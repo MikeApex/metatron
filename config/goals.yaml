@@ -1,0 +1,25 @@
+# Goals
+# Tier 3 — specific goals at 90-day, weekly, and daily horizons.
+# Populated and updated frequently. Populated first during the Goals Interview (Phase 1).
+#
+# Goal privacy schema:
+#   private_why: the underlying motivation — Sensitive tier, never leaves the system
+#   shareable_what: the instrumental behavior — Semi-sensitive, may be used for external advice
+
+quarterly: []
+  # - title: ""
+  #   private_why: ""
+  #   shareable_what: ""
+  #   kpis: []
+  #   due: ""
+
+weekly: []
+  # - title: ""
+  #   private_why: ""
+  #   shareable_what: ""
+  #   due: ""
+
+daily: []
+  # - title: ""
+  #   context: ""   # energy level, location, time of day this fits best
+  #   essential: true/false

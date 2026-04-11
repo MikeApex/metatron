@@ -1,0 +1,19 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+.venv/
+venv/
+*.log
+
+# Claude Code local settings — not project config
+.claude/
+
+# Sensitive data — never committed
+# Exclude contents but keep directory markers via gitkeep
+data/logs/*.json
+data/journal/*
+data/wisdom/*
+data/archive/*
+data/memory/*
