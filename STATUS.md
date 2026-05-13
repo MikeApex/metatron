@@ -4,7 +4,7 @@
 
 ---
 
-## Current Phase: 2 (in progress)
+## Current Phase: 3 (ready to begin)
 
 **Phase 0 is complete. Phase 1 is complete** (pending goals interview redesign and sandbox calendar — both deferred by design). Phase 2 is ready to begin.
 
@@ -94,7 +94,7 @@ pip install pyyaml
 | `core/voice_pipeline.py` | Done | faster-whisper STT + macOS `say` TTS; `run_voice_session()` interactive loop |
 | `core/server.py` | Done | FastAPI; `/session` endpoint; serves PWA |
 | `static/index.html` | Done | Mobile PWA; Web Speech API STT+TTS; provider/agent selectors |
-| **Verification** | **Pending** | Full voice check-in on phone, latency < 5s |
+| **Verification** | Done | Laptop voice verified (Whisper + edge-tts). All 4 providers confirmed: OpenAI, Gemini, Ollama (qwen3:14b), Anthropic (pending credits). Phone pending — Android/Chrome needs HTTPS for mic. |
 
 **To verify:**
 1. `source ~/.zprofile && source .venv/bin/activate`

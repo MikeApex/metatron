@@ -243,8 +243,9 @@ def run_session_gemini(system_prompt: str, user_input: str,
 
 def _openai_compat_loop(system_prompt: str, user_input: str,
                          tool_schemas: list[dict], tool_handlers: dict,
-                         api_key: str, base_url: str | None, model: str) -> str:
-    """Shared agentic loop for OpenAI-compatible APIs (OpenAI, Ollama)."""
+                         api_key: str, base_url: str | None, model: str,
+                         max_iterations: int = 8) -> str:
+    """Shared agentic loop for OpenAI-compatible APIs (OpenAI, Ollama, Gemini)."""
     client = openai.OpenAI(api_key=api_key, base_url=base_url or None)
     oai_tools = _to_openai_tools(tool_schemas)
     messages = [
@@ -252,7 +253,7 @@ def _openai_compat_loop(system_prompt: str, user_input: str,
         {"role": "user", "content": user_input},
     ]
 
-    while True:
+    for _ in range(max_iterations):
         response = client.chat.completions.create(
             model=model,
             max_tokens=4096,
@@ -264,6 +265,7 @@ def _openai_compat_loop(system_prompt: str, user_input: str,
         message = choice.message
         messages.append(message)
 
+        # Return on any non-tool-call finish, or if content exists alongside tool calls
         if choice.finish_reason != "tool_calls" or not message.tool_calls:
             return message.content or ""
 
@@ -275,6 +277,9 @@ def _openai_compat_loop(system_prompt: str, user_input: str,
                 "tool_call_id": tc.id,
                 "content": result,
             })
+
+    # Fallback if max iterations reached — return whatever content we have
+    return messages[-1].get("content") or ""
 
 
 def run_session(agent_name: str, user_input: str,
