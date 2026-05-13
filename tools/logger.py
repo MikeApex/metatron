@@ -91,6 +91,7 @@ WRITE_LOG_SCHEMA = {
                     "Log fields to record. Common keys: mood, energy, focus, "
                     "blockers, wins, tasks_completed, notes."
                 ),
+                "additionalProperties": True,
             },
         },
         "required": ["content"],

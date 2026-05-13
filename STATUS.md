@@ -4,9 +4,11 @@
 
 ---
 
-## Current Phase: 1 (in progress)
+## Current Phase: 2 (ready to begin)
 
-**Phase 0 is complete.** Phase 1 structure work is in progress. Goals interview not yet conducted — real user data has not entered the system.
+**Phase 0 is complete. Phase 1 is complete** (pending goals interview redesign and sandbox calendar — both deferred by design). Phase 2 is ready to begin.
+
+**Provider note:** OpenAI (`--provider openai`) is the active provider for development. Anthropic API key needs credits added before switching back to `--provider anthropic` (default).
 
 ---
 
@@ -46,9 +48,9 @@ All files listed in the Phase 0 plan exist and are working:
 | `config/personas/nin.md` | Done | Anaïs Nin — creative life, relational complexity, emotional weather |
 | `config/personas/aurelius.md` | Done | Marcus Aurelius — duty-heavy, no slack, lifetime-scale values |
 | **Sandbox calendar setup** | **Pending — user action** | Create a dedicated Google account or isolated sub-calendar for dev. No CalDAV coding yet. Share read-only when wired up in a later phase. |
-| **Goals interview** | **Pending — next session** | Deferred to post OS-update restart (2026-05-12) |
-| **pyyaml dependency** | **Pending** | `tools/goals.py` requires `pyyaml` — install before running goals tools |
-| **Verification** | Pending | Full check-in → directed day plan → log written |
+| **Goals interview** | **Redesign needed** | Interview flow must start from concrete goals → values, not abstract value questions. See feedback memory. |
+| **pyyaml dependency** | Done | Already installed in .venv |
+| **Verification** | Done | Check-in against Pepys persona passed; write_log confirmed (600 perms, correct JSON) |
 
 ---
 
