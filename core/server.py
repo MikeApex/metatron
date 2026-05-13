@@ -105,8 +105,26 @@ if __name__ == "__main__":
                         help="Default provider (can be overridden per request)")
     args = parser.parse_args()
 
-    print(f"\nLife Manager server starting on http://0.0.0.0:{args.port}")
-    print("Find your local IP: run `ipconfig getifaddr en0` in a new terminal")
-    print("Then open http://<your-ip>:{args.port} on your phone (same WiFi)\n")
+    certs_dir = Path(__file__).parent.parent / "certs"
+    cert_file = next(certs_dir.glob("*.pem"), None) if certs_dir.exists() else None
+    key_file = next(certs_dir.glob("*-key.pem"), None) if certs_dir.exists() else None
 
-    uvicorn.run("core.server:app", host=args.host, port=args.port, reload=False)
+    if cert_file and key_file:
+        # Use the key file that pairs with the cert (cert = *.pem, key = *-key.pem)
+        cert_file = next((f for f in certs_dir.glob("*.pem") if "-key" not in f.name), None)
+        protocol = "https"
+        ssl_kwargs = {"ssl_certfile": str(cert_file), "ssl_keyfile": str(key_file)}
+    else:
+        protocol = "http"
+        ssl_kwargs = {}
+        print("  No certs found in certs/ — running HTTP (mic blocked on Android Chrome).")
+        print("  Run: cd certs && mkcert <your-ip> localhost 127.0.0.1")
+
+    local_ip = args.host if args.host != "0.0.0.0" else "192.168.x.x"
+    print(f"\nLife Manager server → {protocol}://0.0.0.0:{args.port}")
+    print(f"Open on phone (same WiFi): {protocol}://{local_ip}:{args.port}")
+    if protocol == "https":
+        print("Android setup (one-time): install certs/rootCA.pem on your phone as a trusted CA.")
+        print("  Settings → Security → Install certificate → CA certificate\n")
+
+    uvicorn.run("core.server:app", host=args.host, port=args.port, reload=False, **ssl_kwargs)

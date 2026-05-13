@@ -133,6 +133,7 @@ These items are hardcoded for the current dev machine and will need adaptation o
 | `GEMINI_API_KEY` | `.env` in project root | aistudio.google.com/apikey |
 | Whisper model size | `core/voice_pipeline.py` → `WHISPER_MODEL_SIZE` | `"base.en"` (fast), `"small.en"` (more accurate), `"medium.en"` (best quality) |
 | Local LLM model | TBD — Phase 3 | Ollama: `ollama list` to see installed models |
+| TLS cert for phone | `certs/` (gitignored) | `brew install mkcert && mkcert -install && cd certs && mkcert <local-ip> localhost 127.0.0.1` |
 
 ---
 
