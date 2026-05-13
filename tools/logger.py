@@ -42,6 +42,8 @@ def write_log(log_date: str, content: dict) -> str:
     with open(log_path, "w") as f:
         json.dump(existing, f, indent=2)
 
+    os.chmod(log_path, 0o600)
+
     return f"Log written to {log_path}"
 
 

@@ -88,11 +88,14 @@ def register_tools() -> tuple[list[dict], dict]:
         handlers: Dict mapping tool name → Python function.
     """
     from tools.logger import write_log, read_log, WRITE_LOG_SCHEMA, READ_LOG_SCHEMA
+    from tools.goals import read_goals, write_goals, READ_GOALS_SCHEMA, WRITE_GOALS_SCHEMA
 
-    schemas = [WRITE_LOG_SCHEMA, READ_LOG_SCHEMA]
+    schemas = [WRITE_LOG_SCHEMA, READ_LOG_SCHEMA, READ_GOALS_SCHEMA, WRITE_GOALS_SCHEMA]
     handlers = {
         "write_log": write_log,
         "read_log": read_log,
+        "read_goals": read_goals,
+        "write_goals": write_goals,
     }
 
     return schemas, handlers

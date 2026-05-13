@@ -1,25 +1,51 @@
-# Goals
-# Tier 3 — specific goals at 90-day, weekly, and daily horizons.
-# Populated and updated frequently. Populated first during the Goals Interview (Phase 1).
+# Goals — Tier 3
+# Sensitive-tier: local-only, 600 permissions enforced at write time.
 #
-# Goal privacy schema:
-#   private_why: the underlying motivation — Sensitive tier, never leaves the system
-#   shareable_what: the instrumental behavior — Semi-sensitive, may be used for external advice
+# Privacy schema (enforced at the tool layer, not in prompts):
+#   private_why:    The underlying motivation. SENSITIVE — never routed to a cloud LLM.
+#   shareable_what: The instrumental behavior. SEMI-SENSITIVE — safe for external advice.
+#
+# Horizons:
+#   quarterly:  90-day goals — what this season is for
+#   weekly:     this week's priorities — link to quarterly via parent_goal
+#   daily:      today's focus items — link to weekly via parent_goal
+#
+# Status values: active | paused | complete
+#
+# Filled during the Goals Interview. Edit directly or through the Life Manager.
 
 quarterly: []
-  # - title: ""
-  #   private_why: ""
-  #   shareable_what: ""
-  #   kpis: []
-  #   due: ""
+
+# Example quarterly goal (remove leading # to activate):
+# quarterly:
+#   - id: q1
+#     title: ""
+#     private_why: ""
+#     shareable_what: ""
+#     kpis: []
+#     status: active
+#     due: ""           # YYYY-MM-DD
 
 weekly: []
-  # - title: ""
-  #   private_why: ""
-  #   shareable_what: ""
-  #   due: ""
+
+# Example weekly goal:
+# weekly:
+#   - id: w1
+#     title: ""
+#     private_why: ""
+#     shareable_what: ""
+#     status: active
+#     due: ""
+#     parent_goal: q1   # id of the quarterly goal this serves
 
 daily: []
-  # - title: ""
-  #   context: ""   # energy level, location, time of day this fits best
-  #   essential: true/false
+
+# Example daily item:
+# daily:
+#   - id: d1
+#     title: ""
+#     shareable_what: ""
+#     context: ""        # energy, location, or time-of-day notes (e.g. "morning, focused")
+#     essential: true    # true = cannot slip today; false = deferrable
+#     status: active
+#     parent_goal: w1    # id of the weekly goal this serves
