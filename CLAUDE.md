@@ -130,6 +130,7 @@ These items are hardcoded for the current dev machine and will need adaptation o
 | TTS voice name | `core/voice_pipeline.py` → `speak()` default arg | Run `say -v '?'` in terminal; download Premium voices via System Settings → Accessibility → Spoken Content |
 | `OPENAI_API_KEY` | `~/.zprofile` (exported) or `.env` in project root | console.openai.com |
 | `ANTHROPIC_API_KEY` | `.env` in project root | console.anthropic.com (needs credits) |
+| `GEMINI_API_KEY` | `.env` in project root | aistudio.google.com/apikey |
 | Whisper model size | `core/voice_pipeline.py` → `WHISPER_MODEL_SIZE` | `"base.en"` (fast), `"small.en"` (more accurate), `"medium.en"` (best quality) |
 | Local LLM model | TBD — Phase 3 | Ollama: `ollama list` to see installed models |
 

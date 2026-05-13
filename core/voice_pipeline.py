@@ -222,7 +222,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Life Manager — Voice Mode")
     parser.add_argument("--agent", default="time_director")
     parser.add_argument("--persona", help="Dev persona (e.g. pepys)")
-    parser.add_argument("--provider", default="anthropic", choices=["anthropic", "openai", "ollama"])
+    parser.add_argument("--provider", default="anthropic", choices=["anthropic", "openai", "ollama", "gemini"])
     args = parser.parse_args()
 
     run_voice_session(args.agent, persona=args.persona, provider=args.provider)

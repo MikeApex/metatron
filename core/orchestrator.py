@@ -39,6 +39,8 @@ ANTHROPIC_MODEL = "claude-sonnet-4-6"
 OPENAI_MODEL = "gpt-4o"
 OLLAMA_BASE_URL = "http://localhost:11434/v1"
 OLLAMA_MODEL = "qwen3:14b"
+GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+GEMINI_MODEL = "gemini-2.5-flash"
 
 
 # ---------------------------------------------------------------------------
@@ -225,6 +227,20 @@ def run_session_ollama(system_prompt: str, user_input: str,
     )
 
 
+def run_session_gemini(system_prompt: str, user_input: str,
+                       tool_schemas: list[dict], tool_handlers: dict) -> str:
+    """Agentic loop using Gemini via Google's OpenAI-compatible endpoint."""
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise EnvironmentError("GEMINI_API_KEY is not set.")
+    return _openai_compat_loop(
+        system_prompt, user_input, tool_schemas, tool_handlers,
+        api_key=api_key,
+        base_url=GEMINI_BASE_URL,
+        model=GEMINI_MODEL,
+    )
+
+
 def _openai_compat_loop(system_prompt: str, user_input: str,
                          tool_schemas: list[dict], tool_handlers: dict,
                          api_key: str, base_url: str | None, model: str) -> str:
@@ -281,6 +297,8 @@ def run_session(agent_name: str, user_input: str,
         return run_session_openai(system_prompt, user_input, tool_schemas, tool_handlers)
     if provider == "ollama":
         return run_session_ollama(system_prompt, user_input, tool_schemas, tool_handlers)
+    if provider == "gemini":
+        return run_session_gemini(system_prompt, user_input, tool_schemas, tool_handlers)
     return run_session_anthropic(system_prompt, user_input, tool_schemas, tool_handlers)
 
 
@@ -323,7 +341,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Personal AI Life Manager — Runtime Orchestrator")
     parser.add_argument("--agent", default="time_director", help="Agent to use (default: time_director)")
     parser.add_argument("--persona", help="Dev persona to load (e.g. pepys, nin, aurelius)")
-    parser.add_argument("--provider", default="anthropic", choices=["anthropic", "openai", "ollama"],
+    parser.add_argument("--provider", default="anthropic", choices=["anthropic", "openai", "ollama", "gemini"],
                         help="Model provider (default: anthropic)")
     parser.add_argument("--input", help="Single-shot input (skips interactive mode)")
     args = parser.parse_args()

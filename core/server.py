@@ -101,7 +101,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Life Manager — PWA Server")
     parser.add_argument("--host", default="0.0.0.0", help="Bind address (0.0.0.0 = all interfaces)")
     parser.add_argument("--port", type=int, default=8000)
-    parser.add_argument("--provider", default="anthropic", choices=["anthropic", "openai", "ollama"],
+    parser.add_argument("--provider", default="anthropic", choices=["anthropic", "openai", "ollama", "gemini"],
                         help="Default provider (can be overridden per request)")
     args = parser.parse_args()
 
