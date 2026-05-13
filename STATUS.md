@@ -4,7 +4,7 @@
 
 ---
 
-## Current Phase: 2 (ready to begin)
+## Current Phase: 2 (in progress)
 
 **Phase 0 is complete. Phase 1 is complete** (pending goals interview redesign and sandbox calendar — both deferred by design). Phase 2 is ready to begin.
 
@@ -84,6 +84,25 @@ pip install pyyaml
 - FAISS for memory (Phase 3). No vector DB until then.
 - All integrations are MCP tools in this repo. No third-party plugins.
 - Calendar sandbox = isolated dev account/calendar, read-only. No write access during development.
+
+---
+
+## Phase 2 Progress
+
+| Task | Status | Notes |
+|---|---|---|
+| `core/voice_pipeline.py` | Done | faster-whisper STT + macOS `say` TTS; `run_voice_session()` interactive loop |
+| `core/server.py` | Done | FastAPI; `/session` endpoint; serves PWA |
+| `static/index.html` | Done | Mobile PWA; Web Speech API STT+TTS; provider/agent selectors |
+| **Verification** | **Pending** | Full voice check-in on phone, latency < 5s |
+
+**To verify:**
+1. `source ~/.zprofile && source .venv/bin/activate`
+2. `PYTHONPATH=. python core/server.py --provider openai`
+3. Find your IP: `ipconfig getifaddr en0`
+4. Open `http://<ip>:8000` on phone (same WiFi)
+
+**iOS note:** Web Speech API requires Safari on iOS and HTTPS for full mic access — if `http://` blocks the mic, see HTTPS workaround note below.
 
 ---
 
