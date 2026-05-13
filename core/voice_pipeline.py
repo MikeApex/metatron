@@ -8,6 +8,7 @@ Run directly for an interactive voice session:
 """
 
 import argparse
+import io
 import re
 import subprocess
 import tempfile
@@ -20,6 +21,15 @@ import sounddevice as sd
 _whisper_model = None
 WHISPER_MODEL_SIZE = "base.en"   # base.en: fast, English-only, ~150MB. Upgrade to "small.en" for accuracy.
 SAMPLE_RATE = 16000              # Whisper expects 16kHz
+
+# Piper TTS voice model path.
+# SYSTEM-SPECIFIC: voice model lives in data/voices/. Download additional voices from:
+#   https://huggingface.co/rhasspy/piper-voices
+# Current model: en_US-lessac-high (~108MB, high quality US English male voice)
+VOICES_DIR = Path(__file__).parent.parent / "data" / "voices"
+PIPER_VOICE = VOICES_DIR / "en_US-lessac-high.onnx"
+
+_piper_voice = None
 
 
 # ---------------------------------------------------------------------------
@@ -103,6 +113,14 @@ def transcribe(audio: np.ndarray) -> str:
 # TTS
 # ---------------------------------------------------------------------------
 
+def _get_piper():
+    global _piper_voice
+    if _piper_voice is None:
+        from piper.voice import PiperVoice
+        _piper_voice = PiperVoice.load(str(PIPER_VOICE))
+    return _piper_voice
+
+
 def _strip_markdown(text: str) -> str:
     """Remove markdown formatting so TTS reads cleanly."""
     text = re.sub(r"#{1,6}\s*", "", text)          # headings
@@ -115,18 +133,29 @@ def _strip_markdown(text: str) -> str:
     return text.strip()
 
 
-def speak(text: str, voice: str = "Zoe (Premium)") -> None:
+def speak(text: str) -> None:
     """
-    Speak text using macOS `say`. Strips markdown before speaking.
+    Speak text using Piper TTS. Strips markdown before speaking.
+    Synthesises raw audio and plays directly via sounddevice.
 
-    SYSTEM-SPECIFIC: The voice name must match a voice installed on this machine.
-    Run `say -v '?'` in terminal to list available voices.
-    Premium/Enhanced voices sound significantly better and are worth downloading:
-      System Settings → Accessibility → Spoken Content → System Voice → Customize
-    When setting up on a new machine, update the default voice name here or move
-    it to a config file (deferred to a future setup/onboarding phase).
+    SYSTEM-SPECIFIC: Voice model path is set by PIPER_VOICE at the top of this file.
+    To use a different voice, download an .onnx + .onnx.json pair from:
+      https://huggingface.co/rhasspy/piper-voices
+    and update PIPER_VOICE. When setting up on a new machine, update or move
+    this to a config file (deferred to a future setup/onboarding phase).
     """
-    subprocess.run(["say", "-v", voice, _strip_markdown(text)], check=False)
+    import wave
+    clean = _strip_markdown(text)
+    piper_voice = _get_piper()
+
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+        wav_path = Path(f.name)
+
+    with wave.open(str(wav_path), "wb") as wav:
+        piper_voice.synthesize_wav(clean, wav)
+
+    subprocess.run(["afplay", str(wav_path)], check=False)
+    wav_path.unlink(missing_ok=True)
 
 
 # ---------------------------------------------------------------------------
@@ -193,7 +222,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Life Manager — Voice Mode")
     parser.add_argument("--agent", default="time_director")
     parser.add_argument("--persona", help="Dev persona (e.g. pepys)")
-    parser.add_argument("--provider", default="anthropic", choices=["anthropic", "openai"])
+    parser.add_argument("--provider", default="anthropic", choices=["anthropic", "openai", "ollama"])
     args = parser.parse_args()
 
     run_voice_session(args.agent, persona=args.persona, provider=args.provider)

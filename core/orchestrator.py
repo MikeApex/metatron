@@ -37,6 +37,8 @@ AGENTS_DIR = CONFIG_DIR / "agents"
 
 ANTHROPIC_MODEL = "claude-sonnet-4-6"
 OPENAI_MODEL = "gpt-4o"
+OLLAMA_BASE_URL = "http://localhost:11434/v1"
+OLLAMA_MODEL = "qwen3:14b"
 
 
 # ---------------------------------------------------------------------------
@@ -202,12 +204,31 @@ def run_session_anthropic(system_prompt: str, user_input: str,
 
 def run_session_openai(system_prompt: str, user_input: str,
                         tool_schemas: list[dict], tool_handlers: dict) -> str:
-    """Agentic loop using the OpenAI API (also compatible with Ollama)."""
+    """Agentic loop using the OpenAI API."""
     api_key = os.environ.get("OPENAI_API_KEY")
-    base_url = os.environ.get("OPENAI_BASE_URL")  # set to Ollama endpoint when switching
     if not api_key:
         raise EnvironmentError("OPENAI_API_KEY is not set.")
+    return _openai_compat_loop(
+        system_prompt, user_input, tool_schemas, tool_handlers,
+        api_key=api_key, base_url=None, model=OPENAI_MODEL,
+    )
 
+
+def run_session_ollama(system_prompt: str, user_input: str,
+                       tool_schemas: list[dict], tool_handlers: dict) -> str:
+    """Agentic loop using a local Ollama model via its OpenAI-compatible API."""
+    return _openai_compat_loop(
+        system_prompt, user_input, tool_schemas, tool_handlers,
+        api_key="ollama",          # Ollama doesn't validate the key
+        base_url=OLLAMA_BASE_URL,
+        model=OLLAMA_MODEL,
+    )
+
+
+def _openai_compat_loop(system_prompt: str, user_input: str,
+                         tool_schemas: list[dict], tool_handlers: dict,
+                         api_key: str, base_url: str | None, model: str) -> str:
+    """Shared agentic loop for OpenAI-compatible APIs (OpenAI, Ollama)."""
     client = openai.OpenAI(api_key=api_key, base_url=base_url or None)
     oai_tools = _to_openai_tools(tool_schemas)
     messages = [
@@ -217,7 +238,7 @@ def run_session_openai(system_prompt: str, user_input: str,
 
     while True:
         response = client.chat.completions.create(
-            model=OPENAI_MODEL,
+            model=model,
             max_tokens=4096,
             tools=oai_tools,
             messages=messages,
@@ -258,6 +279,8 @@ def run_session(agent_name: str, user_input: str,
 
     if provider == "openai":
         return run_session_openai(system_prompt, user_input, tool_schemas, tool_handlers)
+    if provider == "ollama":
+        return run_session_ollama(system_prompt, user_input, tool_schemas, tool_handlers)
     return run_session_anthropic(system_prompt, user_input, tool_schemas, tool_handlers)
 
 
@@ -300,7 +323,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Personal AI Life Manager — Runtime Orchestrator")
     parser.add_argument("--agent", default="time_director", help="Agent to use (default: time_director)")
     parser.add_argument("--persona", help="Dev persona to load (e.g. pepys, nin, aurelius)")
-    parser.add_argument("--provider", default="anthropic", choices=["anthropic", "openai"],
+    parser.add_argument("--provider", default="anthropic", choices=["anthropic", "openai", "ollama"],
                         help="Model provider (default: anthropic)")
     parser.add_argument("--input", help="Single-shot input (skips interactive mode)")
     args = parser.parse_args()
