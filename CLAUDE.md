@@ -121,6 +121,20 @@ Register by adding `(my_tool, MY_TOOL_SCHEMA)` to the list in `orchestrator.regi
 
 ---
 
+## Per-System Configuration (new machine checklist)
+
+These items are hardcoded for the current dev machine and will need adaptation on any new system. A proper setup/onboarding flow is deferred to a later phase — for now, find and update these manually:
+
+| What | Where | How to find the right value |
+|---|---|---|
+| TTS voice name | `core/voice_pipeline.py` → `speak()` default arg | Run `say -v '?'` in terminal; download Premium voices via System Settings → Accessibility → Spoken Content |
+| `OPENAI_API_KEY` | `~/.zprofile` (exported) or `.env` in project root | console.openai.com |
+| `ANTHROPIC_API_KEY` | `.env` in project root | console.anthropic.com (needs credits) |
+| Whisper model size | `core/voice_pipeline.py` → `WHISPER_MODEL_SIZE` | `"base.en"` (fast), `"small.en"` (more accurate), `"medium.en"` (best quality) |
+| Local LLM model | TBD — Phase 3 | Ollama: `ollama list` to see installed models |
+
+---
+
 ## Key Design Decisions (don't revisit without good reason)
 
 - Orchestrator calls Claude API directly (not Claude Code sessions at runtime)

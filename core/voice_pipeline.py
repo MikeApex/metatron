@@ -8,6 +8,7 @@ Run directly for an interactive voice session:
 """
 
 import argparse
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -35,22 +36,28 @@ def _get_whisper():
 
 def record_until_silence(
     silence_threshold: float = 0.01,
-    silence_duration: float = 1.5,
-    max_duration: float = 60.0,
+    silence_duration: float = 2.5,
+    min_speech_duration: float = 1.0,
+    max_duration: float = 120.0,
 ) -> np.ndarray:
     """
     Record from the default mic until silence is detected or max_duration reached.
+
+    Silence detection only kicks in after min_speech_duration seconds of speech,
+    preventing premature cutoff on natural mid-sentence pauses.
 
     Returns audio as a float32 numpy array at SAMPLE_RATE.
     """
     print("  [listening...]", end="", flush=True)
 
-    chunk_size = int(SAMPLE_RATE * 0.1)   # 100ms chunks
+    chunk_size = int(SAMPLE_RATE * 0.1)       # 100ms chunks
     max_chunks = int(max_duration / 0.1)
     silence_chunks_needed = int(silence_duration / 0.1)
+    min_speech_chunks = int(min_speech_duration / 0.1)
 
     audio_chunks = []
     silence_count = 0
+    speech_chunk_count = 0
     recording_started = False
 
     with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32") as stream:
@@ -61,13 +68,17 @@ def record_until_silence(
             if rms > silence_threshold:
                 recording_started = True
                 silence_count = 0
+                speech_chunk_count += 1
             elif recording_started:
                 silence_count += 1
 
             if recording_started:
                 audio_chunks.append(chunk)
 
-            if recording_started and silence_count >= silence_chunks_needed:
+            # Only end on silence after minimum speech duration has been captured
+            if (recording_started
+                    and speech_chunk_count >= min_speech_chunks
+                    and silence_count >= silence_chunks_needed):
                 break
 
     print(" done.")
@@ -92,13 +103,30 @@ def transcribe(audio: np.ndarray) -> str:
 # TTS
 # ---------------------------------------------------------------------------
 
-def speak(text: str, voice: str = "Samantha") -> None:
+def _strip_markdown(text: str) -> str:
+    """Remove markdown formatting so TTS reads cleanly."""
+    text = re.sub(r"#{1,6}\s*", "", text)          # headings
+    text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)   # bold
+    text = re.sub(r"\*(.+?)\*", r"\1", text)        # italic
+    text = re.sub(r"`(.+?)`", r"\1", text)          # inline code
+    text = re.sub(r"^\s*[-*+]\s+", "", text, flags=re.MULTILINE)  # bullets
+    text = re.sub(r"^\s*\d+\.\s+", "", text, flags=re.MULTILINE)  # numbered lists
+    text = re.sub(r"\n{2,}", "\n", text)            # collapse blank lines
+    return text.strip()
+
+
+def speak(text: str, voice: str = "Zoe (Premium)") -> None:
     """
-    Speak text using macOS `say`. Blocks until speech completes.
-    Voice options: Samantha (default), Alex, Tom, Victoria, etc.
-    Full list: `say -v ?` in terminal.
+    Speak text using macOS `say`. Strips markdown before speaking.
+
+    SYSTEM-SPECIFIC: The voice name must match a voice installed on this machine.
+    Run `say -v '?'` in terminal to list available voices.
+    Premium/Enhanced voices sound significantly better and are worth downloading:
+      System Settings → Accessibility → Spoken Content → System Voice → Customize
+    When setting up on a new machine, update the default voice name here or move
+    it to a config file (deferred to a future setup/onboarding phase).
     """
-    subprocess.run(["say", "-v", voice, text], check=False)
+    subprocess.run(["say", "-v", voice, _strip_markdown(text)], check=False)
 
 
 # ---------------------------------------------------------------------------
