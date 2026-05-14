@@ -16,17 +16,24 @@ Find your IP: System Settings → Wi-Fi → Details, or run `ipconfig getifaddr 
 import argparse
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import edge_tts
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from core.orchestrator import run_session
+
+KOKORO_VOICE = "af_heart"
+KOKORO_SPEAK = Path(__file__).parent.parent / "tools" / "kokoro" / "speak.py"
+KOKORO_PYTHON = Path(__file__).parent.parent / "tools" / "kokoro" / "venv" / "bin" / "python"
+EDGE_VOICE = "en-US-JennyNeural"
 
 app = FastAPI(title="Life Manager")
 
@@ -81,6 +88,45 @@ async def health() -> dict:
     return {"status": "ok"}
 
 
+class TTSRequest(BaseModel):
+    text: str
+
+@app.post("/tts")
+async def tts(req: TTSRequest):
+    """Generate speech audio — Kokoro af_heart primary, edge-tts fallback."""
+    if not req.text.strip():
+        raise HTTPException(status_code=400, detail="Text is empty.")
+    tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
+    tmp.close()
+    try:
+        if KOKORO_PYTHON.exists():
+            import subprocess
+            wav_tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+            wav_tmp.close()
+            result = subprocess.run(
+                [str(KOKORO_PYTHON), str(KOKORO_SPEAK), "--voice", KOKORO_VOICE, "--output", wav_tmp.name],
+                input=req.text, capture_output=True, text=True, timeout=30
+            )
+            if result.returncode != 0:
+                raise RuntimeError(result.stderr)
+            media_type = "audio/wav"
+            audio_path = wav_tmp.name
+        else:
+            communicate = edge_tts.Communicate(req.text, EDGE_VOICE)
+            await communicate.save(tmp.name)
+            media_type = "audio/mpeg"
+            audio_path = tmp.name
+
+        def iterfile():
+            with open(audio_path, "rb") as f:
+                yield from f
+            Path(audio_path).unlink(missing_ok=True)
+        return StreamingResponse(iterfile(), media_type=media_type)
+    except Exception as e:
+        Path(tmp.name).unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/")
 async def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
@@ -106,25 +152,27 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     certs_dir = Path(__file__).parent.parent / "certs"
-    cert_file = next(certs_dir.glob("*.pem"), None) if certs_dir.exists() else None
-    key_file = next(certs_dir.glob("*-key.pem"), None) if certs_dir.exists() else None
+    # Prefer Tailscale cert (.crt/.key) over mkcert (.pem) — Tailscale certs are publicly trusted
+    cert_file = next(certs_dir.glob("*.crt"), None) if certs_dir.exists() else None
+    key_file = next(certs_dir.glob("*.key"), None) if certs_dir.exists() else None
+    if not cert_file:
+        cert_file = next((f for f in certs_dir.glob("*.pem") if "-key" not in f.name), None)
+        key_file = next(certs_dir.glob("*-key.pem"), None)
 
     if cert_file and key_file:
-        # Use the key file that pairs with the cert (cert = *.pem, key = *-key.pem)
-        cert_file = next((f for f in certs_dir.glob("*.pem") if "-key" not in f.name), None)
         protocol = "https"
         ssl_kwargs = {"ssl_certfile": str(cert_file), "ssl_keyfile": str(key_file)}
     else:
         protocol = "http"
         ssl_kwargs = {}
         print("  No certs found in certs/ — running HTTP (mic blocked on Android Chrome).")
-        print("  Run: cd certs && mkcert <your-ip> localhost 127.0.0.1")
+        print("  Run: tailscale cert <hostname>  or  mkcert <your-ip> localhost 127.0.0.1")
 
-    local_ip = args.host if args.host != "0.0.0.0" else "192.168.x.x"
+    tailscale_host = "mikes-macbook-air.tail0acc5d.ts.net"
     print(f"\nLife Manager server → {protocol}://0.0.0.0:{args.port}")
-    print(f"Open on phone (same WiFi): {protocol}://{local_ip}:{args.port}")
+    print(f"Open on phone (Tailscale): {protocol}://{tailscale_host}:{args.port}")
     if protocol == "https":
-        print("Android setup (one-time): install certs/rootCA.pem on your phone as a trusted CA.")
+        print("No CA install needed — Tailscale cert is publicly trusted.")
         print("  Settings → Security → Install certificate → CA certificate\n")
 
     uvicorn.run("core.server:app", host=args.host, port=args.port, reload=False, **ssl_kwargs)

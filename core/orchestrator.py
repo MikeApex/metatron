@@ -112,13 +112,16 @@ def register_tools() -> tuple[list[dict], dict]:
     """
     from tools.logger import write_log, read_log, WRITE_LOG_SCHEMA, READ_LOG_SCHEMA
     from tools.goals import read_goals, write_goals, READ_GOALS_SCHEMA, WRITE_GOALS_SCHEMA
+    from tools.config_writer import write_config, WRITE_CONFIG_SCHEMA
 
-    schemas = [WRITE_LOG_SCHEMA, READ_LOG_SCHEMA, READ_GOALS_SCHEMA, WRITE_GOALS_SCHEMA]
+    schemas = [WRITE_LOG_SCHEMA, READ_LOG_SCHEMA, READ_GOALS_SCHEMA, WRITE_GOALS_SCHEMA,
+               WRITE_CONFIG_SCHEMA]
     handlers = {
         "write_log": write_log,
         "read_log": read_log,
         "read_goals": read_goals,
         "write_goals": write_goals,
+        "write_config": write_config,
     }
 
     return schemas, handlers

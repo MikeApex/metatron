@@ -20,11 +20,19 @@ quarterly: []
 # quarterly:
 #   - id: q1
 #     title: ""
-#     private_why: ""
-#     shareable_what: ""
+#     private_why: ""           # SENSITIVE: underlying motivation — never routed to cloud LLM
+#     shareable_what: ""        # SEMI-SENSITIVE: concrete goal — safe for external advice
+#     domain: ""                # life domain from goals interview (health, career, social, etc.)
+#     timeline: ""              # user's stated timeline
+#     essential: true           # true = survived trade-off forcing; false = aspirational
+#     themes: []                # underlying motivations to develop in future interviews
+#     open_questions: []        # threads for future dedicated interviews
+#     retrospective_fit: ""     # how this compares to past goals that generated lasting satisfaction
+#     health_constraints: ""    # Phase 1 health/limitation factors affecting this goal
+#     notes: ""                 # interview observations and context worth preserving
 #     kpis: []
 #     status: active
-#     due: ""           # YYYY-MM-DD
+#     due: ""                   # YYYY-MM-DD
 
 weekly: []
 

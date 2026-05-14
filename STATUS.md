@@ -6,9 +6,11 @@
 
 ## Current Phase: 3 (ready to begin)
 
-**Phase 0 is complete. Phase 1 is complete** (pending goals interview redesign and sandbox calendar — both deferred by design). Phase 2 is ready to begin.
+**Phases 0, 1, and 2 are complete.** Goals interview and sandbox calendar deferred by design.
 
 **Provider note:** OpenAI (`--provider openai`) is the active provider for development. Anthropic API key needs credits added before switching back to `--provider anthropic` (default).
+
+**Hard prerequisite before Phase 3 / first real interview:** Wire Ollama as primary orchestrator for sensitive data before any real personal data enters the system. See local LLM memory.
 
 ---
 
@@ -48,7 +50,7 @@ All files listed in the Phase 0 plan exist and are working:
 | `config/personas/nin.md` | Done | Anaïs Nin — creative life, relational complexity, emotional weather |
 | `config/personas/aurelius.md` | Done | Marcus Aurelius — duty-heavy, no slack, lifetime-scale values |
 | **Sandbox calendar setup** | **Pending — user action** | Create a dedicated Google account or isolated sub-calendar for dev. No CalDAV coding yet. Share read-only when wired up in a later phase. |
-| **Goals interview** | **Redesign needed** | Interview flow must start from concrete goals → values, not abstract value questions. See feedback memory. |
+| **Goals interview** | **Ready to run** | `config/agents/goals_interviewer.md` — 7-phase design. Prototype via text (not voice). Run against user directly; no persona needed. |
 | **pyyaml dependency** | Done | Already installed in .venv |
 | **Verification** | Done | Check-in against Pepys persona passed; write_log confirmed (600 perms, correct JSON) |
 
@@ -126,6 +128,18 @@ The privacy architecture always assumed a local LLM for sensitive-tier data (Pha
 **Recommendation:** Ollama on macOS — OpenAI-compatible API at `localhost:11434`, easy model swaps, integrates cleanly with the existing orchestrator routing pattern.
 
 Decide the role before building the routing logic.
+
+---
+
+## First-User Prototyping — Conversation Required Before That Phase
+
+Before the first external user touches this system, hold a dedicated planning conversation covering:
+
+1. **Who are the first users?** Names, relationships, languages, how they were chosen.
+2. **First steps toward multi-user:** What changes in the architecture (data isolation, config per-user, onboarding flow)?
+3. **Bulgarian voice support:** First user may need Bulgarian TTS. Kokoro does not support it — evaluate options at that point (dedicated Bulgarian TTS model, a different engine, or a fallback).
+
+This conversation should happen at the transition into the first-user prototyping phase, before any multi-user code is written.
 
 ---
 

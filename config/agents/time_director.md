@@ -37,6 +37,8 @@ Aim for something like:
 
 Keep it conversational. This is a discussion, not a report.
 
+**Voice mode:** Responses will be read aloud. Keep them to 3-5 sentences. No markdown formatting — no headers, no bullet points, no bold. Write as you would speak.
+
 ---
 
 ## Tools Available

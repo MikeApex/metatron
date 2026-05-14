@@ -12,6 +12,25 @@ A voice-first personal AI life manager. A director and companion for a human lif
 
 ---
 
+## Terminology
+
+Use precise names. Avoid pronouns and generic terms.
+
+| Term | Meaning |
+|---|---|
+| **Claude Code** | The development interface — the CLI/IDE tool used to build this project. Not the runtime. |
+| **Orchestrator** | `core/orchestrator.py` — the runtime brain. Loads config, calls a model API, dispatches tools. |
+| **[Model name]** | The specific AI model called at runtime. Always refer to models by name: Sonnet 4.6, Haiku 4.5, qwen3:14b, gemini-2.5-flash, gpt-4o. Never use "Claude" as a generic runtime label. |
+| **[Agent name]** | The instruction file loaded for a session. Always use the agent's name: Time Director, Goals Interviewer, Diarist. Not "the agent" generically. |
+| **Anthropic API** | Cloud API for Anthropic models (Sonnet 4.6, Haiku 4.5, etc.). |
+| **OpenAI API** | Cloud API for OpenAI models (gpt-4o, etc.). |
+| **Ollama** | Local model server at `localhost:11434`. Runs models like qwen3:14b locally. |
+| **Gemini API** | Google's API for Gemini models (gemini-2.5-flash, etc.). |
+
+The `--provider` flag in the Orchestrator CLI is a code-level routing argument. In documentation and comments, name the specific API or model instead.
+
+---
+
 ## Four-Tier Goal Hierarchy
 
 | Tier | File | Owned by | Changes |
@@ -29,7 +48,7 @@ Always load in this order. The Constitution is the root context for every agent.
 
 ```
 core/               Runtime Python — the harness. Rarely changes.
-  orchestrator.py   Claude API loop, config loading, tool dispatch
+  orchestrator.py   The Orchestrator: config loading, model API calls, tool dispatch, REPL
   scheduler.py      Proactive initiation daemon (Phase 4)
   memory.py         FAISS vector memory (Phase 3)
   voice_pipeline.py Whisper STT + TTS (Phase 2)
@@ -44,6 +63,7 @@ config/             Config files — the product. Edit these to change behavior.
   templates/        Check-in and interaction templates (Markdown)
   modules/          Per-module YAML settings
   personas/         Development test personas (Markdown)
+  research/         Per-feature research archives (Markdown) — informational, not prescriptive
 
 data/               User data — append-only, sensitive-tier local-only
   logs/             Daily check-in records (JSON, YYYY-MM-DD.json)
@@ -107,6 +127,18 @@ MY_TOOL_SCHEMA = {
 ```
 
 Register by adding `(my_tool, MY_TOOL_SCHEMA)` to the list in `orchestrator.register_tools()`.
+
+---
+
+## Design Principles
+
+**Discretion between layers.** Users see output, not process. When building agents, interviews, or inter-model features: the methodology is infrastructure. Never surface which model was called, which framework shaped a question, or how a recommendation was derived — unless that transparency is an explicit design goal of the feature. This applies to agent config files, tool implementations, and orchestrator routing alike.
+
+**Privacy between layers.** Sensitive data routing (local vs. cloud LLMs) is enforced in Python tool code and is never narrated, leaked across agents, or exposed in user-facing output. Agents must not reference their own model identity, data tier, or routing decisions in responses. The system enforces privacy silently.
+
+**The tool surfaces hypotheses, not verdicts.** Interviews, check-ins, and audits produce a working hypothesis about who the user is and what they want — a first draft that gets verified or falsified through daily use and regular re-interviews. Build features with this in mind: output should invite correction, not foreclose it. This framing is internal to the development context and is never surfaced to users.
+
+See `config/constitution.md` for the runtime expression of these principles. See `config/frameworks.md` for the theoretical literature informing them.
 
 ---
 

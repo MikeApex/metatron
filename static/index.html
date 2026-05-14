@@ -72,11 +72,19 @@
       gap: 10px;
     }
 
+    #status {
+      font-size: 12px;
+      color: #555;
+      text-align: center;
+      min-height: 16px;
+    }
+
     #transcript {
       font-size: 14px;
-      color: #888;
+      color: #aaa;
       min-height: 18px;
       text-align: center;
+      font-style: italic;
     }
 
     #controls {
@@ -193,10 +201,14 @@
     </select>
   </div>
 
+  <div id="status">Checking mic...</div>
   <div id="transcript"></div>
 
   <div id="controls">
-    <button id="mic-btn">Hold to Speak</button>
+    <button id="mic-btn">Tap to Speak</button>
+  </div>
+  <div id="grant-wrap" style="text-align:center;display:none">
+    <button id="grant-btn" style="background:#333;border:1px solid #555;border-radius:20px;color:#aaa;font-size:13px;padding:8px 20px;cursor:pointer">Grant mic permission</button>
   </div>
 
   <div id="text-input">
@@ -211,11 +223,17 @@
   const conversation = document.getElementById('conversation');
   const micBtn = document.getElementById('mic-btn');
   const transcript = document.getElementById('transcript');
+  const statusEl = document.getElementById('status');
   const textField = document.getElementById('text-field');
   const sendBtn = document.getElementById('send-btn');
   const providerSelect = document.getElementById('provider-select');
   const agentSelect = document.getElementById('agent-select');
   const voiceUnsupported = document.getElementById('voice-unsupported');
+
+  function setStatus(msg, color) {
+    statusEl.textContent = msg;
+    statusEl.style.color = color || '#555';
+  }
 
   // --- Conversation history display ---
 
@@ -264,16 +282,21 @@
     if (on) {
       micBtn.classList.add('loading');
       micBtn.textContent = 'Thinking...';
+      setStatus('Waiting for response...', '#888');
     } else {
       micBtn.classList.remove('loading');
-      micBtn.textContent = recognition ? 'Hold to Speak' : 'Tap to Speak';
+      micBtn.textContent = 'Tap to Speak';
+      setStatus('Ready', '#555');
     }
   }
 
   // --- Web Speech API: STT ---
 
   let recognition = null;
-  let recognizing = false;
+  let shouldListen = false;
+  let silenceTimer = null;
+  let accumulated = '';
+  const SILENCE_MS = 3000;
 
   if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -283,64 +306,127 @@
     recognition.lang = 'en-US';
 
     recognition.onstart = () => {
-      recognizing = true;
       micBtn.classList.add('listening');
-      micBtn.textContent = 'Listening...';
-      transcript.textContent = '';
+      micBtn.textContent = 'Tap to Stop';
+      setStatus('Listening...', '#4a7');
     };
 
     recognition.onresult = (e) => {
       let interim = '', final = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const t = e.results[i][0].transcript;
-        e.results[i].isFinal ? final += t : interim += t;
+        if (e.results[i].isFinal) final += t;
+        else interim += t;
       }
-      transcript.textContent = final || interim;
-      if (final) recognition.stop();
+      if (final) accumulated += (accumulated ? ' ' : '') + final;
+      transcript.textContent = accumulated + (interim ? ' ' + interim : '');
+      resetSilenceTimer();
     };
 
     recognition.onerror = (e) => {
-      transcript.textContent = `(${e.error})`;
-      resetMic();
+      if (e.error === 'no-speech') return;
+      setStatus('Error: ' + e.error, '#a44');
     };
 
     recognition.onend = () => {
-      const text = transcript.textContent.trim();
+      if (shouldListen) {
+        try { recognition.start(); return; } catch {}
+      }
+      clearSilenceTimer();
+      const text = accumulated.trim();
+      accumulated = '';
       resetMic();
-      if (text) sendToServer(text);
+      if (text) {
+        setStatus('Sending...', '#888');
+        sendToServer(text);
+      } else {
+        setStatus('No speech detected', '#666');
+      }
     };
 
-    micBtn.textContent = 'Hold to Speak';
+    micBtn.textContent = 'Tap to Speak';
+
+    const grantWrap = document.getElementById('grant-wrap');
+    const grantBtn = document.getElementById('grant-btn');
+
+    function requestMicPermission() {
+      return navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(stream => {
+          stream.getTracks().forEach(t => t.stop());
+          setStatus('Mic ready', '#4a7');
+          grantWrap.style.display = 'none';
+        })
+        .catch(err => {
+          setStatus('Mic blocked: ' + err.name, '#a44');
+          grantWrap.style.display = 'block';
+        });
+    }
+
+    grantBtn.addEventListener('click', requestMicPermission);
+    requestMicPermission();
   } else {
     voiceUnsupported.style.display = 'block';
     micBtn.style.display = 'none';
+    setStatus('Speech API not supported in this browser', '#a44');
+  }
+
+  function resetSilenceTimer() {
+    clearSilenceTimer();
+    silenceTimer = setTimeout(() => {
+      if (shouldListen) { shouldListen = false; recognition.stop(); }
+    }, SILENCE_MS);
+  }
+
+  function clearSilenceTimer() {
+    if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
   }
 
   function resetMic() {
-    recognizing = false;
+    shouldListen = false;
     micBtn.classList.remove('listening');
-    micBtn.textContent = recognition ? 'Hold to Speak' : 'Tap to Speak';
+    micBtn.textContent = 'Tap to Speak';
+    setStatus('Ready', '#555');
   }
 
   micBtn.addEventListener('click', () => {
     if (!recognition) return;
     if (micBtn.classList.contains('loading')) return;
-    if (recognizing) {
+    if (shouldListen) {
+      shouldListen = false;
+      clearSilenceTimer();
       recognition.stop();
     } else {
+      accumulated = '';
+      transcript.textContent = '';
+      shouldListen = true;
       recognition.start();
     }
   });
 
   // --- Web Speech API: TTS ---
 
-  function speakResponse(text) {
-    if (!window.speechSynthesis) return;
-    window.speechSynthesis.cancel();
-    const utt = new SpeechSynthesisUtterance(text);
-    utt.rate = 0.95;
-    utt.pitch = 1.0;
-    window.speechSynthesis.speak(utt);
+  let currentAudio = null;
+
+  async function speakResponse(text) {
+    if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+    try {
+      const res = await fetch('/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) throw new Error('TTS failed');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      currentAudio = new Audio(url);
+      currentAudio.onended = () => URL.revokeObjectURL(url);
+      currentAudio.play();
+    } catch {
+      // fallback to browser TTS
+      const utt = new SpeechSynthesisUtterance(text);
+      utt.rate = 0.95;
+      window.speechSynthesis?.speak(utt);
+    }
   }
 
   // --- Text input ---

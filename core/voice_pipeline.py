@@ -1,18 +1,23 @@
 """
-core/voice_pipeline.py — Whisper STT + macOS TTS pipeline.
+core/voice_pipeline.py — Whisper STT + TTS pipeline.
 
-Laptop voice mode: record from mic → Whisper transcription → orchestrator → say.
+Laptop voice mode: record from mic → Whisper transcription → orchestrator → speak.
 Run directly for an interactive voice session:
     python core/voice_pipeline.py
     python core/voice_pipeline.py --persona pepys --provider openai
+
+TTS: edge-tts (Microsoft neural voices) with Piper as offline fallback.
+To change voice: update EDGE_VOICE. Run `edge-tts --list-voices` to see options.
+Good alternatives: en-US-GuyNeural, en-US-ChristopherNeural, en-GB-RyanNeural
 """
 
 import argparse
-import io
+import asyncio
 import re
 import subprocess
 import tempfile
 from pathlib import Path
+
 
 import numpy as np
 import sounddevice as sd
@@ -22,10 +27,16 @@ _whisper_model = None
 WHISPER_MODEL_SIZE = "base.en"   # base.en: fast, English-only, ~150MB. Upgrade to "small.en" for accuracy.
 SAMPLE_RATE = 16000              # Whisper expects 16kHz
 
-# Piper TTS voice model path.
-# SYSTEM-SPECIFIC: voice model lives in data/voices/. Download additional voices from:
-#   https://huggingface.co/rhasspy/piper-voices
-# Current model: en_US-lessac-high (~108MB, high quality US English male voice)
+# Kokoro TTS settings.
+# Voice IDs: af_heart, af_bella, af_sky, am_adam, bm_george — see tools/kokoro/speak.py
+KOKORO_VOICE = "af_heart"
+KOKORO_SPEAK = Path(__file__).parent.parent / "tools" / "kokoro" / "speak.py"
+KOKORO_PYTHON = Path(__file__).parent.parent / "tools" / "kokoro" / "venv" / "bin" / "python"
+
+# edge-tts fallback voice (used if Kokoro venv not set up / network available).
+EDGE_VOICE = "en-US-JennyNeural"
+
+# Piper last-resort fallback.
 VOICES_DIR = Path(__file__).parent.parent / "data" / "voices"
 PIPER_VOICE = VOICES_DIR / "en_US-lessac-high.onnx"
 
@@ -133,29 +144,50 @@ def _strip_markdown(text: str) -> str:
     return text.strip()
 
 
-def speak(text: str) -> None:
-    """
-    Speak text using Piper TTS. Strips markdown before speaking.
-    Synthesises raw audio and plays directly via sounddevice.
+def _speak_kokoro(text: str) -> None:
+    """Speak via Kokoro (local neural TTS, Python 3.12 venv subprocess)."""
+    result = subprocess.run(
+        [str(KOKORO_PYTHON), str(KOKORO_SPEAK), "--voice", KOKORO_VOICE],
+        input=text,
+        text=True,
+        check=True,
+    )
 
-    SYSTEM-SPECIFIC: Voice model path is set by PIPER_VOICE at the top of this file.
-    To use a different voice, download an .onnx + .onnx.json pair from:
-      https://huggingface.co/rhasspy/piper-voices
-    and update PIPER_VOICE. When setting up on a new machine, update or move
-    this to a config file (deferred to a future setup/onboarding phase).
-    """
+
+async def _speak_edge(text: str) -> None:
+    import edge_tts
+    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
+        mp3_path = Path(f.name)
+    communicate = edge_tts.Communicate(text, EDGE_VOICE)
+    await communicate.save(str(mp3_path))
+    subprocess.run(["afplay", str(mp3_path)], check=False)
+    mp3_path.unlink(missing_ok=True)
+
+
+def _speak_piper_fallback(text: str) -> None:
     import wave
-    clean = _strip_markdown(text)
     piper_voice = _get_piper()
-
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
         wav_path = Path(f.name)
-
     with wave.open(str(wav_path), "wb") as wav:
-        piper_voice.synthesize_wav(clean, wav)
-
+        piper_voice.synthesize_wav(text, wav)
     subprocess.run(["afplay", str(wav_path)], check=False)
     wav_path.unlink(missing_ok=True)
+
+
+def speak(text: str) -> None:
+    """Speak via Kokoro → edge-tts → Piper, in order of preference."""
+    clean = _strip_markdown(text)
+    if KOKORO_PYTHON.exists():
+        try:
+            _speak_kokoro(clean)
+            return
+        except Exception:
+            pass
+    try:
+        asyncio.run(_speak_edge(clean))
+    except Exception:
+        _speak_piper_fallback(clean)
 
 
 # ---------------------------------------------------------------------------
