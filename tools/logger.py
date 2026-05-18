@@ -20,7 +20,7 @@ def _logs_dir() -> Path:
     return _ROOT / "data" / "logs"
 
 
-def write_log(log_date: str, content: dict) -> str:
+def write_log(content: dict | None = None, log_date: str = "") -> str:
     """
     Write a daily log entry to data/logs/YYYY-MM-DD.json.
 
@@ -31,6 +31,13 @@ def write_log(log_date: str, content: dict) -> str:
     Returns:
         Confirmation string with the path written.
     """
+    if content is None:
+        content = {}
+    elif isinstance(content, str):
+        content = {"notes": content}
+    elif not isinstance(content, dict):
+        content = {}
+
     if not log_date:
         log_date = date.today().isoformat()
 
@@ -62,7 +69,7 @@ def write_log(log_date: str, content: dict) -> str:
     return f"Log written to {log_path}"
 
 
-def read_log(log_date: str) -> dict:
+def read_log(log_date: str = "") -> dict:
     """
     Read a daily log entry from data/logs/YYYY-MM-DD.json.
 

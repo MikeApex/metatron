@@ -98,6 +98,62 @@ def load_agent(name: str) -> str:
     return agent_path.read_text().strip()
 
 
+def load_recent_context(persona: str | None = None, days: int = 5) -> str:
+    """
+    Load the last N days of logs and the context tracker into a string
+    for injection into the system prompt as short-term memory.
+
+    Returns empty string if no recent data exists.
+    """
+    import json as _json
+    from datetime import date, timedelta
+    from pathlib import Path
+
+    persona_env = os.environ.get("AI_TEST_PERSONA") or persona
+
+    if persona_env:
+        logs_dir = ROOT / "data" / "personas" / persona_env / "logs"
+        tracker_path = ROOT / "data" / "personas" / persona_env / "context.json"
+    else:
+        logs_dir = ROOT / "data" / "logs"
+        tracker_path = ROOT / "data" / "context.json"
+
+    sections = []
+
+    # Context tracker (mid-term: open threads, patterns, follow-ups)
+    if tracker_path.exists():
+        try:
+            tracker = _json.loads(tracker_path.read_text())
+            lines = [f"## Session Context (last session: {tracker.get('last_session', 'unknown')})"]
+            if tracker.get("open_threads"):
+                lines.append("**Open threads:** " + " | ".join(tracker["open_threads"]))
+            if tracker.get("patterns"):
+                lines.append("**Patterns noted:** " + " | ".join(tracker["patterns"]))
+            if tracker.get("follow_ups"):
+                lines.append("**Follow up on:** " + " | ".join(tracker["follow_ups"]))
+            sections.append("\n".join(lines))
+        except Exception:
+            pass
+
+    # Recent logs (short-term: last N days)
+    today = date.today()
+    recent_entries = []
+    for i in range(days):
+        d = (today - timedelta(days=i)).isoformat()
+        log_path = logs_dir / f"{d}.json"
+        if log_path.exists():
+            try:
+                entry = _json.loads(log_path.read_text())
+                recent_entries.append(f"  {d}: {_json.dumps(entry, ensure_ascii=False)}")
+            except Exception:
+                pass
+
+    if recent_entries:
+        sections.append("## Recent Logs (last 5 days)\n" + "\n".join(recent_entries))
+
+    return "\n\n---\n\n".join(sections)
+
+
 # ---------------------------------------------------------------------------
 # Tool registration
 # ---------------------------------------------------------------------------
@@ -119,6 +175,10 @@ def register_tools() -> tuple[list[dict], dict]:
     )
     from tools.wisdom import write_wisdom, read_wisdom, WRITE_WISDOM_SCHEMA, READ_WISDOM_SCHEMA
     from tools.memory_tool import search_memory, SEARCH_MEMORY_SCHEMA
+    from tools.context_tracker import (
+        read_context_tracker, write_context_tracker,
+        READ_CONTEXT_TRACKER_SCHEMA, WRITE_CONTEXT_TRACKER_SCHEMA,
+    )
 
     schemas = [
         WRITE_LOG_SCHEMA, READ_LOG_SCHEMA,
@@ -128,6 +188,7 @@ def register_tools() -> tuple[list[dict], dict]:
         WRITE_ARCHIVE_SCHEMA, READ_ARCHIVE_SCHEMA,
         WRITE_WISDOM_SCHEMA, READ_WISDOM_SCHEMA,
         SEARCH_MEMORY_SCHEMA,
+        READ_CONTEXT_TRACKER_SCHEMA, WRITE_CONTEXT_TRACKER_SCHEMA,
     ]
     handlers = {
         "write_log": write_log,
@@ -142,6 +203,8 @@ def register_tools() -> tuple[list[dict], dict]:
         "write_wisdom": write_wisdom,
         "read_wisdom": read_wisdom,
         "search_memory": search_memory,
+        "read_context_tracker": read_context_tracker,
+        "write_context_tracker": write_context_tracker,
     }
 
     return schemas, handlers
@@ -324,7 +387,9 @@ def run_session(agent_name: str, user_input: str,
 
     config = load_config(persona=persona)
     agent = load_agent(agent_name)
-    system_prompt = f"{config}\n\n---\n\n## Your Role for This Session\n\n{agent}"
+    recent = load_recent_context(persona=persona)
+    context_block = f"\n\n---\n\n{recent}" if recent else ""
+    system_prompt = f"{config}{context_block}\n\n---\n\n## Your Role for This Session\n\n{agent}"
     tool_schemas, tool_handlers = register_tools()
 
     if provider == "openai":

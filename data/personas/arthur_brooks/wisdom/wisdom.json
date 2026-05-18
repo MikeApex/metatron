@@ -1,0 +1,20 @@
+[
+  {
+    "key": "gym_skipping_impact",
+    "category": "patterns",
+    "value": "Skipping the morning gym routine (d1) correlates with being sharper but less patient. User should not be surprised by this pattern.",
+    "added": "2026-05-18"
+  },
+  {
+    "key": "exercise_affects_mood",
+    "category": "health",
+    "value": "Missing the gym correlates with decreased sharpness and patience. Consistent exercise has a noticeable positive impact on mood.",
+    "added": "2026-05-18"
+  },
+  {
+    "key": "missed_gym_effect",
+    "category": "patterns",
+    "value": "Noticed being sharper and less patient on days when gym session is missed. Gym routine correlates with calmness and patience.",
+    "added": "2026-05-18"
+  }
+]

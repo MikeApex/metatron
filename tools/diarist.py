@@ -36,7 +36,7 @@ def _archive_dir() -> Path:
 # Journal
 # ---------------------------------------------------------------------------
 
-def write_journal(entry_date: str, text: str, tags: list[str] | None = None) -> str:
+def write_journal(text: str, entry_date: str = "", tags: list[str] | None = None) -> str:
     """
     Append a journal entry to the day's journal file.
 
@@ -80,7 +80,7 @@ def write_journal(entry_date: str, text: str, tags: list[str] | None = None) -> 
     return f"Journal entry written to {journal_path}"
 
 
-def read_journal(entry_date: str) -> dict:
+def read_journal(entry_date: str = "") -> dict:
     """
     Read journal entries for a given date.
 
@@ -105,7 +105,7 @@ def read_journal(entry_date: str) -> dict:
 # Archive
 # ---------------------------------------------------------------------------
 
-def write_archive(category: str, item: dict) -> str:
+def write_archive(category: str, item: dict | str | None = None) -> str:
     """
     Append an item to a category archive file.
 
@@ -123,6 +123,11 @@ def write_archive(category: str, item: dict) -> str:
     Returns:
         Confirmation string.
     """
+    if item is None:
+        item = {}
+    elif isinstance(item, str):
+        item = {"title": item}
+
     category = category.lower().strip().replace(" ", "_")
 
     archive_dir = _archive_dir()
