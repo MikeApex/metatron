@@ -85,15 +85,16 @@ Config files *are* the product. Code is infrastructure. If changing behavior req
 
 | Tier | Data types | Storage | Analysis |
 |---|---|---|---|
-| **Open** | Research, scheduling, general queries | Cloud APIs allowed | Cloud LLM |
-| **Semi-sensitive** | Instrumental goals (`shareable_what`), preferences, activity logs | Local primary | Local first; `shareable_what` field only to cloud |
-| **Sensitive** | Core goals (`private_why`), health, mood, finances, biometrics, prime directive | Local-only, encrypted at rest | Local LLM only (Ollama/Llama) |
+| **Open** | Research, general queries with no personal context attached | Cloud APIs allowed | Cloud LLM |
+| **Sensitive** | All goal data (`private_why`, `shareable_what`), activity logs, health, mood, finances, biometrics, prime directive, mission | Local-only, encrypted at rest | Local LLM only (Ollama/Llama) |
+
+The semi-sensitive tier has been collapsed into sensitive. Empirical testing (synthesis leak test, May 2026) demonstrated that `shareable_what` combined with behavioral patterns carries sufficient inferential signal to reconstruct `private_why`. The privacy boundary between the two tiers does not hold in practice — free-text synthesis from either layer produces HIGH-richness inference by an independent model. Cloud LLMs are used only for fully decontextualized tasks.
 
 **Goal privacy schema:** Each goal carries two fields:
-- `private_why` — the underlying motivation. Sensitive tier. Never leaves the system.
-- `shareable_what` — the instrumental behavior. Semi-sensitive. Can be shared for advice without revealing motivation.
+- `private_why` — the underlying motivation. Sensitive. Never leaves the system.
+- `shareable_what` — the instrumental behavior. Sensitive. Never leaves the system.
 
-*Example: `private_why`: "prove I can finish something I start"; `shareable_what`: "training for long-distance running." Cloud LLM sees only the latter.*
+**Cloud dispatch threshold (multi-user architecture, Phase 7+):** Before any request is sent to a cloud LLM, the private model applies a single test: *"Is this request identifiable to a specific individual within the user pool?"* If yes, it must be decomposed further or kept private. If no, it may be dispatched. At sufficient user scale, pooled cloud calls provide genuine k-anonymity — individual requests are unattributable without knowledge of the user base composition. This threshold is the enforcement mechanism that makes the cloud layer safe at scale.
 
 **Encryption stack (cross-platform, Phase 6):**
 - Files at rest: `age` encryption
@@ -351,6 +352,30 @@ Order determined by goals interview results + usage frequency + user research se
 - `age` encryption for all Tier 2+ data
 - Syncthing cross-device sync
 - Evaluate full local LLM stack
+
+---
+
+### Phase 7 — Multi-User Architecture (Future)
+*Prerequisite: single-user system stable and validated through real use.*
+
+**Private model layer (per-user isolation):**
+- Each user's sensitive data (goals, private_why, health, prime directive) is siloed — the private model processes each user's context independently
+- No cross-user data access at the sensitive tier
+- Private model runs on dedicated hardware or a wiped-per-session VPS (LLaMA 3.3 70B or equivalent)
+
+**Cloud dispatch layer (shared, pooled):**
+- All users' cloud requests are pooled through a shared interface
+- Before dispatch, the private model applies the identifiability threshold: *"Is this request attributable to a specific individual within the user pool?"*
+- If yes: decompose further, abstract more, or keep private
+- If no: dispatch — the pooled request stream provides k-anonymity; cloud provider cannot attribute requests to individuals without knowledge of user base composition
+- Threshold becomes more permissive as user count grows; more users = lower identification risk per request
+
+**Privacy model at scale:**
+- Sensitive layer: fully private, per-user, never touches cloud regardless of pool size
+- Cloud layer: safe once pool is large enough and requests are sufficiently decontextualized
+- The identifiability threshold is the enforcement boundary — it is the only gate that needs to hold
+
+**User research session required** before this phase to validate multi-user data model, consent architecture, and onboarding flow.
 
 ---
 

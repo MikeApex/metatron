@@ -1,0 +1,36 @@
+{
+  "date": "2025-05-18",
+  "mood": "something between frustrated and motivated",
+  "energy": "moderate",
+  "morning_sketch": {
+    "done": true,
+    "notes": "Drew Eliza today. First time in two months. She looked the way I originally imagined her, which means the image hasn't drifted even if the work has been slow. Good to know."
+  },
+  "work": {
+    "notes": "Our lead designer announced she's going freelance. Effective end of June. My manager asked if I'd be interested in a temporary lead role — more responsibility, same pay, 'opportunities for growth.' I said I'd think about it.",
+    "honest_note": "She is good. Less technically strong than me, I think. I do not enjoy noticing this. The freelance thing: she has one major client lined up and is making a bet. She might be right. I'm not ready to make that bet but I'm aware I keep saying 'not ready' about things I might just be scared of."
+  },
+  "book": {
+    "sunday_hour": {
+      "done": false,
+      "reason": "Leo sick — 101 fever; Chris at an end-of-season coaching dinner he couldn't miss; I had both kids",
+      "note": "This is the first Sunday hour I've missed in six weeks. I'm logging it so I don't catastrophize it. One miss is a miss, not a pattern. Next Sunday."
+    },
+    "pages_complete": 13
+  },
+  "transition_plan": {
+    "notes": "Looked at the income data again — stayed with it longer this time. The median is hard. The top quartile is livable. The differentiator seems to be licensing and repeat clients, not per-book fees. This changes how I think about what I'd need to build. I did not close the tab.",
+    "status": "actually started — half a page of notes"
+  },
+  "kids": {
+    "leo": "Fever broke by evening. He slept in my arms for two hours. I didn't try to do anything else.",
+    "sofia": "Read to me instead of me reading to her. Just for a few minutes. She corrected my expression on one line. I let her."
+  },
+  "finances": {
+    "notes": "Chris's summer schedule means fewer coaching hours — his income drops slightly June through August. This is normal and planned for but worth noting in the margin calculation.",
+    "months_to_kindergarten": 12
+  },
+  "wins": ["Transition plan started — half a page of real notes", "Sofia reading to me", "Sunday miss logged without spiraling"],
+  "at_risk": ["Lead role offer — need to decide by Friday; don't want it but don't want to close a door for the wrong reasons"],
+  "note": "12 months. I switched from 13 to 12 sometime this week without noticing. The counting is changing."
+}

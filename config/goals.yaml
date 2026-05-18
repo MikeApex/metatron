@@ -3,7 +3,9 @@
 #
 # Privacy schema (enforced at the tool layer, not in prompts):
 #   private_why:    The underlying motivation. SENSITIVE — never routed to a cloud LLM.
-#   shareable_what: The instrumental behavior. SEMI-SENSITIVE — safe for external advice.
+#   shareable_what: The instrumental behavior. SENSITIVE — never routed to a cloud LLM.
+#                   (Previously semi-sensitive; reclassified after empirical testing showed
+#                   shareable_what carries sufficient signal to reconstruct private_why.)
 #
 # Horizons:
 #   quarterly:  90-day goals — what this season is for

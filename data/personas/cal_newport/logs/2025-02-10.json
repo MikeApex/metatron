@@ -1,0 +1,38 @@
+{
+  "date": "2025-02-10",
+  "mood": "focused, mildly restless",
+  "energy": "good",
+  "morning": {
+    "run": true,
+    "pull_ups": 25,
+    "notes": "Run to the park, 25 pull-ups, back by 7:40. No email until 8:30. This is the protocol and it works."
+  },
+  "deep_work": {
+    "hours": 3.5,
+    "focus": "Exploratory reading — AI and knowledge work, looking for the next book question",
+    "notes": "Read three papers and two chapters. Taking notes in the research log. The AI-and-knowledge-worker territory is crowded and I'm skeptical of my own interest in it — am I genuinely curious or just following the obvious next topic? The question I keep returning to is about what happens to expertise when the tools change. That might be something.",
+    "question_statement_progress": "Draft of one paragraph. Not ready."
+  },
+  "research_paper": {
+    "notes": "Two hours in the afternoon on the distributed systems draft. The proof is almost clean. One more pass on the boundary conditions section. Target: submitted to the conference by end of month.",
+    "status": "on track"
+  },
+  "new_yorker": {
+    "notes": "Pitch accepted on the slow productivity piece — a follow-up to the original. Deadline March 15. Manageable alongside the semester."
+  },
+  "teaching": {
+    "notes": "Graduate seminar went well. One student asked whether slow productivity is compatible with a PhD timeline. Good question with a complicated answer. The system can be deliberately slow; the calendar cannot always accommodate it. I said so.",
+    "outside_commitments_this_month": 1
+  },
+  "family": {
+    "notes": "Home by 5:15. Shutdown ritual at 5pm — 'schedule shutdown complete' — and I meant it today. Dinner, homework logistics, the usual middle-school chaos. Good evening.",
+    "genuine_day_off_this_week": "Saturday — confirmed"
+  },
+  "time_block_review": {
+    "adherence": "high — green blocks held except one meeting that ran long",
+    "note": "The meeting that ran long was mine. I need to enforce endings as well as beginnings."
+  },
+  "wins": ["Deep work block held", "Research paper on schedule", "New Yorker pitch accepted", "Shutdown at 5pm kept"],
+  "at_risk": ["Next book question still unfocused — need to sharpen in the next two weeks"],
+  "note": "The AI territory pulls because it's the obvious follow-on to Slow Productivity. Obvious follow-ons produce obvious books. I'm not ready to commit until I have a question that surprises me."
+}

@@ -1,0 +1,36 @@
+{
+  "date": "2025-05-13",
+  "mood": "restless in a specific way",
+  "energy": "moderate",
+  "morning": {
+    "walk": true,
+    "notes": "Different route — took Basho west toward Sloans Lake instead of the usual north loop. He was confused for one block and then completely fine. Good reminder."
+  },
+  "work": {
+    "notes": "Pipeline review with my manager. She mentioned the fast track conversation again — Senior AE, more accounts, travel three weeks a month. She said she wanted to know my timeline. I said I was thinking about it. This is the third time she has mentioned it in six weeks.",
+    "fast_track": {
+      "status": "still undecided",
+      "honest_note": "The honest thing is that I don't not want it. I also don't want my life to be 60% airports. I don't know how to hold both of those at once."
+    }
+  },
+  "debt": {
+    "current_balance": 25800,
+    "notes": "Down $600 from last check. Slow. The commission variance from last month was smaller than I expected — deal pushed to next quarter. Still on pace for under $22K by end of Q3, but less margin than I'd like."
+  },
+  "camera": {
+    "notes": "I defined the project today. Actually defined it. Saturday mornings, the coffee shop, the same table, whoever is sitting there, for one year. I wrote it down. The project exists now.",
+    "first_session": "This Saturday",
+    "photos_taken": 0
+  },
+  "portland": {
+    "status": "booked — June 14-16",
+    "notes": "I booked it. $280 round trip. Done."
+  },
+  "evening": {
+    "dinner": "Cooked properly — the salmon I've been avoiding attempting. It was better than I expected.",
+    "reading": "Read 40 pages of the boat book. The man is beginning to understand why he started building it, which took him 80 pages to figure out. I recognize this."
+  },
+  "wins": ["Portland booked — for real this time", "Camera project defined and written down", "Salmon worked"],
+  "at_risk": ["Fast track decision — can't defer indefinitely; manager will want an answer"],
+  "note": "The project exists now that it's written down. That's how I know I mean it."
+}

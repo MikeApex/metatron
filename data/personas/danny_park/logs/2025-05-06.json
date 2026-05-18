@@ -1,0 +1,32 @@
+{
+  "date": "2025-05-06",
+  "mood": "okay, which is most days",
+  "energy": "steady",
+  "morning": {
+    "walk": true,
+    "notes": "Basho found something in the bushes on the north loop. Probably a rabbit. We watched it for five minutes. Good start."
+  },
+  "work": {
+    "notes": "Closed a renewal with Hartwick Solutions — a medium one, $84K ARR. My manager sent a Slack message. I said thanks. Felt nothing in particular about it, which is normal for renewals. The new logo hunt is more interesting but also where I keep stalling.",
+    "commission": "If the current pipeline closes at 70%, I'll clear $2,800 extra this quarter. All of it goes to the card."
+  },
+  "debt": {
+    "current_balance": 26400,
+    "notes": "Did the Sunday review on Tuesday this week. Still counts. $26,400. Target is under $22K by end of Q3. Math works if the pipeline closes."
+  },
+  "camera": {
+    "notes": "Looked at it again tonight. Did not pick it up. The project I keep almost defining: I want to photograph the coffee shop on Saturday mornings — the same table, different people, over a year. Simple. I have been 'almost defining' this for two months.",
+    "photos_taken_this_month": 0
+  },
+  "portland": {
+    "notes": "Marcus texted: 'you coming or what.' I said I'd book it this weekend. I will book it this weekend.",
+    "status": "rescheduled three times"
+  },
+  "evening": {
+    "dinner": "Pasta. Getting better at this.",
+    "reading": "Picked up the Bashō collection again. Read three pages. Put it down. That's fine."
+  },
+  "wins": ["Renewal closed", "Debt review done", "Walk with Basho"],
+  "at_risk": ["Camera project still only defined in my head", "Portland still not booked"],
+  "notes": "The 'okay' days are good. I know that now. I spent a year waiting for something to be better than okay before I could start doing the things I wanted to do. That was wrong."
+}

@@ -1,0 +1,34 @@
+{
+  "date": "2025-03-10",
+  "mood": "productive, slightly overextended",
+  "energy": "moderate",
+  "morning": {
+    "run": false,
+    "notes": "Skipped — one of the boys had an early thing. Noticed the difference in afternoon focus. Logging this because the correlation is consistent."
+  },
+  "deep_work": {
+    "hours": 2.5,
+    "focus": "Book question statement — third draft",
+    "notes": "The question is almost there: 'What does it take to build a meaningful, skill-based career in a world that structurally rewards busyness over depth — and why do so many smart, motivated people fail at this even when they know better?' The second clause is new. I think it's the book.",
+    "question_statement_progress": "Third draft — sharing with editor this week"
+  },
+  "research": {
+    "notes": "Conference review came back — major revisions. Expected. The boundary conditions section needs more formal treatment. Added to next quarter's deep work budget."
+  },
+  "new_yorker": {
+    "notes": "Editor notes came back: 'the organizational section is the most interesting part and also the most underdeveloped.' She's right. Revising.",
+    "deadline": "March 15 — four days"
+  },
+  "teaching": {
+    "notes": "Semester hits its density peak this week. Three seminars, one undergraduate class, two office hours blocks. I knew this was coming and still find the week slightly airless.",
+    "outside_commitments_this_month": 2,
+    "note": "Held the two-per-month limit. One podcast, one talk. Both scheduled before the semester, both short. The limit is working."
+  },
+  "family": {
+    "notes": "Shutdown at 5pm — only four days this week, not five. The missed day was the conference review email arriving at 4:50. I answered it. I shouldn't have.",
+    "genuine_day_off": "Saturday held"
+  },
+  "wins": ["Book question reaching final form", "Commitment budget held", "Saturday off"],
+  "at_risk": ["Conference paper revision needs scheduling — goes on Q2 list", "One shutdown missed — watch this week"],
+  "note": "The 4:50pm email. I knew what it was before I opened it, and I opened it anyway. The protocol exists for this exact situation. I will not do it again this week."
+}

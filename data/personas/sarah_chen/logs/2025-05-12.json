@@ -1,0 +1,34 @@
+{
+  "date": "2025-05-12",
+  "mood": "irritable before the gym, functional after",
+  "energy": "moderate — sleep was broken",
+  "workout": {
+    "done": true,
+    "type": "gym — weights",
+    "notes": "Emma was up at 3am with a nightmare. I was up until 4. Went anyway at 5. This is the thing. The going anyway is the thing."
+  },
+  "work": {
+    "focus": "Budget variance review — Q2 is tracking 4% over on staffing costs",
+    "notes": "Three hours on the variance analysis. Found the source — two contractors extended without going through my approval process. Corrective conversation with the team lead. She was apologetic and will not do it again. I was direct and not unkind. This is the version of me I prefer.",
+    "q1_status": "on track — board deck outline started"
+  },
+  "kids": {
+    "jake_reading": {
+      "notes": "Tutor assessment today. She says he has phonological processing difficulty — not dyslexia, but adjacent. Treatable. She gave us a plan. I read the entire packet tonight.",
+      "reaction": "Something released when she named it. The not-knowing was worse than the knowing."
+    },
+    "emma": "Robotics camp deposit paid. She is extremely pleased with herself."
+  },
+  "saturday_boundary": {
+    "status": "failed — email at 8am",
+    "notes": "A VP texted me Saturday morning about the staffing issue before I found it. I responded. I told myself it was necessary. I am not sure it was."
+  },
+  "evening": {
+    "tom": "He asked how I was doing, specifically. Not 'how was your day' — how was I doing. I said I was fine and then I said actually I wasn't sure. He got up and made tea. We talked for 45 minutes. This is the conversation I've been rerouting around.",
+    "notes": "I told him about the Ecuador thing. Not the full version but the start of it. He didn't say anything immediately. Then he said: 'I didn't know you still thought about that.' I said: I didn't know I did either, not like this."
+  },
+  "wins": ["Jake assessment complete — finally have a plan", "Variance issue found and corrected", "Honest conversation with Tom started"],
+  "at_risk": ["Saturday boundary — failed again; need to actually name this as a pattern to Tom"],
+  "therapy_appointment": "rescheduled — third time; moved to May 22",
+  "note": "The Tom conversation. I have been waiting for a natural opening for three months. There isn't going to be a natural opening. I opened it artificially and it worked."
+}

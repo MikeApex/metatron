@@ -1,0 +1,33 @@
+{
+  "date": "2021-02-08",
+  "mood": "energized but self-conscious",
+  "energy": "high — the 4:30 routine held",
+  "gym": {
+    "done": true,
+    "type": "resistance — upper body",
+    "notes": "Good session. The discipline of the routine is its own argument. Twenty-five years. There is something clarifying about a practice that predates every professional identity I have had."
+  },
+  "atlantic_column": {
+    "status": "Week 8 draft — on the happiness research around friendship vs. income",
+    "notes": "Worried it reads too much like a listicle. The data is strong but the writing has to do more than report it. Sent draft to Elena at HBS for a read. She said the middle section needed a harder claim. She was right. Revised.",
+    "lead_weeks": 8
+  },
+  "book": {
+    "notes": "Wrote 1,200 words on the chapter about fluid vs. crystallized intelligence. The autobiographical frame is working but I'm using 'I' more than I intended. Need to decide whether this book has a first-person spine or not.",
+    "concern": "I keep writing around the AEI chapter instead of into it. The reader will see this."
+  },
+  "harvard": {
+    "notes": "Managing Happiness course went well today. The MBA students are more skeptical than Kennedy School students — they keep asking 'but how do you measure it.' Good question. I like teaching people who push back.",
+    "difference_from_aic": "I miss the institutional momentum of AEI. I don't miss what the momentum was pointed at. This is a useful distinction."
+  },
+  "ester": {
+    "notes": "We said the rosary and then talked for an hour after. She asked when I was going to write the AEI chapter honestly. I said soon. She nodded in the way that means she will ask again.",
+    "observation": "She has been asking the right questions for thirty years. I have not always been answering them."
+  },
+  "friendship_goal": {
+    "notes": "Dinner with Paul and Maria on Saturday. Confirmed. The first time I've had dinner with friends who are not professional contacts in three months. This is not something I would have noticed two years ago."
+  },
+  "wins": ["Gym at 4:30", "Column draft revised and strengthened", "1,200 words on the book", "Dinner with Paul and Maria confirmed"],
+  "at_risk": ["AEI chapter — still routing around it", "Ester conversation — still scheduled as 'soon'"],
+  "note": "The students today asked whether happiness is something you achieve or something you practice. I gave them the research answer. The honest answer is that I am still figuring out the difference."
+}

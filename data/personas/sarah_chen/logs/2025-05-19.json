@@ -1,0 +1,34 @@
+{
+  "date": "2025-05-19",
+  "mood": "quieter than usual — not bad",
+  "energy": "good",
+  "workout": {
+    "done": true,
+    "type": "run — 4 miles",
+    "notes": "The morning is still the best part. Forty minutes of nothing to manage."
+  },
+  "work": {
+    "focus": "VP conversation about Q2 staffing; board deck section 2",
+    "notes": "Good day. The kind where I know what I'm doing and it works. The VP was receptive; the deck is coming together. I am not struggling with the work. I keep waiting to find a word for what I am struggling with.",
+    "q1_status": "on track"
+  },
+  "therapy": {
+    "appointment": "2025-05-22 — confirmed, not rescheduled",
+    "notes": "I have not rescheduled it. This feels like an accomplishment, which tells me something."
+  },
+  "ecuador": {
+    "notes": "Tom looked up the organization I went with in 2009. They still exist. He showed me the website without saying anything. I looked at it for a long time. I don't know what I'm looking for. I know I'm looking for something.",
+    "ideas_app": "Opened the notes app again. Read the entry from 2022: 'what would you do if the money was the same.' I think the question is wrong. I think the real question is what I would do if it wasn't."
+  },
+  "kids": {
+    "jake": "First tutoring session today. He was frustrated and then proud. She knows what she's doing.",
+    "emma": "Made a presentation about her robotics camp project for us at dinner. Tom and I gave feedback with straight faces. She was magnificent."
+  },
+  "saturday": {
+    "status": "success — no email until 10:15am",
+    "notes": "15 minutes late but I'm counting it. Tom noticed. He didn't make a big thing of it. The noticing was enough."
+  },
+  "wins": ["Saturday boundary — partial but real", "Therapy appointment not rescheduled", "Jake's first tutoring session done"],
+  "at_risk": ["Ecuador question is getting louder, not quieter — need to do something with it before it becomes a crisis"],
+  "note": "The ideas app. 47 entries going back to 2018 and I have acted on none of them. I don't think all of them are good ideas. I think some of them are the same idea, written over and over because I didn't know what to do with it."
+}

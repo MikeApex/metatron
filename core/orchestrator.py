@@ -113,15 +113,35 @@ def register_tools() -> tuple[list[dict], dict]:
     from tools.logger import write_log, read_log, WRITE_LOG_SCHEMA, READ_LOG_SCHEMA
     from tools.goals import read_goals, write_goals, READ_GOALS_SCHEMA, WRITE_GOALS_SCHEMA
     from tools.config_writer import write_config, WRITE_CONFIG_SCHEMA
+    from tools.diarist import (
+        write_journal, read_journal, WRITE_JOURNAL_SCHEMA, READ_JOURNAL_SCHEMA,
+        write_archive, read_archive, WRITE_ARCHIVE_SCHEMA, READ_ARCHIVE_SCHEMA,
+    )
+    from tools.wisdom import write_wisdom, read_wisdom, WRITE_WISDOM_SCHEMA, READ_WISDOM_SCHEMA
+    from tools.memory_tool import search_memory, SEARCH_MEMORY_SCHEMA
 
-    schemas = [WRITE_LOG_SCHEMA, READ_LOG_SCHEMA, READ_GOALS_SCHEMA, WRITE_GOALS_SCHEMA,
-               WRITE_CONFIG_SCHEMA]
+    schemas = [
+        WRITE_LOG_SCHEMA, READ_LOG_SCHEMA,
+        READ_GOALS_SCHEMA, WRITE_GOALS_SCHEMA,
+        WRITE_CONFIG_SCHEMA,
+        WRITE_JOURNAL_SCHEMA, READ_JOURNAL_SCHEMA,
+        WRITE_ARCHIVE_SCHEMA, READ_ARCHIVE_SCHEMA,
+        WRITE_WISDOM_SCHEMA, READ_WISDOM_SCHEMA,
+        SEARCH_MEMORY_SCHEMA,
+    ]
     handlers = {
         "write_log": write_log,
         "read_log": read_log,
         "read_goals": read_goals,
         "write_goals": write_goals,
         "write_config": write_config,
+        "write_journal": write_journal,
+        "read_journal": read_journal,
+        "write_archive": write_archive,
+        "read_archive": read_archive,
+        "write_wisdom": write_wisdom,
+        "read_wisdom": read_wisdom,
+        "search_memory": search_memory,
     }
 
     return schemas, handlers
@@ -296,6 +316,12 @@ def run_session(agent_name: str, user_input: str,
         persona: Optional dev persona (e.g. "pepys").
         provider: "anthropic" or "openai".
     """
+    # Route tool data writes to persona-scoped directories during persona testing.
+    if persona:
+        os.environ["AI_TEST_PERSONA"] = persona
+    else:
+        os.environ.pop("AI_TEST_PERSONA", None)
+
     config = load_config(persona=persona)
     agent = load_agent(agent_name)
     system_prompt = f"{config}\n\n---\n\n## Your Role for This Session\n\n{agent}"

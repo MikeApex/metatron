@@ -1,0 +1,58 @@
+# Oliver Burkeman — persona goals
+# Set: 2025. Post-Guardian, Meditations for Mortals recently published.
+# Aliveness (Oct 2026) announced but not yet in progress.
+
+quarterly:
+  - id: q1
+    title: Maintain The Imperfectionist at the quality it deserves — two issues per month, nothing forced
+    private_why: The newsletter is now my primary ongoing relationship with readers; if it becomes obligation rather than genuine thought, I will have traded the Guardian grind for a self-imposed one
+    shareable_what: Publish 6 issues in the quarter; each must pass the test of whether I'd want to read it
+    status: active
+
+  - id: q2
+    title: Determine whether Aliveness has a real argument or just a compelling title
+    private_why: I have a contract and an October 2026 deadline; but I will not produce a third book that's just variations on the second; the argument has to be genuinely new or I need to renegotiate
+    shareable_what: Six weeks of exploratory writing — morning pages and longer drafts; assess honestly at week six; no forced momentum before then
+    status: active
+
+  - id: q3
+    title: Be present to Rowan's year in a non-delegated way
+    private_why: He's ten; these are the years he'll remember; the move to Yorkshire was partly for this and I will not undermine it with deadline-driven absence
+    shareable_what: School runs when possible; weekends mostly unscheduled; make the paper pop-up projects he's been asking about
+    status: active
+
+weekly:
+  - id: w1
+    title: One Imperfectionist draft — allow it to surprise me
+    parent_goal: q1
+    status: active
+
+  - id: w2
+    title: One long unstructured walk on the moors — no phone, no podcast
+    parent_goal: q3
+    context: Saturday or Sunday; this is not exercise or productivity; it is the landscape doing something that thinking cannot
+    status: active
+
+  - id: w3
+    title: Check in with my wife on her novel progress — not to help, to witness
+    context: She's working on something real; the least I can do is pay attention
+    status: active
+
+daily:
+  - id: d1
+    title: Morning pages — three sides of the A5 notebook, pen moving the whole time
+    context: Before anything else; no one will ever read these; the rule is keep moving even if I'm writing about having nothing to write
+    essential: true
+    status: active
+
+  - id: d2
+    title: Three hours on the main project (book exploration or newsletter draft) — the 3/3/3 method
+    context: Three hours on the important thing first; then three shorter urgent tasks; then three maintenance items; stop
+    essential: true
+    status: active
+
+  - id: d3
+    title: One atelic activity — something with no endpoint and no product
+    context: Walk, music, the paper pop-up work; the goal is genuine absorption, not recovery
+    essential: false
+    status: active

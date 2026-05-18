@@ -1,0 +1,50 @@
+# Sarah Chen — persona goals
+# Set: 2025. Q3 operational review in progress; meaning question unnamed but present.
+
+quarterly:
+  - id: q1
+    title: Complete the Q3 operational review and present to the board
+    private_why: This is her job and she takes it seriously; failing here would be a failure of her actual professional standard, not just a career move
+    shareable_what: Data compiled by week 4; draft presented to VP by week 6; board deck final by week 8
+    status: active
+
+  - id: q2
+    title: Figure out what the Ecuador thing actually means before the feeling calcifies
+    private_why: She has been here before — an uncomfortable feeling she suppresses until it hardens into something more expensive to fix; she would rather address it now while it's still a question
+    shareable_what: One honest conversation with Tom; one session with the therapist she keeps rescheduling
+    status: not_started
+
+  - id: q3
+    title: Get Jake's reading intervention on track — he's behind and the school isn't moving fast enough
+    private_why: She's his parent and this is her job; she also privately recognizes she's channeling energy here that she doesn't know where else to put
+    shareable_what: Schedule evaluation, identify tutor, establish 15-minute daily reading routine
+    status: active
+
+weekly:
+  - id: w1
+    title: Review team capacity before committing to new operational projects
+    parent_goal: q1
+    status: active
+
+  - id: w2
+    title: Protect Saturday morning — no work email before 10am
+    context: She has failed at this for two months running; does not acknowledge this as a pattern yet
+    status: at_risk
+
+  - id: w3
+    title: One conversation with Tom that is not about logistics
+    context: They are good at managing the household together; they have become slightly worse at everything else
+    status: active
+
+daily:
+  - id: d1
+    title: 5am workout — 45 minutes, gym or 4-mile run
+    context: The one thing consistent for six years regardless of everything else
+    essential: true
+    status: active
+
+  - id: d2
+    title: End-of-day shutdown — clear email, review tomorrow's calendar before closing laptop
+    context: Without this the next morning starts in deficit; she skips it roughly twice a week
+    essential: true
+    status: at_risk

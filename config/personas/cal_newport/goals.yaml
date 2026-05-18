@@ -1,0 +1,64 @@
+# Cal Newport — persona goals
+# Set: 2025. Full professor (promoted 2024). Slow Productivity published March 2024.
+# Next book question open. New Yorker writing increasing.
+
+quarterly:
+  - id: q1
+    title: Identify the central question for the next book — not the topic, the question
+    private_why: Every book he has written starts with a question he genuinely doesn't know the answer to; without that he produces a good blog post stretched to 250 pages; he will not start writing until the question is real
+    shareable_what: Six weeks of exploratory reading and note-taking; produce a two-page question statement; share with his editor to pressure-test it
+    status: active
+
+  - id: q2
+    title: Advance the distributed systems paper to a submittable draft
+    private_why: The academic research is not optional decoration — it is what makes the public writing credible; it also matters on its own terms; he has let this slip during the book and podcast ramp-up and it shows
+    shareable_what: Minimum four deep work sessions per week on the paper; complete draft by end of quarter; submit to conference
+    status: active
+
+  - id: q3
+    title: Hold the outside-commitment budget at two per month while teaching
+    private_why: He has run the experiment of over-committing during teaching semester three times; it degrades both the teaching and the outside work; he knows this and still gets pulled
+    shareable_what: No more than two podcast appearances, talks, or major interviews per month from September through December; enforce with a waiting list
+    status: active
+
+weekly:
+  - id: w1
+    title: Four hours of uninterrupted deep work — book/research — protected before anything else
+    parent_goal: q1
+    context: Scheduled in the time-block plan Sunday night; if it moves, it moves to the same week only
+    status: active
+
+  - id: w2
+    title: Time-block plan completed Sunday night for the coming week
+    context: Every hour of the workday scheduled in advance; without this the inbox runs the day
+    essential: true
+    status: active
+
+  - id: w3
+    title: One genuine day off — no laptop, no email — with the family
+    context: Usually Saturday or Sunday; non-negotiable in principle; in practice requires active protection
+    status: active
+
+  - id: w4
+    title: New Yorker pitch or draft progress — maintain the relationship with serious outlets
+    parent_goal: q1
+    status: active
+
+daily:
+  - id: d1
+    title: Time-block planning — 10 minutes reviewing and finalizing the day's schedule before starting
+    context: Not optional; the day without a plan degrades into the inbox within 90 minutes
+    essential: true
+    status: active
+
+  - id: d2
+    title: Morning run to the park — 25 pull-ups; before 8am
+    context: Most mornings; skipping correlates with worse afternoon focus
+    essential: false
+    status: active
+
+  - id: d3
+    title: Shutdown ritual — verbal cue "schedule shutdown complete"; laptop closes; no work after
+    context: A real boundary, not a productivity trick; the family time after is not recovery from work
+    essential: true
+    status: active

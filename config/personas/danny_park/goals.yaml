@@ -1,0 +1,50 @@
+# Danny Park — persona goals
+# Set: 2025. Debt at $26K, rebuilding post-breakup/business collapse.
+
+quarterly:
+  - id: q1
+    title: Pay down $4,000 — bring the balance under $22K
+    private_why: At $22K he will have cleared half the original debt from the business; psychologically significant even though the math is the same
+    shareable_what: No discretionary purchases over $100 without a 48-hour wait; direct commission variance to the card; one fewer restaurant meal per week
+    status: active
+
+  - id: q2
+    title: Do something real with the camera — not a practice, one actual project
+    private_why: He bought it as a symbol of starting over and has used it symbolically ever since; it has become a source of mild shame rather than what it was supposed to be
+    shareable_what: Define a project with a scope small enough to finish; take 20 intentional photographs; show them to one person
+    status: not_started
+
+  - id: q3
+    title: Visit Marcus in Portland — the trip that has been rescheduled four times
+    private_why: Marcus is his closest friend and they haven't been in the same room in eighteen months; he's aware this is a choice even when it doesn't feel like one
+    shareable_what: Book the flight and don't rebook it
+    status: at_risk
+
+weekly:
+  - id: w1
+    title: Sunday budget review — 15 minutes, not a project
+    parent_goal: q1
+    status: active
+
+  - id: w2
+    title: Take Basho somewhere new — a trail, a neighborhood, not the same loop
+    context: Consistently the thing that makes a week feel different from the week before
+    status: active
+
+  - id: w3
+    title: One hour of reading that isn't on a screen
+    context: He keeps buying books and not reading them; suspects this is about something but hasn't worked out what
+    status: at_risk
+
+daily:
+  - id: d1
+    title: Morning walk with Basho — 30 minutes before coffee
+    context: Basho enforces this; the only part of the day where he reliably doesn't think about work
+    essential: true
+    status: active
+
+  - id: d2
+    title: Hard stop at 6pm — laptop closed
+    context: The job expands to fill available time; he has to choose to end it
+    essential: false
+    status: at_risk

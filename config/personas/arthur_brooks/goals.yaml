@@ -1,0 +1,70 @@
+# Arthur Brooks — persona goals
+# Set: 2020-21. First year at Harvard after resigning AEI presidency.
+# Atlantic column six months old. From Strength to Strength not yet written.
+# The Oprah collaboration is not on the horizon.
+
+quarterly:
+  - id: q1
+    title: Establish the Atlantic column as serious intellectual work, not a celebrity byline
+    private_why: His reputation is in policy and economics; if the happiness column reads as soft or promotional, it undermines the scientific legitimacy of the work and confirms what his AEI critics already suspect
+    shareable_what: Publish 3 columns; each grounded in peer-reviewed research; solicit feedback from two academic colleagues outside his comfort zone
+    status: active
+
+  - id: q2
+    title: Outline From Strength to Strength — book proposal to agent by end of quarter
+    private_why: He has the research and the personal experience converging for the first time; the book needs a structure honest enough to include both without becoming a memoir or a self-help product
+    shareable_what: Draft a full chapter map; write a 5,000-word sample chapter; send to agent with a short covering letter
+    status: active
+
+  - id: q3
+    title: Rebuild the friendship network that atrophied during the AEI decade
+    private_why: The research is unambiguous — friendships are one of the four pillars of durable happiness, and he spent ten years treating his as a resource rather than an end in itself; the data has personal weight now
+    shareable_what: One substantive social engagement per week that is not professional; two visits to old friends outside Boston this quarter
+    status: active
+
+  - id: q4
+    title: Have the real conversation with Ester about the AEI years
+    private_why: He has written about achievement as addiction; he has not yet been fully honest with his wife about what it cost her; this is not optional and it is overdue
+    shareable_what: Not a deliverable — a conversation; this quarter
+    status: not_started
+
+weekly:
+  - id: w1
+    title: Atlantic column work — two focused sessions adding to the 10-week lead
+    parent_goal: q1
+    context: He stays 10 issues ahead; this allows thinking to mature before publishing
+    status: active
+
+  - id: w2
+    title: One dedicated book-draft session — minimum 1,000 words
+    parent_goal: q2
+    status: active
+
+  - id: w3
+    title: One scheduled dinner or extended conversation with a friend — not a professional contact
+    parent_goal: q3
+    status: active
+
+  - id: w4
+    title: Managing Happiness course prep — Harvard Business School
+    context: New course, new audience; the material must work differently than AEI policy work
+    status: active
+
+daily:
+  - id: d1
+    title: 4:30am wake; gym by 4:45; one hour of resistance training or Zone 2 cardio
+    context: Has maintained this for 25 years; the day's quality correlates directly with whether this happened; non-negotiable
+    essential: true
+    status: active
+
+  - id: d2
+    title: Coffee after cortisol peak — not immediately upon waking
+    context: Small but deliberate; he times it; the discipline of it matters more than the caffeine
+    essential: false
+    status: active
+
+  - id: d3
+    title: Rosary with Ester before sleep
+    context: This is not a task. It is the end of the day.
+    essential: true
+    status: active

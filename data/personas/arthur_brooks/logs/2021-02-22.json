@@ -1,0 +1,30 @@
+{
+  "date": "2021-02-22",
+  "mood": "unsettled, productively so",
+  "energy": "high",
+  "gym": {
+    "done": true,
+    "type": "Zone 2 cardio — 45 minutes",
+    "notes": "The sustained moderate effort is harder than the heavy lifting. You can't distract yourself from it. I think about the book during Zone 2. Today I thought about the AEI chapter the entire time."
+  },
+  "atlantic_column": {
+    "status": "Week 10 published today — on work as identity and why this is a trap",
+    "notes": "The reader response is larger than anything from the AEI years. People are writing to say they built their entire sense of self around their job title and don't know who they are without it. I know this territory personally. I didn't say so in the column. I should have.",
+    "lead_weeks": 9,
+    "observation": "The column is finding its audience. The audience is people who are succeeding at the wrong thing. I am one of them, or was."
+  },
+  "book": {
+    "notes": "I wrote the AEI chapter today. Not a good draft. Honest. Those are not always the same thing. I have never written this directly about professional ambition as a mechanism of avoidance. It was uncomfortable. I will keep it.",
+    "breakthrough": "The book's argument is clearer to me now: the first curve of life is about acquisition; the second is about giving away. The fall from the first curve is not a failure — it is the invitation to begin the second. I lived this without understanding it. The book is about understanding it."
+  },
+  "harvard": {
+    "notes": "A student stayed after class to tell me the friendship research had changed how she thought about her career choices. She is 28 and already making trade-offs she will regret at 48. I told her what the data says. I could not tell her what the data feels like from the inside."
+  },
+  "ester": {
+    "notes": "We had the conversation last night. Not the polished version — the actual one. I told her what the AEI decade cost, from my side. She told me what it cost from hers. We were up until 1am. I went to the gym at 4:30 anyway.",
+    "assessment": "We are more intact than I feared. The conversation was harder than I expected. Both things are true."
+  },
+  "wins": ["AEI chapter drafted", "Real conversation with Ester — overdue but done", "Column published to strong response"],
+  "at_risk": ["Lead time dropping — need to write this week to stay at 10"],
+  "note": "The student after class. 28 years old, already trading depth for trajectory. I was her at 28. I am not sure what to do with that except be honest in the column."
+}

@@ -1,0 +1,27 @@
+{
+  "date": "2025-05-05",
+  "mood": "competent, slightly hollow",
+  "energy": "high in the morning, flat by 4pm",
+  "workout": {
+    "done": true,
+    "type": "run",
+    "notes": "4 miles before 6am. Good. The morning is the best part."
+  },
+  "work": {
+    "focus": "Q3 planning kickoff with the operations team",
+    "notes": "Meeting went well. I ran it well. I could run it in my sleep, which is part of the problem I'm not fully admitting yet. Kevin from finance asked a question I'd already anticipated and I had the slide ready. Everyone was impressed. I was not. I don't know what I wanted instead.",
+    "q1_status": "on track"
+  },
+  "kids": {
+    "jake_reading": "Tutor assessment scheduled for the 14th. Finally.",
+    "emma": "She wants to do robotics camp this summer. I said yes before Tom could answer. He noticed.",
+    "notes": "Tom pointed out at dinner that we haven't had a conversation about anything other than the kids and the house in a while. He said it nicely. He was right."
+  },
+  "evening": {
+    "notes": "Opened the notes app at 9:30pm. There's an entry from 2022 that just says 'what would you do if the money was the same.' I don't remember writing it. I closed the app.",
+    "work_email": "Checked work email until 10:15. Did not need to."
+  },
+  "wins": ["Q3 kickoff done", "Jake's assessment booked", "Run completed"],
+  "at_risk": ["Saturday email boundary — failed again yesterday", "Therapy appointment still not rescheduled"],
+  "notes": "Tom's comment is sitting with me more than I expected. I don't know if it's a symptom of something or just the usual logistics crunch. I would like to know which one it is."
+}

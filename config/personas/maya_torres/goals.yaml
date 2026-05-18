@@ -1,0 +1,52 @@
+# Maya Torres — persona goals
+# Set: 2025. Sofia starts kindergarten in 14 months. Leo in preschool 8 months after.
+# The window is coming. The task is to not let the thread go cold before it opens.
+
+quarterly:
+  - id: q1
+    title: Add three pages to the book dummy — pages 13, 14, and 15
+    private_why: Three pages in three months is slow by any creative standard; it is triple the pace of the last three years; it proves the work is alive and can be touched now, not only after the kids are older
+    shareable_what: One hour per week on the iPad; Sunday evenings when Chris takes the bedtime routine
+    status: active
+
+  - id: q2
+    title: Build the transition plan — what does the Meridian exit eventually look like?
+    private_why: She needs to know whether illustration is a realistic career change or a dream she's been too busy to examine honestly; she would rather know the hard version now than discover it at 35
+    shareable_what: Research illustration income ranges; estimate timeline from "practicing" to "earning"; write one page she can show Chris
+    status: not_started
+
+  - id: q3
+    title: Get Sofia reading — she's four and ready and Maya wants to be the one to do this
+    private_why: Not ambitious parenting; she wants to share this specific thing with this specific child and doesn't want to outsource it
+    shareable_what: 15 minutes of reading together before bed, five nights a week
+    status: active
+
+weekly:
+  - id: w1
+    title: One hour on the book — Sunday evening, after Leo is down
+    parent_goal: q1
+    context: The only reliable window in the week; Chris handles the rest of Sunday night
+    status: active
+
+  - id: w2
+    title: Look at one illustrator's work that is actually better than hers
+    context: Not to feel bad; to stay calibrated on where the bar is
+    status: active
+
+  - id: w3
+    title: One adult conversation with Chris that isn't about the kids or the schedule
+    context: They are genuinely good; the logistics of two working parents with young children just fill all available space if you let them
+    status: at_risk
+
+daily:
+  - id: d1
+    title: Morning sketch — 5 minutes, anything, on paper before the day starts
+    context: Small enough it can't be skipped; the practice is what matters, not the output
+    essential: true
+    status: active
+
+  - id: d2
+    title: Read to Sofia — 15 minutes at bedtime
+    parent_goal: q3
+    essential: true
+    status: active

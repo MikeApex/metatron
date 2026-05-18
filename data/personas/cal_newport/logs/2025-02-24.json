@@ -1,0 +1,34 @@
+{
+  "date": "2025-02-24",
+  "mood": "clear",
+  "energy": "high",
+  "morning": {
+    "run": true,
+    "pull_ups": 25,
+    "notes": "Good. The Monday rhythm is the best rhythm."
+  },
+  "deep_work": {
+    "hours": 4,
+    "focus": "Next book question — reading craft tradition research",
+    "notes": "Something shifted today. The AI angle kept feeling like reaction — writing in response to a thing rather than from a genuine intellectual position. I came back to a question I've been carrying since A World Without Email: what does it mean to build a career that depends on depth in an environment that systematically prices against it? That's not about AI specifically. It's about the condition of knowledge work more broadly. Wrote two pages in the question statement. Closer.",
+    "question_statement_progress": "Two pages. Getting somewhere."
+  },
+  "research_paper": {
+    "notes": "Submitted today. Boundary conditions section resolved cleaner than I expected. Waiting on the review.",
+    "status": "submitted"
+  },
+  "new_yorker": {
+    "notes": "Draft one complete. Sent to editor. The piece argues that the slow productivity principles require organizational adoption, not just individual practice — which is the part of the book I underplayed. The editor will have notes."
+  },
+  "teaching": {
+    "notes": "Office hours today — three students, good conversations. The seminar is the work I find most directly satisfying right now. I am aware of this.",
+    "outside_commitments_this_month": 2
+  },
+  "family": {
+    "notes": "Saturday was genuinely off. Took the boys hiking. No phone in my pocket. The younger one asked a question about map-reading that I couldn't answer and we figured it out together from first principles. That is what Saturday is for.",
+    "shutdown_adherence": "5 of 5 days this week"
+  },
+  "wins": ["Research paper submitted", "New Yorker draft to editor", "Question statement moving", "Genuine day off Saturday"],
+  "at_risk": ["Commitment budget at two for the month — need to hold the rest of March"],
+  "note": "The question I've been circling: what does it take to build a deep career in a shallow environment, and why do so few institutions support it even when they say they do? I don't have the answer. That means it might be the right question."
+}

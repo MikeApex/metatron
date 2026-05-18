@@ -1,0 +1,43 @@
+{
+  "date": "2025-05-11",
+  "mood": "tired, briefly awake",
+  "energy": "low until 7pm, then better",
+  "morning_sketch": {
+    "done": true,
+    "notes": "Five minutes before Leo woke up. Drew a hand. Mine, from memory. It looked wrong and right at the same time. Five minutes is five minutes."
+  },
+  "work": {
+    "notes": "Campaign presentation for a new client — a regional bank. I designed the pitch deck. It looked good. The client loved it. My manager said 'this is your best work this quarter.' This is not false. It is also not interesting to me in the way that it would be to someone who chose this.",
+    "engagement": "low — good execution, low investment"
+  },
+  "book": {
+    "sunday_hour": {
+      "done": true,
+      "notes": "Page 13 is finished. The leaves on the plant finally work — I went more stylized than realistic, which is what the whole book wants and I kept resisting. The plant looks like it knows something now.",
+      "pages_complete": 13
+    }
+  },
+  "transition_plan": {
+    "notes": "I looked at illustration income data for the first time. SCBWI statistics, some Patreon data, a few income reports from illustrators I follow. The range is enormous and the median is not encouraging. I closed the tab.",
+    "honest_note": "I am not ready to look at this directly. I need to be, and I am not yet. I am logging this so I do not pretend I don't know what I'm doing."
+  },
+  "kids": {
+    "sofia_reading": {
+      "done": true,
+      "book": "Owl at Home",
+      "notes": "She read three pages herself today. Slowly, with effort, and then she looked up like she expected applause. I gave her applause. She deserved it."
+    },
+    "leo": "Sleeping. Blessed."
+  },
+  "finances": {
+    "notes": "13 months to kindergarten. I've stopped counting weeks and switched to months. It feels more manageable.",
+    "margin_this_month": "approximately $520"
+  },
+  "chris": {
+    "notes": "He noticed I finished page 13. He didn't make a big deal of it. He said 'the plant looks different.' I said it finally looks right. He nodded like he understood, even though he hasn't seen the earlier versions.",
+    "adult_conversation": "we talked about his coaching season ending and what the summer schedule looks like; it was mostly logistics but we stayed in the kitchen talking for an hour and a half"
+  },
+  "wins": ["Page 13 finished", "Sofia reading independently — three pages", "Sunday hour kept"],
+  "at_risk": ["Transition plan research — one look and one retreat; needs another attempt"],
+  "note": "The plant looks like it knows something. That's what I was going for. Two pages to go."
+}

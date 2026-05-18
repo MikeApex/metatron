@@ -84,11 +84,12 @@ archive/plans/      Historical plan revisions — for reference only
 
 | Tier | Examples | Storage | Analysis |
 |---|---|---|---|
-| Open | Research, general queries | Cloud OK | Cloud LLM |
-| Semi-sensitive | Instrumental goals (`shareable_what`), activity logs | Local primary | Cloud summaries only |
-| Sensitive | Core goals (`private_why`), health, finances, prime directive | Local only | Local LLM only |
+| Open | Research, general queries with no personal context | Cloud OK | Cloud LLM |
+| Sensitive | All goal data (`private_why`, `shareable_what`), activity logs, health, finances, prime directive, mission | Local only | Local LLM only |
 
-Sensitive data is **never** passed to a cloud LLM. Enforce at the tool layer, not in prompts.
+The semi-sensitive tier has been collapsed into sensitive. Empirical testing showed that `shareable_what` (instrumental goals) carries sufficient inferential signal to reconstruct `private_why` when combined with behavioral patterns — the privacy boundary between them does not hold in practice. All personal context is now sensitive-tier by default.
+
+Cloud LLMs are used only for fully decontextualized tasks: generic research, writing, or advice with no personal context attached. Enforce at the tool layer, not in prompts.
 
 ---
 

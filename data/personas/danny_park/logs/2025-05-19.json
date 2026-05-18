@@ -1,0 +1,33 @@
+{
+  "date": "2025-05-19",
+  "mood": "good — genuinely",
+  "energy": "high",
+  "morning": {
+    "walk": true,
+    "notes": "Basho found the same thing in the bushes again. Still a rabbit. Still five minutes."
+  },
+  "camera": {
+    "first_session_done": true,
+    "notes": "Saturday morning. The coffee shop. The same table. I sat across the room and took 34 photos over two hours. The light through the east window at 8:40am is something. Two of the photos are good. I know which two.",
+    "showed_to": "no one yet — that's the next step"
+  },
+  "work": {
+    "notes": "Told my manager I needed two more weeks on the Senior AE question. She said okay. I have two weeks.",
+    "honest_note": "I am writing out what I actually want from work, which I have not done since the business. The question is harder than I expected because the last time I answered it, the answer was entangled with Elena and the answer dissolved when she left. I need an answer that's just mine."
+  },
+  "debt": {
+    "notes": "Budget review Sunday. Steady. The June commission should be strong — the deal that pushed looks like it will close.",
+    "status": "on track"
+  },
+  "portland": {
+    "notes": "Flight is booked. Hotel booked. Marcus texted 'I'll believe it when I see you.' Fair.",
+    "countdown": "26 days"
+  },
+  "reading": {
+    "notes": "Finished the boat book. The man finishes the boat and sails it one mile and then sails back. That's the whole ending. I sat with this for a while. I think I understand it.",
+    "next": "Haiku collection — back to Bashō"
+  },
+  "wins": ["First camera session done — two good photos", "Portland still booked", "Budget on track"],
+  "at_risk": ["Senior AE decision — two weeks; need to actually think about it this week, not just defer"],
+  "note": "Two good photos out of 34 tries is not a bad ratio for a first session. I'm going back Saturday."
+}

@@ -19,7 +19,14 @@ from pathlib import Path
 
 import yaml
 
-GOALS_PATH = Path(__file__).parent.parent / "config" / "goals.yaml"
+_ROOT = Path(__file__).parent.parent
+
+
+def _goals_path() -> Path:
+    persona = os.environ.get("AI_TEST_PERSONA")
+    if persona:
+        return _ROOT / "config" / "personas" / persona / "goals.yaml"
+    return _ROOT / "config" / "goals.yaml"
 
 
 def read_goals() -> dict:
@@ -29,10 +36,11 @@ def read_goals() -> dict:
     Returns:
         Parsed goals as a dict, or empty dict if no goals file exists yet.
     """
-    if not GOALS_PATH.exists():
+    goals_path = _goals_path()
+    if not goals_path.exists():
         return {}
 
-    with open(GOALS_PATH) as f:
+    with open(goals_path) as f:
         data = yaml.safe_load(f)
 
     return data or {}
@@ -55,14 +63,15 @@ def write_goals(content: dict) -> str:
     existing = read_goals()
     existing.update(content)
 
-    GOALS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    goals_path = _goals_path()
+    goals_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with open(GOALS_PATH, "w") as f:
+    with open(goals_path, "w") as f:
         yaml.dump(existing, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
-    os.chmod(GOALS_PATH, 0o600)
+    os.chmod(goals_path, 0o600)
 
-    return f"Goals written to {GOALS_PATH}"
+    return f"Goals written to {goals_path}"
 
 
 # Tool schemas — registered in orchestrator.register_tools()

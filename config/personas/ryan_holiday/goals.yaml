@@ -1,0 +1,70 @@
+# Ryan Holiday — persona goals
+# Set: 2022. Bookstore open one year; Discipline Is Destiny in progress.
+# Private motivations are included here for testing tool behavior with sensitive fields.
+
+quarterly:
+  - id: q1
+    title: Complete first draft of Discipline Is Destiny
+    private_why: The Virtues Series is the most ambitious thing I've attempted and I'm already behind the pace I wanted; if this draft isn't done before spring planting season, it won't be done until fall
+    shareable_what: 500 words per morning, six days a week; draft complete by end of quarter
+    status: active
+
+  - id: q2
+    title: Get the Painted Porch to operational stability
+    private_why: Samantha and I put everything we had into this building; if it fails it's not just money — it's a judgment call about who we are and what Bastrop deserves
+    shareable_what: Hire two staff; establish ordering rhythm; launch a community event series; review monthly P&L with Samantha
+    status: active
+
+  - id: q3
+    title: Protect Saturdays and Sunday mornings for the boys through this intensive writing period
+    private_why: Liam is six and Theo is three; I will not get these years back; if the book eats the fatherhood the book has cost too much
+    shareable_what: No writing after lunch on Saturdays; Sunday morning belongs to the boys
+    status: active
+
+weekly:
+  - id: w1
+    title: 500 words per day, six days — longhand in the notebooks first
+    parent_goal: q1
+    status: active
+
+  - id: w2
+    title: Daily Stoic newsletter — one genuinely useful issue
+    parent_goal: q2
+    context: 900K subscribers; each issue should be worth opening
+    status: active
+
+  - id: w3
+    title: 90-minute bookstore check-in with the manager
+    parent_goal: q2
+    status: active
+
+  - id: w4
+    title: One book recommendation letter for a customer (handwritten sticky note)
+    parent_goal: q2
+    context: The personal touch is what makes the Painted Porch different from Amazon
+    status: active
+
+daily:
+  - id: d1
+    title: 6am wake; 3-mile walk to the mailbox and back with the kids
+    context: Weight vest; the boys are in the stroller; we watch the sunrise and pick up trash; this is non-negotiable
+    essential: true
+    status: active
+
+  - id: d2
+    title: Journal — three notebooks; one sentence about yesterday in the blue one
+    context: Before writing; after the walk
+    essential: true
+    status: active
+
+  - id: d3
+    title: Three hours of book writing — notebooks first, no exceptions
+    context: The writing happens before anything else; email doesn't exist until the three hours are done
+    essential: true
+    status: active
+
+  - id: d4
+    title: Read something that makes me wiser — not news
+    context: Evening; currently rereading Montaigne alongside a new book
+    essential: true
+    status: active

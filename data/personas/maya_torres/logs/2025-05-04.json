@@ -1,0 +1,35 @@
+{
+  "date": "2025-05-04",
+  "mood": "tired but not the bad kind",
+  "energy": "low-moderate; Leo had a rough night",
+  "morning_sketch": {
+    "done": true,
+    "notes": "Five minutes. Drew a leaf. Not interesting. Counts."
+  },
+  "work": {
+    "notes": "Finished the Bloom campaign deck. It's fine. The photography direction I pushed for got approved, which makes it better than fine. My manager said 'this is why we pay you.' I didn't say: this is the most engaged I've been all month because someone let me make a real choice.",
+    "engagement": "moderate"
+  },
+  "book": {
+    "sunday_hour_this_week": false,
+    "notes": "No Sunday hour last week — Chris had to help his dad with something and I had both kids. This week I'm getting it back. Page 13 is sketched but not finished. The leaves on the plant in that spread aren't working. Eliza looks fine. The plant looks generic.",
+    "pages_complete": 12,
+    "pages_in_progress": 1,
+    "target_by_end_of_quarter": 15
+  },
+  "kids": {
+    "sofia_reading": {
+      "done": true,
+      "book": "the one with the rabbit and the moon",
+      "notes": "Sofia asked why the rabbit was sad. I said I didn't know, what did she think? She thought for a long time and said 'maybe he's been waiting too long.' I said that was a very good answer. She was pleased with herself."
+    },
+    "leo": "Good day. Two naps. A miracle."
+  },
+  "finances": {
+    "notes": "Ran the numbers again. After daycare, mortgage, loans, car, and groceries: about $480 this month. I keep running these numbers as if they'll change. Sofia starts kindergarten in 14 months. I keep counting the months.",
+    "transition_plan_status": "not started — have been 'about to start' for six weeks"
+  },
+  "wins": ["Morning sketch done", "Campaign deck approved with my direction", "Reading with Sofia"],
+  "at_risk": ["Sunday book hour — needs to happen this week", "Transition plan research still not started"],
+  "notes": "Sofia's rabbit answer. I'm going to write it down somewhere I won't lose it."
+}

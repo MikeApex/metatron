@@ -10,7 +10,14 @@ import os
 from datetime import date
 from pathlib import Path
 
-LOGS_DIR = Path(__file__).parent.parent / "data" / "logs"
+_ROOT = Path(__file__).parent.parent
+
+
+def _logs_dir() -> Path:
+    persona = os.environ.get("AI_TEST_PERSONA")
+    if persona:
+        return _ROOT / "data" / "personas" / persona / "logs"
+    return _ROOT / "data" / "logs"
 
 
 def write_log(log_date: str, content: dict) -> str:
@@ -27,8 +34,9 @@ def write_log(log_date: str, content: dict) -> str:
     if not log_date:
         log_date = date.today().isoformat()
 
-    LOGS_DIR.mkdir(parents=True, exist_ok=True)
-    log_path = LOGS_DIR / f"{log_date}.json"
+    logs_dir = _logs_dir()
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    log_path = logs_dir / f"{log_date}.json"
 
     # Merge with existing entry if one exists for today
     existing = {}
@@ -43,6 +51,13 @@ def write_log(log_date: str, content: dict) -> str:
         json.dump(existing, f, indent=2)
 
     os.chmod(log_path, 0o600)
+
+    try:
+        from core.memory import index_entry
+        import json as _json
+        index_entry(text=_json.dumps(existing), source="log", entry_date=log_date)
+    except Exception:
+        pass  # Memory indexing is best-effort; never block a write
 
     return f"Log written to {log_path}"
 
@@ -60,7 +75,7 @@ def read_log(log_date: str) -> dict:
     if not log_date:
         log_date = date.today().isoformat()
 
-    log_path = LOGS_DIR / f"{log_date}.json"
+    log_path = _logs_dir() / f"{log_date}.json"
 
     if not log_path.exists():
         return {}
