@@ -1,3 +1,10 @@
 {
-  "date": "2026-05-18"
+  "date": "2026-05-18",
+  "sleep_hours": 5,
+  "writing_feeling": "struggling",
+  "tasks_completed": [
+    "one_hour_run",
+    "read_letters_from_a_stoic"
+  ],
+  "mood": "tired"
 }

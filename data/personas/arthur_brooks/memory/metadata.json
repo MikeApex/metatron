@@ -13,5 +13,15 @@
     "text": "{\"date\": \"2023-10-19\"}",
     "source": "log",
     "date": "2023-10-19"
+  },
+  {
+    "text": "{\"notes\": \"Missed gym for the third time this week. Noticed feeling sharper and less patient.\", \"date\": \"2026-05-18\"}",
+    "source": "log",
+    "date": "2026-05-18"
+  },
+  {
+    "text": "Missed the gym again this morning, making it three times this week. I had the intention to go after working on the column, but it didn't materialize. I've observed a clear connection between skipping the gym and feeling sharper, but also notably less patient. This isn't a new discovery, but it's a pattern I need to pay more attention to.",
+    "source": "journal",
+    "date": "2026-05-18"
   }
 ]

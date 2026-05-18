@@ -16,5 +16,11 @@
     "category": "patterns",
     "value": "Noticed being sharper and less patient on days when gym session is missed. Gym routine correlates with calmness and patience.",
     "added": "2026-05-18"
+  },
+  {
+    "key": "gym_effect_on_patience_and_sharpness",
+    "category": "patterns",
+    "value": "Missing the gym routine leads to feeling sharper but also less patient.",
+    "added": "2026-05-18"
   }
 ]
