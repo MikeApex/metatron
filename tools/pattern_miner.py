@@ -27,14 +27,24 @@ def _persona_dir(persona: str | None = None) -> Path:
 # Log window retrieval
 # ---------------------------------------------------------------------------
 
-def get_log_window(start_date: str, end_date: str, persona: str = "") -> list[dict]:
+def get_log_window(
+    start_date: str,
+    end_date: str,
+    persona: str = "",
+    max_entries: int = 0,
+) -> list[dict]:
     """
-    Return all daily log entries between start_date and end_date inclusive.
+    Return daily log entries between start_date and end_date inclusive.
 
     Args:
-        start_date: ISO date string (YYYY-MM-DD), start of window.
-        end_date:   ISO date string (YYYY-MM-DD), end of window.
-        persona:    Persona name for scoped testing. Defaults to env var.
+        start_date:  ISO date string (YYYY-MM-DD), start of window.
+        end_date:    ISO date string (YYYY-MM-DD), end of window.
+        persona:     Persona name for scoped testing. Defaults to env var.
+        max_entries: Cap on entries returned (0 = no limit). When the window
+                     exceeds the cap, the most recent entries are returned so
+                     the Pattern Miner always has the freshest data. Use
+                     multiple calls with different windows to cover the full
+                     range without hitting token limits.
 
     Returns:
         List of dicts, each with a 'date' key and the log fields.
@@ -62,6 +72,9 @@ def get_log_window(start_date: str, end_date: str, persona: str = "") -> list[di
             except Exception:
                 pass
         current += timedelta(days=1)
+
+    if max_entries and len(results) > max_entries:
+        results = results[-max_entries:]
 
     return results
 
@@ -154,6 +167,14 @@ GET_LOG_WINDOW_SCHEMA = {
             "persona": {
                 "type": "string",
                 "description": "Persona name for dev testing. Leave empty for real user data.",
+            },
+            "max_entries": {
+                "type": "integer",
+                "description": (
+                    "Cap on entries returned (0 = no limit, default). When the window "
+                    "is large, set this to 30–45 to stay within token limits. Most-recent "
+                    "entries are kept. Call twice with split windows to cover the full range."
+                ),
             },
         },
         "required": ["start_date", "end_date"],

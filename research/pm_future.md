@@ -116,3 +116,16 @@ Flag this for a full working session before Phase 6 (production readiness phase)
 **Phase 4, 2026-05-19** — the progressive unlocking of baseline types (trailing → calendar → state-anchored → life-stage) has natural gamification potential. As history accumulates, new analytical capabilities unlock — "You've now logged 90 days. A new type of analysis is available..." This is an early-engagement driver that becomes especially valuable for multi-user Alpha onboarding.
 
 **Revisit this conversation when preparing for multi-user Alpha testing.** Design the unlocking sequence, the notification mechanism, and the onboarding flow that makes the progression feel earned rather than arbitrary. The unlocking should map to genuine analytical capability improvements, not just time-gating.
+
+---
+
+## Large-window log retrieval — rate limit workaround
+
+**Phase 4, 2026-05-19** — `get_log_window` with a 90-day window (~56 entries) hit the Anthropic cloud rate limit (30k input tokens/minute) on a low-credit tier account. Short-term fix: `max_entries` cap added to `get_log_window`; Pattern Miner can call twice with split windows to cover the full range.
+
+**This is a workaround, not a solution.** The real fix is one of:
+- **Local model routing**: Ollama/vLLM has no token rate limits. 90-day and all-time analyses should be scheduled to run locally during off-hours once Ollama is running. This is the primary motivator for completing the sensitive routing toggle (routing.yaml `local_enabled: true`).
+- **Chunked retrieval with progressive synthesis**: Pattern Miner pulls 30-day chunks sequentially, synthesizes each, then merges. Adds latency but works on any tier.
+- **Structured summary layer**: Instead of passing raw log JSON, pre-aggregate entries into weekly summaries before passing to the model. Reduces tokens by ~10x with modest information loss.
+
+Revisit when either (a) Ollama is running and local routing is active, or (b) the corpus exceeds 180 days and chunked synthesis becomes necessary regardless of tier.
