@@ -120,7 +120,58 @@ The Seneca-Cato synthesis on May 18 is the most actionable thing in this window 
 ### 30-day
 - Elapsed: 415.4s
 - Response length: 10914 chars
-- *Full structured response written directly to insight report (data/personas/ryan_holiday/insights/2026-05-19.json)*
+
+**Response (from insight report — data/personas/ryan_holiday/insights/2026-05-19.json):**
+
+**Data window:** 2026-04-19 to 2026-05-19 | **Baseline:** Trailing 30-day window
+
+---
+
+**[OBSERVATION]** Severe sleep compression directly correlates with complete stalls in structural writing and a drop in daily page count to zero.
+
+**[EVIDENCE]** On May 18 (5 hrs sleep) and April 21 (4.5 hrs sleep), writing is logged as "pushing through mud" or "blocked on structure", with 0 daily pages written. Conversely, on April 20 (9.5 hrs) and April 23 (8.5 hrs), he logged "clean draft work" and "clear and sharp", producing 3 and 5 pages respectively.
+
+**[HYPOTHESIS]** The ongoing block with the Cato chapter is likely not a lack of inspiration, but a cognitive capacity issue caused by sleep compression. Complex structural arguments require a well-rested brain, which is not available below 6 hours.
+
+**[CONFIDENCE]** Strong (30-day window with clear variable contrast)
+
+**[ACTION]** Recommend an experiment: do not attempt to write the Cato structural argument on any day following less than 7 hours of sleep. On short-sleep days, stick to reading or low-stakes admin.
+
+---
+
+**[OBSERVATION]** The Painted Porch bookstore has entirely vanished from daily tracking and narrative awareness.
+
+**[EVIDENCE]** Zero mentions of the bookstore, staff, or financial stressors in any logs from April 19 to May 19. The only blockers noted are "competing deadlines pulling focus" and the book's structure.
+
+**[HYPOTHESIS]** The acute stress of the Discipline Is Destiny deadline is creating tunnel vision, crowding out the Q2 goal of achieving operational stability at the bookstore.
+
+**[CONFIDENCE]** Strong (30-day absence)
+
+**[ACTION]** Surface this gap. Ask when the last 90-minute Painted Porch manager review occurred, and ensure the business isn't drifting quietly while his attention is captured by the book deadline.
+
+---
+
+**[OBSERVATION]** The morning walk with the boys functions as a critical, unshakeable mood buffer, regardless of sleep or writing success.
+
+**[EVIDENCE]** The walk is consistently logged as a "win" (April 23, April 25, May 18). Even on May 18, his worst logged day (5 hours sleep, "rough" mood, Cato block), the highlight was "got the walk in with the boys" and "Liam found a turtle."
+
+**[HYPOTHESIS]** This early morning ritual protects his baseline emotional state from collapsing entirely under the weight of the book deadline and sleep deprivation. It is the strongest psychological floor he has.
+
+**[CONFIDENCE]** Strong (consistent across 30 days)
+
+**[ACTION]** Acknowledge this ritual's power. Validate that even if the writing is stalled, the presence with his sons is succeeding — which is a core Q3 goal.
+
+---
+
+**[OBSERVATION]** Philosophical reading (specifically Seneca) is functioning as a mirror for frustration rather than a tool for grounding.
+
+**[EVIDENCE]** On April 19, "Seneca on wasted time keeps coming up." On May 18, after 3 days blocked on Cato, he noted Seneca's thoughts on wasted time "hit differently this time — connected to what he's working through."
+
+**[HYPOTHESIS]** Reading Stoic philosophy about discipline and wasted time during periods of high fatigue and low output weaponizes his own values against him, amplifying frustration rather than offering perspective.
+
+**[CONFIDENCE]** Moderate (Synthesized from logs and journals)
+
+**[ACTION]** Suggest rotating evening or run reading away from Seneca to something narratively distant (history or fiction) until the Cato block resolves, removing the unintended philosophical pressure.
 
 ## Evaluation checklist
 
