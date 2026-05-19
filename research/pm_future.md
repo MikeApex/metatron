@@ -129,3 +129,23 @@ Flag this for a full working session before Phase 6 (production readiness phase)
 - **Structured summary layer**: Instead of passing raw log JSON, pre-aggregate entries into weekly summaries before passing to the model. Reduces tokens by ~10x with modest information loss.
 
 Revisit when either (a) Ollama is running and local routing is active, or (b) the corpus exceeds 180 days and chunked synthesis becomes necessary regardless of tier.
+
+---
+
+## Statistical pre-aggregation as a privacy layer
+
+**Phase 4, 2026-05-19** — The Pattern Miner is both the most analytically demanding agent and the most sensitive-tier. The question: could FAISS matrices be sent to an external model for analysis without leaking content, using the vectors as an opaque representation?
+
+**Why raw vectors don't work:** FAISS embeddings (384-dim floats) can't be read by an LLM — they're not tokens. More critically, they're not actually private: embedding inversion attacks can approximately reconstruct original text from vectors with reasonable accuracy. Sending raw embeddings is leaking sensitive content in a form that looks opaque but isn't.
+
+**The version that does work — statistical pre-aggregation:**
+
+Run FAISS queries and log retrieval entirely locally → extract only aggregate statistical features → send those features to an external model for analytical synthesis.
+
+Instead of: *"Ryan wrote: 'pushing through mud, third day stuck on Cato'"*
+
+Send: *"Sleep: μ=5.1h σ=0.4, writing output: μ=0.3 pages, correlation r=0.82, n=12, baseline deviation: -2.1σ from 30-day mean"*
+
+The external model gets numbers and structure, not diary entries. It can still perform meaningful pattern synthesis without ever seeing raw log content. This is the "structured summary layer" mentioned in the large-window retrieval note above — it's both a token-reduction strategy and a genuine privacy mechanism.
+
+**Practical path:** When the corpus is large enough to justify it (Phase 6+), a local pre-aggregation step would allow capable external models (o3, Gemini Pro) to do the heavy analytical synthesis without routing sensitive text off-device. The FAISS index and raw logs stay local; only sanitised statistics leave. This is a complement to Ollama routing, not a replacement — Ollama remains the primary path; this opens a cloud fallback that doesn't compromise the privacy tier.
