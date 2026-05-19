@@ -170,6 +170,22 @@ These items are hardcoded for the current dev machine and will need adaptation o
 
 ---
 
+## Model Version Maintenance
+
+Model IDs in `core/orchestrator.py` and `config/modules/routing.yaml` drift as providers release new versions. Check and update at the start of each new phase, or when a provider announces a new model in a session:
+
+| What to check | Where | How |
+|---|---|---|
+| Anthropic models | `ANTHROPIC_MODEL`, `routing.yaml` cloud_deep | console.anthropic.com/docs/models |
+| OpenAI models | `OPENAI_MODEL` | platform.openai.com/docs/models |
+| Gemini models | `GEMINI_MODEL`, `GEMINI_PRO_MODEL`, `routing.yaml` cloud_fast/cloud_deep | aistudio.google.com / Gemini API docs |
+| MCP ask_gemini | session-level via `mcp__ask_gemini__set_model` | MCP tool description lists available options |
+| Ollama | `OLLAMA_MODEL` | `ollama list` on the local machine |
+
+Current model IDs (updated 2026-05-19): Sonnet 4.6, o3, gemini-3.1-flash-lite-preview (flash), gemini-3.1-pro-preview (pro).
+
+---
+
 ## Key Design Decisions (don't revisit without good reason)
 
 - Orchestrator calls Claude API directly (not Claude Code sessions at runtime)

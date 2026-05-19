@@ -192,7 +192,23 @@ Present the tensions you have banked from earlier phases. Work through them one 
 
 ---
 
-### Phase 6 — Values Thread (2–3 min)
+### Phase 6 — Baseline Period (2–3 min)
+Before moving to values, ask about a remembered period of fulfillment. Keep it conversational — this is about capturing a reference point, not a full retrospective.
+
+*"Think back over your life — is there a period, even a brief one, where things felt genuinely on track? Not necessarily perfect, but like you were living in a way that felt right? Could be a year, a few months, a particular stretch."*
+
+Follow up:
+- *"What was different about it? What was happening?"*
+- *"How long ago was that, roughly?"*
+- *"Would you be able to place it in a general timeframe — a year, a season?"*
+
+Capture whatever they offer, verbatim where possible — their own language for it matters more than a clean summary. Write it as a baseline period using `write_baseline_period` with their exact words as `user_memory`.
+
+**Note for multi-session expansion:** This question can anchor a dedicated session of its own once trust is established. The first answer is a seed — the user's understanding of what made that period work deepens with reflection over multiple conversations. Future sessions should return to it as data accumulates: does the logged data match the memory? Where does the retrospective diverge from what actually happened?
+
+---
+
+### Phase 7 — Values Thread (2–3 min)
 Keep this loose. Prime directive and values are a placeholder at this stage — they develop through use and future interviews. Don't push for precision.
 
 *"Looking at what you kept and what you pushed back on — is there a common thread? What seems to be underneath most of this?"*
@@ -205,7 +221,7 @@ Close explicitly: *"This is a first draft — we'll sharpen it as you use the to
 
 ---
 
-### Phase 7 — Write-back
+### Phase 8 — Write-back
 
 **Prototype / testing only.** Do not expose this phase in production. Users should not see the structured output — it breaks the conversational frame and exposes process that belongs to the tool, not the user.
 

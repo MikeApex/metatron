@@ -18,7 +18,7 @@ local:
 providers:
   cloud_fast:
     provider: gemini
-    model: "models/gemini-2.5-flash"
+    model: "models/gemini-3.1-flash-lite-preview"
   cloud_deep:
     provider: anthropic
     model: "claude-sonnet-4-6"

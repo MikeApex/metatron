@@ -40,7 +40,8 @@ OPENAI_MODEL = "o3"
 OLLAMA_BASE_URL = "http://localhost:11434/v1"
 OLLAMA_MODEL = "qwen3:14b"
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
-GEMINI_MODEL = "models/gemini-3.1-pro-preview"
+GEMINI_MODEL = "models/gemini-3.1-flash-lite-preview"   # flash default; use GEMINI_PRO_MODEL for full Pro
+GEMINI_PRO_MODEL = "models/gemini-3.1-pro-preview"
 
 
 # ---------------------------------------------------------------------------
@@ -182,6 +183,12 @@ def register_tools() -> tuple[list[dict], dict]:
         get_log_window, write_insight_report, read_recent_insights,
         GET_LOG_WINDOW_SCHEMA, WRITE_INSIGHT_REPORT_SCHEMA, READ_RECENT_INSIGHTS_SCHEMA,
     )
+    from tools.baselines import (
+        write_baseline_period, read_baseline_periods,
+        write_retrospective, get_baseline_context,
+        WRITE_BASELINE_PERIOD_SCHEMA, READ_BASELINE_PERIODS_SCHEMA,
+        WRITE_RETROSPECTIVE_SCHEMA, GET_BASELINE_CONTEXT_SCHEMA,
+    )
     from tools.memory_tool import search_memory, SEARCH_MEMORY_SCHEMA
     from tools.context_tracker import (
         read_context_tracker, write_context_tracker,
@@ -199,6 +206,8 @@ def register_tools() -> tuple[list[dict], dict]:
         SEARCH_MEMORY_SCHEMA,
         READ_CONTEXT_TRACKER_SCHEMA, WRITE_CONTEXT_TRACKER_SCHEMA,
         GET_LOG_WINDOW_SCHEMA, WRITE_INSIGHT_REPORT_SCHEMA, READ_RECENT_INSIGHTS_SCHEMA,
+        WRITE_BASELINE_PERIOD_SCHEMA, READ_BASELINE_PERIODS_SCHEMA,
+        WRITE_RETROSPECTIVE_SCHEMA, GET_BASELINE_CONTEXT_SCHEMA,
     ]
     handlers = {
         "write_log": write_log,
@@ -220,6 +229,10 @@ def register_tools() -> tuple[list[dict], dict]:
         "get_log_window": get_log_window,
         "write_insight_report": write_insight_report,
         "read_recent_insights": read_recent_insights,
+        "write_baseline_period": write_baseline_period,
+        "read_baseline_periods": read_baseline_periods,
+        "write_retrospective": write_retrospective,
+        "get_baseline_context": get_baseline_context,
     }
 
     return schemas, handlers

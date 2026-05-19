@@ -70,4 +70,49 @@ At the Phase 4 planning session (2026-05-19), the baseline strategy question was
 
 > "We're building a Pattern Miner for a personal life-logging system. Data lives in a FAISS vector index of journal and log entries (all-MiniLM-L6-v2 embeddings, 384 dimensions). The question is about baseline selection — the reference window used to give a short-scale analysis statistical grounding. [Full question text in archive/sessions/2026-05-19 — Phase 4 Plan, Baseline Strategy Poll.md]"
 
-Gemini's research thoroughness may surface baseline structures not identified above.
+Gemini responded on 2026-05-19 (second attempt, Flash model). Key additions vs. GPT-4o and Sonnet 4.6:
+
+**Life-stage segment baseline:** Compare periods where the user was in a similar life configuration — not just event-conditioned ("after X") but state-defined ("while self-employed", "early parenthood", "living in City X"). Non-contiguous periods sharing a characteristic. Requires user tagging or clustering inference. Meaningful with 3+ years of data.
+
+**Multi-baseline parallel scoring:** For every pattern found, evaluate it against all applicable baselines simultaneously and surface the one with the strongest signal. Removes the guessing problem from baseline selection at the cost of compute. Operationally: score each pattern against trailing window, same-calendar-period, state-anchored — report the highest-signal result with its baseline labeled.
+
+Both are Phase 5/6 work. The progressive unlocking thresholds Gemini provided (3 months / 6-12 months / 1 year / 2-3 years / 3+ years) were incorporated into the Pattern Miner agent instruction file directly.
+
+---
+
+## User-defined baseline periods — exit interviews and time dilation
+
+**Phase 4, 2026-05-19** — tool layer built now; deeper features deferred
+
+The tool layer (`tools/baselines.py`) captures named baseline periods and retrospectives. The deeper design:
+
+**Perfectly fulfilled periods as the gold standard baseline.** The most meaningful comparison isn't "the last 30 days" — it's "those three months where everything was working." Users carry memories of these periods. The baseline interview should include: *"Tell me about a period of your life where you felt genuinely fulfilled — not perfect, but deeply on track. What was happening?"* The system captures this as a named baseline period with a user memory narrative and, if datable, maps it to actual check-in data.
+
+**Exit interviews and retrospective layering.** Human memory of a period changes over time. The late-night drinking was great at the time; less so the next morning; differently understood a year later in the context of a behavior pattern. The system should capture retrospective assessments of the same baseline period at multiple time distances:
+- **Immediate** (during/just after): in-the-moment quality score
+- **Short-term** (1-4 weeks later): settled assessment
+- **Long-term** (6-12 months later): pattern-context reassessment
+
+This creates a time-dilation layer on memory — the system can surface that a user's remembered fulfillment was accurate at the time but revised by later data, or vice versa. A "baseline" that looked good in the moment but was retrospectively assessed as a deterioration period is a flag, not a reference.
+
+Build the retrospective capture tool now (done). The multi-session retrospective interview design is Phase 5 work, dependent on having enough longitudinal data to make the comparison meaningful.
+
+---
+
+## Statistical modeling — deferred deep conversation
+
+**Phase 4, 2026-05-19** — using Gemini's suggested approach (t-tests, ANOVA, Cohen's d, anomaly scoring) for the Phase 4-5 build. The choice of statistical model deserves a dedicated conversation before a production-quality release. Questions to address:
+- Are parametric tests (t-test, ANOVA) appropriate for this data? Life-logging data is non-normal, autocorrelated, and sparse.
+- Permutation tests as the non-parametric alternative — practical at our data volumes?
+- Effect size vs. statistical significance: for a personal tool with N=1, statistical significance is less meaningful than effect size and personal relevance.
+- Bayesian approaches: updating a prior belief about a pattern given new data is arguably more natural for this use case than frequentist hypothesis testing.
+
+Flag this for a full working session before Phase 6 (production readiness phase). In the meantime, confidence annotations in the Pattern Miner output serve as the practical proxy for statistical rigor.
+
+---
+
+## Gamification of baseline unlocking — Alpha note
+
+**Phase 4, 2026-05-19** — the progressive unlocking of baseline types (trailing → calendar → state-anchored → life-stage) has natural gamification potential. As history accumulates, new analytical capabilities unlock — "You've now logged 90 days. A new type of analysis is available..." This is an early-engagement driver that becomes especially valuable for multi-user Alpha onboarding.
+
+**Revisit this conversation when preparing for multi-user Alpha testing.** Design the unlocking sequence, the notification mechanism, and the onboarding flow that makes the progression feel earned rather than arbitrary. The unlocking should map to genuine analytical capability improvements, not just time-gating.

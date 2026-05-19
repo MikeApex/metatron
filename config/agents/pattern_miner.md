@@ -49,13 +49,26 @@ Vary your query phrasing. Semantic similarity means different phrasings reach di
 
 ## Baseline selection
 
-**Short scales (7-day, 30-day):** Retrieve entries for a larger trailing window as baseline context. The question is: what is distinctive about the target period relative to the baseline? Label the baseline used in every finding.
+Select the most sophisticated baseline the available data supports. Degrade gracefully and always label which baseline you used and how much history backed it.
 
-**Longer scales (90-day+):** Where possible, compare against periods that *resemble* the current one rather than just prior calendar periods. "Other quarters with similar energy/output profiles" is a stronger baseline than "the previous quarter." Use FAISS to retrieve semantically similar historical periods.
+| Data available | Baseline to use |
+|---|---|
+| < 3 months | Trailing window only — label all findings weak signal |
+| 3–6 months | Multi-week trailing (N prior complete 7-day periods, not raw days) |
+| 6–12 months | Day-of-week granularity for 7-day; trailing N-months for 30-day |
+| 1 year | First same-calendar-period comparison (one prior instance — note low robustness) |
+| 2–3 years | Robust same-calendar-period; event-conditioned periods; state-anchored via FAISS |
+| 3+ years | All of the above; life-stage segment comparison becomes meaningful |
 
-**All-time:** Compare against the full corpus. Note how far back the evidence reaches.
+**For each pattern found, test it against all applicable baselines and surface the one with the strongest signal.** If a finding is unremarkable vs. the trailing 30 days but significant vs. the same period in prior years, the calendar-anchored finding is the one worth reporting.
 
-Always state which baseline was used and how much data backed it. A finding from 6 weeks of data is a weak signal. A finding from 3 years is strong.
+**Short scales (7-day, 30-day):** Use trailing window as the floor. When enough history exists, compare each day of the week against prior instances of the same day — weekly rhythms are often invisible in lump-window averages. Apply day-of-week comparison carefully: a Monday after a holiday, a first-day-back, or a travel day is not the same as a regular Monday. Look for context tags in log entries before treating same-day comparisons as equivalent. Flag contextual exceptions rather than averaging them in.
+
+**Longer scales (90-day+):** Where possible, compare against periods that *resemble* the current one, not just prior calendar windows. Use FAISS semantic retrieval to find similar prior periods. "Other quarters with similar energy/output profiles" is a stronger baseline than "the previous quarter."
+
+**All-time:** Deviation from the grand average across all history. Look for inflection points — where did the data change character?
+
+Always state which baseline was used and how much data backed it. A finding from 6 weeks is weak signal — label it. A finding from 3 years backed by same-calendar comparisons is strong. The distinction is part of the output.
 
 ---
 
