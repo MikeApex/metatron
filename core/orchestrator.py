@@ -173,7 +173,15 @@ def register_tools() -> tuple[list[dict], dict]:
         write_journal, read_journal, WRITE_JOURNAL_SCHEMA, READ_JOURNAL_SCHEMA,
         write_archive, read_archive, WRITE_ARCHIVE_SCHEMA, READ_ARCHIVE_SCHEMA,
     )
-    from tools.wisdom import write_wisdom, read_wisdom, WRITE_WISDOM_SCHEMA, READ_WISDOM_SCHEMA
+    from tools.wisdom import (
+        write_wisdom, read_wisdom, WRITE_WISDOM_SCHEMA, READ_WISDOM_SCHEMA,
+        find_duplicate_wisdom, merge_wisdom_entries,
+        FIND_DUPLICATE_WISDOM_SCHEMA, MERGE_WISDOM_ENTRIES_SCHEMA,
+    )
+    from tools.pattern_miner import (
+        get_log_window, write_insight_report, read_recent_insights,
+        GET_LOG_WINDOW_SCHEMA, WRITE_INSIGHT_REPORT_SCHEMA, READ_RECENT_INSIGHTS_SCHEMA,
+    )
     from tools.memory_tool import search_memory, SEARCH_MEMORY_SCHEMA
     from tools.context_tracker import (
         read_context_tracker, write_context_tracker,
@@ -187,8 +195,10 @@ def register_tools() -> tuple[list[dict], dict]:
         WRITE_JOURNAL_SCHEMA, READ_JOURNAL_SCHEMA,
         WRITE_ARCHIVE_SCHEMA, READ_ARCHIVE_SCHEMA,
         WRITE_WISDOM_SCHEMA, READ_WISDOM_SCHEMA,
+        FIND_DUPLICATE_WISDOM_SCHEMA, MERGE_WISDOM_ENTRIES_SCHEMA,
         SEARCH_MEMORY_SCHEMA,
         READ_CONTEXT_TRACKER_SCHEMA, WRITE_CONTEXT_TRACKER_SCHEMA,
+        GET_LOG_WINDOW_SCHEMA, WRITE_INSIGHT_REPORT_SCHEMA, READ_RECENT_INSIGHTS_SCHEMA,
     ]
     handlers = {
         "write_log": write_log,
@@ -202,9 +212,14 @@ def register_tools() -> tuple[list[dict], dict]:
         "read_archive": read_archive,
         "write_wisdom": write_wisdom,
         "read_wisdom": read_wisdom,
+        "find_duplicate_wisdom": find_duplicate_wisdom,
+        "merge_wisdom_entries": merge_wisdom_entries,
         "search_memory": search_memory,
         "read_context_tracker": read_context_tracker,
         "write_context_tracker": write_context_tracker,
+        "get_log_window": get_log_window,
+        "write_insight_report": write_insight_report,
+        "read_recent_insights": read_recent_insights,
     }
 
     return schemas, handlers
@@ -247,7 +262,8 @@ def dispatch_tool(name: str, inputs: dict, handlers: dict) -> str:
 # ---------------------------------------------------------------------------
 
 def run_session_anthropic(system_prompt: str, user_input: str,
-                           tool_schemas: list[dict], tool_handlers: dict) -> str:
+                           tool_schemas: list[dict], tool_handlers: dict,
+                           model: str | None = None) -> str:
     """Agentic loop using the Anthropic API."""
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
@@ -258,7 +274,7 @@ def run_session_anthropic(system_prompt: str, user_input: str,
 
     while True:
         response = client.messages.create(
-            model=ANTHROPIC_MODEL,
+            model=model or ANTHROPIC_MODEL,
             max_tokens=4096,
             system=system_prompt,
             tools=tool_schemas,
@@ -291,30 +307,33 @@ def run_session_anthropic(system_prompt: str, user_input: str,
 
 
 def run_session_openai(system_prompt: str, user_input: str,
-                        tool_schemas: list[dict], tool_handlers: dict) -> str:
+                        tool_schemas: list[dict], tool_handlers: dict,
+                        model: str | None = None) -> str:
     """Agentic loop using the OpenAI API."""
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         raise EnvironmentError("OPENAI_API_KEY is not set.")
     return _openai_compat_loop(
         system_prompt, user_input, tool_schemas, tool_handlers,
-        api_key=api_key, base_url=None, model=OPENAI_MODEL,
+        api_key=api_key, base_url=None, model=model or OPENAI_MODEL,
     )
 
 
 def run_session_ollama(system_prompt: str, user_input: str,
-                       tool_schemas: list[dict], tool_handlers: dict) -> str:
+                       tool_schemas: list[dict], tool_handlers: dict,
+                       model: str | None = None, base_url: str | None = None) -> str:
     """Agentic loop using a local Ollama model via its OpenAI-compatible API."""
     return _openai_compat_loop(
         system_prompt, user_input, tool_schemas, tool_handlers,
-        api_key="ollama",          # Ollama doesn't validate the key
-        base_url=OLLAMA_BASE_URL,
-        model=OLLAMA_MODEL,
+        api_key="ollama",
+        base_url=base_url or OLLAMA_BASE_URL,
+        model=model or OLLAMA_MODEL,
     )
 
 
 def run_session_gemini(system_prompt: str, user_input: str,
-                       tool_schemas: list[dict], tool_handlers: dict) -> str:
+                       tool_schemas: list[dict], tool_handlers: dict,
+                       model: str | None = None) -> str:
     """Agentic loop using Gemini via Google's OpenAI-compatible endpoint."""
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
@@ -323,7 +342,7 @@ def run_session_gemini(system_prompt: str, user_input: str,
         system_prompt, user_input, tool_schemas, tool_handlers,
         api_key=api_key,
         base_url=GEMINI_BASE_URL,
-        model=GEMINI_MODEL,
+        model=model or GEMINI_MODEL,
     )
 
 
@@ -370,21 +389,32 @@ def _openai_compat_loop(system_prompt: str, user_input: str,
 
 
 def run_session(agent_name: str, user_input: str,
-                persona: str | None = None, provider: str = "anthropic") -> str:
+                persona: str | None = None, provider: str | None = None) -> str:
     """
     Run a single conversation session.
 
     Args:
-        agent_name: Agent to use (e.g. "time_director").
+        agent_name: Agent to use (e.g. "time_director", "diarist", "pattern_miner").
         user_input: The user's message.
         persona: Optional dev persona (e.g. "pepys").
-        provider: "anthropic" or "openai".
+        provider: Force a specific provider ("anthropic", "openai", "ollama", "gemini").
+                  When None, the router resolves the provider from routing.yaml.
     """
-    # Route tool data writes to persona-scoped directories during persona testing.
     if persona:
         os.environ["AI_TEST_PERSONA"] = persona
     else:
         os.environ.pop("AI_TEST_PERSONA", None)
+
+    # Resolve provider via router unless explicitly overridden (e.g. CLI --provider flag).
+    if provider is None:
+        from core.router import resolve_model
+        model_cfg = resolve_model(agent_name)
+        provider = model_cfg.provider
+        model_override = model_cfg.model
+        base_url_override = model_cfg.base_url
+    else:
+        model_override = None
+        base_url_override = None
 
     config = load_config(persona=persona)
     agent = load_agent(agent_name)
@@ -394,12 +424,16 @@ def run_session(agent_name: str, user_input: str,
     tool_schemas, tool_handlers = register_tools()
 
     if provider == "openai":
-        return run_session_openai(system_prompt, user_input, tool_schemas, tool_handlers)
+        return run_session_openai(system_prompt, user_input, tool_schemas, tool_handlers,
+                                  model=model_override)
     if provider == "ollama":
-        return run_session_ollama(system_prompt, user_input, tool_schemas, tool_handlers)
+        return run_session_ollama(system_prompt, user_input, tool_schemas, tool_handlers,
+                                  model=model_override, base_url=base_url_override)
     if provider == "gemini":
-        return run_session_gemini(system_prompt, user_input, tool_schemas, tool_handlers)
-    return run_session_anthropic(system_prompt, user_input, tool_schemas, tool_handlers)
+        return run_session_gemini(system_prompt, user_input, tool_schemas, tool_handlers,
+                                  model=model_override)
+    return run_session_anthropic(system_prompt, user_input, tool_schemas, tool_handlers,
+                                 model=model_override)
 
 
 # ---------------------------------------------------------------------------
@@ -441,8 +475,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Personal AI Life Manager — Runtime Orchestrator")
     parser.add_argument("--agent", default="time_director", help="Agent to use (default: time_director)")
     parser.add_argument("--persona", help="Dev persona to load (e.g. pepys, nin, aurelius)")
-    parser.add_argument("--provider", default="anthropic", choices=["anthropic", "openai", "ollama", "gemini"],
-                        help="Model provider (default: anthropic)")
+    parser.add_argument("--provider", default=None, choices=["anthropic", "openai", "ollama", "gemini"],
+                        help="Force a model provider (default: auto-routed via routing.yaml)")
     parser.add_argument("--input", help="Single-shot input (skips interactive mode)")
     args = parser.parse_args()
 

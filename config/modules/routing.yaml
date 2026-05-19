@@ -1,0 +1,44 @@
+# Model routing configuration
+#
+# Controls which model/provider handles each agent session.
+# Sensitive agents (diarist, pattern_miner) are routed to local Ollama
+# when local_enabled is true. While false, they fall back to cloud and
+# every fallback is logged to data/logs/routing_fallbacks.json.
+#
+# Flip local_enabled to true once Ollama is running with a capable model.
+# That single change switches all sensitive routing — no code changes needed.
+
+local_enabled: false
+
+local:
+  endpoint: "http://localhost:11434/v1"
+  model: "qwen3:14b"
+
+# Named provider targets — referenced by agent entries below.
+providers:
+  cloud_fast:
+    provider: gemini
+    model: "models/gemini-2.5-flash"
+  cloud_deep:
+    provider: anthropic
+    model: "claude-sonnet-4-6"
+  cloud_analytical:
+    provider: openai
+    model: "o3"
+
+# Agent → target mapping.
+# target: which provider to use (local | cloud_fast | cloud_deep | cloud_analytical)
+# fallback: used when target is 'local' and local_enabled is false
+agents:
+  diarist:
+    target: local
+    fallback: cloud_deep
+  pattern_miner:
+    target: local
+    fallback: cloud_analytical
+  time_director:
+    target: cloud_deep
+    fallback: cloud_deep
+  goals_interviewer:
+    target: local
+    fallback: cloud_deep

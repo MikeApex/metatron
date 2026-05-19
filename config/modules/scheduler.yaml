@@ -1,0 +1,47 @@
+# Scheduler configuration
+#
+# Controls when the scheduler daemon fires orchestrator sessions.
+# Edit times and intervals here — no code changes needed.
+#
+# notification channels:
+#   terminal  — stdout + macOS notification banner
+#   push      — Web Push to registered phone PWA
+#   both      — terminal and push
+
+quiet_hours:
+  start: "22:00"
+  end: "07:00"
+
+schedules:
+  morning_brief:
+    enabled: true
+    time: "07:30"
+    days: weekdays          # weekdays | daily | weekend
+    agent: time_director
+    prompt: "Good morning. What's on today?"
+    notification: both
+
+  companion_checkin:
+    enabled: true
+    interval_minutes: 90
+    days: daily
+    agent: diarist
+    prompt: "What's going on?"
+    notification: push
+    respect_quiet_hours: true
+
+  evening_diarist:
+    enabled: true
+    time: "20:00"
+    days: daily
+    agent: diarist
+    prompt: "How did today go? Anything worth capturing before the day closes?"
+    notification: push
+
+  weekly_pattern_miner:
+    enabled: true
+    day: sunday             # monday | tuesday | ... | sunday
+    time: "09:00"
+    agent: pattern_miner
+    prompt: "Run a full pattern analysis for this week, the past 30 days, and the past 90 days."
+    notification: terminal

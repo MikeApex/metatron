@@ -55,7 +55,7 @@ class SessionRequest(BaseModel):
     input: str
     agent: str = "time_director"
     persona: str | None = None
-    provider: str = "anthropic"
+    provider: str | None = None   # None = auto-routed via routing.yaml
 
 
 class SessionResponse(BaseModel):
@@ -86,6 +86,38 @@ async def session(req: SessionRequest) -> SessionResponse:
 @app.get("/health")
 async def health() -> dict:
     return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# Web Push
+# ---------------------------------------------------------------------------
+
+class PushSubscription(BaseModel):
+    endpoint: str
+    keys: dict
+
+
+@app.get("/vapid-public-key")
+async def vapid_public_key() -> dict:
+    """Return the VAPID public key so the PWA can subscribe to push."""
+    from core.push import get_vapid_public_key
+    return {"publicKey": get_vapid_public_key()}
+
+
+@app.post("/subscribe")
+async def subscribe(sub: PushSubscription) -> dict:
+    """Register a browser push subscription from the PWA."""
+    from core.push import save_subscription
+    result = save_subscription(sub.dict())
+    return {"status": result}
+
+
+@app.post("/push/test")
+async def push_test() -> dict:
+    """Dev endpoint — send a test push to all registered subscriptions."""
+    from core.push import send_push
+    result = send_push(title="Life Manager", body="Push notifications are working.")
+    return result
 
 
 class TTSRequest(BaseModel):
