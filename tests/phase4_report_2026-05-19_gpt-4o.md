@@ -10,30 +10,21 @@
 ## Scale results
 
 ### 7-day
-- Elapsed: 39.0s
-- Response length: 463 chars
+- Elapsed: 45.2s
+- Response length: 934 chars
 
 **Response:**
 
-The 7-day pattern analysis has been completed, and the insights have been structured and saved into a report. Key findings include issues with low energy related to insufficient sleep, creative blocks specifically on the Cato section, and the positive emotional impact of morning family activities. Further exploration into improving sleep quality and writing approaches was suggested, alongside continued prioritization of family time for its grounding benefits.
+The 7-day pattern analysis for the period from 2026-05-12 to 2026-05-19 has been completed and the insights have been documented. Two primary observations emerged from the data:
+
+1. **Sleep and Writing Blockage:** There is a notable correlation between inadequate sleep and stalled progress in writing, particularly on the Cato section. This suggests that improving sleep quality might help in overcoming current creative blocks.
+
+2. **Philosophical Reflection and Productivity Pressures:** The engagement with Stoic philosophy, particularly reflections on 'wasted time', seems to be reinforcing pressures related to productivity rather than inspiring a flow state. This might be impacting the user's motivation and mental state.
+
+Actions have been suggested to address these findings, including experimenting with improvements in sleep and re-framing philosophical engagement to support acceptance and process over mere productivity.
 
 ### 30-day
-- Elapsed: 70.1s
-- Response length: 1187 chars
-
-**Response:**
-
-The 30-day pattern analysis for the period from 2026-04-19 to 2026-05-19 has been completed. Key insights include:
-
-1. **Sleep and Energy**: Persistent low energy and fatigue are notably linked to nights with under 6 hours of sleep, resulting in impaired cognitive function and creative blocks. It may be beneficial to ensure at least 6 hours of sleep.
-
-2. **Writing Blocks**: Creative blocks, especially in challenging sections like the Cato analysis, correlate with sleep deprivation. Exploring rest-focused routines might aid in overcoming these blocks.
-
-3. **Exercise and Mood**: Running provides a mental reset and mood improvement even on low-energy days. Assessing energy levels before and after exercise could help optimize essential task timing.
-
-4. **Reading Material Influence**: Philosophical reading, such as Seneca's reflections, can amplify frustration during writing blocks when self-criticism is high. Diversifying reading or timing it to coincide with better writing cycles could mitigate this.
-
-No duplicates were flagged in the wisdom entries. Follow-up actions have been suggested for each insight to assist in optimizing overall wellbeing and creative productivity.
+**ERROR:** Error code: 429 - {'error': {'message': 'Rate limit reached for gpt-4o in organization org-JfR6nsCR4XD3KOuM37yHL7cm on tokens per min (TPM): Limit 30000, Used 25817, Requested 9211. Please try again in 10.056s. Visit https://platform.openai.com/account/rate-limits to learn more.', 'type': 'tokens', 'param': None, 'code': 'rate_limit_exceeded'}}
 
 ## Evaluation checklist
 
