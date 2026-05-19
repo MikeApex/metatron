@@ -1,4 +1,10 @@
 {
-  "notes": "Missed gym for the third time this week. Noticed feeling sharper and less patient.",
-  "date": "2026-05-18"
+  "notes": "Missed gym third time this week. Intended to go after column draft but didn't. Self-aware about the mood/patience correlation \u2014 not surprised but still not solving for it.",
+  "date": "2026-05-18",
+  "missed_gym": true,
+  "gym_misses_this_week": 3,
+  "mood": "sharper, less patient",
+  "focus": "column draft",
+  "gym_missed_count": 3,
+  "blocker": "Deferring gym until after writing work; never materializes"
 }

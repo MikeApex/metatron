@@ -22,5 +22,17 @@
     "category": "patterns",
     "value": "Missing the gym routine leads to feeling sharper but also less patient.",
     "added": "2026-05-18"
+  },
+  {
+    "key": "morning_gym_nonnegotiable_reinforcement",
+    "category": "patterns",
+    "value": "User continues to observe negative cognitive and emotional impact (sharper but less patient) when skipping the non-negotiable morning gym. Reinforcing that rescheduling later rarely works. May need strategy to protect 4:45 gym slot even during heavy column draft days.",
+    "added": "2026-05-18"
+  },
+  {
+    "key": "skipped_gym_effects",
+    "category": "patterns",
+    "value": "Skipping the morning gym makes him sharper and less patient. Trying to shift the gym to *after* morning writing usually means it doesn't happen.",
+    "added": "2026-05-18"
   }
 ]

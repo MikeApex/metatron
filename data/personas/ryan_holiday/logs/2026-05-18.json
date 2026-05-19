@@ -1,10 +1,23 @@
 {
   "date": "2026-05-18",
   "sleep_hours": 5,
-  "writing_feeling": "struggling",
+  "writing_feeling": "pushing through mud",
   "tasks_completed": [
-    "one_hour_run",
-    "read_letters_from_a_stoic"
+    "run",
+    "finished rereading Letters from a Stoic \u2014 Seneca"
   ],
-  "mood": "tired"
+  "mood": "rough",
+  "blockers": [
+    "Cato section not moving \u2014 third day stuck"
+  ],
+  "wins": [
+    "got the walk in with the boys",
+    "Liam found a turtle near the mailbox"
+  ],
+  "reading": [
+    "Letters from a Stoic \u2014 Seneca (reread, finished on run)"
+  ],
+  "notes": "Finished Letters from a Stoic on the afternoon run. Seneca on wasted time hit differently this time \u2014 connected to what he's working through with the Cato chapter.",
+  "energy": "low",
+  "focus": "struggling"
 }

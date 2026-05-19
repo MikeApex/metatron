@@ -39,8 +39,8 @@ import openai
 import anthropic as anthropic_sdk
 
 PROVIDER_LABELS = {
-    "openai": "GPT-4o",
-    "gemini": "Gemini 2.5 Flash",
+    "openai": "o3",
+    "gemini": "Gemini 3.1 Pro",
     "claude": "Claude Sonnet 4.6",
 }
 
@@ -72,9 +72,11 @@ def run_session_captured_openai(
 
         while iterations < max_iterations:
             iterations += 1
+            # o3 and o-series models use max_completion_tokens; others use max_tokens
+            token_kwarg = "max_completion_tokens" if model.startswith("o") else "max_tokens"
             resp = client.chat.completions.create(
                 model=model,
-                max_tokens=2048,
+                **{token_kwarg: 4096},
                 tools=oai_tools,
                 messages=messages,
             )

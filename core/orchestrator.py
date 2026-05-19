@@ -36,11 +36,11 @@ CONFIG_DIR = ROOT / "config"
 AGENTS_DIR = CONFIG_DIR / "agents"
 
 ANTHROPIC_MODEL = "claude-sonnet-4-6"
-OPENAI_MODEL = "gpt-4o"
+OPENAI_MODEL = "o3"
 OLLAMA_BASE_URL = "http://localhost:11434/v1"
 OLLAMA_MODEL = "qwen3:14b"
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
-GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_MODEL = "models/gemini-3.1-pro-preview"
 
 
 # ---------------------------------------------------------------------------
@@ -340,9 +340,10 @@ def _openai_compat_loop(system_prompt: str, user_input: str,
     ]
 
     for _ in range(max_iterations):
+        token_kwarg = "max_completion_tokens" if model.startswith("o") else "max_tokens"
         response = client.chat.completions.create(
             model=model,
-            max_tokens=4096,
+            **{token_kwarg: 4096},
             tools=oai_tools,
             messages=messages,
         )

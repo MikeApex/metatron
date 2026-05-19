@@ -16,5 +16,11 @@
     "category": "patterns",
     "value": "Seneca's reflections resonate more deeply during intense writing periods, particularly when considering themes of wasted time and the value of a disciplined life.",
     "added": "2026-05-18"
+  },
+  {
+    "key": "sleep_under_6_writing_struggle",
+    "category": "patterns",
+    "value": "When sleep drops below 6 hours, morning writing sessions feel muddied and progress slows noticeably.",
+    "added": "2026-05-18"
   }
 ]
