@@ -402,32 +402,36 @@ def _openai_compat_loop(system_prompt: str, user_input: str,
 
 
 def run_session(agent_name: str, user_input: str,
-                persona: str | None = None, provider: str | None = None) -> str:
+                persona: str | None = None, provider: str | None = None,
+                model_override: str | None = None) -> str:
     """
     Run a single conversation session.
 
     Args:
-        agent_name: Agent to use (e.g. "time_director", "diarist", "pattern_miner").
-        user_input: The user's message.
-        persona: Optional dev persona (e.g. "pepys").
-        provider: Force a specific provider ("anthropic", "openai", "ollama", "gemini").
-                  When None, the router resolves the provider from routing.yaml.
+        agent_name:     Agent to use (e.g. "time_director", "diarist", "pattern_miner").
+        user_input:     The user's message.
+        persona:        Optional dev persona (e.g. "pepys").
+        provider:       Force a specific provider ("anthropic", "openai", "ollama", "gemini").
+                        When None, the router resolves the provider from routing.yaml.
+        model_override: Explicit model ID, overrides both router and provider default.
     """
     if persona:
         os.environ["AI_TEST_PERSONA"] = persona
     else:
         os.environ.pop("AI_TEST_PERSONA", None)
 
+    base_url_override = None
+
     # Resolve provider via router unless explicitly overridden (e.g. CLI --provider flag).
     if provider is None:
         from core.router import resolve_model
         model_cfg = resolve_model(agent_name)
         provider = model_cfg.provider
-        model_override = model_cfg.model
+        if model_override is None:
+            model_override = model_cfg.model
         base_url_override = model_cfg.base_url
-    else:
-        model_override = None
-        base_url_override = None
+    elif model_override is None:
+        pass  # provider forced, no model override — each runner uses its own default
 
     config = load_config(persona=persona)
     agent = load_agent(agent_name)

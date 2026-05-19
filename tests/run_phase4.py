@@ -26,7 +26,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 _ROOT = Path(__file__).parent.parent
 _PERSONA = "ryan_holiday"
-_REPORT_PATH = _ROOT / "tests" / "phase4_report.md"
+
+
+def _report_path(label: str) -> Path:
+    today = date.today().isoformat()
+    safe = label.replace("/", "-").replace(" ", "_")
+    return _ROOT / "tests" / f"phase4_report_{today}_{safe}.md"
 
 
 def _count_entries(persona: str) -> dict:
@@ -40,7 +45,7 @@ def _count_entries(persona: str) -> dict:
     }
 
 
-def run_pattern_miner(scale_days: int, provider: str | None) -> dict:
+def run_pattern_miner(scale_days: int, provider: str | None, model: str | None = None) -> dict:
     """Fire one Pattern Miner session for the given scale."""
     import os
     from core.orchestrator import run_session
@@ -69,6 +74,7 @@ def run_pattern_miner(scale_days: int, provider: str | None) -> dict:
         user_input=prompt,
         persona=_PERSONA,
         provider=provider,
+        model_override=model,
     )
     elapsed = round(time.time() - t0, 1)
 
@@ -80,12 +86,12 @@ def run_pattern_miner(scale_days: int, provider: str | None) -> dict:
     }
 
 
-def run_tests(scales: list[int], provider: str | None) -> list[dict]:
+def run_tests(scales: list[int], provider: str | None, model: str | None = None) -> list[dict]:
     results = []
     for scale in scales:
         print(f"\n--- Pattern Miner: {scale}-day scale ---", flush=True)
         try:
-            r = run_pattern_miner(scale, provider)
+            r = run_pattern_miner(scale, provider, model)
             print(f"  Done in {r['elapsed_s']}s — {r['response_length']} chars")
             results.append(r)
         except Exception as e:
@@ -94,11 +100,11 @@ def run_tests(scales: list[int], provider: str | None) -> list[dict]:
     return results
 
 
-def write_report(results: list[dict], entry_counts: dict, provider: str | None) -> None:
+def write_report(results: list[dict], entry_counts: dict, label: str) -> None:
     lines = [
         "# Phase 4 Test Report — Pattern Miner",
         f"*Generated: {date.today().isoformat()}*",
-        f"*Persona: {_PERSONA}  |  Provider: {provider or 'auto-routed'}*",
+        f"*Persona: {_PERSONA}  |  Model: {label}*",
         "",
         "## Data inventory",
         f"- Log entries: {entry_counts['logs']}",
@@ -142,8 +148,9 @@ def write_report(results: list[dict], entry_counts: dict, provider: str | None) 
         "*Add observations here after reviewing.*",
     ]
 
-    _REPORT_PATH.write_text("\n".join(lines))
-    print(f"\nReport written: {_REPORT_PATH}")
+    path = _report_path(label)
+    path.write_text("\n".join(lines))
+    print(f"\nReport written: {path}")
 
 
 def main() -> None:
@@ -151,6 +158,8 @@ def main() -> None:
     parser.add_argument("--provider", default=None,
                         choices=["anthropic", "openai", "ollama", "gemini"],
                         help="Force provider (default: auto-routed)")
+    parser.add_argument("--model", default=None,
+                        help="Override model ID (e.g. models/gemini-3.1-pro-preview)")
     parser.add_argument("--scales", nargs="+", type=int, default=[7, 30, 90],
                         help="Time scales to test in days (default: 7 30 90)")
     args = parser.parse_args()
@@ -166,8 +175,9 @@ def main() -> None:
         print("Run: python tests/generate_synthetic_data.py --index")
         print("Then re-run this script.\n")
 
-    results = run_tests(args.scales, args.provider)
-    write_report(results, counts, args.provider)
+    label = args.model or args.provider or "auto-routed"
+    results = run_tests(args.scales, args.provider, args.model)
+    write_report(results, counts, label)
 
 
 if __name__ == "__main__":

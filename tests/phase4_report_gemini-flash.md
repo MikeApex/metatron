@@ -1,6 +1,6 @@
 # Phase 4 Test Report — Pattern Miner
 *Generated: 2026-05-19*
-*Persona: ryan_holiday  |  Provider: gemini*
+*Persona: ryan_holiday  |  Model: gemini-3.1-flash-lite-preview*
 
 ## Data inventory
 - Log entries: 64
@@ -45,7 +45,6 @@ Manual review — mark each after reading the reports above:
 - [ ] 7-day: Confidence correctly labeled as weak (limited data)
 - [ ] 30-day: Monthly rhythm pattern surfaced
 - [ ] 30-day: At least one belief validation/challenge with data
-- [ ] 90-day: Multi-week trend identified
 - [ ] All scales: Output format followed (OBSERVATION / EVIDENCE / HYPOTHESIS / CONFIDENCE / ACTION)
 - [ ] Wisdom duplicates flagged (if any exist)
 - [ ] Routing fallback log written to data/logs/routing_fallbacks.json
