@@ -161,7 +161,22 @@ async def tts(req: TTSRequest):
 
 @app.get("/")
 async def index() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html")
+    return FileResponse(
+        STATIC_DIR / "index.html",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.get("/sw.js")
+async def service_worker() -> FileResponse:
+    return FileResponse(
+        STATIC_DIR / "sw.js",
+        media_type="application/javascript",
+        headers={
+            "Cache-Control": "no-store",
+            "Service-Worker-Allowed": "/",
+        },
+    )
 
 
 # Serve static assets (CSS, JS if we add them later)

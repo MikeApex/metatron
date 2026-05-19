@@ -71,12 +71,24 @@ def send_push(title: str, body: str, urgency: str = "normal") -> dict:
         Dict with 'sent' count and any 'errors'.
     """
     from pywebpush import webpush, WebPushException
+    from cryptography.hazmat.primitives.serialization import (
+        load_pem_private_key, Encoding, PrivateFormat, NoEncryption,
+    )
+    import base64
 
     private_key_pem = os.environ.get("VAPID_PRIVATE_KEY", "").replace("\\n", "\n")
     claims_sub = os.environ.get("VAPID_CLAIMS_SUB", "mailto:user@example.com")
 
     if not private_key_pem:
         return {"sent": 0, "errors": ["VAPID_PRIVATE_KEY not set in .env"]}
+
+    # py_vapid expects a base64url-encoded DER key, not a PEM string.
+    try:
+        _key = load_pem_private_key(private_key_pem.strip().encode(), password=None)
+        _der = _key.private_bytes(Encoding.DER, PrivateFormat.TraditionalOpenSSL, NoEncryption())
+        vapid_key = base64.urlsafe_b64encode(_der).rstrip(b"=").decode()
+    except Exception as e:
+        return {"sent": 0, "errors": [f"VAPID key parse error: {e}"]}
 
     subs = _load_subscriptions()
     if not subs:
@@ -92,7 +104,7 @@ def send_push(title: str, body: str, urgency: str = "normal") -> dict:
             webpush(
                 subscription_info=sub,
                 data=payload,
-                vapid_private_key=private_key_pem,
+                vapid_private_key=vapid_key,
                 vapid_claims={"sub": claims_sub},
                 headers={"urgency": urgency},
             )

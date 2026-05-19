@@ -1,19 +1,34 @@
-// Service worker for Life Manager PWA
+// Service worker for Life Manager PWA v2
 // Handles Web Push notifications and displays them on the device.
+const CACHE_VERSION = 'v2';
+
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', event => {
+  event.waitUntil(
+    caches.keys().then(keys =>
+      Promise.all(keys.filter(k => k !== CACHE_VERSION).map(k => caches.delete(k)))
+    ).then(() => self.clients.claim())
+  );
+});
 
 self.addEventListener('push', event => {
-  let data = { title: 'Life Manager', body: '' };
+  let title = 'Life Manager';
+  let body = 'New message';
   if (event.data) {
-    try { data = { ...data, ...JSON.parse(event.data.text()) }; }
-    catch { data.body = event.data.text(); }
+    try {
+      const d = JSON.parse(event.data.text());
+      if (d.title) title = d.title;
+      if (d.body) body = d.body;
+    } catch {
+      body = event.data.text() || 'New message';
+    }
   }
   event.waitUntil(
-    self.registration.showNotification(data.title, {
-      body: data.body,
-      icon: '/static/icon-192.png',
-      badge: '/static/icon-192.png',
+    self.registration.showNotification(title, {
+      body: body,
       tag: 'life-manager',
       renotify: true,
+      requireInteraction: false,
     })
   );
 });

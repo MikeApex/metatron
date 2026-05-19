@@ -210,6 +210,9 @@
   <div id="grant-wrap" style="text-align:center;display:none">
     <button id="grant-btn" style="background:#333;border:1px solid #555;border-radius:20px;color:#aaa;font-size:13px;padding:8px 20px;cursor:pointer">Grant mic permission</button>
   </div>
+  <div id="notif-wrap" style="text-align:center;margin-top:6px">
+    <span id="notif-debug" style="color:#333;font-size:11px">notif-v2</span>
+  </div>
 
   <div id="text-input">
     <input id="text-field" type="text" placeholder="Or type here..." autocomplete="off">
@@ -431,38 +434,76 @@
 
   // --- Web Push registration ---
 
-  async function registerPush() {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+  async function subscribePush(reg) {
+    const keyRes = await fetch('/vapid-public-key');
+    const { publicKey } = await keyRes.json();
+    if (!publicKey) return;
+    const padding = '='.repeat((4 - publicKey.length % 4) % 4);
+    const base64 = (publicKey + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const raw = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+
+    // Unsubscribe any existing subscription — key may have rotated
+    const existing = await reg.pushManager.getSubscription();
+    if (existing) await existing.unsubscribe();
+
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: raw,
+    });
+    await fetch('/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(sub.toJSON()),
+    });
+    return sub;
+  }
+
+  async function initPush() {
+    const wrap = document.getElementById('notif-wrap');
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      wrap.innerHTML = '<span style="color:#333;font-size:11px">push-unsupported</span>';
+      return;
+    }
+    const perm = Notification.permission;
+
+    if (perm === 'denied') {
+      wrap.innerHTML = '<span style="color:#333;font-size:11px">notif blocked — enable in Chrome site settings</span>';
+      return;
+    }
+
+    if (perm !== 'granted') {
+      // Show button immediately — don't wait for SW registration
+      wrap.innerHTML = '<button id="notif-btn" style="background:#1a1a1a;border:1px solid #333;border-radius:20px;color:#666;font-size:12px;padding:6px 16px;cursor:pointer">Enable notifications</button>';
+      document.getElementById('notif-btn').addEventListener('click', async () => {
+        try {
+          const result = await Notification.requestPermission();
+          if (result === 'granted') {
+            wrap.innerHTML = '<span style="color:#444;font-size:12px">Notifications on — setting up...</span>';
+            const reg = await navigator.serviceWorker.register('/sw.js');
+            await navigator.serviceWorker.ready;
+            await subscribePush(reg);
+            wrap.innerHTML = '<span style="color:#444;font-size:12px">Notifications on</span>';
+          } else {
+            wrap.innerHTML = '<span style="color:#333;font-size:12px">Notifications blocked</span>';
+          }
+        } catch(e) {
+          wrap.innerHTML = `<span style="color:#333;font-size:11px">notif error: ${e.message}</span>`;
+          console.warn('Push setup failed:', e);
+        }
+      });
+      return;
+    }
+
+    // Already granted — register SW and subscribe silently
     try {
       const reg = await navigator.serviceWorker.register('/sw.js');
       await navigator.serviceWorker.ready;
-
-      const keyRes = await fetch('/vapid-public-key');
-      const { publicKey } = await keyRes.json();
-      if (!publicKey) return;
-
-      // Convert base64url public key to Uint8Array
-      const padding = '='.repeat((4 - publicKey.length % 4) % 4);
-      const base64 = (publicKey + padding).replace(/-/g, '+').replace(/_/g, '/');
-      const raw = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
-
-      const existing = await reg.pushManager.getSubscription();
-      const sub = existing || await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: raw,
-      });
-
-      await fetch('/subscribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(sub.toJSON()),
-      });
-    } catch (e) {
-      console.warn('Push registration failed:', e);
-    }
+      await subscribePush(reg);
+      wrap.innerHTML = '<span style="color:#444;font-size:12px">Notifications on</span>';
+    } catch(e) { console.warn('Push subscribe failed:', e); }
   }
 
-  registerPush();
+  initPush();
 
   // --- Text input ---
 
