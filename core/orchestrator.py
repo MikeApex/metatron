@@ -635,19 +635,57 @@ def run_session_ollama(system_prompt: str, user_input: str,
     return result
 
 
+def _get_vertex_bearer_token() -> str:
+    """Get OAuth2 access token for Vertex AI from Application Default Credentials."""
+    import google.auth
+    import google.auth.transport.requests
+    credentials, _ = google.auth.default(
+        scopes=["https://www.googleapis.com/auth/cloud-platform"]
+    )
+    credentials.refresh(google.auth.transport.requests.Request())
+    return credentials.token
+
+
+def _vertex_openai_base_url(project: str, location: str) -> str:
+    """Return the Vertex AI OpenAI-compatible base URL."""
+    if location == "global":
+        return f"https://aiplatform.googleapis.com/v1beta1/projects/{project}/locations/global/endpoints/openapi/"
+    return f"https://{location}-aiplatform.googleapis.com/v1beta1/projects/{project}/locations/{location}/endpoints/openapi/"
+
+
+def _vertex_model_name(model: str) -> str:
+    """Convert a Gemini model ID to Vertex AI OpenAI-compat format: google/{model}."""
+    if model.startswith("models/"):
+        model = model[len("models/"):]
+    if not model.startswith("google/"):
+        model = f"google/{model}"
+    return model
+
+
 def run_session_gemini(system_prompt: str, user_input: str,
                        tool_schemas: list[dict], tool_handlers: dict,
                        model: str | None = None,
                        history: list[dict] | None = None) -> str:
-    """Agentic loop using Gemini via Google's OpenAI-compatible endpoint."""
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        raise EnvironmentError("GEMINI_API_KEY is not set.")
+    """Agentic loop using Gemini — Vertex AI if GOOGLE_CLOUD_PROJECT is set, else AI Studio."""
+    project = os.environ.get("GOOGLE_CLOUD_PROJECT")
+    location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+
+    if project:
+        api_key = _get_vertex_bearer_token()
+        base_url = _vertex_openai_base_url(project, location)
+        model_name = _vertex_model_name(model or GEMINI_PRO_MODEL)
+    else:
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            raise EnvironmentError("GEMINI_API_KEY or GOOGLE_CLOUD_PROJECT must be set.")
+        base_url = GEMINI_BASE_URL
+        model_name = model or GEMINI_MODEL
+
     return _openai_compat_loop(
         system_prompt, user_input, tool_schemas, tool_handlers,
         api_key=api_key,
-        base_url=GEMINI_BASE_URL,
-        model=model or GEMINI_MODEL,
+        base_url=base_url,
+        model=model_name,
         history=history,
     )
 
