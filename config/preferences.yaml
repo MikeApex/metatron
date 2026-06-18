@@ -1,0 +1,32 @@
+# User preferences — proactive action governance
+#
+# Controls what the Synthesizer can do autonomously vs. what requires confirmation.
+# Until a preference is explicitly set, the Synthesizer defaults to Confirm First
+# for anything beyond informing and autonomous reversible actions (list entries, reminders).
+#
+# Set these in conversation ("set my expenditure threshold to 20 dollars") or edit directly.
+
+proactive:
+
+  # Expenditure threshold — autonomous purchases below this amount are permitted
+  # when the corresponding opt-in is true. Set currency to your local currency code.
+  expenditure:
+    threshold: null          # e.g. 20
+    currency: null           # e.g. "USD", "GBP", "EUR", "CAD"
+    opt_in: false
+
+  # Financial actions — bill payment, transfers, subscription management
+  financial_actions:
+    opt_in: false
+
+  # Social outreach — the tool can reach out to contacts on the user's behalf
+  # mode: "as_user" (in user's voice) | "as_agent" (transparently, as tool)
+  social_outreach:
+    opt_in: false
+    default_mode: "as_agent"  # safer default; change to "as_user" per contact if preferred
+    # Per-contact overrides: add entries as contact_name: {opt_in: true, mode: "as_user"}
+    contacts: {}
+
+  # Calendar and reservation bookings — opt-in for autonomous booking without confirmation
+  bookings:
+    opt_in: false

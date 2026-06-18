@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+    "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Label must match the filename (minus .plist). -->
+    <key>Label</key>
+    <string>com.life-manager.backup</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/md-homefolder/Desktop/multi-model-mcp/scripts/backup.sh</string>
+    </array>
+
+    <!--
+        WatchPaths fires the job when the listed path appears or disappears.
+        Replace LifeBackup1 with the actual volume name of Drive 1.
+        launchd watches /Volumes/LifeBackup1 — when the drive mounts, the
+        directory is created and launchd fires the script within a few seconds.
+    -->
+    <key>WatchPaths</key>
+    <array>
+        <string>/Volumes/LifeBackup1</string>
+    </array>
+
+    <!-- Restart on failure, up to 3 times. -->
+    <key>ThrottleInterval</key>
+    <integer>300</integer>
+
+    <!-- stdout and stderr go to the system log; backup.sh also writes its own log. -->
+    <key>StandardOutPath</key>
+    <string>/Users/md-homefolder/Library/Logs/life-manager-backup-launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/md-homefolder/Library/Logs/life-manager-backup-launchd.log</string>
+
+    <!-- Only run when the user is logged in. -->
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

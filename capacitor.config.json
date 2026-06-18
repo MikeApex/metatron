@@ -1,0 +1,11 @@
+{
+  "appId": "com.mike.metatron",
+  "appName": "Metatron",
+  "webDir": "static",
+  "server": {
+    "cleartext": true
+  },
+  "android": {
+    "allowMixedContent": true
+  }
+}

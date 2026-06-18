@@ -1,0 +1,35 @@
+# CalDAV calendar integration
+# Configure and set enabled: true to activate calendar read/write.
+#
+# Supported servers: iCloud, Google, Fastmail, Nextcloud, and any standard CalDAV server.
+#
+# iCloud:
+#   calendar_url: https://caldav.icloud.com/...  (find in Calendar.app: right-click a calendar → Get Info)
+#   auth.username: your@icloud.com
+#   auth.password: app-specific password from appleid.apple.com → Security → App-Specific Passwords
+#
+# Google Calendar:
+#   calendar_url: https://apidata.googleusercontent.com/caldav/v2/{email}/events
+#   auth.username: your@gmail.com
+#   auth.password: app password from myaccount.google.com/apppasswords (requires 2FA)
+#
+# Fastmail:
+#   calendar_url: https://caldav.fastmail.com/dav/calendars/user/{email}/{calendar-name}/
+#   auth.username: your@fastmail.com
+#   auth.password: Fastmail password or app password
+#
+# Nextcloud / generic CalDAV:
+#   calendar_url: https://your-server.com/remote.php/dav/calendars/{username}/{calendar-name}/
+
+enabled: false
+
+# CalDAV collection URL for the target calendar
+calendar_url: ""
+
+auth:
+  username: ""
+  # Use an app-specific password where the server supports it — do not use your main account password
+  password: ""
+
+# IANA timezone name for newly created events (e.g. America/New_York, Europe/London, Asia/Tokyo)
+timezone: "America/New_York"

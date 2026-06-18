@@ -3,20 +3,55 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .env
-.venv/
 venv/
 *.log
+
+# macOS metadata
+.DS_Store
+**/.DS_Store
 
 # Claude Code local settings — not project config
 .claude/
 
 # TLS certs — never committed (IP-specific; regenerate with mkcert on each machine)
 certs/
+certs_backup/
+
+# Android build — Capacitor generated; regenerate with: npx cap add android
+android/
+
+# Node dependencies
+node_modules/
 
 # Sensitive data — never committed
-# Exclude contents but keep directory markers via gitkeep
 data/logs/*.json
 data/journal/*
 data/wisdom/*
 data/archive/*
 data/memory/*
+
+# Runtime data (sensitive or ephemeral)
+data/audio/
+data/baselines/
+data/config/
+data/context.json
+data/conversations/
+data/push_subscriptions.json
+data/voices/
+
+# Test persona runtime data (generated; not config)
+data/personas/mike/
+data/personas/pepys/
+data/personas/test_a3/
+data/personas/ryan_holiday/journal/
+data/personas/ryan_holiday/logs/
+data/personas/ryan_holiday/insights/
+data/personas/Ryan\ Holiday/
+
+# Real user persona config — sensitive
+config/personas/mike.md
+config/personas/mike/
+
+# Session verbatim transcripts — large; source of truth is ~/.claude/projects/*.jsonl
+archive/sessions/*.txt
+archive/transcripts/
