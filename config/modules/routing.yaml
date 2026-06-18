@@ -1,44 +1,76 @@
 # Model routing configuration
 #
-# Controls which model/provider handles each agent session.
-# Sensitive agents (diarist, pattern_miner) are routed to local Ollama
-# when local_enabled is true. While false, they fall back to cloud and
-# every fallback is logged to data/logs/routing_fallbacks.json.
+# All agents with personal context are local: true — they route to Ollama only.
+# Ollama unavailable → hard error (fail-closed). No cloud fallbacks for sensitive agents.
 #
-# Flip local_enabled to true once Ollama is running with a capable model.
-# That single change switches all sensitive routing — no code changes needed.
+# complexity="quick" does NOT override local: true agents — sensitivity beats speed.
+# quick_override applies only to non-sensitive agents (currently: research_agent).
+#
+# research_agent is the only cloud-routed agent; it receives only decontextualized requests.
 
-local_enabled: false
+local_enabled: true
 
 local:
   endpoint: "http://localhost:11434/v1"
   model: "qwen3:14b"
 
-# Named provider targets — referenced by agent entries below.
-providers:
-  cloud_fast:
-    provider: gemini
-    model: "models/gemini-3.1-flash-lite-preview"
-  cloud_deep:
-    provider: anthropic
-    model: "claude-sonnet-4-6"
-  cloud_analytical:
-    provider: openai
-    model: "o3"
+# System-level override for complexity="quick" calls on non-sensitive agents only.
+quick_override:
+  provider: gemini
+  model: "models/gemini-3.1-flash-lite"
 
-# Agent → target mapping.
-# target: which provider to use (local | cloud_fast | cloud_deep | cloud_analytical)
-# fallback: used when target is 'local' and local_enabled is false
+# Agent model assignments.
+# local: true  → Ollama only; fail-closed if Ollama is down.
+# provider/model → cloud; only permitted for decontextualized agents.
 agents:
+
+  # ── Head layer (local: carries Tier 1–3 context in every session) ───────────
+
+  coordinator:
+    local: true
+
+  synthesizer:
+    local: true
+
+  # ── Data and analysis (local: reads/writes personal logs) ───────────────────
+
   diarist:
-    target: local
-    fallback: cloud_deep
+    local: true
+
   pattern_miner:
-    target: local
-    fallback: cloud_analytical
-  time_director:
-    target: cloud_deep
-    fallback: cloud_deep
+    local: true
+
   goals_interviewer:
-    target: local
-    fallback: cloud_deep
+    local: true
+
+  # ── Personal specialists (local: sensitive — named individuals, health, finance) ─
+
+  mental_wellbeing:
+    local: true
+
+  physical_health:
+    local: true
+
+  work_vocation:
+    local: true
+
+  relationships:
+    local: true
+
+  finance:
+    local: true
+
+  learning_growth:
+    local: true
+
+  recreation_hobbies:
+    local: true
+
+  logistics:
+    local: true
+
+  # ── Cloud-only (decontextualized — no personal context ever passed) ──────────
+
+  research_agent:
+    provider: gemini
+    model: "models/gemini-3.1-pro-preview"   # grounded search; decontextualized only

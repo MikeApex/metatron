@@ -1,0 +1,78 @@
+# Cloud routing configuration — used when DEPLOYMENT_MODE=cloud (VM deployment).
+#
+# All agents route to Vertex AI Gemini 3.1 Pro via the google-genai SDK.
+# No Ollama references — the VM does no local inference.
+# Privacy basis: Vertex AI ZDR (contractual sequestration, no training on data).
+# This file is a temporary path; north star is private hardware (local/A100/H100).
+#
+# To activate: set DEPLOYMENT_MODE=cloud in the VM's .env file.
+# Local dev: omit DEPLOYMENT_MODE or set DEPLOYMENT_MODE=local — routing.yaml loads instead.
+
+local_enabled: false
+
+# Agent model assignments — all on Vertex Gemini 3.1 Pro.
+agents:
+
+  # ── Head layer ───────────────────────────────────────────────────────────────
+
+  coordinator:
+    provider: gemini
+    model: "gemini-3.1-pro-preview"
+
+  synthesizer:
+    provider: gemini
+    model: "gemini-3.1-pro-preview"
+
+  # ── Data and analysis ────────────────────────────────────────────────────────
+
+  diarist:
+    provider: gemini
+    model: "gemini-3.1-pro-preview"
+
+  pattern_miner:
+    provider: gemini
+    model: "gemini-3.1-pro-preview"
+
+  goals_interviewer:
+    provider: gemini
+    model: "gemini-3.1-pro-preview"
+
+  # ── Personal specialists ─────────────────────────────────────────────────────
+
+  mental_wellbeing:
+    provider: gemini
+    model: "gemini-3.1-pro-preview"
+
+  physical_health:
+    provider: gemini
+    model: "gemini-3.1-pro-preview"
+
+  work_vocation:
+    provider: gemini
+    model: "gemini-3.1-pro-preview"
+
+  relationships:
+    provider: gemini
+    model: "gemini-3.1-pro-preview"
+
+  finance:
+    provider: gemini
+    model: "gemini-3.1-pro-preview"
+
+  learning_growth:
+    provider: gemini
+    model: "gemini-3.1-pro-preview"
+
+  recreation_hobbies:
+    provider: gemini
+    model: "gemini-3.1-pro-preview"
+
+  logistics:
+    provider: gemini
+    model: "gemini-3.1-pro-preview"
+
+  # ── Cloud-only (decontextualized) ────────────────────────────────────────────
+
+  research_agent:
+    provider: gemini
+    model: "gemini-3.1-pro-preview"   # grounded search; decontextualized only

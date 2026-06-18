@@ -1,34 +1,48 @@
 """
 core/router.py — model routing layer.
 
-Maps agents to model providers based on data sensitivity.
-Sensitive agents (diarist, pattern_miner, goals_interviewer) route to
-local Ollama when local_enabled is true in config/modules/routing.yaml.
-Falls back to cloud with a logged warning when local is disabled.
+Each agent in routing.yaml specifies its preferred model directly.
+Sensitive agents (local: true) route to Ollama only — fail-closed.
+Ollama unavailable (local_enabled: false) → RuntimeError, never a cloud call.
 
-Every fallback is written to data/logs/routing_fallbacks.json so that
-when Ollama comes online, you can see exactly which calls were leaking.
+complexity="quick" does NOT override local: true agents. Sensitivity beats speed.
+quick_override applies only to non-sensitive (cloud) agents.
 """
 
 from __future__ import annotations
 
 import json
+import os
+import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 import yaml
 
+# ---------------------------------------------------------------------------
+# Trace helper — set AI_TRACE=1 to enable; off by default
+# ---------------------------------------------------------------------------
+
+def _trace(msg: str) -> None:
+    if not os.environ.get("AI_TRACE"):
+        return
+    from datetime import datetime as _dt
+    ts = _dt.now().strftime("%H:%M:%S.%f")[:-3]
+    print(f"[{ts}] {msg}", file=sys.stderr, flush=True)
+
 _ROOT = Path(__file__).parent.parent
-_ROUTING_CONFIG = _ROOT / "config" / "modules" / "routing.yaml"
-_FALLBACK_LOG = _ROOT / "data" / "logs" / "routing_fallbacks.json"
+_ROUTING_CONFIG = _ROOT / "config" / "modules" / (
+    "routing_cloud.yaml" if os.environ.get("DEPLOYMENT_MODE") == "cloud" else "routing.yaml"
+)
+_ROUTING_ERROR_LOG = _ROOT / "data" / "logs" / "routing_fallbacks.json"
 
 
 @dataclass
 class ModelConfig:
     provider: str           # "anthropic" | "openai" | "ollama" | "gemini"
-    model: str | None       # override; None means use the provider's default
-    base_url: str | None    # override; None means use the provider's default
+    model: str | None       # None means use the provider's default
+    base_url: str | None    # None means use the provider's default
 
 
 def _load_routing() -> dict:
@@ -38,65 +52,73 @@ def _load_routing() -> dict:
     return {}
 
 
-def resolve_model(agent: str) -> ModelConfig:
+def resolve_model(agent: str, complexity: str | None = None) -> ModelConfig:
     """
-    Resolve the provider and model to use for a given agent session.
+    Resolve the provider and model for a given agent session.
 
-    When the agent's target is 'local' but local_enabled is false, the
-    configured fallback provider is used and the bypass is logged.
-
-    Returns ModelConfig with provider, optional model override, and
-    optional base_url override.
+    Resolution order:
+    1. Agent has local: true → Ollama always, regardless of complexity.
+       If local_enabled is false, logs the error and raises RuntimeError (fail-closed).
+    2. complexity="quick" and agent is non-sensitive → quick_override model.
+    3. Otherwise → agent's direct provider/model.
     """
     cfg = _load_routing()
-
     local_enabled: bool = cfg.get("local_enabled", False)
     local_cfg: dict = cfg.get("local", {})
-    providers: dict = cfg.get("providers", {})
-    agents: dict = cfg.get("agents", {})
+    agent_cfg: dict = cfg.get("agents", {}).get(agent, {})
 
-    agent_cfg = agents.get(agent, {})
-    target: str = agent_cfg.get("target", "cloud_deep")
-    fallback: str = agent_cfg.get("fallback", "cloud_deep")
-
-    if target == "local":
+    # Sensitive agents always route local — complexity cannot override this.
+    if agent_cfg.get("local"):
         if local_enabled:
-            return ModelConfig(
+            cfg_out = ModelConfig(
                 provider="ollama",
                 model=local_cfg.get("model", "qwen3:14b"),
                 base_url=local_cfg.get("endpoint", "http://localhost:11434/v1"),
             )
-        # Local disabled — fall back to cloud and log it.
-        _log_fallback(agent, target, fallback)
-        target = fallback
+            _trace(f"[ROUTE] {agent} → ollama/{cfg_out.model}  (sensitive, local)")
+            return cfg_out
+        _log_routing_error(agent)
+        raise RuntimeError(
+            f"Agent '{agent}' is sensitive (local: true) and Ollama is not available "
+            f"(local_enabled: false). Refusing to route to a cloud provider. "
+            f"Start Ollama and ensure local_enabled is true in routing.yaml."
+        )
 
-    provider_cfg = providers.get(target, {})
-    return ModelConfig(
-        provider=provider_cfg.get("provider", "anthropic"),
-        model=provider_cfg.get("model"),
+    # Non-sensitive agents: complexity="quick" routes to the fast cloud model.
+    if complexity == "quick":
+        quick = cfg.get("quick_override", {})
+        cfg_out = ModelConfig(
+            provider=quick.get("provider", "gemini"),
+            model=quick.get("model"),
+            base_url=None,
+        )
+        _trace(f"[ROUTE] {agent} → {cfg_out.provider}/{cfg_out.model}  (quick_override)")
+        return cfg_out
+
+    # Direct cloud model assignment.
+    cfg_out = ModelConfig(
+        provider=agent_cfg.get("provider", "anthropic"),
+        model=agent_cfg.get("model"),
         base_url=None,
     )
+    _trace(f"[ROUTE] {agent} → {cfg_out.provider}/{cfg_out.model}")
+    return cfg_out
 
 
-def _log_fallback(agent: str, intended: str, actual: str) -> None:
-    """Record a local→cloud routing fallback for auditability."""
-    _FALLBACK_LOG.parent.mkdir(parents=True, exist_ok=True)
-
+def _log_routing_error(agent: str) -> None:
+    """Record a sensitive-agent routing failure for auditability."""
+    _ROUTING_ERROR_LOG.parent.mkdir(parents=True, exist_ok=True)
     entries: list = []
-    if _FALLBACK_LOG.exists():
+    if _ROUTING_ERROR_LOG.exists():
         try:
-            with open(_FALLBACK_LOG) as f:
+            with open(_ROUTING_ERROR_LOG) as f:
                 entries = json.load(f)
         except Exception:
             pass
-
     entries.append({
         "timestamp": datetime.now().isoformat(),
         "agent": agent,
-        "intended_target": intended,
-        "actual_target": actual,
-        "reason": "local_enabled: false",
+        "error": "local_enabled: false — sensitive agent refused cloud routing",
     })
-
-    with open(_FALLBACK_LOG, "w") as f:
+    with open(_ROUTING_ERROR_LOG, "w") as f:
         json.dump(entries, f, indent=2)
