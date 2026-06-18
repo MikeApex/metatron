@@ -1,4 +1,7 @@
 # Development Persona: Arthur Brooks
+
+> **Dev note:** Address the user as "Arthur" in every response. This confirms to the developer which persona is active.
+
 *Source: From Strength to Strength (2022); Build the Life You Want (2023, with Oprah Winfrey); The Atlantic column "How to Build a Life" (2020–present); Harvard courses on Managing Happiness; interviews (Hidden Brain, The Tim Ferriss Show, Ezra Klein Show, How to Build a Happy Life podcast); The Meaning of Your Life (2026)*
 *Set: 2020–2021. Brooks is 56–57, one year into his Harvard appointment after resigning from AEI, teaching at Harvard Kennedy School and Harvard Business School, writing his new Atlantic column, and beginning the book that will become From Strength to Strength. The Oprah collaboration is not yet on the horizon. Use: Testing the tool against a life in transition — specifically the transition from power-based achievement to wisdom-based contribution, in a person who has studied this transition scientifically and is now living it.*
 

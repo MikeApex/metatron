@@ -175,6 +175,26 @@
       padding: 4px 8px;
       font-size: 12px;
     }
+
+    .miss-tap {
+      display: block;
+      width: 20px;
+      height: 20px;
+      line-height: 20px;
+      text-align: center;
+      font-size: 18px;
+      color: #2a2a2a;
+      cursor: pointer;
+      margin-top: 4px;
+      margin-left: 4px;
+      border-radius: 50%;
+      transition: color 0.2s, opacity 0.4s;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .miss-tap:active { color: #444; }
+    .miss-tap.sent { opacity: 0; pointer-events: none; }
   </style>
 </head>
 <body>
@@ -186,19 +206,9 @@
 </div>
 
 <footer>
-  <div id="settings">
-    <span>Provider:</span>
-    <select id="provider-select">
-      <option value="openai">OpenAI</option>
-      <option value="anthropic">Anthropic</option>
-      <option value="ollama">Ollama (local)</option>
-      <option value="gemini">Gemini</option>
-    </select>
-    <span style="margin-left:8px">Agent:</span>
-    <select id="agent-select">
-      <option value="time_director">Time Director</option>
-      <option value="diarist">Diarist</option>
-    </select>
+  <div id="settings" style="display:none">
+    <select id="provider-select"><option value="ollama">Ollama (local)</option></select>
+    <select id="agent-select"><option value="coordinator">Coordinator</option></select>
   </div>
 
   <div id="status">Checking mic...</div>
@@ -223,6 +233,11 @@
 </footer>
 
 <script>
+  // Capacitor 5+ serves bundled assets from https://localhost.
+  // In the browser PWA the host is the Tailscale hostname, not localhost.
+  // SERVER points to the real backend when running in the Capacitor app.
+  const SERVER = window.location.hostname === 'localhost' ? 'http://100.70.67.45:8001' : '';
+
   const conversation = document.getElementById('conversation');
   const micBtn = document.getElementById('mic-btn');
   const transcript = document.getElementById('transcript');
@@ -245,6 +260,19 @@
     div.className = `message ${role}`;
     div.textContent = text;
     conversation.appendChild(div);
+
+    if (role === 'assistant') {
+      const tap = document.createElement('span');
+      tap.className = 'miss-tap';
+      tap.textContent = '·';
+      tap.title = '';
+      tap.addEventListener('click', () => {
+        tap.classList.add('sent');
+        fetch(SERVER + '/feedback', { method: 'POST' }).catch(() => {});
+      });
+      conversation.appendChild(tap);
+    }
+
     conversation.scrollTop = conversation.scrollHeight;
     return div;
   }
@@ -259,10 +287,11 @@
     setLoading(true);
 
     try {
-      const res = await fetch('/session', {
+      const res = await fetch(SERVER + '/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ input, agent, provider }),
+        signal: AbortSignal.timeout(600000),  // 10-minute timeout for local LLM
       });
 
       if (!res.ok) {
@@ -293,117 +322,135 @@
     }
   }
 
-  // --- Web Speech API: STT ---
+  // --- STT via server-side Whisper (audio never leaves this device → Mac over Tailscale) ---
 
-  let recognition = null;
-  let shouldListen = false;
+  let mediaRecorder = null;
+  let audioChunks = [];
+  let isRecording = false;
   let silenceTimer = null;
-  let accumulated = '';
-  const SILENCE_MS = 3000;
-
-  if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    recognition = new SR();
-    recognition.continuous = false;
-    recognition.interimResults = true;
-    recognition.lang = 'en-US';
-
-    recognition.onstart = () => {
-      micBtn.classList.add('listening');
-      micBtn.textContent = 'Tap to Stop';
-      setStatus('Listening...', '#4a7');
-    };
-
-    recognition.onresult = (e) => {
-      let interim = '', final = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const t = e.results[i][0].transcript;
-        if (e.results[i].isFinal) final += t;
-        else interim += t;
-      }
-      if (final) accumulated += (accumulated ? ' ' : '') + final;
-      transcript.textContent = accumulated + (interim ? ' ' + interim : '');
-      resetSilenceTimer();
-    };
-
-    recognition.onerror = (e) => {
-      if (e.error === 'no-speech') return;
-      setStatus('Error: ' + e.error, '#a44');
-    };
-
-    recognition.onend = () => {
-      if (shouldListen) {
-        try { recognition.start(); return; } catch {}
-      }
-      clearSilenceTimer();
-      const text = accumulated.trim();
-      accumulated = '';
-      resetMic();
-      if (text) {
-        setStatus('Sending...', '#888');
-        sendToServer(text);
-      } else {
-        setStatus('No speech detected', '#666');
-      }
-    };
-
-    micBtn.textContent = 'Tap to Speak';
-
-    const grantWrap = document.getElementById('grant-wrap');
-    const grantBtn = document.getElementById('grant-btn');
-
-    function requestMicPermission() {
-      return navigator.mediaDevices.getUserMedia({ audio: true })
-        .then(stream => {
-          stream.getTracks().forEach(t => t.stop());
-          setStatus('Mic ready', '#4a7');
-          grantWrap.style.display = 'none';
-        })
-        .catch(err => {
-          setStatus('Mic blocked: ' + err.name, '#a44');
-          grantWrap.style.display = 'block';
-        });
-    }
-
-    grantBtn.addEventListener('click', requestMicPermission);
-    requestMicPermission();
-  } else {
-    voiceUnsupported.style.display = 'block';
-    micBtn.style.display = 'none';
-    setStatus('Speech API not supported in this browser', '#a44');
-  }
-
-  function resetSilenceTimer() {
-    clearSilenceTimer();
-    silenceTimer = setTimeout(() => {
-      if (shouldListen) { shouldListen = false; recognition.stop(); }
-    }, SILENCE_MS);
-  }
-
-  function clearSilenceTimer() {
-    if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
-  }
+  let silencePoller = null;
+  let audioCtx = null;
+  let analyser = null;
+  const SILENCE_MS = 2500;
+  const SILENCE_RMS = 0.04;  // 0–1 normalised; tune up if triggering on background noise
 
   function resetMic() {
-    shouldListen = false;
-    micBtn.classList.remove('listening');
+    micBtn.classList.remove('listening', 'loading');
+    micBtn.disabled = false;
     micBtn.textContent = 'Tap to Speak';
     setStatus('Ready', '#555');
   }
 
-  micBtn.addEventListener('click', () => {
-    if (!recognition) return;
-    if (micBtn.classList.contains('loading')) return;
-    if (shouldListen) {
-      shouldListen = false;
-      clearSilenceTimer();
-      recognition.stop();
-    } else {
-      accumulated = '';
-      transcript.textContent = '';
-      shouldListen = true;
-      recognition.start();
+  function stopSilenceDetection() {
+    if (silencePoller) { clearInterval(silencePoller); silencePoller = null; }
+    if (silenceTimer)  { clearTimeout(silenceTimer);   silenceTimer  = null; }
+    if (analyser)      { analyser.disconnect();         analyser      = null; }
+    if (audioCtx)      { audioCtx.close();              audioCtx      = null; }
+  }
+
+  function stopRecording() {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+  }
+
+  async function startRecording() {
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      setStatus('Mic blocked: ' + err.name, '#a44');
+      document.getElementById('grant-wrap').style.display = 'block';
+      return;
     }
+
+    audioChunks = [];
+    isRecording = true;
+    micBtn.classList.add('listening');
+    micBtn.textContent = 'Tap to Stop';
+    setStatus('Recording...', '#4a7');
+    transcript.textContent = '';
+
+    mediaRecorder = new MediaRecorder(stream);
+    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+
+    mediaRecorder.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      stopSilenceDetection();
+      isRecording = false;
+      micBtn.classList.remove('listening');
+      micBtn.textContent = 'Tap to Speak';
+
+      if (audioChunks.length === 0) { setStatus('No audio captured', '#666'); return; }
+
+      const blob = new Blob(audioChunks, { type: 'audio/webm' });
+      audioChunks = [];
+
+      setStatus('Transcribing...', '#888');
+      micBtn.classList.add('loading');
+      micBtn.disabled = true;
+
+      try {
+        const fd = new FormData();
+        fd.append('audio', blob, `${Date.now()}.webm`);
+        const res = await fetch(SERVER + '/transcribe', { method: 'POST', body: fd });
+        if (!res.ok) throw new Error((await res.json()).detail || 'Transcription failed');
+        const { transcript: text } = await res.json();
+        transcript.textContent = text;
+        micBtn.classList.remove('loading');
+        micBtn.disabled = false;
+        if (text.trim()) {
+          sendToServer(text.trim());
+        } else {
+          setStatus('No speech detected', '#666');
+        }
+      } catch (e) {
+        setStatus('Error: ' + (e.message || 'unknown'), '#a44');
+        micBtn.classList.remove('loading');
+        micBtn.disabled = false;
+        // leave status visible — do not reset
+      }
+    };
+
+    mediaRecorder.start();
+
+    // Silence detection: stop automatically after SILENCE_MS of quiet post-speech
+    try {
+      audioCtx = new AudioContext();
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      audioCtx.createMediaStreamSource(stream).connect(analyser);
+      const buf = new Uint8Array(analyser.frequencyBinCount);
+      let speechSeen = false;
+
+      silencePoller = setInterval(() => {
+        if (!isRecording) return;
+        analyser.getByteFrequencyData(buf);
+        const rms = Math.sqrt(buf.reduce((s, v) => s + v * v, 0) / buf.length) / 255;
+        if (rms > SILENCE_RMS) {
+          speechSeen = true;
+          if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+        } else if (speechSeen && !silenceTimer) {
+          silenceTimer = setTimeout(() => { if (isRecording) stopRecording(); }, SILENCE_MS);
+        }
+      }, 150);
+    } catch {}
+  }
+
+  // Mic permission check on load
+  const grantWrap = document.getElementById('grant-wrap');
+  const grantBtn  = document.getElementById('grant-btn');
+
+  function requestMicPermission() {
+    return navigator.mediaDevices.getUserMedia({ audio: true })
+      .then(s => { s.getTracks().forEach(t => t.stop()); setStatus('Ready', '#555'); grantWrap.style.display = 'none'; })
+      .catch(err => { setStatus('Mic blocked: ' + err.name, '#a44'); grantWrap.style.display = 'block'; });
+  }
+  grantBtn.addEventListener('click', requestMicPermission);
+  requestMicPermission();
+
+  micBtn.textContent = 'Tap to Speak';
+  micBtn.addEventListener('click', () => {
+    if (micBtn.disabled) return;
+    if (isRecording) stopRecording(); else startRecording();
   });
 
   // --- Web Speech API: TTS ---
@@ -413,7 +460,7 @@
   async function speakResponse(text) {
     if (currentAudio) { currentAudio.pause(); currentAudio = null; }
     try {
-      const res = await fetch('/tts', {
+      const res = await fetch(SERVER + '/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text }),
@@ -435,7 +482,7 @@
   // --- Web Push registration ---
 
   async function subscribePush(reg) {
-    const keyRes = await fetch('/vapid-public-key');
+    const keyRes = await fetch(SERVER + '/vapid-public-key');
     const { publicKey } = await keyRes.json();
     if (!publicKey) return;
     const padding = '='.repeat((4 - publicKey.length % 4) % 4);
@@ -450,7 +497,7 @@
       userVisibleOnly: true,
       applicationServerKey: raw,
     });
-    await fetch('/subscribe', {
+    await fetch(SERVER + '/subscribe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(sub.toJSON()),

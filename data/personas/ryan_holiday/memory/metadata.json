@@ -243,5 +243,285 @@
     "text": "{\"date\": \"2026-05-18\", \"sleep_hours\": 5, \"writing_feeling\": \"pushing through mud\", \"tasks_completed\": [\"run\", \"finished rereading Letters from a Stoic \\u2014 Seneca\"], \"mood\": \"rough\", \"blockers\": [\"Cato section not moving \\u2014 third day stuck\"], \"wins\": [\"got the walk in with the boys\", \"Liam found a turtle near the mailbox\"], \"reading\": [\"Letters from a Stoic \\u2014 Seneca (reread, finished on run)\"], \"notes\": \"Finished Letters from a Stoic on the afternoon run. Seneca on wasted time hit differently this time \\u2014 connected to what he's working through with the Cato chapter.\", \"energy\": \"low\", \"focus\": \"struggling\"}",
     "source": "log",
     "date": "2026-05-18"
+  },
+  {
+    "text": "Family in town this week, writing schedule compressed. Deadline pressure starting to clarify things. Writing: argument not landing yet. Stuck on: too many anecdotes, not enough argument. Reading: Daily Stoic \u2014 Holiday. Best thing today: cleared the inbox.",
+    "source": "synthetic_log",
+    "date": "2026-03-01"
+  },
+  {
+    "text": "Travel tomorrow \u2014 trying to get ahead today. Short night \u2014 5.0 hours. Tried to get to the desk early anyway. Writing went clean draft work. Got 3 pages done. Reading: Letters from a Stoic \u2014 Seneca. Best thing today: found the right Seneca quote.",
+    "source": "synthetic_log",
+    "date": "2026-03-02"
+  },
+  {
+    "text": "Family in town this week, writing schedule compressed. Deadline pressure starting to clarify things. Writing: slow and resistant. Stuck on: chapter structure not resolved. Best thing today: Liam read to me before bed.",
+    "source": "synthetic_log",
+    "date": "2026-03-03"
+  },
+  {
+    "text": "The Courage argument is starting to come together. Writing went productive but tired by end. Got 5 pages done. Best thing today: cards finally organized.",
+    "source": "synthetic_log",
+    "date": "2026-03-04"
+  },
+  {
+    "text": "Research day \u2014 less writing, more reading. Need to cut at least a third of this section. Writing went cards coming together. Got 7 pages done. Stuck on: too many anecdotes, not enough argument. Best thing today: Liam read to me before bed.",
+    "source": "synthetic_log",
+    "date": "2026-03-05"
+  },
+  {
+    "text": "Family in town this week, writing schedule compressed. Writing went rough start, found rhythm by midmorning. Got 3 pages done. Stuck on: Cato section stalled. Reading: The Republic \u2014 Plato. Best thing today: family dinner together.",
+    "source": "synthetic_log",
+    "date": "2026-03-06"
+  },
+  {
+    "text": "Family in town this week, writing schedule compressed. Deadline pressure starting to clarify things. Slept well, 8.0 hours. Woke up with some clarity about the chapter. Writing went strong session, ran long. Got 4 pages done. Stuck on: narrative thread not clear. Reading: On the Shortness of Life \u2014 Seneca. Best thing today: got the morning walk in.",
+    "source": "synthetic_log",
+    "date": "2026-03-07"
+  },
+  {
+    "text": "Research day \u2014 less writing, more reading. Seneca on wasted time keeps coming up. Writing: rewriting more than writing. Stuck on: kids had rough night. Reading: Stillness Is the Key \u2014 Holiday. Best thing today: hit word count target.",
+    "source": "synthetic_log",
+    "date": "2026-03-08"
+  },
+  {
+    "text": "Research day \u2014 less writing, more reading. Seneca on wasted time keeps coming up. Writing went pushing through mud. Got 5 pages done. Stuck on: chapter structure not resolved. Reading: On Living and Dying Well \u2014 Cicero. Best thing today: good run in the park.",
+    "source": "synthetic_log",
+    "date": "2026-03-09"
+  },
+  {
+    "text": "Reading Man's Search for Meaning \u2014 Frankl on the run. Writing went strong session, ran long. Got 3 pages done. Stuck on: kids had rough night. Best thing today: good reading session.",
+    "source": "synthetic_log",
+    "date": "2026-03-10"
+  },
+  {
+    "text": "Rough start but finished strong. Slept well, 8.0 hours. Woke up with some clarity about the chapter. Writing went strong session, ran long. Got 3 pages done. Stuck on: couldn't get quiet time until afternoon. Reading: Daily Stoic \u2014 Holiday. Best thing today: got the morning walk in.",
+    "source": "synthetic_log",
+    "date": "2026-03-11"
+  },
+  {
+    "text": "Writing went good flow, pages moving today. Deadline pressure starting to clarify things. Writing went good flow, pages moving. Got 3 pages done. Reading: Antifragile \u2014 Taleb. Best thing today: strong email to editor.",
+    "source": "synthetic_log",
+    "date": "2026-03-12"
+  },
+  {
+    "text": "Travel tomorrow \u2014 trying to get ahead today. Seneca on wasted time keeps coming up. Slept well, 9.5 hours. Woke up with some clarity about the chapter. Writing: blocked on structure. Reading: The Power of Myth \u2014 Campbell. Best thing today: good run in the park.",
+    "source": "synthetic_log",
+    "date": "2026-03-13"
+  },
+  {
+    "text": "Spent the morning on the introduction chapter. Short night \u2014 5.5 hours. Tried to get to the desk early anyway. Writing: better than yesterday. Stuck on: Cato section stalled. Best thing today: cards finally organized.",
+    "source": "synthetic_log",
+    "date": "2026-03-14"
+  },
+  {
+    "text": "Travel tomorrow \u2014 trying to get ahead today. Good conversation with Nils about structure. Writing went better than yesterday. Got 5 pages done. Stuck on: too many anecdotes, not enough argument. Reading: Antifragile \u2014 Taleb. Best thing today: resolved the structure problem.",
+    "source": "synthetic_log",
+    "date": "2026-03-15"
+  },
+  {
+    "text": "Family in town this week, writing schedule compressed. Boys were up early \u2014 lost the quiet morning window. Writing went pushing through mud. Got 6 pages done. Stuck on: source material gap \u2014 need to research. Best thing today: resolved the structure problem.",
+    "source": "synthetic_log",
+    "date": "2026-03-16"
+  },
+  {
+    "text": "Reading Man's Search for Meaning \u2014 Frankl on the run. Good conversation with Nils about structure. Writing went productive but tired by end. Got 4 pages done. Best thing today: finished a book.",
+    "source": "synthetic_log",
+    "date": "2026-03-17"
+  },
+  {
+    "text": "Rough start but finished strong. Thinking about the throughline more carefully. Slept well, 8.0 hours. Woke up with some clarity about the chapter. Writing went productive but tired by end. Got 4 pages done. Stuck on: chapter structure not resolved. Reading: Man's Search for Meaning \u2014 Frankl. Best thing today: cleared the inbox.",
+    "source": "synthetic_log",
+    "date": "2026-03-18"
+  },
+  {
+    "text": "Rough start but finished strong. Writing went productive but tired by end. Got 1 pages done. Best thing today: cleared the inbox.",
+    "source": "synthetic_log",
+    "date": "2026-03-19"
+  },
+  {
+    "text": "The conclusion argument is starting to come together. Short night \u2014 5.0 hours. Tried to get to the desk early anyway. Writing went good flow, pages moving. Got 4 pages done. Stuck on: narrative thread not clear. Best thing today: cards finally organized.",
+    "source": "synthetic_log",
+    "date": "2026-03-20"
+  },
+  {
+    "text": "Spent the morning on the first chapter. The Plutarch parallel is working. Slept well, 9.5 hours. Woke up with some clarity about the chapter. Writing went blocked on structure. Got 5 pages done. Stuck on: competing deadlines pulling focus. Best thing today: Liam read to me before bed.",
+    "source": "synthetic_log",
+    "date": "2026-03-21"
+  },
+  {
+    "text": "Good day overall. Slept well, 9.0 hours. Woke up with some clarity about the chapter. Writing went better than yesterday. Got 3 pages done. Stuck on: tired from late night. Reading: Stillness Is the Key \u2014 Holiday. Best thing today: good run in the park.",
+    "source": "synthetic_log",
+    "date": "2026-03-22"
+  },
+  {
+    "text": "Travel tomorrow \u2014 trying to get ahead today. Boys were up early \u2014 lost the quiet morning window. Writing went productive but tired by end. Got 5 pages done. Stuck on: Cato section stalled. Reading: On Living and Dying Well \u2014 Cicero. Best thing today: family dinner together.",
+    "source": "synthetic_log",
+    "date": "2026-03-23"
+  },
+  {
+    "text": "Travel tomorrow \u2014 trying to get ahead today. Need to cut at least a third of this section. Writing went good flow, pages moving. Got 4 pages done. Best thing today: resolved the structure problem.",
+    "source": "synthetic_log",
+    "date": "2026-03-24"
+  },
+  {
+    "text": "Good day overall. Writing: clean draft work. Stuck on: source material gap \u2014 need to research. Best thing today: took the afternoon off \u2014 needed it.",
+    "source": "synthetic_log",
+    "date": "2026-03-25"
+  },
+  {
+    "text": "Family in town this week, writing schedule compressed. Writing went rewriting more than writing. Got 5 pages done. Stuck on: tired from late night. Best thing today: found the right Seneca quote.",
+    "source": "synthetic_log",
+    "date": "2026-03-26"
+  },
+  {
+    "text": "The Justice argument is starting to come together. Deadline pressure starting to clarify things. Short night \u2014 5.0 hours. Tried to get to the desk early anyway. Writing went clean draft work. Got 1 pages done. Reading: The Obstacle Is the Way \u2014 Holiday. Best thing today: cards finally organized.",
+    "source": "synthetic_log",
+    "date": "2026-03-27"
+  },
+  {
+    "text": "Rough start but finished strong. Need to cut at least a third of this section. Writing went rewriting more than writing. Got 4 pages done. Stuck on: narrative thread not clear. Reading: Man's Search for Meaning \u2014 Frankl. Best thing today: workout done before 7am.",
+    "source": "synthetic_log",
+    "date": "2026-03-28"
+  },
+  {
+    "text": "Writing went distracted, kept returning to research today. Need to cut at least a third of this section. Writing went distracted, kept returning to research. Got 3 pages done. Stuck on: Cato section stalled. Reading: On Living and Dying Well \u2014 Cicero. Best thing today: finished a chapter draft.",
+    "source": "synthetic_log",
+    "date": "2026-03-29"
+  },
+  {
+    "text": "Research day \u2014 less writing, more reading. The Plutarch parallel is working. Writing went blocked on structure. Got 3 pages done. Stuck on: chapter structure not resolved. Reading: The Republic \u2014 Plato. Best thing today: found the right Seneca quote.",
+    "source": "synthetic_log",
+    "date": "2026-03-30"
+  },
+  {
+    "text": "Rough start but finished strong. Thinking about the throughline more carefully. Writing went good flow, pages moving. Got 4 pages done. Stuck on: Cato section stalled. Best thing today: family dinner together.",
+    "source": "synthetic_log",
+    "date": "2026-03-31"
+  },
+  {
+    "text": "Travel tomorrow \u2014 trying to get ahead today. Thinking about the throughline more carefully. Writing went rough start, found rhythm by midmorning. Got 2 pages done. Reading: The Power of Myth \u2014 Campbell. Best thing today: good reading session.",
+    "source": "synthetic_log",
+    "date": "2026-04-01"
+  },
+  {
+    "text": "Writing went better than yesterday today. Need to cut at least a third of this section. Writing went better than yesterday. Got 4 pages done. Best thing today: workout done before 7am.",
+    "source": "synthetic_log",
+    "date": "2026-04-02"
+  },
+  {
+    "text": "The Temperance argument is starting to come together. Good conversation with Nils about structure. Slept well, 8.5 hours. Woke up with some clarity about the chapter. Writing went distracted, kept returning to research. Got 4 pages done. Best thing today: got the morning walk in.",
+    "source": "synthetic_log",
+    "date": "2026-04-03"
+  },
+  {
+    "text": "Rough start but finished strong. Deadline pressure starting to clarify things. Writing went better than yesterday. Got 4 pages done. Stuck on: chapter structure not resolved. Reading: Discourses \u2014 Epictetus. Best thing today: found the right Seneca quote.",
+    "source": "synthetic_log",
+    "date": "2026-04-04"
+  },
+  {
+    "text": "Travel tomorrow \u2014 trying to get ahead today. Good conversation with Nils about structure. Slept well, 8.5 hours. Woke up with some clarity about the chapter. Writing went productive but tired by end. Got 3 pages done. Stuck on: chapter structure not resolved. Reading: Man's Search for Meaning \u2014 Frankl. Best thing today: cleared the inbox.",
+    "source": "synthetic_log",
+    "date": "2026-04-05"
+  },
+  {
+    "text": "Research day \u2014 less writing, more reading. Need to cut at least a third of this section. Writing: cards coming together. Stuck on: source material gap \u2014 need to research. Best thing today: took the afternoon off \u2014 needed it.",
+    "source": "synthetic_log",
+    "date": "2026-04-06"
+  },
+  {
+    "text": "Sent draft sections to editor. Thinking about the throughline more carefully. Slept well, 8.0 hours. Woke up with some clarity about the chapter. Writing went rough start, found rhythm by midmorning. Got 4 pages done. Stuck on: Cato section stalled. Best thing today: resolved the structure problem.",
+    "source": "synthetic_log",
+    "date": "2026-04-07"
+  },
+  {
+    "text": "Research day \u2014 less writing, more reading. Good conversation with Nils about structure. Writing went productive but tired by end. Got 3 pages done. Reading: The Art of War \u2014 Sun Tzu. Best thing today: cleared the inbox.",
+    "source": "synthetic_log",
+    "date": "2026-04-08"
+  },
+  {
+    "text": "Sent draft sections to editor. Thinking about the throughline more carefully. Writing went productive but tired by end. Got 5 pages done. Stuck on: too many anecdotes, not enough argument. Reading: The Power of Myth \u2014 Campbell. Best thing today: finished a book.",
+    "source": "synthetic_log",
+    "date": "2026-04-09"
+  },
+  {
+    "text": "The first argument is starting to come together. Slept well, 8.0 hours. Woke up with some clarity about the chapter. Writing went good flow, pages moving. Got 2 pages done. Stuck on: competing deadlines pulling focus. Reading: The Republic \u2014 Plato. Best thing today: cleared the inbox.",
+    "source": "synthetic_log",
+    "date": "2026-04-10"
+  },
+  {
+    "text": "Writing went better than yesterday today. Boys were up early \u2014 lost the quiet morning window. Writing went better than yesterday. Got 6 pages done. Best thing today: cleared the inbox.",
+    "source": "synthetic_log",
+    "date": "2026-04-11"
+  },
+  {
+    "text": "Reading Letters from a Stoic \u2014 Seneca on the run. Writing went good flow, pages moving. Got 3 pages done. Best thing today: finished a book.",
+    "source": "synthetic_log",
+    "date": "2026-04-12"
+  },
+  {
+    "text": "Rough start but finished strong. The Plutarch parallel is working. Short night \u2014 5.5 hours. Tried to get to the desk early anyway. Writing: productive but tired by end. Stuck on: too many anecdotes, not enough argument. Reading: On the Shortness of Life \u2014 Seneca. Best thing today: family dinner together.",
+    "source": "synthetic_log",
+    "date": "2026-04-13"
+  },
+  {
+    "text": "The Courage argument is starting to come together. Seneca on wasted time keeps coming up. Writing went slow and resistant. Got 7 pages done. Stuck on: couldn't get quiet time until afternoon. Reading: The Obstacle Is the Way \u2014 Holiday. Best thing today: good run in the park.",
+    "source": "synthetic_log",
+    "date": "2026-04-14"
+  },
+  {
+    "text": "Travel tomorrow \u2014 trying to get ahead today. Boys were up early \u2014 lost the quiet morning window. Slept well, 8.5 hours. Woke up with some clarity about the chapter. Writing: rough start, found rhythm by midmorning. Reading: The Republic \u2014 Plato. Best thing today: found the right Seneca quote.",
+    "source": "synthetic_log",
+    "date": "2026-04-15"
+  },
+  {
+    "text": "Spent the morning on the first chapter. Thinking about the throughline more carefully. Slept well, 8.5 hours. Woke up with some clarity about the chapter. Writing went good flow, pages moving. Got 1 pages done. Stuck on: kids had rough night. Reading: Lives \u2014 Plutarch. Best thing today: found the right Seneca quote.",
+    "source": "synthetic_log",
+    "date": "2026-04-16"
+  },
+  {
+    "text": "Sent draft sections to editor. Good conversation with Nils about structure. Slept well, 8.5 hours. Woke up with some clarity about the chapter. Writing went strong session, ran long. Got 4 pages done. Stuck on: narrative thread not clear. Reading: Letters from a Stoic \u2014 Seneca. Best thing today: found the right Seneca quote.",
+    "source": "synthetic_log",
+    "date": "2026-04-17"
+  },
+  {
+    "text": "Good day overall. Writing went strong session, ran long. Got 4 pages done. Stuck on: tired from late night. Reading: Man's Search for Meaning \u2014 Frankl. Best thing today: strong email to editor.",
+    "source": "synthetic_log",
+    "date": "2026-04-18"
+  },
+  {
+    "text": "Research day \u2014 less writing, more reading. Seneca on wasted time keeps coming up. Slept well, 9.0 hours. Woke up with some clarity about the chapter. Writing went rewriting more than writing. Got 2 pages done. Reading: Man's Search for Meaning \u2014 Frankl. Best thing today: hit word count target.",
+    "source": "synthetic_log",
+    "date": "2026-04-19"
+  },
+  {
+    "text": "Family in town this week, writing schedule compressed. Slept well, 9.5 hours. Woke up with some clarity about the chapter. Writing went clean draft work. Got 3 pages done. Stuck on: competing deadlines pulling focus. Reading: Daily Stoic \u2014 Holiday. Best thing today: resolved the structure problem.",
+    "source": "synthetic_log",
+    "date": "2026-04-20"
+  },
+  {
+    "text": "Spent the morning on the conclusion chapter. Short night \u2014 4.5 hours. Tried to get to the desk early anyway. Writing: blocked on structure. Stuck on: introduction still not right. Reading: Stillness Is the Key \u2014 Holiday. Best thing today: found the right Seneca quote.",
+    "source": "synthetic_log",
+    "date": "2026-04-21"
+  },
+  {
+    "text": "Research day \u2014 less writing, more reading. The Plutarch parallel is working. Slept well, 8.5 hours. Woke up with some clarity about the chapter. Writing: rewriting more than writing. Reading: The Republic \u2014 Plato. Best thing today: good run in the park.",
+    "source": "synthetic_log",
+    "date": "2026-04-22"
+  },
+  {
+    "text": "The Cato argument is starting to come together. Thinking about the throughline more carefully. Slept well, 8.5 hours. Woke up with some clarity about the chapter. Writing went clear and sharp. Got 5 pages done. Stuck on: couldn't get quiet time until afternoon. Best thing today: cards finally organized.",
+    "source": "synthetic_log",
+    "date": "2026-04-23"
+  },
+  {
+    "text": "Research day \u2014 less writing, more reading. Boys were up early \u2014 lost the quiet morning window. Short night \u2014 5.0 hours. Tried to get to the desk early anyway. Writing went cards coming together. Got 1 pages done. Stuck on: competing deadlines pulling focus. Reading: The Obstacle Is the Way \u2014 Holiday. Best thing today: cards finally organized.",
+    "source": "synthetic_log",
+    "date": "2026-04-24"
+  },
+  {
+    "text": "Family in town this week, writing schedule compressed. Deadline pressure starting to clarify things. Writing went distracted, kept returning to research. Got 3 pages done. Stuck on: competing deadlines pulling focus. Reading: Meditations \u2014 Marcus Aurelius. Best thing today: got the morning walk in.",
+    "source": "synthetic_log",
+    "date": "2026-04-25"
   }
 ]

@@ -1,29 +1,69 @@
 """
-tools/baselines.py — User-defined baseline periods.
+tools/baselines.py — User-defined baseline periods and semantic state anchors.
 
-Stores named periods the user has identified as meaningful reference points:
-fulfilled periods, difficult periods, transitional periods. These become
-the most personally resonant baselines for pattern comparison.
+Two complementary baseline systems:
 
-Each period carries:
-  - A user memory narrative (what the user says about it)
-  - Date bounds (if the user can place it in time)
-  - A fulfillment score (user's retrospective assessment)
-  - Retrospective layers — the user's reassessment at later dates
+1. Biographical periods (write_baseline_period / read_baseline_periods):
+   Named life periods the user has identified as meaningful reference points.
+   Stores the user's own narrative, fulfillment score, and retrospective layers.
 
-The retrospective layer captures time dilation of memory: how a period
-is understood changes over time. A period that felt great at the time
-may be reassessed differently at 6 months or 1 year's distance.
+2. Semantic anchors (create_semantic_anchor / score_against_anchors):
+   Canonical human experiential states (burnout, deep_focus, etc.) embedded
+   using all-MiniLM-L6-v2. Pattern Miner scores current log centroids against
+   these anchors from day one — no months of accumulation required.
 
-Persona-scoped when AI_TEST_PERSONA is set. Sensitive-tier, local-only.
+3. Aspirational baseline (write_aspirational_baseline):
+   Goals-oriented self-report from the Goals Interview. Stores what good/hard
+   weeks look like in the user's own words. Working draft at A3; re-run at A5b
+   after the full Goals Interview.
+
+4. Shuffled null score (shuffled_null_score):
+   Permutation baseline for sparse data — establishes what random signal looks
+   like for this user's log history before treating deviations as meaningful.
+
+Biographical periods and aspirational baselines are persona-scoped when
+AI_TEST_PERSONA is set. Semantic anchors are not persona-scoped (canonical).
+Sensitive-tier, local-only.
 """
 
 import json
 import os
-from datetime import date
+import random
+from datetime import date, timedelta
 from pathlib import Path
 
 _ROOT = Path(__file__).parent.parent
+
+# Lazy-loaded embedding model — same as core/memory.py (all-MiniLM-L6-v2, 384-dim).
+# Do not introduce a second embedding model.
+_model = None
+
+
+def _get_model():
+    global _model
+    if _model is None:
+        from sentence_transformers import SentenceTransformer
+        _model = SentenceTransformer("all-MiniLM-L6-v2")
+    return _model
+
+
+def _embed(text: str) -> list[float]:
+    """Embed text and return as a plain list for JSON serialisation."""
+    import numpy as np
+    model = _get_model()
+    vec = model.encode([text], convert_to_numpy=True, normalize_embeddings=True)
+    return vec[0].astype("float32").tolist()
+
+
+def _cosine_sim(a: list[float], b: list[float]) -> float:
+    """Cosine similarity of two pre-normalised vectors (dot product)."""
+    import numpy as np
+    return float(np.dot(np.array(a, dtype="float32"), np.array(b, dtype="float32")))
+
+
+def _baselines_dir() -> Path:
+    """Directory for non-persona-scoped baseline data."""
+    return _ROOT / "data" / "baselines"
 
 
 def _baselines_path() -> Path:
@@ -31,6 +71,40 @@ def _baselines_path() -> Path:
     if persona:
         return _ROOT / "data" / "personas" / persona / "baselines.json"
     return _ROOT / "data" / "baselines.json"
+
+
+def _anchors_path() -> Path:
+    return _baselines_dir() / "semantic_anchors.json"
+
+
+def _aspirational_path(persona: str) -> Path:
+    if persona:
+        p = _ROOT / "data" / "personas" / persona / "aspirational_baseline.json"
+    else:
+        p = _baselines_dir() / "aspirational_baseline.json"
+    return p
+
+
+def _logs_dir(persona: str) -> Path:
+    if persona:
+        return _ROOT / "data" / "personas" / persona / "logs"
+    return _ROOT / "data" / "logs"
+
+
+def _load_anchors() -> list[dict]:
+    p = _anchors_path()
+    if not p.exists():
+        return []
+    with open(p) as f:
+        return json.load(f)
+
+
+def _save_anchors(anchors: list[dict]) -> None:
+    p = _anchors_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "w") as f:
+        json.dump(anchors, f, indent=2)
+    os.chmod(p, 0o600)
 
 
 def _load() -> list[dict]:
@@ -206,6 +280,248 @@ def get_baseline_context(start_date: str, end_date: str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Semantic anchor functions
+# ---------------------------------------------------------------------------
+
+
+def create_semantic_anchor(label: str, description: str) -> str:
+    """
+    Embed a canonical state description and store it as a named anchor.
+
+    Anchors are universal, not persona-scoped — they represent canonical human
+    experiential states (burnout, deep_focus, etc.) that all analysis can score
+    against regardless of which user or persona is active.
+
+    Args:
+        label:       Short slug (e.g. "burnout", "deep_focus").
+        description: Prose description of what this state feels like. The richer
+                     and more specific, the better the embedding quality.
+
+    Returns:
+        Confirmation string.
+    """
+    anchors = _load_anchors()
+    existing = {a["label"]: i for i, a in enumerate(anchors)}
+
+    today = date.today().isoformat()
+    embedding = _embed(description)
+
+    entry = {
+        "label": label,
+        "description": description,
+        "embedding": embedding,
+        "created": today,
+    }
+
+    if label in existing:
+        entry["created"] = anchors[existing[label]].get("created", today)
+        anchors[existing[label]] = entry
+        action = "updated"
+    else:
+        anchors.append(entry)
+        action = "created"
+
+    _save_anchors(anchors)
+    return f"Semantic anchor '{label}' {action}."
+
+
+def write_aspirational_baseline(
+    persona: str,
+    good_week: str,
+    hard_week: str,
+    peak_days: str,
+    floor_days: str,
+) -> str:
+    """
+    Record the user's aspirational baseline from the Goals Interview.
+
+    Stores what good/hard weeks and peak/floor days look like in the user's own
+    words. This is a working draft at A3; re-run at A5b after the full Goals
+    Interview to update with mission-level data.
+
+    Args:
+        persona:    Persona slug for test runs; empty string for the real user.
+        good_week:  User's description of a recent week that felt genuinely good.
+        hard_week:  User's description of a week that felt hard or depleted.
+        peak_days:  What a peak day looks like — signals of the user's best days.
+        floor_days: The floor — a day to avoid; signals of heading there.
+
+    Returns:
+        Confirmation string.
+    """
+    p = _aspirational_path(persona)
+    p.parent.mkdir(parents=True, exist_ok=True)
+
+    today = date.today().isoformat()
+    existing = {}
+    if p.exists():
+        with open(p) as f:
+            existing = json.load(f)
+
+    entry = {
+        "persona": persona,
+        "good_week": good_week,
+        "hard_week": hard_week,
+        "peak_days": peak_days,
+        "floor_days": floor_days,
+        "created": existing.get("created", today),
+        "updated": today,
+    }
+
+    with open(p, "w") as f:
+        json.dump(entry, f, indent=2)
+    os.chmod(p, 0o600)
+
+    action = "updated" if existing else "created"
+    return f"Aspirational baseline {action} ({today})."
+
+
+def shuffled_null_score(
+    persona: str,
+    window_days: int,
+    n_permutations: int = 100,
+) -> dict:
+    """
+    Build a null distribution of anchor similarity scores via random permutation.
+
+    Takes the full log history for a persona, randomly samples `window_days`-sized
+    windows `n_permutations` times, and records the anchor similarity scores for
+    each draw. Returns mean ± std per anchor — the baseline against which actual
+    window scores can be compared.
+
+    Use this when you have sparse data (< 3 months) and want to distinguish real
+    signal from random variation before reporting a pattern as meaningful.
+
+    Args:
+        persona:        Persona slug; empty string for the real user.
+        window_days:    Size of the analysis window in days (e.g. 7, 30).
+        n_permutations: Number of random draws (default 100).
+
+    Returns:
+        Dict of {anchor_label: {"mean": float, "std": float, "n": int}}.
+        Empty dict if fewer log entries exist than window_days or no anchors set.
+    """
+    import numpy as np
+
+    anchors = _load_anchors()
+    if not anchors:
+        return {}
+
+    logs_dir = _logs_dir(persona)
+    if not logs_dir.exists():
+        return {}
+
+    # Collect all available log entries as (date_str, text) pairs.
+    entries: list[tuple[str, str]] = []
+    for log_file in sorted(logs_dir.glob("*.json")):
+        if log_file.name == "quality_events.json":
+            continue
+        try:
+            with open(log_file) as f:
+                data = json.load(f)
+            entries.append((log_file.stem, json.dumps(data)))
+        except (json.JSONDecodeError, OSError):
+            continue
+
+    if len(entries) < window_days:
+        return {}
+
+    # Precompute embeddings for all entries to avoid re-embedding each permutation.
+    all_embeddings = [_embed(text) for _, text in entries]
+    anchor_embeddings = [a["embedding"] for a in anchors]
+    anchor_labels = [a["label"] for a in anchors]
+
+    scores_by_anchor: dict[str, list[float]] = {label: [] for label in anchor_labels}
+
+    for _ in range(n_permutations):
+        sample_indices = random.sample(range(len(entries)), window_days)
+        sample_vecs = [all_embeddings[i] for i in sample_indices]
+        centroid = np.mean(np.array(sample_vecs, dtype="float32"), axis=0)
+        norm = np.linalg.norm(centroid)
+        if norm > 0:
+            centroid = centroid / norm
+        for label, anchor_vec in zip(anchor_labels, anchor_embeddings):
+            scores_by_anchor[label].append(_cosine_sim(centroid.tolist(), anchor_vec))
+
+    result = {}
+    for label, scores in scores_by_anchor.items():
+        arr = np.array(scores, dtype="float32")
+        result[label] = {
+            "mean": float(arr.mean()),
+            "std": float(arr.std()),
+            "n": n_permutations,
+        }
+    return result
+
+
+def score_against_anchors(
+    persona: str,
+    date_range: dict,
+) -> dict:
+    """
+    Score a date range's log entries against all semantic anchors.
+
+    Embeds each log entry in the range, averages to a centroid, then computes
+    cosine similarity to every semantic anchor. Higher similarity = current state
+    resembles that anchor more closely.
+
+    Args:
+        persona:    Persona slug; empty string for the real user.
+        date_range: Dict with "start" and "end" keys (ISO dates, YYYY-MM-DD).
+
+    Returns:
+        Dict of {anchor_label: cosine_similarity (0.0–1.0)}.
+        Empty dict if no logs in range or no anchors exist.
+    """
+    import numpy as np
+
+    anchors = _load_anchors()
+    if not anchors:
+        return {}
+
+    start_str = date_range.get("start", "")
+    end_str = date_range.get("end", "")
+    if not start_str or not end_str:
+        return {}
+
+    try:
+        start_dt = date.fromisoformat(start_str)
+        end_dt = date.fromisoformat(end_str)
+    except ValueError:
+        return {}
+
+    logs_dir = _logs_dir(persona)
+    if not logs_dir.exists():
+        return {}
+
+    embeddings = []
+    current = start_dt
+    while current <= end_dt:
+        log_file = logs_dir / f"{current.isoformat()}.json"
+        if log_file.exists():
+            try:
+                with open(log_file) as f:
+                    data = json.load(f)
+                embeddings.append(_embed(json.dumps(data)))
+            except (json.JSONDecodeError, OSError):
+                pass
+        current += timedelta(days=1)
+
+    if not embeddings:
+        return {}
+
+    centroid = np.mean(np.array(embeddings, dtype="float32"), axis=0)
+    norm = np.linalg.norm(centroid)
+    if norm > 0:
+        centroid = centroid / norm
+
+    return {
+        anchor["label"]: _cosine_sim(centroid.tolist(), anchor["embedding"])
+        for anchor in anchors
+    }
+
+
+# ---------------------------------------------------------------------------
 # Tool schemas
 # ---------------------------------------------------------------------------
 
@@ -314,5 +630,125 @@ GET_BASELINE_CONTEXT_SCHEMA = {
             "end_date": {"type": "string", "description": "ISO date (YYYY-MM-DD)."},
         },
         "required": ["start_date", "end_date"],
+    },
+}
+
+CREATE_SEMANTIC_ANCHOR_SCHEMA = {
+    "name": "create_semantic_anchor",
+    "description": (
+        "Embed a canonical experiential state and store it as a named anchor. "
+        "Anchors are universal reference points (burnout, deep_focus, anxiety, etc.) "
+        "that the Pattern Miner scores current log windows against. "
+        "Not persona-scoped — anchors are shared across all analysis."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "label": {
+                "type": "string",
+                "description": "Short slug identifier (e.g. 'burnout', 'deep_focus').",
+            },
+            "description": {
+                "type": "string",
+                "description": (
+                    "Prose description of what this state feels like — "
+                    "the richer and more specific, the better the embedding quality."
+                ),
+            },
+        },
+        "required": ["label", "description"],
+    },
+}
+
+WRITE_ASPIRATIONAL_BASELINE_SCHEMA = {
+    "name": "write_aspirational_baseline",
+    "description": (
+        "Record the user's aspirational baseline from the Goals Interview. "
+        "Stores what good/hard weeks and peak/floor days look like in the user's own words. "
+        "Working draft at A3; re-run after the full Goals Interview (A5b) to update "
+        "with mission-level data."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "persona": {
+                "type": "string",
+                "description": "Persona slug for test runs; empty string for the real user.",
+            },
+            "good_week": {
+                "type": "string",
+                "description": "User's description of a recent week that felt genuinely good.",
+            },
+            "hard_week": {
+                "type": "string",
+                "description": "User's description of a week that felt hard or depleted.",
+            },
+            "peak_days": {
+                "type": "string",
+                "description": "What a peak day looks like — signals of the user's best days.",
+            },
+            "floor_days": {
+                "type": "string",
+                "description": "The floor — a day to avoid; signals of heading there.",
+            },
+        },
+        "required": ["persona", "good_week", "hard_week", "peak_days", "floor_days"],
+    },
+}
+
+SHUFFLED_NULL_SCORE_SCHEMA = {
+    "name": "shuffled_null_score",
+    "description": (
+        "Build a null distribution of anchor similarity scores via random permutation. "
+        "Randomly samples window_days-sized windows from the full log history n_permutations times "
+        "and returns mean ± std per anchor. "
+        "Use when data is sparse (< 3 months) to distinguish real signal from random variation."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "persona": {
+                "type": "string",
+                "description": "Persona slug; empty string for the real user.",
+            },
+            "window_days": {
+                "type": "integer",
+                "description": "Analysis window size in days (e.g. 7, 30).",
+            },
+            "n_permutations": {
+                "type": "integer",
+                "description": "Number of random draws (default 100).",
+            },
+        },
+        "required": ["persona", "window_days"],
+    },
+}
+
+SCORE_AGAINST_ANCHORS_SCHEMA = {
+    "name": "score_against_anchors",
+    "description": (
+        "Score a date range's log entries against all semantic anchors. "
+        "Returns cosine similarity (0–1) for each anchor — higher means current state "
+        "more closely resembles that canonical experiential state. "
+        "Call at the start of every Pattern Miner session to orient the analysis."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "persona": {
+                "type": "string",
+                "description": "Persona slug; empty string for the real user.",
+            },
+            "date_range": {
+                "type": "object",
+                "description": "Dict with 'start' and 'end' keys (ISO dates YYYY-MM-DD).",
+                "properties": {
+                    "start": {"type": "string", "description": "Start date YYYY-MM-DD."},
+                    "end": {"type": "string", "description": "End date YYYY-MM-DD."},
+                },
+                "required": ["start", "end"],
+            },
+        },
+        "required": ["persona", "date_range"],
     },
 }

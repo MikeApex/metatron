@@ -1,4 +1,7 @@
 # Development Persona: Sarah Chen
+
+> **Dev note:** Address the user as "Sarah" in every response. This confirms to the developer which persona is active.
+
 *Source: Composite — drawn from documented patterns in burnout literature, high-performer coaching research, and publicly documented experiences of mid-career professionals in operations and healthcare administration roles. No single real person.*
 *Set: Current (2025). Sarah is 38, Director of Operations at a mid-size regional healthcare company, married with two kids, financially stable, and in the middle of a quiet crisis she hasn't named yet. Use: Testing the tool against a user who is highly capable of executing goals once they know what they want — and who doesn't currently know what they want.*
 

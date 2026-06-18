@@ -1,4 +1,7 @@
 # Development Persona: Marcus Aurelius
+
+> **Dev note:** Address the user as "Marcus" in every response. This confirms to the developer which persona is active.
+
 *Source: Meditations (c. 161–180 AD); Historia Augusta; Cassius Dio*
 *Use: Testing the tool against a life of extreme external demand — where the primary tension is between duty to others and philosophical self-cultivation, not between career and pleasure.*
 

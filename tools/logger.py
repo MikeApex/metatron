@@ -7,8 +7,12 @@ All logs are stored locally in data/logs/YYYY-MM-DD.json — Sensitive-tier from
 
 import json
 import os
-from datetime import date
+import threading
+from datetime import date, datetime
 from pathlib import Path
+
+_WRITE_LOG_LOCK = threading.Lock()
+_WRITE_QUALITY_EVENT_LOCK = threading.Lock()
 
 _ROOT = Path(__file__).parent.parent
 
@@ -45,19 +49,16 @@ def write_log(content: dict | None = None, log_date: str = "") -> str:
     logs_dir.mkdir(parents=True, exist_ok=True)
     log_path = logs_dir / f"{log_date}.json"
 
-    # Merge with existing entry if one exists for today
-    existing = {}
-    if log_path.exists():
-        with open(log_path) as f:
-            existing = json.load(f)
-
-    existing.update(content)
-    existing["date"] = log_date
-
-    with open(log_path, "w") as f:
-        json.dump(existing, f, indent=2)
-
-    os.chmod(log_path, 0o600)
+    with _WRITE_LOG_LOCK:
+        existing = {}
+        if log_path.exists():
+            with open(log_path) as f:
+                existing = json.load(f)
+        existing.update(content)
+        existing["date"] = log_date
+        with open(log_path, "w") as f:
+            json.dump(existing, f, indent=2)
+        os.chmod(log_path, 0o600)
 
     try:
         from core.memory import index_entry
@@ -89,6 +90,44 @@ def read_log(log_date: str = "") -> dict:
 
     with open(log_path) as f:
         return json.load(f)
+
+
+def write_quality_event(
+    event_type: str,
+    source_agent: str = "",
+    detail: str = "",
+    session_id: str = "",
+) -> str:
+    """
+    Append a quality event to data/logs/quality_events.json (JSON Lines format).
+
+    Args:
+        event_type: ROUTING_MISS | USER_CORRECTION (or any future type)
+        source_agent: Which agent emitted or missed the signal
+        detail: Brief description of what was missed or corrected
+        session_id: Any string identifying the current session (date/time or short ID)
+
+    Returns:
+        Confirmation string.
+    """
+    logs_dir = _logs_dir()
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    events_path = logs_dir / "quality_events.json"
+
+    event = {
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "session_id": session_id,
+        "event_type": event_type,
+        "source_agent": source_agent,
+        "detail": detail,
+    }
+
+    with _WRITE_QUALITY_EVENT_LOCK:
+        with open(events_path, "a") as f:
+            f.write(json.dumps(event) + "\n")
+        os.chmod(events_path, 0o600)
+
+    return f"Quality event logged: {event_type}"
 
 
 # Tool schemas — registered with the Claude API in orchestrator.register_tools()
@@ -132,5 +171,36 @@ READ_LOG_SCHEMA = {
             },
         },
         "required": [],
+    },
+}
+
+WRITE_QUALITY_EVENT_SCHEMA = {
+    "name": "write_quality_event",
+    "description": (
+        "Log a quality event for the self-improvement protocol. "
+        "Use event_type ROUTING_MISS when the original message carried a signal no specialist surfaced. "
+        "Use event_type USER_CORRECTION when the user re-states or corrects a prior turn."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "event_type": {
+                "type": "string",
+                "description": "ROUTING_MISS or USER_CORRECTION",
+            },
+            "source_agent": {
+                "type": "string",
+                "description": "Which agent emitted or missed the signal (e.g. 'synthesizer', 'mental_wellbeing')",
+            },
+            "detail": {
+                "type": "string",
+                "description": "Brief description of what was missed or corrected",
+            },
+            "session_id": {
+                "type": "string",
+                "description": "Any string identifying this session — use the date/time or a short ID",
+            },
+        },
+        "required": ["event_type"],
     },
 }

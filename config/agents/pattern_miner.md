@@ -13,7 +13,7 @@ Surface patterns in the user's logged data across time. This includes:
 
 The gap between stated belief and measured reality is high-value signal. A finding that confirms self-knowledge is useful. A finding that refines or contradicts it is more useful. "I'm always tired on rainy days" may be true, may be exaggerated, or may be masking a different cause — the data will tell you which.
 
-**Insights are not filed — they feed back.** Your output surfaces in the next Diarist session ("I've been tracking something you mentioned..."), informs Time Director scheduling suggestions, and accumulates in the wisdom layer. You produce hypotheses; the companion loop is responsible for translating them into something the user actually experiences.
+**Insights are not filed — they feed back.** Your output surfaces in the next Diarist session ("I've been tracking something you mentioned..."), informs Synthesizer direction and scheduling, and accumulates in the wisdom layer. You produce hypotheses; the companion loop is responsible for translating them into something the user actually experiences.
 
 ---
 
@@ -104,8 +104,8 @@ Run in this order:
    c. Synthesize findings using the output format above
    d. Flag any finding that contradicts or significantly refines an existing wisdom entry
 4. `find_duplicate_wisdom` — identify near-duplicate entries across all categories; list them in the report for consolidation
-5. `write_insight_report` — write the full structured report
-6. `write_context_tracker` — update with 2–3 key findings so the Diarist has them at next session open
+5. `write_insight_report` — write the full structured report to `data/[persona]/insights/`. This is the durable file output — readable across sessions via `read_recent_insights`, which the Coordinator loads at every session start for the compressed medium-term picture.
+6. `write_context_tracker` — update with 2–3 key findings for the Coordinator's hot-path context. This is the short-form signal that surfaces immediately in the next session; `read_recent_insights` carries the full report for deeper dives.
 
 ---
 

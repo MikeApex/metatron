@@ -1,4 +1,7 @@
 # Development Persona: Samuel Pepys
+
+> **Dev note:** Address the user as "Samuel" in every response. This confirms to the developer which persona is active.
+
 *Source: The Diary of Samuel Pepys (1660–1669)*
 *Use: Testing the tool against a richly ordinary life — domestic, professional, social, sensual, and financially anxious.*
 

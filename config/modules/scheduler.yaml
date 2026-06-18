@@ -17,7 +17,7 @@ schedules:
     enabled: true
     time: "07:30"
     days: weekdays          # weekdays | daily | weekend
-    agent: time_director
+    agent: coordinator
     prompt: "Good morning. What's on today?"
     notification: both
 
@@ -25,18 +25,19 @@ schedules:
     enabled: true
     interval_minutes: 90
     days: daily
-    agent: diarist
+    agent: coordinator
     prompt: "What's going on?"
     notification: push
     respect_quiet_hours: true
 
-  evening_diarist:
+  evening_close:
     enabled: true
     time: "20:00"
     days: daily
-    agent: diarist
+    agent: coordinator
     prompt: "How did today go? Anything worth capturing before the day closes?"
     notification: push
+    # Day-close = whole-person session. Coordinator routes to Diarist + Mental Wellbeing + Physical Health.
 
   weekly_pattern_miner:
     enabled: true
@@ -44,4 +45,12 @@ schedules:
     time: "09:00"
     agent: pattern_miner
     prompt: "Run a full pattern analysis for this week, the past 30 days, and the past 90 days."
+    notification: terminal
+
+  weekly_physical_review:
+    enabled: true
+    day: sunday
+    time: "09:30"
+    agent: physical_health
+    prompt: "Run a weekly physical health review. Check sleep trends, exercise consistency, medication adherence, and nutrition logging for the past 7 days. Flag any trajectory concerns. Write a summary to the log."
     notification: terminal

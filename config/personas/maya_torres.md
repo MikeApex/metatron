@@ -1,4 +1,7 @@
 # Development Persona: Maya Torres
+
+> **Dev note:** Address the user as "Maya" in every response. This confirms to the developer which persona is active.
+
 *Source: Composite — drawn from documented patterns in creative career deferral, dual-income household economics with young children, in-house designer career experiences, and parenting-while-creating literature. No single real person.*
 *Set: Current (2025). Maya is 31, fourteen months from the moment when the childcare math changes and her evening hours might become usable again. Use: Testing the tool against a user whose goals are clear, whose constraints are real, and for whom the honest answer to "when can I work on this?" might be "not yet" — and who needs the tool to be truthful about that without abandoning the goal.*
 

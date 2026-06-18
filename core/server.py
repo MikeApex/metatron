@@ -17,12 +17,13 @@ import argparse
 import os
 import sys
 import tempfile
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import edge_tts
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -36,6 +37,9 @@ KOKORO_PYTHON = Path(__file__).parent.parent / "tools" / "kokoro" / "venv" / "bi
 EDGE_VOICE = "en-US-JennyNeural"
 
 app = FastAPI(title="Life Manager")
+
+# Read at module import time from env var set before uvicorn.run()
+DEFAULT_PERSONA: str | None = os.environ.get("SERVER_PERSONA") or None
 
 app.add_middleware(
     CORSMiddleware,
@@ -53,7 +57,7 @@ STATIC_DIR = Path(__file__).parent.parent / "static"
 
 class SessionRequest(BaseModel):
     input: str
-    agent: str = "time_director"
+    agent: str = "coordinator"
     persona: str | None = None
     provider: str | None = None   # None = auto-routed via routing.yaml
 
@@ -66,18 +70,34 @@ class SessionResponse(BaseModel):
 # Routes
 # ---------------------------------------------------------------------------
 
+def _log_conversation(user_input: str, response: str, agent: str, persona: str | None) -> None:
+    """Append a verbatim exchange to the daily conversation log."""
+    import json as _json
+    from datetime import datetime
+    log_dir = Path(__file__).parent.parent / "data" / "conversations"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / f"{datetime.now().strftime('%Y-%m-%d')}.jsonl"
+    entry = {
+        "ts": datetime.now().isoformat(),
+        "agent": agent,
+        "persona": persona,
+        "user": user_input,
+        "response": response,
+    }
+    with open(log_file, "a") as f:
+        f.write(_json.dumps(entry, ensure_ascii=False) + "\n")
+
+
 @app.post("/session", response_model=SessionResponse)
 async def session(req: SessionRequest) -> SessionResponse:
     """Run a single orchestrator turn and return the text response."""
     if not req.input.strip():
         raise HTTPException(status_code=400, detail="Input is empty.")
     try:
-        response = run_session(
-            req.agent,
-            req.input,
-            persona=req.persona,
-            provider=req.provider,
-        )
+        agent = req.agent
+        persona = req.persona or DEFAULT_PERSONA
+        response = run_session(agent, req.input, persona=persona, provider=req.provider)
+        _log_conversation(req.input, response, agent, persona)
         return SessionResponse(response=response)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -120,6 +140,20 @@ async def push_test() -> dict:
     return result
 
 
+@app.post("/feedback")
+async def feedback() -> dict:
+    """PWA tap — record a USER_CORRECTION quality event."""
+    from tools.logger import write_quality_event
+    from datetime import datetime
+    result = write_quality_event(
+        event_type="USER_CORRECTION",
+        source_agent="pwa_tap",
+        detail="User tapped missed-the-mark affordance",
+        session_id=datetime.utcnow().strftime("%Y-%m-%dT%H"),
+    )
+    return {"status": result}
+
+
 class TTSRequest(BaseModel):
     text: str
 
@@ -159,6 +193,58 @@ async def tts(req: TTSRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/transcribe")
+async def transcribe_audio(audio: UploadFile = File(...)) -> dict:
+    """
+    Receive a raw audio blob from the PWA, transcribe with Whisper (local),
+    and archive both the audio file and its transcript to data/audio/.
+
+    Returns {"transcript": "..."} — the text is then sent to /session by the client.
+    Audio never leaves this machine; Web Speech API (Google) is not used.
+    """
+    import json as _json
+    import subprocess as _subprocess
+    import numpy as _np
+
+    ts = datetime.now().strftime("%H-%M-%S")
+    date_dir = Path(__file__).parent.parent / "data" / "audio" / datetime.now().strftime("%Y-%m-%d")
+    date_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save raw audio (WebM/Opus from MediaRecorder)
+    audio_path = date_dir / f"{ts}.webm"
+    audio_bytes = await audio.read()
+    with open(audio_path, "wb") as f:
+        f.write(audio_bytes)
+
+    # Decode to float32 PCM at 16kHz via ffmpeg (Whisper expects this format)
+    try:
+        result = _subprocess.run(
+            ["ffmpeg", "-i", str(audio_path), "-ar", "16000", "-ac", "1",
+             "-f", "f32le", "-"],
+            capture_output=True, timeout=30,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"ffmpeg: {result.stderr.decode()[:200]}")
+        audio_array = _np.frombuffer(result.stdout, dtype=_np.float32)
+    except FileNotFoundError:
+        raise HTTPException(status_code=500, detail="ffmpeg not found — install with: brew install ffmpeg")
+
+    # Transcribe locally with faster-whisper
+    from core.voice_pipeline import transcribe as _transcribe
+    transcript = _transcribe(audio_array)
+
+    # Archive transcript alongside audio
+    meta_path = date_dir / f"{ts}.json"
+    with open(meta_path, "w") as f:
+        _json.dump({
+            "ts": datetime.now().isoformat(),
+            "audio_file": str(audio_path),
+            "transcript": transcript,
+        }, f, ensure_ascii=False, indent=2)
+
+    return {"transcript": transcript}
+
+
 @app.get("/")
 async def index() -> FileResponse:
     return FileResponse(
@@ -196,7 +282,13 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--provider", default="anthropic", choices=["anthropic", "openai", "ollama", "gemini"],
                         help="Default provider (can be overridden per request)")
+    parser.add_argument("--persona", default=None,
+                        help="Default dev persona for all sessions (e.g. pepys). Omit for real user context.")
     args = parser.parse_args()
+
+    if args.persona:
+        os.environ["SERVER_PERSONA"] = args.persona
+        print(f"  Dev persona: {args.persona} (all sessions will use this persona)")
 
     certs_dir = Path(__file__).parent.parent / "certs"
     # Prefer Tailscale cert (.crt/.key) over mkcert (.pem) — Tailscale certs are publicly trusted

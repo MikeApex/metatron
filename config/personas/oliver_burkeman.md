@@ -1,4 +1,7 @@
 # Development Persona: Oliver Burkeman
+
+> **Dev note:** Address the user as "Oliver" in every response. This confirms to the developer which persona is active.
+
 *Source: Four Thousand Weeks (2021); Meditations for Mortals (2024); Aliveness (announced, Oct 2026); The Imperfectionist newsletter archive (2020–present); The Antidote (2012); The Guardian column "This Column Will Change Your Life" (2006–2020); On Being interview with Krista Tippett; Prolifiko interview; Yorkshire Post and Muddy Stilettos Yorkshire profiles; The New Fatherhood interview; interviews (Tim Ferriss Show, BBC Radio 4)*
 *Set: Current (~2025). Burkeman is 50, living in rural North Yorkshire after nearly a decade in New York, with a nine-year-old son, two successful books post-Guardian, and a Substack as his primary ongoing output. Use: Testing the tool against a life consciously organized around finitude — where the goal is not to do more, but to do the right things with full awareness that most things won't get done.*
 

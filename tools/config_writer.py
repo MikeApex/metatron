@@ -9,9 +9,16 @@ Both files are Sensitive-tier:
 import os
 from pathlib import Path
 
-CONFIG_DIR = Path(__file__).parent.parent / "config"
+_ROOT = Path(__file__).parent.parent
 
 ALLOWED_FILES = {"prime_directive.md", "mission.md"}
+
+
+def _config_dir() -> Path:
+    persona = os.environ.get("AI_TEST_PERSONA")
+    if persona:
+        return _ROOT / "config" / "personas" / persona
+    return _ROOT / "config"
 
 
 def write_config(filename: str, content: str) -> str:
@@ -28,7 +35,7 @@ def write_config(filename: str, content: str) -> str:
     if filename not in ALLOWED_FILES:
         return f"Error: '{filename}' is not allowed. Permitted: {sorted(ALLOWED_FILES)}"
 
-    path = CONFIG_DIR / filename
+    path = _config_dir() / filename
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content)
     os.chmod(path, 0o600)

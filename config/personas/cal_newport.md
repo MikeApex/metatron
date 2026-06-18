@@ -1,4 +1,7 @@
 # Development Persona: Cal Newport
+
+> **Dev note:** Address the user as "Cal" in every response. This confirms to the developer which persona is active.
+
 *Source: Deep Work (2016); Digital Minimalism (2019); A World Without Email (2021); Slow Productivity (2024); Deep Questions podcast (2020–present, 300+ episodes); Study Hacks blog (2007–present); The New Yorker contributions; interviews (Ezra Klein Show, Rich Roll Podcast, Modern Wisdom)*
 *Set: Current (~2025). Newport is 43, recently promoted to full professor at Georgetown, with eight books published and a clear intellectual project. Use: Testing the tool against a life of structured compartmentalization — where the primary challenge is protecting the conditions for good work in an environment that constantly pressures against them, by someone with a family, two careers, and no social media.*
 

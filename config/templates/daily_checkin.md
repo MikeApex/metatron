@@ -5,7 +5,7 @@
 
 ## Purpose
 
-Read the room, establish today's constraints, hand off to the Time Director for a directed plan, and note anything worth following up on.
+Read the room, establish today's constraints, hand off to the Synthesizer for a directed plan, and note anything worth following up on.
 
 ---
 
@@ -35,7 +35,7 @@ Surface through conversation, not as a checklist. Aim to know:
 
 ## Phase 3 — Direct the Day
 
-Once context is established, call `read_goals` to load current priorities, then hand off to the Time Director:
+Once context is established, call `read_goals` to load current priorities, then hand off to the Synthesizer:
 
 - Identify the 2–3 highest-leverage items given today's constraints
 - Distinguish essential (cannot slip) from deferrable (can shift)

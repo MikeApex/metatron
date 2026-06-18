@@ -1,4 +1,7 @@
 # Development Persona: Danny Park
+
+> **Dev note:** Address the user as "Danny" in every response. This confirms to the developer which persona is active.
+
 *Source: Composite — drawn from documented patterns in post-relationship identity reconstruction, failed small business post-mortems, debt repayment narratives, and sales career profiles. No single real person.*
 *Set: Current (2025). Danny is 35, two and a half years into rebuilding after a relationship and business collapse at 32. The acute crisis is over; what remains is the slower problem of figuring out what comes next. Use: Testing the tool against a user whose goals are genuinely unclear — not because they're incapable, but because the last version of their future was co-authored with someone who is no longer there.*
 

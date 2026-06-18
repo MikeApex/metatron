@@ -28,11 +28,11 @@ def _tracker_path() -> Path:
 
 def read_context_tracker() -> dict:
     """
-    Read the Diarist's session context — open threads, recent patterns,
-    follow-ups, and the date of the last session.
+    Read the session context — open threads, recent patterns, follow-ups,
+    held items, and the date of the last session.
 
     Returns:
-        Dict with keys: last_session, open_threads, patterns, follow_ups.
+        Dict with keys: last_session, open_threads, patterns, follow_ups, held_items.
         Returns empty structure if no tracker file exists yet.
     """
     path = _tracker_path()
@@ -42,33 +42,40 @@ def read_context_tracker() -> dict:
             "open_threads": [],
             "patterns": [],
             "follow_ups": [],
+            "held_items": [],
         }
-    with open(path) as f:
-        return json.load(f)
+    data = json.load(open(path))
+    # Backfill held_items for trackers written before this field existed.
+    data.setdefault("held_items", [])
+    return data
 
 
 def write_context_tracker(
     open_threads: list[str],
     patterns: list[str],
     follow_ups: list[str],
+    held_items: list[str] | None = None,
 ) -> str:
     """
-    Update the Diarist's session context at close of session.
+    Update the session context at close of each exchange.
 
-    Replaces the current tracker with the updated state. Call at the end of
-    every meaningful session. Keep entries concise — this file is read at the
-    start of the next session to orient the Diarist, not to summarize.
+    Replaces the current tracker with the updated state. Call after every
+    meaningful exchange. Keep entries concise — one sentence each.
 
     Args:
-        open_threads: Things mentioned that weren't resolved or followed up.
-                      E.g. ["bookstore P&L review scheduled for Thursday",
-                             "Cato chapter structure still unresolved"].
-        patterns:     Observations about recurring patterns noticed this session.
-                      E.g. ["writing stalls when sleep is under 6 hours",
-                             "more energized after farm chores than after desk work"].
-        follow_ups:   Specific things to ask about next session.
-                      E.g. ["ask how the Cato chapter went",
-                             "check in on gym streak"].
+        open_threads: Unresolved topics to carry forward.
+                      E.g. ["bookstore P&L review scheduled for Thursday"].
+        patterns:     Recurring observations worth noting.
+                      E.g. ["writing stalls when sleep under 6 hours"].
+        follow_ups:   Specific questions to ask next exchange or session.
+                      E.g. ["ask how the Cato chapter went"].
+        held_items:   Things the Synthesizer chose NOT to surface yet but
+                      must not lose. Each entry should include WHAT was held
+                      and WHY (timing, emotional readiness, relevance).
+                      E.g. ["Held: SLEEP_POOR flag — user was already stressed,
+                              surface when mood is better"].
+                      Held items that age across multiple sessions without
+                      surfacing should be escalated, not silently dropped.
 
     Returns:
         Confirmation string.
@@ -81,6 +88,7 @@ def write_context_tracker(
         "open_threads": open_threads,
         "patterns": patterns,
         "follow_ups": follow_ups,
+        "held_items": held_items or [],
     }
 
     with open(path, "w") as f:
@@ -142,6 +150,16 @@ WRITE_CONTEXT_TRACKER_SCHEMA = {
                 "description": (
                     "Specific questions to ask next session. "
                     "E.g. 'ask how the Cato chapter went'."
+                ),
+            },
+            "held_items": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Things the Synthesizer chose not to surface yet but must not lose. "
+                    "Each entry must state WHAT was held and WHY. "
+                    "E.g. 'Held: SLEEP_POOR flag — user was already stressed, surface when mood lifts'. "
+                    "Items held across multiple sessions without surfacing should be escalated."
                 ),
             },
         },

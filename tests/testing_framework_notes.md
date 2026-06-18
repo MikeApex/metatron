@@ -52,6 +52,40 @@ Baseline selection logic should be reviewed at the Phase 5 → 6 transition when
 
 ---
 
+## Cumulative prompt length tracking
+
+**2026-05-27**
+
+Individual agent files are short (300–800 tokens each) and are not the risk. The risk is cumulative prompt size per session: Constitution + Prime Directive + Mission + Goals + agent file + tool schemas + conversation history. This can reach 10K–20K input tokens per turn in a multi-agent Phase 5 session — well past the ~8K threshold where "lost in the middle" attention degradation becomes measurable.
+
+### How to measure reliably
+
+Every API we use returns actual token counts in the response object. Use these, not local estimators:
+
+| Provider | Field |
+|---|---|
+| Anthropic | `response.usage.input_tokens` + `response.usage.output_tokens` |
+| OpenAI | `response.usage.prompt_tokens` + `response.usage.completion_tokens` |
+| Gemini | `response.usage_metadata.prompt_token_count` + `candidates_token_count` |
+| Ollama | `response.prompt_eval_count` + `response.eval_count` (model-dependent) |
+
+**Implementation target (Phase 5):** The orchestrator should accumulate `input_tokens` per turn and log a session-level total to the session log. A warning log line at >8K cumulative input tokens per turn is sufficient — no UI change required.
+
+### Warning thresholds (current generation models)
+
+| Cumulative input tokens | Signal |
+|---|---|
+| < 8K | Reliable attention across full prompt |
+| 8K–15K | Monitor for instruction dropout; run behavioral audit after config changes |
+| 15K–30K | Lost-in-the-middle risk is significant; consider prompt pruning or FAISS retrieval to replace full context loads |
+| > 30K | Treat as a design problem, not a tuning problem |
+
+### Practical implication for testing
+
+When running Phase 5 multi-agent scenarios, log cumulative input tokens per session. If any session regularly exceeds 15K, identify which config components are largest and evaluate whether they can be trimmed or conditionally loaded. Do not assume instruction fidelity without a prompt budget check.
+
+---
+
 ## 384-dimension embedding ceiling
 
 **Phase 4, 2026-05-19** — deferred to `research/pm_future.md`
