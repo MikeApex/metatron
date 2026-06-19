@@ -1,5 +1,5 @@
 # Session Primer — Personal AI Life Manager
-*Updated: 2026-06-18. Update this file at the close of every chat so the next chat — or any parallel chat window — starts from current state.*
+*Updated: 2026-06-19. Update this file at the close of every chat so the next chat — or any parallel chat window — starts from current state.*
 
 ---
 
@@ -33,7 +33,9 @@ If you need to find a specific file, tool, or planning document: **[CODEBASE_IND
 
 ### In progress / next (numbering per 2026-06-10 roadmap — note: renumbered from the 2026-06-09 draft)
 
-**Parallel execution is live (2026-06-11):** seven simultaneous chats, one prompt file each — see [archive/plans/parallel_chats_index_2026-06-11.md](archive/plans/parallel_chats_index_2026-06-11.md) for the launcher, file-ownership rules, and close-out order. Covers A1, A2, A3, A4+A6, B1, and the check 10 + check 12 sign-off prep. A5 stays user-run (gated on A4); A7 runs last.
+**Parallel chats (2026-06-11 batch) — status as of 2026-06-19:** A1, A2, A3, A4+A6 all complete. B1 (red team), Check 10 (agent audits), and Check 12 (constitution review) on hold — see below. See [archive/plans/parallel_chats_index_2026-06-11.md](archive/plans/parallel_chats_index_2026-06-11.md) for prompt files and file-ownership rules.
+
+**Active priority (2026-06-19):** streamline agent flow to reduce response latency — get the tool functionally usable before completing sign-off work. B1/Check10/Check12 resume after latency work stabilises the pipeline.
 
 - ~~**A1** Compliance curve design conversation~~ — **done 2026-06-18.** All four design questions resolved. Shared principle + Synthesizer integrator (Q1); user-reported cold-start, ratchet research-gated (Q2); Synthesizer level only (Q3); nothing activates at A5c, produces plan only (Q4). Decision doc: `archive/plans/compliance_curve_decision_2026-06-13.md`. Agent file edits queued (apply when A2 chat closes). MCP server updates: o3+o1+auto-discovery added to ask_gpt; auto-discovery added to ask_gemini; Opus timeout fixed (600s) in ask_claude.
 - ~~**A2** Logging Layer~~ — **done 2026-06-13.** `write_quality_event` in `tools/logger.py`, ROUTING_MISS wired in synthesizer.md, USER_CORRECTION in coordinator.md, PWA tap (`·` dot → `/feedback`). Tests deferred to Alpha launch (`tests/phase5_testing_plan.md` → Known gaps).
@@ -41,8 +43,22 @@ If you need to find a specific file, tool, or planning document: **[CODEBASE_IND
 - ~~**A4** Local routing enforcement~~ — **done 2026-06-13.** `local_enabled: true`, fail-closed sensitive routing (no cloud fallbacks), head layer + Learning & Growth + Recreation + Logistics re-tiered local, quick_override guard. MW mania hard-fail: PASS (front-loaded critical instructions). Finance arithmetic: FAIL/deferred D1. Session archive: `2026-06-13 — A4 A6 Local Routing and Token Budget.md`.
 - ~~**A5** Goals Interview with real user~~ — **done.** A5b: re-run `write_aspirational_baseline` with existing A5 interview data (replaces A3 placeholder; required for A7 gate — run before A7). A5c preference activation status unknown — confirm if needed. **D1 note:** once VM is provisioned and new features are live, run a fresh Goals Interview + A5b re-run as first-use onboarding on the VM (new D1 item, separate from this A5b).
 - ~~**A6** Token budget logging~~ — **done** (all four session paths; 8K warning threshold)
-- **A7** Phase 5 sign-off — **blocked on parallel chats completion** (A1 and B1/check10/check12 prep from the 2026-06-11 batch not yet done; A3 done 2026-06-18). Gate: A1–A6 all complete. See [archive/plans/parallel_chats_index_2026-06-11.md](archive/plans/parallel_chats_index_2026-06-11.md) for what's outstanding.
-- **B1** Red team can start now, independent of Alpha Gate
+- **A7** Phase 5 sign-off — **blocked** (B1, Check 10, Check 12 on hold pending latency work; A1–A6 all complete). Resume when pipeline is stable.
+- **B1** Red team — **on hold** (independent of Alpha Gate, but deprioritised — resumes after latency work)
+- **Check 10** Agent behavioral audits — **on hold**
+- **Check 12** Constitution alignment review — **on hold**
+
+### Also done 2026-06-19 (Vertex AI setup session)
+- **GCP project created:** `metatron-ai-499810`, billing linked, Vertex AI API enabled, ADC configured.
+- **Billing hard-cap at $20:** Pub/Sub topic `billing-cap` + Cloud Function `stop-billing` (Python 3.11, Gen2) auto-disables billing when budget fires. IAM grants in place.
+- **Vertex AI migration:** `run_session_gemini_grounded()` now uses Vertex native SDK (`genai.Client(vertexai=True)`). Vertex requires `location=global` for Gemini 3.x models. `.env` updated with `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION=global`, `DEPLOYMENT_MODE=cloud`.
+- **`routing_cloud.yaml` created:** all 14 agents on `gemini-3.1-pro-preview` via Vertex. `DEPLOYMENT_MODE` toggle in `router.py` (evaluated at call time, not import time — fixes `.env` load order bug).
+- **Flash model ID updated:** `gemini-3.1-flash-lite-preview` → `gemini-3.1-flash-lite` (old preview discontinues July 9).
+- **sys.path fix:** orchestrator now inserts project root so `tools/` resolves correctly when running `python core/orchestrator.py`.
+- **Smoke test:** Research Agent via Vertex returned valid grounded response. Full pipeline: 60–90s latency (multiple sequential Gemini 3.1 Pro calls via AI Studio — see open item below).
+- **Repo cleanup:** .gitignore expanded; all previously untracked files committed (108 files).
+- **⚠ OPEN:** `run_session_gemini()` (coordinator/synthesizer/specialists) still uses AI Studio OpenAI-compat endpoint — NOT Vertex. Only research_agent is on Vertex. Full Vertex migration of this path is the next code task.
+- **Next sessions ready:** efficiency prompt + Android app prompt both written and in this archive.
 
 ### Also done 2026-06-17 (Metatron Android app session)
 - **Metatron Android app built and working** — Capacitor wrapper, sideloaded APK, voice end-to-end confirmed.
@@ -92,38 +108,39 @@ If you need to find a specific file, tool, or planning document: **[CODEBASE_IND
 cd ~/Desktop/multi-model-mcp
 source .venv/bin/activate
 
-# Run the full pipeline (Coordinator → Synthesizer → specialists)
-python core/orchestrator.py
+# Start the PWA server (Vertex cloud routing — default as of 2026-06-19)
+# No Ollama needed — DEPLOYMENT_MODE=cloud in .env routes all agents to Vertex
+python core/server.py --persona mike --port 8001
+
+# Kill a stuck server on port 8001 and restart
+lsof -ti :8001 | xargs kill -9 && python core/server.py --persona mike --port 8001
 
 # Run a specific agent directly
-python core/orchestrator.py --agent goals_interviewer --provider ollama
-
-# Start the PWA server
-python core/server.py
+python core/orchestrator.py --agent research_agent --provider gemini
 
 # Run the scheduler daemon
 python core/scheduler.py
 ```
 
-Ollama (local sensitive-tier model) runs at `localhost:11434`. Model: `qwen3:14b`.
-Start with: `ollama serve` (if not already running as a service).
-All 4 providers: anthropic (Sonnet 4.6), openai (o3), gemini (Flash/Pro), ollama (qwen3:14b).
+**Deployment mode:** `DEPLOYMENT_MODE=cloud` is set in `.env` — loads `config/modules/routing_cloud.yaml` (all agents → Vertex Gemini 3.1 Pro). To use local Ollama instead, remove or unset `DEPLOYMENT_MODE`.
+
+**Vertex credentials:** ADC configured via gcloud on this machine. GCP project: `metatron-ai-499810`, location: `global`.
+
+**If using local Ollama:** `ollama serve` at `localhost:11434`, model `qwen3:14b`.
 
 ---
 
-## Model IDs (current as of 2026-06-10)
+## Model IDs (updated 2026-06-19)
 
-| Provider | Model | ID |
-|---|---|---|
-| Anthropic | Fable 5 (most capable) | `claude-fable-5` |
-| Anthropic | Sonnet 4.6 (default) | `claude-sonnet-4-6` |
-| Anthropic | Haiku 4.5 | `claude-haiku-4-5-20251001` |
-| OpenAI | o3 | `o3` |
-| Gemini | Flash | `models/gemini-3.1-flash-lite-preview` ⚠ verify |
-| Gemini | Pro | `models/gemini-3.1-pro-preview` ⚠ verify |
-| Ollama | Local 14B | `qwen3:14b` |
+| Provider | Model | ID | Notes |
+|---|---|---|---|
+| Anthropic | Sonnet 4.6 (default) | `claude-sonnet-4-6` | |
+| OpenAI | o3 | `o3` | |
+| Gemini | Flash-Lite | `gemini-3.1-flash-lite` | ✓ confirmed on Vertex (no `models/` prefix on Vertex) |
+| Gemini | Pro | `gemini-3.1-pro-preview` | ✓ confirmed on Vertex |
+| Ollama | Local 14B | `qwen3:14b` | local only |
 
-⚠ Gemini model IDs in `routing.yaml` may be stale — verify at Phase 6 / D2 before model validation pass.
+**Vertex note:** AI Studio uses `models/gemini-*` prefix; Vertex drops the prefix. The orchestrator strips it automatically when `GOOGLE_CLOUD_PROJECT` is set. Flash-Lite preview ID discontinues July 9 — already updated to non-preview ID.
 
 ---
 

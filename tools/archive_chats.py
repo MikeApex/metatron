@@ -211,28 +211,60 @@ def render_markdown(entries: list[dict], session_id: str) -> str:
     return "\n".join(lines)
 
 
-def archive_session(jsonl_path: Path) -> tuple[bool, str]:
-    """Copy JSONL and write readable markdown. Returns (was_new, output_path)."""
+def count_lines(path: Path) -> int:
+    """Count non-empty lines in a file."""
+    count = 0
+    with open(path) as f:
+        for line in f:
+            if line.strip():
+                count += 1
+    return count
+
+
+def find_readable_transcript(session_id: str, readable_dir: Path) -> Path | None:
+    """Find the readable markdown for a session by scanning for its session ID header."""
+    marker = f"*Session ID: {session_id}*"
+    for path in readable_dir.glob("*.md"):
+        try:
+            with open(path) as f:
+                for i, line in enumerate(f):
+                    if i > 3:
+                        break
+                    if marker in line:
+                        return path
+        except Exception:
+            continue
+    return None
+
+
+def archive_session(jsonl_path: Path) -> tuple[str, str]:
+    """Archive or update a session. Returns (status, output_path) where status is 'new'/'updated'/'skipped'."""
     session_id = jsonl_path.stem
     raw_dest = RAW_DIR / jsonl_path.name
 
-    # Skip if already archived
     if raw_dest.exists():
-        return False, str(raw_dest)
+        # Re-archive if source has grown (mid-session capture or extended conversation)
+        if count_lines(jsonl_path) <= count_lines(raw_dest):
+            return "skipped", str(raw_dest)
+        raw_dest.unlink()
+        existing_readable = find_readable_transcript(session_id, READABLE_DIR)
+        if existing_readable:
+            existing_readable.unlink()
+        status = "updated"
+    else:
+        status = "new"
 
     entries = load_session(jsonl_path)
     if not entries:
-        return False, ""
+        return "skipped", ""
 
-    # Copy raw JSONL
     shutil.copy2(jsonl_path, raw_dest)
 
-    # Write readable markdown
     date, topic = session_date_and_first_message(entries)
     out_path = unique_output_path(READABLE_DIR, date, topic)
     out_path.write_text(render_markdown(entries, session_id), encoding="utf-8")
 
-    return True, str(out_path)
+    return status, str(out_path)
 
 
 def main():
@@ -244,16 +276,19 @@ def main():
         print(f"No JSONL files found in {SOURCE_DIR}")
         sys.exit(0)
 
-    new_count = 0
+    new_count = updated_count = 0
     for path in jsonl_files:
-        was_new, out = archive_session(path)
-        if was_new:
+        status, out = archive_session(path)
+        if status == "new":
             new_count += 1
             print(f"  archived → {Path(out).name}")
+        elif status == "updated":
+            updated_count += 1
+            print(f"  updated  → {Path(out).name}")
         else:
-            print(f"  skipped  (already archived) {path.stem}")
+            print(f"  skipped  (no new content) {path.stem}")
 
-    print(f"\nDone. {new_count} new session(s) archived to archive/transcripts/")
+    print(f"\nDone. {new_count} new, {updated_count} updated — archive/transcripts/")
 
 
 if __name__ == "__main__":

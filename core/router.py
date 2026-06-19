@@ -32,10 +32,13 @@ def _trace(msg: str) -> None:
     print(f"[{ts}] {msg}", file=sys.stderr, flush=True)
 
 _ROOT = Path(__file__).parent.parent
-_ROUTING_CONFIG = _ROOT / "config" / "modules" / (
-    "routing_cloud.yaml" if os.environ.get("DEPLOYMENT_MODE") == "cloud" else "routing.yaml"
-)
 _ROUTING_ERROR_LOG = _ROOT / "data" / "logs" / "routing_fallbacks.json"
+
+
+def _routing_config_path() -> Path:
+    mode = os.environ.get("DEPLOYMENT_MODE", "local")
+    name = "routing_cloud.yaml" if mode == "cloud" else "routing.yaml"
+    return _ROOT / "config" / "modules" / name
 
 
 @dataclass
@@ -46,8 +49,9 @@ class ModelConfig:
 
 
 def _load_routing() -> dict:
-    if _ROUTING_CONFIG.exists():
-        with open(_ROUTING_CONFIG) as f:
+    path = _routing_config_path()
+    if path.exists():
+        with open(path) as f:
             return yaml.safe_load(f) or {}
     return {}
 

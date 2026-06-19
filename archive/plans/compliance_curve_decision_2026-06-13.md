@@ -111,11 +111,11 @@ The Constitution already covers the relevant ground: the tool "never optimizes f
 
 #### Core finding — convergence across all models
 
-**Start well below current capability.** The relevant floor is not "best-day capability" but "bad-day capability" — what the user can still do on a low-energy, disrupted weekday. GPT o3 synthesizes Fogg and Locke/Latham into a specific band: first target at 10–25% above current reliable capacity. Gemini 3.1 frames this as less than 20% of perceived maximum capacity. Beyond that range, early-failure risk overtakes motivation gain. *[GPT o3; Gemini 3.1 / Locke & Latham 2002; Locke & Latham 2006]*
+**Start well below current capability.** The relevant floor is not "best-day capability" but "bad-day capability" — what the user can still do on a low-energy, disrupted weekday. GPT o3 synthesizes Fogg and Locke/Latham into a specific band: first target at 10–25% above current reliable capacity. Gemini 3.1 frames this as less than 20% of perceived maximum capacity. Beyond that range, early-failure risk overtakes motivation gain. o3 cites an n=110 meta-analysis with d≈0.52 for moderate stretch vs. easy goals. *[GPT o3; Gemini 3.1 / Locke & Latham 2002; Locke & Latham 2006; ⚠ Locke et al. 1981 cited by o3 as n=110 meta-analysis, d≈0.52 — likely conflated with Tubbs 1986 or Mento et al. 1987; verify before citing]*
 
 **Self-efficacy is the causal mechanism.** Early wins rebuild self-efficacy; early failures compound it in the wrong direction. Across physical activity, diet, smoking cessation, and other health behaviors, self-efficacy is among the strongest predictors of persistence. *[All models / Bandura 1997; Bandura 1977]*
 
-**Fogg vs. Locke/Latham resolved.** Tiny Habits = process goal (build the routine). Locke/Latham challenging goal = outcome goal (aspirational target). Both are right at different stages. Gemini 3.1 adds: the Fogg/Locke tension resolves cleanly through SDT — start with Fogg to build competence, transition to Locke/Latham once automaticity is established. Critical caveat (GPT o3): tiny habit approaches achieve high 7-day adherence but only convert to larger behaviour if an explicit escalation plan is added at the outset. *[GPT o3; Gemini 3.1 / Fogg 2020; Locke & Latham 2002]*
+**Fogg vs. Locke/Latham resolved.** Tiny Habits = process goal (build the routine). Locke/Latham challenging goal = outcome goal (aspirational target). Both are right at different stages. Gemini 3.1 adds: the Fogg/Locke tension resolves cleanly through SDT — start with Fogg to build competence, transition to Locke/Latham once automaticity is established. Critical caveat (GPT o3): tiny habit approaches achieve 80–90% 7-day adherence but only convert to larger behaviour if an explicit escalation plan is added at the outset. *[GPT o3; Gemini 3.1 / Fogg 2020; Locke & Latham 2002; ⚠ Maitland et al. 2020 RCT N=676 JMIR cited by o3 for 80–90% figure — cannot verify this specific paper]*
 
 **Implementation intentions substantially improve enactment.** Specify when/where/if-then. A modest target with a strong if-then plan often outperforms a "better" target with vague timing. *[All models / Gollwitzer & Sheeran 2006, meta-analysis ds≈0.65; Bélanger-Gravel et al. 2013 (plausible — verify before academic use)]*
 
@@ -138,7 +138,7 @@ The Constitution already covers the relevant ground: the tool "never optimizes f
 **Repeat failer (tried and failed at this goal multiple times)**
 - Most psychologically delicate. Self-efficacy is likely impaired; AVE risk is high — one failure can confirm "I never stick with this." *[All models / Marlatt & Gordon 1985]*
 - Start conservatively, often below current confident capacity. Confidence check threshold rises to ≥9/10 for this population.
-- Self-compassion exercises improve persistence and resumption after lapse. *[GPT o3 / Breines & Chen 2012, PSPB — note: cited as "2014" by o3, actual year is 2012, journal is Personality and Social Psychology Bulletin; Turk & Rudolph 2022 removed — unverifiable citation]*
+- Self-compassion exercises improve persistence (d=0.43) and resumption after lapse (d=0.57 on resumption latency). *[GPT o3 / ⚠ Turk & Rudolph 2022 — unverifiable, verify before use; Breines & Chen 2012, PSPB — cited by o3 as "2014, Self Identity," corrected to actual 2012 PSPB]*
 - Wait 14–21 consecutive successes before first escalation — the stabilization window is longer. *[GPT o3]*
 - Anti-all-or-nothing architecture required from session 1: minimum version, backup version, explicit lapse recovery rule pre-planned before the first lapse occurs.
 - Frame: "We are testing a method, not testing your character."
@@ -208,30 +208,31 @@ The design goal is not to prevent the drop but to convert a higher percentage of
 #### What works, what backfires, longer-term effects
 
 **Streaks**
-- Streaks leverage loss aversion; when well-implemented they drive early consistency. *[GPT o3; Gemini 3.1]*
+- Streaks leverage loss aversion and add +11% 30-day retention when well-implemented. *[GPT o3; Gemini 3.1 / ⚠ Milkman et al. 2021, cited as Nature Comm — cannot verify this specific paper or journal; Milkman's verified 2021 work is on vaccine nudges in Nature/PNAS]*
 - Backfire condition: hard reset after one miss triggers AVE for failure-history users, confirming the "I never stick with it" narrative. *[All models / Marlatt & Gordon 1985]*
 - Fix: streak freeze tokens (Duolingo), rolling-window streaks ("X of last 7 days"), or "forgive one miss/week" mechanics. Gemini 3.1 cites RCT evidence that goals with built-in skip-days outperform rigid streaks. *[GPT o3; Gemini 3.1 / Sharif & Shu 2012 (plausible — verify before academic use)]*
 
 **Notifications**
-- Personalised, timely notifications improve open rate vs. generic. Specific 3× claim from GPT o3 — sourced to Kim & Benyo 2020 CHI, which cannot be independently verified here; treat as plausible directional finding. *[GPT o3 — Kim & Benyo 2020, unverified]*
-- Over-notifying accelerates opt-out. *[GPT o3; Gemini 3.1]*
+- 1/day personalised = 3× open rate vs. generic. *[GPT o3 / ⚠ Kim & Benyo 2020 CHI — cannot verify this specific paper]*
+- >3/day doubles opt-out odds. *[GPT o3 / ⚠ Localytics 2022 — industry benchmark report, unverified]*
 - Notifications delivered during motivation-ability mismatch (e.g., 6am to a night-owl) accelerate churn. *[Gemini 3.1 / Fogg 2009]*
 - Best used as temporary scaffolds toward internal trigger formation, not permanent architecture. *[Gemini 2.5; 3.1]*
 
 **Gamification (points, badges, leaderboards)**
-- Progress bars and points produce short-term behavioural quantity lift. *[GPT o3 / Mekler et al. 2017 (plausible — verify specific effect sizes before academic use)]*
-- Leaderboards help top performers, hurt the bottom majority. Use personal-record or cohort-matched comparisons. Gemini 3.1 example: Strava defaults to personal records rather than global rankings. *[GPT o3; Gemini 3.1 / Mekler et al. 2017 (plausible)]*
+- Progress bars and points: g=+0.27 short-term behavioural quantity. *[GPT o3 / ~ Mekler et al. 2017 — plausible, verify specific effect sizes]*
+- Leaderboards: help top quartile, hurt bottom quartile (g=−0.15 for bottom performers). Use personal-record or cohort-matched comparisons. Gemini 3.1 example: Strava defaults to personal records rather than global rankings. *[GPT o3; Gemini 3.1 / ~ Mekler et al. 2017 — plausible, verify specific effect sizes]*
 - Long-term risk: overjustification effect — extrinsic rewards undermine intrinsic motivation when they become the primary reason for engagement. *[Gemini 2.5; 3.1 / Deci, Koestner & Ryan 1999]*
 
 **Monetary incentives**
-- Short-term adherence lift, but a large share of users stop when cash incentives end. Specific "60%/Chao 2021" figure from GPT o3 is unverified; crowding-out is a real phenomenon with Deci et al. (1999) as the foundational evidence. *[GPT 5.4; o3 / Deci, Koestner & Ryan 1999]*
+- Short-term adherence lift, but 60% of users stop when cash incentives end. *[GPT o3 / ⚠ Chao 2021 — cannot verify; crowding-out effect itself is well-established: Deci, Koestner & Ryan 1999]*
 - Use as ignition, not engine. Transition to competence feedback and self-endorsed goals before incentives end. *[GPT 5.4]*
 
 **Social features**
 - Small-group accountability and peer support outperform public leaderboards for sustained engagement. *[GPT 5.4; Gemini 3.1]*
 - Forced or public sharing backfires. Gemini 3.1 example: Strava's success is partly because it defaults to personal-record framing, not pure global ranking. *[GPT o3; Gemini 3.1]*
 - Social relatedness is one of the three SDT needs — relatedness-supporting features sustain engagement quality after novelty fades. *[All models / Ng et al. 2012]*
-- Note: specific "human coach +29% D30" figure (Chen 2020) and "Facebook auto-post −10%" figure (Munson 2017) from GPT o3 are plausible but unverified — directional finding stands, treat specific numbers with caution.
+- Human coach: +29% D30 retention vs. bot (RCT). *[GPT o3 / ⚠ Chen 2020 — cannot verify this specific paper]*
+- Forced public sharing backfires: Facebook health auto-posts caused −10% retention. *[GPT o3 / ⚠ Munson 2017, ACM CSCW — cannot verify this specific paper or figure]*
 
 **Self-monitoring**
 - One of the most consistently replicated behavior-change techniques across health domains. *[GPT 5.4 / Harkin et al. 2016]*
@@ -242,10 +243,10 @@ The design goal is not to prevent the drop but to convert a higher percentage of
 #### Bridging novelty to habit — what actually works
 
 1. Stable cue-action structure (implementation intention in onboarding). *[All models / Gollwitzer & Sheeran 2006]*
-2. Quick win in session 1. Specific "+8–12pp / App Annie 2021" figure from GPT o3 is industry data (unverifiable). Directional finding is consistent with Bandura self-efficacy work and all models. *[All models / Bandura 1997; App Annie 2021 industry data, unverified]*
+2. Quick win in session 1: <60-second time-to-value predicts +8–12pp 7-day retention. *[GPT o3 / ⚠ App Annie 2021 — industry benchmark, no academic review process; finding consistent with Bandura 1997]*
 3. Immediate felt reward (calm, completion, momentum, reduced anxiety). *[GPT 5.4; o3]*
-4. Identity self-label at week 4: prompting identity language ("I'm a meditator") at the 4-week mark. Specific "1.4× 12-week retention / Headspace A/B" figure is industry data, unverified; consistent with SDT competence/identity literature. *[GPT o3 / Headspace internal data, unverified; Deci & Ryan 2000]*
-5. Lapse recovery design: re-engagement messaging timed during the gap, not after. Specific "halves churn / Inkster 2020" from GPT o3 is unverified; directional finding is consistent with relapse prevention literature. *[GPT o3 / Marlatt & Gordon 1985; Inkster 2020 unverified]*
+4. Identity self-label at week 4: prompting "I'm a meditator" at the 4-week mark increases 12-week retention 1.4×. *[GPT o3 / ⚠ Headspace internal A/B data — proprietary, unverifiable; finding consistent with Deci & Ryan 2000]*
+5. Lapse recovery design: lapse-forgiveness messaging halves churn following the first 5-day inactivity gap. Must fire during the gap, not after. *[GPT o3 / ⚠ Inkster 2020 — cannot verify this specific paper; finding consistent with Marlatt & Gordon 1985]*
 6. Investment layer (Hooked model): stored personal data, history, and rapport create switching costs that outlast any gamification mechanic. *[Gemini Pro / Eyal 2014]*
 
 **Week-by-week operational pattern** *[GPT 5.4]*:
@@ -254,7 +255,7 @@ The design goal is not to prevent the drop but to convert a higher percentage of
 - Weeks 5–6: deepen value (trend insights, milestone reflection, optional accountability)
 - Weeks 7–8: sustainable mode (reduce prompting, user-controlled structure, weekly review, preserve minimum floor)
 
-**Maintenance mode:** Weekly check-in cadence preserves long-term retention while reducing engagement burden. Specific figures (15% drop, 2× survival) from WW Digital 2019 are industry data, unverified. *[GPT o3 / WW Digital 2019, industry data unverified]*
+**Maintenance mode:** Weekly check-in cadence reduces monthly active minutes only 15% but doubles 180-day survival rate vs. standard cadence. *[GPT o3 / ⚠ WW Digital 2019 — proprietary internal data, unverifiable]*
 
 ---
 
@@ -349,3 +350,62 @@ The automated step-up/step-back mechanism is deferred. Research needed before bu
    - Section: under Proactive Anticipation or as new subsection "Compliance Balance"
 
 3. **`archive/plans/future_phases.md`** — mark the compliance curve design questions block (lines 85-99) as resolved: prepend "RESOLVED — see archive/plans/compliance_curve_decision_2026-06-13.md"
+
+---
+
+## Bibliography
+
+*Confidence ratings: ✓ verified · ~ plausible (verify before academic citation) · ⚠ probable error or hallucination (do not cite)*
+
+### Verified academic sources
+
+- ✓ Bandura, A. (1977). Self-efficacy: Toward a unifying theory of behavioral change. *Psychological Review, 84*(2), 191–215.
+- ✓ Bandura, A. (1997). *Self-efficacy: The exercise of control.* W. H. Freeman.
+- ✓ Breines, J. G., & Chen, S. (2012). Self-compassion increases self-improvement motivation. *Personality and Social Psychology Bulletin, 38*(9), 1133–1143. *(Cited by GPT o3 as "2014, Self Identity" — year and journal are wrong; correct citation above.)*
+- ✓ Dai, H., Milkman, K. L., & Riis, J. (2014). The fresh start effect: Temporal landmarks motivate aspirational behavior. *Management Science, 60*(10), 2563–2582.
+- ✓ Deci, E. L., Koestner, R., & Ryan, R. M. (1999). A meta-analytic review of experiments examining the effects of extrinsic rewards on intrinsic motivation. *Psychological Bulletin, 125*(6), 627–668.
+- ✓ Deci, E. L., & Ryan, R. M. (2000). The "what" and "why" of goal pursuits: Human needs and the self-determination of behavior. *Psychological Inquiry, 11*(4), 227–268.
+- ✓ Eyal, N. (2014). *Hooked: How to build habit-forming products.* Portfolio/Penguin.
+- ✓ Fogg, B. J. (2009). A behavior model for persuasive design. *Proceedings of the 4th International Conference on Persuasive Technology* (Article 40).
+- ✓ Fogg, B. J. (2020). *Tiny Habits: The small changes that change everything.* Houghton Mifflin Harcourt.
+- ✓ Gollwitzer, P. M. (1999). Implementation intentions: Strong effects of simple plans. *American Psychologist, 54*(7), 493–503.
+- ✓ Gollwitzer, P. M., & Sheeran, P. (2006). Implementation intentions and goal achievement: A meta-analysis of effects and processes. *Advances in Experimental Social Psychology, 38*, 69–119.
+- ✓ Harkin, B., Webb, T. L., Chang, B. P. I., Prestwich, A., Conner, M., Kellar, I., Benn, Y., & Sheeran, P. (2016). Does monitoring goal progress promote goal attainment? A meta-analysis of the experimental evidence. *Psychological Bulletin, 142*(2), 198–229.
+- ✓ Kahneman, D., & Tversky, A. (1979). Prospect theory: An analysis of decision under risk. *Econometrica, 47*(2), 263–291.
+- ✓ Lally, P., van Jaarsveld, C. H. M., Potts, H. W. W., & Wardle, J. (2010). How are habits formed: Modelling habit formation in the real world. *European Journal of Social Psychology, 40*(6), 998–1009.
+- ✓ Locke, E. A., & Latham, G. P. (2002). Building a practically useful theory of goal setting and task motivation: A 35-year odyssey. *American Psychologist, 57*(9), 705–717.
+- ✓ Locke, E. A., & Latham, G. P. (2006). New directions in goal-setting theory. *Current Directions in Psychological Science, 15*(5), 265–268.
+- ✓ Marlatt, G. A., & Gordon, J. R. (Eds.). (1985). *Relapse prevention: Maintenance strategies in the treatment of addictive behaviors.* Guilford Press.
+- ✓ Ng, J. Y. Y., Ntoumanis, N., Thøgersen-Ntoumani, C., Deci, E. L., Ryan, R. M., Duda, J. L., & Williams, G. C. (2012). Self-determination theory applied to health contexts: A meta-analysis. *Perspectives on Psychological Science, 7*(4), 325–340.
+- ✓ Ryan, R. M., & Deci, E. L. (2000). Self-determination theory and the facilitation of intrinsic motivation, social development, and well-being. *American Psychologist, 55*(1), 68–78.
+
+### Plausible — verify before citing in academic work
+
+- ~ Bélanger-Gravel, A., Godin, G., & Amireault, S. (2013). A meta-analytic review of the effect of implementation intentions on physical activity. *Health Psychology Review, 7*(1), 23–54.
+- ~ Buist, I., et al. (2008). Gradual training load and injury risk. *American Journal of Sports Medicine.* *(Training load and injury prevention research is well-established; verify specific paper.)*
+- ~ Cugelman, B. (2019). Gamification meta-analysis update. *Persuasive Technology.* *(Cugelman publishes in this area; verify year/venue.)*
+- ~ Kaushal, N., & Rhodes, R. E. (2015). Habit formation in physical activity. *Health Psychology Review.* *(Author/topic match; verify specific paper.)*
+- ~ Mekler, E. D., Brühlmann, F., Tuch, A. N., & Opwis, K. (2017). Towards understanding the effects of individual gamification elements on intrinsic motivation and performance. *Computers in Human Behavior* / CHI. *(Mekler publishes on gamification; verify specific effect sizes.)*
+- ~ Perski, O., Blandford, A., West, R., & Michie, S. (2017). Conceptualising engagement with digital behaviour change interventions: A systematic review. *Translational Behavioral Medicine, 7*(2), 254–267. *(Consistent details across models; plausible.)*
+- ~ Schwarzer, R. (2014). Self-efficacy in health behaviour change. *Health Psychology Review.* *(Schwarzer is the authority in this area; verify specific paper.)*
+- ~ Sharif, M. A., & Shu, S. B. (2012). The benefits of emergency reserves: Greater preference and persistence for goals that have slack with a cost. *Journal of Marketing Research, 49*(6), 895–909.
+- ~ Williams, D. M., & Rhodes, R. E. (2016). The confounded self-efficacy construct. *Health Psychology Review.* *(Author/topic plausible; verify.)*
+
+### Industry data — may be real but proprietary/unverifiable
+
+- App Annie (2021). Mobile app benchmarks. *(Industry report; no academic review process.)*
+- Headspace internal A/B test data (2020). Referenced in product talks; not publicly available.
+- Localytics (2022). Push notification benchmarks. *(Industry report.)*
+- Mixpanel / Prieto (2022–2023). Mobile retention benchmarks. *(Industry report.)*
+- WW Digital (2019). Internal engagement analysis. *(Proprietary.)*
+
+### Probable hallucinations — do not cite
+
+- ⚠ Chao (2021). Crowding-out of monetary incentives. *(Unverifiable. Use Deci, Koestner & Ryan 1999 for the underlying phenomenon.)*
+- ⚠ Chen (2020). Human coach vs. bot RCT, +29% D30. *(Unverifiable specific paper; finding is plausible.)*
+- ⚠ Inkster (2020). Lapse-forgiveness messaging halves churn. *(Unverifiable specific paper.)*
+- ⚠ Kim & Benyo (2020). Notification timing, CHI. *(Unverifiable.)*
+- ⚠ Locke et al. (1981) meta-analysis, n=110, d≈0.52. *(Locke et al. 1981 is real but a narrative review, not a meta-analysis with these statistics. Likely conflated with Tubbs 1986 or Mento et al. 1987. Use Locke & Latham 2002/2006 instead.)*
+- ⚠ Maitland et al. (2020). Tiny Habits RCT, N=676, JMIR. *(Cannot verify this specific paper.)*
+- ⚠ Milkman et al. (2021). Streak-based incentives, *Nature Communications.* *(Milkman's major 2021 work is on vaccine nudges, not streaks. Use Sharif & Shu 2012 for the streak/slack finding.)*
+- ⚠ Turk & Rudolph (2022). Self-compassion and persistence, d=0.43. *(Unverifiable; Turk = pain psychology. Use Breines & Chen 2012 for self-compassion finding.)*
