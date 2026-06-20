@@ -29,7 +29,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from core.orchestrator import run_session
+from core.orchestrator import run_pipeline_session_stream, run_session
 
 KOKORO_VOICE = "af_heart"
 KOKORO_SPEAK = Path(__file__).parent.parent / "tools" / "kokoro" / "speak.py"
@@ -101,6 +101,55 @@ async def session(req: SessionRequest) -> SessionResponse:
         return SessionResponse(response=response)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/session/stream")
+async def session_stream(req: SessionRequest):
+    """
+    Streaming variant of /session — Synthesizer output arrives as Server-Sent Events.
+
+    Only supports agent="coordinator" (the full pipeline). Other agents 400.
+
+    SSE event format:
+      data: {text chunk}\\n\\n   — live text from Synthesizer
+      data: [DONE]\\n\\n          — generation complete, filter passed; client commits text
+      data: [RETRACT]\\n\\n       — filter hit; client should discard received text
+      data: [ERROR] ...\\n\\n     — server exception
+
+    NOTE: The sync generator runs inline in this async handler — acceptable for
+    single-user local deployment. For multi-user, wrap with run_in_executor().
+    """
+    if not req.input.strip():
+        raise HTTPException(status_code=400, detail="Input is empty.")
+    if req.agent != "coordinator":
+        raise HTTPException(status_code=400, detail="Streaming only supported for agent=coordinator.")
+
+    persona = req.persona or DEFAULT_PERSONA
+
+    async def sse_generator():
+        accumulated: list[str] = []
+        try:
+            for chunk in run_pipeline_session_stream(
+                req.input, persona=persona, provider=req.provider
+            ):
+                if chunk in ("[DONE]", "[RETRACT]"):
+                    yield f"data: {chunk}\n\n"
+                else:
+                    accumulated.append(chunk)
+                    yield f"data: {chunk}\n\n"
+        except NotImplementedError:
+            # Provider has no streaming variant — fall back to single blocking chunk
+            response = run_session(req.agent, req.input, persona=persona, provider=req.provider)
+            accumulated = [response]
+            yield f"data: {response}\n\n"
+            yield "data: [DONE]\n\n"
+        except Exception as e:
+            yield f"data: [ERROR] {e}\n\n"
+            return
+
+        _log_conversation(req.input, "".join(accumulated), req.agent, persona)
+
+    return StreamingResponse(sse_generator(), media_type="text/event-stream")
 
 
 @app.get("/health")

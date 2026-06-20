@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import sys
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -345,6 +346,37 @@ def _to_openai_tools(anthropic_schemas: list[dict]) -> list[dict]:
     ]
 
 
+def _clean_schema_for_gemini(schema: dict) -> dict:
+    """Recursively clean a JSON Schema dict for Gemini API compatibility.
+    Gemini rejects empty-string enum values; strip them before passing to FunctionDeclaration.
+    """
+    result = {}
+    for k, v in schema.items():
+        if k == "enum" and isinstance(v, list):
+            cleaned = [e for e in v if e != ""]
+            if cleaned:
+                result[k] = cleaned
+        elif isinstance(v, dict):
+            result[k] = _clean_schema_for_gemini(v)
+        else:
+            result[k] = v
+    return result
+
+
+def _to_gemini_tools(anthropic_schemas: list[dict]) -> list:
+    """Translate Anthropic tool schemas to google-genai types.Tool format."""
+    from google.genai import types
+    declarations = [
+        types.FunctionDeclaration(
+            name=s["name"],
+            description=s.get("description", ""),
+            parameters=_clean_schema_for_gemini(s["input_schema"]),
+        )
+        for s in anthropic_schemas
+    ]
+    return [types.Tool(function_declarations=declarations)]
+
+
 # ---------------------------------------------------------------------------
 # Output filter — strip architecture leaks before returning to user
 # ---------------------------------------------------------------------------
@@ -495,6 +527,88 @@ def run_session_anthropic(system_prompt: str, user_input: str,
                         "tool_use_id": tc.id,
                         "content": result,
                     })
+
+        messages.append({"role": "user", "content": tool_results})
+
+
+def _anthropic_stream(
+    system_prompt: str, user_input: str,
+    tool_schemas: list[dict], tool_handlers: dict,
+    model: str | None = None,
+    max_iterations: int = 8,
+) -> Iterator[str]:
+    """Streaming agentic loop for Anthropic.
+
+    Streams every turn. Text from tool-call turns is buffered but not yielded
+    (it is internal pre-tool reasoning). Text from the final text turn is yielded
+    in real-time as chunks arrive.
+
+    NOTE: Only the Synthesizer uses this function at runtime — it never calls tools,
+    so the first turn always goes directly to the yield-and-return path.
+    """
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise EnvironmentError("ANTHROPIC_API_KEY is not set.")
+
+    client = anthropic.Anthropic(api_key=api_key)
+    messages: list[dict] = [{"role": "user", "content": user_input}]
+    _model = model or ANTHROPIC_MODEL
+
+    for turn_num in range(1, max_iterations + 1):
+        _trace(f"[API] anthropic/{_model}  turn={turn_num}  streaming...")
+        text_parts: list[str] = []
+
+        with client.messages.stream(
+            model=_model,
+            max_tokens=4096,
+            system=system_prompt,
+            tools=tool_schemas,
+            messages=messages,
+        ) as stream:
+            for text in stream.text_stream:
+                text_parts.append(text)
+            final = stream.get_final_message()
+
+        if final.usage:
+            pts = final.usage.input_tokens
+            if pts > 8000:
+                logger.warning(f"[token_budget] OVER_8K turn={turn_num} input={pts}")
+                _trace(f"[TOKEN] turn={turn_num} input={pts} ⚠ OVER_8K")
+            else:
+                logger.info(f"[token_budget] turn={turn_num} input={pts}")
+                _trace(f"[TOKEN] turn={turn_num} input={pts}")
+
+        tool_calls = [block for block in final.content if block.type == "tool_use"]
+
+        if not tool_calls:
+            # Final text turn — yield chunks (already accumulated from stream)
+            for chunk in text_parts:
+                yield chunk
+            return
+
+        # Tool-call turn — dispatch and continue; don't yield text_parts
+        messages.append({"role": "assistant", "content": final.content})
+        tool_results = []
+        parallel_calls = [tc for tc in tool_calls if tc.name in _PARALLEL_TOOLS]
+        sequential_calls = [tc for tc in tool_calls if tc.name not in _PARALLEL_TOOLS]
+
+        for tc in sequential_calls:
+            result = dispatch_tool(tc.name, tc.input, tool_handlers)
+            tool_results.append({"type": "tool_result", "tool_use_id": tc.id, "content": result})
+
+        if parallel_calls:
+            with ThreadPoolExecutor() as executor:
+                future_to_tc = {
+                    executor.submit(dispatch_tool, tc.name, tc.input, tool_handlers): tc
+                    for tc in parallel_calls
+                }
+                for future in as_completed(future_to_tc):
+                    tc = future_to_tc[future]
+                    try:
+                        result = future.result()
+                    except Exception as e:
+                        result = f"Error: {e}"
+                    tool_results.append({"type": "tool_result", "tool_use_id": tc.id, "content": result})
 
         messages.append({"role": "user", "content": tool_results})
 
@@ -662,30 +776,42 @@ def _vertex_model_name(model: str) -> str:
     return model
 
 
-def run_session_gemini(system_prompt: str, user_input: str,
-                       tool_schemas: list[dict], tool_handlers: dict,
-                       model: str | None = None,
-                       history: list[dict] | None = None) -> str:
-    """Agentic loop using Gemini — Vertex AI if GOOGLE_CLOUD_PROJECT is set, else AI Studio."""
+def _resolve_gemini_credentials(model: str | None = None) -> tuple[str, str, str]:
+    """Return (api_key, base_url, model_name) for the Gemini OpenAI-compat endpoint.
+
+    Used by _openai_compat_stream() for Synthesizer streaming. Routes to Vertex AI
+    OpenAI-compat when GOOGLE_CLOUD_PROJECT is set, else AI Studio's OpenAI-compat URL.
+    """
     project = os.environ.get("GOOGLE_CLOUD_PROJECT")
     location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
-
     if project:
         api_key = _get_vertex_bearer_token()
         base_url = _vertex_openai_base_url(project, location)
         model_name = _vertex_model_name(model or GEMINI_PRO_MODEL)
     else:
-        api_key = os.environ.get("GEMINI_API_KEY")
+        api_key = os.environ.get("GEMINI_API_KEY") or ""
         if not api_key:
             raise EnvironmentError("GEMINI_API_KEY or GOOGLE_CLOUD_PROJECT must be set.")
         base_url = GEMINI_BASE_URL
         model_name = model or GEMINI_MODEL
+    return api_key, base_url, model_name
 
+
+def run_session_gemini(system_prompt: str, user_input: str,
+                       tool_schemas: list[dict], tool_handlers: dict,
+                       model: str | None = None,
+                       history: list[dict] | None = None) -> str:
+    """Agentic loop via Vertex AI OpenAI-compat endpoint (or AI Studio OpenAI-compat).
+
+    Uses _openai_compat_loop rather than the native genai SDK to avoid Vertex's
+    thought_signature bug: when the model makes parallel function calls, the native SDK
+    only assigns a thought_signature to the first Part, and Vertex rejects the multi-turn
+    request. The thought_signature workaround lives in _openai_compat_loop.
+    """
+    api_key, base_url, model_name = _resolve_gemini_credentials(model)
     return _openai_compat_loop(
         system_prompt, user_input, tool_schemas, tool_handlers,
-        api_key=api_key,
-        base_url=base_url,
-        model=model_name,
+        api_key=api_key, base_url=base_url, model=model_name,
         history=history,
     )
 
@@ -755,6 +881,108 @@ def run_session_gemini_grounded(system_prompt: str, user_input: str,
     return text
 
 
+def _run_gemini_native_loop(client, model_name: str,
+                             system_prompt: str, user_input: str,
+                             tool_schemas: list[dict], tool_handlers: dict,
+                             history: list[dict] | None = None,
+                             max_iterations: int = 8) -> str:
+    """
+    Agentic loop using the google-genai native SDK.
+
+    Replicates _openai_compat_loop behaviour for the Gemini path: multi-turn
+    contents list, tool dispatch (sequential + parallel for _PARALLEL_TOOLS),
+    token budget logging, and AI_TRACE markers.
+    """
+    from google.genai import types
+
+    gemini_tools = _to_gemini_tools(tool_schemas)
+    config = types.GenerateContentConfig(
+        system_instruction=system_prompt,
+        tools=gemini_tools,
+        max_output_tokens=4096,
+    )
+
+    contents: list = []
+    if history:
+        for msg in history:
+            role = "user" if msg["role"] == "user" else "model"
+            contents.append(types.Content(role=role, parts=[types.Part(text=msg["content"])]))
+    contents.append(types.Content(role="user", parts=[types.Part(text=user_input)]))
+
+    cumulative_input_tokens = 0
+    result = ""
+
+    for turn_num in range(1, max_iterations + 1):
+        _trace(f"[API] gemini-native/{model_name}  turn={turn_num}  waiting...")
+        response = client.models.generate_content(
+            model=model_name,
+            contents=contents,
+            config=config,
+        )
+
+        if hasattr(response, "usage_metadata") and response.usage_metadata:
+            input_tokens = getattr(response.usage_metadata, "prompt_token_count", 0) or 0
+            cumulative_input_tokens += input_tokens
+            if cumulative_input_tokens > 8000:
+                logger.warning(f"[token_budget] OVER_8K turn={turn_num} cumulative_input={cumulative_input_tokens}")
+                _trace(f"[TOKEN] turn={turn_num} input={input_tokens} cumulative={cumulative_input_tokens} ⚠ OVER_8K")
+            else:
+                logger.info(f"[token_budget] turn={turn_num} cumulative_input={cumulative_input_tokens}")
+                _trace(f"[TOKEN] turn={turn_num} input={input_tokens} cumulative={cumulative_input_tokens}")
+
+        model_content = response.candidates[0].content
+        contents.append(model_content)
+
+        function_calls = []
+        text_parts = []
+        for part in model_content.parts:
+            if part.function_call:
+                function_calls.append(part.function_call)
+            elif part.text:
+                text_parts.append(part.text)
+
+        if not function_calls:
+            result = "\n".join(text_parts)
+            if history is not None:
+                history.append({"role": "user", "content": user_input})
+                history.append({"role": "assistant", "content": result})
+            return result
+
+        result_parts = []
+        parallel_calls = []
+        for fc in function_calls:
+            if fc.name in _PARALLEL_TOOLS:
+                parallel_calls.append(fc)
+            else:
+                res = dispatch_tool(fc.name, fc.args, tool_handlers)
+                result_parts.append(
+                    types.Part.from_function_response(name=fc.name, response={"result": res})
+                )
+
+        if parallel_calls:
+            with ThreadPoolExecutor() as executor:
+                future_to_fc = {
+                    executor.submit(dispatch_tool, fc.name, fc.args, tool_handlers): fc
+                    for fc in parallel_calls
+                }
+                for future in as_completed(future_to_fc):
+                    fc = future_to_fc[future]
+                    try:
+                        res = future.result()
+                    except Exception as e:
+                        res = f"Error: {e}"
+                    result_parts.append(
+                        types.Part.from_function_response(name=fc.name, response={"result": res})
+                    )
+
+        contents.append(types.Content(role="user", parts=result_parts))
+
+    if history is not None:
+        history.append({"role": "user", "content": user_input})
+        history.append({"role": "assistant", "content": result})
+    return result
+
+
 def _openai_compat_loop(system_prompt: str, user_input: str,
                          tool_schemas: list[dict], tool_handlers: dict,
                          api_key: str, base_url: str | None, model: str,
@@ -797,33 +1025,165 @@ def _openai_compat_loop(system_prompt: str, user_input: str,
 
         choice = response.choices[0]
         message = choice.message
-        messages.append(message)
 
-        # Return on any non-tool-call finish, or if content exists alongside tool calls
+        # Return on any non-tool-call finish
         if choice.finish_reason != "tool_calls" or not message.tool_calls:
+            messages.append(message)
             result = message.content or ""
             if history is not None:
                 history.append({"role": "user", "content": user_input_display or user_input})
                 history.append({"role": "assistant", "content": result})
             return result
 
-        parallel_calls = []
-        for tc in message.tool_calls:
+        if len(message.tool_calls) == 1:
+            # Single tool call — use Vertex's message as-is (valid thought_signature in extra_content)
+            messages.append(message)
+            tc = message.tool_calls[0]
             inputs = json.loads(tc.function.arguments)
-            if tc.function.name in _PARALLEL_TOOLS:
+            result = dispatch_tool(tc.function.name, inputs, tool_handlers)
+            messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
+        else:
+            # Vertex bug: parallel tool calls only sign tc0 in extra_content.google.thought_signature.
+            # Sending the full multi-call Vertex message back causes a 400 — Vertex validates
+            # signatures on its own prior responses and rejects unsigned tc1+.
+            #
+            # Workaround: execute only tc0 (which has a valid signature). Use model_copy() to
+            # create a single-tool-call version of the original Vertex message, preserving all
+            # internal SDK metadata (including thought_signature). The model re-calls tc1+ on
+            # subsequent turns as individual signed calls.
+            # Cost: N parallel calls become N sequential turns. Acceptable for Vertex workaround.
+            tc0 = message.tool_calls[0]
+            inputs = json.loads(tc0.function.arguments)
+            result = dispatch_tool(tc0.function.name, inputs, tool_handlers)
+            # model_copy preserves all internal SDK state (including Vertex's extra_content with
+            # thought_signature) while reducing tool_calls to only tc0 (the signed call).
+            messages.append(message.model_copy(update={"tool_calls": [tc0]}))
+            messages.append({"role": "tool", "tool_call_id": tc0.id, "content": result})
+
+    # Fallback if max iterations reached — return whatever content we have
+    result = messages[-1].get("content") or ""
+    if history is not None:
+        history.append({"role": "user", "content": user_input})
+        history.append({"role": "assistant", "content": result})
+    return result
+
+
+def _openai_compat_stream(
+    system_prompt: str, user_input: str,
+    tool_schemas: list[dict], tool_handlers: dict,
+    api_key: str, base_url: str | None, model: str,
+    max_iterations: int = 8,
+    extra_body: dict | None = None,
+    history: list[dict] | None = None,
+    user_input_display: str | None = None,
+) -> Iterator[str]:
+    """Streaming agentic loop for OpenAI-compatible APIs (Gemini, OpenAI, Ollama).
+
+    Yields text chunks from the final (non-tool-call) response turn in real-time.
+    Tool-call intermediate turns run blocking (stream=False) before the streaming turn.
+
+    NOTE: Only the Synthesizer uses this function at runtime — it never calls tools,
+    so only the final-turn streaming path is exercised in practice.
+    """
+    client = openai.OpenAI(api_key=api_key, base_url=base_url or None)
+    oai_tools = _to_openai_tools(tool_schemas)
+    messages = [{"role": "system", "content": system_prompt}]
+    if history:
+        messages.extend(history)
+    messages.append({"role": "user", "content": user_input})
+
+    for turn_num in range(1, max_iterations + 1):
+        _trace(f"[API] {base_url or 'openai'}/{model}  turn={turn_num}  streaming...")
+        token_kwarg = "max_completion_tokens" if model.startswith("o") else "max_tokens"
+
+        stream = client.chat.completions.create(
+            model=model,
+            **{token_kwarg: 4096},
+            tools=oai_tools,
+            messages=messages,
+            stream=True,
+            stream_options={"include_usage": True},
+            **({"extra_body": extra_body} if extra_body else {}),
+        )
+
+        text_parts: list[str] = []
+        tool_calls_raw: dict[int, dict] = {}  # delta index → accumulated data
+        finish_reason: str | None = None
+
+        for chunk in stream:
+            if not chunk.choices:
+                # Usage-only trailing chunk (include_usage=True)
+                if hasattr(chunk, "usage") and chunk.usage:
+                    pts = chunk.usage.prompt_tokens or 0
+                    if pts > 8000:
+                        logger.warning(f"[token_budget] OVER_8K turn={turn_num} cumulative_input={pts}")
+                        _trace(f"[TOKEN] turn={turn_num} input={pts} ⚠ OVER_8K")
+                    else:
+                        logger.info(f"[token_budget] turn={turn_num} cumulative_input={pts}")
+                        _trace(f"[TOKEN] turn={turn_num} input={pts}")
+                continue
+
+            choice = chunk.choices[0]
+            if choice.finish_reason:
+                finish_reason = choice.finish_reason
+            delta = choice.delta
+
+            if delta.content:
+                text_parts.append(delta.content)
+                yield delta.content
+
+            if delta.tool_calls:
+                for tc_delta in delta.tool_calls:
+                    idx = tc_delta.index
+                    if idx not in tool_calls_raw:
+                        tool_calls_raw[idx] = {"id": "", "name": "", "arguments": ""}
+                    if tc_delta.id:
+                        tool_calls_raw[idx]["id"] = tc_delta.id
+                    if tc_delta.function:
+                        if tc_delta.function.name:
+                            tool_calls_raw[idx]["name"] = tc_delta.function.name
+                        if tc_delta.function.arguments:
+                            tool_calls_raw[idx]["arguments"] += tc_delta.function.arguments
+
+        if finish_reason != "tool_calls" or not tool_calls_raw:
+            result = "".join(text_parts)
+            if history is not None:
+                history.append({"role": "user", "content": user_input_display or user_input})
+                history.append({"role": "assistant", "content": result})
+            return
+
+        # Tool-call turn — reconstruct and dispatch, then continue the loop
+        reconstructed = [
+            {
+                "id": tool_calls_raw[i]["id"],
+                "type": "function",
+                "function": {
+                    "name": tool_calls_raw[i]["name"],
+                    "arguments": tool_calls_raw[i]["arguments"],
+                },
+            }
+            for i in sorted(tool_calls_raw)
+        ]
+        messages.append({
+            "role": "assistant",
+            "content": "".join(text_parts) or None,
+            "tool_calls": reconstructed,
+        })
+
+        parallel_calls = []
+        for tc in reconstructed:
+            name = tc["function"]["name"]
+            inputs = json.loads(tc["function"]["arguments"])
+            if name in _PARALLEL_TOOLS:
                 parallel_calls.append((tc, inputs))
             else:
-                result = dispatch_tool(tc.function.name, inputs, tool_handlers)
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": result,
-                })
+                result = dispatch_tool(name, inputs, tool_handlers)
+                messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
 
         if parallel_calls:
             with ThreadPoolExecutor() as executor:
                 future_to_tc = {
-                    executor.submit(dispatch_tool, tc.function.name, inputs, tool_handlers): tc
+                    executor.submit(dispatch_tool, tc["function"]["name"], inputs, tool_handlers): tc
                     for tc, inputs in parallel_calls
                 }
                 for future in as_completed(future_to_tc):
@@ -832,18 +1192,12 @@ def _openai_compat_loop(system_prompt: str, user_input: str,
                         result = future.result()
                     except Exception as e:
                         result = f"Error: {e}"
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc.id,
-                        "content": result,
-                    })
+                    messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
 
-    # Fallback if max iterations reached — return whatever content we have
-    result = messages[-1].get("content") or ""
+    # Fallback: max iterations reached
     if history is not None:
-        history.append({"role": "user", "content": user_input})
-        history.append({"role": "assistant", "content": result})
-    return result
+        history.append({"role": "user", "content": user_input_display or user_input})
+        history.append({"role": "assistant", "content": ""})
 
 
 def _run_single_agent(agent_name: str, user_input: str,
@@ -875,27 +1229,30 @@ def _run_single_agent(agent_name: str, user_input: str,
         # bare: token-pressure diagnostics — agent file only, no personal context.
         # research_agent: external-facing, never receives personal config.
         system_prompt = f"## Your Role for This Session\n\n{agent}"
+        augmented_input = user_input
     else:
         config = load_config(persona=persona)
         recent = load_recent_context(persona=persona)
-        context_block = f"\n\n---\n\n{recent}" if recent else ""
-        system_prompt = f"## Your Role for This Session\n\n{agent}\n\n---\n\n{config}{context_block}"
+        # Recent context goes in the user message (not system prompt) so the system
+        # prompt remains stable across calls — enabling KV prefix cache activation.
+        system_prompt = f"## Your Role for This Session\n\n{agent}\n\n---\n\n{config}"
+        augmented_input = f"[Recent context]\n{recent}\n\n---\n\n{user_input}" if recent else user_input
     tool_schemas, tool_handlers = register_tools()
 
     if provider == "openai":
-        return run_session_openai(system_prompt, user_input, tool_schemas, tool_handlers,
+        return run_session_openai(system_prompt, augmented_input, tool_schemas, tool_handlers,
                                   model=model_override, history=history)
     elif provider == "ollama":
-        return run_session_ollama(system_prompt, user_input, tool_schemas, tool_handlers,
+        return run_session_ollama(system_prompt, augmented_input, tool_schemas, tool_handlers,
                                   model=model_override, base_url=base_url_override,
                                   history=history)
     elif provider == "gemini":
         if agent_name == "research_agent":
-            return run_session_gemini_grounded(system_prompt, user_input, model=model_override)
-        return run_session_gemini(system_prompt, user_input, tool_schemas, tool_handlers,
+            return run_session_gemini_grounded(system_prompt, augmented_input, model=model_override)
+        return run_session_gemini(system_prompt, augmented_input, tool_schemas, tool_handlers,
                                   model=model_override, history=history)
     else:
-        return run_session_anthropic(system_prompt, user_input, tool_schemas, tool_handlers,
+        return run_session_anthropic(system_prompt, augmented_input, tool_schemas, tool_handlers,
                                      model=model_override)
 
 
@@ -917,6 +1274,7 @@ def run_pipeline_session(user_input: str,
         "coordinator", user_input, persona=persona, provider=provider
     )
     _trace(f"[PIPELINE] coordinator  done  ({len(coord_package)} chars) → synthesizer starting")
+    print(f"\n--- COORD PACKAGE ---\n{coord_package}\n--- END COORD PACKAGE ---\n", file=sys.stderr)  # dev
 
     # Pass 2: Synthesizer — integration and user-facing response
     synthesizer_input = (
@@ -929,6 +1287,101 @@ def run_pipeline_session(user_input: str,
     _trace(f"[PIPELINE] synthesizer  done  ({len(synth_result)} chars)")
 
     return filter_output(synth_result, "synthesizer")
+
+
+def run_pipeline_session_stream(
+    user_input: str,
+    persona: str | None = None,
+    provider: str | None = None,
+) -> Iterator[str]:
+    """
+    Streaming variant of run_pipeline_session().
+
+    Pass 1 (Coordinator): runs blocking, identical to run_pipeline_session().
+    Pass 2 (Synthesizer): streams output as text chunks, yielding each in real-time.
+
+    Yields text chunks during generation, then exactly one control token:
+      "[DONE]"    — generation complete, filter passed
+      "[RETRACT]" — filter caught a confidential term; client should discard received text
+    """
+    # Pass 1: Coordinator — blocking (unchanged)
+    _trace("[PIPELINE] coordinator  starting")
+    coord_package = _run_single_agent("coordinator", user_input, persona=persona, provider=provider)
+    _trace(f"[PIPELINE] coordinator  done  ({len(coord_package)} chars) → synthesizer streaming")
+
+    # Build Synthesizer input (same as run_pipeline_session)
+    synthesizer_input = (
+        f"ORIGINAL USER MESSAGE:\n{user_input}\n\n"
+        f"COORDINATOR CONTEXT PACKAGE:\n{coord_package}"
+    )
+
+    # Load Synthesizer prompt — mirrors _run_single_agent internals
+    agent_instructions = load_agent("synthesizer")
+    config = load_config(persona=persona)
+    recent = load_recent_context(persona=persona)
+    system_prompt = f"## Your Role for This Session\n\n{agent_instructions}\n\n---\n\n{config}"
+    augmented_input = (
+        f"[Recent context]\n{recent}\n\n---\n\n{synthesizer_input}" if recent else synthesizer_input
+    )
+    tool_schemas, tool_handlers = register_tools()
+
+    # Resolve Synthesizer provider/model — explicit provider arg overrides router
+    if provider is not None:
+        synth_provider = provider
+        synth_model: str | None = None
+        synth_base_url: str | None = None
+    else:
+        from core.router import resolve_model
+        model_cfg = resolve_model("synthesizer")
+        synth_provider = model_cfg.provider
+        synth_model = model_cfg.model
+        synth_base_url = model_cfg.base_url
+
+    _trace(f"[PIPELINE] synthesizer  provider={synth_provider}  model={synth_model}  streaming")
+
+    # Dispatch to streaming variant
+    # STREAMING NOTE: All four providers stream here. If you add a new provider,
+    # add a streaming branch below before routing the Synthesizer to it.
+    if synth_provider == "gemini":
+        api_key, base_url, model_name = _resolve_gemini_credentials(synth_model)
+        gen = _openai_compat_stream(
+            system_prompt, augmented_input, tool_schemas, tool_handlers,
+            api_key=api_key, base_url=base_url, model=model_name,
+        )
+    elif synth_provider == "openai":
+        api_key = os.environ.get("OPENAI_API_KEY", "")
+        gen = _openai_compat_stream(
+            system_prompt, augmented_input, tool_schemas, tool_handlers,
+            api_key=api_key, base_url=None, model=synth_model or OPENAI_MODEL,
+        )
+    elif synth_provider == "ollama":
+        gen = _openai_compat_stream(
+            system_prompt, augmented_input, tool_schemas, tool_handlers,
+            api_key="ollama", base_url=synth_base_url or OLLAMA_BASE_URL,
+            model=synth_model or OLLAMA_MODEL,
+        )
+    elif synth_provider == "anthropic":
+        gen = _anthropic_stream(
+            system_prompt, augmented_input, tool_schemas, tool_handlers,
+            model=synth_model or ANTHROPIC_MODEL,
+        )
+    else:
+        raise NotImplementedError(f"No streaming implementation for provider: {synth_provider}")
+
+    # Yield chunks and accumulate for post-stream filter check
+    buffer: list[str] = []
+    for chunk in gen:
+        buffer.append(chunk)
+        yield chunk
+
+    complete = "".join(buffer)
+    filtered = filter_output(complete, "synthesizer")
+    if filtered != complete:
+        yield "[RETRACT]"
+    else:
+        yield "[DONE]"
+
+    _trace(f"[PIPELINE] synthesizer  done  ({len(complete)} chars)")
 
 
 def run_session(agent_name: str, user_input: str,
