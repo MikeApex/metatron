@@ -46,7 +46,7 @@ If you need to find a specific file, tool, or planning document: **[CODEBASE_IND
 - **Native SDK migration:** reverted — `run_session_gemini` now routes through `_openai_compat_loop` + `_resolve_gemini_credentials` (Vertex OpenAI-compat endpoint). The native genai SDK (`_run_gemini_native_loop`) is retained but unused; migration was abandoned due to an unworkable Vertex thought_signature bug (see below).
 - **Streaming:** complete. `POST /session/stream` SSE endpoint live. Anthropic streaming confirmed working. Gemini streaming via `_openai_compat_stream` wired up. PWA client-side SSE consumption deferred.
 - **Vertex thought_signature bug — fixed:** When Vertex returns N parallel tool calls, only tc0 gets a cryptographically valid `thought_signature` in `extra_content`. Fix in `_openai_compat_loop`: `message.model_copy(update={"tool_calls": [tc0]})` — trim to single signed call, execute it, let model re-call tc1+ individually. Cost: parallel calls become sequential turns. No 400 errors in testing (turn=6+ confirmed).
-- **HF_TOKEN:** add read-only token from hf.co/settings/tokens to `.env` — suppresses HuggingFace rate-limit warnings during model weight loading.
+- **HF_TOKEN:** read-only token added to `.env` ✓
 - Coordinator slimming: handed off to new chat — target ≤3 turns, ≤40K tokens (currently 6 turns, 88K)
 - Coord package debug print active in `core/orchestrator.py` (dev — remove before Beta)
 - Baseline: 16–20s simple session, 65–74s complex multi-specialist. Was 60–90s.

@@ -92,4 +92,4 @@ Expect: chunks arrive progressively, `[DONE]` at end, first chunk within ~2s.
 - **SSE streaming:** complete, confirmed working (Anthropic path tested live)
 - **Vertex thought_signature bug:** fixed — no 400 errors in testing; sequential fallback confirmed functional to turn=6+
 - **PWA client-side SSE:** deferred to follow-up session
-- **HF_TOKEN:** add read-only token to `.env` to suppress HuggingFace warnings
+- **HF_TOKEN:** read-only token added to `.env` ✓
