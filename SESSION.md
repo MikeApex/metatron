@@ -1,5 +1,5 @@
 # Session Primer — Personal AI Life Manager
-*Updated: 2026-06-19. Update this file at the close of every chat so the next chat — or any parallel chat window — starts from current state.*
+*Updated: 2026-06-20 (Streaming + Vertex thought_signature fix). Update this file at the close of every chat so the next chat — or any parallel chat window — starts from current state.*
 
 ---
 
@@ -37,6 +37,20 @@ If you need to find a specific file, tool, or planning document: **[CODEBASE_IND
 
 **Active priority (2026-06-19):** streamline agent flow to reduce response latency — get the tool functionally usable before completing sign-off work. B1/Check10/Check12 resume after latency work stabilises the pipeline.
 
+**Latency work done (2026-06-19):**
+- Model tiering: coordinator + 6 specialists → Flash; coordinator reverted to Pro (Flash skips tool calls unreliably); 6 specialists remain on Flash
+- Diarist fire-and-forget: code-enforced in `tools/subagent.py` — confirmed working; excluded from SPECIALIST_OUTPUTS
+- quick_override added to `routing_cloud.yaml` (Flash) — diarist routes correctly via quick_override path
+- Prefix caching: recent context moved to user message in `_run_single_agent()` — system prompt stable per agent
+- Output compression: Recreation → compact JSON confirmed working; Logistics / Work/Vocation next
+- **Native SDK migration:** reverted — `run_session_gemini` now routes through `_openai_compat_loop` + `_resolve_gemini_credentials` (Vertex OpenAI-compat endpoint). The native genai SDK (`_run_gemini_native_loop`) is retained but unused; migration was abandoned due to an unworkable Vertex thought_signature bug (see below).
+- **Streaming:** complete. `POST /session/stream` SSE endpoint live. Anthropic streaming confirmed working. Gemini streaming via `_openai_compat_stream` wired up. PWA client-side SSE consumption deferred.
+- **Vertex thought_signature bug — fixed:** When Vertex returns N parallel tool calls, only tc0 gets a cryptographically valid `thought_signature` in `extra_content`. Fix in `_openai_compat_loop`: `message.model_copy(update={"tool_calls": [tc0]})` — trim to single signed call, execute it, let model re-call tc1+ individually. Cost: parallel calls become sequential turns. No 400 errors in testing (turn=6+ confirmed).
+- **HF_TOKEN:** add read-only token from hf.co/settings/tokens to `.env` — suppresses HuggingFace rate-limit warnings during model weight loading.
+- Coordinator slimming: handed off to new chat — target ≤3 turns, ≤40K tokens (currently 6 turns, 88K)
+- Coord package debug print active in `core/orchestrator.py` (dev — remove before Beta)
+- Baseline: 16–20s simple session, 65–74s complex multi-specialist. Was 60–90s.
+
 - ~~**A1** Compliance curve design conversation~~ — **done 2026-06-18.** All four design questions resolved. Shared principle + Synthesizer integrator (Q1); user-reported cold-start, ratchet research-gated (Q2); Synthesizer level only (Q3); nothing activates at A5c, produces plan only (Q4). Decision doc: `archive/plans/compliance_curve_decision_2026-06-13.md`. Agent file edits queued (apply when A2 chat closes). MCP server updates: o3+o1+auto-discovery added to ask_gpt; auto-discovery added to ask_gemini; Opus timeout fixed (600s) in ask_claude.
 - ~~**A2** Logging Layer~~ — **done 2026-06-13.** `write_quality_event` in `tools/logger.py`, ROUTING_MISS wired in synthesizer.md, USER_CORRECTION in coordinator.md, PWA tap (`·` dot → `/feedback`). Tests deferred to Alpha launch (`tests/phase5_testing_plan.md` → Known gaps).
 - ~~**A3** Cold-start baselines~~ — **done 2026-06-18.** 4 new functions in `tools/baselines.py`: `create_semantic_anchor`, `write_aspirational_baseline`, `shuffled_null_score`, `score_against_anchors`. All 8 canonical anchors written to `data/baselines/semantic_anchors.json`. All 3 roadmap tests pass. Truncated Goals Interview run-guide in `archive/sessions/2026-06-18 — A3 Cold-Start Baselines.md`. A5b re-run pending (after full Goals Interview).
@@ -57,7 +71,7 @@ If you need to find a specific file, tool, or planning document: **[CODEBASE_IND
 - **sys.path fix:** orchestrator now inserts project root so `tools/` resolves correctly when running `python core/orchestrator.py`.
 - **Smoke test:** Research Agent via Vertex returned valid grounded response. Full pipeline: 60–90s latency (multiple sequential Gemini 3.1 Pro calls via AI Studio — see open item below).
 - **Repo cleanup:** .gitignore expanded; all previously untracked files committed (108 files).
-- **⚠ OPEN:** `run_session_gemini()` (coordinator/synthesizer/specialists) still uses AI Studio OpenAI-compat endpoint — NOT Vertex. Only research_agent is on Vertex. Full Vertex migration of this path is the next code task.
+- **Vertex native SDK migration complete (2026-06-19):** `run_session_gemini()` now uses `_run_gemini_native_loop()` via `genai.Client(vertexai=True)` — same client setup as `run_session_gemini_grounded()`. All Gemini agents (coordinator, synthesizer, all specialists) are now on the native SDK. `_openai_compat_loop()` retained for OpenAI/Ollama paths only. One fix required: Gemini API rejects empty-string enum values; handled in `_clean_schema_for_gemini()` at conversion time. Tested: single-shot full pipeline + two-turn interactive history threading. Session archive: `2026-06-19 — Native SDK Migration (Gemini).md`.
 - **Next sessions ready:** efficiency prompt + Android app prompt both written and in this archive.
 
 ### Also done 2026-06-17 (Metatron Android app session)
