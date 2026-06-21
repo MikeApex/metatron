@@ -10,6 +10,11 @@
 
 local_enabled: false
 
+# Flash override for complexity="quick" calls (non-sensitive agents only).
+quick_override:
+  provider: gemini
+  model: "models/gemini-3.1-flash-lite"
+
 # Agent model assignments — all on Vertex Gemini 3.1 Pro.
 agents:
 
@@ -17,62 +22,62 @@ agents:
 
   coordinator:
     provider: gemini
-    model: "gemini-3.1-pro-preview"
+    model: "models/gemini-3.1-pro-preview"  # reverted from Flash — Flash skips tool calls on complex routing tasks
 
   synthesizer:
     provider: gemini
-    model: "gemini-3.1-pro-preview"
+    model: "models/gemini-3.1-pro-preview"  # user-facing voice; safety flag integration; keep on Pro
 
   # ── Data and analysis ────────────────────────────────────────────────────────
 
   diarist:
     provider: gemini
-    model: "gemini-3.1-pro-preview"
+    model: "models/gemini-3.1-flash-lite"   # write-only; fire-and-forget target
 
   pattern_miner:
     provider: gemini
-    model: "gemini-3.1-pro-preview"
+    model: "models/gemini-3.1-pro-preview"  # analytical depth; scheduler task, not on real-time path
 
   goals_interviewer:
     provider: gemini
-    model: "gemini-3.1-pro-preview"
+    model: "models/gemini-3.1-pro-preview"  # interview quality matters; runs infrequently
 
   # ── Personal specialists ─────────────────────────────────────────────────────
 
   mental_wellbeing:
     provider: gemini
-    model: "gemini-3.1-pro-preview"
+    model: "models/gemini-3.1-pro-preview"  # clinical flags (MUST_SURFACE, CLINICAL_CONCERN); never downgrade
 
   physical_health:
     provider: gemini
-    model: "gemini-3.1-pro-preview"
+    model: "models/gemini-3.1-pro-preview"  # medication / symptom class; same safety rationale as MW
 
   work_vocation:
     provider: gemini
-    model: "gemini-3.1-pro-preview"
+    model: "models/gemini-3.1-flash-lite"   # no clinical stakes
 
   relationships:
     provider: gemini
-    model: "gemini-3.1-pro-preview"
+    model: "models/gemini-3.1-flash-lite"   # no clinical stakes
 
   finance:
     provider: gemini
-    model: "gemini-3.1-pro-preview"
+    model: "models/gemini-3.1-flash-lite"   # arithmetic tracking; upgrade to Pro if hard-fail results were marginal
 
   learning_growth:
     provider: gemini
-    model: "gemini-3.1-pro-preview"
+    model: "models/gemini-3.1-flash-lite"
 
   recreation_hobbies:
     provider: gemini
-    model: "gemini-3.1-pro-preview"
+    model: "models/gemini-3.1-flash-lite"
 
   logistics:
     provider: gemini
-    model: "gemini-3.1-pro-preview"
+    model: "models/gemini-3.1-flash-lite"
 
   # ── Cloud-only (decontextualized) ────────────────────────────────────────────
 
   research_agent:
     provider: gemini
-    model: "gemini-3.1-pro-preview"   # grounded search; decontextualized only
+    model: "models/gemini-3.1-pro-preview"  # grounded search; decontextualized only

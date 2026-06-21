@@ -1,5 +1,5 @@
 # Session Primer — Personal AI Life Manager
-*Updated: 2026-06-20 (Streaming + Vertex thought_signature fix). Update this file at the close of every chat so the next chat — or any parallel chat window — starts from current state.*
+*Updated: 2026-06-21 (CLAUDE.md deployment infrastructure section). Update this file at the close of every chat so the next chat — or any parallel chat window — starts from current state.*
 
 ---
 
@@ -62,6 +62,24 @@ If you need to find a specific file, tool, or planning document: **[CODEBASE_IND
 - **Check 10** Agent behavioral audits — **on hold**
 - **Check 12** Constitution alignment review — **on hold**
 
+### Also done 2026-06-21 (CLAUDE.md deployment infrastructure)
+- **CLAUDE.md updated:** "Per-System Configuration" replaced with comprehensive "Deployment Infrastructure" section covering topology diagram, GCP VM, Vertex AI, billing protection, Tailscale, systemd unit files (verbatim), GitHub/deploy pipeline, Python env, all environment variables, routing/deployment mode, Android app build steps, local dev mode, and a 10-step recreate-from-scratch checklist.
+- **Model version note** in CLAUDE.md updated (2026-05-19 → 2026-06-21; Flash-Lite ID corrected to non-preview).
+- Session archive: `archive/sessions/2026-06-21 — CLAUDE.md Deployment Infrastructure Section.md`
+
+### Also done 2026-06-20 (VM provisioning, GitHub, deploy pipeline)
+- **GCP VM provisioned:** `metatron-vm`, `e2-medium`, Debian 12, `us-central1-a`. Python 3.11, ffmpeg, all deps installed.
+- **Tailscale on VM:** joined tailnet. **VM Tailscale IP: `100.64.226.49`** — phone connects here (not the Mac). Health check confirmed via Tailscale.
+- **Vertex credentials on VM:** service account `metatron-vertex@metatron-ai-499810.iam.gserviceaccount.com` with `roles/aiplatform.user`. Key at `~/multi-model-mcp/vertex-key.json`, `GOOGLE_APPLICATION_CREDENTIALS` in `.env`.
+- **systemd services:** `metatron-server.service` (port 8001, `--persona mike`) + `metatron-scheduler.service` — both enabled and `active (running)`.
+- **GitHub repo:** `github.com/MikeApex/metatron` (private). SSH key `~/.ssh/github_mikeapex` on Mac, deploy key `metatron-vm` on VM.
+- **Deploy pipeline:** `./deploy.sh` — pushes to GitHub, VM pulls, restarts services. Post-commit hook reminds to deploy after every commit.
+- **Always-on Mac backup:** not yet implemented — deferred until needed (VM is primary). When needed: `pmset` for sleep prevention + launchd plist (see notes below).
+- **Login/profile screen:** added to `static/index.html`. Shows on first launch; auto-logins on return via `localStorage`. Persona dropdown (mike + all test personas grouped). Password field (placeholder, not enforced). Persona chip in header — tap to switch.
+- **APK rebuilt and sideloaded:** new VM Tailscale IP (`100.64.226.49`), login screen, new mem icon. Java 21 installed via Homebrew. Adaptive icon XMLs removed — Android now uses PNG directly (fixes home screen icon caching issue). APK served via `python3 -m http.server 8888` on Mac Tailscale IP.
+- **GitHub:** `github.com/MikeApex/metatron` (private). SSH key `~/.ssh/github_mikeapex`. Deploy key `metatron-vm` on VM. `./deploy.sh` pushes to GitHub + restarts VM services. Post-commit hook reminds to deploy.
+- **requirements.txt** generated from venv (95 packages) and committed.
+
 ### Also done 2026-06-19 (Vertex AI setup session)
 - **GCP project created:** `metatron-ai-499810`, billing linked, Vertex AI API enabled, ADC configured.
 - **Billing hard-cap at $20:** Pub/Sub topic `billing-cap` + Cloud Function `stop-billing` (Python 3.11, Gen2) auto-disables billing when budget fires. IAM grants in place.
@@ -117,6 +135,11 @@ If you need to find a specific file, tool, or planning document: **[CODEBASE_IND
 ---
 
 ## Quick start
+
+> **⚠ Switching to local Mac routing (Ollama)?** Two things must be activated first:
+> 1. `sudo pmset -a sleep 0 disksleep 0` — prevent Mac sleep
+> 2. `launchctl load ~/Library/LaunchAgents/com.metatron.server.plist` — keep server alive (create plist first if not done — see `archive/sessions/2026-06-20 — VM Provisioning, GitHub, Deploy Pipeline.md`)
+> Reverse with: `sudo pmset -a sleep 10 disksleep 10` and `launchctl unload ~/Library/LaunchAgents/com.metatron.server.plist`
 
 ```bash
 cd ~/Desktop/multi-model-mcp

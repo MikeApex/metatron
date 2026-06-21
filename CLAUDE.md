@@ -154,19 +154,357 @@ See `config/constitution.md` for the runtime expression of these principles. See
 
 ---
 
-## Per-System Configuration (new machine checklist)
+## Deployment Infrastructure
 
-These items are hardcoded for the current dev machine and will need adaptation on any new system. A proper setup/onboarding flow is deferred to a later phase — for now, find and update these manually:
+This section describes the full production topology as of 2026-06-20. An engineer reading this should be able to recreate it from scratch.
 
-| What | Where | How to find the right value |
+---
+
+### Topology
+
+```
+Mac (dev)
+  │  git push → github.com/MikeApex/metatron (private)
+  │               │
+  │               └── VM pulls via deploy key (read-only SSH)
+  │
+  └── ./deploy.sh ──► GCP VM (metatron-vm, us-central1-a)
+                            │  runs: metatron-server.service (port 8001)
+                            │        metatron-scheduler.service
+                            │
+                            ├──► Vertex AI (Gemini 3.1 Pro / Flash-Lite)
+                            │         GCP project: metatron-ai-499810
+                            │
+                            └──► Tailscale VPN (IP: 100.64.226.49)
+                                      │
+                                 Android phone
+                                 (Metatron app → http://100.64.226.49:8001)
+```
+
+The VM's external IP (`35.202.250.80`) is never used. All client access is through the Tailscale WireGuard tunnel. HTTP (not HTTPS) on port 8001 is acceptable because Tailscale provides transport encryption.
+
+---
+
+### GCP VM
+
+| Property | Value |
+|---|---|
+| Instance name | `metatron-vm` |
+| Machine type | `e2-medium` (2 vCPU / 4 GB RAM) |
+| OS | Debian 12 |
+| Zone | `us-central1-a` |
+| GCP project | `metatron-ai-499810` |
+| External IP | `35.202.250.80` (not used — do not open firewall) |
+| Tailscale IP | `100.64.226.49` (production client address) |
+| OS user | `md-homefolder` |
+| Repo path | `~/multi-model-mcp` |
+| Python | 3.11 |
+| System packages | `python3.11`, `python3.11-venv`, `ffmpeg` |
+
+SSH access from Mac:
+```bash
+gcloud compute ssh metatron-vm --zone=us-central1-a --project=metatron-ai-499810
+```
+
+---
+
+### Vertex AI
+
+| Property | Value |
+|---|---|
+| GCP project | `metatron-ai-499810` |
+| Location | `global` (required for Gemini 3.x models — `us-central1` does not work) |
+| Service account | `metatron-vertex@metatron-ai-499810.iam.gserviceaccount.com` |
+| IAM role | `roles/aiplatform.user` |
+| Key file on VM | `~/multi-model-mcp/vertex-key.json` (gitignored) |
+| `.env` var | `GOOGLE_APPLICATION_CREDENTIALS=/home/md-homefolder/multi-model-mcp/vertex-key.json` |
+
+How the orchestrator uses it: all Gemini agents go through `_openai_compat_loop()` via the Vertex AI OpenAI-compatible endpoint. The native genai SDK loop (`_run_gemini_native_loop`) is retained in code but unused — it was abandoned due to an unworkable `thought_signature` bug on parallel tool calls. The grounded search path (`run_session_gemini_grounded`) uses the native SDK and is unaffected.
+
+Model ID note: Vertex drops the `models/` prefix that AI Studio requires. The orchestrator strips it automatically when `GOOGLE_CLOUD_PROJECT` is set.
+
+---
+
+### Billing Protection
+
+Hard cap at $20/month to prevent runaway API charges.
+
+- **Pub/Sub topic:** `billing-cap` in project `metatron-ai-499810`
+- **Budget alert:** fires at $20, publishes to `billing-cap` topic
+- **Cloud Function:** `stop-billing` (Python 3.11, Gen2, `us-central1`)
+  - Trigger: Pub/Sub message on `billing-cap`
+  - Action: calls `cloudbilling.disable_project_billing()` on the project
+  - Retry policy: `RETRY_POLICY_DO_NOT_RETRY`
+
+If billing gets disabled, re-enable it in the GCP Console under Billing before doing anything else.
+
+---
+
+### Tailscale
+
+Tailscale creates a WireGuard mesh VPN between the Mac, VM, and phone. It is the sole access path to the server — no public firewall ports are open on the VM.
+
+| Device | Tailscale hostname / IP |
+|---|---|
+| Mac | `mikes-macbook-air` |
+| VM | `100.64.226.49` |
+| Phone | auto-assigned |
+
+Setup on a new device: install Tailscale, sign in with the same account, and the device joins the tailnet automatically. The VM was added via `curl -fsSL https://tailscale.com/install.sh | sh && sudo tailscale up`.
+
+---
+
+### systemd Services
+
+Both services run as user `md-homefolder`, load env from `.env`, and restart automatically on crash.
+
+**`/etc/systemd/system/metatron-server.service`**
+```ini
+[Unit]
+Description=Metatron FastAPI Server
+After=network.target tailscaled.service
+
+[Service]
+Type=simple
+User=md-homefolder
+WorkingDirectory=/home/md-homefolder/multi-model-mcp
+ExecStart=/home/md-homefolder/multi-model-mcp/.venv/bin/python core/server.py --persona mike --port 8001
+Restart=always
+RestartSec=5
+EnvironmentFile=/home/md-homefolder/multi-model-mcp/.env
+
+[Install]
+WantedBy=multi-user.target
+```
+
+**`/etc/systemd/system/metatron-scheduler.service`**
+```ini
+[Unit]
+Description=Metatron Scheduler Daemon
+After=network.target metatron-server.service
+
+[Service]
+Type=simple
+User=md-homefolder
+WorkingDirectory=/home/md-homefolder/multi-model-mcp
+ExecStart=/home/md-homefolder/multi-model-mcp/.venv/bin/python core/scheduler.py
+Restart=always
+RestartSec=10
+EnvironmentFile=/home/md-homefolder/multi-model-mcp/.env
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Common service management commands (run on VM):
+```bash
+sudo systemctl status metatron-server metatron-scheduler
+sudo systemctl restart metatron-server metatron-scheduler
+sudo journalctl -u metatron-server -f        # live logs
+sudo journalctl -u metatron-scheduler -f
+```
+
+---
+
+### GitHub and Deploy Pipeline
+
+| Property | Value |
+|---|---|
+| GitHub account | `MikeApex` |
+| Repo | `github.com/MikeApex/metatron` (private) |
+| Mac SSH key | `~/.ssh/github_mikeapex` (push access) |
+| VM deploy key | `~/.ssh/github_deploy` (read-only pull; registered as deploy key on the repo) |
+| VM git config | `pull.rebase false` (set to avoid divergent branch errors) |
+
+**`deploy.sh`** (project root, run from Mac):
+```bash
+# Pushes to GitHub, then SSHes to VM to pull + reinstall + restart
+./deploy.sh
+```
+What it does: `git push origin main` → `gcloud compute ssh metatron-vm` → `git pull origin main` → `pip install -q -r requirements.txt` → `sudo systemctl restart metatron-server metatron-scheduler`.
+
+**Post-commit hook** (`.git/hooks/post-commit`): prints a reminder to run `./deploy.sh` after every commit. Does not auto-deploy — deployment is always manual.
+
+---
+
+### Python Environment
+
+```bash
+# On VM (or Mac for local dev)
+cd ~/multi-model-mcp
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt       # 95 packages as of 2026-06-20
+```
+
+`requirements.txt` is committed to the repo and regenerated from the venv when dependencies change.
+
+Kokoro TTS has its own isolated venv at `tools/kokoro/venv/` — it is separate from the main venv because Kokoro has conflicting dependencies. The `tools/kokoro/speak.py` script uses its own interpreter path directly.
+
+---
+
+### Environment Variables (`.env`)
+
+The `.env` file lives at the project root on both the Mac (dev) and the VM. It is gitignored. Transfer to new machines manually via `gcloud compute scp` or similar.
+
+```bash
+# API keys — obtain from provider consoles
+ANTHROPIC_API_KEY=...          # console.anthropic.com
+OPENAI_API_KEY=...             # platform.openai.com/api-keys
+GEMINI_API_KEY=...             # aistudio.google.com/apikey (for AI Studio fallback; not used on Vertex path)
+HF_TOKEN=...                   # huggingface.co/settings/tokens (read-only token)
+
+# Vertex AI (VM only — local dev uses ADC instead)
+GOOGLE_APPLICATION_CREDENTIALS=/home/md-homefolder/multi-model-mcp/vertex-key.json
+GOOGLE_CLOUD_PROJECT=metatron-ai-499810
+GOOGLE_CLOUD_LOCATION=global
+
+# Deployment mode
+DEPLOYMENT_MODE=cloud          # loads routing_cloud.yaml (Vertex); omit or set to "local" for Ollama
+
+# Web Push
+VAPID_CLAIMS_SUB=mailto:diamond.mike@gmail.com
+```
+
+On Mac for local dev, `OPENAI_API_KEY` is also exported from `~/.zprofile` as a fallback.
+
+---
+
+### Routing / Deployment Mode
+
+`DEPLOYMENT_MODE` (set in `.env`) controls which routing config loads. Evaluated at call time in `core/router.py` — not at import time, so `.env` load order does not matter.
+
+| `DEPLOYMENT_MODE` | Routing file | Model path |
 |---|---|---|
-| TTS voice name | `core/voice_pipeline.py` → `speak()` default arg | Run `say -v '?'` in terminal; download Premium voices via System Settings → Accessibility → Spoken Content |
-| `OPENAI_API_KEY` | `~/.zprofile` (exported) or `.env` in project root | console.openai.com |
-| `ANTHROPIC_API_KEY` | `.env` in project root | console.anthropic.com (needs credits) |
-| `GEMINI_API_KEY` | `.env` in project root | aistudio.google.com/apikey |
-| Whisper model size | `core/voice_pipeline.py` → `WHISPER_MODEL_SIZE` | `"base.en"` (fast), `"small.en"` (more accurate), `"medium.en"` (best quality) |
-| Local LLM model | TBD — Phase 3 | Ollama: `ollama list` to see installed models |
-| TLS cert for phone | `certs/` (gitignored) | `brew install mkcert && mkcert -install && cd certs && mkcert <local-ip> localhost 127.0.0.1` |
+| `cloud` | `config/modules/routing_cloud.yaml` | All agents → Vertex AI Gemini 3.1 Pro or Flash-Lite |
+| `local` or unset | `config/modules/routing.yaml` | Sensitive agents → Ollama (qwen3:14b); open agents → cloud |
+
+Current model assignments (cloud mode) are in `config/modules/routing_cloud.yaml`. See "Model Version Maintenance" below for how to update model IDs.
+
+---
+
+### Android App (Metatron)
+
+The app is a Capacitor 8.4.0 wrapper around `static/index.html`. There is no separate backend bundled in the app — it calls the VM server over Tailscale.
+
+| Property | Value |
+|---|---|
+| App ID | `com.mike.metatron` |
+| App name | `Metatron` |
+| Framework | Capacitor 8.4.0 (`@capacitor/android`) |
+| Web asset dir | `static/` (the PWA lives here) |
+| Server address | `http://100.64.226.49:8001` (VM Tailscale IP, hardcoded in `static/index.html`) |
+| Icon source | `assets/icon-only.png` (Phoenician mem glyph, parchment/brown) |
+| Icon generation | `npx @capacitor/assets generate` — writes to all `mipmap-*` density folders |
+
+Key config decisions:
+- `allowMixedContent: true` and `cleartext: true` in `capacitor.config.json` — HTTP is safe because Tailscale encrypts the transport.
+- Adaptive icon XMLs removed from `mipmap-anydpi-v26/` — Android uses the PNG directly (fixes home screen icon caching bug).
+- Adaptive icon background color: `#0d0d0d` in `android/app/src/main/res/values/ic_launcher_background.xml`.
+
+**Build prerequisites (Mac):**
+- Java 21 via Homebrew (`brew install openjdk@21`) — Capacitor requires 21, not 17
+- Android SDK (Android Studio or command-line tools)
+- Node.js / npm
+
+**Build steps:**
+```bash
+cd ~/Desktop/multi-model-mcp
+npx cap sync android          # syncs web assets + plugins into the Android project
+cd android
+./gradlew assembleDebug       # outputs APK to app/build/outputs/apk/debug/app-debug.apk
+```
+
+**Sideload to phone:**
+```bash
+# Serve the APK from Mac (phone connects to Mac via Tailscale)
+cd ~/Desktop/multi-model-mcp
+python3 -m http.server 8888
+# Then on the phone browser: http://<mac-tailscale-ip>:8888/android/app/build/outputs/apk/debug/app-debug.apk
+```
+Phone must have "Install from unknown sources" enabled for the browser.
+
+**When to rebuild the APK:** any time `static/index.html` changes the `SERVER` constant, the login flow, or UI structure. Pure server-side changes (agent files, orchestrator logic) do not require a rebuild.
+
+---
+
+### Local Dev Mode (Mac / Ollama)
+
+When running locally instead of on the VM:
+
+| What | Where | How to find / set |
+|---|---|---|
+| `DEPLOYMENT_MODE` | `.env` | Remove the line (or set to `local`) — loads `routing.yaml` instead of `routing_cloud.yaml` |
+| Ollama | `localhost:11434` | `brew install ollama && ollama pull qwen3:14b && ollama serve` |
+| Local LLM model | `config/modules/routing.yaml` → `OLLAMA_MODEL` | `ollama list` to see installed models |
+| Prevent Mac sleep | terminal | `sudo pmset -a sleep 0 disksleep 0` (reverse: `sudo pmset -a sleep 10 disksleep 10`) |
+| Keep server alive | launchd | `launchctl load ~/Library/LaunchAgents/com.metatron.server.plist` — create plist first (see `archive/sessions/2026-06-20 — VM Provisioning, GitHub, Deploy Pipeline.md`) |
+| Whisper model size | `core/voice_pipeline.py` → `WHISPER_MODEL_SIZE` | `"base.en"` (fast), `"small.en"` (accurate), `"medium.en"` (best) |
+| TTS voice name | `core/voice_pipeline.py` → `speak()` default arg | `say -v '?'` in terminal; download Premium voices via System Settings → Accessibility → Spoken Content |
+| TLS cert (if needed) | `certs/` (gitignored; backed up to `certs_backup/`) | `brew install mkcert && mkcert -install && cd certs && mkcert <local-ip> localhost 127.0.0.1` |
+
+Note: the Mac is no longer the primary host. Local mode is for development and testing only. Tailscale + HTTP transport encryption means TLS certs are not needed for phone access in either mode.
+
+---
+
+### Recreate from Scratch (ordered checklist)
+
+Follow this order. Each step depends on the ones before it.
+
+**1. GCP project**
+- Create project `metatron-ai-499810` (or new name — update `.env` and `routing_cloud.yaml`)
+- Enable APIs: Vertex AI, Cloud Functions, Pub/Sub, Cloud Billing, Eventarc
+- Link billing account
+
+**2. Billing cap**
+- Create Pub/Sub topic `billing-cap`
+- Create budget alert at $20, configured to publish to `billing-cap` topic
+- Deploy Cloud Function `stop-billing` (Python 3.11, Gen2, Pub/Sub trigger on `billing-cap`)
+
+**3. Vertex AI service account**
+- Create service account `metatron-vertex@<project>.iam.gserviceaccount.com`
+- Grant `roles/aiplatform.user`
+- Download JSON key → save as `vertex-key.json` (do not commit)
+
+**4. GCP VM**
+- Create `e2-medium` Debian 12 VM in `us-central1-a`, named `metatron-vm`
+- Do not open any firewall ports (Tailscale is the only access path)
+- SSH in: `gcloud compute ssh metatron-vm --zone=us-central1-a --project=<project>`
+- Install system packages: `sudo apt install python3.11 python3.11-venv ffmpeg -y`
+
+**5. Tailscale on VM**
+- `curl -fsSL https://tailscale.com/install.sh | sh && sudo tailscale up`
+- Sign in with the tailnet account — VM joins automatically
+- Note the assigned Tailscale IP (update `static/index.html` `SERVER` constant and rebuild APK)
+
+**6. GitHub repo**
+- Create private repo `github.com/<account>/metatron`
+- On Mac: add SSH key `~/.ssh/github_mikeapex` to GitHub account
+- On VM: generate deploy key (`ssh-keygen -t ed25519 -f ~/.ssh/github_deploy`), add public key to repo as read-only deploy key
+- VM: `git config --global pull.rebase false`
+
+**7. Repo on VM**
+- Option A (from GitHub after step 6): `git clone git@github.com:<account>/metatron.git ~/multi-model-mcp`
+- Option B (initial transfer before GitHub exists): `git archive HEAD | gcloud compute scp - metatron-vm:~/repo.tar --zone=us-central1-a` then extract
+- Create `.venv` and install: `python3.11 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt`
+- Copy `.env` to VM: `gcloud compute scp .env metatron-vm:~/multi-model-mcp/.env --zone=us-central1-a`
+- Copy `vertex-key.json` to VM: same command pattern
+
+**8. systemd services**
+- Write both unit files (text above) to `/etc/systemd/system/`
+- `sudo systemctl daemon-reload && sudo systemctl enable metatron-server metatron-scheduler && sudo systemctl start metatron-server metatron-scheduler`
+- Verify: `curl http://100.64.226.49:8001/health` → `{"status":"ok"}`
+
+**9. Deploy pipeline on Mac**
+- Ensure `deploy.sh` is executable: `chmod +x deploy.sh`
+- Set `git config pull.rebase false` on VM (step 6 above)
+- Test: make a trivial commit, run `./deploy.sh`, confirm services restart
+
+**10. Android app**
+- Install Java 21: `brew install openjdk@21`
+- Update `SERVER` in `static/index.html` to the VM Tailscale IP
+- `npx cap sync android && cd android && ./gradlew assembleDebug`
+- Sideload APK via `python3 -m http.server 8888` (see build steps above)
 
 ---
 
@@ -182,7 +520,7 @@ Model IDs in `core/orchestrator.py` and `config/modules/routing.yaml` drift as p
 | MCP ask_gemini | session-level via `mcp__ask_gemini__set_model` | MCP tool description lists available options |
 | Ollama | `OLLAMA_MODEL` | `ollama list` on the local machine |
 
-Current model IDs (updated 2026-05-19): Sonnet 4.6, o3, gemini-3.1-flash-lite-preview (flash), gemini-3.1-pro-preview (pro).
+Current model IDs (updated 2026-06-20): Sonnet 4.6, o3, gemini-3.1-flash-lite (flash), gemini-3.1-pro-preview (pro).
 
 ---
 

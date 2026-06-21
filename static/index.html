@@ -123,6 +123,7 @@
 
     #text-input {
       display: flex;
+      flex-direction: column;
       gap: 8px;
     }
 
@@ -147,6 +148,7 @@
       font-size: 15px;
       color: #e8e8e8;
       cursor: pointer;
+      width: 100%;
     }
 
     #send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -195,11 +197,107 @@
 
     .miss-tap:active { color: #444; }
     .miss-tap.sent { opacity: 0; pointer-events: none; }
+
+    /* Login screen */
+    #login-screen {
+      position: fixed;
+      inset: 0;
+      background: #0d0d0d;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    #login-box {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+      width: min(320px, 90vw);
+    }
+    #login-icon { font-size: 72px; line-height: 1; }
+    #login-title {
+      font-size: 13px;
+      color: #555;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+    }
+    .login-row { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+    .login-row label { font-size: 11px; color: #444; text-transform: uppercase; letter-spacing: 0.08em; }
+    .login-row select, .login-row input[type="password"] {
+      width: 100%;
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 10px;
+      color: #e8e8e8;
+      padding: 12px 14px;
+      font-size: 15px;
+      outline: none;
+    }
+    #login-enter-btn {
+      width: 100%;
+      height: 52px;
+      background: #1e3a5f;
+      border: none;
+      border-radius: 26px;
+      color: #e8e8e8;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+
+    /* Persona chip in header */
+    header { display: flex; justify-content: space-between; align-items: center; }
+    #persona-chip {
+      font-size: 11px;
+      color: #444;
+      cursor: pointer;
+      padding: 3px 8px;
+      border: 1px solid #222;
+      border-radius: 10px;
+      letter-spacing: 0.06em;
+    }
+    #persona-chip:active { color: #666; }
   </style>
 </head>
 <body>
 
-<header>Life Manager</header>
+<div id="login-screen">
+  <div id="login-box">
+    <div id="login-icon">𐤌</div>
+    <div id="login-title">Metatron</div>
+    <div class="login-row">
+      <label>Persona</label>
+      <select id="login-persona-select">
+        <optgroup label="User">
+          <option value="mike">mike</option>
+        </optgroup>
+        <optgroup label="Test personas">
+          <option value="pepys">pepys</option>
+          <option value="danny_park">danny_park</option>
+          <option value="maya_torres">maya_torres</option>
+          <option value="sarah_chen">sarah_chen</option>
+          <option value="arthur_brooks">arthur_brooks</option>
+          <option value="cal_newport">cal_newport</option>
+          <option value="ryan_holiday">ryan_holiday</option>
+          <option value="oliver_burkeman">oliver_burkeman</option>
+          <option value="test_a3">test_a3</option>
+        </optgroup>
+      </select>
+    </div>
+    <div class="login-row">
+      <label>Password</label>
+      <input id="login-password" type="password" placeholder="not required">
+    </div>
+    <button id="login-enter-btn">Enter</button>
+  </div>
+</div>
+
+<header>
+  <span>Life Manager</span>
+  <span id="persona-chip" style="display:none"></span>
+</header>
 
 <div id="conversation">
   <div class="message system">Session started. Tap the mic or type to begin.</div>
@@ -207,7 +305,7 @@
 
 <footer>
   <div id="settings" style="display:none">
-    <select id="provider-select"><option value="ollama">Ollama (local)</option></select>
+    <select id="provider-select"><option value="">Auto (server routing)</option></select>
     <select id="agent-select"><option value="coordinator">Coordinator</option></select>
   </div>
 
@@ -236,7 +334,40 @@
   // Capacitor 5+ serves bundled assets from https://localhost.
   // In the browser PWA the host is the Tailscale hostname, not localhost.
   // SERVER points to the real backend when running in the Capacitor app.
-  const SERVER = window.location.hostname === 'localhost' ? 'http://100.70.67.45:8001' : '';
+  const SERVER = window.location.hostname === 'localhost' ? 'https://metatron-vm.tail0acc5d.ts.net:8001' : '';
+
+  // --- Persona / login ---
+
+  let currentPersona = null;
+
+  function enterApp(persona) {
+    currentPersona = persona;
+    localStorage.setItem('metatron_persona', persona);
+    document.getElementById('login-screen').style.display = 'none';
+    const chip = document.getElementById('persona-chip');
+    chip.textContent = persona;
+    chip.style.display = '';
+    requestMicPermission();
+    initPush();
+  }
+
+  function showLogin() {
+    document.getElementById('login-screen').style.display = 'flex';
+    document.getElementById('persona-chip').style.display = 'none';
+  }
+
+  document.getElementById('login-enter-btn').addEventListener('click', () => {
+    const persona = document.getElementById('login-persona-select').value;
+    if (persona) enterApp(persona);
+  });
+
+  document.getElementById('persona-chip').addEventListener('click', showLogin);
+
+  // Auto-login if persona saved
+  const savedPersona = localStorage.getItem('metatron_persona');
+  if (savedPersona) {
+    enterApp(savedPersona);
+  }
 
   const conversation = document.getElementById('conversation');
   const micBtn = document.getElementById('mic-btn');
@@ -290,7 +421,7 @@
       const res = await fetch(SERVER + '/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input, agent, provider }),
+        body: JSON.stringify({ input, agent, provider, persona: currentPersona }),
         signal: AbortSignal.timeout(600000),  // 10-minute timeout for local LLM
       });
 
@@ -440,6 +571,11 @@
   const grantBtn  = document.getElementById('grant-btn');
 
   function requestMicPermission() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setStatus('Mic unavailable (needs HTTPS)', '#a44');
+      grantWrap.style.display = 'block';
+      return Promise.resolve();
+    }
     return navigator.mediaDevices.getUserMedia({ audio: true })
       .then(s => { s.getTracks().forEach(t => t.stop()); setStatus('Ready', '#555'); grantWrap.style.display = 'none'; })
       .catch(err => { setStatus('Mic blocked: ' + err.name, '#a44'); grantWrap.style.display = 'block'; });
@@ -453,9 +589,23 @@
     if (isRecording) stopRecording(); else startRecording();
   });
 
-  // --- Web Speech API: TTS ---
+  // --- TTS ---
 
   let currentAudio = null;
+  let audioUnlocked = false;
+
+  // Android blocks autoplay until a user gesture has touched the AudioContext.
+  // We create and immediately suspend a silent context on first tap to unlock it.
+  function unlockAudio() {
+    if (audioUnlocked) return;
+    audioUnlocked = true;
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      ctx.resume().then(() => ctx.close());
+    } catch {}
+  }
+  document.addEventListener('click', unlockAudio, { once: true });
+  document.addEventListener('touchend', unlockAudio, { once: true });
 
   async function speakResponse(text) {
     if (currentAudio) { currentAudio.pause(); currentAudio = null; }
@@ -470,9 +620,14 @@
       const url = URL.createObjectURL(blob);
       currentAudio = new Audio(url);
       currentAudio.onended = () => URL.revokeObjectURL(url);
-      currentAudio.play();
+      await currentAudio.play().catch(() => {
+        // Autoplay blocked — fall back to browser TTS
+        URL.revokeObjectURL(url);
+        const utt = new SpeechSynthesisUtterance(text);
+        utt.rate = 0.95;
+        window.speechSynthesis?.speak(utt);
+      });
     } catch {
-      // fallback to browser TTS
       const utt = new SpeechSynthesisUtterance(text);
       utt.rate = 0.95;
       window.speechSynthesis?.speak(utt);
@@ -549,8 +704,6 @@
       wrap.innerHTML = '<span style="color:#444;font-size:12px">Notifications on</span>';
     } catch(e) { console.warn('Push subscribe failed:', e); }
   }
-
-  initPush();
 
   // --- Text input ---
 

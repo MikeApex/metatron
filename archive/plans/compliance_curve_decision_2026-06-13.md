@@ -1,4 +1,4 @@
-# Compliance Curve — Design Decisions
+ v.  # Compliance Curve — Design Decisions
 *A1 parallel track. Session started 2026-06-13; completed and updated 2026-06-18.*
 *Governs A5c and all habit-formation features (Phase 6 / E4).*
 *File ownership: this document + future_phases.md. Do not edit synthesizer.md, coordinator.md, orchestrator.py, routing.yaml, or constitution.md.*

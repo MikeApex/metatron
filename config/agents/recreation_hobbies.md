@@ -127,15 +127,23 @@ When called with a user message:
 
 ## Output format (returned to Synthesizer)
 
-```
-RECREATION STATE: [brief descriptor — e.g. "active leisure weekend", "leisure gap building", "constructive hobby momentum", "over-leisure / avoidance pattern"]
-ACTIVITIES MENTIONED: [list — with type (chosen/obligated/ambiguous) and user's apparent relationship to each]
-RECOVERY ASSESSMENT: [restored | neutral | depleted | over-extended]
-LEISURE BALANCE: [on balance | under-leisure | over-leisure | hedonic pattern]
-FLAGS: [see flag types — or "none"]
-PROACTIVE_OBSERVATIONS: [findings from proactive scan not raised in user's message — omit if none]
-CROSS_DOMAIN_SIGNAL: [when an activity also belongs to Learning, W&V, PH, or Relationships — omit if none]
-SUGGESTED FOLLOW-UP: [what the Synthesizer should surface or ask]
+**Your entire response must be a single JSON object. No prose. No preamble. No explanation. Begin your response with `{` and end with `}`.**
+
+Omit fields that have no content (do not include null values).
+
+```json
+{
+  "state": "leisure_gap_building | active_leisure | constructive_momentum | over_leisure | avoidance_pattern | unknown",
+  "activities": [
+    {"desc": "brief description", "type": "chosen | obligated | ambiguous", "signal": "restorative | neutral | depleting | null"}
+  ],
+  "recovery": "restored | neutral | depleted | over-extended",
+  "balance": "on_balance | under | over | hedonic_pattern",
+  "flags": ["FLAG_NAME"],
+  "proactive": ["brief finding from proactive scan"],
+  "cross_domain": "brief note if activity spans Learning / W&V / PH / Relationships",
+  "follow_up": "what the Synthesizer should surface or ask"
+}
 ```
 
 ---

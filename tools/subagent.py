@@ -6,16 +6,26 @@ full run_session() with the named agent's instruction file and the shared
 data context. Persona (AI_TEST_PERSONA env var) is passed through automatically.
 """
 
+import logging
 import os
+import threading
+
+logger = logging.getLogger(__name__)
 
 
-def run_subagent(agent_name: str, message: str, complexity: str = "") -> str:
+def run_subagent(agent_name: str, message: str, complexity: str = "",
+                 fire_and_forget: bool = False) -> str:
     """
     Spawn a specialist agent session and return its response.
 
     complexity: "quick" routes to the fast/cheap model tier (Gemini Flash);
                 "deep" routes to the agent's configured target model;
                 omit or pass "" to use the agent's default routing.
+
+    fire_and_forget: when True, dispatch in a background thread and return
+                     immediately without waiting for the result. Use for
+                     write-only agents (Diarist) that don't need to block
+                     the Coordinator's context package.
 
     The current persona (if any) is inherited from the environment so specialist
     sessions see the same config context as the Coordinator session.
@@ -34,6 +44,27 @@ def run_subagent(agent_name: str, message: str, complexity: str = "") -> str:
 
     persona = os.environ.get("AI_TEST_PERSONA") or None
     complexity_hint = complexity if complexity in ("quick", "deep") else None
+
+    # Diarist is always write-only — enforce fire_and_forget at the code layer
+    # regardless of what the coordinator model passes.
+    if agent_name == "diarist":
+        fire_and_forget = True
+
+    if fire_and_forget:
+        # Capture env vars needed by the background thread before returning.
+        subagent_env = os.environ.get("_SUBAGENT_DEPTH", "0")
+        def _run() -> None:
+            os.environ["_SUBAGENT_DEPTH"] = str(int(subagent_env) + 1)
+            try:
+                run_session(agent_name, user_input=message, persona=persona,
+                            complexity=complexity_hint)
+            except Exception as e:
+                logger.warning(f"[fire_and_forget] {agent_name} failed: {e}")
+            finally:
+                os.environ["_SUBAGENT_DEPTH"] = subagent_env
+        threading.Thread(target=_run, daemon=True).start()
+        return f"{agent_name}: dispatched (async)"
+
     os.environ["_SUBAGENT_DEPTH"] = str(depth + 1)
     try:
         return run_session(agent_name, user_input=message, persona=persona,
@@ -123,7 +154,10 @@ RUN_SUBAGENT_SCHEMA = {
         "Use this to consult a specialist — Diarist, Mental Wellbeing, Physical Health, "
         "Work & Vocation, Relationships, Learning & Growth, Recreation & Hobbies, "
         "Finance, Research Agent, or Logistics. "
-        "Pass a contextualized directive (user message + relevant context) as the message."
+        "Pass a contextualized directive (user message + relevant context) as the message. "
+        "For write-only agents that never need to block the Coordinator (Diarist), "
+        "set fire_and_forget=true — the agent runs in the background and its output is "
+        "excluded from SPECIALIST_OUTPUTS."
     ),
     "input_schema": {
         "type": "object",
@@ -143,11 +177,19 @@ RUN_SUBAGENT_SCHEMA = {
             },
             "complexity": {
                 "type": "string",
-                "enum": ["quick", "deep", ""],
+                "enum": ["quick", "deep"],
                 "description": (
                     "Model tier hint. 'quick' uses the fast model (good for logging, lookups, simple tasks). "
                     "'deep' uses the agent's full-power model (for synthesis, analysis, nuanced judgment). "
-                    "Omit or pass '' to use the agent's default routing."
+                    "Omit to use the agent's default routing."
+                ),
+            },
+            "fire_and_forget": {
+                "type": "boolean",
+                "description": (
+                    "When true, dispatch the agent in the background and return immediately. "
+                    "Use only for Diarist — it is write-only and its output is never needed "
+                    "in SPECIALIST_OUTPUTS. Do not use for any other agent."
                 ),
             },
         },

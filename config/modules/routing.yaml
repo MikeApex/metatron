@@ -1,4 +1,9 @@
-# Model routing configuration
+# Model routing configuration — LOCAL (Ollama) mode
+#
+# ⚠ BEFORE USING THIS ON THE MAC: activate always-on provisions first:
+#   1. sudo pmset -a sleep 0 disksleep 0
+#   2. launchctl load ~/Library/LaunchAgents/com.metatron.server.plist
+#      (create plist first if needed — see archive/sessions/2026-06-20 — VM Provisioning, GitHub, Deploy Pipeline.md)
 #
 # All agents with personal context are local: true — they route to Ollama only.
 # Ollama unavailable → hard error (fail-closed). No cloud fallbacks for sensitive agents.

@@ -20,7 +20,6 @@ from pathlib import Path
 
 
 import numpy as np
-import sounddevice as sd
 
 # Whisper model is loaded once at module level to avoid reload cost per session.
 _whisper_model = None
@@ -81,6 +80,7 @@ def record_until_silence(
     speech_chunk_count = 0
     recording_started = False
 
+    import sounddevice as sd
     with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32") as stream:
         for _ in range(max_chunks):
             chunk, _ = stream.read(chunk_size)

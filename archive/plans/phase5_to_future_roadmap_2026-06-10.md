@@ -249,6 +249,8 @@ Unlocks: Phase 5 sign-off check 11.
 | 11. Token budget logging | Token counts in session log across all three session paths; no turn exceeds 15K; 8K–15K turns show warning (from A6) |
 | 12. Constitution alignment | Process defined: a single Claude Code review session producing `archive/constitution_alignment_review_YYYY-MM-DD.md` — a matrix of 12 specialists × Tier 0 principles, plus a documented precedence order for the overlap domains (sleep, addiction, emotional state) used by Synthesizer synthesis. Pass: no specialist contradicts Tier 0; precedence table exists. |
 
+**Pre-sign-off gate — prefix caching regression (2026-06-19):** The `_run_single_agent()` system prompt restructure (prefix caching change) moved dynamic context from the system prompt into the user message turn, changing the system prompt assembly order for every agent. Before A7 sign-off, re-run the A4 clinical-flag hard-fail scenarios (Mental Wellbeing `MUST_SURFACE` / `CLINICAL_CONCERN`) against the updated assembly order. Failure indicates critical instruction position needs adjustment — addressed in D2's prompt structure optimization pass. Add this as a named item in `tests/phase5_testing_plan.md` → Known gaps.
+
 ---
 
 ### Track B — Security Hardening (Phase 6A)
@@ -443,7 +445,7 @@ Prompt structure optimization (informed by A4 safety hard-fail findings):
   - Synthesizer → context tracker: 400 → 100–150 tokens (compact JSON)
   - Pattern Miner: 1,500–3,000 → 600–1,000 tokens (structured sections; not on critical path)
   - Diarist: already minimal; async, not on critical path
-  - Cloud agents (Research, Logistics, Learning, Recreation): similar compression savings
+  - Cloud agents (Research, Logistics, Learning, Recreation): similar compression savings. *(Recreation JSON output format implemented pre-Alpha 2026-06-19 — compact JSON schema confirmed working; Synthesizer consumes correctly. Logistics and Work/Vocation are next priority.)*
   - Expected overall: ~1,050 tokens generated on a real-time session → ~285 tokens; deep session ~2,650 → ~680. At 50 tok/s on qwen3:14b: ~21s → ~5.7s real-time; ~53s → ~14s deep.
 
 - **Agent instruction file slimming — context-file pattern (Option 2):** For agents over the token target (synthesizer ~7,200, mental_wellbeing ~6,100, relationships ~5,730; targets: specialists 1,500–2,500, Synthesizer/Coordinator 3,500–5,000), audit content into two buckets: (a) behavioral rules that must be in the instruction file, and (b) domain data — signal-word lists, clinical protocols, scoring rubrics, playbooks, virtue lists — that can move to `config/modules/{agent}_*.yaml` and be loaded on demand via `read_agent_config`. The agent file adds a line: "When [signal], call `read_agent_config('[module]')` before responding." No code changes required; `read_agent_config` is already registered. Run the A4 clinical-flag hard-fail scenarios as a regression gate after each agent slim — safety flags must fire identically before and after. See Section 4 token budget table and 2026-06-18 session for context.
@@ -458,12 +460,13 @@ Prompt structure optimization (informed by A4 safety hard-fail findings):
   ```
   Each tag: 15–40 tokens vs. 80–200 tokens of prose. Hard constraint: `CLINICAL_CONCERN`, `MUST_SURFACE`, and all safety flags must survive compression with full context intact — stripping prose that a safety flag depends on for action is a Fail. Validate against the B1 red-team suite and A4 clinical-flag hard-fail scenarios before shipping.
 
-**Latency optimizations** (source: `archive/sessions/2026-06-02 — Local Model Architecture, Token Generation, Hardware Analysis.txt`). Four items from the June 2 session that were brainstormed but never formally planned:
+**Latency optimizations** (source: `archive/sessions/2026-06-02 — Local Model Architecture, Token Generation, Hardware Analysis.txt`). Originally four items; items 1 and 2 implemented pre-Alpha (2026-06-19); items 3–5 remain for D2:
 
-- **Diarist fire-and-forget (async dispatch):** Add `fire_and_forget: bool = False` parameter to `run_subagent()` and its schema. Update `coordinator.md` to dispatch Diarist with `fire_and_forget=True` and exclude it from `SPECIALIST_OUTPUTS`. Diarist is write-only and never needs to block the Synthesizer. Estimated saving: ~30–40s removed from the critical path per session — the largest single latency contributor after output compression.
-- **Prefix caching — move dynamic context from system prompt to user message:** Constitution + Prime Directive + Goals is ~1,500–2,500 tokens that is identical across every agent call and already a stable prefix — but KV caching doesn't activate because `load_recent_context()` is injected into the system prompt, breaking the stable prefix on every call. Fix: move dynamic context (recent logs, context tracker state, Pattern Miner insights) from the system prompt into the user message turn. System prompt becomes static per agent per session; prefix cache activates across all specialist calls. Named "highest-leverage structural change" in the June 2 session — applies to every single agent call.
+- **Diarist fire-and-forget (async dispatch):** *(Done pre-Alpha 2026-06-19. Code-enforced in `tools/subagent.py` — `agent_name == "diarist"` forces `fire_and_forget=True` regardless of coordinator model parameter. Confirmed working: diarist excluded from `SPECIALIST_OUTPUTS`, coordinator does not wait for it.)* Add `fire_and_forget: bool = False` parameter to `run_subagent()` and its schema. Update `coordinator.md` to dispatch Diarist with `fire_and_forget=True` and exclude it from `SPECIALIST_OUTPUTS`. Diarist is write-only and never needs to block the Synthesizer. Estimated saving: ~30–40s removed from the critical path per session — the largest single latency contributor after output compression.
+- **Prefix caching — move dynamic context from system prompt to user message:** *(Done pre-Alpha 2026-06-19. Implemented in `core/orchestrator.py → _run_single_agent()`. Before A7 sign-off, re-run the A4 clinical-flag hard-fail scenarios — system prompt restructure could affect instruction fidelity on safety-critical agents. See A7 pre-sign-off gate note.)* Constitution + Prime Directive + Goals is ~1,500–2,500 tokens that is identical across every agent call and already a stable prefix — but KV caching doesn't activate because `load_recent_context()` is injected into the system prompt, breaking the stable prefix on every call. Fix: move dynamic context (recent logs, context tracker state, Pattern Miner insights) from the system prompt into the user message turn. System prompt becomes static per agent per session; prefix cache activates across all specialist calls. Named "highest-leverage structural change" in the June 2 session — applies to every single agent call.
 - **12B Coordinator split (explicit D1 evaluation target):** At D1, evaluate running a smaller 12B model for Coordinator (fast routing, lower stakes) alongside the heavier local model for Synthesizer and all sensitive specialists. June 2 sizing: 70B Q4_K_M (~40GB) + 12B (~7GB) + ~8GB overhead = ~55GB — tight on 64GB (use Q3_K_M for 70B to bring to ~39GB total, comfortable); straightforward on 128GB. 12B Coordinator at ~110–130 tok/s reduces Coordinator turns from ~12–15s to ~2–3s. Evaluation must confirm 12B is sufficient for routing decisions before adopting the split.
 - **Pattern Miner daily cadence as context-reduction lever:** Running Pattern Miner daily (vs. weekly) reduces the raw log load Coordinator must carry from ~1,500–3,000 tokens to ~300–600 tokens (one day's logs), replaced by a compressed insight report (~500–800 tokens). Net context reduction per session: ~1,000–2,500 tokens. Better signal quality too — synthesized Pattern Miner output vs. raw noisy log data. Factor into scheduler cadence planning at D1/E3.
+- **Coordinator instruction slimming — turn-count reduction (in progress pre-Alpha 2026-06-19):** The Coordinator exhibits a 6-turn / 88K cumulative token loop on complex sessions. The instruction file (~3,490 tokens) is within the size target; the problem is behavioral — the coordinator makes multiple sequential specialist calls across turns rather than fanning out in parallel. Fix: add explicit instruction to `coordinator.md`: "Dispatch all relevant specialists in a single parallel `run_subagent` batch in one turn. Do not make multiple sequential specialist calls across turns — fan out once, collect all results, then package." Consider moving the specialist directory and cross-domain routing examples to `config/modules/coordinator_routing.yaml` (loaded via `read_agent_config`), reducing the instruction file to routing rules only. Target: ≤3 turns, ≤40K cumulative tokens at coordinator done. Test: camping/guitar prompts complete within budget. *(Separate pre-Alpha chat; see D2 output compression for full context-reduction strategy.)*
 
 Unlocks: E2 Wishes full build (encryption required); D1 local model upgrade decision data.
 
@@ -721,7 +724,50 @@ Each specialist agent's `## Enhancement backlog` items, organized by dependency 
 | pattern_miner.md | ~1,920 | Good |
 | diarist.md | ~1,000 | Ideal |
 
+**Coordinator runtime note (2026-06-19):** `coordinator.md` at ~3,490 tokens is within the instruction-file size target. The latency problem is behavioral, not file size: on complex sessions the coordinator makes multiple sequential specialist calls across 6+ turns, accumulating ~88K tokens in conversation history. Resolution: explicit parallel dispatch instruction + optional context-file offload of specialist directory (see D2 latency item 5). Target: ≤3 turns, ≤40K cumulative tokens at coordinator done.
+
 **Review approach:** For agents that are over target, audit whether content is (a) behavioral rules that must be in the instruction file, (b) domain knowledge / signal-word lists / playbooks that could be offloaded to `config/modules/` YAML files and loaded on demand via `read_agent_config`, or (c) redundant with what the model already knows. See instruction architecture discussion (2026-06-18 session) for the context-file pattern.
+
+---
+
+## Section 5A — Streaming Architecture Notes
+*Added 2026-06-19.*
+
+### Provider coverage
+
+As of 2026-06-19, Synthesizer streaming is implemented for all four providers:
+
+| Provider | Streaming path |
+|---|---|
+| Gemini / Vertex AI | `_openai_compat_stream()` via Vertex OpenAI-compat endpoint |
+| OpenAI | `_openai_compat_stream()` via standard OpenAI endpoint |
+| Ollama | `_openai_compat_stream()` via local Ollama OpenAI-compat endpoint |
+| Anthropic | `_anthropic_stream()` via Anthropic SDK `messages.stream()` |
+
+The "Gemini only" framing used during development referred to the current Synthesizer routing, not a code limitation. If the Synthesizer's assigned model in `routing.yaml` changes, the streaming path follows automatically. **If a 5th provider is added, a streaming variant must be implemented before routing the Synthesizer to it** — see the `# STREAMING NOTE` guard in `run_pipeline_session_stream()`.
+
+### Pre-Alpha: revisit live-stream + retract design
+
+The current filter_output() + streaming approach streams chunks to the client in real-time and buffers simultaneously. After the final chunk, `filter_output()` runs on the complete text. If a confidential term is detected, a `[RETRACT]` SSE event is sent and the client discards received text.
+
+**Before Alpha launch:** Evaluate whether a brief leading buffer (e.g. hold the first 20 tokens) can reduce the probability of a partial retract being spoken via TTS, without meaningfully increasing time-to-first-word. If filter hit rates remain near zero in development, no change needed. File this as a pre-Alpha checkpoint.
+
+### Pre-Alpha: Cloudflare Tunnel for phone connectivity
+
+The Android app currently requires Tailscale to be installed and running on the user's phone to reach the VM. This is not a viable install experience for other users.
+
+**Before Alpha launch:** Replace Tailscale on the phone side with a Cloudflare Tunnel. Run `cloudflared tunnel` on the VM — it punches outward, no firewall changes needed, gives a stable `https://` URL with TLS handled automatically. The phone connects over plain internet with no Tailscale dependency.
+
+- Set up a named Cloudflare Tunnel on the VM (free tier is sufficient)
+- Update the `SERVER` constant in `static/index.html` to the tunnel URL
+- Rebuild APK — users install once and connect without any VPN setup
+- Keep Tailscale on the VM for SSH/admin access (orthogonal concern)
+
+Tailscale remains on the VM for developer access. This item removes it from the user-facing path only.
+
+### Pre-Beta housekeeping
+
+- **Coordinator package debug print:** `print(f"\n--- COORD PACKAGE ---\n{coord_package}\n--- END COORD PACKAGE ---\n", file=sys.stderr)` in `core/orchestrator.py → run_pipeline_session()` is active for development (added 2026-06-19 session). Remove before Beta — it writes the coordinator context package (which contains user data) to stderr on every pipeline session.
 
 ---
 
