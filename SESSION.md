@@ -62,6 +62,15 @@ If you need to find a specific file, tool, or planning document: **[CODEBASE_IND
 - **Check 10** Agent behavioral audits — **on hold**
 - **Check 12** Constitution alignment review — **on hold**
 
+### Also done 2026-06-21 (Android end-to-end testing)
+- **All 10 Android tests pass.** App fully functional on VM.
+- Mike persona synced to VM; Vertex key deployed; Whisper installed.
+- Server migrated to HTTPS via Tailscale cert (`metatron-vm.tail0acc5d.ts.net:8001`).
+- Fixed: PortAudio crash (lazy sounddevice import), provider defaulting to ollama (now auto-route), send button layout, mic auto-prompt (MainActivity.java), audio autoplay on Android (AudioContext unlock).
+- **Cloudflare Tunnel** added to roadmap as pre-alpha requirement (removes Tailscale from phone).
+- **D1 open:** Run Goals Interview on VM — `BASELINE_INCOMPLETE` on every session until done. Run via CLI: `python core/orchestrator.py --agent goals_interviewer --provider gemini`
+- Session archive: `archive/sessions/2026-06-21 — Android End-to-End Testing.md`
+
 ### Also done 2026-06-21 (CLAUDE.md deployment infrastructure)
 - **CLAUDE.md updated:** "Per-System Configuration" replaced with comprehensive "Deployment Infrastructure" section covering topology diagram, GCP VM, Vertex AI, billing protection, Tailscale, systemd unit files (verbatim), GitHub/deploy pipeline, Python env, all environment variables, routing/deployment mode, Android app build steps, local dev mode, and a 10-step recreate-from-scratch checklist.
 - **Model version note** in CLAUDE.md updated (2026-05-19 → 2026-06-21; Flash-Lite ID corrected to non-preview).
