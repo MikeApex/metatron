@@ -74,16 +74,20 @@ class MessageBlock(ListItem):
     def compose(self) -> ComposeResult:
         ts = fmt_ts(self.entry.get("ts", ""))
         persona = self.entry.get("persona") or "—"
-        user_text = truncate(self.entry.get("user", ""), 80)
-        synth_text = truncate(self.entry.get("response", ""), 80)
+        user_full = self.entry.get("user", "")
+        synth_full = self.entry.get("response", "")
         is_proactive = self.trace.get("is_proactive", False) if self.trace else False
 
-        if is_proactive:
-            header = f"[bold cyan]{ts}[/] [dim]{persona}[/] [yellow]⊕ proactive[/]"
-        else:
-            header = f"[bold cyan]{ts}[/] [dim]{persona}[/]"
-
-        yield Static(f"{header}\n[dim]You:[/] {user_text}\n[dim]M:[/]  {synth_text}")
+        proactive_tag = " [yellow]⊕[/]" if is_proactive else ""
+        title = (
+            f"[bold cyan]{ts}[/] [dim]{persona}[/]{proactive_tag}  "
+            f"[dim]{truncate(user_full, 60)}[/]"
+        )
+        yield Collapsible(
+            Static(f"[dim]You:[/]\n{user_full}\n\n[dim]Metatron:[/]\n{synth_full}"),
+            title=title,
+            collapsed=True,
+        )
 
 
 class AgentLogItem(ListItem):
