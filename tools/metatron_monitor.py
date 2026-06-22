@@ -202,15 +202,13 @@ Collapsible { margin: 0 0 1 0; }
 # ---------------------------------------------------------------------------
 
 class FileViewerScreen(ModalScreen):
-    """Full-screen overlay showing the content of a data file."""
+    """Full-screen overlay showing a file or full directory history."""
 
     DEFAULT_CSS = """
-    FileViewerScreen {
-        align: center middle;
-    }
+    FileViewerScreen { align: center middle; }
     #fv-container {
-        width: 90%;
-        height: 90%;
+        width: 92%;
+        height: 92%;
         background: $surface;
         border: solid $accent;
         padding: 1 2;
@@ -219,18 +217,37 @@ class FileViewerScreen(ModalScreen):
     #fv-title  { height: 1; color: $accent; }
     #fv-scroll { height: 1fr; }
     #fv-footer { height: 1; color: $text-muted; }
+    .fv-divider { color: $accent; margin: 1 0; }
+    .fv-current { color: $success; }
     """
     BINDINGS = [Binding("escape,q", "dismiss", "Close")]
 
-    def __init__(self, path: str, content: str, **kwargs):
+    def __init__(self, path: str, sections: list[dict], current: str, **kwargs):
+        """
+        sections: list of {filename, stem, content} dicts in date order.
+        current:  filename of the entry to mark as current (just-written).
+        If sections has one item it's a plain file view; multiple = history view.
+        """
         super().__init__(**kwargs)
         self._path = path
-        self._content = content
+        self._sections = sections
+        self._current = current
 
     def compose(self) -> ComposeResult:
+        count = len(self._sections)
+        title = f"{self._path}  ({count} entr{'y' if count == 1 else 'ies'})"
         with Container(id="fv-container"):
-            yield Label(self._path, id="fv-title")
-            yield ScrollableContainer(Static(self._content), id="fv-scroll")
+            yield Label(title, id="fv-title")
+            with ScrollableContainer(id="fv-scroll"):
+                for sec in self._sections:
+                    is_current = sec["filename"] == self._current
+                    label_cls = "fv-current" if is_current else "fv-divider"
+                    marker = "  ← current" if is_current else ""
+                    yield Static(
+                        f"─── {sec['stem']}{marker} ───",
+                        classes=label_cls,
+                    )
+                    yield Static(sec["content"])
             yield Label("Esc / Q  close", id="fv-footer")
 
 
@@ -500,14 +517,17 @@ class TheBookApp(App):
         path = event.button.name or str(event.button.label)
         self._set_status(f"Opening {path}…")
         try:
-            async with httpx.AsyncClient(timeout=10, verify=False) as client:
+            async with httpx.AsyncClient(timeout=15, verify=False) as client:
+                # Try history endpoint first — returns full directory for dated files
                 r = await client.get(
-                    f"{self.server}/monitor/file", params={"path": path}
+                    f"{self.server}/monitor/history", params={"path": path}
                 )
                 r.raise_for_status()
                 data = r.json()
-            await self.push_screen(FileViewerScreen(data["path"], data["content"]))
-            self._set_status(f"Viewing {path}")
+            await self.push_screen(
+                FileViewerScreen(data["path"], data["sections"], data["current"])
+            )
+            self._set_status(f"Viewing {path} ({len(data['sections'])} entries)")
         except Exception as e:
             print(f"[open_file error] {e}", file=sys.stderr)
             self._set_status(f"Cannot read {path}: {e}")

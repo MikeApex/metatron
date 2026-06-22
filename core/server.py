@@ -464,6 +464,42 @@ async def monitor_stream(persona: str | None = None):
 _PROJECT_ROOT = Path(__file__).parent.parent
 
 
+@app.get("/monitor/history")
+async def monitor_history(path: str) -> dict:
+    """
+    Return the full contents of the directory containing `path`, sorted by
+    filename (which equals date for YYYY-MM-DD.json files).  Each entry is
+    separated by a divider.  The `current` key tells the caller which entry
+    is the one that was just written so the viewer can scroll to it.
+
+    path must be a relative data/ path, e.g. data/logs/2026-06-22.json
+    """
+    import json as _json
+
+    if not path.startswith("data/") or ".." in path:
+        raise HTTPException(status_code=400, detail="Invalid path")
+
+    full = _PROJECT_ROOT / path
+    if not full.exists():
+        raise HTTPException(status_code=404, detail=f"File not found: {path}")
+
+    parent = full.parent
+    suffix = full.suffix
+    siblings = sorted(p for p in parent.iterdir() if p.is_file() and p.suffix == suffix)
+
+    sections = []
+    for p in siblings:
+        raw = p.read_text(errors="replace")
+        if suffix == ".json":
+            try:
+                raw = _json.dumps(_json.loads(raw), indent=2, ensure_ascii=False)
+            except Exception:
+                pass
+        sections.append({"filename": p.name, "stem": p.stem, "content": raw})
+
+    return {"path": path, "current": full.name, "sections": sections}
+
+
 @app.get("/monitor/file")
 async def monitor_file(path: str) -> dict:
     """
