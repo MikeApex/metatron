@@ -1,0 +1,5 @@
+# Requirements for The Book (tools/metatron_monitor.py)
+# Install on Mac only — not needed on the VM.
+# pip install -r tools/requirements-monitor.txt
+textual>=0.47.0
+httpx>=0.24.0

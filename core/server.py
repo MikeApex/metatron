@@ -314,6 +314,153 @@ async def service_worker() -> FileResponse:
     )
 
 
+# ---------------------------------------------------------------------------
+# Monitor API — The Book
+# Read-only endpoints for the Mac monitoring tool. No auth: access is gated
+# by the Tailscale VPN. Add a shared-secret header at Alpha.
+# ---------------------------------------------------------------------------
+
+DATA_DIR = Path(__file__).parent.parent / "data"
+
+
+def _all_personas() -> list[str]:
+    """Return all known persona identifiers — dev personas + root user."""
+    personas = set()
+    personas_data = DATA_DIR / "personas"
+    if personas_data.exists():
+        for p in personas_data.iterdir():
+            if p.is_dir():
+                personas.add(p.name)
+    # Root user (mike) may not have a personas/ subdir if they predate the layout
+    if (DATA_DIR / "logs").exists() or (DATA_DIR / "context.json").exists():
+        personas.add("mike")
+    return sorted(personas)
+
+
+def _conversation_files(persona: str | None) -> list[Path]:
+    if persona:
+        conv_dir = DATA_DIR / "personas" / persona / "conversations"
+    else:
+        conv_dir = DATA_DIR / "conversations"
+    if not conv_dir.exists():
+        # Fall back to shared conversations dir, filtered by persona field
+        conv_dir = DATA_DIR / "conversations"
+    if not conv_dir.exists():
+        return []
+    return sorted(conv_dir.glob("*.jsonl"))
+
+
+def _trace_files(persona: str | None) -> list[Path]:
+    if persona:
+        trace_dir = DATA_DIR / "personas" / persona / "traces"
+    else:
+        trace_dir = DATA_DIR / "traces"
+    if not trace_dir.exists():
+        return []
+    return sorted(trace_dir.glob("*.jsonl"))
+
+
+def _read_jsonl(path: Path) -> list[dict]:
+    import json as _json
+    lines = []
+    try:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        lines.append(_json.loads(line))
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+    return lines
+
+
+@app.get("/monitor/personas")
+async def monitor_personas() -> dict:
+    """List all persona identifiers known to the system."""
+    return {"personas": _all_personas()}
+
+
+@app.get("/monitor/conversations")
+async def monitor_conversations(persona: str | None = None) -> dict:
+    """
+    Return all conversation entries for a persona across all dates.
+    Each entry: {ts, agent, persona, user, response}.
+    If persona is None, returns from the shared conversations dir and
+    filters nothing (all users).
+    """
+    entries = []
+    files = _conversation_files(persona)
+    if not files:
+        # Shared dir, filter by persona field
+        for f in sorted((DATA_DIR / "conversations").glob("*.jsonl")) if (DATA_DIR / "conversations").exists() else []:
+            for entry in _read_jsonl(f):
+                if persona is None or entry.get("persona") == persona:
+                    entries.append(entry)
+    else:
+        for f in files:
+            entries.extend(_read_jsonl(f))
+    return {"entries": entries}
+
+
+@app.get("/monitor/traces")
+async def monitor_traces(persona: str | None = None, trace_id: str | None = None) -> dict:
+    """
+    Return trace records. If trace_id given, return just that one record.
+    Otherwise return all traces for the persona across all dates.
+    """
+    traces = []
+    for f in _trace_files(persona):
+        for t in _read_jsonl(f):
+            if trace_id is None or t.get("trace_id") == trace_id:
+                traces.append(t)
+    return {"traces": traces}
+
+
+@app.get("/monitor/stream")
+async def monitor_stream(persona: str | None = None):
+    """
+    SSE stream that emits new conversation+trace pairs in real time.
+
+    The client connects once; the server polls the trace file for new lines
+    every second and pushes them as SSE events. Each event is a JSON object
+    with {type: "trace", data: {...}} or {type: "heartbeat"}.
+
+    Format: text/event-stream, each message: "data: {json}\\n\\n"
+    """
+    import asyncio
+    import json as _json
+
+    async def _generate():
+        # Track how many lines we've already sent from the current trace file
+        seen: dict[str, int] = {}  # filepath → lines_sent
+
+        while True:
+            files = _trace_files(persona)
+            if not files:
+                yield "data: {\"type\": \"heartbeat\"}\n\n"
+                await asyncio.sleep(1)
+                continue
+
+            for f in files:
+                key = str(f)
+                prev = seen.get(key, 0)
+                lines = _read_jsonl(f)
+                new_lines = lines[prev:]
+                for entry in new_lines:
+                    payload = _json.dumps({"type": "trace", "data": entry}, ensure_ascii=False)
+                    yield f"data: {payload}\n\n"
+                seen[key] = len(lines)
+
+            yield "data: {\"type\": \"heartbeat\"}\n\n"
+            await asyncio.sleep(1)
+
+    return StreamingResponse(_generate(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
 # Serve static assets (CSS, JS if we add them later)
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")

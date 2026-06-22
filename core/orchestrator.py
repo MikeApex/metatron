@@ -20,9 +20,12 @@ import json
 import logging
 import os
 import sys
+import time
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+
+import core.trace as _tr
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
@@ -433,18 +436,25 @@ def filter_output(text: str, agent_name: str) -> str:
 # Tool dispatch
 # ---------------------------------------------------------------------------
 
-def dispatch_tool(name: str, inputs: dict, handlers: dict) -> str:
+def dispatch_tool(name: str, inputs: dict, handlers: dict,
+                  _agent_rec=None, _turn_num: int = 1) -> str:
     """Execute a tool call and return the result as a string."""
     if name not in handlers:
         return f"Error: unknown tool '{name}'"
     _trace(f"  [TOOL] {name}")
+    t0 = time.monotonic()
     try:
         result = handlers[name](**inputs)
         if isinstance(result, dict):
-            return json.dumps(result, indent=2)
-        return str(result)
+            result = json.dumps(result, indent=2)
+        else:
+            result = str(result)
     except Exception as e:
-        return f"Error running tool '{name}': {e}"
+        result = f"Error running tool '{name}': {e}"
+    duration_ms = int((time.monotonic() - t0) * 1000)
+    rec = _agent_rec or _tr.get_current_agent()
+    _tr.record_tool_call(rec, _turn_num, name, inputs, result, duration_ms)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -476,13 +486,16 @@ def run_session_anthropic(system_prompt: str, user_input: str,
         )
 
         turn_num += 1
-        cumulative_input_tokens += response.usage.input_tokens
+        _in_tok = response.usage.input_tokens
+        _out_tok = response.usage.output_tokens
+        cumulative_input_tokens += _in_tok
         if cumulative_input_tokens > 8000:
             logger.warning(f"[token_budget] OVER_8K turn={turn_num} cumulative_input={cumulative_input_tokens}")
-            _trace(f"[TOKEN] turn={turn_num} input={response.usage.input_tokens} cumulative={cumulative_input_tokens} ⚠ OVER_8K")
+            _trace(f"[TOKEN] turn={turn_num} input={_in_tok} cumulative={cumulative_input_tokens} ⚠ OVER_8K")
         else:
             logger.info(f"[token_budget] turn={turn_num} cumulative_input={cumulative_input_tokens}")
-            _trace(f"[TOKEN] turn={turn_num} input={response.usage.input_tokens} cumulative={cumulative_input_tokens}")
+            _trace(f"[TOKEN] turn={turn_num} input={_in_tok} cumulative={cumulative_input_tokens}")
+        _tr.record_turn_tokens(_tr.get_current_agent(), turn_num, _in_tok, _out_tok)
 
         text_parts = []
         tool_calls = []
@@ -503,7 +516,7 @@ def run_session_anthropic(system_prompt: str, user_input: str,
             if tc.name in _PARALLEL_TOOLS:
                 parallel_calls.append(tc)
             else:
-                result = dispatch_tool(tc.name, tc.input, tool_handlers)
+                result = dispatch_tool(tc.name, tc.input, tool_handlers, _turn_num=turn_num)
                 tool_results.append({
                     "type": "tool_result",
                     "tool_use_id": tc.id,
@@ -511,9 +524,17 @@ def run_session_anthropic(system_prompt: str, user_input: str,
                 })
 
         if parallel_calls:
+            _parent_trace = _tr.get_trace()
+            _parent_agent = _tr.get_current_agent()
+            def _make_dispatch(name, inputs, handlers, turn):
+                def _worker():
+                    _tr.set_trace(_parent_trace)
+                    _tr._set_current_agent(_parent_agent)
+                    return dispatch_tool(name, inputs, handlers, _agent_rec=_parent_agent, _turn_num=turn)
+                return _worker
             with ThreadPoolExecutor() as executor:
                 future_to_tc = {
-                    executor.submit(dispatch_tool, tc.name, tc.input, tool_handlers): tc
+                    executor.submit(_make_dispatch(tc.name, tc.input, tool_handlers, turn_num)): tc
                     for tc in parallel_calls
                 }
                 for future in as_completed(future_to_tc):
@@ -571,12 +592,14 @@ def _anthropic_stream(
 
         if final.usage:
             pts = final.usage.input_tokens
+            ots = final.usage.output_tokens
             if pts > 8000:
                 logger.warning(f"[token_budget] OVER_8K turn={turn_num} input={pts}")
                 _trace(f"[TOKEN] turn={turn_num} input={pts} ⚠ OVER_8K")
             else:
                 logger.info(f"[token_budget] turn={turn_num} input={pts}")
                 _trace(f"[TOKEN] turn={turn_num} input={pts}")
+            _tr.record_turn_tokens(_tr.get_current_agent(), turn_num, pts, ots)
 
         tool_calls = [block for block in final.content if block.type == "tool_use"]
 
@@ -593,13 +616,21 @@ def _anthropic_stream(
         sequential_calls = [tc for tc in tool_calls if tc.name not in _PARALLEL_TOOLS]
 
         for tc in sequential_calls:
-            result = dispatch_tool(tc.name, tc.input, tool_handlers)
+            result = dispatch_tool(tc.name, tc.input, tool_handlers, _turn_num=turn_num)
             tool_results.append({"type": "tool_result", "tool_use_id": tc.id, "content": result})
 
         if parallel_calls:
+            _parent_trace = _tr.get_trace()
+            _parent_agent = _tr.get_current_agent()
+            def _make_dispatch(name, inputs, handlers, turn):
+                def _worker():
+                    _tr.set_trace(_parent_trace)
+                    _tr._set_current_agent(_parent_agent)
+                    return dispatch_tool(name, inputs, handlers, _agent_rec=_parent_agent, _turn_num=turn)
+                return _worker
             with ThreadPoolExecutor() as executor:
                 future_to_tc = {
-                    executor.submit(dispatch_tool, tc.name, tc.input, tool_handlers): tc
+                    executor.submit(_make_dispatch(tc.name, tc.input, tool_handlers, turn_num)): tc
                     for tc in parallel_calls
                 }
                 for future in as_completed(future_to_tc):
@@ -705,6 +736,7 @@ def run_session_ollama(system_prompt: str, user_input: str,
         # Token budget — final chunk carries usage counts in native Ollama SDK
         if final_chunk is not None:
             prompt_tokens = getattr(final_chunk, "prompt_eval_count", None) or 0
+            eval_tokens = getattr(final_chunk, "eval_count", None) or 0
             if prompt_tokens:
                 if prompt_tokens > 8000:
                     logger.warning(f"[token_budget] OVER_8K turn={_turn} input={prompt_tokens}")
@@ -712,6 +744,7 @@ def run_session_ollama(system_prompt: str, user_input: str,
                 else:
                     logger.info(f"[token_budget] turn={_turn} input={prompt_tokens}")
                     _trace(f"[TOKEN] turn={_turn} input={prompt_tokens}")
+            _tr.record_turn_tokens(_tr.get_current_agent(), _turn, prompt_tokens, eval_tokens)
 
         if header_printed:
             print("\n", flush=True)
@@ -857,10 +890,12 @@ def run_session_gemini_grounded(system_prompt: str, user_input: str,
     # Token budget logging (native SDK field)
     if hasattr(response, "usage_metadata") and response.usage_metadata:
         input_tokens = getattr(response.usage_metadata, "prompt_token_count", 0) or 0
+        output_tokens = getattr(response.usage_metadata, "candidates_token_count", 0) or 0
         if input_tokens > 8000:
             logger.warning(f"[token_budget] OVER_8K turn=1 cumulative_input={input_tokens}")
         else:
             logger.info(f"[token_budget] turn=1 cumulative_input={input_tokens}")
+        _tr.record_turn_tokens(_tr.get_current_agent(), 1, input_tokens, output_tokens)
 
     # Extract source URLs from grounding metadata
     sources = []
@@ -922,6 +957,7 @@ def _run_gemini_native_loop(client, model_name: str,
 
         if hasattr(response, "usage_metadata") and response.usage_metadata:
             input_tokens = getattr(response.usage_metadata, "prompt_token_count", 0) or 0
+            output_tokens = getattr(response.usage_metadata, "candidates_token_count", 0) or 0
             cumulative_input_tokens += input_tokens
             if cumulative_input_tokens > 8000:
                 logger.warning(f"[token_budget] OVER_8K turn={turn_num} cumulative_input={cumulative_input_tokens}")
@@ -929,6 +965,7 @@ def _run_gemini_native_loop(client, model_name: str,
             else:
                 logger.info(f"[token_budget] turn={turn_num} cumulative_input={cumulative_input_tokens}")
                 _trace(f"[TOKEN] turn={turn_num} input={input_tokens} cumulative={cumulative_input_tokens}")
+            _tr.record_turn_tokens(_tr.get_current_agent(), turn_num, input_tokens, output_tokens)
 
         model_content = response.candidates[0].content
         contents.append(model_content)
@@ -1015,13 +1052,16 @@ def _openai_compat_loop(system_prompt: str, user_input: str,
         )
 
         if response.usage:
-            cumulative_input_tokens += response.usage.prompt_tokens
+            _in_tok = response.usage.prompt_tokens
+            _out_tok = getattr(response.usage, "completion_tokens", 0) or 0
+            cumulative_input_tokens += _in_tok
             if cumulative_input_tokens > 8000:
                 logger.warning(f"[token_budget] OVER_8K turn={turn_num} cumulative_input={cumulative_input_tokens}")
-                _trace(f"[TOKEN] turn={turn_num} input={response.usage.prompt_tokens} cumulative={cumulative_input_tokens} ⚠ OVER_8K")
+                _trace(f"[TOKEN] turn={turn_num} input={_in_tok} cumulative={cumulative_input_tokens} ⚠ OVER_8K")
             else:
                 logger.info(f"[token_budget] turn={turn_num} cumulative_input={cumulative_input_tokens}")
-                _trace(f"[TOKEN] turn={turn_num} input={response.usage.prompt_tokens} cumulative={cumulative_input_tokens}")
+                _trace(f"[TOKEN] turn={turn_num} input={_in_tok} cumulative={cumulative_input_tokens}")
+            _tr.record_turn_tokens(_tr.get_current_agent(), turn_num, _in_tok, _out_tok)
 
         choice = response.choices[0]
         message = choice.message
@@ -1040,7 +1080,7 @@ def _openai_compat_loop(system_prompt: str, user_input: str,
             messages.append(message)
             tc = message.tool_calls[0]
             inputs = json.loads(tc.function.arguments)
-            result = dispatch_tool(tc.function.name, inputs, tool_handlers)
+            result = dispatch_tool(tc.function.name, inputs, tool_handlers, _turn_num=turn_num)
             messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
         else:
             # Vertex bug: parallel tool calls only sign tc0 in extra_content.google.thought_signature.
@@ -1054,7 +1094,7 @@ def _openai_compat_loop(system_prompt: str, user_input: str,
             # Cost: N parallel calls become N sequential turns. Acceptable for Vertex workaround.
             tc0 = message.tool_calls[0]
             inputs = json.loads(tc0.function.arguments)
-            result = dispatch_tool(tc0.function.name, inputs, tool_handlers)
+            result = dispatch_tool(tc0.function.name, inputs, tool_handlers, _turn_num=turn_num)
             # model_copy preserves all internal SDK state (including Vertex's extra_content with
             # thought_signature) while reducing tool_calls to only tc0 (the signed call).
             messages.append(message.model_copy(update={"tool_calls": [tc0]}))
@@ -1115,12 +1155,14 @@ def _openai_compat_stream(
                 # Usage-only trailing chunk (include_usage=True)
                 if hasattr(chunk, "usage") and chunk.usage:
                     pts = chunk.usage.prompt_tokens or 0
+                    ots = getattr(chunk.usage, "completion_tokens", 0) or 0
                     if pts > 8000:
                         logger.warning(f"[token_budget] OVER_8K turn={turn_num} cumulative_input={pts}")
                         _trace(f"[TOKEN] turn={turn_num} input={pts} ⚠ OVER_8K")
                     else:
                         logger.info(f"[token_budget] turn={turn_num} cumulative_input={pts}")
                         _trace(f"[TOKEN] turn={turn_num} input={pts}")
+                    _tr.record_turn_tokens(_tr.get_current_agent(), turn_num, pts, ots)
                 continue
 
             choice = chunk.choices[0]
@@ -1177,13 +1219,21 @@ def _openai_compat_stream(
             if name in _PARALLEL_TOOLS:
                 parallel_calls.append((tc, inputs))
             else:
-                result = dispatch_tool(name, inputs, tool_handlers)
+                result = dispatch_tool(name, inputs, tool_handlers, _turn_num=turn_num)
                 messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
 
         if parallel_calls:
+            _parent_trace = _tr.get_trace()
+            _parent_agent = _tr.get_current_agent()
+            def _make_dispatch(name, inputs, handlers, turn):
+                def _worker():
+                    _tr.set_trace(_parent_trace)
+                    _tr._set_current_agent(_parent_agent)
+                    return dispatch_tool(name, inputs, handlers, _agent_rec=_parent_agent, _turn_num=turn)
+                return _worker
             with ThreadPoolExecutor() as executor:
                 future_to_tc = {
-                    executor.submit(dispatch_tool, tc["function"]["name"], inputs, tool_handlers): tc
+                    executor.submit(_make_dispatch(tc["function"]["name"], inputs, tool_handlers, turn_num)): tc
                     for tc, inputs in parallel_calls
                 }
                 for future in as_completed(future_to_tc):
@@ -1226,34 +1276,42 @@ def _run_single_agent(agent_name: str, user_input: str,
     _trace(f"[AGENT] {agent_name}  provider={provider}  model={model_override}{'  bare=True' if bare else ''}")
     agent = load_agent(agent_name)
     if bare or agent_name == "research_agent":
-        # bare: token-pressure diagnostics — agent file only, no personal context.
-        # research_agent: external-facing, never receives personal config.
         system_prompt = f"## Your Role for This Session\n\n{agent}"
         augmented_input = user_input
+        context_sections = {"agent_file": agent}
     else:
         config = load_config(persona=persona)
         recent = load_recent_context(persona=persona)
-        # Recent context goes in the user message (not system prompt) so the system
-        # prompt remains stable across calls — enabling KV prefix cache activation.
         system_prompt = f"## Your Role for This Session\n\n{agent}\n\n---\n\n{config}"
         augmented_input = f"[Recent context]\n{recent}\n\n---\n\n{user_input}" if recent else user_input
+        context_sections = {
+            "agent_file": agent,
+            "config": config,
+            "recent_context": recent,
+        }
     tool_schemas, tool_handlers = register_tools()
 
-    if provider == "openai":
-        return run_session_openai(system_prompt, augmented_input, tool_schemas, tool_handlers,
-                                  model=model_override, history=history)
-    elif provider == "ollama":
-        return run_session_ollama(system_prompt, augmented_input, tool_schemas, tool_handlers,
-                                  model=model_override, base_url=base_url_override,
-                                  history=history)
-    elif provider == "gemini":
-        if agent_name == "research_agent":
-            return run_session_gemini_grounded(system_prompt, augmented_input, model=model_override)
-        return run_session_gemini(system_prompt, augmented_input, tool_schemas, tool_handlers,
-                                  model=model_override, history=history)
-    else:
-        return run_session_anthropic(system_prompt, augmented_input, tool_schemas, tool_handlers,
-                                     model=model_override)
+    _agent_rec = _tr.push_agent(agent_name, provider or "", model_override or "", context_sections)
+    try:
+        if provider == "openai":
+            result = run_session_openai(system_prompt, augmented_input, tool_schemas, tool_handlers,
+                                        model=model_override, history=history)
+        elif provider == "ollama":
+            result = run_session_ollama(system_prompt, augmented_input, tool_schemas, tool_handlers,
+                                        model=model_override, base_url=base_url_override,
+                                        history=history)
+        elif provider == "gemini":
+            if agent_name == "research_agent":
+                result = run_session_gemini_grounded(system_prompt, augmented_input, model=model_override)
+            else:
+                result = run_session_gemini(system_prompt, augmented_input, tool_schemas, tool_handlers,
+                                            model=model_override, history=history)
+        else:
+            result = run_session_anthropic(system_prompt, augmented_input, tool_schemas, tool_handlers,
+                                           model=model_override)
+    finally:
+        _tr.pop_agent(_agent_rec)
+    return result
 
 
 def run_pipeline_session(user_input: str,
@@ -1268,25 +1326,31 @@ def run_pipeline_session(user_input: str,
     Pass 2 (Synthesizer): receives original message + context package,
     integrates specialist outputs, reasons, responds to user.
     """
-    # Pass 1: Coordinator — intake, context loading, specialist fan-out
-    _trace("[PIPELINE] coordinator  starting")
-    coord_package = _run_single_agent(
-        "coordinator", user_input, persona=persona, provider=provider
-    )
-    _trace(f"[PIPELINE] coordinator  done  ({len(coord_package)} chars) → synthesizer starting")
-    print(f"\n--- COORD PACKAGE ---\n{coord_package}\n--- END COORD PACKAGE ---\n", file=sys.stderr)  # dev
+    _tr.start_request_trace(user_input, persona)
+    try:
+        # Pass 1: Coordinator — intake, context loading, specialist fan-out
+        _trace("[PIPELINE] coordinator  starting")
+        coord_package = _run_single_agent(
+            "coordinator", user_input, persona=persona, provider=provider
+        )
+        _trace(f"[PIPELINE] coordinator  done  ({len(coord_package)} chars) → synthesizer starting")
+        print(f"\n--- COORD PACKAGE ---\n{coord_package}\n--- END COORD PACKAGE ---\n", file=sys.stderr)  # dev
 
-    # Pass 2: Synthesizer — integration and user-facing response
-    synthesizer_input = (
-        f"ORIGINAL USER MESSAGE:\n{user_input}\n\n"
-        f"COORDINATOR CONTEXT PACKAGE:\n{coord_package}"
-    )
-    synth_result = _run_single_agent(
-        "synthesizer", synthesizer_input, persona=persona, provider=provider
-    )
-    _trace(f"[PIPELINE] synthesizer  done  ({len(synth_result)} chars)")
-
-    return filter_output(synth_result, "synthesizer")
+        # Pass 2: Synthesizer — integration and user-facing response
+        synthesizer_input = (
+            f"ORIGINAL USER MESSAGE:\n{user_input}\n\n"
+            f"COORDINATOR CONTEXT PACKAGE:\n{coord_package}"
+        )
+        synth_result = _run_single_agent(
+            "synthesizer", synthesizer_input, persona=persona, provider=provider
+        )
+        _trace(f"[PIPELINE] synthesizer  done  ({len(synth_result)} chars)")
+        filtered = filter_output(synth_result, "synthesizer")
+    except Exception:
+        _tr.set_trace(None)
+        raise
+    _tr.finish_request_trace(filtered)
+    return filtered
 
 
 def run_pipeline_session_stream(
@@ -1304,6 +1368,8 @@ def run_pipeline_session_stream(
       "[DONE]"    — generation complete, filter passed
       "[RETRACT]" — filter caught a confidential term; client should discard received text
     """
+    _tr.start_request_trace(user_input, persona)
+
     # Pass 1: Coordinator — blocking (unchanged)
     _trace("[PIPELINE] coordinator  starting")
     coord_package = _run_single_agent("coordinator", user_input, persona=persona, provider=provider)
@@ -1338,6 +1404,16 @@ def run_pipeline_session_stream(
         synth_base_url = model_cfg.base_url
 
     _trace(f"[PIPELINE] synthesizer  provider={synth_provider}  model={synth_model}  streaming")
+
+    # Register synthesizer in the trace (mirrors _run_single_agent)
+    _synth_rec = _tr.push_agent(
+        "synthesizer", synth_provider, synth_model or "",
+        {
+            "agent_file": agent_instructions,
+            "config": config,
+            "recent_context": recent,
+        },
+    )
 
     # Dispatch to streaming variant
     # STREAMING NOTE: All four providers stream here. If you add a new provider,
@@ -1375,6 +1451,7 @@ def run_pipeline_session_stream(
         yield chunk
 
     complete = "".join(buffer)
+    _tr.pop_agent(_synth_rec)
     filtered = filter_output(complete, "synthesizer")
     if filtered != complete:
         yield "[RETRACT]"
@@ -1382,6 +1459,7 @@ def run_pipeline_session_stream(
         yield "[DONE]"
 
     _trace(f"[PIPELINE] synthesizer  done  ({len(complete)} chars)")
+    _tr.finish_request_trace(filtered if filtered == complete else "")
 
 
 def run_session(agent_name: str, user_input: str,
