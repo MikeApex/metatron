@@ -264,7 +264,7 @@ class TheBookApp(App):
         Binding("q", "quit", "Quit"),
         Binding("r", "refresh", "Refresh"),
         Binding("l", "toggle_live", "Toggle Live"),
-        Binding("s", "snapshot", "Snapshot → Claude Code"),
+        Binding("s", "snapshot", "Snapshot → Claude Code", priority=True),
     ]
 
     selected_persona: reactive[str | None] = reactive(None)
@@ -503,7 +503,9 @@ class TheBookApp(App):
 
                 if tc_name == "run_subagent":
                     # Resolve to the actual subagent record instead of showing raw args
-                    called = tc.get("args", {}).get("agent", "") or tc.get("args", {}).get("name", "")
+                    called = (tc.get("args", {}).get("agent_name", "")
+                              or tc.get("args", {}).get("agent", "")
+                              or tc.get("args", {}).get("name", ""))
                     sub = sub_by_name.get(called)
                     if sub:
                         s_in = sub.get("total_input_tokens", 0)
@@ -713,11 +715,14 @@ class TheBookApp(App):
                 lines.append("  Output files: " + ", ".join(ag["output_files"]))
             lines.append("")
 
-        # Write to Mac project directory (where Claude Code runs)
-        snapshot_path = Path(__file__).parent.parent / "data" / "book_snapshot.md"
-        snapshot_path.parent.mkdir(parents=True, exist_ok=True)
-        snapshot_path.write_text("\n".join(lines))
-        self._set_status(f"Snapshot written → data/book_snapshot.md  (tell Claude Code to read it)")
+        try:
+            snapshot_path = Path(__file__).parent.parent / "data" / "book_snapshot.md"
+            snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+            snapshot_path.write_text("\n".join(lines))
+            self._set_status("Snapshot written → data/book_snapshot.md  (tell Claude Code to read it)")
+        except Exception as e:
+            print(f"[snapshot error] {e}", file=sys.stderr)
+            self._set_status(f"Snapshot failed: {e}")
 
     # ------------------------------------------------------------------
     # Helpers
