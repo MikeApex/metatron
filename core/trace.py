@@ -15,12 +15,19 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+
+# Matches absolute paths that contain /data/... and relative data/... paths,
+# both ending in a recognisable file extension.
+_DATA_PATH_RE = re.compile(
+    r'(?:/[^\s]+/)?(data/[a-zA-Z0-9._/\-]+\.(?:json|jsonl|md|txt|yaml|csv))'
+)
 
 ROOT = Path(__file__).parent.parent
 
@@ -58,6 +65,7 @@ class AgentRecord:
     context_sections: dict = field(default_factory=dict)
     turns: list[TurnRecord] = field(default_factory=list)
     subagents: list[AgentRecord] = field(default_factory=list)
+    output_files: list[str] = field(default_factory=list)
     start_mono: float = field(default_factory=time.monotonic)
     duration_ms: int = 0
 
@@ -175,12 +183,22 @@ def record_tool_call(rec: AgentRecord | None, turn_num: int,
                      name: str, args: dict, result: str, duration_ms: int) -> None:
     if rec is None:
         return
-    # Truncate large results so the trace file stays readable
     preview = result[:800] if len(result) > 800 else result
     tr = rec.ensure_turn(turn_num)
     tr.tool_calls.append(ToolCallRecord(
         name=name, args=args, result_preview=preview, duration_ms=duration_ms
     ))
+    # Extract any file paths written by this tool call (from args values + result)
+    candidates: set[str] = set()
+    for v in args.values():
+        if isinstance(v, str):
+            for m in _DATA_PATH_RE.finditer(v):
+                candidates.add(m.group(1))
+    for m in _DATA_PATH_RE.finditer(result):
+        candidates.add(m.group(1))
+    for path in candidates:
+        if path not in rec.output_files:
+            rec.output_files.append(path)
 
 
 # ---------------------------------------------------------------------------
@@ -211,6 +229,7 @@ def _agent_to_dict(a: AgentRecord) -> dict:
             for tr in a.turns
         ],
         "subagents": [_agent_to_dict(s) for s in a.subagents],
+        "output_files": a.output_files,
         "total_input_tokens": a.total_input_tokens(),
         "total_output_tokens": a.total_output_tokens(),
         "duration_ms": a.duration_ms,

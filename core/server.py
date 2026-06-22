@@ -461,6 +461,40 @@ async def monitor_stream(persona: str | None = None):
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
+_PROJECT_ROOT = Path(__file__).parent.parent
+
+
+@app.get("/monitor/file")
+async def monitor_file(path: str) -> dict:
+    """
+    Read a file from the project data directory and return its content.
+
+    path must be a relative path starting with 'data/' — no traversal allowed.
+    Returns {path, content, size_bytes}.
+    """
+    import json as _json
+
+    if not path.startswith("data/") or ".." in path or path != Path(path).as_posix():
+        raise HTTPException(status_code=400, detail="Invalid path — must be relative data/ path")
+
+    full = _PROJECT_ROOT / path
+    if not full.exists():
+        raise HTTPException(status_code=404, detail=f"File not found: {path}")
+    if not full.is_file():
+        raise HTTPException(status_code=400, detail="Not a file")
+
+    raw = full.read_text(errors="replace")
+
+    # Pretty-print JSON for readability in the viewer
+    if path.endswith(".json"):
+        try:
+            raw = _json.dumps(_json.loads(raw), indent=2, ensure_ascii=False)
+        except Exception:
+            pass
+
+    return {"path": path, "content": raw, "size_bytes": full.stat().st_size}
+
+
 # Serve static assets (CSS, JS if we add them later)
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
