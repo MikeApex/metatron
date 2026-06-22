@@ -31,7 +31,7 @@ try:
     from textual.reactive import reactive
     from textual.screen import ModalScreen
     from textual.widgets import (
-        Button, Collapsible, Footer, Header, Label, ListItem,
+        Button, Collapsible, Footer, Header, Input, Label, ListItem,
         ListView, Select, Static,
     )
 except ImportError:
@@ -194,6 +194,24 @@ Collapsible { margin: 0 0 1 0; }
     text-align: left;
 }
 .file-link:hover { background: $boost; }
+
+#chat-panel {
+    height: 14;
+    border-top: solid $accent;
+}
+#chat-history { height: 1fr; padding: 0 1; }
+#chat-controls {
+    height: 3;
+    padding: 0 1;
+    align: left middle;
+}
+#chat-input  { width: 1fr; margin-right: 1; }
+#chat-send   { width: 8; }
+#chat-clear  { width: 9; margin-left: 1; }
+#chat-tokens { width: 14; color: $text-muted; content-align: right middle; }
+.chat-user      { color: $text; margin-top: 1; }
+.chat-assistant { color: $success; }
+.chat-error     { color: $error; }
 """
 
 
@@ -265,6 +283,7 @@ class TheBookApp(App):
         Binding("r", "refresh", "Refresh"),
         Binding("l", "toggle_live", "Toggle Live"),
         Binding("s", "snapshot", "Snapshot → Claude Code", priority=True),
+        Binding("c", "toggle_chat", "Chat", priority=True),
     ]
 
     selected_persona: reactive[str | None] = reactive(None)
@@ -278,6 +297,8 @@ class TheBookApp(App):
         self._sse_worker = None
         self._selected_trace: dict | None = None
         self._selected_agent_rec: dict | None = None
+        self._chat_history: list[tuple[str, str]] = []
+        self._approx_tokens: int = 0
 
     # ------------------------------------------------------------------
     # Layout
@@ -299,6 +320,13 @@ class TheBookApp(App):
             with Vertical(id="col3"):
                 yield Label("  Context & detail", classes="col-header")
                 yield ScrollableContainer(id="detail-scroll")
+        with Vertical(id="chat-panel"):
+            yield ScrollableContainer(id="chat-history")
+            with Horizontal(id="chat-controls"):
+                yield Input(placeholder="Ask about the current trace… (Enter to send)", id="chat-input")
+                yield Button("Send", id="chat-send", variant="primary")
+                yield Button("Clear", id="chat-clear")
+                yield Label("~0 tok", id="chat-tokens")
         yield Footer()
 
     # ------------------------------------------------------------------
@@ -306,6 +334,7 @@ class TheBookApp(App):
     # ------------------------------------------------------------------
 
     def on_mount(self) -> None:
+        self.query_one("#chat-panel").display = False
         self.load_personas()
 
     @work(exclusive=True)
@@ -653,6 +682,165 @@ class TheBookApp(App):
             if self._sse_worker is not None:
                 self._sse_worker.cancel()
                 self._sse_worker = None
+
+    def action_toggle_chat(self) -> None:
+        panel = self.query_one("#chat-panel")
+        panel.display = not panel.display
+        if panel.display:
+            self.query_one("#chat-input", Input).focus()
+
+    @on(Input.Submitted, "#chat-input")
+    def chat_submitted(self, event: Input.Submitted) -> None:
+        self._send_message(event.value)
+        event.input.clear()
+
+    @on(Button.Pressed, "#chat-send")
+    def chat_send_pressed(self) -> None:
+        inp = self.query_one("#chat-input", Input)
+        self._send_message(inp.value)
+        inp.clear()
+
+    @on(Button.Pressed, "#chat-clear")
+    async def chat_clear_pressed(self) -> None:
+        self._chat_history.clear()
+        self._approx_tokens = 0
+        container = self.query_one("#chat-history", ScrollableContainer)
+        container.remove_children()
+        self._update_token_label()
+
+    def _send_message(self, text: str) -> None:
+        text = text.strip()
+        if not text:
+            return
+        self._run_chat(text)
+
+    def _snapshot_text(self) -> str:
+        lines = [f"Persona: {self.selected_persona or 'none'}"]
+        if self._selected_trace:
+            t = self._selected_trace
+            lines.append(
+                f"Selected conversation: {t.get('ts','')}  "
+                f"User: {(t.get('user_input') or t.get('user',''))[:120]}"
+            )
+            lines.append(f"Total duration: {t.get('duration_ms','?')}ms")
+            for ag in t.get("pipeline", []):
+                m = ag.get("model","").split("/")[-1]
+                lines.append(
+                    f"  Agent {ag.get('agent')}  {ag.get('provider')}/{m}  "
+                    f"{ag.get('total_input_tokens',0):,}in/{ag.get('total_output_tokens',0):,}out  "
+                    f"{ag.get('duration_ms',0)}ms  {len(ag.get('turns',[]))} turns"
+                )
+                for sub in ag.get("subagents", []):
+                    sm = sub.get("model","").split("/")[-1]
+                    lines.append(
+                        f"    ↳ {sub.get('agent')}  {sub.get('provider')}/{sm}  "
+                        f"{sub.get('total_input_tokens',0):,}in/{sub.get('total_output_tokens',0):,}out  "
+                        f"{sub.get('duration_ms',0)}ms"
+                    )
+                    for fp in sub.get("output_files", []):
+                        lines.append(f"       wrote: {fp}")
+        if self._selected_agent_rec:
+            ag = self._selected_agent_rec
+            lines.append(
+                f"Focused agent: {ag.get('agent')}  "
+                f"{ag.get('total_input_tokens',0):,}in/{ag.get('total_output_tokens',0):,}out  "
+                f"{len(ag.get('turns',[]))} turns"
+            )
+            for turn in ag.get("turns", []):
+                tcs = [tc.get("name","?") for tc in turn.get("tool_calls", [])]
+                if tcs:
+                    lines.append(f"  Turn {turn.get('turn')}: {', '.join(tcs)}")
+        return "\n".join(lines)
+
+    def _update_token_label(self) -> None:
+        try:
+            self.query_one("#chat-tokens", Label).update(f"~{self._approx_tokens:,} tok")
+        except NoMatches:
+            pass
+
+    @work(exclusive=False, name="chat")
+    async def _run_chat(self, question: str) -> None:
+        container = self.query_one("#chat-history", ScrollableContainer)
+        await container.mount(Static(f"[bold]You:[/] {question}", classes="chat-user"))
+        container.scroll_end(animate=False)
+
+        context = self._snapshot_text()
+        prompt_parts = [
+            "You are analyzing Metatron, a personal AI life manager built on a multi-agent "
+            "pipeline. The Book is its monitoring tool. Answer questions about its internal "
+            "traffic, routing decisions, token usage, and agent behavior based on the current state.\n\n"
+            f"Current Book state:\n{context}\n"
+        ]
+        for u, a in self._chat_history:
+            prompt_parts.append(f"\nHuman: {u}\nAssistant: {a}")
+        prompt_parts.append(f"\nHuman: {question}\nAssistant:")
+        full_prompt = "".join(prompt_parts)
+
+        self._approx_tokens += len(full_prompt) // 4
+        self._update_token_label()
+
+        response_widget = Static("…", classes="chat-assistant")
+        await container.mount(response_widget)
+        container.scroll_end(animate=False)
+
+        response_text = ""
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "claude", "-p",
+                "--output-format", "streaming_json",
+                "--include-partial-messages",
+                "--no-session-persistence",
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            proc.stdin.write(full_prompt.encode())
+            await proc.stdin.drain()
+            proc.stdin.close()
+
+            async for raw in proc.stdout:
+                line = raw.decode().strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                    t = obj.get("type", "")
+                    if t == "content_block_delta":
+                        chunk = obj.get("delta", {}).get("text", "")
+                        if chunk:
+                            response_text += chunk
+                            response_widget.update(f"[green]Claude:[/] {response_text}")
+                            container.scroll_end(animate=False)
+                    elif t == "result":
+                        # Final result object — use if we got nothing from deltas
+                        if not response_text:
+                            response_text = obj.get("result", "")
+                            response_widget.update(f"[green]Claude:[/] {response_text}")
+                except json.JSONDecodeError:
+                    # Unexpected plain text — accumulate it
+                    if line:
+                        response_text += line + "\n"
+                        response_widget.update(f"[green]Claude:[/] {response_text.strip()}")
+
+            await proc.wait()
+
+            if not response_text:
+                response_widget.update("[dim]No response.[/]")
+
+            self._chat_history.append((question, response_text))
+            self._approx_tokens += len(response_text) // 4
+            self._update_token_label()
+
+        except FileNotFoundError:
+            response_widget.update(
+                "[red]'claude' not found in PATH. "
+                "Is Claude Code CLI installed and in your shell PATH?[/]"
+            )
+        except Exception as e:
+            print(f"[chat error] {e}", file=sys.stderr)
+            response_widget.update(f"[red]Error: {e}[/]")
+
+        container.scroll_end(animate=False)
 
     def action_snapshot(self) -> None:
         """Write current Book state to data/book_snapshot.md for Claude Code."""
