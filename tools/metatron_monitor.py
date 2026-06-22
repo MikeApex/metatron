@@ -18,7 +18,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
+import shlex
 import sys
+import tempfile
 from datetime import datetime
 
 try:
@@ -783,66 +786,58 @@ class TheBookApp(App):
         self._approx_tokens += len(full_prompt) // 4
         self._update_token_label()
 
-        response_widget = Static("…", classes="chat-assistant")
+        response_widget = Static("[dim]Thinking…[/]", classes="chat-assistant")
         await container.mount(response_widget)
         container.scroll_end(animate=False)
 
-        response_text = ""
+        tmp_path = None
         try:
-            proc = await asyncio.create_subprocess_exec(
-                "claude", "-p",
-                "--output-format", "streaming_json",
-                "--include-partial-messages",
-                "--no-session-persistence",
-                stdin=asyncio.subprocess.PIPE,
+            # Write prompt to a temp file — avoids TTY/stdin detection issues
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".txt", delete=False, encoding="utf-8"
+            ) as f:
+                f.write(full_prompt)
+                tmp_path = f.name
+
+            cmd = f"claude -p --output-format text < {shlex.quote(tmp_path)}"
+            proc = await asyncio.create_subprocess_shell(
+                cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            proc.stdin.write(full_prompt.encode())
-            await proc.stdin.drain()
-            proc.stdin.close()
 
+            response_text = ""
+            # Stream stdout line-by-line for live display
             async for raw in proc.stdout:
-                line = raw.decode().strip()
-                if not line:
-                    continue
-                try:
-                    obj = json.loads(line)
-                    t = obj.get("type", "")
-                    if t == "content_block_delta":
-                        chunk = obj.get("delta", {}).get("text", "")
-                        if chunk:
-                            response_text += chunk
-                            response_widget.update(f"[green]Claude:[/] {response_text}")
-                            container.scroll_end(animate=False)
-                    elif t == "result":
-                        # Final result object — use if we got nothing from deltas
-                        if not response_text:
-                            response_text = obj.get("result", "")
-                            response_widget.update(f"[green]Claude:[/] {response_text}")
-                except json.JSONDecodeError:
-                    # Unexpected plain text — accumulate it
-                    if line:
-                        response_text += line + "\n"
-                        response_widget.update(f"[green]Claude:[/] {response_text.strip()}")
+                chunk = raw.decode()
+                response_text += chunk
+                response_widget.update(f"[green]Claude:[/] {response_text.rstrip()}")
+                container.scroll_end(animate=False)
 
-            await proc.wait()
+            _, stderr_bytes = await proc.communicate()
 
             if not response_text:
-                response_widget.update("[dim]No response.[/]")
-
-            self._chat_history.append((question, response_text))
-            self._approx_tokens += len(response_text) // 4
-            self._update_token_label()
+                err = stderr_bytes.decode().strip()
+                print(f"[chat stderr] {err}", file=sys.stderr)
+                response_widget.update(
+                    f"[red]No response.[/]\n[dim]{err[:400] if err else 'claude produced no output'}[/]"
+                )
+            else:
+                self._chat_history.append((question, response_text))
+                self._approx_tokens += len(response_text) // 4
+                self._update_token_label()
 
         except FileNotFoundError:
             response_widget.update(
-                "[red]'claude' not found in PATH. "
-                "Is Claude Code CLI installed and in your shell PATH?[/]"
+                "[red]'claude' not found in PATH.[/]\n"
+                "[dim]Ensure Claude Code CLI is installed and your shell PATH is set.[/]"
             )
         except Exception as e:
             print(f"[chat error] {e}", file=sys.stderr)
             response_widget.update(f"[red]Error: {e}[/]")
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                os.unlink(tmp_path)
 
         container.scroll_end(animate=False)
 
