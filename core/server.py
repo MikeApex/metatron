@@ -392,16 +392,10 @@ async def monitor_conversations(persona: str | None = None) -> dict:
     filters nothing (all users).
     """
     entries = []
-    files = _conversation_files(persona)
-    if not files:
-        # Shared dir, filter by persona field
-        for f in sorted((DATA_DIR / "conversations").glob("*.jsonl")) if (DATA_DIR / "conversations").exists() else []:
-            for entry in _read_jsonl(f):
-                if persona is None or entry.get("persona") == persona:
-                    entries.append(entry)
-    else:
-        for f in files:
-            entries.extend(_read_jsonl(f))
+    for f in _conversation_files(persona):
+        for entry in _read_jsonl(f):
+            if persona is None or entry.get("persona") == persona:
+                entries.append(entry)
     return {"entries": entries}
 
 
