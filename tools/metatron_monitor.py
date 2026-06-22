@@ -264,6 +264,7 @@ class TheBookApp(App):
         Binding("q", "quit", "Quit"),
         Binding("r", "refresh", "Refresh"),
         Binding("l", "toggle_live", "Toggle Live"),
+        Binding("s", "snapshot", "Snapshot → Claude Code"),
     ]
 
     selected_persona: reactive[str | None] = reactive(None)
@@ -275,6 +276,8 @@ class TheBookApp(App):
         self.conversations: list[dict] = []
         self.traces: list[dict] = []
         self._sse_worker = None
+        self._selected_trace: dict | None = None
+        self._selected_agent_rec: dict | None = None
 
     # ------------------------------------------------------------------
     # Layout
@@ -409,6 +412,8 @@ class TheBookApp(App):
         item = event.item
         if not isinstance(item, MessageBlock):
             return
+        self._selected_trace = item.trace
+        self._selected_agent_rec = None
         self._populate_col2(item.trace)
         self._clear_col3()
 
@@ -435,6 +440,7 @@ class TheBookApp(App):
         item = event.item
         if not isinstance(item, AgentLogItem):
             return
+        self._selected_agent_rec = item.agent_rec
         await self._populate_col3(item.agent_rec)
 
     def _clear_col3(self) -> None:
@@ -445,9 +451,9 @@ class TheBookApp(App):
         scroller = self.query_one("#detail-scroll", ScrollableContainer)
         scroller.remove_children()
 
-        sections = agent_rec.get("context_sections", {})
+        ctx = agent_rec.get("context_sections", {})
         turns = agent_rec.get("turns", [])
-
+        subagents = agent_rec.get("subagents", [])
         name = agent_rec.get("agent", "?")
         provider = agent_rec.get("provider", "")
         model = agent_rec.get("model", "")
@@ -455,51 +461,100 @@ class TheBookApp(App):
         total_out = agent_rec.get("total_output_tokens", 0)
         dur = agent_rec.get("duration_ms", 0)
 
-        widgets = [
+        widgets: list = [
             Static(
                 f"[bold]{name}[/]  [dim]{provider}[/]  [cyan]{model}[/]\n"
                 f"[green]{total_in:,}[/] in / [yellow]{total_out:,}[/] out  [dim]{dur}ms[/]"
             )
         ]
 
+        # Context sections — each a top-level Collapsible
         for key, label in [
             ("agent_file", "Agent Instructions"),
             ("config", "Config (constitution + goals)"),
             ("recent_context", "Recent Context"),
         ]:
-            content = sections.get(key, "")
+            content = ctx.get(key, "")
             if content:
                 widgets.append(Collapsible(Static(content), title=label, collapsed=True))
 
+        # Build a lookup of subagent records by name for run_subagent resolution
+        sub_by_name: dict[str, dict] = {s.get("agent", ""): s for s in subagents}
+
+        # Turns — Static divider per turn, then each tool call as its own top-level Collapsible
         for t in turns:
             turn_num = t.get("turn", "?")
             t_in = t.get("input_tokens", 0)
             t_out = t.get("output_tokens", 0)
             tool_calls = t.get("tool_calls", [])
-            title = f"Turn {turn_num}  [green]{t_in:,}[/]in  [yellow]{t_out:,}[/]out"
 
-            tc_widgets = []
+            widgets.append(Static(
+                f"\n[dim]── Turn {turn_num}  "
+                f"[green]{t_in:,}[/]in  [yellow]{t_out:,}[/]out ──[/]"
+            ))
+
+            if not tool_calls:
+                widgets.append(Static("  [dim]no tool calls[/]"))
+                continue
+
             for tc in tool_calls:
                 tc_name = tc.get("name", "?")
                 tc_dur = tc.get("duration_ms", 0)
-                tc_args = json.dumps(tc.get("args", {}), indent=2)
-                tc_result = tc.get("result_preview", "")
-                tc_widgets.append(
-                    Collapsible(
+
+                if tc_name == "run_subagent":
+                    # Resolve to the actual subagent record instead of showing raw args
+                    called = tc.get("args", {}).get("agent", "") or tc.get("args", {}).get("name", "")
+                    sub = sub_by_name.get(called)
+                    if sub:
+                        s_in = sub.get("total_input_tokens", 0)
+                        s_out = sub.get("total_output_tokens", 0)
+                        s_dur = sub.get("duration_ms", 0)
+                        s_model = sub.get("model", "").split("/")[-1]
+                        s_files = sub.get("output_files", [])
+                        s_turns = sub.get("turns", [])
+
+                        inner: list = [Static(
+                            f"[dim]{sub.get('provider','')}/{s_model}[/]  "
+                            f"[green]{s_in:,}[/]in / [yellow]{s_out:,}[/]out  [dim]{s_dur}ms[/]"
+                        )]
+                        for st in s_turns:
+                            stcs = st.get("tool_calls", [])
+                            stc_line = "  ".join(
+                                f"[blue]⚙ {stc.get('name','?')}[/]" for stc in stcs
+                            )
+                            inner.append(Static(
+                                f"  Turn {st.get('turn')}  "
+                                f"[green]{st.get('input_tokens',0):,}[/]in  "
+                                f"[yellow]{st.get('output_tokens',0):,}[/]out"
+                                + (f"  {stc_line}" if stc_line else "")
+                            ))
+                        if s_files:
+                            inner.append(Static("[bold]Output Files[/]"))
+                            for fp in s_files:
+                                inner.append(Button(fp, name=fp, classes="file-link"))
+
+                        widgets.append(Collapsible(
+                            *inner,
+                            title=f"→ {called}  [dim]{s_dur}ms[/]",
+                            collapsed=True,
+                        ))
+                    else:
+                        # Subagent record not found — fall back to raw args
+                        widgets.append(Collapsible(
+                            Static(json.dumps(tc.get("args", {}), indent=2)),
+                            title=f"run_subagent({called or '?'})  [dim]{tc_dur}ms[/]",
+                            collapsed=True,
+                        ))
+                else:
+                    tc_args = json.dumps(tc.get("args", {}), indent=2)
+                    tc_result = tc.get("result_preview", "")
+                    widgets.append(Collapsible(
                         Static(f"Args:\n{tc_args}\n\nResult:\n{tc_result}"),
                         title=f"⚙ {tc_name}  [dim]{tc_dur}ms[/]",
                         collapsed=True,
-                    )
-                )
+                    ))
 
-            if tc_widgets:
-                widgets.append(Collapsible(*tc_widgets, title=title, collapsed=True))
-            else:
-                widgets.append(
-                    Collapsible(Static("[dim]No tool calls.[/]"), title=title, collapsed=True)
-                )
-
-        # Output files written by this agent's tool calls
+        # Output files written by this agent
         output_files = agent_rec.get("output_files", [])
         if output_files:
             widgets.append(Static("\n[bold]Output Files[/]"))
@@ -596,6 +651,73 @@ class TheBookApp(App):
             if self._sse_worker is not None:
                 self._sse_worker.cancel()
                 self._sse_worker = None
+
+    def action_snapshot(self) -> None:
+        """Write current Book state to data/book_snapshot.md for Claude Code."""
+        lines = [
+            "# Book Snapshot",
+            f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"Server: {self.server}",
+            f"Persona: {self.selected_persona or '—'}",
+            f"Conversations loaded: {len(self.conversations)}",
+            f"Traces loaded: {len(self.traces)}",
+            "",
+        ]
+
+        if self._selected_trace:
+            t = self._selected_trace
+            lines += [
+                "## Selected Conversation",
+                f"Timestamp: {t.get('ts', '—')}",
+                f"User: {t.get('user_input', t.get('user', '—'))}",
+                f"Response: {(t.get('synth_response', '') or '')[:300]}",
+                f"Duration: {t.get('duration_ms', '—')}ms",
+                "",
+                "### Pipeline",
+            ]
+            for i, ag in enumerate(t.get("pipeline", []), 1):
+                lines.append(
+                    f"{i}. {ag.get('agent','?')}  {ag.get('provider','')}/{ag.get('model','').split('/')[-1]}"
+                    f"  {ag.get('total_input_tokens',0):,}in / {ag.get('total_output_tokens',0):,}out"
+                    f"  {ag.get('duration_ms',0)}ms"
+                )
+                for sub in ag.get("subagents", []):
+                    lines.append(
+                        f"   ↳ {sub.get('agent','?')}  {sub.get('total_input_tokens',0):,}in"
+                        f" / {sub.get('total_output_tokens',0):,}out  {sub.get('duration_ms',0)}ms"
+                    )
+                    for fp in sub.get("output_files", []):
+                        lines.append(f"      wrote: {fp}")
+                for fp in ag.get("output_files", []):
+                    lines.append(f"      wrote: {fp}")
+            lines.append("")
+
+        if self._selected_agent_rec:
+            ag = self._selected_agent_rec
+            lines += [
+                "## Selected Agent (Column 3 focus)",
+                f"Agent: {ag.get('agent','?')}",
+                f"Provider/Model: {ag.get('provider','')}/{ag.get('model','')}",
+                f"Tokens: {ag.get('total_input_tokens',0):,}in / {ag.get('total_output_tokens',0):,}out",
+                f"Duration: {ag.get('duration_ms',0)}ms",
+                f"Turns: {len(ag.get('turns',[]))}",
+                "",
+            ]
+            for turn in ag.get("turns", []):
+                tcs = turn.get("tool_calls", [])
+                if tcs:
+                    lines.append(f"  Turn {turn.get('turn')}: " + ", ".join(
+                        f"{tc.get('name','?')} ({tc.get('duration_ms',0)}ms)" for tc in tcs
+                    ))
+            if ag.get("output_files"):
+                lines.append("  Output files: " + ", ".join(ag["output_files"]))
+            lines.append("")
+
+        # Write to Mac project directory (where Claude Code runs)
+        snapshot_path = Path(__file__).parent.parent / "data" / "book_snapshot.md"
+        snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+        snapshot_path.write_text("\n".join(lines))
+        self._set_status(f"Snapshot written → data/book_snapshot.md  (tell Claude Code to read it)")
 
     # ------------------------------------------------------------------
     # Helpers
