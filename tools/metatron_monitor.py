@@ -631,41 +631,51 @@ class TheBookApp(App):
 
     async def _sse_loop(self, persona: str) -> None:
         url = f"{self.server}/monitor/stream"
-        try:
-            async with httpx.AsyncClient(timeout=None, verify=False) as client:
-                async with client.stream("GET", url, params={"persona": persona}) as resp:
-                    async for line in resp.aiter_lines():
-                        if not line.startswith("data: "):
-                            continue
-                        try:
-                            msg = json.loads(line[6:])
-                        except Exception:
-                            continue
-                        if msg.get("type") != "trace":
-                            continue
-
-                        trace = msg["data"]
-                        self.traces.append(trace)
-                        user_input = trace.get("user_input", "")
-                        if not any(e.get("user", "")[:50] == user_input[:50]
-                                   for e in self.conversations):
-                            new_entry = {
-                                "ts": trace.get("ts", ""),
-                                "agent": "coordinator",
-                                "persona": trace.get("persona"),
-                                "user": user_input,
-                                "response": trace.get("synth_response", ""),
-                            }
-                            self.conversations.append(new_entry)
-                            self._append_col1(new_entry, trace)
+        retry_delay = 2
+        while True:
+            try:
+                async with httpx.AsyncClient(timeout=None, verify=False) as client:
+                    async with client.stream("GET", url, params={"persona": persona}) as resp:
+                        retry_delay = 2  # reset on successful connection
                         self._set_status(
                             f"{persona} — {len(self.conversations)} messages  ● live"
                         )
-        except asyncio.CancelledError:
-            pass
-        except Exception as e:
-            print(f"[sse_loop error] {e}", file=sys.stderr)
-            self._set_status(f"SSE disconnected: {e}")
+                        async for line in resp.aiter_lines():
+                            if not line.startswith("data: "):
+                                continue
+                            try:
+                                msg = json.loads(line[6:])
+                            except Exception:
+                                continue
+                            if msg.get("type") != "trace":
+                                continue
+
+                            trace = msg["data"]
+                            self.traces.append(trace)
+                            user_input = trace.get("user_input", "")
+                            if not any(e.get("user", "")[:50] == user_input[:50]
+                                       for e in self.conversations):
+                                new_entry = {
+                                    "ts": trace.get("ts", ""),
+                                    "agent": "coordinator",
+                                    "persona": trace.get("persona"),
+                                    "user": user_input,
+                                    "response": trace.get("synth_response", ""),
+                                }
+                                self.conversations.append(new_entry)
+                                self._append_col1(new_entry, trace)
+                            self._set_status(
+                                f"{persona} — {len(self.conversations)} messages  ● live"
+                            )
+            except asyncio.CancelledError:
+                return  # intentional shutdown — don't retry
+            except Exception as e:
+                print(f"[sse_loop error] {e}", file=sys.stderr)
+                self._set_status(
+                    f"{persona} — SSE reconnecting in {retry_delay}s…"
+                )
+                await asyncio.sleep(retry_delay)
+                retry_delay = min(retry_delay * 2, 30)  # backoff up to 30s
 
     # ------------------------------------------------------------------
     # Actions
