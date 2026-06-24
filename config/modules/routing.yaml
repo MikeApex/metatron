@@ -37,7 +37,7 @@ agents:
 
   coordinator:
     local: true
-    allowed_tools: [read_log, read_recent_insights, read_context_tracker, run_subagent, write_quality_event]
+    allowed_tools: []
 
   synthesizer:
     local: true

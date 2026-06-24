@@ -146,6 +146,31 @@ def load_goals(persona: str | None = None) -> str:
     return ""
 
 
+def _load_coordinator_context(persona: str | None = None) -> str:
+    """Pre-load Pattern Miner insights — the one context source not already in the system prompt."""
+    persona_str = os.environ.get("AI_TEST_PERSONA") or persona or ""
+    try:
+        from tools.pattern_miner import read_recent_insights
+        insights = read_recent_insights(n=1, persona=persona_str)
+        if insights:
+            return f"## Pattern Miner Report (most recent)\n{json.dumps(insights[0], indent=2, ensure_ascii=False)}"
+    except Exception as e:
+        logger.warning(f"[PIPELINE] Failed to pre-load Pattern Miner insights: {e}")
+    return ""
+
+
+def _handle_user_correction(coord_output: str) -> None:
+    """Extract USER_CORRECTION from Coordinator output and log it via write_quality_event."""
+    import re as _re
+    match = _re.search(r'^USER_CORRECTION:\s*(.+)$', coord_output, _re.MULTILINE)
+    if match:
+        try:
+            from tools.logger import write_quality_event
+            write_quality_event("USER_CORRECTION", "coordinator", match.group(1).strip())
+        except Exception as e:
+            logger.warning(f"[PIPELINE] USER_CORRECTION log failed: {e}")
+
+
 def load_agent(name: str) -> str:
     """Load a sub-agent instruction file from config/agents/{name}.md."""
     agent_path = AGENTS_DIR / f"{name}.md"
@@ -1348,33 +1373,126 @@ def _run_single_agent(agent_name: str, user_input: str,
     return result
 
 
+def _dispatch_from_coordinator(
+    coord_output: str,
+    persona: str | None = None,
+    provider: str | None = None,
+) -> dict:
+    """
+    Parse SPECIALISTS_TO_CALL from Coordinator output and dispatch agents.
+    Returns {agent_name: output} for blocking agents.
+    Fire-and-forget agents (Diarist) run in background daemon threads.
+    """
+    import re as _re
+    import threading
+
+    match = _re.search(r'SPECIALISTS_TO_CALL:\s*```json\s*(.*?)```', coord_output, _re.DOTALL)
+    if not match:
+        match = _re.search(r'SPECIALISTS_TO_CALL:\s*(\[.*?\])\s*(?:\n\n|\Z)', coord_output, _re.DOTALL)
+    if not match:
+        _trace("[PIPELINE] SPECIALISTS_TO_CALL not found — no specialists dispatched")
+        return {}
+
+    try:
+        specialists: list = json.loads(match.group(1).strip())
+    except json.JSONDecodeError as e:
+        logger.warning(f"[PIPELINE] SPECIALISTS_TO_CALL JSON parse error: {e}")
+        return {}
+
+    outputs: dict = {}
+    blocking: list = []
+
+    for spec in specialists:
+        agent = spec.get("agent", "")
+        directive = spec.get("directive", "")
+        mode = spec.get("mode", "")
+        is_ff = spec.get("fire_and_forget", False) or agent == "diarist"
+        complexity: str | None = mode if mode in ("quick", "deep") else None
+
+        if not agent or not directive:
+            continue
+
+        if is_ff:
+            def _bg(a: str = agent, d: str = directive, c: str | None = complexity) -> None:
+                try:
+                    run_session(a, user_input=d, persona=persona, complexity=c)
+                except Exception as exc:
+                    logger.warning(f"[fire_and_forget] {a} failed: {exc}")
+            threading.Thread(target=_bg, daemon=True).start()
+            outputs[agent] = f"{agent}: dispatched (async)"
+        else:
+            blocking.append((agent, directive, complexity))
+
+    if blocking:
+        with ThreadPoolExecutor() as executor:
+            futures = {
+                executor.submit(_run_single_agent, a, d, persona, provider, None, c): a
+                for a, d, c in blocking
+            }
+            for future in as_completed(futures):
+                a = futures[future]
+                try:
+                    outputs[a] = future.result()
+                except Exception as exc:
+                    outputs[a] = f"[Subagent error — {exc}]"
+                    logger.warning(f"[PIPELINE] {a} failed: {exc}")
+
+    return outputs
+
+
 def run_pipeline_session(user_input: str,
                          persona: str | None = None,
                          provider: str | None = None) -> str:
     """
     Run the two-pass Coordinator → Synthesizer pipeline.
 
-    Pass 1 (Coordinator): loads context, resolves intent, calls specialists,
-    returns a structured context package (internal — not shown to user).
+    Pass 1 (Coordinator): receives pre-loaded context, resolves intent, returns
+    SPECIALISTS_TO_CALL directives in a single response (no tool calls needed).
+    Python dispatches specialists in parallel from the Coordinator's output.
 
-    Pass 2 (Synthesizer): receives original message + context package,
-    integrates specialist outputs, reasons, responds to user.
+    Pass 2 (Synthesizer): receives original message + Coordinator routing package
+    + specialist outputs, integrates, responds to user.
     """
     _tr.start_request_trace(user_input, persona)
     try:
-        # Pass 1: Coordinator — intake, context loading, specialist fan-out
-        _trace("[PIPELINE] coordinator  starting")
-        coord_package = _run_single_agent(
-            "coordinator", user_input, persona=persona, provider=provider
+        # Pre-load Pattern Miner insights (the one context source not in the system prompt).
+        coord_context = _load_coordinator_context(persona)
+        coord_input = (
+            f"{user_input}\n\n---\n\n[Pre-loaded context]\n{coord_context}"
+            if coord_context else user_input
         )
-        _trace(f"[PIPELINE] coordinator  done  ({len(coord_package)} chars) → synthesizer starting")
-        print(f"\n--- COORD PACKAGE ---\n{coord_package}\n--- END COORD PACKAGE ---\n", file=sys.stderr)  # dev
+
+        # Pass 1: Coordinator — single-pass routing directive assembly
+        _trace("[PIPELINE] coordinator  starting")
+        coord_output = _run_single_agent(
+            "coordinator", coord_input, persona=persona, provider=provider
+        )
+        _trace(f"[PIPELINE] coordinator  done  ({len(coord_output)} chars)")
+        print(f"\n--- COORD PACKAGE ---\n{coord_output}\n--- END COORD PACKAGE ---\n", file=sys.stderr)  # dev
+
+        # Handle any USER_CORRECTION flag in Coordinator output
+        _handle_user_correction(coord_output)
+
+        # Dispatch specialists from Python based on Coordinator's SPECIALISTS_TO_CALL
+        _trace("[PIPELINE] dispatching specialists")
+        specialist_outputs = _dispatch_from_coordinator(
+            coord_output, persona=persona, provider=provider
+        )
+
+        # Bundle specialist outputs for Synthesizer (exclude async fire-and-forget)
+        spec_text = "\n\n".join(
+            f"--- {agent} ---\n{output}"
+            for agent, output in specialist_outputs.items()
+            if "dispatched (async)" not in output
+        )
 
         # Pass 2: Synthesizer — integration and user-facing response
         synthesizer_input = (
             f"ORIGINAL USER MESSAGE:\n{user_input}\n\n"
-            f"COORDINATOR CONTEXT PACKAGE:\n{coord_package}"
+            f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"
+            + (f"\n\nSPECIALIST OUTPUTS:\n{spec_text}" if spec_text else "")
         )
+        _trace("[PIPELINE] synthesizer  starting")
         synth_result = _run_single_agent(
             "synthesizer", synthesizer_input, persona=persona, provider=provider
         )
@@ -1404,15 +1522,29 @@ def run_pipeline_session_stream(
     """
     _tr.start_request_trace(user_input, persona)
 
-    # Pass 1: Coordinator — blocking (unchanged)
+    # Pass 1: Coordinator — single-pass routing directive assembly (blocking)
     _trace("[PIPELINE] coordinator  starting")
-    coord_package = _run_single_agent("coordinator", user_input, persona=persona, provider=provider)
-    _trace(f"[PIPELINE] coordinator  done  ({len(coord_package)} chars) → synthesizer streaming")
+    coord_context = _load_coordinator_context(persona)
+    coord_input = (
+        f"{user_input}\n\n---\n\n[Pre-loaded context]\n{coord_context}"
+        if coord_context else user_input
+    )
+    coord_output = _run_single_agent("coordinator", coord_input, persona=persona, provider=provider)
+    _trace(f"[PIPELINE] coordinator  done  ({len(coord_output)} chars) → dispatching specialists")
+    _handle_user_correction(coord_output)
+    specialist_outputs = _dispatch_from_coordinator(coord_output, persona=persona, provider=provider)
+    spec_text = "\n\n".join(
+        f"--- {agent} ---\n{output}"
+        for agent, output in specialist_outputs.items()
+        if "dispatched (async)" not in output
+    )
+    _trace("[PIPELINE] synthesizer  streaming")
 
-    # Build Synthesizer input (same as run_pipeline_session)
+    # Build Synthesizer input
     synthesizer_input = (
         f"ORIGINAL USER MESSAGE:\n{user_input}\n\n"
-        f"COORDINATOR CONTEXT PACKAGE:\n{coord_package}"
+        f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"
+        + (f"\n\nSPECIALIST OUTPUTS:\n{spec_text}" if spec_text else "")
     )
 
     # Load Synthesizer prompt — mirrors _run_single_agent internals
