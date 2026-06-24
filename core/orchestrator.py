@@ -60,6 +60,12 @@ AGENTS_DIR = CONFIG_DIR / "agents"
 
 ANTHROPIC_MODEL = "claude-sonnet-4-6"
 _PARALLEL_TOOLS = {"run_subagent", "run_model_conference"}
+
+# Vertex context cache registry — in-process singleton, keyed by content hash.
+# Populated on first request; survives for the process lifetime.
+# Caches expire at midnight UTC; rebuild happens automatically on the next miss.
+_vertex_native_client: object | None = None
+_vertex_cache_registry: dict[str, str] = {}  # sha256[:16] of (model+prompt) → CachedContent.name
 OPENAI_MODEL = "o3"
 OLLAMA_BASE_URL = "http://localhost:11434/v1"
 OLLAMA_MODEL = "qwen3:14b"
@@ -874,6 +880,57 @@ def _resolve_gemini_credentials(model: str | None = None) -> tuple[str, str, str
     return api_key, base_url, model_name
 
 
+def _get_vertex_native_client():
+    """Return (or create) the singleton native genai.Client for Vertex AI."""
+    global _vertex_native_client
+    if _vertex_native_client is None:
+        import datetime
+        from google import genai
+        project = os.environ.get("GOOGLE_CLOUD_PROJECT")
+        if not project:
+            return None
+        location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+        _vertex_native_client = genai.Client(vertexai=True, project=project, location=location)
+    return _vertex_native_client
+
+
+def _get_or_create_vertex_cache(client, system_prompt: str, model_name: str) -> str | None:
+    """
+    Return the Vertex CachedContent name for this system prompt, creating it if needed.
+
+    Expire time: midnight UTC tonight — matches the "once per day" config change cadence.
+    Returns None on any failure (model doesn't support caching, content too short, etc.).
+    The caller falls back to uncached generation.
+    """
+    import datetime
+    import hashlib
+    from google.genai import types
+
+    content_hash = hashlib.sha256(f"{model_name}:{system_prompt}".encode()).hexdigest()[:16]
+    if content_hash in _vertex_cache_registry:
+        return _vertex_cache_registry[content_hash]
+
+    try:
+        now = datetime.datetime.now(datetime.timezone.utc)
+        midnight = (now + datetime.timedelta(days=1)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        cache = client.caches.create(
+            model=model_name,
+            config=types.CreateCachedContentConfig(
+                system_instruction=system_prompt,
+                expire_time=midnight,
+            ),
+        )
+        _vertex_cache_registry[content_hash] = cache.name
+        _trace(f"[VERTEX_CACHE] created {cache.name} expires={midnight.isoformat()}")
+        logger.info(f"[vertex_cache] created model={model_name} hash={content_hash} expires={midnight.isoformat()}")
+        return cache.name
+    except Exception as e:
+        logger.warning(f"[vertex_cache] creation failed ({e}) — running uncached")
+        return None
+
+
 def run_session_gemini(system_prompt: str, user_input: str,
                        tool_schemas: list[dict], tool_handlers: dict,
                        model: str | None = None,
@@ -960,26 +1017,80 @@ def run_session_gemini_grounded(system_prompt: str, user_input: str,
     return text
 
 
+def run_session_gemini_cached(system_prompt: str, user_input: str,
+                               tool_schemas: list[dict], tool_handlers: dict,
+                               model: str | None = None,
+                               history: list[dict] | None = None) -> str:
+    """
+    Gemini session with Vertex context caching via the native SDK.
+
+    On the first call for a given system prompt, creates a Vertex CachedContent object
+    (expires midnight UTC) and stores the name in _vertex_cache_registry. Subsequent
+    calls for the same prompt hit the cache — the system prompt tokens are not re-billed
+    or re-processed at full cost.
+
+    Falls back to run_session_gemini (OpenAI-compat, uncached) when:
+    - GOOGLE_CLOUD_PROJECT is not set (not on Vertex)
+    - Cache creation fails (model doesn't support caching, content below minimum, etc.)
+    - Native loop raises (e.g. thought_signature bug on rare parallel-tool escalations)
+    """
+    project = os.environ.get("GOOGLE_CLOUD_PROJECT")
+    if not project:
+        return run_session_gemini(system_prompt, user_input, tool_schemas, tool_handlers, model, history)
+
+    model_name = model or GEMINI_PRO_MODEL
+    if model_name.startswith("models/"):
+        model_name = model_name[len("models/"):]
+
+    client = _get_vertex_native_client()
+    if client is None:
+        return run_session_gemini(system_prompt, user_input, tool_schemas, tool_handlers, model, history)
+
+    cached_content_name = _get_or_create_vertex_cache(client, system_prompt, model_name)
+
+    try:
+        return _run_gemini_native_loop(
+            client, model_name, system_prompt, user_input,
+            tool_schemas, tool_handlers,
+            history=history,
+            cached_content=cached_content_name,
+        )
+    except Exception as e:
+        logger.warning(f"[vertex_cache] native loop failed ({e}) — falling back to compat")
+        return run_session_gemini(system_prompt, user_input, tool_schemas, tool_handlers, model, history)
+
+
 def _run_gemini_native_loop(client, model_name: str,
                              system_prompt: str, user_input: str,
                              tool_schemas: list[dict], tool_handlers: dict,
                              history: list[dict] | None = None,
-                             max_iterations: int = 8) -> str:
+                             max_iterations: int = 8,
+                             cached_content: str | None = None) -> str:
     """
     Agentic loop using the google-genai native SDK.
 
     Replicates _openai_compat_loop behaviour for the Gemini path: multi-turn
     contents list, tool dispatch (sequential + parallel for _PARALLEL_TOOLS),
     token budget logging, and AI_TRACE markers.
+
+    cached_content: Vertex CachedContent resource name. When provided, the system
+    prompt is served from cache — system_instruction is omitted from GenerateContentConfig.
     """
     from google.genai import types
 
     gemini_tools = _to_gemini_tools(tool_schemas)
-    config = types.GenerateContentConfig(
-        system_instruction=system_prompt,
-        tools=gemini_tools,
-        max_output_tokens=4096,
-    )
+    if cached_content:
+        config = types.GenerateContentConfig(
+            cached_content=cached_content,
+            tools=gemini_tools,
+            max_output_tokens=4096,
+        )
+    else:
+        config = types.GenerateContentConfig(
+            system_instruction=system_prompt,
+            tools=gemini_tools,
+            max_output_tokens=4096,
+        )
 
     contents: list = []
     if history:
@@ -1002,13 +1113,15 @@ def _run_gemini_native_loop(client, model_name: str,
         if hasattr(response, "usage_metadata") and response.usage_metadata:
             input_tokens = getattr(response.usage_metadata, "prompt_token_count", 0) or 0
             output_tokens = getattr(response.usage_metadata, "candidates_token_count", 0) or 0
+            cache_read = getattr(response.usage_metadata, "cached_content_token_count", 0) or 0
             cumulative_input_tokens += input_tokens
+            _cache_suffix = f" cache_read={cache_read}" if cache_read else ""
             if cumulative_input_tokens > 8000:
-                logger.warning(f"[token_budget] OVER_8K turn={turn_num} cumulative_input={cumulative_input_tokens}")
-                _trace(f"[TOKEN] turn={turn_num} input={input_tokens} cumulative={cumulative_input_tokens} ⚠ OVER_8K")
+                logger.warning(f"[token_budget] OVER_8K turn={turn_num} cumulative_input={cumulative_input_tokens}{_cache_suffix}")
+                _trace(f"[TOKEN] turn={turn_num} input={input_tokens} cumulative={cumulative_input_tokens}{_cache_suffix} ⚠ OVER_8K")
             else:
-                logger.info(f"[token_budget] turn={turn_num} cumulative_input={cumulative_input_tokens}")
-                _trace(f"[TOKEN] turn={turn_num} input={input_tokens} cumulative={cumulative_input_tokens}")
+                logger.info(f"[token_budget] turn={turn_num} cumulative_input={cumulative_input_tokens}{_cache_suffix}")
+                _trace(f"[TOKEN] turn={turn_num} input={input_tokens} cumulative={cumulative_input_tokens}{_cache_suffix}")
             _tr.record_turn_tokens(_tr.get_current_agent(), turn_num, input_tokens, output_tokens)
 
         model_content = response.candidates[0].content
@@ -1380,6 +1493,9 @@ def _run_single_agent(agent_name: str, user_input: str,
         elif provider == "gemini":
             if agent_name == "research_agent":
                 result = run_session_gemini_grounded(system_prompt, augmented_input, model=model_override)
+            elif agent_name in (_HEAD_LAYER_AGENTS | _ROUTING_LAYER_AGENTS):
+                result = run_session_gemini_cached(system_prompt, augmented_input, tool_schemas,
+                                                   tool_handlers, model=model_override, history=history)
             else:
                 result = run_session_gemini(system_prompt, augmented_input, tool_schemas, tool_handlers,
                                             model=model_override, history=history)
