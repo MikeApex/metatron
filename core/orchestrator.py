@@ -518,7 +518,7 @@ def run_session_anthropic(system_prompt: str, user_input: str,
         response = client.messages.create(
             model=_model,
             max_tokens=4096,
-            system=system_prompt,
+            system=[{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
             tools=tool_schemas,
             messages=messages,
         )
@@ -526,13 +526,16 @@ def run_session_anthropic(system_prompt: str, user_input: str,
         turn_num += 1
         _in_tok = response.usage.input_tokens
         _out_tok = response.usage.output_tokens
+        _cache_write = getattr(response.usage, "cache_creation_input_tokens", 0) or 0
+        _cache_read = getattr(response.usage, "cache_read_input_tokens", 0) or 0
         cumulative_input_tokens += _in_tok
+        _cache_suffix = f" cache_write={_cache_write} cache_read={_cache_read}" if (_cache_write or _cache_read) else ""
         if cumulative_input_tokens > 8000:
-            logger.warning(f"[token_budget] OVER_8K turn={turn_num} cumulative_input={cumulative_input_tokens}")
-            _trace(f"[TOKEN] turn={turn_num} input={_in_tok} cumulative={cumulative_input_tokens} ⚠ OVER_8K")
+            logger.warning(f"[token_budget] OVER_8K turn={turn_num} cumulative_input={cumulative_input_tokens}{_cache_suffix}")
+            _trace(f"[TOKEN] turn={turn_num} input={_in_tok} cumulative={cumulative_input_tokens}{_cache_suffix} ⚠ OVER_8K")
         else:
-            logger.info(f"[token_budget] turn={turn_num} cumulative_input={cumulative_input_tokens}")
-            _trace(f"[TOKEN] turn={turn_num} input={_in_tok} cumulative={cumulative_input_tokens}")
+            logger.info(f"[token_budget] turn={turn_num} cumulative_input={cumulative_input_tokens}{_cache_suffix}")
+            _trace(f"[TOKEN] turn={turn_num} input={_in_tok} cumulative={cumulative_input_tokens}{_cache_suffix}")
         _tr.record_turn_tokens(_tr.get_current_agent(), turn_num, _in_tok, _out_tok)
 
         text_parts = []
@@ -620,7 +623,7 @@ def _anthropic_stream(
         with client.messages.stream(
             model=_model,
             max_tokens=4096,
-            system=system_prompt,
+            system=[{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
             tools=tool_schemas,
             messages=messages,
         ) as stream:
@@ -631,12 +634,15 @@ def _anthropic_stream(
         if final.usage:
             pts = final.usage.input_tokens
             ots = final.usage.output_tokens
+            _cache_write = getattr(final.usage, "cache_creation_input_tokens", 0) or 0
+            _cache_read = getattr(final.usage, "cache_read_input_tokens", 0) or 0
+            _cache_suffix = f" cache_write={_cache_write} cache_read={_cache_read}" if (_cache_write or _cache_read) else ""
             if pts > 8000:
-                logger.warning(f"[token_budget] OVER_8K turn={turn_num} input={pts}")
-                _trace(f"[TOKEN] turn={turn_num} input={pts} ⚠ OVER_8K")
+                logger.warning(f"[token_budget] OVER_8K turn={turn_num} input={pts}{_cache_suffix}")
+                _trace(f"[TOKEN] turn={turn_num} input={pts}{_cache_suffix} ⚠ OVER_8K")
             else:
-                logger.info(f"[token_budget] turn={turn_num} input={pts}")
-                _trace(f"[TOKEN] turn={turn_num} input={pts}")
+                logger.info(f"[token_budget] turn={turn_num} input={pts}{_cache_suffix}")
+                _trace(f"[TOKEN] turn={turn_num} input={pts}{_cache_suffix}")
             _tr.record_turn_tokens(_tr.get_current_agent(), turn_num, pts, ots)
 
         tool_calls = [block for block in final.content if block.type == "tool_use"]
@@ -1290,7 +1296,8 @@ def _openai_compat_stream(
 
 # Head-layer agents receive full config + recent context.
 # All other agents (specialists) receive goals.yaml only; context arrives via directive.
-_HEAD_LAYER_AGENTS = {"coordinator", "synthesizer"}
+_HEAD_LAYER_AGENTS = {"synthesizer"}
+_ROUTING_LAYER_AGENTS = {"coordinator"}  # goals + recent context; no constitution/prime_directive
 
 
 def _run_single_agent(agent_name: str, user_input: str,
@@ -1332,6 +1339,17 @@ def _run_single_agent(agent_name: str, user_input: str,
         system_prompt = f"## Your Role for This Session\n\n{agent}\n\n---\n\n{config}"
         augmented_input = f"[Recent context]\n{recent}\n\n---\n\n{user_input}" if recent else user_input
         context_sections = {"agent_file": agent, "config": config, "recent_context": recent}
+    elif agent_name in _ROUTING_LAYER_AGENTS:
+        # Routing layer: goals.yaml + recent context. No constitution/prime_directive —
+        # values are enforced by the Synthesizer; Coordinator needs domain and context only.
+        goals = load_goals(persona=persona)
+        recent = load_recent_context(persona=persona)
+        system_prompt = (
+            f"## Your Role for This Session\n\n{agent}\n\n---\n\n{goals}"
+            if goals else f"## Your Role for This Session\n\n{agent}"
+        )
+        augmented_input = f"[Recent context]\n{recent}\n\n---\n\n{user_input}" if recent else user_input
+        context_sections = {"agent_file": agent, "goals": goals, "recent_context": recent}
     else:
         # Specialists: goals.yaml only. Context arrives via the Coordinator directive.
         goals = load_goals(persona=persona)
