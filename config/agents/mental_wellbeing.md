@@ -25,6 +25,14 @@ When in doubt on any clinical flag, flag it. False positives are preferable to m
 
 ---
 
+## Quick mode
+
+If the Coordinator directive includes `mode: quick`: apply all clinical detection rules above (these are active in all modes without exception), extract what the user explicitly mentioned in your domain, set applicable flags, write to log, and return structured output. Skip the proactive scan and deep cognitive pattern analysis. Do not proceed to Deep mode.
+
+---
+
+## Deep mode
+
 ## Capture first
 
 Log every event of consequence — do not filter for significance in the moment. The richness of the picture comes from granularity. Patterns invisible at a summary level appear at the transaction level. When in doubt, log it. Capture first, curate later.

@@ -7,6 +7,10 @@
 #
 # To activate: set DEPLOYMENT_MODE=cloud in the VM's .env file.
 # Local dev: omit DEPLOYMENT_MODE or set DEPLOYMENT_MODE=local — routing.yaml loads instead.
+#
+# allowed_tools: per-agent schema whitelist. Only these tool schemas are sent to the LLM.
+# All Python functions remain registered in register_tools(); schemas for unlisted tools
+# are simply not advertised. Omit the field to pass all schemas (default / bare agents).
 
 local_enabled: false
 
@@ -23,61 +27,75 @@ agents:
   coordinator:
     provider: gemini
     model: "models/gemini-3.1-pro-preview"  # reverted from Flash — Flash skips tool calls on complex routing tasks
+    allowed_tools: [read_log, read_recent_insights, read_context_tracker, run_subagent, write_quality_event]
 
   synthesizer:
     provider: gemini
     model: "models/gemini-3.1-pro-preview"  # user-facing voice; safety flag integration; keep on Pro
+    allowed_tools: [run_subagent, run_model_conference, write_context_tracker, write_config, write_wishes, read_wishes, generate_emergency_card, write_quality_event]
 
   # ── Data and analysis ────────────────────────────────────────────────────────
 
   diarist:
     provider: gemini
     model: "models/gemini-3.1-flash-lite"   # write-only; fire-and-forget target
+    allowed_tools: [write_journal, write_archive]
 
   pattern_miner:
     provider: gemini
     model: "models/gemini-3.1-pro-preview"  # analytical depth; scheduler task, not on real-time path
+    allowed_tools: [get_log_window, write_insight_report, read_recent_insights, write_baseline_period, read_baseline_periods, write_retrospective, get_baseline_context, create_semantic_anchor, shuffled_null_score, score_against_anchors]
 
   goals_interviewer:
     provider: gemini
     model: "models/gemini-3.1-pro-preview"  # interview quality matters; runs infrequently
+    allowed_tools: [read_goals, write_goals, write_config, write_retrospective, create_semantic_anchor, write_aspirational_baseline]
 
   # ── Personal specialists ─────────────────────────────────────────────────────
 
   mental_wellbeing:
     provider: gemini
     model: "models/gemini-3.1-pro-preview"  # clinical flags (MUST_SURFACE, CLINICAL_CONCERN); never downgrade
+    allowed_tools: [read_log, write_log, write_journal, search_memory, read_agent_config, write_agent_config, read_wisdom, write_wisdom]
 
   physical_health:
     provider: gemini
     model: "models/gemini-3.1-pro-preview"  # medication / symptom class; same safety rationale as MW
+    allowed_tools: [read_log, write_log, search_memory, read_wisdom, write_wisdom]
 
   work_vocation:
     provider: gemini
     model: "models/gemini-3.1-flash-lite"   # no clinical stakes
+    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config]
 
   relationships:
     provider: gemini
     model: "models/gemini-3.1-flash-lite"   # no clinical stakes
+    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts]
 
   finance:
     provider: gemini
     model: "models/gemini-3.1-flash-lite"   # arithmetic tracking; upgrade to Pro if hard-fail results were marginal
+    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config]
 
   learning_growth:
     provider: gemini
     model: "models/gemini-3.1-flash-lite"
+    allowed_tools: [read_log, write_log, search_memory, read_agent_config, write_agent_config]
 
   recreation_hobbies:
     provider: gemini
     model: "models/gemini-3.1-flash-lite"
+    allowed_tools: [read_log, write_log]
 
   logistics:
     provider: gemini
     model: "models/gemini-3.1-flash-lite"
+    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event]
 
   # ── Cloud-only (decontextualized) ────────────────────────────────────────────
 
   research_agent:
     provider: gemini
     model: "models/gemini-3.1-pro-preview"  # grounded search; decontextualized only
+    # no allowed_tools — research_agent runs in bare mode (no personal tools)

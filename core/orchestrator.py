@@ -133,6 +133,19 @@ def load_config(persona: str | None = None) -> str:
     return "\n\n---\n\n".join(sections)
 
 
+def load_goals(persona: str | None = None) -> str:
+    """Load only goals.yaml — for specialist agents that don't need full config."""
+    if persona:
+        goals_path = CONFIG_DIR / "personas" / persona / "goals.yaml"
+    else:
+        goals_path = CONFIG_DIR / "goals.yaml"
+    if goals_path.exists():
+        content = goals_path.read_text().strip()
+        if content:
+            return f"## Current Goals\n\n```yaml\n{content}\n```"
+    return ""
+
+
 def load_agent(name: str) -> str:
     """Load a sub-agent instruction file from config/agents/{name}.md."""
     agent_path = AGENTS_DIR / f"{name}.md"
@@ -1250,6 +1263,11 @@ def _openai_compat_stream(
         history.append({"role": "assistant", "content": ""})
 
 
+# Head-layer agents receive full config + recent context.
+# All other agents (specialists) receive goals.yaml only; context arrives via directive.
+_HEAD_LAYER_AGENTS = {"coordinator", "synthesizer"}
+
+
 def _run_single_agent(agent_name: str, user_input: str,
                       persona: str | None = None, provider: str | None = None,
                       model_override: str | None = None,
@@ -1261,8 +1279,9 @@ def _run_single_agent(agent_name: str, user_input: str,
     Used internally by run_session and run_pipeline_session.
 
     bare=True: load only the agent instruction file — no constitution, no personal
-    config, no recent logs. Used for token-pressure diagnostics.
+    config, no recent logs. Used for token-pressure diagnostics and research_agent.
     """
+    from core.router import get_allowed_tools
     base_url_override = None
 
     if provider is None:
@@ -1275,21 +1294,36 @@ def _run_single_agent(agent_name: str, user_input: str,
 
     _trace(f"[AGENT] {agent_name}  provider={provider}  model={model_override}{'  bare=True' if bare else ''}")
     agent = load_agent(agent_name)
+
     if bare or agent_name == "research_agent":
+        # No personal config or context — decontextualized / diagnostic mode.
         system_prompt = f"## Your Role for This Session\n\n{agent}"
         augmented_input = user_input
         context_sections = {"agent_file": agent}
-    else:
+    elif agent_name in _HEAD_LAYER_AGENTS:
+        # Full config (constitution → prime_directive → mission → goals) + recent context.
         config = load_config(persona=persona)
         recent = load_recent_context(persona=persona)
         system_prompt = f"## Your Role for This Session\n\n{agent}\n\n---\n\n{config}"
         augmented_input = f"[Recent context]\n{recent}\n\n---\n\n{user_input}" if recent else user_input
-        context_sections = {
-            "agent_file": agent,
-            "config": config,
-            "recent_context": recent,
-        }
+        context_sections = {"agent_file": agent, "config": config, "recent_context": recent}
+    else:
+        # Specialists: goals.yaml only. Context arrives via the Coordinator directive.
+        goals = load_goals(persona=persona)
+        system_prompt = (
+            f"## Your Role for This Session\n\n{agent}\n\n---\n\n{goals}"
+            if goals else f"## Your Role for This Session\n\n{agent}"
+        )
+        augmented_input = user_input
+        context_sections = {"agent_file": agent, "goals": goals}
+
     tool_schemas, tool_handlers = register_tools()
+
+    # Apply per-agent schema whitelist — only advertise tools the agent can call.
+    allowed = get_allowed_tools(agent_name)
+    if allowed:
+        allowed_set = set(allowed)
+        tool_schemas = [s for s in tool_schemas if s["name"] in allowed_set]
 
     _agent_rec = _tr.push_agent(agent_name, provider or "", model_override or "", context_sections)
     try:

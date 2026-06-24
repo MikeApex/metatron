@@ -43,9 +43,10 @@ def _routing_config_path() -> Path:
 
 @dataclass
 class ModelConfig:
-    provider: str           # "anthropic" | "openai" | "ollama" | "gemini"
-    model: str | None       # None means use the provider's default
-    base_url: str | None    # None means use the provider's default
+    provider: str                    # "anthropic" | "openai" | "ollama" | "gemini"
+    model: str | None                # None means use the provider's default
+    base_url: str | None             # None means use the provider's default
+    allowed_tools: list[str] | None = None  # schema whitelist; None = all tools
 
 
 def _load_routing() -> dict:
@@ -71,6 +72,8 @@ def resolve_model(agent: str, complexity: str | None = None) -> ModelConfig:
     local_cfg: dict = cfg.get("local", {})
     agent_cfg: dict = cfg.get("agents", {}).get(agent, {})
 
+    allowed_tools: list[str] | None = agent_cfg.get("allowed_tools") or None
+
     # Sensitive agents always route local — complexity cannot override this.
     if agent_cfg.get("local"):
         if local_enabled:
@@ -78,6 +81,7 @@ def resolve_model(agent: str, complexity: str | None = None) -> ModelConfig:
                 provider="ollama",
                 model=local_cfg.get("model", "qwen3:14b"),
                 base_url=local_cfg.get("endpoint", "http://localhost:11434/v1"),
+                allowed_tools=allowed_tools,
             )
             _trace(f"[ROUTE] {agent} → ollama/{cfg_out.model}  (sensitive, local)")
             return cfg_out
@@ -95,6 +99,7 @@ def resolve_model(agent: str, complexity: str | None = None) -> ModelConfig:
             provider=quick.get("provider", "gemini"),
             model=quick.get("model"),
             base_url=None,
+            allowed_tools=allowed_tools,
         )
         _trace(f"[ROUTE] {agent} → {cfg_out.provider}/{cfg_out.model}  (quick_override)")
         return cfg_out
@@ -104,9 +109,17 @@ def resolve_model(agent: str, complexity: str | None = None) -> ModelConfig:
         provider=agent_cfg.get("provider", "anthropic"),
         model=agent_cfg.get("model"),
         base_url=None,
+        allowed_tools=allowed_tools,
     )
     _trace(f"[ROUTE] {agent} → {cfg_out.provider}/{cfg_out.model}")
     return cfg_out
+
+
+def get_allowed_tools(agent: str) -> list[str] | None:
+    """Return the tool schema whitelist for an agent, or None if no whitelist is set."""
+    cfg = _load_routing()
+    agent_cfg = cfg.get("agents", {}).get(agent, {})
+    return agent_cfg.get("allowed_tools") or None
 
 
 def _log_routing_error(agent: str) -> None:

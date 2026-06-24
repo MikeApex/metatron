@@ -12,6 +12,10 @@
 # quick_override applies only to non-sensitive agents (currently: research_agent).
 #
 # research_agent is the only cloud-routed agent; it receives only decontextualized requests.
+#
+# allowed_tools: per-agent schema whitelist. Only these tool schemas are sent to the LLM.
+# All Python functions remain registered in register_tools(); schemas for unlisted tools
+# are simply not advertised. Omit the field to pass all schemas (default / bare agents).
 
 local_enabled: true
 
@@ -33,49 +37,63 @@ agents:
 
   coordinator:
     local: true
+    allowed_tools: [read_log, read_recent_insights, read_context_tracker, run_subagent, write_quality_event]
 
   synthesizer:
     local: true
+    allowed_tools: [run_subagent, run_model_conference, write_context_tracker, write_config, write_wishes, read_wishes, generate_emergency_card, write_quality_event]
 
   # ── Data and analysis (local: reads/writes personal logs) ───────────────────
 
   diarist:
     local: true
+    allowed_tools: [write_journal, write_archive]
 
   pattern_miner:
     local: true
+    allowed_tools: [get_log_window, write_insight_report, read_recent_insights, write_baseline_period, read_baseline_periods, write_retrospective, get_baseline_context, create_semantic_anchor, shuffled_null_score, score_against_anchors]
 
   goals_interviewer:
     local: true
+    allowed_tools: [read_goals, write_goals, write_config, write_retrospective, create_semantic_anchor, write_aspirational_baseline]
 
   # ── Personal specialists (local: sensitive — named individuals, health, finance) ─
 
   mental_wellbeing:
     local: true
+    allowed_tools: [read_log, write_log, write_journal, search_memory, read_agent_config, write_agent_config, read_wisdom, write_wisdom]
 
   physical_health:
     local: true
+    allowed_tools: [read_log, write_log, search_memory, read_wisdom, write_wisdom]
 
   work_vocation:
     local: true
+    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config]
 
   relationships:
     local: true
+    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts]
 
   finance:
     local: true
+    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config]
 
   learning_growth:
     local: true
+    allowed_tools: [read_log, write_log, search_memory, read_agent_config, write_agent_config]
 
   recreation_hobbies:
     local: true
+    allowed_tools: [read_log, write_log]
 
   logistics:
     local: true
+    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event]
 
   # ── Cloud-only (decontextualized — no personal context ever passed) ──────────
 
   research_agent:
     provider: gemini
     model: "models/gemini-3.1-pro-preview"   # grounded search; decontextualized only
+    # no allowed_tools — research_agent runs in bare mode (no personal tools)

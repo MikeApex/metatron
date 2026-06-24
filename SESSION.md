@@ -1,5 +1,5 @@
 # Session Primer — Personal AI Life Manager
-*Updated: 2026-06-21 (CLAUDE.md deployment infrastructure section). Update this file at the close of every chat so the next chat — or any parallel chat window — starts from current state.*
+*Updated: 2026-06-24 (Token reduction — Steps 1–5 complete). Update this file at the close of every chat so the next chat — or any parallel chat window — starts from current state.*
 
 ---
 
@@ -61,6 +61,41 @@ If you need to find a specific file, tool, or planning document: **[CODEBASE_IND
 - **B1** Red team — **on hold** (independent of Alpha Gate, but deprioritised — resumes after latency work)
 - **Check 10** Agent behavioral audits — **on hold**
 - **Check 12** Constitution alignment review — **on hold**
+
+### Also done 2026-06-24 (token reduction — Steps 1–5)
+
+**Token reduction implementation complete (Steps 1–5 of 6).** Projected ~3× reduction (Steps 1–5); ~5× with Step 6.
+
+- **Step 1:** `git tag v0.5-pre-refactor` — snapshot before any changes.
+- **Step 2:** Per-agent tool schema whitelists. `allowed_tools` added to `routing_cloud.yaml` and `routing.yaml` for all agents; `core/router.py` — `ModelConfig.allowed_tools` field + `get_allowed_tools()` function; `core/orchestrator.py` — schema filter in `_run_single_agent()`. Only advertised schemas go to the LLM; Python functions stay registered. (~15,000t saved)
+- **Step 3:** Strip constitution/prime_directive from specialist system prompts. Three-branch context loading in `_run_single_agent()`: bare (research_agent), head layer (full config + recent context), specialists (goals.yaml only). `_HEAD_LAYER_AGENTS = {"coordinator", "synthesizer"}`. `load_goals()` function added. (~5,000t saved)
+- **Step 4:** Specialists no longer call `load_recent_context()` independently. Context arrives via Coordinator directive. (~3,000t saved)
+- **Step 5:** Quick/deep behavioral sections added to all 8 specialist agent files (mental_wellbeing, physical_health, work_vocation, relationships, finance, learning_growth, recreation_hobbies, logistics). Existing language preserved exactly; Quick mode is a gate only. MW clinical detection active in all modes without exception.
+- **Step 6 (deferred):** Coordinator restructure — single-pass directive assembly replaces 3-turn session. Do after Steps 1–5 stable. (~15,000t saved from Coordinator alone)
+
+Session archive: [archive/sessions/2026-06-24 — Token Reduction Architecture and Implementation.md](archive/sessions/2026-06-24 — Token Reduction Architecture and Implementation.md)
+
+### Also done 2026-06-22 (token economics analysis)
+- **Pipeline token cost traced end-to-end:** ~95,000 input tokens for a 70-token user message (~13× overhead). Coordinator (3 turns): ~22,000t. 5 sync specialists (2 turns each): ~49,000t. Synthesizer (2 turns): ~14,790t.
+- **Three waste sources identified:**
+  1. Tool schemas (~2,000t) paid 9× across all invocations — each agent/specialist receives all 30 schemas regardless of which 2–3 it uses. Synthesizer pays for schemas it never calls (streaming path confirmed no-tool in code comments).
+  2. Shared config (constitution + prime_directive + mission + goals, ~1,400t) paid 9× — no cross-agent caching.
+  3. Recent context (~600t) loaded independently 8× — each specialist calls `load_recent_context()` even though Coordinator already has it and constructs their directive from it.
+- **Three fixes without architectural change** would cut to ~55,000t: (1) route tool schemas per agent, (2) pass recent context in the directive rather than reloading in specialists, (3) strip constitution from specialist system prompts (mirrors existing research_agent pattern).
+- **Architectural question raised:** should all specialist calls live in Synthesizer, with Coordinator being a cheap single-turn router only? Coordinator currently costs ~22,000t; as lightweight classifier it would cost ~1,000t. Synthesizer already does secondary chains (ReAct, up to 3 rounds per its agent file). No decision made — deferred.
+- Session archive: `archive/sessions/2026-06-22 — Token Economics and Pipeline Architecture Analysis.md`
+
+### Also done 2026-06-22 (The Book — monitoring tool iteration)
+- **The Book** (`tools/metatron_monitor.py`) — substantial iteration on the monitoring TUI.
+- **Bug fixes:** persona bleed in Column 1 (conversations endpoint now always filters by persona), subagent name showing as `run_subagent(?)` (arg key is `agent_name`), SSE disconnect on ID collision (list items no longer use IDs; SSE loop is append-only), snapshot crash (`s` key priority binding), chat "no response" (dropped `streaming_json`, now uses `--output-format text` via temp file + shell redirect).
+- **Column 1:** datestamps added; each message block is now a `Collapsible` — collapsed shows truncated preview, expanded shows full user + Metatron text.
+- **Column 3:** turns flattened to Static dividers with tool calls as top-level Collapsibles; `run_subagent` now resolves to the actual subagent record (provider/model/tokens/output files) instead of raw args.
+- **Diary/file history viewer:** clicking a file link opens all entries in that directory, sorted by date, with the current entry marked `← current` in green. New `GET /monitor/history` endpoint on server.
+- **Output file tracking:** `core/trace.py` now scans tool call args and results for `data/...` paths; stores as `output_files` on `AgentRecord`; included in JSONL serialization and shown as clickable buttons in Column 3.
+- **Snapshot (`s` key):** writes `data/book_snapshot.md` to Mac project dir with current Book state — bridge to Claude Code in VSCode.
+- **Chat panel (`c` key):** bottom panel with Input, Send, Clear, token counter. Sends messages to `claude -p --output-format text` via temp file; builds recursive context (full `Human:/Assistant:` history prepended each turn). Chat panel still unconfirmed working — under investigation.
+- **New server endpoints:** `GET /monitor/history`, `GET /monitor/file`.
+- Session archive: `archive/sessions/2026-06-22 — The Book Iteration and Chat Panel.md`
 
 ### Also done 2026-06-21 (Android end-to-end testing)
 - **All 10 Android tests pass.** App fully functional on VM.
