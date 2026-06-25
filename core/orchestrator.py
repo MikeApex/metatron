@@ -1135,8 +1135,13 @@ def _run_gemini_native_loop(client, model_name: str,
             elif part.text:
                 text_parts.append(part.text)
 
-        if not function_calls:
+        # Capture text even when tool calls are also present — Gemini can emit text
+        # and function_call in the same response. Without this, the user-facing text
+        # from a "write_context_tracker + respond" turn gets silently discarded.
+        if text_parts:
             result = "\n".join(text_parts)
+
+        if not function_calls:
             if history is not None:
                 history.append({"role": "user", "content": user_input})
                 history.append({"role": "assistant", "content": result})
@@ -1196,6 +1201,7 @@ def _openai_compat_loop(system_prompt: str, user_input: str,
         messages.extend(history)
     messages.append({"role": "user", "content": user_input})
     cumulative_input_tokens = 0
+    result = ""  # accumulated text; may be set in a tool-call turn if model mixes text+tools
 
     for turn_num in range(1, max_iterations + 1):
         _trace(f"[API] {base_url or 'openai'}/{model}  turn={turn_num}  waiting...")
@@ -1223,10 +1229,15 @@ def _openai_compat_loop(system_prompt: str, user_input: str,
         choice = response.choices[0]
         message = choice.message
 
+        # Capture any text content now — Gemini can emit text + tool_call in the same turn.
+        # Without this, the user-facing response text gets discarded when the loop continues
+        # to execute the tool call, and the model returns nothing on the following turn.
+        if message.content:
+            result = message.content
+
         # Return on any non-tool-call finish
         if choice.finish_reason != "tool_calls" or not message.tool_calls:
             messages.append(message)
-            result = message.content or ""
             if history is not None:
                 history.append({"role": "user", "content": user_input_display or user_input})
                 history.append({"role": "assistant", "content": result})
