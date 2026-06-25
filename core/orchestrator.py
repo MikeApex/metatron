@@ -1477,7 +1477,7 @@ def _run_single_agent(agent_name: str, user_input: str,
 
     # Apply per-agent schema whitelist — only advertise tools the agent can call.
     allowed = get_allowed_tools(agent_name)
-    if allowed:
+    if allowed is not None:  # None = allow all; [] = allow none
         allowed_set = set(allowed)
         tool_schemas = [s for s in tool_schemas if s["name"] in allowed_set]
 

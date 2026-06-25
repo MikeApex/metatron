@@ -72,7 +72,7 @@ def resolve_model(agent: str, complexity: str | None = None) -> ModelConfig:
     local_cfg: dict = cfg.get("local", {})
     agent_cfg: dict = cfg.get("agents", {}).get(agent, {})
 
-    allowed_tools: list[str] | None = agent_cfg.get("allowed_tools") or None
+    allowed_tools: list[str] | None = agent_cfg.get("allowed_tools")  # None=allow all; []=allow none
 
     # Sensitive agents always route local — complexity cannot override this.
     if agent_cfg.get("local"):
@@ -119,7 +119,7 @@ def get_allowed_tools(agent: str) -> list[str] | None:
     """Return the tool schema whitelist for an agent, or None if no whitelist is set."""
     cfg = _load_routing()
     agent_cfg = cfg.get("agents", {}).get(agent, {})
-    return agent_cfg.get("allowed_tools") or None
+    return agent_cfg.get("allowed_tools")  # None=allow all; []=allow none
 
 
 def _log_routing_error(agent: str) -> None:
