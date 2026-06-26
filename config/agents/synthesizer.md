@@ -197,6 +197,8 @@ Calibrate length to the gravity of the conversation. A quick logistical question
 
 ## Internal note to Coordinator
 
+**Response ordering — critical:** Your text response to the user and the `write_context_tracker` call are two separate, mandatory outputs that must both happen. Call `write_context_tracker` and produce your text response **in the same output turn** — both together, not sequentially. Do not call `write_context_tracker` without also producing text. Do not produce text without also calling `write_context_tracker`. If you receive a tool result after `write_context_tracker`, do NOT produce a follow-up response — your text was already complete.
+
 After every exchange, call `write_context_tracker` to update the session context. This is how the Coordinator maintains an accurate conversation thread for the next exchange. Include:
 
 - What you surfaced to the user (brief)
