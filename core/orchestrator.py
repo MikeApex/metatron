@@ -1417,10 +1417,13 @@ def _openai_compat_stream(
         _trace(f"[API] {base_url or 'openai'}/{model}  turn={turn_num}  streaming...")
         token_kwarg = "max_completion_tokens" if model.startswith("o") else "max_tokens"
 
+        # Snapshot messages before this turn so we can replay blocking if tool calls appear.
+        messages_snapshot = list(messages)
+
         stream = client.chat.completions.create(
             model=model,
             **{token_kwarg: 4096},
-            tools=oai_tools,
+            **({"tools": oai_tools} if oai_tools else {}),
             messages=messages,
             stream=True,
             stream_options={"include_usage": True},
@@ -1475,23 +1478,22 @@ def _openai_compat_stream(
                 history.append({"role": "assistant", "content": result})
             return
 
-        # Tool-call turn — reconstruct and dispatch, then continue the loop
-        reconstructed = [
-            {
-                "id": tool_calls_raw[i]["id"],
-                "type": "function",
-                "function": {
-                    "name": tool_calls_raw[i]["name"],
-                    "arguments": tool_calls_raw[i]["arguments"],
-                },
-            }
-            for i in sorted(tool_calls_raw)
-        ]
-        messages.append({
-            "role": "assistant",
-            "content": "".join(text_parts) or None,
-            "tool_calls": reconstructed,
-        })
+        # Tool-call turn — Vertex requires thought_signature on all function-call content
+        # blocks. Stream deltas don't carry thought_signature, so a reconstructed-from-deltas
+        # assistant dict causes a 400 on the next request. Fix: replay this turn blocking to
+        # get a real Vertex message object (which carries thought_signature in extra_content),
+        # then apply the same workaround used in _openai_compat_loop.
+        # The streaming text already yielded above is correct; this replay is used only to
+        # build the signed assistant message — its text is not re-yielded.
+        blocking_resp = client.chat.completions.create(
+            model=model,
+            **{token_kwarg: 4096},
+            **({"tools": oai_tools} if oai_tools else {}),
+            messages=messages_snapshot,
+            stream=False,
+            **({"extra_body": extra_body} if extra_body else {}),
+        )
+        blocking_msg = blocking_resp.choices[0].message
 
         parallel_calls = []
         for tc in reconstructed:
@@ -1503,27 +1505,34 @@ def _openai_compat_stream(
                 result = dispatch_tool(name, inputs, tool_handlers, _turn_num=turn_num)
                 messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
 
-        if parallel_calls:
-            _parent_trace = _tr.get_trace()
-            _parent_agent = _tr.get_current_agent()
-            def _make_dispatch(name, inputs, handlers, turn):
-                def _worker():
-                    _tr.set_trace(_parent_trace)
-                    _tr._set_current_agent(_parent_agent)
-                    return dispatch_tool(name, inputs, handlers, _agent_rec=_parent_agent, _turn_num=turn)
-                return _worker
-            with ThreadPoolExecutor() as executor:
-                future_to_tc = {
-                    executor.submit(_make_dispatch(tc["function"]["name"], inputs, tool_handlers, turn_num)): tc
-                    for tc, inputs in parallel_calls
-                }
-                for future in as_completed(future_to_tc):
-                    tc = future_to_tc[future]
-                    try:
-                        result = future.result()
-                    except Exception as e:
-                        result = f"Error: {e}"
-                    messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
+        # Apply the same thought_signature workaround as _openai_compat_loop using the
+        # blocking message object (which carries Vertex's signed extra_content).
+        if blocking_msg.tool_calls:
+            if len(blocking_msg.tool_calls) == 1:
+                messages.append(blocking_msg)
+                tc = blocking_msg.tool_calls[0]
+                inputs = json.loads(tc.function.arguments)
+                dispatch_tool(tc.function.name, inputs, tool_handlers, _turn_num=turn_num)
+                messages.append({"role": "tool", "tool_call_id": tc.id, "content": ""})
+            else:
+                tc0 = blocking_msg.tool_calls[0]
+                inputs = json.loads(tc0.function.arguments)
+                dispatch_tool(tc0.function.name, inputs, tool_handlers, _turn_num=turn_num)
+                messages.append(blocking_msg.model_copy(update={"tool_calls": [tc0]}))
+                messages.append({"role": "tool", "tool_call_id": tc0.id, "content": ""})
+        else:
+            # Blocking replay didn't produce tool calls — use the stream-based reconstruction
+            # as fallback (rare; means the two calls diverged).
+            reconstructed = [
+                {"id": tool_calls_raw[i]["id"], "type": "function",
+                 "function": {"name": tool_calls_raw[i]["name"], "arguments": tool_calls_raw[i]["arguments"]}}
+                for i in sorted(tool_calls_raw)
+            ]
+            messages.append({"role": "assistant", "content": "".join(text_parts) or None, "tool_calls": reconstructed})
+            for tc in reconstructed:
+                inputs = json.loads(tc["function"]["arguments"])
+                dispatch_tool(tc["function"]["name"], inputs, tool_handlers, _turn_num=turn_num)
+                messages.append({"role": "tool", "tool_call_id": tc["id"], "content": ""})
 
     # Fallback: max iterations reached
     if history is not None:
