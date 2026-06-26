@@ -411,7 +411,10 @@ def _clean_schema_for_gemini(schema: dict) -> dict:
 
 
 def _to_gemini_tools(anthropic_schemas: list[dict]) -> list:
-    """Translate Anthropic tool schemas to google-genai types.Tool format."""
+    """Translate Anthropic tool schemas to google-genai types.Tool format.
+    Returns [] when no schemas are given — callers must omit the tools param in that case."""
+    if not anthropic_schemas:
+        return []
     from google.genai import types
     declarations = [
         types.FunctionDeclaration(
@@ -1079,17 +1082,18 @@ def _run_gemini_native_loop(client, model_name: str,
     from google.genai import types
 
     gemini_tools = _to_gemini_tools(tool_schemas)
+    _tools_kwarg = {"tools": gemini_tools} if gemini_tools else {}
     if cached_content:
         config = types.GenerateContentConfig(
             cached_content=cached_content,
-            tools=gemini_tools,
             max_output_tokens=4096,
+            **_tools_kwarg,
         )
     else:
         config = types.GenerateContentConfig(
             system_instruction=system_prompt,
-            tools=gemini_tools,
             max_output_tokens=4096,
+            **_tools_kwarg,
         )
 
     contents: list = []
@@ -1135,9 +1139,6 @@ def _run_gemini_native_loop(client, model_name: str,
             elif part.text:
                 text_parts.append(part.text)
 
-        # DEBUG — remove after diagnosis
-        finish_reason = getattr(response.candidates[0], "finish_reason", "?")
-        logger.warning(f"[DEBUG native] turn={turn_num} finish={finish_reason} text_parts={len(text_parts)} fn_calls={[fc.name for fc in function_calls]} result_so_far={repr(result[:80])}")
 
         # Capture text even when tool calls are also present — Gemini can emit text
         # and function_call in the same response. Without this, the user-facing text
@@ -1213,7 +1214,7 @@ def _openai_compat_loop(system_prompt: str, user_input: str,
         response = client.chat.completions.create(
             model=model,
             **{token_kwarg: 4096},
-            tools=oai_tools,
+            **({"tools": oai_tools} if oai_tools else {}),
             messages=messages,
             **({"extra_body": extra_body} if extra_body else {}),
         )
