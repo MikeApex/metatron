@@ -362,6 +362,7 @@ def register_tools() -> tuple[list[dict], dict]:
         read_context_tracker, write_context_tracker,
         READ_CONTEXT_TRACKER_SCHEMA, WRITE_CONTEXT_TRACKER_SCHEMA,
     )
+    from tools.persona import write_persona, WRITE_PERSONA_SCHEMA
     from tools.subagent import (
         run_subagent, RUN_SUBAGENT_SCHEMA,
         run_model_conference, RUN_MODEL_CONFERENCE_SCHEMA,
@@ -394,6 +395,7 @@ def register_tools() -> tuple[list[dict], dict]:
         FIND_DUPLICATE_WISDOM_SCHEMA, MERGE_WISDOM_ENTRIES_SCHEMA,
         SEARCH_MEMORY_SCHEMA,
         READ_CONTEXT_TRACKER_SCHEMA, WRITE_CONTEXT_TRACKER_SCHEMA,
+        WRITE_PERSONA_SCHEMA,
         GET_LOG_WINDOW_SCHEMA, WRITE_INSIGHT_REPORT_SCHEMA, READ_RECENT_INSIGHTS_SCHEMA,
         WRITE_BASELINE_PERIOD_SCHEMA, READ_BASELINE_PERIODS_SCHEMA,
         WRITE_RETROSPECTIVE_SCHEMA, GET_BASELINE_CONTEXT_SCHEMA,
@@ -451,6 +453,7 @@ def register_tools() -> tuple[list[dict], dict]:
         "read_calendar": read_calendar,
         "write_calendar_event": write_calendar_event,
         "write_quality_event": write_quality_event,
+        "write_persona": write_persona,
     }
 
     return schemas, handlers
@@ -509,13 +512,15 @@ def _to_gemini_tools(anthropic_schemas: list[dict]) -> list:
 # Output filter — strip architecture leaks before returning to user
 # ---------------------------------------------------------------------------
 
-# Names that must never appear in user-facing output.
-_CONFIDENTIAL_TERMS = [
-    # Agent names
-    "mental_wellbeing", "physical_health", "work_vocation", "relationships",
-    "learning_growth", "recreation_hobbies", "finance", "research_agent",
-    "logistics", "time_director", "diarist", "pattern_miner", "goals_interviewer",
-    "coordinator", "synthesizer",
+import re as _re
+
+# Code identifiers: contain underscores, slashes, or are otherwise impossible
+# in natural prose. Always flag on substring match.
+_ALWAYS_CONFIDENTIAL = [
+    # Agent names (underscore form)
+    "mental_wellbeing", "physical_health", "work_vocation",
+    "learning_growth", "recreation_hobbies", "research_agent",
+    "time_director", "pattern_miner", "goals_interviewer",
     # Tool names
     "run_subagent", "run_model_conference", "write_log", "read_log",
     "write_journal", "read_journal", "write_archive", "read_archive",
@@ -524,13 +529,40 @@ _CONFIDENTIAL_TERMS = [
     "read_recent_insights", "write_baseline_period", "read_baseline_periods",
     "write_retrospective", "get_baseline_context", "read_context_tracker",
     "write_context_tracker", "find_duplicate_wisdom", "merge_wisdom_entries",
-    "write_contact", "read_contact", "list_contacts", "log_interaction", "search_contacts",
+    "write_contact", "read_contact", "list_contacts", "log_interaction",
+    "search_contacts", "write_persona",
     # Routing / architecture terms
     "cloud_deep", "cloud_fast", "cloud_analytical", "routing.yaml",
-    "orchestrator", "run_session", "config/agents",
+    "run_session", "config/agents",
 ]
 
-_LEAK_MARKER = "[response filtered]"
+# Common English words that are also internal names. Only flagged when the
+# surrounding sentence contains architecture vocabulary — indicating an actual
+# leak rather than ordinary usage (e.g. "daily logistics", "music synthesizer").
+_CONTEXT_SENSITIVE = [
+    "relationships", "finance", "logistics", "diarist",
+    "coordinator", "synthesizer", "orchestrator",
+]
+
+# Vocabulary that, when appearing in the same sentence as a context-sensitive
+# term, signals an architecture leak rather than ordinary prose.
+_ARCH_VOCAB_RE = _re.compile(
+    r'\b(agent|specialist|sub-?agent|routing|pipeline|module|dispatch|'
+    r'tool\s*call|system\s*prompt|subagent)\b',
+    _re.IGNORECASE,
+)
+
+
+def _sentence_bounds(text: str, pos: int) -> tuple[int, int]:
+    """Return (start, end) indices of the sentence containing position pos."""
+    start = max(text.rfind('.', 0, pos), text.rfind('\n', 0, pos)) + 1
+    end_dot = text.find('.', pos)
+    end_nl = text.find('\n', pos)
+    end = min(
+        end_dot if end_dot >= 0 else len(text),
+        end_nl if end_nl >= 0 else len(text),
+    )
+    return start, end if end > start else len(text)
 
 
 def filter_output(text: str, agent_name: str) -> str:
@@ -539,20 +571,41 @@ def filter_output(text: str, agent_name: str) -> str:
     Logs a warning and returns a safe fallback if any are found.
     Only applied to the Synthesizer (user-facing); Coordinator output is
     internal (context package) and does not need filtering.
+
+    Two-tier check:
+    - _ALWAYS_CONFIDENTIAL: code identifiers, flagged on substring match.
+    - _CONTEXT_SENSITIVE: common English words that are also agent names;
+      only flagged when architecture vocabulary appears in the same sentence.
     """
     if agent_name != "synthesizer":
         return text
 
+    import warnings
+
     lower = text.lower()
-    for term in _CONFIDENTIAL_TERMS:
+
+    for term in _ALWAYS_CONFIDENTIAL:
         if term.lower() in lower:
-            import warnings
             warnings.warn(
                 f"[SECURITY] Output filter: '{term}' found in Synthesizer response. "
                 f"Response suppressed.",
                 stacklevel=2,
             )
             return "I'm here to help you manage your life. What can I help you with today?"
+
+    for term in _CONTEXT_SENSITIVE:
+        idx = lower.find(term.lower())
+        while idx >= 0:
+            start, end = _sentence_bounds(lower, idx)
+            sentence = lower[start:end]
+            if _ARCH_VOCAB_RE.search(sentence):
+                warnings.warn(
+                    f"[SECURITY] Output filter: '{term}' in architecture context found "
+                    f"in Synthesizer response. Response suppressed.",
+                    stacklevel=2,
+                )
+                return "I'm here to help you manage your life. What can I help you with today?"
+            idx = lower.find(term.lower(), idx + 1)
 
     return text
 

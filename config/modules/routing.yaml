@@ -41,7 +41,7 @@ agents:
 
   synthesizer:
     local: true
-    allowed_tools: [run_subagent, run_model_conference, write_context_tracker, write_config, write_wishes, read_wishes, generate_emergency_card, write_quality_event]
+    allowed_tools: [run_subagent, run_model_conference, write_context_tracker, write_persona, write_config, write_wishes, read_wishes, generate_emergency_card, write_quality_event]
 
   # ── Data and analysis (local: reads/writes personal logs) ───────────────────
 
