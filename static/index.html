@@ -417,12 +417,92 @@
     addMessage('user', input);
     setLoading(true);
 
+    // Streaming path: coordinator agent uses /session/stream (SSE).
+    // Other agents fall back to /session (non-streaming).
+    // TODO future: phrase-by-phrase TTS with meaningful pauses between sentences.
+    if (agent === 'coordinator') {
+      await sendStreaming(input, provider);
+    } else {
+      await sendBlocking(input, agent, provider);
+    }
+  }
+
+  async function sendStreaming(input, provider) {
+    let bubble = null;
+    let accumulated = '';
+
+    try {
+      const res = await fetch(SERVER + '/session/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input, agent: 'coordinator', provider, persona: currentPersona }),
+        signal: AbortSignal.timeout(600000),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: 'Server error' }));
+        throw new Error(err.detail || 'Server error');
+      }
+
+      bubble = addMessage('assistant', '▍');
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop(); // incomplete line stays in buffer
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const payload = line.slice(6);
+
+          if (payload === '[DONE]') {
+            bubble.textContent = accumulated;
+            speakResponse(accumulated);
+            return;
+          } else if (payload === '[RETRACT]') {
+            bubble.textContent = "I can't help with that right now.";
+            return;
+          } else if (payload.startsWith('[ERROR]')) {
+            bubble.textContent = `Error: ${payload.slice(8)}`;
+            return;
+          } else {
+            accumulated += payload;
+            bubble.textContent = accumulated + '▍';
+            conversation.scrollTop = conversation.scrollHeight;
+          }
+        }
+      }
+
+      // Stream closed without [DONE] — show whatever we have
+      if (bubble && accumulated) {
+        bubble.textContent = accumulated;
+        speakResponse(accumulated);
+      }
+    } catch (e) {
+      if (bubble) {
+        bubble.textContent = `Error: ${e.message}`;
+      } else {
+        addMessage('system', `Error: ${e.message}`);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function sendBlocking(input, agent, provider) {
     try {
       const res = await fetch(SERVER + '/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ input, agent, provider, persona: currentPersona }),
-        signal: AbortSignal.timeout(600000),  // 10-minute timeout for local LLM
+        signal: AbortSignal.timeout(600000),
       });
 
       if (!res.ok) {
