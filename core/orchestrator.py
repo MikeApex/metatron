@@ -1575,7 +1575,7 @@ def _run_single_agent(agent_name: str, user_input: str,
     from core.router import get_allowed_tools
     base_url_override = None
 
-    if provider is None:
+    if not provider:
         from core.router import resolve_model
         model_cfg = resolve_model(agent_name, complexity=complexity)
         provider = model_cfg.provider
@@ -1882,7 +1882,7 @@ def run_pipeline_session_stream(
     recent_history = list(history[-10:]) if history else None
 
     # Resolve Synthesizer provider/model — explicit provider arg overrides router
-    if provider is not None:
+    if provider:
         synth_provider = provider
         synth_model: str | None = None
         synth_base_url: str | None = None
