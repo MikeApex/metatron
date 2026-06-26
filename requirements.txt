@@ -1,4 +1,5 @@
 aiohappyeyeballs==2.6.1
+aiosqlite
 aiohttp==3.13.5
 aiosignal==1.4.0
 annotated-doc==0.0.4
