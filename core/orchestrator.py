@@ -1135,6 +1135,10 @@ def _run_gemini_native_loop(client, model_name: str,
             elif part.text:
                 text_parts.append(part.text)
 
+        # DEBUG — remove after diagnosis
+        finish_reason = getattr(response.candidates[0], "finish_reason", "?")
+        logger.warning(f"[DEBUG native] turn={turn_num} finish={finish_reason} text_parts={len(text_parts)} fn_calls={[fc.name for fc in function_calls]} result_so_far={repr(result[:80])}")
+
         # Capture text even when tool calls are also present — Gemini can emit text
         # and function_call in the same response. Without this, the user-facing text
         # from a "write_context_tracker + respond" turn gets silently discarded.
