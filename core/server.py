@@ -182,7 +182,8 @@ async def session_stream(req: SessionRequest):
                 return
             else:
                 accumulated.append(item)
-                yield f"data: {item}\n\n"
+                safe = item.replace('\r', '').replace('\n', r'\n')
+                yield f"data: {safe}\n\n"
 
         await asyncio.wrap_future(producer)
         _log_conversation(req.input, "".join(accumulated), req.agent, persona)

@@ -473,7 +473,7 @@
             bubble.textContent = `Error: ${payload.slice(8)}`;
             return;
           } else {
-            accumulated += payload;
+            accumulated += payload.replace(/\\n/g, '\n');
             bubble.textContent = accumulated + '▍';
             conversation.scrollTop = conversation.scrollHeight;
           }
