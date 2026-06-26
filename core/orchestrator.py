@@ -498,9 +498,22 @@ def dispatch_tool(name: str, inputs: dict, handlers: dict,
             result = str(result)
     except Exception as e:
         result = f"Error running tool '{name}': {e}"
-    duration_ms = int((time.monotonic() - t0) * 1000)
+    duration_ms = round((time.monotonic() - t0) * 1000, 1)
     rec = _agent_rec or _tr.get_current_agent()
-    _tr.record_tool_call(rec, _turn_num, name, inputs, result, duration_ms)
+    # For run_subagent, pull token counts from the subagent record that was just created.
+    in_tok = out_tok = 0
+    if name == "run_subagent" and rec is not None:
+        t = _tr.get_trace()
+        if t is not None:
+            subagents = t.pipeline[0].subagents if t.pipeline else []
+            agent_arg = inputs.get("agent_name") or inputs.get("agent") or ""
+            for sub in reversed(subagents):
+                if sub.agent == agent_arg:
+                    in_tok = sub.total_input_tokens()
+                    out_tok = sub.total_output_tokens()
+                    break
+    _tr.record_tool_call(rec, _turn_num, name, inputs, result, duration_ms,
+                         input_tokens=in_tok, output_tokens=out_tok)
     return result
 
 
@@ -1166,15 +1179,24 @@ def _run_gemini_native_loop(client, model_name: str,
             if fc.name in _PARALLEL_TOOLS:
                 parallel_calls.append(fc)
             else:
-                res = dispatch_tool(fc.name, fc.args, tool_handlers)
+                res = dispatch_tool(fc.name, fc.args, tool_handlers, _turn_num=turn_num)
                 result_parts.append(
                     types.Part.from_function_response(name=fc.name, response={"result": res})
                 )
 
         if parallel_calls:
+            _parent_trace = _tr.get_trace()
+            _parent_agent = _tr.get_current_agent()
+            def _make_gemini_dispatch(fc_name, fc_args, handlers, turn):
+                def _worker():
+                    _tr.set_trace(_parent_trace)
+                    _tr._set_current_agent(_parent_agent)
+                    return dispatch_tool(fc_name, fc_args, handlers,
+                                        _agent_rec=_parent_agent, _turn_num=turn)
+                return _worker
             with ThreadPoolExecutor() as executor:
                 future_to_fc = {
-                    executor.submit(dispatch_tool, fc.name, fc.args, tool_handlers): fc
+                    executor.submit(_make_gemini_dispatch(fc.name, fc.args, tool_handlers, turn_num)): fc
                     for fc in parallel_calls
                 }
                 for future in as_completed(future_to_fc):
@@ -1575,9 +1597,16 @@ def _dispatch_from_coordinator(
         "time director": "time_director",
     }
 
+    def _normalize_agent(name: str) -> str:
+        lowered = name.lower()
+        if lowered in _AGENT_NAME_MAP:
+            return _AGENT_NAME_MAP[lowered]
+        # Generic fallback: lowercase + replace " & "/" and "/" spaces with underscore
+        return lowered.replace(" & ", "_").replace(" and ", "_").replace(" ", "_")
+
     for spec in specialists:
         agent = spec.get("agent", "")
-        agent = _AGENT_NAME_MAP.get(agent.lower(), agent)
+        agent = _normalize_agent(agent)
         directive = spec.get("directive", "")
         mode = spec.get("mode", "")
         is_ff = spec.get("fire_and_forget", False) or agent == "diarist"
