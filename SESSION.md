@@ -1,5 +1,5 @@
 # Session Primer — Personal AI Life Manager
-*Updated: 2026-06-26 (User profile + ambient world context). Update this file at the close of every chat so the next chat — or any parallel chat window — starts from current state.*
+*Updated: 2026-06-26 (Latency work — streaming, cache fix, name normalization). Update this file at the close of every chat so the next chat — or any parallel chat window — starts from current state.*
 
 ---
 
@@ -99,15 +99,21 @@ Session archive: [archive/sessions/2026-06-26 — The Book Call Timing, Token Co
 
 ---
 
-### Also done 2026-06-26 (pipeline debugging — first live response)
+### Also done 2026-06-26 (pipeline debugging + latency work)
 
-Three root-cause bugs fixed. First live response confirmed via browser.
+Phase 1 — Three root-cause bugs fixed. First live response confirmed via browser (see session archive for details).
 
-1. **`tools=[]` → invalid Gemini API call** — `_to_gemini_tools([])` returned `[Tool(function_declarations=[])]` (invalid). Native loop threw, fell back to compat, which also passed `tools=[]` → `content=None`. Coordinator always returned `""`. Fixed: empty tools list → omit tools param in both loops.
-2. **Synthesizer text discarded alongside tool call** — both loops only captured text when `finish_reason != "tool_calls"`. Fixed: capture text before entering tool-call branch in both `_run_gemini_native_loop` and `_openai_compat_loop`.
-3. **Agent instruction gaps** — Coordinator produced prose instead of SPECIALISTS_TO_CALL format; Synthesizer called `write_context_tracker` alone with no text then returned nothing. Fixed: hard format mandate in coordinator.md; text+tool same-turn ordering rule in synthesizer.md.
+Phase 2 — Latency reduction. Warm-cache second-message latency: ~40s → **~20s**. Streaming text now appears word-by-word in UI.
 
-**Open: agent name mismatch** — Coordinator writes "Physical Health" / "Mental Wellbeing" (spaced); dispatch looks for `physical_health.md` / `mental_wellbeing.md`. MW/PH specialists silently fail. Fix: normalization in `_dispatch_from_coordinator` or update coordinator.md agent names.
+Key changes:
+1. **Agent name normalization** — `_normalize_agent()` in `_dispatch_from_coordinator`. All casing/spacing variants ("Physical Health", "Logistics", etc.) now resolve to correct filenames. MW, PH, and other specialists were silently dropping on every session.
+2. **Coordinator: Pro → Flash-Lite** — single-pass routing directive, no tools. Saves ~3–5s.
+3. **Vertex cache fix** — tools now baked into `CreateCachedContentConfig`. Eliminates guaranteed native-loop-fail + compat-fallback double round-trip on every tool-bearing agent (Synthesizer, specialists). `cache_read=12000+` visible in logs.
+4. **trace.py committed** — `ToolCallRecord.input_tokens`/`output_tokens` had been applied locally but never committed; old VM version crashed native loop.
+5. **Streaming client** (`static/index.html`) — coordinator uses `/session/stream` (SSE). Text streams into bubble word-by-word (`▍` cursor). TTS fires on `[DONE]`. TODO (future): phrase-by-phrase TTS with pauses.
+6. **Streaming thought_signature fix** (`_openai_compat_stream`) — when Synthesizer emits text + `write_context_tracker` in one streaming turn, stream deltas lack Vertex's `thought_signature`. Fix: replay that turn blocking using pre-turn message snapshot; apply `model_copy()` workaround. Already-yielded text is correct; replay used only for signed message construction.
+
+**Next:** specialist token reduction (plan Steps 3–5) — specialists still running 5–8 tool-call turns; this is the biggest remaining latency lever. Then B1/Check10/Check12 for A7 sign-off.
 
 Session archive: [archive/sessions/2026-06-26 — Pipeline Debugging and First Response.md](archive/sessions/2026-06-26 — Pipeline Debugging and First Response.md)
 

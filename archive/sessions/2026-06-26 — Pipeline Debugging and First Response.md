@@ -1,8 +1,8 @@
-# 2026-06-26 — Pipeline Debugging and First Response
+# 2026-06-26 — Pipeline Debugging, First Response, and Latency Work
 
 ## What this session covered
 
-End-to-end debugging of the Coordinator → Synthesizer pipeline after the Step 6 single-pass Coordinator restructure (implemented 2026-06-24). The pipeline was returning empty responses on all paths (phone, browser, Book). This session traced and fixed three root causes, confirmed the first live response via browser, then began latency planning.
+Two phases. Phase 1: end-to-end debugging of the Coordinator → Synthesizer pipeline after the Step 6 single-pass Coordinator restructure (implemented 2026-06-24). The pipeline was returning empty responses on all paths (phone, browser, Book). Three root causes traced and fixed; first live response confirmed via browser. Phase 2: latency reduction — agent name normalization, Coordinator model downgrade, Vertex cache fix, trace.py commit, streaming client, and streaming thought_signature fix. Warm-cache second-message latency dropped from ~40s to ~20s.
 
 ---
 
@@ -49,40 +49,65 @@ After fix 1, the Coordinator started producing output but in conversational pros
 
 ---
 
-## Agent name mismatch (still open)
+## Agent name mismatch — fixed in phase 2
 
-Coordinator outputs agent names as "Physical Health", "Mental Wellbeing", etc. (title-cased, spaced). The dispatch code calls `load_agent("Physical Health")` which looks for `config/agents/Physical Health.md` (doesn't exist). Actual files are `physical_health.md`, `mental_wellbeing.md`, etc.
+Coordinator outputs agent names as "Physical Health", "Mental Wellbeing", etc. (title-cased, spaced). The dispatch code was looking for `config/agents/Physical Health.md` which doesn't exist.
 
-Result: any session where MW or PH specialists are dispatched, they silently fail. Diarist still runs (fire-and-forget, name matches). Synthesizer runs without specialist context.
-
-**Fix needed:** Add a name normalization step in `_dispatch_from_coordinator` — either a mapping dict or update coordinator.md to list technical names (underscored). Deferred to latency session.
+**Fix:** `_normalize_agent()` in `_dispatch_from_coordinator` — explicit map for multi-word names + generic fallback (`lower().replace(" & ", "_").replace(" ", "_")`). Covers all variants including single-word capitalized names (Logistics, Finance, etc.).
 
 ---
 
-## Latency baseline (current)
+## Phase 2 — Latency reduction
 
-Pipeline observed at ~25–45 seconds for conversational sessions, browser. Breakdown:
-- Coordinator (single pass, Gemini Pro, no tools): ~5–8s
-- Specialists (parallel, Flash-Lite): ~10–15s per active specialist
-- Synthesizer (Gemini Pro, write_context_tracker + text): ~10–20s
-- Transcription (ffmpeg + faster-whisper base.en, CPU): ~2–5s (voice path only)
+### Baseline (before phase 2)
+- ~27–45s per conversational session (all paths: phone, browser, curl)
+- Every agent call doing double round-trip: native loop failed → compat fallback
+- Agent name normalization failures silently dropping MW, PH, Logistics on every session
+- Coordinator on Pro (no tools, single-pass — Pro was overkill)
+- No streaming — user waited for full pipeline before seeing any text
 
-Main lever: Coordinator model. It now does a single routing pass with no tools — Flash or Flash-Lite should work. Not yet tested.
+### Changes made
+
+**1. Agent name normalization** — MW, PH, and all other spaced/titled variants now resolve. Fixed silently-failing specialists on every session.
+
+**2. Coordinator: Pro → Flash-Lite** (`routing_cloud.yaml`) — single-pass routing directive with `allowed_tools: []`. Previous revert reason ("Flash skips tool calls") no longer applies. Saves ~3–5s.
+
+**3. Vertex cache fix** — Cache was created with `system_instruction` only; the native loop then tried to pass `tools` in the same request, which Vertex rejects ("Tool config, tools and system instruction should not be set in the request when using cached content"). Fix: `_get_or_create_vertex_cache` now accepts `tool_schemas` and includes tools in `CreateCachedContentConfig`. Cache key includes tool names. GenerateContentConfig with `cached_content` no longer includes tools or system_instruction. Eliminated the guaranteed native-loop-fail + compat-fallback double round-trip on every tool-bearing agent call.
+
+**4. trace.py committed** — `ToolCallRecord.input_tokens`/`output_tokens` fields and matching `record_tool_call` signature were applied locally but never committed. VM had the old version without these params, which crashed the native loop once the cache fix made it actually run.
+
+**5. Streaming client** (`static/index.html`) — coordinator agent now calls `/session/stream` (SSE) instead of `/session`. Text streams into the assistant bubble word-by-word with a `▍` cursor. TTS fires when `[DONE]` arrives. Non-coordinator agents still use `/session` (blocking). Future TODO: phrase-by-phrase TTS with meaningful pauses between sentences.
+
+**6. Streaming thought_signature fix** — `_openai_compat_stream` was written assuming the Synthesizer never calls tools ("NOTE: Only the Synthesizer uses this function at runtime — it never calls tools"). Now it does (`write_context_tracker`). Stream deltas don't carry Vertex's `thought_signature`, so the reconstructed assistant dict caused a 400 on the next request. Fix: when a streaming turn produces tool calls, replay that turn blocking (`stream=False`) using the pre-turn messages snapshot; apply the same `model_copy()` thought_signature workaround from `_openai_compat_loop`. Streaming text already yielded is correct; replay used only for the signed assistant message.
+
+### Results
+- First call (cold cache, 3 specialists): ~55–66s (one-time cache creation overhead)
+- Second+ call (warm in-memory cache): **~20s**
+- Previously: ~40s every call, no streaming
+- Synthesizer now shows `cache_read=12000+` tokens — cache is working
+- No more "native loop failed" warnings in VM logs
+
+### Observations from test sessions (Danny Park, Maya Torres, Mike)
+- Agent name normalization confirmed working: physical_health, mental_wellbeing dispatching correctly
+- Coordinator producing high-quality SPECIALISTS_TO_CALL packages with contextualized directives
+- Synthesizer cache hit visible in logs: `cache_read=12005` on turns 1 and 2
+- Specialists still running 5–8 tool-call turns — this is the next major latency lever (token reduction Steps 3–5 of plan)
+- Constitution already stripped from specialists (confirmed in code — was noted as incomplete in plan doc but was actually done)
 
 ---
 
-## Commits this session
+## Commits (phase 2)
 
-- `be68363` — Fix: capture Synthesizer text when emitted alongside tool call in same turn; revert metatron_monitor DEFAULT_SERVER to https
-- `3f400aa` — Debug: log native loop turn details (temporary, removed in next commit)
-- `1527491` — Fix: don't pass tools=[] to Gemini API — omit tools param when no schemas
-- `780623f` — Fix agent instructions: Coordinator format mandate + Synthesizer text+tool ordering
+- `ad9081a` — Agent name normalization + Coordinator Flash-Lite downgrade
+- `85e0f52` — Vertex cache: bake tools into cache; strip tools from cached request
+- `b10806c` — Generic name normalization fallback (fixes Logistics, Finance, etc.)
+- `69f75fe` — Commit trace.py changes (missing from git; crashed native loop)
+- streaming commits — streaming client + thought_signature fix for streaming tool-call turns
 
 ---
 
 ## What's next
 
-1. **Agent name normalization** — `_dispatch_from_coordinator` fix so "Physical Health" → `physical_health`
-2. **Coordinator model** — test Flash/Flash-Lite for routing pass; Pro is overkill for a single-pass routing directive
-3. **Latency reduction** — measure actual component times; consider Coordinator model downgrade, then streaming path for Synthesizer output
-4. **Resume A7 gate items** — B1 (red team), Check 10 (agent audits), Check 12 (constitution review) once pipeline is stable
+1. **Specialist token reduction** (plan Steps 3–5) — specialists running 5–8 turns of tool calls; reducing context/tool overhead is the biggest remaining latency lever
+2. **Resume A7 gate items** — B1 (red team), Check 10 (agent audits), Check 12 (constitution review) once pipeline is stable
+3. **Phrase-by-phrase TTS** — future streaming enhancement; marked with TODO in index.html
