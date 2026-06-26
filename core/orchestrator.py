@@ -1495,16 +1495,6 @@ def _openai_compat_stream(
         )
         blocking_msg = blocking_resp.choices[0].message
 
-        parallel_calls = []
-        for tc in reconstructed:
-            name = tc["function"]["name"]
-            inputs = json.loads(tc["function"]["arguments"])
-            if name in _PARALLEL_TOOLS:
-                parallel_calls.append((tc, inputs))
-            else:
-                result = dispatch_tool(name, inputs, tool_handlers, _turn_num=turn_num)
-                messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
-
         # Apply the same thought_signature workaround as _openai_compat_loop using the
         # blocking message object (which carries Vertex's signed extra_content).
         if blocking_msg.tool_calls:
