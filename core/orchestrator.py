@@ -1456,11 +1456,12 @@ def _openai_compat_stream(
         text_parts: list[str] = []
         tool_calls_raw: dict[int, dict] = {}  # delta index → accumulated data
         finish_reason: str | None = None
+        _usage_recorded = False
 
         for chunk in stream:
             if not chunk.choices:
-                # Usage-only trailing chunk (include_usage=True)
-                if hasattr(chunk, "usage") and chunk.usage:
+                # Usage-only trailing chunk (include_usage=True) — standard OpenAI pattern
+                if hasattr(chunk, "usage") and chunk.usage and not _usage_recorded:
                     pts = chunk.usage.prompt_tokens or 0
                     ots = getattr(chunk.usage, "completion_tokens", 0) or 0
                     if pts > 8000:
@@ -1470,12 +1471,28 @@ def _openai_compat_stream(
                         logger.info(f"[token_budget] turn={turn_num} cumulative_input={pts}")
                         _trace(f"[TOKEN] turn={turn_num} input={pts}")
                     _tr.record_turn_tokens(_tr.get_current_agent(), turn_num, pts, ots)
+                    _usage_recorded = True
                 continue
 
             choice = chunk.choices[0]
             if choice.finish_reason:
                 finish_reason = choice.finish_reason
             delta = choice.delta
+
+            # Vertex AI embeds usage in the finish chunk (choices non-empty) rather than
+            # a trailing chunk — capture it here as a fallback so Synth tokens are recorded.
+            if choice.finish_reason and hasattr(chunk, "usage") and chunk.usage and not _usage_recorded:
+                pts = getattr(chunk.usage, "prompt_tokens", 0) or 0
+                ots = getattr(chunk.usage, "completion_tokens", 0) or 0
+                if pts or ots:
+                    if pts > 8000:
+                        logger.warning(f"[token_budget] OVER_8K turn={turn_num} cumulative_input={pts}")
+                        _trace(f"[TOKEN] turn={turn_num} input={pts} ⚠ OVER_8K")
+                    else:
+                        logger.info(f"[token_budget] turn={turn_num} cumulative_input={pts}")
+                        _trace(f"[TOKEN] turn={turn_num} input={pts}")
+                    _tr.record_turn_tokens(_tr.get_current_agent(), turn_num, pts, ots)
+                    _usage_recorded = True
 
             if delta.content:
                 text_parts.append(delta.content)
@@ -1896,12 +1913,17 @@ def run_pipeline_session_stream(
     _trace(f"[PIPELINE] synthesizer  provider={synth_provider}  model={synth_model}  streaming")
 
     # Register synthesizer in the trace (mirrors _run_single_agent)
+    _history_display = "\n\n".join(
+        f"{m['role'].upper()}: {m['content']}"
+        for m in (recent_history or [])
+    ) if recent_history else ""
     _synth_rec = _tr.push_agent(
         "synthesizer", synth_provider, synth_model or "",
         {
             "agent_file": agent_instructions,
             "config": config,
             "recent_context": recent,
+            "conversation_history": _history_display,
         },
     )
 

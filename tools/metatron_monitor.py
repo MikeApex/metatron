@@ -609,6 +609,7 @@ class TheBookApp(App):
             ("agent_file", "Agent Instructions"),
             ("config", "Config (constitution + goals)"),
             ("recent_context", "Recent Context"),
+            ("conversation_history", "Conversation History (fed to Synth)"),
         ]:
             content = ctx.get(key, "")
             if content:
