@@ -362,6 +362,13 @@
     if (persona) enterApp(persona);
   });
 
+  document.getElementById('login-password').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      const persona = document.getElementById('login-persona-select').value;
+      if (persona) enterApp(persona);
+    }
+  });
+
   document.getElementById('persona-chip').addEventListener('click', showLogin);
 
   // Auto-login if persona saved
