@@ -151,13 +151,10 @@ RUN_SUBAGENT_SCHEMA = {
     "name": "run_subagent",
     "description": (
         "Spawn a specialist agent and return its response. "
-        "Use this to consult a specialist — Diarist, Mental Wellbeing, Physical Health, "
+        "Use this to consult a specialist — Mental Wellbeing, Physical Health, "
         "Work & Vocation, Relationships, Learning & Growth, Recreation & Hobbies, "
         "Finance, Research Agent, or Logistics. "
-        "Pass a contextualized directive (user message + relevant context) as the message. "
-        "For write-only agents that never need to block the Coordinator (Diarist), "
-        "set fire_and_forget=true — the agent runs in the background and its output is "
-        "excluded from SPECIALIST_OUTPUTS."
+        "Pass a contextualized directive (user message + relevant context) as the message."
     ),
     "input_schema": {
         "type": "object",
@@ -166,7 +163,7 @@ RUN_SUBAGENT_SCHEMA = {
                 "type": "string",
                 "description": (
                     "Name of the specialist agent to call. Must match a file in config/agents/. "
-                    "Options: diarist, mental_wellbeing, physical_health, "
+                    "Options: mental_wellbeing, physical_health, "
                     "work_vocation, relationships, learning_growth, recreation_hobbies, "
                     "finance, research_agent, logistics"
                 ),
@@ -188,8 +185,8 @@ RUN_SUBAGENT_SCHEMA = {
                 "type": "boolean",
                 "description": (
                     "When true, dispatch the agent in the background and return immediately. "
-                    "Use only for Diarist — it is write-only and its output is never needed "
-                    "in SPECIALIST_OUTPUTS. Do not use for any other agent."
+                    "Reserved for write-only agents whose output is never needed in the response. "
+                    "Do not use for any specialist whose output must inform the reply."
                 ),
             },
         },
