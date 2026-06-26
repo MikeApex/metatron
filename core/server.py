@@ -18,6 +18,7 @@ import asyncio
 import os
 import sys
 import tempfile
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -71,6 +72,9 @@ class SessionResponse(BaseModel):
 # Routes
 # ---------------------------------------------------------------------------
 
+_CONV_LOCK = threading.Lock()
+
+
 def _log_conversation(user_input: str, response: str, agent: str, persona: str | None) -> None:
     """Append a verbatim exchange to the daily conversation log."""
     import json as _json
@@ -78,15 +82,25 @@ def _log_conversation(user_input: str, response: str, agent: str, persona: str |
     log_dir = Path(__file__).parent.parent / "data" / "conversations"
     log_dir.mkdir(parents=True, exist_ok=True)
     log_file = log_dir / f"{datetime.now().strftime('%Y-%m-%d')}.jsonl"
-    entry = {
-        "ts": datetime.now().isoformat(),
-        "agent": agent,
-        "persona": persona,
-        "user": user_input,
-        "response": response,
-    }
-    with open(log_file, "a") as f:
-        f.write(_json.dumps(entry, ensure_ascii=False) + "\n")
+    with _CONV_LOCK:
+        # Count existing entries to assign a per-day sequential ID (1-indexed)
+        existing = 0
+        if log_file.exists():
+            with open(log_file) as _f:
+                for line in _f:
+                    if line.strip():
+                        existing += 1
+        seq = f"{existing + 1:03d}"
+        entry = {
+            "ts": datetime.now().isoformat(),
+            "seq": seq,
+            "agent": agent,
+            "persona": persona,
+            "user": user_input,
+            "response": response,
+        }
+        with open(log_file, "a") as f:
+            f.write(_json.dumps(entry, ensure_ascii=False) + "\n")
 
 
 @app.post("/session", response_model=SessionResponse)

@@ -57,6 +57,14 @@ def fmt_ts(ts: str) -> str:
         return ts[:19]
 
 
+def fmt_ts_short(ts: str) -> str:
+    try:
+        dt = datetime.fromisoformat(ts)
+        return dt.strftime("%H:%M")
+    except Exception:
+        return ts[11:16]
+
+
 def truncate(text: str, n: int = 120) -> str:
     text = text.replace("\n", " ")
     return text[:n] + "…" if len(text) > n else text
@@ -75,15 +83,20 @@ class MessageBlock(ListItem):
         self.trace = trace
 
     def compose(self) -> ComposeResult:
-        ts = fmt_ts(self.entry.get("ts", ""))
+        ts_raw = self.entry.get("ts", "")
         persona = self.entry.get("persona") or "—"
         user_full = self.entry.get("user", "")
         synth_full = self.entry.get("response", "")
         is_proactive = self.trace.get("is_proactive", False) if self.trace else False
+        seq = self.entry.get("seq", "")
 
         proactive_tag = " [yellow]⊕[/]" if is_proactive else ""
+        if seq:
+            ts_prefix = f"[dim]#{seq}[/] [bold cyan]{fmt_ts_short(ts_raw)}[/]"
+        else:
+            ts_prefix = f"[bold cyan]{fmt_ts(ts_raw)}[/]"
         title = (
-            f"[bold cyan]{ts}[/] [dim]{persona}[/]{proactive_tag}  "
+            f"{ts_prefix} [dim]{persona}[/]{proactive_tag}  "
             f"[dim]{truncate(user_full, 60)}[/]"
         )
         yield Collapsible(
