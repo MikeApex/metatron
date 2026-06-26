@@ -551,6 +551,8 @@
   }
 
   function renderHistory(messages) {
+    // Don't wipe the conversation if an exchange is actively streaming on this device
+    if (ownBubble) return;
     conversation.innerHTML = '<div class="message system">Session started. Tap the mic or type to begin.</div>';
     for (const msg of messages) {
       addMessage('user', msg.user);
@@ -900,10 +902,6 @@
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitText(); }
   });
 
-  // Force clean disconnect when tab/app goes to background; onclose will reconnect on return
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden && ws && ws.readyState === WebSocket.OPEN) ws.close();
-  });
 
   // Auto-login if persona saved — must run after all variables and handlers are initialized
   const savedPersona = localStorage.getItem('metatron_persona');

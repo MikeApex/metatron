@@ -401,6 +401,16 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                         asyncio.run_coroutine_threadsafe(queue.put(None), loop).result()
 
                 producer = loop.run_in_executor(None, _produce)
+                sender_alive = True  # track whether the initiating WS is still connected
+
+                async def _send_to_sender(payload: dict) -> None:
+                    nonlocal sender_alive
+                    if not sender_alive:
+                        return
+                    try:
+                        await websocket.send_json(payload)
+                    except Exception:
+                        sender_alive = False
 
                 while True:
                     item = await queue.get()
@@ -413,7 +423,7 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                         break
                     elif item.startswith("[ERROR] "):
                         errored = True
-                        await websocket.send_json({
+                        await _send_to_sender({
                             "type": "error", "exchange_id": exchange_id, "text": item[8:],
                         })
                         await manager.broadcast(persona_key, {
@@ -423,19 +433,19 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                     else:
                         accumulated.append(item)
                         chunk_payload = {"type": "chunk", "exchange_id": exchange_id, "text": item}
-                        await websocket.send_json(chunk_payload)
+                        await _send_to_sender(chunk_payload)
                         await manager.broadcast(persona_key, chunk_payload, exclude=websocket)
 
                 await asyncio.wrap_future(producer)
 
                 if retracted:
                     retract_payload = {"type": "retract", "exchange_id": exchange_id}
-                    await websocket.send_json(retract_payload)
+                    await _send_to_sender(retract_payload)
                     await manager.broadcast(persona_key, retract_payload, exclude=websocket)
                 elif not errored:
                     full_response = "".join(accumulated)
                     done_payload = {"type": "done", "exchange_id": exchange_id}
-                    await websocket.send_json(done_payload)
+                    await _send_to_sender(done_payload)
                     await manager.broadcast(persona_key, done_payload, exclude=websocket)
                     new_id = await _save_exchange(persona_key, exchange_id, user_input, full_response)
                     _log_conversation(user_input, full_response, "coordinator", persona_orch)
