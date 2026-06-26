@@ -1,5 +1,5 @@
 # Session Primer — Personal AI Life Manager
-*Updated: 2026-06-24 (Token reduction — Steps 1–5 complete). Update this file at the close of every chat so the next chat — or any parallel chat window — starts from current state.*
+*Updated: 2026-06-26 (Pipeline debugging — first live response confirmed). Update this file at the close of every chat so the next chat — or any parallel chat window — starts from current state.*
 
 ---
 
@@ -58,9 +58,26 @@ If you need to find a specific file, tool, or planning document: **[CODEBASE_IND
 - ~~**A5** Goals Interview with real user~~ — **done.** A5b: re-run `write_aspirational_baseline` with existing A5 interview data (replaces A3 placeholder; required for A7 gate — run before A7). A5c preference activation status unknown — confirm if needed. **D1 note:** once VM is provisioned and new features are live, run a fresh Goals Interview + A5b re-run as first-use onboarding on the VM (new D1 item, separate from this A5b).
 - ~~**A6** Token budget logging~~ — **done** (all four session paths; 8K warning threshold)
 - **A7** Phase 5 sign-off — **blocked** (B1, Check 10, Check 12 on hold pending latency work; A1–A6 all complete). Resume when pipeline is stable.
+- **A8** Pre-Alpha code refactor (full program) — **new (added 2026-06-25, scoped 2026-06-26).** Gate: A7 complete. Full module extraction, not just Phase 5 cleanup. `core/orchestrator.py` (1870 lines, 5 concerns) → `core/config.py` + `core/providers.py` + `core/tools.py` + slimmed `core/orchestrator.py`. `core/server.py` → split monitoring endpoints into `core/monitor_api.py`. Remove COORD PACKAGE debug print (line 1616). Update import paths in server, scheduler, subagent, router. Regression gate: A4 clinical-flag scenarios + server startup + full pipeline session + The Book SSE. Note: `run_session_*` functions and `_run_gemini_native_loop` are active switches, not legacy — they stay in `core/providers.py`.
 - **B1** Red team — **on hold** (independent of Alpha Gate, but deprioritised — resumes after latency work)
 - **Check 10** Agent behavioral audits — **on hold**
 - **Check 12** Constitution alignment review — **on hold**
+
+### Also done 2026-06-22 (The Book SSE reconnect)
+- `_sse_loop` now auto-reconnects with exponential backoff (2s→30s) on any connection failure. Column 1 updates in real time without re-selecting the persona.
+- Session archive: `archive/sessions/2026-06-22 — The Book SSE Reconnect.md`
+
+### Also done 2026-06-26 (pipeline debugging — first live response)
+
+Three root-cause bugs fixed. First live response confirmed via browser.
+
+1. **`tools=[]` → invalid Gemini API call** — `_to_gemini_tools([])` returned `[Tool(function_declarations=[])]` (invalid). Native loop threw, fell back to compat, which also passed `tools=[]` → `content=None`. Coordinator always returned `""`. Fixed: empty tools list → omit tools param in both loops.
+2. **Synthesizer text discarded alongside tool call** — both loops only captured text when `finish_reason != "tool_calls"`. Fixed: capture text before entering tool-call branch in both `_run_gemini_native_loop` and `_openai_compat_loop`.
+3. **Agent instruction gaps** — Coordinator produced prose instead of SPECIALISTS_TO_CALL format; Synthesizer called `write_context_tracker` alone with no text then returned nothing. Fixed: hard format mandate in coordinator.md; text+tool same-turn ordering rule in synthesizer.md.
+
+**Open: agent name mismatch** — Coordinator writes "Physical Health" / "Mental Wellbeing" (spaced); dispatch looks for `physical_health.md` / `mental_wellbeing.md`. MW/PH specialists silently fail. Fix: normalization in `_dispatch_from_coordinator` or update coordinator.md agent names.
+
+Session archive: [archive/sessions/2026-06-26 — Pipeline Debugging and First Response.md](archive/sessions/2026-06-26 — Pipeline Debugging and First Response.md)
 
 ### Also done 2026-06-24 (token reduction — Steps 1–5)
 

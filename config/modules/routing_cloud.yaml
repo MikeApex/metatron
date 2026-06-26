@@ -26,7 +26,7 @@ agents:
 
   coordinator:
     provider: gemini
-    model: "models/gemini-3.1-pro-preview"  # reverted from Flash — Flash skips tool calls on complex routing tasks
+    model: "models/gemini-3.1-flash-lite"   # single-pass routing directive, no tools — Flash-Lite is sufficient
     allowed_tools: []
 
   synthesizer:

@@ -1552,8 +1552,24 @@ def _dispatch_from_coordinator(
     outputs: dict = {}
     blocking: list = []
 
+    _AGENT_NAME_MAP = {
+        "mental wellbeing": "mental_wellbeing",
+        "physical health": "physical_health",
+        "work & vocation": "work_vocation",
+        "work and vocation": "work_vocation",
+        "learning & growth": "learning_growth",
+        "learning and growth": "learning_growth",
+        "recreation & hobbies": "recreation_hobbies",
+        "recreation and hobbies": "recreation_hobbies",
+        "research agent": "research_agent",
+        "goals interviewer": "goals_interviewer",
+        "pattern miner": "pattern_miner",
+        "time director": "time_director",
+    }
+
     for spec in specialists:
         agent = spec.get("agent", "")
+        agent = _AGENT_NAME_MAP.get(agent.lower(), agent)
         directive = spec.get("directive", "")
         mode = spec.get("mode", "")
         is_ff = spec.get("fire_and_forget", False) or agent == "diarist"
