@@ -65,6 +65,33 @@ See Learning & Growth enhancement backlog. Naturalistic questioning approach, sa
 
 ---
 
+## Projects — Discrete Goal Planning and Execution (Phase 6+)
+
+A structured planning and project management feature for large, bounded, real-world goals: home renovation, photo organization, garage cleanout, estate planning, learning a new skill, preparing a major event. These are different from Goals in character — they have a defined start and end, discrete deliverables, and often require domain-specific task decomposition rather than open-ended progress tracking.
+
+**Why it's distinct from Goals:**
+Goals (Tier 3) capture ongoing life direction — health, relationships, career growth. Projects capture bounded initiatives with a finish line. A user might have a Goal of "maintain a comfortable, organized home" and a Project of "renovate the kitchen." The Goal persists; the Project completes and archives. Overlap is intentional — Projects should be able to reference and contribute toward Goals, but shouldn't be forced into the Tier 3 goals schema.
+
+**Core feature set:**
+
+- **Project creation interview** — new specialist or Coordinator-initiated flow that captures: what the project is, why it matters, rough scope, hard deadlines or constraints, external dependencies (contractors, other people, budget). Produces a structured project record.
+- **Task decomposition** — the system breaks the project into phases or milestones, then into actionable next steps. This is the core planning function: large, vague goals ("renovate the kitchen") become concrete sequences ("measure current cabinets → get 3 contractor quotes → select cabinet style"). Decomposition may be domain-aware (a renovation project looks different from a photo archive project).
+- **Progress tracking** — session-to-session continuity. User reports what they've done; the system updates the task list, flags blockers, surfaces the next action.
+- **Domain specialization** — some project types benefit from pre-built templates or domain knowledge: home renovation (permits, contractors, material lead times), financial projects (tax season, estate settlement), creative projects (manuscript, album, portfolio). Consider whether specialists should handle their own domains (Physical Health owns a fitness challenge project; Finance owns a tax prep project) or whether a dedicated Projects agent coordinates across domains.
+- **Handoff to Goals** — when a project completes something that should become an ongoing habit or life practice, the system should offer to convert the outcome to a Goal. "You've organized your photos — would you like to add a recurring reminder to do this quarterly?"
+
+**Design questions to resolve before building:**
+
+1. **Agent architecture:** Single Projects agent vs. delegating project types to existing specialists with a Projects coordinator on top. The latter avoids building domain knowledge twice but adds routing complexity.
+2. **Schema:** How does a project record relate to the goals schema (`config/goals.yaml`)? Separate data structure, or an extension of the existing goal hierarchy? Consider: projects have subtasks, deadlines, blocking dependencies — none of which exist in the current goals schema.
+3. **Decomposition engine:** LLM-driven decomposition at creation time vs. incremental decomposition as the project progresses. Incremental is more adaptive but requires more session-to-session state. Large upfront decomposition can overwhelm the user with tasks they're not ready to see.
+4. **Duration and scope limits:** How long can a project run? Some home renovations take 18 months. Does the system need a project "health" concept (stalled, active, on-hold, abandoned)?
+5. **Coordinator integration:** Projects should surface to the Coordinator when they have active next steps — today's action item from an ongoing renovation project should appear in a regular check-in. How does a project "push" its current action into Coordinator context without bloating the system prompt?
+
+**Related features:** Wishes / Emergency & Legacy (similar structured interview + phased task completion); Compliance Development (project step-up pacing uses the same compliance curve mechanics).
+
+---
+
 ## User Engagement — Compliance Development (Phase 6+)
 
 A conversation is needed before building any compliance or habit-formation features. The design principle to explore:
@@ -206,3 +233,70 @@ quality_events.json
 Minimum alpha cohort for meaningful miss signal: 12 users.
 Maximum supported by M5 Max 128GB after token optimizations: ~25-40 users.
 Target: `max(12, hardware_max)` — hardware-limited upper bound, signal-floor lower bound.
+
+---
+
+## Specialty Subagents (Phase 7+ / Design First)
+
+Narrow-scope, task-execution agents for a single transactional or research domain. Unlike the current specialist roster (which covers broad life domains), specialty subagents are activated on-demand for a specific task and return a result that feeds into Logistics, Finance, or another existing specialist.
+
+**Distinction from existing agents:** Logistics coordinates scheduling and reminders. A purchasing agent executes — it compares products, tracks prices, surfaces options with enough detail to make a decision. Finance tracks spending. A flight comparison agent searches, filters, and presents bookable options with trade-offs explained. The depth of domain knowledge and the task-execution orientation distinguish these from the existing roster.
+
+**Candidate list:**
+
+| Agent | Domain | Example tasks | Natural parent specialist |
+|---|---|---|---|
+| Purchasing | Product research + price tracking | "Find the best noise-canceling headphones under $200"; monitor a wishlist item for price drops | Logistics |
+| Flight comparison | Air travel research | Compare routes / prices / times; flag best-value options given stated preferences | Logistics |
+| Accommodation | Hotel / rental research | Filter by location, price, amenities; compare against past preferences | Logistics |
+| Restaurant / event booking | Local discovery + reservations | Find options matching mood or occasion; make a reservation if authorized | Logistics |
+| Rx / pharmacy | Medication logistics | Cost comparison across pharmacies, refill timing, interaction context (non-diagnostic) | Physical Health |
+| Job search | Career opportunity scanning | Track relevant postings, compare against vocation profile, surface application timing | Work & Vocation |
+| Gift finding | Occasion-aware product search | Find gifts for named contacts using CRM profile data | Relationships |
+
+**Architecture decisions to resolve before building:**
+
+1. **Agent vs. tool set.** For pure search / retrieval tasks a rich tool set registered to the parent specialist may suffice. For tasks requiring judgment across options given personal history — "compare these 5 flights given how I travel" — a dedicated instruction file and `run_subagent` call is warranted. Decide per-agent, not globally.
+2. **Authorization model.** Any booking or purchasing capability requires an explicit per-action confirmation gate in Python tool code (not a prompt instruction). No specialty agent commits money or calendar slots without a user-confirmed action step. Design the confirmation UX before any booking capability is live.
+3. **Coordinator routing table.** Does the Coordinator route to specialty subagents directly, or does the parent specialist (Logistics) act as an intermediate dispatcher? The latter keeps the Coordinator's routing table from growing with every new micro-agent.
+4. **Tool infrastructure.** Most specialty agents need integrations not yet built (E1) — product APIs, flight aggregators, OpenTable, pharmacy APIs. Identify which E1 integrations are prerequisites and which can be deferred.
+5. **Privacy.** Search queries for flights, products, and restaurants are low-sensitivity and cloud-safe. If the agent also receives personal context to personalize results (preferences, CRM profile for gift recipient), the decontextualized query goes cloud while the personalization layer stays local — same routing principle as Research Agent. Document per-agent.
+
+**Build prerequisite:** E1 integrations + B2 auth in place. Design conversation required before any instruction files are written — evaluate the agent-vs-tool question first, since the wrong choice adds unnecessary complexity.
+
+---
+
+## Session Agents (Phase 7+ / Design First)
+
+Time-bounded interactive agents for discrete, well-defined goals. Unlike the current specialist roster — which runs within the Coordinator / Synthesizer pipeline on every session — session agents operate as a focused mode: the user enters a session for a specific purpose, the agent works with them directly or through Synthesizer as host, and the session ends with a concrete artifact or outcome.
+
+**Key distinctions from existing agents:**
+- **Discrete goal with a defined endpoint.** A language tutor session ends when the user stops or reaches the lesson goal. A trip planning session ends with an itinerary. Normal Coordinator / Synth sessions are open-ended by design.
+- **User-facing or Synth-hosted.** Session agents may speak to the user directly (conversational practice, coaching, interactive planning) or feed structured output to Synthesizer (itinerary assembly, workout design). The mode depends on whether real-time back-and-forth with the user is the value.
+- **Session artifact.** Most session agents produce something: a completed itinerary, a vocabulary list, a workout plan, a practice transcript. This artifact is the deliverable, distinct from the ongoing logs that normal specialists produce.
+
+**Candidate list:**
+
+| Agent | Goal | Interaction mode | Output artifact |
+|---|---|---|---|
+| Language tutor | Conversational practice, vocabulary, grammar | User-facing (dialogue) | Session transcript + vocabulary list |
+| Trip planner | Build a complete itinerary for a defined trip | Synth-hosted initially, then user-facing refinement | Itinerary → `data/documents/` (E7 Tier 3) |
+| Interview coach | Practice for a specific interview type (behavioral, technical, case) | User-facing (role-play) | Feedback summary + study areas |
+| Workout designer | Design a training block or single session | Synth-hosted | Workout plan → Physical Health log |
+| Meal planner | Plan meals for a week or event | Synth-hosted | Meal plan → Logistics / grocery list |
+| Writing coach | Improve a specific piece of writing | User-facing (line-level feedback) | Annotated draft |
+| Debate partner | Pressure-test an argument or decision | User-facing (Socratic adversary) | Summary of strongest objections |
+| Study session | Learn a specific topic interactively | User-facing (Socratic teaching) | Topic summary + gaps identified |
+
+**Architecture decisions to resolve before building:**
+
+1. **Pipeline integration.** Does a session agent bypass the Coordinator entirely, or does the Coordinator hand off to it? Proposed model: Coordinator detects session intent ("let's practice Spanish"), sets a session mode flag, and Synthesizer routes directly to the session agent for the duration. Normal pipeline resumes on session end. Resolve before any instruction files are written.
+2. **Session-scoped state store.** Session agents need to maintain state across turns *within* the session (current lesson, itinerary draft in progress, practice scenario in play). This is distinct from the context tracker, which maintains state *across* sessions. Design the session-scoped state store schema before building.
+3. **User-facing vs. Synth-hosted split.** User-facing session agents bypass Synthesizer's synthesis role — the agent speaks directly. This must be an explicit architectural decision, not an accident. For conversational practice (language tutor, interview coach), direct is likely better — Synth as intermediary adds latency without adding value. For planning tasks (trip planner, meal planner), Synth-hosted is fine and keeps the user experience consistent.
+4. **Entry and exit protocol.** Define how the user enters and exits session mode without breaking the normal conversation flow. "Start a trip planning session" → session begins. "We're done" / "enough for today" → session ends, artifact saved, Synth acknowledges. The exit must not lose session state if the user disconnects mid-session — artifact is checkpointed, not written only on clean exit.
+5. **Artifacts and handoff.** Session artifacts go through the E7 file storage tier model. Trip itinerary → Tier 3 owned (encrypted). Workout plan → Physical Health log. Vocabulary list → Learning & Growth log. Define the handoff to existing specialists per agent before building — avoid a session agent that writes to nowhere and loses its output.
+6. **Privacy.** Language tutoring on generic topics is cloud-safe. Trip planning with actual travel dates, companions, and budget is personal context — local model or decontextualized query only. The same session agent may need different routing depending on what context it carries during the session. Document per-agent.
+
+**Design conversation (prerequisite to any build).** Session agents represent a meaningful pipeline addition — a new execution mode, a new state store, a new entry/exit protocol. Run an E4-style design conversation before writing any instruction files.
+
+**Related — Projects feature:** A trip planning session is a bounded Project type (see Projects section above). Evaluate whether session agents are best implemented as a mode within the Projects architecture before designing a separate session pipeline. If Projects ships first, session agents may be a Projects sub-type rather than a parallel architecture.

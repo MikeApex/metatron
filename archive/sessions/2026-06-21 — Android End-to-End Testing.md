@@ -49,6 +49,6 @@ All 10 tests from the test plan: **PASS**
 
 ## Next
 
-- Run Goals Interview on VM (CLI, not app — agent selector is hidden)
 - Token trimming to reduce latency
 - A7 Phase 5 sign-off (after B1/Check10/Check12 resume)
+- Goals Interview on VM not needed — goals config already synced; BASELINE_INCOMPLETE clears naturally with daily use; data/baselines/ missing but only needed for A5b (Pattern Miner), not daily use

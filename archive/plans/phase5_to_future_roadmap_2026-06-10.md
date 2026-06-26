@@ -72,6 +72,7 @@ The 2026-06-10 ruling used "cloud" as shorthand for shared infrastructure where 
 | A3 | **A5** | Goals Interview with real user (Phase 5 / D5) |
 | A4 | **A6** | Token budget logging (Phase 5 / D6) |
 | A6 | **A7** | Phase 5 sign-off |
+| — | **A8** | Pre-Alpha code refactor (new — gate: A7 complete) |
 
 ---
 
@@ -250,6 +251,48 @@ Unlocks: Phase 5 sign-off check 11.
 | 12. Constitution alignment | Process defined: a single Claude Code review session producing `archive/constitution_alignment_review_YYYY-MM-DD.md` — a matrix of 12 specialists × Tier 0 principles, plus a documented precedence order for the overlap domains (sleep, addiction, emotional state) used by Synthesizer synthesis. Pass: no specialist contradicts Tier 0; precedence table exists. |
 
 **Pre-sign-off gate — prefix caching regression (2026-06-19):** The `_run_single_agent()` system prompt restructure (prefix caching change) moved dynamic context from the system prompt into the user message turn, changing the system prompt assembly order for every agent. Before A7 sign-off, re-run the A4 clinical-flag hard-fail scenarios (Mental Wellbeing `MUST_SURFACE` / `CLINICAL_CONCERN`) against the updated assembly order. Failure indicates critical instruction position needs adjustment — addressed in D2's prompt structure optimization pass. Add this as a named item in `tests/phase5_testing_plan.md` → Known gaps.
+
+---
+
+**A8 — Pre-Alpha code refactor (full program)**
+*Gate: A7 sign-off complete.*
+
+Phase 5 was built iteratively across many sessions, each solving a local problem. The result is functional but structurally monolithic: five distinct concerns co-mingled in a 1870-line `core/orchestrator.py`, server monitoring logic mixed into the user-facing API, and dev artifacts accumulated in place. Phase 6 opens new surface area — B2 (PoLP) must reason clearly about `register_tools()`; E1 (integrations) adds more tools; D2 needs a stable orchestrator base. Extract the program into modules with clear ownership before that surface expands.
+
+**Important distinction:** the `run_session_*` functions (`run_session_anthropic`, `run_session_gemini`, `run_session_gemini_cached`, `run_session_gemini_grounded`, `run_session_openai`, `run_session_ollama`) are active provider switches called from `_run_single_agent` — not legacy. `_run_gemini_native_loop` is the hot path for Vertex cached sessions (called by `run_session_gemini_cached` for head-layer and routing-layer agents) — also not dead. Latent code in this codebase is minimal; the problem is co-location, not accumulation.
+
+**Module extraction — `core/orchestrator.py` → 4 files:**
+
+- **`core/config.py`** — all config loading: `load_config`, `load_goals`, `load_agent`, `load_recent_context`, `_load_coordinator_context`. Zero session logic. Imported by orchestrator and any future module that needs config.
+- **`core/providers.py`** — all `run_session_*` entry points, their internal loops (`_openai_compat_loop`, `_openai_compat_stream`, `_run_gemini_native_loop`, `_anthropic_stream`), schema converters (`_to_openai_tools`, `_clean_schema_for_gemini`, `_to_gemini_tools`), and Vertex credential/cache utilities (`_resolve_gemini_credentials`, `_get_vertex_native_client`, `_get_or_create_vertex_cache`, `_vertex_*`). Zero orchestration logic.
+- **`core/tools.py`** — `register_tools()` and `dispatch_tool()`. Zero session logic. This is the file B2 (PoLP) will work in when implementing per-agent tool injection.
+- **`core/orchestrator.py`** — shrinks to: `filter_output`, `_run_single_agent`, `_dispatch_from_coordinator`, `run_pipeline_session`, `run_pipeline_session_stream`, `run_session`, `run_interactive`, and the `_HEAD_LAYER_AGENTS` / `_ROUTING_LAYER_AGENTS` constants. Owns the pipeline and nothing else. Imports from `core/config`, `core/providers`, `core/tools`.
+
+**Server split — `core/server.py` → 2 files:**
+
+- **`core/monitor_api.py`** — all `/monitor/*` endpoints (`monitor_personas`, `monitor_conversations`, `monitor_traces`, `monitor_stream`, `monitor_history`, `monitor_file`) and their helpers (`_all_personas`, `_conversation_files`, `_trace_files`, `_read_jsonl`). Mounted as a FastAPI router.
+- **`core/server.py`** — keeps only the user-facing API: session, session_stream, health, push, feedback, tts, transcribe, static file serving.
+
+**Leave unchanged:**
+- `core/router.py` (141 lines, clean and focused)
+- `core/trace.py` (261 lines, purpose-built)
+- `tools/` (modular by design — targeted per-file cleanup only, not rewrite)
+- `config/agents/` (consistency pass on quick/deep sections and flag naming, not rewrite)
+
+**Dev artifact removal:**
+- `core/orchestrator.py` line 1616: `print(f"\n--- COORD PACKAGE ---\n...")  # dev` — remove.
+- Audit all files for any other `# dev` / `# debug` / `# temp` markers added during iterative work.
+
+**Import surface to update after extraction:**
+`core/server.py`, `core/scheduler.py`, `tools/subagent.py`, `core/router.py` all import from `core/orchestrator` — update each import path to the new module after extraction.
+
+**Test (regression gate — run after refactor, before closing A8):**
+1. Re-run A4 clinical-flag hard-fail scenarios (Mental Wellbeing `MUST_SURFACE` / `CLINICAL_CONCERN`, Finance arithmetic). Identical outputs required — no behavioral regression from module extraction.
+2. Server startup: `python core/server.py --persona mike --port 8001` starts cleanly; `/health` returns `{"status":"ok"}`.
+3. Full pipeline session (camping or guitar prompt) completes end-to-end via the server; token counts in expected range.
+4. Monitoring TUI (The Book) connects to SSE stream and renders correctly.
+
+Unlocks: Phase 6 begins on a legible, modular codebase. B2 (PoLP) works in `core/tools.py` with clear scope. E1 adds integrations to a stable structure.
 
 ---
 
@@ -627,6 +670,27 @@ Test:
 
 ---
 
+**E8 — Specialty Subagents and Session Agents (Phase 7+ / Design Phase)**
+*Design conversations required before any build. Specialty agents depend on E1 integrations + B2 auth. Session agents depend on session architecture decisions that must be made before any instruction files are written.*
+
+Two classes of new agent capability, distinct from the current specialist roster:
+
+**Specialty subagents** — narrow-scope, task-execution agents for a single transactional domain. Unlike Logistics (which coordinates schedules and reminders), specialty subagents execute: they search, compare, filter, and surface options with enough depth to act on. Examples: purchasing / product research, flight comparison, accommodation search, restaurant booking, prescription logistics, job search, gift finding. Key unresolved question: agent vs. tool set — for pure search/retrieval, a rich tool set registered to Logistics may suffice; for tasks requiring judgment across options given personal history, a dedicated instruction file and `run_subagent` call is warranted. Any booking-capable agent requires an explicit per-action user authorization model (not a blanket permission) before going live.
+
+**Session agents** — time-bounded interactive agents for discrete, well-defined goals that have a defined endpoint and produce a concrete artifact. These operate as a focused mode: the user enters, the agent works with them directly or through Synthesizer as host, and the session ends with something tangible. Examples: language tutor, trip planner, interview coach, workout designer, meal planner, writing coach, debate partner, study session. Key unresolved questions: pipeline integration (does Coordinator hand off, or does Synthesizer enter a session mode?), session-scoped state store (distinct from the context tracker, which persists across sessions), user-facing vs. Synth-hosted split (conversational practice → direct; planning tasks → Synth-hosted), entry/exit protocol, and artifact handoff to existing specialists (trip itinerary → E7 Tier 3; workout plan → Physical Health log).
+
+**Design conversation (prerequisite to any build):** E4-style session for each class before any instruction files are written. Session agents in particular represent a significant pipeline addition — resolve the architecture before committing to an implementation.
+
+**Privacy:** Specialty agent search queries (flights, products) are low-sensitivity and cloud-safe. If the agent also receives personal context to personalize results (preferences, CRM data for gift recipients), the decontextualized query goes cloud while the personalization layer stays local — same routing principle as Research Agent. Session agents carrying actual user context (travel dates, companions, budget) are sensitive-tier and route local.
+
+**Related:** Projects (see `future_phases.md`) — a trip planning session is a bounded Project type. Evaluate whether session agents are best implemented as a mode within the Projects architecture before building a separate session pipeline.
+
+**Full detail:** [`archive/plans/future_phases.md`](future_phases.md) → "Specialty Subagents" and "Session Agents" sections.
+
+**Gate:** Design conversation complete + E1 integrations live + B2 auth in place. Specialty agents that need external APIs (flights, product aggregators, OpenTable) are blocked on those integrations. Session agents are not integration-blocked but are architecture-blocked until the design conversation resolves the pipeline questions.
+
+---
+
 ### Track F — Phase 7: Multi-User Architecture
 *Gate: Phase 6 close + Phase 6A close + Phase 6B close + user research session.*
 
@@ -661,13 +725,26 @@ Phase 7 is complete when: cross-user isolation verified, identifiability thresho
 
 | Gate | Requires | Unlocks |
 |---|---|---|
-| **Alpha** | A1 + A2 + A3 + A4 + A5 (incl. A5b, A5c) + A6 + A7 | Tracks D, E start; alpha data accumulation begins |
+| **Alpha** | A1 + A2 + A3 + A4 + A5 (incl. A5b, A5c) + A6 + A7 + A8 | Tracks D, E start; alpha data accumulation begins |
 | **Phase 6 close** | D1 + D2 + E1 + E2 + E4 (conversations resolved or explicitly deferred with a date) + E5 + `tests/phase6_testing_plan.md` (amended 2026-06-10) passes. **E3 is explicitly not required.** | Phase 7 gate (one of three) |
 | **Phase 6A close** | B1–B4 + `tests/security_testing_plan.md` (amended 2026-06-10) fully passes. Earliest possible close is post-E1 (indirect injection checks). | Phase 7 gate |
 | **Phase 6B close** | Legal brief produced and decisions documented | Phase 7 gate |
 | **Phase 7** | Phase 6 close + Phase 6A close + Phase 6B close + user research session | Multi-user deployment |
 
 **Note on parallelism:** Tracks A and B run simultaneously now. Track C is independent of everything — commission it early; it has the longest external lead time. Track B starts against the Phase 5 system but cannot close before E1 (stated honestly: it starts independent, it does not close independent). F0 runs during Phase 6. E3 runs on its own data clock and blocks nothing.
+
+### Standing: Review `future_phases.md` at every phase gate
+
+At every gate — Alpha, Phase 6 close, Phase 6A/B close, Phase 7 — open [`archive/plans/future_phases.md`](future_phases.md) and ask: does anything in the parking document belong in the next phase? The answer is almost always no, but the review takes five minutes and prevents good ideas from silently aging out.
+
+What to look for:
+
+1. **Unblocked features** — something that was "Phase 7+" when written but whose blockers have since resolved.
+2. **Newly relevant features** — something that becomes a natural fit now that adjacent infrastructure exists (e.g., Projects becomes more tractable once Goals Interview and task decomposition patterns are established).
+3. **Stale entries** — items that no longer make sense given how the project has evolved; mark them explicitly as retired rather than leaving them to accumulate.
+4. **Design questions with answers** — parked items often have open questions. If those questions have been answered elsewhere in development, update the entry.
+
+This review does not require a decision. The output is either "nothing moves" (fine) or a specific proposal to schedule a parked item in the next phase plan. Do not defer the review itself — the gate is the trigger.
 
 ---
 

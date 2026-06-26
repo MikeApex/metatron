@@ -1,5 +1,5 @@
 # Session Primer — Personal AI Life Manager
-*Updated: 2026-06-26 (Latency work — streaming, cache fix, name normalization). Update this file at the close of every chat so the next chat — or any parallel chat window — starts from current state.*
+*Updated: 2026-06-26 (Synthesizer conversation history — 5-turn rolling window + Synth tool whitelist fix). Update this file at the close of every chat so the next chat — or any parallel chat window — starts from current state.*
 
 ---
 
@@ -67,6 +67,57 @@ If you need to find a specific file, tool, or planning document: **[CODEBASE_IND
 - `_sse_loop` now auto-reconnects with exponential backoff (2s→30s) on any connection failure. Column 1 updates in real time without re-selecting the persona.
 - Session archive: `archive/sessions/2026-06-22 — The Book SSE Reconnect.md`
 
+### Also done 2026-06-26 (SSE streaming newline fix)
+
+- **Root cause:** LLM stream chunks containing literal `\n` were embedded directly in SSE `data:` lines. Client's `split('\n')` parser dropped all text after the newline, causing truncated responses and mid-word splicing.
+- **Fix:** Server escapes `\r`/`\n` in text chunks before SSE emission (`core/server.py`); client unescapes `\\n` when accumulating (`static/index.html`). Control tokens unaffected.
+- Committed `ba84c6d`, deployed to VM. Hard reload required on client.
+
+Session archive: [archive/sessions/2026-06-26 — SSE Streaming Newline Fix.md](archive/sessions/2026-06-26 — SSE Streaming Newline Fix.md)
+
+### Also done 2026-06-26 (seq in conversation logging)
+
+- **`core/server.py`** — `_log_conversation` now writes `"seq": "003"` (1-indexed, zero-padded, per-day) to each JSONL entry. Thread-safe: `_CONV_LOCK` wraps the read-count-then-write atomically.
+- **`tools/metatron_monitor.py`** — Column 1 shows `#003 14:23` prefix when seq present; falls back to full timestamp for old entries.
+- No changes to `/monitor/conversations` — seq passes through from JSONL automatically.
+- Committed `9fcd802`, deployed to VM.
+
+Session archive: [archive/sessions/2026-06-26 — Sequential Exchange ID (seq) in Conversation Logging.md](archive/sessions/2026-06-26 — Sequential Exchange ID (seq) in Conversation Logging.md)
+
+### Also done 2026-06-26 (Gemini routing fix)
+
+- **Root cause 1:** `core/router.py` silently defaulted unknown agents to `provider="anthropic"`. Fixed: raises `RuntimeError` + logs to `data/logs/routing_fallbacks.json`.
+- **Root cause 2:** Browser sends `provider=""` (empty string from Auto dropdown); `if provider is None` check didn't catch it. Fixed: both sites in orchestrator changed to `if not provider`.
+- **Error tracking added:** `log_model_error()` in `router.py` writes API failures to `data/logs/model_errors.json` (agent, provider, model, error). Wired into `_openai_compat_loop`, `run_session_gemini_grounded`, `run_session_gemini_cached`, and the unrecognised-provider branch.
+- **Other defaults cleaned:** `run_interactive()` + server CLI `--provider` both changed from `"anthropic"` to `"gemini"`.
+- Deployed `config/profile.yaml` and `tools/ambient.py` (were missing from VM, causing warning).
+- Confirmed working via SSH test and browser.
+
+Session archive: [archive/sessions/2026-06-26 — Gemini Routing Fix and Deploy Audit.md](archive/sessions/2026-06-26 — Gemini Routing Fix and Deploy Audit.md)
+
+### Also done 2026-06-26 (Synthesizer conversation history)
+
+- **Rolling 5-turn history** (10 entries) added to the Coordinator → Synthesizer pipeline. Synth no longer cold-starts each turn — prior user/assistant exchanges are prepended to its messages.
+- **`core/orchestrator.py`:** `_anthropic_stream` — added `history` param. `run_pipeline_session` + `run_pipeline_session_stream` — both accept `history`, pass a `list(history[-10:])` snapshot copy to Synth, update history in-place after each turn, trim to 10. `run_session` — threads history through to pipeline (previously dropped on the floor).
+- **`core/server.py`:** `_session_history: dict[str, list[dict]]` — per-persona in-memory history. Both `/session` and `/session/stream` look up the right list and pass it to the pipeline each request.
+- **Side fix:** streaming pipeline was not applying Synth's `allowed_tools` whitelist — Synth was receiving all ~20 tool schemas instead of its 8. Now matches `_run_single_agent` behavior. This also addressed the "context file not registering" observation.
+- Deployed to VM. Confirmed working.
+
+Session archive: [archive/sessions/2026-06-26 — Synthesizer Conversation History.md](archive/sessions/2026-06-26 — Synthesizer Conversation History.md)
+
+### Also done 2026-06-26 (pipeline audit + Research Agent normalization fix)
+
+- **Pipeline audit** across 2 hours of live traffic (15:28–16:47): 5 bugs identified. See session archive for full latency profile and failure pattern catalog.
+- **Research Agent normalization fix (two-part):**
+  - `core/orchestrator.py` — 9 single-word abbreviation entries added to `_AGENT_NAME_MAP` (`"research"` → `"research_agent"`, `"mental"` → `"mental_wellbeing"`, etc.). Covers Flash-Lite's tendency to shorten multi-word agent names on cold starts.
+  - `config/agents/coordinator.md` — explicit "Valid agent values" line added before the format template, listing all 12 agent strings verbatim.
+- **Root cause of exchange 027:** Coordinator output `"Research"` (not `"Research Agent"`) → normalized to `"research"` → `research.md` not found → Synthesizer streamed "minor snag" then called `run_subagent` as recovery → weather data returned but too late to retract already-streamed text.
+- **Single-exchange troubleshoot prompt** written — two inputs (DATE, SEQ), one SSH command, pulls conversation record + server logs + pipeline trace in one round-trip.
+- **Pending deploy:** both normalization fixes are committed locally but not yet pushed to VM.
+- **Bugs identified but not fixed this session:** (1) `tools.ambient` missing on VM, (2) output filter false positive on `write_config`, (3) graceful shutdown 90s SIGKILL cycle.
+
+Session archive: [archive/sessions/2026-06-26 — Pipeline Audit and Research Agent Fix.md](archive/sessions/2026-06-26 — Pipeline Audit and Research Agent Fix.md)
+
 ### Also done 2026-06-26 (user profile + ambient world context)
 
 - **`config/profile.yaml`** (new) — stable biographical profile injected into Synthesizer and Coordinator. Filled in: name Mike, London, UK, Europe/London. Age/occupation/household left to fill. Includes `ambient.markets: true` flag.
@@ -82,6 +133,14 @@ Session archive: [archive/sessions/2026-06-26 — User Profile and Ambient World
 Root-cause fix for two related issues: (1) Load menu filter (24h / max 10) appeared broken because `/monitor/stream` replayed all historical traces on connection, backfilling old conversations to the top of Column 1 past the filtered 10. Fixed: `/monitor/stream` accepts `since` param; skips old traces on initial scan only. Monitor records `_sse_since = now()` at `load_data()` start and passes it to the SSE endpoint. (2) Uncommitted changes from prior session meant VM was running old server code with no `since`/`limit` support — deploy was a no-op. Committed and deployed. (3) Max entries Input → Select dropdown (10/20/50/All). Client-side descending sort added as defensive measure.
 
 Session archive: [archive/sessions/2026-06-26 — The Book Load Menu, Ordering, and SSE Backfill Fix.md](archive/sessions/2026-06-26 — The Book Load Menu, Ordering, and SSE Backfill Fix.md)
+
+### Also done 2026-06-26 (Book: Synth token counts + conversation history)
+
+- **Synth tokens showing 0:** `_openai_compat_stream` only captured usage from the trailing choices-empty chunk (OpenAI pattern). Vertex AI embeds usage in the final content chunk (`finish_reason="stop"`, choices non-empty). Added second capture path guarded by `_usage_recorded` flag. Confirmed working.
+- **Conversation history not in Column 3:** `recent_history` was fed to the model but not stored in `context_sections`. Now serialized as `USER:/ASSISTANT:` text and added as `"conversation_history"` key. The Book's Column 3 shows it in a new "Conversation History (fed to Synth)" collapsible. Appears from the second exchange onward (first message after restart has no prior history — expected).
+- Deployed `e1a12d2`.
+
+Session archive: [archive/sessions/2026-06-26 — Book Synth Token Counts and Conversation History.md](archive/sessions/2026-06-26 — Book Synth Token Counts and Conversation History.md)
 
 ### Also done 2026-06-26 (The Book: call timing, tokens, load menu, server fixes)
 

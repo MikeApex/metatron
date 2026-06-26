@@ -1707,6 +1707,7 @@ def _dispatch_from_coordinator(
     blocking: list = []
 
     _AGENT_NAME_MAP = {
+        # Full names
         "mental wellbeing": "mental_wellbeing",
         "physical health": "physical_health",
         "work & vocation": "work_vocation",
@@ -1719,6 +1720,16 @@ def _dispatch_from_coordinator(
         "goals interviewer": "goals_interviewer",
         "pattern miner": "pattern_miner",
         "time director": "time_director",
+        # Single-word abbreviations: Flash-Lite sometimes shortens multi-word names
+        "research": "research_agent",
+        "mental": "mental_wellbeing",
+        "physical": "physical_health",
+        "work": "work_vocation",
+        "learning": "learning_growth",
+        "recreation": "recreation_hobbies",
+        "goals": "goals_interviewer",
+        "pattern": "pattern_miner",
+        "time": "time_director",
     }
 
     def _normalize_agent(name: str) -> str:
