@@ -466,28 +466,35 @@ async def monitor_traces(
 
 
 @app.get("/monitor/stream")
-async def monitor_stream(persona: str | None = None):
+async def monitor_stream(persona: str | None = None, since: str | None = None):
     """
     SSE stream that emits new conversation+trace pairs in real time.
 
-    The client connects once; the server polls the trace file for new lines
-    every second and pushes them as SSE events. Each event is a JSON object
-    with {type: "trace", data: {...}} or {type: "heartbeat"}.
+    since: ISO datetime string. Traces older than this are skipped on the
+    initial scan (their positions are still tracked so they are not re-sent).
+    Pass the time load_data started so historical backfill doesn't corrupt
+    the client's filtered view.
 
     Format: text/event-stream, each message: "data: {json}\\n\\n"
     """
     import asyncio
     import json as _json
+    from datetime import datetime as _dt
+
+    since_dt = _dt.fromisoformat(since) if since else None
 
     async def _generate():
-        # Track how many lines we've already sent from the current trace file
-        seen: dict[str, int] = {}  # filepath → lines_sent
+        # Track how many lines we've already sent from the current trace file.
+        # On first pass, skip (but count) lines older than since_dt.
+        seen: dict[str, int] = {}
+        first_pass = True
 
         while True:
             files = _trace_files(persona)
             if not files:
                 yield "data: {\"type\": \"heartbeat\"}\n\n"
                 await asyncio.sleep(1)
+                first_pass = False
                 continue
 
             for f in files:
@@ -496,12 +503,20 @@ async def monitor_stream(persona: str | None = None):
                 lines = _read_jsonl(f)
                 new_lines = lines[prev:]
                 for entry in new_lines:
+                    if first_pass and since_dt:
+                        try:
+                            entry_ts = _dt.fromisoformat(entry.get("ts", "")[:26])
+                            if entry_ts < since_dt:
+                                continue  # count position but don't emit
+                        except (ValueError, TypeError):
+                            pass
                     payload = _json.dumps({"type": "trace", "data": entry}, ensure_ascii=False)
                     yield f"data: {payload}\n\n"
                 seen[key] = len(lines)
 
             yield "data: {\"type\": \"heartbeat\"}\n\n"
             await asyncio.sleep(1)
+            first_pass = False
 
     return StreamingResponse(_generate(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

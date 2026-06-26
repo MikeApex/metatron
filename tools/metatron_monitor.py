@@ -321,6 +321,7 @@ class TheBookApp(App):
         self._approx_tokens: int = 0
         self._range_hours: int = 24   # 0 = all time
         self._limit: int = 10         # 0 = all (no limit param sent)
+        self._sse_since: str = ""     # ISO timestamp; SSE ignores traces older than this
 
     # ------------------------------------------------------------------
     # Layout
@@ -447,6 +448,11 @@ class TheBookApp(App):
             self._sse_worker.cancel()
             self._sse_worker = None
 
+        # Record now as the SSE cutoff — the SSE stream will skip any trace older
+        # than this, so historical backfill can't corrupt the filtered HTTP view.
+        from datetime import datetime as _dt
+        self._sse_since = _dt.now().isoformat()
+
         # Build query params from current load settings
         params: dict = {"persona": persona}
         if self._range_hours > 0:
@@ -479,7 +485,7 @@ class TheBookApp(App):
 
             if self.live_mode:
                 self._sse_worker = self.run_worker(
-                    self._sse_loop(persona), exclusive=False, name="sse"
+                    self._sse_loop(persona, self._sse_since), exclusive=False, name="sse"
                 )
 
         except Exception as e:
@@ -714,13 +720,16 @@ class TheBookApp(App):
     # Live SSE
     # ------------------------------------------------------------------
 
-    async def _sse_loop(self, persona: str) -> None:
+    async def _sse_loop(self, persona: str, since: str = "") -> None:
         url = f"{self.server}/monitor/stream"
+        sse_params: dict = {"persona": persona}
+        if since:
+            sse_params["since"] = since
         retry_delay = 2
         while True:
             try:
                 async with httpx.AsyncClient(timeout=None, verify=False) as client:
-                    async with client.stream("GET", url, params={"persona": persona}) as resp:
+                    async with client.stream("GET", url, params=sse_params) as resp:
                         retry_delay = 2  # reset on successful connection
                         self._set_status(
                             f"{persona} — {len(self.conversations)} messages  ● live"
