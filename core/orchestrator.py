@@ -1921,6 +1921,12 @@ def run_pipeline_session_stream(
     """
     _tr.start_request_trace(user_input, persona)
 
+    # Ensure persona is available to tool calls (write_context_tracker, etc.)
+    if persona:
+        os.environ["AI_TEST_PERSONA"] = persona
+    else:
+        os.environ.pop("AI_TEST_PERSONA", None)
+
     # Pass 1: Coordinator — single-pass routing directive assembly (blocking)
     _trace("[PIPELINE] coordinator  starting")
     coord_context = _load_coordinator_context(persona)
@@ -2027,26 +2033,75 @@ def run_pipeline_session_stream(
     else:
         raise NotImplementedError(f"No streaming implementation for provider: {synth_provider}")
 
-    # Yield chunks and accumulate for post-stream filter check
+    # Stream visible text to client; intercept [CONTEXT] block before it reaches the user.
+    # The Synthesizer appends a [CONTEXT]...[/CONTEXT] block after its visible response.
+    # Everything before [CONTEXT] is forwarded as SSE chunks; the block is captured,
+    # parsed, and written to the context tracker directly — no tool call turn needed.
+    _CONTEXT_OPEN = "[CONTEXT]"
+    _CONTEXT_CLOSE = "[/CONTEXT]"
+    _LOOKAHEAD = len(_CONTEXT_OPEN) - 1   # chars to hold back in case delimiter spans chunks
+
     buffer: list[str] = []
+    pending: str = ""          # buffered but not yet yielded (delimiter lookahead window)
+    context_started: bool = False
+
     for chunk in gen:
         buffer.append(chunk)
-        yield chunk
+        if not context_started:
+            pending += chunk
+            if _CONTEXT_OPEN in pending:
+                idx = pending.index(_CONTEXT_OPEN)
+                if idx > 0:
+                    yield pending[:idx]   # flush everything before the delimiter
+                context_started = True
+                pending = ""
+            elif len(pending) > _LOOKAHEAD:
+                safe = len(pending) - _LOOKAHEAD
+                yield pending[:safe]
+                pending = pending[safe:]
+
+    # Flush any remaining visible text if the delimiter was never seen
+    if not context_started and pending:
+        yield pending
 
     complete = "".join(buffer)
+
+    # Split visible text from context block; write tracker directly
+    if _CONTEXT_OPEN in complete:
+        visible = complete[:complete.index(_CONTEXT_OPEN)].strip()
+        raw = complete[complete.index(_CONTEXT_OPEN) + len(_CONTEXT_OPEN):]
+        if _CONTEXT_CLOSE in raw:
+            raw = raw[:raw.index(_CONTEXT_CLOSE)]
+        raw = raw.strip()
+        try:
+            ctx = json.loads(raw)
+            from tools.context_tracker import write_context_tracker as _write_ct
+            _write_ct(
+                open_threads=ctx.get("open_threads", []),
+                patterns=ctx.get("patterns", []),
+                follow_ups=ctx.get("follow_ups", []),
+                held_items=ctx.get("held_items"),
+            )
+            _trace("[PIPELINE] context_tracker  written  (inline block)")
+        except Exception as _ct_exc:
+            logger.warning(f"[context_block] parse/write failed: {_ct_exc} — raw: {raw[:200]}")
+    else:
+        visible = complete
+        logger.warning("[context_block] no [CONTEXT] block in Synthesizer response")
+
     _tr.pop_agent(_synth_rec)
-    filtered = filter_output(complete, "synthesizer")
+    filtered = filter_output(visible, "synthesizer")
     if history is not None:
         history.append({"role": "user", "content": user_input})
-        history.append({"role": "assistant", "content": filtered if filtered == complete else ""})
+        history.append({"role": "assistant", "content": filtered if filtered == visible else ""})
         del history[:-10]
-    if filtered != complete:
+    if filtered != visible:
         yield "[RETRACT]"
     else:
         yield "[DONE]"
 
-    _trace(f"[PIPELINE] synthesizer  done  ({len(complete)} chars)")
-    _tr.finish_request_trace(filtered if filtered == complete else "")
+    _trace(f"[PIPELINE] synthesizer  done  ({len(visible)} chars visible)")
+    _tr.finish_request_trace(filtered if filtered == visible else "")
 
 
 def run_session(agent_name: str, user_input: str,

@@ -32,7 +32,7 @@ agents:
   synthesizer:
     provider: gemini
     model: "models/gemini-3.1-pro-preview"  # user-facing voice; safety flag integration; keep on Pro
-    allowed_tools: [run_subagent, run_model_conference, write_context_tracker, write_persona, write_config, write_wishes, read_wishes, generate_emergency_card, write_quality_event]
+    allowed_tools: [run_subagent, run_model_conference, write_persona, write_config, write_wishes, read_wishes, generate_emergency_card, write_quality_event]
 
   # ── Data and analysis ────────────────────────────────────────────────────────
 
