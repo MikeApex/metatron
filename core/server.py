@@ -14,6 +14,7 @@ Find your IP: System Settings → Wi-Fi → Details, or run `ipconfig getifaddr 
 """
 
 import argparse
+import asyncio
 import os
 import sys
 import tempfile
@@ -96,7 +97,10 @@ async def session(req: SessionRequest) -> SessionResponse:
     try:
         agent = req.agent
         persona = req.persona or DEFAULT_PERSONA
-        response = run_session(agent, req.input, persona=persona, provider=req.provider)
+        loop = asyncio.get_running_loop()
+        response = await loop.run_in_executor(
+            None, lambda: run_session(agent, req.input, persona=persona, provider=req.provider)
+        )
         _log_conversation(req.input, response, agent, persona)
         return SessionResponse(response=response)
     except Exception as e:
@@ -128,25 +132,41 @@ async def session_stream(req: SessionRequest):
 
     async def sse_generator():
         accumulated: list[str] = []
-        try:
-            for chunk in run_pipeline_session_stream(
-                req.input, persona=persona, provider=req.provider
-            ):
-                if chunk in ("[DONE]", "[RETRACT]"):
-                    yield f"data: {chunk}\n\n"
-                else:
-                    accumulated.append(chunk)
-                    yield f"data: {chunk}\n\n"
-        except NotImplementedError:
-            # Provider has no streaming variant — fall back to single blocking chunk
-            response = run_session(req.agent, req.input, persona=persona, provider=req.provider)
-            accumulated = [response]
-            yield f"data: {response}\n\n"
-            yield "data: [DONE]\n\n"
-        except Exception as e:
-            yield f"data: [ERROR] {e}\n\n"
-            return
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue = asyncio.Queue()
 
+        def _produce() -> None:
+            try:
+                for chunk in run_pipeline_session_stream(
+                    req.input, persona=persona, provider=req.provider
+                ):
+                    asyncio.run_coroutine_threadsafe(queue.put(chunk), loop).result()
+            except NotImplementedError:
+                # Provider has no streaming variant — fall back to single blocking call
+                response = run_session(req.agent, req.input, persona=persona, provider=req.provider)
+                asyncio.run_coroutine_threadsafe(queue.put(response), loop).result()
+                asyncio.run_coroutine_threadsafe(queue.put("[DONE]"), loop).result()
+            except Exception as e:
+                asyncio.run_coroutine_threadsafe(queue.put(f"[ERROR] {e}"), loop).result()
+            finally:
+                asyncio.run_coroutine_threadsafe(queue.put(None), loop).result()
+
+        producer = loop.run_in_executor(None, _produce)
+
+        while True:
+            item = await queue.get()
+            if item is None:
+                break
+            if item in ("[DONE]", "[RETRACT]"):
+                yield f"data: {item}\n\n"
+            elif item.startswith("[ERROR] "):
+                yield f"data: {item}\n\n"
+                return
+            else:
+                accumulated.append(item)
+                yield f"data: {item}\n\n"
+
+        await asyncio.wrap_future(producer)
         _log_conversation(req.input, "".join(accumulated), req.agent, persona)
 
     return StreamingResponse(sse_generator(), media_type="text/event-stream")
@@ -384,32 +404,64 @@ async def monitor_personas() -> dict:
 
 
 @app.get("/monitor/conversations")
-async def monitor_conversations(persona: str | None = None) -> dict:
+async def monitor_conversations(
+    persona: str | None = None,
+    since: str | None = None,
+    limit: int | None = None,
+) -> dict:
     """
-    Return all conversation entries for a persona across all dates.
-    Each entry: {ts, agent, persona, user, response}.
-    If persona is None, returns from the shared conversations dir and
-    filters nothing (all users).
+    Return conversation entries. Filtered by persona and optional ISO datetime
+    lower-bound (since). Returns the `limit` most recent entries, sorted newest-first.
     """
+    from datetime import datetime as _dt
+    since_dt = _dt.fromisoformat(since) if since else None
     entries = []
     for f in _conversation_files(persona):
         for entry in _read_jsonl(f):
-            if persona is None or entry.get("persona") == persona:
-                entries.append(entry)
+            if persona is not None and entry.get("persona") != persona:
+                continue
+            if since_dt:
+                try:
+                    if _dt.fromisoformat(entry.get("ts", "")[:19]) < since_dt:
+                        continue
+                except (ValueError, TypeError):
+                    pass
+            entries.append(entry)
+    entries.sort(key=lambda e: e.get("ts", ""), reverse=True)
+    if limit is not None:
+        entries = entries[:limit]
     return {"entries": entries}
 
 
 @app.get("/monitor/traces")
-async def monitor_traces(persona: str | None = None, trace_id: str | None = None) -> dict:
+async def monitor_traces(
+    persona: str | None = None,
+    trace_id: str | None = None,
+    since: str | None = None,
+    limit: int | None = None,
+) -> dict:
     """
     Return trace records. If trace_id given, return just that one record.
-    Otherwise return all traces for the persona across all dates.
+    Otherwise return traces filtered by since/limit, newest-first.
     """
+    from datetime import datetime as _dt
+    since_dt = _dt.fromisoformat(since) if since else None
     traces = []
     for f in _trace_files(persona):
         for t in _read_jsonl(f):
-            if trace_id is None or t.get("trace_id") == trace_id:
-                traces.append(t)
+            if trace_id is not None and t.get("trace_id") != trace_id:
+                continue
+            if since_dt and trace_id is None:
+                try:
+                    if _dt.fromisoformat(t.get("ts", "")[:19]) < since_dt:
+                        continue
+                except (ValueError, TypeError):
+                    pass
+            traces.append(t)
+    if trace_id is None:
+        traces.sort(key=lambda t: t.get("ts", ""), reverse=True)
+        if limit is not None:
+            traces = traces[:limit]
     return {"traces": traces}
 
 

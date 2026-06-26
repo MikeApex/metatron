@@ -78,10 +78,71 @@ GEMINI_PRO_MODEL = "models/gemini-3.1-pro-preview"
 # Config loading
 # ---------------------------------------------------------------------------
 
+def load_profile(persona: str | None = None) -> str:
+    """
+    Load config/profile.yaml (or persona override) and format as a system prompt section.
+    Sensitive-tier: injected only into agents that run on local/sensitive-routed models.
+    Returns empty string if file is missing or all fields are null.
+    """
+    import yaml as _yaml
+
+    if persona:
+        profile_path = CONFIG_DIR / "personas" / persona / "profile.yaml"
+        if not profile_path.exists():
+            profile_path = CONFIG_DIR / "profile.yaml"
+    else:
+        profile_path = CONFIG_DIR / "profile.yaml"
+
+    if not profile_path.exists():
+        return ""
+
+    try:
+        profile = _yaml.safe_load(profile_path.read_text()) or {}
+    except Exception:
+        return ""
+
+    lines = []
+
+    if profile.get("name"):
+        lines.append(f"Name: {profile['name']}")
+
+    loc = profile.get("location") or {}
+    loc_parts = [v for v in [loc.get("city"), loc.get("country")] if v]
+    if loc_parts:
+        lines.append(f"Home location: {', '.join(loc_parts)}")
+    if loc.get("timezone"):
+        lines.append(f"Timezone: {loc['timezone']}")
+
+    age = profile.get("age")
+    birth_year = profile.get("birth_year")
+    if age:
+        lines.append(f"Age: {age}")
+    elif birth_year:
+        from datetime import date as _date
+        computed_age = _date.today().year - int(birth_year)
+        lines.append(f"Age: ~{computed_age} (born {birth_year})")
+
+    if profile.get("occupation"):
+        lines.append(f"Occupation: {profile['occupation']}")
+    if profile.get("household"):
+        lines.append(f"Household: {profile['household']}")
+    if profile.get("health_notes"):
+        lines.append(f"Health notes: {profile['health_notes']}")
+
+    for item in (profile.get("other") or []):
+        if item:
+            lines.append(str(item))
+
+    if not lines:
+        return ""
+
+    return "## User Profile\n\n" + "\n".join(lines)
+
+
 def load_config(persona: str | None = None) -> str:
     """
     Build the system prompt from the four-tier config hierarchy.
-    Loads: constitution → prime_directive → mission → goals.
+    Loads: constitution → prime_directive → mission → goals → profile.
     If persona is given, loads config/personas/{persona}.md instead of the
     prime_directive/mission/goals stubs — for development testing only.
     Returns a single string for use as the system prompt.
@@ -117,6 +178,10 @@ def load_config(persona: str | None = None) -> str:
                 if goals_content:
                     sections.append(f"## Current Goals\n\n```yaml\n{goals_content}\n```")
 
+        profile = load_profile(persona=persona)
+        if profile:
+            sections.append(profile)
+
         return "\n\n---\n\n".join(sections)
 
     files = [
@@ -135,6 +200,10 @@ def load_config(persona: str | None = None) -> str:
         goals_content = goals_path.read_text().strip()
         if goals_content:
             sections.append(f"## Current Goals\n\n```yaml\n{goals_content}\n```")
+
+    profile = load_profile()
+    if profile:
+        sections.append(profile)
 
     return "\n\n---\n\n".join(sections)
 
@@ -187,8 +256,8 @@ def load_agent(name: str) -> str:
 
 def load_recent_context(persona: str | None = None, days: int = 5) -> str:
     """
-    Load the last N days of logs and the context tracker into a string
-    for injection into the system prompt as short-term memory.
+    Load the last N days of logs, context tracker, and ambient world context
+    (date/time, weather, news) into a string for injection into the system prompt.
 
     Returns empty string if no recent data exists.
     """
@@ -206,6 +275,15 @@ def load_recent_context(persona: str | None = None, days: int = 5) -> str:
         tracker_path = ROOT / "data" / "context.json"
 
     sections = []
+
+    # Ambient world context — date/time always live; weather/news from last refresh
+    try:
+        from tools.ambient import load_ambient_context
+        ambient = load_ambient_context()
+        if ambient:
+            sections.append(ambient)
+    except Exception as e:
+        logger.warning(f"[context] ambient load failed: {e}")
 
     # Context tracker (mid-term: open threads, patterns, follow-ups)
     if tracker_path.exists():
@@ -1499,14 +1577,17 @@ def _run_single_agent(agent_name: str, user_input: str,
         augmented_input = f"[Recent context]\n{recent}\n\n---\n\n{user_input}" if recent else user_input
         context_sections = {"agent_file": agent, "config": config, "recent_context": recent}
     elif agent_name in _ROUTING_LAYER_AGENTS:
-        # Routing layer: goals.yaml + recent context. No constitution/prime_directive —
+        # Routing layer: goals.yaml + profile + recent context. No constitution/prime_directive —
         # values are enforced by the Synthesizer; Coordinator needs domain and context only.
         goals = load_goals(persona=persona)
+        profile = load_profile(persona=persona)
         recent = load_recent_context(persona=persona)
-        system_prompt = (
-            f"## Your Role for This Session\n\n{agent}\n\n---\n\n{goals}"
-            if goals else f"## Your Role for This Session\n\n{agent}"
-        )
+        prompt_parts = [f"## Your Role for This Session\n\n{agent}"]
+        if goals:
+            prompt_parts.append(goals)
+        if profile:
+            prompt_parts.append(profile)
+        system_prompt = "\n\n---\n\n".join(prompt_parts)
         augmented_input = f"[Recent context]\n{recent}\n\n---\n\n{user_input}" if recent else user_input
         context_sections = {"agent_file": agent, "goals": goals, "recent_context": recent}
     else:

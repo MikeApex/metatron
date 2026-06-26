@@ -161,6 +161,20 @@ def _log_error(job: str, message: str) -> None:
 # Schedule registration
 # ---------------------------------------------------------------------------
 
+def fire_function(job_name: str, fn_path: str) -> None:
+    """Call a Python function directly (no LLM session). Used for maintenance jobs."""
+    import importlib
+    try:
+        module_path, fn_name = fn_path.rsplit(".", 1)
+        mod = importlib.import_module(module_path)
+        fn = getattr(mod, fn_name)
+        result = fn()
+        print(f"[scheduler] {job_name}: {result}", flush=True)
+    except Exception as e:
+        _log_error(job_name, str(e))
+        print(f"[scheduler error] {job_name}: {e}", flush=True)
+
+
 def _register_schedules(persona: str | None) -> None:
     cfg = _load_config()
     schedules_cfg = cfg.get("schedules", {})
@@ -169,14 +183,20 @@ def _register_schedules(persona: str | None) -> None:
         if not job.get("enabled", True):
             continue
 
-        agent = job["agent"]
-        prompt = job.get("prompt", "What's going on?")
         notification = job.get("notification", "terminal")
 
-        def make_job(jn=job_name, ag=agent, pr=prompt, no=notification, pe=persona):
-            return lambda: fire_session(jn, ag, pr, no, pe)
-
-        job_fn = make_job()
+        # Function jobs call a Python callable directly — no LLM session
+        if "function" in job:
+            fn_path = job["function"]
+            def make_fn_job(jn=job_name, fp=fn_path):
+                return lambda: fire_function(jn, fp)
+            job_fn = make_fn_job()
+        else:
+            agent = job["agent"]
+            prompt = job.get("prompt", "What's going on?")
+            def make_job(jn=job_name, ag=agent, pr=prompt, no=notification, pe=persona):
+                return lambda: fire_session(jn, ag, pr, no, pe)
+            job_fn = make_job()
 
         if "interval_minutes" in job:
             schedule.every(job["interval_minutes"]).minutes.do(job_fn)

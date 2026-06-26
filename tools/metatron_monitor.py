@@ -155,6 +155,19 @@ Screen { layout: vertical; }
 #persona-select { width: 30; margin: 0 2 0 0; }
 #live-label { width: auto; margin: 0 1; }
 
+#load-bar {
+    height: 3;
+    layout: horizontal;
+    background: $surface;
+    padding: 0 1;
+    align: left middle;
+    border-top: solid $panel;
+}
+#range-select  { width: 18; margin: 0 1; }
+#limit-select  { width: 10; margin: 0 1; }
+#load-btn      { width: 8;  margin: 0 1; }
+.load-label   { width: auto; margin: 0 1; color: $text-muted; }
+
 #status-bar {
     height: 1;
     background: $panel;
@@ -306,6 +319,8 @@ class TheBookApp(App):
         self._selected_agent_rec: dict | None = None
         self._chat_history: list[tuple[str, str]] = []
         self._approx_tokens: int = 0
+        self._range_hours: int = 24   # 0 = all time
+        self._limit: int = 10         # 0 = all (no limit param sent)
 
     # ------------------------------------------------------------------
     # Layout
@@ -316,6 +331,34 @@ class TheBookApp(App):
         with Container(id="toolbar"):
             yield Select([], id="persona-select", prompt="— select persona —", allow_blank=True)
             yield Label("● LIVE", id="live-label")
+        with Horizontal(id="load-bar"):
+            yield Label("Range:", classes="load-label")
+            yield Select(
+                [
+                    ("Last 1h",    "1"),
+                    ("Last 6h",    "6"),
+                    ("Last 24h",   "24"),
+                    ("Last 7d",    "168"),
+                    ("Last 30d",   "720"),
+                    ("All time",   "0"),
+                ],
+                id="range-select",
+                value="24",
+                allow_blank=False,
+            )
+            yield Label("Max:", classes="load-label")
+            yield Select(
+                [
+                    ("10",  "10"),
+                    ("20",  "20"),
+                    ("50",  "50"),
+                    ("All", "0"),
+                ],
+                id="limit-select",
+                value="10",
+                allow_blank=False,
+            )
+            yield Button("Load", id="load-btn", variant="primary")
         yield Label("Connecting…", id="status-bar")
         with Horizontal(id="columns"):
             with Vertical(id="col1"):
@@ -346,19 +389,24 @@ class TheBookApp(App):
 
     @work(exclusive=True)
     async def load_personas(self) -> None:
-        self._set_status("Loading personas…")
-        try:
-            async with httpx.AsyncClient(timeout=10, verify=False) as client:
-                r = await client.get(f"{self.server}/monitor/personas")
-                r.raise_for_status()
-                personas = r.json().get("personas", [])
-
-            sel = self.query_one("#persona-select", Select)
-            sel.set_options([(p, p) for p in personas])
-            self._set_status(f"Loaded {len(personas)} persona(s). Select one to begin.")
-        except Exception as e:
-            print(f"[load_personas error] {e}", file=sys.stderr)
-            self._set_status(f"Error: {e}")
+        for attempt in range(4):
+            if attempt > 0:
+                self._set_status(f"Connecting… (attempt {attempt + 1}/4)")
+                await asyncio.sleep(2 ** attempt)  # 2s, 4s, 8s
+            else:
+                self._set_status("Loading personas…")
+            try:
+                async with httpx.AsyncClient(timeout=10, verify=False) as client:
+                    r = await client.get(f"{self.server}/monitor/personas")
+                    r.raise_for_status()
+                    personas = r.json().get("personas", [])
+                sel = self.query_one("#persona-select", Select)
+                sel.set_options([(p, p) for p in personas])
+                self._set_status(f"Loaded {len(personas)} persona(s). Select one to begin.")
+                return
+            except Exception as e:
+                print(f"[load_personas attempt {attempt + 1}] {e}", file=sys.stderr)
+        self._set_status(f"Cannot reach server. Press R to retry.")
 
     # ------------------------------------------------------------------
     # Persona selection
@@ -371,22 +419,53 @@ class TheBookApp(App):
         self.selected_persona = str(event.value)
         self.load_data()
 
+    @on(Button.Pressed, "#load-btn")
+    def load_btn_pressed(self) -> None:
+        try:
+            raw = self.query_one("#range-select", Select).value
+            self._range_hours = int(raw) if raw != Select.BLANK else 24
+        except (ValueError, TypeError):
+            self._range_hours = 24
+        try:
+            raw_limit = self.query_one("#limit-select", Select).value
+            val = int(raw_limit) if raw_limit != Select.BLANK else 10
+            self._limit = val  # 0 = All (no limit sent to server)
+        except (ValueError, TypeError):
+            self._limit = 10
+        self.load_data()
+
     @work(exclusive=True)
     async def load_data(self) -> None:
         persona = self.selected_persona
         if not persona:
             return
-        self._set_status(f"Loading {persona}…")
+
+        # Stop the old SSE worker immediately so it stops writing to self.conversations
+        # while we clear and repopulate. Deferring this until after the HTTP requests
+        # was the root cause of the freeze-on-switch bug.
+        if self._sse_worker is not None:
+            self._sse_worker.cancel()
+            self._sse_worker = None
+
+        # Build query params from current load settings
+        params: dict = {"persona": persona}
+        if self._range_hours > 0:
+            from datetime import datetime as _dt, timedelta as _td
+            since = (_dt.now() - _td(hours=self._range_hours)).isoformat()
+            params["since"] = since
+        if self._limit > 0:
+            params["limit"] = self._limit
+
+        range_label = f"last {self._range_hours}h" if self._range_hours > 0 else "all time"
+        self._set_status(f"Loading {persona} ({range_label}, max {self._limit})…")
         try:
-            async with httpx.AsyncClient(timeout=30, verify=False) as client:
+            async with httpx.AsyncClient(timeout=15, verify=False) as client:
                 conv_r = await client.get(
-                    f"{self.server}/monitor/conversations",
-                    params={"persona": persona},
+                    f"{self.server}/monitor/conversations", params=params,
                 )
                 conv_r.raise_for_status()
                 trace_r = await client.get(
-                    f"{self.server}/monitor/traces",
-                    params={"persona": persona},
+                    f"{self.server}/monitor/traces", params=params,
                 )
                 trace_r.raise_for_status()
 
@@ -395,12 +474,9 @@ class TheBookApp(App):
             self._populate_col1()
             self._set_status(
                 f"{persona} — {len(self.conversations)} messages, "
-                f"{len(self.traces)} traces"
+                f"{len(self.traces)} traces  [{range_label}]"
             )
 
-            # Start live SSE stream
-            if self._sse_worker is not None:
-                self._sse_worker.cancel()
             if self.live_mode:
                 self._sse_worker = self.run_worker(
                     self._sse_loop(persona), exclusive=False, name="sse"
@@ -428,16 +504,21 @@ class TheBookApp(App):
     def _populate_col1(self) -> None:
         lst = self.query_one("#msg-list", ListView)
         lst.clear()
-        for entry in self.conversations:
+        sorted_convs = sorted(self.conversations, key=lambda e: e.get("ts", ""), reverse=True)
+        for entry in sorted_convs:
             trace = self._trace_for_conv(entry)
             lst.append(MessageBlock(entry, trace))
-        if self.conversations:
-            lst.scroll_end(animate=False)
+        lst.scroll_home(animate=False)
 
-    def _append_col1(self, entry: dict, trace: dict | None) -> None:
+    def _prepend_col1(self, entry: dict, trace: dict | None) -> None:
+        """Insert a new (most recent) message at the top of Column 1."""
         lst = self.query_one("#msg-list", ListView)
-        lst.append(MessageBlock(entry, trace))
-        lst.scroll_end(animate=False)
+        block = MessageBlock(entry, trace)
+        if lst.children:
+            lst.mount(block, before=lst.children[0])
+        else:
+            lst.mount(block)
+        lst.scroll_home(animate=False)
 
     # ------------------------------------------------------------------
     # Column 1 → Column 2
@@ -571,24 +652,28 @@ class TheBookApp(App):
                             for fp in s_files:
                                 inner.append(Button(fp, name=fp, classes="file-link"))
 
+                        tok_str = f"  [green]{s_in:,}[/]in/[yellow]{s_out:,}[/]out" if (s_in or s_out) else ""
                         widgets.append(Collapsible(
                             *inner,
-                            title=f"→ {called}  [dim]{s_dur}ms[/]",
+                            title=f"→ {called}{tok_str}  [dim]{s_dur:.1f}ms[/]",
                             collapsed=True,
                         ))
                     else:
                         # Subagent record not found — fall back to raw args
                         widgets.append(Collapsible(
                             Static(json.dumps(tc.get("args", {}), indent=2)),
-                            title=f"run_subagent({called or '?'})  [dim]{tc_dur}ms[/]",
+                            title=f"run_subagent({called or '?'})  [dim]{tc_dur:.1f}ms[/]",
                             collapsed=True,
                         ))
                 else:
                     tc_args = json.dumps(tc.get("args", {}), indent=2)
                     tc_result = tc.get("result_preview", "")
+                    tc_in = tc.get("input_tokens", 0)
+                    tc_out = tc.get("output_tokens", 0)
+                    tok_str = f"  [green]{tc_in:,}[/]in/[yellow]{tc_out:,}[/]out" if (tc_in or tc_out) else ""
                     widgets.append(Collapsible(
                         Static(f"Args:\n{tc_args}\n\nResult:\n{tc_result}"),
-                        title=f"⚙ {tc_name}  [dim]{tc_dur}ms[/]",
+                        title=f"⚙ {tc_name}{tok_str}  [dim]{tc_dur:.1f}ms[/]",
                         collapsed=True,
                     ))
 
@@ -663,7 +748,7 @@ class TheBookApp(App):
                                     "response": trace.get("synth_response", ""),
                                 }
                                 self.conversations.append(new_entry)
-                                self._append_col1(new_entry, trace)
+                                self._prepend_col1(new_entry, trace)
                             self._set_status(
                                 f"{persona} — {len(self.conversations)} messages  ● live"
                             )
@@ -684,6 +769,8 @@ class TheBookApp(App):
     def action_refresh(self) -> None:
         if self.selected_persona:
             self.load_data()
+        else:
+            self.load_personas()
 
     def action_toggle_live(self) -> None:
         self.live_mode = not self.live_mode

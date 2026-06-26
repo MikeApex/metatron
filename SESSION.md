@@ -1,5 +1,5 @@
 # Session Primer — Personal AI Life Manager
-*Updated: 2026-06-26 (Pipeline debugging — first live response confirmed). Update this file at the close of every chat so the next chat — or any parallel chat window — starts from current state.*
+*Updated: 2026-06-26 (The Book fixes — call timing, token counts, load menu, server unblocking). Update this file at the close of every chat so the next chat — or any parallel chat window — starts from current state.*
 
 ---
 
@@ -66,6 +66,22 @@ If you need to find a specific file, tool, or planning document: **[CODEBASE_IND
 ### Also done 2026-06-22 (The Book SSE reconnect)
 - `_sse_loop` now auto-reconnects with exponential backoff (2s→30s) on any connection failure. Column 1 updates in real time without re-selecting the persona.
 - Session archive: `archive/sessions/2026-06-22 — The Book SSE Reconnect.md`
+
+### Also done 2026-06-26 (The Book: call timing, tokens, load menu, server fixes)
+
+Seven fixes across `core/trace.py`, `core/orchestrator.py`, `core/server.py`, `tools/metatron_monitor.py`:
+
+1. **Tool call timing:** `duration_ms` changed to float (`round(..., 1)`); `ToolCallRecord` now stores 1-decimal ms precision. 0ms sub-millisecond ops now show e.g. `0.3ms`.
+2. **Token counts per call:** `ToolCallRecord` extended with `input_tokens`/`output_tokens`. For `run_subagent`, tokens pulled from subagent `AgentRecord` at dispatch time and shown on collapsible title in Column 3.
+3. **`run_subagent` not recorded (Gemini native parallel path):** `_run_gemini_native_loop` parallel branch now propagates thread-local trace context (same pattern as Anthropic path). Previously all Coordinator subagent calls were silently dropped from traces.
+4. **Server blocking event loop:** `session_stream` iterated a sync generator inline in `async def`, blocking uvicorn for 10–30s — no monitor requests could be served during a pipeline run. Fixed: `_produce()` runs in `run_in_executor`; chunks queued via `asyncio.Queue` + `run_coroutine_threadsafe`. `/session` non-streaming also fixed with `run_in_executor`. Zero latency impact.
+5. **Personas not loading on launch:** `load_personas()` now retries 4× with exponential backoff. R key now also retries persona load when no persona is selected.
+6. **Freezing on persona switch:** SSE worker cancel moved to top of `load_data()` (was deferred until after HTTP requests — caused old-persona SSE to write to new-persona's list mid-load).
+7. **Load menu + most-recent-first:** New `#load-bar` in The Book with Range presets (1h/6h/24h/7d/30d/All) and Max count input. Default: 24h, 10 messages. Server `/monitor/conversations` and `/monitor/traces` now accept `since` + `limit` and return newest-first. Column 1 now shows most recent messages at top; SSE live messages prepend to top.
+
+Session archive: [archive/sessions/2026-06-26 — The Book Call Timing, Token Counts, Load Menu, and Server Fixes.md](archive/sessions/2026-06-26 — The Book Call Timing, Token Counts, Load Menu, and Server Fixes.md)
+
+---
 
 ### Also done 2026-06-26 (pipeline debugging — first live response)
 
