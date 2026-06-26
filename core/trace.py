@@ -46,7 +46,9 @@ class ToolCallRecord:
     name: str
     args: dict
     result_preview: str
-    duration_ms: int
+    duration_ms: float
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 
 @dataclass
@@ -180,13 +182,15 @@ def record_turn_tokens(rec: AgentRecord | None, turn_num: int,
 
 
 def record_tool_call(rec: AgentRecord | None, turn_num: int,
-                     name: str, args: dict, result: str, duration_ms: int) -> None:
+                     name: str, args: dict, result: str, duration_ms: float,
+                     input_tokens: int = 0, output_tokens: int = 0) -> None:
     if rec is None:
         return
     preview = result[:800] if len(result) > 800 else result
     tr = rec.ensure_turn(turn_num)
     tr.tool_calls.append(ToolCallRecord(
-        name=name, args=args, result_preview=preview, duration_ms=duration_ms
+        name=name, args=args, result_preview=preview, duration_ms=duration_ms,
+        input_tokens=input_tokens, output_tokens=output_tokens,
     ))
     # Extract any file paths written by this tool call (from args values + result)
     candidates: set[str] = set()
@@ -222,6 +226,8 @@ def _agent_to_dict(a: AgentRecord) -> dict:
                         "args": tc.args,
                         "result_preview": tc.result_preview,
                         "duration_ms": tc.duration_ms,
+                        "input_tokens": tc.input_tokens,
+                        "output_tokens": tc.output_tokens,
                     }
                     for tc in tr.tool_calls
                 ],
