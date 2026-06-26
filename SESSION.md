@@ -114,7 +114,8 @@ Session archive: [archive/sessions/2026-06-26 — Synthesizer Conversation Histo
 - **Root cause of exchange 027:** Coordinator output `"Research"` (not `"Research Agent"`) → normalized to `"research"` → `research.md` not found → Synthesizer streamed "minor snag" then called `run_subagent` as recovery → weather data returned but too late to retract already-streamed text.
 - **Single-exchange troubleshoot prompt** written — two inputs (DATE, SEQ), one SSH command, pulls conversation record + server logs + pipeline trace in one round-trip.
 - **Pending deploy:** both normalization fixes are committed locally but not yet pushed to VM.
-- **Bugs identified but not fixed this session:** (1) `tools.ambient` missing on VM, (2) output filter false positive on `write_config`, (3) graceful shutdown 90s SIGKILL cycle.
+- **Bugs identified but not fixed this session:** (1) `tools.ambient` missing on VM, (2) output filter false positive on `write_config`.
+- **(3) graceful shutdown 90s SIGKILL cycle — fixed 2026-06-26:** `timeout_graceful_shutdown=150` added to `uvicorn.run()`; `_active_streams` counter + `GET /active` endpoint added to `core/server.py`; `deploy.sh` restructured to drain active SSE streams (up to 180s) before restarting metatron-server. Full Fix 3 (drain gate + client reconnect + `/result/{date}/{seq}` endpoint) scoped in `archive/plans/future_phases.md`.
 
 Session archive: [archive/sessions/2026-06-26 — Pipeline Audit and Research Agent Fix.md](archive/sessions/2026-06-26 — Pipeline Audit and Research Agent Fix.md)
 

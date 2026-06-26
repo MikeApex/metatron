@@ -76,6 +76,9 @@ _CONV_LOCK = threading.Lock()
 # Per-persona rolling conversation history — last 5 turns (10 entries) for Synthesizer context.
 _session_history: dict[str, list[dict]] = {}
 
+_active_lock = threading.Lock()
+_active_streams: int = 0
+
 
 def _log_conversation(user_input: str, response: str, agent: str, persona: str | None) -> None:
     """Append a verbatim exchange to the daily conversation log."""
@@ -149,9 +152,13 @@ async def session_stream(req: SessionRequest):
     history = _session_history.setdefault(persona or "__default__", [])
 
     async def sse_generator():
+        global _active_streams
         accumulated: list[str] = []
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue = asyncio.Queue()
+
+        with _active_lock:
+            _active_streams += 1
 
         def _produce() -> None:
             try:
@@ -169,24 +176,28 @@ async def session_stream(req: SessionRequest):
             finally:
                 asyncio.run_coroutine_threadsafe(queue.put(None), loop).result()
 
-        producer = loop.run_in_executor(None, _produce)
+        try:
+            producer = loop.run_in_executor(None, _produce)
 
-        while True:
-            item = await queue.get()
-            if item is None:
-                break
-            if item in ("[DONE]", "[RETRACT]"):
-                yield f"data: {item}\n\n"
-            elif item.startswith("[ERROR] "):
-                yield f"data: {item}\n\n"
-                return
-            else:
-                accumulated.append(item)
-                safe = item.replace('\r', '').replace('\n', r'\n')
-                yield f"data: {safe}\n\n"
+            while True:
+                item = await queue.get()
+                if item is None:
+                    break
+                if item in ("[DONE]", "[RETRACT]"):
+                    yield f"data: {item}\n\n"
+                elif item.startswith("[ERROR] "):
+                    yield f"data: {item}\n\n"
+                    return
+                else:
+                    accumulated.append(item)
+                    safe = item.replace('\r', '').replace('\n', r'\n')
+                    yield f"data: {safe}\n\n"
 
-        await asyncio.wrap_future(producer)
-        _log_conversation(req.input, "".join(accumulated), req.agent, persona)
+            await asyncio.wrap_future(producer)
+            _log_conversation(req.input, "".join(accumulated), req.agent, persona)
+        finally:
+            with _active_lock:
+                _active_streams -= 1
 
     return StreamingResponse(sse_generator(), media_type="text/event-stream")
 
@@ -194,6 +205,11 @@ async def session_stream(req: SessionRequest):
 @app.get("/health")
 async def health() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/active")
+async def active() -> dict:
+    return {"active_streams": _active_streams}
 
 
 # ---------------------------------------------------------------------------
@@ -660,4 +676,5 @@ if __name__ == "__main__":
         print("No CA install needed — Tailscale cert is publicly trusted.")
         print("  Settings → Security → Install certificate → CA certificate\n")
 
-    uvicorn.run("core.server:app", host=args.host, port=args.port, reload=False, **ssl_kwargs)
+    uvicorn.run("core.server:app", host=args.host, port=args.port, reload=False,
+                timeout_graceful_shutdown=150, **ssl_kwargs)

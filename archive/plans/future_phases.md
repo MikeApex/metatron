@@ -3,6 +3,24 @@
 
 ---
 
+## SSE Reconnect + Result Fetch + Drain Gate (Pre-Beta hardening)
+
+**Context:** Fixes 1 and 2 (graceful shutdown timeout + deploy drain loop) were implemented 2026-06-26 and cover Alpha. This Fix 3 is the complete solution for Beta and beyond, when restarts may happen mid-session without a developer controlling both sides.
+
+**Three parts — implement together:**
+
+1. **"No new sessions" drain mode.** When a deploy is in progress, the server should reject new `/session/stream` requests with `503 Service Unavailable` rather than accepting them and risking a mid-pipeline restart. Requires a drain flag (`_draining: bool`) that `/active` also exposes, and a new `/drain` endpoint that sets it. `deploy.sh` calls `/drain` first, then polls `/active` until 0. Client should surface the 503 cleanly rather than showing a generic error.
+
+2. **Client reconnect on abort.** When the client receives a `Fetch is aborted` error (or any SSE connection failure), it should not surface an error immediately. Instead: wait 3–5 seconds, reconnect, and poll a `/result/{date}/{seq}` endpoint for the completed response. The conversation record is already written to disk before the process dies — the client just needs a read path.
+
+3. **`/result/{date}/{seq}` endpoint.** New server endpoint that reads a single entry from `data/conversations/{date}.jsonl` by seq and returns it. Lightweight — no pipeline involved. Client uses this as the recovery path after a reconnect following an abort. Also useful for manual troubleshooting (replaces the current SSH + Python one-liner for simple lookups).
+
+**Why these three go together:** the drain gate prevents the problem; the result fetch recovers from it when prevention fails (crash, SIGKILL, external restart); the `/result` endpoint is the shared primitive both use.
+
+**Prerequisite:** none — can be built independently of other Phase 6 work.
+
+---
+
 ## Environmental Monitoring (Phase 7+)
 
 A contextual layer that reconstructs what was going on around the user on any given day.
