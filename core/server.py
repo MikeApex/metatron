@@ -548,7 +548,7 @@ async def tts(req: TTSRequest):
             wav_tmp.close()
             result = subprocess.run(
                 [str(KOKORO_PYTHON), str(KOKORO_SPEAK), "--voice", KOKORO_VOICE, "--output", wav_tmp.name],
-                input=req.text, capture_output=True, text=True, timeout=30
+                input=req.text, capture_output=True, text=True, timeout=120
             )
             if result.returncode != 0:
                 raise RuntimeError(result.stderr)
