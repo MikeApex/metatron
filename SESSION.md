@@ -142,6 +142,24 @@ Session archive: [archive/sessions/2026-06-26 — The Book Load Menu, Ordering, 
 
 Session archive: [archive/sessions/2026-06-26 — Book Synth Token Counts and Conversation History.md](archive/sessions/2026-06-26 — Book Synth Token Counts and Conversation History.md)
 
+### Also done 2026-06-26 (single exchange troubleshoot — SEQ 026 / Logistics routing)
+
+Root-caused why "Delayed until Monday at 5:30." (SEQ 026, 16:28:23) did not trigger a scheduling action. Coordinator dispatched zero specialists; Synthesizer absorbed it conversationally. Three fixes deployed:
+
+1. **`config/agents/coordinator.md`** — Logistics entry broadened: added explicit "also call when user defers or postpones anything to a named time" rule; added deferral signal words (delayed, postponed, rescheduled, moved to, pushed to, bumped, put off, defer, reschedule, changed to, updated to) and temporal commitment triggers (tomorrow, next week, this weekend, next month, end of month/week, next year, by [day name], on [day name], [day] at [time]).
+2. **`config/agents/synthesizer.md`** — `write_config` scope clarified (recurring proactive sessions only; one-off deferrals → Logistics). Catch-up rule added: if user message contains a temporal commitment signal and no Logistics output in context package, call `run_subagent("logistics")` before responding, log `ROUTING_MISS: Logistics`, call `write_quality_event`.
+3. **`tools/subagent.py`** — Diarist removed from Synthesizer's `run_subagent` schema (Coordinator always dispatches it fire-and-forget; Synth has no use case for calling it directly). Confirmed: Coordinator dispatches Diarist via `_dispatch_from_coordinator` text parsing, not tool calls — schema change has no effect on Coordinator.
+
+**Clarifications established:**
+- No "Scheduler agent" exists. Scheduling = Logistics (`write_calendar_event`) for one-off events/deferrals; `write_config` for recurring Metatron session entries (habits, standing check-ins). These are distinct.
+- Pattern Miner and Goals Interviewer should not be in Synth's callable agent list — PM runs on schedule, Goals runs at first-instance onboarding only.
+- Coordinator model upgrade is not the right fix for routing misses; missing rules are the cause.
+- Synth token tracking (in=0 out=0) was broken before ~17:05 on 2026-06-26; confirmed working from 17:05 onwards. No code change needed.
+
+**Open:** (1) Test Coordinator fix with a deferral message in app, verify Logistics in trace. (2) Verify `write_calendar_event` actually connects to a real calendar, not just flat file logging.
+
+Commits: `e477c76`, `5f21800`, `5a7c6ff`. Session archive: [archive/sessions/2026-06-26 — Single Exchange Troubleshoot SEQ 026 Logistics Routing.md](archive/sessions/2026-06-26 — Single Exchange Troubleshoot SEQ 026 Logistics Routing.md)
+
 ### Also done 2026-06-26 (The Book: call timing, tokens, load menu, server fixes)
 
 Seven fixes across `core/trace.py`, `core/orchestrator.py`, `core/server.py`, `tools/metatron_monitor.py`:
@@ -175,6 +193,16 @@ Key changes:
 **Next:** specialist token reduction (plan Steps 3–5) — specialists still running 5–8 tool-call turns; this is the biggest remaining latency lever. Then B1/Check10/Check12 for A7 sign-off.
 
 Session archive: [archive/sessions/2026-06-26 — Pipeline Debugging and First Response.md](archive/sessions/2026-06-26 — Pipeline Debugging and First Response.md)
+
+### Also done 2026-06-26 (troubleshooting prompts + interchange ID design)
+
+Meta/planning block — no code changes. Three deliverables:
+
+1. **TTS phrase-by-phrase note confirmed recorded** — `// TODO future: phrase-by-phrase TTS` in `static/index.html` (`sendStreaming`), session archive, and SESSION.md.
+2. **Latency troubleshooting prompt written** — general-purpose prompt for diagnosing a specific exchange: pull VM logs for a time window, break down latency by component, evaluate Coordinator routing and RESOLVED_INTENT, compare what happened vs. what should have happened. Text in chat transcript; reuse by pasting into a new chat with a target time window.
+3. **Interchange ID design recommendation** — daily zero-padded sequential counter (`001`, `002`…) as `seq` field in `data/conversations/YYYY-MM-DD.jsonl`. Display as `#003  14:23` in Column 1. Implementation prompt written (two steps: `_log_conversation` in `core/server.py` + Column 1 display in `tools/metatron_monitor.py`). Not yet implemented.
+
+Session archive: [archive/sessions/2026-06-26 — Troubleshooting Prompts and Interchange ID Design.md](archive/sessions/2026-06-26 — Troubleshooting Prompts and Interchange ID Design.md)
 
 ### Also done 2026-06-24 (token reduction — Steps 1–5)
 
