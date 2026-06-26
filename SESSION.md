@@ -1,5 +1,5 @@
 # Session Primer — Personal AI Life Manager
-*Updated: 2026-06-26 (The Book fixes — call timing, token counts, load menu, server unblocking). Update this file at the close of every chat so the next chat — or any parallel chat window — starts from current state.*
+*Updated: 2026-06-26 (User profile + ambient world context). Update this file at the close of every chat so the next chat — or any parallel chat window — starts from current state.*
 
 ---
 
@@ -66,6 +66,22 @@ If you need to find a specific file, tool, or planning document: **[CODEBASE_IND
 ### Also done 2026-06-22 (The Book SSE reconnect)
 - `_sse_loop` now auto-reconnects with exponential backoff (2s→30s) on any connection failure. Column 1 updates in real time without re-selecting the persona.
 - Session archive: `archive/sessions/2026-06-22 — The Book SSE Reconnect.md`
+
+### Also done 2026-06-26 (user profile + ambient world context)
+
+- **`config/profile.yaml`** (new) — stable biographical profile injected into Synthesizer and Coordinator. Filled in: name Mike, London, UK, Europe/London. Age/occupation/household left to fill. Includes `ambient.markets: true` flag.
+- **`tools/ambient.py`** (new) — 3-hour scheduler job fetches weather (wttr.in/London), headlines (BBC + CNN interleaved, 8 total), and 7 market indices (S&P 500, FTSE, DAX, Nikkei, Hang Seng, Gold, WTI Oil) via Yahoo Finance v8 chart endpoint. Writes `data/ambient_context.json`. `load_ambient_context()` always injects live date/time from system clock; weather/news/markets from last refresh.
+- **`core/orchestrator.py`** — `load_profile()` added; injected into `load_config()` (Synthesizer) and Coordinator system prompt. Ambient context prepended to `load_recent_context()` so both agents always see it.
+- **`core/scheduler.py`** — `function:` job type added; calls Python callables directly without an LLM session.
+- **`config/modules/scheduler.yaml`** — `ambient_refresh` job: every 180 minutes, calls `tools.ambient.refresh_ambient_context`.
+
+Session archive: [archive/sessions/2026-06-26 — User Profile and Ambient World Context.md](archive/sessions/2026-06-26 — User Profile and Ambient World Context.md)
+
+### Also done 2026-06-26 (The Book: SSE backfill fix, load menu, ordering)
+
+Root-cause fix for two related issues: (1) Load menu filter (24h / max 10) appeared broken because `/monitor/stream` replayed all historical traces on connection, backfilling old conversations to the top of Column 1 past the filtered 10. Fixed: `/monitor/stream` accepts `since` param; skips old traces on initial scan only. Monitor records `_sse_since = now()` at `load_data()` start and passes it to the SSE endpoint. (2) Uncommitted changes from prior session meant VM was running old server code with no `since`/`limit` support — deploy was a no-op. Committed and deployed. (3) Max entries Input → Select dropdown (10/20/50/All). Client-side descending sort added as defensive measure.
+
+Session archive: [archive/sessions/2026-06-26 — The Book Load Menu, Ordering, and SSE Backfill Fix.md](archive/sessions/2026-06-26 — The Book Load Menu, Ordering, and SSE Backfill Fix.md)
 
 ### Also done 2026-06-26 (The Book: call timing, tokens, load menu, server fixes)
 
