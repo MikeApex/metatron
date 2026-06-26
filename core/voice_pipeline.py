@@ -30,7 +30,7 @@ SAMPLE_RATE = 16000              # Whisper expects 16kHz
 # Voice IDs: af_heart, af_bella, af_sky, am_adam, bm_george — see tools/kokoro/speak.py
 KOKORO_VOICE = "af_heart"
 KOKORO_SPEAK = Path(__file__).parent.parent / "tools" / "kokoro" / "speak.py"
-KOKORO_PYTHON = Path(__file__).parent.parent / "tools" / "kokoro" / "venv" / "bin" / "python"
+KOKORO_PYTHON = Path(__file__).parent.parent / ".venv" / "bin" / "python"
 
 # edge-tts fallback voice (used if Kokoro venv not set up / network available).
 EDGE_VOICE = "en-US-JennyNeural"

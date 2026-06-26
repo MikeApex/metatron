@@ -19,13 +19,15 @@ import os
 import sys
 import tempfile
 import threading
+import uuid
 from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import aiosqlite
 import edge_tts
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -35,13 +37,15 @@ from core.orchestrator import run_pipeline_session_stream, run_session
 
 KOKORO_VOICE = "af_heart"
 KOKORO_SPEAK = Path(__file__).parent.parent / "tools" / "kokoro" / "speak.py"
-KOKORO_PYTHON = Path(__file__).parent.parent / "tools" / "kokoro" / "venv" / "bin" / "python"
+KOKORO_PYTHON = Path(__file__).parent.parent / ".venv" / "bin" / "python"
 EDGE_VOICE = "en-US-JennyNeural"
 
 app = FastAPI(title="Life Manager")
 
 # Read at module import time from env var set before uvicorn.run()
 DEFAULT_PERSONA: str | None = os.environ.get("SERVER_PERSONA") or None
+
+DB_PATH = Path(__file__).parent.parent / "data" / "conversations" / "metatron.db"
 
 app.add_middleware(
     CORSMiddleware,
@@ -80,6 +84,30 @@ _active_lock = threading.Lock()
 _active_streams: int = 0
 
 
+class ConnectionManager:
+    def __init__(self) -> None:
+        self.active: dict[str, set[WebSocket]] = {}
+
+    async def connect(self, ws: WebSocket, persona: str) -> None:
+        await ws.accept()
+        self.active.setdefault(persona, set()).add(ws)
+
+    def disconnect(self, ws: WebSocket, persona: str) -> None:
+        self.active.get(persona, set()).discard(ws)
+
+    async def broadcast(self, persona: str, payload: dict, exclude: WebSocket | None = None) -> None:
+        for ws in list(self.active.get(persona, set())):
+            if ws is exclude:
+                continue
+            try:
+                await ws.send_json(payload)
+            except Exception:
+                self.active.get(persona, set()).discard(ws)
+
+
+manager = ConnectionManager()
+
+
 def _log_conversation(user_input: str, response: str, agent: str, persona: str | None) -> None:
     """Append a verbatim exchange to the daily conversation log."""
     import json as _json
@@ -106,6 +134,94 @@ def _log_conversation(user_input: str, response: str, agent: str, persona: str |
         }
         with open(log_file, "a") as f:
             f.write(_json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+# ---------------------------------------------------------------------------
+# SQLite persistence — shared conversation history across devices
+# ---------------------------------------------------------------------------
+
+async def _init_db() -> None:
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS exchanges (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                exchange_id TEXT UNIQUE NOT NULL,
+                persona     TEXT NOT NULL,
+                user        TEXT NOT NULL,
+                assistant   TEXT NOT NULL,
+                ts          TEXT NOT NULL
+            )
+        """)
+        await db.commit()
+
+
+async def _load_history_from_db(persona: str) -> list[dict]:
+    """Return last 10 exchanges as {role, content} pairs for orchestrator context."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT user, assistant FROM exchanges WHERE persona=? ORDER BY id DESC LIMIT 10",
+            (persona,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+    pairs: list[dict] = []
+    for row in reversed(rows):
+        pairs.append({"role": "user", "content": row["user"]})
+        pairs.append({"role": "assistant", "content": row["assistant"]})
+    return pairs
+
+
+async def _get_recent_exchanges(persona: str, limit: int = 20) -> list[dict]:
+    """Return last `limit` exchanges as dicts for WS history message."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT id, exchange_id, user, assistant, ts FROM exchanges "
+            "WHERE persona=? ORDER BY id DESC LIMIT ?",
+            (persona, limit),
+        ) as cursor:
+            rows = await cursor.fetchall()
+    return [dict(r) for r in reversed(rows)]
+
+
+async def _catchup_since(persona: str, since_id: int) -> list[dict]:
+    """Return exchanges with id > since_id, oldest first."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT id, exchange_id, user, assistant, ts FROM exchanges "
+            "WHERE persona=? AND id > ? ORDER BY id ASC",
+            (persona, since_id),
+        ) as cursor:
+            rows = await cursor.fetchall()
+    return [dict(r) for r in rows]
+
+
+async def _save_exchange(persona: str, exchange_id: str, user: str, assistant: str) -> int:
+    """Persist a completed exchange. Returns the new row id."""
+    ts = datetime.utcnow().isoformat() + "Z"
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "INSERT OR IGNORE INTO exchanges (exchange_id, persona, user, assistant, ts) "
+            "VALUES (?,?,?,?,?)",
+            (exchange_id, persona, user, assistant, ts),
+        )
+        await db.commit()
+        return cursor.lastrowid or 0
+
+
+@app.on_event("startup")
+async def _startup() -> None:
+    await _init_db()
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT DISTINCT persona FROM exchanges") as cursor:
+            personas = [row["persona"] async for row in cursor]
+    for persona in personas:
+        pairs = await _load_history_from_db(persona)
+        if pairs:
+            _session_history[persona] = pairs
 
 
 @app.post("/session", response_model=SessionResponse)
@@ -200,6 +316,153 @@ async def session_stream(req: SessionRequest):
                 _active_streams -= 1
 
     return StreamingResponse(sse_generator(), media_type="text/event-stream")
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -> None:
+    """
+    WebSocket endpoint for real-time cross-device conversation sync.
+
+    Query param: ?persona=X  (same values as the HTTP endpoints)
+
+    Client → server message types:
+      {type: "send", exchange_id, input, provider}  — submit a prompt
+      {type: "catchup", since_id}                   — fetch missed exchanges on reconnect
+
+    Server → client message types:
+      {type: "history", messages, last_id}           — initial history / catch-up response
+      {type: "stream_start", exchange_id, user}      — foreign exchange starting (not this device)
+      {type: "chunk", exchange_id, text}             — token from the LLM (own or foreign)
+      {type: "done", exchange_id}                    — exchange complete; commit text
+      {type: "retract", exchange_id}                 — output filtered; discard buffered text
+      {type: "message", id, exchange_id, user, assistant, ts}  — completed record for catch-up
+      {type: "error", exchange_id, text?}            — error (text only on sender)
+      {type: "ping"}                                 — 30-second heartbeat
+    """
+    persona_orch = persona or DEFAULT_PERSONA
+    persona_key = persona_orch or "__default__"
+    await manager.connect(websocket, persona_key)
+
+    recent = await _get_recent_exchanges(persona_key)
+    last_id = recent[-1]["id"] if recent else 0
+    await websocket.send_json({"type": "history", "messages": recent, "last_id": last_id})
+
+    async def _heartbeat() -> None:
+        while True:
+            await asyncio.sleep(30)
+            try:
+                await websocket.send_json({"type": "ping"})
+            except Exception:
+                return
+
+    hb_task = asyncio.create_task(_heartbeat())
+
+    try:
+        while True:
+            data = await websocket.receive_json()
+            msg_type = data.get("type")
+
+            if msg_type == "send":
+                exchange_id = data.get("exchange_id") or str(uuid.uuid4())
+                user_input = data.get("input", "").strip()
+                if not user_input:
+                    continue
+                provider = data.get("provider") or None
+                history = _session_history.setdefault(persona_key, [])
+
+                # Notify other devices that a new exchange is starting
+                await manager.broadcast(persona_key, {
+                    "type": "stream_start",
+                    "exchange_id": exchange_id,
+                    "user": user_input,
+                }, exclude=websocket)
+
+                loop = asyncio.get_running_loop()
+                queue: asyncio.Queue = asyncio.Queue()
+                accumulated: list[str] = []
+                retracted = False
+                errored = False
+
+                def _produce() -> None:
+                    try:
+                        for chunk in run_pipeline_session_stream(
+                            user_input, persona=persona_orch, provider=provider, history=history
+                        ):
+                            asyncio.run_coroutine_threadsafe(queue.put(chunk), loop).result()
+                    except NotImplementedError:
+                        response = run_session(
+                            "coordinator", user_input, persona=persona_orch, provider=provider
+                        )
+                        asyncio.run_coroutine_threadsafe(queue.put(response), loop).result()
+                        asyncio.run_coroutine_threadsafe(queue.put("[DONE]"), loop).result()
+                    except Exception as e:
+                        asyncio.run_coroutine_threadsafe(queue.put(f"[ERROR] {e}"), loop).result()
+                    finally:
+                        asyncio.run_coroutine_threadsafe(queue.put(None), loop).result()
+
+                producer = loop.run_in_executor(None, _produce)
+
+                while True:
+                    item = await queue.get()
+                    if item is None:
+                        break
+                    if item == "[DONE]":
+                        break
+                    elif item == "[RETRACT]":
+                        retracted = True
+                        break
+                    elif item.startswith("[ERROR] "):
+                        errored = True
+                        await websocket.send_json({
+                            "type": "error", "exchange_id": exchange_id, "text": item[8:],
+                        })
+                        await manager.broadcast(persona_key, {
+                            "type": "error", "exchange_id": exchange_id,
+                        }, exclude=websocket)
+                        break
+                    else:
+                        accumulated.append(item)
+                        chunk_payload = {"type": "chunk", "exchange_id": exchange_id, "text": item}
+                        await websocket.send_json(chunk_payload)
+                        await manager.broadcast(persona_key, chunk_payload, exclude=websocket)
+
+                await asyncio.wrap_future(producer)
+
+                if retracted:
+                    retract_payload = {"type": "retract", "exchange_id": exchange_id}
+                    await websocket.send_json(retract_payload)
+                    await manager.broadcast(persona_key, retract_payload, exclude=websocket)
+                elif not errored:
+                    full_response = "".join(accumulated)
+                    done_payload = {"type": "done", "exchange_id": exchange_id}
+                    await websocket.send_json(done_payload)
+                    await manager.broadcast(persona_key, done_payload, exclude=websocket)
+                    new_id = await _save_exchange(persona_key, exchange_id, user_input, full_response)
+                    _log_conversation(user_input, full_response, "coordinator", persona_orch)
+                    await manager.broadcast(persona_key, {
+                        "type": "message",
+                        "id": new_id,
+                        "exchange_id": exchange_id,
+                        "user": user_input,
+                        "assistant": full_response,
+                        "ts": datetime.utcnow().isoformat() + "Z",
+                    }, exclude=websocket)
+
+            elif msg_type == "catchup":
+                since_id = int(data.get("since_id", 0))
+                rows = await _catchup_since(persona_key, since_id)
+                if rows:
+                    await websocket.send_json({
+                        "type": "history",
+                        "messages": rows,
+                        "last_id": rows[-1]["id"],
+                    })
+
+    except WebSocketDisconnect:
+        pass
+    finally:
+        hb_task.cancel()
+        manager.disconnect(websocket, persona_key)
 
 
 @app.get("/health")

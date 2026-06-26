@@ -349,6 +349,7 @@
     chip.style.display = '';
     requestMicPermission();
     initPush();
+    connectWebSocket(persona);
   }
 
   function showLogin() {
@@ -408,92 +409,192 @@
     return div;
   }
 
-  // --- API call ---
+  // --- WebSocket (cross-device sync) ---
 
-  async function sendToServer(input) {
-    const provider = providerSelect.value;
-    const agent = agentSelect.value;
+  let ws = null;
+  let ownBubble = null;
+  let ownAccumulated = '';
+  const foreignBubbles = new Map();  // exchange_id → {bubble, accumulated}
+  const shownIds = new Set();        // exchange_ids rendered on this device
+  let lastSeenId = 0;
 
-    addMessage('user', input);
-    setLoading(true);
+  function connectWebSocket(persona) {
+    const base = SERVER || window.location.origin;
+    const wsUrl = base.replace(/^http/, 'ws') + '/ws?persona=' + encodeURIComponent(persona);
+    ws = new WebSocket(wsUrl);
 
-    // Streaming path: coordinator agent uses /session/stream (SSE).
-    // Other agents fall back to /session (non-streaming).
-    // TODO future: phrase-by-phrase TTS with meaningful pauses between sentences.
-    if (agent === 'coordinator') {
-      await sendStreaming(input, provider);
-    } else {
-      await sendBlocking(input, agent, provider);
-    }
+    ws.onopen = () => {
+      setStatus('Ready', '#555');
+      if (lastSeenId > 0) {
+        ws.send(JSON.stringify({ type: 'catchup', since_id: lastSeenId }));
+      }
+    };
+
+    ws.onmessage = (event) => {
+      handleWsMessage(JSON.parse(event.data));
+    };
+
+    ws.onclose = () => {
+      // If a response was in-flight on this device, finalize what we have
+      if (ownBubble) {
+        ownBubble.textContent = ownAccumulated || '[Connection lost]';
+        ownBubble = null; ownAccumulated = '';
+        setLoading(false);
+      }
+      setStatus('Reconnecting...', '#888');
+      setTimeout(() => { if (currentPersona) connectWebSocket(currentPersona); }, 3000);
+    };
   }
 
-  async function sendStreaming(input, provider) {
-    let bubble = null;
-    let accumulated = '';
+  function handleWsMessage(msg) {
+    switch (msg.type) {
 
-    try {
-      const res = await fetch(SERVER + '/session/stream', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input, agent: 'coordinator', provider, persona: currentPersona }),
-        signal: AbortSignal.timeout(600000),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: 'Server error' }));
-        throw new Error(err.detail || 'Server error');
+      case 'history': {
+        renderHistory(msg.messages);
+        if (msg.last_id) lastSeenId = msg.last_id;
+        break;
       }
 
-      bubble = addMessage('assistant', '▍');
+      case 'stream_start': {
+        // Another device started sending — render their user bubble + empty assistant bubble
+        if (!shownIds.has(msg.exchange_id)) {
+          addMessage('user', msg.user);
+          const bubble = addMessage('assistant', '▍');
+          foreignBubbles.set(msg.exchange_id, { bubble, accumulated: '' });
+        }
+        break;
+      }
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buf = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buf += decoder.decode(value, { stream: true });
-        const lines = buf.split('\n');
-        buf = lines.pop(); // incomplete line stays in buffer
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          const payload = line.slice(6);
-
-          if (payload === '[DONE]') {
-            bubble.textContent = accumulated;
-            speakResponse(accumulated);
-            return;
-          } else if (payload === '[RETRACT]') {
-            bubble.textContent = "I can't help with that right now.";
-            return;
-          } else if (payload.startsWith('[ERROR]')) {
-            bubble.textContent = `Error: ${payload.slice(8)}`;
-            return;
-          } else {
-            accumulated += payload.replace(/\\n/g, '\n');
-            bubble.textContent = accumulated + '▍';
+      case 'chunk': {
+        if (shownIds.has(msg.exchange_id)) {
+          // Own exchange: update streaming bubble
+          if (ownBubble) {
+            ownAccumulated += msg.text;
+            ownBubble.textContent = ownAccumulated + '▍';
+            conversation.scrollTop = conversation.scrollHeight;
+          }
+        } else {
+          // Foreign exchange: update their bubble
+          const fb = foreignBubbles.get(msg.exchange_id);
+          if (fb) {
+            fb.accumulated += msg.text;
+            fb.bubble.textContent = fb.accumulated + '▍';
             conversation.scrollTop = conversation.scrollHeight;
           }
         }
+        break;
       }
 
-      // Stream closed without [DONE] — show whatever we have
-      if (bubble && accumulated) {
-        bubble.textContent = accumulated;
-        speakResponse(accumulated);
+      case 'done': {
+        if (shownIds.has(msg.exchange_id)) {
+          // Own exchange complete — finalize and speak
+          if (ownBubble) {
+            ownBubble.textContent = ownAccumulated;
+            speakResponse(ownAccumulated);
+            ownBubble = null; ownAccumulated = '';
+          }
+          setLoading(false);
+        } else {
+          // Foreign exchange complete — finalize (no TTS)
+          const fb = foreignBubbles.get(msg.exchange_id);
+          if (fb) {
+            fb.bubble.textContent = fb.accumulated;
+            foreignBubbles.delete(msg.exchange_id);
+          }
+          shownIds.add(msg.exchange_id);
+        }
+        break;
       }
-    } catch (e) {
-      if (bubble) {
-        bubble.textContent = `Error: ${e.message}`;
-      } else {
-        addMessage('system', `Error: ${e.message}`);
+
+      case 'retract': {
+        if (shownIds.has(msg.exchange_id)) {
+          if (ownBubble) {
+            ownBubble.textContent = "I can't help with that right now.";
+            ownBubble = null; ownAccumulated = '';
+          }
+          setLoading(false);
+        } else {
+          const fb = foreignBubbles.get(msg.exchange_id);
+          if (fb) { fb.bubble.textContent = '...'; foreignBubbles.delete(msg.exchange_id); }
+          shownIds.add(msg.exchange_id);
+        }
+        break;
       }
-    } finally {
-      setLoading(false);
+
+      case 'message': {
+        // Completed exchange arriving for catch-up (missed while disconnected)
+        if (!shownIds.has(msg.exchange_id)) {
+          addMessage('user', msg.user);
+          addMessage('assistant', msg.assistant);
+          shownIds.add(msg.exchange_id);
+        }
+        if (msg.id > lastSeenId) lastSeenId = msg.id;
+        break;
+      }
+
+      case 'error': {
+        if (shownIds.has(msg.exchange_id)) {
+          if (ownBubble) {
+            ownBubble.textContent = 'Error: ' + (msg.text || 'unknown error');
+            ownBubble = null; ownAccumulated = '';
+          }
+          setLoading(false);
+        } else {
+          const fb = foreignBubbles.get(msg.exchange_id);
+          if (fb) { fb.bubble.textContent = '[Error]'; foreignBubbles.delete(msg.exchange_id); }
+          shownIds.add(msg.exchange_id);
+        }
+        break;
+      }
     }
+  }
+
+  function renderHistory(messages) {
+    conversation.innerHTML = '<div class="message system">Session started. Tap the mic or type to begin.</div>';
+    for (const msg of messages) {
+      addMessage('user', msg.user);
+      addMessage('assistant', msg.assistant);
+      shownIds.add(msg.exchange_id);
+      if (msg.id > lastSeenId) lastSeenId = msg.id;
+    }
+    if (shownIds.size > 100) shownIds.clear();
+  }
+
+  // --- API call ---
+
+  function sendToServer(input) {
+    const provider = providerSelect.value;
+    const agent = agentSelect.value;
+    if (agent === 'coordinator') {
+      sendViaWebSocket(input, provider);
+    } else {
+      addMessage('user', input);
+      setLoading(true);
+      sendBlocking(input, agent, provider);
+    }
+  }
+
+  function sendViaWebSocket(input, provider) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      addMessage('system', 'Not connected — reconnecting...');
+      return;
+    }
+    const exchangeId = crypto.randomUUID();
+    shownIds.add(exchangeId);
+    if (shownIds.size > 100) shownIds.clear();
+
+    addMessage('user', input);
+    ownBubble = addMessage('assistant', '▍');
+    ownAccumulated = '';
+    setLoading(true);
+
+    ws.send(JSON.stringify({
+      type: 'send',
+      exchange_id: exchangeId,
+      input,
+      agent: 'coordinator',
+      provider: provider || null,
+    }));
   }
 
   async function sendBlocking(input, agent, provider) {
@@ -671,24 +772,24 @@
 
   // --- TTS ---
 
-  let currentAudio = null;
-  let audioUnlocked = false;
+  let audioCtxShared = null;  // single shared AudioContext — resumed on first gesture
+  let currentSource = null;   // active BufferSourceNode, so we can stop on interrupt
 
-  // Android blocks autoplay until a user gesture has touched the AudioContext.
-  // We create and immediately suspend a silent context on first tap to unlock it.
+  // Safari and Android both require a user gesture before audio can play.
+  // We resume a shared AudioContext on first tap; all playback goes through it
+  // so decodeAudioData/start() are always allowed after this point.
   function unlockAudio() {
-    if (audioUnlocked) return;
-    audioUnlocked = true;
+    if (audioCtxShared) return;
     try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      ctx.resume().then(() => ctx.close());
+      audioCtxShared = new (window.AudioContext || window.webkitAudioContext)();
+      audioCtxShared.resume();
     } catch {}
   }
   document.addEventListener('click', unlockAudio, { once: true });
   document.addEventListener('touchend', unlockAudio, { once: true });
 
   async function speakResponse(text) {
-    if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+    if (currentSource) { try { currentSource.stop(); } catch {} currentSource = null; }
     try {
       const res = await fetch(SERVER + '/tts', {
         method: 'POST',
@@ -696,17 +797,16 @@
         body: JSON.stringify({ text }),
       });
       if (!res.ok) throw new Error('TTS failed');
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      currentAudio = new Audio(url);
-      currentAudio.onended = () => URL.revokeObjectURL(url);
-      await currentAudio.play().catch(() => {
-        // Autoplay blocked — fall back to browser TTS
-        URL.revokeObjectURL(url);
-        const utt = new SpeechSynthesisUtterance(text);
-        utt.rate = 0.95;
-        window.speechSynthesis?.speak(utt);
-      });
+      const arrayBuffer = await res.arrayBuffer();
+      if (!audioCtxShared) unlockAudio();
+      await audioCtxShared.resume();
+      const audioBuffer = await audioCtxShared.decodeAudioData(arrayBuffer);
+      const source = audioCtxShared.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(audioCtxShared.destination);
+      currentSource = source;
+      source.onended = () => { if (currentSource === source) currentSource = null; };
+      source.start(0);
     } catch {
       const utt = new SpeechSynthesisUtterance(text);
       utt.rate = 0.95;
@@ -797,6 +897,11 @@
   sendBtn.addEventListener('click', submitText);
   textField.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitText(); }
+  });
+
+  // Force clean disconnect when tab/app goes to background; onclose will reconnect on return
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && ws && ws.readyState === WebSocket.OPEN) ws.close();
   });
 </script>
 </body>
