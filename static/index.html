@@ -371,12 +371,6 @@
 
   document.getElementById('persona-chip').addEventListener('click', showLogin);
 
-  // Auto-login if persona saved
-  const savedPersona = localStorage.getItem('metatron_persona');
-  if (savedPersona) {
-    enterApp(savedPersona);
-  }
-
   const conversation = document.getElementById('conversation');
   const micBtn = document.getElementById('mic-btn');
   const transcript = document.getElementById('transcript');
@@ -910,6 +904,12 @@
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && ws && ws.readyState === WebSocket.OPEN) ws.close();
   });
+
+  // Auto-login if persona saved — must run after all variables and handlers are initialized
+  const savedPersona = localStorage.getItem('metatron_persona');
+  if (savedPersona) {
+    enterApp(savedPersona);
+  }
 </script>
 </body>
 </html>
