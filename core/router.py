@@ -33,6 +33,7 @@ def _trace(msg: str) -> None:
 
 _ROOT = Path(__file__).parent.parent
 _ROUTING_ERROR_LOG = _ROOT / "data" / "logs" / "routing_fallbacks.json"
+_MODEL_ERROR_LOG = _ROOT / "data" / "logs" / "model_errors.json"
 
 
 def _routing_config_path() -> Path:
@@ -105,8 +106,14 @@ def resolve_model(agent: str, complexity: str | None = None) -> ModelConfig:
         return cfg_out
 
     # Direct cloud model assignment.
+    if not agent_cfg:
+        _log_routing_error(agent, reason="unknown agent — not listed in routing config")
+        raise RuntimeError(
+            f"Agent '{agent}' has no entry in the routing config. "
+            f"Add it to config/modules/routing_cloud.yaml (or routing.yaml for local mode)."
+        )
     cfg_out = ModelConfig(
-        provider=agent_cfg.get("provider", "anthropic"),
+        provider=agent_cfg.get("provider", "gemini"),
         model=agent_cfg.get("model"),
         base_url=None,
         allowed_tools=allowed_tools,
@@ -122,8 +129,8 @@ def get_allowed_tools(agent: str) -> list[str] | None:
     return agent_cfg.get("allowed_tools")  # None=allow all; []=allow none
 
 
-def _log_routing_error(agent: str) -> None:
-    """Record a sensitive-agent routing failure for auditability."""
+def _log_routing_error(agent: str, reason: str = "local_enabled: false — sensitive agent refused cloud routing") -> None:
+    """Record a routing failure for auditability."""
     _ROUTING_ERROR_LOG.parent.mkdir(parents=True, exist_ok=True)
     entries: list = []
     if _ROUTING_ERROR_LOG.exists():
@@ -135,7 +142,28 @@ def _log_routing_error(agent: str) -> None:
     entries.append({
         "timestamp": datetime.now().isoformat(),
         "agent": agent,
-        "error": "local_enabled: false — sensitive agent refused cloud routing",
+        "error": reason,
     })
     with open(_ROUTING_ERROR_LOG, "w") as f:
+        json.dump(entries, f, indent=2)
+
+
+def log_model_error(agent: str, provider: str, model: str | None, error: str) -> None:
+    """Record a model API call failure. Called by orchestrator on any provider exception."""
+    _MODEL_ERROR_LOG.parent.mkdir(parents=True, exist_ok=True)
+    entries: list = []
+    if _MODEL_ERROR_LOG.exists():
+        try:
+            with open(_MODEL_ERROR_LOG) as f:
+                entries = json.load(f)
+        except Exception:
+            pass
+    entries.append({
+        "timestamp": datetime.now().isoformat(),
+        "agent": agent,
+        "provider": provider,
+        "model": model,
+        "error": error,
+    })
+    with open(_MODEL_ERROR_LOG, "w") as f:
         json.dump(entries, f, indent=2)

@@ -1,0 +1,19 @@
+# User biographical profile — stable context for all agents
+# Sensitive-tier: loaded into sensitive-layer agents only; never sent to cloud models
+# Edit directly or update through conversation ("my home city is London")
+
+name: Mike
+location:
+  city: London
+  country: United Kingdom
+  timezone: Europe/London
+age: null                # Fill in current age (integer)
+birth_year: null         # Or fill in birth year — age is computed from this automatically
+occupation: null         # Brief description (e.g. "Writer and bookshop owner")
+household: null          # Living situation (e.g. "Lives with children")
+health_notes: null       # Standing conditions, medications, or context relevant to health routing
+other: []                # Any other stable biographical facts worth injecting
+
+# Ambient context settings — controls what the 3-hourly refresh fetches
+ambient:
+  markets: true          # Fetch major global market indices (S&P 500, FTSE, DAX, Nikkei, Gold, Oil)

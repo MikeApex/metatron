@@ -698,6 +698,7 @@ def _anthropic_stream(
     tool_schemas: list[dict], tool_handlers: dict,
     model: str | None = None,
     max_iterations: int = 8,
+    history: list[dict] | None = None,
 ) -> Iterator[str]:
     """Streaming agentic loop for Anthropic.
 
@@ -713,7 +714,10 @@ def _anthropic_stream(
         raise EnvironmentError("ANTHROPIC_API_KEY is not set.")
 
     client = anthropic.Anthropic(api_key=api_key)
-    messages: list[dict] = [{"role": "user", "content": user_input}]
+    messages: list[dict] = []
+    if history:
+        messages.extend(history)
+    messages.append({"role": "user", "content": user_input})
     _model = model or ANTHROPIC_MODEL
 
     for turn_num in range(1, max_iterations + 1):
@@ -1079,14 +1083,21 @@ def run_session_gemini_grounded(system_prompt: str, user_input: str,
         model_name = model_name[len("models/"):]
 
     _trace(f"[API] gemini-grounded/{model_name}  turn=1  waiting...")
-    response = client.models.generate_content(
-        model=model_name,
-        contents=user_input,
-        config=types.GenerateContentConfig(
-            system_instruction=system_prompt,
-            tools=[types.Tool(google_search=types.GoogleSearch())],
-        ),
-    )
+    try:
+        response = client.models.generate_content(
+            model=model_name,
+            contents=user_input,
+            config=types.GenerateContentConfig(
+                system_instruction=system_prompt,
+                tools=[types.Tool(google_search=types.GoogleSearch())],
+            ),
+        )
+    except Exception as _api_exc:
+        from core.router import log_model_error
+        _agent = _tr.get_current_agent() or "research_agent"
+        logger.error(f"[model_error] agent={_agent} provider=gemini-grounded model={model_name} error={_api_exc}")
+        log_model_error(_agent, "gemini-grounded", model_name, str(_api_exc))
+        raise
 
     text = response.text or ""
 
@@ -1158,7 +1169,10 @@ def run_session_gemini_cached(system_prompt: str, user_input: str,
             cached_content=cached_content_name,
         )
     except Exception as e:
+        from core.router import log_model_error
+        _agent = _tr.get_current_agent() or "unknown"
         logger.warning(f"[vertex_cache] native loop failed ({e}) — falling back to compat")
+        log_model_error(_agent, "gemini-cached", model_name, f"native loop failed, fell back to compat: {e}")
         return run_session_gemini(system_prompt, user_input, tool_schemas, tool_handlers, model, history)
 
 
@@ -1316,16 +1330,25 @@ def _openai_compat_loop(system_prompt: str, user_input: str,
     cumulative_input_tokens = 0
     result = ""  # accumulated text; may be set in a tool-call turn if model mixes text+tools
 
+    _provider_label = "gemini" if base_url and "googleapis" in base_url else (base_url or "openai")
+
     for turn_num in range(1, max_iterations + 1):
         _trace(f"[API] {base_url or 'openai'}/{model}  turn={turn_num}  waiting...")
         token_kwarg = "max_completion_tokens" if model.startswith("o") else "max_tokens"
-        response = client.chat.completions.create(
-            model=model,
-            **{token_kwarg: 4096},
-            **({"tools": oai_tools} if oai_tools else {}),
-            messages=messages,
-            **({"extra_body": extra_body} if extra_body else {}),
-        )
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                **{token_kwarg: 4096},
+                **({"tools": oai_tools} if oai_tools else {}),
+                messages=messages,
+                **({"extra_body": extra_body} if extra_body else {}),
+            )
+        except Exception as _api_exc:
+            from core.router import log_model_error
+            _agent = _tr.get_current_agent() or "unknown"
+            logger.error(f"[model_error] agent={_agent} provider={_provider_label} model={model} turn={turn_num} error={_api_exc}")
+            log_model_error(_agent, _provider_label, model, str(_api_exc))
+            raise
 
         if response.usage:
             _in_tok = response.usage.prompt_tokens
@@ -1626,8 +1649,12 @@ def _run_single_agent(agent_name: str, user_input: str,
                 result = run_session_gemini(system_prompt, augmented_input, tool_schemas, tool_handlers,
                                             model=model_override, history=history)
         else:
-            result = run_session_anthropic(system_prompt, augmented_input, tool_schemas, tool_handlers,
-                                           model=model_override)
+            from core.router import log_model_error
+            log_model_error(agent_name, provider or "unknown", model_override, f"unrecognised provider '{provider}' — no session started")
+            raise RuntimeError(
+                f"Agent '{agent_name}': unrecognised provider '{provider}'. "
+                f"Valid values: gemini, openai, ollama, anthropic."
+            )
     finally:
         _tr.pop_agent(_agent_rec)
     return result
@@ -1725,7 +1752,8 @@ def _dispatch_from_coordinator(
 
 def run_pipeline_session(user_input: str,
                          persona: str | None = None,
-                         provider: str | None = None) -> str:
+                         provider: str | None = None,
+                         history: list[dict] | None = None) -> str:
     """
     Run the two-pass Coordinator → Synthesizer pipeline.
 
@@ -1776,11 +1804,17 @@ def run_pipeline_session(user_input: str,
             + (f"\n\nSPECIALIST OUTPUTS:\n{spec_text}" if spec_text else "")
         )
         _trace("[PIPELINE] synthesizer  starting")
+        recent_history = list(history[-10:]) if history else None
         synth_result = _run_single_agent(
-            "synthesizer", synthesizer_input, persona=persona, provider=provider
+            "synthesizer", synthesizer_input, persona=persona, provider=provider,
+            history=recent_history,
         )
         _trace(f"[PIPELINE] synthesizer  done  ({len(synth_result)} chars)")
         filtered = filter_output(synth_result, "synthesizer")
+        if history is not None:
+            history.append({"role": "user", "content": user_input})
+            history.append({"role": "assistant", "content": filtered})
+            del history[:-10]
     except Exception:
         _tr.set_trace(None)
         raise
@@ -1792,6 +1826,7 @@ def run_pipeline_session_stream(
     user_input: str,
     persona: str | None = None,
     provider: str | None = None,
+    history: list[dict] | None = None,
 ) -> Iterator[str]:
     """
     Streaming variant of run_pipeline_session().
@@ -1839,6 +1874,12 @@ def run_pipeline_session_stream(
         f"[Recent context]\n{recent}\n\n---\n\n{synthesizer_input}" if recent else synthesizer_input
     )
     tool_schemas, tool_handlers = register_tools()
+    from core.router import get_allowed_tools
+    synth_allowed = get_allowed_tools("synthesizer")
+    if synth_allowed is not None:
+        synth_allowed_set = set(synth_allowed)
+        tool_schemas = [s for s in tool_schemas if s["name"] in synth_allowed_set]
+    recent_history = list(history[-10:]) if history else None
 
     # Resolve Synthesizer provider/model — explicit provider arg overrides router
     if provider is not None:
@@ -1872,23 +1913,30 @@ def run_pipeline_session_stream(
         gen = _openai_compat_stream(
             system_prompt, augmented_input, tool_schemas, tool_handlers,
             api_key=api_key, base_url=base_url, model=model_name,
+            history=recent_history,
         )
     elif synth_provider == "openai":
         api_key = os.environ.get("OPENAI_API_KEY", "")
         gen = _openai_compat_stream(
             system_prompt, augmented_input, tool_schemas, tool_handlers,
             api_key=api_key, base_url=None, model=synth_model or OPENAI_MODEL,
+            history=recent_history,
         )
     elif synth_provider == "ollama":
         gen = _openai_compat_stream(
             system_prompt, augmented_input, tool_schemas, tool_handlers,
             api_key="ollama", base_url=synth_base_url or OLLAMA_BASE_URL,
             model=synth_model or OLLAMA_MODEL,
+            history=recent_history,
         )
     elif synth_provider == "anthropic":
+        from core.router import log_model_error
+        logger.warning(f"[provider_warn] synthesizer routed to anthropic — unexpected on VM; check routing config")
+        log_model_error("synthesizer", "anthropic", synth_model, "synthesizer reached anthropic streaming branch — check routing config")
         gen = _anthropic_stream(
             system_prompt, augmented_input, tool_schemas, tool_handlers,
             model=synth_model or ANTHROPIC_MODEL,
+            history=recent_history,
         )
     else:
         raise NotImplementedError(f"No streaming implementation for provider: {synth_provider}")
@@ -1902,6 +1950,10 @@ def run_pipeline_session_stream(
     complete = "".join(buffer)
     _tr.pop_agent(_synth_rec)
     filtered = filter_output(complete, "synthesizer")
+    if history is not None:
+        history.append({"role": "user", "content": user_input})
+        history.append({"role": "assistant", "content": filtered if filtered == complete else ""})
+        del history[:-10]
     if filtered != complete:
         yield "[RETRACT]"
     else:
@@ -1937,9 +1989,8 @@ def run_session(agent_name: str, user_input: str,
     else:
         os.environ.pop("AI_TEST_PERSONA", None)
 
-    # Coordinator triggers the two-pass pipeline (stateless — no history threading).
     if agent_name == "coordinator":
-        return run_pipeline_session(user_input, persona=persona, provider=provider)
+        return run_pipeline_session(user_input, persona=persona, provider=provider, history=history)
 
     result = _run_single_agent(
         agent_name, user_input,
@@ -1955,7 +2006,7 @@ def run_session(agent_name: str, user_input: str,
 # ---------------------------------------------------------------------------
 
 def run_interactive(agent_name: str, persona: str | None = None,
-                    provider: str = "anthropic") -> None:
+                    provider: str = "gemini") -> None:
     """Run an interactive session in the terminal."""
     label = agent_name.replace('_', ' ').title()
     if persona:

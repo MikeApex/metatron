@@ -73,6 +73,8 @@ class SessionResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 _CONV_LOCK = threading.Lock()
+# Per-persona rolling conversation history — last 5 turns (10 entries) for Synthesizer context.
+_session_history: dict[str, list[dict]] = {}
 
 
 def _log_conversation(user_input: str, response: str, agent: str, persona: str | None) -> None:
@@ -111,9 +113,10 @@ async def session(req: SessionRequest) -> SessionResponse:
     try:
         agent = req.agent
         persona = req.persona or DEFAULT_PERSONA
+        history = _session_history.setdefault(persona or "__default__", []) if agent == "coordinator" else None
         loop = asyncio.get_running_loop()
         response = await loop.run_in_executor(
-            None, lambda: run_session(agent, req.input, persona=persona, provider=req.provider)
+            None, lambda: run_session(agent, req.input, persona=persona, provider=req.provider, history=history)
         )
         _log_conversation(req.input, response, agent, persona)
         return SessionResponse(response=response)
@@ -143,6 +146,7 @@ async def session_stream(req: SessionRequest):
         raise HTTPException(status_code=400, detail="Streaming only supported for agent=coordinator.")
 
     persona = req.persona or DEFAULT_PERSONA
+    history = _session_history.setdefault(persona or "__default__", [])
 
     async def sse_generator():
         accumulated: list[str] = []
@@ -152,7 +156,7 @@ async def session_stream(req: SessionRequest):
         def _produce() -> None:
             try:
                 for chunk in run_pipeline_session_stream(
-                    req.input, persona=persona, provider=req.provider
+                    req.input, persona=persona, provider=req.provider, history=history
                 ):
                     asyncio.run_coroutine_threadsafe(queue.put(chunk), loop).result()
             except NotImplementedError:
@@ -621,7 +625,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Life Manager — PWA Server")
     parser.add_argument("--host", default="0.0.0.0", help="Bind address (0.0.0.0 = all interfaces)")
     parser.add_argument("--port", type=int, default=8000)
-    parser.add_argument("--provider", default="anthropic", choices=["anthropic", "openai", "ollama", "gemini"],
+    parser.add_argument("--provider", default="gemini", choices=["anthropic", "openai", "ollama", "gemini"],
                         help="Default provider (can be overridden per request)")
     parser.add_argument("--persona", default=None,
                         help="Default dev persona for all sessions (e.g. pepys). Omit for real user context.")

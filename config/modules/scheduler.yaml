@@ -54,3 +54,10 @@ schedules:
     agent: physical_health
     prompt: "Run a weekly physical health review. Check sleep trends, exercise consistency, medication adherence, and nutrition logging for the past 7 days. Flag any trajectory concerns. Write a summary to the log."
     notification: terminal
+
+  ambient_refresh:
+    enabled: true
+    interval_minutes: 180   # every 3 hours
+    days: daily
+    function: tools.ambient.refresh_ambient_context
+    notification: false
