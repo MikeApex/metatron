@@ -897,9 +897,16 @@ def _get_vertex_native_client():
     return _vertex_native_client
 
 
-def _get_or_create_vertex_cache(client, system_prompt: str, model_name: str) -> str | None:
+def _get_or_create_vertex_cache(
+    client, system_prompt: str, model_name: str,
+    tool_schemas: list[dict] | None = None,
+) -> str | None:
     """
-    Return the Vertex CachedContent name for this system prompt, creating it if needed.
+    Return the Vertex CachedContent name for this (system_prompt, tools) pair.
+
+    Tools are baked into the cache so the request body can stay clean — Vertex
+    rejects requests that include both cached_content and tools/system_instruction.
+    The cache key includes tool names so different tool sets get separate caches.
 
     Expire time: midnight UTC tonight — matches the "once per day" config change cadence.
     Returns None on any failure (model doesn't support caching, content too short, etc.).
@@ -909,7 +916,8 @@ def _get_or_create_vertex_cache(client, system_prompt: str, model_name: str) -> 
     import hashlib
     from google.genai import types
 
-    content_hash = hashlib.sha256(f"{model_name}:{system_prompt}".encode()).hexdigest()[:16]
+    tool_key = ":".join(s["name"] for s in (tool_schemas or []))
+    content_hash = hashlib.sha256(f"{model_name}:{system_prompt}:{tool_key}".encode()).hexdigest()[:16]
     if content_hash in _vertex_cache_registry:
         return _vertex_cache_registry[content_hash]
 
@@ -918,13 +926,13 @@ def _get_or_create_vertex_cache(client, system_prompt: str, model_name: str) -> 
         midnight = (now + datetime.timedelta(days=1)).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
-        cache = client.caches.create(
-            model=model_name,
-            config=types.CreateCachedContentConfig(
-                system_instruction=system_prompt,
-                expire_time=midnight,
-            ),
+        gemini_tools = _to_gemini_tools(tool_schemas or [])
+        cache_config = types.CreateCachedContentConfig(
+            system_instruction=system_prompt,
+            expire_time=midnight,
+            **({"tools": gemini_tools} if gemini_tools else {}),
         )
+        cache = client.caches.create(model=model_name, config=cache_config)
         _vertex_cache_registry[content_hash] = cache.name
         _trace(f"[VERTEX_CACHE] created {cache.name} expires={midnight.isoformat()}")
         logger.info(f"[vertex_cache] created model={model_name} hash={content_hash} expires={midnight.isoformat()}")
@@ -1049,7 +1057,7 @@ def run_session_gemini_cached(system_prompt: str, user_input: str,
     if client is None:
         return run_session_gemini(system_prompt, user_input, tool_schemas, tool_handlers, model, history)
 
-    cached_content_name = _get_or_create_vertex_cache(client, system_prompt, model_name)
+    cached_content_name = _get_or_create_vertex_cache(client, system_prompt, model_name, tool_schemas)
 
     try:
         return _run_gemini_native_loop(
@@ -1084,10 +1092,10 @@ def _run_gemini_native_loop(client, model_name: str,
     gemini_tools = _to_gemini_tools(tool_schemas)
     _tools_kwarg = {"tools": gemini_tools} if gemini_tools else {}
     if cached_content:
+        # Tools and system_instruction are baked into the cache — must not repeat them here.
         config = types.GenerateContentConfig(
             cached_content=cached_content,
             max_output_tokens=4096,
-            **_tools_kwarg,
         )
     else:
         config = types.GenerateContentConfig(
