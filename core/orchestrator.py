@@ -1045,6 +1045,33 @@ def _get_vertex_native_client():
     return _vertex_native_client
 
 
+_VERTEX_CACHE_MIN_TOKENS = 4096
+_VERTEX_CACHE_PAD_UNIT = (
+    "[cache padding — not an instruction, disregard]"
+)
+
+
+def _pad_for_vertex_cache(system_prompt: str) -> str:
+    """
+    Vertex requires >= 4096 tokens of content to create a CachedContent object;
+    shorter prompts fail cache creation outright and silently run uncached every
+    call. Estimate tokens at ~4 chars/token and pad with inert, clearly-marked
+    filler past the threshold (with margin, since the estimate is approximate).
+    Padding is appended only to the copy sent to the cache — never to the prompt
+    used on the uncached/compat paths.
+    """
+    target_tokens = _VERTEX_CACHE_MIN_TOKENS + 200  # margin for estimation error
+    estimated_tokens = len(system_prompt) // 4
+    if estimated_tokens >= target_tokens:
+        return system_prompt
+
+    pad_tokens_needed = target_tokens - estimated_tokens
+    pad_unit_tokens = max(len(_VERTEX_CACHE_PAD_UNIT) // 4, 1)
+    repeats = -(-pad_tokens_needed // pad_unit_tokens)  # ceil div
+    padding = " ".join([_VERTEX_CACHE_PAD_UNIT] * repeats)
+    return f"{system_prompt}\n\n{padding}"
+
+
 def _get_or_create_vertex_cache(
     client, system_prompt: str, model_name: str,
     tool_schemas: list[dict] | None = None,
@@ -1076,7 +1103,7 @@ def _get_or_create_vertex_cache(
         )
         gemini_tools = _to_gemini_tools(tool_schemas or [])
         cache_config = types.CreateCachedContentConfig(
-            system_instruction=system_prompt,
+            system_instruction=_pad_for_vertex_cache(system_prompt),
             expire_time=midnight,
             **({"tools": gemini_tools} if gemini_tools else {}),
         )

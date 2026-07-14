@@ -306,6 +306,19 @@ sudo journalctl -u metatron-scheduler -f
 
 ---
 
+### Pausing / Resuming (cost control while not developing)
+
+`metatron-vm` running 24/7 plus the scheduler's periodic Vertex AI calls accrue cost even with zero active use. When not actively developing, stop the VM entirely rather than leaving it running idle:
+
+```bash
+./scripts/metatron-pause.sh    # stops metatron-vm — halts Compute Engine + scheduler Vertex billing
+./scripts/metatron-resume.sh   # starts metatron-vm, waits for health check
+```
+
+Both scripts run from the Mac and shell out to `gcloud compute instances stop/start`. Both systemd services (`metatron-server`, `metatron-scheduler`) are enabled and start automatically on boot — no manual restart needed after resume. The phone app is unreachable while paused. A stopped VM still incurs a small persistent-disk storage fee, but no compute or Vertex AI charges.
+
+---
+
 ### GitHub and Deploy Pipeline
 
 | Property | Value |
