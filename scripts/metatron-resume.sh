@@ -10,7 +10,7 @@ echo "VM started. Waiting for server to come up..."
 timeout=120; elapsed=0; interval=5
 while [ "$elapsed" -lt "$timeout" ]; do
     status=$(gcloud compute ssh metatron-vm --zone=us-central1-a --project=metatron-ai-499810 \
-        --command="curl -sk http://localhost:8001/health" 2>/dev/null || echo "")
+        --command="curl -sk https://localhost:8001/health" 2>/dev/null || echo "")
     if [ -n "$status" ]; then
         echo "Server is up: $status"
         exit 0
