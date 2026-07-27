@@ -583,8 +583,8 @@
       return;
     }
     const exchangeId = crypto.randomUUID();
-    shownIds.add(exchangeId);
     if (shownIds.size > 100) shownIds.clear();
+    shownIds.add(exchangeId);
 
     addMessage('user', input);
     ownBubble = addMessage('assistant', '▍');
