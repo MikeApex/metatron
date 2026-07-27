@@ -12,6 +12,25 @@ A voice-first personal AI life manager. A director and companion for a human lif
 
 ---
 
+## Mandatory Pre-Edit Context Check
+
+No code, config, or agent-file edit happens in a session until that session has actually read:
+
+1. **`SESSION.md`** — current phase, what's in progress, what's blocked or frozen.
+2. **The active roadmap it points to** (e.g. `archive/plans/phase5_to_future_roadmap_*.md`) — phase gates, freeze states, hard-fail criteria, scheduled refactors.
+3. **Any file-ownership rules in effect** (e.g. `archive/plans/parallel_chats_index_*.md`) — which files are frozen, which track owns them, what "propose, don't edit" applies to.
+4. **The current state of the specific file(s) about to be touched** — not a memory of what they contained earlier in this conversation or a prior one.
+
+This applies even to small, well-intentioned additions made in service of a good design discussion. Specifics worth naming because they've already caused a problem once:
+
+- **Specialist agent files (`config/agents/*.md`) are frozen post-review.** Audit/review work proposes edits in a document; it does not apply them directly, unless the current roadmap explicitly says the freeze is lifted.
+- **`core/orchestrator.py`** carries active ownership and refactor plans (module-split work) tracked in the roadmap. Check whether a pending refactor will relocate the code being touched before adding to it.
+- **Domains with named hard-fail criteria** (e.g. Finance arithmetic accuracy, Mental Wellbeing clinical-flag firing) have a designated test/validation path in the roadmap or `tests/`. New tooling in those domains goes through that path, not around it.
+
+If `SESSION.md` or the roadmap doesn't clearly resolve whether a file is safe to edit right now, ask before editing — don't infer permission from the fact that the conversation reached an implementation-shaped request.
+
+---
+
 ## Terminology
 
 Use precise names. Avoid pronouns and generic terms.
@@ -227,16 +246,20 @@ Model ID note: Vertex drops the `models/` prefix that AI Studio requires. The or
 
 ### Billing Protection
 
-Hard cap at $20/month to prevent runaway API charges.
+Hard cap at $30/month (raised from $20 on 2026-07-27) to prevent runaway API charges.
 
+- **Budget resource:** "Metatron & Multi-Model Budget" on billing account `013F3D-66B5CD-955A3A`, `$30` monthly, calendar-period, notifying via Pub/Sub
 - **Pub/Sub topic:** `billing-cap` in project `metatron-ai-499810`
-- **Budget alert:** fires at $20, publishes to `billing-cap` topic
+- **Budget alert:** fires whenever cost exceeds the budget, publishes `{costAmount, budgetAmount}` to `billing-cap` topic — not just once on first crossing; GCP re-evaluates and re-notifies repeatedly while spend stays over budget
 - **Cloud Function:** `stop-billing` (Python 3.11, Gen2, `us-central1`)
   - Trigger: Pub/Sub message on `billing-cap`
-  - Action: calls `cloudbilling.disable_project_billing()` on the project
+  - Action: if `costAmount > budgetAmount` **and no manual override is active**, calls `cloudbilling.disable_project_billing()` on the project
   - Retry policy: `RETRY_POLICY_DO_NOT_RETRY`
+  - Source tracked at... *(not yet in the repo — currently only deployed; consider adding under `infra/stop-billing/` if it needs another change)*
 
-If billing gets disabled, re-enable it in the GCP Console under Billing before doing anything else.
+**Manual override:** `gs://metatron-billing-state/override.json` — if present with an unexpired `until` timestamp, `stop-billing` logs and skips disabling instead of acting. Set via `scripts/metatron-billing-override.sh [hours]`. Exists because after raising the budget in the Console, GCP's notification pipeline took 10+ minutes to stop sending stale notifications carrying the old (lower) budget, each of which would otherwise re-disable billing right after a manual relink. `scripts/metatron-resume.sh` sets a 4-hour override automatically, but only when it finds billing already disabled — never on a routine resume.
+
+If billing gets disabled and `metatron-resume.sh` doesn't recover it, relink manually: `gcloud billing projects link metatron-ai-499810 --billing-account=013F3D-66B5CD-955A3A`, then check the GCP Console under Billing to confirm the budget amount is what you expect before doing anything else.
 
 ---
 
@@ -316,6 +339,10 @@ sudo journalctl -u metatron-scheduler -f
 ```
 
 Both scripts run from the Mac and shell out to `gcloud compute instances stop/start`. Both systemd services (`metatron-server`, `metatron-scheduler`) are enabled and start automatically on boot — no manual restart needed after resume. The phone app is unreachable while paused. A stopped VM still incurs a small persistent-disk storage fee, but no compute or Vertex AI charges.
+
+If `metatron-resume.sh` finds billing disabled (the `$` cap tripped while paused — see Billing Protection below), it alerts, sets a manual override, and relinks automatically before starting the VM. A routine resume where billing was never disabled skips that path entirely.
+
+**Known issue — Tailscale DNS after resume:** after a stop/start cycle, Tailscale's DNS relay (`100.100.100.100` in `/etc/resolv.conf`) has come up unhealthy at least once, silently blocking *all* outbound DNS on the VM (not just tailnet traffic) since Tailscale had taken over system DNS resolution. Symptom: Python/gcloud calls to Google APIs fail with `NameResolutionError` even though the metadata server and general network are reachable. Check with `sudo tailscale status` (look for a DNS health-check failure) and fix with `sudo tailscale set --accept-dns=false` to fall back to normal DNS. Root cause not yet identified — restarting `tailscaled` alone did not fix it.
 
 ---
 
