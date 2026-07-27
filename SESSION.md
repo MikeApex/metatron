@@ -63,6 +63,14 @@ If you need to find a specific file, tool, or planning document: **[CODEBASE_IND
 - **Check 10** Agent behavioral audits — **on hold**
 - **Check 12** Constitution alignment review — **on hold**
 
+### Also done 2026-07-27 (Vertex cache padding fix, pause/resume tooling, billing incident)
+- **Vertex cache padding fixed:** `_pad_for_vertex_cache()` added to `core/orchestrator.py` — the 2026-06-24 token-reduction work had shrunk Coordinator/Synthesizer prompts under Vertex's 4096-token cache-creation floor, silently failing cache creation on every call. Verified live: cache now creates successfully and reads confirmed (`cache_read=12281` on a real session).
+- **VM pause/resume tooling added:** `scripts/metatron-pause.sh`, `scripts/metatron-resume.sh` — stop/start `metatron-vm` for cost control during dev downtime.
+- **Billing incident + fix:** the $20 budget cap had tripped and fully unlinked the billing account days earlier. Budget raised to $30. Found and fixed a re-fire loop in `stop-billing` (Cloud Function) caused by GCP's budget-notification propagation lag re-disabling billing on every relink attempt — added a manual-override marker mechanism (`gs://metatron-billing-state/override.json`, `scripts/metatron-billing-override.sh`), wired into `metatron-resume.sh` to trigger only when it finds billing actually disabled.
+- **Known issue documented:** Tailscale DNS relay came up unhealthy after VM stop/start, blocking all outbound API calls until `tailscale set --accept-dns=false`. Root cause not identified.
+- **Monitoring note added** below (June 24 token-reduction entry) — watch cache padding on any future prompt-shrinking pass to Coordinator/Synthesizer.
+- Session archive: `archive/sessions/2026-07-27 — GCP Billing Investigation, Cache Padding Fix, and Pause-Resume Tooling.md`
+
 ### Also done 2026-06-22 (The Book SSE reconnect)
 - `_sse_loop` now auto-reconnects with exponential backoff (2s→30s) on any connection failure. Column 1 updates in real time without re-selecting the persona.
 - Session archive: `archive/sessions/2026-06-22 — The Book SSE Reconnect.md`
@@ -217,6 +225,8 @@ Session archive: [archive/sessions/2026-06-26 — Troubleshooting Prompts and In
 - **Step 6 (deferred):** Coordinator restructure — single-pass directive assembly replaces 3-turn session. Do after Steps 1–5 stable. (~15,000t saved from Coordinator alone)
 
 Session archive: [archive/sessions/2026-06-24 — Token Reduction Architecture and Implementation.md](archive/sessions/2026-06-24 — Token Reduction Architecture and Implementation.md)
+
+**Monitor: Vertex cache padding (2026-07-27).** Steps 2–5 above shrank Coordinator/Synthesizer system prompts enough that at least one (Physical Health-adjacent context, 4051t) fell under Vertex's 4096-token cache-creation floor — every cache attempt silently failed and ran uncached until fixed in `_pad_for_vertex_cache()` (`core/orchestrator.py`). Any future token-reduction pass on `coordinator`/`synthesizer` (the only two agents on the cached path — `_HEAD_LAYER_AGENTS`/`_ROUTING_LAYER_AGENTS`) should re-check real prompt sizes stay comfortably clear of that floor, or confirm the padding logic is still absorbing the gap. Currently routed to Gemini only — the dormant Anthropic `cache_control` path (1024t floor, fails silently rather than erroring) doesn't need the same watch unless Anthropic routing comes back.
 
 ### Also done 2026-06-22 (token economics analysis)
 - **Pipeline token cost traced end-to-end:** ~95,000 input tokens for a 70-token user message (~13× overhead). Coordinator (3 turns): ~22,000t. 5 sync specialists (2 turns each): ~49,000t. Synthesizer (2 turns): ~14,790t.
