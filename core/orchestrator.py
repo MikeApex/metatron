@@ -58,7 +58,7 @@ if str(ROOT) not in sys.path:
 CONFIG_DIR = ROOT / "config"
 AGENTS_DIR = CONFIG_DIR / "agents"
 
-ANTHROPIC_MODEL = "claude-sonnet-4-6"
+ANTHROPIC_MODEL = "claude-sonnet-5"
 _PARALLEL_TOOLS = {"run_subagent", "run_model_conference"}
 
 # Vertex context cache registry — in-process singleton, keyed by content hash.
@@ -1683,8 +1683,9 @@ def _run_single_agent(agent_name: str, user_input: str,
     _trace(f"[AGENT] {agent_name}  provider={provider}  model={model_override}{'  bare=True' if bare else ''}")
     agent = load_agent(agent_name)
 
-    if bare or agent_name == "research_agent":
+    if bare or agent_name in {"research_agent", "diarist"}:
         # No personal config or context — decontextualized / diagnostic mode.
+        # diarist: write-only, directive-driven; goals.yaml adds tokens without value.
         system_prompt = f"## Your Role for This Session\n\n{agent}"
         augmented_input = user_input
         context_sections = {"agent_file": agent}

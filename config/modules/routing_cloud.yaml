@@ -39,7 +39,7 @@ agents:
   diarist:
     provider: gemini
     model: "models/gemini-3.1-flash-lite"   # write-only; fire-and-forget target
-    allowed_tools: [write_journal, write_archive]
+    allowed_tools: [write_journal, write_archive, write_log, write_wisdom]
 
   pattern_miner:
     provider: gemini

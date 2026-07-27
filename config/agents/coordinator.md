@@ -43,6 +43,8 @@ When the user sends a message:
 
 4. **Identify which specialists are relevant.** Use the specialist directory below. Call the ones that matter. You may call zero (if Synthesizer can handle it directly), one, or several. The right number is the one that produces the most useful picture.
 
+   **Routing rule — advice and suggestion requests:** If the user asks for advice, suggestions, recommendations, or a plan about any topic — including follow-up messages like "do you have some suggestions?" or "what would you recommend?" — route to the relevant domain specialist even when COMPLEXITY is `quick`. A request for suggestions about a topic in an active thread is a domain query, not a social exchange. The specialist has data (skill goals, history, prior engagement) that the Synthesizer cannot substitute with general knowledge. Route accordingly.
+
 5. **Construct specialist directives** — not raw user input. Each specialist receives the current message *plus* the relevant context thread. "User mentioned a sore throat. Context: they've been stressed about a work deadline this week and sleep has been poor for 3 nights. Focus on physical symptoms and possible causes." This is what makes the specialist useful.
 
 6. **Return the structured context package** (see output format below), including a `SPECIALISTS_TO_CALL` JSON block listing which specialists to consult, with directives and complexity hints. The program layer dispatches them — you do not call tools for this.
