@@ -224,3 +224,47 @@ Those sessions also **never wrote the context tracker**, so proactive check-ins 
 3. ~~`/session` leaks `[CONTEXT]` / skips the context tracker~~ — **fixed**, and it was worse than recorded: it affected every scheduled job and every push notification.
 4. `[vertex_cache] 404 cached content metadata` — stale cache ID reused after expiry, falls back to compat on every call. **Still open**, cost/latency only.
 5. Coordinator ran 7 turns / 48K cumulative tokens on the reproduction — the known coordinator-slimming item (target <=3 turns, <=40K). **Still open.**
+
+---
+
+## Vertex cache — two bugs, one masking the other
+
+**Symptom:** `[vertex_cache] native loop failed (404 NOT_FOUND ... cached content metadata for 3167247740363079680)` on every call, falling back to the compat path.
+
+### Bug 1 — the registry never expired
+`_vertex_cache_registry` mapped content hash to cache name and was never invalidated, but Vertex deletes each cache at its `expire_time` (midnight UTC). After the first midnight the registry kept returning a dead name: every call paid a wasted round trip, 404'd, and fell back. It then ran **uncached for the rest of the process lifetime**. The same cache id appeared at 07:35, 09:05, 10:35 and 12:05 — one stale entry, reused all day.
+
+The docstring claimed "rebuild happens automatically on the next miss." There was no eviction anywhere, so there was never a miss to rebuild from.
+
+**Fix:** the registry stores `(name, expire_time)` and treats an entry within 60s of expiry as a miss, so the cache rebuilds *before* it can 404. Plus, on a not-found from the native loop, the dead entry is evicted and rebuilt once before falling back — a cache can vanish early (deleted, or project-evicted), which previously also meant uncached forever.
+
+Deliberately not thread-locked: concurrent specialists could both create a cache for the same hash, but both are valid and the loser is simply unused. A lock would add contention on every cached call to avoid a rare, harmless duplicate.
+
+### Bug 2 — padding under-shot the floor (a regression from earlier today)
+Fixing bug 1 stopped the 404 firing *before* creation was attempted, which exposed:
+
+`400 INVALID_ARGUMENT — The cached content is of 3898 tokens. The minimum token count to start explicit caching is 4096.`
+
+**Caused by this session's own work.** Removing the Constitution's Development Note and de-duplicating the tier headings shrank the system prompt below what the padding could absorb — precisely the failure the SESSION.md monitoring note was added to catch after the 2026-06-24 token-reduction pass. The note worked; it just needed someone to read the log.
+
+Root cause: `_pad_for_vertex_cache()` estimated 4 chars/token. That is *optimistic* — it overestimates the token count and therefore under-pads. The real ratio on this codebase's prompts is ~4.4, so a prompt padded to an estimated 4296 tokens arrived as 3898 actual.
+
+**Fix:** assume 5 chars/token and target 25% above the floor plus a flat margin. Underestimating is the safe direction — it pads more than needed, and surplus padding costs nothing because the cache is read rather than regenerated.
+
+### Verified live
+| Agent | Real tokens | Result |
+|---|---|---|
+| Synthesizer | 8,826 (no padding needed) | cache created |
+| Coordinator | 4,938 -> 6,127 padded | cache created |
+
+Registry reuse confirmed (`second call reused: True`); `cache_read=9691` present in token-budget lines; zero cache failures after the 14:48:47 restart.
+
+**Lesson recorded:** a fallback that works can hide a bug indefinitely. The 404 was "harmless" because compat caught it — so it sat there for over a month, silently paying full token cost on every call.
+
+### Backlog after this session
+- ~~`companion_checkin` fails every fire~~ — fixed (missing `--persona`)
+- ~~`AgentRecord not JSON serializable`~~ — same bug, fixed
+- ~~`/session` leaks `[CONTEXT]` / skips tracker~~ — fixed; affected every push notification
+- ~~stale Vertex cache 404~~ — fixed
+- ~~cache padding below the 4096 floor~~ — fixed
+- **Open:** Coordinator ran 7 turns / 48K cumulative tokens — the known coordinator-slimming item (target <=3 turns, <=40K). Now the largest remaining cost/latency lever.
