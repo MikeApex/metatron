@@ -1946,7 +1946,12 @@ def run_pipeline_session(user_input: str,
             "coordinator", coord_input, persona=persona, provider=provider
         )
         _trace(f"[PIPELINE] coordinator  done  ({len(coord_output)} chars)")
-        print(f"\n--- COORD PACKAGE ---\n{coord_output}\n--- END COORD PACKAGE ---\n", file=sys.stderr)  # dev
+        # Gated behind AI_TRACE (the existing debug flag) rather than always-on:
+        # this fires on every scheduled job, so unconditionally it floods
+        # journalctl with routing internals and buries real errors.
+        if os.environ.get("AI_TRACE"):
+            print(f"\n--- COORD PACKAGE ---\n{coord_output}\n--- END COORD PACKAGE ---\n",
+                  file=sys.stderr)
 
         # Handle any USER_CORRECTION flag in Coordinator output
         _handle_user_correction(coord_output)
