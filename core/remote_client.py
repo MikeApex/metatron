@@ -220,3 +220,52 @@ def run_interactive_remote(persona: str, server: str | None = None,
         asyncio.run(_run(persona, server or DEFAULT_SERVER, provider, insecure))
     except KeyboardInterrupt:
         print("\n")
+
+
+async def _send_one(persona: str, text: str, server: str, provider: str | None,
+                    insecure: bool, timeout: float) -> str:
+    import websockets
+
+    url = _ws_url(server, persona)
+    async with websockets.connect(url, ssl=_ssl_context(url, insecure), max_size=None) as ws:
+        await ws.recv()  # history handshake
+        xid = str(uuid.uuid4())
+        await ws.send(json.dumps({
+            "type": "send", "exchange_id": xid, "input": text,
+            "provider": provider, "proactive": True,
+        }))
+        parts: list[str] = []
+        while True:
+            msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=timeout))
+            kind = msg.get("type")
+            if msg.get("exchange_id") != xid:
+                continue
+            if kind == "chunk":
+                parts.append(msg.get("text", ""))
+            elif kind == "done":
+                return "".join(parts)
+            elif kind == "retract":
+                return ""
+            elif kind == "error":
+                raise RuntimeError(msg.get("text", "server reported an error"))
+
+
+def send_one(persona: str, text: str, server: str | None = None,
+             provider: str | None = None, insecure: bool = True,
+             timeout: float = 600.0) -> str:
+    """
+    Send one message through the server and return the response.
+
+    Used by the scheduler so proactive sessions are ordinary exchanges: they get
+    a conversation record (and therefore a seq), land in the shared database, and
+    are broadcast live to every connected device.
+
+    Running the pipeline in-process instead — as the scheduler did — produces a
+    trace and a push notification but no conversation record and no database row,
+    so Metatron initiates a conversation that then appears nowhere in the user's
+    history. Raises on failure rather than falling back to in-process, because a
+    silent fallback recreates exactly that invisibility.
+    """
+    return asyncio.run(
+        _send_one(persona, text, server or DEFAULT_SERVER, provider, insecure, timeout)
+    )

@@ -372,6 +372,9 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                 if not user_input:
                     continue
                 provider = data.get("provider") or None
+                # Scheduler-initiated exchanges are flagged so traces record that
+                # Metatron opened the conversation rather than the user.
+                proactive = bool(data.get("proactive"))
                 history = _session_history.setdefault(persona_key, [])
 
                 # Notify other devices that a new exchange is starting
@@ -390,7 +393,8 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                 def _produce() -> None:
                     try:
                         for chunk in run_pipeline_session_stream(
-                            user_input, persona=persona_orch, provider=provider, history=history
+                            user_input, persona=persona_orch, provider=provider,
+                            history=history, is_proactive=proactive,
                         ):
                             asyncio.run_coroutine_threadsafe(queue.put(chunk), loop).result()
                     except NotImplementedError:

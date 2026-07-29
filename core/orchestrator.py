@@ -570,7 +570,7 @@ def _sentence_bounds(text: str, pos: int) -> tuple[int, int]:
     return start, end if end > start else len(text)
 
 
-def filter_output(text: str, agent_name: str) -> str:
+def filter_output(text: str, agent_name: str, user_message: str = "") -> str:
     """
     Scan final user-facing output for leaked architecture terms.
     Logs a warning and returns a safe fallback if any are found.
@@ -581,6 +581,12 @@ def filter_output(text: str, agent_name: str) -> str:
     - _ALWAYS_CONFIDENTIAL: code identifiers, flagged on substring match.
     - _CONTEXT_SENSITIVE: common English words that are also agent names;
       only flagged when architecture vocabulary appears in the same sentence.
+
+    A term already present in the user's own message is not a leak — the
+    user said it first, so the Synthesizer echoing it back reveals nothing.
+    (Root cause of the 2026-06-26 exchange-027 false positive: the user
+    wrote "write_config" and the filter suppressed the Synthesizer's reply
+    for repeating it.)
     """
     if agent_name != "synthesizer":
         return text
@@ -588,9 +594,10 @@ def filter_output(text: str, agent_name: str) -> str:
     import warnings
 
     lower = text.lower()
+    user_lower = user_message.lower()
 
     for term in _ALWAYS_CONFIDENTIAL:
-        if term.lower() in lower:
+        if term.lower() in lower and term.lower() not in user_lower:
             warnings.warn(
                 f"[SECURITY] Output filter: '{term}' found in Synthesizer response. "
                 f"Response suppressed.",
@@ -599,6 +606,8 @@ def filter_output(text: str, agent_name: str) -> str:
             return "I'm here to help you manage your life. What can I help you with today?"
 
     for term in _CONTEXT_SENSITIVE:
+        if term.lower() in user_lower:
+            continue
         idx = lower.find(term.lower())
         while idx >= 0:
             start, end = _sentence_bounds(lower, idx)
@@ -2042,7 +2051,7 @@ def run_pipeline_session(user_input: str,
         # the context tracker is never updated for proactive sessions.
         visible, _ctx = split_context_block(synth_result)
         persist_context_block(_ctx)
-        filtered = filter_output(visible, "synthesizer")
+        filtered = filter_output(visible, "synthesizer", user_input)
         if history is not None:
             history.append({"role": "user", "content": user_input})
             history.append({"role": "assistant", "content": filtered})
@@ -2059,6 +2068,7 @@ def run_pipeline_session_stream(
     persona: str | None = None,
     provider: str | None = None,
     history: list[dict] | None = None,
+    is_proactive: bool = False,
 ) -> Iterator[str]:
     """
     Streaming variant of run_pipeline_session().
@@ -2071,6 +2081,7 @@ def run_pipeline_session_stream(
     with persona_scope(resolve_persona(persona)) as bound:
         yield from _run_pipeline_session_stream_inner(
             user_input, persona=bound, provider=provider, history=history,
+            is_proactive=is_proactive,
         )
 
 
@@ -2079,6 +2090,7 @@ def _run_pipeline_session_stream_inner(
     persona: str | None = None,
     provider: str | None = None,
     history: list[dict] | None = None,
+    is_proactive: bool = False,
 ) -> Iterator[str]:
     """
     Pass 1 (Coordinator): runs blocking, identical to run_pipeline_session().
@@ -2090,7 +2102,7 @@ def _run_pipeline_session_stream_inner(
 
     Persona is already bound by the caller — do not set it here.
     """
-    _tr.start_request_trace(user_input, persona)
+    _tr.start_request_trace(user_input, persona, is_proactive=is_proactive)
 
     # Pass 1: Coordinator — single-pass routing directive assembly (blocking)
     _trace("[PIPELINE] coordinator  starting")
@@ -2237,7 +2249,7 @@ def _run_pipeline_session_stream_inner(
     persist_context_block(_ctx)
 
     _tr.pop_agent(_synth_rec)
-    filtered = filter_output(visible, "synthesizer")
+    filtered = filter_output(visible, "synthesizer", user_input)
     if history is not None:
         history.append({"role": "user", "content": user_input})
         history.append({"role": "assistant", "content": filtered if filtered == visible else ""})
@@ -2284,7 +2296,7 @@ def run_session(agent_name: str, user_input: str,
             model_override=model_override, complexity=complexity,
             history=history, bare=bare,
         )
-        return filter_output(result, agent_name)
+        return filter_output(result, agent_name, user_input)
 
 
 # ---------------------------------------------------------------------------

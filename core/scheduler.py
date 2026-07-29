@@ -139,8 +139,20 @@ def fire_session(job_name: str, agent: str, prompt: str,
     print(f"[scheduler] [{persona}] firing {job_name} ({agent})", flush=True)
 
     try:
-        from core.orchestrator import run_session
-        response = run_session(agent_name=agent, user_input=prompt, persona=persona)
+        if agent == "coordinator":
+            # Go through the server so a proactive session is an ordinary
+            # exchange: conversation record (and seq), row in the shared
+            # database, and a live broadcast to every connected device.
+            # Run in-process and it produces a trace and a push notification but
+            # no record anywhere the user can see — Metatron opens a conversation
+            # that then appears nowhere in their history.
+            from core.remote_client import send_one
+            response = send_one(persona, prompt)
+        else:
+            # Single-agent jobs (pattern_miner, physical_health) are analysis
+            # runs that write their own outputs; they are not conversation.
+            from core.orchestrator import run_session
+            response = run_session(agent_name=agent, user_input=prompt, persona=persona)
         title = job_name.replace("_", " ").title()
         _dispatch(notification, title, response)
     except Exception as e:
