@@ -328,3 +328,25 @@ Two feeds. `/monitor/conversations` serves the JSONL (has seq); `/monitor/stream
 
 ### Confirmed working during testing
 Sync across browser, app and terminal. **Open:** the browser appears to need a manual refresh to show foreign messages — the WS broadcast should push them live, so that is a client-side bug in `static/index.html`, separate from this work.
+
+---
+
+## Trace instrumentation + timezone (and a correction to the coordinator claim)
+
+**Specialists were absent from every trace.** Trace context is thread-local; the specialist fan-out in `_dispatch_from_coordinator` propagated persona but not trace, so each specialist's `push_agent()` landed on an empty context and the record was dropped. The Book showed only coordinator and synthesizer. Predates this session (the original `executor.submit` did not propagate either).
+
+**Correction — the 7-8 turns are NOT the coordinator.** With traces fixed, a specialist-heavy session records:
+
+```
+coordinator          turns=[1]
+physical_health      turns=[1,2,3,4,5,6,7,8]
+synthesizer          turns=[1]
+```
+
+The coordinator does **one** turn. The multi-turn sequence is a *specialist* doing 8 internal tool-call turns. The interleaved `turn=2` x3, `turn=3` x3 pattern in the logs was three specialists running **concurrently** — i.e. parallel fan-out already works.
+
+This contradicts the roadmap's D2 item 5, which states "the coordinator makes multiple sequential specialist calls across turns rather than fanning out in parallel" and targets "<=3 turns" at coordinator. The coordinator already meets that. **The real cost driver is per-specialist internal tool-call turns**, which that item does not address. The slimming item needs re-scoping against measured behaviour before any work starts.
+
+**VM timezone was `Etc/UTC` while the user is in Europe/London.** Not merely a display offset in The Book: `scheduler.yaml` times are wall clock, so `morning_brief 07:30` fired at 08:30 BST, `evening_close 20:00` at 21:00, and quiet hours 22:00-07:00 were really 23:00-08:00. Set to `Europe/London`; fixes timestamps and firing times together and follows DST. Scheduler re-registered and confirmed.
+
+**Terminal client now reconnects** with backoff (capped 30s) instead of dying on close code 1012 — a deploy restarting the server killed a live session with an unretrieved-task traceback.
