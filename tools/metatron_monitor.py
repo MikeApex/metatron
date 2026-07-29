@@ -765,6 +765,12 @@ class TheBookApp(App):
                                        for e in self.conversations):
                                 new_entry = {
                                     "ts": trace.get("ts", ""),
+                                    # seq lives in the conversation record, not the
+                                    # trace; the server looks it up and attaches it
+                                    # before emitting. Dropping it here is what made
+                                    # live exchanges unnumbered while exchanges
+                                    # already on disk at load time were numbered.
+                                    "seq": trace.get("seq", ""),
                                     "agent": "coordinator",
                                     "persona": trace.get("persona"),
                                     "user": user_input,

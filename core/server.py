@@ -795,6 +795,32 @@ async def monitor_stream(persona: str | None = None, since: str | None = None):
 
     since_dt = _dt.fromisoformat(since) if since else None
 
+    def _seq_for(trace_entry: dict) -> str:
+        """
+        Find the seq of the conversation record matching this trace.
+
+        seq is assigned by _log_conversation() and lives only in the
+        conversation JSONL; traces have no seq of their own. Without this
+        lookup, exchanges that arrive live are unnumbered in the monitor while
+        exchanges already on disk at load time are numbered — the same
+        exchange, displayed two different ways depending on timing.
+
+        Matched on the user text, taking the newest match: the trace is written
+        at pipeline completion and the conversation record immediately after, so
+        the correct record is the last one with that text.
+        """
+        user_text = (trace_entry.get("user_input") or "").strip()
+        if not user_text:
+            return ""
+        try:
+            for conv_file in reversed(_conversation_files(persona)):
+                for record in reversed(_read_jsonl(conv_file)):
+                    if (record.get("user") or "").strip() == user_text:
+                        return record.get("seq", "")
+        except Exception:
+            pass
+        return ""
+
     async def _generate():
         # Track how many lines we've already sent from the current trace file.
         # On first pass, skip (but count) lines older than since_dt.
@@ -822,6 +848,10 @@ async def monitor_stream(persona: str | None = None, since: str | None = None):
                                 continue  # count position but don't emit
                         except (ValueError, TypeError):
                             pass
+                    if not entry.get("seq"):
+                        seq = _seq_for(entry)
+                        if seq:
+                            entry = {**entry, "seq": seq}
                     payload = _json.dumps({"type": "trace", "data": entry}, ensure_ascii=False)
                     yield f"data: {payload}\n\n"
                 seen[key] = len(lines)
