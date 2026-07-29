@@ -23,7 +23,8 @@
 | File | Description |
 |---|---|
 | [core/orchestrator.py](core/orchestrator.py) | Primary runtime brain — config loading, model API calls (4 providers), tool dispatch, REPL, two-pass Coordinator→Synthesizer pipeline (`run_pipeline_session` at line 621), parallel subagent dispatch. The most important file in the repo. |
-| [core/router.py](core/router.py) | Sensitive routing layer — routes sensitive agents to local LLM; logs fallbacks to `data/logs/routing_fallbacks.json`. `local_enabled` flag in `config/modules/routing.yaml`. |
+| [core/persona.py](core/persona.py) | **Persona identity — single source of truth.** `resolve_persona()` (fail-closed), `persona_scope()` (thread-local), `persona_data_dir()` / `persona_config_dir()` / `persona_md()`, name validation. Never read the env var directly. |
+| [core/router.py](core/router.py) | Sensitive routing layer — routes sensitive agents to local LLM; logs fallbacks to `data/diagnostics/routing_fallbacks.json`. `local_enabled` flag in `config/modules/routing.yaml`. |
 | [core/server.py](core/server.py) | FastAPI server — `/session` endpoint, PWA serving, Web Push subscriptions, audio upload. Default agent: coordinator. |
 | [core/scheduler.py](core/scheduler.py) | Proactive initiation daemon — morning brief (07:30), 90-min companion check-ins, EOD Diarist (20:00), weekly Pattern Miner (Sunday 09:00). |
 | [core/memory.py](core/memory.py) | FAISS vector memory — all-MiniLM-L6-v2 (384-dim), embeds log/journal entries on write, semantic search via `search_memory`. |
@@ -76,9 +77,25 @@ Each file is a Markdown instruction file loaded at runtime by the orchestrator. 
 
 ---
 
-## Development Personas (`config/personas/`)
+## Scripts (`scripts/`)
 
-Personas drawn from published diaries, memoirs, and biographies. Used for agent testing and design validation. The `--persona` flag loads a persona at runtime.
+| Script | Purpose |
+|---|---|
+| [scripts/new_persona.sh](scripts/new_persona.sh) | Provision a persona from `config/templates/`. Validates the name with the same rule the resolver enforces. |
+| [scripts/check_personas.py](scripts/check_personas.py) | Read-only linter: drift between identity files, config dirs, and data dirs. Non-zero exit on real breakage. |
+| [scripts/metatron-pause.sh](scripts/metatron-pause.sh) | Stop `metatron-vm` (cost control while not developing). |
+| [scripts/metatron-resume.sh](scripts/metatron-resume.sh) | Start `metatron-vm`, wait for health check, recover billing if disabled. |
+| [scripts/metatron-billing-override.sh](scripts/metatron-billing-override.sh) | Set a manual override so `stop-billing` skips disabling billing. |
+
+---
+
+## Personas (`config/personas/`)
+
+A persona is a user — there is no test-versus-real tier. Every session belongs to exactly one persona and is treated as real. Identity resolves fail-closed through `core/persona.py`; `--persona` is required on both the server and the scheduler. See the Personas section in [CLAUDE.md](CLAUDE.md) for the full layout and rules.
+
+`mike` is the live user. The rest are drawn from published diaries, memoirs, and biographies, or are synthetic, and are used for agent design validation — but they run through exactly the same machinery.
+
+Provision with `./scripts/new_persona.sh <name>`; check consistency with `python scripts/check_personas.py`.
 
 | Persona | Source | Config |
 |---|---|---|

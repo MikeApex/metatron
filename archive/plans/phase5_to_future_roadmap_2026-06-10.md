@@ -35,10 +35,17 @@ The 2026-06-10 ruling used "cloud" as shorthand for shared infrastructure where 
 - "Testing phase" ends when the tool transitions to production use with real user data at scale. At that point, the default reverts to local/architectural, and cloud VM use requires a conscious per-deployment decision.
 - Fail-closed routing still applies: a VM with Ollama down still returns a hard error if Ollama is the designated local model. The amendment covers routing to a cloud model on a ZDR-compliant VM, not removing the fail-closed requirement.
 
-**What the ruling does NOT affect — development testing (clarified 2026-06-11):** the rule protects real user data, not test data. Unchanged and explicitly permitted on any cloud model:
-- **Persona testing** (`config/personas/`, `data/personas/`) — agent audits, prompt design validation, model comparisons, red teaming, simulation
-- **Public and synthetic corpora** — diary ingestion and Pattern Miner simulation (E5: Dooce, Reddit daily loggers, Pepys)
-- **The truncated goals interview (A3)** runs locally because it interviews the real user — its *output* is real data and stays local. If cloud-side testing needs realistic goals data, run the truncated interview against a persona instead; that output is unrestricted.
+**~~What the ruling does NOT affect — development testing (clarified 2026-06-11)~~ — SUPERSEDED 2026-07-28.** The original carve-out permitted persona data (`config/personas/`, `data/personas/`) on any cloud model on the grounds that it was test data rather than real user data.
+
+**That carve-out no longer holds, for a practical reason rather than a philosophical one.** After the persona unification (2026-07-28) every persona is a complete universe — its own identity file, tier 1–3 config, settings, credentials and data tree — and **nothing at runtime distinguishes a synthetic persona from a real one.** That is the entire point of the change: one mechanism, no special cases, every session treated as real. A rule whose enforcement depends on a distinction the system deliberately no longer makes is a rule that will eventually be applied wrongly, and the failure mode is real user data on a cloud model.
+
+**Current position:** all persona data is sensitive-tier and routes accordingly. Cloud models continue to serve genuinely decontextualized work — Research Agent dispatch, generic `quick_override` lookups, model conference on generic questions — which is unchanged and is where the cost saving always was.
+
+Still explicitly permitted on any cloud model, because none of it is persona-scoped:
+- **Public and synthetic corpora** — diary ingestion and Pattern Miner simulation (E5: Dooce, Reddit daily loggers, Pepys source texts)
+- **Decontextualized dispatch** — prompts with intent and circumstance stripped, per the Research Agent path
+
+Note the practical consequence: cloud-side testing can no longer use a persona as a stand-in for realistic goals data. Use public corpora, or run the test locally.
 
 ### Other changes from the 2026-06-09 draft
 
@@ -763,7 +770,7 @@ Each specialist agent's `## Enhancement backlog` items, organized by dependency 
 
 | Agent | Now | E1 | E2 / D2 | Data | Phase 7+ |
 |---|---|---|---|---|---|
-| **Finance** | Portfolio tracking, budget setup, tax year summary, net worth tracker | Plaid/account integration | — | — | Market Intelligence Service, intraday alert daemon |
+| **Finance** | Portfolio tracking, budget setup, tax year summary, net worth tracker, transaction aggregation/summary tooling (real sum-by-category over a date range, incl. time-bucketed drift detection for the Proactive scan — see hard-fail criterion below) | Plaid/account integration | — | — | Market Intelligence Service, intraday alert daemon |
 | **Learning & Growth** | Topic thread tracking, recommendation engine | — | — | — | Cognitive function profiling, motivation modulation profiling (E4 conversation first) |
 | **Logistics** | Recurring appointment detection | Email integration, maps/transit | — | — | — |
 | **Mental Wellbeing** | Practice streak tracking, therapy logging, resilience scoring, cognitive distortion tracking | — | Clinical concern protocol (Phase 6B gate; now also in Track C scope) | Mood trajectory visualization, seasonal/anniversary pattern detection | — |
@@ -775,6 +782,17 @@ Each specialist agent's `## Enhancement backlog` items, organized by dependency 
 | **Work & Vocation** | Project-level tracking, vocation identity profiling, professional development tracking | — | — | Career timeline reconstruction | Entrepreneurship module (later phase) |
 
 **config/preferences.yaml** — proactive action governance (expenditure threshold, social outreach opt-in, bookings opt-in). All currently `null`/`false`. Activated at A5c, governed by the A1 compliance curve decision.
+
+---
+
+### Cross-cutting data-management gaps (Now tier — noted 2026-07-27, not yet scoped)
+
+Identified in a design discussion about whether the archive/wisdom tooling adequately covers open-ended user data (expense tracking, watchlists, running idea lists). Two gaps span more than one agent, so they don't fit a single row in the table above:
+
+1. **Archive item lifecycle / update-in-place.** `write_archive` is append-only; there is no way to transition an existing item's status (e.g. a film moving from "want to watch" to "watched," a place moving from "aspirational" to "visited") without appending a duplicate or rewriting the whole category file by hand. Affects **Diarist** (owns `write_archive`) and **Recreation & Hobbies** (documents `write_archive`/`read_archive` for exactly this bucket-list pattern already, per its agent file). Needs a `update_archive_item(category, item_id, updates)` tool, keyed by an id assigned at write time — proposed and reverted once already this session pending proper scoping; not yet built.
+2. **Finance transaction aggregation** — see the Finance row above. Note when scoping: this touches the *arithmetic accuracy* hard-fail criterion already tracked elsewhere in this roadmap (local-adequacy ladder — "Finance arithmetic must be 100% accurate," qwen3:14b ceiling scenarios). Any new aggregation tooling needs to run through that same validation path, not be introduced separately from it.
+
+Neither item is scoped or scheduled yet — this is a placeholder for the next chat that picks up Finance or Diarist/archive work to size and gate properly, consistent with the pre-edit context-check rule in `CLAUDE.md`.
 
 ---
 
@@ -845,6 +863,7 @@ Tailscale remains on the VM for developer access. This item removes it from the 
 ### Pre-Beta housekeeping
 
 - **Coordinator package debug print:** `print(f"\n--- COORD PACKAGE ---\n{coord_package}\n--- END COORD PACKAGE ---\n", file=sys.stderr)` in `core/orchestrator.py → run_pipeline_session()` is active for development (added 2026-06-19 session). Remove before Beta — it writes the coordinator context package (which contains user data) to stderr on every pipeline session.
+- **SESSION.md / roadmap pruning (added 2026-07-29):** the Claude Code `SessionStart` hook (`.claude/session_context_primer.py`) forces a full `Read` of `SESSION.md` and this roadmap file at the start of every session — as of 2026-07-29 that's ~38,500 tokens (SESSION.md 61,487 bytes / roadmap 92,322 bytes) paid on every new session, resume, `/clear`, `/compact`, or fork. Both files grow with every dated entry and will keep growing; this cost is not fixed. At the v1.0 refactor pass, prune/archive older dated `SESSION.md` entries (older session detail already lives in `archive/sessions/`) and reassess whether the full roadmap still needs to be read verbatim every session vs. a trimmed/current-tracks-only version. Re-measure actual byte sizes at that point — don't assume today's numbers.
 
 ---
 

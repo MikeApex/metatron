@@ -54,10 +54,12 @@ The `--provider` flag in the Orchestrator CLI is a code-level routing argument. 
 
 | Tier | File | Owned by | Changes |
 |---|---|---|---|
-| 0 — Tool Constitution | `config/constitution.md` | The tool | Never |
-| 1 — Prime Directive | `config/prime_directive.md` | User | Rarely |
-| 2 — Mission | `config/mission.md` | User | At life transitions |
-| 3 — Goals | `config/goals.yaml` | User | Frequently |
+| 0 — Tool Constitution | `config/constitution.md` | The tool | Never — shared by every persona |
+| 1 — Prime Directive | `config/personas/{persona}/prime_directive.md` | User | Rarely |
+| 2 — Mission | `config/personas/{persona}/mission.md` | User | At life transitions |
+| 3 — Goals | `config/personas/{persona}/goals.yaml` | User | Frequently |
+
+Tiers 1–3 are per-persona. There is no root-level fallback — see Personas below.
 
 Always load in this order. The Constitution is the root context for every agent.
 
@@ -81,7 +83,7 @@ config/             Config files — the product. Edit these to change behavior.
   agents/           Sub-agent instruction files (Markdown)
   templates/        Check-in and interaction templates (Markdown)
   modules/          Per-module YAML settings
-  personas/         Development test personas (Markdown)
+  personas/         One directory + identity file per persona (see Personas below)
   research/         Per-feature research archives (Markdown) — informational, not prescriptive
 
 data/               User data — append-only, sensitive-tier local-only
@@ -96,6 +98,37 @@ tools/              MCP tool implementations (Python)
 
 archive/plans/      Historical plan revisions — for reference only
 ```
+
+---
+
+## Personas
+
+A persona is a user. There is no test-versus-real distinction: every session belongs to exactly one persona and is treated as real.
+
+Each persona owns a complete universe:
+
+```
+config/personas/{name}.md              identity + interaction preferences (required)
+config/personas/{name}/
+    prime_directive.md  mission.md  goals.yaml     tiers 1-3
+    profile.yaml  scheduler.yaml  caldav.yaml      settings (gitignored)
+data/personas/{name}/                  logs, journal, memory, traces, conversations,
+                                       crm, wisdom, archive, config, baselines
+```
+
+**Identity resolution is fail-closed.** `core/persona.py` is the single source of truth. `resolve_persona()` checks, in order: an explicit argument, thread-local state (set by `persona_scope()`), then `METATRON_PERSONA`. If none resolves it **raises** — it never falls back to a shared path. Every entry point must name a persona: `--persona` is required on both `core/server.py` and `core/scheduler.py`.
+
+Never read the environment variable directly. Call `resolve_persona()`, `persona_data_dir()`, `persona_config_dir()` or `persona_md()`.
+
+Identity is thread-local, not process-global, because sessions run on a pooled executor thread and specialists fan out across further threads. Anything that spawns a thread must bind the persona inside it — see the four boundaries in `core/orchestrator.py` and `tools/subagent.py`. A fire-and-forget subagent (the Diarist) outlives its request, so it resolves identity on the *calling* thread before the parent scope exits.
+
+Persona names are validated against `^[a-z0-9][a-z0-9_]{0,39}$`. They become filesystem paths and arrive from the HTTP request body, so an invalid name is rejected rather than sanitised.
+
+**Adding a persona:** `./scripts/new_persona.sh <name>`, then fill in `profile.yaml` and run the Goals Interview. Settings files are gitignored, so copy them to the VM manually — `deploy.sh` will not carry them.
+
+**Checking consistency:** `python scripts/check_personas.py` reports drift between identity files, config directories and data directories. Exits non-zero on real breakage.
+
+**Transition note:** `AI_TEST_PERSONA` is a deprecated alias for `METATRON_PERSONA`. It still works and warns once.
 
 ---
 
