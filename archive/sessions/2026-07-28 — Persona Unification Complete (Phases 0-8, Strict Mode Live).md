@@ -1,6 +1,6 @@
-# Persona Unification — Plan and Phase 0
+# Persona Unification — Complete (Phases 0-8, Strict Mode Live)
 **Date:** 2026-07-28
-**Type:** Architecture — planning + execution (in progress)
+**Type:** Architecture — planning + full execution. Shipped and verified.
 
 ---
 
@@ -130,3 +130,60 @@ Both are fixed by the plan (Phase 2 thread-local identity, Phase 3 scheduler per
 - **CalDAV password** — blocked on Google App Password generation.
 - **`data/baselines/aspirational_baseline.json`** has `"persona": ""` — untagged. Fix during the sweep.
 - **Goals interview fix prompt** needs rewriting to reflect the corrected finding.
+
+---
+
+## Phases 3-8 — COMPLETE
+
+### Phase 3+4 (commit `92b51f7` + scheduler crash fix)
+- **Persona-blind tools fixed:** `agent_config` (7 live health/finance state files, moved on both machines in the same change so agents kept their memory), `wishes` (estate/medical/POA), `caldav`, `ambient`. `server._log_conversation` now writes `data/personas/{p}/conversations/` — where the monitoring reader always looked.
+- **Settings per-persona:** `profile.yaml`, `scheduler.yaml`, `caldav.yaml` under `config/personas/{p}/`, gitignored; tracked originals became `config/templates/`. **Files scp'd to the VM BEFORE the code deploy** — the tracked originals are deleted by the commit and the replacements are gitignored, so the reverse order would have left the VM with neither.
+- **`load_profile()` / `load_goals()` root fallback removed.** Verified: a fresh persona now reports `leaks Mike?: False`.
+- **Scheduler:** `fire_function()` takes and binds a persona (closing the `ambient_refresh` leak); schedules load per-persona; per-job try/except so registration can't crash-loop; `--persona` now **required**; `fire_session`/`_notify_push` take persona explicitly.
+- **Security:** `write_calendar_event` no longer accepts a model-supplied `calendar_url`. It overrode config and let the model choose the destination server for a tool that ships event titles and descriptions — an exfiltration path reachable through untrusted calendar content.
+- **`PersonaError` made unswallowable** in the best-effort blocks (memory indexing, ambient load, insight preload). Misfiled data must be loud, not silently absent — this mattered because the user audits traces, and absence is invisible.
+- Router diagnostics moved to `data/diagnostics/` — daemon-level, deliberately not per-persona, kept out of user data.
+
+### Phase 5 (commit `af32b5f`)
+- `scripts/new_persona.sh` — provisions from templates, validates the name with the same regex the resolver enforces.
+- `scripts/check_personas.py` — read-only linter. Severities corrected after first run to match actual runtime behaviour: missing tier files are warnings (`load_config` tolerates them), only genuine breakage errors. Found `data/personas/'Ryan Holiday'` (space in name — resolver rejects it) and an orphaned `test_a3` dir.
+
+### Phase 6 — data reset
+- **Mac:** global tree moved to `data/_pre_reset_2026-07-28/`.
+- **VM:** same, with a full `MANIFEST.txt`. **Deliberately preserved:** `metatron.db` (the Android app's entire chat history), `push_subscriptions.json` (loss silently kills notifications until the user re-grants permission), `data/baselines/`.
+
+### Phase 8 — rename
+- `AI_TEST_PERSONA` -> `METATRON_PERSONA` in the test harnesses (old name still works, warns once).
+- Prompt header `## Development Persona` -> `## User`.
+- `_titled()` helper dedups tier headings — `write_config()` stores the Goals Interviewer's text verbatim including its own `## Prime Directive` heading, so the prompt carried each twice with an empty section between.
+
+### Constitution (Tier 0, explicitly user-approved)
+`## Development Note` **removed**. It made discretion conditional on a development/production distinction the model cannot observe; it contradicted `filter_output()` (plausibly behind SEQ 031, where "daily logistics" tripped the filter and the user got "I can't help with that right now"); and after this work it was the last test/production split left in the runtime, sitting at the highest-precedence context. No visibility lost — that comes from `core/trace.py`, not model self-report. Proposal: `archive/plans/constitution_development_note_proposal_2026-07-28.md`. Lines 1-30 untouched.
+
+### Strict mode — LIVE
+Exercised all 21 persona-dependent paths on the VM first; audit log stayed empty. Then removed `METATRON_PERSONA_STRICT=0` / `METATRON_PERSONA_FALLBACK` from both units. Verified with a real session: coherent response, writes to `data/personas/mike/{logs,conversations,traces}`, global tree unchanged, no `PersonaError`, no audit file.
+
+**Decision changed mid-session:** the original plan waited 7 days in audit mode. The user pushed back — worst case looked like a visible error. The counter was that swallowed exceptions make it silent instead, and the Sunday-only jobs were unexercised. Resolution: fix the swallowing, force-exercise every path including the Sunday ones, and flip *before* the test week rather than after. Better outcome — the user gets guaranteed-clean data instead of a week of audit-mode uncertainty.
+
+### Docs
+`CLAUDE.md` gained a Personas section (layout, fail-closed resolution, thread-local identity, "never read the env var directly"); tier table repointed at `config/personas/{persona}/`. `CODEBASE_INDEX.md` gained `core/persona.py` and a Scripts section. **Roadmap Section 0: the carve-out permitting persona data on any cloud model is SUPERSEDED** — it rested on a distinction the runtime no longer makes, and the failure mode is real user data on a cloud model.
+
+---
+
+## Two process lessons (both cost real time)
+
+1. **`deploy.sh` restarts services, so systemd unit edits need `daemon-reload` BEFORE the deploy.** Adding `Environment=` lines then deploying meant the services restarted without them — production briefly ran fail-closed. Caught in deploy output.
+2. **`py_compile` cannot catch a `NameError`.** A stale `_SCHEDULER_CONFIG` reference in `main()` crash-looped the scheduler after the phase 3+4 deploy. I had grepped for the other removed constants but not that one. Grep for every removed symbol, and actually *run* the daemon — which is how the six-job registration was finally confirmed.
+
+---
+
+## Open / next
+
+- **CalDAV still needs the Google App Password** (requires 2FA enabled first). `config/personas/mike/caldav.yaml` is pre-filled with the address, URL and `Europe/London`; `enabled: false` pending the password.
+- **User testing week** — phone browser, MacBook browser, terminal. `--persona` is now required on CLI.
+- **Backlog (pre-existing, none introduced here):**
+  1. `companion_checkin` errors on every fire, ~90 min after firing — timeout suspected. **Diagnosing next.**
+  2. `Object of type AgentRecord is not JSON serializable` on every scheduler job.
+  3. `[vertex_cache] 404 cached content metadata` — stale cache ID reused after expiry.
+  4. `/session` (non-streaming) leaks `[CONTEXT]` and never writes the context tracker.
+- **Goals interview fix prompt** (`archive/plans/goals_interview_fix_prompt_2026-07-28.md`) still overstates the problem — written before I found the real files at `config/personas/mike/`. Needs correcting.
