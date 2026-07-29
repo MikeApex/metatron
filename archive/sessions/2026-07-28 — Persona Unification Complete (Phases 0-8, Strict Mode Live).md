@@ -350,3 +350,21 @@ This contradicts the roadmap's D2 item 5, which states "the coordinator makes mu
 **VM timezone was `Etc/UTC` while the user is in Europe/London.** Not merely a display offset in The Book: `scheduler.yaml` times are wall clock, so `morning_brief 07:30` fired at 08:30 BST, `evening_close 20:00` at 21:00, and quiet hours 22:00-07:00 were really 23:00-08:00. Set to `Europe/London`; fixes timestamps and firing times together and follows DST. Scheduler re-registered and confirmed.
 
 **Terminal client now reconnects** with backoff (capped 30s) instead of dying on close code 1012 — a deploy restarting the server killed a live session with an unretrieved-task traceback.
+
+---
+
+## Proactive exchanges, check-in prompts, DST contingency
+
+**Metatron opening a conversation was rendered as though the user typed the prompt**, so Synth appeared to answer itself. The prompt is an internal instruction to the pipeline, not user speech.
+
+Exchanges now carry a `proactive` flag: `exchanges` table (ALTER wrapped for existing DBs), both read paths, persistence, the `stream_start` broadcast, and the conversation log. **All three client render paths** — `history`, `stream_start`, `message` (catch-up) — skip the user bubble when set. Terminal shows `[Metatron checking in]`.
+
+**Deliberate decision:** the prompt stays in the *model* history. History is a strict user/assistant alternation and an empty user turn risks provider rejection — so display and model context are separated rather than conflated. Synth still knows why it spoke; the user never sees a message they didn't send.
+
+Verified: `db #16 proactive=1`, `log #016 proactive=True`, `trace is_proactive=True`. APK rebuilt (3 guards present).
+
+**Check-in prompts rewritten** to lead with a specific outstanding item, and to stop rather than manufacture a topic when nothing is open. The context tracker already held `open_threads` and `follow_ups` and was already in the Coordinator's context — nothing told it to use them. First run produced: *"the most practical one to resolve tonight is how we handle your exercise. We haven't logged any workouts yet this week against your goal"* — specific, tracker-grounded, no generic opener.
+
+**DST contingency.** The OS handles the zone change (verified: Oct 26 -> GMT, Mar 29 -> BST). The gap was the `schedule` library, which computes each `next_run` once at registration while this daemon runs for weeks — so the first firing after a transition would be an hour off and stay stale. The main loop now compares the UTC offset each tick and re-registers on change. No cron entry, no manual step.
+
+Incidentally confirmed the timezone fix working: a test check-in at 22:04 BST was correctly suppressed by quiet hours (22:00-07:00), which under UTC would not have triggered until 23:00 local.
