@@ -1,7 +1,8 @@
 """
 tools/agent_config.py — agent-owned persistent state storage.
 
-Each specialist agent gets its own namespace in data/config/{agent_name}.json.
+Each specialist agent gets its own namespace in
+data/personas/{persona}/config/{agent_name}.json.
 This is user-data config space — not system config. Agents store structured
 preferences, plans, and state here (workout plans, budget structures, coping
 protocols, active skill goals, etc.).
@@ -16,7 +17,12 @@ import json
 import os
 from pathlib import Path
 
-DATA_CONFIG_DIR = Path(__file__).parent.parent / "data" / "config"
+from core.persona import persona_data_dir
+
+
+def _agent_config_dir() -> Path:
+    """Per-persona agent state. Health and finance state must never cross personas."""
+    return persona_data_dir() / "config"
 
 
 def write_agent_config(agent_name: str, key: str, value: str) -> str:
@@ -34,8 +40,9 @@ def write_agent_config(agent_name: str, key: str, value: str) -> str:
     Returns:
         Confirmation string.
     """
-    DATA_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    config_path = DATA_CONFIG_DIR / f"{agent_name}.json"
+    config_dir = _agent_config_dir()
+    config_dir.mkdir(parents=True, exist_ok=True)
+    config_path = config_dir / f"{agent_name}.json"
 
     existing: dict = {}
     if config_path.exists():
@@ -61,7 +68,7 @@ def read_agent_config(agent_name: str, key: str = "") -> str:
     Returns:
         Value string, full JSON config, or a not-found message.
     """
-    config_path = DATA_CONFIG_DIR / f"{agent_name}.json"
+    config_path = _agent_config_dir() / f"{agent_name}.json"
 
     if not config_path.exists():
         return f"No config found for {agent_name}."

@@ -34,6 +34,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from core.orchestrator import run_pipeline_session_stream, run_session
+from core.persona import persona_data_dir
 
 KOKORO_VOICE = "af_heart"
 KOKORO_SPEAK = Path(__file__).parent.parent / "tools" / "kokoro" / "speak.py"
@@ -112,7 +113,10 @@ def _log_conversation(user_input: str, response: str, agent: str, persona: str |
     """Append a verbatim exchange to the daily conversation log."""
     import json as _json
     from datetime import datetime
-    log_dir = Path(__file__).parent.parent / "data" / "conversations"
+    # Per-persona: matches what _conversation_dir() (the monitoring reader) has
+    # always expected. Previously writes went to a shared data/conversations/
+    # that nothing read, so The Book fell back to the global path.
+    log_dir = persona_data_dir(persona) / "conversations"
     log_dir.mkdir(parents=True, exist_ok=True)
     log_file = log_dir / f"{datetime.now().strftime('%Y-%m-%d')}.jsonl"
     with _CONV_LOCK:

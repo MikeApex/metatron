@@ -17,14 +17,21 @@ from pathlib import Path
 import requests
 import yaml
 
+from core.persona import persona_config_dir
+
 _ROOT = Path(__file__).parent.parent
-_CONFIG_PATH = _ROOT / "config" / "modules" / "caldav.yaml"
 
 
-def _load_config() -> dict:
-    if not _CONFIG_PATH.exists():
+def _config_path(persona: str | None = None) -> Path:
+    """Per-persona. Each persona has its own calendar and its own credentials."""
+    return persona_config_dir(persona) / "caldav.yaml"
+
+
+def _load_config(persona: str | None = None) -> dict:
+    path = _config_path(persona)
+    if not path.exists():
         return {}
-    return yaml.safe_load(_CONFIG_PATH.read_text()) or {}
+    return yaml.safe_load(path.read_text()) or {}
 
 
 def _parse_ical_dt(val: str) -> str:
@@ -107,13 +114,13 @@ def read_calendar(start_date: str, end_date: str) -> dict:
         return {
             "error": (
                 "CalDAV is not enabled. Set enabled: true and configure "
-                "calendar_url and auth in config/modules/caldav.yaml."
+                "calendar_url and auth in this persona's caldav.yaml."
             )
         }
 
     calendar_url = cfg.get("calendar_url", "").strip()
     if not calendar_url:
-        return {"error": "calendar_url not set in config/modules/caldav.yaml."}
+        return {"error": "calendar_url not set in this persona's caldav.yaml."}
 
     try:
         start_dt = datetime.fromisoformat(start_date + "T00:00:00").strftime("%Y%m%dT%H%M%SZ")
@@ -181,7 +188,6 @@ def write_calendar_event(
     start: str,
     end: str,
     description: str = "",
-    calendar_url: str = "",
 ) -> dict:
     """
     Create a new calendar event on the CalDAV server.
@@ -191,7 +197,6 @@ def write_calendar_event(
         start:        Start datetime in YYYY-MM-DDTHH:MM:SS format.
         end:          End datetime in YYYY-MM-DDTHH:MM:SS format.
         description:  Optional event description/notes.
-        calendar_url: CalDAV collection URL. Falls back to config value if empty.
 
     Returns:
         Dict with success status and event uid, or error.
@@ -201,15 +206,15 @@ def write_calendar_event(
         return {
             "error": (
                 "CalDAV is not enabled. Set enabled: true and configure "
-                "calendar_url and auth in config/modules/caldav.yaml."
+                "calendar_url and auth in this persona's caldav.yaml."
             )
         }
 
-    url = (calendar_url.strip() or cfg.get("calendar_url", "")).strip()
+    url = str(cfg.get("calendar_url", "")).strip()
     if not url:
         return {
             "error": (
-                "No calendar_url provided. Pass it as an argument or set it "
+                "No calendar_url configured. Set it "
                 "in config/modules/caldav.yaml."
             )
         }
@@ -327,13 +332,6 @@ WRITE_CALENDAR_EVENT_SCHEMA = {
             "description": {
                 "type": "string",
                 "description": "Optional event notes or description.",
-            },
-            "calendar_url": {
-                "type": "string",
-                "description": (
-                    "CalDAV collection URL to write to. Leave empty to use the default "
-                    "configured in config/modules/caldav.yaml."
-                ),
             },
         },
         "required": ["title", "start", "end"],

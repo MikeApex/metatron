@@ -32,8 +32,11 @@ def _trace(msg: str) -> None:
     print(f"[{ts}] {msg}", file=sys.stderr, flush=True)
 
 _ROOT = Path(__file__).parent.parent
-_ROUTING_ERROR_LOG = _ROOT / "data" / "logs" / "routing_fallbacks.json"
-_MODEL_ERROR_LOG = _ROOT / "data" / "logs" / "model_errors.json"
+# Daemon-level diagnostics, deliberately NOT per-persona: these record routing
+# and provider failures for the process as a whole. Kept out of data/logs/ so
+# infrastructure diagnostics are never mixed in with a persona's user data.
+_ROUTING_ERROR_LOG = _ROOT / "data" / "diagnostics" / "routing_fallbacks.json"
+_MODEL_ERROR_LOG = _ROOT / "data" / "diagnostics" / "model_errors.json"
 
 
 def _routing_config_path() -> Path:

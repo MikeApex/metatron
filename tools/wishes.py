@@ -27,8 +27,12 @@ import json
 import os
 from pathlib import Path
 
-WISHES_DIR = Path(__file__).parent.parent / "data" / "wishes"
-WISHES_FILE = WISHES_DIR / "wishes.json"
+from core.persona import persona_data_dir
+
+
+def _wishes_file() -> Path:
+    """Per-persona. Estate, medical POA and custody records must never cross personas."""
+    return persona_data_dir() / "wishes" / "wishes.json"
 
 VALID_SECTIONS = {
     "emergency_contacts",
@@ -43,18 +47,20 @@ VALID_SECTIONS = {
 
 
 def _load() -> dict:
-    if not WISHES_FILE.exists():
+    path = _wishes_file()
+    if not path.exists():
         return {}
     try:
-        return json.loads(WISHES_FILE.read_text())
+        return json.loads(path.read_text())
     except json.JSONDecodeError:
         return {}
 
 
 def _save(data: dict) -> None:
-    WISHES_DIR.mkdir(parents=True, exist_ok=True)
-    WISHES_FILE.write_text(json.dumps(data, indent=2))
-    os.chmod(WISHES_FILE, 0o600)
+    path = _wishes_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2))
+    os.chmod(path, 0o600)
 
 
 def write_wishes(section: str, content: str) -> str:

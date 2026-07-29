@@ -20,8 +20,15 @@ import requests
 import yaml
 
 _ROOT = Path(__file__).parent.parent
-_AMBIENT_PATH = _ROOT / "data" / "ambient_context.json"
-_PROFILE_PATH = _ROOT / "config" / "profile.yaml"
+from core.persona import persona_config_dir, persona_data_dir
+
+
+def _ambient_path() -> Path:
+    return persona_data_dir() / "ambient_context.json"
+
+
+def _profile_path() -> Path:
+    return persona_config_dir() / "profile.yaml"
 
 _MARKET_SYMBOLS = ["^GSPC", "^FTSE", "^GDAXI", "^N225", "^HSI", "GC=F", "CL=F"]
 _MARKET_NAMES = {
@@ -36,9 +43,10 @@ _MARKET_NAMES = {
 
 
 def _read_profile() -> dict:
-    if _PROFILE_PATH.exists():
+    path = _profile_path()
+    if path.exists():
         try:
-            return yaml.safe_load(_PROFILE_PATH.read_text()) or {}
+            return yaml.safe_load(path.read_text()) or {}
         except Exception:
             pass
     return {}
@@ -171,8 +179,9 @@ def refresh_ambient_context() -> str:
         "markets": _fetch_markets() if _markets_enabled() else None,
     }
 
-    _AMBIENT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(_AMBIENT_PATH, "w") as f:
+    ambient_path = _ambient_path()
+    ambient_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(ambient_path, "w") as f:
         json.dump(data, f, indent=2)
 
     parts = []
@@ -180,7 +189,7 @@ def refresh_ambient_context() -> str:
         parts.append(f"weather OK ({city})")
     else:
         parts.append("weather unavailable" + (
-            f" (city: {city})" if city else " — set location.city in config/profile.yaml"
+            f" (city: {city})" if city else " — set location.city in config/personas/{persona}/profile.yaml"
         ))
     headlines = data.get("news_headlines") or []
     parts.append(f"{len(headlines)} headlines" if headlines else "news unavailable")
@@ -207,11 +216,12 @@ def load_ambient_context() -> str:
         f"Date/time: {dt_label}, {time_label}{tz_label}",
     ]
 
-    if not _AMBIENT_PATH.exists():
+    ambient_path = _ambient_path()
+    if not ambient_path.exists():
         return "\n".join(lines)
 
     try:
-        data = json.loads(_AMBIENT_PATH.read_text())
+        data = json.loads(ambient_path.read_text())
     except Exception:
         return "\n".join(lines)
 

@@ -58,3 +58,8 @@ config/modules/caldav.yaml
 # Session verbatim transcripts — large; source of truth is ~/.claude/projects/*.jsonl
 archive/sessions/*.txt
 archive/transcripts/
+
+# Per-persona settings (profile, schedule, calendar credentials) — sensitive
+config/personas/*/profile.yaml
+config/personas/*/scheduler.yaml
+config/personas/*/caldav.yaml

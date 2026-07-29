@@ -60,9 +60,11 @@ AGENTS_DIR = CONFIG_DIR / "agents"
 
 from contextlib import nullcontext
 from core.persona import (
+    PersonaError,
     current_persona,
     persona_config_dir,
     persona_data_dir,
+    persona_md,
     persona_scope,
     resolve_persona,
 )
@@ -95,12 +97,10 @@ def load_profile(persona: str | None = None) -> str:
     """
     import yaml as _yaml
 
-    if persona:
-        profile_path = CONFIG_DIR / "personas" / persona / "profile.yaml"
-        if not profile_path.exists():
-            profile_path = CONFIG_DIR / "profile.yaml"
-    else:
-        profile_path = CONFIG_DIR / "profile.yaml"
+    # No root fallback. A persona without a profile gets no profile — inheriting
+    # another persona's name, city and timezone is worse than having none, and
+    # that fallback was silently telling every persona it was the real user.
+    profile_path = persona_config_dir(persona) / "profile.yaml"
 
     if not profile_path.exists():
         return ""
@@ -150,12 +150,14 @@ def load_profile(persona: str | None = None) -> str:
 
 def load_config(persona: str | None = None) -> str:
     """
-    Build the system prompt from the four-tier config hierarchy.
-    Loads: constitution → prime_directive → mission → goals → profile.
-    If persona is given, loads config/personas/{persona}.md instead of the
-    prime_directive/mission/goals stubs — for development testing only.
-    Returns a single string for use as the system prompt.
+    Build the system prompt from the four-tier config hierarchy for one persona.
+    Loads: constitution -> identity -> prime_directive -> mission -> goals -> profile.
+
+    Tier 0 (the Constitution) is shared by every persona. Tiers 1-3 and the
+    profile are per-persona, under config/personas/{persona}/. There is no
+    root-level fallback: a session always belongs to exactly one persona.
     """
+    resolved = resolve_persona(persona)
     sections = []
 
     constitution_path = CONFIG_DIR / "constitution.md"
@@ -164,53 +166,29 @@ def load_config(persona: str | None = None) -> str:
         if content:
             sections.append(f"## Tool Constitution\n\n{content}")
 
-    if persona:
-        persona_path = CONFIG_DIR / "personas" / f"{persona}.md"
-        if not persona_path.exists():
-            raise FileNotFoundError(f"Persona not found: {persona_path}")
-        sections.append(f"## Development Persona\n\n{persona_path.read_text().strip()}")
+    identity_path = persona_md(resolved)
+    if not identity_path.exists():
+        raise FileNotFoundError(f"Persona not found: {identity_path}")
+    sections.append(f"## Development Persona\n\n{identity_path.read_text().strip()}")
 
-        persona_config_dir = CONFIG_DIR / "personas" / persona
-        if persona_config_dir.is_dir():
-            tier_files = [
-                ("Prime Directive", persona_config_dir / "prime_directive.md"),
-                ("Mission", persona_config_dir / "mission.md"),
-            ]
-            for label, path in tier_files:
-                if path.exists():
-                    content = path.read_text().strip()
-                    if content:
-                        sections.append(f"## {label}\n\n{content}")
-            goals_path = persona_config_dir / "goals.yaml"
-            if goals_path.exists():
-                goals_content = goals_path.read_text().strip()
-                if goals_content:
-                    sections.append(f"## Current Goals\n\n```yaml\n{goals_content}\n```")
-
-        profile = load_profile(persona=persona)
-        if profile:
-            sections.append(profile)
-
-        return "\n\n---\n\n".join(sections)
-
-    files = [
-        ("Prime Directive", CONFIG_DIR / "prime_directive.md"),
-        ("Mission", CONFIG_DIR / "mission.md"),
-    ]
-
-    for label, path in files:
+    config_dir = persona_config_dir(resolved)
+    for label, filename in (
+        ("Prime Directive", "prime_directive.md"),
+        ("Mission", "mission.md"),
+    ):
+        path = config_dir / filename
         if path.exists():
             content = path.read_text().strip()
             if content:
                 sections.append(f"## {label}\n\n{content}")
 
-    goals_path = CONFIG_DIR / "goals.yaml"
+    goals_path = config_dir / "goals.yaml"
     if goals_path.exists():
         goals_content = goals_path.read_text().strip()
         if goals_content:
             sections.append(f"## Current Goals\n\n```yaml\n{goals_content}\n```")
 
-    profile = load_profile()
+    profile = load_profile(persona=resolved)
     if profile:
         sections.append(profile)
 
@@ -219,10 +197,7 @@ def load_config(persona: str | None = None) -> str:
 
 def load_goals(persona: str | None = None) -> str:
     """Load only goals.yaml — for specialist agents that don't need full config."""
-    if persona:
-        goals_path = CONFIG_DIR / "personas" / persona / "goals.yaml"
-    else:
-        goals_path = CONFIG_DIR / "goals.yaml"
+    goals_path = persona_config_dir(persona) / "goals.yaml"
     if goals_path.exists():
         content = goals_path.read_text().strip()
         if content:
@@ -238,6 +213,8 @@ def _load_coordinator_context(persona: str | None = None) -> str:
         insights = read_recent_insights(n=1, persona=persona_str)
         if insights:
             return f"## Pattern Miner Report (most recent)\n{json.dumps(insights[0], indent=2, ensure_ascii=False)}"
+    except PersonaError:
+        raise
     except Exception as e:
         logger.warning(f"[PIPELINE] Failed to pre-load Pattern Miner insights: {e}")
     return ""
@@ -286,6 +263,8 @@ def load_recent_context(persona: str | None = None, days: int = 5) -> str:
         ambient = load_ambient_context()
         if ambient:
             sections.append(ambient)
+    except PersonaError:
+        raise
     except Exception as e:
         logger.warning(f"[context] ambient load failed: {e}")
 

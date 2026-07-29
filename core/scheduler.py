@@ -9,7 +9,7 @@ Run:
     python core/scheduler.py --persona ryan_holiday   # dev persona mode
 
 The orchestrator is stateless; this daemon holds all timing state.
-Errors are logged to data/logs/scheduler_errors.json — the daemon keeps
+Errors are logged per-persona to data/personas/{persona}/logs/ — the daemon keeps
 running after any single failure.
 """
 
@@ -29,8 +29,16 @@ import yaml
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 _ROOT = Path(__file__).parent.parent
-_SCHEDULER_CONFIG = _ROOT / "config" / "modules" / "scheduler.yaml"
-_ERROR_LOG = _ROOT / "data" / "logs" / "scheduler_errors.json"
+from core.persona import persona_config_dir, persona_data_dir, persona_scope
+
+# Quiet hours and job times are personal facts, so the schedule is per-persona.
+# One daemon still serves every persona; it registers each persona's jobs separately.
+def _scheduler_config_path(persona: str | None = None):
+    return persona_config_dir(persona) / "scheduler.yaml"
+
+
+def _error_log_path(persona: str | None = None):
+    return persona_data_dir(persona) / "logs" / "scheduler_errors.json"
 
 WEEKDAYS = {"monday", "tuesday", "wednesday", "thursday", "friday"}
 WEEKEND = {"saturday", "sunday"}
@@ -40,9 +48,10 @@ WEEKEND = {"saturday", "sunday"}
 # Config
 # ---------------------------------------------------------------------------
 
-def _load_config() -> dict:
-    if _SCHEDULER_CONFIG.exists():
-        with open(_SCHEDULER_CONFIG) as f:
+def _load_config(persona: str | None = None) -> dict:
+    path = _scheduler_config_path(persona)
+    if path.exists():
+        with open(path) as f:
             return yaml.safe_load(f) or {}
     return {}
 
@@ -139,12 +148,13 @@ def fire_session(job_name: str, agent: str, prompt: str,
 # Error logging
 # ---------------------------------------------------------------------------
 
-def _log_error(job: str, message: str) -> None:
-    _ERROR_LOG.parent.mkdir(parents=True, exist_ok=True)
+def _log_error(job: str, message: str, persona: str | None = None) -> None:
+    log_path = _error_log_path(persona)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
     entries: list = []
-    if _ERROR_LOG.exists():
+    if log_path.exists():
         try:
-            with open(_ERROR_LOG) as f:
+            with open(log_path) as f:
                 entries = json.load(f)
         except Exception:
             pass
@@ -153,7 +163,7 @@ def _log_error(job: str, message: str) -> None:
         "job": job,
         "error": message,
     })
-    with open(_ERROR_LOG, "w") as f:
+    with open(log_path, "w") as f:
         json.dump(entries, f, indent=2)
 
 
@@ -161,25 +171,39 @@ def _log_error(job: str, message: str) -> None:
 # Schedule registration
 # ---------------------------------------------------------------------------
 
-def fire_function(job_name: str, fn_path: str) -> None:
-    """Call a Python function directly (no LLM session). Used for maintenance jobs."""
+def fire_function(job_name: str, fn_path: str, persona: str) -> None:
+    """
+    Call a Python function directly (no LLM session). Used for maintenance jobs.
+
+    The persona is bound for the call. Without it these jobs inherited whatever
+    persona happened to be left in the process from the last session — which is
+    how ambient_refresh wrote to the wrong tree.
+    """
     import importlib
     try:
-        module_path, fn_name = fn_path.rsplit(".", 1)
-        mod = importlib.import_module(module_path)
-        fn = getattr(mod, fn_name)
-        result = fn()
-        print(f"[scheduler] {job_name}: {result}", flush=True)
+        with persona_scope(persona):
+            module_path, fn_name = fn_path.rsplit(".", 1)
+            mod = importlib.import_module(module_path)
+            fn = getattr(mod, fn_name)
+            result = fn()
+        print(f"[scheduler] [{persona}] {job_name}: {result}", flush=True)
     except Exception as e:
-        _log_error(job_name, str(e))
-        print(f"[scheduler error] {job_name}: {e}", flush=True)
+        _log_error(job_name, str(e), persona)
+        print(f"[scheduler error] [{persona}] {job_name}: {e}", flush=True)
 
 
-def _register_schedules(persona: str | None) -> None:
-    cfg = _load_config()
+def _register_schedules(persona: str) -> None:
+    cfg = _load_config(persona)
     schedules_cfg = cfg.get("schedules", {})
+    if not schedules_cfg:
+        print(f"  [scheduler] WARNING: no schedules for persona {persona!r} "
+              f"({_scheduler_config_path(persona)}) — registering none", flush=True)
+        return
 
     for job_name, job in schedules_cfg.items():
+      # Registration runs once at daemon start. An uncaught raise here is a
+      # crash loop, not a degraded job — so each job is isolated.
+      try:
         if not job.get("enabled", True):
             continue
 
@@ -188,8 +212,8 @@ def _register_schedules(persona: str | None) -> None:
         # Function jobs call a Python callable directly — no LLM session
         if "function" in job:
             fn_path = job["function"]
-            def make_fn_job(jn=job_name, fp=fn_path):
-                return lambda: fire_function(jn, fp)
+            def make_fn_job(jn=job_name, fp=fn_path, pe=persona):
+                return lambda: fire_function(jn, fp, pe)
             job_fn = make_fn_job()
         else:
             agent = job["agent"]
@@ -212,6 +236,11 @@ def _register_schedules(persona: str | None) -> None:
         elif "time" in job:
             schedule.every().day.at(job["time"]).do(job_fn)
             print(f"  [scheduler] {job_name}: daily at {job['time']}")
+
+      except Exception as e:
+        _log_error(job_name, f"registration failed: {e}", persona)
+        print(f"  [scheduler] ERROR registering {job_name} for {persona}: {e} "
+              f"— skipping this job, daemon continues", flush=True)
 
 
 # ---------------------------------------------------------------------------

@@ -11,7 +11,7 @@ import threading
 from datetime import date, datetime
 from pathlib import Path
 
-from core.persona import persona_data_dir
+from core.persona import PersonaError, persona_data_dir
 
 _WRITE_LOG_LOCK = threading.Lock()
 _WRITE_QUALITY_EVENT_LOCK = threading.Lock()
@@ -63,6 +63,10 @@ def write_log(content: dict | None = None, log_date: str = "") -> str:
         from core.memory import index_entry
         import json as _json
         index_entry(text=_json.dumps(existing), source="log", entry_date=log_date)
+    except PersonaError:
+        # Never silent: a persona failure means data may be misfiled, which is
+        # exactly the class of bug the resolver exists to surface.
+        raise
     except Exception:
         pass  # Memory indexing is best-effort; never block a write
 

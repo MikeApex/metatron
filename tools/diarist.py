@@ -15,7 +15,7 @@ import os
 from datetime import date, datetime
 from pathlib import Path
 
-from core.persona import persona_data_dir
+from core.persona import PersonaError, persona_data_dir
 
 _ROOT = Path(__file__).parent.parent
 
@@ -70,6 +70,10 @@ def write_journal(text: str, entry_date: str = "", tags: list[str] | None = None
     try:
         from core.memory import index_entry
         index_entry(text=text, source="journal", entry_date=entry_date)
+    except PersonaError:
+        # Never silent: a persona failure means data may be misfiled, which is
+        # exactly the class of bug the resolver exists to surface.
+        raise
     except Exception:
         pass  # Memory indexing is best-effort; never block a write
 

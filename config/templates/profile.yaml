@@ -2,11 +2,11 @@
 # Sensitive-tier: loaded into sensitive-layer agents only; never sent to cloud models
 # Edit directly or update through conversation ("my home city is London")
 
-name: Mike
+name: ""
 location:
-  city: London
-  country: United Kingdom
-  timezone: Europe/London
+  city: ""
+  country: ""
+  timezone: "UTC"
 age: null                # Fill in current age (integer)
 birth_year: null         # Or fill in birth year — age is computed from this automatically
 occupation: null         # Brief description (e.g. "Writer and bookshop owner")
