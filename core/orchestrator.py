@@ -2327,6 +2327,8 @@ def run_interactive(agent_name: str, persona: str | None = None,
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    from core.remote_client import DEFAULT_SERVER as _DEFAULT_REMOTE_SERVER
+
     parser = argparse.ArgumentParser(description="Personal AI Life Manager — Runtime Orchestrator")
     parser.add_argument("--agent", default="coordinator", help="Agent to use (default: coordinator → runs full pipeline)")
     parser.add_argument(
@@ -2340,11 +2342,29 @@ if __name__ == "__main__":
     parser.add_argument("--input", help="Single-shot input (skips interactive mode)")
     parser.add_argument("--bare", action="store_true",
                         help="Load agent file only — skip constitution/config/logs (token-pressure diagnostics)")
+    parser.add_argument("--local", action="store_true",
+                        help="Run the pipeline in this process instead of through the server. "
+                             "Writes to THIS machine's data tree and does not sync with the phone "
+                             "or browser — use for offline or diagnostic work only.")
+    parser.add_argument("--server", default=None,
+                        help=f"Server to connect to when remote (default: {_DEFAULT_REMOTE_SERVER})")
     args = parser.parse_args()
 
-    if args.input:
+    # Interactive coordinator sessions go through the server by default. Running
+    # them in-process builds a second history for the same persona on whichever
+    # machine happens to run the command — the split-brain the persona work
+    # exists to prevent. --local opts out explicitly.
+    _use_remote = (not args.input) and args.agent == "coordinator" and not args.local
+
+    if _use_remote:
+        from core.remote_client import run_interactive_remote
+        run_interactive_remote(args.persona, server=args.server, provider=args.provider)
+    elif args.input:
         result = run_session(args.agent, args.input, persona=args.persona, provider=args.provider,
                              bare=args.bare)
         print(result)
     else:
+        if args.agent == "coordinator":
+            print(f"[local mode] writing to this machine's data tree — "
+                  f"will NOT sync with the phone or browser\n")
         run_interactive(args.agent, persona=args.persona, provider=args.provider)
