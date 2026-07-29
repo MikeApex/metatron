@@ -87,8 +87,36 @@ async def _run(persona: str, server: str, provider: str | None, insecure: bool) 
     own: set[str] = set()
     pending: dict[str, list[str]] = {}
     streaming_own = False
+    _closed = False
 
     async def receive() -> None:
+        nonlocal streaming_own, conn
+        while True:
+            try:
+                await _receive_once()
+            except Exception as exc:
+                # A deploy restarts the server mid-session (close code 1012).
+                # The browser reconnects with backoff; this did not, so the
+                # session died with an unretrieved-task traceback.
+                if _closed:
+                    return
+                print(f"\n{_YELLOW}[connection lost: {type(exc).__name__}] reconnecting…{_RESET}")
+                delay = 2.0
+                while not _closed:
+                    await asyncio.sleep(delay)
+                    try:
+                        conn = await websockets.connect(
+                            url, ssl=_ssl_context(url, insecure), max_size=None
+                        )
+                        print(f"{_YELLOW}[reconnected]{_RESET}")
+                        break
+                    except Exception:
+                        delay = min(delay * 2, 30.0)
+                        print(f"{_DIM}  retry in {delay:.0f}s…{_RESET}")
+                if _closed:
+                    return
+
+    async def _receive_once() -> None:
         nonlocal streaming_own
         async for raw in conn:
             msg = json.loads(raw)
@@ -160,6 +188,7 @@ async def _run(persona: str, server: str, provider: str | None, insecure: bool) 
         sys.stdout.flush()
 
     async def send_loop() -> None:
+        nonlocal _closed
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue = asyncio.Queue()
 
@@ -185,6 +214,7 @@ async def _run(persona: str, server: str, provider: str | None, insecure: bool) 
                 _prompt()
                 continue
             if text.lower() in ("exit", "quit"):
+                _closed = True
                 break
             xid = str(uuid.uuid4())
             own.add(xid)
@@ -204,7 +234,11 @@ async def _run(persona: str, server: str, provider: str | None, insecure: bool) 
         for task in pending_tasks:
             task.cancel()
     finally:
-        await conn.close()
+        _closed = True
+        try:
+            await conn.close()
+        except Exception:
+            pass
 
 
 def run_interactive_remote(persona: str, server: str | None = None,
