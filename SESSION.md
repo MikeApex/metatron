@@ -1,5 +1,5 @@
 # Session Primer — Personal AI Life Manager
-*Updated: 2026-06-26 (Synthesizer conversation history — 5-turn rolling window + Synth tool whitelist fix). Update this file at the close of every chat so the next chat — or any parallel chat window — starts from current state.*
+*Updated: 2026-07-28 (persona unification — one fail-closed identity mechanism, strict mode live; constitution Development Note removed). Update this file at the close of every chat so the next chat — or any parallel chat window — starts from current state.*
 
 ---
 
@@ -63,6 +63,77 @@ If you need to find a specific file, tool, or planning document: **[CODEBASE_IND
 - **Check 10** Agent behavioral audits — **on hold**
 - **Check 12** Constitution alignment review — **on hold**
 
+### Also done 2026-07-29 (SessionStart hook removed after compliance-gap testing)
+
+- **Hook confirmed firing correctly, but model non-compliant on trivial questions:** traced a live test through raw JSONL — `SessionStart:clear` ran `session_context_primer.py` successfully and correctly injected the "mandatory, no exceptions" Read instruction. On the next turn ("what is the capital of France?"), the model answered "Paris." with zero tool calls — no `Read` on SESSION.md or the roadmap at all. Not a hook-plumbing bug: the model's own relevance judgment silently overrode the procedural "no exceptions" instruction.
+- **Reworded instruction drafted but not adopted** — shifting from a procedural mandate ("read these files first") to an epistemic one ("these files are truth for this session, even overriding obvious facts") was discussed as directionally stronger, then narrowed to scope authority to project-specific facts only (avoid coopting general common sense). User judged the tuning cycle wasn't worth it relative to the value delivered.
+- **Decision: rolled back entirely.** Removed the `SessionStart` hook block from `.claude/settings.local.json` (the `Stop` hook / `show_phase_progress.py` untouched) and deleted `.claude/session_context_primer.py`. Both files are gitignored — no git history affected.
+- **Replacement: `/metatron-code` slash command** (new) — `.claude/commands/metatron-code.md`. User-triggered (not automatic): reads SESSION.md, resolves + reads the current roadmap from SESSION.md's own link, and CODEBASE_INDEX.md if needed. Same content the hook used to inject, but explicit per-invocation instead of firing on every session start — avoids the compliance-gap failure mode since there's no relevance judgment to override on an unrelated turn.
+- Session archive: [archive/sessions/2026-07-29 — SessionStart Hook Removal After Compliance Gap Found.md](archive/sessions/2026-07-29 — SessionStart Hook Removal After Compliance Gap Found.md)
+
+### Also done 2026-07-28 (PERSONA UNIFICATION — architecture change, strict mode live)
+
+**One mechanism, no test/real distinction, every session real.** Started as CalDAV setup; became an architecture fix after finding the persona system was half-implemented.
+
+**What was wrong:** 20 code sites each read `AI_TEST_PERSONA` independently and silently fell back to a shared global path when unset. Consequences, all verified: the user's history split across two trees (VM global tree held ~8x more journal content than `personas/mike/`); Pepys test data sat in the same directory as real clinical logs; three tools (`caldav`, `agent_config`, `wishes`) were persona-blind entirely; `load_profile()` fell back to root so **every synthetic persona was being told it was "Mike, London"**; the prompt header said `## Development Persona` on real sessions; and `persona` went unvalidated from the HTTP body into filesystem paths.
+
+**Root cause of the split — a process boundary, not a date cutover:** `metatron-server.service` ran `--persona mike`; `metatron-scheduler.service` had **no `--persona` flag at all**, so every scheduled session wrote globally. Compounded by a thread race: `run_session` set then *popped* a process-global env var while the Diarist ran fire-and-forget on a daemon thread.
+
+**Now:**
+- **`core/persona.py`** — single fail-closed resolver. Explicit arg -> thread-local -> `METATRON_PERSONA` -> raise. Thread-local, not process-global (sessions run on a pooled executor thread; specialists fan out further). Names validated `^[a-z0-9][a-z0-9_]{0,39}$`.
+- All 20 sites converted; 4 thread boundaries bound; `PersonaError` re-raised rather than swallowed in best-effort blocks.
+- `profile.yaml` / `scheduler.yaml` / `caldav.yaml` now per-persona under `config/personas/{p}/` (gitignored). Templates in `config/templates/`.
+- `scripts/new_persona.sh` + `scripts/check_personas.py` (read-only linter, exits 0).
+- **Security:** `write_calendar_event` no longer accepts a model-supplied `calendar_url` — it overrode config and let the model pick the destination server for a tool shipping event text.
+- **Constitution (Tier 0, user-approved):** `## Development Note` removed — it made discretion conditional on a development/production distinction the model cannot observe, and contradicted `filter_output()`. Proposal doc: `archive/plans/constitution_development_note_proposal_2026-07-28.md`.
+- **Roadmap Section 0:** the carve-out permitting persona data on cloud models is **superseded** — nothing at runtime distinguishes synthetic from real any more. All persona data is sensitive-tier.
+- **Data reset:** global trees moved aside to `data/_pre_reset_2026-07-28/` on both machines, VM with a full manifest. `metatron.db` (Android chat history), `push_subscriptions.json` and `data/baselines/` deliberately preserved.
+- **STRICT MODE IS LIVE.** Exercised all 21 persona-dependent paths first; audit log stayed empty. Verified with a real session: writes land in `data/personas/mike/`, global tree gets nothing, no `PersonaError`.
+
+**Commits:** `82e583a` (resolver + 20 sites), `92b51f7` (tools + settings + security), scheduler crash fix, `af32b5f` (provisioning + linter + rename), constitution, docs. Rollback tag: `pre-persona-unification` (`814e6c3`). VM backup: `~/metatron-backups/pre-persona-unification-2026-07-28-*.tar.gz` (verified restore).
+
+**Two process lessons recorded:** (1) `deploy.sh` restarts services, so systemd unit edits need `daemon-reload` **before** the deploy — a near-miss briefly ran production fail-closed. (2) `py_compile` cannot catch a `NameError`; a stale `_SCHEDULER_CONFIG` reference crash-looped the scheduler after deploy. Grep for removed symbols, and actually run the daemon.
+
+Session archive: [archive/sessions/2026-07-28 — Persona Unification Plan and Phase 0.md](archive/sessions/2026-07-28%20—%20Persona%20Unification%20Plan%20and%20Phase%200.md)
+
+### Backlog found this session (pre-existing, not fixed)
+1. **`companion_checkin` errors on every fire** (07:35, 09:05, 10:35, 12:05) — error logged ~90 min after firing, suggesting a timeout. A core proactive feature failing silently. **Highest priority.**
+2. `Object of type AgentRecord is not JSON serializable` — trace serialization, every scheduler job.
+3. `[vertex_cache] 404 cached content metadata` — stale cache ID reused after expiry, falling back to compat on every call.
+4. `/session` (non-streaming) leaks the `[CONTEXT]{...}[/CONTEXT]` block into the response body and never writes the context tracker — the parser lives only in the streaming path. No user impact (app uses WebSocket/SSE).
+5. `## Prime Directive` / `## Mission` appear once each now, but the underlying cause remains: `write_config()` stores the Goals Interviewer's text verbatim including its own heading. `_titled()` dedups at load time.
+
+### Also done 2026-07-28 (SessionStart context hook + troubleshoot slash command)
+
+- **Problem:** chats overstep because SESSION.md/roadmap/ownership context isn't loaded before basic queries or edits — the CLAUDE.md "Mandatory Pre-Edit Context Check" is an instruction the model has to remember, not a forced load (see 2026-07-27 revert incident below).
+- **`.claude/session_context_primer.py`** (new) — `SessionStart` hook wired into `.claude/settings.local.json` (alongside the existing `Stop` hook, untouched). Fires on session start/resume/clear/compact/fork; injects full `SESSION.md` + the currently-active roadmap (resolved dynamically from SESSION.md's link, not hardcoded — won't go stale when the roadmap is next revised) + `CODEBASE_INDEX.md` (~1,560 lines / ~15–18K tokens). CLAUDE.md deliberately not duplicated — Claude Code auto-loads it already. Output uses the documented JSON `additionalContext` hook format (confirmed via `claude-code-guide` research); first line is a literal `Default Hook Fired` marker so firing is visually confirmable, and each file section echoes its resolved path.
+- **`.claude/commands/metatron-troubleshoot.md`** (new) — callable slash command, `/metatron-troubleshoot <DATE> <SEQ> <ISSUE>`. Reconstructed from the single-exchange troubleshoot prompt referenced in `archive/sessions/2026-06-26 — Troubleshooting Prompts and Interchange ID Design.md` (original was only "in the chat transcript," never saved — user supplied the text this session). Pulls conversation record + server logs + pipeline trace for one exchange via one SSH round-trip. Confirmed working by user.
+- **Not yet confirmed:** live in-session firing of the SessionStart hook — `SessionStart` doesn't fire on ordinary turns within an already-running session (only on the five sources above), so an in-session test came back empty as expected, not a bug. Next session (or a `/clear`) should confirm `Default Hook Fired` appears and no `Bash`/`grep` fallback is needed for a roadmap question.
+- Session archive: [archive/sessions/2026-07-28 — SessionStart Context Hook and Troubleshoot Slash Command.md](archive/sessions/2026-07-28 — SessionStart Context Hook and Troubleshoot Slash Command.md)
+
+### Also done 2026-07-28 (rehydrated 2026-06-26 pipeline audit session — no code changes)
+
+- Pure context-recovery task: located and read both transcript copies of the 2026-06-26 "Context: this is the Metatron..." session, summarized findings, and cross-checked against current state.
+- Confirmed all 5 bugs from that original audit (ambient context missing, `write_config` filter false positive, Research Agent normalization, uncached Coordinator prompt, graceful shutdown SIGKILL) are resolved — most on the same day, `write_config` filter in the SEQ 031 session.
+- No new work opened. Session archive: [archive/sessions/2026-07-28 — Rehydrate Metatron Pipeline Audit Session.md](archive/sessions/2026-07-28 — Rehydrate Metatron Pipeline Audit Session.md)
+
+### Also done 2026-07-28 (lost chat recovery + ask_claude MCP resume)
+- No code/config changes. User couldn't find an open `ask_claude` chat ("write product description...") that hadn't rehydrated after a restart — `list_conversations` showed the MCP tool's own archive empty, so it was gone from that tool's state. Located the content via file search in `archive/transcripts/` instead (2026-06-19 "Bill Hopkins Proposal" session — capital-raise product description for a corporate/enterprise variant of Metatron). Manually resumed by re-feeding the prior draft + six flagged research gaps into a new `ask_claude` prompt; got a full multi-model pass back (competitive differentiation, agency trade-off framing, beachhead segment, revenue model, AI/human accountability, regulatory surface — see session archive for the findings).
+- Ran `python3 tools/archive_chats.py` twice — cleared a backlog of 12 unarchived sessions going back to 2026-07-14, then captured this session's own transcript incrementally.
+- Session archive: [archive/sessions/2026-07-28 — Lost Chat Recovery and ask_claude MCP Resume.md](archive/sessions/2026-07-28 — Lost Chat Recovery and ask_claude MCP Resume.md)
+
+### Also done 2026-07-27 (SEQ 041 routing miss diagnosis and fixes)
+
+- **Root cause:** Coordinator dispatched zero specialists for "I'm not sure. Do you have some suggestions?" (Bulgarian vocabulary follow-up) — treated as conversational follow-up, not a domain query. Synthesizer received no Learning output and responded from general knowledge.
+- **Synthesizer catch also failed:** existing sanity-check rule did not trigger `run_subagent` despite absent Learning output for a Learning domain query.
+- **Diarist evaluated:** fire-and-forget (no user latency), 3-turn pattern is Vertex parallel tool call bug (not worth fixing — background agent, no user impact). OVER_8K warnings at turn=2/3 are from Diarist running in parallel; Synthesizer's turn=1 warning is logged at API return time, not start time.
+- **Four fixes deployed (commit `814e6c3`):**
+  1. `config/agents/coordinator.md` — routing rule: advice/suggestion requests route to relevant domain specialist regardless of COMPLEXITY
+  2. `config/agents/synthesizer.md` — domain query catch-up covering all 8 domains (generalizes existing Logistics-only catch)
+  3. `core/orchestrator.py` — Diarist added to bare-mode set; strips goals.yaml (~500–1000 tokens/turn saved)
+  4. `config/modules/routing_cloud.yaml` — `write_log` and `write_wisdom` added to Diarist allowed_tools
+- Session archive: [archive/sessions/2026-07-27 — SEQ 041 Pipeline Routing Diagnosis and Routing Miss Fixes.md](archive/sessions/2026-07-27 — SEQ 041 Pipeline Routing Diagnosis and Routing Miss Fixes.md)
+
 ### Also done 2026-07-27 (Vertex cache padding fix, pause/resume tooling, billing incident)
 - **Vertex cache padding fixed:** `_pad_for_vertex_cache()` added to `core/orchestrator.py` — the 2026-06-24 token-reduction work had shrunk Coordinator/Synthesizer prompts under Vertex's 4096-token cache-creation floor, silently failing cache creation on every call. Verified live: cache now creates successfully and reads confirmed (`cache_read=12281` on a real session).
 - **VM pause/resume tooling added:** `scripts/metatron-pause.sh`, `scripts/metatron-resume.sh` — stop/start `metatron-vm` for cost control during dev downtime.
@@ -113,6 +184,15 @@ Session archive: [archive/sessions/2026-06-26 — Gemini Routing Fix and Deploy 
 
 Session archive: [archive/sessions/2026-06-26 — Synthesizer Conversation History.md](archive/sessions/2026-06-26 — Synthesizer Conversation History.md)
 
+### Also done 2026-06-27 (Kokoro TTS migration + Safari AudioContext fix)
+
+- **Kokoro `af_heart` now running on VM.** Venv was Mac-only and never migrated. Installed `espeak-ng` via apt + `kokoro soundfile` into main `.venv` (reuses existing torch). `KOKORO_PYTHON` path updated in `core/server.py` and `core/voice_pipeline.py`. Subprocess timeout raised 30s → 120s.
+- **Safari AudioContext fix** (`static/index.html`): replaced `new Audio().play()` with `AudioContext.decodeAudioData()` + `BufferSourceNode` — Safari blocks the former even after user gesture; the latter is always allowed after `ctx.resume()`. Shared `audioCtxShared` context created on first tap.
+- **`aiosqlite` added to `requirements.txt`** — was missing, caused server crash on startup after deploy.
+- **Login Enter key** — `#login-password` now has a `keydown` handler; Enter submits the login form.
+- **VM gap audit complete** — all other expected packages/models confirmed present on VM. Only Kokoro was missing.
+- Session archive: [archive/sessions/2026-06-27 — Kokoro TTS Migration and Safari AudioContext Fix.md](archive/sessions/2026-06-27 — Kokoro TTS Migration and Safari AudioContext Fix.md)
+
 ### Also done 2026-06-26 (pipeline audit + Research Agent normalization fix)
 
 - **Pipeline audit** across 2 hours of live traffic (15:28–16:47): 5 bugs identified. See session archive for full latency profile and failure pattern catalog.
@@ -123,7 +203,7 @@ Session archive: [archive/sessions/2026-06-26 — Synthesizer Conversation Histo
 - **Single-exchange troubleshoot prompt** written — two inputs (DATE, SEQ), one SSH command, pulls conversation record + server logs + pipeline trace in one round-trip.
 - **Pending deploy:** both normalization fixes are committed locally but not yet pushed to VM.
 - **Bugs identified but not fixed this session:** (1) `tools.ambient` missing on VM, (2) output filter false positive on `write_config`.
-- **(3) graceful shutdown 90s SIGKILL cycle — fixed 2026-06-26:** `timeout_graceful_shutdown=150` added to `uvicorn.run()`; `_active_streams` counter + `GET /active` endpoint added to `core/server.py`; `deploy.sh` restructured to drain active SSE streams (up to 180s) before restarting metatron-server. Full Fix 3 (drain gate + client reconnect + `/result/{date}/{seq}` endpoint) scoped in `archive/plans/future_phases.md`.
+- **(3) graceful shutdown 90s SIGKILL cycle — fixed 2026-06-26:** `timeout_graceful_shutdown=150` added to `uvicorn.run()`; `_active_streams` counter + `GET /active` endpoint added to `core/server.py`; `deploy.sh` restructured to drain active SSE streams (up to 180s) before restarting metatron-server. Full Fix 3 (drain gate + client reconnect + `/result/{date}/{seq}` endpoint) scoped in `archive/plans/future_phases.md`. Session archive: [archive/sessions/2026-06-26 — SEQ 032 Troubleshoot and Graceful Shutdown Fixes.md](archive/sessions/2026-06-26 — SEQ 032 Troubleshoot and Graceful Shutdown Fixes.md)
 
 Session archive: [archive/sessions/2026-06-26 — Pipeline Audit and Research Agent Fix.md](archive/sessions/2026-06-26 — Pipeline Audit and Research Agent Fix.md)
 
@@ -150,6 +230,18 @@ Session archive: [archive/sessions/2026-06-26 — The Book Load Menu, Ordering, 
 - Deployed `e1a12d2`.
 
 Session archive: [archive/sessions/2026-06-26 — Book Synth Token Counts and Conversation History.md](archive/sessions/2026-06-26 — Book Synth Token Counts and Conversation History.md)
+
+### Also done 2026-06-26 (SEQ 031 troubleshoot + context tracker refactor)
+
+Root-caused SEQ 031: "I can't help with that right now" response despite coherent tracker entry. Three findings:
+
+1. **Output filter false positive** on `logistics` in "daily logistics" — common English word matched banned agent name. Fixed: two-tier filter. `_ALWAYS_CONFIDENTIAL` (code identifiers, always flagged) vs. `_CONTEXT_SENSITIVE` (`logistics`, `finance`, `relationships`, `coordinator`, `synthesizer`, `orchestrator`, `diarist`) — only flagged when architecture vocabulary appears in the same sentence.
+2. **Preference not durable** — `write_context_tracker` is session-level state; `config/personas/mike.md` was not updated. Fixed: `write_persona` tool added (`tools/persona.py`), registered in orchestrator + both routing configs. `mike.md` updated with goals interview complete + Interaction Preferences section (no validation/commendation, direct follow-up questions only). File pushed directly to VM via `gcloud compute scp` (gitignored).
+3. **Context tracker double-turn overhead** — `write_context_tracker` tool call forced 2–3 Synthesizer turns per exchange (~$0.066/exchange at Pro pricing; ~$20/month at 300 exchanges).
+
+**Fix 3 — [CONTEXT] inline block:** Synth now appends `[CONTEXT]{json}[/CONTEXT]` after its visible response instead of calling the tool. Streaming parser in `run_pipeline_session_stream()` intercepts the block before it reaches the client, parses JSON, calls `write_context_tracker()` as a direct Python function call. Synth is now 1 turn for simple exchanges (2 for `run_subagent` exchanges). Held item fidelity preserved — Synth authors them in the same generation pass. Recency bias guard added to instruction. Tested live: clean visible response, `[CONTEXT]` not leaked, tracker written with correct held item. Commits `4984f48`, `5df05aa`.
+
+Session archive: [archive/sessions/2026-06-26 — SEQ 031 Troubleshoot and Context Tracker Refactor.md](archive/sessions/2026-06-26 — SEQ 031 Troubleshoot and Context Tracker Refactor.md)
 
 ### Also done 2026-06-26 (single exchange troubleshoot — SEQ 026 / Logistics routing)
 
@@ -364,17 +456,28 @@ python core/scheduler.py
 
 ---
 
-## Model IDs (updated 2026-06-19)
+## Model IDs (updated 2026-07-27)
 
 | Provider | Model | ID | Notes |
 |---|---|---|---|
-| Anthropic | Sonnet 4.6 (default) | `claude-sonnet-4-6` | |
+| Anthropic | Sonnet 5 (orchestrator fallback) | `claude-sonnet-5` | Only used inside `run_model_conference`'s unused `anthropic` branch — not on the live routing path (cloud/local routing is all Gemini/Ollama). Bumped 2026-07-27 from `claude-sonnet-4-6`. |
+| Anthropic | Opus 5 (`ask_claude` MCP alias `opus`) | `claude-opus-5` | Added 2026-07-27 — new Anthropic release, matches Fable-5-tier capability at half price. `opus-4-8`/`opus-4-7` kept as pinned aliases in `~/.claude/mcp_servers/ask_claude.py`. |
 | OpenAI | o3 | `o3` | |
 | Gemini | Flash-Lite | `gemini-3.1-flash-lite` | ✓ confirmed on Vertex (no `models/` prefix on Vertex) |
 | Gemini | Pro | `gemini-3.1-pro-preview` | ✓ confirmed on Vertex |
 | Ollama | Local 14B | `qwen3:14b` | local only |
 
 **Vertex note:** AI Studio uses `models/gemini-*` prefix; Vertex drops the prefix. The orchestrator strips it automatically when `GOOGLE_CLOUD_PROJECT` is set. Flash-Lite preview ID discontinues July 9 — already updated to non-preview ID.
+
+**2026-07-27 session note:** Reviewed a Google email about GCE Guest Environment Packages moving to regional rollout (Sept 3, 2026) — no action needed, single-VM/single-region deployment isn't affected. Reviewed Anthropic's Claude Opus 5 announcement and updated model aliases (see table above). Future refactor/security-audit work flagged as a candidate for Claude Fable 5 (`ask_claude` alias `fable`) or Opus 5 — decide when that work starts.
+
+**2026-07-27 session note (2nd session, later same day):** Design discussion on whether archive/wisdom tooling covers open-ended user data (expenses, watchlists, ideas) escalated into an implementation attempt (`update_archive_item` in `tools/diarist.py`, new `tools/finance_summary.py`, wiring in `core/orchestrator.py`, whitelist fixes in both `routing*.yaml`, a doc line in `finance.md`) made without checking `SESSION.md`/the roadmap/file-ownership rules first. This violated the frozen-specialist-file rule and the `core/orchestrator.py` ownership/A8-refactor plan already on record — **all of it was reverted** (verified clean via `git diff`). New standing rule added to `CLAUDE.md`: **"Mandatory Pre-Edit Context Check"** — no edit without first reading SESSION.md + active roadmap + ownership rules. Also saved as memory `feedback_pre_edit_context_check.md`. The one change that did land: `archive/plans/phase5_to_future_roadmap_2026-06-10.md` Section 4 now notes both gaps (Finance transaction aggregation; archive item lifecycle/update-in-place) as unscoped "Now tier" placeholders for future work — see that doc for details, and `archive/sessions/2026-07-27 — Data Management Gaps Discussion and Pre-Edit Context Rule.md` for the full session log.
+
+**2026-07-27 session note (3rd session — chat rehydration + persona goals audit):** Located the one never-archived "Metatron — Single Exchange Troubleshoot" chat (of five same-titled transcripts) — session `f37f081a-693d-4b82-bdcb-b7d6d163b392`, SEQ 026 duplicate, left open mid-thread on CalDAV setup (which service Mike uses; timezone needs `America/New_York` → `Europe/London` in `config/modules/caldav.yaml`, currently `enabled: false` with empty credentials). Discussed blank vs. duplicate Google account for a London base — recommended blank, import contacts only, skip calendar/email history (works against the "hypothesis not verdict" design principle; Goals Interview is the intended onboarding mechanism, not account data mining). **New gap surfaced:** `config/goals.yaml` (Tier 3 structured store) is still empty despite `config/personas/mike.md` flagging "Goals interview completed 2026-06-26" — the interview's actual output landed in `data/baselines/aspirational_baseline.json` (good/hard week, peak/floor days narrative; also has an untagged `"persona": ""` bug) and the ephemeral `data/personas/mike/context.json` tracker instead of durable `goals.yaml`. No edits made — analysis only. Deferred to user: whether to draft `goals.yaml` entries from existing baseline/context data; account creation is a manual user step. Session archive: [archive/sessions/2026-07-27 — SEQ 026 Chat Rehydration and Persona Goals Gap Audit.md](archive/sessions/2026-07-27 — SEQ 026 Chat Rehydration and Persona Goals Gap Audit.md)
+
+**2026-07-27 session note (4th session — coordinator-slim chat rehydration):** Found and rehydrated the 2026-06-19 "slim coordinator.md" proposal chat on request. Confirmed it was never implemented: `config/modules/coordinator_routing.yaml` / `data/config/coordinator_routing.json` don't exist, no "Parallel dispatch" block is in `coordinator.md`, and the file has grown to 2,279 words (from 2,160 at proposal time) with new content the old proposal doesn't account for (deferral/rescheduling signal words, agent-name normalization). Still open per the roadmap (D2 latency item 5). No edits made — user confirmed they only wanted the context back, not implementation. If resumed later, needs a fresh audit against current file content, not the stale 2026-06-19 draft, and should re-check the Vertex 4096-token cache-padding floor (Section 4 monitor) before landing any reduction. Session archive: [archive/sessions/2026-07-27 — Coordinator Slim Chat Rehydration and Archive Runs.md](archive/sessions/2026-07-27 — Coordinator Slim Chat Rehydration and Archive Runs.md)
+
+**2026-07-27 session note (4th session — cross-device WS sync bug fix + deploy):** User was trying to relocate a "Synch" chat; traced it to [archive/sessions/2026-06-26 — Synthesizer Conversation History.md](archive/sessions/2026-06-26%20—%20Synthesizer%20Conversation%20History.md), which undersold its own follow-through — same-night commit `4302ef8` actually shipped full SQLite-backed, real-time cross-device WS sync (`core/server.py` `ConnectionManager` + `exchanges` table), never verified against two real devices and never fully documented (`dc8f031` has no session log entry). Found and fixed a real bug in `static/index.html` `sendViaWebSocket()`: `shownIds.clear()` ran after adding the new exchange ID instead of before, so once the client-side set exceeded 100 entries the in-flight exchange's own ID got wiped, causing the response bubble to hang forever with no error. Fixed (commit `eea3faf`), deployed via `./deploy.sh` (GCP billing had auto-disabled on the $20 cap mid-session, user re-enabled, deploy succeeded on retry). **Next: two-device persistence/sync test not yet run** — see [archive/sessions/2026-07-27 — Cross-Device WS Sync Bug Fix and Deploy.md](archive/sessions/2026-07-27%20—%20Cross-Device%20WS%20Sync%20Bug%20Fix%20and%20Deploy.md) for the test plan.
 
 ---
 
