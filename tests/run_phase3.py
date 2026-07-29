@@ -26,7 +26,7 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
-os.environ["AI_TEST_PERSONA"] = ""  # reset; set per test
+os.environ["METATRON_PERSONA"] = ""  # reset; set per test
 
 from dotenv import load_dotenv
 load_dotenv(ROOT / ".env")
@@ -226,7 +226,7 @@ def _build_system_prompt(persona: str, agent: str) -> str:
 
 
 def run_single_session(persona: str, agent: str, prompt: str, provider: str) -> dict:
-    os.environ["AI_TEST_PERSONA"] = persona
+    os.environ["METATRON_PERSONA"] = persona
     system_prompt = _build_system_prompt(persona, agent)
     schemas, handlers = register_tools()
     turns = run_session_captured(system_prompt, [prompt], schemas, handlers, provider=provider)
@@ -234,7 +234,7 @@ def run_single_session(persona: str, agent: str, prompt: str, provider: str) -> 
 
 
 def run_multi_turn(persona: str, agent: str, prompts: list[str], provider: str) -> list[dict]:
-    os.environ["AI_TEST_PERSONA"] = persona
+    os.environ["METATRON_PERSONA"] = persona
     system_prompt = _build_system_prompt(persona, agent)
     schemas, handlers = register_tools()
     return run_session_captured(system_prompt, prompts, schemas, handlers, provider=provider)

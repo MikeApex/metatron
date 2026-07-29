@@ -320,7 +320,7 @@ def generate(start_date: date, weeks: int, also_index: bool) -> None:
         generated += 1
 
         if also_index:
-            os.environ["AI_TEST_PERSONA"] = _PERSONA
+            os.environ["METATRON_PERSONA"] = _PERSONA
             from core.memory import index_entry
             index_entry(
                 text=log["notes"] + " " + journal["entries"][0]["text"],

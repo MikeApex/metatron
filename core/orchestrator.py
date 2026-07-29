@@ -148,6 +148,21 @@ def load_profile(persona: str | None = None) -> str:
     return "## User Profile\n\n" + "\n".join(lines)
 
 
+def _titled(label: str, content: str) -> str:
+    """
+    Wrap content in a '## {label}' heading, unless it already opens with one.
+
+    The Goals Interviewer writes prime_directive.md and mission.md through
+    write_config(), which stores the model's text verbatim — and the model
+    includes its own '## Prime Directive' heading. Without this check the
+    system prompt carries the heading twice with an empty section between.
+    """
+    first = content.lstrip().splitlines()[0].strip().lower() if content.strip() else ""
+    if first == f"## {label}".lower():
+        return content
+    return f"## {label}\n\n{content}"
+
+
 def load_config(persona: str | None = None) -> str:
     """
     Build the system prompt from the four-tier config hierarchy for one persona.
@@ -169,7 +184,7 @@ def load_config(persona: str | None = None) -> str:
     identity_path = persona_md(resolved)
     if not identity_path.exists():
         raise FileNotFoundError(f"Persona not found: {identity_path}")
-    sections.append(f"## Development Persona\n\n{identity_path.read_text().strip()}")
+    sections.append(f"## User\n\n{identity_path.read_text().strip()}")
 
     config_dir = persona_config_dir(resolved)
     for label, filename in (
@@ -180,7 +195,7 @@ def load_config(persona: str | None = None) -> str:
         if path.exists():
             content = path.read_text().strip()
             if content:
-                sections.append(f"## {label}\n\n{content}")
+                sections.append(_titled(label, content))
 
     goals_path = config_dir / "goals.yaml"
     if goals_path.exists():

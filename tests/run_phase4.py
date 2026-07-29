@@ -50,7 +50,7 @@ def run_pattern_miner(scale_days: int, provider: str | None, model: str | None =
     import os
     from core.orchestrator import run_session
 
-    os.environ["AI_TEST_PERSONA"] = _PERSONA
+    os.environ["METATRON_PERSONA"] = _PERSONA
 
     today = date.today()
     end = today.isoformat()
@@ -165,7 +165,7 @@ def main() -> None:
     args = parser.parse_args()
 
     import os
-    os.environ["AI_TEST_PERSONA"] = _PERSONA
+    os.environ["METATRON_PERSONA"] = _PERSONA
 
     counts = _count_entries(_PERSONA)
     print(f"Data inventory: {counts['logs']} logs, {counts['journal']} journal entries")
