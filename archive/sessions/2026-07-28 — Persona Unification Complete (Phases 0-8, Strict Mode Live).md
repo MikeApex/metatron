@@ -302,3 +302,29 @@ Test 2 is the meaningful one: GitHub *will* serve reachable commits by direct SH
 **Honest caveat recorded:** this proves unreachability by any client, not that GitHub has physically gc'd its storage, and it cannot prove nothing accessed the data during the ~40 minutes it was live. Only GitHub support can confirm the former.
 
 Also gitignored `dummy` and `data/_pre_reset_*/` so the same sweep cannot recur.
+
+---
+
+## Proactive check-ins were invisible (found during live testing)
+
+User saw an unnumbered "What's going on?" in The Book they had not sent. That is `companion_checkin`'s configured prompt, firing every 90 minutes — **working for the first time**, since it had failed on every fire until the `--persona` fix earlier today.
+
+**The gap:** the scheduler ran the pipeline in-process, so a check-in produced a trace and a push notification but **no conversation record and no database row**. Consequences: no seq (unnumbered in The Book), and completely absent from the phone and browser. Metatron opened a conversation that then appeared nowhere in the user's history. `scheduler.py` had zero references to `_log_conversation`, `_save_exchange` or `metatron.db`.
+
+Same class of bug as the terminal running in-process — a component doing its own pipeline run instead of going through the server.
+
+**Fix:** coordinator jobs now call `remote_client.send_one()`, so a proactive session is an ordinary exchange: conversation record, seq, shared database row, live broadcast to connected devices. Single-agent jobs (`pattern_miner`, `physical_health`) still run in-process — they are analysis runs that write their own outputs, not conversation. Raises on failure rather than falling back, since a silent fallback recreates the invisibility.
+
+Also threaded `is_proactive` through the WS send into the trace; it was hardcoded `False`, so traces could not distinguish a check-in Metatron initiated from a user message.
+
+**Verified live:** check-in landed as conversation `#013` with seq, `metatron.db` row #14, trace `is_proactive=True`.
+
+### Also fixed: The Book numbering live exchanges
+Two feeds. `/monitor/conversations` serves the JSONL (has seq); `/monitor/stream` serves trace records (no seq — it is assigned by `_log_conversation` after the trace is written). So exchanges on disk at load time were numbered and live ones were not. Server now attaches seq by matching the conversation record on user text; the monitor carries it into the Column 1 entry, which it had been discarding. Both halves were needed.
+
+### Terminal client regressions (reported immediately, both mine)
+- **Ctrl-C hung** — `sys.stdin.readline()` is uninterruptible and `run_in_executor(None, ...)` uses non-daemon threads, so the interpreter waited forever at exit. Replaced with a daemon reader thread feeding an asyncio queue.
+- **Responses invisible** — chunks written with no label or colour were indistinguishable from the terminal's echo of the typed input. Now green with a leading newline, plus a prompt on connect.
+
+### Confirmed working during testing
+Sync across browser, app and terminal. **Open:** the browser appears to need a manual refresh to show foreign messages — the WS broadcast should push them live, so that is a client-side bug in `static/index.html`, separate from this work.

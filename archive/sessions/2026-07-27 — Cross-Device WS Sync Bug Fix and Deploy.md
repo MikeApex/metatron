@@ -34,14 +34,29 @@ Once the client-side `shownIds` set exceeded 100 entries (accumulated over a lon
 
 `./deploy.sh` hit a snag: GCP billing had been auto-disabled (the `stop-billing` Cloud Function tripped on the $20/month cap — see CLAUDE.md Billing Protection section). User re-enabled billing in the GCP Console. Retried deploy — first attempt still failed (`ssh: Could not resolve hostname github.com` from the VM, DNS not yet settled post billing-restore); second retry succeeded. VM pulled `eea3faf`, no active SSE streams blocked restart, both services restarted, `/health` confirmed OK.
 
-## Deferred / next
+## Follow-up (2026-07-28/29)
 
-Two-device persistence and live-sync test not yet run. Plan handed off to user:
-1. Two devices open on the same persona simultaneously
-2. Confirm live streaming visibility (`stream_start`/`chunk`) on the non-sending device
-3. Confirm final text matches on both
-4. Kill/reopen one device mid-stream — confirm catch-up via `since_id`, no dupes/drops
-5. Restart server, confirm SQLite-backed history still loads (not just in-memory)
-6. The >100-exchange edge case is hard to force live — verified by code review only; offered to seed dummy SQLite rows to force-test it if wanted
+User ran the test on real devices and confirmed: "Synching seems to be occurring." Cross-device sync is working post-fix.
 
-Also still undocumented from before this session: commit `dc8f031` has no session archive entry — noted here retroactively, not separately logged.
+**Not independently re-verified by Claude Code this session** — this is the user's own observation, not a re-check of logs/DB. If confirmation with hard evidence is wanted later (e.g. `exchanges` table row count matching across a live two-device exchange, or checking `/monitor` traces), that's still open.
+
+## >100-exchange edge case: force-tested (2026-07-29)
+
+Two-part verification, no mike-persona involvement, minimal cost:
+
+**1. Pure logic proof (zero cost, no server/persona touched).** Extracted the exact `sendViaWebSocket()` Set ordering into a standalone Node harness (scratchpad only, not committed to the repo), ran 300 simulated sequential sends for both orderings:
+- **Pre-fix order** (`add` then `clear`): fails at send #101 and #202 — exactly the predicted pattern, recurring every time the set crosses the 100-entry cap.
+- **Fixed order** (`clear` then `add`, deployed): 0 failures across all 300.
+
+**2. Live end-to-end proof (one real Vertex call, persona=`cal_newport`, a dev/test persona, not mike).** Wrote a Python WebSocket client implementing the exact deployed (fixed) client logic, pre-seeded its local `shownIds` with 100 synthetic exchange IDs to recreate the real boundary condition (no need to actually send 100 real messages), then sent one real message through the live production server:
+- `exchange_id` correctly survived the clear-then-add check (`shownIds` size went 100 → 101, no clear, since the check fires on size *before* adding and 100 is not `> 100`)
+- Server `chunk` → `done` correctly recognized as the client's own exchange
+- Response streamed back and completed normally: *"Test received and acknowledged."*
+- Confirmed via direct SQLite read on the VM: the exchange persisted under `persona='cal_newport'`; `mike`'s row count (11) was untouched — no cross-persona contamination.
+
+**Verdict: fix confirmed at both the isolated-logic level and the live production-server level.** This closes out the one item from the deploy session that hadn't been directly forced.
+
+## Deferred / open (remaining)
+
+1. Commit `dc8f031` has no session archive entry from when it landed — noted here retroactively, not separately logged.
+2. Duplicate "4th session" label on 2026-07-27 in `SESSION.md` (this entry and the earlier "coordinator-slim chat rehydration" one) — cosmetic, offered to fix, not done.

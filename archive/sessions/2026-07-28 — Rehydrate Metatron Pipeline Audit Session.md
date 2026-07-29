@@ -21,11 +21,20 @@ No code changes this session — a pure context-recovery task.
 
 ## Status check against current state (as of this session)
 
-Cross-referenced the 2026-06-26 findings against `SESSION.md`:
-- Research Agent normalization fix — landed and deployed (confirmed in SESSION.md "pipeline audit + Research Agent normalization fix" entry).
+Cross-referenced the 2026-06-26 findings against `SESSION.md` — then went back and verified each claim directly in code rather than trusting the archive note, after the user asked whether anything from the transcripts was still open.
+
+- Research Agent normalization fix — confirmed live: `_AGENT_NAME_MAP` at `core/orchestrator.py:1894` has the single-word abbreviation entries (`"research"` → `"research_agent"`, etc.), committed in `e477c76`.
 - Graceful shutdown 90s SIGKILL cycle — fixed same day (`timeout_graceful_shutdown=150` + drain gate in `deploy.sh`).
 - `tools.ambient` missing / ambient context — resolved same day (`config/profile.yaml` + `tools/ambient.py` deployed).
-- `write_config` output-filter false positive — resolved in the SEQ 031 troubleshoot session (two-tier `_ALWAYS_CONFIDENTIAL` vs `_CONTEXT_SENSITIVE` filter).
+- **`write_config` output-filter false positive — found still open on re-check.** The SEQ 031 session's two-tier filter (`_ALWAYS_CONFIDENTIAL` vs `_CONTEXT_SENSITIVE`) only softened matching for common-English-word agent names (`logistics`, `finance`, etc.). Tool names including `write_config` remained in `_ALWAYS_CONFIDENTIAL`, flagged on any substring match with no exception for the user having said the term first — the exact failure mode from exchange 027 in the rehydrated transcript was still reproducible.
 - The routing-miss bug family this audit started continued to recur and was most recently addressed in the SEQ 041 session (2026-07-27, commit `814e6c3`) — advice/suggestion requests not routing to domain specialists.
 
-No open action items from this rehydration — it was a lookback, not new work.
+## Fix applied this session
+
+`filter_output()` in `core/orchestrator.py` (line ~573) now takes an optional `user_message` param. A term is only flagged as leaked if it does **not** already appear in the user's own message this turn — a term the user said first isn't a leak when the Synthesizer echoes it back. Applied to both tiers (`_ALWAYS_CONFIDENTIAL` substring match, `_CONTEXT_SENSITIVE` architecture-context match).
+
+All three call sites updated to pass `user_input` through: `run_pipeline_session` (line ~2045), `run_pipeline_session_stream` (line ~2240), `run_session` single-agent path (line ~2287).
+
+Verified with 4 manual cases (unmentioned term still suppresses; user-mentioned term passes through; same logic for both filter tiers) — all behaved as intended. `py_compile` clean.
+
+**Not yet deployed** — committed locally only, needs `./deploy.sh` to reach the VM.
