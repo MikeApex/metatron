@@ -17,9 +17,10 @@ _save_exchange() and manager.broadcast(). POST /session/stream writes the daily
 JSONL log but neither persists to the shared store nor notifies anyone, so it
 would fix the split tree while leaving the terminal invisible to other devices.
 
-Usage (via the orchestrator CLI):
-    python core/orchestrator.py --persona mike --remote
-    python core/orchestrator.py --persona mike --remote --server https://host:8001
+Usage (via the orchestrator CLI) — remote is the default for coordinator:
+    python core/orchestrator.py --persona mike
+    python core/orchestrator.py --persona mike --server https://host:8001
+    python core/orchestrator.py --persona mike --local     # in-process, no sync
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ import asyncio
 import json
 import ssl
 import sys
+import threading
 import uuid
 
 DEFAULT_SERVER = "https://metatron-vm.tail0acc5d.ts.net:8001"
@@ -37,6 +39,7 @@ DEFAULT_SERVER = "https://metatron-vm.tail0acc5d.ts.net:8001"
 _DIM = "\033[2m"
 _CYAN = "\033[36m"
 _YELLOW = "\033[33m"
+_GREEN = "\033[32m"
 _RESET = "\033[0m"
 
 
@@ -63,7 +66,7 @@ async def _run(persona: str, server: str, provider: str | None, insecure: bool) 
     try:
         import websockets
     except ImportError:
-        print("The --remote flag needs the 'websockets' package: pip install websockets",
+        print("Remote mode needs the 'websockets' package: pip install websockets",
               file=sys.stderr)
         raise SystemExit(1)
 
@@ -75,7 +78,7 @@ async def _run(persona: str, server: str, provider: str | None, insecure: bool) 
     except Exception as exc:
         print(f"\nCould not reach the server at {server}\n  {exc}\n\n"
               f"Check the server is running and Tailscale is up. To run the pipeline\n"
-              f"locally instead, drop --remote (note: that writes to this machine, not\n"
+              f"locally instead, pass --local (note: that writes to this machine, not\n"
               f"the server, and does not sync with the phone or browser).",
               file=sys.stderr)
         raise SystemExit(1)
@@ -103,7 +106,8 @@ async def _run(persona: str, server: str, provider: str | None, insecure: bool) 
                         print(f"{_DIM}  you: {m['user'][:90]}{_RESET}")
                         print(f"{_DIM}   me: {m['assistant'][:90]}{_RESET}")
                     print(f"{_DIM}---{_RESET}")
-                print("\nType a message and press Enter. Ctrl+C to exit.\n")
+                print("\nType a message and press Enter. Ctrl+C or 'exit' to quit.\n")
+                _prompt()
 
             elif kind == "stream_start":
                 # Another device is talking. This is the sync signal.
@@ -112,7 +116,11 @@ async def _run(persona: str, server: str, provider: str | None, insecure: bool) 
 
             elif kind == "chunk":
                 if xid in own:
-                    streaming_own = True
+                    if not streaming_own:
+                        # Label the reply. Without this it is indistinguishable
+                        # from the terminal's echo of what you just typed.
+                        streaming_own = True
+                        sys.stdout.write(f"\n{_GREEN}")
                     sys.stdout.write(msg.get("text", ""))
                     sys.stdout.flush()
                 else:
@@ -121,7 +129,7 @@ async def _run(persona: str, server: str, provider: str | None, insecure: bool) 
             elif kind == "done":
                 if xid in own:
                     streaming_own = False
-                    print("\n")
+                    print(f"{_RESET}\n")
                     _prompt()
                 else:
                     text = "".join(pending.pop(xid, []))
@@ -153,10 +161,23 @@ async def _run(persona: str, server: str, provider: str | None, insecure: bool) 
 
     async def send_loop() -> None:
         loop = asyncio.get_running_loop()
+        queue: asyncio.Queue = asyncio.Queue()
+
+        # A DAEMON thread, not run_in_executor. sys.stdin.readline() is an
+        # uninterruptible syscall; the default executor's threads are
+        # non-daemon, so Ctrl-C would raise in the main thread and then hang
+        # forever waiting for the reader to return.
+        def _reader() -> None:
+            while True:
+                line = sys.stdin.readline()
+                loop.call_soon_threadsafe(queue.put_nowait, line)
+                if not line:
+                    return
+
+        threading.Thread(target=_reader, daemon=True).start()
+
         while True:
-            # Reading stdin in an executor keeps the receive task live, so
-            # messages from other devices arrive while waiting for input.
-            line = await loop.run_in_executor(None, sys.stdin.readline)
+            line = await queue.get()
             if not line:
                 break
             text = line.strip()
