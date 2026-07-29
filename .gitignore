@@ -63,3 +63,9 @@ archive/transcripts/
 config/personas/*/profile.yaml
 config/personas/*/scheduler.yaml
 config/personas/*/caldav.yaml
+
+# Pre-reset data archives — user data, never committed
+data/_pre_reset_*/
+
+# Local convenience file (empty, clicked to reduce editor context noise)
+dummy
