@@ -138,8 +138,11 @@ async def _run(persona: str, server: str, provider: str | None, insecure: bool) 
                 _prompt()
 
             elif kind == "stream_start":
-                # Another device is talking. This is the sync signal.
-                print(f"\n{_CYAN}[from another device] {msg.get('user','')}{_RESET}")
+                # Another device is talking, or Metatron opened a check-in.
+                if msg.get("proactive"):
+                    print(f"\n{_CYAN}[Metatron checking in]{_RESET}")
+                else:
+                    print(f"\n{_CYAN}[from another device] {msg.get('user','')}{_RESET}")
                 pending[xid] = []
 
             elif kind == "chunk":
@@ -179,7 +182,10 @@ async def _run(persona: str, server: str, provider: str | None, insecure: bool) 
             elif kind == "message":
                 # Catch-up record for an exchange completed while disconnected.
                 if xid not in own:
-                    print(f"\n{_CYAN}[from another device] {msg.get('user','')}{_RESET}")
+                    if msg.get("proactive"):
+                        print(f"\n{_CYAN}[Metatron checking in]{_RESET}")
+                    else:
+                        print(f"\n{_CYAN}[from another device] {msg.get('user','')}{_RESET}")
                     print(f"{_CYAN}{msg.get('assistant','')}{_RESET}\n")
                     _prompt()
 

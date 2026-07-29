@@ -289,7 +289,21 @@ def main() -> None:
 
     print("\nRunning. Ctrl+C to stop.\n")
 
+    # The schedule library computes each job's next_run once, from the clock at
+    # registration. At a DST boundary those precomputed times are an hour wrong,
+    # and this daemon runs for weeks without restarting — so detect the change
+    # and re-register. Self-healing; no cron entry or manual step needed.
+    current_offset = datetime.now().astimezone().utcoffset()
+
     while True:
+        offset = datetime.now().astimezone().utcoffset()
+        if offset != current_offset:
+            print(f"\n[scheduler] clock offset changed {current_offset} -> {offset} "
+                  f"(daylight saving); re-registering schedules", flush=True)
+            schedule.clear()
+            _register_schedules(persona=persona)
+            current_offset = offset
+
         schedule.run_pending()
         time.sleep(30)
 

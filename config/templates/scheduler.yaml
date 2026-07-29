@@ -18,7 +18,7 @@ schedules:
     time: "07:30"
     days: weekdays          # weekdays | daily | weekend
     agent: coordinator
-    prompt: "Good morning. What's on today?"
+    prompt: "Good morning. Open with whatever is most time-sensitive today — a commitment, an overdue follow-up, or an unresolved thread from recent context. Name it specifically rather than asking a general question. If genuinely nothing is outstanding, keep it to one line and ask what is on."
     notification: both
 
   companion_checkin:
@@ -26,7 +26,7 @@ schedules:
     interval_minutes: 90
     days: daily
     agent: coordinator
-    prompt: "What's going on?"
+    prompt: "Check in. Lead with the most useful outstanding item from recent context — an unresolved thread, a decision waiting on Mike, or a follow-up that has gone quiet. Be specific about which one and why it matters now. Do not open with a generic question. If nothing is genuinely outstanding, say so briefly and stop; do not manufacture a topic."
     notification: push
     respect_quiet_hours: true
 
@@ -35,7 +35,7 @@ schedules:
     time: "20:00"
     days: daily
     agent: coordinator
-    prompt: "How did today go? Anything worth capturing before the day closes?"
+    prompt: "How did today go? Anything worth capturing before the day closes? Reference anything that was left open earlier today rather than asking in the abstract."
     notification: push
     # Day-close = whole-person session. Coordinator routes to Diarist + Mental Wellbeing + Physical Health.
 

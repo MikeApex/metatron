@@ -109,7 +109,8 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
-def _log_conversation(user_input: str, response: str, agent: str, persona: str | None) -> None:
+def _log_conversation(user_input: str, response: str, agent: str, persona: str | None,
+                      proactive: bool = False) -> None:
     """Append a verbatim exchange to the daily conversation log."""
     import json as _json
     from datetime import datetime
@@ -133,6 +134,7 @@ def _log_conversation(user_input: str, response: str, agent: str, persona: str |
             "seq": seq,
             "agent": agent,
             "persona": persona,
+            "proactive": proactive,
             "user": user_input,
             "response": response,
         }
@@ -157,6 +159,11 @@ async def _init_db() -> None:
                 ts          TEXT NOT NULL
             )
         """)
+        # Added after the table shipped, so tolerate an existing DB.
+        try:
+            await db.execute("ALTER TABLE exchanges ADD COLUMN proactive INTEGER DEFAULT 0")
+        except Exception:
+            pass  # column already present
         await db.commit()
 
 
@@ -181,7 +188,8 @@ async def _get_recent_exchanges(persona: str, limit: int = 20) -> list[dict]:
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
-            "SELECT id, exchange_id, user, assistant, ts FROM exchanges "
+            "SELECT id, exchange_id, user, assistant, ts, "
+            "COALESCE(proactive,0) AS proactive FROM exchanges "
             "WHERE persona=? ORDER BY id DESC LIMIT ?",
             (persona, limit),
         ) as cursor:
@@ -194,7 +202,8 @@ async def _catchup_since(persona: str, since_id: int) -> list[dict]:
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
-            "SELECT id, exchange_id, user, assistant, ts FROM exchanges "
+            "SELECT id, exchange_id, user, assistant, ts, "
+            "COALESCE(proactive,0) AS proactive FROM exchanges "
             "WHERE persona=? AND id > ? ORDER BY id ASC",
             (persona, since_id),
         ) as cursor:
@@ -202,14 +211,16 @@ async def _catchup_since(persona: str, since_id: int) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-async def _save_exchange(persona: str, exchange_id: str, user: str, assistant: str) -> int:
+async def _save_exchange(persona: str, exchange_id: str, user: str, assistant: str,
+                         proactive: bool = False) -> int:
     """Persist a completed exchange. Returns the new row id."""
     ts = datetime.utcnow().isoformat() + "Z"
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute(
-            "INSERT OR IGNORE INTO exchanges (exchange_id, persona, user, assistant, ts) "
-            "VALUES (?,?,?,?,?)",
-            (exchange_id, persona, user, assistant, ts),
+            "INSERT OR IGNORE INTO exchanges "
+            "(exchange_id, persona, user, assistant, ts, proactive) "
+            "VALUES (?,?,?,?,?,?)",
+            (exchange_id, persona, user, assistant, ts, 1 if proactive else 0),
         )
         await db.commit()
         return cursor.lastrowid or 0
@@ -382,6 +393,9 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                     "type": "stream_start",
                     "exchange_id": exchange_id,
                     "user": user_input,
+                    # Clients must not render the prompt of a proactive exchange as
+                    # something the user said — Metatron opened this one.
+                    "proactive": proactive,
                 }, exclude=websocket)
 
                 loop = asyncio.get_running_loop()
@@ -455,8 +469,10 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                     done_payload = {"type": "done", "exchange_id": exchange_id}
                     await _send_to_sender(done_payload)
                     await manager.broadcast(persona_key, done_payload, exclude=websocket)
-                    new_id = await _save_exchange(persona_key, exchange_id, user_input, full_response)
-                    _log_conversation(user_input, full_response, "coordinator", persona_orch)
+                    new_id = await _save_exchange(persona_key, exchange_id, user_input,
+                                                  full_response, proactive=proactive)
+                    _log_conversation(user_input, full_response, "coordinator", persona_orch,
+                                      proactive=proactive)
                     await manager.broadcast(persona_key, {
                         "type": "message",
                         "id": new_id,

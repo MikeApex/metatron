@@ -457,9 +457,10 @@
       }
 
       case 'stream_start': {
-        // Another device started sending — render their user bubble + empty assistant bubble
+        // Another device started sending — render their user bubble + empty assistant bubble.
+        // A proactive exchange has no user turn: Metatron opened it.
         if (!shownIds.has(msg.exchange_id)) {
-          addMessage('user', msg.user);
+          if (!msg.proactive) addMessage('user', msg.user);
           const bubble = addMessage('assistant', '▍');
           foreignBubbles.set(msg.exchange_id, { bubble, accumulated: '' });
         }
@@ -525,7 +526,7 @@
       case 'message': {
         // Completed exchange arriving for catch-up (missed while disconnected)
         if (!shownIds.has(msg.exchange_id)) {
-          addMessage('user', msg.user);
+          if (!msg.proactive) addMessage('user', msg.user);
           addMessage('assistant', msg.assistant);
           shownIds.add(msg.exchange_id);
         }
@@ -555,7 +556,10 @@
     if (ownBubble) return;
     conversation.innerHTML = '<div class="message system">Session started. Tap the mic or type to begin.</div>';
     for (const msg of messages) {
-      addMessage('user', msg.user);
+      // Proactive exchanges were opened by Metatron, not the user. Their prompt
+      // is an internal instruction to the pipeline and must never be shown as
+      // something the user said.
+      if (!msg.proactive) addMessage('user', msg.user);
       addMessage('assistant', msg.assistant);
       shownIds.add(msg.exchange_id);
       if (msg.id > lastSeenId) lastSeenId = msg.id;
