@@ -187,3 +187,40 @@ Exercised all 21 persona-dependent paths on the VM first; audit log stayed empty
   3. `[vertex_cache] 404 cached content metadata` — stale cache ID reused after expiry.
   4. `/session` (non-streaming) leaks `[CONTEXT]` and never writes the context tracker.
 - **Goals interview fix prompt** (`archive/plans/goals_interview_fix_prompt_2026-07-28.md`) still overstates the problem — written before I found the real files at `config/personas/mike/`. Needs correcting.
+
+---
+
+## Diagnosis: `companion_checkin` failing on every fire
+
+**Symptom:** 223 scheduler errors — 189 `companion_checkin`, 18 `evening_close`, 14 `morning_brief`, 1 each for both Sunday jobs. Every scheduled job affected.
+
+**My initial hypothesis was wrong.** I read the ~90-minute gap between firing and error as a timeout. It was not — 90 minutes is simply the job interval. The actual error text was `Object of type AgentRecord is not JSON serializable`, which also collapsed two backlog items into one: they were the same bug.
+
+**Investigation:** ruled out the push path (the two `terminal`-notification jobs failed too), then `dispatch_tool` (args are the model's own, no AgentRecord injected), then `context_sections` (all strings, no post-hoc mutation). Rather than keep guessing, reproduced the exact scheduler call path on the VM with a monkeypatched `_log_error` to capture the traceback that the real one discards.
+
+**Result: no error.** The job completed cleanly.
+
+**Root cause: the missing `--persona` on the scheduler unit.** Fixed earlier in this session as a side effect of stopping data divergence — it also fixed 189 recurring failures. Precise mechanism not pinned down (most likely the process-global env var being popped while background threads were mid-flight, crossing thread-local trace state); the resolver's thread-local identity removes that class of failure regardless.
+
+### The more valuable finding, surfaced by the reproduction
+
+The notification body contained the raw `[CONTEXT]{...}[/CONTEXT]` block.
+
+The Synthesizer appends that block instead of spending a tool-call turn on `write_context_tracker` — but **only the streaming path parsed and removed it.** Everything through `run_pipeline_session` leaked it verbatim:
+- **every scheduled job** — so push notifications on the phone contained raw JSON
+- the non-streaming `/session` endpoint
+
+Those sessions also **never wrote the context tracker**, so proactive check-ins never updated state. The tracker was stuck at `last_session: 2026-06-29`.
+
+**Fix:** `split_context_block()` / `persist_context_block()` extracted and shared by both paths so they cannot drift apart again. Malformed JSON still strips the block (it just does not persist), so it can never reach a user. Verified live: notification body clean, tracker advanced 2026-06-29 -> 2026-07-29 with current threads, no errors.
+
+### Two supporting fixes
+- **Scheduler error log now records a traceback.** It stored only `str(e)`; 189 identical one-line entries needed a live reproduction to diagnose.
+- **`COORD PACKAGE` debug dump gated behind `AI_TRACE`.** It printed the full routing package to stderr on every session including every scheduled job — flooding journalctl and burying real errors, right before a week of audited testing. A8 scopes it as a deletion; gating keeps the capability.
+
+### Backlog now
+1. ~~`companion_checkin` fails every fire~~ — **fixed** (missing `--persona`).
+2. ~~`AgentRecord not JSON serializable`~~ — **same bug, fixed**.
+3. ~~`/session` leaks `[CONTEXT]` / skips the context tracker~~ — **fixed**, and it was worse than recorded: it affected every scheduled job and every push notification.
+4. `[vertex_cache] 404 cached content metadata` — stale cache ID reused after expiry, falls back to compat on every call. **Still open**, cost/latency only.
+5. Coordinator ran 7 turns / 48K cumulative tokens on the reproduction — the known coordinator-slimming item (target <=3 turns, <=40K). **Still open.**
