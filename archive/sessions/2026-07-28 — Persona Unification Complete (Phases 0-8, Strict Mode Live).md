@@ -268,3 +268,37 @@ Registry reuse confirmed (`second call reused: True`); `cache_read=9691` present
 - ~~stale Vertex cache 404~~ — fixed
 - ~~cache padding below the 4096 floor~~ — fixed
 - **Open:** Coordinator ran 7 turns / 48K cumulative tokens — the known coordinator-slimming item (target <=3 turns, <=40K). Now the largest remaining cost/latency lever.
+
+---
+
+## Terminal made a real client (`core/remote_client.py`)
+
+**Problem:** `python core/orchestrator.py --persona mike` ran the pipeline in-process, writing to whichever machine ran the command. Used alongside the phone and browser that is not a fourth client — it is a second parallel history for the same person on a different machine, i.e. the same split-brain the persona work exists to prevent, at the Mac-vs-VM boundary instead of global-vs-persona.
+
+**Design finding that changed the implementation:** the plan was to POST to the SSE endpoint. Reading the code first showed that would only half-work — **only the WebSocket path calls `_save_exchange()` and `manager.broadcast()`**. `POST /session/stream` writes the daily JSONL log but neither persists to the shared store nor notifies other clients, so the terminal would have stopped fragmenting the tree while staying invisible to the phone and browser.
+
+**Built:** `core/remote_client.py` connects to `wss://<server>/ws?persona=<p>`. Remote is the default for interactive coordinator sessions; `--local` opts out and warns. New module rather than adding to `core/orchestrator.py`, which A8 will restructure.
+
+**Verified live:** handshake returned 4 exchanges of shared history; message persisted as row #5 in `metatron.db` and seq 005 in the VM conversation log; before/after mtime check confirmed the Mac tree was untouched.
+
+### Also fixed while here
+- **Orchestrator CLI was broken** — `import core.trace` at line 28 with the `sys.path` fix at line 57. Broken since the "Add The Book" commit (`c66ed03`); `server.py` and `scheduler.py` both set the path before their imports, the CLI never did. Pre-existing, not caused by this session's work.
+- `--persona` made required on the CLI, matching the scheduler.
+- **Android APK rebuilt** — the installed build was from Jun 21 and missing five weeks of client fixes including `eea3faf` (WS `shownIds` cap wiping the in-flight exchange id, which hangs the response bubble with no error). Rebuilt and verified to contain current code and target the right server.
+
+### Git history rewrite (user-approved)
+`git add -A` swept `data/_pre_reset_2026-07-28/` — 41 files of journals, clinical logs, conversations and `metatron.db` — into commit `89ac3ed`, which reached GitHub before it was noticed. **My error.**
+
+Rewritten with a soft-reset rather than `git filter-repo`: the offending commit was `HEAD~1`, so filter-repo's fresh-clone-and-swap dance was unnecessary risk against a repo containing live gitignored data (`config/personas/mike/`, `.env`, `.venv`). The soft reset touched only git metadata.
+
+**Verified against a fresh clone from GitHub** — four independent tests, no support request needed:
+1. Data path in zero commits of a fresh clone
+2. `git fetch origin <sha>` for both orphaned commits — GitHub refuses ("couldn't find remote ref")
+3. Journal blob unreadable by SHA path
+4. Zero objects matching the path across all history
+
+Test 2 is the meaningful one: GitHub *will* serve reachable commits by direct SHA, which is the usual post-force-push concern. It refused both. Object stores garbage-collected on Mac and VM.
+
+**Honest caveat recorded:** this proves unreachability by any client, not that GitHub has physically gc'd its storage, and it cannot prove nothing accessed the data during the ~40 minutes it was live. Only GitHub support can confirm the former.
+
+Also gitignored `dummy` and `data/_pre_reset_*/` so the same sweep cannot recur.
