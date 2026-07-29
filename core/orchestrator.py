@@ -1106,18 +1106,27 @@ def _pad_for_vertex_cache(system_prompt: str) -> str:
     """
     Vertex requires >= 4096 tokens of content to create a CachedContent object;
     shorter prompts fail cache creation outright and silently run uncached every
-    call. Estimate tokens at ~4 chars/token and pad with inert, clearly-marked
-    filler past the threshold (with margin, since the estimate is approximate).
+    call. Pad with inert, clearly-marked filler past the threshold.
+
+    The estimate deliberately assumes 5 chars/token rather than 4. Assuming 4 is
+    optimistic: it overestimates the token count, so it under-pads. Measured on
+    this codebase's own prompts the real ratio is ~4.4 chars/token, so a prompt
+    padded to an estimated 4296 tokens arrived as 3898 actual and Vertex rejected
+    it. Underestimating is the safe direction — it pads more than needed, and
+    surplus padding costs nothing because the cache is read, not regenerated.
+
     Padding is appended only to the copy sent to the cache — never to the prompt
     used on the uncached/compat paths.
     """
-    target_tokens = _VERTEX_CACHE_MIN_TOKENS + 200  # margin for estimation error
-    estimated_tokens = len(system_prompt) // 4
+    # 25% headroom on top of the floor, plus a flat margin. Cheap insurance
+    # against a prompt-shrinking change quietly disabling caching again.
+    target_tokens = int(_VERTEX_CACHE_MIN_TOKENS * 1.25) + 200
+    estimated_tokens = len(system_prompt) // 5
     if estimated_tokens >= target_tokens:
         return system_prompt
 
     pad_tokens_needed = target_tokens - estimated_tokens
-    pad_unit_tokens = max(len(_VERTEX_CACHE_PAD_UNIT) // 4, 1)
+    pad_unit_tokens = max(len(_VERTEX_CACHE_PAD_UNIT) // 5, 1)
     repeats = -(-pad_tokens_needed // pad_unit_tokens)  # ceil div
     padding = " ".join([_VERTEX_CACHE_PAD_UNIT] * repeats)
     return f"{system_prompt}\n\n{padding}"
