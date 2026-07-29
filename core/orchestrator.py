@@ -11,8 +11,8 @@ Usage:
     python core/orchestrator.py                                    # interactive, coordinator agent (pipeline)
     python core/orchestrator.py --agent diarist                    # use a specific agent
     python core/orchestrator.py --provider openai                  # use OpenAI instead of Anthropic
-    python core/orchestrator.py --persona pepys                    # load a dev persona
-    python core/orchestrator.py --input "how am I doing?"         # single-shot input
+    python core/orchestrator.py --persona mike                     # interactive REPL
+    python core/orchestrator.py --persona mike --input "how am I doing?"   # single-shot
 """
 
 import argparse
@@ -24,6 +24,13 @@ import time
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+
+# Must precede any `core.*` / `tools.*` import. Running `python core/orchestrator.py`
+# puts core/ on sys.path[0], not the project root, so `import core.trace` fails
+# without this. core/server.py has always done the same thing before its imports.
+ROOT = Path(__file__).parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 import core.trace as _tr
 
@@ -52,9 +59,6 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 # Paths
 # ---------------------------------------------------------------------------
 
-ROOT = Path(__file__).parent.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 CONFIG_DIR = ROOT / "config"
 AGENTS_DIR = CONFIG_DIR / "agents"
 
@@ -2325,7 +2329,12 @@ def run_interactive(agent_name: str, persona: str | None = None,
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Personal AI Life Manager — Runtime Orchestrator")
     parser.add_argument("--agent", default="coordinator", help="Agent to use (default: coordinator → runs full pipeline)")
-    parser.add_argument("--persona", help="Dev persona to load (e.g. pepys, nin, aurelius)")
+    parser.add_argument(
+        "--persona",
+        required=True,
+        help="Persona this session serves (e.g. mike, pepys). Required — every "
+             "session belongs to exactly one persona.",
+    )
     parser.add_argument("--provider", default=None, choices=["anthropic", "openai", "ollama", "gemini"],
                         help="Force a model provider (default: auto-routed via routing.yaml)")
     parser.add_argument("--input", help="Single-shot input (skips interactive mode)")
