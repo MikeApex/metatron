@@ -29,7 +29,12 @@ import yaml
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 _ROOT = Path(__file__).parent.parent
-from core.persona import persona_config_dir, persona_data_dir, persona_scope
+from core.persona import (
+    persona_config_dir,
+    persona_data_dir,
+    persona_scope,
+    validate_persona_name,
+)
 
 # Quiet hours and job times are personal facts, so the schedule is per-persona.
 # One daemon still serves every persona; it registers each persona's jobs separately.
@@ -98,12 +103,12 @@ def _notify_terminal(title: str, body: str) -> None:
         pass
 
 
-def _notify_push(title: str, body: str) -> None:
+def _notify_push(title: str, body: str, persona: str | None = None) -> None:
     try:
         from core.push import send_push
         send_push(title=title, body=body)
     except Exception as e:
-        _log_error("push_notification", str(e))
+        _log_error("push_notification", str(e), persona)
 
 
 def _dispatch(channel: str, title: str, body: str) -> None:
@@ -118,21 +123,19 @@ def _dispatch(channel: str, title: str, body: str) -> None:
 # ---------------------------------------------------------------------------
 
 def fire_session(job_name: str, agent: str, prompt: str,
-                 notification: str, persona: str | None) -> None:
+                 notification: str, persona: str) -> None:
     """Run one orchestrator session and dispatch the response."""
-    if not _is_active_day(_load_config().get("schedules", {})
-                          .get(job_name, {}).get("days", "daily")):
-        return
-
-    cfg = _load_config()
+    cfg = _load_config(persona)
     job_cfg = cfg.get("schedules", {}).get(job_name, {})
+
+    if not _is_active_day(job_cfg.get("days", "daily")):
+        return
     if not job_cfg.get("enabled", True):
         return
-
     if job_cfg.get("respect_quiet_hours") and _in_quiet_hours(cfg):
         return
 
-    print(f"[scheduler] firing {job_name} ({agent})", flush=True)
+    print(f"[scheduler] [{persona}] firing {job_name} ({agent})", flush=True)
 
     try:
         from core.orchestrator import run_session
@@ -140,7 +143,7 @@ def fire_session(job_name: str, agent: str, prompt: str,
         title = job_name.replace("_", " ").title()
         _dispatch(notification, title, response)
     except Exception as e:
-        _log_error(job_name, str(e))
+        _log_error(job_name, str(e), persona)
         _notify_terminal(f"[scheduler error] {job_name}", str(e))
 
 
@@ -251,16 +254,22 @@ def main() -> None:
     import time
 
     parser = argparse.ArgumentParser(description="Life Manager — Scheduler Daemon")
-    parser.add_argument("--persona", help="Dev persona to use for all sessions")
+    parser.add_argument(
+        "--persona",
+        required=True,
+        help="Persona whose schedule this daemon runs (e.g. mike). Required — "
+             "every scheduled session must belong to a persona.",
+    )
     args = parser.parse_args()
 
+    persona = validate_persona_name(args.persona)
+
     print("\nLife Manager — Scheduler Daemon")
-    print(f"Config: {_SCHEDULER_CONFIG}")
-    if args.persona:
-        print(f"Persona: {args.persona}")
+    print(f"Persona: {persona}")
+    print(f"Config: {_scheduler_config_path(persona)}")
     print("Registering schedules...")
 
-    _register_schedules(persona=args.persona)
+    _register_schedules(persona=persona)
 
     print("\nRunning. Ctrl+C to stop.\n")
 
