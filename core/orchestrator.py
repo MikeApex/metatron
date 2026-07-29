@@ -570,7 +570,7 @@ def _sentence_bounds(text: str, pos: int) -> tuple[int, int]:
     return start, end if end > start else len(text)
 
 
-def filter_output(text: str, agent_name: str, user_message: str = "") -> str:
+def filter_output(text: str, agent_name: str) -> str:
     """
     Scan final user-facing output for leaked architecture terms.
     Logs a warning and returns a safe fallback if any are found.
@@ -582,11 +582,13 @@ def filter_output(text: str, agent_name: str, user_message: str = "") -> str:
     - _CONTEXT_SENSITIVE: common English words that are also agent names;
       only flagged when architecture vocabulary appears in the same sentence.
 
-    A term already present in the user's own message is not a leak — the
-    user said it first, so the Synthesizer echoing it back reveals nothing.
-    (Root cause of the 2026-06-26 exchange-027 false positive: the user
-    wrote "write_config" and the filter suppressed the Synthesizer's reply
-    for repeating it.)
+    Deliberately does NOT exempt terms the user already typed themselves —
+    that would let a direct probing question ("what does write_config do?")
+    disable its own backstop. See B1 red-team category "Direct tool inquiry"
+    in the roadmap. The resulting false positive (Exchange 027, 2026-06-26 —
+    user mentioned "write_config" in a complaint, got the canned fallback
+    instead of a real reply) is a known, accepted-risk gap pending the B2
+    "Output filter upgrade" (regex+semantic) — see SESSION.md.
     """
     if agent_name != "synthesizer":
         return text
@@ -594,10 +596,9 @@ def filter_output(text: str, agent_name: str, user_message: str = "") -> str:
     import warnings
 
     lower = text.lower()
-    user_lower = user_message.lower()
 
     for term in _ALWAYS_CONFIDENTIAL:
-        if term.lower() in lower and term.lower() not in user_lower:
+        if term.lower() in lower:
             warnings.warn(
                 f"[SECURITY] Output filter: '{term}' found in Synthesizer response. "
                 f"Response suppressed.",
@@ -606,8 +607,6 @@ def filter_output(text: str, agent_name: str, user_message: str = "") -> str:
             return "I'm here to help you manage your life. What can I help you with today?"
 
     for term in _CONTEXT_SENSITIVE:
-        if term.lower() in user_lower:
-            continue
         idx = lower.find(term.lower())
         while idx >= 0:
             start, end = _sentence_bounds(lower, idx)
@@ -1958,8 +1957,19 @@ def _dispatch_from_coordinator(
     if blocking:
         with ThreadPoolExecutor() as executor:
             _fan_persona = current_persona()
+            # Trace context is thread-local. Without propagating it, every
+            # specialist's push_agent() lands on an empty context and the
+            # subagent record is silently dropped — which is why The Book showed
+            # only coordinator and synthesizer while the logs showed three
+            # specialists running concurrently. Same pattern as the parallel
+            # tool-dispatch sites above.
+            _fan_trace = _tr.get_trace()
+            _fan_agent = _tr.get_current_agent()
+
             def _make_specialist(agent_name, directive, cx):
                 def _worker():
+                    _tr.set_trace(_fan_trace)
+                    _tr._set_current_agent(_fan_agent)
                     with (persona_scope(_fan_persona) if _fan_persona else nullcontext()):
                         return _run_single_agent(
                             agent_name, directive, persona, provider, None, cx
@@ -2051,7 +2061,7 @@ def run_pipeline_session(user_input: str,
         # the context tracker is never updated for proactive sessions.
         visible, _ctx = split_context_block(synth_result)
         persist_context_block(_ctx)
-        filtered = filter_output(visible, "synthesizer", user_input)
+        filtered = filter_output(visible, "synthesizer")
         if history is not None:
             history.append({"role": "user", "content": user_input})
             history.append({"role": "assistant", "content": filtered})
@@ -2249,7 +2259,7 @@ def _run_pipeline_session_stream_inner(
     persist_context_block(_ctx)
 
     _tr.pop_agent(_synth_rec)
-    filtered = filter_output(visible, "synthesizer", user_input)
+    filtered = filter_output(visible, "synthesizer")
     if history is not None:
         history.append({"role": "user", "content": user_input})
         history.append({"role": "assistant", "content": filtered if filtered == visible else ""})
@@ -2296,7 +2306,7 @@ def run_session(agent_name: str, user_input: str,
             model_override=model_override, complexity=complexity,
             history=history, bare=bare,
         )
-        return filter_output(result, agent_name, user_input)
+        return filter_output(result, agent_name)
 
 
 # ---------------------------------------------------------------------------
