@@ -21,8 +21,8 @@ Two complementary baseline systems:
    Permutation baseline for sparse data — establishes what random signal looks
    like for this user's log history before treating deviations as meaningful.
 
-Biographical periods and aspirational baselines are persona-scoped when
-AI_TEST_PERSONA is set. Semantic anchors are not persona-scoped (canonical).
+Biographical periods and aspirational baselines are persona-scoped.
+Semantic anchors are shared across personas (canonical reference states).
 Sensitive-tier, local-only.
 """
 
@@ -31,6 +31,8 @@ import os
 import random
 from datetime import date, timedelta
 from pathlib import Path
+
+from core.persona import persona_data_dir
 
 _ROOT = Path(__file__).parent.parent
 
@@ -67,28 +69,19 @@ def _baselines_dir() -> Path:
 
 
 def _baselines_path() -> Path:
-    persona = os.environ.get("AI_TEST_PERSONA")
-    if persona:
-        return _ROOT / "data" / "personas" / persona / "baselines.json"
-    return _ROOT / "data" / "baselines.json"
+    return persona_data_dir() / "baselines.json"
 
 
 def _anchors_path() -> Path:
     return _baselines_dir() / "semantic_anchors.json"
 
 
-def _aspirational_path(persona: str) -> Path:
-    if persona:
-        p = _ROOT / "data" / "personas" / persona / "aspirational_baseline.json"
-    else:
-        p = _baselines_dir() / "aspirational_baseline.json"
-    return p
+def _aspirational_path(persona: str = "") -> Path:
+    return persona_data_dir(persona or None) / "aspirational_baseline.json"
 
 
-def _logs_dir(persona: str) -> Path:
-    if persona:
-        return _ROOT / "data" / "personas" / persona / "logs"
-    return _ROOT / "data" / "logs"
+def _logs_dir(persona: str = "") -> Path:
+    return persona_data_dir(persona or None) / "logs"
 
 
 def _load_anchors() -> list[dict]:

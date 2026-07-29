@@ -58,6 +58,15 @@ if str(ROOT) not in sys.path:
 CONFIG_DIR = ROOT / "config"
 AGENTS_DIR = CONFIG_DIR / "agents"
 
+from contextlib import nullcontext
+from core.persona import (
+    current_persona,
+    persona_config_dir,
+    persona_data_dir,
+    persona_scope,
+    resolve_persona,
+)
+
 ANTHROPIC_MODEL = "claude-sonnet-5"
 _PARALLEL_TOOLS = {"run_subagent", "run_model_conference"}
 
@@ -223,7 +232,7 @@ def load_goals(persona: str | None = None) -> str:
 
 def _load_coordinator_context(persona: str | None = None) -> str:
     """Pre-load Pattern Miner insights — the one context source not already in the system prompt."""
-    persona_str = os.environ.get("AI_TEST_PERSONA") or persona or ""
+    persona_str = resolve_persona(persona)
     try:
         from tools.pattern_miner import read_recent_insights
         insights = read_recent_insights(n=1, persona=persona_str)
@@ -265,14 +274,9 @@ def load_recent_context(persona: str | None = None, days: int = 5) -> str:
     from datetime import date, timedelta
     from pathlib import Path
 
-    persona_env = os.environ.get("AI_TEST_PERSONA") or persona
-
-    if persona_env:
-        logs_dir = ROOT / "data" / "personas" / persona_env / "logs"
-        tracker_path = ROOT / "data" / "personas" / persona_env / "context.json"
-    else:
-        logs_dir = ROOT / "data" / "logs"
-        tracker_path = ROOT / "data" / "context.json"
+    data_dir = persona_data_dir(persona)
+    logs_dir = data_dir / "logs"
+    tracker_path = data_dir / "context.json"
 
     sections = []
 
@@ -720,11 +724,13 @@ def run_session_anthropic(system_prompt: str, user_input: str,
         if parallel_calls:
             _parent_trace = _tr.get_trace()
             _parent_agent = _tr.get_current_agent()
+            _parent_persona = current_persona()
             def _make_dispatch(name, inputs, handlers, turn):
                 def _worker():
                     _tr.set_trace(_parent_trace)
                     _tr._set_current_agent(_parent_agent)
-                    return dispatch_tool(name, inputs, handlers, _agent_rec=_parent_agent, _turn_num=turn)
+                    with (persona_scope(_parent_persona) if _parent_persona else nullcontext()):
+                        return dispatch_tool(name, inputs, handlers, _agent_rec=_parent_agent, _turn_num=turn)
                 return _worker
             with ThreadPoolExecutor() as executor:
                 future_to_tc = {
@@ -823,11 +829,13 @@ def _anthropic_stream(
         if parallel_calls:
             _parent_trace = _tr.get_trace()
             _parent_agent = _tr.get_current_agent()
+            _parent_persona = current_persona()
             def _make_dispatch(name, inputs, handlers, turn):
                 def _worker():
                     _tr.set_trace(_parent_trace)
                     _tr._set_current_agent(_parent_agent)
-                    return dispatch_tool(name, inputs, handlers, _agent_rec=_parent_agent, _turn_num=turn)
+                    with (persona_scope(_parent_persona) if _parent_persona else nullcontext()):
+                        return dispatch_tool(name, inputs, handlers, _agent_rec=_parent_agent, _turn_num=turn)
                 return _worker
             with ThreadPoolExecutor() as executor:
                 future_to_tc = {
@@ -1359,12 +1367,14 @@ def _run_gemini_native_loop(client, model_name: str,
         if parallel_calls:
             _parent_trace = _tr.get_trace()
             _parent_agent = _tr.get_current_agent()
+            _parent_persona = current_persona()
             def _make_gemini_dispatch(fc_name, fc_args, handlers, turn):
                 def _worker():
                     _tr.set_trace(_parent_trace)
                     _tr._set_current_agent(_parent_agent)
-                    return dispatch_tool(fc_name, fc_args, handlers,
-                                        _agent_rec=_parent_agent, _turn_num=turn)
+                    with (persona_scope(_parent_persona) if _parent_persona else nullcontext()):
+                        return dispatch_tool(fc_name, fc_args, handlers,
+                                            _agent_rec=_parent_agent, _turn_num=turn)
                 return _worker
             with ThreadPoolExecutor() as executor:
                 future_to_fc = {
@@ -1844,8 +1854,16 @@ def _dispatch_from_coordinator(
 
     if blocking:
         with ThreadPoolExecutor() as executor:
+            _fan_persona = current_persona()
+            def _make_specialist(agent_name, directive, cx):
+                def _worker():
+                    with (persona_scope(_fan_persona) if _fan_persona else nullcontext()):
+                        return _run_single_agent(
+                            agent_name, directive, persona, provider, None, cx
+                        )
+                return _worker
             futures = {
-                executor.submit(_run_single_agent, a, d, persona, provider, None, c): a
+                executor.submit(_make_specialist(a, d, c)): a
                 for a, d, c in blocking
             }
             for future in as_completed(futures):
@@ -1940,20 +1958,34 @@ def run_pipeline_session_stream(
     """
     Streaming variant of run_pipeline_session().
 
+    Thin wrapper that binds the persona for the whole generator. The binding is
+    thread-local and is entered on the thread that iterates the generator — which
+    is the executor thread in core/server.py, not the event loop — so concurrent
+    requests for different personas cannot observe each other's identity.
+    """
+    with persona_scope(resolve_persona(persona)) as bound:
+        yield from _run_pipeline_session_stream_inner(
+            user_input, persona=bound, provider=provider, history=history,
+        )
+
+
+def _run_pipeline_session_stream_inner(
+    user_input: str,
+    persona: str | None = None,
+    provider: str | None = None,
+    history: list[dict] | None = None,
+) -> Iterator[str]:
+    """
     Pass 1 (Coordinator): runs blocking, identical to run_pipeline_session().
     Pass 2 (Synthesizer): streams output as text chunks, yielding each in real-time.
 
     Yields text chunks during generation, then exactly one control token:
       "[DONE]"    — generation complete, filter passed
       "[RETRACT]" — filter caught a confidential term; client should discard received text
+
+    Persona is already bound by the caller — do not set it here.
     """
     _tr.start_request_trace(user_input, persona)
-
-    # Ensure persona is available to tool calls (write_context_tracker, etc.)
-    if persona:
-        os.environ["AI_TEST_PERSONA"] = persona
-    else:
-        os.environ.pop("AI_TEST_PERSONA", None)
 
     # Pass 1: Coordinator — single-pass routing directive assembly (blocking)
     _trace("[PIPELINE] coordinator  starting")
@@ -2153,21 +2185,19 @@ def run_session(agent_name: str, user_input: str,
         model_override: Explicit model ID, overrides both router and provider default.
         history:        Mutable list of prior turn dicts. Updated in-place each turn.
     """
-    if persona:
-        os.environ["AI_TEST_PERSONA"] = persona
-    else:
-        os.environ.pop("AI_TEST_PERSONA", None)
+    with persona_scope(resolve_persona(persona)) as bound:
+        if agent_name == "coordinator":
+            return run_pipeline_session(
+                user_input, persona=bound, provider=provider, history=history
+            )
 
-    if agent_name == "coordinator":
-        return run_pipeline_session(user_input, persona=persona, provider=provider, history=history)
-
-    result = _run_single_agent(
-        agent_name, user_input,
-        persona=persona, provider=provider,
-        model_override=model_override, complexity=complexity,
-        history=history, bare=bare,
-    )
-    return filter_output(result, agent_name)
+        result = _run_single_agent(
+            agent_name, user_input,
+            persona=bound, provider=provider,
+            model_override=model_override, complexity=complexity,
+            history=history, bare=bare,
+        )
+        return filter_output(result, agent_name)
 
 
 # ---------------------------------------------------------------------------

@@ -52,6 +52,9 @@ data/personas/Ryan\ Holiday/
 config/personas/mike.md
 config/personas/mike/
 
+# CalDAV credentials — sensitive
+config/modules/caldav.yaml
+
 # Session verbatim transcripts — large; source of truth is ~/.claude/projects/*.jsonl
 archive/sessions/*.txt
 archive/transcripts/

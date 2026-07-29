@@ -19,14 +19,13 @@ from pathlib import Path
 
 import yaml
 
+from core.persona import persona_config_dir
+
 _ROOT = Path(__file__).parent.parent
 
 
 def _goals_path() -> Path:
-    persona = os.environ.get("AI_TEST_PERSONA")
-    if persona:
-        return _ROOT / "config" / "personas" / persona / "goals.yaml"
-    return _ROOT / "config" / "goals.yaml"
+    return persona_config_dir() / "goals.yaml"
 
 
 def read_goals() -> dict:

@@ -3,12 +3,14 @@ tools/subagent.py — run a specialist sub-agent session and return its output.
 
 Used by the Coordinator to fan out to specialists. Each call spawns a
 full run_session() with the named agent's instruction file and the shared
-data context. Persona (AI_TEST_PERSONA env var) is passed through automatically.
+data context. The active persona is resolved and passed through automatically.
 """
 
 import logging
 import os
 import threading
+
+from core.persona import current_persona
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +29,9 @@ def run_subagent(agent_name: str, message: str, complexity: str = "",
                      write-only agents (Diarist) that don't need to block
                      the Coordinator's context package.
 
-    The current persona (if any) is inherited from the environment so specialist
-    sessions see the same config context as the Coordinator session.
+    The current persona is resolved on the calling thread and passed explicitly to
+    the specialist session, so specialists see the same config context as the
+    Coordinator session — including on the fire-and-forget path.
     """
     from core.orchestrator import run_session
 
@@ -42,7 +45,10 @@ def run_subagent(agent_name: str, message: str, complexity: str = "",
             f"Perform this task directly without delegating."
         )
 
-    persona = os.environ.get("AI_TEST_PERSONA") or None
+    # Resolve on THIS thread, before any background thread starts. A fire-and-forget
+    # subagent (the Diarist) outlives the request that spawned it, so it cannot read
+    # the persona later — by then the parent scope may have exited.
+    persona = current_persona()
     complexity_hint = complexity if complexity in ("quick", "deep") else None
 
     # Diarist is always write-only — enforce fire_and_forget at the code layer
@@ -88,7 +94,7 @@ def run_model_conference(message: str, models: list[str],
     from core.orchestrator import run_session
     from core.router import _load_routing
 
-    persona = os.environ.get("AI_TEST_PERSONA") or None
+    persona = current_persona()
     cfg = _load_routing()
     providers = cfg.get("providers", {})
 

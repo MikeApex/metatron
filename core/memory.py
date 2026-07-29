@@ -5,9 +5,7 @@ Embeds log and journal entries using a local sentence-transformers model
 (all-MiniLM-L6-v2, ~80MB, no API call, runs on-device). Persists a FAISS
 index alongside a metadata JSON file so past entries survive across sessions.
 
-Persona-scoped when AI_TEST_PERSONA is set:
-  Real user:  data/memory/
-  Persona:    data/personas/{persona}/memory/
+Persona-scoped: data/personas/{persona}/memory/
 
 Public API:
   index_entry(text, source, entry_date)  — embed and store one entry
@@ -20,6 +18,8 @@ import json
 import os
 from datetime import date
 from pathlib import Path
+
+from core.persona import persona_data_dir
 from typing import Any
 
 import numpy as np
@@ -49,10 +49,7 @@ def _get_faiss():
 
 
 def _memory_dir() -> Path:
-    persona = os.environ.get("AI_TEST_PERSONA")
-    if persona:
-        return _ROOT / "data" / "personas" / persona / "memory"
-    return _ROOT / "data" / "memory"
+    return persona_data_dir() / "memory"
 
 
 def _index_path() -> Path:

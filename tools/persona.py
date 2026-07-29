@@ -12,12 +12,13 @@ import os
 import re
 from pathlib import Path
 
+from core.persona import persona_md
+
 _ROOT = Path(__file__).parent.parent
 
 
 def _persona_path() -> Path:
-    persona = os.environ.get("AI_TEST_PERSONA", "mike")
-    return _ROOT / "config" / "personas" / f"{persona}.md"
+    return persona_md()
 
 
 def write_persona(section: str, content: str) -> str:

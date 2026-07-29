@@ -16,14 +16,13 @@ import os
 from datetime import date
 from pathlib import Path
 
+from core.persona import persona_data_dir
+
 _ROOT = Path(__file__).parent.parent
 
 
 def _tracker_path() -> Path:
-    persona = os.environ.get("AI_TEST_PERSONA")
-    if persona:
-        return _ROOT / "data" / "personas" / persona / "context.json"
-    return _ROOT / "data" / "context.json"
+    return persona_data_dir() / "context.json"
 
 
 def read_context_tracker() -> dict:

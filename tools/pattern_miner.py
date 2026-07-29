@@ -4,7 +4,7 @@ tools/pattern_miner.py — Pattern Miner tools.
 Provides bulk log retrieval, insight report read/write, and
 the get_log_window helper for time-windowed analysis.
 
-Persona-scoped when AI_TEST_PERSONA is set.
+Persona-scoped. Every session belongs to exactly one persona.
 All paths are local-only, sensitive-tier.
 """
 
@@ -13,14 +13,13 @@ import os
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from core.persona import persona_data_dir
+
 _ROOT = Path(__file__).parent.parent
 
 
 def _persona_dir(persona: str | None = None) -> Path:
-    p = persona or os.environ.get("AI_TEST_PERSONA")
-    if p:
-        return _ROOT / "data" / "personas" / p
-    return _ROOT / "data"
+    return persona_data_dir(persona)
 
 
 # ---------------------------------------------------------------------------

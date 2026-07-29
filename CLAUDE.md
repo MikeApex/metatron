@@ -294,6 +294,8 @@ WorkingDirectory=/home/md-homefolder/multi-model-mcp
 ExecStart=/home/md-homefolder/multi-model-mcp/.venv/bin/python core/server.py --persona mike --port 8001
 Restart=always
 RestartSec=5
+Environment=METATRON_PERSONA_STRICT=0
+Environment=METATRON_PERSONA_FALLBACK=mike
 EnvironmentFile=/home/md-homefolder/multi-model-mcp/.env
 
 [Install]
@@ -310,14 +312,18 @@ After=network.target metatron-server.service
 Type=simple
 User=md-homefolder
 WorkingDirectory=/home/md-homefolder/multi-model-mcp
-ExecStart=/home/md-homefolder/multi-model-mcp/.venv/bin/python core/scheduler.py
+ExecStart=/home/md-homefolder/multi-model-mcp/.venv/bin/python core/scheduler.py --persona mike
 Restart=always
 RestartSec=10
+Environment=METATRON_PERSONA_STRICT=0
+Environment=METATRON_PERSONA_FALLBACK=mike
 EnvironmentFile=/home/md-homefolder/multi-model-mcp/.env
 
 [Install]
 WantedBy=multi-user.target
 ```
+
+> **`--persona mike` on the scheduler is load-bearing (added 2026-07-28).** Without it the scheduler resolved no persona and every scheduled session — check-ins, Diarist, Pattern Miner — wrote to the global `data/` tree while the server (which does pass `--persona mike`) wrote to `data/personas/mike/`. That split the user's history across two trees. Both units must name a persona. Pre-change unit file backed up on the VM at `~/metatron-backups/metatron-scheduler.service.pre-persona-2026-07-28`.
 
 Common service management commands (run on VM):
 ```bash

@@ -7,7 +7,7 @@ Journal: freeform daily entries (one file per day, multiple entries per file).
 Archive: append-only categorized records (books, films, music, experiences, ideas, places, etc.)
 
 All data is Sensitive-tier, local-only, 600 permissions enforced at write time.
-Persona-scoped when AI_TEST_PERSONA is set (dev testing only).
+Persona-scoped. Every session belongs to exactly one persona.
 """
 
 import json
@@ -15,21 +15,17 @@ import os
 from datetime import date, datetime
 from pathlib import Path
 
+from core.persona import persona_data_dir
+
 _ROOT = Path(__file__).parent.parent
 
 
 def _journal_dir() -> Path:
-    persona = os.environ.get("AI_TEST_PERSONA")
-    if persona:
-        return _ROOT / "data" / "personas" / persona / "journal"
-    return _ROOT / "data" / "journal"
+    return persona_data_dir() / "journal"
 
 
 def _archive_dir() -> Path:
-    persona = os.environ.get("AI_TEST_PERSONA")
-    if persona:
-        return _ROOT / "data" / "personas" / persona / "archive"
-    return _ROOT / "data" / "archive"
+    return persona_data_dir() / "archive"
 
 
 # ---------------------------------------------------------------------------

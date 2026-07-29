@@ -8,13 +8,15 @@ Separate from logs (episodic) and journal (narrative). Wisdom entries are
 stable facts that accumulate over time and get surfaced proactively.
 
 Sensitive-tier, local-only, 600 permissions enforced at write time.
-Persona-scoped when AI_TEST_PERSONA is set (dev testing only).
+Persona-scoped. Every session belongs to exactly one persona.
 """
 
 import json
 import os
 from datetime import date
 from pathlib import Path
+
+from core.persona import persona_data_dir
 
 _ROOT = Path(__file__).parent.parent
 
@@ -29,10 +31,7 @@ WISDOM_CATEGORIES = [
 
 
 def _wisdom_path() -> Path:
-    persona = os.environ.get("AI_TEST_PERSONA")
-    if persona:
-        return _ROOT / "data" / "personas" / persona / "wisdom" / "wisdom.json"
-    return _ROOT / "data" / "wisdom" / "wisdom.json"
+    return persona_data_dir() / "wisdom" / "wisdom.json"
 
 
 def read_wisdom(key: str = "") -> list | dict:
@@ -205,11 +204,7 @@ def merge_wisdom_entries(keep_key: str, source_keys: list[str], merged_value: st
         entries: list = json.load(f)
 
     # Resolve archive directory (parallel to wisdom/, under archive/)
-    persona = os.environ.get("AI_TEST_PERSONA")
-    if persona:
-        archive_dir = _ROOT / "data" / "personas" / persona / "archive" / "wisdom"
-    else:
-        archive_dir = _ROOT / "data" / "archive" / "wisdom"
+    archive_dir = persona_data_dir() / "archive" / "wisdom"
     archive_dir.mkdir(parents=True, exist_ok=True)
 
     today = date.today().isoformat()

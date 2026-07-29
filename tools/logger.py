@@ -11,6 +11,8 @@ import threading
 from datetime import date, datetime
 from pathlib import Path
 
+from core.persona import persona_data_dir
+
 _WRITE_LOG_LOCK = threading.Lock()
 _WRITE_QUALITY_EVENT_LOCK = threading.Lock()
 
@@ -18,10 +20,7 @@ _ROOT = Path(__file__).parent.parent
 
 
 def _logs_dir() -> Path:
-    persona = os.environ.get("AI_TEST_PERSONA")
-    if persona:
-        return _ROOT / "data" / "personas" / persona / "logs"
-    return _ROOT / "data" / "logs"
+    return persona_data_dir() / "logs"
 
 
 def write_log(content: dict | None = None, log_date: str = "") -> str:

@@ -9,16 +9,15 @@ Both files are Sensitive-tier:
 import os
 from pathlib import Path
 
+from core.persona import persona_config_dir
+
 _ROOT = Path(__file__).parent.parent
 
 ALLOWED_FILES = {"prime_directive.md", "mission.md"}
 
 
 def _config_dir() -> Path:
-    persona = os.environ.get("AI_TEST_PERSONA")
-    if persona:
-        return _ROOT / "config" / "personas" / persona
-    return _ROOT / "config"
+    return persona_config_dir()
 
 
 def write_config(filename: str, content: str) -> str:

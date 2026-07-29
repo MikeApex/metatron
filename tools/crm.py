@@ -14,6 +14,8 @@ import uuid
 from datetime import date, timedelta
 from pathlib import Path
 
+from core.persona import persona_data_dir
+
 _CRM_LOCK = threading.Lock()
 
 _ROOT = Path(__file__).parent.parent
@@ -29,11 +31,8 @@ _FREQUENCY_DAYS: dict[str, int | None] = {
 
 
 def _crm_path() -> Path:
-    """Return the path to contacts.json, accounting for test persona."""
-    persona = os.environ.get("AI_TEST_PERSONA")
-    if persona:
-        return _ROOT / "data" / "personas" / persona / "crm" / "contacts.json"
-    return _ROOT / "data" / "crm" / "contacts.json"
+    """Return the path to this persona's contacts.json."""
+    return persona_data_dir() / "crm" / "contacts.json"
 
 
 def _load_contacts() -> list[dict]:
