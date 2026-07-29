@@ -76,7 +76,10 @@ _PARALLEL_TOOLS = {"run_subagent", "run_model_conference"}
 # Populated on first request; survives for the process lifetime.
 # Caches expire at midnight UTC; rebuild happens automatically on the next miss.
 _vertex_native_client: object | None = None
-_vertex_cache_registry: dict[str, str] = {}  # sha256[:16] of (model+prompt) → CachedContent.name
+# sha256[:16] of (model+prompt+tools) → (CachedContent.name, expire_time).
+# The expiry is stored because Vertex deletes the cache at that moment; without
+# it the registry keeps handing out a dead name and every call 404s.
+_vertex_cache_registry: dict[str, tuple[str, "datetime.datetime"]] = {}
 OPENAI_MODEL = "o3"
 OLLAMA_BASE_URL = "http://localhost:11434/v1"
 OLLAMA_MODEL = "qwen3:14b"
@@ -1120,6 +1123,19 @@ def _pad_for_vertex_cache(system_prompt: str) -> str:
     return f"{system_prompt}\n\n{padding}"
 
 
+def _is_cache_not_found(exc: Exception) -> bool:
+    """True when an exception is Vertex reporting a missing cached_content."""
+    text = str(exc).lower()
+    return "not_found" in text or ("404" in text and "cach" in text)
+
+
+def _evict_vertex_cache(cache_name: str) -> None:
+    """Remove a cache name from the registry so the next call rebuilds it."""
+    for key, (name, _exp) in list(_vertex_cache_registry.items()):
+        if name == cache_name:
+            _vertex_cache_registry.pop(key, None)
+
+
 def _get_or_create_vertex_cache(
     client, system_prompt: str, model_name: str,
     tool_schemas: list[dict] | None = None,
@@ -1141,8 +1157,15 @@ def _get_or_create_vertex_cache(
 
     tool_key = ":".join(s["name"] for s in (tool_schemas or []))
     content_hash = hashlib.sha256(f"{model_name}:{system_prompt}:{tool_key}".encode()).hexdigest()[:16]
-    if content_hash in _vertex_cache_registry:
-        return _vertex_cache_registry[content_hash]
+
+    entry = _vertex_cache_registry.get(content_hash)
+    if entry is not None:
+        cached_name, expires_at = entry
+        # 60s margin so a cache cannot expire between this check and the request.
+        if datetime.datetime.now(datetime.timezone.utc) < expires_at - datetime.timedelta(seconds=60):
+            return cached_name
+        _vertex_cache_registry.pop(content_hash, None)
+        logger.info(f"[vertex_cache] expired hash={content_hash} — recreating")
 
     try:
         now = datetime.datetime.now(datetime.timezone.utc)
@@ -1156,7 +1179,7 @@ def _get_or_create_vertex_cache(
             **({"tools": gemini_tools} if gemini_tools else {}),
         )
         cache = client.caches.create(model=model_name, config=cache_config)
-        _vertex_cache_registry[content_hash] = cache.name
+        _vertex_cache_registry[content_hash] = (cache.name, midnight)
         _trace(f"[VERTEX_CACHE] created {cache.name} expires={midnight.isoformat()}")
         logger.info(f"[vertex_cache] created model={model_name} hash={content_hash} expires={midnight.isoformat()}")
         return cache.name
@@ -1299,6 +1322,24 @@ def run_session_gemini_cached(system_prompt: str, user_input: str,
     except Exception as e:
         from core.router import log_model_error
         _agent = _tr.get_current_agent() or "unknown"
+
+        # A cache can vanish before its recorded expiry (deleted, or the project
+        # evicted it). Drop the dead entry and rebuild once, rather than running
+        # uncached for the rest of the process lifetime.
+        if cached_content_name and _is_cache_not_found(e):
+            _evict_vertex_cache(cached_content_name)
+            logger.info(f"[vertex_cache] {cached_content_name} not found — evicted, rebuilding once")
+            try:
+                fresh = _get_or_create_vertex_cache(client, system_prompt, model_name, tool_schemas)
+                return _run_gemini_native_loop(
+                    client, model_name, system_prompt, user_input,
+                    tool_schemas, tool_handlers,
+                    history=history,
+                    cached_content=fresh,
+                )
+            except Exception as retry_exc:
+                e = retry_exc
+
         logger.warning(f"[vertex_cache] native loop failed ({e}) — falling back to compat")
         log_model_error(_agent, "gemini-cached", model_name, f"native loop failed, fell back to compat: {e}")
         return run_session_gemini(system_prompt, user_input, tool_schemas, tool_handlers, model, history)
