@@ -612,6 +612,52 @@ def filter_output(text: str, agent_name: str) -> str:
 # Tool dispatch
 # ---------------------------------------------------------------------------
 
+_CONTEXT_OPEN = "[CONTEXT]"
+_CONTEXT_CLOSE = "[/CONTEXT]"
+
+
+def split_context_block(complete: str) -> tuple[str, dict | None]:
+    """
+    Split a Synthesizer response into visible text and its [CONTEXT] block.
+
+    The Synthesizer appends [CONTEXT]{json}[/CONTEXT] after its visible answer
+    instead of spending a tool-call turn on write_context_tracker. That block is
+    internal — it must never reach a user, a push notification, or an API caller.
+
+    Returns (visible_text, parsed_context_or_None).
+    """
+    if _CONTEXT_OPEN not in complete:
+        return complete, None
+    visible = complete[:complete.index(_CONTEXT_OPEN)].strip()
+    raw = complete[complete.index(_CONTEXT_OPEN) + len(_CONTEXT_OPEN):]
+    if _CONTEXT_CLOSE in raw:
+        raw = raw[:raw.index(_CONTEXT_CLOSE)]
+    try:
+        return visible, json.loads(raw.strip())
+    except Exception as exc:
+        logger.warning(f"[context_block] parse failed: {exc} — raw: {raw[:200]}")
+        return visible, None
+
+
+def persist_context_block(ctx: dict | None) -> None:
+    """Write a parsed [CONTEXT] block to the tracker. Best-effort; never blocks a response."""
+    if not ctx:
+        return
+    try:
+        from tools.context_tracker import write_context_tracker as _write_ct
+        _write_ct(
+            open_threads=ctx.get("open_threads", []),
+            patterns=ctx.get("patterns", []),
+            follow_ups=ctx.get("follow_ups", []),
+            held_items=ctx.get("held_items"),
+        )
+        _trace("[PIPELINE] context_tracker  written  (inline block)")
+    except PersonaError:
+        raise
+    except Exception as exc:
+        logger.warning(f"[context_block] write failed: {exc}")
+
+
 def dispatch_tool(name: str, inputs: dict, handlers: dict,
                   _agent_rec=None, _turn_num: int = 1) -> str:
     """Execute a tool call and return the result as a string."""
@@ -1931,7 +1977,13 @@ def run_pipeline_session(user_input: str,
             history=recent_history,
         )
         _trace(f"[PIPELINE] synthesizer  done  ({len(synth_result)} chars)")
-        filtered = filter_output(synth_result, "synthesizer")
+        # Strip the internal [CONTEXT] block before the response leaves the
+        # pipeline. Without this it reaches push notifications, the scheduler's
+        # terminal output and the non-streaming /session endpoint verbatim, and
+        # the context tracker is never updated for proactive sessions.
+        visible, _ctx = split_context_block(synth_result)
+        persist_context_block(_ctx)
+        filtered = filter_output(visible, "synthesizer")
         if history is not None:
             history.append({"role": "user", "content": user_input})
             history.append({"role": "assistant", "content": filtered})
@@ -2091,8 +2143,6 @@ def _run_pipeline_session_stream_inner(
     # The Synthesizer appends a [CONTEXT]...[/CONTEXT] block after its visible response.
     # Everything before [CONTEXT] is forwarded as SSE chunks; the block is captured,
     # parsed, and written to the context tracker directly — no tool call turn needed.
-    _CONTEXT_OPEN = "[CONTEXT]"
-    _CONTEXT_CLOSE = "[/CONTEXT]"
     _LOOKAHEAD = len(_CONTEXT_OPEN) - 1   # chars to hold back in case delimiter spans chunks
 
     buffer: list[str] = []
@@ -2120,28 +2170,12 @@ def _run_pipeline_session_stream_inner(
 
     complete = "".join(buffer)
 
-    # Split visible text from context block; write tracker directly
-    if _CONTEXT_OPEN in complete:
-        visible = complete[:complete.index(_CONTEXT_OPEN)].strip()
-        raw = complete[complete.index(_CONTEXT_OPEN) + len(_CONTEXT_OPEN):]
-        if _CONTEXT_CLOSE in raw:
-            raw = raw[:raw.index(_CONTEXT_CLOSE)]
-        raw = raw.strip()
-        try:
-            ctx = json.loads(raw)
-            from tools.context_tracker import write_context_tracker as _write_ct
-            _write_ct(
-                open_threads=ctx.get("open_threads", []),
-                patterns=ctx.get("patterns", []),
-                follow_ups=ctx.get("follow_ups", []),
-                held_items=ctx.get("held_items"),
-            )
-            _trace("[PIPELINE] context_tracker  written  (inline block)")
-        except Exception as _ct_exc:
-            logger.warning(f"[context_block] parse/write failed: {_ct_exc} — raw: {raw[:200]}")
-    else:
-        visible = complete
+    # Same splitting logic as the non-streaming pipeline — one implementation so
+    # the two paths cannot drift apart again.
+    visible, _ctx = split_context_block(complete)
+    if _ctx is None and _CONTEXT_OPEN not in complete:
         logger.warning("[context_block] no [CONTEXT] block in Synthesizer response")
+    persist_context_block(_ctx)
 
     _tr.pop_agent(_synth_rec)
     filtered = filter_output(visible, "synthesizer")

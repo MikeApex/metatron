@@ -20,6 +20,7 @@ import json
 import os
 import subprocess
 import sys
+import traceback
 from datetime import datetime, time as dtime
 from pathlib import Path
 
@@ -165,6 +166,9 @@ def _log_error(job: str, message: str, persona: str | None = None) -> None:
         "timestamp": datetime.now().isoformat(),
         "job": job,
         "error": message,
+        # Without this a failure is one opaque line. 189 identical
+        # "not JSON serializable" entries took a live reproduction to diagnose.
+        "traceback": traceback.format_exc() if sys.exc_info()[0] else "",
     })
     with open(log_path, "w") as f:
         json.dump(entries, f, indent=2)
