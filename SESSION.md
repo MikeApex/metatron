@@ -65,7 +65,7 @@ If you need to find a specific file, tool, or planning document: **[CODEBASE_IND
 
 ### Also done 2026-07-30 (client/app audit — ⚠ COST FINDING, and symptoms need re-testing)
 
-Investigation into five reported app/PWA bugs. **No code changed** — one approved programme, parked. Full findings: [archive/plans/client_auth_tunnel_programme_2026-07-30.md](archive/plans/client_auth_tunnel_programme_2026-07-30.md)
+Investigation into five reported app/PWA bugs. **No code changed** — one approved programme, parked. Full findings: [archive/plans/client_auth_tunnel_programme_2026-07-30.md](archive/plans/client_auth_tunnel_programme_2026-07-30.md) · Session archive: [archive/sessions/2026-07-30 — Client and App Audit, Cost Finding, Programme Parked.md](archive/sessions/2026-07-30%20—%20Client%20and%20App%20Audit,%20Cost%20Finding,%20Programme%20Parked.md)
 
 **⚠ THE $30 BUDGET WAS NEVER VIABLE — this is arithmetic, not anomaly.** e2-medium 24/7 ≈ $24.50/mo + in-use external IPv4 ≈ $2.90 + disk ≈ $1 = **~$29/mo of infrastructure before a single AI token.** The cap wasn't protecting against runaway AI spend; it was tripping on the VM existing. It tripped twice in three days, disabling billing and taking the VM offline both times. Budget raised to $40 manually by the user on 2026-07-30; **service restoration was handled in a parallel chat.**
 
