@@ -1,5 +1,5 @@
 # Session Primer — Personal AI Life Manager
-*Updated: 2026-07-29 (live multi-surface testing — 7 bugs fixed; coordinator turn-count claim CORRECTED, see below before touching D2 item 5). Update this file at the close of every chat so the next chat — or any parallel chat window — starts from current state.*
+*Updated: 2026-07-30 (client/app audit — BUDGET WAS NEVER VIABLE, see below; reported symptoms partly the outage and need re-testing before any fix work). Update this file at the close of every chat so the next chat — or any parallel chat window — starts from current state.*
 
 ---
 
@@ -62,6 +62,31 @@ If you need to find a specific file, tool, or planning document: **[CODEBASE_IND
 - **B1** Red team — **on hold** (independent of Alpha Gate, but deprioritised — resumes after latency work)
 - **Check 10** Agent behavioral audits — **on hold**
 - **Check 12** Constitution alignment review — **on hold**
+
+### Also done 2026-07-30 (client/app audit — ⚠ COST FINDING, and symptoms need re-testing)
+
+Investigation into five reported app/PWA bugs. **No code changed** — one approved programme, parked. Full findings: [archive/plans/client_auth_tunnel_programme_2026-07-30.md](archive/plans/client_auth_tunnel_programme_2026-07-30.md)
+
+**⚠ THE $30 BUDGET WAS NEVER VIABLE — this is arithmetic, not anomaly.** e2-medium 24/7 ≈ $24.50/mo + in-use external IPv4 ≈ $2.90 + disk ≈ $1 = **~$29/mo of infrastructure before a single AI token.** The cap wasn't protecting against runaway AI spend; it was tripping on the VM existing. It tripped twice in three days, disabling billing and taking the VM offline both times. Budget raised to $40 manually by the user on 2026-07-30; **service restoration was handled in a parallel chat.**
+
+**⚠ THE REPORTED SYMPTOMS ARE PARTLY THE OUTAGE — re-test before fixing anything.** "Web app doesn't load", "failed to fetch", and much of "Tailscale keeps falling silent" are all consistent with a dead server. **Do not start Phase 1 of the parked programme until the system has been used against a live server and we know which symptoms actually survive.**
+
+**Two symptoms were misdiagnosed and are worth knowing regardless:**
+1. **"Messages stay at the top" is not an ordering bug.** DOM order is correct — `appendChild` only, no prepend anywhere, and the server already reverses to oldest-first. `#conversation` (`static/index.html:30-37`) is a flex column with no bottom alignment, so short content stacks at the top of a tall column. One-line CSS fix (use `margin-top: auto` on an inner wrapper, **not** `justify-content: flex-end`, which clips overflow in Chromium).
+2. **"Tailscale falling silent" is largely the client.** There is no `case 'ping'`, no `visibilitychange`/`online`/`pageshow` listener anywhere in `static/index.html`. Android freezes the WebView on background; the socket dies half-open; `readyState` stays `OPEN` so sends vanish with no timeout. Restarting Tailscale forces a network-change event that finally kills the socket — which is why Tailscale *looks* guilty.
+
+**Real defects found (documented, not fixed):**
+- **Blank screen on 2nd+ launch:** auto-login (`index.html:911`) runs `enterApp` at script-parse time; `enterApp` hides the login screen **first**, then calls three functions with no `try/catch`. `new WebSocket()` throws synchronously on a bad URL → `ws` stays `null`, `onclose` never fires, **no reconnect path exists**. History arrives *only* via the WS frame, so no WS = permanently blank with no error shown.
+- **`/transcribe` and `/tts` block the event loop** (`server.py:597-646`, `561-594`) — no `run_in_executor`, freezing the WS chunk relay, heartbeats and `/active` for the whole of ffmpeg + Whisper. The correct pattern is already used at `server.py:252/311/425`.
+- **Whisper is untuned:** `base.en` at float32, `beam_size=5`, no VAD, `condition_on_previous_text` defaulting True, never warm-loaded — so the first call after every restart pays model construction *on the event loop*.
+- **`deploy.sh`'s drain is decorative** — `/active` counts only SSE streams, and `/session/stream` has no client at all, so **every deploy kills in-flight WebSocket exchanges.**
+- **No auth anywhere** (`allow_origins=["*"]`); Tailscale is the entire security model. `/monitor/file` and `/monitor/history` read arbitrary paths under `data/`. This is what makes the Cloudflare Tunnel a bigger job than the roadmap implies.
+- `shownIds` eviction cliff at `index.html:567` (clears *after* adding, unlike the hardened L590); catch-up reuses `type:"history"` so a reconnect wipes the conversation and re-renders only the delta.
+- `sw.js` has **no `fetch` handler** and caches nothing, and `/` is served `no-store` — there is no offline shell, so an unreachable server is a browser error page.
+
+**Cost levers (recorded, not applied):** gate check-ins on user activity (largest — the pathological case *is* the current state: ~12 full pipelines/day talking to itself while the app was broken); stop the VM overnight via a GCE instance schedule (~$8–9/mo, native, no code); `companion_checkin` 90 → 180 min; hold off on a CUD until Whisper sizing settles. Enable BigQuery billing export for per-SKU daily attribution — **not retroactive**, so enabling early matters.
+
+**Domain recommendation:** user has `apexgmat.com` on Cloudflare, but I'd advise a **separate personal domain** for the tunnel — one Cloudflare account means a shared blast radius between a business site and a host holding journals/clinical flags/finances, and `metatron.apexgmat.com` would be published permanently to public Certificate Transparency logs, associating a personal endpoint with a business entity. ~$10/yr. Nothing before Phase 4 depends on it.
 
 ### Also done 2026-07-29 (SessionStart hook removed after compliance-gap testing)
 
