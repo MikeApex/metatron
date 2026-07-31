@@ -1,5 +1,5 @@
 # Session Primer — Personal AI Life Manager
-*Updated: 2026-07-30 (client/app audit — BUDGET WAS NEVER VIABLE, see below; reported symptoms partly the outage and need re-testing before any fix work). Update this file at the close of every chat so the next chat — or any parallel chat window — starts from current state.*
+*Updated: 2026-07-31 (26-hour outage recovered — VM REBUILT ON NEW VPC `metatron-net`; `networks/default` still frozen; cost control now two-tier $70 soft / $150 hard). Update this file at the close of every chat so the next chat — or any parallel chat window — starts from current state.*
 
 ---
 
@@ -62,6 +62,31 @@ If you need to find a specific file, tool, or planning document: **[CODEBASE_IND
 - **B1** Red team — **on hold** (independent of Alpha Gate, but deprioritised — resumes after latency work)
 - **Check 10** Agent behavioral audits — **on hold**
 - **Check 12** Constitution alignment review — **on hold**
+
+### Also done 2026-07-31 (⚠ 26-HOUR OUTAGE — VPC frozen by billing disable; VM rebuilt on a new network; cost control restructured)
+
+Full writeup: [archive/sessions/2026-07-31 — Billing Cap Trip, VPC Freeze Recovery, Two-Tier Cost Control.md](archive/sessions/2026-07-31%20—%20Billing%20Cap%20Trip,%20VPC%20Freeze%20Recovery,%20Two-Tier%20Cost%20Control.md) · Commit `571f9bc`, deployed.
+
+**⚠ `networks/default` IN THIS PROJECT IS STILL FROZEN.** The VM now runs on a new VPC, `metatron-net` / `metatron-subnet` (`10.10.0.0/24`). Anything that assumes `default` exists will fail. Google support case left open to get `default` restored; tech team estimate was 3–5 business days.
+
+**What happened.** `stop-billing` disabled billing at ~$31 against a budget already raised to $40, acting on a stale notification. Disabling billing froze the project VPC. Billing was relinked within hours, but Google's asynchronous thaw **never ran** — 25+ hours of `nic0 is frozen`. Recovered by building a new VPC and rebuilding `metatron-vm` on it from the existing boot disk. Tailscale reclaimed the same node identity, so `100.64.226.49` is unchanged and **no client changes were needed**.
+
+**Cost control restructured** — the hard cap is now a firebreak, not a routine control. Distinction is recovery cost, not dollars:
+
+| Tier | Amount | Action | Recovery |
+|---|---|---|---|
+| Soft | $70 | `stop-vm` stops the VM | ~60s |
+| Hard | $150 | `stop-billing` disables billing | Days, plus a frozen VPC |
+
+New `stop-vm` function source is tracked at [infra/stop-vm/](infra/stop-vm/) — deployed, ACTIVE, tested. Override at `scripts/metatron-vm-override.sh` writes a *separate* marker from the billing override so silencing one cannot silence the other.
+
+**This sits directly on top of the 2026-07-30 arithmetic below:** if infrastructure alone is ~$29/mo, a $70 soft cap leaves ~$40/mo of genuine AI headroom before anything stops.
+
+**Bugs fixed:** `metatron-resume.sh` wrote the billing override *before* relinking — but the marker lives in a bucket inside the disabled project, so the write always 403'd and `set -e` aborted before the relink. **That recovery path had never once completed.** Also `deploy.sh` + resume now need `--tunnel-through-iap`, since `metatron-net` has no public SSH ingress (verified with a real deploy).
+
+**Check when convenient:** the rebuilt VM has an ephemeral external IP (`136.112.188.80`) that is never used — all access is via Tailscale. Per the cost finding below, an in-use external IPv4 is ~$2.90/mo. Removing it is a straightforward saving.
+
+Also: check-in cadence 90 → 180 minutes (`config/personas/mike/scheduler.yaml`, gitignored — hand-copied to VM, scheduler restarted).
 
 ### Also done 2026-07-30 (client/app audit — ⚠ COST FINDING, and symptoms need re-testing)
 
