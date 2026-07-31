@@ -3,7 +3,10 @@ set -e
 echo "Pushing to GitHub..."
 git push origin main
 echo "Deploying to VM..."
-gcloud compute ssh metatron-vm --zone=us-central1-a --project=metatron-ai-499810 -- bash -s <<'REMOTE'
+# --tunnel-through-iap is required since the 2026-07-31 VPC rebuild: metatron-net
+# has no public SSH ingress, only tcp:22 from the IAP range (35.235.240.0/20).
+# Without it, ssh times out against the external IP.
+gcloud compute ssh metatron-vm --zone=us-central1-a --project=metatron-ai-499810 --tunnel-through-iap -- bash -s <<'REMOTE'
 set -e
 cd ~/multi-model-mcp
 git pull origin main
