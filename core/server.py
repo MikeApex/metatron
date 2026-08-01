@@ -266,9 +266,14 @@ async def _startup() -> None:
             from core.voice_pipeline import _get_whisper
             _get_whisper()
 
+        def _load_kokoro() -> None:
+            if _kokoro_available():
+                _get_kokoro()
+
         for name, fn, executor in (
             ("embedding", _load_embedder, _INDEX_EXECUTOR),
             ("whisper", _load_whisper, _STT_EXECUTOR),
+            ("kokoro", _load_kokoro, _TTS_EXECUTOR),
         ):
             try:
                 t0 = datetime.now()
@@ -601,19 +606,53 @@ async def feedback() -> dict:
 class TTSRequest(BaseModel):
     text: str
 
+_kokoro_pipeline = None
+_kokoro_lock = threading.Lock()
+
+
+def _kokoro_available() -> bool:
+    try:
+        import kokoro  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
+def _get_kokoro():
+    """
+    Build the Kokoro pipeline once and keep it.
+
+    It used to run as a subprocess per request, which meant importing kokoro
+    (~7s) and constructing KPipeline (~3s) every single call — about 10s of the
+    measured 15s per request, repeated forever, while actual synthesis was only
+    ~3s. speak.py even caches the pipeline in a module global, but a fresh
+    process each time made that cache useless.
+
+    The subprocess existed because Kokoro once lived in its own venv with
+    conflicting dependencies. It was installed into the main venv on the VM on
+    2026-06-27, so the isolation is obsolete.
+    """
+    global _kokoro_pipeline
+    with _kokoro_lock:
+        if _kokoro_pipeline is None:
+            from kokoro import KPipeline
+            _kokoro_pipeline = KPipeline(lang_code="a")
+        return _kokoro_pipeline
+
+
 def _kokoro_blocking(text: str) -> str:
-    """Run Kokoro and return the wav path. Blocking — must not touch the loop."""
-    import subprocess
+    """Synthesise to a wav and return its path. Blocking — never on the loop."""
+    import numpy as _np
+    import soundfile as _sf
+
     wav_tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
     wav_tmp.close()
     try:
-        result = subprocess.run(
-            [str(KOKORO_PYTHON), str(KOKORO_SPEAK), "--voice", KOKORO_VOICE,
-             "--output", wav_tmp.name],
-            input=text, capture_output=True, text=True, timeout=120,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(result.stderr[:300])
+        pipeline = _get_kokoro()
+        chunks = [audio for _gs, _ps, audio in pipeline(text, voice=KOKORO_VOICE)]
+        if not chunks:
+            raise RuntimeError("Kokoro produced no audio")
+        _sf.write(wav_tmp.name, _np.concatenate(chunks), 24000)
         return wav_tmp.name
     except Exception:
         # Previously only the mp3 temp file was cleaned up on failure, so every
@@ -635,7 +674,7 @@ async def tts(req: TTSRequest):
         raise HTTPException(status_code=400, detail="Text is empty.")
 
     try:
-        if KOKORO_PYTHON.exists():
+        if _kokoro_available():
             loop = asyncio.get_running_loop()
             audio_path = await loop.run_in_executor(_TTS_EXECUTOR, _kokoro_blocking, req.text)
             media_type = "audio/wav"
