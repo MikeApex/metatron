@@ -444,12 +444,47 @@
   const shownIds = new Set();        // exchange_ids rendered on this device
   let lastSeenId = 0;
 
+  // The server pings every 30s. If we have heard nothing for appreciably longer
+  // than that, the socket is dead even if the browser still says OPEN — which is
+  // exactly what happens when Android freezes the WebView: the connection dies
+  // half-open, onclose never fires, and sends vanish silently with no error.
+  // That silence is what reads as "Tailscale dropped".
+  let lastMessageAt = 0;
+  let reconnectTimer = null;
+  const STALE_AFTER_MS = 45000;
+
+  function socketUsable() {
+    return ws && ws.readyState === WebSocket.OPEN &&
+           (Date.now() - lastMessageAt) < STALE_AFTER_MS;
+  }
+
+  function scheduleReconnect(delay = 3000) {
+    if (reconnectTimer) return;          // one pending attempt at a time
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      if (currentPersona) connectWebSocket(currentPersona);
+    }, delay);
+  }
+
+  function ensureConnected() {
+    if (!currentPersona) return;
+    if (ws && ws.readyState === WebSocket.CONNECTING) return;
+    if (socketUsable()) return;
+    // Drop the corpse first: closing a half-open socket is what finally makes
+    // onclose fire, and without it we would stack duplicate connections.
+    if (ws) { try { ws.close(); } catch (e) {} }
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    connectWebSocket(currentPersona);
+  }
+
   function connectWebSocket(persona) {
     const base = SERVER || window.location.origin;
     const wsUrl = base.replace(/^http/, 'ws') + '/ws?persona=' + encodeURIComponent(persona);
     ws = new WebSocket(wsUrl);
+    lastMessageAt = Date.now();
 
     ws.onopen = () => {
+      lastMessageAt = Date.now();
       setStatus('Ready', '#555');
       if (lastSeenId > 0) {
         ws.send(JSON.stringify({ type: 'catchup', since_id: lastSeenId }));
@@ -457,7 +492,14 @@
     };
 
     ws.onmessage = (event) => {
+      lastMessageAt = Date.now();
       handleWsMessage(JSON.parse(event.data));
+    };
+
+    ws.onerror = () => {
+      // An error does not reliably produce a close on mobile WebViews. Force it
+      // so the reconnect path runs instead of the socket sitting there dead.
+      try { ws.close(); } catch (e) {}
     };
 
     ws.onclose = () => {
@@ -468,12 +510,33 @@
         setLoading(false);
       }
       setStatus('Reconnecting...', '#888');
-      setTimeout(() => { if (currentPersona) connectWebSocket(currentPersona); }, 3000);
+      scheduleReconnect(3000);
     };
   }
 
+  // Android freezes the WebView when the app is backgrounded, so the socket is
+  // usually already dead by the time the user returns. Check on resume rather
+  // than waiting for a close event that will never arrive.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') ensureConnected();
+  });
+  window.addEventListener('focus', ensureConnected);
+  window.addEventListener('online', ensureConnected);
+
+  // Backstop for the case where the app stays open but the network drops out
+  // underneath it — no event fires at all there.
+  setInterval(() => {
+    if (document.visibilityState === 'visible') ensureConnected();
+  }, 20000);
+
   function handleWsMessage(msg) {
     switch (msg.type) {
+
+      case 'ping':
+        // Server heartbeat. lastMessageAt is already updated in onmessage;
+        // this exists so the liveness contract is explicit rather than
+        // depending on an unhandled case falling through.
+        break;
 
       case 'history': {
         renderHistory(msg.messages);
