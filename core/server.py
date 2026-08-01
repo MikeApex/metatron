@@ -20,6 +20,7 @@ import sys
 import tempfile
 import threading
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
@@ -83,6 +84,14 @@ _session_history: dict[str, list[dict]] = {}
 
 _active_lock = threading.Lock()
 _active_streams: int = 0
+
+# Dedicated single-worker pools, deliberately NOT run_in_executor(None, ...).
+# The default pool is shared with the LLM producer threads; speech work spawning
+# its own native thread pools alongside them on 2 vCPUs is worse than
+# serialising. One worker each also means a long job cannot starve the other.
+_STT_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="stt")
+_TTS_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="tts")
+_STT_SEMAPHORE = asyncio.Semaphore(1)
 
 
 class ConnectionManager:
@@ -558,50 +567,75 @@ async def feedback() -> dict:
 class TTSRequest(BaseModel):
     text: str
 
+def _kokoro_blocking(text: str) -> str:
+    """Run Kokoro and return the wav path. Blocking — must not touch the loop."""
+    import subprocess
+    wav_tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+    wav_tmp.close()
+    try:
+        result = subprocess.run(
+            [str(KOKORO_PYTHON), str(KOKORO_SPEAK), "--voice", KOKORO_VOICE,
+             "--output", wav_tmp.name],
+            input=text, capture_output=True, text=True, timeout=120,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr[:300])
+        return wav_tmp.name
+    except Exception:
+        # Previously only the mp3 temp file was cleaned up on failure, so every
+        # Kokoro error leaked a wav.
+        Path(wav_tmp.name).unlink(missing_ok=True)
+        raise
+
+
 @app.post("/tts")
 async def tts(req: TTSRequest):
-    """Generate speech audio — Kokoro af_heart primary, edge-tts fallback."""
+    """
+    Generate speech audio — Kokoro af_heart primary, edge-tts fallback.
+
+    Kokoro runs on its own executor. It used to run inline in this async
+    function, freezing the whole server for up to 120s: no HTTP responses, no
+    WebSocket pings, nothing.
+    """
     if not req.text.strip():
         raise HTTPException(status_code=400, detail="Text is empty.")
-    tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
-    tmp.close()
+
     try:
         if KOKORO_PYTHON.exists():
-            import subprocess
-            wav_tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-            wav_tmp.close()
-            result = subprocess.run(
-                [str(KOKORO_PYTHON), str(KOKORO_SPEAK), "--voice", KOKORO_VOICE, "--output", wav_tmp.name],
-                input=req.text, capture_output=True, text=True, timeout=120
-            )
-            if result.returncode != 0:
-                raise RuntimeError(result.stderr)
+            loop = asyncio.get_running_loop()
+            audio_path = await loop.run_in_executor(_TTS_EXECUTOR, _kokoro_blocking, req.text)
             media_type = "audio/wav"
-            audio_path = wav_tmp.name
         else:
+            tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
+            tmp.close()
+            # edge_tts is already async — it does not block the loop.
             communicate = edge_tts.Communicate(req.text, EDGE_VOICE)
             await communicate.save(tmp.name)
             media_type = "audio/mpeg"
             audio_path = tmp.name
 
         def iterfile():
-            with open(audio_path, "rb") as f:
-                yield from f
-            Path(audio_path).unlink(missing_ok=True)
+            try:
+                with open(audio_path, "rb") as f:
+                    yield from f
+            finally:
+                Path(audio_path).unlink(missing_ok=True)
+
         return StreamingResponse(iterfile(), media_type=media_type)
+    except HTTPException:
+        raise
     except Exception as e:
-        Path(tmp.name).unlink(missing_ok=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Speech synthesis failed: {e}")
 
 
-@app.post("/transcribe")
-async def transcribe_audio(audio: UploadFile = File(...)) -> dict:
+def _transcribe_blocking(audio_bytes: bytes) -> dict:
     """
-    Receive a raw audio blob from the PWA, transcribe with Whisper (local),
-    and archive both the audio file and its transcript to data/audio/.
+    ffmpeg decode + Whisper. Blocking — must run off the event loop.
 
-    Returns {"transcript": "..."} — the text is then sent to /session by the client.
-    Audio never leaves this machine; Web Speech API (Google) is not used.
+    All of this used to run inside `async def transcribe_audio`, so the server
+    was frozen for the whole of ffmpeg + Whisper: no HTTP responses, no
+    WebSocket pings. A second voice message sent during the first transcription
+    got "Failed to fetch" from a server that was running but unable to answer.
     """
     import json as _json
     import subprocess as _subprocess
@@ -611,30 +645,34 @@ async def transcribe_audio(audio: UploadFile = File(...)) -> dict:
     date_dir = Path(__file__).parent.parent / "data" / "audio" / datetime.now().strftime("%Y-%m-%d")
     date_dir.mkdir(parents=True, exist_ok=True)
 
-    # Save raw audio (WebM/Opus from MediaRecorder)
     audio_path = date_dir / f"{ts}.webm"
-    audio_bytes = await audio.read()
     with open(audio_path, "wb") as f:
         f.write(audio_bytes)
 
-    # Decode to float32 PCM at 16kHz via ffmpeg (Whisper expects this format)
+    # Decode from the bytes already in memory — no disk round-trip.
     try:
         result = _subprocess.run(
-            ["ffmpeg", "-i", str(audio_path), "-ar", "16000", "-ac", "1",
-             "-f", "f32le", "-"],
-            capture_output=True, timeout=30,
+            ["ffmpeg", "-i", "pipe:0", "-ar", "16000", "-ac", "1", "-f", "f32le", "-"],
+            input=audio_bytes, capture_output=True, timeout=120,
         )
-        if result.returncode != 0:
-            raise RuntimeError(f"ffmpeg: {result.stderr.decode()[:200]}")
-        audio_array = _np.frombuffer(result.stdout, dtype=_np.float32)
     except FileNotFoundError:
-        raise HTTPException(status_code=500, detail="ffmpeg not found — install with: brew install ffmpeg")
+        raise HTTPException(status_code=500, detail="ffmpeg not found on the server")
+    except _subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="Audio decoding timed out")
 
-    # Transcribe locally with faster-whisper
+    if result.returncode != 0:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Could not decode audio: {result.stderr.decode(errors='replace')[:200]}",
+        )
+
+    audio_array = _np.frombuffer(result.stdout, dtype=_np.float32)
+    if audio_array.size == 0:
+        raise HTTPException(status_code=422, detail="Recording contained no audio")
+
     from core.voice_pipeline import transcribe as _transcribe
     transcript = _transcribe(audio_array)
 
-    # Archive transcript alongside audio
     meta_path = date_dir / f"{ts}.json"
     with open(meta_path, "w") as f:
         _json.dump({
@@ -644,6 +682,31 @@ async def transcribe_audio(audio: UploadFile = File(...)) -> dict:
         }, f, ensure_ascii=False, indent=2)
 
     return {"transcript": transcript}
+
+
+@app.post("/transcribe")
+async def transcribe_audio(audio: UploadFile = File(...)) -> dict:
+    """
+    Transcribe a voice recording with Whisper, locally. Audio never leaves this
+    machine; the Web Speech API is deliberately not used.
+
+    Runs on a dedicated executor. The semaphore returns a fast 503 on a
+    concurrent request rather than queueing it invisibly until the client gives
+    up — which previously surfaced as "Failed to fetch".
+    """
+    audio_bytes = await audio.read()
+    if not audio_bytes:
+        raise HTTPException(status_code=422, detail="Empty audio upload")
+
+    if _STT_SEMAPHORE.locked():
+        raise HTTPException(
+            status_code=503,
+            detail="Still transcribing the previous recording — try again in a moment",
+        )
+
+    async with _STT_SEMAPHORE:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(_STT_EXECUTOR, _transcribe_blocking, audio_bytes)
 
 
 @app.get("/")
