@@ -36,6 +36,15 @@
       gap: 16px;
     }
 
+    /* Anchor to the bottom. A flex column defaults to packing at the top, so a
+       short conversation sat at the top of a tall screen and the newest message
+       was the furthest from the thumb. margin-top:auto on the first child is
+       used rather than justify-content:flex-end, which can make overflowing
+       content unreachable at the top of a scroll container. */
+    #conversation > *:first-child {
+      margin-top: auto;
+    }
+
     .message {
       max-width: 88%;
       padding: 12px 16px;
@@ -406,8 +415,24 @@
       conversation.appendChild(tap);
     }
 
-    conversation.scrollTop = conversation.scrollHeight;
+    scrollToBottom();
     return div;
+  }
+
+  // Auto-scroll unless the user has deliberately scrolled up to read. Yanking
+  // them back down mid-read is worse than a missed scroll.
+  const SCROLL_ANCHOR_SLACK = 120;
+
+  function nearBottom() {
+    const gap = conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight;
+    return gap <= SCROLL_ANCHOR_SLACK;
+  }
+
+  function scrollToBottom(force = false) {
+    if (!force && !nearBottom()) return;
+    requestAnimationFrame(() => {
+      conversation.scrollTop = conversation.scrollHeight;
+    });
   }
 
   // --- WebSocket (cross-device sync) ---
@@ -473,7 +498,7 @@
           if (ownBubble) {
             ownAccumulated += msg.text;
             ownBubble.textContent = ownAccumulated + '▍';
-            conversation.scrollTop = conversation.scrollHeight;
+            scrollToBottom();
           }
         } else {
           // Foreign exchange: update their bubble
@@ -481,7 +506,7 @@
           if (fb) {
             fb.accumulated += msg.text;
             fb.bubble.textContent = fb.accumulated + '▍';
-            conversation.scrollTop = conversation.scrollHeight;
+            scrollToBottom();
           }
         }
         break;
@@ -565,6 +590,10 @@
       if (msg.id > lastSeenId) lastSeenId = msg.id;
     }
     if (shownIds.size > 100) shownIds.clear();
+    // Force: on load the newest exchange must be the one in view, whatever the
+    // scroll position happened to be. Double rAF so the browser has laid the
+    // messages out before scrollHeight is read.
+    requestAnimationFrame(() => scrollToBottom(true));
   }
 
   // --- API call ---
