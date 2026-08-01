@@ -15,7 +15,8 @@ import os
 from datetime import date, datetime
 from pathlib import Path
 
-from core.persona import PersonaError, persona_data_dir
+from core.persona import PersonaError, persona_data_dir, persona_scope, resolve_persona
+from core.background import run_background
 
 _ROOT = Path(__file__).parent.parent
 
@@ -67,15 +68,16 @@ def write_journal(text: str, entry_date: str = "", tags: list[str] | None = None
 
     os.chmod(journal_path, 0o600)
 
-    try:
+    # See tools/logger.py — same reasoning. Persona resolved here, re-bound in
+    # the worker thread, which carries no thread-local identity.
+    _persona = resolve_persona()
+
+    def _index() -> None:
         from core.memory import index_entry
-        index_entry(text=text, source="journal", entry_date=entry_date)
-    except PersonaError:
-        # Never silent: a persona failure means data may be misfiled, which is
-        # exactly the class of bug the resolver exists to surface.
-        raise
-    except Exception:
-        pass  # Memory indexing is best-effort; never block a write
+        with persona_scope(_persona):
+            index_entry(text=text, source="journal", entry_date=entry_date)
+
+    run_background(_index, f"index journal {entry_date}")
 
     return f"Journal entry written to {journal_path}"
 

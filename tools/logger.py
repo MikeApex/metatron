@@ -11,7 +11,8 @@ import threading
 from datetime import date, datetime
 from pathlib import Path
 
-from core.persona import PersonaError, persona_data_dir
+from core.persona import PersonaError, persona_data_dir, persona_scope, resolve_persona
+from core.background import run_background
 
 _WRITE_LOG_LOCK = threading.Lock()
 _WRITE_QUALITY_EVENT_LOCK = threading.Lock()
@@ -59,16 +60,20 @@ def write_log(content: dict | None = None, log_date: str = "") -> str:
             json.dump(existing, f, indent=2)
         os.chmod(log_path, 0o600)
 
-    try:
+    # Embedding costs ~150-200ms on the VM and nothing reads its result, but it
+    # ran inline here — inside tool dispatch, on the user's critical path.
+    # Persona is resolved on THIS thread (so a failure still surfaces, and so
+    # fail-closed behaviour is preserved) and re-bound inside the worker, which
+    # has no thread-local identity of its own.
+    _persona = resolve_persona()
+    _payload = json.dumps(existing)
+
+    def _index() -> None:
         from core.memory import index_entry
-        import json as _json
-        index_entry(text=_json.dumps(existing), source="log", entry_date=log_date)
-    except PersonaError:
-        # Never silent: a persona failure means data may be misfiled, which is
-        # exactly the class of bug the resolver exists to surface.
-        raise
-    except Exception:
-        pass  # Memory indexing is best-effort; never block a write
+        with persona_scope(_persona):
+            index_entry(text=_payload, source="log", entry_date=log_date)
+
+    run_background(_index, f"index log {log_date}")
 
     return f"Log written to {log_path}"
 

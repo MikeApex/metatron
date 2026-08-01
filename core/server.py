@@ -92,6 +92,9 @@ _active_streams: int = 0
 _STT_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="stt")
 _TTS_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="tts")
 _STT_SEMAPHORE = asyncio.Semaphore(1)
+# Memory indexing is best-effort and nothing waits on its result, but it ran
+# synchronously inside write_log/write_journal — on the user's critical path.
+_INDEX_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="index")
 
 
 class ConnectionManager:
@@ -246,6 +249,37 @@ async def _startup() -> None:
         pairs = await _load_history_from_db(persona)
         if pairs:
             _session_history[persona] = pairs
+
+    # Warm the models that would otherwise load lazily inside a user's session.
+    # The embedding model takes ~10s to load; without this, the first log or
+    # journal write after every restart paid that cost mid-response — i.e. after
+    # every deploy. Runs in the background so startup is not delayed, and stays
+    # best-effort: a warm-up failure must never stop the server booting.
+    async def _warm() -> None:
+        loop = asyncio.get_running_loop()
+
+        def _load_embedder() -> None:
+            from core.memory import _get_model
+            _get_model()
+
+        def _load_whisper() -> None:
+            from core.voice_pipeline import _get_whisper
+            _get_whisper()
+
+        for name, fn, executor in (
+            ("embedding", _load_embedder, _INDEX_EXECUTOR),
+            ("whisper", _load_whisper, _STT_EXECUTOR),
+        ):
+            try:
+                t0 = datetime.now()
+                await loop.run_in_executor(executor, fn)
+                secs = (datetime.now() - t0).total_seconds()
+                print(f"[warmup] {name} model ready ({secs:.1f}s)", flush=True)
+            except Exception as exc:
+                print(f"[warmup] {name} model failed ({exc}) — will load on first use",
+                      flush=True)
+
+    asyncio.create_task(_warm())
 
 
 @app.post("/session", response_model=SessionResponse)
