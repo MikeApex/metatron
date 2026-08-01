@@ -368,3 +368,44 @@ Verified: `db #16 proactive=1`, `log #016 proactive=True`, `trace is_proactive=T
 **DST contingency.** The OS handles the zone change (verified: Oct 26 -> GMT, Mar 29 -> BST). The gap was the `schedule` library, which computes each `next_run` once at registration while this daemon runs for weeks — so the first firing after a transition would be an hour off and stay stale. The main loop now compares the UTC offset each tick and re-registers on change. No cron entry, no manual step.
 
 Incidentally confirmed the timezone fix working: a test check-in at 22:04 BST was correctly suppressed by quiet hours (22:00-07:00), which under UTC would not have triggered until 23:00 local.
+
+---
+
+## Voice/latency work, client resilience, and a correction
+
+### Fix 2 — blocking the event loop (the "Failed to fetch" cause)
+`/transcribe` ran ffmpeg + Whisper and `/tts` ran Kokoro **synchronously inside `async def`**, freezing the whole server for the duration: no HTTP responses, no WebSocket pings. A second voice message during the first transcription reached a live-but-deaf server, which the client surfaced as "Failed to fetch". Both now run on dedicated single-worker executors (not `run_in_executor(None, …)` — the default pool is shared with the LLM producer threads). `/transcribe` gained a semaphore returning a fast 503, ffmpeg reads from memory, and real status codes replaced a bare `FileNotFoundError` catch. `/tts` leaked a wav on every Kokoro failure; fixed.
+
+**Verified:** server answered health checks 3/3 *during* TTS synthesis.
+
+### Kokoro was reloading its model on every single request
+Measured on the VM: **15.0s per `/tts` call, three consecutive calls identical.** Breakdown: `import kokoro` 7.3s + build `KPipeline` 3.0s + **actual synthesis only ~3s**. About 10s of every call was model loading, repeated forever.
+
+Cause: `/tts` shelled out to `tools/kokoro/speak.py` as a **subprocess**, so each request spawned a fresh interpreter. `speak.py` even caches the pipeline in a module global — but a new process every time meant that cache could never hit.
+
+The subprocess existed because Kokoro once had its own venv with conflicting dependencies. It was installed into the main venv on the VM on 2026-06-27, making the isolation obsolete — but the workaround stayed, and `CLAUDE.md` still documented the isolated venv as current, which kept it invisible.
+
+Now loaded once in-process, cached behind a lock, warmed at boot. **15.0s → 2.8s.**
+
+### Model warm-up at startup
+Embedding (15.7s) and Whisper (14.4s) loaded lazily, so the **first log or journal write after every deploy paid ~15s inside a user's response**. All three models now warm at boot in a background task; memory 2.1GB of 3.9GB with all resident.
+
+### Memory indexing off the critical path
+`index_entry()` ran inline in `write_log`/`write_journal` during tool dispatch — ~150-200ms on the VM for a result nothing reads. Moved to `core/background.py` (single worker, drops past a queue cap so it can never become back-pressure). Persona resolved on the calling thread and re-bound in the worker, preserving fail-closed behaviour. **write_log: 150-200ms → 1ms.**
+
+### Conversation anchoring
+`#conversation` is a flex column with no bottom alignment, so short conversations packed at the top. Not an ordering bug. Fixed with `margin-top:auto` on the first child rather than `justify-content:flex-end`, which can make overflowing content unreachable in a scroll container. Scrolling now holds position if the user has scrolled up to read (120px slack); history load forces the scroll behind a double rAF.
+
+### WebSocket resilience — the "Tailscale falling silent" cause
+Android freezes the WebView on background; the socket dies **half-open** with `readyState` still `OPEN`, `onclose` never fires, and sends vanish silently. The existing 3s reconnect only ran on close, so it never ran. Restarting Tailscale forced a network-change event that finally killed the socket — which is what made Tailscale look responsible.
+
+Added: explicit `ping` handling (>45s silence = dead regardless of `readyState`), `visibilitychange`/`focus`/`online` liveness checks on resume, a 20s backstop interval, `onerror` force-close, and single-flight reconnect that closes the corpse first.
+
+### Corrections recorded
+- **"Block connections without VPN" was bad advice.** Tailscale is split-tunnel; Android lockdown blocks non-VPN traffic, so it would have cut general internet on the phone. Only the battery-optimisation exemption is both effective and safe.
+- **`companion_checkin` is 180 minutes, not 90** — the user had already changed it, and also replaced the generic `"What's going on?"` prompt with one instructing the Coordinator to lead with a specific outstanding item. My cost estimate of "10-12 pipeline runs/day" was based on the stale 90-minute value; with 180 min and 22:00-07:00 quiet hours it is **~5 check-ins + 2 scheduled = ~7/day**.
+
+### Open
+- APK with anchoring + reconnect fixes built (10:00) but **not yet installed** — user testing later.
+- Activity-gating for check-ins (skip when no user-originated exchange since the last) still unimplemented; identified in the parked programme as the largest cost lever.
+- Sentence-chunked TTS deferred pending judgement on whether 2.8s still feels slow.
