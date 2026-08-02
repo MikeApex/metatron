@@ -1,5 +1,5 @@
 # Session Primer — Personal AI Life Manager
-*Updated: 2026-08-02 (Synthesizer recap fix — SEQ 002 diagnosed and fixed locally, validated against a non-Mike persona, NOT yet deployed — see below). Update this file at the close of every chat so the next chat — or any parallel chat window — starts from current state.*
+*Updated: 2026-08-02 (spend guard + runaway rate limiter live; GCP account verified clean and `default` VPC unfrozen; conversation scroll root-caused; Synthesizer recap fix now deployed). Update this file at the close of every chat so the next chat — or any parallel chat window — starts from current state.*
 
 ---
 
@@ -78,7 +78,27 @@ Full writeup: [archive/sessions/2026-08-02 — SEQ 008 Timestamp Fix, Deploy, Pe
 
 **Known stale artifact, not yet fixed:** `/metatron-troubleshoot` command template still points at pre-persona-scoping paths (bare `data/conversations/`, `data/personas/mike/traces/` hardcoded to mike) — corrected inline this session but not on disk. Low priority, flag for a future pass.
 
-### Also done 2026-08-02 (Synthesizer recap fix — SEQ 002 diagnosis, fix, local validation — NOT yet deployed)
+### Also done 2026-08-02 (spend guard, GCP verification, scroll root-cause)
+
+Full writeup: [archive/sessions/2026-07-28 — Persona Unification Complete (Phases 0-8, Strict Mode Live).md](archive/sessions/2026-07-28%20—%20Persona%20Unification%20Complete%20(Phases%200-8,%20Strict%20Mode%20Live).md) (2026-08-02 section at the end).
+
+**GCP account verified genuinely clean.** Created a throwaway instance **on `default`** — the exact operation that failed with `networks/default … is not ready` on 2026-07-30. It reached RUNNING, so Google's thaw did eventually complete. Probe deleted. Billing enabled; hard cap **armed** (the override expired 2026-07-31 — its leftover marker was removed, since it read as "hard cap disarmed"); no orphaned disks or static IPs. Only leftover is the pre-unfreeze snapshot (8.5GB, ~$0.22/mo).
+
+**Spend guard live** (`core/spend_guard.py` + `config/modules/spend_guard.yaml`). GCP budget data lags hours, so the $70/$150 caps cannot catch a loop. Two in-process guards, hooked into `trace.record_turn_tokens` (the one point every provider already reports through):
+- **Rate limit** — sessions per rolling hour, alert 20 / stop 60. Needs no pricing data, so it survives a stale rate table. **This is the guard that actually catches a loop.**
+- **Spend limit** — token counts × rates, alert $5/day / stop $10/day.
+
+Refusal returns plain user-facing text, not an exception. Both fail **open** on internal error — a bug in cost accounting must never take down a working assistant. Rate-limiter state is in-memory, so it resets on restart (acceptable: a restart breaks a loop).
+
+**Costing bug caught by user challenge — reported figure was 8x too high.** Pricing keys were unprefixed but traces record `models/gemini-3.1-flash-lite`, so every lookup missed and fell through to `default`, set to Pro rates. All the Flash-Lite traffic — the bulk of every exchange — was priced at ~12x. Corrected: an exchange is **~$0.025, not $0.20**; a scheduled day **~$0.18, not $1.41**. Fixed with prefix normalisation, prefix-match fallback, and a warning on unknown models rather than silent defaulting.
+
+**Measured token economics** (real): one exchange = 82,360 input tokens across coordinator (Flash-Lite, 1 turn), logistics (Flash-Lite, **8 turns**, 39,810t), physical_health (Flash-Lite, 5 turns), synthesizer (**Pro**, 1 turn, 12,989t). **The synthesizer is 71% of cost on 16% of tokens**, being the only agent on Pro — so it, not the Flash-Lite specialists, is the cost lever. Reconfirms the coordinator does 1 turn while specialists do 5-8: roadmap D2 item 5 is **mis-scoped** and needs re-measuring before any work.
+
+**Conversation scroll — earlier fix was a no-op.** `body` used `min-height:100dvh`, so it grew past the viewport and `#conversation` (`flex:1`) expanded to fit content instead of being capped — it was never a scroll container, making `overflow-y`, `margin-top:auto` and `scrollTop` all inert. Fixed with `height:100dvh` + `overflow:hidden` on body and `min-height:0` on the flex child. **Testable in a desktop browser without installing the APK.**
+
+**Open:** pricing rates are unverified estimates marked VERIFY (fine for order-of-magnitude runaway, not for accounting); activity-gating for check-ins; sentence-chunked TTS; browser live-refresh bug; turn-reduction re-scoping.
+
+### Also done 2026-08-02 (Synthesizer recap fix — SEQ 002 diagnosis, fix, local validation — **NOW DEPLOYED**)
 
 Full writeup: [archive/sessions/2026-08-02 — SEQ 002 Single Exchange Troubleshoot.md](archive/sessions/2026-08-02%20—%20SEQ%20002%20Single%20Exchange%20Troubleshoot.md)
 
@@ -86,13 +106,15 @@ Full writeup: [archive/sessions/2026-08-02 — SEQ 002 Single Exchange Troublesh
 
 **Fix:** One sentence added to `config/agents/synthesizer.md` under "Direction and prioritization": *"Acknowledge, don't recap. Do not restate specific facts the user just gave you... as a summary opener... They already know what they told you; repeating it adds no value and reads as filler."* Frozen post-review file — **freeze lifted on explicit user instruction** for this fix, not a general exception. A longer first draft was cut per user direction — keep agent instruction files token-light.
 
+**Validated locally; DEPLOYED 2026-08-02** (commit `799aa3f` went out with the spend-guard deploys from the parallel session — VM confirmed to carry the line). Original note follows:
+
 **Validated locally, not yet deployed:** 3 iterations against `sarah_chen` (non-Mike dev persona) via `python3 core/orchestrator.py --persona sarah_chen --input "..."` (local Mac, `DEPLOYMENT_MODE=cloud` → real Vertex/Gemini pipeline). All 3 messages carried specific facts (museum/planetarium/pizza; skipped breakfast/coffee/sandwich/dentist; river run/stir fry) — no readback in any response. **`./deploy.sh` still needed** to push this to metatron-vm before it affects the live Mike sessions.
 
 ### Also done 2026-07-31 (⚠ 26-HOUR OUTAGE — VPC frozen by billing disable; VM rebuilt on a new network; cost control restructured)
 
 Full writeup: [archive/sessions/2026-07-31 — Billing Cap Trip, VPC Freeze Recovery, Two-Tier Cost Control.md](archive/sessions/2026-07-31%20—%20Billing%20Cap%20Trip,%20VPC%20Freeze%20Recovery,%20Two-Tier%20Cost%20Control.md) · Commit `571f9bc`, deployed.
 
-**⚠ `networks/default` IN THIS PROJECT IS STILL FROZEN.** The VM now runs on a new VPC, `metatron-net` / `metatron-subnet` (`10.10.0.0/24`). Anything that assumes `default` exists will fail. Google support case left open to get `default` restored; tech team estimate was 3–5 business days.
+**⚠ ~~`networks/default` IN THIS PROJECT IS STILL FROZEN.~~ SUPERSEDED 2026-08-02 — `default` is UNFROZEN, verified by creating a live instance on it (the exact operation that failed on 2026-07-30). Google's thaw did eventually run. The VM stays on `metatron-net` by choice, not necessity.** The VM now runs on a new VPC, `metatron-net` / `metatron-subnet` (`10.10.0.0/24`). Anything that assumes `default` exists will fail. Google support case left open to get `default` restored; tech team estimate was 3–5 business days.
 
 **What happened.** `stop-billing` disabled billing at ~$31 against a budget already raised to $40, acting on a stale notification. Disabling billing froze the project VPC. Billing was relinked within hours, but Google's asynchronous thaw **never ran** — 25+ hours of `nic0 is frozen`. Recovered by building a new VPC and rebuilding `metatron-vm` on it from the existing boot disk. Tailscale reclaimed the same node identity, so `100.64.226.49` is unchanged and **no client changes were needed**.
 
