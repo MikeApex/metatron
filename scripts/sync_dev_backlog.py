@@ -27,7 +27,10 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-DEFAULT_SERVER = "http://100.64.226.49:8001"
+# HTTPS, and the Tailscale hostname rather than the raw IP: the server runs
+# behind a Tailscale-issued cert, so the IP form fails hostname verification.
+# This matches the orchestrator CLI's own --server default.
+DEFAULT_SERVER = "https://metatron-vm.tail0acc5d.ts.net:8001"
 DEFAULT_PERSONA = "mike"
 TIMEOUT_SECONDS = 3
 
