@@ -409,3 +409,52 @@ Added: explicit `ping` handling (>45s silence = dead regardless of `readyState`)
 - APK with anchoring + reconnect fixes built (10:00) but **not yet installed** — user testing later.
 - Activity-gating for check-ins (skip when no user-originated exchange since the last) still unimplemented; identified in the parked programme as the largest cost lever.
 - Sentence-chunked TTS deferred pending judgement on whether 2.8s still feels slow.
+
+---
+
+## 2026-08-02 — account verification, spend guard, and a costing bug
+
+### GCP account verified genuinely clean (not just working around the freeze)
+Ran the definitive test rather than inferring: created a throwaway instance **on the `default` network** — the exact operation that failed with *"networks/default … is not ready"* on 2026-07-30. It reached RUNNING. **Google's thaw did eventually complete.** Probe deleted immediately.
+
+| Check | State |
+|---|---|
+| `default` VPC | **Unfrozen**, verified by live instance creation |
+| Billing | Enabled |
+| Hard cap ($150) | **Armed** — override expired 2026-07-31 |
+| Orphaned disks / static IPs | None |
+
+Housekeeping: removed the **expired `override.json`** marker, which would have read as "hard cap disarmed" to anyone checking. Only leftover is the pre-unfreeze snapshot (8.5GB, ~$0.22/mo). `metatron-net` is now a deliberate choice, not a forced workaround.
+
+### Conversation scroll — the earlier fix was a no-op
+`body` used `min-height:100dvh`, so it grew past the viewport and `#conversation` (`flex:1`) expanded to fit its content instead of being capped. It was therefore **never a scroll container**: `overflow-y` never engaged, `margin-top:auto` had no free space, and `scrollTop=scrollHeight` did nothing because `scrollHeight == clientHeight`. The page scrolled, not the list. Fixed with `height:100dvh` + `overflow:hidden` on body and `min-height:0` on the flex child.
+
+### Spend guard (`core/spend_guard.py`)
+GCP budget data lags hours, so the $70/$150 caps cannot catch a loop. Two in-process guards:
+- **Rate limit** — sessions per rolling hour. Needs no pricing data, so it survives a stale rate table. Alert 20/hr, stop 60/hr. **This is the guard that actually catches a loop.**
+- **Spend limit** — token counts × rates. Alert $5/day, stop $10/day.
+
+Hooks `trace.record_turn_tokens`, the one point every provider already reports through. Refusal returns plain user-facing text, not an exception. Both fail **open** on internal error — a bug in cost accounting must never take down a working assistant.
+
+### Costing bug — reported figure was 8x too high
+Pricing keys were unprefixed (`gemini-3.1-flash-lite`) but traces record the AI Studio form `models/gemini-3.1-flash-lite`. **Every lookup missed and fell through to `default`, set to Pro rates** — so the Flash-Lite traffic that is the bulk of every exchange was priced at ~12x.
+
+Caught because the user challenged the number as implausible. Corrected: one exchange is **~$0.025, not $0.20**; a scheduled day **~$0.18, not $1.41**. Fixed with prefix normalisation, prefix-match fallback for dated/-preview suffixes, and a warning on unknown models rather than silent defaulting — the silence is what hid it.
+
+### Measured token economics (real, not estimated)
+One exchange, 82,360 input tokens across 4 agents:
+
+| Agent | Model | Turns | Input | Cost |
+|---|---|---|---|---|
+| coordinator | Flash-Lite | 1 | 8,354 | $0.0010 |
+| logistics | Flash-Lite | **8** | 39,810 | $0.0041 |
+| physical_health | Flash-Lite | 5 | 21,207 | $0.0023 |
+| synthesizer | **Pro** | 1 | 12,989 | **$0.0180** |
+
+**The synthesizer is 71% of cost on 16% of tokens**, being the only agent on Pro. That is the cost lever — not the Flash-Lite specialists, despite them consuming most tokens. Confirms again that the coordinator does 1 turn while specialists do 5-8; the roadmap's D2 item 5 remains mis-scoped.
+
+### Open
+- Anchoring fix deployed + APK rebuilt (2026-08-02 10:15) — **testable in the MacBook browser without installing**.
+- Pricing rates remain **unverified estimates** marked VERIFY. Adequate for order-of-magnitude runaway detection, not for accounting.
+- Rate limiter state is in-memory, so it resets on restart. Acceptable (a restart breaks a loop) but not durable across deploys.
+- Activity-gating for check-ins; sentence-chunked TTS; browser live-refresh bug; turn-reduction re-scoping.
