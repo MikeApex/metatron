@@ -156,6 +156,33 @@ def load_profile(persona: str | None = None) -> str:
     return "## User Profile\n\n" + "\n".join(lines)
 
 
+def _spend_gate() -> str | None:
+    """
+    Check the runaway guards before starting a session.
+
+    Returns a user-facing message if the session must be refused, else None.
+    A refusal is returned as ordinary text rather than raised: the user should
+    see a plain explanation, not a stack trace, and the surrounding machinery
+    should not treat a deliberate stop as a crash.
+    """
+    try:
+        from core.spend_guard import SpendLimitExceeded, check_before_session, note_session_start
+        try:
+            check_before_session()
+        except SpendLimitExceeded as exc:
+            logger.warning(f"[spend_guard] session refused: {exc}")
+            return (
+                "I've paused myself for now — I've hit the daily usage limit set to "
+                "catch runaway activity. Nothing is broken, and this resets tomorrow.\n\n"
+                f"Detail: {exc}"
+            )
+        note_session_start()
+    except Exception as exc:
+        # Fail open — the guard must never be the reason a session cannot run.
+        logger.warning(f"[spend_guard] gate error, allowing session: {exc}")
+    return None
+
+
 def _titled(label: str, content: str) -> str:
     """
     Wrap content in a '## {label}' heading, unless it already opens with one.
@@ -2012,6 +2039,10 @@ def run_pipeline_session(user_input: str,
     to tens of seconds after the message actually arrived, once pipeline
     latency (routing + specialist dispatch + synthesis) is accounted for.
     """
+    _guard_msg = _spend_gate()
+    if _guard_msg:
+        return _guard_msg
+
     _tr.start_request_trace(user_input, persona)
     try:
         receipt_line = ""
@@ -2131,6 +2162,12 @@ def _run_pipeline_session_stream_inner(
     timestamp, more precise than the ambient system clock once pipeline latency
     (routing + specialist dispatch + synthesis, often tens of seconds) elapses.
     """
+    _guard_msg = _spend_gate()
+    if _guard_msg:
+        yield _guard_msg
+        yield "[DONE]"
+        return
+
     _tr.start_request_trace(user_input, persona, is_proactive=is_proactive)
 
     receipt_line = ""

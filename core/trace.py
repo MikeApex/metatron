@@ -180,6 +180,14 @@ def record_turn_tokens(rec: AgentRecord | None, turn_num: int,
     tr.input_tokens = input_tokens
     tr.output_tokens = output_tokens
 
+    # Every provider path already reports here, so this is the one place the
+    # spend guard needs to observe. It never raises.
+    try:
+        from core.spend_guard import record_tokens
+        record_tokens(rec.model or "", input_tokens, output_tokens)
+    except Exception:
+        pass
+
 
 def record_tool_call(rec: AgentRecord | None, turn_num: int,
                      name: str, args: dict, result: str, duration_ms: float,

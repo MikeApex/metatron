@@ -1,0 +1,51 @@
+# Spend guard — daily runaway protection.
+#
+# This exists because GCP's own budget data lags by hours, so the $70 soft cap
+# and $150 hard cap cannot react at runaway speed. A retry loop can burn a
+# month's budget before a budget alert fires. This layer runs in-process and
+# reacts in seconds.
+#
+# Two independent guards, because they fail differently:
+#
+#   1. Rate limit  — "more than N sessions an hour means something is looping".
+#                    Needs no pricing data, so it still works if the rates below
+#                    are stale or a new cost source appears. This is the robust one.
+#   2. Spend limit — token counts x the rates below. Maps to actual money, so the
+#                    thresholds mean something, but depends on the table staying
+#                    roughly current.
+#
+# Accuracy note: these thresholds are for catching order-of-magnitude runaway,
+# not for accounting. An estimate that is 2x wrong still catches a 100x loop.
+
+enabled: true
+
+# --- Spend thresholds (USD, per day, estimated from token counts) ---
+# Warn, then refuse. The gap is deliberate: a warning that is also a hard stop
+# gives no chance to intervene before the system goes silent.
+alert_usd_per_day: 5.0
+stop_usd_per_day: 10.0
+
+# --- Rate limit (pipeline sessions started, rolling 60 minutes) ---
+# Normal load is ~7 scheduled sessions/day plus interactive use. These are set
+# well above that so ordinary bursts do not trip them.
+alert_sessions_per_hour: 20
+stop_sessions_per_hour: 60
+
+# --- Pricing, USD per 1M tokens ---
+# VERIFY THESE against current Vertex AI pricing before trusting the dollar
+# figures. They are order-of-magnitude estimates chosen so the guard fires on
+# runaway; they are not billing-accurate. Unknown models fall back to "default".
+pricing:
+  gemini-3.1-pro-preview:
+    input: 1.25
+    output: 10.00
+  gemini-3.1-flash-lite:
+    input: 0.10
+    output: 0.40
+  default:
+    input: 1.25
+    output: 10.00
+
+# The VM costs roughly $29/month in fixed infrastructure (~$1/day) regardless of
+# usage. That floor is NOT counted here — these thresholds measure AI spend only,
+# so a quiet day reads near zero rather than $1.
