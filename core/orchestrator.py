@@ -23,6 +23,7 @@ import sys
 import time
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
 from pathlib import Path
 
 # Must precede any `core.*` / `tools.*` import. Running `python core/orchestrator.py`
@@ -1993,7 +1994,8 @@ def _dispatch_from_coordinator(
 def run_pipeline_session(user_input: str,
                          persona: str | None = None,
                          provider: str | None = None,
-                         history: list[dict] | None = None) -> str:
+                         history: list[dict] | None = None,
+                         received_at: datetime | None = None) -> str:
     """
     Run the two-pass Coordinator → Synthesizer pipeline.
 
@@ -2003,14 +2005,25 @@ def run_pipeline_session(user_input: str,
 
     Pass 2 (Synthesizer): receives original message + Coordinator routing package
     + specialist outputs, integrates, responds to user.
+
+    received_at: actual message-arrival timestamp (UTC-aware), captured at the
+    WebSocket boundary in core/server.py. More precise than the ambient system
+    clock, which reflects "now" at the time each agent runs — several seconds
+    to tens of seconds after the message actually arrived, once pipeline
+    latency (routing + specialist dispatch + synthesis) is accounted for.
     """
     _tr.start_request_trace(user_input, persona)
     try:
+        receipt_line = ""
+        if received_at is not None:
+            from tools.ambient import format_receipt_time
+            receipt_line = f"[This message received at: {format_receipt_time(received_at)}]\n\n"
+
         # Pre-load Pattern Miner insights (the one context source not in the system prompt).
         coord_context = _load_coordinator_context(persona)
         coord_input = (
-            f"{user_input}\n\n---\n\n[Pre-loaded context]\n{coord_context}"
-            if coord_context else user_input
+            f"{receipt_line}{user_input}\n\n---\n\n[Pre-loaded context]\n{coord_context}"
+            if coord_context else f"{receipt_line}{user_input}"
         )
 
         # Pass 1: Coordinator — single-pass routing directive assembly
@@ -2044,7 +2057,7 @@ def run_pipeline_session(user_input: str,
 
         # Pass 2: Synthesizer — integration and user-facing response
         synthesizer_input = (
-            f"ORIGINAL USER MESSAGE:\n{user_input}\n\n"
+            f"{receipt_line}ORIGINAL USER MESSAGE:\n{user_input}\n\n"
             f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"
             + (f"\n\nSPECIALIST OUTPUTS:\n{spec_text}" if spec_text else "")
         )
@@ -2079,6 +2092,7 @@ def run_pipeline_session_stream(
     provider: str | None = None,
     history: list[dict] | None = None,
     is_proactive: bool = False,
+    received_at: datetime | None = None,
 ) -> Iterator[str]:
     """
     Streaming variant of run_pipeline_session().
@@ -2091,7 +2105,7 @@ def run_pipeline_session_stream(
     with persona_scope(resolve_persona(persona)) as bound:
         yield from _run_pipeline_session_stream_inner(
             user_input, persona=bound, provider=provider, history=history,
-            is_proactive=is_proactive,
+            is_proactive=is_proactive, received_at=received_at,
         )
 
 
@@ -2101,6 +2115,7 @@ def _run_pipeline_session_stream_inner(
     provider: str | None = None,
     history: list[dict] | None = None,
     is_proactive: bool = False,
+    received_at: datetime | None = None,
 ) -> Iterator[str]:
     """
     Pass 1 (Coordinator): runs blocking, identical to run_pipeline_session().
@@ -2111,15 +2126,24 @@ def _run_pipeline_session_stream_inner(
       "[RETRACT]" — filter caught a confidential term; client should discard received text
 
     Persona is already bound by the caller — do not set it here.
+
+    received_at: see run_pipeline_session() docstring — actual message-arrival
+    timestamp, more precise than the ambient system clock once pipeline latency
+    (routing + specialist dispatch + synthesis, often tens of seconds) elapses.
     """
     _tr.start_request_trace(user_input, persona, is_proactive=is_proactive)
+
+    receipt_line = ""
+    if received_at is not None:
+        from tools.ambient import format_receipt_time
+        receipt_line = f"[This message received at: {format_receipt_time(received_at)}]\n\n"
 
     # Pass 1: Coordinator — single-pass routing directive assembly (blocking)
     _trace("[PIPELINE] coordinator  starting")
     coord_context = _load_coordinator_context(persona)
     coord_input = (
-        f"{user_input}\n\n---\n\n[Pre-loaded context]\n{coord_context}"
-        if coord_context else user_input
+        f"{receipt_line}{user_input}\n\n---\n\n[Pre-loaded context]\n{coord_context}"
+        if coord_context else f"{receipt_line}{user_input}"
     )
     coord_output = _run_single_agent("coordinator", coord_input, persona=persona, provider=provider)
     _trace(f"[PIPELINE] coordinator  done  ({len(coord_output)} chars) → dispatching specialists")
@@ -2134,7 +2158,7 @@ def _run_pipeline_session_stream_inner(
 
     # Build Synthesizer input
     synthesizer_input = (
-        f"ORIGINAL USER MESSAGE:\n{user_input}\n\n"
+        f"{receipt_line}ORIGINAL USER MESSAGE:\n{user_input}\n\n"
         f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"
         + (f"\n\nSPECIALIST OUTPUTS:\n{spec_text}" if spec_text else "")
     )

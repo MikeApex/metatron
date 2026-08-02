@@ -75,6 +75,26 @@ def _now_local() -> datetime:
     return datetime.now()
 
 
+def format_receipt_time(dt: datetime) -> str:
+    """
+    Format a UTC-aware timestamp (e.g. message receipt time, captured in
+    core/server.py) in the persona's local timezone, seconds precision.
+    Mirrors the date/time formatting in load_ambient_context() so the two
+    read the same to the agent.
+    """
+    tz_str = _get_timezone()
+    if tz_str:
+        try:
+            from zoneinfo import ZoneInfo
+            dt = dt.astimezone(ZoneInfo(tz_str))
+        except Exception:
+            pass
+    dt_label = dt.strftime("%A, %B %-d, %Y")
+    time_label = dt.strftime("%-I:%M:%S %p")
+    tz_label = f" ({tz_str})" if tz_str else ""
+    return f"{dt_label}, {time_label}{tz_label}"
+
+
 def _fetch_weather(city: str) -> dict | None:
     try:
         response = requests.get(f"https://wttr.in/{city}?format=j1", timeout=10)
@@ -209,11 +229,11 @@ def load_ambient_context() -> str:
     tz_str = _get_timezone()
 
     dt_label = now.strftime("%A, %B %-d, %Y")
-    time_label = now.strftime("%-I:%M %p")
+    time_label = now.strftime("%-I:%M:%S %p")
     tz_label = f" ({tz_str})" if tz_str else ""
     lines = [
         "## Current Context",
-        f"Date/time: {dt_label}, {time_label}{tz_label}",
+        f"System clock (authoritative — trust this over any time the user states in their message): {dt_label}, {time_label}{tz_label}",
     ]
 
     ambient_path = _ambient_path()

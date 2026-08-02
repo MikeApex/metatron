@@ -21,7 +21,7 @@ import tempfile
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -322,6 +322,7 @@ async def session_stream(req: SessionRequest):
     NOTE: The sync generator runs inline in this async handler — acceptable for
     single-user local deployment. For multi-user, wrap with run_in_executor().
     """
+    received_at = datetime.now(timezone.utc)
     if not req.input.strip():
         raise HTTPException(status_code=400, detail="Input is empty.")
     if req.agent != "coordinator":
@@ -342,7 +343,8 @@ async def session_stream(req: SessionRequest):
         def _produce() -> None:
             try:
                 for chunk in run_pipeline_session_stream(
-                    req.input, persona=persona, provider=req.provider, history=history
+                    req.input, persona=persona, provider=req.provider, history=history,
+                    received_at=received_at,
                 ):
                     asyncio.run_coroutine_threadsafe(queue.put(chunk), loop).result()
             except NotImplementedError:
@@ -423,6 +425,7 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
     try:
         while True:
             data = await websocket.receive_json()
+            received_at = datetime.now(timezone.utc)
             msg_type = data.get("type")
 
             if msg_type == "send":
@@ -457,6 +460,7 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                         for chunk in run_pipeline_session_stream(
                             user_input, persona=persona_orch, provider=provider,
                             history=history, is_proactive=proactive,
+                            received_at=received_at,
                         ):
                             asyncio.run_coroutine_threadsafe(queue.put(chunk), loop).result()
                     except NotImplementedError:
