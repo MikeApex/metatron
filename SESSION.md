@@ -1,5 +1,5 @@
 # Session Primer — Personal AI Life Manager
-*Updated: 2026-08-02 (spend guard + runaway rate limiter live; GCP account verified clean and `default` VPC unfrozen; conversation scroll root-caused; Synthesizer recap fix now deployed). Update this file at the close of every chat so the next chat — or any parallel chat window — starts from current state.*
+*Updated: 2026-08-02 (SEQ 021: specialist clock injection, self-correcting tool errors, failure reporting — **written and validated but UNCOMMITTED/UNDEPLOYED, held behind a parallel chat's work in the same file**; agent capability gap survey written; `/metatron-troubleshoot` rewritten. Earlier: spend guard + runaway rate limiter live; GCP account verified clean and `default` VPC unfrozen; conversation scroll root-caused; Synthesizer recap fix deployed). Update this file at the close of every chat so the next chat — or any parallel chat window — starts from current state.*
 
 ---
 
@@ -62,6 +62,65 @@ If you need to find a specific file, tool, or planning document: **[CODEBASE_IND
 - **B1** Red team — **on hold** (independent of Alpha Gate, but deprioritised — resumes after latency work)
 - **Check 10** Agent behavioral audits — **on hold**
 - **Check 12** Constitution alignment review — **on hold**
+
+### Also done 2026-08-02 (Synth self-development awareness + `DEV_BACKLOG.md` — the single change-request list)
+
+Full writeup: [archive/sessions/2026-08-02 — Synth Self-Development Awareness and Dev Backlog.md](archive/sessions/2026-08-02%20—%20Synth%20Self-Development%20Awareness%20and%20Dev%20Backlog.md)
+
+**Problem:** Mike is both user and builder, but when he asked for a change mid-conversation it evaporated — no frame for what kind of change it was, and nowhere durable for it to land.
+
+**Now:** the Synthesizer triages a change request into three routes and says which plainly — *handle now* / *needs a change outside this conversation* / *needs building* — then records it. Requests land in **[DEV_BACKLOG.md](DEV_BACKLOG.md)** at the project root, git-tracked and visible in the file tree: `## Inbox` is machine-written, everything below hand-curated.
+
+- **`config/personas/mike/self_development.md`** (new, gitignored, `0600`) — the triage instruction, ~700 tokens. Loaded by `load_config()` only when present, so **no other persona's behaviour changes**.
+- **`_persist_dev_request()`** in `core/orchestrator.py` — reads a `dev_request` key off the `[CONTEXT]` block the Synthesizer already emits and calls `write_quality_event()` directly. **Zero extra turns:** a tool call would have cost a second Pro turn (~13.4K input, +$0.017, +3–8s) — exactly the overhead SEQ 031 removed.
+- **`scripts/sync_dev_backlog.py`** — stdlib-only, pulls the VM's quality events through the existing `/monitor/file` endpoint over Tailscale, filters to the three request types, dedups on timestamp. 3s timeout, **exits 0 silently when the VM is paused**. Wired into `/metatron-code`.
+- **`config/agents/synthesizer.md`** — one pointer line. Freeze lifted on explicit instruction, same exception as SEQ 002/008.
+
+**Cost:** under $0.50/month, no measurable latency change on a normal exchange.
+
+**Plan assumption proved stale, in our favour:** the plan budgeted extracting the `[CONTEXT]` parser into a shared helper. `split_context_block()` / `persist_context_block()` already exist and are already called from **both** pipeline paths — so **SESSION.md backlog item 4 below is stale** and the change collapsed to ~35 lines.
+
+**Two failures found by live testing, both fixed:**
+1. **Route 3 recorded nothing.** The instruction said to name the gap *"as you already do for capability gaps"*, which pointed the Synthesizer at the pre-existing `TOOL_NOT_BUILT` open-thread and it skipped `dev_request` entirely — perfect-looking response, empty backlog. Fixed by making the requirement unconditional.
+2. **Confidentiality beat self-development.** Asked *"will those changes stick?"*, it emitted the canned *"I'm here to help you manage your life"* — self-generated, not the output filter. A legitimate question about the user's own request got stonewalled. Fixed by carving the boundary explicitly: whether a change stuck is about *his request*, not how the tool is built.
+
+All four probes pass against `sarah_chen` on the real Vertex pipeline. Test artifacts removed afterwards to keep her a clean subject.
+
+**SessionStart hook proposed and declined** — `/metatron-code` carries the sync instead, so the backlog refreshes on command rather than automatically.
+
+**Two new backlog entries found in passing:** the `write_config`/`scheduler.yaml` discrepancy (`synthesizer.md:355` promises a capability `tools/config_writer.py:16` forbids — corroborated live by a Logistics tool failure in a tracker held-item), and **silent `[CONTEXT]` data loss** when the model emits malformed JSON (`split_context_block` logs and returns `None`, losing both the tracker write and the `dev_request`).
+
+### Also done 2026-08-02 (SEQ 021 — specialist clock, tool-error hints, failure reporting; capability gap survey) ⚠ **UNCOMMITTED / UNDEPLOYED**
+
+Full writeup: [archive/sessions/2026-08-02 — SEQ 021 Logistics Turn Burn, Clock Injection, Tool Error Hints.md](archive/sessions/2026-08-02%20—%20SEQ%20021%20Logistics%20Turn%20Burn,%20Clock%20Injection,%20Tool%20Error%20Hints.md)
+
+**Bug:** user asked for a recurring monthly credit-card reminder (`mike`, SEQ 021). Routing was correct — Coordinator 1 turn. **Logistics burned 6 turns, 4 wasted**, saved nothing, and the Synthesizer told the user *"The reminder for the 15th is set."* It was not.
+
+**Three root causes, all confirmed from the trace:**
+1. Logistics guessed `write_agent_config`'s parameters three times (`content`, `recurring_obligations`, `data`) and never tried the real `key`/`value`. `dispatch_tool()` returned the bare Python `TypeError`, which says the guess was wrong but not what is right.
+2. The three failures never reached the Synthesizer, so it confirmed a save that never happened.
+3. **Specialists receive no system clock** — Coordinator/Synthesizer get `recent_context`; specialists get `agent_file` + `goals` only. Logistics invented `log_date: 2025-05-22`, filing the note 14 months in the past.
+
+**Four fixes written and validated locally against `sarah_chen` (full pipeline, real Vertex):**
+1. `tools/ambient.py → current_clock_line()` + `core/orchestrator.py → clock_line()`, injected into the specialist branch of `_run_single_agent()` **via the user message** so the cacheable system prefix stays stable.
+2. `dispatch_tool()` binds with `inspect.signature().bind()` before calling and returns `Correct usage: write_agent_config(required: agent_name, key, value)`. **Measured:** the same request that previously failed 3× and gave up now self-corrects on attempt 2 and saves.
+3. `_failed_tool_calls()` appends `[TOOL FAILURES — these actions did NOT complete]` to specialist output. Excludes head/routing layer, and excludes any tool that later succeeded on retry (or a recovered error would produce a false "it didn't save").
+4. Hallucinated `data/personas/mike/logs/2025-05-22.json` moved to `data/diagnostics/bogus_logs/` **on the VM**. No real data lost.
+
+**⚠ HELD AT USER INSTRUCTION — not committed, not deployed.** `core/orchestrator.py` also carries a **parallel chat's** uncommitted work (Dev Backlog / Synth self-development: `_persist_dev_request`, `_DEV_REQUEST_TYPES`, `self_development.md` loader) plus a modified `config/agents/synthesizer.md`, `DEV_BACKLOG.md`, `scripts/sync_dev_backlog.py`. Both sessions' edits sit in the same file. Close the parallel chat first, then commit and deploy in one pass. **Everything is Mac-local until `./deploy.sh` runs.**
+
+**Deliverable — [archive/plans/agent_capability_gap_2026-08-02.md](archive/plans/agent_capability_gap_2026-08-02.md).** Written instead of reconciling `logistics.md` downward, at user's direction, since a calendar is arriving shortly. Headlines:
+- **Finding 0 (security):** the per-agent tool whitelist filters `tool_schemas` but **not** `tool_handlers`, and `dispatch_tool()` does no whitelist check — **any agent can invoke any of the 43 tools.** Proven live: `logistics` is not granted `write_agent_config` yet called it three times in production and the dispatcher executed each. **Implication: every "told-but-not-offered" capability currently works by accident, so closing this (Track B / B2 PoLP) without first fixing the allowlists breaks them all at once. Fix the lists, then enforce.**
+- **Finding 1:** all 13 agents name at least one tool they are not advertised (`logistics` 8, `finance` 7, `recreation_hobbies` 7). `run_subagent` appears in nine specialist files despite a hard recursion guard — dead instructions.
+- **Finding 2:** `physical_health.md` names `get_environmental_snapshot`, which does not exist.
+- **Finding 3 (behind the original complaint): nothing in the system can actually set a reminder.** CalDAV `enabled: false` with empty password; `scheduler.yaml` jobs are static with no tool to add one; `write_config` allowlisted to `mission.md`/`prime_directive.md`. A reminder can be *recorded* but never *delivered*. Build order: enable CalDAV → grant Logistics its config tools → `write_schedule`/`list_schedules`/`delete_schedule` → store delivery preference.
+- **Finding 4:** `WRITE_AGENT_CONFIG_SCHEMA` still documents the pre-persona path `data/config/{agent_name}.json`.
+
+Four agent-file edits **proposed, not applied** — `config/agents/*.md` frozen post-review.
+
+**`/metatron-troubleshoot` rewritten and verified** (`.claude/commands/`, gitignored — Mac-local, no commit/deploy). Fixed six defects after the third consecutive session where its stale paths broke the first data pull: persona-scoped conversation path; persona parameterised (was hardcoded `mike`, nine personas exist); `--tunnel-through-iap`; argument substitution (a real invocation produced `DATE = 2`, `SEQ = $2`); zero-padded SEQ matching with available-values listing on a miss; native ±2-min trace window replacing the exact-minute match. **Added `context_sections` output** — the decisive evidence in this diagnosis, previously needing a separate hand-written query. Tested against live data plus all three error paths. **Note: `.claude/` is gitignored entirely, so this file has no backup and reaches neither the VM nor GitHub — the original was already lost once.**
+
+**Open from this session:** `[background] index log 2025-05-22 failed: Extra data: line 557 column 2 (char 82852)` fired twice against a 276-byte file — offset doesn't match, so the memory indexer is likely reading a different/concatenated source. Unexamined. Pre-2026 logs (`2025-01-24`, `2025-05-13`–`16`) remain in `data/personas/mike/logs/` — believed genuine early-dev data, worth confirming none are further hallucinations.
 
 ### Also done 2026-08-02 (Synthesizer timestamp-authority fix — SEQ 008 diagnosis, fix, deploy, verified)
 

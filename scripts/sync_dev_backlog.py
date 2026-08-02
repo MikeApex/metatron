@@ -1,0 +1,144 @@
+#!/usr/bin/env python3
+"""
+Pull user-reported change requests from the VM into DEV_BACKLOG.md.
+
+The Synthesizer records requests on the VM, into a gitignored data directory.
+Development sessions run on the Mac. This bridges that gap using the server's
+existing /monitor/file endpoint over Tailscale — no new server code, no SSH.
+
+Design constraints, both deliberate:
+
+  * Standard library only. This runs from a Claude Code SessionStart hook, which
+    gets no virtualenv.
+  * Fails silent, exits 0, always. The VM is routinely stopped for cost control
+    (scripts/metatron-pause.sh), so "unreachable" is a normal state, not an
+    error. A backlog sync must never block or noise up a development session.
+
+Only '## Inbox' is written. Everything below it is hand-curated and never touched.
+
+Usage:  python3 scripts/sync_dev_backlog.py [--persona mike] [--server URL]
+"""
+
+import argparse
+import json
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+DEFAULT_SERVER = "http://100.64.226.49:8001"
+DEFAULT_PERSONA = "mike"
+TIMEOUT_SECONDS = 3
+
+# The self-improvement stream carries ROUTING_MISS / USER_CORRECTION too; those
+# are for the Pattern Miner health pass, not for a human backlog. Filter here so
+# nothing extra has to be built on the writing side.
+WANTED = {"SELF_APPLIED", "INSTRUCTION_CHANGE_REQUEST", "FEATURE_REQUEST"}
+
+LABELS = {
+    "FEATURE_REQUEST": "needs building",
+    "INSTRUCTION_CHANGE_REQUEST": "instruction change",
+    "SELF_APPLIED": "already applied by the tool",
+}
+
+ROOT = Path(__file__).resolve().parent.parent
+BACKLOG = ROOT / "DEV_BACKLOG.md"
+# Anchored to line start with its own newlines: the intro prose mentions
+# "## Inbox" inline, and a bare substring match finds that first — which would
+# splice new entries into the middle of a paragraph.
+INBOX_HEADING = "\n## Inbox\n"
+DONE_HEADING = "\n## Done\n"
+INBOX_PLACEHOLDER = "*(nothing yet)*"
+
+
+def fetch_events(server: str, persona: str) -> list[dict]:
+    """Fetch and parse the persona's quality event log. Returns [] on any failure."""
+    path = f"data/personas/{persona}/logs/quality_events.json"
+    url = f"{server.rstrip('/')}/monitor/file?{urllib.parse.urlencode({'path': path})}"
+    try:
+        with urllib.request.urlopen(url, timeout=TIMEOUT_SECONDS) as resp:
+            payload = json.loads(resp.read().decode("utf-8", errors="replace"))
+    except (urllib.error.URLError, OSError, ValueError, json.JSONDecodeError):
+        return []
+
+    content = payload.get("content", "")
+    if not isinstance(content, str):
+        return []
+
+    # JSON Lines, but /monitor/file pretty-prints anything ending in .json. If it
+    # did, the whole body is one re-serialized blob rather than one object a line.
+    events = []
+    for line in content.splitlines():
+        line = line.strip().rstrip(",")
+        if not line.startswith("{"):
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict) and "event_type" in obj:
+            events.append(obj)
+
+    if not events:
+        try:
+            blob = json.loads(content)
+            events = blob if isinstance(blob, list) else [blob]
+        except json.JSONDecodeError:
+            pass
+
+    return [e for e in events if isinstance(e, dict) and e.get("event_type") in WANTED]
+
+
+def render(event: dict) -> str:
+    """One backlog bullet. Timestamp is last — it doubles as the dedup key."""
+    kind = event.get("event_type", "")
+    label = LABELS.get(kind, kind)
+    detail = " ".join(str(event.get("detail", "")).split()) or "(no detail recorded)"
+    return f"- **[{label}]** {detail}  \n  `{event.get('timestamp', '')}`"
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--persona", default=DEFAULT_PERSONA)
+    ap.add_argument("--server", default=DEFAULT_SERVER)
+    ap.add_argument("--quiet", action="store_true", help="print nothing when there is nothing new")
+    args = ap.parse_args()
+
+    if not BACKLOG.exists():
+        return 0
+
+    text = BACKLOG.read_text()
+    if INBOX_HEADING not in text:
+        return 0
+
+    events = fetch_events(args.server, args.persona)
+    # Dedup on the timestamp string appearing anywhere in the file, so an entry
+    # stays deduped after it is curated out of Inbox into an Open section.
+    new = [
+        e for e in events
+        if (ts := str(e.get("timestamp", ""))) and ts not in text
+    ]
+
+    if new:
+        head, _, tail = text.partition(INBOX_HEADING)
+        body = tail.replace(f"\n{INBOX_PLACEHOLDER}\n", "\n", 1)
+        block = "\n".join(render(e) for e in new)
+        text = f"{head}{INBOX_HEADING}\n{block}\n\n{body.lstrip(chr(10))}"
+        BACKLOG.write_text(text)
+
+    # Count only the live region — between Inbox and Done. Counting the whole
+    # file would sweep in the intro bullets and everything already finished.
+    live = text.partition(INBOX_HEADING)[2].partition(DONE_HEADING)[0]
+    open_count = sum(1 for line in live.splitlines() if line.startswith("- "))
+    if new or not args.quiet:
+        print(f"DEV_BACKLOG.md: {len(new)} new, {open_count} open")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except Exception:
+        # Never let a backlog sync break a session start.
+        sys.exit(0)

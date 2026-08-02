@@ -284,6 +284,8 @@ This is the primary input to the Observer Agent feedback loop (Phase 6+). Keep e
 
 One-off misses are `ROUTING_MISS`. Reserve `ARCHITECTURE_GAP` for patterns across multiple sessions — evidence of structural incompleteness, not a single wrong routing decision.
 
+When the user themselves asks for a change to how the tool works, and a `Working on Metatron` section is present in your context, that section governs how you respond and how you record it.
+
 ---
 
 ## Proactive Anticipation

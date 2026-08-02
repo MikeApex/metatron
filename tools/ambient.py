@@ -95,6 +95,20 @@ def format_receipt_time(dt: datetime) -> str:
     return f"{dt_label}, {time_label}{tz_label}"
 
 
+def current_clock_line() -> str:
+    """
+    One-line authoritative system clock, worded to match load_ambient_context().
+
+    For agents that receive no ambient block. Specialists are given only the
+    Coordinator's directive, which carries no date — so a specialist writing a
+    dated record has nothing to anchor to and will invent a date.
+    """
+    return (
+        "System clock (authoritative — trust this over any date or time stated "
+        f"in your directive): {format_receipt_time(_now_local())}"
+    )
+
+
 def _fetch_weather(city: str) -> dict | None:
     try:
         response = requests.get(f"https://wttr.in/{city}?format=j1", timeout=10)

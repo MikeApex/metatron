@@ -16,6 +16,7 @@ Usage:
 """
 
 import argparse
+import inspect
 import json
 import logging
 import os
@@ -238,6 +239,15 @@ def load_config(persona: str | None = None) -> str:
         if goals_content:
             sections.append(f"## Current Goals\n\n```yaml\n{goals_content}\n```")
 
+    # Optional, per-persona: how to handle a request to change the tool itself.
+    # Present only for personas whose user is also building Metatron — absent
+    # for everyone else, so no other persona's behaviour changes.
+    self_dev_path = config_dir / "self_development.md"
+    if self_dev_path.exists():
+        self_dev = self_dev_path.read_text().strip()
+        if self_dev:
+            sections.append(_titled("Working on Metatron", self_dev))
+
     profile = load_profile(persona=resolved)
     if profile:
         sections.append(profile)
@@ -350,6 +360,23 @@ def load_recent_context(persona: str | None = None, days: int = 5) -> str:
         sections.append("## Recent Logs (last 5 days)\n" + "\n".join(recent_entries))
 
     return "\n\n---\n\n".join(sections)
+
+
+def clock_line() -> str:
+    """
+    Authoritative system-clock line for agents that get no recent context.
+
+    Returns "" on failure — a missing clock degrades a specialist's dated writes,
+    but raising here would take down the whole exchange.
+    """
+    try:
+        from tools.ambient import current_clock_line
+        return current_clock_line()
+    except PersonaError:
+        raise
+    except Exception as e:
+        logger.warning(f"[context] clock line failed: {e}")
+        return ""
 
 
 # ---------------------------------------------------------------------------
@@ -700,6 +727,65 @@ def persist_context_block(ctx: dict | None) -> None:
     except Exception as exc:
         logger.warning(f"[context_block] write failed: {exc}")
 
+    _persist_dev_request(ctx.get("dev_request"))
+
+
+_DEV_REQUEST_TYPES = {"SELF_APPLIED", "INSTRUCTION_CHANGE_REQUEST", "FEATURE_REQUEST"}
+
+
+def _persist_dev_request(req: dict | None) -> None:
+    """
+    Record a user-reported change request from the inline [CONTEXT] block.
+
+    Mike is both the user and the builder, so requests to change the tool arrive
+    mid-conversation. They ride along in the block the Synthesizer already emits
+    rather than costing a second Pro turn on a tool call. Written to the same
+    quality_events stream the self-improvement protocol already uses; the
+    development-side reader filters on these event types.
+
+    Separate try block from the context-tracker write above: neither failure
+    should cost the other, and neither should ever affect the user's response.
+    """
+    if not isinstance(req, dict):
+        return
+    try:
+        req_type = str(req.get("type", "")).strip().upper()
+        detail = str(req.get("detail", "")).strip()
+        if req_type not in _DEV_REQUEST_TYPES or not detail:
+            logger.warning(f"[dev_request] discarded — type={req_type!r} detail={detail[:80]!r}")
+            return
+        from tools.logger import write_quality_event as _wqe
+        _wqe(
+            event_type=req_type,
+            source_agent="synthesizer",
+            detail=detail,
+            session_id=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+        )
+        _trace(f"[PIPELINE] dev_request  recorded  ({req_type})")
+    except PersonaError:
+        raise
+    except Exception as exc:
+        logger.warning(f"[dev_request] write failed: {exc}")
+
+
+def _signature_hint(fn) -> str:
+    """Render a tool's real parameter list, for correcting a mis-shaped call."""
+    try:
+        sig = inspect.signature(fn)
+    except (TypeError, ValueError):
+        return ""
+    required, optional = [], []
+    for p in sig.parameters.values():
+        if p.kind in (p.VAR_POSITIONAL, p.VAR_KEYWORD):
+            continue
+        (optional if p.default is not p.empty else required).append(p.name)
+    parts = []
+    if required:
+        parts.append("required: " + ", ".join(required))
+    if optional:
+        parts.append("optional: " + ", ".join(optional))
+    return f"{getattr(fn, '__name__', 'tool')}({'; '.join(parts)})" if parts else ""
+
 
 def dispatch_tool(name: str, inputs: dict, handlers: dict,
                   _agent_rec=None, _turn_num: int = 1) -> str:
@@ -708,12 +794,28 @@ def dispatch_tool(name: str, inputs: dict, handlers: dict,
         return f"Error: unknown tool '{name}'"
     _trace(f"  [TOOL] {name}")
     t0 = time.monotonic()
+    fn = handlers[name]
     try:
-        result = handlers[name](**inputs)
-        if isinstance(result, dict):
-            result = json.dumps(result, indent=2)
+        # Bind first, so a wrong-argument error can name the right arguments.
+        # A bare "got an unexpected keyword argument 'content'" tells the model its
+        # guess was wrong but nothing about what is correct, so it guesses again:
+        # on 2026-08-02 Logistics burned three of six turns cycling through invented
+        # parameter names for write_agent_config, then gave up without ever saving
+        # the user's reminder. Binding separately also keeps this hint off genuine
+        # TypeErrors raised from inside the tool body.
+        try:
+            inspect.signature(fn).bind(**inputs)
+        except TypeError as bind_err:
+            hint = _signature_hint(fn)
+            result = f"Error calling tool '{name}': {bind_err}."
+            if hint:
+                result += f" Correct usage: {hint}"
         else:
-            result = str(result)
+            result = fn(**inputs)
+            if isinstance(result, dict):
+                result = json.dumps(result, indent=2)
+            else:
+                result = str(result)
     except Exception as e:
         result = f"Error running tool '{name}': {e}"
     duration_ms = round((time.monotonic() - t0) * 1000, 1)
@@ -1851,14 +1953,20 @@ def _run_single_agent(agent_name: str, user_input: str,
         augmented_input = f"[Recent context]\n{recent}\n\n---\n\n{user_input}" if recent else user_input
         context_sections = {"agent_file": agent, "goals": goals, "recent_context": recent}
     else:
-        # Specialists: goals.yaml only. Context arrives via the Coordinator directive.
+        # Specialists: goals.yaml only. Context arrives via the Coordinator directive
+        # — except the date, which no directive carries. Specialists write dated
+        # records (write_log, calendar events, recurring obligations), so without a
+        # clock they invent one: on 2026-08-02 Logistics filed a credit-card reminder
+        # into a log dated 2025-05-22, fourteen months in the past. One line, and it
+        # goes in the user message so the cacheable system prefix stays stable.
         goals = load_goals(persona=persona)
         system_prompt = (
             f"## Your Role for This Session\n\n{agent}\n\n---\n\n{goals}"
             if goals else f"## Your Role for This Session\n\n{agent}"
         )
-        augmented_input = user_input
-        context_sections = {"agent_file": agent, "goals": goals}
+        clock = clock_line()
+        augmented_input = f"{clock}\n\n---\n\n{user_input}" if clock else user_input
+        context_sections = {"agent_file": agent, "goals": goals, "clock": clock}
 
     tool_schemas, tool_handlers = register_tools()
 
@@ -1895,7 +2003,50 @@ def _run_single_agent(agent_name: str, user_input: str,
             )
     finally:
         _tr.pop_agent(_agent_rec)
+
+    # A specialist whose writes fail still returns a confident prose summary, and
+    # the Synthesizer sees only that summary — so it reports success. On 2026-08-02
+    # Logistics failed three save attempts and the user was told "The reminder for
+    # the 15th is set." Nothing had been saved. Append the failures so the
+    # Synthesizer can tell the user what did not happen.
+    #
+    # Head and routing layer excluded: the Synthesizer's own output goes straight
+    # to the user, and the Coordinator's is parsed for SPECIALISTS_TO_CALL.
+    if agent_name not in (_HEAD_LAYER_AGENTS | _ROUTING_LAYER_AGENTS):
+        failures = _failed_tool_calls(_agent_rec)
+        if failures:
+            result = (f"{result}\n\n[TOOL FAILURES — these actions did NOT complete. "
+                      f"Do not tell the user they succeeded.]\n" + "\n".join(failures))
     return result
+
+
+def _failed_tool_calls(rec) -> list[str]:
+    """
+    Tool calls that failed and were never afterwards made to work, for reporting
+    upward to the Synthesizer.
+
+    A tool that failed and then succeeded on a retry is deliberately omitted: the
+    action did happen, and reporting it would have the Synthesizer tell the user a
+    save failed when it landed. Only a tool with no successful call anywhere in the
+    session counts as a real failure.
+
+    Any result beginning "Error" counts — that covers a bad call signature, a raised
+    exception, and a permission denial such as a write to a non-allowlisted file.
+    """
+    if rec is None:
+        return []
+
+    failures: dict[str, str] = {}
+    succeeded: set[str] = set()
+    for turn in rec.turns:
+        for tc in turn.tool_calls:
+            preview = str(tc.result_preview)
+            if preview.startswith("Error"):
+                failures.setdefault(tc.name, preview[:300])
+            else:
+                succeeded.add(tc.name)
+
+    return [f"- {name}: {msg}" for name, msg in failures.items() if name not in succeeded]
 
 
 def _dispatch_from_coordinator(
