@@ -1,5 +1,5 @@
 # Session Primer — Personal AI Life Manager
-*Updated: 2026-07-31 (26-hour outage recovered — VM REBUILT ON NEW VPC `metatron-net`; `networks/default` still frozen; cost control now two-tier $70 soft / $150 hard). Update this file at the close of every chat so the next chat — or any parallel chat window — starts from current state.*
+*Updated: 2026-08-02 (Synthesizer recap fix — SEQ 002 diagnosed and fixed locally, validated against a non-Mike persona, NOT yet deployed — see below). Update this file at the close of every chat so the next chat — or any parallel chat window — starts from current state.*
 
 ---
 
@@ -62,6 +62,31 @@ If you need to find a specific file, tool, or planning document: **[CODEBASE_IND
 - **B1** Red team — **on hold** (independent of Alpha Gate, but deprioritised — resumes after latency work)
 - **Check 10** Agent behavioral audits — **on hold**
 - **Check 12** Constitution alignment review — **on hold**
+
+### Also done 2026-08-02 (Synthesizer timestamp-authority fix — SEQ 008 diagnosis, fix, deploy, verified)
+
+Full writeup: [archive/sessions/2026-08-02 — SEQ 008 Timestamp Fix, Deploy, Pepys Test.md](archive/sessions/2026-08-02%20—%20SEQ%20008%20Timestamp%20Fix%2C%20Deploy%2C%20Pepys%20Test.md) · Commit `b184d92`, deployed.
+
+**Bug:** Synthesizer echoed a user-claimed timestamp instead of checking the actual system clock (2026-08-01, SEQ 008, `mike` persona — "953" boundary test). Diagnosed via `/metatron-troubleshoot`.
+
+**Fix (three parts, all landed):**
+1. `tools/ambient.py` — ambient date/time now second-precision, labeled "authoritative" in context.
+2. `config/agents/coordinator.md` + `synthesizer.md` — explicit instruction to trust the system clock over user-claimed times. **These files are frozen post-review** — edited on explicit user instruction ("fix this now") for this specific bug, not a general exception to the freeze.
+3. `core/server.py` + `core/orchestrator.py` — WebSocket/SSE handlers now stamp the actual message-receipt time and thread it into both Coordinator and Synthesizer input (`run_pipeline_session_stream` → `_run_pipeline_session_stream_inner`). This mattered most: pipeline latency (this trace ~30s end-to-end) means "current time" at generation-time is already stale relative to actual arrival. Non-streaming `run_session()` (scheduler/CLI/proactive) intentionally untouched.
+
+**Verified against `pepys` (non-Mike persona)** post-deploy: replayed the original bug pattern via `/session/stream` — user falsely claimed "3:00pm exactly," Synthesizer correctly responded "I received that message at exactly 9:24:41 AM" instead of echoing the claim.
+
+**Known stale artifact, not yet fixed:** `/metatron-troubleshoot` command template still points at pre-persona-scoping paths (bare `data/conversations/`, `data/personas/mike/traces/` hardcoded to mike) — corrected inline this session but not on disk. Low priority, flag for a future pass.
+
+### Also done 2026-08-02 (Synthesizer recap fix — SEQ 002 diagnosis, fix, local validation — NOT yet deployed)
+
+Full writeup: [archive/sessions/2026-08-02 — SEQ 002 Single Exchange Troubleshoot.md](archive/sessions/2026-08-02%20—%20SEQ%20002%20Single%20Exchange%20Troubleshoot.md)
+
+**Bug:** Synthesizer opened a response by restating specific facts the user had just given (dinosaurs, hedge maze, Sainsbury's meal deal — `mike` persona, SEQ 002) instead of acknowledging their meaning. No pipeline failure — correct routing, no filter hits — pure content-quality gap. Diagnosed via `/metatron-troubleshoot` (same stale-path issue as SEQ 008 above: had to fall back to `data/personas/mike/conversations/` and `--tunnel-through-iap` for SSH).
+
+**Fix:** One sentence added to `config/agents/synthesizer.md` under "Direction and prioritization": *"Acknowledge, don't recap. Do not restate specific facts the user just gave you... as a summary opener... They already know what they told you; repeating it adds no value and reads as filler."* Frozen post-review file — **freeze lifted on explicit user instruction** for this fix, not a general exception. A longer first draft was cut per user direction — keep agent instruction files token-light.
+
+**Validated locally, not yet deployed:** 3 iterations against `sarah_chen` (non-Mike dev persona) via `python3 core/orchestrator.py --persona sarah_chen --input "..."` (local Mac, `DEPLOYMENT_MODE=cloud` → real Vertex/Gemini pipeline). All 3 messages carried specific facts (museum/planetarium/pizza; skipped breakfast/coffee/sandwich/dentist; river run/stir fry) — no readback in any response. **`./deploy.sh` still needed** to push this to metatron-vm before it affects the live Mike sessions.
 
 ### Also done 2026-07-31 (⚠ 26-HOUR OUTAGE — VPC frozen by billing disable; VM rebuilt on a new network; cost control restructured)
 

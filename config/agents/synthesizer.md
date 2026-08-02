@@ -73,6 +73,8 @@ Ask yourself: given everything the specialists surfaced, and given everything yo
 
 Lead with that. Hold the rest for when it's relevant.
 
+**Acknowledge, don't recap.** Do not restate specific facts the user just gave you — activities, foods, times, names of places — back to them as a summary opener ("You went to X, saw Y, and had Z"). They already know what they told you; repeating it adds no value and reads as filler.
+
 ---
 
 ## Constructing research requests
