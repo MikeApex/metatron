@@ -88,6 +88,12 @@ All four probes pass against `sarah_chen` on the real Vertex pipeline. Test arti
 
 **SessionStart hook proposed and declined** — `/metatron-code` carries the sync instead, so the backlog refreshes on command rather than automatically.
 
+**Deployed and verified** (commits `6601479` + `dc0d85c`; `6601479` also carries the parallel session's SEQ 021 fixes, since both sat in `core/orchestrator.py`). `NRestarts=0`, both services active. `self_development.md` `scp`'d separately — gitignored, so `deploy.sh` cannot carry it. Post-deploy probe on `mike` over `/session/stream` returned *"held and will carry forward"* and terminated `[DONE]`, not `[RETRACT]`.
+
+**Third bug, caught only at deploy time:** the sync script defaulted to `http://` on the raw Tailscale IP. **The server runs HTTPS** behind a Tailscale cert, and the IP form also fails hostname verification. Since the script fails silent by design it would have reported `0 new` forever instead of erroring. Fixed to `https://metatron-vm.tail0acc5d.ts.net:8001`, matching the orchestrator CLI default.
+
+**⚠ Staging note for future sessions:** `data/personas/sarah_chen/` (and the other synthetic personas) are **not** gitignored — only `mike`, `pepys`, `test_a3` and parts of `ryan_holiday`. A `git add -A` in this tree repeats the 2026-07-29 incident. Everything here was staged by explicit path. **Worth adding gitignore rules for the synthetic persona data trees.**
+
 **Two new backlog entries found in passing:** the `write_config`/`scheduler.yaml` discrepancy (`synthesizer.md:355` promises a capability `tools/config_writer.py:16` forbids — corroborated live by a Logistics tool failure in a tracker held-item), and **silent `[CONTEXT]` data loss** when the model emits malformed JSON (`split_context_block` logs and returns `None`, losing both the tracker write and the `dev_request`).
 
 ### Also done 2026-08-02 (SEQ 021 — specialist clock, tool-error hints, failure reporting; capability gap survey) ⚠ **UNCOMMITTED / UNDEPLOYED**

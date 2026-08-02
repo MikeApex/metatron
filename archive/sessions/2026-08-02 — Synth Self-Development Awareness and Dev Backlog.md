@@ -77,6 +77,16 @@ The `[CONTEXT]` parser lives only in the streaming path (SESSION.md backlog item
 
 2. **Confidentiality beat self-development.** Asked *"will those changes stick, or will you have forgotten by tomorrow? How does that work?"*, Synth emitted the canned *"I'm here to help you manage your life"* refusal — self-generated from its Confidentiality section, not the output filter (the filter replaces the entire response; here real content followed). A legitimate question about the user's own request got stonewalled. Fixed by carving out the boundary explicitly: whether a change stuck is about *his request*, not about how the tool is built, and deflecting there reads as evasion.
 
+### Deployed and verified on `mike`
+
+Committed `6601479` (both this work and the parallel session's SEQ 021 fixes, since both sat in `core/orchestrator.py`) and `dc0d85c`. `./deploy.sh` clean, `NRestarts=0`, both services active. `self_development.md` copied separately by `gcloud compute scp` — it is gitignored, so the deploy could not carry it — and `chmod 600` on the VM.
+
+Post-deploy probe over `/session/stream`, the path clients actually use: *"When I ask you to change how you talk to me, does that actually stick?"* → *"Yes. Your instructions … are held and will carry forward."* Terminated `[DONE]`, not `[RETRACT]` — the output filter passed.
+
+**Third bug, found only at deploy time:** the sync script defaulted to `http://100.64.226.49:8001`. The server runs **HTTPS** behind a Tailscale-issued cert (`Uvicorn running on https://0.0.0.0:8001`), and the raw IP also fails hostname verification. Because the script fails silent by design, it would have reported `0 new` indefinitely rather than erroring — the failure mode that hides itself. Fixed to the Tailscale hostname, matching the orchestrator CLI's own `--server` default, and confirmed against real VM data.
+
+**Staging discipline:** `data/personas/sarah_chen/` is **not** gitignored (only `mike`, `pepys`, `test_a3` and parts of `ryan_holiday` are). `git add -A` here would have swept test journals and logs into the commit — the exact 2026-07-29 incident. Every file was staged explicitly; all persona data left untracked. Worth adding a gitignore rule for the synthetic personas.
+
 **Corroboration found in passing:** a held item in `sarah_chen`'s tracker read *"Logistics tool failure: system attempted to schedule a recurring reminder but failed"* — the `write_config` / `scheduler.yaml` bug firing live, independently of the code read that found it.
 
 ---
