@@ -13,7 +13,12 @@
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       background: #0d0d0d;
       color: #e8e8e8;
-      min-height: 100dvh;
+      /* height, not min-height. With min-height the body grows past the
+         viewport, so #conversation (flex:1) expands to fit its content and
+         never becomes a scroll container — the page scrolls instead. That made
+         overflow-y, margin-top:auto and scrollTop on #conversation all no-ops. */
+      height: 100dvh;
+      overflow: hidden;
       display: flex;
       flex-direction: column;
     }
@@ -29,6 +34,9 @@
 
     #conversation {
       flex: 1;
+      /* A flex item will not shrink below its content size without this, so
+         overflow-y would still never engage. */
+      min-height: 0;
       overflow-y: auto;
       padding: 20px;
       display: flex;
