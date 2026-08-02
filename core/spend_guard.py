@@ -82,9 +82,34 @@ def _write_state(state: dict) -> None:
         logger.warning(f"[spend_guard] could not persist state: {exc}")
 
 
+def _normalise_model(model: str) -> str:
+    """
+    Strip the 'models/' prefix that AI Studio uses and Vertex does not.
+
+    Traces record the prefixed form, so an unprefixed pricing table missed every
+    lookup and silently fell through to the default rate — pricing all the cheap
+    Flash-Lite traffic as if it were Pro, and overstating spend by roughly 8x.
+    """
+    name = (model or "").strip()
+    if name.startswith("models/"):
+        name = name[len("models/"):]
+    return name
+
+
 def _rate_for(model: str) -> tuple[float, float]:
     pricing = _load_config().get("pricing", {}) or {}
-    entry = pricing.get(model) or pricing.get("default") or {}
+    name = _normalise_model(model)
+    entry = pricing.get(name)
+    if entry is None:
+        # Prefix match, so a dated or -preview suffix still resolves.
+        for key, val in pricing.items():
+            if key != "default" and name.startswith(key):
+                entry = val
+                break
+    if entry is None:
+        entry = pricing.get("default") or {}
+        if name:
+            logger.warning(f"[spend_guard] no rate for model {name!r} — using default")
     return float(entry.get("input", 0.0)), float(entry.get("output", 0.0))
 
 
