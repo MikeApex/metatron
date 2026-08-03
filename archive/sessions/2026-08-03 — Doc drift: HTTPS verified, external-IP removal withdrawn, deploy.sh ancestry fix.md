@@ -1,6 +1,18 @@
-# 2026-08-03 — Doc drift reconciliation: HTTPS verified live, ephemeral IP removed
+# 2026-08-03 — Doc drift: HTTPS verified, external-IP removal withdrawn, deploy.sh ancestry fix
 
-*4th window. Short session. Deployed `b83f283`.*
+*4th window. Deployed `b83f283`, `56a86f4`, `3492d42`, `c674a91`.*
+
+*Filename note: this log was first written as "…ephemeral IP removed", which
+became actively misleading once the removal was withdrawn — it reads as though
+the IP was deleted. Renamed. Fitting for a session about docs that mislead
+whoever acts on them.*
+
+**One thread, three findings.** It began as a check on someone else's
+correction, and each step turned up the same shape of defect one layer further
+out: a doc that is accurate about a fact and wrong about what to *do* with it,
+failing only when someone acts. The HTTPS note was right and already fixed. The
+external-IP note was right about the cost and wrong about the consequence. The
+deploy assertion was right about the SHA and wrong about the verdict.
 
 ---
 
@@ -117,6 +129,79 @@ live, not *who* deployed it") but not that it would trip the check.
 
 ---
 
+## The external-IP item — withdrawn (`3492d42`)
+
+Prompted by a question about what the item actually was and where $2.90 came
+from. Answering it properly showed the item was unsafe.
+
+**"Never used" was true for inbound and false for outbound.** Nothing connects
+*to* the address — no public ingress, all clients over Tailscale — but it is
+the VM's **sole egress path**. Both alternatives checked live, neither exists:
+
+| Check | Result |
+|---|---|
+| `gcloud compute routers list` | **0 items** — no Cloud NAT |
+| `metatron-subnet` `privateIpGoogleAccess` | **False** |
+
+Deleting the access config would have cut Vertex AI (the entire product), the
+Tailscale coordination bootstrap that makes the VM reachable at all, `git pull`
+on deploy, apt/pip, CalDAV, weather and RSS.
+
+**Pricing verified against the Cloud Billing Catalog API**, not memory. The
+published pricing pages are JS-rendered and return nothing to a fetch, so
+`cloudbilling.googleapis.com/v1/services/.../skus` was walked with pagination:
+
+| SKU | Rate |
+|---|---|
+| `External IP Charge on a Standard VM` | **$0.005/hour** |
+| `Networking Cloud NAT IP Usage` | **$0.005/hour** |
+
+**Cloud NAT is not a cheaper substitute — it consumes a public IP at the
+identical rate**, then adds gateway and per-GB data charges. That is a stronger
+result than the "roughly 10×" I first asserted from memory, and it holds on any
+usage assumption rather than a guessed volume.
+
+**Two corrections to figures previously stated:**
+1. $0.004/hr ≈ $2.92 was wrong (mine, from memory). Catalog rate is $0.005/hr ≈
+   **$3.65/mo**. The 2026-07-30 audit's $2.90 was low for the same reason.
+2. It accrues **only while the VM runs** — an ephemeral IP is released on stop,
+   so a `metatron-pause.sh` window costs nothing.
+
+**The real money is the $24.50 e2-medium line, which pausing already addresses.**
+
+Corrected in three places: DEV_BACKLOG (struck, reasoning kept), SESSION.md
+(withdrawn), CLAUDE.md (VM table + a note placed where someone would be tempted
+to delete it). Private Google Access is noted as the free first step *if* egress
+ever does need to move — it covers Vertex AI only, not GitHub or Tailscale.
+
+---
+
+## `deploy.sh` — ancestry, not equality (`c674a91`)
+
+Four outcomes, deliberately distinct:
+
+| Outcome | Meaning | Exit |
+|---|---|---|
+| `unverified` | HEAD unreadable | 1 |
+| `match` | VM HEAD is exactly the pushed commit | 0 |
+| `ahead` | pushed commit is an ancestor — **live**; extra commits named | 0 |
+| `failed` | pushed commit absent from history | 1 |
+
+`ahead` succeeds but is not silent — it prints what else is running, because
+"something I did not push is also live" is worth knowing before testing against
+it. Ancestry and the extra-commit log return in the **same** SSH call, so no
+additional round trip.
+
+Verified with `bash -n` and a local harness driving all four branches, rather
+than by reading the diff. The real deploy then took `match`.
+
+**Known limitation:** the `ahead` branch is still harness-only. Exercising it for
+real needs two windows pushing in sequence, which one window cannot stage. The
+logic is a single string comparison, so risk is low — but it has not run against
+a live VM, and this log should not imply otherwise.
+
+---
+
 ## Carried in
 
 The commit also carries pre-existing uncommitted work from an earlier window:
@@ -131,4 +216,11 @@ for this session's work.
 ## Not done
 
 - The smoke script for CLAUDE.md's executable claims — scoped in the backlog only.
-- Removing the unused external IP from the VM (~$2.90/mo saving) — still open.
+- `deploy.sh`'s `ahead` branch never exercised against a live VM (see above).
+
+## Not to be done
+
+- **Removing the external IP.** Withdrawn, not deferred. If it resurfaces in a
+  future session, the answer is in DEV_BACKLOG → housekeeping and in CLAUDE.md's
+  VM section; do not re-derive it from the $/mo figure alone, which is what made
+  it look attractive twice.
