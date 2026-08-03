@@ -17,7 +17,7 @@ A voice-first personal AI life manager. A director and companion for a human lif
 No code, config, or agent-file edit happens in a session until that session has actually read:
 
 1. **`SESSION.md`** — current phase, what's in progress, what's blocked or frozen.
-2. **The active roadmap it points to** (e.g. `archive/plans/phase5_to_future_roadmap_*.md`) — phase gates, freeze states, hard-fail criteria, scheduled refactors.
+2. **The active roadmap it points to** — currently [`ROADMAP.md`](ROADMAP.md), the abridged live copy: phase gates, freeze states, hard-fail criteria, scheduled refactors. If your work is in an area `ROADMAP.md` states it does not carry, read that area in the full static plan before editing.
 3. **Any file-ownership rules in effect** (e.g. `archive/plans/parallel_chats_index_*.md`) — which files are frozen, which track owns them, what "propose, don't edit" applies to.
 4. **The current state of the specific file(s) about to be touched** — not a memory of what they contained earlier in this conversation or a prior one.
 
@@ -40,7 +40,7 @@ jobs and no rule about ownership — `SESSION.md` had reached 775 lines, 80% of 
 |---|---|---|---|
 | `CLAUDE.md` | how to work here: rules, conventions, architecture | edited | auto, every session |
 | `SESSION.md` | **current state only** | **replaced** | `/metatron-code` |
-| `DEV_BACKLOG.md` | outstanding work, one entry per item | appended to `## Inbox`, curated below | `/metatron-code` |
+| `DEV_BACKLOG.md` | outstanding work, one entry per item | appended to `## Inbox`, curated below | **on demand** — synced every session, read only when working the backlog |
 | [`ROADMAP.md`](ROADMAP.md) | **live** tracks, phase gates, freezes — abridged | edited | `/metatron-code` |
 | `archive/plans/phase5_to_future_roadmap_2026-06-10.md` | the full plan — completed tracks, Phase 6B/7 detail | **never edited — it is dated and static** | never — read when `ROADMAP.md` says it does not carry your area |
 | `CODEBASE_INDEX.md` | where things are | edited | on demand |

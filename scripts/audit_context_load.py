@@ -34,12 +34,12 @@ from pathlib import Path
 EXPECTED = {                      # /metatron-code should read these
     "SESSION.md":        "current state",
     "ROADMAP.md":        "abridged live roadmap",
-    "DEV_BACKLOG.md":    "outstanding work",
 }
 CONDITIONAL = {
     "CODEBASE_INDEX.md": "only when locating a file/tool/plan",
 }
 DO_NOT_READ_BY_DEFAULT = {        # deliberately outside the default load
+    "DEV_BACKLOG.md":          "only when working the backlog (removed from autoload 2026-08-03)",
     "archive/PROJECT_LOG.md":  "dated history — consult deliberately",
     "docs/INFRASTRUCTURE.md":  "deploy/recovery — consult when deploying",
 }

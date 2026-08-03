@@ -10,14 +10,15 @@ First, refresh the development backlog from the VM:
 python3 scripts/sync_dev_backlog.py
 ```
 
-This pulls any change requests the user raised in conversation into `DEV_BACKLOG.md`. It exits 0 silently when the VM is stopped — that is expected, not a failure, so do not investigate or report it. If it reports new entries, mention the count in one line.
+This pulls any change requests the user raised in conversation into `DEV_BACKLOG.md` — it **writes to disk and costs no context**, which is why it runs even though the file is not read below. It exits 0 silently when the VM is stopped — expected, not a failure, so do not investigate or report it. If it reports new entries, mention the count in one line.
+
+*(A `SessionStart` hook normally runs this already. It is repeated here deliberately: the run is ~1s and idempotent, and the equivalent hook was removed once before, on 2026-07-29. Cheap insurance against a silent gap.)*
 
 Then read, in full, in this order:
 
 1. `SESSION.md` — current state.
 2. The active roadmap — find its path from SESSION.md's "Read these before doing anything" section (currently `ROADMAP.md`, the abridged live copy, but confirm from SESSION.md itself since it may have changed). **Read only that file.** The full plan it points to is static reference — open it only when the task is in an area `ROADMAP.md` states it does not carry (Tracks C, E, F, or completed Track A detail).
-3. `DEV_BACKLOG.md` — the single list of outstanding changes, including anything just synced into `## Inbox`.
-4. `CODEBASE_INDEX.md` — file/dir index, only if the task ahead needs it (locating a specific file/tool/plan).
+3. `CODEBASE_INDEX.md` — file/dir index, only if the task ahead needs it (locating a specific file/tool/plan).
 
 Do not summarize the files back to the user — just read them so you're grounded in current state, then continue with whatever the user asks next in this session.
 
@@ -31,8 +32,12 @@ below actually applies — not routinely, and not "to be thorough."
 
 | File | Read it when |
 |---|---|
+| `DEV_BACKLOG.md` | The user is **working the backlog** — picking up an item, triaging the Inbox, or asking what is outstanding. It is kept current by the sync above whether or not it is read. **Not for ordinary coding**, where the task comes from the user, not from the list. |
 | `archive/PROJECT_LOG.md` | You need to know **why** something was built as it is, whether an approach was already tried, or which of two conflicting docs drifted. Dated history, reasoning, corrections. |
 | `docs/INFRASTRUCTURE.md` | You are deploying, recovering from a billing/VPC incident, rebuilding the VM or the project, building the Android APK, or setting up local Ollama dev. |
+
+Reading one of these on the right trigger is correct and expected. Reading one "to be
+thorough" is the habit this split exists to break.
 
 `CLAUDE.md` is auto-loaded by Claude Code — do not read it again here.
 
