@@ -62,6 +62,17 @@ data/personas/ryan_holiday/logs/
 data/personas/ryan_holiday/insights/
 data/personas/Ryan\ Holiday/
 
+# sarah_chen is the validation-probe persona — every run writes into this tree.
+# Its three seed logs (2025-05-05/12/19) are already tracked and stay tracked;
+# a genuinely new fixture here needs `git add -f`.
+data/personas/sarah_chen/
+
+# Never fixtures, for any persona — written by the running system
+data/personas/*/traces/
+data/personas/*/config/
+data/personas/*/schedules.yaml
+data/personas/*/logs/quality_events.json
+
 # Real user persona config — sensitive
 config/personas/mike.md
 config/personas/mike/
@@ -77,6 +88,9 @@ archive/transcripts/
 config/personas/*/profile.yaml
 config/personas/*/scheduler.yaml
 config/personas/*/caldav.yaml
+# write_config keeps the previous version of prime_directive.md / mission.md
+# before overwriting. Tier 1-2 content — sensitive, never committable.
+config/personas/*/*.bak
 
 # Pre-reset data archives — user data, never committed
 data/_pre_reset_*/

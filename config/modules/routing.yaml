@@ -41,7 +41,7 @@ agents:
 
   synthesizer:
     local: true
-    allowed_tools: [run_subagent, run_model_conference, write_persona, write_profile, read_profile, write_config, write_wishes, read_wishes, generate_emergency_card, write_quality_event, write_schedule, list_schedules, delete_schedule]
+    allowed_tools: [run_subagent, run_model_conference, write_persona, write_profile, read_profile, write_config, write_wishes, read_wishes, generate_emergency_card, write_quality_event, write_schedule, list_schedules, delete_schedule, update_goal]
 
   # ── Data and analysis (local: reads/writes personal logs) ───────────────────
 
@@ -58,7 +58,7 @@ agents:
 
   goals_interviewer:
     local: true
-    allowed_tools: [read_goals, write_goals, write_config, write_retrospective, create_semantic_anchor, write_aspirational_baseline]
+    allowed_tools: [read_goals, write_goals, write_config, write_retrospective, create_semantic_anchor, write_aspirational_baseline, update_goal]
 
   # ── Personal specialists (local: sensitive — named individuals, health, finance) ─
 

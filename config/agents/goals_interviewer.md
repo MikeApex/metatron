@@ -229,7 +229,8 @@ Full output schema (goals.yaml entry, mission.md, prime_directive.md templates):
 
 Use only the tools listed here. Ignore all other tools available in this session — they belong to other agents.
 
-- `write_goals` — write goals to the user's goals file
+- `write_goals` — write a complete goal set. Each horizon you pass **replaces** what is there, so a goal you leave out is deleted. Right for authoring the full set at the end of an interview; wrong for a single change.
+- `update_goal(action, ...)` — add, update, complete or remove one goal, leaving everything else untouched. Use this in a re-interview where most of the set stands and only a few goals move.
 - `write_config` — write `prime_directive.md` or `mission.md` to the user's config directory
 - `read_goals` — read current goals (use at start if goals already exist)
 - `write_baseline_period` — write a remembered period of fulfillment (Phase 6)

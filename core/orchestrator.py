@@ -392,7 +392,10 @@ def register_tools() -> tuple[list[dict], dict]:
         handlers: Dict mapping tool name → Python function.
     """
     from tools.logger import write_log, read_log, WRITE_LOG_SCHEMA, READ_LOG_SCHEMA, write_quality_event, WRITE_QUALITY_EVENT_SCHEMA
-    from tools.goals import read_goals, write_goals, READ_GOALS_SCHEMA, WRITE_GOALS_SCHEMA
+    from tools.goals import (
+        read_goals, write_goals, update_goal,
+        READ_GOALS_SCHEMA, WRITE_GOALS_SCHEMA, UPDATE_GOAL_SCHEMA,
+    )
     from tools.config_writer import write_config, WRITE_CONFIG_SCHEMA
     from tools.diarist import (
         write_journal, read_journal, WRITE_JOURNAL_SCHEMA, READ_JOURNAL_SCHEMA,
@@ -459,7 +462,7 @@ def register_tools() -> tuple[list[dict], dict]:
 
     schemas = [
         WRITE_LOG_SCHEMA, READ_LOG_SCHEMA,
-        READ_GOALS_SCHEMA, WRITE_GOALS_SCHEMA,
+        READ_GOALS_SCHEMA, WRITE_GOALS_SCHEMA, UPDATE_GOAL_SCHEMA,
         WRITE_CONFIG_SCHEMA,
         WRITE_JOURNAL_SCHEMA, READ_JOURNAL_SCHEMA,
         WRITE_ARCHIVE_SCHEMA, READ_ARCHIVE_SCHEMA,
@@ -491,6 +494,7 @@ def register_tools() -> tuple[list[dict], dict]:
         "read_log": read_log,
         "read_goals": read_goals,
         "write_goals": write_goals,
+        "update_goal": update_goal,
         "write_config": write_config,
         "write_journal": write_journal,
         "read_journal": read_journal,
@@ -608,7 +612,8 @@ _ALWAYS_CONFIDENTIAL = [
     "run_subagent", "run_model_conference", "write_log", "read_log",
     "write_journal", "read_journal", "write_archive", "read_archive",
     "write_wisdom", "read_wisdom", "search_memory", "write_config",
-    "read_goals", "write_goals", "get_log_window", "write_insight_report",
+    "read_goals", "write_goals", "update_goal", "write_schedule",
+    "list_schedules", "delete_schedule", "get_log_window", "write_insight_report",
     "read_recent_insights", "write_baseline_period", "read_baseline_periods",
     "write_retrospective", "get_baseline_context", "read_context_tracker",
     "write_context_tracker", "find_duplicate_wisdom", "merge_wisdom_entries",
