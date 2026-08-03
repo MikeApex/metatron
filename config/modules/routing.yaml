@@ -68,7 +68,9 @@ agents:
 
   physical_health:
     local: true
-    allowed_tools: [read_log, write_log, search_memory, read_wisdom, write_wisdom, read_profile, write_profile]
+    # read_agent_config granted 2026-08-04 — see routing_cloud.yaml for the rationale.
+    # Kept in parity so the flag behaves identically on local and cloud paths.
+    allowed_tools: [read_log, write_log, search_memory, read_wisdom, write_wisdom, read_profile, write_profile, read_agent_config]
 
   work_vocation:
     local: true

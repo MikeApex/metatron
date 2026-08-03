@@ -53,25 +53,39 @@ data/conversations/
 data/push_subscriptions.json
 data/voices/
 
-# Test persona runtime data (generated; not config)
+# ---------------------------------------------------------------------------
+# REAL USER personas — sensitive tier. Never committed, under any circumstances.
+#
+# `mike` is a real person's logs, journal, health, finances and memory. This is
+# not a "test persona" and never was, though the heading above these lines said
+# so until 2026-08-04. There is NO `git add -f` escape hatch here: if something
+# in this tree looks like it needs committing, the answer is that it does not.
+# Sensitive-tier data does not enter git history — that is the 2026-07-29
+# incident, which cost a full history rewrite.
 data/personas/mike/
-data/personas/pepys/
-data/personas/test_a3/
-data/personas/ryan_holiday/journal/
-data/personas/ryan_holiday/logs/
-data/personas/ryan_holiday/insights/
-data/personas/Ryan\ Holiday/
 
-# sarah_chen is the validation-probe persona — every run writes into this tree.
-# Its three seed logs (2025-05-05/12/19) are already tracked and stay tracked;
-# a genuinely new fixture here needs `git add -f`.
-data/personas/sarah_chen/
-
-# Never fixtures, for any persona — written by the running system
-data/personas/*/traces/
-data/personas/*/config/
-data/personas/*/schedules.yaml
-data/personas/*/logs/quality_events.json
+# ---------------------------------------------------------------------------
+# ALL OTHER persona data trees — synthetic and dev personas.
+#
+# This was an enumerated list until 2026-08-04, and the list fell behind:
+# pepys, test_a3, sarah_chen and three of ryan_holiday's subdirectories were
+# covered, while arthur_brooks, cal_newport, danny_park, maya_torres and
+# oliver_burkeman were not. Those five are written to on every validation run
+# and a `git add -A` would have committed them. A list that must be updated by
+# hand each time a persona is added is the defect, not the missing entries.
+#
+# The rule that does not drift: no persona data tree is committable by default,
+# because the running system writes into all of them and nothing at runtime
+# distinguishes a synthetic persona from a real one (persona unification,
+# 2026-07-28 — see ROADMAP.md § Binding privacy ruling). The wildcard also
+# covers `mike` a second time, which is intended: the explicit rule above is
+# there to be read, not because the glob needs help.
+#
+# Seed fixtures already tracked stay tracked — .gitignore does not untrack.
+# A genuinely new *synthetic* fixture needs `git add -f`. Before forcing, check
+# which tree you are in: a fixture that silently fails to commit is recoverable,
+# a real persona's logs that silently do commit are not.
+data/personas/*/
 
 # Real user persona config — sensitive
 config/personas/mike.md

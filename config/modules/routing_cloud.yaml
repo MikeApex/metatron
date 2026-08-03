@@ -61,7 +61,13 @@ agents:
   physical_health:
     provider: gemini
     model: "models/gemini-3.1-pro-preview"  # medication / symptom class; same safety rationale as MW
-    allowed_tools: [read_log, write_log, search_memory, read_wisdom, write_wisdom, read_profile, write_profile]
+    # read_agent_config granted 2026-08-04: MEDICATION_MISSED_CRITICAL classification must come
+    # from the stored medication_profile and never from inference (physical_health.md:106,123).
+    # Without the read grant the flag is structurally unfireable — the agent is required to
+    # consult a profile it has no tool to reach. Two warn-mode entries on 2026-08-03 recorded it
+    # attempting exactly this. write_agent_config deliberately NOT granted: writing a medication
+    # profile is a larger privilege and a separate decision (DEV_BACKLOG Inbox).
+    allowed_tools: [read_log, write_log, search_memory, read_wisdom, write_wisdom, read_profile, write_profile, read_agent_config]
 
   work_vocation:
     provider: gemini

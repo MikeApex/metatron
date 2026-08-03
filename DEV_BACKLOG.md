@@ -40,7 +40,42 @@ Capabilities that do not exist yet.
 
 ### Surfaced 2026-08-03 by the context-audit test run
 
-- **⚠ A4 clinical-flag hard-fails must be re-run before A7 sign-off.** Prefix caching moved dynamic context out of the system prompt for every agent, so `MUST_SURFACE` and `CLINICAL_CONCERN` firing was last validated against a *different* prompt assembly order than the one now running. Named gate at [ROADMAP.md](ROADMAP.md):113. This is the mania / suicidal-ideation / missed-critical-medication path — it has named hard-fail criteria and a designated validation route, so it goes through that route, not around it. **Blocks A7.** *Found when a live `/metatron-code` test session cited the gate unprompted; it was not on the audit's own list.*
+- ~~**⚠ A4 clinical-flag hard-fails must be re-run before A7 sign-off.**~~ **Gate PASSED
+  2026-08-04 on the cloud path — 6/6.** Report:
+  [tests/a4_safety_rerun_2026-08-04_gemini.md](tests/a4_safety_rerun_2026-08-04_gemini.md).
+  Runner: [tests/run_a4_safety.py](tests/run_a4_safety.py), `--persona sarah_chen --provider gemini`.
+
+  All three clinical flags fire correctly under the post-prefix-caching assembly order, and
+  verified as firing for the right reason rather than on a keyword match: `SUICIDAL_IDEATION`
+  with 988 crisis signposting; `MANIA` with an explicit instruction not to celebrate the energy
+  (its documented failure mode); `MEDICATION_MISSED_CRITICAL` naming lamotrigine as
+  *"morning dose, required"* while correctly leaving `optional` vitamin D alone. Finance
+  arithmetic exact on all three (FIN-1 $520/$80; FIN-2 $18,000 → $19,091; FIN-4 47 months /
+  $6,096 — amortisation checked by hand).
+
+  **A prerequisite defect was found and fixed to make PH testable at all.**
+  `physical_health` was not granted `read_agent_config`, while
+  [physical_health.md:106](config/agents/physical_health.md#L106) requires
+  `MEDICATION_MISSED_CRITICAL` classification to come from the stored medication profile and
+  *"never from the agent's judgment"*. The flag was therefore structurally unfireable — the
+  agent had to consult a profile it had no tool to reach. Granted in both
+  `routing_cloud.yaml` and `routing.yaml`; `write_agent_config` deliberately **not** granted.
+  This resolves Inbox items 1 and 2 in the read direction — those warn-mode entries were the
+  symptom of this. **Note this flag has never actually worked in production**, which no
+  assembly-order re-run would have revealed.
+
+  **Two limits on what this result covers — do not read it as more than it is:**
+  1. **Cloud path only.** The original A4 baseline was Ollama/qwen3:14b. This run is not a
+     like-for-like comparison against it; it verifies the pass conditions hold on the path
+     currently serving the user. The local path remains unverified under the new assembly
+     order — `--provider ollama` runs the same suite when that matters.
+  2. **Specialists in isolation, not end-to-end.** A flag that fires correctly in Mental
+     Wellbeing can still be held at the Synthesizer, which is the actual user-facing failure
+     mode and the reason A4 added the mandatory-surface block to `synthesizer.md:21`. The head
+     layer also had dynamic context moved by the same change. **A pipeline-level probe is the
+     one piece of this gate still missing** — recommend running it before A7 sign-off.
+
+  A7 remains blocked on B1, Check 10 and Check 12. This clears only the named pre-sign-off gate.
 
 - **Pre-existing dead link in the project log.** `archive/sessions/2026-07-28 — Persona Unification Plan and Phase 0.md` is referenced but does not exist. Already broken in `SESSION.md` before the split; preserved verbatim rather than invented a target for. Either write the missing writeup or correct the reference. Cosmetic.
 
@@ -53,7 +88,24 @@ item "nearly aged out" (see Troubleshooting signal below).*
 
 - **⚠ `deploy.sh`'s drain is decorative — every deploy kills in-flight WebSocket exchanges.** `/active` counts only SSE streams, and `/session/stream` has no client at all, so the drain gate always sees zero and restarts immediately. The most user-visible defect on this list; unfiled since 2026-07-30. *`SESSION.md:317`, client/app audit.*
 
-- **Synthetic persona data trees are not gitignored.** Only `mike`, `pepys`, `test_a3` and parts of `ryan_holiday` are covered. `data/personas/sarah_chen/` and the other synthetic trees are written to on every validation run, so a `git add -A` in this repo repeats the 2026-07-29 incident that required a history rewrite. Add gitignore rules for the synthetic data trees; keep seed fixtures with `git add -f`. *`SESSION.md:193`.*
+- ~~**Synthetic persona data trees are not gitignored.**~~ **Done 2026-08-04** — `.gitignore`
+  now carries `data/personas/*/` in place of the enumerated per-persona list. Five trees were
+  uncovered (`arthur_brooks`, `cal_newport`, `danny_park`, `maya_torres`, `oliver_burkeman`)
+  plus most of `ryan_holiday`; all are now ignored, as is any persona added in future — the
+  drifting hand-maintained list was the actual defect, not the missing entries.
+
+  **Two corrections made while fixing it.** (1) The section heading read *"Test persona runtime
+  data"* and listed `mike` under it. `mike` is a real user's logs, health and finances, not a
+  test fixture; it now has its own explicitly-labelled sensitive-tier rule. (2) The first draft
+  of the fix carried `sarah_chen`'s *"a genuinely new fixture needs `git add -f`"* note up to
+  the top of the block, where it read as a blanket escape hatch across every tree — including
+  `mike`. That is an instruction to force real user data past the ignore rule, i.e. the
+  2026-07-29 incident with extra steps. The `-f` allowance is now scoped to synthetic trees
+  and the real-user rule states that no such hatch exists there.
+
+  Verified: 65 tracked seed fixtures still tracked (`.gitignore` does not untrack), no
+  deletions, `git check-ignore` passes for all nine existing personas and an invented tenth,
+  and `git add -A --dry-run` stages zero files under `data/personas/`.
 
 - **Memory indexer is reading the wrong source.** `[background] index log 2025-05-22 failed: Extra data: line 557 column 2 (char 82852)` fired twice against a **276-byte** file — the offset cannot come from that file, so the indexer is likely reading a different or concatenated source. Unexamined. *`SESSION.md:227`.*
 
