@@ -1,6 +1,6 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-03 (context-file audit) — **`SESSION.md` was 775 lines; the history now lives in [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).** Six context files had accreted overlapping jobs with no ownership rule, so the cold-start load had reached ~88k tokens. Dated history, deploy runbooks and the agent-backlog mirror moved out; the standing rules buried in them moved into `CLAUDE.md`; `/archive` became a real command. Immediately before this: `deploy.sh` cried wolf on a good deploy and is fixed — its assertion tested exact HEAD equality, so a parallel window's push made the VM strictly *ahead* and it printed `DEPLOY FAILED … running OLD CODE`, the opposite of true. It now tests **ancestry** with four outcomes (`unverified` / `match` / `ahead` / `failed`) and names the extra commits. **The `ahead` branch is harness-tested only.** Deployed `3492d42`, `c674a91`.*
+*Updated: 2026-08-03 (context-file audit, closed) — **cold start is ~88k → ~28k tokens, verified against a live run rather than estimated.** `SESSION.md` split into this primer plus [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md); deploy/recovery detail to [docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md); [ROADMAP.md](ROADMAP.md) is an abridged live copy — **the full plan under `archive/plans/` is static and must never be edited.** `DEV_BACKLOG.md` is no longer autoloaded (still synced every session); read it when working the backlog. `/archive` now carries the close-out ritual. **One thing to act on:** the test run surfaced a pre-sign-off gate at `ROADMAP.md:113` — prefix-caching moved dynamic context out of the system prompt, so **the A4 clinical-flag hard-fails must be re-run before A7 sign-off**. Audit any session's real load with `python3 scripts/audit_context_load.py`. Deployed: nothing — docs only.*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -40,37 +40,39 @@ For **why** something was built the way it is — reasoning, rejected options, c
 - Parallel subagent dispatch, write_log threading lock, agent_config tool
 - Security: threat model + security backlog complete (`archive/security/`)
 
-### In progress / next (numbering per 2026-06-10 roadmap — note: renumbered from the 2026-06-09 draft)
+### In progress / next
 
-**Parallel chats (2026-06-11 batch) — status as of 2026-06-19:** A1, A2, A3, A4+A6 all complete. B1 (red team), Check 10 (agent audits), and Check 12 (constitution review) on hold — see below. See [archive/plans/parallel_chats_index_2026-06-11.md](archive/plans/parallel_chats_index_2026-06-11.md) for prompt files and file-ownership rules.
+**A7 — Phase 5 sign-off — BLOCKED.** A1–A6 all complete (detail in
+[archive/PROJECT_LOG.md](archive/PROJECT_LOG.md)). Three checks on hold, deliberately
+deprioritised behind latency work:
 
-**Active priority (2026-06-19):** streamline agent flow to reduce response latency — get the tool functionally usable before completing sign-off work. B1/Check10/Check12 resume after latency work stabilises the pipeline.
+- **B1** — red team + automated security tests
+- **Check 10** — agent behavioural audits (12 specialists; Coordinator/Synthesizer via pipeline probes)
+- **Check 12** — constitution alignment review
 
-**Latency work done (2026-06-19):**
-- Model tiering: coordinator + 6 specialists → Flash; coordinator reverted to Pro (Flash skips tool calls unreliably); 6 specialists remain on Flash
-- Diarist fire-and-forget: code-enforced in `tools/subagent.py` — confirmed working; excluded from SPECIALIST_OUTPUTS
-- quick_override added to `routing_cloud.yaml` (Flash) — diarist routes correctly via quick_override path
-- Prefix caching: recent context moved to user message in `_run_single_agent()` — system prompt stable per agent
-- Output compression: Recreation → compact JSON confirmed working; Logistics / Work/Vocation next
-- **Native SDK migration:** reverted — `run_session_gemini` now routes through `_openai_compat_loop` + `_resolve_gemini_credentials` (Vertex OpenAI-compat endpoint). The native genai SDK (`_run_gemini_native_loop`) is retained but unused; migration was abandoned due to an unworkable Vertex thought_signature bug (see below).
-- **Streaming:** complete. `POST /session/stream` SSE endpoint live. Anthropic streaming confirmed working. Gemini streaming via `_openai_compat_stream` wired up. PWA client-side SSE consumption deferred.
-- **Vertex thought_signature bug — fixed:** When Vertex returns N parallel tool calls, only tc0 gets a cryptographically valid `thought_signature` in `extra_content`. Fix in `_openai_compat_loop`: `message.model_copy(update={"tool_calls": [tc0]})` — trim to single signed call, execute it, let model re-call tc1+ individually. Cost: parallel calls become sequential turns. No 400 errors in testing (turn=6+ confirmed).
-- **HF_TOKEN:** read-only token added to `.env` ✓
-- Coordinator slimming: handed off to new chat — target ≤3 turns, ≤40K tokens (currently 6 turns, 88K)
-- Coord package debug print active in `core/orchestrator.py` (dev — remove before Beta)
-- Baseline: 16–20s simple session, 65–74s complex multi-specialist. Was 60–90s.
+> **⚠ Named pre-sign-off gate, surfaced 2026-08-03 — [ROADMAP.md](ROADMAP.md):113.** Prefix
+> caching moved dynamic context out of the system prompt for *every* agent, so the **A4
+> clinical-flag hard-fails (`MUST_SURFACE` / `CLINICAL_CONCERN`) must be re-run against the new
+> assembly order before A7 can be signed off.** This is a clinical-safety path with named
+> hard-fail criteria — it is not a formality.
 
-- ~~**A1** Compliance curve design conversation~~ — **done 2026-06-18.** All four design questions resolved. Shared principle + Synthesizer integrator (Q1); user-reported cold-start, ratchet research-gated (Q2); Synthesizer level only (Q3); nothing activates at A5c, produces plan only (Q4). Decision doc: `archive/plans/compliance_curve_decision_2026-06-13.md`. Agent file edits queued (apply when A2 chat closes). MCP server updates: o3+o1+auto-discovery added to ask_gpt; auto-discovery added to ask_gemini; Opus timeout fixed (600s) in ask_claude.
-- ~~**A2** Logging Layer~~ — **done 2026-06-13.** `write_quality_event` in `tools/logger.py`, ROUTING_MISS wired in synthesizer.md, USER_CORRECTION in coordinator.md, PWA tap (`·` dot → `/feedback`). Tests deferred to Alpha launch (`tests/phase5_testing_plan.md` → Known gaps).
-- ~~**A3** Cold-start baselines~~ — **done 2026-06-18.** 4 new functions in `tools/baselines.py`: `create_semantic_anchor`, `write_aspirational_baseline`, `shuffled_null_score`, `score_against_anchors`. All 8 canonical anchors written to `data/baselines/semantic_anchors.json`. All 3 roadmap tests pass. Truncated Goals Interview run-guide in `archive/sessions/2026-06-18 — A3 Cold-Start Baselines.md`. A5b re-run pending (after full Goals Interview).
-- ~~**A4** Local routing enforcement~~ — **done 2026-06-13.** `local_enabled: true`, fail-closed sensitive routing (no cloud fallbacks), head layer + Learning & Growth + Recreation + Logistics re-tiered local, quick_override guard. MW mania hard-fail: PASS (front-loaded critical instructions). Finance arithmetic: FAIL/deferred D1. Session archive: `2026-06-13 — A4 A6 Local Routing and Token Budget.md`.
-- ~~**A5** Goals Interview with real user~~ — **done.** A5b: re-run `write_aspirational_baseline` with existing A5 interview data (replaces A3 placeholder; required for A7 gate — run before A7). A5c preference activation status unknown — confirm if needed. **D1 note:** once VM is provisioned and new features are live, run a fresh Goals Interview + A5b re-run as first-use onboarding on the VM (new D1 item, separate from this A5b).
-- ~~**A6** Token budget logging~~ — **done** (all four session paths; 8K warning threshold)
-- **A7** Phase 5 sign-off — **blocked** (B1, Check 10, Check 12 on hold pending latency work; A1–A6 all complete). Resume when pipeline is stable.
-- **A8** Pre-Alpha code refactor (full program) — **new (added 2026-06-25, scoped 2026-06-26).** Gate: A7 complete. Full module extraction, not just Phase 5 cleanup. `core/orchestrator.py` (1870 lines, 5 concerns) → `core/config.py` + `core/providers.py` + `core/tools.py` + slimmed `core/orchestrator.py`. `core/server.py` → split monitoring endpoints into `core/monitor_api.py`. Remove COORD PACKAGE debug print (line 1616). Update import paths in server, scheduler, subagent, router. Regression gate: A4 clinical-flag scenarios + server startup + full pipeline session + The Book SSE. Note: `run_session_*` functions and `_run_gemini_native_loop` are active switches, not legacy — they stay in `core/providers.py`.
-- **B1** Red team — **on hold** (independent of Alpha Gate, but deprioritised — resumes after latency work)
-- **Check 10** Agent behavioral audits — **on hold**
-- **Check 12** Constitution alignment review — **on hold**
+Two loose ends inside the gate, both discrete checklist items so they don't get skipped:
+
+- **A5b** — re-run `write_aspirational_baseline` with the A5 mission-level data; the A3 baseline is still a placeholder.
+- **A5c** — preference activation status recorded as "unknown, confirm if needed."
+
+**A8 — Pre-Alpha code refactor** — gated on A7. Full module extraction:
+`core/orchestrator.py` (~1,870 lines, 5 concerns) → `core/config.py` + `core/providers.py` +
+`core/tools.py` + slimmed orchestrator; `core/server.py` → split monitoring into
+`core/monitor_api.py`. Remove the COORD PACKAGE debug print. Regression gate: A4 clinical-flag
+scenarios + server startup + full pipeline session + The Book SSE.
+
+**Latency work (2026-06-19) — complete.** Baseline 16–20s simple, 65–74s complex, from 60–90s.
+Model tiering, Diarist fire-and-forget, prefix caching, streaming, and the Vertex
+`thought_signature` fix all landed; full detail in the project log. **Still open from it:**
+Coordinator slimming — but **re-scope against measured data first**, the Coordinator runs 1 turn,
+not the 7 the roadmap assumes (`logistics` measured at 8). See `DEV_BACKLOG.md`.
+
 
 ---
 
@@ -81,7 +83,7 @@ Newest first. Full detail for every entry — and everything older — is in
 
 | Date | What | Deployed |
 |---|---|---|
-| 08-03 | **Context-file audit** — `SESSION.md` split into this primer + `PROJECT_LOG.md`; `docs/INFRASTRUCTURE.md` created; agent-backlog mirror removed from `DEV_BACKLOG.md`; `/archive` command | docs only |
+| 08-03 | **Context-file audit** — `SESSION.md` 775→170 lines; `PROJECT_LOG.md`, `INFRASTRUCTURE.md`, abridged `ROADMAP.md`, `/archive`, load auditor. Cold start ~88k→~28k tokens | docs only |
 | 08-03 | `deploy.sh` verifies by **ancestry**, not HEAD equality — no more false failures when a parallel window pushes | `3492d42`, `c674a91` |
 | 08-03 | Outage chat closeout — ✅ `networks/default` **has thawed**, support case closable; external-IP saving **withdrawn** (it is the VM's only egress path) | `48e17da` |
 | 08-03 | **Calendar delivers** — CalDAV live with recurrence/alarms/all-day; `get_weather` + `get_environmental_snapshot`; tool permissions in warn mode; VM backup | `cfcd212`, `6865058` |
@@ -92,7 +94,6 @@ Newest first. Full detail for every entry — and everything older — is in
 | 08-02 | SEQ 021 — specialist clock injection, tool-error hints, failure reporting; capability-gap survey | `6601479` |
 | 08-02 | Synthesizer timestamp authority (SEQ 008) · recap fix (SEQ 002) · spend guard + rate limiter | `b184d92`, `799aa3f` |
 | 07-31 | ⚠ **26-hour outage** — VPC frozen by billing disable; VM rebuilt on `metatron-net`; cost control restructured to $70 soft / $150 hard | `571f9bc` |
-| 07-30 | Client/app audit — the $30 budget was never viable (~$29/mo infrastructure before a single token) | no code |
 
 ---
 

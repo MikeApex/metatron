@@ -1,6 +1,8 @@
 # 2026-08-03 — Context-file audit: SESSION.md split, cold-start trim, `/archive` command
 
-*Status: in progress. Written early per the session-logging rule; updated as work lands.*
+*Status: complete. Written early per the session-logging rule; updated as work landed.*
+
+**Outcome: cold-start load ~88k → ~28k tokens.** A live test run, audited from its JSONL, passed every check. Commits `403ecb9`, `7599ed8`, `c4d2c4d`, `3a17f1a`, `b6543f7` — docs and `.claude/` only, **not deployed**.
 
 ---
 
@@ -84,6 +86,31 @@ Approved plan: `~/.claude/plans/yes-the-purpose-of-parallel-glacier.md`.
 - All 9 agent files still carry `## Enhancement backlog` (77 lines) — checked *before* deleting the `DEV_BACKLOG.md` mirror.
 - `archive_chats.py`: global copy is a **strict superset** (zero project-only functions) — the project copy was a stale June 19 ancestor.
 - The `## Read these before doing anything` anchor that `/metatron-code` parses is byte-identical apart from the intended roadmap repoint.
+
+### Live test run — audited, passed
+
+Session `998a7b0f`, four real questions after `/metatron-code`. Audited with
+`scripts/audit_context_load.py`:
+
+- ✓ `SESSION.md` and `ROADMAP.md` read; the 94 KB static plan **not** read — the parsed anchor held, which was the failure mode of most concern
+- ✓ `CODEBASE_INDEX.md` correctly skipped
+- ✓ **no file the session had to go find** — nothing was cut that it needed
+- ✓ answered the billing question completely *and* cited `docs/INFRASTRUCTURE.md` for the runbook **without opening it** — trigger-adjacent pointers working as designed
+- ✓ surfaced a pre-sign-off gate at `ROADMAP.md:113` that neither the audit nor the 17-question acceptance test had listed: prefix-caching moved dynamic context out of the system prompt, so the **A4 clinical-flag hard-fails must be re-run against the new assembly order before A7 sign-off**
+
+Two auditor bugs found and fixed by this run: slash-command invocations read as "NO" (the
+`<command-name>` wrapper is the same one used to filter system-injected text), and the
+`38 open` vs `32` discrepancy — both counts correct, different denominators
+(`sync_dev_backlog.py:162` counts every `- ` line including sub-bullets and Inbox).
+
+### Post-test change
+
+**`DEV_BACKLOG.md` removed from the `/metatron-code` autoload** (user's call). It is a work
+queue, not project context — ordinary coding takes its task from the user, not the list. The
+sync step stays because it writes to disk and costs no context, so the file stays current
+whether or not it is read. `/metatron-code` load 91,985 → 61,900 bytes (~22k → ~15k tokens).
+This also exposed that `CLAUDE.md`'s Mandatory Pre-Edit Context Check still named the static
+plan rather than `ROADMAP.md` — the rule governing every edit in the project, now corrected.
 
 ### Known limitation carried forward
 

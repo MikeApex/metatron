@@ -84,6 +84,57 @@ Four related complaints, one root cause and four fixes. **The cause was not an a
 
 ## Dated history
 
+### 2026-08-03 (context-file audit — SESSION.md split, roadmap abridged, `/archive` formalised)
+
+Full writeup: [../archive/sessions/2026-08-03 — Context-file audit: SESSION.md split, cold-start trim, archive command.md](sessions/2026-08-03%20—%20Context-file%20audit:%20SESSION.md%20split,%20cold-start%20trim,%20archive%20command.md).
+Commits `403ecb9`, `7599ed8`, `c4d2c4d`, `3a17f1a`, `b6543f7`. **Docs and `.claude/` only — not deployed.**
+
+**Started as "how large is SESSION.md?" (775 lines / 126 KB) and became an audit of the whole cold-start path.** The finding was not one bloated file: six context files had accreted overlapping jobs with no rule about which owned what. The project already had the doctrine for this — **One Home Per Rule Class**, written that same morning — and had never applied it to its own context files.
+
+**Measured, before anything was moved:** ~88k tokens loaded before the user types a word, ~44% of a 200k window. Four files were 60–80% history rather than state. `CLAUDE.md`'s Deployment Infrastructure section alone was 27,308 of 50,706 bytes — 54% of a file auto-loaded into *every* session, including ones that never touch infrastructure.
+
+**Result: ~88k → ~28k.** A real `/metatron-code` session now measures ~15k for the files it reads, plus ~13k auto-loaded.
+
+**What was built**
+
+- **`archive/PROJECT_LOG.md`** (this file) — dated history, append-only, never loaded. All 44 `### Also done` sections moved **verbatim**; verified byte-identical at 13,336 words both sides.
+- **`docs/INFRASTRUCTURE.md`** — recreate-from-scratch, outage runbooks, systemd unit files, APK build, local Ollama dev.
+- **`ROADMAP.md`** — abridged live copy. Binding privacy ruling, A5b/A5c/A7/A8, all of Track B and D, phase gates, pre-Alpha streaming items.
+- **`.claude/commands/archive.md`** — the five-step ritual, executable rather than remembered.
+- **`scripts/audit_context_load.py`** — reads a session's JSONL and reports what it actually loaded. Built so the second pass is evidence-based rather than recalled.
+
+**Decisions, and what was rejected**
+
+1. **`SESSION.md` is replaced; the log is appended.** This is the whole anti-regrowth mechanism. The file reached 775 lines purely because "update SESSION.md" was read as *append*, session after session, for two months. Without changing the protocol the cut would have undone itself by October.
+2. **Trigger-adjacent pointers, not an index.** An index only helps someone already looking. Pointers go where the *problem* appears. **Rejected:** a table of contents in `SESSION.md`, which would have been read past.
+3. **The test that decides what may move: anything that must fire *unprompted* cannot live in an on-demand doc.** This is why the external-IP trap, the persona VM-ownership rule and the billing caps table stayed in `CLAUDE.md` regardless of byte count.
+4. **Decision-level statements never name a model provider.** `CLAUDE.md`'s "don't revisit" list said *"Orchestrator calls Claude API directly"* long after the runtime moved to Vertex. **Rejected: rewriting it to say "Vertex"** — that goes stale again on the move back to self-hosted, which is the stated North Star (`core/router.py:43` branches on `DEPLOYMENT_MODE` at call time; only two non-vendor files mention Vertex). The invariant is that the Orchestrator calls *a model API* directly; the provider is routing config. This is the existing "don't write down values with a short half-life" rule applied one layer up.
+5. **The rolling handoff paragraph was kept deliberately** — one paragraph, rewritten not stacked. Four of the five then-current paragraphs contained a *correction* to a previous one, which is exactly what a status table flattens away.
+6. **`DEV_BACKLOG.md` removed from the autoload** (user's call, and the largest single win at ~7.5k tokens). It is a work queue, not project context — ordinary coding takes its task from the user. The sync step stays: it writes to disk and costs no context, so the file is current whether or not it is read.
+
+**Corrections — things believed true that were not**
+
+- **Claimed `archive/transcripts/` (132 MB) was carried by every clone and VM pull. False.** Already gitignored, 0 files tracked, `.git` is 9 MB, and `daily-backup.sh`'s exclude list does not cover it, so it *is* in the daily encrypted backup. Nothing to fix.
+- **Claimed `.claude/` is gitignored "entirely" so slash commands have no backup. False** — `.gitignore:28` has `!.claude/commands/*.md`; all three commands are tracked. This claim had propagated from `SESSION.md:225` into the new `/archive` file before being caught.
+- **The backlog read 97 open; only 24 were real.** 70 of 94 bullets were the agent-file mirror — a copy whose own heading admitted *"These are mirrors, not moves."* The same text existed in three places (agent file, roadmap Section 4, `DEV_BACKLOG.md`). Deleted after verifying all nine originals present, 77 lines.
+- **Carried A6 into `ROADMAP.md` although it is complete** — the line-range extraction caught it between A5c and A7. Found by audit and removed in `7599ed8`. This is the standing warning about trimming Track D the same way.
+- **`CLAUDE.md:341` still warned that `networks/default` may be frozen.** It thawed; probe-tested twice.
+- **Two divergent copies of `archive_chats.py`** (353 vs 295 lines) writing to the same directory, each named by a different protocol document. Diffed: the global copy is a **strict superset** with zero project-only functions. The in-repo copy was a stale June 19 ancestor — deleted.
+
+**User corrections during execution, both of which improved the outcome**
+
+1. **"The roadmap is static — don't trim it."** Correct: it is a dated plan document, and editing it rewrites the record. The abridged `ROADMAP.md` was created instead, naming explicitly what it does *not* carry so omission is never mistaken for completion.
+2. **"What happened to that suggestion?"** — the abridged file had been proposed, then deferred by me to a second pass. Built in-session instead.
+
+**Verification, not assumption**
+
+Cold-start acceptance test: **17/17** questions answerable from the trimmed load, including all five standing rules that must fire unprompted. Then a live test run (session `998a7b0f`), audited from its JSONL: all expected files read, the static plan **not** read (the anchor held), `CODEBASE_INDEX.md` correctly skipped, and **no file the session had to go find**. It answered the billing question completely *and* cited `docs/INFRASTRUCTURE.md` for the runbook without opening it — the pointer design working as intended. It also surfaced a pre-sign-off gate at `ROADMAP.md:113` (prefix-caching moved dynamic context out of the system prompt, so the A4 clinical-flag hard-fails need re-running before sign-off) that neither the audit nor the acceptance test had listed.
+
+**Superseded handoff paragraph, carried from `SESSION.md`:**
+
+*Updated: 2026-08-03 (context-file audit) — **`SESSION.md` was 775 lines; the history now lives in [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).** Six context files had accreted overlapping jobs with no ownership rule, so the cold-start load had reached ~88k tokens. Dated history, deploy runbooks and the agent-backlog mirror moved out; the standing rules buried in them moved into `CLAUDE.md`; `/archive` became a real command. Immediately before this: `deploy.sh` cried wolf on a good deploy and is fixed — its assertion tested exact HEAD equality, so a parallel window's push made the VM strictly *ahead* and it printed `DEPLOY FAILED … running OLD CODE`, the opposite of true. It now tests **ancestry** with four outcomes (`unverified` / `match` / `ahead` / `failed`) and names the extra commits. **The `ahead` branch is harness-tested only.** Deployed `3492d42`, `c674a91`.*
+
+
 ### Also done 2026-08-03 (outage chat closeout — ✅ `networks/default` HAS THAWED; two items carried into the backlog) — `48e17da`, docs only
 
 Full writeup: [archive/sessions/2026-08-03 — Outage Chat Closeout, default Network Thawed, Backlog Carryover.md](../archive/sessions/2026-08-03%20—%20Outage%20Chat%20Closeout,%20default%20Network%20Thawed,%20Backlog%20Carryover.md)

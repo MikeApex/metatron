@@ -38,6 +38,12 @@ Behavioural changes to how agents judge, prioritise, or decide what to raise. Ap
 
 Capabilities that do not exist yet.
 
+### Surfaced 2026-08-03 by the context-audit test run
+
+- **⚠ A4 clinical-flag hard-fails must be re-run before A7 sign-off.** Prefix caching moved dynamic context out of the system prompt for every agent, so `MUST_SURFACE` and `CLINICAL_CONCERN` firing was last validated against a *different* prompt assembly order than the one now running. Named gate at [ROADMAP.md](ROADMAP.md):113. This is the mania / suicidal-ideation / missed-critical-medication path — it has named hard-fail criteria and a designated validation route, so it goes through that route, not around it. **Blocks A7.** *Found when a live `/metatron-code` test session cited the gate unprompted; it was not on the audit's own list.*
+
+- **Pre-existing dead link in the project log.** `archive/sessions/2026-07-28 — Persona Unification Plan and Phase 0.md` is referenced but does not exist. Already broken in `SESSION.md` before the split; preserved verbatim rather than invented a target for. Either write the missing writeup or correct the reference. Cosmetic.
+
 ### Recovered from SESSION.md prose, 2026-08-03
 
 *These sat in dated `SESSION.md` sections and were never filed. That file is now a primer and
