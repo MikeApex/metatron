@@ -40,6 +40,29 @@ echo "Deploying to VM..."
 gcloud compute ssh metatron-vm --zone=us-central1-a --project=metatron-ai-499810 --tunnel-through-iap -- bash -s <<'REMOTE'
 set -e
 cd ~/multi-model-mcp
+
+# --- Preflight: refuse to deploy into a server that cannot start ---------------
+#
+# As of 2026-08-03 core/server.py fails closed without METATRON_AUTH_PASSWORD, and
+# .env is gitignored so this script cannot carry it — the variable reaches the VM only
+# by hand. Checked BEFORE `git pull`, deliberately: once the pull lands, the restart
+# further down takes production down, and the failure surfaces as a systemd crash loop
+# that looks nothing like a deploy problem.
+#
+# This is the "config and its guard deploy together, guard first" rule from CLAUDE.md
+# pointed the other way — here the code arrives before the config it needs.
+if ! grep -q '^METATRON_AUTH_PASSWORD=.' .env 2>/dev/null; then
+    echo "DEPLOY ABORTED — METATRON_AUTH_PASSWORD is not set in the VM's .env." >&2
+    echo "" >&2
+    echo "The server refuses to start without it, so deploying now would stop the" >&2
+    echo "service rather than update it. Nothing has been pulled; the VM is untouched." >&2
+    echo "" >&2
+    echo "Fix: copy the value from the Mac's .env, then re-run ./deploy.sh" >&2
+    echo "  gcloud compute scp .env metatron-vm:~/multi-model-mcp/.env \\" >&2
+    echo "    --zone=us-central1-a --project=metatron-ai-499810 --tunnel-through-iap" >&2
+    exit 1
+fi
+
 git pull origin main
 source .venv/bin/activate
 pip install -q -r requirements.txt
