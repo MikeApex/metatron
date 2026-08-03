@@ -89,17 +89,8 @@ Unlocks: Every specialist module grounded in real user context. Required for Pha
 
 ---
 
-**A6 — Token budget logging (Phase 5 / D6)**
-
-Build: Add session-level token accumulation to `run_session_anthropic`, `_openai_compat_loop`, **and `run_session_gemini`** (the third session path; the old draft omitted it and four agents routed through it — fewer post-A4, but the path remains live for Research Agent and decontextualized dispatch). Log cumulative input tokens per turn to the session log. Emit a warning log line when a single turn exceeds 8K input tokens.
-
-Implementation note: Anthropic → `response.usage.input_tokens`; OpenAI-compat (incl. Ollama) → `response.usage.prompt_tokens`; Gemini → `response.usage_metadata.prompt_token_count`. See `tests/testing_framework_notes.md` for thresholds and implementation guidance.
-
-Test: Run a Coordinator + Mental Wellbeing + Diarist session. Pass: token counts appear in session log; no turn exceeds 15K cumulative input tokens; any turn between 8K–15K shows a warning line. Fail: no token logging exists, or any multi-agent session regularly exceeds 15K without an identified mitigation.
-
-Unlocks: Phase 5 sign-off check 11.
-
----
+*A6 (token budget logging) is complete — removed from this abridged copy 2026-08-03.
+Full item in the static plan.*
 
 **A7 — Phase 5 sign-off**
 *Gate: A1–A6 all complete. Run `tests/phase5_testing_plan.md` (amended 2026-06-10) checks 1–12.*
