@@ -1,4 +1,30 @@
 #!/bin/bash
+#
+# Deploys code and shared config to the VM via GitHub.
+#
+# DO NOT ADD A PERSONA-CONFIG PUSH HERE. It is tempting, because
+# config/personas/{persona}.md and config/personas/{persona}/ are gitignored and
+# therefore never travel with a deploy — which looks like a gap. It is not.
+#
+# The VM is the source of truth for persona config, because the running system
+# writes to it: write_persona() edits config/personas/{persona}.md and
+# write_config() edits prime_directive.md and mission.md, both on the VM, in
+# response to what the user asks for mid-conversation. Pushing the Mac's copy
+# over the top destroys whatever the user has changed since it was last copied
+# down. Verified 2026-08-03: the VM's mike.md held five preferences recorded that
+# morning that the Mac copy knew nothing about.
+#
+# Authoring a genuinely new persona file: write it, scp it once, and let the VM
+# own it from then on. Do not keep a Mac copy in config/personas/ — a stale copy
+# is the thing that gets pushed by mistake.
+#
+#   gcloud compute scp <file> metatron-vm:~/multi-model-mcp/config/personas/<p>/ \
+#     --zone=us-central1-a --project=metatron-ai-499810 --tunnel-through-iap
+#
+# Backup runs the other way: scripts/metatron-backup.sh pulls the VM's
+# config/personas and data down to backups/vm/, and scripts/daily-backup.sh
+# archives that.
+#
 set -e
 echo "Pushing to GitHub..."
 git push origin main

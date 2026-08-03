@@ -13,7 +13,19 @@ venv/
 **/.DS_Store
 
 # Claude Code local settings — not project config
-.claude/
+# ...except the slash commands. They are project tooling with no personal data
+# and no secrets, they get edited during development like any other source file,
+# and ignoring them has already cost us one: the original troubleshoot command
+# existed only in a chat transcript and had to be rebuilt by hand.
+# settings.local.json stays ignored — machine-specific paths.
+#
+# Note the shape: ".claude/" alone cannot be used, because git will not descend
+# into an excluded directory and a "!" rule below it never matches. Exclude the
+# contents, re-admit the one subdirectory, then its .md files.
+.claude/*
+!.claude/commands/
+.claude/commands/*
+!.claude/commands/*.md
 
 # TLS certs — never committed (IP-specific; regenerate with mkcert on each machine)
 certs/

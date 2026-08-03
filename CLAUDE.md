@@ -126,6 +126,24 @@ Persona names are validated against `^[a-z0-9][a-z0-9_]{0,39}$`. They become fil
 
 **Adding a persona:** `./scripts/new_persona.sh <name>`, then fill in `profile.yaml` and run the Goals Interview. Settings files are gitignored, so copy them to the VM manually — `deploy.sh` will not carry them.
 
+**The VM owns live persona config — the Mac does not (established 2026-08-03).**
+
+`config/personas/{persona}.md` and `config/personas/{persona}/` are gitignored *and* deliberately absent from the deploy. This is not a gap to be closed:
+
+- **The running system writes to them.** `write_persona()` edits `config/personas/{persona}.md`; `write_config()` edits `prime_directive.md` and `mission.md`. Both happen on the VM, in response to what the user asks for mid-conversation. On 2026-08-03 the VM's `mike.md` held five interaction preferences recorded that morning which the Mac copy knew nothing about — a Mac→VM push would have erased all five.
+- **They hold Tier 1–3 content**, which is sensitive-tier under the data-privacy table above. A private repo is not a reason to relax that; the 2026-07-29 history rewrite is the precedent for what it costs to get this wrong.
+
+So the rule is directional:
+
+| Direction | Mechanism | When |
+|---|---|---|
+| Mac → VM | one-off `gcloud compute scp`, deliberately | authoring a genuinely new file (e.g. `self_development.md`) |
+| VM → Mac | `scripts/metatron-backup.sh` into `backups/vm/`, archived by `scripts/daily-backup.sh` | routine backup |
+
+**Do not keep a Mac copy in `config/personas/` after scp'ing.** A stale copy is the thing that gets pushed by mistake. Only synthetic/dev personas, which are git-tracked and not written to at runtime, live on the Mac. `deploy.sh` carries a comment block explaining this at the point where someone would be tempted to add the push.
+
+**Editing live persona config:** pull it down (`scripts/metatron-backup.sh`), or edit on the VM directly and let the next backup capture it. Never reconstruct it from memory on the Mac.
+
 **Checking consistency:** `python scripts/check_personas.py` reports drift between identity files, config directories and data directories. Exits non-zero on real breakage.
 
 **Transition note:** `AI_TEST_PERSONA` is a deprecated alias for `METATRON_PERSONA`. It still works and warns once.
