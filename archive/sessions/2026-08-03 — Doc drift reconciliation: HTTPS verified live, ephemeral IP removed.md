@@ -93,8 +93,27 @@ services restarted, health `{"status":"ok"}` after restart.
 
 **The new deploy verification exercised its match path on a real deploy for the
 first time** — SESSION.md had flagged it as simulation-tested only. Output:
-`Verifying VM is running b83f2836... Verified: VM HEAD matches.` The failure
-paths remain simulation-tested.
+`Verifying VM is running b83f2836... Verified: VM HEAD matches.`
+
+**Then its failure path fired too — and was wrong.** The third deploy of the
+session reported `DEPLOY FAILED ... Whatever you were about to test is running
+OLD CODE`. It wasn't. A parallel chat window pushed `88286a7` between this
+window's push and the VM's pull, so the VM was strictly **ahead** — running the
+pushed commit *plus* one more. `git merge-base --is-ancestor` confirmed the
+commit was live.
+
+The assertion tested **exact HEAD equality**, which is the wrong question. The
+question is *"is the commit I pushed live?"*, not *"is the VM's HEAD
+character-for-character mine?"* Fixed in the same session: `deploy.sh` now tests
+ancestry and reports four distinct outcomes — `unverified`, `match`, `ahead`
+(success, naming the extra commits), `failed` (commit absent from history). All
+four branches exercised through a local harness; syntax checked with `bash -n`.
+
+Worth stating plainly because it is the more expensive kind of bug: **an alarm
+that cries wolf on a good deploy is one people learn to ignore**, which costs
+exactly the silent-failure detection the assertion was added to provide.
+SESSION.md had anticipated the parallel-window ambiguity ("tells you *what* is
+live, not *who* deployed it") but not that it would trip the check.
 
 ---
 

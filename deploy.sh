@@ -82,11 +82,36 @@ REMOTE
 #
 # Runs even when the deploy above reports success — a deploy that "succeeded"
 # while leaving the VM behind is exactly the case this exists to catch.
+#
+# The test is ANCESTRY, not equality. The question worth answering is "is the
+# commit I just pushed live on the VM?" — not "is the VM's HEAD character-for-
+# character mine?" Those differ whenever a parallel chat window pushes between
+# this script's push and the VM's pull: the VM ends up strictly AHEAD, running
+# your commit plus someone else's. Equality called that a failure and told the
+# reader they were "running OLD CODE", which was the opposite of true.
+#
+# That false alarm fired for real on 2026-08-03, one day after this assertion
+# was added. It matters more than a cosmetic wrong message: an alarm that cries
+# wolf on a good deploy is one people learn to ignore, which costs exactly the
+# silent-failure detection this block exists to provide.
+#
+# So there are four outcomes, deliberately distinct:
+#   unverified  — HEAD unreadable; may or may not have worked
+#   match       — VM HEAD is exactly the pushed commit
+#   ahead       — pushed commit is an ancestor of VM HEAD; it IS live, and
+#                 something else shipped too (name it, don't hide it)
+#   failed      — pushed commit is absent from the VM's history
 echo "Verifying VM is running ${EXPECTED_SHA:0:8}..."
-REMOTE_SHA=$(gcloud compute ssh metatron-vm --zone=us-central1-a \
+REMOTE_OUT=$(gcloud compute ssh metatron-vm --zone=us-central1-a \
     --project=metatron-ai-499810 --tunnel-through-iap --quiet \
-    --command 'cd ~/multi-model-mcp && git rev-parse HEAD' 2>/dev/null \
-    | tr -d '[:space:]') || REMOTE_SHA=""
+    --command "cd ~/multi-model-mcp && git rev-parse HEAD && \
+      { git merge-base --is-ancestor $EXPECTED_SHA HEAD 2>/dev/null \
+        && echo CONTAINS || echo MISSING; } && \
+      git log --oneline $EXPECTED_SHA..HEAD 2>/dev/null" 2>/dev/null) || REMOTE_OUT=""
+
+REMOTE_SHA=$(printf '%s\n' "$REMOTE_OUT" | sed -n '1p' | tr -d '[:space:]')
+CONTAINS=$(printf  '%s\n' "$REMOTE_OUT" | sed -n '2p' | tr -d '[:space:]')
+EXTRA=$(printf     '%s\n' "$REMOTE_OUT" | sed -n '3,$p')
 
 if [ -z "$REMOTE_SHA" ]; then
     echo ""
@@ -97,9 +122,9 @@ if [ -z "$REMOTE_SHA" ]; then
     echo "        --project=metatron-ai-499810 --tunnel-through-iap \\"
     echo "        --command 'cd ~/multi-model-mcp && git log --oneline -3'"
     exit 1
-elif [ "$REMOTE_SHA" != "$EXPECTED_SHA" ]; then
+elif [ "$CONTAINS" != "CONTAINS" ]; then
     echo ""
-    echo "!!! DEPLOY FAILED — the VM is NOT running what you just pushed."
+    echo "!!! DEPLOY FAILED — your commit is NOT in the VM's history."
     echo "    expected: $EXPECTED_SHA"
     echo "    VM has:   $REMOTE_SHA"
     echo ""
@@ -110,6 +135,19 @@ elif [ "$REMOTE_SHA" != "$EXPECTED_SHA" ]; then
     echo "        --project=metatron-ai-499810 --tunnel-through-iap \\"
     echo "        --command 'cd ~/multi-model-mcp && git status && git pull origin main'"
     exit 1
+elif [ "$REMOTE_SHA" != "$EXPECTED_SHA" ]; then
+    # Your commit is live; the VM is simply further along. Not a failure — but
+    # not silent either, because "something I did not push is also running" is
+    # worth a human knowing before they test against it.
+    echo ""
+    echo "Verified: ${EXPECTED_SHA:0:8} is live — but the VM is AHEAD of it."
+    echo "    VM HEAD:  $REMOTE_SHA"
+    echo "    Almost certainly a parallel chat window deployed after this push."
+    echo "    Also running, on top of yours:"
+    printf '%s\n' "$EXTRA" | sed 's/^/      /'
+    echo ""
+    echo "Deploy complete."
+    exit 0
 fi
 
 echo "Verified: VM HEAD matches."
