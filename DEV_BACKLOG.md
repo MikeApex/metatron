@@ -43,7 +43,7 @@ Capabilities that do not exist yet.
 
 - **Cannot take an action on an external website.** *"Can you go on the R website and reserve tickets for us"* — SEQ 006, 2026-08-02. No browsing-with-actions capability exists. Worth an explicit decision on whether this is ever in scope, since it is the first request of its kind and carries a real security surface: the same message handed over an email address, postal address and phone number.
 
-- **Confirm personal data points offered mid-conversation are actually stored.** Same message: *"You can archive these data points in personal information."* Unverified whether the address and phone number reached `profile.yaml`, the CRM, or nothing at all. Check before deciding anything else here.
+- **No tool can write a biographical fact.** Closing the misfiling hole (`write_persona` now rejects non-preference sections) leaves the user with no way to give the system a durable personal detail at all — email, phone, address, occupation, household. The tool correctly refuses and says so, but the right destination has no door: `profile.yaml` is read-only to the runtime. Needs a `write_profile(field, value)` against a fixed field whitelist, keeping the unrendered `contact:` block out of the prompt. **Until this exists, biographical facts given in conversation are lost.** *Raised by closing the 2026-08-02 contact-details misfiling.*
 
 ---
 
