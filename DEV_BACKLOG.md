@@ -93,6 +93,20 @@ Capabilities that do not exist yet.
 
   **Build order:** 2 (with injection defense) → authentication story → 3 (confirmation-gated). Do not ship 3 on the assumption that 2's defenses cover it; they address a different failure.
 
+### Troubleshooting signal
+
+- **"Unsurfaced opportunities" has no instrumentation — the only troubleshooting category that cannot be measured.** The standing per-exchange review looks for four things: missed routing, unsurfaced opportunities, token overspend, and useless calls. Three of those leave traces. This one is **an absence**, and nothing in the system logs what it failed to raise. *Recorded in SESSION.md 2026-07-29; not previously carried into this list, which is how it nearly aged out.*
+
+  Why it resists the obvious approach: you cannot diff against a ground truth that was never written down. The trace shows which specialists ran and what they returned — not the thing none of them thought to mention. So there is no post-hoc query that recovers it, and no amount of richer tracing produces the signal on its own.
+
+  Three routes, cheapest first:
+
+  1. **Make the `·` feedback dot carry a reason.** Already in the UI and already the nearest hook. A one-tap "missed something" reason code turns a silent miss into a dated, exchange-linked record. Costs almost nothing and produces real data, but only catches misses the user *notices* — which is a biased sample, and systematically misses the ones that matter most.
+  2. **Retrospective sweep.** Periodically re-run a batch of past exchanges with full context and a prompt asking what a good response would have raised that the live one did not. Catches misses the user never saw. Costs tokens, and grades the system with the same class of model that produced the output, so it is suggestive rather than authoritative.
+  3. **Close the loop against outcomes.** The context tracker already holds `open_threads` and `follow_ups`. A thread that goes quiet without resolution is a candidate missed opportunity, detectable without any judgement call. Narrower than the other two, but it is the only one that yields a hard signal rather than an opinion.
+
+  Recommend 1 and 3 together — cheap, complementary, and neither depends on model self-assessment. Hold 2 until there is enough history for a sweep to be worth its token cost.
+
 ---
 
 ## Open — housekeeping
@@ -103,6 +117,8 @@ Stale docs, paths, and low-priority corrections.
 
 - **`/metatron-troubleshoot` command template points at pre-persona-scoping paths.** Uses bare `data/conversations/` and hardcodes `data/personas/mike/traces/`, so it has to be corrected inline every time it runs, and it fails outright for any other persona. Also missing `--tunnel-through-iap` on its SSH command, which is now required since the VM moved to `metatron-net`. *Recorded in SESSION.md 2026-08-02.*
 - **Roadmap D2 item 5 (turn reduction) is mis-scoped and needs rewriting before anyone works it.** It targets the Coordinator on the assumption that the Coordinator runs ~7 turns per exchange. Measured 2026-08-02: **the Coordinator runs 1 turn.** The turns are in the specialists — `logistics` alone ran 8. Working the item as written would optimise a component that is already minimal and leave the actual cost untouched. Re-measure across several specialists before rewriting the item, rather than swapping one assumed culprit for another.
+
+  **The roadmap has not been corrected — only this entry has.** [`archive/plans/phase5_to_future_roadmap_2026-06-10.md:519`](archive/plans/phase5_to_future_roadmap_2026-06-10.md#L519) still reads *"The Coordinator exhibits a 6-turn / 88K cumulative token loop on complex sessions"* and still prescribes a `coordinator.md` instruction change plus a ≤3-turn target. Anyone who reads the roadmap without reading this backlog gets the original wrong picture and a fix aimed at the wrong component. Deliberately not edited in place: the roadmap is a dated plan snapshot, and rewriting its body would erase what was believed at the time. Whoever picks the item up should rewrite it from measurement and note the supersession there — the correction is verified twice (2026-07-29 traces, re-measured 2026-08-02), so it is not waiting on evidence.
 
 - ~~**No check that the VM is actually running what the Mac has committed.**~~ **Done 2026-08-03** — see the Done section.
 
