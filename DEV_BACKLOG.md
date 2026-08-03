@@ -85,14 +85,7 @@ Stale docs, paths, and low-priority corrections.
 - **`/metatron-troubleshoot` command template points at pre-persona-scoping paths.** Uses bare `data/conversations/` and hardcodes `data/personas/mike/traces/`, so it has to be corrected inline every time it runs, and it fails outright for any other persona. Also missing `--tunnel-through-iap` on its SSH command, which is now required since the VM moved to `metatron-net`. *Recorded in SESSION.md 2026-08-02.*
 - **Roadmap D2 item 5 (turn reduction) is mis-scoped and needs rewriting before anyone works it.** It targets the Coordinator on the assumption that the Coordinator runs ~7 turns per exchange. Measured 2026-08-02: **the Coordinator runs 1 turn.** The turns are in the specialists — `logistics` alone ran 8. Working the item as written would optimise a component that is already minimal and leave the actual cost untouched. Re-measure across several specialists before rewriting the item, rather than swapping one assumed culprit for another.
 
-- **No check that the VM is actually running what the Mac has committed.** Two false records in one day (2026-08-02): a `./deploy.sh` failed at the SSH step and silently left the VM a commit behind, and a parallel chat's *"NOT yet deployed"* note was already stale because a deploy from this window had shipped their commit as a side effect. Both were caught by hand.
-
-  **Cheapest guard, no code:** compare `git log --oneline -3` on the VM against local before trusting any claim about what is or is not deployed.
-  ```bash
-  gcloud compute ssh metatron-vm --zone=us-central1-a --project=metatron-ai-499810 \
-    --tunnel-through-iap --command 'cd ~/multi-model-mcp && git log --oneline -3'
-  ```
-  Worth folding into `deploy.sh` as a post-deploy assertion — compare the remote HEAD against the pushed SHA and **fail loudly on mismatch**, since the failure mode here is silence, not an error. Note this bites hardest with parallel chat windows open: either window's deploy ships whatever both have committed, so a per-session "not deployed" note is only true until the other window deploys.
+- ~~**No check that the VM is actually running what the Mac has committed.**~~ **Done 2026-08-03** — see the Done section.
 
 - **Spend guard pricing rates are unverified estimates.** `config/modules/spend_guard.yaml` is marked VERIFY — fine for order-of-magnitude runaway detection, not for cost accounting. Check against current Vertex AI pricing before trusting any dollar figure derived from it.
 - **VM has an unused ephemeral external IP** (`136.112.188.80`). All access is over Tailscale. An in-use external IPv4 is ~$2.90/mo. *Recorded in SESSION.md 2026-07-31.*
@@ -228,6 +221,16 @@ Full security design, threat model, and audit required before implementation. Th
 ---
 
 ## Done
+
+### Deploy verification — 2026-08-03
+
+~~**Nothing checked that the VM was running what the Mac had committed.**~~ `deploy.sh` now asserts it, and **exits non-zero on mismatch**.
+
+The reason it had to be automatic rather than a documented habit: **the failure mode is silence, not an error.** Two false records on 2026-08-02 — a deploy that failed at the SSH step and left the VM a commit behind without complaint, and a parallel chat's *"NOT yet deployed"* note that was already stale because a deploy from another window had shipped its commit as a side effect. Both were caught by a human happening to look, which catches nothing on the day nobody looks.
+
+How it works: capture `git rev-parse HEAD` after the push succeeds, then re-SSH after the restart and compare. A **second** SSH on purpose — the deploy heredoc interleaves pip, systemctl and drain-loop output, so a SHA parsed out of it would be guesswork. Three outcomes: match (silent pass), mismatch (prints both SHAs, the *"you are about to test OLD CODE"* warning, and the `git status && git pull` command that shows the real error), and unreadable HEAD (says the deploy is **unverified** rather than claiming either result). All three branches tested, including that a failed SSH capture doesn't abort early under `set -e`.
+
+**This bites hardest with parallel chat windows open.** Either window's deploy ships whatever both have committed, so a per-session "not deployed" note is only true until the other window deploys. The assertion tells you what is live; it does not tell you who put it there.
 
 ### Rule redundancy — deployed 2026-08-03 (`0077a63`, `a03ed7e`)
 
