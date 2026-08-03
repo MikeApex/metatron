@@ -23,7 +23,7 @@ No code, config, or agent-file edit happens in a session until that session has 
 
 This applies even to small, well-intentioned additions made in service of a good design discussion. Specifics worth naming because they've already caused a problem once:
 
-- **Specialist agent files (`config/agents/*.md`) are frozen post-review.** Audit/review work proposes edits in a document; it does not apply them directly, unless the current roadmap explicitly says the freeze is lifted.
+- **Specialist agent files (`config/agents/*.md`): the post-review freeze was LIFTED ENTIRELY on 2026-08-02** by explicit user decision, during the SEQ 021 capability-gap review. They are ordinary editable config again — no "propose, don't edit" step, no per-bug exception needed. This supersedes rule 3 of `archive/plans/parallel_chats_index_2026-06-11.md`, which is now historical on this point. The freeze had been worked around by explicit exception in three consecutive sessions (SEQ 008, SEQ 002, SEQ 021), which was the reason for lifting it. Normal care still applies: these files are the product, they are token-sensitive (keep additions short — see the SEQ 002 precedent), and clinical-safety instructions in `mental_wellbeing.md` have named hard-fail criteria in the roadmap.
 - **`core/orchestrator.py`** carries active ownership and refactor plans (module-split work) tracked in the roadmap. Check whether a pending refactor will relocate the code being touched before adding to it.
 - **Domains with named hard-fail criteria** (e.g. Finance arithmetic accuracy, Mental Wellbeing clinical-flag firing) have a designated test/validation path in the roadmap or `tests/`. New tooling in those domains goes through that path, not around it.
 
