@@ -732,6 +732,14 @@ def persist_context_block(ctx: dict | None) -> None:
 
 _DEV_REQUEST_TYPES = {"SELF_APPLIED", "INSTRUCTION_CHANGE_REQUEST", "FEATURE_REQUEST"}
 
+# Its own logger at INFO, because the module logger is pinned to WARNING (line 41)
+# and _trace() is a no-op unless AI_TRACE is set — which the service never sets.
+# Without this, the one confirmation that a user's change request was captured
+# is invisible in production. Records propagate to the root handler, which has
+# no level of its own, so they reach journalctl.
+_dev_request_log = logging.getLogger("metatron.dev_request")
+_dev_request_log.setLevel(logging.INFO)
+
 
 def _persist_dev_request(req: dict | None) -> None:
     """
@@ -761,10 +769,7 @@ def _persist_dev_request(req: dict | None) -> None:
             detail=detail,
             session_id=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
         )
-        # logger, not _trace: _trace is a no-op unless AI_TRACE is set, and the
-        # service does not set it — so this would never have been visible in
-        # production, on the one path whose whole purpose is a silent record.
-        logger.info(f"[dev_request] recorded {req_type}: {detail[:200]}")
+        _dev_request_log.info(f"[dev_request] recorded {req_type}: {detail[:200]}")
     except PersonaError:
         raise
     except Exception as exc:
