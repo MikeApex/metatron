@@ -32,7 +32,7 @@ agents:
   synthesizer:
     provider: gemini
     model: "models/gemini-3.1-pro-preview"  # user-facing voice; safety flag integration; keep on Pro
-    allowed_tools: [run_subagent, run_model_conference, write_persona, write_config, write_wishes, read_wishes, generate_emergency_card, write_quality_event]
+    allowed_tools: [run_subagent, run_model_conference, write_persona, write_profile, read_profile, write_config, write_wishes, read_wishes, generate_emergency_card, write_quality_event]
 
   # ── Data and analysis ────────────────────────────────────────────────────────
 
@@ -61,22 +61,22 @@ agents:
   physical_health:
     provider: gemini
     model: "models/gemini-3.1-pro-preview"  # medication / symptom class; same safety rationale as MW
-    allowed_tools: [read_log, write_log, search_memory, read_wisdom, write_wisdom]
+    allowed_tools: [read_log, write_log, search_memory, read_wisdom, write_wisdom, read_profile, write_profile]
 
   work_vocation:
     provider: gemini
     model: "models/gemini-3.1-flash-lite"   # no clinical stakes
-    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config]
+    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile]
 
   relationships:
     provider: gemini
     model: "models/gemini-3.1-flash-lite"   # no clinical stakes
-    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts]
+    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, read_profile, write_profile]
 
   finance:
     provider: gemini
     model: "models/gemini-3.1-flash-lite"   # arithmetic tracking; upgrade to Pro if hard-fail results were marginal
-    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config]
+    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile]
 
   learning_growth:
     provider: gemini
@@ -91,7 +91,7 @@ agents:
   logistics:
     provider: gemini
     model: "models/gemini-3.1-flash-lite"
-    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, get_weather]
+    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, get_weather, read_profile, write_profile]
 
   # ── Cloud-only (decontextualized) ────────────────────────────────────────────
 

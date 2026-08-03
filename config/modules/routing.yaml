@@ -41,7 +41,7 @@ agents:
 
   synthesizer:
     local: true
-    allowed_tools: [run_subagent, run_model_conference, write_persona, write_config, write_wishes, read_wishes, generate_emergency_card, write_quality_event]
+    allowed_tools: [run_subagent, run_model_conference, write_persona, write_profile, read_profile, write_config, write_wishes, read_wishes, generate_emergency_card, write_quality_event]
 
   # ── Data and analysis (local: reads/writes personal logs) ───────────────────
 
@@ -68,19 +68,19 @@ agents:
 
   physical_health:
     local: true
-    allowed_tools: [read_log, write_log, search_memory, read_wisdom, write_wisdom]
+    allowed_tools: [read_log, write_log, search_memory, read_wisdom, write_wisdom, read_profile, write_profile]
 
   work_vocation:
     local: true
-    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config]
+    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile]
 
   relationships:
     local: true
-    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts]
+    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, read_profile, write_profile]
 
   finance:
     local: true
-    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config]
+    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile]
 
   learning_growth:
     local: true
@@ -92,7 +92,7 @@ agents:
 
   logistics:
     local: true
-    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, get_weather]
+    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, get_weather, read_profile, write_profile]
 
   # ── Cloud-only (decontextualized — no personal context ever passed) ──────────
 

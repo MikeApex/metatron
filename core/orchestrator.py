@@ -423,6 +423,10 @@ def register_tools() -> tuple[list[dict], dict]:
         READ_CONTEXT_TRACKER_SCHEMA, WRITE_CONTEXT_TRACKER_SCHEMA,
     )
     from tools.persona import write_persona, WRITE_PERSONA_SCHEMA
+    from tools.profile import (
+        write_profile, WRITE_PROFILE_SCHEMA,
+        read_profile, READ_PROFILE_SCHEMA,
+    )
     from tools.subagent import (
         run_subagent, RUN_SUBAGENT_SCHEMA,
         run_model_conference, RUN_MODEL_CONFERENCE_SCHEMA,
@@ -448,6 +452,10 @@ def register_tools() -> tuple[list[dict], dict]:
         get_weather, get_environmental_snapshot,
         GET_WEATHER_SCHEMA, GET_ENVIRONMENTAL_SNAPSHOT_SCHEMA,
     )
+    from tools.schedule import (
+        write_schedule, list_schedules, delete_schedule,
+        WRITE_SCHEDULE_SCHEMA, LIST_SCHEDULES_SCHEMA, DELETE_SCHEDULE_SCHEMA,
+    )
 
     schemas = [
         WRITE_LOG_SCHEMA, READ_LOG_SCHEMA,
@@ -460,6 +468,8 @@ def register_tools() -> tuple[list[dict], dict]:
         SEARCH_MEMORY_SCHEMA,
         READ_CONTEXT_TRACKER_SCHEMA, WRITE_CONTEXT_TRACKER_SCHEMA,
         WRITE_PERSONA_SCHEMA,
+        WRITE_PROFILE_SCHEMA,
+        READ_PROFILE_SCHEMA,
         GET_LOG_WINDOW_SCHEMA, WRITE_INSIGHT_REPORT_SCHEMA, READ_RECENT_INSIGHTS_SCHEMA,
         WRITE_BASELINE_PERIOD_SCHEMA, READ_BASELINE_PERIODS_SCHEMA,
         WRITE_RETROSPECTIVE_SCHEMA, GET_BASELINE_CONTEXT_SCHEMA,
@@ -473,6 +483,7 @@ def register_tools() -> tuple[list[dict], dict]:
         WRITE_WISHES_SCHEMA, READ_WISHES_SCHEMA, GENERATE_EMERGENCY_CARD_SCHEMA,
         READ_CALENDAR_SCHEMA, WRITE_CALENDAR_EVENT_SCHEMA,
         GET_WEATHER_SCHEMA, GET_ENVIRONMENTAL_SNAPSHOT_SCHEMA,
+        WRITE_SCHEDULE_SCHEMA, LIST_SCHEDULES_SCHEMA, DELETE_SCHEDULE_SCHEMA,
         WRITE_QUALITY_EVENT_SCHEMA,
     ]
     handlers = {
@@ -519,8 +530,13 @@ def register_tools() -> tuple[list[dict], dict]:
         "write_calendar_event": write_calendar_event,
         "get_weather": get_weather,
         "get_environmental_snapshot": get_environmental_snapshot,
+        "write_schedule": write_schedule,
+        "list_schedules": list_schedules,
+        "delete_schedule": delete_schedule,
         "write_quality_event": write_quality_event,
         "write_persona": write_persona,
+        "write_profile": write_profile,
+        "read_profile": read_profile,
     }
 
     return schemas, handlers
