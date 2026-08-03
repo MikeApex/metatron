@@ -13,6 +13,13 @@ Refresh: `python3 scripts/sync_dev_backlog.py`
 
 ## Inbox
 
+- **[agent wanted a tool it lacks]** `physical_health` attempted `read_agent_config` (agent_name) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
+  `2026-08-03T15:11:49.179709Z`
+- **[agent wanted a tool it lacks]** `physical_health` attempted `write_agent_config` (agent_name, config) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
+  `2026-08-03T15:11:50.265168Z`
+- **[instruction change]** For all check-ins: maximum two sentences. If exactly one item genuinely needs attention, name it and stop; otherwise just ask what is on. Never list or recap pending items, and never manufacture a topic.  
+  `2026-08-03T15:12:14.933312Z`
+
 *(nothing new)*
 
 ---
@@ -74,6 +81,18 @@ Capabilities that do not exist yet.
 
   **Constraints:** unknown fields are refused rather than absorbed (`_SCALAR_FIELDS`/`_CONTACT_FIELDS`/`_LOCATION_FIELDS` in [tools/profile.py](tools/profile.py)) — an invented key is exactly how `mike.md` acquired a section no code knew about. `profile.yaml` is VM-owned and gitignored; edit it on the VM, never reconstruct it on the Mac.
 
+- **No agent can read a specific web page. Grounded search is not web access.** Raised 2026-08-03. Three distinct capabilities; the system has only the first.
+
+  1. **Grounded search — built.** `run_session_gemini_grounded` ([core/orchestrator.py](core/orchestrator.py), native genai SDK path) searches inside a single model call and returns an answer with sources. The model picks its own sources. There is no way to say *"read this page."* Anything behind a login, too recent, too obscure, or pasted in by the user is unreachable.
+
+  2. **Direct fetch — missing. This is the actual gap.** Retrieve a named URL and read it: fetch, convert to text, size and time limits. Ordinary work — a `fetch_url` tool under the standard tool pattern, allowlisted to the agents that need it (Research Agent first). Note this is the point at which the deferred **indirect prompt injection defense** in CLAUDE.md § Security Architecture stops being deferred: fetched content must return wrapped in `<untrusted_content>` tags with the accompanying agent instruction, in the same change that ships the fetch — not as a follow-up.
+
+  3. **Acting on the user's behalf — missing, and a different animal.** Navigate, log in, fill forms, transact.
+
+  **The distinction between 2 and 3 is the one that governs build order.** At level 2 a hostile page can only *say* things to the model. At level 3 it can make the model *do* things — send a message, submit a form, spend money — using the user's credentials. So 3 goes last, behind both authentication and injection defense, and with per-action confirmation rather than autonomous dispatch. In plain terms: reading a booby-trapped page is a bad answer; acting on one is a real loss.
+
+  **Build order:** 2 (with injection defense) → authentication story → 3 (confirmation-gated). Do not ship 3 on the assumption that 2's defenses cover it; they address a different failure.
+
 ---
 
 ## Open — housekeeping
@@ -88,7 +107,11 @@ Stale docs, paths, and low-priority corrections.
 - ~~**No check that the VM is actually running what the Mac has committed.**~~ **Done 2026-08-03** — see the Done section.
 
 - **Spend guard pricing rates are unverified estimates.** `config/modules/spend_guard.yaml` is marked VERIFY — fine for order-of-magnitude runaway detection, not for cost accounting. Check against current Vertex AI pricing before trusting any dollar figure derived from it.
-- **VM has an unused ephemeral external IP** (`136.112.188.80`). All access is over Tailscale. An in-use external IPv4 is ~$2.90/mo. *Recorded in SESSION.md 2026-07-31.*
+- **VM has an unused ephemeral external IP.** All access is over Tailscale. An in-use external IPv4 is ~$2.90/mo, so removing it is a straightforward saving. *Recorded in SESSION.md 2026-07-31.* **Do not record the literal address in any doc** — it is ephemeral and changes on every stop/start. It was written down twice and both copies went stale: SESSION.md and this entry said `136.112.188.80`, CLAUDE.md said `35.202.250.80` in prose and `136.112.188.80` in its table, and the live value on 2026-08-03 was a third address. Look it up when needed: `gcloud compute instances describe metatron-vm --zone=us-central1-a --project=metatron-ai-499810 --format="value(networkInterfaces[0].accessConfigs[0].natIP)"`.
+
+- **Docs record values that the system changes underneath them, and nothing checks.** Two instances found on 2026-08-03, both by running the documented command rather than reading it. (1) CLAUDE.md described the server as plain **HTTP** in five places including the recreate-from-scratch checklist, while it has been serving **HTTPS** behind a Tailscale cert — caught when a health check against `http://` failed; corrected, and re-verified live this session (`https://.../health` → `{"status":"ok"}`, `http://` → empty reply). (2) The ephemeral external IP above. The docstring of [core/server.py](core/server.py) had the same HTTP/HTTPS error and was corrected in the same pass — worth noting because the CLAUDE.md fix did not prompt anyone to check the code comment saying the same wrong thing.
+
+  **The pattern, not the two bugs:** drift of this class is invisible to reading and only surfaces when someone executes the documented step. Cheapest mitigation is to stop writing down values with a short half-life (external IPs, anything reassigned on rebuild) and point at the lookup command instead — done for the IP. A stronger fix would be a smoke script that runs the handful of executable claims in CLAUDE.md (health check, service status, deploy verification) and reports mismatches; `deploy.sh`'s new HEAD assertion is the same idea applied to one claim, and is the model to copy. **Corollary for anyone hitting a doc that does not match live: file it here rather than assuming you are holding it wrong.**
 - **The scheduler cannot defer a time-based job — only skip it.** `_activity_gate_blocks` ([core/scheduler.py:173](core/scheduler.py#L173)) returns a reason-to-skip, and `fire_session` ([:263](core/scheduler.py#L263)) simply `return`s. For an `interval_minutes` job that is harmless — the next poll retries a few minutes later, which is exactly how `companion_checkin`'s 30-minute poll / 60-minute quiet gate works. For a `time:`-anchored job it means **gone for the day**: the `schedule` library fires it once at its clock time and there is no second attempt.
 
   **Current state is correct, not broken.** `morning_brief` and `evening_close` deliberately carry no activity gate, per the 2026-08-03 decision that they are the fixed points of the day and are not interruptible — they redirect openly instead (*"Now let's turn to the evening close"*, `synthesizer.md` → *Scheduled session conduct*). So nothing is being dropped today.

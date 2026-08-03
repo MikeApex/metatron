@@ -1,16 +1,20 @@
 """
 core/server.py — FastAPI server for the phone PWA.
 
-Exposes the orchestrator over HTTP on the local network.
-The PWA (static/index.html) uses Web Speech API for STT/TTS on the phone
-and calls this server for the actual model inference.
+Exposes the orchestrator over HTTPS when a cert is present in certs/, HTTP otherwise
+(see __main__ below). The PWA (static/index.html) uses Web Speech API for STT/TTS on
+the phone and calls this server for the actual model inference.
 
 Run:
-    python core/server.py
-    python core/server.py --provider openai --port 8000
+    python core/server.py --persona <name>
+    python core/server.py --persona <name> --provider openai --port 8000
 
-Then open http://<your-laptop-ip>:8000 on your phone (same WiFi network).
-Find your IP: System Settings → Wi-Fi → Details, or run `ipconfig getifaddr en0`.
+In production the VM serves HTTPS on 8001 behind a Tailscale cert:
+    https://metatron-vm.tail0acc5d.ts.net:8001
+
+For local dev without a cert, open http://<your-laptop-ip>:8000 on your phone (same
+WiFi network). Find your IP: System Settings → Wi-Fi → Details, or `ipconfig getifaddr en0`.
+Note Android Chrome blocks the mic on plain HTTP — see the cert hint printed at startup.
 """
 
 import argparse

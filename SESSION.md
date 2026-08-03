@@ -276,7 +276,7 @@ New `stop-vm` function source is tracked at [infra/stop-vm/](infra/stop-vm/) —
 
 **Bugs fixed:** `metatron-resume.sh` wrote the billing override *before* relinking — but the marker lives in a bucket inside the disabled project, so the write always 403'd and `set -e` aborted before the relink. **That recovery path had never once completed.** Also `deploy.sh` + resume now need `--tunnel-through-iap`, since `metatron-net` has no public SSH ingress (verified with a real deploy).
 
-**Check when convenient:** the rebuilt VM has an ephemeral external IP (`136.112.188.80`) that is never used — all access is via Tailscale. Per the cost finding below, an in-use external IPv4 is ~$2.90/mo. Removing it is a straightforward saving.
+**Check when convenient:** the rebuilt VM has an ephemeral external IP (address not recorded — it changes on every stop/start; the value written here on 2026-07-31 was stale by 2026-08-03) that is never used — all access is via Tailscale. Per the cost finding below, an in-use external IPv4 is ~$2.90/mo. Removing it is a straightforward saving.
 
 Also: check-in cadence 90 → 180 minutes (`config/personas/mike/scheduler.yaml`, gitignored — hand-copied to VM, scheduler restarted).
 

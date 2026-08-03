@@ -279,7 +279,7 @@ Mac (dev)
                                  (Metatron app → https://metatron-vm.tail0acc5d.ts.net:8001)
 ```
 
-The VM's external IP (`35.202.250.80`) is never used. All client access is through the Tailscale WireGuard tunnel. The server listens on **HTTPS** port 8001 using the Tailscale-issued cert for `metatron-vm.tail0acc5d.ts.net`, which is publicly trusted — so no CA install is needed on any client. (Tailscale would encrypt the transport regardless; the cert exists so browsers and the Android WebView treat the origin as secure.)
+The VM's external IP is never used. All client access is through the Tailscale WireGuard tunnel. The server listens on **HTTPS** port 8001 using the Tailscale-issued cert for `metatron-vm.tail0acc5d.ts.net`, which is publicly trusted — so no CA install is needed on any client. (Tailscale would encrypt the transport regardless; the cert exists so browsers and the Android WebView treat the origin as secure.)
 
 ---
 
@@ -292,7 +292,7 @@ The VM's external IP (`35.202.250.80`) is never used. All client access is throu
 | OS | Debian 12 |
 | Zone | `us-central1-a` |
 | GCP project | `metatron-ai-499810` |
-| External IP | `136.112.188.80` (ephemeral, changed on the 2026-07-31 rebuild; not used — do not open firewall) |
+| External IP | ephemeral — **changes on every stop/start**, so no literal value is recorded here. Not used by anything; do not open firewall. Look it up if ever needed: `gcloud compute instances describe metatron-vm --zone=us-central1-a --project=metatron-ai-499810 --format="value(networkInterfaces[0].accessConfigs[0].natIP)"` |
 | Tailscale IP | `100.64.226.49` (production client address — unchanged across the rebuild) |
 | VPC network | `metatron-net` / `metatron-subnet` (`10.10.0.0/24`), internal `10.10.0.4` |
 | Firewall | `metatron-net-allow-iap-ssh` — `tcp:22` from `35.235.240.0/20` (IAP range) only; no public ingress |
