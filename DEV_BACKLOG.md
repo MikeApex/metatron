@@ -49,6 +49,16 @@ Capabilities that do not exist yet.
 
   Related: this is also what the Pattern Miner's baselines will run into. Worth resolving before trusting any cross-domain pattern it produces.
 
+- **Check-ins are not gated on the user having been present at all.** The gates shipped 2026-08-03 (`quiet_after_user_minutes`, `min_gap_minutes` — see Done) solve *"don't interrupt a live conversation"*. They do **not** solve the inverse, which is the one the cost analysis identified: a day where the user says nothing still fires the full check-in schedule. That is the pathological case from the parked programme — *"the VM has been running ~12 full multi-specialist pipelines/day talking to itself while the app was broken"* — and it survives the current gates, because silence is exactly what `quiet_after_user_minutes` reads as permission to fire.
+
+  **The check needed:** any user-originated exchange (`proactive=0`) since the last check-in fired. If none, skip. `_record_fire()`/`_minutes_since_last_fire()` in [core/scheduler.py](core/scheduler.py) already persist the timestamp to key on, and `_activity_gate_blocks` ([:173](core/scheduler.py#L173)) is the right place for it.
+
+  **Decide the intended behaviour before building.** A hard skip means a user who goes quiet for three days gets nothing on the fourth morning — which may be exactly wrong, since a silent stretch is arguably when a check-in matters most. A first-of-day exemption, or an escalating gap rather than a hard skip, is probably the right shape. `morning_brief`/`evening_close` are deliberately ungated (2026-08-03 decision: fixed points of the day) and should stay that way.
+
+- **Sentence-chunked TTS.** Kokoro is at 2.8s/call after the in-process fix (down from 15.0s, which was a subprocess re-import per request). Streaming the first sentence while the rest synthesises would cut perceived latency again. **Deferred pending a judgement call on whether 2.8s actually feels slow in use** — do not build this before using voice mode enough to say. Named in the parked programme as an alpha nice-to-have, not a blocker.
+
+- **Browser does not live-refresh on foreign messages.** A message sent from the terminal or the Android app reaches the browser only after a manual page reload; the app and terminal sync fine. Sync itself is confirmed working — this is a client-side render path, not a transport failure. Same file and same area as the scroll and line-wrap items above, so worth doing in one pass. The parked programme's Phase 2b (one connection state machine, `visibilitychange`/`focus`/`online` handling) is the fuller treatment; some of it is already in `static/index.html`.
+
 - **Cannot take an action on an external website.** *"Can you go on the R website and reserve tickets for us"* — SEQ 006, 2026-08-02. No browsing-with-actions capability exists. Worth an explicit decision on whether this is ever in scope, since it is the first request of its kind and carries a real security surface: the same message handed over an email address, postal address and phone number.
 
 - ~~**No tool can write a biographical fact.**~~ **Done 2026-08-03 (`35e53ee`)** — `tools/profile.py`. See the follow-on immediately below, which is the part that was *not* built.
@@ -73,6 +83,17 @@ Stale docs, paths, and low-priority corrections.
 - **Transcript lines run too long on screen.** *"The transcript liners too long on the screen"* — SEQ 014, 2026-08-02. Client-side line wrapping / bubble width in `static/index.html`. Note the conversation-scroll fix (`height:100dvh` + `overflow:hidden` on body, `min-height:0` on the flex child) is in the same area and is testable in a desktop browser without rebuilding the APK.
 
 - **`/metatron-troubleshoot` command template points at pre-persona-scoping paths.** Uses bare `data/conversations/` and hardcodes `data/personas/mike/traces/`, so it has to be corrected inline every time it runs, and it fails outright for any other persona. Also missing `--tunnel-through-iap` on its SSH command, which is now required since the VM moved to `metatron-net`. *Recorded in SESSION.md 2026-08-02.*
+- **Roadmap D2 item 5 (turn reduction) is mis-scoped and needs rewriting before anyone works it.** It targets the Coordinator on the assumption that the Coordinator runs ~7 turns per exchange. Measured 2026-08-02: **the Coordinator runs 1 turn.** The turns are in the specialists — `logistics` alone ran 8. Working the item as written would optimise a component that is already minimal and leave the actual cost untouched. Re-measure across several specialists before rewriting the item, rather than swapping one assumed culprit for another.
+
+- **No check that the VM is actually running what the Mac has committed.** Two false records in one day (2026-08-02): a `./deploy.sh` failed at the SSH step and silently left the VM a commit behind, and a parallel chat's *"NOT yet deployed"* note was already stale because a deploy from this window had shipped their commit as a side effect. Both were caught by hand.
+
+  **Cheapest guard, no code:** compare `git log --oneline -3` on the VM against local before trusting any claim about what is or is not deployed.
+  ```bash
+  gcloud compute ssh metatron-vm --zone=us-central1-a --project=metatron-ai-499810 \
+    --tunnel-through-iap --command 'cd ~/multi-model-mcp && git log --oneline -3'
+  ```
+  Worth folding into `deploy.sh` as a post-deploy assertion — compare the remote HEAD against the pushed SHA and **fail loudly on mismatch**, since the failure mode here is silence, not an error. Note this bites hardest with parallel chat windows open: either window's deploy ships whatever both have committed, so a per-session "not deployed" note is only true until the other window deploys.
+
 - **Spend guard pricing rates are unverified estimates.** `config/modules/spend_guard.yaml` is marked VERIFY — fine for order-of-magnitude runaway detection, not for cost accounting. Check against current Vertex AI pricing before trusting any dollar figure derived from it.
 - **VM has an unused ephemeral external IP** (`136.112.188.80`). All access is over Tailscale. An in-use external IPv4 is ~$2.90/mo. *Recorded in SESSION.md 2026-07-31.*
 - **The scheduler cannot defer a time-based job — only skip it.** `_activity_gate_blocks` ([core/scheduler.py:173](core/scheduler.py#L173)) returns a reason-to-skip, and `fire_session` ([:263](core/scheduler.py#L263)) simply `return`s. For an `interval_minutes` job that is harmless — the next poll retries a few minutes later, which is exactly how `companion_checkin`'s 30-minute poll / 60-minute quiet gate works. For a `time:`-anchored job it means **gone for the day**: the `schedule` library fires it once at its clock time and there is no second attempt.
