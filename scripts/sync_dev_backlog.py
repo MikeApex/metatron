@@ -73,12 +73,34 @@ DONE_HEADING = "\n## Done\n"
 INBOX_PLACEHOLDER = "*(nothing yet)*"
 
 
+def _auth_header() -> dict:
+    """
+    Mint a short-lived bearer token for /monitor/file.
+
+    The endpoint requires authentication as of 2026-08-03. This script holds the same
+    password the server does (both read .env), and the signing key derives from it, so
+    the token is minted locally rather than by calling /auth/login.
+
+    core.auth is stdlib-only by design, which is what keeps this script's
+    standard-library-only constraint intact. Returns {} if the password is not set —
+    consistent with this script's fail-silent contract; the request then 401s and the
+    caller treats it like any other unreachable-VM case.
+    """
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    try:
+        from core.auth import bearer_header
+        return bearer_header(ttl_seconds=300)
+    except Exception:
+        return {}
+
+
 def fetch_events(server: str, persona: str) -> list[dict]:
     """Fetch and parse the persona's quality event log. Returns [] on any failure."""
     path = f"data/personas/{persona}/logs/quality_events.json"
     url = f"{server.rstrip('/')}/monitor/file?{urllib.parse.urlencode({'path': path})}"
     try:
-        with urllib.request.urlopen(url, timeout=TIMEOUT_SECONDS) as resp:
+        req = urllib.request.Request(url, headers=_auth_header())
+        with urllib.request.urlopen(req, timeout=TIMEOUT_SECONDS) as resp:
             payload = json.loads(resp.read().decode("utf-8", errors="replace"))
     except (urllib.error.URLError, OSError, ValueError, json.JSONDecodeError):
         return []

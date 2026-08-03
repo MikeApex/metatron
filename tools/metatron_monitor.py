@@ -45,6 +45,26 @@ except ImportError:
 DEFAULT_SERVER = "https://100.64.226.49:8001"
 
 
+def _auth_headers() -> dict:
+    """
+    Bearer token for the /monitor/* endpoints, which require auth as of 2026-08-03.
+
+    Minted locally rather than fetched: this machine holds the same
+    METATRON_AUTH_PASSWORD the server does, and the signing key derives from it.
+    core.auth is stdlib-only, so it imports cleanly from this tool's own slim venv
+    (requirements-monitor.txt) without dragging in the server's dependencies.
+
+    Returns {} if the password is missing — the request then 401s and the existing
+    error handling reports an unreachable server, which is the honest description.
+    """
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    try:
+        from core.auth import bearer_header
+        return bearer_header(ttl_seconds=3600)
+    except Exception:
+        return {}
+
+
 # ---------------------------------------------------------------------------
 # Data helpers
 # ---------------------------------------------------------------------------
@@ -410,7 +430,7 @@ class TheBookApp(App):
             else:
                 self._set_status("Loading personas…")
             try:
-                async with httpx.AsyncClient(timeout=10, verify=False) as client:
+                async with httpx.AsyncClient(timeout=10, verify=False, headers=_auth_headers()) as client:
                     r = await client.get(f"{self.server}/monitor/personas")
                     r.raise_for_status()
                     personas = r.json().get("personas", [])
@@ -478,7 +498,7 @@ class TheBookApp(App):
         range_label = f"last {self._range_hours}h" if self._range_hours > 0 else "all time"
         self._set_status(f"Loading {persona} ({range_label}, max {self._limit})…")
         try:
-            async with httpx.AsyncClient(timeout=15, verify=False) as client:
+            async with httpx.AsyncClient(timeout=15, verify=False, headers=_auth_headers()) as client:
                 conv_r = await client.get(
                     f"{self.server}/monitor/conversations", params=params,
                 )
@@ -715,7 +735,7 @@ class TheBookApp(App):
         path = event.button.name or str(event.button.label)
         self._set_status(f"Opening {path}…")
         try:
-            async with httpx.AsyncClient(timeout=15, verify=False) as client:
+            async with httpx.AsyncClient(timeout=15, verify=False, headers=_auth_headers()) as client:
                 # Try history endpoint first — returns full directory for dated files
                 r = await client.get(
                     f"{self.server}/monitor/history", params={"path": path}
@@ -742,7 +762,7 @@ class TheBookApp(App):
         retry_delay = 2
         while True:
             try:
-                async with httpx.AsyncClient(timeout=None, verify=False) as client:
+                async with httpx.AsyncClient(timeout=None, verify=False, headers=_auth_headers()) as client:
                     async with client.stream("GET", url, params=sse_params) as resp:
                         retry_delay = 2  # reset on successful connection
                         self._set_status(

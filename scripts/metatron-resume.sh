@@ -34,8 +34,11 @@ echo "VM started. Waiting for server to come up..."
 timeout=240; elapsed=0; interval=10
 while [ "$elapsed" -lt "$timeout" ]; do
     # --tunnel-through-iap required since the 2026-07-31 VPC rebuild (no public SSH ingress).
+    # /health requires authentication as of 2026-08-03. The token is minted on the VM,
+    # which holds METATRON_AUTH_PASSWORD; scripts/mint_token.py is standard-library only,
+    # so the system python3 is enough and the venv does not need activating.
     status=$(gcloud compute ssh metatron-vm --zone=us-central1-a --project=metatron-ai-499810 \
-        --tunnel-through-iap --command="curl -sk https://localhost:8001/health" 2>/dev/null || echo "")
+        --tunnel-through-iap --command="cd ~/multi-model-mcp && curl -sk -H \"Authorization: Bearer \$(python3 scripts/mint_token.py)\" https://localhost:8001/health" 2>/dev/null || echo "")
     if [ -n "$status" ]; then
         echo "Server is up: $status"
         exit 0

@@ -251,6 +251,13 @@
       font-size: 15px;
       outline: none;
     }
+    #login-error {
+      display: none;
+      font-size: 13px;
+      color: #b00020;
+      text-align: center;
+      width: 100%;
+    }
     #login-enter-btn {
       width: 100%;
       height: 52px;
@@ -305,8 +312,9 @@
     </div>
     <div class="login-row">
       <label>Password</label>
-      <input id="login-password" type="password" placeholder="not required">
+      <input id="login-password" type="password" placeholder="required">
     </div>
+    <div id="login-error"></div>
     <button id="login-enter-btn">Enter</button>
   </div>
 </div>
@@ -357,10 +365,72 @@
 
   let currentPersona = null;
 
+  // The session token from /auth/login. Also set as an HttpOnly cookie, which is what
+  // carries the same-origin browser; this copy is what the Android app uses, since it
+  // calls the VM cross-origin from https://localhost and never receives that cookie.
+  let authToken = localStorage.getItem('metatron_token') || null;
+
+  // Every call to the server goes through here. A bare fetch() that forgot the header
+  // is the failure this wrapper exists to prevent — and a 401 anywhere means the token
+  // expired or the password changed, so it drops straight back to the login screen
+  // rather than failing in some feature-specific way the user has to interpret.
+  async function authFetch(path, options = {}) {
+    const opts = { ...options, credentials: 'include' };
+    opts.headers = { ...(options.headers || {}) };
+    if (authToken) opts.headers['Authorization'] = 'Bearer ' + authToken;
+    const res = await fetch(SERVER + path, opts);
+    if (res.status === 401) {
+      clearAuth();
+      showLogin();
+      setLoginError('Session expired — sign in again.');
+      throw new Error('unauthenticated');
+    }
+    return res;
+  }
+
+  function clearAuth() {
+    authToken = null;
+    localStorage.removeItem('metatron_token');
+    if (ws) { try { ws.close(); } catch (e) {} }
+  }
+
+  function setLoginError(msg) {
+    const el = document.getElementById('login-error');
+    el.textContent = msg || '';
+    el.style.display = msg ? '' : 'none';
+  }
+
+  async function login(persona, password) {
+    setLoginError('');
+    const btn = document.getElementById('login-enter-btn');
+    btn.disabled = true;
+    try {
+      const res = await fetch(SERVER + '/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ password: password || '' }),
+      });
+      if (!res.ok) {
+        setLoginError(res.status === 401 ? 'Incorrect password.' : 'Sign-in failed.');
+        return;
+      }
+      const data = await res.json();
+      authToken = data.token;
+      localStorage.setItem('metatron_token', authToken);
+      enterApp(persona);
+    } catch (e) {
+      setLoginError('Cannot reach the server.');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
   function enterApp(persona) {
     currentPersona = persona;
     localStorage.setItem('metatron_persona', persona);
     document.getElementById('login-screen').style.display = 'none';
+    setLoginError('');
     const chip = document.getElementById('persona-chip');
     chip.textContent = persona;
     chip.style.display = '';
@@ -374,16 +444,16 @@
     document.getElementById('persona-chip').style.display = 'none';
   }
 
-  document.getElementById('login-enter-btn').addEventListener('click', () => {
+  function submitLogin() {
     const persona = document.getElementById('login-persona-select').value;
-    if (persona) enterApp(persona);
-  });
+    const password = document.getElementById('login-password').value;
+    if (persona) login(persona, password);
+  }
+
+  document.getElementById('login-enter-btn').addEventListener('click', submitLogin);
 
   document.getElementById('login-password').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      const persona = document.getElementById('login-persona-select').value;
-      if (persona) enterApp(persona);
-    }
+    if (e.key === 'Enter') submitLogin();
   });
 
   document.getElementById('persona-chip').addEventListener('click', showLogin);
@@ -418,7 +488,7 @@
       tap.title = '';
       tap.addEventListener('click', () => {
         tap.classList.add('sent');
-        fetch(SERVER + '/feedback', { method: 'POST' }).catch(() => {});
+        authFetch('/feedback', { method: 'POST' }).catch(() => {});
       });
       conversation.appendChild(tap);
     }
@@ -446,6 +516,9 @@
   // --- WebSocket (cross-device sync) ---
 
   let ws = null;
+  // Set when the server closes a socket for bad credentials, so onclose knows not to
+  // start the reconnect loop.
+  let wsAuthFailed = false;
   let ownBubble = null;
   let ownAccumulated = '';
   const foreignBubbles = new Map();  // exchange_id → {bubble, accumulated}
@@ -493,15 +566,34 @@
 
     ws.onopen = () => {
       lastMessageAt = Date.now();
-      setStatus('Ready', '#555');
-      if (lastSeenId > 0) {
-        ws.send(JSON.stringify({ type: 'catchup', since_id: lastSeenId }));
-      }
+      setStatus('Connecting...', '#888');
+      // The server requires the first frame to be an auth frame — a WebSocket cannot
+      // carry an Authorization header, and a ?token= in the URL would land in the
+      // access log. Nothing else is sent until the server answers auth_ok.
+      ws.send(JSON.stringify({ type: 'auth', token: authToken }));
     };
 
     ws.onmessage = (event) => {
       lastMessageAt = Date.now();
-      handleWsMessage(JSON.parse(event.data));
+      const msg = JSON.parse(event.data);
+
+      if (msg.type === 'auth_ok') {
+        setStatus('Ready', '#555');
+        if (lastSeenId > 0) {
+          ws.send(JSON.stringify({ type: 'catchup', since_id: lastSeenId }));
+        }
+        return;
+      }
+      if (msg.type === 'auth_failed') {
+        // Do not reconnect: the token is bad and retrying would loop.
+        wsAuthFailed = true;
+        clearAuth();
+        showLogin();
+        setLoginError('Session expired — sign in again.');
+        return;
+      }
+
+      handleWsMessage(msg);
     };
 
     ws.onerror = () => {
@@ -516,6 +608,14 @@
         ownBubble.textContent = ownAccumulated || '[Connection lost]';
         ownBubble = null; ownAccumulated = '';
         setLoading(false);
+      }
+      // A socket the server closed for bad credentials must not be retried — the
+      // token will still be bad, and the reconnect loop would hammer the server
+      // while showing the user nothing but "Reconnecting...".
+      if (wsAuthFailed) {
+        wsAuthFailed = false;
+        setStatus('Signed out', '#888');
+        return;
       }
       setStatus('Reconnecting...', '#888');
       scheduleReconnect(3000);
@@ -706,7 +806,7 @@
 
   async function sendBlocking(input, agent, provider) {
     try {
-      const res = await fetch(SERVER + '/session', {
+      const res = await authFetch('/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ input, agent, provider, persona: currentPersona }),
@@ -810,7 +910,7 @@
       try {
         const fd = new FormData();
         fd.append('audio', blob, `${Date.now()}.webm`);
-        const res = await fetch(SERVER + '/transcribe', { method: 'POST', body: fd });
+        const res = await authFetch('/transcribe', { method: 'POST', body: fd });
         if (!res.ok) throw new Error((await res.json()).detail || 'Transcription failed');
         const { transcript: text } = await res.json();
         transcript.textContent = text;
@@ -898,7 +998,7 @@
   async function speakResponse(text) {
     if (currentSource) { try { currentSource.stop(); } catch {} currentSource = null; }
     try {
-      const res = await fetch(SERVER + '/tts', {
+      const res = await authFetch('/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text }),
@@ -924,7 +1024,7 @@
   // --- Web Push registration ---
 
   async function subscribePush(reg) {
-    const keyRes = await fetch(SERVER + '/vapid-public-key');
+    const keyRes = await authFetch('/vapid-public-key');
     const { publicKey } = await keyRes.json();
     if (!publicKey) return;
     const padding = '='.repeat((4 - publicKey.length % 4) % 4);
@@ -939,7 +1039,7 @@
       userVisibleOnly: true,
       applicationServerKey: raw,
     });
-    await fetch(SERVER + '/subscribe', {
+    await authFetch('/subscribe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(sub.toJSON()),
@@ -1010,6 +1110,13 @@
   // Auto-login if persona saved — must run after all variables and handlers are initialized
   const savedPersona = localStorage.getItem('metatron_persona');
   if (savedPersona) {
+    document.getElementById('login-persona-select').value = savedPersona;
+  }
+  // Auto-enter only with a token in hand. Without one every call would 401 and bounce
+  // straight back here, so the login screen is the honest starting point. The token
+  // outlives a restart (it is signed, not stored server-side), so this is still the
+  // usual path — the user is not asked for a password on every app open.
+  if (savedPersona && authToken) {
     enterApp(savedPersona);
   }
 </script>

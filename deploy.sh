@@ -52,9 +52,14 @@ sudo systemctl restart metatron-scheduler
 # Note: new requests can still arrive during the drain window (server stays up).
 # A "no new sessions" mode is tracked in archive/plans/future_phases.md (Fix 3 scope).
 echo "Checking for active SSE streams..."
+# /active requires authentication as of 2026-08-03. Minted here rather than fetched:
+# this machine holds METATRON_AUTH_PASSWORD, which is what the signing key derives
+# from. If the mint fails the curl 401s, `active` falls back to 0, and the drain
+# proceeds as it did before — the same behaviour as an unreachable server.
+MT_TOKEN=$(python3 scripts/mint_token.py 900 2>/dev/null || echo "")
 timeout=180; elapsed=0; interval=5
 while [ "$elapsed" -lt "$timeout" ]; do
-    active=$(curl -sk https://localhost:8001/active 2>/dev/null \
+    active=$(curl -sk -H "Authorization: Bearer $MT_TOKEN" https://localhost:8001/active 2>/dev/null \
         | python3 -c 'import sys,json; print(json.load(sys.stdin)["active_streams"])' 2>/dev/null \
         || echo 0)
     [ "$active" = "0" ] && { echo "No active streams — restarting server."; break; }

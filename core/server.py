@@ -32,12 +32,14 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import aiosqlite
 import edge_tts
-from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import (FastAPI, File, HTTPException, Request, Response, UploadFile, WebSocket,
+                     WebSocketDisconnect)
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from core import auth
 from core.orchestrator import run_pipeline_session_stream, run_session
 from core.persona import persona_data_dir
 
@@ -53,14 +55,94 @@ DEFAULT_PERSONA: str | None = os.environ.get("SERVER_PERSONA") or None
 
 DB_PATH = Path(__file__).parent.parent / "data" / "conversations" / "metatron.db"
 
+# Refuse to start unauthenticated. Module level rather than __main__, so the guard holds
+# however the app is launched (uvicorn core.server:app, a test import, anything).
+auth.require_configured()
+
+# Origins allowed to call this server cross-origin. The PWA is served same-origin and
+# needs none of this; the Android app is the reason it exists — Capacitor serves the
+# WebView from https://localhost and calls the VM cross-origin.
+#
+# allow_origins=["*"] is gone: a wildcard is incompatible with allow_credentials=True
+# (browsers reject the combination outright), and "local network only" stopped being
+# true the day the VM went up.
+_DEFAULT_ORIGINS = [
+    "https://localhost",
+    "http://localhost",
+    "capacitor://localhost",
+    "https://metatron-vm.tail0acc5d.ts.net:8001",
+]
+ALLOWED_ORIGINS = [
+    o.strip() for o in os.environ.get("METATRON_ALLOWED_ORIGINS", "").split(",") if o.strip()
+] or _DEFAULT_ORIGINS
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # local network only — no auth needed at this stage
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 STATIC_DIR = Path(__file__).parent.parent / "static"
+
+
+@app.middleware("http")
+async def require_auth(request: Request, call_next):
+    """
+    Gate every HTTP endpoint except the app shell and /auth/login.
+
+    Deliberately a middleware rather than a per-endpoint dependency: the failure mode
+    being closed off is an endpoint that nobody remembered to protect, and a middleware
+    is the only version of this that cannot be forgotten when the next route is added.
+
+    Does NOT cover /ws — Starlette never runs HTTP middleware for a WebSocket
+    handshake. That path is gated inside the endpoint; see websocket_endpoint().
+    """
+    # CORS preflight carries no credentials by design; let CORSMiddleware answer it.
+    if request.method == "OPTIONS" or auth.is_open_path(request.url.path):
+        return await call_next(request)
+
+    token = auth.credential_from_headers(
+        request.headers.get("authorization"),
+        request.cookies.get(auth.COOKIE_NAME),
+    )
+    if not auth.verify_token(token):
+        return JSONResponse({"detail": "Authentication required."}, status_code=401)
+    return await call_next(request)
+
+
+class LoginRequest(BaseModel):
+    password: str
+
+
+@app.post("/auth/login")
+async def auth_login(req: LoginRequest, response: Response) -> dict:
+    """
+    Exchange the shared password for a session token.
+
+    Returns the token in the body *and* sets it as a cookie. Both carry the same value:
+    the cookie serves the same-origin browser, the body serves the Android app, which is
+    cross-origin and so never receives a SameSite=Lax cookie.
+    """
+    if not auth.check_password(req.password):
+        # Awaited here rather than inside check_password so the delay never blocks the
+        # event loop for other requests.
+        delay = auth.failure_delay()
+        if delay:
+            await asyncio.sleep(delay)
+        raise HTTPException(status_code=401, detail="Incorrect password.")
+
+    token = auth.issue_token()
+    response.set_cookie(
+        auth.COOKIE_NAME, token,
+        httponly=True,      # unreachable from JS, so an XSS in the PWA cannot lift it
+        secure=True,        # HTTPS only — the VM serves behind a Tailscale cert
+        samesite="lax",
+        max_age=auth.TOKEN_TTL_SECONDS,
+        path="/",
+    )
+    return {"token": token, "expires_in": auth.TOKEN_TTL_SECONDS}
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +188,14 @@ class ConnectionManager:
         self.active: dict[str, set[WebSocket]] = {}
 
     async def connect(self, ws: WebSocket, persona: str) -> None:
-        await ws.accept()
+        """
+        Join an already-accepted socket to a persona's broadcast group.
+
+        The caller accepts the socket, not this method: the auth handshake has to
+        exchange frames before the connection is trusted, and a socket must be accepted
+        before it can carry a frame. Registering here — after that check — is what keeps
+        an unauthenticated socket out of the broadcast group.
+        """
         self.active.setdefault(persona, set()).add(ws)
 
     def disconnect(self, ws: WebSocket, persona: str) -> None:
@@ -410,6 +499,36 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
     """
     persona_orch = persona or DEFAULT_PERSONA
     persona_key = persona_orch or "__default__"
+
+    # --- Authentication ---------------------------------------------------
+    # HTTP middleware does not run for a WebSocket handshake, so this endpoint is
+    # gated here or not at all.
+    #
+    # The client's first frame must be {"type": "auth", "token": "<token>"}. A cookie
+    # would work for the same-origin browser but not for the Android app, which is
+    # cross-origin and never receives one; a ?token= query parameter would work for
+    # both but writes the secret into URLs and therefore into access logs. The
+    # handshake is the only option that is uniform across both clients and leaks
+    # nothing.
+    #
+    # The connection is accepted before the check because a WebSocket cannot carry a
+    # frame until it is open. It is registered with the manager only after the check
+    # passes, so an unauthenticated socket never joins a broadcast group.
+    await websocket.accept()
+    try:
+        opening = await asyncio.wait_for(websocket.receive_json(), timeout=10)
+    except Exception:
+        # Timeout, malformed JSON, or a client that hung up. All the same answer:
+        # a socket that has not authenticated within 10s does not get to linger.
+        await websocket.close(code=1008)
+        return
+    if opening.get("type") != "auth" or not auth.verify_token(opening.get("token")):
+        await websocket.send_json({"type": "auth_failed"})
+        await websocket.close(code=1008)
+        return
+    await websocket.send_json({"type": "auth_ok"})
+    # ----------------------------------------------------------------------
+
     await manager.connect(websocket, persona_key)
 
     recent = await _get_recent_exchanges(persona_key)

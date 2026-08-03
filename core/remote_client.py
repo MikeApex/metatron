@@ -52,6 +52,30 @@ def _ws_url(server: str, persona: str) -> str:
     return f"{base}/ws?persona={persona}"
 
 
+async def _connect_authed(websockets, url: str, insecure: bool):
+    """
+    Open a WebSocket and complete the auth handshake.
+
+    The server requires the first frame to be {"type": "auth", "token": ...} — a
+    WebSocket cannot carry an Authorization header, and a token in the query string
+    would land in the access log. Every connect path goes through here, including the
+    reconnect loop: a reconnect that skipped the handshake would be closed by the
+    server and retried forever.
+    """
+    from core.auth import client_token
+
+    conn = await websockets.connect(url, ssl=_ssl_context(url, insecure), max_size=None)
+    await conn.send(json.dumps({"type": "auth", "token": client_token(ttl_seconds=86400)}))
+    reply = json.loads(await conn.recv())
+    if reply.get("type") != "auth_ok":
+        await conn.close()
+        raise PermissionError(
+            "Server rejected the session token. Check METATRON_AUTH_PASSWORD in .env "
+            "matches the value set on the server."
+        )
+    return conn
+
+
 def _ssl_context(url: str, insecure: bool):
     if not url.startswith("wss://"):
         return None
@@ -74,7 +98,7 @@ async def _run(persona: str, server: str, provider: str | None, insecure: bool) 
     print(f"\nLife Manager — {persona} {_DIM}(remote: {server}){_RESET}")
 
     try:
-        conn = await websockets.connect(url, ssl=_ssl_context(url, insecure), max_size=None)
+        conn = await _connect_authed(websockets, url, insecure)
     except Exception as exc:
         print(f"\nCould not reach the server at {server}\n  {exc}\n\n"
               f"Check the server is running and Tailscale is up. To run the pipeline\n"
@@ -105,9 +129,7 @@ async def _run(persona: str, server: str, provider: str | None, insecure: bool) 
                 while not _closed:
                     await asyncio.sleep(delay)
                     try:
-                        conn = await websockets.connect(
-                            url, ssl=_ssl_context(url, insecure), max_size=None
-                        )
+                        conn = await _connect_authed(websockets, url, insecure)
                         print(f"{_YELLOW}[reconnected]{_RESET}")
                         break
                     except Exception:
@@ -267,7 +289,8 @@ async def _send_one(persona: str, text: str, server: str, provider: str | None,
     import websockets
 
     url = _ws_url(server, persona)
-    async with websockets.connect(url, ssl=_ssl_context(url, insecure), max_size=None) as ws:
+    ws = await _connect_authed(websockets, url, insecure)
+    try:
         await ws.recv()  # history handshake
         xid = str(uuid.uuid4())
         await ws.send(json.dumps({
@@ -288,6 +311,10 @@ async def _send_one(persona: str, text: str, server: str, provider: str | None,
                 return ""
             elif kind == "error":
                 raise RuntimeError(msg.get("text", "server reported an error"))
+    finally:
+        # Was an `async with` before the auth handshake was added; the handshake has
+        # to happen between connect and first use, so the close is explicit now.
+        await ws.close()
 
 
 def send_one(persona: str, text: str, server: str | None = None,
