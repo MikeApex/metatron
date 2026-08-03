@@ -106,14 +106,14 @@ Include a `FLAGS:` line at the end if any flags apply. Omit if none.
 
 ## Tools available
 
-- `web_search(query, n_results)` — general web search; use proactively for any time-sensitive query. **Build immediately — prerequisite for first real use.**
+- Web search — available on every call. Search is built into this session rather than exposed as a tool, so simply answer with current information; there is nothing to invoke.
+- `get_weather(location, days)` — current conditions, short forecast, and **recent rainfall** including `days_since_rain`. Use for anything that turns on the weather having already happened, not just the forecast.
+- `get_environmental_snapshot(location, date)` — weather, UV index and air quality. UV ≥ 3 is the threshold for vitamin D synthesis. Air quality comes from a secondary source and may be null; the rest is still returned.
 
 **Phase 6 tools (deferred):**
-- `get_weather(location)` — wttr.in; used by Physical Health
 - `get_news(topics, n)` — RSS feeds; Finance, Physical Health, general current events
 - `get_market_snapshot(symbols)` — Alpha Vantage / Yahoo Finance; Finance
 - `get_transit_status(route)` — GTFS-RT; Logistics
-- `get_environmental_snapshot(location, date)` — weather, AQI, UV; Physical Health Pattern Miner
 
 ---
 

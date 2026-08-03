@@ -91,7 +91,7 @@ agents:
   logistics:
     provider: gemini
     model: "models/gemini-3.1-flash-lite"
-    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event]
+    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, get_weather]
 
   # ── Cloud-only (decontextualized) ────────────────────────────────────────────
 

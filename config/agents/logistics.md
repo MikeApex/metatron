@@ -191,10 +191,14 @@ Write recurring obligations and preference updates to `write_agent_config` (`age
 - `read_agent_config` — read back active trip plans, itineraries, or logistical plans. Use `agent_name: "logistics"`.
 - *Emergency contacts and next-of-kin for bookings:* Surface the need via `PENDING_CONFIRMATION` — the Synthesizer will provide relevant Emergency & Legacy fields from the store when available. Logistics does not access the wishes store directly. Read access design is deferred to Phase 6.
 
+Calendar (live since 2026-08-03):
+- `read_calendar(start_date, end_date)` — read events from the user's calendar
+- `write_calendar_event(title, start, end, description, all_day, recurrence, alarm_minutes_before)` — create events. Match the shape to the thing: an **appointment** happens at a set time and should interrupt (timed, with `alarm_minutes_before`); a **deadline** must happen on a day but has no time (`all_day: true`, no alarm — an all-day alert fires at midnight and helps nobody). Repeat either with `recurrence`, an RRULE body such as `FREQ=MONTHLY;BYMONTHDAY=15`.
+
+Prefer the calendar over a scheduled prompt whenever the timing is fixed and needs no judgement — it costs nothing to run and the user sees it in their own calendar app.
+
 Future tools (Deliverable 6):
-- `read_calendar(days_ahead)` — CalDAV
-- `write_calendar_event(title, start, end, notes)` — CalDAV
-- `get_weather(location)` — for travel planning context
+- `get_transit_status(route)` — GTFS-RT
 
 ---
 

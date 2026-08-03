@@ -37,12 +37,18 @@ TIMEOUT_SECONDS = 3
 # The self-improvement stream carries ROUTING_MISS / USER_CORRECTION too; those
 # are for the Pattern Miner health pass, not for a human backlog. Filter here so
 # nothing extra has to be built on the writing side.
-WANTED = {"SELF_APPLIED", "INSTRUCTION_CHANGE_REQUEST", "FEATURE_REQUEST"}
+WANTED = {"SELF_APPLIED", "INSTRUCTION_CHANGE_REQUEST", "FEATURE_REQUEST", "TOOL_DENIED"}
 
 LABELS = {
     "FEATURE_REQUEST": "needs building",
     "INSTRUCTION_CHANGE_REQUEST": "instruction change",
     "SELF_APPLIED": "already applied by the tool",
+    # Emitted by dispatch_tool when an agent reaches for a tool it was not
+    # granted. The agent instruction files are a specification written ahead of
+    # the tools, so an attempt is evidence of designed intent — the signal that
+    # says grant it, build it, or drop the instruction. Deduplicated per
+    # (agent, tool) at the source.
+    "TOOL_DENIED": "agent wanted a tool it lacks",
 }
 
 ROOT = Path(__file__).resolve().parent.parent

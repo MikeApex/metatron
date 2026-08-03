@@ -802,11 +802,89 @@ def _signature_hint(fn) -> str:
     return f"{getattr(fn, '__name__', 'tool')}({'; '.join(parts)})" if parts else ""
 
 
+# Per-agent tool permissions.
+#
+# Two things were true before this existed, and both were invisible:
+#   1. The `allowed_tools` whitelist filtered the schemas an agent was SHOWN,
+#      but `dispatch_tool` looked up handlers unfiltered — so an agent that
+#      knew a tool's name from its instruction file could call anything, and
+#      did. SEQ 021: Logistics called write_agent_config three times without
+#      ever being advertised it.
+#   2. Because the call simply succeeded, there was no signal anywhere that an
+#      agent wanted a capability it had not been granted.
+#
+# (2) is the more valuable of the two. The agent instruction files are a
+# specification of intended capability written ahead of the tools, so an
+# attempted call is a design signal, not a bug. Enforcing silently would
+# destroy that signal; removing the references from the files would destroy it
+# just as thoroughly.
+#
+# So this starts in WARN mode: record the attempt, let it through. Denials land
+# in the dev backlog as evidence of demonstrated need, and the mode flips to
+# "enforce" once the log has been reviewed — before integrations open the
+# indirect-injection surface (roadmap B2 gates E1).
+TOOL_PERMISSION_MODE = os.environ.get("METATRON_TOOL_PERMISSIONS", "warn").lower()
+
+# One backlog entry per (agent, tool). Budget alerts taught us what happens
+# when a repeating condition writes a record every time it is observed.
+_reported_denials: set[tuple[str, str]] = set()
+
+
+def _record_tool_denial(agent: str, name: str, inputs: dict) -> None:
+    """
+    Record that an agent reached for a tool it was not granted.
+
+    Feeds the dev backlog via the quality-event stream, so a capability the
+    agents actually want surfaces as a development item rather than dying as a
+    log line nobody reads.
+    """
+    key = (agent, name)
+    if key in _reported_denials:
+        return
+    _reported_denials.add(key)
+
+    logger.warning(
+        f"[tool_permissions] {agent} called '{name}' without a grant "
+        f"(mode={TOOL_PERMISSION_MODE})"
+    )
+    try:
+        from tools.logger import write_quality_event
+        arg_keys = ", ".join(sorted(inputs)) if inputs else "no arguments"
+        write_quality_event(
+            event_type="TOOL_DENIED",
+            source_agent=agent,
+            detail=(
+                f"`{agent}` attempted `{name}` ({arg_keys}) but it is not in its "
+                f"allowed_tools. Its instruction file asks for this capability. "
+                f"Decide: grant it, build it, or drop the instruction."
+            ),
+            session_id=datetime.now().strftime("%Y-%m-%dT%H:%M"),
+        )
+    except Exception as e:
+        # Never let audit bookkeeping break a working tool call.
+        logger.warning(f"[tool_permissions] could not record denial: {e}")
+
+
 def dispatch_tool(name: str, inputs: dict, handlers: dict,
-                  _agent_rec=None, _turn_num: int = 1) -> str:
+                  _agent_rec=None, _turn_num: int = 1,
+                  _allowed: set[str] | None = None) -> str:
     """Execute a tool call and return the result as a string."""
     if name not in handlers:
         return f"Error: unknown tool '{name}'"
+
+    # _allowed is the set of tools actually advertised to this agent. None means
+    # the caller did not supply it (legacy path or an all-tools agent) — treat
+    # that as unrestricted rather than silently blocking everything.
+    if _allowed is not None and name not in _allowed:
+        _rec = _agent_rec or _tr.get_current_agent()
+        _record_tool_denial(getattr(_rec, "agent", "") or "unknown", name, inputs)
+        if TOOL_PERMISSION_MODE == "enforce":
+            return (
+                f"Error: '{name}' is not available to this agent. "
+                f"Complete the task with the tools you have, or report what you "
+                f"could not do."
+            )
+
     _trace(f"  [TOOL] {name}")
     t0 = time.monotonic()
     fn = handlers[name]
@@ -860,6 +938,11 @@ def run_session_anthropic(system_prompt: str, user_input: str,
                            tool_schemas: list[dict], tool_handlers: dict,
                            model: str | None = None) -> str:
     """Agentic loop using the Anthropic API."""
+
+    # The schemas handed to this runner are already filtered to what this
+    # agent was granted, so they double as the permission set — no separate
+    # lookup, and no way for the two to drift apart.
+    _allowed_names = {s['name'] for s in tool_schemas} if tool_schemas else set()
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         raise EnvironmentError("ANTHROPIC_API_KEY is not set.")
@@ -914,7 +997,7 @@ def run_session_anthropic(system_prompt: str, user_input: str,
             if tc.name in _PARALLEL_TOOLS:
                 parallel_calls.append(tc)
             else:
-                result = dispatch_tool(tc.name, tc.input, tool_handlers, _turn_num=turn_num)
+                result = dispatch_tool(tc.name, tc.input, tool_handlers, _turn_num=turn_num, _allowed=_allowed_names)
                 tool_results.append({
                     "type": "tool_result",
                     "tool_use_id": tc.id,
@@ -930,7 +1013,7 @@ def run_session_anthropic(system_prompt: str, user_input: str,
                     _tr.set_trace(_parent_trace)
                     _tr._set_current_agent(_parent_agent)
                     with (persona_scope(_parent_persona) if _parent_persona else nullcontext()):
-                        return dispatch_tool(name, inputs, handlers, _agent_rec=_parent_agent, _turn_num=turn)
+                        return dispatch_tool(name, inputs, handlers, _agent_rec=_parent_agent, _turn_num=turn, _allowed=_allowed_names)
                 return _worker
             with ThreadPoolExecutor() as executor:
                 future_to_tc = {
@@ -968,6 +1051,11 @@ def _anthropic_stream(
     NOTE: Only the Synthesizer uses this function at runtime — it never calls tools,
     so the first turn always goes directly to the yield-and-return path.
     """
+
+    # The schemas handed to this runner are already filtered to what this
+    # agent was granted, so they double as the permission set — no separate
+    # lookup, and no way for the two to drift apart.
+    _allowed_names = {s['name'] for s in tool_schemas} if tool_schemas else set()
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         raise EnvironmentError("ANTHROPIC_API_KEY is not set.")
@@ -1023,7 +1111,7 @@ def _anthropic_stream(
         sequential_calls = [tc for tc in tool_calls if tc.name not in _PARALLEL_TOOLS]
 
         for tc in sequential_calls:
-            result = dispatch_tool(tc.name, tc.input, tool_handlers, _turn_num=turn_num)
+            result = dispatch_tool(tc.name, tc.input, tool_handlers, _turn_num=turn_num, _allowed=_allowed_names)
             tool_results.append({"type": "tool_result", "tool_use_id": tc.id, "content": result})
 
         if parallel_calls:
@@ -1035,7 +1123,7 @@ def _anthropic_stream(
                     _tr.set_trace(_parent_trace)
                     _tr._set_current_agent(_parent_agent)
                     with (persona_scope(_parent_persona) if _parent_persona else nullcontext()):
-                        return dispatch_tool(name, inputs, handlers, _agent_rec=_parent_agent, _turn_num=turn)
+                        return dispatch_tool(name, inputs, handlers, _agent_rec=_parent_agent, _turn_num=turn, _allowed=_allowed_names)
                 return _worker
             with ThreadPoolExecutor() as executor:
                 future_to_tc = {
@@ -1079,6 +1167,11 @@ def run_session_ollama(system_prompt: str, user_input: str,
     think=False. Returns empty string (output already printed); run_interactive
     checks for this and skips its own print.
     """
+
+    # The schemas handed to this runner are already filtered to what this
+    # agent was granted, so they double as the permission set — no separate
+    # lookup, and no way for the two to drift apart.
+    _allowed_names = {s['name'] for s in tool_schemas} if tool_schemas else set()
     import ollama as _ollama
 
     _model = model or OLLAMA_MODEL
@@ -1182,7 +1275,7 @@ def run_session_ollama(system_prompt: str, user_input: str,
             _trace(f"  [TOOL] {tc.function.name}")
             if not os.environ.get("AI_TRACE"):
                 print(f"  [calling {tc.function.name}]", flush=True)
-            tool_result = dispatch_tool(tc.function.name, args, tool_handlers)
+            tool_result = dispatch_tool(tc.function.name, args, tool_handlers, _allowed=_allowed_names)
             messages.append({"role": "tool", "content": tool_result})
 
     if history is not None:
@@ -1527,6 +1620,11 @@ def _run_gemini_native_loop(client, model_name: str,
     cached_content: Vertex CachedContent resource name. When provided, the system
     prompt is served from cache — system_instruction is omitted from GenerateContentConfig.
     """
+
+    # The schemas handed to this runner are already filtered to what this
+    # agent was granted, so they double as the permission set — no separate
+    # lookup, and no way for the two to drift apart.
+    _allowed_names = {s['name'] for s in tool_schemas} if tool_schemas else set()
     from google.genai import types
 
     gemini_tools = _to_gemini_tools(tool_schemas)
@@ -1606,7 +1704,7 @@ def _run_gemini_native_loop(client, model_name: str,
             if fc.name in _PARALLEL_TOOLS:
                 parallel_calls.append(fc)
             else:
-                res = dispatch_tool(fc.name, fc.args, tool_handlers, _turn_num=turn_num)
+                res = dispatch_tool(fc.name, fc.args, tool_handlers, _turn_num=turn_num, _allowed=_allowed_names)
                 result_parts.append(
                     types.Part.from_function_response(name=fc.name, response={"result": res})
                 )
@@ -1621,7 +1719,7 @@ def _run_gemini_native_loop(client, model_name: str,
                     _tr._set_current_agent(_parent_agent)
                     with (persona_scope(_parent_persona) if _parent_persona else nullcontext()):
                         return dispatch_tool(fc_name, fc_args, handlers,
-                                            _agent_rec=_parent_agent, _turn_num=turn)
+                                            _agent_rec=_parent_agent, _turn_num=turn, _allowed=_allowed_names)
                 return _worker
             with ThreadPoolExecutor() as executor:
                 future_to_fc = {
@@ -1658,6 +1756,11 @@ def _openai_compat_loop(system_prompt: str, user_input: str,
     user_input_display: the clean version stored in history (omits control tokens
     prepended to user_input for model-specific behaviour, e.g. /no_think).
     """
+
+    # The schemas handed to this runner are already filtered to what this
+    # agent was granted, so they double as the permission set — no separate
+    # lookup, and no way for the two to drift apart.
+    _allowed_names = {s['name'] for s in tool_schemas} if tool_schemas else set()
     client = openai.OpenAI(api_key=api_key, base_url=base_url or None)
     oai_tools = _to_openai_tools(tool_schemas)
     messages = [{"role": "system", "content": system_prompt}]
@@ -1721,7 +1824,7 @@ def _openai_compat_loop(system_prompt: str, user_input: str,
             messages.append(message)
             tc = message.tool_calls[0]
             inputs = json.loads(tc.function.arguments)
-            result = dispatch_tool(tc.function.name, inputs, tool_handlers, _turn_num=turn_num)
+            result = dispatch_tool(tc.function.name, inputs, tool_handlers, _turn_num=turn_num, _allowed=_allowed_names)
             messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
         else:
             # Vertex bug: parallel tool calls only sign tc0 in extra_content.google.thought_signature.
@@ -1735,7 +1838,7 @@ def _openai_compat_loop(system_prompt: str, user_input: str,
             # Cost: N parallel calls become N sequential turns. Acceptable for Vertex workaround.
             tc0 = message.tool_calls[0]
             inputs = json.loads(tc0.function.arguments)
-            result = dispatch_tool(tc0.function.name, inputs, tool_handlers, _turn_num=turn_num)
+            result = dispatch_tool(tc0.function.name, inputs, tool_handlers, _turn_num=turn_num, _allowed=_allowed_names)
             # model_copy preserves all internal SDK state (including Vertex's extra_content with
             # thought_signature) while reducing tool_calls to only tc0 (the signed call).
             messages.append(message.model_copy(update={"tool_calls": [tc0]}))
@@ -1766,6 +1869,11 @@ def _openai_compat_stream(
     NOTE: Only the Synthesizer uses this function at runtime — it never calls tools,
     so only the final-turn streaming path is exercised in practice.
     """
+
+    # The schemas handed to this runner are already filtered to what this
+    # agent was granted, so they double as the permission set — no separate
+    # lookup, and no way for the two to drift apart.
+    _allowed_names = {s['name'] for s in tool_schemas} if tool_schemas else set()
     client = openai.OpenAI(api_key=api_key, base_url=base_url or None)
     oai_tools = _to_openai_tools(tool_schemas)
     messages = [{"role": "system", "content": system_prompt}]
@@ -1879,12 +1987,12 @@ def _openai_compat_stream(
                 messages.append(blocking_msg)
                 tc = blocking_msg.tool_calls[0]
                 inputs = json.loads(tc.function.arguments)
-                dispatch_tool(tc.function.name, inputs, tool_handlers, _turn_num=turn_num)
+                dispatch_tool(tc.function.name, inputs, tool_handlers, _turn_num=turn_num, _allowed=_allowed_names)
                 messages.append({"role": "tool", "tool_call_id": tc.id, "content": ""})
             else:
                 tc0 = blocking_msg.tool_calls[0]
                 inputs = json.loads(tc0.function.arguments)
-                dispatch_tool(tc0.function.name, inputs, tool_handlers, _turn_num=turn_num)
+                dispatch_tool(tc0.function.name, inputs, tool_handlers, _turn_num=turn_num, _allowed=_allowed_names)
                 messages.append(blocking_msg.model_copy(update={"tool_calls": [tc0]}))
                 messages.append({"role": "tool", "tool_call_id": tc0.id, "content": ""})
         else:
@@ -1898,7 +2006,7 @@ def _openai_compat_stream(
             messages.append({"role": "assistant", "content": "".join(text_parts) or None, "tool_calls": reconstructed})
             for tc in reconstructed:
                 inputs = json.loads(tc["function"]["arguments"])
-                dispatch_tool(tc["function"]["name"], inputs, tool_handlers, _turn_num=turn_num)
+                dispatch_tool(tc["function"]["name"], inputs, tool_handlers, _turn_num=turn_num, _allowed=_allowed_names)
                 messages.append({"role": "tool", "tool_call_id": tc["id"], "content": ""})
 
     # Fallback: max iterations reached

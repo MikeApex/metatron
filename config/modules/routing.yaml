@@ -47,7 +47,10 @@ agents:
 
   diarist:
     local: true
-    allowed_tools: [write_journal, write_archive]
+    # Parity with routing_cloud.yaml. The 2026-07-27 fix (commit 814e6c3) added
+    # write_log and write_wisdom to the cloud config and missed this one, so the
+    # Diarist silently lost both whenever DEPLOYMENT_MODE was local.
+    allowed_tools: [write_journal, write_archive, write_log, write_wisdom]
 
   pattern_miner:
     local: true
@@ -89,7 +92,7 @@ agents:
 
   logistics:
     local: true
-    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event]
+    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, get_weather]
 
   # ── Cloud-only (decontextualized — no personal context ever passed) ──────────
 
