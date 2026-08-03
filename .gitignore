@@ -67,5 +67,12 @@ config/personas/*/caldav.yaml
 # Pre-reset data archives — user data, never committed
 data/_pre_reset_*/
 
+# Diagnostic captures pulled out of live data — may contain real user entries
+data/diagnostics/
+
+# Local backups pulled from the VM — real user data, never committed
+backups/
+
 # Local convenience file (empty, clicked to reduce editor context noise)
 dummy
+.dev_backlog_seen

@@ -47,6 +47,12 @@ LABELS = {
 
 ROOT = Path(__file__).resolve().parent.parent
 BACKLOG = ROOT / "DEV_BACKLOG.md"
+
+# Which events have already been pulled. A separate ledger, not a scan of the
+# markdown: keying off "does this timestamp appear in the file" means an entry
+# resurfaces the moment it is curated out of Inbox — resolved items would come
+# back forever, and rewording one would duplicate it.
+SEEN = ROOT / ".dev_backlog_seen"
 # Anchored to line start with its own newlines: the intro prose mentions
 # "## Inbox" inline, and a bare substring match finds that first — which would
 # splice new entries into the middle of a paragraph.
@@ -116,14 +122,22 @@ def main() -> int:
         return 0
 
     events = fetch_events(args.server, args.persona)
-    # Dedup on the timestamp string appearing anywhere in the file, so an entry
-    # stays deduped after it is curated out of Inbox into an Open section.
+
+    seen = set(SEEN.read_text().split()) if SEEN.exists() else set()
+    # First run against an existing backlog: adopt whatever is already written in
+    # rather than re-adding every historical event as "new".
+    if not SEEN.exists():
+        seen = {str(e.get("timestamp", "")) for e in events if str(e.get("timestamp", "")) in text}
+
     new = [
         e for e in events
-        if (ts := str(e.get("timestamp", ""))) and ts not in text
+        if (ts := str(e.get("timestamp", ""))) and ts not in seen
     ]
 
     if new:
+        seen.update(str(e.get("timestamp", "")) for e in new)
+        SEEN.write_text("\n".join(sorted(seen)) + "\n")
+
         head, _, tail = text.partition(INBOX_HEADING)
         body = tail.replace(f"\n{INBOX_PLACEHOLDER}\n", "\n", 1)
         block = "\n".join(render(e) for e in new)
