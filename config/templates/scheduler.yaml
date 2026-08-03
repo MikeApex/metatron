@@ -23,10 +23,15 @@ schedules:
 
   companion_checkin:
     enabled: true
-    interval_minutes: 90
+    interval_minutes: 180
     days: daily
     agent: coordinator
-    prompt: "Check in. Lead with the most useful outstanding item from recent context — an unresolved thread, a decision waiting on Mike, or a follow-up that has gone quiet. Be specific about which one and why it matters now. Do not open with a generic question. If nothing is genuinely outstanding, say so briefly and stop; do not manufacture a topic."
+    # Deliberately light, and this is the baseline every new persona inherits.
+    # The previous wording commanded a summary of outstanding work on every
+    # firing, which in practice re-raised the same item all day. A check-in is
+    # an open door, not a status report. (It also named "Mike" in a template
+    # used to provision other people.)
+    prompt: "Check in briefly — two sentences at most. If exactly one thing genuinely needs attention right now, name it and stop. Otherwise just ask what's on. Never list or recap pending items, and never manufacture a topic."
     notification: push
     respect_quiet_hours: true
 

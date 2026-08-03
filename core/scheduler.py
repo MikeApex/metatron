@@ -21,7 +21,7 @@ import os
 import subprocess
 import sys
 import traceback
-from datetime import datetime, time as dtime
+from datetime import datetime, time as dtime, timedelta
 from pathlib import Path
 
 import schedule
@@ -76,6 +76,130 @@ def _in_quiet_hours(cfg: dict) -> bool:
     if start > end:
         return now >= start or now <= end
     return start <= now <= end
+
+
+def _last_fired_path(persona: str | None = None):
+    return persona_data_dir(persona) / "logs" / "scheduler_last_fired.json"
+
+
+def _minutes_since_last_user_message(persona: str) -> float | None:
+    """
+    Minutes since the user last actually said something, or None if unknown.
+
+    Proactive sessions are written to the same conversation log as real ones and
+    are flagged `proactive: true` — without that filter the scheduler would read
+    its own check-ins as user activity and never fire again.
+
+    Returns None on any failure, and callers treat None as "do not gate": an
+    unreadable log must not silently switch check-ins off altogether.
+    """
+    try:
+        conv_dir = persona_data_dir(persona) / "conversations"
+        latest = None
+        # Yesterday as well as today: at 00:30 today's file may not exist yet,
+        # and a conversation an hour ago is still an active conversation.
+        for day_offset in (0, 1):
+            day = (datetime.now() - timedelta(days=day_offset)).strftime("%Y-%m-%d")
+            path = conv_dir / f"{day}.jsonl"
+            if not path.exists():
+                continue
+            for line in path.read_text().splitlines():
+                line = line.strip()
+                if not line.startswith("{"):
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if entry.get("proactive"):
+                    continue
+                # Key is "ts", written by _log_conversation in core/server.py as a
+                # naive local-time isoformat string. Not "timestamp" — that is the
+                # key in the quality-event log, and using it here silently matched
+                # nothing, which (failing open) looked exactly like a working gate.
+                ts = entry.get("ts")
+                if not ts:
+                    continue
+                try:
+                    when = datetime.fromisoformat(ts)
+                except ValueError:
+                    continue
+                if when.tzinfo is not None:
+                    when = when.astimezone().replace(tzinfo=None)
+                if latest is None or when > latest:
+                    latest = when
+        if latest is None:
+            return None
+        return (datetime.now() - latest).total_seconds() / 60.0
+    except Exception:
+        return None
+
+
+def _minutes_since_last_fire(job_name: str, persona: str) -> float | None:
+    """Minutes since this job last actually fired, or None if it never has."""
+    try:
+        path = _last_fired_path(persona)
+        if not path.exists():
+            return None
+        stamps = json.loads(path.read_text())
+        ts = stamps.get(job_name)
+        if not ts:
+            return None
+        return (datetime.now() - datetime.fromisoformat(ts)).total_seconds() / 60.0
+    except Exception:
+        return None
+
+
+def _record_fire(job_name: str, persona: str) -> None:
+    """Persist this job's fire time. On disk, not in memory: a deploy restarts
+    the daemon several times a day, and an in-memory clock would reset each
+    time and let a check-in through early."""
+    try:
+        path = _last_fired_path(persona)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        stamps = {}
+        if path.exists():
+            try:
+                stamps = json.loads(path.read_text())
+            except json.JSONDecodeError:
+                pass
+        stamps[job_name] = datetime.now().isoformat()
+        path.write_text(json.dumps(stamps, indent=2))
+        os.chmod(path, 0o600)
+    except Exception as e:
+        print(f"[scheduler] could not record fire time for {job_name}: {e}", flush=True)
+
+
+def _activity_gate_blocks(job_name: str, job_cfg: dict, persona: str) -> str | None:
+    """
+    Decide whether an activity-gated job should stay quiet. Returns a reason to
+    skip, or None to proceed.
+
+    Two independent conditions, both opt-in per job:
+
+      quiet_after_user_minutes — do not interrupt a live conversation. A check-in
+        that lands while the user is mid-exchange is noise; it should arrive once
+        they have gone quiet.
+      min_gap_minutes — never more often than this, however long they stay quiet.
+
+    Together these let the job be polled frequently while still firing rarely:
+    the check-in arrives once the user has been quiet for a while, and never more
+    than once per gap. Absent both keys, behaviour is exactly as before.
+    """
+    quiet_after = job_cfg.get("quiet_after_user_minutes")
+    if quiet_after:
+        idle = _minutes_since_last_user_message(persona)
+        # None means unknown — proceed rather than fall silent forever.
+        if idle is not None and idle < float(quiet_after):
+            return f"user active {idle:.0f}m ago (needs {quiet_after}m quiet)"
+
+    min_gap = job_cfg.get("min_gap_minutes")
+    if min_gap:
+        since = _minutes_since_last_fire(job_name, persona)
+        if since is not None and since < float(min_gap):
+            return f"last fired {since:.0f}m ago (min gap {min_gap}m)"
+
+    return None
 
 
 def _is_active_day(days_str: str) -> bool:
@@ -135,6 +259,16 @@ def fire_session(job_name: str, agent: str, prompt: str,
         return
     if job_cfg.get("respect_quiet_hours") and _in_quiet_hours(cfg):
         return
+
+    blocked = _activity_gate_blocks(job_name, job_cfg, persona)
+    if blocked:
+        print(f"[scheduler] [{persona}] skipping {job_name} — {blocked}", flush=True)
+        return
+
+    # Recorded before the session runs, not after: a pipeline takes 20-70s, and
+    # crediting the fire only on success would let a failing job retry on every
+    # poll. Firing is what the gap limits, whether or not it succeeds.
+    _record_fire(job_name, persona)
 
     print(f"[scheduler] [{persona}] firing {job_name} ({agent})", flush=True)
 
