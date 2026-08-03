@@ -1,0 +1,335 @@
+# Infrastructure — deploy, recovery, rebuild
+
+Detail that a coding session does not need, kept out of `CLAUDE.md` so it isn't
+paid for on every chat. Nothing here is optional knowledge — it is the knowledge
+you need *at a specific moment*, and this file is that moment's home.
+
+**Read this when:**
+- A billing cap has tripped and the VM or the project is down.
+- `instances start` reports `nic0 is frozen` after a billing relink.
+- You are rebuilding the VM, the VPC, or the whole project from nothing.
+- You are rebuilding or sideloading the Android APK.
+- You are setting up local Mac / Ollama development.
+- You need a systemd unit file verbatim.
+
+Operational day-to-day material — topology, deploy pipeline, service commands,
+billing cap thresholds, pause/resume, env vars, routing mode — stays in
+[CLAUDE.md](../CLAUDE.md) → **Deployment Infrastructure**. History and reasoning
+live in [archive/PROJECT_LOG.md](../archive/PROJECT_LOG.md).
+
+---
+
+## systemd unit files (verbatim)
+
+Both services run as user `md-homefolder`, load env from `.env`, and restart
+automatically on crash. Service management commands are in `CLAUDE.md`.
+
+**`/etc/systemd/system/metatron-server.service`**
+```ini
+[Unit]
+Description=Metatron FastAPI Server
+After=network.target tailscaled.service
+
+[Service]
+Type=simple
+User=md-homefolder
+WorkingDirectory=/home/md-homefolder/multi-model-mcp
+ExecStart=/home/md-homefolder/multi-model-mcp/.venv/bin/python core/server.py --persona mike --port 8001
+Restart=always
+RestartSec=5
+Environment=METATRON_PERSONA_STRICT=0
+Environment=METATRON_PERSONA_FALLBACK=mike
+EnvironmentFile=/home/md-homefolder/multi-model-mcp/.env
+
+[Install]
+WantedBy=multi-user.target
+```
+
+**`/etc/systemd/system/metatron-scheduler.service`**
+```ini
+[Unit]
+Description=Metatron Scheduler Daemon
+After=network.target metatron-server.service
+
+[Service]
+Type=simple
+User=md-homefolder
+WorkingDirectory=/home/md-homefolder/multi-model-mcp
+ExecStart=/home/md-homefolder/multi-model-mcp/.venv/bin/python core/scheduler.py --persona mike
+Restart=always
+RestartSec=10
+Environment=METATRON_PERSONA_STRICT=0
+Environment=METATRON_PERSONA_FALLBACK=mike
+EnvironmentFile=/home/md-homefolder/multi-model-mcp/.env
+
+[Install]
+WantedBy=multi-user.target
+```
+
+
+---
+
+## VM spec
+
+| Property | Value |
+|---|---|
+| Instance name | `metatron-vm` |
+| Machine type | `e2-medium` (2 vCPU / 4 GB RAM) |
+| OS | Debian 12 |
+| Zone | `us-central1-a` |
+| GCP project | `metatron-ai-499810` |
+| External IP | ephemeral — **changes on every stop/start**, so no literal value is recorded here. Look it up if needed: `gcloud compute instances describe metatron-vm --zone=us-central1-a --project=metatron-ai-499810 --format="value(networkInterfaces[0].accessConfigs[0].natIP)"`. **Nothing connects *to* it — but it is the VM's only route *out*. Do not remove it** (see below) |
+| Tailscale IP | `100.64.226.49` (production client address — unchanged across the rebuild) |
+| VPC network | `metatron-net` / `metatron-subnet` (`10.10.0.0/24`), internal `10.10.0.4` |
+| Firewall | `metatron-net-allow-iap-ssh` — `tcp:22` from `35.235.240.0/20` (IAP range) only; no public ingress |
+| OS user | `md-homefolder` |
+| Repo path | `~/multi-model-mcp` |
+| Python | 3.11 |
+| System packages | `python3.11`, `python3.11-venv`, `ffmpeg` |
+
+> The external-IP trap and the do-not-record-ephemeral-values rule live in
+> [CLAUDE.md](../CLAUDE.md) § GCP VM — they must fire unprompted, so they are not repeated here.
+
+---
+
+## Billing protection — full mechanism and recovery
+
+Thresholds, the override scripts and the normal recovery command are in
+`CLAUDE.md`. This is the detail behind them, plus the recovery runbook.
+
+> **Why the hard cap was demoted.** On 2026-07-30 `stop-billing` fired at ~$31 against a budget already raised to $40, acting on a stale notification. Disabling billing froze the project's VPC. Billing was relinked within hours, but Google's asynchronous network thaw never ran — 25+ hours later `instances start` still returned `UNSUPPORTED_OPERATION: The default network interface [nic0] is frozen`, and creating any instance on `networks/default` returned `not ready`. Support escalated with a 3–5 business day estimate. Recovery came from building a **new VPC** (`metatron-net`) and rebuilding the VM on it.
+>
+> **✅ `networks/default` has since thawed — corrected 2026-08-03.** Probe-tested twice: an instance created on `default` came up `RUNNING` on `10.128.0.4`, then was deleted. Google restored it between 07-31 and 08-03, past their own 3–5 business day estimate but without further intervention. Earlier revisions of this warning told future sessions to avoid a network that works. `metatron-vm` stays on `metatron-net` by choice, not necessity — moving back would mean another rebuild for no gain.
+
+Budget history: $20 → $30 (2026-07-27) → $40 (2026-07-30) → restructured to $70 soft / $150 hard (2026-07-31).
+
+**Hard cap ($150 — disables billing, last resort):**
+
+- **Budget resource:** "Metatron & Multi-Model Budget" on billing account `013F3D-66B5CD-955A3A`, `$150` monthly, calendar-period, notifying via Pub/Sub
+- **Pub/Sub topic:** `billing-cap` in project `metatron-ai-499810`
+- **Budget alert:** fires whenever cost exceeds the budget, publishes `{costAmount, budgetAmount}` to `billing-cap` topic — not just once on first crossing; GCP re-evaluates and re-notifies repeatedly while spend stays over budget
+- **Cloud Function:** `stop-billing` (Python 3.11, Gen2, `us-central1`)
+  - Trigger: Pub/Sub message on `billing-cap`
+  - Action: if `costAmount > budgetAmount` **and no manual override is active**, calls `cloudbilling.disable_project_billing()` on the project
+  - Retry policy: `RETRY_POLICY_DO_NOT_RETRY`
+  - Source tracked at... *(not yet in the repo — currently only deployed; add under `infra/stop-billing/` if it needs another change. `infra/stop-vm/` shows the pattern.)*
+
+**Soft cap ($70 — stops the VM, the normal control):**
+
+- **Budget resource:** "Metatron Soft Cap (stops VM)" on the same billing account, `$70` monthly, calendar-period, scoped to project `211460608583`
+- **Pub/Sub topic:** `budget-soft-cap`
+- **Cloud Function:** `stop-vm` (Python 3.11, Gen2, `us-central1`) — source in [`infra/stop-vm/`](../infra/stop-vm/), deploy with `gcloud functions deploy stop-vm --gen2 --runtime=python311 --region=us-central1 --source=. --entry-point=stop_vm --trigger-topic=budget-soft-cap`
+  - Action: if `costAmount > budgetAmount`, no override is active, and the instance is not already `TERMINATED`, stops `metatron-vm`
+  - The `TERMINATED` check matters: budget alerts re-fire repeatedly while spend stays over, so without it every notification issues a redundant stop
+  - Override check **fails open** — if the GCS check errors, the VM is stopped anyway. Stopping is cheap and reversible; failing to stop is the expensive mistake
+- **Override:** `gs://metatron-billing-state/override-vm.json`, set via `scripts/metatron-vm-override.sh [hours]` (default 8). A **separate object** from the hard cap's `override.json`, so silencing the soft cap never silences the hard cap
+- **Recovery when it fires:** `gcloud compute instances start metatron-vm --zone=us-central1-a --project=metatron-ai-499810`, or `./scripts/metatron-resume.sh`
+
+Note on cost data: GCP spend figures lag by hours, so neither cap reacts at runaway speed. The fastest available signal is in-process API call and token accounting in the Orchestrator — not yet built, and the only layer that could catch a retry loop in seconds.
+
+**Manual override:** `gs://metatron-billing-state/override.json` — if present with an unexpired `until` timestamp, `stop-billing` logs and skips disabling instead of acting. Set via `scripts/metatron-billing-override.sh [hours]`. Exists because after raising the budget in the Console, GCP's notification pipeline took 10+ minutes to stop sending stale notifications carrying the old (lower) budget, each of which would otherwise re-disable billing right after a manual relink. `scripts/metatron-resume.sh` sets a 4-hour override automatically, but only when it finds billing already disabled — never on a routine resume.
+
+If billing gets disabled and `metatron-resume.sh` doesn't recover it, relink manually: `gcloud billing projects link metatron-ai-499810 --billing-account=013F3D-66B5CD-955A3A`, then check the GCP Console under Billing to confirm the budget amount is what you expect before doing anything else.
+
+**Order matters — relink before overriding.** The override marker lives in a bucket *inside the project being disabled*, so writing it while billing is off fails with `403 ... billing account for the owning project is disabled`. Always `gcloud billing projects link ...` first, then run `metatron-billing-override.sh`. `metatron-resume.sh` had these reversed until 2026-07-30 and aborted under `set -e` before reaching the relink, so its automatic recovery path never completed once.
+
+**Recovering from a hard-cap trip — what 2026-07-30 actually taught.** After a relink the VM refuses to start with `nic0 is frozen`. GCE freezes networking when billing is disabled and is *supposed* to thaw it asynchronously. **Do not assume it will.** In this project it never did — 25+ hours, no thaw, support escalation with a 3–5 business day estimate.
+
+Ordered recovery, fastest first:
+
+1. **Relink billing, then set the override** (in that order — see above).
+2. **Retry `instances start` for ~30 minutes.** If it thaws, this is where it happens.
+3. **Test whether the freeze is network-scoped:** `gcloud compute instances create <probe> --network=default ...`. If that fails with `networks/default ... is not ready`, the VPC is frozen and no amount of retrying the VM will help.
+4. **Build a new VPC and rebuild the VM on it.** This is what worked:
+   ```bash
+   gcloud compute networks create metatron-net --subnet-mode=custom
+   gcloud compute networks subnets create metatron-subnet --network=metatron-net \
+     --region=us-central1 --range=10.10.0.0/24
+   gcloud compute instances set-disk-auto-delete metatron-vm --disk=metatron-vm --no-auto-delete
+   gcloud compute disks snapshot metatron-vm --snapshot-names=metatron-vm-boot-<date>
+   gcloud compute instances delete metatron-vm --quiet          # disk survives
+   gcloud compute instances create metatron-vm --network=metatron-net --subnet=metatron-subnet \
+     --disk=name=metatron-vm,device-name=persistent-disk-0,boot=yes,auto-delete=no \
+     --machine-type=e2-medium --tags=http-server \
+     --service-account=211460608583-compute@developer.gserviceaccount.com --scopes=<original scopes>
+   ```
+   **Always `set-disk-auto-delete --no-auto-delete` and snapshot before deleting the instance.** The boot disk defaulted to `autoDelete: true`; deleting the instance would have destroyed the entire data tree, `metatron.db`, the FAISS index, `.env` and `vertex-key.json`.
+
+**Why the rebuild is safe for clients:** all client access is over Tailscale, and Tailscale's node identity lives in `/var/lib/tailscale/tailscaled.state` on the boot disk. A rebuilt VM reclaims the same node and the same `100.64.226.49`, so the phone, browser, terminal and Android APK need no changes. Verify before deleting anything by mounting a snapshot copy on a temporary instance and confirming `tailscaled.state` is non-empty.
+
+Separately, GCP re-sends budget notifications carrying the *old* budget for 10+ minutes after a raise — that is what the override covers, and it is a genuine waiting game.
+
+---
+
+
+---
+
+## Vertex AI credentials
+
+| Property | Value |
+|---|---|
+| GCP project | `metatron-ai-499810` |
+| Location | `global` (required for Gemini 3.x models — `us-central1` does not work) |
+| Service account | `metatron-vertex@metatron-ai-499810.iam.gserviceaccount.com` |
+| IAM role | `roles/aiplatform.user` |
+| Key file on VM | `~/multi-model-mcp/vertex-key.json` (gitignored) |
+| `.env` var | `GOOGLE_APPLICATION_CREDENTIALS=/home/md-homefolder/multi-model-mcp/vertex-key.json` |
+
+---
+
+## Environment variables (full listing)
+
+
+The `.env` file lives at the project root on both the Mac (dev) and the VM. It is gitignored. Transfer to new machines manually via `gcloud compute scp` or similar.
+
+```bash
+# API keys — obtain from provider consoles
+ANTHROPIC_API_KEY=...          # console.anthropic.com
+OPENAI_API_KEY=...             # platform.openai.com/api-keys
+GEMINI_API_KEY=...             # aistudio.google.com/apikey (for AI Studio fallback; not used on Vertex path)
+HF_TOKEN=...                   # huggingface.co/settings/tokens (read-only token)
+
+# Vertex AI (VM only — local dev uses ADC instead)
+GOOGLE_APPLICATION_CREDENTIALS=/home/md-homefolder/multi-model-mcp/vertex-key.json
+GOOGLE_CLOUD_PROJECT=metatron-ai-499810
+GOOGLE_CLOUD_LOCATION=global
+
+# Deployment mode
+DEPLOYMENT_MODE=cloud          # loads routing_cloud.yaml (Vertex); omit or set to "local" for Ollama
+
+# Web Push
+VAPID_CLAIMS_SUB=mailto:diamond.mike.mt@gmail.com
+```
+
+On Mac for local dev, `OPENAI_API_KEY` is also exported from `~/.zprofile` as a fallback.
+
+> **Account convention (2026-08-03):** all `mike` persona integrations — calendar, mail, push — use the purpose-built account **`diamond.mike.mt@gmail.com`**, not the owner's personal address. Recorded in `config/personas/mike/profile.yaml` as `account_email`. Historical archives predating this are left as written.
+
+---
+---
+
+## Android app — build and sideload
+
+The app is a Capacitor 8.4.0 wrapper around `static/index.html`. There is no separate backend bundled in the app — it calls the VM server over Tailscale.
+
+| Property | Value |
+|---|---|
+| App ID | `com.mike.metatron` |
+| App name | `Metatron` |
+| Framework | Capacitor 8.4.0 (`@capacitor/android`) |
+| Web asset dir | `static/` (the PWA lives here) |
+| Server address | `https://metatron-vm.tail0acc5d.ts.net:8001` (Tailscale MagicDNS name, in `static/index.html` — used when the page is opened from `localhost`; otherwise same-origin) |
+| Icon source | `assets/icon-only.png` (Phoenician mem glyph, parchment/brown) |
+| Icon generation | `npx @capacitor/assets generate` — writes to all `mipmap-*` density folders |
+
+Key config decisions:
+- `allowMixedContent: true` and `cleartext: true` remain in `capacitor.config.json` from the earlier HTTP setup. They are no longer relied on — the server serves HTTPS with a publicly trusted Tailscale cert.
+- Adaptive icon XMLs removed from `mipmap-anydpi-v26/` — Android uses the PNG directly (fixes home screen icon caching bug).
+- Adaptive icon background color: `#0d0d0d` in `android/app/src/main/res/values/ic_launcher_background.xml`.
+
+**Build prerequisites (Mac):**
+- Java 21 via Homebrew (`brew install openjdk@21`) — Capacitor requires 21, not 17
+- Android SDK (Android Studio or command-line tools)
+- Node.js / npm
+
+**Build steps:**
+```bash
+cd ~/Desktop/multi-model-mcp
+npx cap sync android          # syncs web assets + plugins into the Android project
+cd android
+./gradlew assembleDebug       # outputs APK to app/build/outputs/apk/debug/app-debug.apk
+```
+
+**Sideload to phone:**
+```bash
+# Serve the APK from Mac (phone connects to Mac via Tailscale)
+cd ~/Desktop/multi-model-mcp
+python3 -m http.server 8888
+# Then on the phone browser: http://<mac-tailscale-ip>:8888/android/app/build/outputs/apk/debug/app-debug.apk
+```
+Phone must have "Install from unknown sources" enabled for the browser.
+
+**When to rebuild the APK:** any time `static/index.html` changes the `SERVER` constant, the login flow, or UI structure. Pure server-side changes (agent files, orchestrator logic) do not require a rebuild.
+
+---
+
+## Local dev mode (Mac / Ollama)
+
+When running locally instead of on the VM:
+
+| What | Where | How to find / set |
+|---|---|---|
+| `DEPLOYMENT_MODE` | `.env` | Remove the line (or set to `local`) — loads `routing.yaml` instead of `routing_cloud.yaml` |
+| Ollama | `localhost:11434` | `brew install ollama && ollama pull qwen3:14b && ollama serve` |
+| Local LLM model | `config/modules/routing.yaml` → `OLLAMA_MODEL` | `ollama list` to see installed models |
+| Prevent Mac sleep | terminal | `sudo pmset -a sleep 0 disksleep 0` (reverse: `sudo pmset -a sleep 10 disksleep 10`) |
+| Keep server alive | launchd | `launchctl load ~/Library/LaunchAgents/com.metatron.server.plist` — create plist first (see `archive/sessions/2026-06-20 — VM Provisioning, GitHub, Deploy Pipeline.md`) |
+| Whisper model size | `core/voice_pipeline.py` → `WHISPER_MODEL_SIZE` | `"base.en"` (fast), `"small.en"` (accurate), `"medium.en"` (best) |
+| TTS voice name | `core/voice_pipeline.py` → `speak()` default arg | `say -v '?'` in terminal; download Premium voices via System Settings → Accessibility → Spoken Content |
+| TLS cert (if needed) | `certs/` (gitignored; backed up to `certs_backup/`) | `brew install mkcert && mkcert -install && cd certs && mkcert <local-ip> localhost 127.0.0.1` |
+
+Note: the Mac is no longer the primary host. Local mode is for development and testing only. Tailscale + HTTP transport encryption means TLS certs are not needed for phone access in either mode.
+
+---
+
+## Recreate from scratch (ordered checklist)
+
+Follow this order. Each step depends on the ones before it.
+
+**1. GCP project**
+- Create project `metatron-ai-499810` (or new name — update `.env` and `routing_cloud.yaml`)
+- Enable APIs: Vertex AI, Cloud Functions, Pub/Sub, Cloud Billing, Eventarc
+- Link billing account
+
+**2. Billing cap**
+- Create Pub/Sub topic `billing-cap`
+- Create budget alert at $20, configured to publish to `billing-cap` topic
+- Deploy Cloud Function `stop-billing` (Python 3.11, Gen2, Pub/Sub trigger on `billing-cap`)
+
+**3. Vertex AI service account**
+- Create service account `metatron-vertex@<project>.iam.gserviceaccount.com`
+- Grant `roles/aiplatform.user`
+- Download JSON key → save as `vertex-key.json` (do not commit)
+
+**4. GCP VM**
+- Create `e2-medium` Debian 12 VM in `us-central1-a`, named `metatron-vm`
+- Do not open any firewall ports (Tailscale is the only access path)
+- SSH in: `gcloud compute ssh metatron-vm --zone=us-central1-a --project=<project>`
+- Install system packages: `sudo apt install python3.11 python3.11-venv ffmpeg -y`
+
+**5. Tailscale on VM**
+- `curl -fsSL https://tailscale.com/install.sh | sh && sudo tailscale up`
+- Sign in with the tailnet account — VM joins automatically
+- Note the assigned Tailscale IP (update `static/index.html` `SERVER` constant and rebuild APK)
+
+**6. GitHub repo**
+- Create private repo `github.com/<account>/metatron`
+- On Mac: add SSH key `~/.ssh/github_mikeapex` to GitHub account
+- On VM: generate deploy key (`ssh-keygen -t ed25519 -f ~/.ssh/github_deploy`), add public key to repo as read-only deploy key
+- VM: `git config --global pull.rebase false`
+
+**7. Repo on VM**
+- Option A (from GitHub after step 6): `git clone git@github.com:<account>/metatron.git ~/multi-model-mcp`
+- Option B (initial transfer before GitHub exists): `git archive HEAD | gcloud compute scp - metatron-vm:~/repo.tar --zone=us-central1-a` then extract
+- Create `.venv` and install: `python3.11 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt`
+- Copy `.env` to VM: `gcloud compute scp .env metatron-vm:~/multi-model-mcp/.env --zone=us-central1-a`
+- Copy `vertex-key.json` to VM: same command pattern
+
+**8. systemd services**
+- Write both unit files (text above) to `/etc/systemd/system/`
+- `sudo systemctl daemon-reload && sudo systemctl enable metatron-server metatron-scheduler && sudo systemctl start metatron-server metatron-scheduler`
+- Verify: `curl https://metatron-vm.tail0acc5d.ts.net:8001/health` → `{"status":"ok"}`
+
+**9. Deploy pipeline on Mac**
+- Ensure `deploy.sh` is executable: `chmod +x deploy.sh`
+- Set `git config pull.rebase false` on VM (step 6 above)
+- Test: make a trivial commit, run `./deploy.sh`, confirm services restart
+
+**10. Android app**
+- Install Java 21: `brew install openjdk@21`
+- Update `SERVER` in `static/index.html` to the VM Tailscale IP
+- `npx cap sync android && cd android && ./gradlew assembleDebug`
+- Sideload APK via `python3 -m http.server 8888` (see build steps above)
+
+---
+

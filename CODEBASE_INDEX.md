@@ -135,7 +135,7 @@ Each file defines Python functions + JSON schemas. All tools registered in `core
 | [tools/caldav.py](tools/caldav.py) | `read_calendar`, `write_calendar_event` — CalDAV calendar integration (already built; Phase 6 integration ahead of schedule) |
 | [tools/kokoro/speak.py](tools/kokoro/speak.py) | Kokoro TTS wrapper — primary TTS engine (af_heart voice) |
 | [tools/kokoro/audition.py](tools/kokoro/audition.py) | Voice audition script — test/compare Kokoro voice options |
-| [tools/archive_chats.py](tools/archive_chats.py) | Bulk JSONL export — `python3 tools/archive_chats.py` archives all Claude Code sessions to `archive/transcripts/` |
+| `~/.claude/tools/archive_chats.py` | Bulk JSONL export → `archive/transcripts/`. **Lives outside the repo** and auto-detects the project root. The in-repo copy at `tools/archive_chats.py` was a stale ancestor and was deleted 2026-08-03. Invoked by `/archive`. |
 
 ---
 

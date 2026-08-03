@@ -15,8 +15,32 @@ This pulls any change requests the user raised in conversation into `DEV_BACKLOG
 Then read, in full, in this order:
 
 1. `SESSION.md` — current state.
-2. The active roadmap — find its path from SESSION.md's "Read these before doing anything" section (currently `archive/plans/phase5_to_future_roadmap_2026-06-10.md`, but confirm from SESSION.md itself since it may have changed).
+2. The active roadmap — find its path from SESSION.md's "Read these before doing anything" section (currently `ROADMAP.md`, the abridged live copy, but confirm from SESSION.md itself since it may have changed). **Read only that file.** The full plan it points to is static reference — open it only when the task is in an area `ROADMAP.md` states it does not carry (Tracks C, E, F, or completed Track A detail).
 3. `DEV_BACKLOG.md` — the single list of outstanding changes, including anything just synced into `## Inbox`.
 4. `CODEBASE_INDEX.md` — file/dir index, only if the task ahead needs it (locating a specific file/tool/plan).
 
 Do not summarize the files back to the user — just read them so you're grounded in current state, then continue with whatever the user asks next in this session.
+
+---
+
+## Do not read these by default
+
+Two files carry detail that used to sit in `SESSION.md` and `CLAUDE.md` and was paid for on
+every session. They are deliberately outside the default load. Consult them when the trigger
+below actually applies — not routinely, and not "to be thorough."
+
+| File | Read it when |
+|---|---|
+| `archive/PROJECT_LOG.md` | You need to know **why** something was built as it is, whether an approach was already tried, or which of two conflicting docs drifted. Dated history, reasoning, corrections. |
+| `docs/INFRASTRUCTURE.md` | You are deploying, recovering from a billing/VPC incident, rebuilding the VM or the project, building the Android APK, or setting up local Ollama dev. |
+
+`CLAUDE.md` is auto-loaded by Claude Code — do not read it again here.
+
+---
+
+## Note for whoever edits `SESSION.md`
+
+Step 2 above **parses `SESSION.md`** — it resolves the roadmap path from the heading
+`## Read these before doing anything` and the numbered link beneath it. That heading and its
+link format are a load-bearing anchor, not decoration. If they are renamed or restructured,
+this command silently loads the wrong roadmap or none at all, with no error.
