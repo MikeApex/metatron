@@ -80,6 +80,9 @@ Everything else can be reordered to taste.
 
 ## Phase 2 — Enforce
 
+> **CLOSED 2026-08-03 by user decision — no longer owed to this plan.** Warn-mode landed and is producing the evidence (`TOOL_DENIED` → `DEV_BACKLOG.md`). The batch agent-file reconciliation this phase depended on was found to be the wrong shape: net removals were zero, and the real question — what each agent should legitimately hold — is now answered continuously from real usage rather than decided in advance. Flipping to enforce moves to the Phase 5 prompt (`phase5_prompt_2026-08-03_security_web_email.md`), where it belongs, since it is what closes the E1 integrations gate. Holding mode until then.
+
+
 | # | Item | Effort | Difficulty | Depends on |
 |---|---|---|---|---|
 | 2.1 | Enforce the whitelist in `dispatch_tool()` — reject a call to a tool not on the calling agent's list | **XS** to write, **M** to verify | **High risk, low complexity** | **1.1 — hard gate** |
