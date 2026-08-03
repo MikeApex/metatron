@@ -56,6 +56,8 @@ Stale docs, paths, and low-priority corrections.
 - **`/metatron-troubleshoot` command template points at pre-persona-scoping paths.** Uses bare `data/conversations/` and hardcodes `data/personas/mike/traces/`, so it has to be corrected inline every time it runs, and it fails outright for any other persona. Also missing `--tunnel-through-iap` on its SSH command, which is now required since the VM moved to `metatron-net`. *Recorded in SESSION.md 2026-08-02.*
 - **Spend guard pricing rates are unverified estimates.** `config/modules/spend_guard.yaml` is marked VERIFY — fine for order-of-magnitude runaway detection, not for cost accounting. Check against current Vertex AI pricing before trusting any dollar figure derived from it.
 - **VM has an unused ephemeral external IP** (`136.112.188.80`). All access is over Tailscale. An in-use external IPv4 is ~$2.90/mo. *Recorded in SESSION.md 2026-07-31.*
+- **Two `synthesizer.md` rules are written but not deployed** (2026-08-03). *"A repeated instruction is a failure, not a new one"* and *"The morning and evening sessions are not interruptible"* sit uncommitted in the working tree because a parallel session held concurrent uncommitted edits to the same file (schedule tools, `write_config` scope). They ship with whichever commit lands that file. **Until then the VM's `synthesizer.md` has neither rule** — the write-time check in `write_persona` is live and does the mechanical half, but Synth has not been *told* that a repeat is a failure. Verify both are present on the VM after the next deploy of that file.
+- **The scheduler cannot defer a time-based job.** `_activity_gate_blocks` returns "skip", and a `time:`-anchored job that skips is gone for the day, not postponed. That is why `morning_brief` and `evening_close` carry no activity gate. Fine under the current decision — those two are deliberately not interruptible — but a genuine "hold until they're quiet" gate for a fixed-time session needs a deferral mechanism, not a skip.
 
 ---
 
@@ -181,6 +183,19 @@ Full security design, threat model, and audit required before implementation. Th
 ---
 
 ## Done
+
+### Rule redundancy — deployed 2026-08-03 (`0077a63`, `a03ed7e`)
+
+One home per rule class, checked at three speeds. Documented in CLAUDE.md → *One Home Per Rule Class*.
+
+- ~~**Repeat-detection.**~~ *"A repeated instruction is a failure, not a new one"* in `synthesizer.md`, plus a write-time check: `write_persona` now appends a warning when a new preference restates a rule already in force. Warns, never blocks — refusing a write to keep a file tidy discards what the user actually said.
+- ~~**One home per rule class, documented and checkable.**~~ `core/rule_classes.py` holds the classes and the owning layer; CLAUDE.md holds the table.
+- ~~**Promotion deletes the original — clear the live debt.**~~ All five duplicates removed from the VM's `config/personas/mike.md`, each only after its replacement was verified live *on the VM* rather than merely committed on the Mac. Backups at `~/metatron-backups/mike.md.pre-dedup*`. The file is down to two genuinely personal preferences. Audit on the live files went 5 findings → 1.
+- ~~**Reconciliation.**~~ `daily_rule_audit` at 05:30, a `function:` job costing **no model tokens**; findings become `RULE_CONFLICT` events and reach this file through the existing sync, reported once each. `scripts/check_rule_overlap.py` is the interactive version for a development session. End-to-end verified: VM audit → quality event → sync → Inbox.
+
+**Adjudicated, not a duplicate:** the audit flagged `mike.md:9` *"No commendation or validation… drop affirmations, compliments, and filler"* against `synthesizer.md:82` *"Do not tell the user to enjoy things."* They share the sycophancy class, but :82 forbids sign-offs and only *mentions* commendation as an analogy — it does not forbid it. Mike's rule says something the shared rule does not, so it stays in the persona layer. Worth promoting to the agent layer only if the user says sycophancy suppression should apply to everyone; they have so far said that only about "enjoy".
+
+**Known limits, so a clean report is not mistaken for proof.** Detection is class-based regex plus word overlap: 5/5 recall on the real 2026-08-03 set and 0 false positives across eleven novel preferences, but the *partner* it names was wrong three times in five. The flagged preference is the reliable part. An earlier version also compared agent files against each other and was unusable — the specialist files carry intentional parallel boilerplate (*"Mandatory pass. Runs every session"*, *"Voice mode:"*) that scores as near-identical because it is, deliberately. Dropped from the daily job; still available via `check_rule_overlap.py`.
 
 ### Check-in restraint — deployed 2026-08-03 (`ae252ab`..`HEAD`)
 
