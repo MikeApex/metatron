@@ -68,6 +68,21 @@ If you need to find a specific file, tool, or planning document: **[CODEBASE_IND
 - **Check 10** Agent behavioral audits — **on hold**
 - **Check 12** Constitution alignment review — **on hold**
 
+### Also done 2026-08-03 (outage chat closeout — ✅ `networks/default` HAS THAWED; two items carried into the backlog) — `48e17da`, docs only
+
+Full writeup: [archive/sessions/2026-08-03 — Outage Chat Closeout, default Network Thawed, Backlog Carryover.md](archive/sessions/2026-08-03%20—%20Outage%20Chat%20Closeout,%20default%20Network%20Thawed,%20Backlog%20Carryover.md)
+
+**✅ `networks/default` is no longer frozen.** Probe-tested: an instance created on `default` came up `RUNNING` on `10.128.0.4`, then deleted. Google restored it between 07-31 and 08-03, past their own 3–5 business day estimate but without further intervention. The 26-hour outage is fully closed and the support case can be closed. **`CLAUDE.md:339` is now stale** — it still warns future sessions off a network that works. `metatron-vm` stays on `metatron-net`; moving back would mean another rebuild for no gain.
+
+**Two items carried into `DEV_BACKLOG.md`, closing out the 07-30 → 08-03 chat:**
+
+1. **"Unsurfaced opportunities" instrumentation** — new entry under *needs building* › *Troubleshooting signal*. It had lived only as prose in this file since 07-29 and was never carried across when the backlog became the single change-request list on 08-02 — which made it the one item at real risk of aging out silently. Records why the obvious approach fails (**you cannot diff against a ground truth nobody wrote down**) plus three routes: reason-code on the `·` dot, retrospective sweep, and closing the loop on `open_threads`/`follow_ups`. Recommended 1 + 3.
+2. **Roadmap D2 item 5** — amended, not duplicated; the existing entry was already correct. What was missing: the roadmap *itself* still says *"6-turn / 88K cumulative token loop"* and still prescribes a `coordinator.md` change, so anyone reading the plan without the backlog gets a fix aimed at the wrong component. The roadmap body was deliberately left alone — it is a dated snapshot, and rewriting it would erase what was believed at the time.
+
+**⚠ Correction carried in from the 5th window: the external-IP saving is withdrawn.** My 07-31 recommendation to drop the VM's "unused" external IP was wrong — it is the only egress path (no Cloud NAT, Private Google Access `False`), so removing it would kill Vertex AI, Tailscale and deploys. The error was reasoning from *"nothing connects inbound"* to *"unused"* without checking egress.
+
+**Generalisable:** when a tracking convention changes, items recorded under the old one do not migrate themselves. Worth sweeping this file's prose for other open items predating 08-02 that were never carried over.
+
 ### Also done 2026-08-03 (calendar delivers, weather tools, warn-mode tool permissions, VM backup) — **deployed `cfcd212`, `6865058`**
 
 Full writeup: [archive/sessions/2026-08-03 — Calendar Delivery, Weather Tools, Tool Permissions, VM Backup.md](archive/sessions/2026-08-03%20—%20Calendar%20Delivery,%20Weather%20Tools,%20Tool%20Permissions,%20VM%20Backup.md) · Plan: [capability_gap_gameplan_2026-08-03.md](archive/plans/capability_gap_gameplan_2026-08-03.md)
@@ -277,7 +292,7 @@ New `stop-vm` function source is tracked at [infra/stop-vm/](infra/stop-vm/) —
 
 **Bugs fixed:** `metatron-resume.sh` wrote the billing override *before* relinking — but the marker lives in a bucket inside the disabled project, so the write always 403'd and `set -e` aborted before the relink. **That recovery path had never once completed.** Also `deploy.sh` + resume now need `--tunnel-through-iap`, since `metatron-net` has no public SSH ingress (verified with a real deploy).
 
-**Check when convenient:** the rebuilt VM has an ephemeral external IP (address not recorded — it changes on every stop/start; the value written here on 2026-07-31 was stale by 2026-08-03) that is never used — all access is via Tailscale. Per the cost finding below, an in-use external IPv4 is ~$2.90/mo. Removing it is a straightforward saving.
+~~**Check when convenient:** the rebuilt VM has an unused ephemeral external IP; removing it saves ~$2.90/mo.~~ **Withdrawn 2026-08-03 — do not act on this.** The IP is unused for *inbound* but is the VM's **only egress path**: there is no Cloud NAT (`routers list` → 0) and Private Google Access is `False`, so removing it kills Vertex AI, Tailscale bootstrap, deploys and every outbound call. Cloud NAT needs a public IP at the *same* $0.005/hr and adds gateway + data charges, so it costs strictly more. The real figure is ~$3.65/mo (catalog rate $0.005/hr, not the $0.004 assumed), and it stops accruing while paused. See DEV_BACKLOG → housekeeping. The address itself is deliberately not recorded — it changes on every stop/start, and the value written here on 2026-07-31 was stale by 2026-08-03.
 
 Also: check-in cadence 90 → 180 minutes (`config/personas/mike/scheduler.yaml`, gitignored — hand-copied to VM, scheduler restarted).
 

@@ -292,7 +292,7 @@ The VM's external IP is never used. All client access is through the Tailscale W
 | OS | Debian 12 |
 | Zone | `us-central1-a` |
 | GCP project | `metatron-ai-499810` |
-| External IP | ephemeral — **changes on every stop/start**, so no literal value is recorded here. Not used by anything; do not open firewall. Look it up if ever needed: `gcloud compute instances describe metatron-vm --zone=us-central1-a --project=metatron-ai-499810 --format="value(networkInterfaces[0].accessConfigs[0].natIP)"` |
+| External IP | ephemeral — **changes on every stop/start**, so no literal value is recorded here. Look it up if needed: `gcloud compute instances describe metatron-vm --zone=us-central1-a --project=metatron-ai-499810 --format="value(networkInterfaces[0].accessConfigs[0].natIP)"`. **Nothing connects *to* it — but it is the VM's only route *out*. Do not remove it** (see below) |
 | Tailscale IP | `100.64.226.49` (production client address — unchanged across the rebuild) |
 | VPC network | `metatron-net` / `metatron-subnet` (`10.10.0.0/24`), internal `10.10.0.4` |
 | Firewall | `metatron-net-allow-iap-ssh` — `tcp:22` from `35.235.240.0/20` (IAP range) only; no public ingress |
@@ -305,6 +305,8 @@ SSH access from Mac:
 ```bash
 gcloud compute ssh metatron-vm --zone=us-central1-a --project=metatron-ai-499810 --tunnel-through-iap
 ```
+
+> **The external IP looks removable and is not.** Because there is no public ingress and every client arrives over Tailscale, the address appears to be dead weight worth deleting for the ~$3.65/mo it costs ($0.005/hour, billed only while the VM runs). It is also the VM's **sole egress path**. There is no Cloud NAT on `metatron-net` (`gcloud compute routers list` → 0 items) and `metatron-subnet` has `privateIpGoogleAccess: False`, so deleting the access config would cut off Vertex AI, the Tailscale coordination bootstrap that makes the VM reachable at all, `git pull` on deploy, apt/pip, and every outbound integration. Cloud NAT is not a cheaper substitute: it consumes a public IP at the *same* $0.005/hour and adds gateway and per-GB data charges on top. If egress ever does need to move off the instance IP, enable Private Google Access first (free, covers Vertex AI only) and confirm what still needs the open internet before touching anything.
 
 ---
 
