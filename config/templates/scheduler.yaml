@@ -66,3 +66,18 @@ schedules:
     days: daily
     function: tools.ambient.refresh_ambient_context
     notification: false
+
+  # Checks this persona's stated preferences against the rules that already
+  # apply to everyone, and reports anything stated in two places. A function
+  # job, so it costs no model tokens — regex over config files, a few ms.
+  #
+  # Deliberately silent to the user: a duplicated rule is a development
+  # problem, not something to interrupt their day with. Findings go to the
+  # quality-event stream as RULE_CONFLICT and surface in DEV_BACKLOG.md.
+  # Each finding is reported once, never re-reported daily.
+  daily_rule_audit:
+    enabled: true
+    time: "05:30"           # before the morning brief, so a fix can land same-day
+    days: daily
+    function: tools.rule_audit.audit_rules
+    notification: false

@@ -37,7 +37,8 @@ TIMEOUT_SECONDS = 3
 # The self-improvement stream carries ROUTING_MISS / USER_CORRECTION too; those
 # are for the Pattern Miner health pass, not for a human backlog. Filter here so
 # nothing extra has to be built on the writing side.
-WANTED = {"SELF_APPLIED", "INSTRUCTION_CHANGE_REQUEST", "FEATURE_REQUEST", "TOOL_DENIED"}
+WANTED = {"SELF_APPLIED", "INSTRUCTION_CHANGE_REQUEST", "FEATURE_REQUEST",
+          "TOOL_DENIED", "RULE_CONFLICT"}
 
 LABELS = {
     "FEATURE_REQUEST": "needs building",
@@ -49,6 +50,11 @@ LABELS = {
     # says grant it, build it, or drop the instruction. Deduplicated per
     # (agent, tool) at the source.
     "TOOL_DENIED": "agent wanted a tool it lacks",
+    # From the daily rule audit: a stated preference that appears to restate a
+    # rule already in force. Nobody asked for these — they are the sweep finding
+    # its own work, which is why they belong in a development backlog and never
+    # in front of the user.
+    "RULE_CONFLICT": "same rule in two places",
 }
 
 ROOT = Path(__file__).resolve().parent.parent

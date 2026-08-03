@@ -163,6 +163,34 @@ Cloud LLMs are used only for fully decontextualized tasks: generic research, wri
 
 ---
 
+## One Home Per Rule Class
+
+Every behavioural instruction lives in exactly one place. This is not tidiness. When the same rule sits in two files, editing one leaves the other stale, and the stale copy keeps firing — silently, because nothing reads both.
+
+**Which layer owns what:**
+
+| Layer | Owns | Scope |
+|---|---|---|
+| `config/agents/*.md` | judgement — what to notice, what to raise, how to weigh evidence, how to speak | every persona |
+| `config/personas/{p}/scheduler.yaml` | *when* a proactive session fires, and its opening prompt | one persona |
+| `core/scheduler.py` | mechanism only — the gate stack, never content | every persona |
+| `config/personas/{p}.md` | this user's personal style preferences | one persona |
+| `config/personas/{p}/profile.yaml` | stable facts about who the user is | one persona |
+
+**The rule that gets broken:** a personal preference is generalised upward into an agent file, and the persona copy is never deleted. On 2026-08-03 five of Mike's preferences — never say "enjoy", stop repetitive reminders, don't over-weight sleep, only check in when quiet, keep check-ins brief — sat in **both** `config/personas/mike.md` and `config/agents/synthesizer.md`. Both were written the same afternoon and nothing noticed.
+
+**So: promotion deletes the original.** When a persona rule is generalised into an agent file or a scheduler prompt, remove the persona copy in the same pass — after confirming the replacement is actually live on the VM, not merely committed on the Mac. A persona file may still hold a *refinement* of a universal rule; if it does, word it so the difference is the only thing it states.
+
+**Three checks, at different speeds:**
+
+1. **Write time** — `write_persona` calls `check_new_rule()` ([core/rule_classes.py](core/rule_classes.py)) and appends a warning to the tool result when a new preference restates an existing rule. It **warns, never blocks**: refusing a write to keep the file tidy would discard something the user actually said, which is the worse failure.
+2. **Daily** — `daily_rule_audit` ([tools/rule_audit.py](tools/rule_audit.py)), a `function:` scheduler job costing **no model tokens**. Catches what the write-time check cannot see: rules added by hand in a development session, which is how the 2026-08-03 set arose. Findings become `RULE_CONFLICT` quality events and reach `DEV_BACKLOG.md` through the existing sync. Each is reported once — a daily re-report of the same finding trains the reader to ignore it.
+3. **On demand** — `python3 scripts/check_rule_overlap.py [--persona NAME]`, the interactive sweep for a development session. Run it on the VM to check `mike`, whose files are VM-only.
+
+**Known limits, so nobody over-trusts the output.** Detection is class-based regex plus word overlap. Recall on the real 2026-08-03 set is 5/5, but the *partner* it names is a starting point, not a verdict — lexical scores at this scale picked the wrong partner three times in five. The flagged preference is the reliable part. `CLASSES` in [core/rule_classes.py](core/rule_classes.py) is incomplete by construction; add a class when a duplicate slips through rather than treating a clean report as proof.
+
+---
+
 ## Adding a New Module
 
 1. Create `config/agents/{module_name}.md` — agent instruction file
@@ -248,10 +276,10 @@ Mac (dev)
                             └──► Tailscale VPN (IP: 100.64.226.49)
                                       │
                                  Android phone
-                                 (Metatron app → http://100.64.226.49:8001)
+                                 (Metatron app → https://metatron-vm.tail0acc5d.ts.net:8001)
 ```
 
-The VM's external IP (`35.202.250.80`) is never used. All client access is through the Tailscale WireGuard tunnel. HTTP (not HTTPS) on port 8001 is acceptable because Tailscale provides transport encryption.
+The VM's external IP (`35.202.250.80`) is never used. All client access is through the Tailscale WireGuard tunnel. The server listens on **HTTPS** port 8001 using the Tailscale-issued cert for `metatron-vm.tail0acc5d.ts.net`, which is publicly trusted — so no CA install is needed on any client. (Tailscale would encrypt the transport regardless; the cert exists so browsers and the Android WebView treat the origin as secure.)
 
 ---
 
@@ -548,12 +576,12 @@ The app is a Capacitor 8.4.0 wrapper around `static/index.html`. There is no sep
 | App name | `Metatron` |
 | Framework | Capacitor 8.4.0 (`@capacitor/android`) |
 | Web asset dir | `static/` (the PWA lives here) |
-| Server address | `http://100.64.226.49:8001` (VM Tailscale IP, hardcoded in `static/index.html`) |
+| Server address | `https://metatron-vm.tail0acc5d.ts.net:8001` (Tailscale MagicDNS name, in `static/index.html` — used when the page is opened from `localhost`; otherwise same-origin) |
 | Icon source | `assets/icon-only.png` (Phoenician mem glyph, parchment/brown) |
 | Icon generation | `npx @capacitor/assets generate` — writes to all `mipmap-*` density folders |
 
 Key config decisions:
-- `allowMixedContent: true` and `cleartext: true` in `capacitor.config.json` — HTTP is safe because Tailscale encrypts the transport.
+- `allowMixedContent: true` and `cleartext: true` remain in `capacitor.config.json` from the earlier HTTP setup. They are no longer relied on — the server serves HTTPS with a publicly trusted Tailscale cert.
 - Adaptive icon XMLs removed from `mipmap-anydpi-v26/` — Android uses the PNG directly (fixes home screen icon caching bug).
 - Adaptive icon background color: `#0d0d0d` in `android/app/src/main/res/values/ic_launcher_background.xml`.
 
@@ -648,7 +676,7 @@ Follow this order. Each step depends on the ones before it.
 **8. systemd services**
 - Write both unit files (text above) to `/etc/systemd/system/`
 - `sudo systemctl daemon-reload && sudo systemctl enable metatron-server metatron-scheduler && sudo systemctl start metatron-server metatron-scheduler`
-- Verify: `curl http://100.64.226.49:8001/health` → `{"status":"ok"}`
+- Verify: `curl https://metatron-vm.tail0acc5d.ts.net:8001/health` → `{"status":"ok"}`
 
 **9. Deploy pipeline on Mac**
 - Ensure `deploy.sh` is executable: `chmod +x deploy.sh`

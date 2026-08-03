@@ -59,7 +59,55 @@ def write_persona(section: str, content: str) -> str:
 
     path.write_text(updated)
     os.chmod(path, 0o600)
-    return f"Persona updated: '{section}' written to {path.name}"
+
+    confirmation = f"Persona updated: '{section}' written to {path.name}"
+
+    warning = _redundancy_warning(text, content)
+    return confirmation + warning if warning else confirmation
+
+
+def _redundancy_warning(previous: str, content: str) -> str:
+    """Flag newly-added preferences that restate a rule already in force.
+
+    Warns; never blocks. The write has already happened by the time this runs,
+    deliberately: refusing to record something the user actually said, in order
+    to keep the file tidy, loses their words — a far worse failure than a
+    duplicate line. It costs no model call and no extra turn, just regex over
+    the config files, so it is safe on a write path.
+
+    Catches only what this tool writes. Rules added by hand in a development
+    session are invisible here, which is how the 2026-08-03 duplicates arose;
+    `tools/rule_audit.py` sweeps for those.
+    """
+    try:
+        from core.rule_classes import check_new_rule
+
+        existing = {ln.strip().lstrip("-* ").strip()
+                    for ln in previous.splitlines() if ln.strip().startswith(("-", "*"))}
+        added = [ln.strip().lstrip("-* ").strip()
+                 for ln in content.splitlines()
+                 if ln.strip().startswith(("-", "*"))
+                 and ln.strip().lstrip("-* ").strip() not in existing]
+
+        notes = []
+        for rule in added:
+            for cls, other, _score in check_new_rule(rule, limit=1):
+                notes.append(f'"{rule[:70]}" overlaps an existing {cls} rule')
+                break
+        if not notes:
+            return ""
+
+        return (
+            "\n\nNOTE — this may already be covered: " + "; ".join(notes) + ". "
+            "If the user is restating something you were already told, the "
+            "instruction you hold is not working; that is a change to record, "
+            "not a preference to store twice. Tell them you already have it and "
+            "that it plainly isn't showing, and record an "
+            "INSTRUCTION_CHANGE_REQUEST rather than leaving two copies."
+        )
+    except Exception:
+        # A tidiness check must never break a write that already succeeded.
+        return ""
 
 
 # ---------------------------------------------------------------------------
