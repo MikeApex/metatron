@@ -16,23 +16,13 @@ Refresh: `python3 scripts/sync_dev_backlog.py`
 - **[instruction change]** Update check-in logic and Synthesizer instructions so that proactive check-ins are very brief and do not include long summaries of pending tasks, especially when the user has not been actively responding.  
   `2026-08-03T09:11:56.763043Z`
 
+*(nothing new)*
+
 ---
 
 ## Open — instruction changes
 
-Behavioural changes to how agents judge, prioritise, or decide what to raise. Applied by editing agent instruction files. Note that `config/agents/*.md` are **frozen post-review** — each edit needs an explicit freeze lift.
-
-### Recovered from conversation, 2026-08-01/02 (pre-dated the automatic capture)
-
-- **Over-indexing on sleep disruption.** *"Once again, you're making too much of the sleep disruption"* — SEQ 020, 2026-08-02, and "once again" means it had already been raised. One interrupted night keeps being treated as a standing health signal. Physical Health / Synthesizer weighting: a single disrupted night is not a pattern and should not lead a response.
-
-- **Repeating pending items until they become noise.** *"You've repeated the calendar thing about six times today. That's not constructive"* — SEQ 020. Open threads and follow-ups carry forward correctly, but nothing decays or suppresses them once raised and acknowledged. Needs a rule: an item already surfaced and not acted on is not re-raised every exchange.
-
-- **Stop telling the user to "enjoy" things.** Two corrections logged within a minute (14:04, 14:05, 2026-08-02) after "Enjoy the museum." `config/personas/mike.md` already bans commendation and validation; this is the same instinct in a different shape. Extend the existing `Interaction Preferences` rather than adding a new one.
-
-### Recovered — cross-cutting
-
-- **Check-ins fire regardless of whether a conversation is already live.** *"Check ins are set for every [three] hours but only need be done if there's not an ongoing dialogue. Otherwise fold them into the conversation"* — SEQ 020. This is the **single largest cost lever on record**: the pathological case already happened, ~12 full pipelines/day talking to itself while the app was broken. Needs both a scheduler gate on recent user activity *and* an instruction change for how a due check-in folds into live dialogue instead of interrupting it. Cadence is already 90 → 180 min; that treated the symptom.
+Behavioural changes to how agents judge, prioritise, or decide what to raise. Applied by editing agent instruction files. **The `config/agents/*.md` freeze was lifted 2026-08-03 (`ae252ab`)** — these are now directly editable.
 
 - **`[CONTEXT]` block silently discarded when the model emits invalid JSON.** Observed live 2026-08-02 on `sarah_chen`: the Synthesizer wrote a literal newline inside a JSON string value, `split_context_block` (`core/orchestrator.py:678`) failed to parse it, logged a warning and returned `None` — so the context tracker was not updated *and* the `dev_request` for that exchange was lost. Silent data loss on a path with no retry. Options: repair common malformations before parsing, or have the Synthesizer re-emit. *Found while testing the self-development work.*
 
@@ -45,6 +35,8 @@ Behavioural changes to how agents judge, prioritise, or decide what to raise. Ap
 Capabilities that do not exist yet.
 
 ### Recovered from conversation, 2026-08-01/02
+
+- **Data breadth — sleep is nearly the only thing consistently logged.** This is the *root cause* behind "too much focus on sleep": with one reliable signal and little else, any reasoning leans on it by default. The 2026-08-03 `synthesizer.md` rules mitigate the symptom (don't over-read a thin record; ask for what's missing) but cannot fix it. Needs a real answer on capturing training, food, work and mood with low enough friction that they actually get logged. Mike has also asked that sleep tracking itself shift to **total hours plus interruptions** rather than a disruption narrative (2026-08-03).
 
 - **Nothing in the system can actually set a reminder or calendar entry.** *"The calendar integration will do later. I don't understand why it didn't, why it triggered at all"* — SEQ 011, 2026-08-01. Confirmed independently in [agent_capability_gap_2026-08-02.md](archive/plans/agent_capability_gap_2026-08-02.md) Finding 3: CalDAV is `enabled: false` with empty credentials, `scheduler.yaml` jobs are static with no tool to add one, and `write_config` is allowlisted to two markdown files. A reminder can be *recorded* but never *delivered* — which is why it appeared to do nothing. Build order there: enable CalDAV → grant Logistics its config tools → `write_schedule`/`list_schedules`/`delete_schedule` → store a delivery preference.
 
@@ -71,6 +63,18 @@ Stale docs, paths, and low-priority corrections.
 ---
 
 ## Done
+
+### Check-in restraint — deployed 2026-08-03 (`ae252ab`..`HEAD`)
+
+Four related complaints, one root cause and four fixes. **The cause was not an agent file:** `companion_checkin`'s own prompt instructed it to *"lead with the most useful outstanding item… be specific about which one and why it matters now"* — every 180 minutes, all day. An unresolved calendar item was therefore correctly surfaced six times.
+
+- ~~**Check-ins fire regardless of whether a conversation is already live.**~~ *"Check ins… only need be done if there's not an ongoing dialogue"* — SEQ 020. Two opt-in gates in `core/scheduler.py`: `quiet_after_user_minutes: 60` (don't interrupt) and `min_gap_minutes: 180` (never more often than). `interval_minutes` becomes the poll rate, not the send rate. **Cost: strictly lower than before** — polling is local file reads with no model call, and `min_gap` preserves the old ceiling of ~5/day. Verified in production reading real conversation data. Only `companion_checkin` is gated; `morning_brief` and `evening_close` still land on their anchors by design.
+- ~~**Check-in prompt too long / demands an outstanding item.**~~ Rewritten in both `config/templates/scheduler.yaml` (the baseline every new persona inherits — which also hardcoded "Mike" in a file used to provision other people) and mike's copy. Template cadence corrected 90 → 180.
+- ~~**Repeating pending items until they become noise.**~~ *"Raise a thing once"* in `synthesizer.md`.
+- ~~**Stop telling the user to "enjoy" things.**~~ Made universal in `synthesizer.md` rather than a per-persona preference, at the user's direction — "wasted language and too sycophantic."
+- ~~**Over-indexing on sleep disruption.**~~ Two rules in `synthesizer.md`: explain a recommendation the first time and not every time (preserving the Constitution's "always explains its reasoning" for the case where it is genuinely new), and beware the loudest available signal — sleep dominates because it is the only thing consistently measured, not because it explains everything. **Where thin, ask for the missing data rather than over-reading what is there.**
+
+**Root cause of the sleep problem is data breadth, not weighting** — still open, and the instruction changes above are mitigation, not a fix.
 
 - **Synthesizer opened responses by recapping facts the user had just given.** Fixed in `synthesizer.md` under "Direction and prioritization"; deployed 2026-08-02 (`799aa3f`). *SEQ 002.*
 - **Synthesizer echoed a user-claimed timestamp instead of checking the clock.** Fixed across `tools/ambient.py`, both head-layer agent files, and the message-receipt stamping in `core/server.py` / `core/orchestrator.py`; deployed 2026-08-02 (`b184d92`). *SEQ 008.* — **This closes the 2026-08-01 SEQ 011 request** *"You'll need to check your timestamps before messaging… Let's add that to things to do."* Raised by the user on 08-01, fixed on 08-02 before the backlog existed.
