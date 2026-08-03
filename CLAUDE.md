@@ -498,10 +498,12 @@ GOOGLE_CLOUD_LOCATION=global
 DEPLOYMENT_MODE=cloud          # loads routing_cloud.yaml (Vertex); omit or set to "local" for Ollama
 
 # Web Push
-VAPID_CLAIMS_SUB=mailto:diamond.mike@gmail.com
+VAPID_CLAIMS_SUB=mailto:diamond.mike.mt@gmail.com
 ```
 
 On Mac for local dev, `OPENAI_API_KEY` is also exported from `~/.zprofile` as a fallback.
+
+> **Account convention (2026-08-03):** all `mike` persona integrations — calendar, mail, push — use the purpose-built account **`diamond.mike.mt@gmail.com`**, not the owner's personal address. Recorded in `config/personas/mike/profile.yaml` as `account_email`. Historical archives predating this are left as written.
 
 ---
 

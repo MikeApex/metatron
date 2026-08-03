@@ -11,7 +11,7 @@ this output is forwarded to an agent, wrap it in <untrusted_content> tags
 
 import uuid
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import requests
@@ -188,15 +188,33 @@ def write_calendar_event(
     start: str,
     end: str,
     description: str = "",
+    recurrence: str = "",
+    alarm_minutes_before: int | None = None,
+    all_day: bool = False,
 ) -> dict:
     """
     Create a new calendar event on the CalDAV server.
 
+    Supports the three kinds of time-bound thing the system distinguishes:
+
+      Appointment — a fixed time you want to be interrupted for.
+                    all_day=False, alarm_minutes_before set.
+      Deadline    — a day something must happen by, with no particular time.
+                    all_day=True, no alarm; the day is surfaced in conversation
+                    rather than by an interrupting alert.
+      Recurring   — either of the above, repeated, via `recurrence`.
+
     Args:
         title:        Event title/summary.
-        start:        Start datetime in YYYY-MM-DDTHH:MM:SS format.
-        end:          End datetime in YYYY-MM-DDTHH:MM:SS format.
+        start:        Start datetime YYYY-MM-DDTHH:MM:SS, or YYYY-MM-DD if all_day.
+        end:          End datetime YYYY-MM-DDTHH:MM:SS, or YYYY-MM-DD if all_day.
         description:  Optional event description/notes.
+        recurrence:   Optional RFC 5545 RRULE body, without the "RRULE:" prefix.
+                      e.g. "FREQ=MONTHLY;BYMONTHDAY=15" or "FREQ=WEEKLY;BYDAY=MO".
+        alarm_minutes_before: Optional alert, N minutes before start. Omit for
+                      deadlines — an all-day event that alarms fires at midnight,
+                      which is worse than useless.
+        all_day:      True for a date-only event with no clock time.
 
     Returns:
         Dict with success status and event uid, or error.
@@ -223,10 +241,37 @@ def write_calendar_event(
         start_dt = datetime.fromisoformat(start)
         end_dt = datetime.fromisoformat(end)
     except ValueError as e:
-        return {"error": f"Invalid datetime (expected YYYY-MM-DDTHH:MM:SS): {e}"}
+        expected = "YYYY-MM-DD" if all_day else "YYYY-MM-DDTHH:MM:SS"
+        return {"error": f"Invalid datetime (expected {expected}): {e}"}
 
     if end_dt <= start_dt:
-        return {"error": "end must be after start."}
+        # An all-day event's DTEND is exclusive per RFC 5545, so a single-day
+        # event is start=D, end=D+1. Callers naturally pass the same date twice;
+        # accept that and advance the end rather than rejecting it.
+        if all_day and end_dt == start_dt:
+            end_dt = end_dt + timedelta(days=1)
+        else:
+            return {"error": "end must be after start."}
+
+    if alarm_minutes_before is not None:
+        try:
+            alarm_minutes_before = int(alarm_minutes_before)
+        except (TypeError, ValueError):
+            return {"error": "alarm_minutes_before must be a whole number of minutes."}
+        if alarm_minutes_before < 0:
+            return {"error": "alarm_minutes_before must be zero or positive."}
+
+    recurrence = (recurrence or "").strip().upper()
+    if recurrence.startswith("RRULE:"):
+        recurrence = recurrence[len("RRULE:"):]
+    if recurrence and not recurrence.startswith("FREQ="):
+        return {
+            "error": (
+                f"recurrence must be an RRULE body starting with FREQ=, got "
+                f"'{recurrence}'. Examples: 'FREQ=MONTHLY;BYMONTHDAY=15', "
+                f"'FREQ=WEEKLY;BYDAY=MO', 'FREQ=YEARLY'."
+            )
+        }
 
     tz = cfg.get("timezone", "UTC")
     dt_fmt = "%Y%m%dT%H%M%S"
@@ -237,21 +282,45 @@ def write_calendar_event(
     def _esc(s: str) -> str:
         return s.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
 
-    ical = "\r\n".join([
+    # All-day events use DATE values with no timezone; timed events use local
+    # times bound to TZID. Mixing the two produces events that display an hour
+    # out, or not at all, depending on the client.
+    if all_day:
+        dtstart = f"DTSTART;VALUE=DATE:{start_dt.strftime('%Y%m%d')}"
+        dtend = f"DTEND;VALUE=DATE:{end_dt.strftime('%Y%m%d')}"
+    else:
+        dtstart = f"DTSTART;TZID={tz}:{start_dt.strftime(dt_fmt)}"
+        dtend = f"DTEND;TZID={tz}:{end_dt.strftime(dt_fmt)}"
+
+    lines = [
         "BEGIN:VCALENDAR",
         "VERSION:2.0",
         "PRODID:-//AI Life Manager//NONSGML//EN",
         "BEGIN:VEVENT",
         f"UID:{event_uid}",
         f"DTSTAMP:{now_utc}",
-        f"DTSTART;TZID={tz}:{start_dt.strftime(dt_fmt)}",
-        f"DTEND;TZID={tz}:{end_dt.strftime(dt_fmt)}",
+        dtstart,
+        dtend,
         f"SUMMARY:{_esc(title)}",
         f"DESCRIPTION:{_esc(description)}",
-        "END:VEVENT",
-        "END:VCALENDAR",
-        "",
-    ])
+    ]
+
+    # RRULE is structured property data, not text — escaping it would turn the
+    # semicolons separating its parts into literal characters and break the rule.
+    if recurrence:
+        lines.append(f"RRULE:{recurrence}")
+
+    if alarm_minutes_before is not None:
+        lines += [
+            "BEGIN:VALARM",
+            "ACTION:DISPLAY",
+            f"DESCRIPTION:{_esc(title)}",
+            f"TRIGGER:-PT{alarm_minutes_before}M",
+            "END:VALARM",
+        ]
+
+    lines += ["END:VEVENT", "END:VCALENDAR", ""]
+    ical = "\r\n".join(lines)
 
     event_url = url.rstrip("/") + "/" + event_uid + ".ics"
 
@@ -310,9 +379,19 @@ READ_CALENDAR_SCHEMA = {
 WRITE_CALENDAR_EVENT_SCHEMA = {
     "name": "write_calendar_event",
     "description": (
-        "Create a new calendar event on the user's CalDAV calendar. "
-        "Use for scheduling appointments, blocking time, or adding reminders with a specific time. "
-        "Requires CalDAV to be configured and enabled in config/modules/caldav.yaml."
+        "Create an event on the user's calendar. Handles one-off and repeating "
+        "events, with or without an alert.\n\n"
+        "Choose the shape from what the thing actually is:\n"
+        "- APPOINTMENT — happens at a set time and should interrupt the user. "
+        "Give a start and end time, and set alarm_minutes_before.\n"
+        "- DEADLINE — must happen on a given day but has no particular time "
+        "(paying a bill, renewing a licence). Set all_day=true and give dates "
+        "only. Do NOT set an alarm: an all-day alert fires at midnight, which "
+        "helps nobody. The day gets raised in conversation instead.\n"
+        "- REPEATING — either of the above with `recurrence` set.\n\n"
+        "Worked example — 'strong reminder to pay the credit card on the 15th "
+        "of every month': title='Pay credit card bills', start='2026-08-15', "
+        "end='2026-08-15', all_day=true, recurrence='FREQ=MONTHLY;BYMONTHDAY=15'."
     ),
     "input_schema": {
         "type": "object",
@@ -323,15 +402,46 @@ WRITE_CALENDAR_EVENT_SCHEMA = {
             },
             "start": {
                 "type": "string",
-                "description": "Start datetime in YYYY-MM-DDTHH:MM:SS format (e.g. 2026-06-10T09:00:00).",
+                "description": (
+                    "Start. Timed events: YYYY-MM-DDTHH:MM:SS (e.g. 2026-08-10T09:00:00). "
+                    "All-day events: YYYY-MM-DD (e.g. 2026-08-15)."
+                ),
             },
             "end": {
                 "type": "string",
-                "description": "End datetime in YYYY-MM-DDTHH:MM:SS format (e.g. 2026-06-10T10:00:00).",
+                "description": (
+                    "End, same format as start. For a single all-day event pass the "
+                    "same date as start."
+                ),
             },
             "description": {
                 "type": "string",
                 "description": "Optional event notes or description.",
+            },
+            "all_day": {
+                "type": "boolean",
+                "description": (
+                    "True for a date-only event with no clock time. Use for deadlines."
+                ),
+            },
+            "recurrence": {
+                "type": "string",
+                "description": (
+                    "Optional repeat rule, as an RRULE body WITHOUT the 'RRULE:' prefix. "
+                    "Common forms: 'FREQ=DAILY'; 'FREQ=WEEKLY;BYDAY=MO' (every Monday); "
+                    "'FREQ=MONTHLY;BYMONTHDAY=15' (15th of each month); "
+                    "'FREQ=MONTHLY;BYDAY=-1FR' (last Friday); 'FREQ=YEARLY'. "
+                    "Add ';COUNT=12' to stop after 12 occurrences, or ';UNTIL=20271231T000000Z' "
+                    "to stop on a date. Omit for a one-off event."
+                ),
+            },
+            "alarm_minutes_before": {
+                "type": "integer",
+                "description": (
+                    "Optional alert, this many minutes before the start time "
+                    "(e.g. 30 for half an hour before, 1440 for a day before). "
+                    "Omit entirely for all-day deadlines."
+                ),
             },
         },
         "required": ["title", "start", "end"],

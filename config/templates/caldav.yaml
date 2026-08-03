@@ -9,7 +9,12 @@
 #   auth.password: app-specific password from appleid.apple.com → Security → App-Specific Passwords
 #
 # Google Calendar:
-#   calendar_url: https://apidata.googleusercontent.com/caldav/v2/{email}/events
+#   calendar_url: https://www.google.com/calendar/dav/{CALENDAR_ID}/events
+#     Use this legacy endpoint, NOT apidata.googleusercontent.com/caldav/v2/ —
+#     that one requires OAuth 2.0 and 401s on app passwords (verified 2026-08-03).
+#     CALENDAR_ID for a secondary calendar: abc123...@group.calendar.google.com,
+#     found in the calendar's "Integrate calendar" settings. The .../basic.ics
+#     address shown there is READ-ONLY; only the ID within it is useful.
 #   auth.username: your@gmail.com
 #   auth.password: app password from myaccount.google.com/apppasswords (requires 2FA)
 #

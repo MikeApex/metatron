@@ -444,6 +444,10 @@ def register_tools() -> tuple[list[dict], dict]:
         read_calendar, write_calendar_event,
         READ_CALENDAR_SCHEMA, WRITE_CALENDAR_EVENT_SCHEMA,
     )
+    from tools.ambient import (
+        get_weather, get_environmental_snapshot,
+        GET_WEATHER_SCHEMA, GET_ENVIRONMENTAL_SNAPSHOT_SCHEMA,
+    )
 
     schemas = [
         WRITE_LOG_SCHEMA, READ_LOG_SCHEMA,
@@ -468,6 +472,7 @@ def register_tools() -> tuple[list[dict], dict]:
         WRITE_AGENT_CONFIG_SCHEMA, READ_AGENT_CONFIG_SCHEMA,
         WRITE_WISHES_SCHEMA, READ_WISHES_SCHEMA, GENERATE_EMERGENCY_CARD_SCHEMA,
         READ_CALENDAR_SCHEMA, WRITE_CALENDAR_EVENT_SCHEMA,
+        GET_WEATHER_SCHEMA, GET_ENVIRONMENTAL_SNAPSHOT_SCHEMA,
         WRITE_QUALITY_EVENT_SCHEMA,
     ]
     handlers = {
@@ -512,6 +517,8 @@ def register_tools() -> tuple[list[dict], dict]:
         "generate_emergency_card": generate_emergency_card,
         "read_calendar": read_calendar,
         "write_calendar_event": write_calendar_event,
+        "get_weather": get_weather,
+        "get_environmental_snapshot": get_environmental_snapshot,
         "write_quality_event": write_quality_event,
         "write_persona": write_persona,
     }

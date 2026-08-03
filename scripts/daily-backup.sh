@@ -37,6 +37,22 @@ export PASSPHRASE
 mkdir -p "$BACKUP_DIR"
 log "=== Backup started ==="
 
+# Pull current data off the VM first, so the archive below contains live server
+# state and not just whatever is on this Mac. The VM holds the real persona data
+# — logs, journals, traces — and none of it is in git.
+#
+# Best-effort: a VM that is paused, unreachable, or missing gcloud in launchd's
+# PATH must not stop the local backup from running. A local-only backup is worth
+# far more than no backup.
+if [[ -x "$SOURCE/scripts/metatron-backup.sh" ]]; then
+    log "Pulling VM data..."
+    if "$SOURCE/scripts/metatron-backup.sh" >>"$LOGFILE" 2>&1; then
+        log "VM pull OK."
+    else
+        log "WARNING: VM pull failed — archiving local state only."
+    fi
+fi
+
 tar -czf - \
     --exclude="$SOURCE/certs" \
     --exclude="$SOURCE/.venv" \
@@ -46,6 +62,7 @@ tar -czf - \
     --exclude="$SOURCE/data/voices" \
     --exclude="$SOURCE/tools/kokoro" \
     --exclude="$SOURCE/data/personas/*/memory/*.faiss" \
+    --exclude="$SOURCE/backups/vm/metatron-vm-data-*.tgz" \
     "$SOURCE" \
 | openssl enc -aes-256-cbc -pbkdf2 -iter 600000 \
     -pass "env:PASSPHRASE" \
