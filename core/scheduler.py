@@ -345,9 +345,106 @@ def fire_function(job_name: str, fn_path: str, persona: str) -> None:
         print(f"[scheduler error] [{persona}] {job_name}: {e}", flush=True)
 
 
+def _agent_schedules_path(persona: str) -> Path:
+    """Agent-written jobs. Separate file from the user's scheduler.yaml — see
+    tools/schedule.py for why they must never share one."""
+    return persona_data_dir(persona) / "schedules.yaml"
+
+
+def _load_agent_schedules(persona: str) -> dict:
+    """Agent-written recurring jobs, in the same shape as scheduler.yaml entries."""
+    path = _agent_schedules_path(persona)
+    if not path.exists():
+        return {}
+    try:
+        data = yaml.safe_load(path.read_text()) or {}
+    except Exception as e:
+        print(f"  [scheduler] WARNING: could not read {path}: {e}", flush=True)
+        return {}
+    # One-offs are not registered with the schedule library — they are fired from
+    # the main loop against their `at` timestamp, then deleted.
+    return {k: v for k, v in data.items()
+            if isinstance(v, dict) and not v.get("one_off")}
+
+
+def _agent_schedules_mtime(persona: str) -> float:
+    path = _agent_schedules_path(persona)
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def _fire_due_one_offs(persona: str) -> None:
+    """
+    Fire and remove any one-off job whose time has come.
+
+    Handled here rather than through the schedule library, which has no concept
+    of a job that runs once. Deleted before firing, not after: a session takes
+    20-70s and the loop ticks every 30, so crediting it afterwards would fire the
+    same job twice.
+    """
+    path = _agent_schedules_path(persona)
+    if not path.exists():
+        return
+    try:
+        data = yaml.safe_load(path.read_text()) or {}
+    except Exception:
+        return
+
+    now = datetime.now()
+    due = []
+    for name, job in list(data.items()):
+        if not isinstance(job, dict) or not job.get("one_off") or not job.get("enabled", True):
+            continue
+        try:
+            when = datetime.fromisoformat(str(job.get("at", "")))
+        except ValueError:
+            continue
+        if when <= now:
+            due.append((name, job))
+
+    if not due:
+        return
+
+    for name, job in due:
+        data.pop(name, None)
+    try:
+        path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False,
+                                  allow_unicode=True))
+        os.chmod(path, 0o600)
+    except Exception as e:
+        print(f"  [scheduler] ERROR removing fired one-offs: {e}", flush=True)
+        return
+
+    for name, job in due:
+        print(f"[scheduler] [{persona}] one-off {name} due — firing and removing", flush=True)
+        try:
+            fire_session(name, job.get("agent", "coordinator"),
+                         job.get("prompt", ""), job.get("notification", "push"),
+                         persona)
+        except Exception as e:
+            _log_error(name, f"one-off failed: {e}", persona)
+
+
 def _register_schedules(persona: str) -> None:
     cfg = _load_config(persona)
-    schedules_cfg = cfg.get("schedules", {})
+    schedules_cfg = dict(cfg.get("schedules", {}))
+
+    # Agent-written jobs are merged in at registration. On a name collision the
+    # user's own scheduler.yaml wins — an agent must not be able to redefine the
+    # morning brief.
+    agent_jobs = _load_agent_schedules(persona)
+    for name, job in agent_jobs.items():
+        if name in schedules_cfg:
+            print(f"  [scheduler] agent job {name!r} ignored — name taken by "
+                  f"the user's scheduler.yaml", flush=True)
+            continue
+        schedules_cfg[name] = job
+    if agent_jobs:
+        print(f"  [scheduler] {len(agent_jobs)} agent-written job(s) from "
+              f"{_agent_schedules_path(persona)}", flush=True)
+
     if not schedules_cfg:
         print(f"  [scheduler] WARNING: no schedules for persona {persona!r} "
               f"({_scheduler_config_path(persona)}) — registering none", flush=True)
@@ -429,6 +526,12 @@ def main() -> None:
     # and re-register. Self-healing; no cron entry or manual step needed.
     current_offset = datetime.now().astimezone().utcoffset()
 
+    # Agents create jobs while the daemon is already running. Without this the
+    # file would only be read at startup, so a reminder set at 09:00 for 10:00
+    # would never fire until the next deploy — the user told it was set, nothing
+    # happening, no error anywhere. Same silent-failure shape as SEQ 021.
+    agent_mtime = _agent_schedules_mtime(persona)
+
     while True:
         offset = datetime.now().astimezone().utcoffset()
         if offset != current_offset:
@@ -437,6 +540,15 @@ def main() -> None:
             schedule.clear()
             _register_schedules(persona=persona)
             current_offset = offset
+
+        new_mtime = _agent_schedules_mtime(persona)
+        if new_mtime != agent_mtime:
+            print("\n[scheduler] agent schedules changed; re-registering", flush=True)
+            schedule.clear()
+            _register_schedules(persona=persona)
+            agent_mtime = new_mtime
+
+        _fire_due_one_offs(persona)
 
         schedule.run_pending()
         time.sleep(30)

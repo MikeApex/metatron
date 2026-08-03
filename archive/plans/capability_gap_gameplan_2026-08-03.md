@@ -5,6 +5,22 @@
 
 ---
 
+## Standing practice — adopted 2026-08-03, applies to all development from here
+
+Three things become permanent, not one-off phases.
+
+**1. The denial audit runs continuously.** `dispatch_tool` records a `TOOL_DENIED` quality event whenever an agent reaches for a tool it was not granted, deduplicated per (agent, tool). `sync_dev_backlog.py` pulls these into `DEV_BACKLOG.md`. This is the demand signal: the agent instruction files were written as a specification of intended capability ahead of the tools, so an attempted call is evidence of designed intent, not a bug.
+
+**Grant on demonstrated need, never blanket.** A denial means one of three things — grant the tool, build the tool, or drop the instruction — and the log tells you which agents actually want what. Review the denial entries at the start of each development session.
+
+**2. `DEV_BACKLOG.md` is the single intake.** Everything routes there: user requests captured in conversation, tool denials, and items found while working. It is reviewed at session start and triaged, not left to accumulate.
+
+**3. Every development is backchecked against this plan for cohesiveness.** Before closing any piece of work, check it against the plan and the roadmap: does it duplicate something already scheduled, does it unblock or obsolete a later item, does it contradict a recorded decision? Findings from the denial audit in particular will keep pulling later-phase features forward — that is expected, and the plan should be amended rather than quietly diverged from.
+
+Two live examples of why this matters. The 2026-08-03 audit found `logistics.md` and `research_agent.md` describing calendar and weather tools as "Future — Deliverable 6" when all three had just been built, and `research_agent.md` calling for `web_search` to be built although grounding already provided it. Work had moved ahead of the documents in both directions.
+
+---
+
 ## Effort scale
 
 | Tag | Means |

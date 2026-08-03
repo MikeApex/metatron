@@ -1,5 +1,5 @@
 # Session Primer — Personal AI Life Manager
-*Updated: 2026-08-02 (SEQ 021: specialist clock injection, self-correcting tool errors, failure reporting — **written and validated but UNCOMMITTED/UNDEPLOYED, held behind a parallel chat's work in the same file**; agent capability gap survey written; `/metatron-troubleshoot` rewritten. Earlier: spend guard + runaway rate limiter live; GCP account verified clean and `default` VPC unfrozen; conversation scroll root-caused; Synthesizer recap fix deployed). Update this file at the close of every chat so the next chat — or any parallel chat window — starts from current state.*
+*Updated: 2026-08-03 — **the calendar now delivers.** CalDAV live with recurrence, alarms and all-day events; `get_weather` + `get_environmental_snapshot` built; tool permissions shipped in warn mode with denials feeding `DEV_BACKLOG.md`; VM backup closes a real single point of failure. Deployed `cfcd212`, `6865058`. **Phase 4 (scheduler write access) is written but uncommitted — one step from done.** The SEQ 021 fixes noted below as undeployed have since shipped in `6601479`. Earlier: spend guard + rate limiter live; GCP verified clean and `default` VPC unfrozen; Synthesizer recap and timestamp fixes deployed. Update this file at the close of every chat so the next chat — or any parallel chat window — starts from current state.*
 
 ---
 
@@ -63,6 +63,32 @@ If you need to find a specific file, tool, or planning document: **[CODEBASE_IND
 - **Check 10** Agent behavioral audits — **on hold**
 - **Check 12** Constitution alignment review — **on hold**
 
+### Also done 2026-08-03 (calendar delivers, weather tools, warn-mode tool permissions, VM backup) — **deployed `cfcd212`, `6865058`**
+
+Full writeup: [archive/sessions/2026-08-03 — Calendar Delivery, Weather Tools, Tool Permissions, VM Backup.md](archive/sessions/2026-08-03%20—%20Calendar%20Delivery,%20Weather%20Tools,%20Tool%20Permissions,%20VM%20Backup.md) · Plan: [capability_gap_gameplan_2026-08-03.md](archive/plans/capability_gap_gameplan_2026-08-03.md)
+
+**The reminder problem is solved.** `write_calendar_event` gained `recurrence` (RRULE), `alarm_minutes_before` (VALARM) and `all_day`. This was the real blocker — the builder emitted a bare one-off `VEVENT` with no alert, so enabling CalDAV alone would have produced a *silent single event*, the same false-success shape as SEQ 021. Credit-card bills now exist as a recurring all-day deadline on a dedicated Metatron calendar.
+
+**CalDAV gotcha, recorded so it is not rediscovered:** `apidata.googleusercontent.com/caldav/v2` **requires OAuth 2.0 and 401s on app passwords** (verified against four URL variants). Use the legacy `https://www.google.com/calendar/dav/{CALENDAR_ID}/events`, which accepts basic auth. A calendar's `.../basic.ics` address is **read-only** — only the ID inside it is useful. Corrected in `config/templates/caldav.yaml`. The same app password authenticates IMAP, which de-risks Phase 5.
+
+**Framework adopted — three kinds of time-bound thing.** *Appointment* (fixed time, should interrupt) → calendar event + alarm. *Deadline* (a day, no time) → all-day event, no alarm, Synth folds it into that day. *Condition* (needs judgement — "water the plants if it hasn't rained") → scheduler job. Prefer the calendar wherever it suffices: no AI at fire time, no cost, visible in the user's own app.
+
+**`get_weather` + `get_environmental_snapshot`** built in `tools/ambient.py`, registered, tested live. `get_weather` adds **recent rainfall** with a computed `days_since_rain` (Open-Meteo — wttr.in only forecasts, but rain decisions are backward-looking). UV is free from the existing wttr.in call; **AQI is not in wttr.in** and comes from Open-Meteo, failing soft. Coordinates reused from `nearest_area` — no geocoding call. **Supersedes roadmap decision 16** (weather-only at E1) by explicit user decision.
+
+**Tool permissions live in WARN mode.** `dispatch_tool` now checks the calling agent's grant. Previously the whitelist filtered what an agent was *shown* but handlers were looked up unfiltered, so any agent could call anything — and because it silently succeeded, nothing recorded that an agent wanted a capability it lacked. Denials emit a **`TOOL_DENIED`** quality event (deduped per agent+tool) which `sync_dev_backlog.py` pulls into `DEV_BACKLOG.md`. Nothing is blocked; flip to `METATRON_TOOL_PERMISSIONS=enforce` once the log is reviewed — required before E1 integrations.
+
+**Standing practice adopted:** (1) the denial audit runs continuously — grant on demonstrated need, never blanket; (2) `DEV_BACKLOG.md` is the single intake; (3) every development is backchecked against the plan for cohesiveness. All nine agent `## Enhancement backlog` sections **mirrored** (not moved) into `DEV_BACKLOG.md`.
+
+**`scripts/metatron-backup.sh` (new)** — nothing on the VM was captured by git; 12MB of real data survived the July rebuild only because the disk was deliberately detached. Pulls VM state to the Mac, verifies before pruning, hardlinks `latest.tgz`; `daily-backup.sh` runs it first and includes only the latest. **Caught real Mac↔VM drift on its first run.** Also fixed: `.env.*` was unignored, so `.env.bak` files would have been committable with every API key.
+
+**Corrections worth carrying:** an audit intended to strip stale tool references found the eight `run_subagent` mentions are *guardrails* reading "do not call `run_subagent` directly" — applying the proposed removals would have deleted the instruction preventing the behaviour. **Net removals: zero.** Separately, the 2026-06-24 token work established the narrow `allowed_tools` lists as deliberate (~95,000t → ~30,000t); widening them to match the agent files would have reversed the project's highest-leverage optimisation. And the agent-backlog token cost measures ~130 tokens total — not worth moving for cost, only for discoverability.
+
+**⚠ Phase 4 written but UNCOMMITTED.** `tools/schedule.py` (`write_schedule`/`list_schedules`/`delete_schedule`; caps 6 recurring agent jobs / 6h min interval / 10 live user-facing; provenance on every entry) and `core/scheduler.py` changes (merges agent jobs, **30s mtime reload** so a job set at 09:00 for 10:00 actually arms, one-off firing that deletes *before* running). Registered in the orchestrator. **Remaining: grant the three tools to Synthesizer and Logistics in both routing configs** — a first attempt silently no-opped because a parallel session edited those same lines mid-edit.
+
+**⚠ Tier-editability is inverted — found, not fixed.** `write_config` (→ `mission.md`, `prime_directive.md`) is held by the **Synthesizer**, which runs on every exchange: least-changed files, most-invoked agent, no confirmation. Meanwhile `write_goals` is held by **`goals_interviewer` alone**, so in ordinary conversation **nobody can update goals** — telling the tool a goal is achieved has no path to being recorded. And `write_goals` replaces a whole horizon at once (*"a key present in content replaces the existing value entirely"*), so adding one daily goal means resending the full list and **any omission silently deletes goals**. Wrong shape for an ongoing add/complete cycle.
+
+**Also open:** location sharing (phone permission + calendar-derived inference; GPS agreed as sensitive-tier, local-only, coarsened); Phase 5 (server auth — currently none, `allow_origins=["*"]`; `<untrusted_content>` injection defense documented but unbuilt; `read_email`, with `send_email` deliberately deferred); `write_config` Tier-1 exposure that warn mode does not close.
+
 ### Also done 2026-08-02 (Synth self-development awareness + `DEV_BACKLOG.md` — the single change-request list)
 
 Full writeup: [archive/sessions/2026-08-02 — Synth Self-Development Awareness and Dev Backlog.md](archive/sessions/2026-08-02%20—%20Synth%20Self-Development%20Awareness%20and%20Dev%20Backlog.md)
@@ -98,7 +124,7 @@ All four probes pass against `sarah_chen` on the real Vertex pipeline. Test arti
 
 **Two new backlog entries found in passing:** the `write_config`/`scheduler.yaml` discrepancy (`synthesizer.md:355` promises a capability `tools/config_writer.py:16` forbids — corroborated live by a Logistics tool failure in a tracker held-item), and **silent `[CONTEXT]` data loss** when the model emits malformed JSON (`split_context_block` logs and returns `None`, losing both the tracker write and the `dev_request`).
 
-### Also done 2026-08-02 (SEQ 021 — specialist clock, tool-error hints, failure reporting; capability gap survey) ⚠ **UNCOMMITTED / UNDEPLOYED**
+### Also done 2026-08-02 (SEQ 021 — specialist clock, tool-error hints, failure reporting; capability gap survey) — **DEPLOYED `6601479`**
 
 Full writeup: [archive/sessions/2026-08-02 — SEQ 021 Logistics Turn Burn, Clock Injection, Tool Error Hints.md](archive/sessions/2026-08-02%20—%20SEQ%20021%20Logistics%20Turn%20Burn,%20Clock%20Injection,%20Tool%20Error%20Hints.md)
 
@@ -115,7 +141,7 @@ Full writeup: [archive/sessions/2026-08-02 — SEQ 021 Logistics Turn Burn, Cloc
 3. `_failed_tool_calls()` appends `[TOOL FAILURES — these actions did NOT complete]` to specialist output. Excludes head/routing layer, and excludes any tool that later succeeded on retry (or a recovered error would produce a false "it didn't save").
 4. Hallucinated `data/personas/mike/logs/2025-05-22.json` moved to `data/diagnostics/bogus_logs/` **on the VM**. No real data lost.
 
-**⚠ HELD AT USER INSTRUCTION — not committed, not deployed.** `core/orchestrator.py` also carries a **parallel chat's** uncommitted work (Dev Backlog / Synth self-development: `_persist_dev_request`, `_DEV_REQUEST_TYPES`, `self_development.md` loader) plus a modified `config/agents/synthesizer.md`, `DEV_BACKLOG.md`, `scripts/sync_dev_backlog.py`. Both sessions' edits sit in the same file. Close the parallel chat first, then commit and deploy in one pass. **Everything is Mac-local until `./deploy.sh` runs.**
+**Resolved 2026-08-03 — committed and deployed.** These fixes were held briefly because `core/orchestrator.py` also carried a parallel chat's uncommitted work; that chat committed both sets together in `6601479` and the VM now runs them. No action outstanding.
 
 **Deliverable — [archive/plans/agent_capability_gap_2026-08-02.md](archive/plans/agent_capability_gap_2026-08-02.md).** Written instead of reconciling `logistics.md` downward, at user's direction, since a calendar is arriving shortly. Headlines:
 - **Finding 0 (security):** the per-agent tool whitelist filters `tool_schemas` but **not** `tool_handlers`, and `dispatch_tool()` does no whitelist check — **any agent can invoke any of the 43 tools.** Proven live: `logistics` is not granted `write_agent_config` yet called it three times in production and the dispatcher executed each. **Implication: every "told-but-not-offered" capability currently works by accident, so closing this (Track B / B2 PoLP) without first fixing the allowlists breaks them all at once. Fix the lists, then enforce.**
