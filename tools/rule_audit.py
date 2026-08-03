@@ -118,6 +118,13 @@ def find_conflicts(persona: str) -> list[dict]:
     findings: list[dict] = []
 
     for p in personal:
+        # A preference whose class the persona layer *owns* is exactly where it
+        # belongs — `follow_up_style` is personal by definition, so flagging it
+        # against a scheduler prompt that happens to say "follow-up" is noise
+        # the reader has to dismiss every time the ledger is cleared.
+        if all(CLASSES.get(c, {}).get("home") == "persona" for c in p.classes) and p.classes:
+            continue
+
         cands = []
         for s in shared:
             shared_class = p.classes & s.classes
