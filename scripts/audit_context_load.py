@@ -83,6 +83,13 @@ def reads_and_prompts(events: list[dict], root: Path):
         msg = ev.get("message") or {}
         content = msg.get("content")
 
+        # A slash command arrives as <command-name>/metatron-code</command-name>, i.e.
+        # inside exactly the angle-bracket wrapper we skip when collecting prompts.
+        # Check for it before that filter, or every real invocation reads as "NO".
+        raw = content if isinstance(content, str) else json.dumps(content)
+        if "<command-name>" in raw and "metatron-code" in raw:
+            ran_cmd = True
+
         if msg.get("role") == "user" and isinstance(content, str):
             text = content.strip()
             if text and not text.startswith("<"):
