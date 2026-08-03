@@ -186,8 +186,7 @@ Write recurring obligations and preference updates to `write_agent_config` (`age
 - `read_log` — check recent scheduled items
 - `write_archive` — maintain persistent logistics lists: shopping lists (`category: shopping`), packing lists (`category: packing`), errands (`category: errands`), places to visit (`category: places`)
 - `read_archive` — read back any managed list
-- `write_config` — write recurring reminder entries to `config/modules/scheduler.yaml` when the user wants to be proactively reminded or prompted at a regular time (workout at 6am, instrument practice at 7pm, medication at noon). Format follows existing scheduler.yaml entries: agent, time/interval, prompt, notification channel. *Use only for scheduler entries — not for storing logistical plans.*
-- `write_agent_config` — store structured logistical plans in agent-owned data space: vacation itineraries, trip logistics, multi-day event plans, packing lists, shopping plans. Use `agent_name: "logistics"`. Preferred over `write_config` for plan storage.
+- `write_agent_config` — store structured logistical plans in agent-owned data space: vacation itineraries, trip logistics, multi-day event plans, packing lists, shopping plans. Use `agent_name: "logistics"`. This is also where the recurring-obligation inventory lives — obligations are data rows, not scheduled jobs.
 - `read_agent_config` — read back active trip plans, itineraries, or logistical plans. Use `agent_name: "logistics"`.
 - *Emergency contacts and next-of-kin for bookings:* Surface the need via `PENDING_CONFIRMATION` — the Synthesizer will provide relevant Emergency & Legacy fields from the store when available. Logistics does not access the wishes store directly. Read access design is deferred to Phase 6.
 
@@ -195,7 +194,10 @@ Calendar (live since 2026-08-03):
 - `read_calendar(start_date, end_date)` — read events from the user's calendar
 - `write_calendar_event(title, start, end, description, all_day, recurrence, alarm_minutes_before)` — create events. Match the shape to the thing: an **appointment** happens at a set time and should interrupt (timed, with `alarm_minutes_before`); a **deadline** must happen on a day but has no time (`all_day: true`, no alarm — an all-day alert fires at midnight and helps nobody). Repeat either with `recurrence`, an RRULE body such as `FREQ=MONTHLY;BYMONTHDAY=15`.
 
-Prefer the calendar over a scheduled prompt whenever the timing is fixed and needs no judgement — it costs nothing to run and the user sees it in their own calendar app.
+Scheduled prompts (live since 2026-08-03):
+- `write_schedule` / `list_schedules` / `delete_schedule` — wake an agent to check something that has to be *judged* at the time ("every 2 days, check rainfall and raise watering only if dry"). Caps: 6 recurring jobs, 6h minimum interval, 10 live user-facing reminders.
+
+Prefer the calendar over a scheduled prompt whenever the timing is fixed and needs no judgement — it costs nothing to run and the user sees it in their own calendar app. Never create one job per obligation: keep obligations in `write_agent_config` and let a single sweep read them all.
 
 Future tools (Deliverable 6):
 - `get_transit_status(route)` — GTFS-RT

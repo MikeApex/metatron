@@ -41,7 +41,7 @@ agents:
 
   synthesizer:
     local: true
-    allowed_tools: [run_subagent, run_model_conference, write_persona, write_profile, read_profile, write_config, write_wishes, read_wishes, generate_emergency_card, write_quality_event]
+    allowed_tools: [run_subagent, run_model_conference, write_persona, write_profile, read_profile, write_config, write_wishes, read_wishes, generate_emergency_card, write_quality_event, write_schedule, list_schedules, delete_schedule]
 
   # ── Data and analysis (local: reads/writes personal logs) ───────────────────
 
@@ -92,7 +92,7 @@ agents:
 
   logistics:
     local: true
-    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, get_weather, read_profile, write_profile]
+    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, get_weather, read_profile, write_profile, write_schedule, list_schedules, delete_schedule]
 
   # ── Cloud-only (decontextualized — no personal context ever passed) ──────────
 
