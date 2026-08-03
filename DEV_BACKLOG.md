@@ -13,7 +13,8 @@ Refresh: `python3 scripts/sync_dev_backlog.py`
 
 ## Inbox
 
-*(nothing yet)*
+- **[instruction change]** Update check-in logic and Synthesizer instructions so that proactive check-ins are very brief and do not include long summaries of pending tasks, especially when the user has not been actively responding.  
+  `2026-08-03T09:11:56.763043Z`
 
 ---
 

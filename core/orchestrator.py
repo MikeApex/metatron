@@ -761,7 +761,10 @@ def _persist_dev_request(req: dict | None) -> None:
             detail=detail,
             session_id=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
         )
-        _trace(f"[PIPELINE] dev_request  recorded  ({req_type})")
+        # logger, not _trace: _trace is a no-op unless AI_TRACE is set, and the
+        # service does not set it — so this would never have been visible in
+        # production, on the one path whose whole purpose is a silent record.
+        logger.info(f"[dev_request] recorded {req_type}: {detail[:200]}")
     except PersonaError:
         raise
     except Exception as exc:
