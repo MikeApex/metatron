@@ -303,6 +303,76 @@ content.
 
 ---
 
+## Second block — decisions A/B/C taken and built (2026-08-04)
+
+Mike took all three rather than deferring, and chose **out-of-band confirmation** for B and
+**CRM contacts** for C — a wider C than recommended, which is defensible precisely *because*
+B is out-of-band. **That dependency is recorded in the commit and the scope doc: if the gate
+is ever downgraded to model-mediated consent, C must shrink back to self-only in the same
+change.**
+
+**Research was broken and is now fixed** (`c886560`). Earlier the same session I added a
+`fetch_url` instruction to `research_agent.md` while `run_session_gemini_grounded` passed no
+tools at all — Research was told it held a capability it could not invoke, which is worse
+than useless: an agent in that state may *claim* it read a page it never fetched, the exact
+unretrieved-source failure `fetch_url` existed to fix.
+
+**Grounding and function calling coexist — tested, not assumed.** Received wisdom says Gemini
+rejects `google_search` alongside `function_declarations`. On gemini-3.1-pro-preview via
+Vertex, search-only, functions-only and both-together all succeed; the only complaint is
+about *automatic* function calling, now disabled. The grounded call is a bounded loop (max 4
+turns, only when schemas are passed; byte-identical behaviour without them). Verified live:
+grounded search still answers with no tools, and with `fetch_url` granted Research read
+example.com's actual heading and cited the URL as a source.
+
+`research_agent`'s config comment was **actively misleading** — *"no allowed_tools — bare mode
+(no personal tools)"* conflated bare *context* with tool grants; omitting `allowed_tools`
+means **all** tools in `core/router.py`. It read as the most restrictive setting and was the
+least. Now `[fetch_url]`.
+
+**A — provenance** (`ca993fe`). Externally-originated actions bump one tier. Reversible
+internal ones stay autonomous but attributed; anything outward-facing becomes Confirm First
+with the source quoted. **My original proposal was too broad** and was narrowed before
+building: Confirm First for *everything* external would have meant asking permission to add
+an item to a list, which teaches the user to approve without reading — paid for later on the
+confirmation that mattered.
+
+**B — the gate** (`ca993fe`, `tools/confirm.py`). The design point: **consent does not pass
+through the model.** A token the model presents back is one it can present without ever
+having asked, and a model talked into acting by a hostile email is exactly the one whose
+claim of consent cannot be trusted. Approval is recorded by `POST /confirm` from a real tap;
+the model may propose, only the user may approve. Approvals are single-use, fingerprinted
+against the exact arguments shown, and expire in 10 minutes.
+
+**C — `send_email`** (`ca993fe`, fixed in `15b9a41`). Recipients limited **in code** to the
+user's own addresses and saved CRM contacts.
+
+> **A bug worth recording, because of how it hid.** `_own_addresses()` imported
+> `tools.profile._load_profile`; the function is `_load`. Wrapped in `except Exception: pass`,
+> the ImportError vanished and the allowlist came back **empty** — `send_email` refused every
+> recipient including Mike's own, looking exactly like "you have no contacts". It failed in
+> the safe direction, which is why it was silent. Found by testing against the live persona,
+> not by the unit tests, which stub `_known_recipients`. Exception handling there is now
+> narrow: a missing file is tolerated, a wrong import name is allowed to say so.
+
+**Injection probe, run against the deployed system** — three independent layers, and only the
+third does not depend on the model behaving:
+
+| Layer | Result |
+|---|---|
+| Wrapper escape (`</untrusted_content>` in the payload) | 1 closing tag — cannot break out |
+| Marker detection | `['Ignore previous instructions', 'You are now']` recorded |
+| **Tool refusal even on full model compliance** | `recovery@evil.example` refused in code |
+
+**APK rebuilt** and every feature verified *inside* the bundle, not assumed from `cap sync`:
+auth flow, WS handshake, `authFetch`, voice toggle, `speechBlocked`, `micIntent`, password
+reveal (`819de75`), transcript readout (`a5ea4c3`, the parallel window's), approval control
+and pending poll (`ca993fe`). Bundled `index.html` is byte-identical to `static/index.html`.
+
+Deployed `15b9a41`. Services active, no errors, `check_personas` 0, all three suites pass.
+
+---
+
 ## Deferred / carried forward
 
 All filed to `DEV_BACKLOG.md` — nothing actionable is left only in this narrative.
