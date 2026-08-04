@@ -48,7 +48,9 @@ jobs and no rule about ownership — `SESSION.md` had reached 775 lines, 80% of 
 | [`docs/INFRASTRUCTURE.md`](docs/INFRASTRUCTURE.md) | recreate-from-scratch, outage runbooks, APK build | edited | never — consult when deploying or recovering |
 | `archive/sessions/` | per-session full writeups | one new file per session | never |
 
-**The rule in one line: if a file grows session over session, detail is going in the wrong file.**
+**The rule in one line: `SESSION.md` has a 200-line ceiling.** Below it, grow freely — recording a
+new blocker is exactly what it is for. Crossing it means history is accumulating in the primer
+instead of the log. (It hit **775** before the 2026-08-03 split; it sits near 170 now.)
 
 History goes in the log; state goes in `SESSION.md`; work goes in `DEV_BACKLOG.md`. A session
 that closes by *appending* to `SESSION.md` has put it in the wrong place — see `/archive`.
@@ -92,36 +94,20 @@ Always load in this order. The Constitution is the root context for every agent.
 ## Directory Layout
 
 ```
-core/               Runtime Python — the harness. Rarely changes.
-  orchestrator.py   The Orchestrator: config loading, model API calls, tool dispatch, REPL
-  scheduler.py      Proactive initiation daemon (Phase 4)
-  memory.py         FAISS vector memory (Phase 3)
-  voice_pipeline.py Whisper STT + TTS (Phase 2)
-  server.py         FastAPI server for PWA (Phase 2)
-
-config/             Config files — the product. Edit these to change behavior.
-  constitution.md   Tier 0: tool philosophy (read-only at runtime)
-  prime_directive.md Tier 1: user terminal values
-  mission.md        Tier 2: current life chapter
-  goals.yaml        Tier 3: 90-day / weekly / daily goals
-  agents/           Sub-agent instruction files (Markdown)
-  templates/        Check-in and interaction templates (Markdown)
-  modules/          Per-module YAML settings
-  personas/         One directory + identity file per persona (see Personas below)
-  research/         Per-feature research archives (Markdown) — informational, not prescriptive
-
-data/               User data — append-only, sensitive-tier local-only
-  logs/             Daily check-in records (JSON, YYYY-MM-DD.json)
-  journal/          Free-form journal entries
-  wisdom/           Life Wisdom Depot (YAML/JSON)
-  archive/          Movies, books, experiences, ideas
-  memory/           FAISS index files
-
-tools/              MCP tool implementations (Python)
-  logger.py         write_log(), read_log()
-
-archive/plans/      Historical plan revisions — for reference only
+core/     Runtime Python — the harness. Rarely changes.
+config/   Config files — the product. Edit these to change behavior.
+data/     User data — append-only, sensitive-tier, local only
+tools/    MCP tool implementations (Python)
+scripts/  Operational scripts (deploy, backup, pause/resume, audits)
+docs/     Reference read on demand — INFRASTRUCTURE.md, CONVENTIONS.md
+archive/  plans/ sessions/ transcripts/ security/ + PROJECT_LOG.md
 ```
+
+The two that matter for where behaviour lives: **`config/` is the product** — agent instruction
+files, per-persona tiers, module settings — and **`core/orchestrator.py` is the harness** that
+loads it. Changing behaviour should mean editing `config/`, not `core/`.
+
+→ File-by-file index: [CODEBASE_INDEX.md](CODEBASE_INDEX.md).
 
 ---
 
@@ -371,44 +357,34 @@ strips it automatically when `GOOGLE_CLOUD_PROJECT` is set.
 
 ### Billing Protection
 
-**Two tiers, restructured 2026-07-31.** The distinction is recovery cost, not dollars:
+Two tiers. The distinction is **recovery cost, not dollars**:
 
 | Tier | Amount | Fires | Action | Recovery |
 |---|---|---|---|---|
-| **Soft** | $70 | `budget-soft-cap` → `stop-vm` | Stops `metatron-vm` | `gcloud compute instances start`, ~60s |
-| **Hard** | $150 | `billing-cap` → `stop-billing` | Disables project billing | Days. See the 2026-07-30 incident below. |
+| **Soft** | $70 | `budget-soft-cap` → `stop-vm` | stops `metatron-vm` | `gcloud compute instances start`, ~60s |
+| **Hard** | $150 | `billing-cap` → `stop-billing` | disables project billing | **days** — see below |
 
-Stopping the VM removes the dominant cost — an `e2-medium` running 24/7 plus the scheduler's periodic Vertex AI calls — while leaving every resource intact. The hard cap is now a firebreak against genuine runaway, not a routine cost control, priced so that reaching it means something is badly wrong.
+Infrastructure alone is ~$29/mo before a single token (`e2-medium` 24/7 ~$24.50 + IP ~$3.65 +
+disk ~$1), so the soft cap leaves ~$40/mo of real AI headroom. Overrides are two *separate* GCS
+markers — `scripts/metatron-vm-override.sh` and `scripts/metatron-billing-override.sh` — so
+silencing one never silences the other.
 
-Budget history: $20 → $30 (2026-07-27) → $40 (2026-07-30) → restructured to $70 soft / $150 hard (2026-07-31).
+> **Relink billing *before* writing an override.** The marker lives in a bucket inside the
+> project being disabled, so writing it while billing is off fails `403`. `metatron-resume.sh`
+> had these reversed until 2026-07-30 and aborted under `set -e` before the relink — its
+> automatic recovery had never once completed.
 
-**Overrides.** Two *separate* GCS markers, so silencing one never silences the other:
-`scripts/metatron-vm-override.sh [hours]` (soft cap, default 8h) and
-`scripts/metatron-billing-override.sh [hours]` (hard cap). `scripts/metatron-resume.sh`
-sets a 4-hour billing override automatically, but **only when it finds billing already
-disabled** — never on a routine resume.
+> **A hard-cap trip is an outage, not a cost event.** Disabling billing freezes the project VPC,
+> and GCE's asynchronous thaw **cannot be relied on** — here it never ran, giving 25+ hours of
+> `nic0 is frozen` and a 26-hour outage that ended only by building a new VPC and rebuilding the
+> VM. $150 is priced so reaching it means something is badly wrong.
+> → Recovery runbook, fastest first: [docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md) § Billing protection.
 
-> **Order matters — relink billing *before* writing an override.** The override marker lives
-> in a bucket *inside the project being disabled*, so writing it while billing is off fails
-> with `403 ... billing account for the owning project is disabled`. Always
-> `gcloud billing projects link metatron-ai-499810 --billing-account=013F3D-66B5CD-955A3A`
-> first. `metatron-resume.sh` had these reversed until 2026-07-30 and aborted under `set -e`
-> before reaching the relink, so its automatic recovery path had never once completed.
+Spend figures lag by hours, so neither cap catches a runaway. The fast path is
+`core/spend_guard.py`, which sees every call as it happens.
 
-> **A hard-cap trip is not a cost event, it is an outage.** Disabling billing freezes the
-> project VPC, and GCE's asynchronous thaw **cannot be relied on** — in this project it never
-> ran, giving 25+ hours of `nic0 is frozen` and a 26-hour outage that ended only by building a
-> new VPC and rebuilding the VM. That is why the hard cap sits at $150: reaching it should mean
-> something is badly wrong, not that the month was busy.
-> → Full recovery runbook, in order, fastest first:
-> [docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md) § Billing protection.
+---
 
-**Note on speed:** GCP spend figures lag by hours, so neither cap reacts at runaway speed.
-The fast path is the in-process rate limiter and spend guard (`core/spend_guard.py`), which
-sees every API call as it happens.
-
-→ Budget resources, Pub/Sub topics, Cloud Function specs and deploy commands:
-[docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md) § Billing protection.
 ### Tailscale
 
 Tailscale creates a WireGuard mesh VPN between the Mac, VM, and phone. It is the sole access path to the server — no public firewall ports are open on the VM.
@@ -456,18 +432,22 @@ sudo journalctl -u metatron-scheduler -f
 
 ### Pausing / Resuming (cost control while not developing)
 
-`metatron-vm` running 24/7 plus the scheduler's periodic Vertex AI calls accrue cost even with zero active use. When not actively developing, stop the VM entirely rather than leaving it running idle:
-
 ```bash
-./scripts/metatron-pause.sh    # stops metatron-vm — halts Compute Engine + scheduler Vertex billing
-./scripts/metatron-resume.sh   # starts metatron-vm, waits for health check
+./scripts/metatron-pause.sh     # stops metatron-vm — halts compute + scheduler Vertex spend
+./scripts/metatron-resume.sh    # starts it, waits for health check
 ```
 
-Both scripts run from the Mac and shell out to `gcloud compute instances stop/start`. Both systemd services (`metatron-server`, `metatron-scheduler`) are enabled and start automatically on boot — no manual restart needed after resume. The phone app is unreachable while paused. A stopped VM still incurs a small persistent-disk storage fee, but no compute or Vertex AI charges.
+Both services are enabled at boot, so nothing needs restarting after a resume. The phone app is
+unreachable while paused; a stopped VM still incurs a small disk fee but no compute or Vertex
+charges. If `metatron-resume.sh` finds billing *disabled* it relinks and sets an override first;
+a routine resume skips that path entirely.
 
-If `metatron-resume.sh` finds billing disabled (the `$` cap tripped while paused — see Billing Protection below), it alerts, sets a manual override, and relinks automatically before starting the VM. A routine resume where billing was never disabled skips that path entirely.
-
-**Known issue — Tailscale DNS after resume:** after a stop/start cycle, Tailscale's DNS relay (`100.100.100.100` in `/etc/resolv.conf`) has come up unhealthy at least once, silently blocking *all* outbound DNS on the VM (not just tailnet traffic) since Tailscale had taken over system DNS resolution. Symptom: Python/gcloud calls to Google APIs fail with `NameResolutionError` even though the metadata server and general network are reachable. Check with `sudo tailscale status` (look for a DNS health-check failure) and fix with `sudo tailscale set --accept-dns=false` to fall back to normal DNS. Root cause not yet identified — restarting `tailscaled` alone did not fix it.
+> **Known issue — Tailscale DNS after resume.** A stop/start has at least once brought up
+> Tailscale's DNS relay unhealthy, silently blocking **all** outbound DNS on the VM (not just
+> tailnet), because Tailscale had taken over system resolution. Symptom: `NameResolutionError`
+> on Google APIs while the metadata server is reachable. Check `sudo tailscale status`; fix with
+> `sudo tailscale set --accept-dns=false`. Root cause unknown; restarting `tailscaled` alone did
+> not fix it.
 
 ---
 
@@ -605,43 +585,15 @@ Current model IDs (updated 2026-06-20): Sonnet 4.6, o3, gemini-3.1-flash-lite (f
 
 ---
 
-## Phase Review Convention
+## Phase Review and Testing Conventions
 
-At the start of every phase, read the previous phase's session archives and the current plan snapshot, then produce a review in this format for each finding:
+Every phase opens with a **review** (findings paired with implications, never findings alone)
+and requires a **testing plan** at `tests/phase{N}_testing_plan.md` written *before* the phase
+begins. Generated files — reports, archives, plan snapshots — follow
+`{purpose}_{YYYY-MM-DD}_{qualifier}.{ext}`; generic names like `report.md` are not acceptable.
 
-> **[Finding]** — what changed or was learned
-> **→ Implication** — what this means for the plan (be specific: which section, which decision, which future work item is affected)
-
-Checklist of categories to cover in every phase review:
-- Model routing: did testing change which model goes where? Are any routing assignments now confirmed, demoted, or written off?
-- Data requirements: do any planned Phase N features require more data than will exist? Call out the constraint and its implication explicitly.
-- Blocking prerequisites: list them in dependency order, not by importance. What cannot start until what else is done?
-- Stale plan elements: anything the plan says that is now outdated, resolved, or superseded?
-- Flagged deferrals: anything that was deferred in the last phase but should be revisited now vs. left for later?
-
-If the review produces a vague finding without an implication, rewrite it. A finding without an implication is just a summary, not a review.
-
----
-
-## Phase Testing Convention
-
-Every development phase must have a testing plan at `tests/phase{N}_testing_plan.md` before that phase begins. Testing plans are intent-driven — they verify that the phase achieved its *purpose*, not just that the built items run. Each plan includes: a statement of phase intent, a prerequisites check, intent verification criteria with explicit pass/fail conditions, and known gaps carried forward.
-
-Testing plans for all phases (including future phases) live in `tests/`. Amend them as gaps are discovered — do not create separate gap documents.
-
-### File naming convention
-
-All generated files — test reports, plans, analysis docs, session archives — must have names specific enough to survive alongside similar future files without collision. Include at minimum: purpose, date, and model/provider where relevant.
-
-**Pattern:** `{purpose}_{YYYY-MM-DD}_{qualifier}.{ext}`
-
-Examples:
-- `tests/phase4_report_2026-05-19_gpt-4o.md` ✓
-- `tests/phase4_report.md` ✗ — overwritten on next run
-- `archive/sessions/2026-05-19_phase4_pattern_miner_testing.md` ✓
-- `archive/sessions/session.md` ✗ — meaningless after the session
-
-Apply this to: test reports (`run_phase*.py` output), session archives, analysis documents, plan snapshots, and any file a script writes automatically. Generic names like `report.md`, `output.json`, or `plan.md` are not acceptable for generated files.
+→ Full conventions, including the review checklist and the finding/implication format:
+[docs/CONVENTIONS.md](docs/CONVENTIONS.md).
 
 ---
 

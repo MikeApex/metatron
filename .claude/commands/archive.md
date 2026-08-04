@@ -69,8 +69,9 @@ session; update it rather than starting over.
 - **Delete** anything now superseded. The detail is in the log; leaving it here is what grew
   this file to 775 lines.
 
-> If `SESSION.md` is longer after your session than before, something went in the wrong file.
-> See `CLAUDE.md` → **Which File Holds What**.
+> **Check the line count: the ceiling is 200.** A session that adds a genuine new blocker *should*
+> make this file slightly longer — do not pare it back to hit an arbitrary number. But if it is
+> over 200, dated detail has accumulated here that belongs in the log.
 
 ---
 

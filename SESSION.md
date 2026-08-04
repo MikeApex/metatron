@@ -4,8 +4,8 @@
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
-> If this file is growing session over session, detail is landing in the wrong place — see
-> `CLAUDE.md` → **Which File Holds What**.
+> **Ceiling: 200 lines.** Growing a little is fine — a new blocker is worth a line. Crossing 200
+> means history is accumulating here instead of in the log; see `CLAUDE.md` → **Which File Holds What**.
 
 ---
 
