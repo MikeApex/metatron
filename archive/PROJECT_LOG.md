@@ -24,6 +24,8 @@ live in [archive/sessions/](sessions/). **This file is not loaded by
 previous ones are kept here in order, newest first, because several contain
 corrections to the one before them.
 
+*Updated: 2026-08-04 (app — dismissable transcription readout) — Short single-feature session on `static/index.html`. The footer's Whisper readout had no height cap and no way to dismiss it, so a long dictation grew the footer until it crowded the conversation off a phone screen. It now sits in a bordered box that is hidden when empty, capped at ~3 lines with internal scroll, and cleared by a `✕`, by a 12s timer, or by starting a new recording. Safe to auto-hide because `sendToServer()` already puts the same text in the conversation as a user bubble — the readout is the pre-send check, not the only copy. **Not deployed and not tested** — reasoned from the code, no server was started. It needs `./deploy.sh` **and an APK rebuild**, since UI structure changed; that rebuild now also carries the still-pending password-reveal toggle. Unchanged from before: auth is live in production (`8e5c47e`), `fetch_url`/`read_email` are wrapped by `tools/untrusted.py`, and **item 5's Python confirmation gate is still the thing blocking anything outward-facing** — Decisions A/B/C await Mike.*
+
 *Updated: 2026-08-04 (auth + injection defense + context second pass — both closed) — **Track B2 authentication is live and verified in production** (`8e5c47e`): every endpoint 401s unauthenticated, the app shell still loads, and `/ws` is gated by a first-frame handshake because Starlette runs no HTTP middleware for a WebSocket. The server **fails closed** without `METATRON_AUTH_PASSWORD`. **`fetch_url` and `read_email` are live, granted to `logistics` only, all external content wrapped by `tools/untrusted.py`** — the SSRF guard is not theoretical, the VM's metadata server hands a working OAuth token to an unauthenticated request. **Separately, the context-file work closed:** cold start is **~87k → ~26k tokens**, verified against a live `/metatron-code` run; `SESSION.md` has a **200-line ceiling** (growth below it is fine — the old "never longer than before" rule was a ratchet); `/archive` carries the close-out. **Next:** item 5's Python confirmation gate (Decisions A/B/C await Mike), and an APK rebuild for the password reveal toggle.*
 
 *Updated: 2026-08-04 (backlog triage, A4 gate, VM outage) — **The A4 clinical-flag gate is CLEARED on the cloud path, 6/6** (`tests/run_a4_safety.py`, report `tests/a4_safety_rerun_2026-08-04_gemini.md`) — the suites are scripted now, not manual prose. **The bigger find was not the gate:** `physical_health` had never been granted `read_agent_config`, so `MEDICATION_MISSED_CRITICAL` — which must classify from the stored medication profile, never inference — was **structurally unfireable in production.** Granted; `write_agent_config` deliberately not. **Nothing deployed, deliberately:** the server now fails closed without `METATRON_AUTH_PASSWORD` and the VM does not have it (verified) — deploying stops production rather than updating it. **`deploy.sh:54` checks the Mac's `.env`, not the VM's**, and today's run passed that guard and pushed; only a 4-hour VM outage (guest lost all networking while GCE said `RUNNING`, root cause unknown, recovered by stop/start) stopped the pull. Two gate pieces remain before A7: a **pipeline probe** (a flag can fire in MW and still be held at the Synthesizer) and the local/Ollama run.*
@@ -93,6 +95,112 @@ Four related complaints, one root cause and four fixes. **The cause was not an a
 ---
 
 ## Dated history
+
+### 2026-08-04 (decisions A/B/C built; Research could not fetch and now can) — `0eb2067`, `c886560`, `ca993fe`, `15b9a41`, `0f2ca6c`; **deployed `15b9a41`**
+
+Writeup: [archive/sessions/2026-08-03 — Auth, Injection Defense, Web Access, Email.md](sessions/2026-08-03%20—%20Auth,%20Injection%20Defense,%20Web%20Access,%20Email.md)
+(second block). Continues the entry below; Mike took all three item-5 decisions rather than
+deferring them, wanting to be ready for new work rather than carrying open questions.
+
+**Decisions as taken, and where they diverged from what I recommended.**
+
+- **A — provenance: bump one tier** (recommended, taken). **My own written proposal was too
+  broad and was narrowed before building.** It said externally-originated actions should be
+  Confirm First *regardless of tier, including otherwise-autonomous ones* — which would mean
+  asking permission before adding "collect parcel" to a list from a delivery email. That is
+  friction on a reversible, internal, near-harmless action, and friction is what trains a user
+  to approve without reading, which is then paid for on the confirmation that mattered.
+  Reversible internal actions stay autonomous but are **attributed**; outward-facing or
+  irreversible ones become Confirm First **with the source quoted**, so the user confirms the
+  *evidence* rather than the act.
+- **B — out-of-band confirmation** (Mike chose the stronger option over my staged
+  recommendation). I proposed a model-mediated token flow first, upgradeable later. He went
+  straight to server-recorded consent. **Rejected by that choice:** the cheaper token-only
+  flow, where the model asserts the user's approval.
+- **C — `send_email` to CRM contacts** (wider than the self-only I recommended). **These two
+  choices hold each other up:** contact-recipient mail is defensible *because* consent is
+  out-of-band. Recorded in the commit, the scope doc and the code comments — **if B is ever
+  downgraded to model-mediated consent, C must shrink to self-only in the same change.**
+- **Housekeeping:** fix Research + rebuild the APK; **enforce mode deliberately still off**,
+  since the 43 grant gaps are the intended build-out and nothing in A/B/C depends on it.
+
+**Research was broken by me earlier the same day, and is now genuinely fixed** (`c886560`).
+`6739d62` added a `fetch_url` instruction to `research_agent.md` while
+`run_session_gemini_grounded()` still passed **no tools at all** — so Research was told it held
+a capability it could not invoke. That does not fail cleanly: an agent in that state is liable
+to *claim* it read a page it never fetched, which is the precise unretrieved-source failure
+`fetch_url` was built to fix.
+
+**Grounding and function calling coexist — tested rather than assumed.** The received wisdom is
+that Gemini rejects `google_search` alongside `function_declarations`, and believing it would
+have forced an ugly workaround (drop grounding, or route Research through a second agent). On
+`gemini-3.1-pro-preview` via Vertex, search-only, functions-only and **both together** all
+succeed; the only complaint concerns *automatic* function calling, now explicitly disabled
+since the loop is manual. The grounded call became a bounded loop — max 4 turns, only when
+schemas are passed, byte-identical behaviour without them. Verified live both ways.
+
+**A misleading config comment, worth recording as a class.** `research_agent` carried
+*"no allowed_tools — research_agent runs in bare mode (no personal tools)"*. That conflates two
+different things: bare mode (`_run_single_agent`) withholds personal **context**; omitting
+`allowed_tools` grants **all** tools (`None` = allow all in `core/router.py`). **It read as the
+most restrictive setting available and was in fact the least.** Harmless only because the
+grounded path passed nothing — which stopped being true the same day. Now `[fetch_url]`.
+
+**The gate (B), and why its shape is the whole point.** Until now every confirmation rule lived
+in `synthesizer.md` — a prompt. That is the control class already proven not to hold here:
+`logistics` was *told* it lacked `write_agent_config` and called it three times in production.
+
+`tools/confirm.py` records approval **out of band**. A token the model presents back is a token
+it can present without ever having asked, and a model talked into acting by a hostile email is
+exactly the one whose claim of consent cannot be trusted — so it is not in that path. `POST
+/confirm` is the only writer, driven by a real tap. The model may propose; only the user may
+approve, and the token it holds is inert until the server records that tap. Approvals are
+single-use, fingerprinted against the exact arguments shown (so an approval for "email Sarah
+the itinerary" cannot be spent on "email everyone the medical file"), and expire in 10 minutes.
+
+**Corrections to things believed true earlier:**
+
+1. **`research_agent` did not effectively hold all 53 tools.** I said it did and filed a backlog
+   item saying so. True of the config, false in practice — the grounded path handed it nothing.
+   The risk was latent (a provider or branch change would have made it real), not live.
+2. **The parallel window's `deploy.sh` bug report was wrong, and is withdrawn** (`0eb2067`). It
+   was filed as confirmed — *"not theoretical — it happened"*. The guard sits inside the quoted
+   `<<'REMOTE'` heredoc (opens line 40, closes 103; `cd ~/multi-model-mcp` at 42; guard at 54),
+   so it greps the **VM's** `.env`. What was actually observed: `git push` is line **30**,
+   before the SSH block — a push happening is not evidence the guard passed. That run's SSH
+   failed on the outage, so the guard was never *reached*. Entry kept struck-through rather than
+   deleted, with an `awk` check attached, because the reasoning is plausible enough to be
+   re-derived. Confirmed the other way too: once the password was on the VM, the same script
+   deployed cleanly four times.
+3. **A bug of mine that hid because it failed safe.** `_own_addresses()` imported
+   `tools.profile._load_profile`; the function is `_load`. Wrapped in `except Exception: pass`,
+   the ImportError vanished and the recipient allowlist came back **empty** — `send_email`
+   refused every recipient including Mike's own, looking exactly like "you have no contacts".
+   Found by testing against the live persona, not by the unit tests, which stub
+   `_known_recipients`. **Generalised: a broad except around a loader converts a coding error
+   into an empty allowlist that reads as legitimate emptiness.** Exception handling there is now
+   narrow — a missing file is tolerated, a wrong import name is allowed to say so.
+4. **Two backlog requests to remove the voice toggle were superseded, not ignored.** Mike had
+   asked Metatron twice to remove it, then asked here for a toggle instead. Closed on his
+   explicit instruction (*"Voice is completed... I can always rerequest"*) and triaged out of
+   the machine-written Inbox rather than deleted.
+
+**Verified in production, not just locally:** `/pending-confirmations` and `/confirm` 401
+unauthenticated; the injection probe holds at three independent layers — payload cannot close
+the wrapper (1 closing tag), markers recorded (`Ignore previous instructions`, `You are now`),
+and **the tool refuses an attacker recipient even on full model compliance**, which is the only
+layer that does not depend on the model behaving. Research fetched a real page and cited it.
+All three suites pass; services clean; `check_personas` 0.
+
+**APK rebuilt** with the three features committed but never shipped — password reveal
+(`819de75`), the parallel window's transcript readout (`a5ea4c3`), and the approval control
+(`ca993fe`). Each verified **inside the bundle** rather than assumed from `cap sync`, after
+Mike flagged that unshipped work existed; bundled `index.html` byte-identical to `static/`.
+
+**Not done:** SMTP send path never actually exercised — every test stops at the gate, so no
+mail has been sent by this system. Pipeline-level injection probe (a hostile email in the real
+inbox, through a full conversation) not run. Both filed.
+
 
 ### 2026-08-04 (app — dismissable transcription readout)
 

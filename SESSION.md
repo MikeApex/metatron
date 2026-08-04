@@ -1,6 +1,6 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-04 (app — dismissable transcription readout) — Short single-feature session on `static/index.html`. The footer's Whisper readout had no height cap and no way to dismiss it, so a long dictation grew the footer until it crowded the conversation off a phone screen. It now sits in a bordered box that is hidden when empty, capped at ~3 lines with internal scroll, and cleared by a `✕`, by a 12s timer, or by starting a new recording. Safe to auto-hide because `sendToServer()` already puts the same text in the conversation as a user bubble — the readout is the pre-send check, not the only copy. **Not deployed and not tested** — reasoned from the code, no server was started. It needs `./deploy.sh` **and an APK rebuild**, since UI structure changed; that rebuild now also carries the still-pending password-reveal toggle. Unchanged from before: auth is live in production (`8e5c47e`), `fetch_url`/`read_email` are wrapped by `tools/untrusted.py`, and **item 5's Python confirmation gate is still the thing blocking anything outward-facing** — Decisions A/B/C await Mike.*
+*Updated: 2026-08-04 (item 5 decided and built — A, B and C) — **Nothing outward-facing can now happen without a tap from the user.** `tools/confirm.py` records approval **out of band** (`POST /confirm`); the model may propose, only the user may approve, and the token the model holds is inert until the server records the tap — a model talked into acting by a hostile email is exactly the one whose claim of consent is worthless. Approvals are single-use, fingerprinted to the exact arguments shown, and expire in 10 min. `send_email` is live, limited **in code** to Mike's addresses and saved CRM contacts. **Research could not fetch and now can:** a `fetch_url` instruction shipped that morning against a grounded path passing no tools — grounding and function calling *do* coexist (tested on Vertex, contrary to received wisdom). **Correction:** the parallel window's `deploy.sh` guard bug is withdrawn — the guard is inside the remote heredoc and greps the VM's `.env`. **Next:** the SMTP send path has never been exercised (every test stops at the gate), and enforce mode is still off by decision.*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -68,13 +68,15 @@ Two loose ends inside the gate, both discrete checklist items so they don't get 
 data first.** The Coordinator runs 1 turn, not the 7 the roadmap assumes (`logistics` measured
 at 8). See `DEV_BACKLOG.md`.
 
-**Track B2 — auth landed 2026-08-04; the rest is open.** Tool permissions stay in **warn
-mode by decision** (the 43 grant gaps are the intended build-out, not breakage). Still open:
-the **Python confirmation gate** — every action tier in `synthesizer.md` is advisory, nothing
-enforces it — and `research_agent`, which omits `allowed_tools` and so holds *all* tools.
-**Nothing outward-facing ships until that gate exists.** Decisions A/B/C await Mike:
-[outward_actions_scope_2026-08-04.md](archive/plans/outward_actions_scope_2026-08-04.md);
-items in `DEV_BACKLOG.md`.
+**Track B2 — auth and the confirmation gate are done; enforcement is not.** Item 5's
+decisions A/B/C are **taken and built** ([outward_actions_scope_2026-08-04.md](archive/plans/outward_actions_scope_2026-08-04.md)):
+nothing outward-facing happens without a tap recorded by `POST /confirm`, and `send_email` is
+limited in code to Mike's addresses and saved contacts. Still open in B2: **tool permissions
+remain in warn mode by decision** (the 43 grant gaps are the intended build-out), and the same
+gate should now be extended to `write_agent_config`/`write_config`, which B2 also requires.
+
+> **The SMTP send path has never been exercised** — every test stops at the gate, so this
+> system has not yet sent mail. First real send is also the first test of that code.
 
 ---
 
@@ -85,6 +87,7 @@ Newest first. Full detail for every entry — and everything older — is in
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-04 | **Item 5 built** — out-of-band confirmation gate (`POST /confirm`), `send_email` to contacts, provenance rule; **Research could not fetch and now can** | `15b9a41` |
 | 08-04 | **App: transcription readout is dismissable** — height-capped, `✕` + 12s auto-hide. Needs deploy **and APK rebuild** | **no — pending** |
 | 08-04 | **Context second pass** — phase conventions → `docs/CONVENTIONS.md`, prose tightened, memory audit 43→39 files (two were actively wrong). Cold start 28k→26k | docs only |
 | 08-04 | **A4 safety gate cleared 6/6** (scripted); `physical_health` `read_agent_config` grant — `MEDICATION_MISSED_CRITICAL` was unfireable; persona trees gitignored; **4h VM outage** recovered | **no — blocked** |
@@ -95,7 +98,6 @@ Newest first. Full detail for every entry — and everything older — is in
 | 08-03 | **Calendar delivers** — CalDAV live with recurrence/alarms/all-day; `get_weather` + `get_environmental_snapshot`; tool permissions in warn mode; VM backup | `cfcd212`, `6865058` |
 | 08-03 | Phase 4 scheduler grants · `update_goal` · Tier 1–2 backup | `2f74cd2`, `8e2983f` |
 | 08-03 | Check-in restraint (60m quiet / 180m floor) · **VM formally owns persona config** · biographical capture | — |
-| 08-02 | Synth self-development awareness + `DEV_BACKLOG.md` as the single change-request list | `6601479`, `dc0d85c` |
 
 ---
 

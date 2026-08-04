@@ -13,6 +13,22 @@ Refresh: `python3 scripts/sync_dev_backlog.py`
 
 ## Inbox
 
+- **[needs building]** 1) The email approval permission prompt is failing to render in the user's app interface. 2) The system needs a tool to read live Google Contacts directly; currently it only checks internal profile records.  
+  `2026-08-04T12:42:35.495275Z`
+- **[agent wanted a tool it lacks]** `logistics` attempted `write_archive` (category, content) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
+  `2026-08-04T12:48:56.486418Z`
+- **[needs building]** Implement email permission prompt bubble for user approval before sending outbound emails, and enable Google Contacts live sync/read capability.  
+  `2026-08-04T12:49:26.633029Z`
+
+- **[agent wanted a tool it lacks]** `logistics` attempted `read_agent_config` (agent_name) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
+  `2026-08-04T09:22:10.863364Z`
+- **[agent wanted a tool it lacks]** `logistics` attempted `search_memory` (query) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
+  `2026-08-04T09:22:11.898974Z`
+- **[agent wanted a tool it lacks]** `logistics` attempted `write_agent_config` (agent_name, value) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
+  `2026-08-04T09:22:14.148392Z`
+- **[agent wanted a tool it lacks]** `work_vocation` attempted `search_memory` (query) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
+  `2026-08-04T12:17:32.889116Z`
+
 - **[agent wanted a tool it lacks]** `physical_health` attempted `read_agent_config` (agent_name) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
   `2026-08-04T07:56:50.829916Z`
 - **[agent wanted a tool it lacks]** `logistics` attempted `write_agent_config` (agent_name, field, value) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
@@ -107,7 +123,37 @@ Capabilities that do not exist yet.
 
 ### Surfaced 2026-08-04 by the outward-actions scope decision
 
-Full reasoning: [archive/plans/outward_actions_scope_2026-08-04.md](archive/plans/outward_actions_scope_2026-08-04.md). **Awaiting Mike's decision on A, B and C** — nothing below is agreed yet.
+Full reasoning: [archive/plans/outward_actions_scope_2026-08-04.md](archive/plans/outward_actions_scope_2026-08-04.md).
+
+> **✅ A, B and C were decided and built 2026-08-04** (`ca993fe`, `15b9a41`, deployed). The
+> three items below are kept for their reasoning; the "proposed"/"awaiting" framing in them is
+> historical. **What Mike chose differed from what was recommended in two places:** B is
+> **out-of-band** confirmation (server-recorded tap, not a model-mediated token), and C is
+> **CRM contacts**, not self-only. Those two hold each other up — **if B is ever downgraded to
+> model-mediated consent, C must shrink back to self-only in the same change.**
+
+**Still open from this block:**
+
+- **The SMTP send path has never been exercised.** Every test — 11 unit cases and the live
+  VM run — stops at the confirmation gate, deliberately, so no mail has ever left this system.
+  `smtplib` config (`smtp_host`/`smtp_port` in `email.yaml`, STARTTLS, app-password login) is
+  therefore **untested code on the first real send**. Expect the first send to be the test:
+  do it to Mike's own address, with the journal open. Gmail SMTP on port 587 with an app
+  password is the assumption; it has not been proven for this account, only IMAP has.
+
+- **No pipeline-level injection probe has been run.** The 2026-08-04 probe tested three layers
+  in isolation — wrapper escape, marker detection, and the tool's recipient refusal. What has
+  *not* been run is the real thing: a hostile email sitting in the actual inbox, read through
+  a full Coordinator→specialist→Synthesizer exchange, to see whether the pipeline surfaces it
+  as analysis or acts on it. The layer that refuses in code will hold regardless; the open
+  question is **agent behaviour**, which is exactly what the isolated tests cannot show. Fold
+  into B1's red-team suite rather than building a separate harness.
+
+- **Extend the gate to `write_agent_config` / `write_config`.** B2 requires a
+  human-in-the-loop gate on these and `tools/confirm.py` now provides one, but they are not
+  wired to it. This is also the standing answer to the open denial entries above
+  (`physical_health`, `logistics` reaching for `write_agent_config`): gate it rather than
+  granting or refusing outright.
 
 - **⚠ The confirmation gate is a prompt, not a control (Decision B).** The Synthesizer's action tiers (`synthesizer.md` § Action tiers) mandate confirmation for everything outward-facing, and `config/preferences.yaml` has every opt-in `false` — so the *policy* is already right. But nothing in Python enforces it; verified 2026-08-04, there is no confirmation gate in `tools/` or `core/orchestrator.py`.
 
