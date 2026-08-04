@@ -1,6 +1,6 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-04 (auth + injection defense + context second pass — both closed) — **Track B2 authentication is live and verified in production** (`8e5c47e`): every endpoint 401s unauthenticated, the app shell still loads, and `/ws` is gated by a first-frame handshake because Starlette runs no HTTP middleware for a WebSocket. The server **fails closed** without `METATRON_AUTH_PASSWORD`. **`fetch_url` and `read_email` are live, granted to `logistics` only, all external content wrapped by `tools/untrusted.py`** — the SSRF guard is not theoretical, the VM's metadata server hands a working OAuth token to an unauthenticated request. **Separately, the context-file work closed:** cold start is **~87k → ~26k tokens**, verified against a live `/metatron-code` run; `SESSION.md` has a **200-line ceiling** (growth below it is fine — the old "never longer than before" rule was a ratchet); `/archive` carries the close-out. **Next:** item 5's Python confirmation gate (Decisions A/B/C await Mike), and an APK rebuild for the password reveal toggle.*
+*Updated: 2026-08-04 (app — dismissable transcription readout) — Short single-feature session on `static/index.html`. The footer's Whisper readout had no height cap and no way to dismiss it, so a long dictation grew the footer until it crowded the conversation off a phone screen. It now sits in a bordered box that is hidden when empty, capped at ~3 lines with internal scroll, and cleared by a `✕`, by a 12s timer, or by starting a new recording. Safe to auto-hide because `sendToServer()` already puts the same text in the conversation as a user bubble — the readout is the pre-send check, not the only copy. **Not deployed and not tested** — reasoned from the code, no server was started. It needs `./deploy.sh` **and an APK rebuild**, since UI structure changed; that rebuild now also carries the still-pending password-reveal toggle. Unchanged from before: auth is live in production (`8e5c47e`), `fetch_url`/`read_email` are wrapped by `tools/untrusted.py`, and **item 5's Python confirmation gate is still the thing blocking anything outward-facing** — Decisions A/B/C await Mike.*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -85,6 +85,7 @@ Newest first. Full detail for every entry — and everything older — is in
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-04 | **App: transcription readout is dismissable** — height-capped, `✕` + 12s auto-hide. Needs deploy **and APK rebuild** | **no — pending** |
 | 08-04 | **Context second pass** — phase conventions → `docs/CONVENTIONS.md`, prose tightened, memory audit 43→39 files (two were actively wrong). Cold start 28k→26k | docs only |
 | 08-04 | **A4 safety gate cleared 6/6** (scripted); `physical_health` `read_agent_config` grant — `MEDICATION_MISSED_CRITICAL` was unfireable; persona trees gitignored; **4h VM outage** recovered | **no — blocked** |
 | 08-04 | **Auth live** (cookie+bearer, WS handshake, fail-closed) · `fetch_url` + `read_email` wrapped in `<untrusted_content>` · voice toggle · item 5 scoped | `8e5c47e` |
@@ -95,7 +96,6 @@ Newest first. Full detail for every entry — and everything older — is in
 | 08-03 | Phase 4 scheduler grants · `update_goal` · Tier 1–2 backup | `2f74cd2`, `8e2983f` |
 | 08-03 | Check-in restraint (60m quiet / 180m floor) · **VM formally owns persona config** · biographical capture | — |
 | 08-02 | Synth self-development awareness + `DEV_BACKLOG.md` as the single change-request list | `6601479`, `dc0d85c` |
-| 08-02 | SEQ 021 — specialist clock injection, tool-error hints, failure reporting; capability-gap survey | `6601479` |
 
 ---
 

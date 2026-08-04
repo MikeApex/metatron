@@ -24,6 +24,8 @@ live in [archive/sessions/](sessions/). **This file is not loaded by
 previous ones are kept here in order, newest first, because several contain
 corrections to the one before them.
 
+*Updated: 2026-08-04 (auth + injection defense + context second pass — both closed) — **Track B2 authentication is live and verified in production** (`8e5c47e`): every endpoint 401s unauthenticated, the app shell still loads, and `/ws` is gated by a first-frame handshake because Starlette runs no HTTP middleware for a WebSocket. The server **fails closed** without `METATRON_AUTH_PASSWORD`. **`fetch_url` and `read_email` are live, granted to `logistics` only, all external content wrapped by `tools/untrusted.py`** — the SSRF guard is not theoretical, the VM's metadata server hands a working OAuth token to an unauthenticated request. **Separately, the context-file work closed:** cold start is **~87k → ~26k tokens**, verified against a live `/metatron-code` run; `SESSION.md` has a **200-line ceiling** (growth below it is fine — the old "never longer than before" rule was a ratchet); `/archive` carries the close-out. **Next:** item 5's Python confirmation gate (Decisions A/B/C await Mike), and an APK rebuild for the password reveal toggle.*
+
 *Updated: 2026-08-04 (backlog triage, A4 gate, VM outage) — **The A4 clinical-flag gate is CLEARED on the cloud path, 6/6** (`tests/run_a4_safety.py`, report `tests/a4_safety_rerun_2026-08-04_gemini.md`) — the suites are scripted now, not manual prose. **The bigger find was not the gate:** `physical_health` had never been granted `read_agent_config`, so `MEDICATION_MISSED_CRITICAL` — which must classify from the stored medication profile, never inference — was **structurally unfireable in production.** Granted; `write_agent_config` deliberately not. **Nothing deployed, deliberately:** the server now fails closed without `METATRON_AUTH_PASSWORD` and the VM does not have it (verified) — deploying stops production rather than updating it. **`deploy.sh:54` checks the Mac's `.env`, not the VM's**, and today's run passed that guard and pushed; only a 4-hour VM outage (guest lost all networking while GCE said `RUNNING`, root cause unknown, recovered by stop/start) stopped the pull. Two gate pieces remain before A7: a **pipeline probe** (a flag can fire in MW and still be held at the Synthesizer) and the local/Ollama run.*
 
 > **Correction, same day:** the claim above that `deploy.sh:54` checks the Mac's
@@ -91,6 +93,52 @@ Four related complaints, one root cause and four fixes. **The cause was not an a
 ---
 
 ## Dated history
+
+### 2026-08-04 (app — dismissable transcription readout)
+
+Full writeup: [sessions/2026-08-04 — App: dismissable transcription readout.md](sessions/2026-08-04%20—%20App:%20dismissable%20transcription%20readout.md).
+`static/index.html` only. **Not yet deployed** — needs `./deploy.sh` **and an APK rebuild.**
+
+**The problem.** The footer's `#transcript` div showed whatever Whisper returned and then kept
+showing it, unbounded, until the next recording started. On a long dictation the footer grew
+until it crowded the conversation off a phone screen, and there was no way to get rid of it
+without recording again.
+
+**What changed.** Three edits, all in `static/index.html`:
+
+1. The bare div is now wrapped in `#transcript-wrap` — text plus a `✕` dismiss button.
+2. The wrapper is `display: none` when empty (it previously reserved `min-height: 18px`
+   permanently), and the text is capped at `max-height: 4.5em` with `overflow-y: auto`, so a
+   long transcript scrolls inside its own box instead of growing the footer. Given a card
+   background and border so it reads as dismissable rather than as loose text.
+3. `showTranscript()` / `hideTranscript()` replace the two direct `textContent` writes.
+   Auto-hide at `TRANSCRIPT_TIMEOUT_MS = 12000`; the timer is cleared by `✕`, and starting a
+   new recording hides the previous readout immediately.
+
+**Decisions, and what was rejected:**
+
+- **Both a close button and a timeout, not one.** The user offered them as alternatives
+  ("either a close button or a timeout"). The timeout clears the screen with no action needed;
+  the `✕` covers the case where 12s is too long to wait. They cost nothing together.
+- **Rejected: deleting the readout entirely.** It is arguably redundant — `sendToServer()`
+  already calls `addMessage('user', text)`, so the same words appear in the conversation a
+  moment later. But the readout is the *pre-send* confirmation that Whisper heard correctly,
+  which the conversation bubble is not, and the user asked for it to stay visible. That
+  redundancy is however the reason auto-hide is safe: nothing is lost when it goes.
+- **Rejected: truncating with an ellipsis.** Scroll-within-a-cap keeps the full text
+  inspectable, which is the whole point of a transcription check.
+- **Left-aligned, was centred.** Centred italic is fine for one line and unreadable at three;
+  the height cap makes three lines the normal case for a long dictation.
+
+**Deploy note worth carrying:** this is a `static/index.html` change to UI *structure*, which
+is one of the named APK-rebuild triggers in `CLAUDE.md` — server-side changes alone are not.
+`SESSION.md` already carried a pending APK rebuild for the password-reveal toggle, so the two
+ride together rather than needing separate builds.
+
+**Untested.** No server was started this session; the change is reasoned from the code, not
+observed running. Test procedure is in the session writeup and in `DEV_BACKLOG.md`.
+
+---
 
 ### 2026-08-04 (context second pass — phase conventions out, prose tightened, the size rule fixed)
 

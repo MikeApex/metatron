@@ -96,13 +96,46 @@
       min-height: 16px;
     }
 
+    /* Readout of what was just heard. Dismissable: a long dictation used to grow
+       the footer until it crowded the conversation off the screen. Capped height,
+       scrollable inside the cap, with a close button and an auto-hide timer. The
+       same text also lands in the conversation as a user message, so nothing is
+       lost when it goes. */
+    #transcript-wrap {
+      display: none;
+      align-items: flex-start;
+      gap: 8px;
+      background: #141414;
+      border: 1px solid #262626;
+      border-radius: 12px;
+      padding: 8px 10px;
+    }
+
+    #transcript-wrap.shown { display: flex; }
+
     #transcript {
+      flex: 1;
       font-size: 14px;
       color: #aaa;
-      min-height: 18px;
-      text-align: center;
       font-style: italic;
+      line-height: 1.5;
+      max-height: 4.5em;
+      overflow-y: auto;
+      overflow-wrap: anywhere;
     }
+
+    #transcript-close {
+      flex: 0 0 auto;
+      background: none;
+      border: none;
+      color: #666;
+      font-size: 15px;
+      line-height: 1;
+      padding: 2px 4px;
+      cursor: pointer;
+    }
+
+    #transcript-close:hover { color: #aaa; }
 
     #controls {
       display: flex;
@@ -393,7 +426,10 @@
   </div>
 
   <div id="status">Checking mic...</div>
-  <div id="transcript"></div>
+  <div id="transcript-wrap">
+    <div id="transcript"></div>
+    <button id="transcript-close" title="Dismiss" aria-label="Dismiss transcription">✕</button>
+  </div>
 
   <div id="controls">
     <button id="mic-btn">Tap to Speak</button>
@@ -537,6 +573,7 @@
   const conversation = document.getElementById('conversation');
   const micBtn = document.getElementById('mic-btn');
   const transcript = document.getElementById('transcript');
+  const transcriptWrap = document.getElementById('transcript-wrap');
   const statusEl = document.getElementById('status');
   const textField = document.getElementById('text-field');
   const sendBtn = document.getElementById('send-btn');
@@ -548,6 +585,28 @@
     statusEl.textContent = msg;
     statusEl.style.color = color || '#555';
   }
+
+  // --- Transcription readout ---
+
+  const TRANSCRIPT_TIMEOUT_MS = 12000;
+  let transcriptTimer = null;
+
+  function showTranscript(text) {
+    clearTimeout(transcriptTimer);
+    transcript.textContent = text;
+    transcript.scrollTop = 0;
+    transcriptWrap.classList.add('shown');
+    transcriptTimer = setTimeout(hideTranscript, TRANSCRIPT_TIMEOUT_MS);
+  }
+
+  function hideTranscript() {
+    clearTimeout(transcriptTimer);
+    transcriptTimer = null;
+    transcriptWrap.classList.remove('shown');
+    transcript.textContent = '';
+  }
+
+  document.getElementById('transcript-close').addEventListener('click', hideTranscript);
 
   // --- Conversation history display ---
 
@@ -978,7 +1037,7 @@
     micBtn.classList.add('listening');
     micBtn.textContent = 'Tap to Stop';
     setStatus('Recording...', '#4a7');
-    transcript.textContent = '';
+    hideTranscript();
 
     mediaRecorder = new MediaRecorder(stream);
     mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
@@ -1006,7 +1065,7 @@
         const res = await authFetch('/transcribe', { method: 'POST', body: fd });
         if (!res.ok) throw new Error((await res.json()).detail || 'Transcription failed');
         const { transcript: text } = await res.json();
-        transcript.textContent = text;
+        showTranscript(text);
         micBtn.classList.remove('loading');
         micBtn.disabled = false;
         if (text.trim()) {
