@@ -1,0 +1,35 @@
+# Email integration (IMAP, read-only) — template.
+#
+# The live file is per-persona and gitignored, like caldav.yaml:
+#   config/personas/{persona}/email.yaml
+# This copy is the documented shape and holds no credentials.
+#
+# Read-only by design. `read_email` never sends and never marks a message as read
+# (messages are fetched with BODY.PEEK). Sending is deferred with the rest of the
+# act-on-the-user's-behalf work — see the Phase 5 plan, item 5.
+#
+# Gmail needs TWO things, and the second is the one people miss:
+#   1. An app-specific password (Google Account → Security → App passwords).
+#      Requires 2-Step Verification to be on. The same app password works for
+#      CalDAV and IMAP, so the calendar's password can be reused — though a
+#      separate one is better hygiene, since it can be revoked independently.
+#   2. IMAP enabled: Gmail → Settings → Forwarding and POP/IMAP → Enable IMAP.
+#      A correct password with IMAP switched off fails at login and looks
+#      exactly like a wrong password.
+#
+# Other providers:
+#   iCloud   — imap.mail.me.com    (app-specific password required)
+#   Fastmail — imap.fastmail.com   (app password)
+#   Outlook  — outlook.office365.com
+
+enabled: false
+
+host: "imap.gmail.com"
+
+auth:
+  username: "diamond.mike.mt@gmail.com"
+  # App-specific password — never the main account password.
+  password: ""
+
+# Mailbox read by default. Gmail exposes labels as folders, e.g. "[Gmail]/All Mail".
+default_folder: "INBOX"
