@@ -57,9 +57,17 @@ if ! grep -q '^METATRON_AUTH_PASSWORD=.' .env 2>/dev/null; then
     echo "The server refuses to start without it, so deploying now would stop the" >&2
     echo "service rather than update it. Nothing has been pulled; the VM is untouched." >&2
     echo "" >&2
-    echo "Fix: copy the value from the Mac's .env, then re-run ./deploy.sh" >&2
-    echo "  gcloud compute scp .env metatron-vm:~/multi-model-mcp/.env \\" >&2
-    echo "    --zone=us-central1-a --project=metatron-ai-499810 --tunnel-through-iap" >&2
+    echo "Fix: APPEND the one variable to the VM's .env — do not copy the whole file." >&2
+    echo "The VM's .env is the live one and holds values the Mac's does not; scp'ing" >&2
+    echo "over it would replace working production config to deliver one variable." >&2
+    echo "" >&2
+    echo "  PW=\$(grep '^METATRON_AUTH_PASSWORD=' .env)   # run on the Mac" >&2
+    echo "  gcloud compute ssh metatron-vm --zone=us-central1-a \\" >&2
+    echo "    --project=metatron-ai-499810 --tunnel-through-iap \\" >&2
+    echo "    --command=\"grep -q '^METATRON_AUTH_PASSWORD=' ~/multi-model-mcp/.env \\" >&2
+    echo "               || echo '\$PW' >> ~/multi-model-mcp/.env\"" >&2
+    echo "" >&2
+    echo "Then re-run ./deploy.sh" >&2
     exit 1
 fi
 
