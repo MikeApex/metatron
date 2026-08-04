@@ -75,7 +75,15 @@ Capabilities that do not exist yet.
 - **`ROADMAP.md` Track D is ~14 KB of a 47 KB file that loads on every `/metatron-code`, and parts of it have shipped.** D2 named cost analysis and model validation; the spend guard, rate limiter and measured token economics all landed 2026-08-02. Trimming it would take the cold-start load from ~26k to roughly ~22k. **Deliberately not done 2026-08-04:** a parallel window was committing to that file the same day, and trimming by line range is how the first pass silently carried completed item A6 into the abridged copy. **If picked up: go item-by-item against `SESSION.md` and `archive/PROJECT_LOG.md`, never by line range**, and check no window is mid-edit. Better done by whoever is actually working Track D than by a token-reduction pass. *Deferred from the context-file second pass, `a5ba388`.*
 
 
-- **⚠ `deploy.sh`'s preflight guard checks the wrong machine — it can pass while production is unsafe to deploy into.** [`deploy.sh:54`](deploy.sh#L54) runs `grep -q '^METATRON_AUTH_PASSWORD=.' .env`, which reads **the Mac's** `.env`, while the abort message it guards says *"METATRON_AUTH_PASSWORD is not set in the VM's .env."* The Mac has the variable; the VM does not. The guard therefore passes on every machine that has ever set it locally — which is the machine you deploy *from*, always.
+- ~~**⚠ `deploy.sh`'s preflight guard checks the wrong machine**~~ — **NOT A BUG. Withdrawn 2026-08-04 after checking the file.** Left in place rather than deleted, because the reasoning below is plausible and someone will re-derive it.
+
+  **The guard runs on the VM.** `deploy.sh:40` opens `bash -s <<'REMOTE'` and the heredoc closes at line 103; line 42 is `cd ~/multi-model-mcp`; the guard is line 54 — inside, executing in the remote shell, greping the VM's `.env`. The heredoc is quoted, so nothing expands locally. (A `grep` for the check appears to match twice; the second, ~line 67, is the remediation command *echoed inside the abort text*, not a second test.)
+
+  **What was actually observed:** `git push origin main` is **line 30 — before the SSH block**. A push happening is not evidence the guard passed. On 2026-08-04 the SSH failed on the outage, so the guard was never *reached* rather than bypassed. Confirmed the other way too: once `METATRON_AUTH_PASSWORD` was appended to the VM's `.env`, the same script deployed `8e5c47e` cleanly and its HEAD assertion verified.
+
+  **Verify before re-filing** (not by reading — that is how this was got wrong twice): `awk` the line numbers of `<<'REMOTE'`, `^REMOTE$` and the guard, and check the guard falls between them.
+
+  *Original entry, preserved:* the guard reads the Mac's `.env` while its message says the VM's; the Mac has the variable and the VM did not; therefore it passes on the machine you deploy from, always.
 
   **This is not theoretical — it happened on 2026-08-04.** A deploy passed the guard, pushed to GitHub, and reached the SSH step; **only an unrelated 4-hour VM outage stopped the `git pull`.** On a healthy VM it would have completed and left the server in a systemd crash loop, which is precisely the outcome the guard's own comment says it exists to prevent (*"the failure surfaces as a systemd crash loop that looks nothing like a deploy problem"*).
 
