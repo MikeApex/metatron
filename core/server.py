@@ -497,6 +497,7 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
       {type: "error", exchange_id, text?}            — error (text only on sender)
       {type: "ping"}                                 — 30-second heartbeat
     """
+    global _active_streams
     persona_orch = persona or DEFAULT_PERSONA
     persona_key = persona_orch or "__default__"
 
@@ -609,53 +610,63 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                     except Exception:
                         sender_alive = False
 
-                while True:
-                    item = await queue.get()
-                    if item is None:
-                        break
-                    if item == "[DONE]":
-                        break
-                    elif item == "[RETRACT]":
-                        retracted = True
-                        break
-                    elif item.startswith("[ERROR] "):
-                        errored = True
-                        await _send_to_sender({
-                            "type": "error", "exchange_id": exchange_id, "text": item[8:],
-                        })
+                # Counts in-flight exchanges (not connections) so deploy.sh's drain
+                # gate — which polls /active — actually waits for this exchange to
+                # finish instead of always reading 0 while an always-connected
+                # client sits idle. Mirrors the SSE path's _active_lock usage above.
+                with _active_lock:
+                    _active_streams += 1
+                try:
+                    while True:
+                        item = await queue.get()
+                        if item is None:
+                            break
+                        if item == "[DONE]":
+                            break
+                        elif item == "[RETRACT]":
+                            retracted = True
+                            break
+                        elif item.startswith("[ERROR] "):
+                            errored = True
+                            await _send_to_sender({
+                                "type": "error", "exchange_id": exchange_id, "text": item[8:],
+                            })
+                            await manager.broadcast(persona_key, {
+                                "type": "error", "exchange_id": exchange_id,
+                            }, exclude=websocket)
+                            break
+                        else:
+                            accumulated.append(item)
+                            chunk_payload = {"type": "chunk", "exchange_id": exchange_id, "text": item}
+                            await _send_to_sender(chunk_payload)
+                            await manager.broadcast(persona_key, chunk_payload, exclude=websocket)
+
+                    await asyncio.wrap_future(producer)
+
+                    if retracted:
+                        retract_payload = {"type": "retract", "exchange_id": exchange_id}
+                        await _send_to_sender(retract_payload)
+                        await manager.broadcast(persona_key, retract_payload, exclude=websocket)
+                    elif not errored:
+                        full_response = "".join(accumulated)
+                        done_payload = {"type": "done", "exchange_id": exchange_id}
+                        await _send_to_sender(done_payload)
+                        await manager.broadcast(persona_key, done_payload, exclude=websocket)
+                        new_id = await _save_exchange(persona_key, exchange_id, user_input,
+                                                      full_response, proactive=proactive)
+                        _log_conversation(user_input, full_response, "coordinator", persona_orch,
+                                          proactive=proactive)
                         await manager.broadcast(persona_key, {
-                            "type": "error", "exchange_id": exchange_id,
+                            "type": "message",
+                            "id": new_id,
+                            "exchange_id": exchange_id,
+                            "user": user_input,
+                            "assistant": full_response,
+                            "ts": datetime.utcnow().isoformat() + "Z",
                         }, exclude=websocket)
-                        break
-                    else:
-                        accumulated.append(item)
-                        chunk_payload = {"type": "chunk", "exchange_id": exchange_id, "text": item}
-                        await _send_to_sender(chunk_payload)
-                        await manager.broadcast(persona_key, chunk_payload, exclude=websocket)
-
-                await asyncio.wrap_future(producer)
-
-                if retracted:
-                    retract_payload = {"type": "retract", "exchange_id": exchange_id}
-                    await _send_to_sender(retract_payload)
-                    await manager.broadcast(persona_key, retract_payload, exclude=websocket)
-                elif not errored:
-                    full_response = "".join(accumulated)
-                    done_payload = {"type": "done", "exchange_id": exchange_id}
-                    await _send_to_sender(done_payload)
-                    await manager.broadcast(persona_key, done_payload, exclude=websocket)
-                    new_id = await _save_exchange(persona_key, exchange_id, user_input,
-                                                  full_response, proactive=proactive)
-                    _log_conversation(user_input, full_response, "coordinator", persona_orch,
-                                      proactive=proactive)
-                    await manager.broadcast(persona_key, {
-                        "type": "message",
-                        "id": new_id,
-                        "exchange_id": exchange_id,
-                        "user": user_input,
-                        "assistant": full_response,
-                        "ts": datetime.utcnow().isoformat() + "Z",
-                    }, exclude=websocket)
+                finally:
+                    with _active_lock:
+                        _active_streams -= 1
 
             elif msg_type == "catchup":
                 since_id = int(data.get("since_id", 0))

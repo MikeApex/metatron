@@ -13,6 +13,9 @@ Refresh: `python3 scripts/sync_dev_backlog.py`
 
 ## Inbox
 
+- **[agent wanted a tool it lacks]** `logistics` attempted `search_memory` (query) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
+  `2026-08-04T16:02:07.471199Z`
+
 *(nothing new — last triaged 2026-08-05)*
 
 ---
@@ -98,7 +101,17 @@ Behavioural changes to how agents judge, prioritise, or decide what to raise. Ap
 
 - **`[CONTEXT]` block silently discarded when the model emits invalid JSON.** Observed live 2026-08-02 on `sarah_chen`: the Synthesizer wrote a literal newline inside a JSON string value, `split_context_block` (`core/orchestrator.py:678`) failed to parse it, logged a warning and returned `None` — so the context tracker was not updated *and* the `dev_request` for that exchange was lost. Silent data loss on a path with no retry. Options: repair common malformations before parsing, or have the Synthesizer re-emit. *Found while testing the self-development work.*
 
-- **`synthesizer.md:355` promises a capability that does not exist.** It instructs the Synthesizer to use `write_config` to write `config/modules/scheduler.yaml` for recurring proactive sessions. `tools/config_writer.py:16` hard-whitelists `{prime_directive.md, mission.md}` and returns an error string for anything else. So every attempt to create a standing check-in silently fails, and the Synthesizer believes it succeeded. Either widen the whitelist (with path validation) or correct the instruction. *Found 2026-08-02 while scoping the self-development work.*
+- ~~**`synthesizer.md:355` promises a capability that does not exist.**~~ — **stale, closed
+  2026-08-05. Already fixed by the 2026-08-03 Phase 4 scheduler-grants session; this entry was
+  never crossed off.** Checked against current source: `synthesizer.md:408` documents
+  `write_config` scoped to exactly `{prime_directive.md, mission.md}`, matching
+  `tools/config_writer.py:16`'s `ALLOWED_FILES` — no mention of `scheduler.yaml` anywhere near
+  it. Recurring proactive sessions go through the separate, already-correct
+  `write_schedule`/`list_schedules`/`delete_schedule` tools (`synthesizer.md:406`,
+  `tools/schedule.py:85`), which write `data/personas/{p}/schedules.yaml` — deliberately not the
+  gitignored, hand-copied `config/modules/scheduler.yaml`.
+  *Original entry filed 2026-08-02 · verified stale 2026-08-05 against synthesizer.md and
+  tools/config_writer.py/schedule.py*
 
 ---
 
@@ -484,7 +497,14 @@ Stale docs, paths, and low-priority corrections.
 
   **Possibly already fixed — confirm before working it.** The 2026-08-04 readout change capped the footer `#transcript` at ~3 lines with internal scroll, which is one reading of this complaint. The other reading is the *conversation bubble* width, which is untouched. The 2026-08-02 wording does not distinguish them; ask, or check on device once the readout change is deployed.
 
-- **`/metatron-troubleshoot` command template points at pre-persona-scoping paths.** Uses bare `data/conversations/` and hardcodes `data/personas/mike/traces/`, so it has to be corrected inline every time it runs, and it fails outright for any other persona. Also missing `--tunnel-through-iap` on its SSH command, which is now required since the VM moved to `metatron-net`. *Recorded in SESSION.md 2026-08-02.*
+- ~~**`/metatron-troubleshoot` command template points at pre-persona-scoping paths.**~~ —
+  **stale, closed 2026-08-05. Already fixed, most recently by `a763628`.** All three claims
+  re-checked against `.claude/commands/metatron-troubleshoot.md`: persona-scoped paths are in
+  place with `data/conversations/` explicitly flagged as a legacy trap (line 39), `BASE =
+  f'data/personas/{PERSONA}'` is fully parameterized (line 56), and `--tunnel-through-iap` is
+  present on the SSH command (line 48).
+  *Original entry recorded in SESSION.md 2026-08-02 · verified stale 2026-08-05 against
+  .claude/commands/metatron-troubleshoot.md*
 - **Roadmap D2 item 5 (turn reduction) is mis-scoped and needs rewriting before anyone works it.** It targets the Coordinator on the assumption that the Coordinator runs ~7 turns per exchange. Measured 2026-08-02: **the Coordinator runs 1 turn.** The turns are in the specialists — `logistics` alone ran 8. Working the item as written would optimise a component that is already minimal and leave the actual cost untouched. Re-measure across several specialists before rewriting the item, rather than swapping one assumed culprit for another.
 
   **The roadmap has not been corrected — only this entry has.** [`archive/plans/phase5_to_future_roadmap_2026-06-10.md:519`](archive/plans/phase5_to_future_roadmap_2026-06-10.md#L519) still reads *"The Coordinator exhibits a 6-turn / 88K cumulative token loop on complex sessions"* and still prescribes a `coordinator.md` instruction change plus a ≤3-turn target. Anyone who reads the roadmap without reading this backlog gets the original wrong picture and a fix aimed at the wrong component. Deliberately not edited in place: the roadmap is a dated plan snapshot, and rewriting its body would erase what was believed at the time. Whoever picks the item up should rewrite it from measurement and note the supersession there — the correction is verified twice (2026-07-29 traces, re-measured 2026-08-02), so it is not waiting on evidence.

@@ -21,6 +21,7 @@ Usage:  python3 scripts/sync_dev_backlog.py [--persona mike] [--server URL]
 
 import argparse
 import json
+import subprocess
 import sys
 import urllib.error
 import urllib.parse
@@ -135,6 +136,27 @@ def fetch_events(server: str, persona: str) -> list[dict]:
     return [e for e in events if isinstance(e, dict) and e.get("event_type") in WANTED]
 
 
+def vm_status() -> str:
+    """
+    Best-effort GCE instance status ("RUNNING", "STOPPED", ...), or "" on any
+    failure (gcloud not installed, no creds, timeout). Same fail-silent posture
+    as fetch_events — this is a diagnostic add-on, never a hard dependency.
+
+    Only called when fetch_events() already came back empty, so a healthy VM
+    never pays for this extra round-trip on the common path.
+    """
+    try:
+        result = subprocess.run(
+            ["gcloud", "compute", "instances", "describe", "metatron-vm",
+             "--zone=us-central1-a", "--project=metatron-ai-499810",
+             "--format=value(status)"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return result.stdout.strip()
+    except Exception:
+        return ""
+
+
 def count_items(text: str) -> tuple[int, int]:
     """
     Return (untriaged, open) — two different kinds of work, counted separately.
@@ -202,6 +224,14 @@ def main() -> int:
 
     events = fetch_events(args.server, args.persona)
 
+    # A stopped VM (routine, cost control) and a running-but-unreachable VM
+    # (an outage) both surface here as "no events" — indistinguishable without
+    # asking GCE directly. Only ask when the happy path already came back
+    # empty, so a healthy VM never pays for the extra round-trip.
+    vm_warning = ""
+    if not events and vm_status() == "RUNNING":
+        vm_warning = " · ⚠ VM running but unreachable"
+
     seen = set(SEEN.read_text().split()) if SEEN.exists() else set()
     # First run against an existing backlog: adopt whatever is already written in
     # rather than re-adding every historical event as "new".
@@ -226,8 +256,8 @@ def main() -> int:
         BACKLOG.write_text(text)
 
     untriaged, open_count = count_items(text)
-    if new or not args.quiet:
-        print(f"DEV_BACKLOG.md: {len(new)} new · {untriaged} untriaged · {open_count} open")
+    if new or not args.quiet or vm_warning:
+        print(f"DEV_BACKLOG.md: {len(new)} new · {untriaged} untriaged · {open_count} open{vm_warning}")
     return 0
 
 

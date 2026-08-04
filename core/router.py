@@ -163,7 +163,7 @@ def log_model_error(agent: str, provider: str, model: str | None, error: str) ->
             pass
     entries.append({
         "timestamp": datetime.now().isoformat(),
-        "agent": agent,
+        "agent": agent.agent if hasattr(agent, "agent") else agent,
         "provider": provider,
         "model": model,
         "error": error,
