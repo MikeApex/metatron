@@ -674,6 +674,43 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
         manager.disconnect(websocket, persona_key)
 
 
+class ConfirmRequest(BaseModel):
+    token: str
+    persona: str | None = None
+
+
+@app.get("/pending-confirmations")
+async def pending_confirmations(persona: str | None = None) -> dict:
+    """Actions awaiting the user's approval. The app polls this to render its prompt."""
+    from core.persona import persona_scope
+    from tools.confirm import pending
+    with persona_scope(persona or DEFAULT_PERSONA):
+        return {"pending": pending()}
+
+
+@app.post("/confirm")
+async def confirm_action(req: ConfirmRequest) -> dict:
+    """
+    Record the user's approval of a pending action.
+
+    **This endpoint is the whole point of the design.** Approval is recorded here, from a
+    deliberate tap in the app, and never by the model saying the user agreed. A model that
+    a hostile email has talked into acting is exactly the model whose claim of consent
+    cannot be trusted — so it is not in this path at all. It may propose; only the user,
+    through this endpoint, may approve.
+
+    Authenticated like every other endpoint, so the tap has to come from a signed-in
+    client rather than anything that can reach the port.
+    """
+    from core.persona import persona_scope
+    from tools.confirm import approve
+    with persona_scope(req.persona or DEFAULT_PERSONA):
+        if not approve(req.token):
+            raise HTTPException(status_code=404,
+                                detail="No such pending action, or it has expired.")
+    return {"status": "approved"}
+
+
 @app.get("/health")
 async def health() -> dict:
     return {"status": "ok"}

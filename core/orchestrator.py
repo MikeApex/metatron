@@ -462,7 +462,7 @@ def register_tools() -> tuple[list[dict], dict]:
     # External-content tools. Both return their payload wrapped by tools/untrusted.py —
     # a web page and an email body are written by strangers.
     from tools.web import fetch_url, FETCH_URL_SCHEMA
-    from tools.mail import read_email, READ_EMAIL_SCHEMA
+    from tools.mail import read_email, send_email, READ_EMAIL_SCHEMA, SEND_EMAIL_SCHEMA
 
     schemas = [
         WRITE_LOG_SCHEMA, READ_LOG_SCHEMA,
@@ -492,7 +492,7 @@ def register_tools() -> tuple[list[dict], dict]:
         GET_WEATHER_SCHEMA, GET_ENVIRONMENTAL_SNAPSHOT_SCHEMA,
         WRITE_SCHEDULE_SCHEMA, LIST_SCHEDULES_SCHEMA, DELETE_SCHEDULE_SCHEMA,
         WRITE_QUALITY_EVENT_SCHEMA,
-        FETCH_URL_SCHEMA, READ_EMAIL_SCHEMA,
+        FETCH_URL_SCHEMA, READ_EMAIL_SCHEMA, SEND_EMAIL_SCHEMA,
     ]
     handlers = {
         "write_log": write_log,
@@ -534,6 +534,7 @@ def register_tools() -> tuple[list[dict], dict]:
         "read_agent_config": read_agent_config,
         "fetch_url": fetch_url,
         "read_email": read_email,
+        "send_email": send_email,
         "write_wishes": write_wishes,
         "read_wishes": read_wishes,
         "generate_emergency_card": generate_emergency_card,

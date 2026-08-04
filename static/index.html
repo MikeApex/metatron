@@ -166,6 +166,41 @@
       cursor: not-allowed;
     }
 
+    /* Approval prompt. Deliberately the loudest thing in the footer: it is the last
+       point at which an irreversible action can be stopped. */
+    #confirm-bar {
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+      background: #1c1608;
+      border: 1px solid #6b5312;
+      border-radius: 12px;
+      padding: 12px 14px;
+    }
+    #confirm-bar.shown { display: flex; }
+    #confirm-text {
+      font-size: 14px;
+      color: #e8dcc0;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      max-height: 9em;
+      overflow-y: auto;
+    }
+    #confirm-actions { display: flex; gap: 8px; }
+    #confirm-actions button {
+      flex: 1;
+      padding: 10px;
+      border-radius: 20px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid #333;
+    }
+    #confirm-no  { background: #1a1a1a; color: #999; }
+    #confirm-yes { background: #7a5c12; color: #fff; border-color: #7a5c12; }
+    #confirm-yes:disabled { opacity: 0.5; cursor: not-allowed; }
+
     /* Spoken-reply toggle. Sits next to the mic rather than in the hidden settings
        row, because it is meant to be flipped mid-conversation. */
     #voice-toggle {
@@ -429,6 +464,17 @@
   <div id="transcript-wrap">
     <div id="transcript"></div>
     <button id="transcript-close" title="Dismiss" aria-label="Dismiss transcription">✕</button>
+  </div>
+
+  <!-- Approval prompt for irreversible actions. Rendered from /pending-confirmations
+       and answered by POST /confirm, so consent is recorded by the server from a real
+       tap — never by the model reporting that the user agreed. -->
+  <div id="confirm-bar">
+    <div id="confirm-text"></div>
+    <div id="confirm-actions">
+      <button id="confirm-no">Not now</button>
+      <button id="confirm-yes">Approve</button>
+    </div>
   </div>
 
   <div id="controls">
@@ -1295,6 +1341,67 @@
   }
 
   // --- Text input ---
+
+  // --- Approval of irreversible actions ---
+  //
+  // The model may propose; only this can approve. The token it holds is inert until the
+  // server records a tap here, so a model talked into acting by a hostile email still
+  // cannot proceed — which is the case the whole mechanism exists for.
+  //
+  // Polled rather than pushed: a missed push would silently strand an action, and the
+  // call is small. Stops while the login screen is up.
+  let pendingToken = null;
+
+  async function refreshPending() {
+    if (!currentPersona || !authToken) return;
+    try {
+      const res = await authFetch('/pending-confirmations?persona=' + encodeURIComponent(currentPersona));
+      if (!res.ok) return;
+      const { pending } = await res.json();
+      const bar = document.getElementById('confirm-bar');
+      if (!pending || !pending.length) {
+        pendingToken = null;
+        bar.classList.remove('shown');
+        return;
+      }
+      const item = pending[0];   // one at a time — stacked approvals invite mis-taps
+      pendingToken = item.token;
+      document.getElementById('confirm-text').textContent = item.description;
+      document.getElementById('confirm-yes').disabled = false;
+      bar.classList.add('shown');
+    } catch (e) { /* offline or signed out — the poll retries */ }
+  }
+
+  document.getElementById('confirm-yes').addEventListener('click', async () => {
+    if (!pendingToken) return;
+    const btn = document.getElementById('confirm-yes');
+    btn.disabled = true;
+    try {
+      const res = await authFetch('/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: pendingToken, persona: currentPersona }),
+      });
+      if (!res.ok) { setStatus('Could not record approval', '#a44'); btn.disabled = false; return; }
+      document.getElementById('confirm-bar').classList.remove('shown');
+      pendingToken = null;
+      // Nudge the pipeline so it retries with the token it already holds. The token was
+      // never the secret — the recorded approval is.
+      sendToServer('Approved — go ahead.');
+    } catch (e) {
+      setStatus('Could not record approval', '#a44');
+      btn.disabled = false;
+    }
+  });
+
+  document.getElementById('confirm-no').addEventListener('click', () => {
+    // No server call: an unapproved request simply expires. Declining is the default
+    // state, so there is nothing to record.
+    document.getElementById('confirm-bar').classList.remove('shown');
+    pendingToken = null;
+  });
+
+  setInterval(refreshPending, 5000);
 
   function submitText() {
     const text = textField.value.trim();
