@@ -104,6 +104,10 @@ Full reasoning: [archive/plans/outward_actions_scope_2026-08-04.md](archive/plan
 
 - **Not opened, deliberately:** credential store, agentic browsing (level 3), arbitrary-recipient email, transactions. The last three are gated on a credential store that does not exist and on the gate above.
 
+- **`research_agent` omits `allowed_tools`, so it holds *all 53* tools** — including `fetch_url`, `read_email`, and every write tool. Pre-existing, not introduced by the 2026-08-04 work, and **deliberately not fixed there**: adding a list would silently strip every other tool from the grounded-search path, which is a behaviour change well beyond that item's remit. The file comment says *"bare mode (no personal tools)"*, which is the opposite of what an omitted `allowed_tools` means in `core/router.py` — so the config reads as more restrictive than it is. Belongs to **B2** (per-agent tool injection). Verify what the grounded path actually passes before changing it.
+
+- **APK rebuild pending — password reveal toggle (`819de75`).** Committed but not built into an APK, by agreement (the session had already rebuilt twice). Rides the next rebuild. Nothing else is waiting on it; `static/index.html` on the server already serves it to the browser PWA.
+
 ### Surfaced 2026-08-03 by the context-audit test run
 
 - ~~**⚠ A4 clinical-flag hard-fails must be re-run before A7 sign-off.**~~ **Gate PASSED

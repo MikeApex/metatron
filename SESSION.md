@@ -1,6 +1,6 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-04 (backlog triage, A4 gate, VM outage) — **The A4 clinical-flag gate is CLEARED on the cloud path, 6/6** (`tests/run_a4_safety.py`, report `tests/a4_safety_rerun_2026-08-04_gemini.md`) — the suites are scripted now, not manual prose. **The bigger find was not the gate:** `physical_health` had never been granted `read_agent_config`, so `MEDICATION_MISSED_CRITICAL` — which must classify from the stored medication profile, never inference — was **structurally unfireable in production.** Granted; `write_agent_config` deliberately not. **Nothing deployed, deliberately:** the server now fails closed without `METATRON_AUTH_PASSWORD` and the VM does not have it (verified) — deploying stops production rather than updating it. **`deploy.sh:54` checks the Mac's `.env`, not the VM's**, and today's run passed that guard and pushed; only a 4-hour VM outage (guest lost all networking while GCE said `RUNNING`, root cause unknown, recovered by stop/start) stopped the pull. Two gate pieces remain before A7: a **pipeline probe** (a flag can fire in MW and still be held at the Synthesizer) and the local/Ollama run.*
+*Updated: 2026-08-04 (auth, injection defense, web access, email — closed) — **Track B2 authentication is live and verified in production** (`8e5c47e`): every endpoint 401s unauthenticated, the app shell still loads, and `/ws` is gated by a first-frame handshake because Starlette runs no HTTP middleware for a WebSocket. The server now **fails closed** without `METATRON_AUTH_PASSWORD`; it is on the VM, and `deploy.sh` aborts before `git pull` if it ever is not. **`fetch_url` and `read_email` are live, granted to `logistics` only, and all external content is wrapped by `tools/untrusted.py`.** The SSRF guard is not theoretical — the VM's metadata server hands a working OAuth token to an unauthenticated request, so an unguarded fetch would have leaked the Vertex service account. **Corrections:** `deploy.sh:54` checks the *VM's* `.env`, not the Mac's — the previous handoff says otherwise and is wrong; and its abort message used to advise an `scp` that would have deleted `GOOGLE_APPLICATION_CREDENTIALS`. **Next:** item 5's Python confirmation gate (Decisions A/B/C await Mike), and an APK rebuild for the password reveal toggle.*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -32,13 +32,12 @@ For **why** something was built the way it is — reasoning, rejected options, c
 
 **Phase 5 intent:** Coordinator Agent + Specialist Modules
 
-### Done
-- Coordinator-Synthesizer two-pass pipeline (`core/orchestrator.py:621`)
-- All 14 specialist agent files (coordinator, synthesizer, diarist, mental_wellbeing, physical_health, work_vocation, relationships, learning_growth, finance, recreation_hobbies, research_agent, logistics, pattern_miner, goals_interviewer) — **all received deep passes**
-- **Phase 5 agent review complete (2026-06-13):** All 14 agents done. Flag consistency audit complete. Research Agent extended: grounded Gemini search implemented in orchestrator (`run_session_gemini_grounded`), decontextualization hardened (constitution stripped from Research system prompt, intent/circumstance stripping added to Coord + Synth). `google-genai` v2.8.0 installed in venv.
-- CRM tools (`tools/crm.py`), Wishes shell (`tools/wishes.py`), CalDAV (`tools/caldav.py`)
-- Parallel subagent dispatch, write_log threading lock, agent_config tool
-- Security: threat model + security backlog complete (`archive/security/`)
+### Built
+Coordinator–Synthesizer pipeline; all 14 agent files (deep passes + flag audit complete);
+grounded Research search; CRM, Wishes, CalDAV, scheduler-write and profile tools; parallel
+subagent dispatch; threat model and security backlog (`archive/security/`); **server auth,
+`fetch_url`, `read_email`, and the `<untrusted_content>` boundary (2026-08-04)**.
+*Dates and reasoning for all of it: [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).*
 
 ### In progress / next
 
@@ -61,15 +60,21 @@ Two loose ends inside the gate, both discrete checklist items so they don't get 
 - **A5b** — re-run `write_aspirational_baseline` with the A5 mission-level data; the A3 baseline is still a placeholder.
 - **A5c** — preference activation status recorded as "unknown, confirm if needed."
 
-**A8 — Pre-Alpha code refactor** — gated on A7. Full module extraction:
-`core/orchestrator.py` (~1,870 lines, 5 concerns) → `core/config.py` + `core/providers.py` +
-`core/tools.py` + slimmed orchestrator; `core/server.py` → split monitoring into
-`core/monitor_api.py`. Remove the COORD PACKAGE debug print. Regression gate: A4 clinical-flag
-scenarios + server startup + full pipeline session + The Book SSE.
+**A8 — Pre-Alpha code refactor** — gated on A7. Module extraction from
+`core/orchestrator.py` and `core/server.py`. **Full spec, including the regression gate, is in
+[ROADMAP.md](ROADMAP.md) § A8** — not restated here, it was a duplicate copy.
 
 **Open from the (complete) latency work:** Coordinator slimming — **re-scope against measured
 data first.** The Coordinator runs 1 turn, not the 7 the roadmap assumes (`logistics` measured
 at 8). See `DEV_BACKLOG.md`.
+
+**Track B2 — auth landed 2026-08-04; the rest is open.** Tool permissions stay in **warn
+mode by decision** (the 43 grant gaps are the intended build-out, not breakage). Still open:
+the **Python confirmation gate** — every action tier in `synthesizer.md` is advisory, nothing
+enforces it — and `research_agent`, which omits `allowed_tools` and so holds *all* tools.
+**Nothing outward-facing ships until that gate exists.** Decisions A/B/C await Mike:
+[outward_actions_scope_2026-08-04.md](archive/plans/outward_actions_scope_2026-08-04.md);
+items in `DEV_BACKLOG.md`.
 
 ---
 
@@ -81,27 +86,15 @@ Newest first. Full detail for every entry — and everything older — is in
 | Date | What | Deployed |
 |---|---|---|
 | 08-04 | **A4 safety gate cleared 6/6** (scripted); `physical_health` `read_agent_config` grant — `MEDICATION_MISSED_CRITICAL` was unfireable; persona trees gitignored; **4h VM outage** recovered | **no — blocked** |
+| 08-04 | **Auth live** (cookie+bearer, WS handshake, fail-closed) · `fetch_url` + `read_email` wrapped in `<untrusted_content>` · voice toggle · item 5 scoped | `8e5c47e` |
 | 08-03 | **Context-file audit** — `SESSION.md` 775→170 lines; `PROJECT_LOG.md`, `INFRASTRUCTURE.md`, abridged `ROADMAP.md`, `/archive`, load auditor. Cold start ~88k→~28k tokens | docs only |
 | 08-03 | `deploy.sh` verifies by **ancestry**, not HEAD equality — no more false failures when a parallel window pushes | `3492d42`, `c674a91` |
 | 08-03 | Outage chat closeout — ✅ `networks/default` **has thawed**, support case closable; external-IP saving **withdrawn** (it is the VM's only egress path) | `48e17da` |
 | 08-03 | **Calendar delivers** — CalDAV live with recurrence/alarms/all-day; `get_weather` + `get_environmental_snapshot`; tool permissions in warn mode; VM backup | `cfcd212`, `6865058` |
 | 08-03 | Phase 4 scheduler grants · `update_goal` · Tier 1–2 backup | `2f74cd2`, `8e2983f` |
 | 08-03 | Check-in restraint (60m quiet / 180m floor) · **VM formally owns persona config** · biographical capture | — |
-| 08-03 | **Rule Redundancy** — one home per rule class; write-time warn, daily zero-token audit, on-demand sweep | `0077a63`, `a03ed7e` |
 | 08-02 | Synth self-development awareness + `DEV_BACKLOG.md` as the single change-request list | `6601479`, `dc0d85c` |
 | 08-02 | SEQ 021 — specialist clock injection, tool-error hints, failure reporting; capability-gap survey | `6601479` |
-| 08-02 | Synthesizer timestamp authority (SEQ 008) · recap fix (SEQ 002) · spend guard + rate limiter | `b184d92`, `799aa3f` |
-
----
-
-## ⚠ Deploys are blocked — read before `./deploy.sh`
-
-`core/server.py` fails closed without `METATRON_AUTH_PASSWORD`; `.env` is gitignored and **the
-VM does not have it (verified 2026-08-04)** — deploying stops production rather than updating
-it. **The preflight guard will not save you:** `deploy.sh:54` greps the *Mac's* `.env` while
-saying "the VM's". Append the variable to the VM's `.env` (never scp over it — it holds values
-the Mac's does not); the abort text prints the command. Waiting on this: the `physical_health`
-`read_agent_config` grant, so `MEDICATION_MISSED_CRITICAL` is dead in production until it ships.
 
 ---
 

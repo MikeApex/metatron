@@ -203,6 +203,115 @@ deployed code does not read it yet. **Deployment is now unblocked.**
 
 ---
 
+### Item 4b — `read_email` — **DONE** (`6739d62`)
+
+`tools/mail.py`, **not** `tools/email.py`: `tools/` is on `sys.path`, so that filename would
+shadow the stdlib `email` package the module needs to parse messages.
+
+`BODY.PEEK`, so reading the inbox does not mark it read. Attachments never parsed — no gain,
+large attack surface. Read-only by design; sending stays with item 5.
+
+Verified against the live account: IMAP login OK, 4 messages / 4 unread.
+`config/personas/mike/email.yaml` seeded **on the VM** from the existing CalDAV app password
+(one Gmail app password serves both), mode 600, VM-only. `config/modules/email.yaml` is the
+credential-free template.
+
+### Registration and grants (`6739d62`)
+
+Both tools registered. Granted to **`logistics` only** — both return content written by
+strangers, so the blast radius of an injected instruction is whatever the holder can call.
+
+**`research_agent` omits `allowed_tools` entirely, which means *all* tools.** Pre-existing
+least-privilege gap. Deliberately not fixed: adding a list would silently strip every other
+tool from the grounded path. Filed; belongs to B2.
+
+The wrapper is inert without the instruction, so `logistics.md` and `research_agent.md` now
+carry it.
+
+### App changes (Mike's requests, mid-session)
+
+- **Voice toggle** (`fe0d688`), persisted, defaults off.
+- **The first voice fix was wrong, and Mike's question caught it** (`8e5c47e`). He asked
+  whether `startRecording()` stops playback or also *prevents* it. It only stopped it — and
+  the reported bug is a *delayed* reply talking over a recording, where the delay is the
+  `await` on `/tts`. Tap the mic during that await and the audio still arrives, with nothing
+  left to stop. Now guarded after the `/tts` await, after `decodeAudioData`, and on the Web
+  Speech fallback path, which was uncovered entirely. `micIntent` set *before* `getUserMedia`,
+  since `isRecording` is only set after it resolves.
+- **Password reveal toggle** (`819de75`) — committed, **not rebuilt**; rides the next APK.
+- **Password changed to a weak, memorable value at Mike's explicit direction.** His call:
+  single-user system, no public ingress on 8001 (verified — the only rule on `metatron-net`
+  is IAP SSH on 22).
+
+### Item 5 — outward-actions scope decision — **WRITTEN, awaiting decision** (`17a88c6`)
+
+[archive/plans/outward_actions_scope_2026-08-04.md](../plans/outward_actions_scope_2026-08-04.md).
+
+The policy question turned out to be **already answered**: the Synthesizer's action tiers
+classify by reversibility and external effect, every capability item 5 names is already on the
+table, and every `preferences.yaml` opt-in is `false`. Two things are open — (A) the tiers have
+no axis for *who proposed* an action, which only began mattering when `fetch_url`/`read_email`
+shipped; (B) **the whole gate is a prompt** — verified, no confirmation gate exists in `tools/`
+or `core/orchestrator.py`.
+
+---
+
+## APK and deploy
+
+APK built twice — the second after the voice-fix correction. 4.1M, verified by unzipping and
+grepping `assets/public/index.html` for `speechBlocked`, `micIntent`, `voice-toggle`,
+`auth/login`. Served for sideload on `:8888`.
+
+Deployed `8e5c47e`. `deploy.sh`'s preflight guard passed once the password was on the VM, and
+the HEAD assertion verified.
+
+**Production verification, all against the live VM:**
+
+| Check | Result |
+|---|---|
+| `/health`, `/monitor/file`, `/monitor/personas`, `/session/stream` unauthenticated | 401 |
+| `/` app shell | 200 |
+| Bearer / cookie | 200 |
+| Wrong → correct password | 401 → 200 |
+| WS bad / valid token | `auth_failed` / `auth_ok` + history |
+| `read_email`, `fetch_url` | wrapped content returned |
+| `fetch_url` → metadata server | blocked |
+| Full pipeline exchange | completed |
+| Services, journal errors, `check_personas.py` | active, none, exit 0 |
+
+**The SSRF block is not theoretical.** Checked directly: the VM's metadata server returns a
+working OAuth access token to an unauthenticated request. Unguarded, one injected line in a
+page or email would have had `fetch_url` return the Vertex AI service-account token as page
+content.
+
+---
+
+## Corrections made this session
+
+1. **`deploy.sh:54` does not check the Mac's `.env`** — the parallel window reported it did.
+   The guard is inside the quoted `<<'REMOTE'` heredoc (lines 40–95) and greps the VM's.
+   What was actually seen: `git push` is line 30, *before* the SSH block, so a push happening
+   is not evidence the guard passed. Their SSH failed on the outage; the guard was never
+   reached.
+2. **The guard's abort message was genuinely wrong** — it said to `scp .env` over the VM's.
+   `GOOGLE_APPLICATION_CREDENTIALS` exists only on the VM, so that would have deleted the
+   Vertex credential path to deliver one password.
+3. **I said a stop/start would make the outage harder to diagnose. Wrong** — the serial buffer
+   was already lost; guest logs survive a reboot on the boot disk. Corrected before Mike acted.
+4. **`sync_dev_backlog.py` "0 new" is not evidence of no events** — it fails silent, so it was
+   indistinguishable from a quiet inbox during the outage. Post-deploy it pulled 3 new.
+
+---
+
 ## Deferred / carried forward
 
-*(to be filled at close — anything still actionable goes to `DEV_BACKLOG.md`, not left here)*
+All filed to `DEV_BACKLOG.md` — nothing actionable is left only in this narrative.
+
+- **Python confirmation gate** (item 5, Decision B) — prerequisite for any outward action;
+  build with B2's `write_agent_config` gate, same mechanism.
+- **Provenance modifier** for the action tiers (Decision A).
+- **`send_email` to self** (Decision C) — gated on the above.
+- **`research_agent` holds all tools** — B2 least-privilege.
+- **Enforce mode** — stays off by decision until the 43 intended grants land.
+- **Not opened:** credential store, agentic browsing, arbitrary-recipient mail, transactions.
+- **APK rebuild pending** for the password reveal toggle.

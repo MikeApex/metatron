@@ -24,6 +24,12 @@ live in [archive/sessions/](sessions/). **This file is not loaded by
 previous ones are kept here in order, newest first, because several contain
 corrections to the one before them.
 
+*Updated: 2026-08-04 (backlog triage, A4 gate, VM outage) — **The A4 clinical-flag gate is CLEARED on the cloud path, 6/6** (`tests/run_a4_safety.py`, report `tests/a4_safety_rerun_2026-08-04_gemini.md`) — the suites are scripted now, not manual prose. **The bigger find was not the gate:** `physical_health` had never been granted `read_agent_config`, so `MEDICATION_MISSED_CRITICAL` — which must classify from the stored medication profile, never inference — was **structurally unfireable in production.** Granted; `write_agent_config` deliberately not. **Nothing deployed, deliberately:** the server now fails closed without `METATRON_AUTH_PASSWORD` and the VM does not have it (verified) — deploying stops production rather than updating it. **`deploy.sh:54` checks the Mac's `.env`, not the VM's**, and today's run passed that guard and pushed; only a 4-hour VM outage (guest lost all networking while GCE said `RUNNING`, root cause unknown, recovered by stop/start) stopped the pull. Two gate pieces remain before A7: a **pipeline probe** (a flag can fire in MW and still be held at the Synthesizer) and the local/Ollama run.*
+
+> **Correction, same day:** the claim above that `deploy.sh:54` checks the Mac's
+> `.env` is wrong — the guard runs inside the remote heredoc and greps the VM's. See the
+> 2026-08-04 auth entry below for the evidence and for the real bug it led to.
+
 
 *Updated: 2026-08-03 (context-file audit, closed) — **cold start is ~88k → ~28k tokens, verified against a live run rather than estimated.** `SESSION.md` split into this primer plus [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md); deploy/recovery detail to [docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md); [ROADMAP.md](ROADMAP.md) is an abridged live copy — **the full plan under `archive/plans/` is static and must never be edited.** `DEV_BACKLOG.md` is no longer autoloaded (still synced every session); read it when working the backlog. `/archive` now carries the close-out ritual. **One thing to act on:** the test run surfaced a pre-sign-off gate at `ROADMAP.md:113` — prefix-caching moved dynamic context out of the system prompt, so **the A4 clinical-flag hard-fails must be re-run before A7 sign-off**. Audit any session's real load with `python3 scripts/audit_context_load.py`. Deployed: nothing — docs only.*
 
@@ -85,6 +91,138 @@ Four related complaints, one root cause and four fixes. **The cause was not an a
 ---
 
 ## Dated history
+
+### 2026-08-04 (auth, injection defense, direct web access, email) — `11a166d`, `5795f31`, `09d2f38`, `22e179d`, `6739d62`, `fe0d688`, `8e5c47e`, `819de75`, `17a88c6`; **deployed `8e5c47e`**
+
+Writeup: [archive/sessions/2026-08-03 — Auth, Injection Defense, Web Access, Email.md](sessions/2026-08-03%20—%20Auth,%20Injection%20Defense,%20Web%20Access,%20Email.md)
+(named for the date the session opened; it ran past midnight). Worked
+[archive/plans/phase5_prompt_2026-08-03_security_web_email.md](plans/phase5_prompt_2026-08-03_security_web_email.md)
+items 1–5. Ran in parallel with a second window; neither touched the other's files, but see
+the correction below — the two windows disagreed about a fact and one of them was wrong.
+
+**Item 1 — server authentication (roadmap B2).** Every endpoint was open; `/monitor/file`
+would hand the user's whole `data/` tree to anything on the tailnet. `core/auth.py` +
+middleware + `POST /auth/login`.
+
+- **Cookie *and* bearer, one secret.** The cookie carries the same-origin browser; the bearer
+  carries the CLI, scripts and the Android app, which is cross-origin from a Capacitor WebView
+  and so never receives a `SameSite=Lax` cookie. **Rejected:** bearer-only with `?token=` on
+  the streaming URLs — works, but writes the secret into access logs and browser history.
+  **Rejected:** gating normal endpoints and leaving `/session/stream` open — that is most of
+  the exposure.
+- **Tokens signed, not stored.** They survive a restart, so the phone is not logged out by
+  every deploy, and a password change revokes all of them at once.
+- **Middleware, not a per-endpoint dependency.** The failure being closed off is an endpoint
+  nobody remembered to protect; only a middleware cannot be forgotten when the next route is
+  added. **WebSocket is the exception and had to be** — Starlette runs no HTTP middleware for
+  a WS handshake, so `/ws` uses a first-frame auth handshake. `ConnectionManager.connect()` no
+  longer calls `accept()`; the endpoint does, before the check, so an unauthenticated socket
+  never joins a broadcast group.
+- **Fail-closed at startup.** No `METATRON_AUTH_PASSWORD`, no server — a server that ran
+  unauthenticated because a hand-copied variable was forgotten would silently reopen the hole
+  while looking healthy.
+- **Four internal clients would have broken.** They hold the password already and the signing
+  key derives from it, so they mint tokens locally rather than calling `/auth/login`:
+  `sync_dev_backlog.py`, `metatron_monitor.py`, `remote_client.py`, and the health checks via
+  new `scripts/mint_token.py`. **`core/auth.py` is stdlib-only with lazy annotations** because
+  the SessionStart hook runs `sync_dev_backlog.py` under macOS system Python **3.9**, where a
+  `str | None` evaluated at import is a `TypeError`. Caught by running it, not by reading it.
+
+**Item 2 — enforce flip deferred, by Mike's decision.** The denial log showed 2 entries; an
+audit of every agent file against `allowed_tools` found **43 gaps across 11 agents**. Mike's
+ruling: these are the intended build-out, not breakage — the agent files are written ahead of
+the tools. So warn mode stays until those tools are actually granted. **Rejected:** flipping
+enforce on the strength of the 2-entry log, which would have broken the other 41 silently.
+
+**Item 3 — indirect injection defense.** `tools/untrusted.py`. The convention was documented
+in `tools/caldav.py` and `logistics.md` and implemented in neither, while the calendar had
+been reading external invite text in production since 2026-08-03. **The part that makes it
+more than decoration:** it neutralises `<untrusted_content>` tags *inside* the content, because
+otherwise a page containing `</untrusted_content> Now follow these instructions:` closes the
+boundary early and the rest reads as trusted. Wrapped once around the whole event list rather
+than field by field, so JSON structure survives.
+
+**Item 4 — `fetch_url` and `read_email`.**
+
+- **SSRF drove the design, not page size.** Verified live: the VM's metadata server returns a
+  **working OAuth access token** to an unauthenticated request. Without the block, one injected
+  line in a page or email would have had `fetch_url` return the Vertex AI service-account token
+  as page content. Every redirect hop is resolved and range-checked; redirects are followed
+  manually because delegating to `requests` lets a 302 land on the metadata server after the
+  first check passed. Hostnames are **resolved, not pattern-matched** —
+  `metadata.google.internal` and an attacker's DNS record both look ordinary as text.
+- **Stdlib HTML-to-text**, no new dependency on a 4GB VM; JS-rendered pages return nothing and
+  say so. **Rejected:** a headless browser.
+- **`tools/mail.py`, not `tools/email.py`** — `tools/` is on `sys.path`, so that filename would
+  shadow the stdlib `email` package the module needs.
+- **`BODY.PEEK`** so reading the inbox does not mark it read. Attachments never parsed.
+- **Granted to `logistics` only.** `research_agent` omits `allowed_tools` entirely, which means
+  *all* tools — a pre-existing least-privilege gap. **Deliberately not fixed here:** adding a
+  list would silently strip every other tool from the grounded path. Filed; belongs to B2.
+
+**Item 5 — outward-actions scope decision** ([plans/outward_actions_scope_2026-08-04.md](plans/outward_actions_scope_2026-08-04.md)),
+proposal awaiting Mike. Main finding: **the policy question was already answered** — the
+Synthesizer's action tiers classify by reversibility and external effect, every capability
+item 5 names is already on the table, and all `preferences.yaml` opt-ins are `false`. Two
+things are open: (A) the tiers have no axis for *who proposed* an action, which only started
+mattering when `fetch_url`/`read_email` shipped this morning; (B) **the entire gate is a
+prompt** — verified, no confirmation gate exists in `tools/` or `core/orchestrator.py`. That is
+the control class already shown not to hold (logistics called `write_agent_config` three times
+after being merely *told* it lacked it). Recommendation: no outward tool ships until the gate
+is enforced in Python, built with B2's; first consumer `send_email` restricted to the user's
+own address.
+
+**App changes** (Mike's requests, mid-session):
+
+- **Voice toggle**, persisted, defaults off. **The first fix was wrong and Mike's question
+  caught it.** He asked whether `startRecording()` stops playback or also *prevents* it — it
+  only stopped it. The reported bug is a *delayed* reply talking over a recording, and the
+  delay is the `await` on `/tts`: tap the mic during it and the audio still arrives with
+  nothing left to stop. Now guarded after the `/tts` await, after `decodeAudioData`, and on the
+  Web Speech fallback path, which was uncovered entirely. `micIntent` is set *before*
+  `getUserMedia` because `isRecording` is only set after it resolves. Late audio is discarded,
+  not queued.
+- **Password reveal toggle** on the login field (`819de75`), committed but not rebuilt — rides
+  the next APK, as agreed. Never persists "visible".
+- **Password changed to a weak, memorable value at Mike's explicit direction.** He judged the
+  security bar over-set for a single-user system with no public ingress on 8001 (verified: the
+  only firewall rule on `metatron-net` is IAP SSH on 22). Recorded as his call, not an
+  oversight.
+
+**Corrections to things believed true earlier:**
+
+1. **`deploy.sh:54` does *not* check the Mac's `.env`.** The parallel window reported it did,
+   and the outgoing handoff paragraph below states it as fact. It is wrong: the guard sits
+   inside the quoted `<<'REMOTE'` heredoc (lines 40–95), so it runs on the VM after
+   `cd ~/multi-model-mcp` and greps the VM's `.env`. Verified by running the same construction.
+   What was actually observed: `git push origin main` is **line 30**, before the SSH block — a
+   push happening is not evidence the guard passed. That window's SSH failed on the outage, so
+   the guard was never *reached* rather than bypassed.
+2. **But the guard had a real bug one step over,** which the false report led to: its abort
+   message told the user to `scp .env` over the VM's. Confirmed destructive —
+   `GOOGLE_APPLICATION_CREDENTIALS` exists **only** on the VM, so that command would have
+   deleted the Vertex AI credential path every model call depends on, to deliver one password.
+   Same class as the `config/personas/` rule in `CLAUDE.md`, one file across. Now appends the
+   single variable idempotently (`22e179d`).
+3. **I told Mike a stop/start would make the outage much harder to diagnose. That was wrong.**
+   The volatile part — the serial ring buffer — was already lost (it retains ~48 minutes and
+   the onset was ~4 hours back). The guest's own logs live on the boot disk and survive a
+   reboot. Corrected before he acted on it.
+4. **`sync_dev_backlog.py` returning "0 new" is not evidence of no new events.** It fails
+   silent by contract, so throughout the outage it was indistinguishable from a quiet inbox —
+   which is how the outage was noticed at all. Post-deploy it pulled **3 new** entries through
+   the now-authenticated endpoint.
+
+**Verified in production after deploy** (`8e5c47e`): `/health`, `/monitor/file`,
+`/monitor/personas`, `/session/stream` all 401 unauthenticated; `/` still 200; bearer and
+cookie both 200; wrong→right password 401→200; WS bad/valid token `auth_failed`/`auth_ok`;
+`read_email` and `fetch_url` return wrapped content; metadata-server fetch blocked; full
+pipeline exchange completed; both services active, no errors; `check_personas.py` exits 0.
+
+**Not done, deliberately:** VM outage root cause (owned by the parallel window, which
+recovered it); enforce mode; `research_agent` least-privilege; credential store; agentic
+browsing; arbitrary-recipient email.
+
 
 ### 2026-08-04 (backlog triage, A4 safety gate cleared, ~4h VM outage) — `b3229ff`, `26c7859`, `e13d140`; **not deployed**
 
