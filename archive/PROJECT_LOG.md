@@ -96,6 +96,160 @@ Four related complaints, one root cause and four fixes. **The cause was not an a
 
 ## Dated history
 
+### 2026-08-05 (backlog trust repair: the counter, the sweep, the grants) — `9361537`, `23057ee`, `812ef1a`, `8ee150f`; **not deployed**
+
+Writeup: [archive/sessions/2026-08-05 — Backlog Trust Repair: Counter Bug, Verify-and-Triage Sweep, Provenance IDs.md](sessions/2026-08-05%20—%20Backlog%20Trust%20Repair:%20Counter%20Bug,%20Verify-and-Triage%20Sweep,%20Provenance%20IDs.md)
+
+**The ask** was to work `DEV_BACKLOG.md` down to a manageable state, with an explicit constraint:
+make sure the work has real value and is not legacy or tail-chasing. The constraint turned out to
+be the whole job — the list could not be worked safely as it stood.
+
+**Why the backlog appeared to balloon from ~30 to ~60 items: it did not.** The counter was wrong.
+`scripts/sync_dev_backlog.py` summed every `- ` line between `## Inbox` and `## Done`, and
+**`DEV_BACKLOG.md` had never contained a `## Done` heading** — so the "live region" ran to end of
+file. Three consequences, all in the same direction: struck-through entries still start with
+`- `, so **closing an item made the reported number go up**; untriaged machine-written denials
+were counted alongside curated engineering work; and the intro prose bullets were swept in. An
+entry in the file already said *"see the Done section"* and the script had partitioned on that
+heading for weeks. Fixed in `count_items()`, which now reports `N new · N untriaged · N open`,
+reconciled by hand against `awk`. The fail-silent contract (exit 0 on an unreachable VM) was
+verified unchanged — it is what keeps a paused VM from noising up a session start.
+
+**Why untriaged and open are now reported separately, rather than one tidier number.** They are
+different kinds of work: untriaged is a queue that someone must decide about, open is work
+already decided on. Collapsing them meant a pile of `TOOL_DENIED` warnings read as a growing
+engineering backlog, which is precisely the false alarm that prompted this session.
+
+**The sweep found roughly a third of checked items stale.** Closed with evidence: the `/session`
+`[CONTEXT]` leak (`run_session` splits and filters at `orchestrator.py:2690`); the `vertex_cache`
+404 (eviction present at `:1417`, last journal occurrence 2026-07-29); *"nothing can set a
+reminder or calendar entry"* (**all four steps of its own prescribed build order are done**);
+and the transcription timeout, whose cause was fixed on 2026-08-01 by `d42eefc`/`81fc6e2` — that
+one is the clearest case for the whole exercise, since anyone working it from the old description
+would have re-fixed a solved problem.
+
+**Live journal evidence beat code reading three times, and this is the transferable lesson.**
+Reading the code would have got two of these wrong in each direction:
+
+- **`AgentRecord is not JSON serializable` — elevated, not closed.** Filed as *"trace
+  serialization fails on every scheduler job"*, which reads like a logging nuisance. The journal
+  says 18 occurrences in 7 days against **19 total scheduler errors** — so essentially every
+  scheduler failure is this bug, and the jobs it kills are the proactive check-ins
+  (`companion_checkin` ×13). Reading `core/trace.py` would have suggested it was fixed:
+  `_agent_to_dict()` has converted `AgentRecord` and recursed `subagents` since `c66ed03`
+  (2026-06-22). The failing path is server-side via `send_one`, since the failing jobs are all
+  `agent == "coordinator"`. Localised as **[DB-0803-02]**; root cause open, and the next step is
+  the server-side traceback rather than more reading.
+- **`vertex_cache` 404 — closed, but with a trap flagged.** Eleven `[vertex_cache]` warnings sit
+  in the log right now and are `NameResolutionError` from the 2026-08-04 outage, not the filed
+  404. A `grep vertex_cache` would re-file the outage as a caching bug; the entry says so.
+- **Memory indexer — hypothesis confirmed and sharpened.** The same byte offset (`char 82852`)
+  now appears against `index log 2026-08-04` as it did against `2025-05-22`. **A shared offset
+  across unrelated files is proof the indexer parses something fixed**, which the original entry
+  could only guess at.
+
+**Marked `needs re-derivation` rather than left looking actionable:** the `write_config` heading
+duplication (cites a `_titled()` that does not exist in the 84-line `tools/config_writer.py`) and
+the `shownIds` eviction cliff (cites `static/index.html:567`; `shownIds` is now at `:706`+).
+Carrying a dead line number forward is what makes a list untrustworthy one item at a time.
+
+**Nine `TOOL_DENIED` entries resolved, six distinct cases, decided from motivation rather than
+mechanism.** The denial text records *what* was blocked and never *what the agent was trying to
+do*, so each was matched to the conversation it happened in via the VM's conversation record.
+Every one was a legitimate lookup: `finance` answering *"what can you tell me about my credit
+card payments"* with no store to read; `work_vocation` recalling that morning's Apex brief;
+`logistics` reading back the plant-check rule to amend it.
+
+Granted (`9361537`, both routing files in parity): `logistics` +`read_agent_config`
++`write_agent_config` +`search_memory` +`read_archive` +`write_archive`; `work_vocation`
++`search_memory`; `finance` +`read_archive`.
+
+> **What was believed at the start of this session and turned out to be wrong — and it changed a
+> decision before it was caught.** The first analysis concluded `logistics` was *"improvising
+> around a store that does not exist"*, and recommended **holding** the `write_agent_config`
+> grant pending the schedule/CalDAV work. Mike accepted that recommendation. Both halves were
+> false:
+>
+> 1. **`write_schedule`/`list_schedules`/`delete_schedule` already existed** — built `078e618`
+>    and granted to `logistics` in `2f74cd2`, both **2026-08-03 14:48, before every one of the
+>    denials.** The work being waited on had shipped two days earlier.
+> 2. **`write_agent_config` is not a workaround for `logistics`; it is the specified store.**
+>    `logistics.md:189` draws the distinction itself — the recurring-obligation inventory lives
+>    there because *"obligations are data rows, not scheduled jobs"* — and `:45` makes writing to
+>    it **mandatory**. Corroborated on disk: `sarah_chen`'s `logistics.json` already held
+>    `recurring_obligations`, written through warn mode.
+>
+> **The source of the error was trusting the backlog's own prose** — *"`scheduler.yaml` jobs are
+> static with no tool to add one"*, true when written 2026-08-01, stale by 2026-08-03. The cost
+> is not the wasted check: **a stale premise argues for the wrong decision, persuasively.** That
+> is now the stated rationale in `CLAUDE.md` and `/backlog` for verifying before acting, and it
+> is a far better argument than "checking is tidy."
+
+**`physical_health` +`write_agent_config` — the 2026-08-04 hold reversed, with a narrower
+control.** Rejected: keeping the blanket denial, which cost the agent an ordinary config store
+every other specialist has. Rejected: granting it outright, which would let the agent author the
+`medication_profile` that `MEDICATION_MISSED_CRITICAL` classifies from — the flag would grade its
+own homework, contradicting `physical_health.md:106` (*"never from the agent's judgment"*).
+Chosen: grant the tool, guard the one key. `_GUARDED_KEYS` in `tools/agent_config.py` refuses
+`(physical_health, medication_profile)` with an explanatory error. **In Python, not the
+instruction file** — `logistics` was told it lacked `write_agent_config` and called it anyway,
+three times in production; being told is not being prevented. Residual concern filed as
+**[DB-0805-01]**: the guard covers exactly one key, and B2 should decide whether guarded keys are
+the right mechanism or whether the confirmation gate supersedes them.
+
+**Also noted and left alone:** `work_vocation` and `finance` hold `write_agent_config` while
+clinical `physical_health` had been denied it — an inconsistency that looked like drift rather
+than design. Mike chose to level up rather than down.
+
+**Provenance and IDs (answering "are the to-dos timestamped?").** They were not, below Inbox.
+Positional references — the `#7` / `#19` used across chat windows — shift the moment anything is
+added or triaged, which had already produced ambiguity. Every curated item now carries
+`DB-MMDD-NN` (dated from filing, never reused, retained by closed items) plus a provenance line:
+who filed it and by what method (`Mike via Synthesizer`, `warn-mode tool denial`, `daily rule
+audit`, `dev session`), the origin SEQ where it came from a conversation, and what was verified
+against what, when. Rejected as unnecessary: restructuring seq allocation so `_persist_dev_request`
+could stamp one at write time — the seq does not exist at that moment, and `_seq_for()`
+(`core/server.py:1118`) already solves the same correlation by timestamp for traces.
+
+**`/backlog` (`812ef1a`) — one bin, and a ritual for emptying it.** `DEV_BACKLOG.md` was already
+the single bin, but nothing said how to work it, so each session invented an approach — which is
+how a third of it went stale. The command carries: sync, triage the Inbox to zero, verify before
+re-filing, assign ID and provenance, close with evidence. Rejected: putting the rules in
+`CLAUDE.md` (auto-loaded, costs tokens every session, and is the file where duplicated rules go
+stale) and in `DEV_BACKLOG.md`'s header (not read by default, so a session that should triage
+would never see them). `CLAUDE.md` gets a pointer and the one load-bearing rule.
+
+**Visibility is deliberately count-only.** `/metatron-code` and `/archive` report the
+`N new · N untriaged · N open` line and stop. Rejected: attaching a triage pass to `/archive`,
+per Mike — *"we won't address the full backlog every time"*. A recurring bulk chore attached to a
+command that runs every session is how a list stops being read at all; the count makes a filling
+Inbox visible for free, and when a pass is worth it is Mike's call.
+
+**Local/Ollama path marked dormant** (user decision). The deployment is fully on the Vertex VM
+under the 2026-06-18 ZDR amendment, so a local re-run verifies a path nothing uses. `ROADMAP.md`
+§A7 residual gap 1 and §0 item 8 are **annotated, not deleted**, and the binding privacy ruling
+is untouched — what is parked is the qwen3:14b *run*, not the requirement it verifies. Rejected:
+deleting the items outright, which would erase what the ruling required and make reversal cost a
+re-derivation. Consequence: the previously-planned parallel window for `--provider ollama` A4 is
+no longer valid work.
+
+**Result: `0 new · 0 untriaged · 45 open`**, and all three numbers now mean what they say.
+
+**Not deployed.** `9361537` touches `config/modules/routing*.yaml` and `tools/agent_config.py`
+and needs `./deploy.sh`; the CalDAV/email window owns `.env` and deploy coordination. Until it
+lands the grants are Mac-only and warn mode continues to let the calls through on the VM.
+
+**Deferred:** the A7 pipeline probe (Step 5 of the approved plan, not reached — self-contained
+and better started fresh); the `deploy.sh` WebSocket drain fix, now confirmed real with evidence
+as **[DB-0803-07]**; transcription accuracy.
+
+Outgoing handoff paragraph from `SESSION.md` — written by the parallel CalDAV/email window,
+which replaced the readout paragraph while this session was running:
+
+*Updated: 2026-08-04 (item 5 decided and built — A, B and C) — **Nothing outward-facing can now happen without a tap from the user.** `tools/confirm.py` records approval **out of band** (`POST /confirm`); the model may propose, only the user may approve, and the token the model holds is inert until the server records the tap — a model talked into acting by a hostile email is exactly the one whose claim of consent is worthless. Approvals are single-use, fingerprinted to the exact arguments shown, and expire in 10 min. `send_email` is live, limited **in code** to Mike's addresses and saved CRM contacts. **Research could not fetch and now can:** a `fetch_url` instruction shipped that morning against a grounded path passing no tools — grounding and function calling *do* coexist (tested on Vertex, contrary to received wisdom). **Correction:** the parallel window's `deploy.sh` guard bug is withdrawn — the guard is inside the remote heredoc and greps the VM's `.env`. **Next:** the SMTP send path has never been exercised (every test stops at the gate), and enforce mode is still off by decision.*
+
+---
+
 ### 2026-08-04 (decisions A/B/C built; Research could not fetch and now can) — `0eb2067`, `c886560`, `ca993fe`, `15b9a41`, `0f2ca6c`; **deployed `15b9a41`**
 
 Writeup: [archive/sessions/2026-08-03 — Auth, Injection Defense, Web Access, Email.md](sessions/2026-08-03%20—%20Auth,%20Injection%20Defense,%20Web%20Access,%20Email.md)

@@ -116,7 +116,10 @@ Every curated item carries an ID and a provenance line:
 Re-run the sync and confirm the count moved the way you expect. Then check:
 
 ```bash
-grep -o "\[DB-[0-9-]*\]" DEV_BACKLOG.md | sort | uniq -d    # duplicate ids — expect nothing
+# Duplicate ids — expect nothing. Anchored to the leading bullet so that a
+# cross-reference to another item ("see [DB-0805-01]") is not read as a second
+# definition of it; the unanchored form false-positives on every cross-reference.
+grep -o "^- \*\*\[DB-[0-9-]*\]" DEV_BACKLOG.md | grep -o "DB-[0-9-]*" | sort | uniq -d
 ```
 
 If code changed, note whether it needs `./deploy.sh` (anything under `core/`, `config/`,

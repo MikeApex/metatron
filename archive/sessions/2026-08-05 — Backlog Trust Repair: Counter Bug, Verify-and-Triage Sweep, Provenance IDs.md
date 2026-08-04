@@ -158,9 +158,36 @@ Marked, not deleted; binding privacy ruling untouched.
 `./deploy.sh`**. Coordinate with the CalDAV/email window, which owns `.env` and deploy. Until
 then the grants are Mac-only and warn mode continues to let the calls through on the VM.
 
+## Commits
+
+| Hash | What |
+|---|---|
+| `9361537` | Counter fix + nine tool denials resolved + `_GUARDED_KEYS` |
+| `23057ee` | The sweep: IDs, provenance, closures with evidence, ROADMAP dormant notes |
+| `812ef1a` | `/backlog` command; count-only visibility in `/metatron-code` and `/archive` |
+| `8ee150f` | This writeup |
+
 ## Deferred / not this session
 
-- Deploy drain fix (verified real, stays filed)
-- Transcription accuracy (`base.en`, `beam_size=5`, no VAD) + dictated-email known-values snap
-- Deploying `ca993fe` / `15b9a41` / `0f2ca6c` — parallel window owns deploy
-- `ROADMAP.md` Track D trim — must be item-by-item by whoever works Track D
+- **A7 pipeline probe** — Step 5 of the approved plan, not reached. Self-contained; start fresh.
+  Plan detail: `~/.claude/plans/let-s-look-at-the-glistening-pinwheel.md` § Step 5.
+- **[DB-0803-02] AgentRecord / proactive check-ins failing** — the highest-value open item to
+  come out of this session. Needs the server-side traceback.
+- **[DB-0803-07] deploy drain** — confirmed real with evidence; fix scoped, not applied.
+- Transcription accuracy (`base.en`, `beam_size=5`, no VAD) + dictated-email known-values snap.
+- `ROADMAP.md` Track D trim — must be item-by-item by whoever works Track D.
+
+## Method note, for the next sweep
+
+Three claims were settled by the VM journal that code reading would have got wrong — twice in the
+direction of "looks fixed, still firing", once "looks broken, stopped weeks ago". **A runtime
+claim needs the journal, not the file.** One SSH round-trip answered four questions at once:
+
+```bash
+gcloud compute ssh metatron-vm --zone=us-central1-a --project=metatron-ai-499810 \
+  --tunnel-through-iap --command="sudo journalctl -u metatron-server -u metatron-scheduler \
+  --since '7 days ago' --no-pager | grep -c 'PATTERN'"
+```
+
+Watch for near-misses: eleven `[vertex_cache]` warnings looked like a filed 404 bug and were DNS
+failures from an unrelated outage.

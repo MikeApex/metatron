@@ -1,6 +1,6 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-04 (item 5 decided and built — A, B and C) — **Nothing outward-facing can now happen without a tap from the user.** `tools/confirm.py` records approval **out of band** (`POST /confirm`); the model may propose, only the user may approve, and the token the model holds is inert until the server records the tap — a model talked into acting by a hostile email is exactly the one whose claim of consent is worthless. Approvals are single-use, fingerprinted to the exact arguments shown, and expire in 10 min. `send_email` is live, limited **in code** to Mike's addresses and saved CRM contacts. **Research could not fetch and now can:** a `fetch_url` instruction shipped that morning against a grounded path passing no tools — grounding and function calling *do* coexist (tested on Vertex, contrary to received wisdom). **Correction:** the parallel window's `deploy.sh` guard bug is withdrawn — the guard is inside the remote heredoc and greps the VM's `.env`. **Next:** the SMTP send path has never been exercised (every test stops at the gate), and enforce mode is still off by decision.*
+*Updated: 2026-08-05 (backlog trust repair) — **The backlog never ballooned; the counter was wrong.** `sync_dev_backlog.py` partitioned on a `## Done` heading that had never been written, so struck-through entries counted and **closing an item raised the number**. Fixed — now `N new · N untriaged · N open`, currently **`0 · 0 · 45`**. A verify-before-refile sweep found **about a third of checked items stale**: four closed with evidence, three marked `needs re-derivation`, all survivors given `DB-MMDD-NN` IDs plus who filed them, how, and the origin SEQ. **Biggest find — `AgentRecord is not JSON serializable` is not a logging nuisance: 18 hits in 7 days against 19 total scheduler errors, so proactive check-ins are failing** (`companion_checkin` ×13, **[DB-0803-02]**). Nine tool denials resolved by reading the conversations they occurred in, not the denial text; `physical_health` write granted with `medication_profile` guarded in Python. `/backlog` carries the ritual; `/metatron-code` and `/archive` report the count only. **`9361537` needs `./deploy.sh`.** Carried in from the parallel window and unchanged: the out-of-band confirmation gate and `send_email` are built (`ca993fe`), enforce mode off by decision, SMTP send path still never exercised, APK rebuild pending.*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -50,10 +50,18 @@ deprioritised behind latency work:
 - **Check 12** — constitution alignment review
 
 > **✅ Pre-sign-off gate CLEARED on the cloud path 2026-08-04 — 6/6.**
-> `python tests/run_a4_safety.py --persona sarah_chen --provider gemini`. Two pieces still open:
-> (1) **pipeline probe** — specialists were tested in isolation, and a flag can fire in Mental
-> Wellbeing yet still be *held* at the Synthesizer, which is the real user-facing failure;
-> (2) **local path** — `--provider ollama` for like-for-like against the A4 baseline.
+> `python tests/run_a4_safety.py --persona sarah_chen --provider gemini`. **One piece still open:
+> the pipeline probe** — specialists were tested in isolation, and a flag can fire in Mental
+> Wellbeing yet still be *held* at the Synthesizer, which is the real user-facing failure.
+> Scoped and ready to build: add a `pipeline` suite to the existing runner calling
+> `run_pipeline_session()`; the pass conditions invert (the *substance* must surface, the flag
+> *token* must not). The local-path re-run is **dormant** — see below.
+
+> **Local/Ollama path is DORMANT (2026-08-05, user decision).** The deployment is fully on the
+> Vertex VM under the 2026-06-18 ZDR amendment, so `--provider ollama` verifies a path nothing
+> uses. `routing.yaml` and the local code stay in place; `ROADMAP.md` §A7 and §0 item 8 are
+> annotated, not deleted. **The binding privacy ruling is unchanged** — what is parked is the
+> run, not the requirement.
 
 Two loose ends inside the gate, both discrete checklist items so they don't get skipped:
 
@@ -78,6 +86,18 @@ gate should now be extended to `write_agent_config`/`write_config`, which B2 als
 > **The SMTP send path has never been exercised** — every test stops at the gate, so this
 > system has not yet sent mail. First real send is also the first test of that code.
 
+**⚠ Proactive check-ins are failing in production — [DB-0803-02].** 18 `AgentRecord is not JSON
+serializable` errors in 7 days against **19 total scheduler errors**, so essentially every
+scheduler failure is this one; `companion_checkin` accounts for 13. `core/trace.py` is clean
+(`_agent_to_dict` has handled it since `c66ed03`), so the failing path is server-side via
+`send_one`. **Next step is the server-side traceback, not more code reading.**
+
+**The backlog is trustworthy again, and it is the bin for everything outside this roadmap.**
+`0 new · 0 untriaged · 45 open`, every item carrying an ID, who filed it, how, and what was
+verified when. Work it with **`/backlog`**. The one rule: *no item is acted on, or re-filed, on
+the strength of its own description* — a 2026-08-05 sweep found about a third stale, and one
+stale premise produced a well-argued recommendation for the wrong decision.
+
 ---
 
 ## Recent sessions
@@ -87,6 +107,7 @@ Newest first. Full detail for every entry — and everything older — is in
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-05 | **Backlog trust repair** — counter counted *up* when items closed; sweep found ~⅓ stale; IDs + provenance; nine tool grants; `/backlog`; **proactive check-ins found failing** | **no — `9361537` pending** |
 | 08-04 | **Item 5 built** — out-of-band confirmation gate (`POST /confirm`), `send_email` to contacts, provenance rule; **Research could not fetch and now can** | `15b9a41` |
 | 08-04 | **App: transcription readout is dismissable** — height-capped, `✕` + 12s auto-hide. Needs deploy **and APK rebuild** | **no — pending** |
 | 08-04 | **Context second pass** — phase conventions → `docs/CONVENTIONS.md`, prose tightened, memory audit 43→39 files (two were actively wrong). Cold start 28k→26k | docs only |
@@ -97,7 +118,6 @@ Newest first. Full detail for every entry — and everything older — is in
 | 08-03 | Outage chat closeout — ✅ `networks/default` **has thawed**, support case closable; external-IP saving **withdrawn** (it is the VM's only egress path) | `48e17da` |
 | 08-03 | **Calendar delivers** — CalDAV live with recurrence/alarms/all-day; `get_weather` + `get_environmental_snapshot`; tool permissions in warn mode; VM backup | `cfcd212`, `6865058` |
 | 08-03 | Phase 4 scheduler grants · `update_goal` · Tier 1–2 backup | `2f74cd2`, `8e2983f` |
-| 08-03 | Check-in restraint (60m quiet / 180m floor) · **VM formally owns persona config** · biographical capture | — |
 
 ---
 
