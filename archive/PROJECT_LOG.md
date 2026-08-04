@@ -92,6 +92,38 @@ Four related complaints, one root cause and four fixes. **The cause was not an a
 
 ## Dated history
 
+### 2026-08-04 (context second pass — phase conventions out, prose tightened, the size rule fixed)
+
+Full writeup: [sessions/2026-08-03 — Context-file audit: SESSION.md split, cold-start trim, archive command.md](sessions/2026-08-03%20—%20Context-file%20audit:%20SESSION.md%20split,%20cold-start%20trim,%20archive%20command.md) (same session, continued).
+Commit `a5ba388`. **Docs and `.claude/` only — not deployed.**
+
+Follow-up to the 2026-08-03 audit, run after the user tested `/metatron-code` live and the audit of that run came back clean. **Cold start 28k → 26k tokens; 69% below the 350,663-byte baseline.** 16/16 checks pass.
+
+**What changed**
+
+- **Phase Review + Phase Testing conventions → `docs/CONVENTIONS.md`.** Needed at phase boundaries; were being paid on every session.
+- **Directory Layout condensed** to the two facts that carry weight — `config/` is the product, `core/` is the harness. `CODEBASE_INDEX.md` already does file-level.
+- **Deployment Infrastructure 16,100 → 14,323** by tightening prose written in the *first* pass rather than moving more out. The condensed blocks from 08-03 were verbose; same content, fewer words.
+
+**The size rule was wrong, and the user caught it**
+
+The first pass wrote *"if `SESSION.md` is longer after your session than before, something went in the wrong file."* That is a **ratchet**: it can only ever shrink, so over enough sessions it pares away things worth keeping, and it penalises a session for recording a genuine new blocker — exactly what the file is for. **Replaced with a 200-line ceiling**, fixed in all four places that stated it (`SESSION.md`, `CLAUDE.md`, `/archive`, global `~/.claude/CLAUDE.md`). Growth below the ceiling is explicitly fine. Currently 172 lines.
+
+**Memory audit — 43 → 39 files, and two were actively wrong rather than merely stale**
+
+- `feedback_archive_chats` instructed a future session to run **`tools/archive_chats.py` — a file this very work had deleted.** A dead path, propagated into memory.
+- `feedback_archive_verbatim_timing` still mandated a manual `.txt` archive that the protocol had dropped.
+- **Deleted three superseded:** `project_phase_progress` ("Phases 0-2 complete; Phase 3 next" — three phases stale), `project_vertex_vm_decision` (executed), `project_goals_interview_ready` (the interview ran 2026-06-26).
+- **`project_gcp_billing_infra` rewritten to *point* rather than restate.** It carried a threshold ($20→$30) that has since changed five times. The memory now holds only the non-obvious part — a hard-cap trip is an outage, not a cost event — and sends the reader to `CLAUDE.md` for numbers. Same "short half-life" rule as the ephemeral IP, applied to memory.
+
+**Rejected: trimming `ROADMAP.md` Track D (~14 KB), the largest remaining item.** A parallel window committed to that file at 00:22 the same day and A7 status was actively moving — the A4 clinical-flag gate filed from this work had already been **cleared by that window** (`b3229ff`, PASS 6/6). Editing it would have risked conflicting with live work, and the A6 slip in the first pass is the standing warning about trimming that file by line range. It should be trimmed by whoever is working those tracks, not by a token-reduction pass.
+
+**Where this leaves it.** What remains in the loaded set is load-bearing: persona ownership rules, the pre-edit check, One Home Per Rule Class, the binding privacy ruling, live tracks. Recommendation on the record: **stop here.** The architecture is no longer the constraint.
+
+**Superseded handoff paragraph, carried from `SESSION.md`:**
+
+*Updated: 2026-08-04 (auth, injection defense, web access, email — closed) — **Track B2 authentication is live and verified in production** (`8e5c47e`): every endpoint 401s unauthenticated, the app shell still loads, and `/ws` is gated by a first-frame handshake because Starlette runs no HTTP middleware for a WebSocket. The server now **fails closed** without `METATRON_AUTH_PASSWORD`; it is on the VM, and `deploy.sh` aborts before `git pull` if it ever is not. **`fetch_url` and `read_email` are live, granted to `logistics` only, and all external content is wrapped by `tools/untrusted.py`.** The SSRF guard is not theoretical — the VM's metadata server hands a working OAuth token to an unauthenticated request, so an unguarded fetch would have leaked the Vertex service account. **Corrections:** `deploy.sh:54` checks the *VM's* `.env`, not the Mac's — the previous handoff says otherwise and is wrong; and its abort message used to advise an `scp` that would have deleted `GOOGLE_APPLICATION_CREDENTIALS`. **Next:** item 5's Python confirmation gate (Decisions A/B/C await Mike), and an APK rebuild for the password reveal toggle.*
+
 ### 2026-08-04 (auth, injection defense, direct web access, email) — `11a166d`, `5795f31`, `09d2f38`, `22e179d`, `6739d62`, `fe0d688`, `8e5c47e`, `819de75`, `17a88c6`; **deployed `8e5c47e`**
 
 Writeup: [archive/sessions/2026-08-03 — Auth, Injection Defense, Web Access, Email.md](sessions/2026-08-03%20—%20Auth,%20Injection%20Defense,%20Web%20Access,%20Email.md)

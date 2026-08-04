@@ -112,6 +112,41 @@ whether or not it is read. `/metatron-code` load 91,985 → 61,900 bytes (~22k �
 This also exposed that `CLAUDE.md`'s Mandatory Pre-Edit Context Check still named the static
 plan rather than `ROADMAP.md` — the rule governing every edit in the project, now corrected.
 
+### Second pass — 2026-08-04 (`a5ba388`)
+
+Run after the live `/metatron-code` test audited clean. **Cold start 28k → 26k tokens; 69% below
+the original 350,663-byte baseline.** 16/16 checks pass, all links resolve.
+
+| File | Pass 1 | Pass 2 |
+|---|---|---|
+| `CLAUDE.md` | 44,569 | **40,172** |
+| `MEMORY.md` | 7,721 | **7,070** |
+| `SESSION.md` | 12,789 | **12,010** |
+| `ROADMAP.md` | 47,220 | 47,220 — deliberately untouched |
+
+- Phase Review + Phase Testing conventions → [docs/CONVENTIONS.md](../../docs/CONVENTIONS.md).
+- Directory Layout condensed; `CODEBASE_INDEX.md` already does file-level.
+- Deployment Infrastructure 16,100 → 14,323 — tightening *first-pass* prose, not moving more out.
+
+**The size rule was wrong.** *"If `SESSION.md` is longer than before, something went in the wrong
+file"* is a ratchet — it can only shrink, eventually paring away what's worth keeping, and it
+penalises a session for recording a new blocker. **Replaced with a 200-line ceiling**, fixed in
+all four places that stated it. User's correction.
+
+**Memory audit, 43 → 39 files. Two were actively wrong, not merely stale:**
+`feedback_archive_chats` pointed at `tools/archive_chats.py` — **deleted by this same work**, so
+it would have sent a future session to a dead path. `feedback_archive_verbatim_timing` still
+mandated the manual `.txt` the protocol had dropped. Three superseded deleted;
+`project_gcp_billing_infra` rewritten to *point* at `CLAUDE.md` rather than restate a threshold
+that has changed five times.
+
+**`ROADMAP.md` Track D (~14 KB) deliberately not trimmed** — a parallel window committed to it at
+00:22 the same day, and the A4 gate filed from this work had already been cleared by that window
+(`b3229ff`, PASS 6/6). Live territory. The A6 slip in pass 1 is the warning about trimming that
+file by line range.
+
+**Recommendation on the record: stop here.** What remains loaded is load-bearing.
+
 ### Known limitation carried forward
 
 One pre-existing dead link — `archive/sessions/2026-07-28 — Persona Unification Plan and Phase 0.md` — was already broken in the original `SESSION.md`. Preserved verbatim in `PROJECT_LOG.md` rather than invented a target for.
