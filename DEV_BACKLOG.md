@@ -187,12 +187,16 @@ Full reasoning: [archive/plans/outward_actions_scope_2026-08-04.md](archive/plan
 
 **Still open from this block:**
 
-- **The SMTP send path has never been exercised.** Every test — 11 unit cases and the live
-  VM run — stops at the confirmation gate, deliberately, so no mail has ever left this system.
-  `smtplib` config (`smtp_host`/`smtp_port` in `email.yaml`, STARTTLS, app-password login) is
-  therefore **untested code on the first real send**. Expect the first send to be the test:
-  do it to Mike's own address, with the journal open. Gmail SMTP on port 587 with an app
-  password is the assumption; it has not been proven for this account, only IMAP has.
+- ~~**The SMTP send path has never been exercised.**~~ — **exercised, closed 2026-08-05. First
+  real email this system has ever sent.** Ran the full production path live on the VM against
+  `mike`: `send_email()` → `PENDING_CONFIRMATION` → `tools.confirm.approve()` → second call with
+  matching `confirm_token` → real SMTP send. Result: `{'status': 'sent', 'to':
+  'diamond.mike.mt@gmail.com', ...}`. Gmail SMTP on port 587 with STARTTLS + app password is
+  confirmed working, not just assumed. **Bonus finding, not a bug:** `consume()`'s fingerprint
+  match correctly refused a second call whose subject/body didn't match the approved request
+  (`"The details changed since this was approved"`) — caught a scripting mistake in this test
+  itself, which is exactly the protection it's there for.
+  *filed 2026-08-04 · exercised live 2026-08-05 against the VM, persona mike, real SMTP send*
 
 - **No pipeline-level injection probe has been run.** The 2026-08-04 probe tested three layers
   in isolation — wrapper escape, marker detection, and the tool's recipient refusal. What has
@@ -239,7 +243,17 @@ Full reasoning: [archive/plans/outward_actions_scope_2026-08-04.md](archive/plan
 
 - **`research_agent` omits `allowed_tools`, so it holds *all 53* tools** — including `fetch_url`, `read_email`, and every write tool. Pre-existing, not introduced by the 2026-08-04 work, and **deliberately not fixed there**: adding a list would silently strip every other tool from the grounded-search path, which is a behaviour change well beyond that item's remit. The file comment says *"bare mode (no personal tools)"*, which is the opposite of what an omitted `allowed_tools` means in `core/router.py` — so the config reads as more restrictive than it is. Belongs to **B2** (per-agent tool injection). Verify what the grounded path actually passes before changing it.
 
-- **APK rebuild pending — password reveal toggle (`819de75`) *and* the dismissable transcription readout (2026-08-04).** Both committed, neither built. The readout change alters UI structure, which is a named rebuild trigger in `CLAUDE.md`; the password toggle was deferred by agreement (the session had already rebuilt twice). One rebuild covers both. `static/index.html` on the server already serves both to the browser PWA — **but the readout change has not been deployed either**, so `./deploy.sh` comes first.
+- ~~**APK rebuild pending — password reveal toggle, dismissable transcription readout, and
+  bubble-width line-wrap.**~~ — **built 2026-08-05.** `./deploy.sh` ran first (line-wrap fix +
+  spend guard pricing), then `npx cap sync android && cd android && ./gradlew assembleDebug` —
+  `BUILD SUCCESSFUL`, output at `android/app/build/outputs/apk/debug/app-debug.apk`. **Verified
+  the build actually picked up the latest change** rather than trusting a stale-looking mtime:
+  unzipped the APK and confirmed `overflow-wrap: anywhere` is present in the packaged
+  `.message` rule. Served from the Mac over Tailscale (`python3 -m http.server 8888`) for
+  sideload. **Still needs:** actually installing it on the phone and confirming it runs — that
+  last step is Mike's, not something done from here.
+  *filed 2026-08-04 · deployed + built 2026-08-05, APK content-verified · sideload/install still
+  pending on-device*
 
 - **Test the dismissable transcription readout — code-verified 2026-08-05, live dictation test
   still not run.** Re-checked `static/index.html` against every named pass condition:
