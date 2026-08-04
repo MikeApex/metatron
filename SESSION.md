@@ -1,6 +1,6 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-03 (context-file audit, closed) — **cold start is ~88k → ~28k tokens, verified against a live run rather than estimated.** `SESSION.md` split into this primer plus [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md); deploy/recovery detail to [docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md); [ROADMAP.md](ROADMAP.md) is an abridged live copy — **the full plan under `archive/plans/` is static and must never be edited.** `DEV_BACKLOG.md` is no longer autoloaded (still synced every session); read it when working the backlog. `/archive` now carries the close-out ritual. **One thing to act on:** the test run surfaced a pre-sign-off gate at `ROADMAP.md:113` — prefix-caching moved dynamic context out of the system prompt, so **the A4 clinical-flag hard-fails must be re-run before A7 sign-off**. Audit any session's real load with `python3 scripts/audit_context_load.py`. Deployed: nothing — docs only.*
+*Updated: 2026-08-04 (backlog triage, A4 gate, VM outage) — **The A4 clinical-flag gate is CLEARED on the cloud path, 6/6** (`tests/run_a4_safety.py`, report `tests/a4_safety_rerun_2026-08-04_gemini.md`) — the suites are scripted now, not manual prose. **The bigger find was not the gate:** `physical_health` had never been granted `read_agent_config`, so `MEDICATION_MISSED_CRITICAL` — which must classify from the stored medication profile, never inference — was **structurally unfireable in production.** Granted; `write_agent_config` deliberately not. **Nothing deployed, deliberately:** the server now fails closed without `METATRON_AUTH_PASSWORD` and the VM does not have it (verified) — deploying stops production rather than updating it. **`deploy.sh:54` checks the Mac's `.env`, not the VM's**, and today's run passed that guard and pushed; only a 4-hour VM outage (guest lost all networking while GCE said `RUNNING`, root cause unknown, recovered by stop/start) stopped the pull. Two gate pieces remain before A7: a **pipeline probe** (a flag can fire in MW and still be held at the Synthesizer) and the local/Ollama run.*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -50,11 +50,11 @@ deprioritised behind latency work:
 - **Check 10** — agent behavioural audits (12 specialists; Coordinator/Synthesizer via pipeline probes)
 - **Check 12** — constitution alignment review
 
-> **⚠ Named pre-sign-off gate, surfaced 2026-08-03 — [ROADMAP.md](ROADMAP.md):113.** Prefix
-> caching moved dynamic context out of the system prompt for *every* agent, so the **A4
-> clinical-flag hard-fails (`MUST_SURFACE` / `CLINICAL_CONCERN`) must be re-run against the new
-> assembly order before A7 can be signed off.** This is a clinical-safety path with named
-> hard-fail criteria — it is not a formality.
+> **✅ Pre-sign-off gate CLEARED on the cloud path 2026-08-04 — 6/6.**
+> `python tests/run_a4_safety.py --persona sarah_chen --provider gemini`. Two pieces still open:
+> (1) **pipeline probe** — specialists were tested in isolation, and a flag can fire in Mental
+> Wellbeing yet still be *held* at the Synthesizer, which is the real user-facing failure;
+> (2) **local path** — `--provider ollama` for like-for-like against the A4 baseline.
 
 Two loose ends inside the gate, both discrete checklist items so they don't get skipped:
 
@@ -67,12 +67,9 @@ Two loose ends inside the gate, both discrete checklist items so they don't get 
 `core/monitor_api.py`. Remove the COORD PACKAGE debug print. Regression gate: A4 clinical-flag
 scenarios + server startup + full pipeline session + The Book SSE.
 
-**Latency work (2026-06-19) — complete.** Baseline 16–20s simple, 65–74s complex, from 60–90s.
-Model tiering, Diarist fire-and-forget, prefix caching, streaming, and the Vertex
-`thought_signature` fix all landed; full detail in the project log. **Still open from it:**
-Coordinator slimming — but **re-scope against measured data first**, the Coordinator runs 1 turn,
-not the 7 the roadmap assumes (`logistics` measured at 8). See `DEV_BACKLOG.md`.
-
+**Open from the (complete) latency work:** Coordinator slimming — **re-scope against measured
+data first.** The Coordinator runs 1 turn, not the 7 the roadmap assumes (`logistics` measured
+at 8). See `DEV_BACKLOG.md`.
 
 ---
 
@@ -83,6 +80,7 @@ Newest first. Full detail for every entry — and everything older — is in
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-04 | **A4 safety gate cleared 6/6** (scripted); `physical_health` `read_agent_config` grant — `MEDICATION_MISSED_CRITICAL` was unfireable; persona trees gitignored; **4h VM outage** recovered | **no — blocked** |
 | 08-03 | **Context-file audit** — `SESSION.md` 775→170 lines; `PROJECT_LOG.md`, `INFRASTRUCTURE.md`, abridged `ROADMAP.md`, `/archive`, load auditor. Cold start ~88k→~28k tokens | docs only |
 | 08-03 | `deploy.sh` verifies by **ancestry**, not HEAD equality — no more false failures when a parallel window pushes | `3492d42`, `c674a91` |
 | 08-03 | Outage chat closeout — ✅ `networks/default` **has thawed**, support case closable; external-IP saving **withdrawn** (it is the VM's only egress path) | `48e17da` |
@@ -93,7 +91,17 @@ Newest first. Full detail for every entry — and everything older — is in
 | 08-02 | Synth self-development awareness + `DEV_BACKLOG.md` as the single change-request list | `6601479`, `dc0d85c` |
 | 08-02 | SEQ 021 — specialist clock injection, tool-error hints, failure reporting; capability-gap survey | `6601479` |
 | 08-02 | Synthesizer timestamp authority (SEQ 008) · recap fix (SEQ 002) · spend guard + rate limiter | `b184d92`, `799aa3f` |
-| 07-31 | ⚠ **26-hour outage** — VPC frozen by billing disable; VM rebuilt on `metatron-net`; cost control restructured to $70 soft / $150 hard | `571f9bc` |
+
+---
+
+## ⚠ Deploys are blocked — read before `./deploy.sh`
+
+`core/server.py` fails closed without `METATRON_AUTH_PASSWORD`; `.env` is gitignored and **the
+VM does not have it (verified 2026-08-04)** — deploying stops production rather than updating
+it. **The preflight guard will not save you:** `deploy.sh:54` greps the *Mac's* `.env` while
+saying "the VM's". Append the variable to the VM's `.env` (never scp over it — it holds values
+the Mac's does not); the abort text prints the command. Waiting on this: the `physical_health`
+`read_agent_config` grant, so `MEDICATION_MISSED_CRITICAL` is dead in production until it ships.
 
 ---
 

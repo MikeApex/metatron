@@ -25,6 +25,8 @@ previous ones are kept here in order, newest first, because several contain
 corrections to the one before them.
 
 
+*Updated: 2026-08-03 (context-file audit, closed) — **cold start is ~88k → ~28k tokens, verified against a live run rather than estimated.** `SESSION.md` split into this primer plus [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md); deploy/recovery detail to [docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md); [ROADMAP.md](ROADMAP.md) is an abridged live copy — **the full plan under `archive/plans/` is static and must never be edited.** `DEV_BACKLOG.md` is no longer autoloaded (still synced every session); read it when working the backlog. `/archive` now carries the close-out ritual. **One thing to act on:** the test run surfaced a pre-sign-off gate at `ROADMAP.md:113` — prefix-caching moved dynamic context out of the system prompt, so **the A4 clinical-flag hard-fails must be re-run before A7 sign-off**. Audit any session's real load with `python3 scripts/audit_context_load.py`. Deployed: nothing — docs only.*
+
 *Updated: 2026-08-03 (5th window, close) — **`networks/default` HAS THAWED (probe-tested); the 26-hour outage is fully closed and the support case can be closed. `CLAUDE.md:339` still warns against it and is now stale.** Two items carried into `DEV_BACKLOG.md`: unsurfaced-opportunity instrumentation (which had lived only in this file's prose and nearly aged out) and the D2 item 5 roadmap-staleness note. **The external-IP saving is withdrawn — that IP is the VM's only egress path.** Previously: (4th window) — **doc drift reconciled, and the drift rule generalised.** The previous window's HTTPS correction is confirmed correct **against the live VM**, not just internally: `https://.../health` → `{"status":"ok"}`, `http://` → empty reply. Two things it missed, both now fixed: (1) `core/server.py`'s docstring still said "over HTTP" while `__main__` serves HTTPS whenever a Tailscale cert is present — **fixing the prose in CLAUDE.md did not prompt anyone to check the code comment saying the same wrong thing**; (2) the VM's **ephemeral external IP was recorded in four places with three different values**, none wrong when written, live being a third address — the literal is now removed everywhere in favour of a `gcloud describe` lookup, because the IP reassigns on every stop/start and there is an active pause/resume workflow. **New standing rule: do not write down values with a short half-life.** Backlog entry filed as the pattern, not the two bugs — this drift class is invisible to reading and only fails on execution; a smoke script over CLAUDE.md's executable claims is scoped but unbuilt. **`deploy.sh`'s HEAD assertion exercised its match path on a real deploy for the first time** (previously simulation-tested only) — `Verified: VM HEAD matches.` Deployed `b83f283`.*
 
 *Updated: 2026-08-03 (3rd window, close) — **`./deploy.sh` now verifies itself.** It captures HEAD after the push, re-SSHes after the restart, and **exits non-zero if the VM is not running what was just pushed** — because the failure mode here is silence, not an error (two false "deployed" records on 2026-08-02, both caught only by a human happening to look). An unreadable remote HEAD reports **unverified**, deliberately distinct from success or failure. Failure paths are simulation-tested only; the next real deploy exercises the match path. Four loose items filed into `DEV_BACKLOG.md`, including **two corrections to what was believed done:** (1) **check-in activity gating is only half solved** — the gates shipped this morning stop check-ins interrupting a live conversation, but nothing stops them firing on a day the user never spoke, which was the actual cost case; (2) **roadmap D2 item 5 is mis-scoped** — it targets the Coordinator assuming ~7 turns, but measurement shows Coordinator = 1 turn and `logistics` = 8. Pushed through `9799ba3`. Note the new assertion tells you *what* is live, not *who* deployed it — with parallel windows open, either window's deploy ships whatever both have committed.*
@@ -83,6 +85,116 @@ Four related complaints, one root cause and four fixes. **The cause was not an a
 ---
 
 ## Dated history
+
+### 2026-08-04 (backlog triage, A4 safety gate cleared, ~4h VM outage) — `b3229ff`, `26c7859`, `e13d140`; **not deployed**
+
+Writeup: [archive/sessions/2026-08-04 — Backlog Triage, A4 Safety Gate Cleared, VM Outage.md](sessions/2026-08-04%20—%20Backlog%20Triage,%20A4%20Safety%20Gate%20Cleared,%20VM%20Outage.md).
+Ran in parallel with a second window working Track B2 (auth, injection defense, `fetch_url` —
+`09d2f38`, `22e179d`). Neither window touched the other's files.
+
+**Session opened as a plain-language pass over all 36 open backlog items.** Recommended first
+target was the A4 clinical-flag gate, on four grounds: it is the only item gating everything
+else (A7 → A8 → Alpha); it is a test run rather than a build; it has the worst failure mode if
+wrong; and unlike items 21, 22 and 25 it needs no design decision from the user first. User
+took it, preceded by the gitignore chore.
+
+**Persona data trees gitignored.** `.gitignore` carried an enumerated per-persona list that had
+fallen behind — `arthur_brooks`, `cal_newport`, `danny_park`, `maya_torres`, `oliver_burkeman`
+entirely uncovered, plus most of `ryan_holiday`, all written to on every validation run.
+Replaced with `data/personas/*/`.
+
+> **Rejected: adding the five missing names.** A list requiring hand-maintenance on every
+> persona creation *is* the failure mode, and it had already failed once. The glob covers any
+> future persona on creation. Cost accepted: a genuinely new synthetic fixture now needs
+> `git add -f`, because a fixture that silently fails to commit is recoverable and a real
+> persona's logs that silently do commit are not.
+
+**Two errors in that fix, one caught by the user mid-edit and worth recording.** The section
+heading read *"Test persona runtime data"* and listed `mike` under it — `mike` is a real user's
+logs, health and finances, not a fixture; that mislabelling was pre-existing and was carried
+forward unexamined. Worse, the first draft promoted `sarah_chen`'s *"a genuinely new fixture
+needs `git add -f`"* note to the top of the block, where it read as a blanket escape hatch over
+every tree **including `mike`** — an instruction to force real user data past the ignore rule,
+i.e. the 2026-07-29 incident with extra steps. Both corrected; `mike` now carries its own rule
+stating no such hatch exists there. **The lesson: generalising a narrow permission is how a
+safe rule becomes an unsafe one, and it happens in the same edit that fixes something real.**
+
+**A4 clinical-flag hard-fail gate — PASSED 6/6, clearing the named pre-sign-off gate at
+`ROADMAP.md:113`.** Prefix caching (2026-06-19) moved dynamic context out of the system prompt
+for every agent, invalidating the A4 result. Re-run against the current assembly order with
+`tests/run_a4_safety.py --persona sarah_chen --provider gemini`; report at
+`tests/a4_safety_rerun_2026-08-04_gemini.md`.
+
+> **Rejected: repeating A4's manual procedure.** A4 recorded the suites as "USER-RUN REQUIRED"
+> prose in a session archive. That is *why* the gate sat unre-run for seven weeks, and A8's
+> regression gate calls for the same suites again — so it was scripted. The runner refuses
+> `--persona mike`: the scenarios write fabricated suicidal-ideation and mania records, which
+> must never enter a real person's history.
+
+Results were verified by reading the raw outputs, not by trusting the keyword match — a
+mechanical check can pass for the wrong reason. `SUICIDAL_IDEATION` fired with 988 crisis
+signposting and "do not move on to any other topic"; `MANIA` fired with an explicit instruction
+not to celebrate the energy, which is its documented failure mode; `MEDICATION_MISSED_CRITICAL`
+named lamotrigine as *"morning dose, required"* while correctly leaving `optional` vitamin D
+alone. Finance arithmetic exact on all three, amortisation checked by hand.
+
+**The finding that mattered more than the gate.** `physical_health` had never been granted
+`read_agent_config`, while `physical_health.md:106` requires `MEDICATION_MISSED_CRITICAL` to be
+classified from the stored medication profile and *"never from the agent's judgment"*. **The
+flag was structurally unfireable in production** — the agent was required to consult a profile
+it had no tool to reach. Granted in both routing files; `write_agent_config` deliberately not
+granted (larger privilege, separate decision). This resolves the two warn-mode Inbox entries
+from 2026-08-03, which were the symptom of exactly this.
+
+> **No assembly-order re-run would have surfaced it.** It appeared only because testing the
+> flag required seeding a medication fixture. Generalised into the roadmap: **a safety flag
+> that is never exercised by a test is not known to work, however carefully its instruction
+> file is written.** Correcting tool allowlists is the sanctioned activity right now —
+> `CLAUDE.md` § Security, *"Correct the lists, verify, then enforce"* — which is why
+> permissions shipped in warn mode.
+
+**Believed true earlier, wrong: that the gate was purely a prompt-position question.** It was
+framed as "re-verify the flags still fire after the caching change." One of the three had never
+fired at all. The re-run's value turned out to be in exercising the path, not in comparing
+against a baseline.
+
+**~4-hour production outage, found by accident.** `./deploy.sh` failed at SSH. GCE reported
+`RUNNING` and the serial console was logging in real time — the OS was alive, not hung — but
+every process inside failed identically on `dial tcp 169.254.169.254:80: connect: network is
+unreachable`, the metadata server on a link-local address. `network is unreachable` rather than
+a timeout means **no route existed**: the guest NIC had lost its routing. Billing `True`, IAP
+firewall correct, IPs assigned, `lastStartTimestamp` three days earlier — networking died under
+a running machine. Recovered with `metatron-pause.sh` → `metatron-resume.sh` (user-authorised);
+both services active, health `{"status":"ok"}`.
+
+> **Same signature as the 2026-07-31 `nic0 is frozen` incident, but with that incident's known
+> cause absent** — billing was never disabled this time. So either the 2026-07-31 attribution
+> to the billing freeze was wrong, or there are two paths to the same failure. Root cause
+> unknown; filed. This matters because the failure is silent and survives a `RUNNING` status
+> check.
+
+**Deliberately not deployed.** The parallel window's auth work means `core/server.py` now fails
+closed without `METATRON_AUTH_PASSWORD`, and `.env` is gitignored so deploy cannot carry it.
+**Verified on the VM: the variable is absent.** Deploying would have left the server refusing to
+start. VM HEAD remains `b5ba807`. Consequence: the `read_agent_config` grant is live nowhere and
+`MEDICATION_MISSED_CRITICAL` stays dead in production until it ships.
+
+**`deploy.sh`'s preflight guard checks the wrong machine — still open.** Line 54 greps the
+**local** `.env` for `METATRON_AUTH_PASSWORD` while the abort message says *"the VM's .env"*.
+Proven empirically today rather than by reading: this session's deploy passed the guard on the
+local file's strength and pushed, and **only the SSH failure — the outage — stopped a `git
+pull`.** On a healthy VM that deploy would have completed and taken production down, which is
+precisely the outcome the guard exists to prevent. The parallel window improved the
+*remediation message* in `22e179d` (append the variable, do not scp the whole file — correct,
+since the VM's `.env` holds values the Mac's does not) but the check itself still tests the Mac.
+Filed.
+
+**Nothing detects a down VM.** `scripts/sync_dev_backlog.py` runs first every session, is the
+first thing to touch the VM, and exits 0 silently when unreachable — correct for a *paused* VM,
+wrong for a *broken* one. During the outage it printed `0 new, 40 open`, indistinguishable from
+a healthy run. Filed.
+
+---
 
 ### 2026-08-03 (context-file audit — SESSION.md split, roadmap abridged, `/archive` formalised)
 

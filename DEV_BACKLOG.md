@@ -13,14 +13,39 @@ Refresh: `python3 scripts/sync_dev_backlog.py`
 
 ## Inbox
 
-- **[agent wanted a tool it lacks]** `physical_health` attempted `read_agent_config` (agent_name) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
-  `2026-08-03T15:11:49.179709Z`
-- **[agent wanted a tool it lacks]** `physical_health` attempted `write_agent_config` (agent_name, config) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
-  `2026-08-03T15:11:50.265168Z`
+- **[agent wanted a tool it lacks]** `logistics` attempted `write_agent_config` (agent_name, field, value) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
+  `2026-08-03T17:04:20.418604Z`
+- **[agent wanted a tool it lacks]** `finance` attempted `read_archive` (category) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
+  `2026-08-03T17:06:28.655802Z`
+- **[agent wanted a tool it lacks]** `logistics` attempted `read_agent_config` (agent_name) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
+  `2026-08-03T17:09:34.625692Z`
+- **[needs building]** Fix interface bug causing text doubling/duplication and abruptly cutting off user input mid-sentence. Also prioritize fixing the live calendar connection so the system can read and write to the user's calendar.  
+  `2026-08-03T17:12:02.492018Z`
+- **[needs building]** Remove the voice activation toggle from the app interface, as the voice output is interrupting the user's message input and causing cutoff errors.  
+  `2026-08-03T17:16:37.148706Z`
+
 - **[instruction change]** For all check-ins: maximum two sentences. If exactly one item genuinely needs attention, name it and stop; otherwise just ask what is on. Never list or recap pending items, and never manufacture a topic.  
   `2026-08-03T15:12:14.933312Z`
 
 *(nothing new)*
+
+---
+
+## Triaged out of Inbox — 2026-08-04
+
+- ~~`physical_health` attempted `read_agent_config` (×3 warn-mode entries)~~ — **granted
+  2026-08-04**, `b3229ff`, in both `routing_cloud.yaml` and `routing.yaml`. Not a judgement call:
+  `physical_health.md:106` requires `MEDICATION_MISSED_CRITICAL` to be classified from the stored
+  medication profile and *"never from the agent's judgment"*, so without the read grant the flag
+  was structurally unfireable. **Not yet deployed** — see the deploy-blocked item below.
+
+- **`physical_health` attempted `write_agent_config` — still open, deliberately.** Deliberately
+  *not* granted alongside the read. Writing a medication profile is a materially larger privilege
+  than reading one, and nothing has yet established that the agent needs to author it rather than
+  consult it. Decide: grant it, restrict it behind the human-in-the-loop confirmation gate that
+  B2 already calls for on `write_agent_config`/`write_config`, or drop the instruction from
+  `physical_health.md:129,184`. Note the same question is open for `logistics` (two Inbox entries)
+  and `finance` (`read_archive`) — worth deciding as one policy rather than three times.
 
 ---
 
@@ -39,6 +64,12 @@ Behavioural changes to how agents judge, prioritise, or decide what to raise. Ap
 Capabilities that do not exist yet.
 
 ### Surfaced 2026-08-04
+
+- **⚠ `deploy.sh`'s preflight guard checks the wrong machine — it can pass while production is unsafe to deploy into.** [`deploy.sh:54`](deploy.sh#L54) runs `grep -q '^METATRON_AUTH_PASSWORD=.' .env`, which reads **the Mac's** `.env`, while the abort message it guards says *"METATRON_AUTH_PASSWORD is not set in the VM's .env."* The Mac has the variable; the VM does not. The guard therefore passes on every machine that has ever set it locally — which is the machine you deploy *from*, always.
+
+  **This is not theoretical — it happened on 2026-08-04.** A deploy passed the guard, pushed to GitHub, and reached the SSH step; **only an unrelated 4-hour VM outage stopped the `git pull`.** On a healthy VM it would have completed and left the server in a systemd crash loop, which is precisely the outcome the guard's own comment says it exists to prevent (*"the failure surfaces as a systemd crash loop that looks nothing like a deploy problem"*).
+
+  **Fix:** check the remote. One SSH round-trip before the pull — `gcloud compute ssh … --command="grep -q '^METATRON_AUTH_PASSWORD=' ~/multi-model-mcp/.env"` — and abort on non-zero. Note the guard is otherwise well-designed: it runs before `git pull` so a refusal leaves the VM untouched, and `22e179d` fixed its remediation advice to append the variable rather than scp the whole file (correct — the VM's `.env` holds values the Mac's does not). Only the test target is wrong. *Owner note: `deploy.sh` was being edited by a parallel window on 2026-08-04; check current state before editing.*
 
 - **⚠ ~4-hour silent outage: the VM's guest lost all networking while GCE reported `RUNNING`. Root cause unknown.** Found 2026-08-04 ~00:20 when a deploy failed at SSH. Recovered by stop/start; the machine has been fine since.
 

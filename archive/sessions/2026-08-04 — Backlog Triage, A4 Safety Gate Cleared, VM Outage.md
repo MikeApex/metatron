@@ -151,10 +151,27 @@ same failure. Filed.
    moved by the same change. **This is the one piece of the gate still missing.**
 2. **Local path re-run** — `python tests/run_a4_safety.py --persona sarah_chen
    --provider ollama` for like-for-like against the A4 baseline.
-3. **`deploy.sh`'s preflight guard checks the wrong machine.** `deploy.sh:54` greps
-   the **local** `.env` for `METATRON_AUTH_PASSWORD` while the abort message says
-   *"the VM's .env"*. This session's run passed the guard on the local file's
-   strength and went on to push; only the SSH failure stopped a `git pull`. On a
-   healthy VM that deploy would have completed and taken the server down. Flagged to
-   the parallel chat, whose file it is.
+3. **`deploy.sh`'s preflight guard checks the wrong machine — confirmed still open at
+   session close.** `deploy.sh:54` greps the **local** `.env` for
+   `METATRON_AUTH_PASSWORD` while the abort message says *"the VM's .env"*. This
+   session's run passed the guard on the local file's strength and went on to push;
+   **only the SSH failure — the outage — stopped a `git pull`.** On a healthy VM that
+   deploy would have completed and taken the server down, which is exactly what the
+   guard exists to prevent. The parallel chat's `22e179d` improved the *remediation
+   message* (append the variable, don't scp the whole file — correct, the VM's `.env`
+   holds values the Mac's does not) but the check itself still tests the Mac. Filed.
 4. **Outage root cause** and **no down-detection** — both filed in `DEV_BACKLOG.md`.
+
+---
+
+## Late in session
+
+- **Backlog re-synced once the VM came back** and pulled six new Inbox items, including
+  two `physical_health` / `read_agent_config` warn-mode entries that **this session's
+  grant already resolves**, and two new user requests: an interface bug (text
+  doubling/duplication, user input cut off mid-sentence) and a request to remove the
+  voice-activation toggle because voice output is interrupting message input. Those two
+  are related and both point at `static/index.html` — same area as the existing
+  transcript-line-length, scroll and live-refresh items, so they are worth one pass.
+- **Parallel window landed** `09d2f38` (indirect injection defense + `fetch_url`) and
+  `22e179d` (deploy.sh message fix). Working tree clean at close; no conflicts.
