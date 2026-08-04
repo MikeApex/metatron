@@ -10,7 +10,9 @@ First, refresh the development backlog from the VM:
 python3 scripts/sync_dev_backlog.py
 ```
 
-This pulls any change requests the user raised in conversation into `DEV_BACKLOG.md` — it **writes to disk and costs no context**, which is why it runs even though the file is not read below. It exits 0 silently when the VM is stopped — expected, not a failure, so do not investigate or report it. If it reports new entries, mention the count in one line.
+This pulls any change requests the user raised in conversation into `DEV_BACKLOG.md` — it **writes to disk and costs no context**, which is why it runs even though the file is not read below. It exits 0 silently when the VM is stopped — expected, not a failure, so do not investigate or report it.
+
+**Report its output as one line and stop there** — `N new · N untriaged · N open`. That is the whole mechanism: the count makes a filling Inbox visible without anyone paying to read the file, and Mike decides when a `/backlog` pass is worth it. Do not summarise the backlog, do not propose items, do not open the file. *Untriaged* is a queue awaiting triage; *open* is curated work. They are different, which is why the script stopped reporting one number.
 
 *(A `SessionStart` hook normally runs this already. It is repeated here deliberately: the run is ~1s and idempotent, and the equivalent hook was removed once before, on 2026-07-29. Cheap insurance against a silent gap.)*
 

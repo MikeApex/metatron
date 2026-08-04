@@ -84,6 +84,19 @@ was not done. Check it is not already listed before adding.
 the unsurfaced-opportunity instrumentation item lived only in `SESSION.md` prose and, in its own
 words, "nearly aged out."
 
+Give each new item an ID and a provenance line — `DB-MMDD-NN`, who filed it and how, the origin
+SEQ if it came from a conversation. Format and rationale: [backlog.md](backlog.md).
+
+Then close with the count, and **only** the count:
+
+```bash
+python3 scripts/sync_dev_backlog.py
+```
+
+Report the `N new · N untriaged · N open` line as-is. **Do not triage here** — `/archive` runs
+every session and a bulk chore attached to it is how a list stops being read. The count is the
+signal; `/backlog` is where a pass happens, when Mike decides one is worth it.
+
 ---
 
 ## Note on this file's backup status

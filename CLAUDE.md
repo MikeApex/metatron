@@ -40,7 +40,7 @@ jobs and no rule about ownership — `SESSION.md` had reached 775 lines, 80% of 
 |---|---|---|---|
 | `CLAUDE.md` | how to work here: rules, conventions, architecture | edited | auto, every session |
 | `SESSION.md` | **current state only** | **replaced** | `/metatron-code` |
-| `DEV_BACKLOG.md` | outstanding work, one entry per item | appended to `## Inbox`, curated below | **on demand** — synced every session, read only when working the backlog |
+| `DEV_BACKLOG.md` | outstanding work, one entry per item | appended to `## Inbox`, curated below — ritual in `/backlog` | **on demand** — synced every session, read only when working the backlog |
 | [`ROADMAP.md`](ROADMAP.md) | **live** tracks, phase gates, freezes — abridged | edited | `/metatron-code` |
 | `archive/plans/phase5_to_future_roadmap_2026-06-10.md` | the full plan — completed tracks, Phase 6B/7 detail | **never edited — it is dated and static** | never — read when `ROADMAP.md` says it does not carry your area |
 | `CODEBASE_INDEX.md` | where things are | edited | on demand |
@@ -54,6 +54,14 @@ instead of the log. (It hit **775** before the 2026-08-03 split; it sits near 17
 
 History goes in the log; state goes in `SESSION.md`; work goes in `DEV_BACKLOG.md`. A session
 that closes by *appending* to `SESSION.md` has put it in the wrong place — see `/archive`.
+
+**`DEV_BACKLOG.md` is the single bin for work outside the roadmap, and `/backlog` is how it is
+worked.** The one rule worth carrying without reading that file: **no item is acted on, or
+re-filed, on the strength of its own description** — open it against the current code first. A
+sweep on 2026-08-05 found roughly a third of checked items stale: causes already fixed, cited
+functions that no longer existed, line numbers hundreds of lines out. The cost is not the wasted
+check. A stale premise *argues for the wrong decision, persuasively* — that day one produced a
+well-reasoned recommendation to hold a tool grant pending work that had shipped two days earlier.
 
 ---
 
