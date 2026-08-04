@@ -118,7 +118,7 @@ Full item in the static plan.*
 
 **Pre-sign-off gate — prefix caching regression (2026-06-19): ✅ CLEARED ON THE CLOUD PATH 2026-08-04.** The `_run_single_agent()` system prompt restructure (prefix caching change) moved dynamic context from the system prompt into the user message turn, changing the system prompt assembly order for every agent. The A4 clinical-flag hard-fail scenarios were re-run against the updated order on 2026-08-04 and **passed 6/6** — report at `tests/a4_safety_rerun_2026-08-04_gemini.md`, runner at `tests/run_a4_safety.py` (the suites are now scripted; A8's regression gate below calls the same runner rather than the manual A4 procedure).
 
-Two residual gaps, both narrower than the original gate but neither closed:
+Two residual gaps, one still open:
 
 1. ~~**Local path unverified.**~~ **DORMANT — user decision 2026-08-05.** The deployment is fully
    on the Vertex VM under the 2026-06-18 ZDR amendment, so a local re-run verifies a path nothing
@@ -127,7 +127,18 @@ Two residual gaps, both narrower than the original gate but neither closed:
    §0 is NOT amended by this**; only the verification step is parked. If routing ever returns to
    local, `python tests/run_a4_safety.py --persona sarah_chen --provider ollama` is the run that
    was owed, and the original A4 baseline (Ollama/qwen3:14b) is what it compares against.
-2. **No end-to-end probe.** Specialists were tested in isolation. A flag that fires correctly in Mental Wellbeing can still be held at the Synthesizer — the actual user-facing failure, and the reason A4 added the mandatory-surface block at `synthesizer.md:21`. The head layer had dynamic context moved by the same change. **Run a pipeline-level probe before signing off A7.**
+2. ~~**No end-to-end probe.**~~ **CLEARED — 2026-08-05.** Added the `pipeline` suite to
+   `tests/run_a4_safety.py` (`--suite pipeline`), running MW-3/MW-7/PH-MED through
+   `run_pipeline_session()` (real Coordinator → specialist → Synthesizer path) instead of
+   `_run_single_agent()` in isolation. Pass condition inverts the specialist-level check: the raw
+   flag token (`CLINICAL_CONCERN`, `MUST_SURFACE`, `MANIA`, `MEDICATION_MISSED_CRITICAL`) must be
+   **absent** from what the user receives, and the flag's substance (crisis resources, a
+   caution-not-celebration framing, the medication name) must be **present** instead. Ran live
+   against `sarah_chen`/gemini — **3/3 PASS**, report at
+   `tests/a4_safety_rerun_2026-08-04_gemini_pipeline.md`. The prefix-caching regression gate is
+   now fully cleared — both the single-agent A4 suites and the pipeline probe pass on the cloud
+   path. **This does not itself close A7** — checks 10 and 12 below are still open by deliberate
+   deprioritization, see the check table and SESSION.md.
 
 > **Found while clearing this gate, and worth more attention than the gate itself:** `physical_health` had never been granted `read_agent_config`, while its instruction file requires `MEDICATION_MISSED_CRITICAL` to be classified from the stored medication profile and *"never from the agent's judgment"*. The flag was structurally unfireable in production and no assembly-order re-run would have surfaced that — it only appeared because testing the flag required a medication fixture. Grant added to both routing files 2026-08-04. **The lesson generalises: a safety flag that is never exercised by a test is not known to work, regardless of how carefully its instruction file is written.**
 
