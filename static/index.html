@@ -271,6 +271,39 @@
       font-size: 15px;
       outline: none;
     }
+    /* Password field + reveal button. The button is positioned over the input rather
+       than beside it, so the field keeps its full width and the login box does not
+       reflow. Right padding on the input reserves the space. */
+    #password-wrap { position: relative; width: 100%; }
+    #password-wrap input[type="password"],
+    #password-wrap input[type="text"] {
+      width: 100%;
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 10px;
+      color: #e8e8e8;
+      padding: 12px 46px 12px 14px;
+      font-size: 15px;
+      outline: none;
+    }
+    #password-reveal {
+      position: absolute;
+      right: 4px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 38px;
+      height: 38px;
+      border: none;
+      background: transparent;
+      color: #555;
+      font-size: 16px;
+      line-height: 1;
+      cursor: pointer;
+      opacity: 0.55;
+      transition: opacity 0.15s;
+    }
+    #password-reveal.on { opacity: 1; color: #8ab; }
+
     #login-error {
       display: none;
       font-size: 13px;
@@ -332,7 +365,12 @@
     </div>
     <div class="login-row">
       <label>Password</label>
-      <input id="login-password" type="password" placeholder="required">
+      <div id="password-wrap">
+        <input id="login-password" type="password" placeholder="required"
+               autocapitalize="none" autocorrect="off" spellcheck="false">
+        <button id="password-reveal" type="button" tabindex="-1"
+                aria-label="Show password">👁</button>
+      </div>
     </div>
     <div id="login-error"></div>
     <button id="login-enter-btn">Enter</button>
@@ -470,6 +508,23 @@
     const password = document.getElementById('login-password').value;
     if (persona) login(persona, password);
   }
+
+  // Show/hide the password. Worth having on a phone: the field is typed rarely — the
+  // token lasts 30 days — so a typo is both likely and invisible, and the failure it
+  // produces ("Incorrect password") looks identical to genuinely having it wrong.
+  //
+  // Always starts hidden on a fresh login screen; the state is not persisted, since a
+  // remembered "visible" would reveal the password to whoever next opens the app.
+  document.getElementById('password-reveal').addEventListener('click', () => {
+    const field = document.getElementById('login-password');
+    const btn = document.getElementById('password-reveal');
+    const show = field.type === 'password';
+    field.type = show ? 'text' : 'password';
+    btn.classList.toggle('on', show);
+    btn.textContent = show ? '🙈' : '👁';
+    btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+    field.focus();
+  });
 
   document.getElementById('login-enter-btn').addEventListener('click', submitLogin);
 
