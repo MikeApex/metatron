@@ -13,6 +13,13 @@ Refresh: `python3 scripts/sync_dev_backlog.py`
 
 ## Inbox
 
+- **[agent wanted a tool it lacks]** `physical_health` attempted `read_agent_config` (agent_name) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
+  `2026-08-04T07:56:50.829916Z`
+- **[agent wanted a tool it lacks]** `logistics` attempted `write_agent_config` (agent_name, field, value) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
+  `2026-08-04T07:56:53.699518Z`
+- **[needs building]** Remove the voice activation toggle from the app interface, as the voice feature is causing interface friction and interrupting the user's ability to send messages.  
+  `2026-08-04T07:57:18.076761Z`
+
 - **[agent wanted a tool it lacks]** `logistics` attempted `write_agent_config` (agent_name, field, value) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
   `2026-08-03T17:04:20.418604Z`
 - **[agent wanted a tool it lacks]** `finance` attempted `read_archive` (category) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
@@ -78,6 +85,24 @@ Capabilities that do not exist yet.
   Same signature as the 2026-07-31 `nic0 is frozen` incident, **but with the known cause absent** — billing was never disabled this time. So either that incident's root cause was misattributed to the billing freeze, or there are two paths to the same failure. Worth resolving before trusting VM uptime: it is silent, it survives a `RUNNING` status check, and it cost ~4 hours here.
 
 - **Nothing detects that the VM is down.** The outage above ran ~4h and was found by accident, on the way to doing something else. `scripts/sync_dev_backlog.py` runs at the start of every session, is the first thing to touch the VM, and **exits 0 silently when it cannot reach it** — by design, so a paused VM is not reported as a failure. That design is right for a paused VM and wrong for a broken one: at session start it printed `0 new, 40 open`, indistinguishable from a healthy run. Cheapest fix is to have it distinguish *stopped* (expected, silent) from *running-but-unreachable* (report it) — `gcloud compute instances describe --format="value(status)"` is one call and already used elsewhere. Related: `metatron-resume.sh`'s health check is the only thing in the repo that verifies the VM actually answers, and it only runs when someone resumes.
+
+### Surfaced 2026-08-04 by the outward-actions scope decision
+
+Full reasoning: [archive/plans/outward_actions_scope_2026-08-04.md](archive/plans/outward_actions_scope_2026-08-04.md). **Awaiting Mike's decision on A, B and C** — nothing below is agreed yet.
+
+- **⚠ The confirmation gate is a prompt, not a control (Decision B).** The Synthesizer's action tiers (`synthesizer.md` § Action tiers) mandate confirmation for everything outward-facing, and `config/preferences.yaml` has every opt-in `false` — so the *policy* is already right. But nothing in Python enforces it; verified 2026-08-04, there is no confirmation gate in `tools/` or `core/orchestrator.py`.
+
+  This is the control class that has already been shown not to hold: `logistics` was not granted `write_agent_config`, its instruction file described the capability, and it called the tool three times in production. Being told is not being prevented. `CLAUDE.md` states the principle for the analogous case — *enforced in Python tool code, never in prompts* — and roadmap **B2** requires the same gate for `write_agent_config`/`write_config`. **Build them together; it is one mechanism.**
+
+  Shape: an outward-facing call returns a `PENDING_CONFIRMATION` token describing what would happen and performs nothing, until a later call presents that token plus explicit user approval from the current conversation. **Prerequisite for any outward-facing tool** — `send_email`, form submission, transactions.
+
+- **Provenance modifier for the action tiers (Decision A).** The tiers classify actions by what they do, not by who proposed them. That was sufficient until `fetch_url` and `read_email` shipped (2026-08-04) and content written by strangers began entering the pipeline. `<untrusted_content>` marks the *data*; nothing marks an *action derived from* it.
+
+  The failure case is not exotic: an email saying *"reply YES within 24 hours or your reservation is released"* satisfies every existing tier, and a legitimate email would be worded identically. Proposed rule — an action whose need is evidenced only by untrusted content is Confirm First regardless of tier and regardless of opt-in, and the confirmation must **quote the source** so the user confirms the evidence rather than just the act. One row plus a paragraph in the existing table; not a second framework.
+
+- **`send_email` restricted to the user's own address (Decision C).** The one narrow action the phase plan allows. Useful now ("email me that summary"), genuinely outward-facing so it tests the gate honestly, and a fully successful prompt injection can do no worse than send the user an email they did not ask for. The recipient restriction is enforceable in Python against `account_email` in `profile.yaml`. **Gated on Decision B.**
+
+- **Not opened, deliberately:** credential store, agentic browsing (level 3), arbitrary-recipient email, transactions. The last three are gated on a credential store that does not exist and on the gate above.
 
 ### Surfaced 2026-08-03 by the context-audit test run
 
