@@ -68,13 +68,15 @@ agents:
 
   physical_health:
     local: true
-    # read_agent_config granted 2026-08-04 — see routing_cloud.yaml for the rationale.
+    # read_agent_config granted 2026-08-04, write_agent_config 2026-08-05 (medication_profile
+    # guarded in Python) — see routing_cloud.yaml for the rationale.
     # Kept in parity so the flag behaves identically on local and cloud paths.
-    allowed_tools: [read_log, write_log, search_memory, read_wisdom, write_wisdom, read_profile, write_profile, read_agent_config]
+    allowed_tools: [read_log, write_log, search_memory, read_wisdom, write_wisdom, read_profile, write_profile, read_agent_config, write_agent_config]
 
   work_vocation:
     local: true
-    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile]
+    # search_memory granted 2026-08-05 — see routing_cloud.yaml. Kept in parity.
+    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, search_memory]
 
   relationships:
     local: true
@@ -82,7 +84,8 @@ agents:
 
   finance:
     local: true
-    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile]
+    # read_archive granted 2026-08-05 — see routing_cloud.yaml. Kept in parity.
+    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, read_archive]
 
   learning_growth:
     local: true
@@ -94,7 +97,9 @@ agents:
 
   logistics:
     local: true
-    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, get_weather, read_profile, write_profile, write_schedule, list_schedules, delete_schedule, fetch_url, read_email, send_email]
+    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, get_weather, read_profile, write_profile, write_schedule, list_schedules, delete_schedule, fetch_url, read_email, send_email, read_agent_config, write_agent_config, search_memory, read_archive, write_archive]
+    # read/write_agent_config, search_memory, read/write_archive granted 2026-08-05 — see
+    # routing_cloud.yaml for the full rationale. Kept in parity.
     # fetch_url + read_email added 2026-08-04. Granted here and not more widely:
     # both return content written by strangers, so the blast radius of an injected
     # instruction is the holder's toolset. Logistics is the agent that actually needs

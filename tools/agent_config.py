@@ -25,6 +25,26 @@ def _agent_config_dir() -> Path:
     return persona_data_dir() / "config"
 
 
+# Keys an agent may READ but never WRITE, as (agent_name, key) pairs.
+#
+# WHY: a safety flag must not be able to author the data it classifies from.
+# physical_health.md:106 requires MEDICATION_MISSED_CRITICAL to be classified from the stored
+# medication profile and "never from the agent's judgment" — but on 2026-08-05 the agent was
+# granted write_agent_config, which without this guard would let it write the profile, then
+# read it back as authority, and grade its own homework. The 2026-08-04 workaround was to deny
+# write_agent_config outright; that cost the agent an ordinary config store every other
+# specialist has, so the narrow guard replaced the blanket denial.
+#
+# Enforced here in Python rather than in the instruction file, per CLAUDE.md: being told is not
+# being prevented. logistics was told it lacked write_agent_config and called it anyway, three
+# times in production.
+#
+# The profile is seeded out-of-band — by the user, or by tests/run_a4_safety.py's fixture.
+_GUARDED_KEYS: set[tuple[str, str]] = {
+    ("physical_health", "medication_profile"),
+}
+
+
 def write_agent_config(agent_name: str, key: str, value: str) -> str:
     """
     Write a key-value entry to this agent's persistent config store.
@@ -32,14 +52,25 @@ def write_agent_config(agent_name: str, key: str, value: str) -> str:
     Merges with existing data — does not overwrite the whole file.
     Value is stored as a string; for structured data, pass JSON-encoded string.
 
+    Refuses the (agent, key) pairs in _GUARDED_KEYS — data a safety flag classifies
+    from, which the agent must not be able to author.
+
     Args:
         agent_name: Name of the calling agent (e.g. 'physical_health', 'finance').
         key: Config key to set (e.g. 'active_workout_plan', 'budget_structure').
         value: Value to store. Use JSON encoding for structured objects.
 
     Returns:
-        Confirmation string.
+        Confirmation string, or an error string naming the refusal.
     """
+    if (agent_name, key) in _GUARDED_KEYS:
+        return (
+            f"Error: '{key}' is read-only for {agent_name} and was not written. "
+            f"This value is the evidence a safety classification depends on, so it "
+            f"cannot be set by the agent that reads it. Surface the change to the user "
+            f"for confirmation instead of writing it."
+        )
+
     config_dir = _agent_config_dir()
     config_dir.mkdir(parents=True, exist_ok=True)
     config_path = config_dir / f"{agent_name}.json"

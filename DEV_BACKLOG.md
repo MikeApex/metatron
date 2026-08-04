@@ -386,3 +386,16 @@ roadmap copy. Verified before deletion: all nine originals present, 77 lines tot
 `grep -l "## Enhancement backlog" config/agents/*.md` — logistics, mental_wellbeing,
 physical_health, finance, relationships, recreation_hobbies, work_vocation, learning_growth,
 research_agent.
+
+---
+
+## Done
+
+**Everything below is closed.** `scripts/sync_dev_backlog.py` stops counting at this heading,
+so items parked here do not inflate the open count — which is the whole reason the heading
+exists. It was referenced by an entry above ("see the Done section") and by the sync script
+for weeks before anyone noticed it had never been written; without it the script's "live
+region" ran to end of file and **closing an item made the reported number go up.**
+
+Every entry keeps its ID and carries the commit or `file:line` that closed it. Closed without
+one is not closed.

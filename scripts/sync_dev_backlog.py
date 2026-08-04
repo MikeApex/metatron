@@ -70,7 +70,9 @@ SEEN = ROOT / ".dev_backlog_seen"
 # splice new entries into the middle of a paragraph.
 INBOX_HEADING = "\n## Inbox\n"
 DONE_HEADING = "\n## Done\n"
-INBOX_PLACEHOLDER = "*(nothing yet)*"
+# Both spellings have been in the file. Matching only one leaves a stale
+# placeholder sitting in the middle of a populated Inbox forever.
+INBOX_PLACEHOLDERS = ("*(nothing yet)*", "*(nothing new)*")
 
 
 def _auth_header() -> dict:
@@ -133,6 +135,49 @@ def fetch_events(server: str, persona: str) -> list[dict]:
     return [e for e in events if isinstance(e, dict) and e.get("event_type") in WANTED]
 
 
+def count_items(text: str) -> tuple[int, int]:
+    """
+    Return (untriaged, open) — two different kinds of work, counted separately.
+
+    WHY THIS IS NOT A ONE-LINER. It used to be:
+
+        live = text.partition(INBOX_HEADING)[2].partition(DONE_HEADING)[0]
+        open_count = sum(1 for line in live.splitlines() if line.startswith("- "))
+
+    which was wrong three ways at once, and reported 48 then 62 in the same
+    session on 2026-08-05 while nothing was filed:
+
+      1. DEV_BACKLOG.md had no '## Done' heading, so partitioning on it returned
+         the whole rest of the file. "Live region" meant Inbox to EOF.
+      2. Struck-through entries (- ~~closed~~) still start with '- ', so
+         **closing an item made the number go up**. The count drifted upward as
+         work got done, which is the opposite of what it is for.
+      3. Untriaged Inbox entries were folded in with curated items, so a pile of
+         machine-written denials read as a growing engineering backlog.
+
+    Anything indented is a sub-bullet inside an item's body, not an item — hence
+    startswith("- ") rather than lstrip().startswith("- ").
+    """
+    def _items(block: str) -> int:
+        return sum(1 for line in block.splitlines()
+                   if line.startswith("- ") and not line.startswith("- ~~"))
+
+    after_inbox = text.partition(INBOX_HEADING)[2]
+    if not after_inbox:
+        return 0, 0
+
+    # Inbox runs to the next '## ' heading, whatever it is — sections get added
+    # and renamed, and hardcoding the successor would silently break the split.
+    inbox_block = after_inbox
+    for i, line in enumerate(after_inbox.splitlines()):
+        if line.startswith("## "):
+            inbox_block = "\n".join(after_inbox.splitlines()[:i])
+            break
+
+    curated = after_inbox[len(inbox_block):].partition(DONE_HEADING)[0]
+    return _items(inbox_block), _items(curated)
+
+
 def render(event: dict) -> str:
     """One backlog bullet. Timestamp is last — it doubles as the dedup key."""
     kind = event.get("event_type", "")
@@ -173,17 +218,16 @@ def main() -> int:
         SEEN.write_text("\n".join(sorted(seen)) + "\n")
 
         head, _, tail = text.partition(INBOX_HEADING)
-        body = tail.replace(f"\n{INBOX_PLACEHOLDER}\n", "\n", 1)
+        body = tail
+        for placeholder in INBOX_PLACEHOLDERS:
+            body = body.replace(f"\n{placeholder}\n", "\n", 1)
         block = "\n".join(render(e) for e in new)
         text = f"{head}{INBOX_HEADING}\n{block}\n\n{body.lstrip(chr(10))}"
         BACKLOG.write_text(text)
 
-    # Count only the live region — between Inbox and Done. Counting the whole
-    # file would sweep in the intro bullets and everything already finished.
-    live = text.partition(INBOX_HEADING)[2].partition(DONE_HEADING)[0]
-    open_count = sum(1 for line in live.splitlines() if line.startswith("- "))
+    untriaged, open_count = count_items(text)
     if new or not args.quiet:
-        print(f"DEV_BACKLOG.md: {len(new)} new, {open_count} open")
+        print(f"DEV_BACKLOG.md: {len(new)} new · {untriaged} untriaged · {open_count} open")
     return 0
 
 

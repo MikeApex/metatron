@@ -65,14 +65,20 @@ agents:
     # from the stored medication_profile and never from inference (physical_health.md:106,123).
     # Without the read grant the flag is structurally unfireable — the agent is required to
     # consult a profile it has no tool to reach. Two warn-mode entries on 2026-08-03 recorded it
-    # attempting exactly this. write_agent_config deliberately NOT granted: writing a medication
-    # profile is a larger privilege and a separate decision (DEV_BACKLOG Inbox).
-    allowed_tools: [read_log, write_log, search_memory, read_wisdom, write_wisdom, read_profile, write_profile, read_agent_config]
+    # attempting exactly this.
+    # write_agent_config granted 2026-08-05 by explicit decision, reversing the 2026-08-04 hold.
+    # The medication_profile key is guarded in Python instead — see _GUARDED_KEYS in
+    # tools/agent_config.py. Rationale: the agent needs its own config store like every other
+    # specialist, but MEDICATION_MISSED_CRITICAL must classify from a profile the agent did not
+    # author, or the flag grades its own homework. A blanket denial cost more than it bought.
+    allowed_tools: [read_log, write_log, search_memory, read_wisdom, write_wisdom, read_profile, write_profile, read_agent_config, write_agent_config]
 
   work_vocation:
     provider: gemini
     model: "models/gemini-3.1-flash-lite"   # no clinical stakes
-    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile]
+    # search_memory granted 2026-08-05: denied 2026-08-04 while trying to recall that morning's
+    # Apex consolidation brief in order to connect "put that on your active items" to it.
+    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, search_memory]
 
   relationships:
     provider: gemini
@@ -82,7 +88,9 @@ agents:
   finance:
     provider: gemini
     model: "models/gemini-3.1-flash-lite"   # arithmetic tracking; upgrade to Pro if hard-fail results were marginal
-    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile]
+    # read_archive granted 2026-08-05: denied 2026-08-03 answering "what can you tell me about my
+    # credit card payments" — a recall question it had no store to answer from.
+    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, read_archive]
 
   learning_growth:
     provider: gemini
@@ -97,7 +105,16 @@ agents:
   logistics:
     provider: gemini
     model: "models/gemini-3.1-flash-lite"
-    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, get_weather, read_profile, write_profile, write_schedule, list_schedules, delete_schedule, fetch_url, read_email, send_email]
+    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, get_weather, read_profile, write_profile, write_schedule, list_schedules, delete_schedule, fetch_url, read_email, send_email, read_agent_config, write_agent_config, search_memory, read_archive, write_archive]
+    # read/write_agent_config, search_memory, read/write_archive granted 2026-08-05, closing
+    # eight warn-mode denials between 2026-08-03 and 2026-08-05. Not a widening on request:
+    # logistics.md specifies all five. :45 makes the config store MANDATORY ("all baseline data
+    # must be written to write_agent_config immediately upon collection"); :189 states that the
+    # recurring-obligation inventory lives there because "obligations are data rows, not
+    # scheduled jobs"; :187 assigns write_archive four named lists (shopping, packing, errands,
+    # places). Note write_schedule was already granted 2026-08-03 (2f74cd2) and did NOT stop the
+    # denials — it is a different mechanism for a different thing, exactly as :189 says. The
+    # writes land in agent-owned data space, not in system-behaviour config.
     # fetch_url + read_email added 2026-08-04. Granted here and not more widely:
     # both return content written by strangers, so the blast radius of an injected
     # instruction is the holder's toolset. Logistics is the agent that actually needs
