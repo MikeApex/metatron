@@ -13,9 +13,6 @@ Refresh: `python3 scripts/sync_dev_backlog.py`
 
 ## Inbox
 
-- **[agent wanted a tool it lacks]** `logistics` attempted `search_memory` (query) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
-  `2026-08-04T16:02:07.471199Z`
-
 *(nothing new — last triaged 2026-08-05)*
 
 ---
@@ -119,6 +116,30 @@ Behavioural changes to how agents judge, prioritise, or decide what to raise. Ap
 
 Capabilities that do not exist yet.
 
+### Surfaced 2026-08-04 (evening)
+
+- **[DB-0804-02] Track B security hardening (B1–B4) scoped, not started.** **Wave 1 — ready
+  now, no dependency on integration count:** B1a (direct-injection red-team suite, 9 categories,
+  live against Coordinator/Synthesizer); B2 remainder (`research_agent` missing `allowed_tools`
+  — currently defaults to all 53 tools; extend the existing `POST /confirm` gate to
+  `write_agent_config`/`write_config`; formalize confused-deputy enforcement + a regression
+  test; upgrade `filter_output()` from substring to regex/semantic matching; confirm
+  `run_model_conference` is scoped head-layer-only); B4 (5 degradation paths — specialist
+  failure mid-pipeline, Ollama-unavailable fail-closed message, context-tracker fallback,
+  retry-with-backoff, max-chain-depth handling, partial-fan-out threshold — plus 2
+  deliberate-failure tests). ≈4.5–5.5 sessions. **Wave 2 — gated on Track E reaching
+  feature-complete for this phase:** B1b (indirect-injection tests — email/calendar/web/contact
+  sources — spot-checked per integration as it ships, one consolidated pass once integrations
+  settle) + B3 (baseline doc at `archive/security/security_baseline_*.md`, to fold in a new
+  recurring security-review protocol: event-triggered per-integration spot-check + a
+  quarterly/per-phase health-check re-run of B1a + B2's cross-agent exfiltration probes).
+  **Also found while scoping:** `SESSION.md` previously stated PoLP tool permissions were "in
+  warn mode" — the code shows the `allowed_tools` whitelist is already enforced; corrected in
+  `SESSION.md` this session. Full detail:
+  [archive/sessions/2026-08-04 — B1-B4 Security Scoping.md](archive/sessions/2026-08-04%20—%20B1-B4%20Security%20Scoping.md).
+  *filed 2026-08-04 by Mike via dev session (Claude Code) · scoping only, not verified by
+  execution*
+
 ### Surfaced 2026-08-04
 
 - **`ROADMAP.md` Track D is ~14 KB of a 47 KB file that loads on every `/metatron-code`, and parts of it have shipped.** D2 named cost analysis and model validation; the spend guard, rate limiter and measured token economics all landed 2026-08-02. Trimming it would take the cold-start load from ~26k to roughly ~22k. **Deliberately not done 2026-08-04:** a parallel window was committing to that file the same day, and trimming by line range is how the first pass silently carried completed item A6 into the abridged copy. **If picked up: go item-by-item against `SESSION.md` and `archive/PROJECT_LOG.md`, never by line range**, and check no window is mid-edit. Better done by whoever is actually working Track D than by a token-reduction pass. *Deferred from the context-file second pass, `a5ba388`.*
@@ -144,7 +165,14 @@ Capabilities that do not exist yet.
 
   Same signature as the 2026-07-31 `nic0 is frozen` incident, **but with the known cause absent** — billing was never disabled this time. So either that incident's root cause was misattributed to the billing freeze, or there are two paths to the same failure. Worth resolving before trusting VM uptime: it is silent, it survives a `RUNNING` status check, and it cost ~4 hours here.
 
-- **Nothing detects that the VM is down.** The outage above ran ~4h and was found by accident, on the way to doing something else. `scripts/sync_dev_backlog.py` runs at the start of every session, is the first thing to touch the VM, and **exits 0 silently when it cannot reach it** — by design, so a paused VM is not reported as a failure. That design is right for a paused VM and wrong for a broken one: at session start it printed `0 new, 40 open`, indistinguishable from a healthy run. Cheapest fix is to have it distinguish *stopped* (expected, silent) from *running-but-unreachable* (report it) — `gcloud compute instances describe --format="value(status)"` is one call and already used elsewhere. Related: `metatron-resume.sh`'s health check is the only thing in the repo that verifies the VM actually answers, and it only runs when someone resumes.
+- ~~**Nothing detects that the VM is down.**~~ — **fixed, closed 2026-08-05 (found already
+  shipped in `10bf194`, 2026-08-04, never crossed off).**
+  [scripts/sync_dev_backlog.py:227-233](scripts/sync_dev_backlog.py#L227) now calls
+  `vm_status()` and appends `⚠ VM running but unreachable` when the VM reports `RUNNING` but
+  the sync can't reach it — distinct from the silent, expected case of a stopped VM. **This is
+  live and firing right now**: this session's own startup hook printed exactly that warning.
+  *filed 2026-08-04 by dev session · fixed 2026-08-04 `10bf194` · closed 2026-08-05, observed
+  firing live at this session's own startup*
 
 ### Surfaced 2026-08-04 by the outward-actions scope decision
 
@@ -180,17 +208,32 @@ Full reasoning: [archive/plans/outward_actions_scope_2026-08-04.md](archive/plan
   (`physical_health`, `logistics` reaching for `write_agent_config`): gate it rather than
   granting or refusing outright.
 
-- **⚠ The confirmation gate is a prompt, not a control (Decision B).** The Synthesizer's action tiers (`synthesizer.md` § Action tiers) mandate confirmation for everything outward-facing, and `config/preferences.yaml` has every opt-in `false` — so the *policy* is already right. But nothing in Python enforces it; verified 2026-08-04, there is no confirmation gate in `tools/` or `core/orchestrator.py`.
-
-  This is the control class that has already been shown not to hold: `logistics` was not granted `write_agent_config`, its instruction file described the capability, and it called the tool three times in production. Being told is not being prevented. `CLAUDE.md` states the principle for the analogous case — *enforced in Python tool code, never in prompts* — and roadmap **B2** requires the same gate for `write_agent_config`/`write_config`. **Build them together; it is one mechanism.**
-
-  Shape: an outward-facing call returns a `PENDING_CONFIRMATION` token describing what would happen and performs nothing, until a later call presents that token plus explicit user approval from the current conversation. **Prerequisite for any outward-facing tool** — `send_email`, form submission, transactions.
+- ~~**⚠ The confirmation gate is a prompt, not a control (Decision B).**~~ — **built, closed
+  2026-08-05.** This entry predates the 2026-08-04 build (`ca993fe`, `15b9a41`). Verified today:
+  [tools/confirm.py](tools/confirm.py) implements exactly the shape this entry proposed —
+  `request()` returns a `PENDING_CONFIRMATION` token and performs nothing;
+  `POST /confirm` ([core/server.py:702](core/server.py#L702)) is the only writer that can
+  approve one; `consume()` gates the second call. `send_email` is wired to it end-to-end
+  ([tools/mail.py:278-306](tools/mail.py#L278)) — two-step by design, first call always returns
+  `PENDING_CONFIRMATION` and sends nothing. **What's still genuinely open is the separate bullet
+  below** — `write_agent_config`/`write_config` are not yet wired to this same mechanism.
+  *filed 2026-08-04 · superseded by the 2026-08-04 build · closed 2026-08-05 against
+  tools/confirm.py, core/server.py:702, tools/mail.py:278-306*
 
 - **Provenance modifier for the action tiers (Decision A).** The tiers classify actions by what they do, not by who proposed them. That was sufficient until `fetch_url` and `read_email` shipped (2026-08-04) and content written by strangers began entering the pipeline. `<untrusted_content>` marks the *data*; nothing marks an *action derived from* it.
 
   The failure case is not exotic: an email saying *"reply YES within 24 hours or your reservation is released"* satisfies every existing tier, and a legitimate email would be worded identically. Proposed rule — an action whose need is evidenced only by untrusted content is Confirm First regardless of tier and regardless of opt-in, and the confirmation must **quote the source** so the user confirms the evidence rather than just the act. One row plus a paragraph in the existing table; not a second framework.
 
-- **`send_email` restricted to the user's own address (Decision C).** The one narrow action the phase plan allows. Useful now ("email me that summary"), genuinely outward-facing so it tests the gate honestly, and a fully successful prompt injection can do no worse than send the user an email they did not ask for. The recipient restriction is enforceable in Python against `account_email` in `profile.yaml`. **Gated on Decision B.**
+- ~~**`send_email` restricted to the user's own address (Decision C).**~~ — **built, closed
+  2026-08-05.** [tools/mail.py:229-262](tools/mail.py#L229) enforces it in Python: `_known_recipients()`
+  allows the user's own addresses (`account_email` / `contact.email` from `profile.yaml`) plus
+  saved CRM contacts — the docstring cites this exact decision by name ("Roadmap item 5, Decision
+  C") and explains why it's enforced here rather than in an agent instruction: an injected email
+  that talks the model into a different recipient fails this check regardless of how convincing
+  it was. Broader than self-only per the block's header note (CRM contacts included, a deliberate
+  choice), gated on Decision B which is also built (see above).
+  *filed 2026-08-04 · built 2026-08-04 `ca993fe`/`15b9a41` · closed 2026-08-05 against
+  tools/mail.py:229-262*
 
 - **Not opened, deliberately:** credential store, agentic browsing (level 3), arbitrary-recipient email, transactions. The last three are gated on a credential store that does not exist and on the gate above.
 
@@ -198,7 +241,19 @@ Full reasoning: [archive/plans/outward_actions_scope_2026-08-04.md](archive/plan
 
 - **APK rebuild pending — password reveal toggle (`819de75`) *and* the dismissable transcription readout (2026-08-04).** Both committed, neither built. The readout change alters UI structure, which is a named rebuild trigger in `CLAUDE.md`; the password toggle was deferred by agreement (the session had already rebuilt twice). One rebuild covers both. `static/index.html` on the server already serves both to the browser PWA — **but the readout change has not been deployed either**, so `./deploy.sh` comes first.
 
-- **Test the dismissable transcription readout — not yet run.** Built 2026-08-04 in `static/index.html`; no server was started, so it is reasoned from the code, not observed. Start the server, dictate 30+ seconds of speech. **Pass:** readout appears in a bordered box no taller than ~3 lines, scrolls internally, mic button and text field do not move, disappears after 12s or on `✕`, footer height unchanged when nothing is showing. **Fail:** footer grows, or the box outlives 12s. Testable in a desktop browser — no APK needed.
+- **Test the dismissable transcription readout — code-verified 2026-08-05, live dictation test
+  still not run.** Re-checked `static/index.html` against every named pass condition:
+  [:104-125](static/index.html#L104) caps `#transcript` at `max-height: 4.5em` with
+  `line-height: 1.5` (= exactly 3 lines), `overflow-y: auto` for internal scroll;
+  [:637](static/index.html#L637) sets `TRANSCRIPT_TIMEOUT_MS = 12000`; the close button
+  ([:466](static/index.html#L466), [:655](static/index.html#L655)) calls the same `hideTranscript()`;
+  `#transcript-wrap { display: none }` by default with `.shown` toggling `flex`
+  ([:105,114](static/index.html#L105)), so footer height is untouched while hidden. Every
+  clause the test asks for is present in code. **What this session could not do: dictate 30+
+  seconds of real speech into a browser and watch it.** No mic/browser access here — this
+  remains an actual human test, owed before it's called done.
+  *filed 2026-08-04 · code-verified against every pass condition 2026-08-05 · live test still
+  outstanding*
 
 ### Surfaced 2026-08-03 by the context-audit test run
 
@@ -239,7 +294,13 @@ Full reasoning: [archive/plans/outward_actions_scope_2026-08-04.md](archive/plan
 
   A7 remains blocked on B1, Check 10 and Check 12. This clears only the named pre-sign-off gate.
 
-- **Pre-existing dead link in the project log.** `archive/sessions/2026-07-28 — Persona Unification Plan and Phase 0.md` is referenced but does not exist. Already broken in `SESSION.md` before the split; preserved verbatim rather than invented a target for. Either write the missing writeup or correct the reference. Cosmetic.
+- ~~**Pre-existing dead link in the project log.**~~ — **fixed, closed 2026-08-05.**
+  [archive/PROJECT_LOG.md:1165](archive/PROJECT_LOG.md#L1165) pointed at a "Plan and Phase 0"
+  session file that was never written. The same section's content is covered by
+  `archive/sessions/2026-07-28 — Persona Unification Complete (Phases 0-8, Strict Mode Live).md`
+  — already the target of two other links in this log for adjacent parts of the same work.
+  Repointed rather than inventing a new writeup.
+  *filed 2026-08-03 by dev session · fixed 2026-08-05 against archive/PROJECT_LOG.md:1165*
 
 ### Recovered from SESSION.md prose, 2026-08-03
 
@@ -248,21 +309,14 @@ the history moved to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md), so anythi
 actionable had to come here or it would have gone quiet — the same way the unsurfaced-opportunity
 item "nearly aged out" (see Troubleshooting signal below).*
 
-- **[DB-0803-07] ⚠ `deploy.sh`'s drain is decorative — every deploy kills in-flight WebSocket
-  exchanges.** **Confirmed real 2026-08-05, by tracing the counter rather than re-reading the
-  entry.** `/active` returns `_active_streams` ([core/server.py:721](core/server.py#L721)),
-  which is incremented in exactly one place — the SSE generator in `/session/stream`
-  ([:433](core/server.py#L433)). The WebSocket exchange loop ([:600-655](core/server.py#L600))
-  never touches it, and the app talks over WebSocket. So the gate at
-  [deploy.sh:93](deploy.sh#L93) always reads `0` and restarts immediately.
-
-  **Fix:** wrap the WS in-flight block — from `producer = loop.run_in_executor(...)` through the
-  `_log_conversation()` / broadcast completion — in the same `_active_lock` increment/decrement,
-  `try`/`finally`. Count **in-flight exchanges, not connections**: an always-connected phone
-  would otherwise pin the counter above zero and make every deploy wait out its full 180s
-  timeout, which is a worse failure than the one being fixed.
+- ~~**[DB-0803-07] ⚠ `deploy.sh`'s drain is decorative — every deploy kills in-flight WebSocket
+  exchanges.**~~ — **fixed, closed 2026-08-05 (found already shipped in `10bf194`, 2026-08-04,
+  never crossed off).** The WS exchange loop now holds the same `_active_lock` as the SSE path
+  around the full in-flight block, counting exchanges not connections —
+  [core/server.py:616-618,668-669](core/server.py#L616). Verified live against current source,
+  not just the commit message.
   *filed 2026-07-30 by dev session (client/app audit) · recovered from SESSION.md:317
-  2026-08-03 · verified 2026-08-05 against core/server.py:433,600,721*
+  2026-08-03 · fixed 2026-08-04 `10bf194` · closed 2026-08-05 against core/server.py:616-669*
 
 - ~~**Synthetic persona data trees are not gitignored.**~~ **Done 2026-08-04** — `.gitignore`
   now carries `data/personas/*/` in place of the enumerated per-persona list. Five trees were
@@ -375,18 +429,32 @@ item "nearly aged out" (see Troubleshooting signal below).*
   *filed 2026-08-03 by dev session · recovered from SESSION.md:320 · verified 2026-08-05 against
   static/sw.js*
 
-- **[DB-0803-06] `shownIds` eviction cliff — line references are stale, symptom unconfirmed.**
-  Original: eviction at `static/index.html:567` clears *after* adding, unlike the hardened site
-  at L590 fixed in `eea3faf`; and catch-up reuses `type:"history"`, so a reconnect wipes the
-  conversation and re-renders only the delta.
+- **[DB-0803-06] `shownIds` eviction wipes the whole set instead of evicting incrementally —
+  re-derived and confirmed real 2026-08-05 (line numbers updated).** `shownIds` is declared at
+  [static/index.html:706](static/index.html#L706). Two call sites do a full
+  `if (shownIds.size > 100) shownIds.clear()` rather than dropping only the oldest entries —
+  [:944](static/index.html#L944) in `renderHistory()` and [:971](static/index.html#L971) in
+  `sendViaWebSocket()`.
 
-  **Checked 2026-08-05: `shownIds` now lives at [static/index.html:706](static/index.html#L706)+**
-  — the file has moved several hundred lines since the entry was written, so neither cited line
-  number means anything now. The symptom may well survive; nobody has looked. **Re-derive
-  against the current file before working it**, and treat the `eea3faf` comparison as a lead
-  rather than a fact.
-  *filed 2026-08-03 by dev session · recovered from SESSION.md:319 · verified 2026-08-05 —
-  line references dead, symptom unconfirmed*
+  **Why it's a real bug, traced through the dedup logic:** every WS message type
+  (`chunk`/`done`/`message`/`error`/`retract`, [:836-927](static/index.html#L836)) branches on
+  `shownIds.has(msg.exchange_id)` to tell "my own exchange, already rendering" from "foreign or
+  catch-up exchange, needs a fresh render." A full clear means that once a conversation crosses
+  100 exchanges, the next reconnect's `renderHistory()` re-populates and immediately re-empties
+  the set — so any subsequent `'message'` catch-up for an exchange the device already rendered
+  looks unseen and gets rendered a second time. **Fix:** evict oldest-first (e.g. convert to an
+  array-backed ring, or drop the first N insertion-ordered keys) instead of `clear()`, at both
+  call sites.
+
+  **`eea3faf` (2026-07-27) is real but fixes a narrower bug than this entry.** It swapped
+  `sendViaWebSocket`'s clear/add order so the just-sent exchange's own ID survives the clear
+  (previously `.add()` then `.clear()` wiped the ID that was just added, breaking the client's
+  own chunk/done recognition — a stuck bubble, not a duplicate). It did not touch the
+  clear-vs-evict question: both call sites still do a full `.clear()` today, just in the
+  now-correct order relative to the current send. The duplicate-render risk traced above is a
+  separate, still-open defect at the same two line numbers.
+  *filed 2026-08-03 by dev session · recovered from SESSION.md:319 · re-derived and confirmed
+  2026-08-05 against static/index.html:706,836-927,944,971 and commit eea3faf*
 
 - ~~**`/session` (non-streaming) leaks the `[CONTEXT]{…}[/CONTEXT]` block**~~ — **fixed;
   closed 2026-08-05.** `run_session` now calls `split_context_block()` then `filter_output()`
@@ -397,20 +465,39 @@ item "nearly aged out" (see Troubleshooting signal below).*
   *filed 2026-08-03 by dev session · recovered from SESSION.md:386 · verified 2026-08-05 against
   core/orchestrator.py:2690*
 
-- **[DB-0803-04] `write_config()` heading duplication — needs re-derivation before anyone works
-  it.** The entry says `write_config()` stores the Goals Interviewer's text verbatim including
-  its own `## Prime Directive` / `## Mission` heading, and that `_titled()` papers over it at
-  load time.
+- ~~**[DB-0803-04] `write_config()` heading duplication.**~~ — **not a bug; the described fix
+  already exists and works. Closed 2026-08-05, correcting a wrong verification from earlier the
+  same day.** The 2026-08-05 pass checked only [tools/config_writer.py](tools/config_writer.py)
+  (confirmed: no heading logic there, writes verbatim) and stopped, concluding the symptom was
+  unconfirmed. `_titled()` is not in that file — it's in
+  [core/orchestrator.py:187-199](core/orchestrator.py#L187), and its docstring states the exact
+  mechanism the entry described: *"The Goals Interviewer writes prime_directive.md and
+  mission.md through write_config(), which stores the model's text verbatim — and the model
+  includes its own heading. Without this check the system prompt carries the heading twice with
+  an empty section between."* `load_config()` calls it at [:234](core/orchestrator.py#L234) for
+  both files. Added in `6601479`, predating this entry. **The lesson: "cited code does not
+  exist" is only true of the one file checked — the fix can live one layer up from where the
+  write happens.**
+  *filed 2026-08-03 by dev session · recovered from SESSION.md:387 · first verification
+  2026-08-05 incomplete · corrected 2026-08-05 same session against core/orchestrator.py:187-234*
 
-  **Checked 2026-08-05: the cited code does not exist.** [tools/config_writer.py](tools/config_writer.py)
-  is 84 lines, has no `_titled()` and no heading handling — it validates against
-  `ALLOWED_FILES = {prime_directive.md, mission.md}` and writes. Either the symptom lives
-  somewhere else entirely or it was fixed without this entry being closed. **Do not act on the
-  description.** Reproduce first: run a Goals Interview write and look at the resulting file.
-  *filed 2026-08-03 by dev session · recovered from SESSION.md:387 · verified 2026-08-05 —
-  cited code absent, symptom unconfirmed*
+- **Pre-2026 logs in mike's tree** (`2025-01-24`, `2025-05-13`–`16`) — believed genuine early-dev
+  data, but the SEQ 021 session found one hallucinated log dated 14 months in the past. Worth
+  confirming none of these are the same.
 
-- **Pre-2026 logs in mike's tree** (`2025-01-24`, `2025-05-13`–`16`) — believed genuine early-dev data, but the SEQ 021 session found one hallucinated log dated 14 months in the past. Worth confirming none of these are the same. *`SESSION.md:227`.*
+  **Attempted 2026-08-05, blocked — real data lives on the VM, not the Mac.** Per `CLAUDE.md`
+  → Personas, live persona data is VM-owned; the Mac copy is a stale mirror. Checked it anyway:
+  `data/personas/mike/logs/` on the Mac has neither of the originally-cited filenames — either
+  already cleaned up, or this mirror predates them — so this pass **cannot confirm or refute
+  the original claim**. **New finding, same class of bug:** the same local directory has
+  `2024-08-04.json` (`{"notes": "User re-engaged with the session.", "date": "2024-08-04"}`,
+  74 bytes) sitting alongside a correctly-dated `2026-08-04.json` — a two-years-stale hallucinated
+  date, not the 14-months-stale one previously found, but the identical failure mode. **Needs
+  the VM to resolve properly**: `data/personas/mike/logs/` there is authoritative; this session's
+  VM access was down (see the sync report). Check both the original two dates and whether
+  `2024-08-04.json` has a live-VM counterpart when it's reachable.
+  *`SESSION.md:227` · re-attempted 2026-08-05, blocked on VM reachability · new data point added,
+  not closed*
 
 - **Coordinator restructure (token-reduction Step 6)** — single-pass directive assembly replacing the multi-turn session, ~15,000t. Deferred 2026-06-24 pending Steps 1–5 stabilising; they have. **Re-scope against measured data first:** the coordinator runs 1 turn, not the 7 the roadmap assumes — the real cost driver is per-specialist internal turns (logistics measured at 8). Relates to the D2 item-5 mis-scoping already on this list. *`SESSION.md:602`.*
 
@@ -492,17 +579,22 @@ item "nearly aged out" (see Troubleshooting signal below).*
 
   **Constraints:** unknown fields are refused rather than absorbed (`_SCALAR_FIELDS`/`_CONTACT_FIELDS`/`_LOCATION_FIELDS` in [tools/profile.py](tools/profile.py)) — an invented key is exactly how `mike.md` acquired a section no code knew about. `profile.yaml` is VM-owned and gitignored; edit it on the VM, never reconstruct it on the Mac.
 
-- **No agent can read a specific web page. Grounded search is not web access.** Raised 2026-08-03. Three distinct capabilities; the system has only the first.
+- **No agent can act on a web page on the user's behalf (level 3).** Raised 2026-08-03 as three
+  distinct capabilities. **Levels 1 and 2 are now both built — verified 2026-08-05, closing that
+  part.** Grounded search (`run_session_gemini_grounded`) was already live. `fetch_url` shipped
+  2026-08-04 ([tools/web.py:146](tools/web.py#L146)) with the injection defense that was named as
+  its prerequisite, not a follow-up: returned content is wrapped in `<untrusted_content>` tags
+  ([tools/untrusted.py](tools/untrusted.py)), confirmed at the `fetch_url` docstring itself.
 
-  1. **Grounded search — built.** `run_session_gemini_grounded` ([core/orchestrator.py](core/orchestrator.py), native genai SDK path) searches inside a single model call and returns an answer with sources. The model picks its own sources. There is no way to say *"read this page."* Anything behind a login, too recent, too obscure, or pasted in by the user is unreachable.
-
-  2. **Direct fetch — missing. This is the actual gap.** Retrieve a named URL and read it: fetch, convert to text, size and time limits. Ordinary work — a `fetch_url` tool under the standard tool pattern, allowlisted to the agents that need it (Research Agent first). Note this is the point at which the deferred **indirect prompt injection defense** in CLAUDE.md § Security Architecture stops being deferred: fetched content must return wrapped in `<untrusted_content>` tags with the accompanying agent instruction, in the same change that ships the fetch — not as a follow-up.
-
-  3. **Acting on the user's behalf — missing, and a different animal.** Navigate, log in, fill forms, transact.
-
-  **The distinction between 2 and 3 is the one that governs build order.** At level 2 a hostile page can only *say* things to the model. At level 3 it can make the model *do* things — send a message, submit a form, spend money — using the user's credentials. So 3 goes last, behind both authentication and injection defense, and with per-action confirmation rather than autonomous dispatch. In plain terms: reading a booby-trapped page is a bad answer; acting on one is a real loss.
-
-  **Build order:** 2 (with injection defense) → authentication story → 3 (confirmation-gated). Do not ship 3 on the assumption that 2's defenses cover it; they address a different failure.
+  **What's left is level 3 only: navigate, log in, fill forms, transact — a different animal.**
+  A hostile page reached via `fetch_url` can only *say* things to the model; level 3 lets a page
+  make the model *do* things using the user's credentials. Explicitly deferred, not started:
+  behind an authentication story that doesn't exist yet, and requires per-action confirmation
+  (the mechanism for that now exists — see `tools/confirm.py` above — but nothing calls it here).
+  Do not ship this on the assumption that `fetch_url`'s injection wrapping covers it; it doesn't,
+  it addresses a different failure.
+  *filed 2026-08-03 · levels 1-2 built 2026-08-04, closed as such 2026-08-05 against
+  tools/web.py:146, tools/untrusted.py · level 3 remains open, not started*
 
 ### Troubleshooting signal
 
@@ -524,9 +616,18 @@ item "nearly aged out" (see Troubleshooting signal below).*
 
 Stale docs, paths, and low-priority corrections.
 
-- **Transcript lines run too long on screen.** *"The transcript liners too long on the screen"* — SEQ 014, 2026-08-02. Client-side line wrapping / bubble width in `static/index.html`. Note the conversation-scroll fix (`height:100dvh` + `overflow:hidden` on body, `min-height:0` on the flex child) is in the same area and is testable in a desktop browser without rebuilding the APK.
-
-  **Possibly already fixed — confirm before working it.** The 2026-08-04 readout change capped the footer `#transcript` at ~3 lines with internal scroll, which is one reading of this complaint. The other reading is the *conversation bubble* width, which is untouched. The 2026-08-02 wording does not distinguish them; ask, or check on device once the readout change is deployed.
+- ~~**Transcript lines run too long on screen.**~~ — **the bubble-width half fixed, closed
+  2026-08-05.** *"The transcript liners too long on the screen"* — SEQ 014, 2026-08-02. Two
+  readings existed: the footer `#transcript` readout (capped to 3 lines with internal scroll,
+  2026-08-04) and the conversation *bubble* width. Checked the second today: `.message` had
+  `max-width: 88%` but no `overflow-wrap`, while `#transcript` and `#confirm-text` both already
+  carry `overflow-wrap: anywhere` — an unbroken long token (URL, run-on dictated text) could
+  overflow the bubble and run off-screen horizontally, matching the complaint exactly. Added
+  `overflow-wrap: anywhere` to `.message` ([static/index.html:62](static/index.html#L62)).
+  Client-only change — testable in a desktop browser, no APK/deploy needed to verify, but
+  **does need `./deploy.sh`** to reach the live PWA and phone.
+  *filed 2026-08-02 by Mike via Synthesizer · origin SEQ 014 · fixed 2026-08-05 against
+  static/index.html:56-62*
 
 - ~~**`/metatron-troubleshoot` command template points at pre-persona-scoping paths.**~~ —
   **stale, closed 2026-08-05. Already fixed, most recently by `a763628`.** All three claims
@@ -542,7 +643,15 @@ Stale docs, paths, and low-priority corrections.
 
 - ~~**No check that the VM is actually running what the Mac has committed.**~~ **Done 2026-08-03** — see the Done section.
 
-- **Spend guard pricing rates are unverified estimates.** `config/modules/spend_guard.yaml` is marked VERIFY — fine for order-of-magnitude runaway detection, not for cost accounting. Check against current Vertex AI pricing before trusting any dollar figure derived from it.
+- ~~**Spend guard pricing rates are unverified estimates.**~~ — **verified and corrected,
+  closed 2026-08-05.** Checked against `cloud.google.com/vertex-ai/generative-ai/pricing`
+  (standard tier, ≤200K token context, text): the file's rates were low across the board —
+  `gemini-3.1-pro-preview` input $1.25→**$2.00**, output $10.00→**$12.00**;
+  `gemini-3.1-flash-lite` input $0.10→**$0.25**, output $0.40→**$1.50** (flash-lite output was
+  ~3.75x under). Updated in [config/modules/spend_guard.yaml](config/modules/spend_guard.yaml)
+  with a dated comment. Still order-of-magnitude, not billing-accurate — cached-input discounts,
+  priority/flex tiers, and the >200K-token rate step are all ignored by design.
+  *filed 2026-08-03 · verified and fixed 2026-08-05 against live Vertex AI pricing page*
 - ~~**VM has an unused ephemeral external IP — remove it to save ~$2.90/mo.**~~ **WON'T DO — the premise is wrong, and acting on it would take the VM offline. Corrected 2026-08-03.**
 
   "Never used" is true for **inbound** and false for **outbound**. Nothing connects *to* the address — there is no public ingress and every client arrives over Tailscale — but it is also the VM's **only route out to the internet**. Both alternatives were checked live on 2026-08-03 and neither exists: `gcloud compute routers list` → **0 items** (no Cloud NAT), and `metatron-subnet`'s `privateIpGoogleAccess` → **False**. Delete the access config and the VM loses Vertex AI (the entire product), the Tailscale coordination bootstrap that makes it reachable at all, `git pull` on deploy, apt/pip, CalDAV, weather and RSS. It becomes an isolated machine.
@@ -562,18 +671,14 @@ Stale docs, paths, and low-priority corrections.
 
   **Pick this up only if a fixed-time session should ever wait for a lull.** Adding `quiet_after_user_minutes` to `evening_close` as things stand would silently cancel the evening close on any day the user happens to be talking at 20:00 — a worse outcome than the interruption it avoids. A real fix needs a *deferred* job: on block, re-register a one-shot retry (e.g. `schedule.every(15).minutes.do(...)` that unregisters itself once it fires or once a cutoff passes), plus a cutoff so a deferred evening close does not arrive at 23:00. `_record_fire()`/`_minutes_since_last_fire()` already persist fire times to disk and give the retry something to key on.
 
-- **[DB-0805-03] `run_a4_safety.py`'s `clinical`/`finance` report filenames collide on a
-  same-day, same-provider re-run.** `a4_safety_rerun_{date}_{provider}.md` carries no suite
-  qualifier, so running `--suite clinical` then `--suite finance` (or `all` then either) against
-  the same persona/provider on the same day silently overwrites the first report with the
-  second — no error, no warning. Noticed while adding the `pipeline` suite, which was given its
-  own `_pipeline` filename suffix specifically to avoid this; the two pre-existing suites still
-  have the exposure. Fix: give `clinical` and `finance` the same suite-qualified filename
-  treatment `pipeline` already has. Low priority — the report is regenerable by re-running, so
-  the cost is a lost report, not lost work.
+- ~~**[DB-0805-03] `run_a4_safety.py`'s `clinical`/`finance` report filenames collide on a
+  same-day, same-provider re-run.**~~ — **fixed, closed 2026-08-05.**
+  [tests/run_a4_safety.py](tests/run_a4_safety.py) — `suite_suffix` now derives from `args.suite`
+  for every suite (`"" if args.suite == "all" else f"_{args.suite}"`), so `clinical`, `finance`,
+  and `pipeline` each get their own filename; `all` keeps the unsuffixed name as before. Docstring
+  updated to match.
   *filed 2026-08-05 by dev session (Claude Code) · found while building the A7 pipeline probe ·
-  origin: this session · verified 2026-08-05 by reading `tests/run_a4_safety.py`'s filename
-  construction*
+  fixed 2026-08-05 same session*
 
 - **`CLASSES` in `core/rule_classes.py` is incomplete by construction.** The rule-overlap checks match on regex per class; a duplicate in a class that does not exist yet is invisible, and a clean audit report is therefore not proof of no duplication. **When a duplicate is found by hand, add or widen a class in the same pass** — that is the maintenance loop, and without it the audit slowly decays into false reassurance. Two patterns needed widening within an hour of being written, both because they matched the *instruction's* wording and not the *user's complaint*: `repetition` missed *"Stop bringing up the same task over and over"*, and `evidence_weighting` missed *"making too much of the sleep disruption."* Test additions against `python3 scripts/check_rule_overlap.py --persona NAME` and confirm no new false positives on ordinary preferences before deploying.
 

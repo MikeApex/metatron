@@ -18,11 +18,68 @@ live in [archive/sessions/](sessions/). **This file is not loaded by
 
 ---
 
+### 2026-08-04 (B1–B4 security scoping)
+
+Scoped execution of Track B security hardening (B1 red-team, B2 hardening pass, B3 baseline doc,
+B4 error handling/degradation) at Mike's request — an effort estimate and sequencing plan, no
+code changed.
+
+**Correction to a belief `SESSION.md` was carrying:** "PoLP tool permissions in warn mode by
+decision" is stale. The actual code (`core/orchestrator.py:2190-2193`, `core/router.py:128`)
+shows the per-agent `allowed_tools` whitelist **is enforced** — `None` = allow-all, `[]` =
+allow-none, filtered before reaching the model. The real gap is narrower: `research_agent` has
+no `allowed_tools` key at all, so it defaults to all 53 tools — a one-line config fix, not a
+mode flip.
+
+**B2 turned out ~60% already done.** Believed-open per the roadmap's language but already
+built: auth + `send_email` confirmation gate (`ca993fe`), CORS restriction
+(`server.py:75-81`, not `["*"]`), and `run_session_anthropic`'s iteration limit (already `8`,
+matching every other provider loop). Remaining B2 work: `research_agent`'s missing
+`allowed_tools`; extending the existing `tools/confirm.py` gate to
+`write_agent_config`/`write_config`; formal confused-deputy enforcement + test; upgrading
+`filter_output()` from substring to regex/semantic; confirming `run_model_conference` is
+head-layer-only.
+
+**Decision: split B1 into two waves instead of one pass.** Mike's question — email/web access
+just shipped, calendar/CardDAV are still coming, so the indirect-injection half of B1 (content
+smuggled via email/calendar/web/contacts) would need re-running for every new integration if run
+now. The direct-injection half (self-disclosure, persona adoption, prefix forcing — 9
+categories) tests the Coordinator/Synthesizer's own prompt handling and is unaffected by
+integration count. **Wave 1 (run now): B1a + B2 + B4. Wave 2 (hold): B1b (spot-checked per
+integration as it ships, then one consolidated pass) + B3, gated on Track E reaching
+feature-complete for this phase** — aligns with CLAUDE.md's existing deferred item, "Full OWASP
+audit before Beta."
+
+**New, at Mike's request: a recurring security-review protocol**, so this doesn't need
+re-scoping from zero each time. Two triggers: event-triggered (any new untrusted-content
+integration gets a one-off indirect-injection spot-check at deploy) and calendar-triggered (a
+quarterly, or per-roadmap-phase, re-run of the B1a suite + B2's cross-agent exfiltration
+probes). Scoped to be written into B3's own baseline document
+(`archive/security/security_baseline_*.md`) rather than a new standing file, per CLAUDE.md's
+"One Home Per Rule Class."
+
+**Options considered and rejected:** running the full B1 sweep now as one pass (would require
+re-running the indirect-injection half per future integration); writing B3 before B1/B2 settle
+(pure rework — it's a synthesis document).
+
+**Estimate:** Wave 1 ≈ 4.5–5.5 sessions / about a week; Wave 2 ≈ 1–1.5 sessions plus near-free
+per-integration spot-checks, timed to Track E's pace rather than a fixed date. Resource
+intensity moderate, not heavy — bounded one-time API spend (Vertex + GPT-4o/o3 for red-team
+prompt generation), no new infra, two `./deploy.sh` points (after B2, after B4), no meaningful
+GCP billing-cap risk.
+
+Nothing deployed, no code changed. Full detail:
+[archive/sessions/2026-08-04 — B1-B4 Security Scoping.md](sessions/2026-08-04%20—%20B1-B4%20Security%20Scoping.md).
+
+---
+
 ## Rolling handoff paragraphs (superseded)
 
 `SESSION.md` carries one live handoff paragraph, rewritten each session. The
 previous ones are kept here in order, newest first, because several contain
 corrections to the one before them.
+
+*Updated: 2026-08-05 (two parallel sessions closed: AgentRecord/WS-drain fix, A7 pipeline probe) — **Proactive check-ins root-caused and fixed** (parallel session): `core/router.py:166`'s `log_model_error()` was handed a live `AgentRecord` instead of a string, crashed on `json.dump`, and masked the real underlying failure — 18 of 19 scheduler errors in 7 days. One-line fix, deployed `10bf194` and verified live on the VM (`ec55788` closes the backlog entry, docs-only). **Not yet confirmed: a real scheduled fire completing end-to-end** — filed as `[DB-0804-01]`, three time-gated checks (~23:03, 07:30, one-week count 2026-08-11). Same fast-forward also fixed `deploy.sh`'s decorative WS-drain gate and closed two stale backlog entries. **Separately, this session closed A7's last residual gap:** a `pipeline` suite added to `tests/run_a4_safety.py` runs the A4 clinical scenarios through the real Coordinator→Synthesizer path, inverting the check (flag substance must surface, raw token must not) — **3/3 PASS live against gemini**, tests-only, no deploy needed. **A7 itself is still not signed off** — checks 10/12 and B1 remain open by deliberate deprioritization. Unchanged: SMTP send path still never exercised, APK rebuild pending.*
 
 *Updated: 2026-08-05 (backlog trust repair) — **The backlog never ballooned; the counter was wrong.** `sync_dev_backlog.py` partitioned on a `## Done` heading that had never been written, so struck-through entries counted and **closing an item raised the number**. Fixed — now `N new · N untriaged · N open`, currently **`0 · 0 · 45`**. A verify-before-refile sweep found **about a third of checked items stale**: four closed with evidence, three marked `needs re-derivation`, all survivors given `DB-MMDD-NN` IDs plus who filed them, how, and the origin SEQ. **Biggest find — `AgentRecord is not JSON serializable` is not a logging nuisance: 18 hits in 7 days against 19 total scheduler errors, so proactive check-ins are failing** (`companion_checkin` ×13, **[DB-0803-02]**). Nine tool denials resolved by reading the conversations they occurred in, not the denial text; `physical_health` write granted with `medication_profile` guarded in Python. `/backlog` carries the ritual; `/metatron-code` and `/archive` report the count only. ~~**`9361537` needs `./deploy.sh`.**~~ **Deployed 2026-08-04**, as a side effect of that session's own deploy fast-forwarding past it. Carried in from the parallel window and unchanged: the out-of-band confirmation gate and `send_email` are built (`ca993fe`), enforce mode off by decision, SMTP send path still never exercised, APK rebuild pending.*
 
@@ -1162,7 +1219,7 @@ Continuation of the persona unification session, driven by real use across brows
 
 **Two process lessons recorded:** (1) `deploy.sh` restarts services, so systemd unit edits need `daemon-reload` **before** the deploy — a near-miss briefly ran production fail-closed. (2) `py_compile` cannot catch a `NameError`; a stale `_SCHEDULER_CONFIG` reference crash-looped the scheduler after deploy. Grep for removed symbols, and actually run the daemon.
 
-Session archive: [archive/sessions/2026-07-28 — Persona Unification Plan and Phase 0.md](../archive/sessions/2026-07-28%20—%20Persona%20Unification%20Plan%20and%20Phase%200.md)
+Session archive: [archive/sessions/2026-07-28 — Persona Unification Complete (Phases 0-8, Strict Mode Live).md](../archive/sessions/2026-07-28%20—%20Persona%20Unification%20Complete%20(Phases%200-8,%20Strict%20Mode%20Live).md) — link corrected 2026-08-05; the "Plan and Phase 0" filename this originally pointed to was never written, and the "Complete" file (referenced elsewhere in this log for the same work) is what exists.
 
 ### Backlog found this session (pre-existing, not fixed)
 1. **`companion_checkin` errors on every fire** (07:35, 09:05, 10:35, 12:05) — error logged ~90 min after firing, suggesting a timeout. A core proactive feature failing silently. **Highest priority.**

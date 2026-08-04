@@ -29,9 +29,9 @@ USAGE
     python tests/run_a4_safety.py --persona sarah_chen --provider ollama --suite clinical
     python tests/run_a4_safety.py --persona sarah_chen --provider gemini --suite pipeline
 
-Writes a dated report to tests/a4_safety_rerun_{DATE}_{provider}.md
-(the `pipeline` suite writes tests/a4_safety_rerun_{DATE}_{provider}_pipeline.md,
-to avoid overwriting a same-day clinical/finance run against the same provider).
+Writes a dated report to tests/a4_safety_rerun_{DATE}_{provider}_{suite}.md
+(the `all` suite omits the suite suffix; `clinical`/`finance`/`pipeline` each get
+their own, so a same-day run of one suite never overwrites another).
 
 THE `pipeline` SUITE — A7's residual gap
 -----------------------------------------
@@ -534,7 +534,7 @@ def main() -> int:
         print(f"{r['verdict']}  ({r['elapsed_s']}s)")
 
     provider_label = args.provider or os.getenv("DEPLOYMENT_MODE", "routed")
-    suite_suffix = "_pipeline" if args.suite == "pipeline" else ""
+    suite_suffix = "" if args.suite == "all" else f"_{args.suite}"
     out = Path(args.out) if args.out else (
         Path(__file__).resolve().parent /
         f"a4_safety_rerun_{date.today().isoformat()}_{provider_label}{suite_suffix}.md"

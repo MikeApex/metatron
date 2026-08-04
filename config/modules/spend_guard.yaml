@@ -32,19 +32,22 @@ alert_sessions_per_hour: 20
 stop_sessions_per_hour: 60
 
 # --- Pricing, USD per 1M tokens ---
-# VERIFY THESE against current Vertex AI pricing before trusting the dollar
-# figures. They are order-of-magnitude estimates chosen so the guard fires on
-# runaway; they are not billing-accurate. Unknown models fall back to "default".
+# Verified 2026-08-05 against cloud.google.com/vertex-ai/generative-ai/pricing
+# (standard tier, <=200K token context, text). Previous values underestimated
+# both models — flash-lite output was off by ~3.75x. Still order-of-magnitude
+# guard figures, not billing-accurate (ignores cached-input discounts, priority/
+# flex tiers, and the >200K token-context rate step). Unknown models fall back
+# to "default". Re-verify at the next pricing page change.
 pricing:
   gemini-3.1-pro-preview:
-    input: 1.25
-    output: 10.00
+    input: 2.00
+    output: 12.00
   gemini-3.1-flash-lite:
-    input: 0.10
-    output: 0.40
+    input: 0.25
+    output: 1.50
   default:
-    input: 1.25
-    output: 10.00
+    input: 2.00
+    output: 12.00
 
 # The VM costs roughly $29/month in fixed infrastructure (~$1/day) regardless of
 # usage. That floor is NOT counted here — these thresholds measure AI spend only,
