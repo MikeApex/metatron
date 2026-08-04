@@ -17,8 +17,6 @@ Refresh: `python3 scripts/sync_dev_backlog.py`
   `2026-08-04T07:56:50.829916Z`
 - **[agent wanted a tool it lacks]** `logistics` attempted `write_agent_config` (agent_name, field, value) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
   `2026-08-04T07:56:53.699518Z`
-- **[needs building]** Remove the voice activation toggle from the app interface, as the voice feature is causing interface friction and interrupting the user's ability to send messages.  
-  `2026-08-04T07:57:18.076761Z`
 
 - **[agent wanted a tool it lacks]** `logistics` attempted `write_agent_config` (agent_name, field, value) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
   `2026-08-03T17:04:20.418604Z`
@@ -28,8 +26,6 @@ Refresh: `python3 scripts/sync_dev_backlog.py`
   `2026-08-03T17:09:34.625692Z`
 - **[needs building]** Fix interface bug causing text doubling/duplication and abruptly cutting off user input mid-sentence. Also prioritize fixing the live calendar connection so the system can read and write to the user's calendar.  
   `2026-08-03T17:12:02.492018Z`
-- **[needs building]** Remove the voice activation toggle from the app interface, as the voice output is interrupting the user's message input and causing cutoff errors.  
-  `2026-08-03T17:16:37.148706Z`
 
 - **[instruction change]** For all check-ins: maximum two sentences. If exactly one item genuinely needs attention, name it and stop; otherwise just ask what is on. Never list or recap pending items, and never manufacture a topic.  
   `2026-08-03T15:12:14.933312Z`
@@ -39,6 +35,18 @@ Refresh: `python3 scripts/sync_dev_backlog.py`
 ---
 
 ## Triaged out of Inbox — 2026-08-04
+
+- ~~**Remove the voice activation toggle from the app** (×2 — `2026-08-03T17:16Z`,
+  `2026-08-04T07:57Z`)~~ — **superseded, closed 2026-08-04 by Mike's decision** (*"Voice is
+  completed as far as I can see. Remove any requests for it. I can always rerequest."*).
+
+  Both requests were about voice output cutting into message input. What shipped addresses
+  the cause rather than removing the feature: a persisted toggle **defaulting to off**
+  (`fe0d688`), so behaviour matches "removed" unless switched on, plus the fix that actually
+  mattered (`8e5c47e`) — speech is now blocked at every point playback could begin, including
+  after the `/tts` await and after `decodeAudioData`. The first attempt only *stopped* audio
+  already playing, which did not fix the reported bug at all: the delay complained about **is**
+  the `/tts` await, so a reply could still start speaking mid-recording.
 
 - ~~`physical_health` attempted `read_agent_config` (×3 warn-mode entries)~~ — **granted
   2026-08-04**, `b3229ff`, in both `routing_cloud.yaml` and `routing.yaml`. Not a judgement call:

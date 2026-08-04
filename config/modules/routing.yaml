@@ -107,4 +107,12 @@ agents:
   research_agent:
     provider: gemini
     model: "models/gemini-3.1-pro-preview"   # grounded search; decontextualized only
-    # no allowed_tools — research_agent runs in bare mode (no personal tools)
+    allowed_tools: [fetch_url]
+    # Explicit list as of 2026-08-04, and the wording it replaced was misleading:
+    # "no allowed_tools — bare mode (no personal tools)" conflated two different
+    # things. Bare mode (orchestrator `_run_single_agent`) withholds personal
+    # *context*; omitting allowed_tools grants *all* tools (`None` = allow all in
+    # core/router.py). It read as the most restrictive setting and was the least.
+    # Harmless while the grounded path passed no tools at all — but that changed
+    # the same day, so the list is now real. fetch_url only: Research reads pages,
+    # it writes nothing.

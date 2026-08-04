@@ -1495,11 +1495,29 @@ def run_session_gemini(system_prompt: str, user_input: str,
 
 
 def run_session_gemini_grounded(system_prompt: str, user_input: str,
+                                tool_schemas: list[dict] | None = None,
+                                tool_handlers: dict | None = None,
                                 model: str | None = None) -> str:
     """
-    Single-call Gemini session using the native SDK with Google Search grounding.
-    Used exclusively for the Research Agent — provides live web search with source
-    citations. Not an agentic loop: Research Agent calls no tools of its own.
+    Gemini session with Google Search grounding, for the Research Agent.
+
+    Provides live web search with source citations, and — since 2026-08-04 — an optional
+    bounded tool loop so Research can also call `fetch_url` on a page search cannot be
+    pointed at.
+
+    **Grounding and function calling coexist; this was tested, not assumed.** The received
+    wisdom is that Gemini rejects `google_search` alongside `function_declarations`. On
+    gemini-3.1-pro-preview via Vertex, search-only, functions-only and both-together all
+    succeed. The only complaint is about *automatic* function calling, which is disabled
+    here — the loop below is manual, matching every other provider path in this file.
+
+    Why this changed: `research_agent.md` was given a `fetch_url` instruction on 2026-08-04
+    while this function still passed no tools at all, so Research was told it held a
+    capability it could not invoke. An agent in that state does not fail cleanly — it is
+    liable to *claim* it read a page it never fetched, which is precisely the
+    unretrieved-source problem `fetch_url` existed to fix.
+
+    Without `tool_schemas` the behaviour is exactly as before: one call, no loop.
     Always appends a SOURCES: field to the response.
     """
     from google import genai
@@ -1520,44 +1538,90 @@ def run_session_gemini_grounded(system_prompt: str, user_input: str,
     if project and model_name.startswith("models/"):
         model_name = model_name[len("models/"):]
 
-    _trace(f"[API] gemini-grounded/{model_name}  turn=1  waiting...")
-    try:
-        response = client.models.generate_content(
-            model=model_name,
-            contents=user_input,
-            config=types.GenerateContentConfig(
-                system_instruction=system_prompt,
-                tools=[types.Tool(google_search=types.GoogleSearch())],
-            ),
-        )
-    except Exception as _api_exc:
-        from core.router import log_model_error
-        _agent = _tr.get_current_agent() or "research_agent"
-        logger.error(f"[model_error] agent={_agent} provider=gemini-grounded model={model_name} error={_api_exc}")
-        log_model_error(_agent, "gemini-grounded", model_name, str(_api_exc))
-        raise
+    tools = [types.Tool(google_search=types.GoogleSearch())]
+    if tool_schemas:
+        tools.extend(_to_gemini_tools(tool_schemas))
 
-    text = response.text or ""
+    # The set actually advertised to this agent, which is what the permission check in
+    # dispatch_tool compares against. Derived here rather than passed in, so it cannot
+    # drift from the schemas the model was shown.
+    _allowed = {s["name"] for s in tool_schemas} if tool_schemas else None
 
-    # Token budget logging (native SDK field)
-    if hasattr(response, "usage_metadata") and response.usage_metadata:
-        input_tokens = getattr(response.usage_metadata, "prompt_token_count", 0) or 0
-        output_tokens = getattr(response.usage_metadata, "candidates_token_count", 0) or 0
-        if input_tokens > 8000:
-            logger.warning(f"[token_budget] OVER_8K turn=1 cumulative_input={input_tokens}")
-        else:
-            logger.info(f"[token_budget] turn=1 cumulative_input={input_tokens}")
-        _tr.record_turn_tokens(_tr.get_current_agent(), 1, input_tokens, output_tokens)
+    config = types.GenerateContentConfig(
+        system_instruction=system_prompt,
+        tools=tools,
+        # Manual loop below, as on every other provider path. Left on, the SDK would
+        # try to invoke callables itself and warn that declarations are incompatible.
+        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+    )
 
-    # Extract source URLs from grounding metadata
-    sources = []
-    if response.candidates:
-        gm = getattr(response.candidates[0], "grounding_metadata", None)
-        if gm:
-            for chunk in getattr(gm, "grounding_chunks", []):
-                web = getattr(chunk, "web", None)
-                if web and getattr(web, "uri", None):
-                    sources.append(web.uri)
+    contents = [types.Content(role="user", parts=[types.Part(text=user_input)])]
+    sources: list[str] = []
+    text = ""
+    # Low deliberately. Research fetches a page or two to check a source; it is not an
+    # agentic browser, and an unbounded loop here would be a token sink on the one path
+    # that already carries live search.
+    max_turns = 4 if tool_schemas else 1
+
+    for turn in range(1, max_turns + 1):
+        _trace(f"[API] gemini-grounded/{model_name}  turn={turn}  waiting...")
+        try:
+            response = client.models.generate_content(
+                model=model_name, contents=contents, config=config,
+            )
+        except Exception as _api_exc:
+            from core.router import log_model_error
+            _agent = _tr.get_current_agent() or "research_agent"
+            logger.error(f"[model_error] agent={_agent} provider=gemini-grounded model={model_name} error={_api_exc}")
+            log_model_error(_agent, "gemini-grounded", model_name, str(_api_exc))
+            raise
+
+        # Token budget logging (native SDK field)
+        if hasattr(response, "usage_metadata") and response.usage_metadata:
+            input_tokens = getattr(response.usage_metadata, "prompt_token_count", 0) or 0
+            output_tokens = getattr(response.usage_metadata, "candidates_token_count", 0) or 0
+            if input_tokens > 8000:
+                logger.warning(f"[token_budget] OVER_8K turn={turn} cumulative_input={input_tokens}")
+            else:
+                logger.info(f"[token_budget] turn={turn} cumulative_input={input_tokens}")
+            _tr.record_turn_tokens(_tr.get_current_agent(), turn, input_tokens, output_tokens)
+
+        # Grounding sources accumulate across turns — a citation found on turn 1 is still
+        # a source for the final answer even if turn 2 fetched a page directly.
+        if response.candidates:
+            gm = getattr(response.candidates[0], "grounding_metadata", None)
+            if gm:
+                for chunk in getattr(gm, "grounding_chunks", []):
+                    web = getattr(chunk, "web", None)
+                    if web and getattr(web, "uri", None) and web.uri not in sources:
+                        sources.append(web.uri)
+
+        calls = getattr(response, "function_calls", None) or []
+        if not calls or not tool_handlers:
+            text = response.text or ""
+            break
+
+        contents.append(response.candidates[0].content)
+        parts = []
+        for call in calls:
+            result = dispatch_tool(call.name, dict(call.args or {}), tool_handlers,
+                                   _turn_num=turn, _allowed=_allowed)
+            # A fetched page is its own source. Recording it here means the SOURCES
+            # field reflects what was actually read, not only what search surfaced.
+            if call.name == "fetch_url":
+                url = (call.args or {}).get("url")
+                if url and url not in sources:
+                    sources.append(url)
+            parts.append(types.Part.from_function_response(
+                name=call.name, response={"result": result}))
+        contents.append(types.Content(role="user", parts=parts))
+    else:
+        # Loop exhausted with the model still calling tools. Return what it last said
+        # rather than nothing, and say so — a silent empty answer from Research reads
+        # as "no information found", which is a different and misleading claim.
+        text = (response.text or "").strip()
+        text += ("\n\n[Note: stopped after the tool-call limit; this answer may be "
+                 "incomplete.]")
 
     if sources:
         sources_block = "\n".join(f"- {url}" for url in sources)
@@ -2138,7 +2202,13 @@ def _run_single_agent(agent_name: str, user_input: str,
                                         history=history)
         elif provider == "gemini":
             if agent_name == "research_agent":
-                result = run_session_gemini_grounded(system_prompt, augmented_input, model=model_override)
+                # Tools are passed now (2026-08-04). Before this, the grounded path took
+                # none — so research_agent's `allowed_tools` had no effect whatsoever, and
+                # the `fetch_url` line in its instruction file described something it could
+                # not do. Its whitelist is what bounds this: keep it narrow.
+                result = run_session_gemini_grounded(system_prompt, augmented_input,
+                                                     tool_schemas, tool_handlers,
+                                                     model=model_override)
             elif agent_name in (_HEAD_LAYER_AGENTS | _ROUTING_LAYER_AGENTS):
                 result = run_session_gemini_cached(system_prompt, augmented_input, tool_schemas,
                                                    tool_handlers, model=model_override, history=history)
