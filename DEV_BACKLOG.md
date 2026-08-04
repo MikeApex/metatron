@@ -38,6 +38,16 @@ Behavioural changes to how agents judge, prioritise, or decide what to raise. Ap
 
 Capabilities that do not exist yet.
 
+### Surfaced 2026-08-04
+
+- **⚠ ~4-hour silent outage: the VM's guest lost all networking while GCE reported `RUNNING`. Root cause unknown.** Found 2026-08-04 ~00:20 when a deploy failed at SSH. Recovered by stop/start; the machine has been fine since.
+
+  **Signature, for whoever sees it next.** GCE said `RUNNING` and the serial console was logging in real time — the OS was alive, not hung. But every process inside failed identically on `dial tcp 169.254.169.254:80: connect: network is unreachable` — the metadata server, on a link-local address, which is reachable from any healthy VM by definition. `network is unreachable` rather than a timeout means **no route existed**: the guest's NIC lost its routing. `tailscaled` looped on *"connectivity impacted; triggering captive portal detection"*; Tailscale showed `offline, last seen 4h ago, tx … rx 0`. Billing was `True`, the IAP firewall rule correct, IPs assigned, and `lastStartTimestamp` was three days earlier — **nobody rebooted it; networking died under a running machine.**
+
+  Same signature as the 2026-07-31 `nic0 is frozen` incident, **but with the known cause absent** — billing was never disabled this time. So either that incident's root cause was misattributed to the billing freeze, or there are two paths to the same failure. Worth resolving before trusting VM uptime: it is silent, it survives a `RUNNING` status check, and it cost ~4 hours here.
+
+- **Nothing detects that the VM is down.** The outage above ran ~4h and was found by accident, on the way to doing something else. `scripts/sync_dev_backlog.py` runs at the start of every session, is the first thing to touch the VM, and **exits 0 silently when it cannot reach it** — by design, so a paused VM is not reported as a failure. That design is right for a paused VM and wrong for a broken one: at session start it printed `0 new, 40 open`, indistinguishable from a healthy run. Cheapest fix is to have it distinguish *stopped* (expected, silent) from *running-but-unreachable* (report it) — `gcloud compute instances describe --format="value(status)"` is one call and already used elsewhere. Related: `metatron-resume.sh`'s health check is the only thing in the repo that verifies the VM actually answers, and it only runs when someone resumes.
+
 ### Surfaced 2026-08-03 by the context-audit test run
 
 - ~~**⚠ A4 clinical-flag hard-fails must be re-run before A7 sign-off.**~~ **Gate PASSED
