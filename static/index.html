@@ -133,6 +133,26 @@
       cursor: not-allowed;
     }
 
+    /* Spoken-reply toggle. Sits next to the mic rather than in the hidden settings
+       row, because it is meant to be flipped mid-conversation. */
+    #voice-toggle {
+      width: 56px;
+      height: 56px;
+      flex: 0 0 auto;
+      border: 1px solid #333;
+      border-radius: 28px;
+      background: #1a1a1a;
+      color: #666;
+      font-size: 20px;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+    #voice-toggle.on {
+      background: #1e3a5f;
+      border-color: #1e3a5f;
+      color: #e8e8e8;
+    }
+
     @keyframes pulse {
       0%, 100% { opacity: 1; }
       50% { opacity: 0.7; }
@@ -339,6 +359,7 @@
 
   <div id="controls">
     <button id="mic-btn">Tap to Speak</button>
+    <button id="voice-toggle" title="Spoken replies on/off">🔇</button>
   </div>
   <div id="grant-wrap" style="text-align:center;display:none">
     <button id="grant-btn" style="background:#333;border:1px solid #555;border-radius:20px;color:#aaa;font-size:13px;padding:8px 20px;cursor:pointer">Grant mic permission</button>
@@ -872,6 +893,12 @@
   }
 
   async function startRecording() {
+    // Silence any reply still playing before the mic opens. Independent of the voice
+    // toggle and worth keeping even with voice on: the reported failure was TTS
+    // arriving late and talking over a follow-up already being recorded, which the
+    // toggle only avoids by turning the feature off entirely.
+    stopSpeaking();
+
     let stream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -995,8 +1022,38 @@
   document.addEventListener('click', unlockAudio, { once: true });
   document.addEventListener('touchend', unlockAudio, { once: true });
 
-  async function speakResponse(text) {
+  // --- Spoken replies (toggle) ---
+  //
+  // Off by default. TTS runs behind the reply, so on a slow synthesis the audio was
+  // still arriving while the user had already tapped the mic to follow up — speaking
+  // over them mid-recording. Making it a toggle rather than removing it keeps voice
+  // one tap away without another APK rebuild, which is the whole reason it is a
+  // control and not a constant.
+  let voiceEnabled = localStorage.getItem('metatron_voice') === 'on';
+
+  function stopSpeaking() {
     if (currentSource) { try { currentSource.stop(); } catch {} currentSource = null; }
+  }
+
+  function renderVoiceToggle() {
+    const btn = document.getElementById('voice-toggle');
+    btn.classList.toggle('on', voiceEnabled);
+    btn.textContent = voiceEnabled ? '🔊' : '🔇';
+    btn.title = voiceEnabled ? 'Spoken replies on — tap to silence' : 'Spoken replies off — tap to enable';
+  }
+
+  document.getElementById('voice-toggle').addEventListener('click', () => {
+    voiceEnabled = !voiceEnabled;
+    localStorage.setItem('metatron_voice', voiceEnabled ? 'on' : 'off');
+    if (!voiceEnabled) stopSpeaking();   // silence what is already playing, not just the next one
+    renderVoiceToggle();
+  });
+
+  renderVoiceToggle();
+
+  async function speakResponse(text) {
+    if (!voiceEnabled) return;
+    stopSpeaking();
     try {
       const res = await authFetch('/tts', {
         method: 'POST',
