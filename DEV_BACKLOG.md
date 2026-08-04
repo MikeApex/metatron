@@ -310,32 +310,63 @@ item "nearly aged out" (see Troubleshooting signal below).*
   *filed 2026-08-03 by dev session · recovered from SESSION.md:385 · verified 2026-08-05 against
   the VM journal + core/orchestrator.py:1417*
 
-- **[DB-0803-02] ⚠ `Object of type AgentRecord is not JSON serializable` — this is not a
-  logging nuisance, it is proactive sessions failing outright.** Elevated 2026-08-05 after
-  checking the live journal; the original entry called it *"trace serialization fails"*, which
-  understates it by a wide margin.
+- ~~**[DB-0803-02] ⚠ `Object of type AgentRecord is not JSON serializable` — proactive sessions
+  failing outright.**~~ — **root-caused and fixed 2026-08-04, deployed `10bf194`.**
 
-  **What the journal actually shows (7 days to 2026-08-05):** 18 occurrences, and
-  `[scheduler error]` counts of `companion_checkin` ×13, `evening_close` ×2, `morning_brief`
-  ×2, `plant_watering_check` ×2 — **19 scheduler errors, 18 of them this one.** Still current:
-  4 on 2026-08-04. So essentially every scheduler failure in the last week is this bug, and the
-  jobs it kills are the proactive check-ins — the product's whole reason for having a scheduler.
+  **Root cause:** `core/router.py:166`, inside `log_model_error()`. Three call sites in
+  `core/orchestrator.py` (:1575, :1676, :1881 — the last is the Coordinator/Synthesizer
+  OpenAI-compat loop every failing scheduled job passes through) did
+  `_agent = _tr.get_current_agent() or "unknown"`. `get_current_agent()` returns the live
+  `AgentRecord`, not a string, and a truthy record short-circuits the `or` — so `_agent` was the
+  record object itself whenever one was active (always, mid-pipeline). `log_model_error` then
+  crashed on `json.dump` trying to serialize it, **masking whatever the real underlying model
+  failure was**. Confirms and completes the localisation two sessions had already narrowed down
+  (`core/trace.py` was correctly ruled out both times).
 
-  **Where it is not:** `core/trace.py` is clean. `_agent_to_dict()`
-  ([:220](core/trace.py#L220)) converts `AgentRecord` (recursing into `subagents`) and
-  `_serialize()` ([:253](core/trace.py#L253)) calls it before `json.dumps`. That has been in
-  place since 2026-06-22 (`c66ed03`), so the obvious suspect is not the culprit and reading
-  `trace.py` will not find it.
+  **Fix:** one line — `"agent": agent.agent if hasattr(agent, "agent") else agent,` — fixes all
+  three call sites at one JSON boundary rather than patching each.
 
-  **Where to look:** the failing jobs are all `agent == "coordinator"`, which route through
-  `send_one()` → the server's WebSocket handler ([core/scheduler.py:281](core/scheduler.py#L281)),
-  not through `run_session` in-process. The payloads `remote_client` sends carry no
-  `AgentRecord`, so the exception is almost certainly raised **server-side** and returned as an
-  error frame, which `fire_session`'s handler ([:292](core/scheduler.py#L292)) then reports.
-  **Next step is the server-side traceback, not more code reading** — the scheduler only ever
-  sees the message text.
-  *filed 2026-08-03 by dev session · recovered from SESSION.md:384 · verified 2026-08-05 against
-  the VM journal; localised, root cause still open*
+  **Verified two ways before calling this closed:**
+  1. Local: called `log_model_error()` directly with both an `AgentRecord`-like mock and a plain
+     string — no `TypeError` either way.
+  2. **On the deployed VM, with the real object**, not a mock: started an actual
+     `RequestTrace`/`AgentRecord` via `core.trace.start_request_trace` +
+     `push_agent('coordinator', ...)`, then called `log_model_error()` with the real
+     `get_current_agent()` return value — the exact call that was crashing in production. It
+     did not raise, and the resulting log entry correctly read `"agent": "coordinator"` (a
+     string, not the object dump a pre-fix run would have produced). The synthetic test entry
+     was deleted from `data/diagnostics/model_errors.json` afterward so it doesn't read as a
+     real production error.
+
+  **What is *not* yet confirmed — a genuine scheduled fire completing end-to-end under real
+  conditions** (not a manual reproduction). See **[DB-0804-01]** below for the time-gated checks
+  that confirm this, and why they should not be run early.
+  *filed 2026-08-03 by dev session · elevated 2026-08-05 · root-caused, fixed and deployed
+  2026-08-04 by dev session · verified against core/router.py and live VM reproduction*
+
+- **[DB-0804-01] Time-gated follow-up: confirm a real scheduled fire completes clean under
+  [DB-0803-02]'s fix.** The fix above is verified against the exact crashing code path, but not
+  yet against a live scheduler fire hitting real model-call variance. **Do not check any of
+  these before the stated time — an early check just shows "hasn't fired yet," which reads as a
+  regression and isn't one.**
+
+  1. **`companion_checkin`, not before 2026-08-04 23:05 BST.** `min_gap_minutes: 180` from its
+     last real fire (20:03 BST) puts the earliest next attempt at ~23:03. Check:
+     `gcloud compute ssh metatron-vm --zone=us-central1-a --project=metatron-ai-499810 --tunnel-through-iap --command="sudo journalctl -u metatron-scheduler --since '2026-08-04 22:55' | grep -E 'companion_checkin|AgentRecord'"`.
+     Pass: a `firing companion_checkin` line with no following `AgentRecord is not JSON
+     serializable` error. (A `skipping` line is a gate decision, not a failure — re-check at the
+     next 30-minute poll rather than treating it as a fail.)
+  2. **`morning_brief`, not before 2026-08-05 07:35 BST.** Fires daily at 07:30. Same journalctl
+     pattern, grep `morning_brief`.
+  3. **One-week count, not before 2026-08-11.** Re-run the exact baseline query:
+     `sudo journalctl -u metatron-scheduler --since '7 days ago' | grep -c 'AgentRecord is not JSON serializable'`.
+     Baseline was 18 in the 7 days to 2026-08-05. Pass: at or near 0 for the 7 days following
+     deploy (2026-08-04 21:00 onward) — some non-zero count is possible if the *same* call sites
+     hit a genuinely different, unrelated serialization issue, so read the actual log lines
+     before treating a nonzero count as this bug recurring.
+
+  *filed 2026-08-04 by dev session · depends on [DB-0803-02] · not to be actioned before the
+  per-check times above*
 
 - **[DB-0803-05] `sw.js` has no `fetch` handler and caches nothing**, and `/` is served
   `no-store` — no offline shell, so an unreachable server shows a browser error page rather than
