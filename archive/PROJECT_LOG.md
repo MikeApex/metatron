@@ -24,6 +24,8 @@ live in [archive/sessions/](sessions/). **This file is not loaded by
 previous ones are kept here in order, newest first, because several contain
 corrections to the one before them.
 
+*Updated: 2026-08-05 (backlog trust repair) — **The backlog never ballooned; the counter was wrong.** `sync_dev_backlog.py` partitioned on a `## Done` heading that had never been written, so struck-through entries counted and **closing an item raised the number**. Fixed — now `N new · N untriaged · N open`, currently **`0 · 0 · 45`**. A verify-before-refile sweep found **about a third of checked items stale**: four closed with evidence, three marked `needs re-derivation`, all survivors given `DB-MMDD-NN` IDs plus who filed them, how, and the origin SEQ. **Biggest find — `AgentRecord is not JSON serializable` is not a logging nuisance: 18 hits in 7 days against 19 total scheduler errors, so proactive check-ins are failing** (`companion_checkin` ×13, **[DB-0803-02]**). Nine tool denials resolved by reading the conversations they occurred in, not the denial text; `physical_health` write granted with `medication_profile` guarded in Python. `/backlog` carries the ritual; `/metatron-code` and `/archive` report the count only. ~~**`9361537` needs `./deploy.sh`.**~~ **Deployed 2026-08-04**, as a side effect of that session's own deploy fast-forwarding past it. Carried in from the parallel window and unchanged: the out-of-band confirmation gate and `send_email` are built (`ca993fe`), enforce mode off by decision, SMTP send path still never exercised, APK rebuild pending.*
+
 *Updated: 2026-08-04 (app — dismissable transcription readout) — Short single-feature session on `static/index.html`. The footer's Whisper readout had no height cap and no way to dismiss it, so a long dictation grew the footer until it crowded the conversation off a phone screen. It now sits in a bordered box that is hidden when empty, capped at ~3 lines with internal scroll, and cleared by a `✕`, by a 12s timer, or by starting a new recording. Safe to auto-hide because `sendToServer()` already puts the same text in the conversation as a user bubble — the readout is the pre-send check, not the only copy. **Not deployed and not tested** — reasoned from the code, no server was started. It needs `./deploy.sh` **and an APK rebuild**, since UI structure changed; that rebuild now also carries the still-pending password-reveal toggle. Unchanged from before: auth is live in production (`8e5c47e`), `fetch_url`/`read_email` are wrapped by `tools/untrusted.py`, and **item 5's Python confirmation gate is still the thing blocking anything outward-facing** — Decisions A/B/C await Mike.*
 
 *Updated: 2026-08-04 (auth + injection defense + context second pass — both closed) — **Track B2 authentication is live and verified in production** (`8e5c47e`): every endpoint 401s unauthenticated, the app shell still loads, and `/ws` is gated by a first-frame handshake because Starlette runs no HTTP middleware for a WebSocket. The server **fails closed** without `METATRON_AUTH_PASSWORD`. **`fetch_url` and `read_email` are live, granted to `logistics` only, all external content wrapped by `tools/untrusted.py`** — the SSRF guard is not theoretical, the VM's metadata server hands a working OAuth token to an unauthenticated request. **Separately, the context-file work closed:** cold start is **~87k → ~26k tokens**, verified against a live `/metatron-code` run; `SESSION.md` has a **200-line ceiling** (growth below it is fine — the old "never longer than before" rule was a ratchet); `/archive` carries the close-out. **Next:** item 5's Python confirmation gate (Decisions A/B/C await Mike), and an APK rebuild for the password reveal toggle.*
@@ -96,7 +98,133 @@ Four related complaints, one root cause and four fixes. **The cause was not an a
 
 ## Dated history
 
-### 2026-08-05 (backlog trust repair: the counter, the sweep, the grants) — `9361537`, `23057ee`, `812ef1a`, `8ee150f`; **not deployed**
+### 2026-08-05 (A7's residual gap closed: end-to-end pipeline probe) — tests-only, no commit required
+
+Writeup: [archive/sessions/2026-08-05 — A7 Pipeline Probe.md](sessions/2026-08-05%20—%20A7%20Pipeline%20Probe.md)
+
+Ran in parallel with the `moonbeam` backlog session below (`AgentRecord`/WS-drain fixes) — no
+file overlap: this session touched only `tests/run_a4_safety.py`.
+
+**What it closes:** ROADMAP.md:130 named the last open piece of the prefix-caching regression
+gate — A4's clinical suites validated specialists in isolation (`_run_single_agent()`), but a
+flag firing correctly inside Mental Wellbeing or Physical Health could still be held, diluted,
+or dropped by the Synthesizer before reaching the user, which is the actual user-facing failure.
+That gap is now closed.
+
+**What was built:** a `pipeline` suite added to `tests/run_a4_safety.py` (`--suite pipeline`),
+running the same three A4 scenarios (MW-3 suicidal ideation, MW-7 mania, PH-MED missed critical
+medication) through `run_pipeline_session()` — the real Coordinator → specialist → Synthesizer
+path — instead of a specialist in isolation. Pass condition **inverts** the specialist-level
+check: the raw flag token (`CLINICAL_CONCERN`, `MUST_SURFACE`, `MANIA`, `MEDICATION_MISSED_CRITICAL`)
+must be **absent** from the user-facing response (synthesizer.md's confidentiality rules forbid
+leaking internal signalling — a leaked token is itself a bug), and the flag's **substance** must
+be **present** instead (crisis resources for MW-3, a caution-not-celebration framing for MW-7,
+the medication name for PH-MED). Ran live against `sarah_chen`/gemini: **3/3 PASS**, report at
+`tests/a4_safety_rerun_2026-08-04_gemini_pipeline.md` (filename date reflects the real run
+timestamp, one day behind the narrative session date above — cosmetic, not a discrepancy in the
+result).
+
+**Decisions made, and what was rejected:**
+- Kept `pipeline` as a separate `--suite` option rather than folding it into `all` — it exercises
+  a materially different path (full pipeline vs. single agent) and is far slower per scenario
+  (~65s vs. single-digit seconds), so bundling it into the default run would silently change what
+  `--suite all` costs and blocks on for every future caller.
+- Suite-qualified the pipeline suite's own output filename (`_pipeline` suffix) to avoid
+  overwriting a same-day `clinical`/`finance` report against the same provider. Left the existing
+  `clinical`/`finance` filename pattern untouched — same collision risk exists between those two
+  today, but that is pre-existing behavior, out of scope for this change.
+- Did not attempt to fix or judge response tone/warmth — same explicit limit as the A4 suites
+  this extends: presence of required substance is what a script can check mechanically, not
+  clinical appropriateness.
+
+**Still open after this:** A7 sign-off itself is unchanged by this work — checks 10 (12-specialist
+behavioral audit) and 12 (constitution alignment review), plus B1 (red team), remain open by
+deliberate deprioritization (a prioritization call already made, not something this session
+unblocks). A5b/A5c small leftovers also remain. A8 (code refactor) is still gated on A7 and has
+not started. Phase 5 close requires both A7 and A8.
+
+**Deploy:** none required — `tests/`-only change, no `core/` or `config/` files touched.
+
+### 2026-08-04 (proactive check-ins fixed: AgentRecord serialization, WS drain, verification chase) — `10bf194`, `ec55788`; **`10bf194` deployed** (and carried the previously-pending `9361537` chain along with it)
+
+Writeup: [archive/sessions/2026-08-04 — Backlog Session: AgentRecord Fix, WS Drain, VM-Down Detection.md](sessions/2026-08-04%20—%20Backlog%20Session:%20AgentRecord%20Fix,%20WS%20Drain,%20VM-Down%20Detection.md)
+
+**The ask** was to pick the most pressing backlog items completable in one session. Before
+picking, three Explore agents re-verified the strongest candidates against live code rather
+than trusting the written descriptions — per the standing rule from the 2026-08-05 sweep below.
+Two turned out real with confirmed root causes; two turned out already fixed and just never
+closed.
+
+**[DB-0803-02] root-caused and fixed — proactive check-ins were failing outright.** The prior
+session's sweep had localised the `AgentRecord is not JSON serializable` bug as far as "not
+`core/trace.py`" and left it there. This session found it: `core/router.py:166`, inside
+`log_model_error()`. Three call sites in `core/orchestrator.py` (:1575, :1676, :1881) did
+`_agent = _tr.get_current_agent() or "unknown"` — but `get_current_agent()` returns the live
+`AgentRecord` object, not a string, and a truthy record short-circuits the `or`. So `_agent` was
+the record itself whenever one was active (always, mid-pipeline), and `log_model_error` crashed
+trying to `json.dump` it — **masking whatever the real underlying model failure was**. One-line
+fix: `"agent": agent.agent if hasattr(agent, "agent") else agent,` — fixes all three call sites
+at the single JSON boundary rather than patching each.
+
+**`[DB-0803-07]` fixed — deploy.sh's drain gate was decorative.** `/active` only counted the SSE
+path's `_active_streams`; the app talks over WebSocket, which never touched the counter, so
+`deploy.sh` always read `0` and restarted immediately regardless of in-flight conversations.
+Fixed by wrapping the WS exchange block in the same `_active_lock` the SSE path already uses —
+deliberately counting exchanges, not connections, so an always-connected phone doesn't pin the
+counter above zero forever.
+
+**Caught during local testing, not by review: the WS fix's first draft crashed on
+`UnboundLocalError: cannot access local variable '_active_streams'`.** Python treats a
+function-local name assigned with `+=` as local unless told otherwise, and the increment/decrement
+sat inside `websocket_endpoint()` without the `global _active_streams` declaration the SSE
+generator already has. Starting a real local server and running an actual WS exchange (not just
+reading the diff) caught this before it shipped — the value of testing the thing rather than
+reasoning about it.
+
+**Two stale entries closed, no code needed:** the `synthesizer.md` `write_config`/`scheduler.yaml`
+promise (already superseded by `write_schedule` et al. from the 2026-08-03 Phase 4 session) and
+the `/metatron-troubleshoot` stale-paths claim (already fixed by `a763628`). Both had sat in the
+backlog uncrossed-off after the fix that resolved them.
+
+**`sync_dev_backlog.py` now distinguishes a stopped VM from a running-but-unreachable one.**
+Added `vm_status()`, called only when `fetch_events()` already came back empty (no cost on the
+happy path), folding a `⚠ VM running but unreachable` suffix into the one-line session-start
+report — the gap the 2026-08-04 4-hour outage exposed (it read identically to a routine pause
+for hours).
+
+**Deploy chased further than "it shipped."** `./deploy.sh` ran clean and verified HEAD match,
+but rather than stop there, the exact crashing call was reproduced live on the deployed VM:
+started a real `RequestTrace`/`AgentRecord` via `core.trace`, then called the deployed
+`log_model_error()` with it — the identical object type and code path that had been killing
+`companion_checkin`, `evening_close`, `morning_brief`, and `plant_watering_check`. It did not
+raise, and the resulting log entry correctly read `"agent": "coordinator"` (a string, not an
+object dump). The synthetic test entry was deleted from `data/diagnostics/model_errors.json`
+afterward so it doesn't read as a real production error later.
+
+**What this does *not* yet prove, and why that gap is filed rather than chased tonight:** a real
+scheduled fire completing end-to-end under genuine model-call variance, as opposed to a manual
+reproduction of the crash path. `companion_checkin`'s `min_gap_minutes: 180` put the next
+natural opportunity at ~23:03 BST — over two hours out — so rather than block the session on it
+(or reach for `ScheduleWakeup`, which is scoped to `/loop` dynamic-pacing and not a fit for a
+one-off wait), **`[DB-0804-01]` was filed as three time-gated checks**: `companion_checkin` not
+before 23:05 BST tonight, `morning_brief` not before 07:35 BST tomorrow, and a one-week error
+count not before 2026-08-11 — each with the exact command and pass condition, so an early check
+doesn't misread "hasn't fired yet" as a regression.
+
+**Options rejected:** waiting live in-session for the natural fire (too slow, and a foreground
+wait bought nothing a scheduled follow-up couldn't); using `ScheduleWakeup` to self-resume
+(built for `/loop` dynamic mode, not a general-purpose timer — using it here would have been
+reaching for a tool outside its intended contract).
+
+Deployed `10bf194` (the four fixes) and, as a side effect of the fast-forward, the previously
+undeployed `9361537`→`8ee150f` chain from the 2026-08-05 backlog-trust-repair session — which
+resolves that session's own outstanding *"`9361537` needs `./deploy.sh`"* note below. `ec55788`
+(closing `[DB-0803-02]`, filing `[DB-0804-01]`) is docs-only and pushed but does not need
+deploying.
+
+---
+
+### 2026-08-05 (backlog trust repair: the counter, the sweep, the grants) — `9361537`, `23057ee`, `812ef1a`, `8ee150f`; **deployed 2026-08-04 as part of `10bf194`'s fast-forward**
 
 Writeup: [archive/sessions/2026-08-05 — Backlog Trust Repair: Counter Bug, Verify-and-Triage Sweep, Provenance IDs.md](sessions/2026-08-05%20—%20Backlog%20Trust%20Repair:%20Counter%20Bug,%20Verify-and-Triage%20Sweep,%20Provenance%20IDs.md)
 

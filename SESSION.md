@@ -1,6 +1,6 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-05 (backlog trust repair) — **The backlog never ballooned; the counter was wrong.** `sync_dev_backlog.py` partitioned on a `## Done` heading that had never been written, so struck-through entries counted and **closing an item raised the number**. Fixed — now `N new · N untriaged · N open`, currently **`0 · 0 · 45`**. A verify-before-refile sweep found **about a third of checked items stale**: four closed with evidence, three marked `needs re-derivation`, all survivors given `DB-MMDD-NN` IDs plus who filed them, how, and the origin SEQ. **Biggest find — `AgentRecord is not JSON serializable` is not a logging nuisance: 18 hits in 7 days against 19 total scheduler errors, so proactive check-ins are failing** (`companion_checkin` ×13, **[DB-0803-02]**). Nine tool denials resolved by reading the conversations they occurred in, not the denial text; `physical_health` write granted with `medication_profile` guarded in Python. `/backlog` carries the ritual; `/metatron-code` and `/archive` report the count only. **`9361537` needs `./deploy.sh`.** Carried in from the parallel window and unchanged: the out-of-band confirmation gate and `send_email` are built (`ca993fe`), enforce mode off by decision, SMTP send path still never exercised, APK rebuild pending.*
+*Updated: 2026-08-05 (two parallel sessions closed: AgentRecord/WS-drain fix, A7 pipeline probe) — **Proactive check-ins root-caused and fixed** (parallel session): `core/router.py:166`'s `log_model_error()` was handed a live `AgentRecord` instead of a string, crashed on `json.dump`, and masked the real underlying failure — 18 of 19 scheduler errors in 7 days. One-line fix, deployed `10bf194` and verified live on the VM (`ec55788` closes the backlog entry, docs-only). **Not yet confirmed: a real scheduled fire completing end-to-end** — filed as `[DB-0804-01]`, three time-gated checks (~23:03, 07:30, one-week count 2026-08-11). Same fast-forward also fixed `deploy.sh`'s decorative WS-drain gate and closed two stale backlog entries. **Separately, this session closed A7's last residual gap:** a `pipeline` suite added to `tests/run_a4_safety.py` runs the A4 clinical scenarios through the real Coordinator→Synthesizer path, inverting the check (flag substance must surface, raw token must not) — **3/3 PASS live against gemini**, tests-only, no deploy needed. **A7 itself is still not signed off** — checks 10/12 and B1 remain open by deliberate deprioritization. Unchanged: SMTP send path still never exercised, APK rebuild pending.*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -49,13 +49,16 @@ deprioritised behind latency work:
 - **Check 10** — agent behavioural audits (12 specialists; Coordinator/Synthesizer via pipeline probes)
 - **Check 12** — constitution alignment review
 
-> **✅ Pre-sign-off gate CLEARED on the cloud path 2026-08-04 — 6/6.**
-> `python tests/run_a4_safety.py --persona sarah_chen --provider gemini`. **One piece still open:
-> the pipeline probe** — specialists were tested in isolation, and a flag can fire in Mental
-> Wellbeing yet still be *held* at the Synthesizer, which is the real user-facing failure.
-> Scoped and ready to build: add a `pipeline` suite to the existing runner calling
-> `run_pipeline_session()`; the pass conditions invert (the *substance* must surface, the flag
-> *token* must not). The local-path re-run is **dormant** — see below.
+> **✅ Pre-sign-off gate FULLY CLEARED on the cloud path — 2026-08-05.** Single-agent suites
+> 6/6 (2026-08-04, `python tests/run_a4_safety.py --persona sarah_chen --provider gemini`)
+> **plus the pipeline probe, 3/3 (2026-08-05,** `--suite pipeline` **— new).** MW-3/MW-7/PH-MED
+> run through the real Coordinator→specialist→Synthesizer path via `run_pipeline_session()`;
+> pass condition inverts the specialist-level check — raw flag tokens (`CLINICAL_CONCERN`,
+> `MUST_SURFACE`, etc.) absent from user-facing text, flag substance (crisis resources, a
+> caution framing, the medication name) present instead. Report:
+> `tests/a4_safety_rerun_2026-08-04_gemini_pipeline.md`. The local-path re-run is **dormant** —
+> see below. **This clears the regression gate, not A7 itself** — checks 10/12 and B1 remain
+> open by deliberate deprioritization (below).
 
 > **Local/Ollama path is DORMANT (2026-08-05, user decision).** The deployment is fully on the
 > Vertex VM under the 2026-06-18 ZDR amendment, so `--provider ollama` verifies a path nothing
@@ -86,17 +89,17 @@ gate should now be extended to `write_agent_config`/`write_config`, which B2 als
 > **The SMTP send path has never been exercised** — every test stops at the gate, so this
 > system has not yet sent mail. First real send is also the first test of that code.
 
-**⚠ Proactive check-ins are failing in production — [DB-0803-02].** 18 `AgentRecord is not JSON
-serializable` errors in 7 days against **19 total scheduler errors**, so essentially every
-scheduler failure is this one; `companion_checkin` accounts for 13. `core/trace.py` is clean
-(`_agent_to_dict` has handled it since `c66ed03`), so the failing path is server-side via
-`send_one`. **Next step is the server-side traceback, not more code reading.**
+**✅ `[DB-0803-02]` proactive check-ins fixed and deployed 2026-08-04 (`10bf194`), re-verified
+live on the VM.** Root cause was `core/router.py:166` handing a live `AgentRecord` to
+`log_model_error()`, masking the real failure. **`[DB-0804-01]` remains open** — a genuine
+scheduled fire completing end-to-end hasn't been observed yet, only the crash path is proven
+dead. Three time-gated checks filed (~23:03 tonight, 07:30 tomorrow, one-week count
+2026-08-11) — do not check before those times.
 
-**The backlog is trustworthy again, and it is the bin for everything outside this roadmap.**
-`0 new · 0 untriaged · 45 open`, every item carrying an ID, who filed it, how, and what was
-verified when. Work it with **`/backlog`**. The one rule: *no item is acted on, or re-filed, on
-the strength of its own description* — a 2026-08-05 sweep found about a third stale, and one
-stale premise produced a well-argued recommendation for the wrong decision.
+**The backlog is the bin for everything outside this roadmap.** Work it with **`/backlog`**.
+The one rule: *no item is acted on, or re-filed, on the strength of its own description* — a
+2026-08-05 sweep found about a third stale, and one stale premise produced a well-argued
+recommendation for the wrong decision.
 
 ---
 
@@ -107,7 +110,9 @@ Newest first. Full detail for every entry — and everything older — is in
 
 | Date | What | Deployed |
 |---|---|---|
-| 08-05 | **Backlog trust repair** — counter counted *up* when items closed; sweep found ~⅓ stale; IDs + provenance; nine tool grants; `/backlog`; **proactive check-ins found failing** | **no — `9361537` pending** |
+| 08-05 | **A7 pipeline probe** — `pipeline` suite added to `run_a4_safety.py`, running MW-3/MW-7/PH-MED through the real Coordinator→Synthesizer path; inverted pass condition (substance surfaces, token doesn't); 3/3 PASS live | tests-only, no deploy |
+| 08-04 | **Proactive check-ins fixed** — `[DB-0803-02]` root cause (`AgentRecord` handed to `log_model_error`) found and fixed; deploy.sh WS drain fixed; VM-down detection; live-VM re-verification; **`[DB-0804-01]` time-gated checks filed** | `10bf194`, `ec55788` |
+| 08-05 | **Backlog trust repair** — counter counted *up* when items closed; sweep found ~⅓ stale; IDs + provenance; nine tool grants; `/backlog` | `10bf194` (fast-forward) |
 | 08-04 | **Item 5 built** — out-of-band confirmation gate (`POST /confirm`), `send_email` to contacts, provenance rule; **Research could not fetch and now can** | `15b9a41` |
 | 08-04 | **App: transcription readout is dismissable** — height-capped, `✕` + 12s auto-hide. Needs deploy **and APK rebuild** | **no — pending** |
 | 08-04 | **Context second pass** — phase conventions → `docs/CONVENTIONS.md`, prose tightened, memory audit 43→39 files (two were actively wrong). Cold start 28k→26k | docs only |
@@ -115,7 +120,6 @@ Newest first. Full detail for every entry — and everything older — is in
 | 08-04 | **Auth live** (cookie+bearer, WS handshake, fail-closed) · `fetch_url` + `read_email` wrapped in `<untrusted_content>` · voice toggle · item 5 scoped | `8e5c47e` |
 | 08-03 | **Context-file audit** — `SESSION.md` 775→170 lines; `PROJECT_LOG.md`, `INFRASTRUCTURE.md`, abridged `ROADMAP.md`, `/archive`, load auditor. Cold start ~88k→~28k tokens | docs only |
 | 08-03 | `deploy.sh` verifies by **ancestry**, not HEAD equality — no more false failures when a parallel window pushes | `3492d42`, `c674a91` |
-| 08-03 | Outage chat closeout — ✅ `networks/default` **has thawed**, support case closable; external-IP saving **withdrawn** (it is the VM's only egress path) | `48e17da` |
 | 08-03 | **Calendar delivers** — CalDAV live with recurrence/alarms/all-day; `get_weather` + `get_environmental_snapshot`; tool permissions in warn mode; VM backup | `cfcd212`, `6865058` |
 | 08-03 | Phase 4 scheduler grants · `update_goal` · Tier 1–2 backup | `2f74cd2`, `8e2983f` |
 

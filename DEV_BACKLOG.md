@@ -562,6 +562,19 @@ Stale docs, paths, and low-priority corrections.
 
   **Pick this up only if a fixed-time session should ever wait for a lull.** Adding `quiet_after_user_minutes` to `evening_close` as things stand would silently cancel the evening close on any day the user happens to be talking at 20:00 — a worse outcome than the interruption it avoids. A real fix needs a *deferred* job: on block, re-register a one-shot retry (e.g. `schedule.every(15).minutes.do(...)` that unregisters itself once it fires or once a cutoff passes), plus a cutoff so a deferred evening close does not arrive at 23:00. `_record_fire()`/`_minutes_since_last_fire()` already persist fire times to disk and give the retry something to key on.
 
+- **[DB-0805-03] `run_a4_safety.py`'s `clinical`/`finance` report filenames collide on a
+  same-day, same-provider re-run.** `a4_safety_rerun_{date}_{provider}.md` carries no suite
+  qualifier, so running `--suite clinical` then `--suite finance` (or `all` then either) against
+  the same persona/provider on the same day silently overwrites the first report with the
+  second — no error, no warning. Noticed while adding the `pipeline` suite, which was given its
+  own `_pipeline` filename suffix specifically to avoid this; the two pre-existing suites still
+  have the exposure. Fix: give `clinical` and `finance` the same suite-qualified filename
+  treatment `pipeline` already has. Low priority — the report is regenerable by re-running, so
+  the cost is a lost report, not lost work.
+  *filed 2026-08-05 by dev session (Claude Code) · found while building the A7 pipeline probe ·
+  origin: this session · verified 2026-08-05 by reading `tests/run_a4_safety.py`'s filename
+  construction*
+
 - **`CLASSES` in `core/rule_classes.py` is incomplete by construction.** The rule-overlap checks match on regex per class; a duplicate in a class that does not exist yet is invisible, and a clean audit report is therefore not proof of no duplication. **When a duplicate is found by hand, add or widen a class in the same pass** — that is the maintenance loop, and without it the audit slowly decays into false reassurance. Two patterns needed widening within an hour of being written, both because they matched the *instruction's* wording and not the *user's complaint*: `repetition` missed *"Stop bringing up the same task over and over"*, and `evidence_weighting` missed *"making too much of the sleep disruption."* Test additions against `python3 scripts/check_rule_overlap.py --persona NAME` and confirm no new false positives on ordinary preferences before deploying.
 
 ---
