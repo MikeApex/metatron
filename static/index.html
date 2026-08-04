@@ -867,6 +867,9 @@
   let mediaRecorder = null;
   let audioChunks = [];
   let isRecording = false;
+  // Set the instant the mic is asked for, before getUserMedia resolves. Guards the
+  // window in which a reply could still start playing into a recording about to begin.
+  let micIntent = false;
   let silenceTimer = null;
   let silencePoller = null;
   let audioCtx = null;
@@ -899,10 +902,17 @@
     // toggle only avoids by turning the feature off entirely.
     stopSpeaking();
 
+    // Claim silence before awaiting the mic, not after. isRecording is only set once
+    // getUserMedia resolves, which on a cold permission prompt can be seconds — and a
+    // reply landing in that window would play into the recording that is about to
+    // start. Set here and cleared on every exit path below.
+    micIntent = true;
+
     let stream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (err) {
+      micIntent = false;
       setStatus('Mic blocked: ' + err.name, '#a44');
       document.getElementById('grant-wrap').style.display = 'block';
       return;
@@ -922,6 +932,7 @@
       stream.getTracks().forEach(t => t.stop());
       stopSilenceDetection();
       isRecording = false;
+      micIntent = false;   // recording is over; replies may speak again
       micBtn.classList.remove('listening');
       micBtn.textContent = 'Tap to Speak';
 
@@ -1033,6 +1044,9 @@
 
   function stopSpeaking() {
     if (currentSource) { try { currentSource.stop(); } catch {} currentSource = null; }
+    // The catch-path fallback in speakResponse uses the Web Speech API, which has its
+    // own queue that stopping the buffer source does not touch.
+    try { window.speechSynthesis?.cancel(); } catch {}
   }
 
   function renderVoiceToggle() {
@@ -1051,8 +1065,22 @@
 
   renderVoiceToggle();
 
+  // Silence is checked at every point where playback could begin, not only on entry.
+  //
+  // The reported failure was a *delayed* reply talking over a recording, and the delay
+  // is the await on /tts below — several seconds of synthesis. Checking only at the top
+  // of this function, or only calling stopSpeaking() when recording starts, both miss
+  // the case that actually happens: the mic opens while the TTS request is still in
+  // flight, and the audio arrives afterwards with nothing left to stop it.
+  //
+  // Late audio is discarded rather than queued. A spoken answer to the message before
+  // last, played after the user has moved on, is worse than silence.
+  function speechBlocked() {
+    return !voiceEnabled || isRecording || micIntent;
+  }
+
   async function speakResponse(text) {
-    if (!voiceEnabled) return;
+    if (speechBlocked()) return;
     stopSpeaking();
     try {
       const res = await authFetch('/tts', {
@@ -1062,9 +1090,11 @@
       });
       if (!res.ok) throw new Error('TTS failed');
       const arrayBuffer = await res.arrayBuffer();
+      if (speechBlocked()) return;            // mic opened while /tts was synthesising
       if (!audioCtxShared) unlockAudio();
       await audioCtxShared.resume();
       const audioBuffer = await audioCtxShared.decodeAudioData(arrayBuffer);
+      if (speechBlocked()) return;            // and again after decode, which also awaits
       const source = audioCtxShared.createBufferSource();
       source.buffer = audioBuffer;
       source.connect(audioCtxShared.destination);
@@ -1072,6 +1102,7 @@
       source.onended = () => { if (currentSource === source) currentSource = null; };
       source.start(0);
     } catch {
+      if (speechBlocked()) return;            // the fallback path can talk over you too
       const utt = new SpeechSynthesisUtterance(text);
       utt.rate = 0.95;
       window.speechSynthesis?.speak(utt);
