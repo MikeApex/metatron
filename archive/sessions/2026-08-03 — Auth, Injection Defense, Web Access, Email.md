@@ -60,11 +60,78 @@ confirmed action.
 
 ## Work log
 
-*(appended as items land)*
+### Item 1 — Server authentication — **BUILT, COMMITTED, NOT DEPLOYED** (`11a166d`)
 
-### Item 1 — Server authentication
+- **`core/auth.py`** (new) — password check, signed tokens, open-path list. Tokens are
+  signed rather than stored: they survive a restart (the phone is not logged out by every
+  deploy) and a password change revokes all of them at once.
+- **`core/server.py`** — `@app.middleware("http")` gates everything except `/`, `/sw.js`,
+  `/static/*`, `/auth/login`, `/favicon.ico`. New `POST /auth/login`. CORS moved off
+  `allow_origins=["*"]` to an allowlist with `allow_credentials=True` (a wildcard is
+  incompatible with credentialed requests anyway).
+- **WebSocket gated separately, and it had to be.** Starlette runs no HTTP middleware for a
+  WS handshake, so `/ws` requires `{"type":"auth","token":…}` as its first frame.
+  `ConnectionManager.connect()` no longer calls `accept()` — the endpoint does, before the
+  check — so an unauthenticated socket never joins a broadcast group.
+- **`static/index.html`** — login field wired up, `authFetch()` wrapper on all six call
+  sites, auth frame on WS connect, no auto-enter without a token, no reconnect loop after
+  an auth failure.
+- **Four internal clients would have broken.** They hold the password already and the
+  signing key derives from it, so they mint tokens locally instead of calling `/auth/login`:
+  `sync_dev_backlog.py`, `metatron_monitor.py`, `remote_client.py`, and the health checks in
+  `deploy.sh` / `metatron-resume.sh` via new **`scripts/mint_token.py`**.
+- **`core/auth.py` is stdlib-only with lazy annotations** — deliberately. The SessionStart
+  hook runs `sync_dev_backlog.py` under the macOS system Python **3.9**, where a
+  `str | None` annotation evaluated at import time is a `TypeError`. Caught by running it,
+  not by reading it.
+- **`tests/test_server_auth.py`** — 16 cases, all pass. Also verified against a live server
+  on :8099: every gated endpoint 401s unauthenticated, both credential forms work, and all
+  four WebSocket paths behave (non-auth frame → `auth_failed`, bad token → `auth_failed`,
+  valid → `auth_ok` then history, silence → closed 1008 after 10s).
+- **Password generated into the Mac `.env`.** Must be hand-copied to the VM *before*
+  deploying, or the server refuses to start — by design.
 
-- Status: in progress
+### Item 2 — Tool permissions — **BLOCKED ON A DECISION, and bigger than the log showed**
+
+The backlog inbox listed **2** `TOOL_DENIED` entries (`physical_health` → `read_agent_config`,
+`write_agent_config`). Auditing every agent instruction file against its `allowed_tools` in
+`routing_cloud.yaml` found **43 gaps across 11 agents**.
+
+The denial log only records what actually *fired* in production. The audit records what the
+instruction files *ask for*. Flipping `METATRON_TOOL_PERMISSIONS=enforce` against the log
+alone would have broken the other 41 silently — which is exactly the failure `CLAUDE.md`
+§ Security Architecture warns about: *"Every told-but-not-offered capability therefore works
+by accident."*
+
+`coordinator` → `write_quality_event` is **not** a live break: `allowed_tools: []` is
+deliberate there (*"single-pass routing directive, no tools"*), so that one is a stale
+instruction rather than a missing grant.
+
+Full audit output is in the session transcript. Decision needed before the flip.
+
+---
+
+## ⚠ Live incident found mid-session — VM unreachable
+
+Not caused by this session's work; found because `sync_dev_backlog.py` was quietly
+returning nothing.
+
+- **GCE reports `RUNNING`** (started 2026-08-01T09:23), **but the guest has no network at
+  all**: the serial console shows continuous
+  `dial tcp 169.254.169.254:80: connect: network is unreachable` — it cannot reach even the
+  link-local metadata server.
+- **Tailscale: offline, last seen ~4h** before 2026-08-04 00:30. Phone `jelly-star` also
+  offline 2h.
+- **SSH over IAP fails** — `4003: failed to connect to backend (port 22)`.
+- **Not the 2026-07-31 billing freeze.** `billingEnabled: true`, account
+  `013F3D-66B5CD-955A3A` linked.
+- **Onset is not in the serial buffer** — retained output begins 2026-08-03T23:21 already in
+  the failure state. No OOM, kernel panic, or NIC link event in what is retained.
+- Serial log captured to the session scratchpad before any reboot destroys it.
+
+**Consequence for this session:** deployment is blocked, so item 1 cannot be verified in
+production, and `sync_dev_backlog.py` has been silently returning nothing — **the backlog
+inbox read at session start is stale.**
 
 ---
 

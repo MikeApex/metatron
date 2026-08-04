@@ -4,9 +4,11 @@ tools/caldav.py — CalDAV calendar read/write.
 Uses raw requests + XML; does not require the caldav library.
 Config loaded from config/modules/caldav.yaml.
 
-Security note: all external calendar data must be treated as untrusted. When
-this output is forwarded to an agent, wrap it in <untrusted_content> tags
-(see logistics.md security note and CLAUDE.md indirect-injection guidance).
+Security note: all external calendar data is untrusted — the title, description and
+location of an invite are written by whoever sent it. `read_calendar` wraps its event
+payload in <untrusted_content> tags at the return boundary (tools/untrusted.py).
+Implemented 2026-08-04; this docstring described it as a to-do from 2026-08-03, during
+which the calendar was live in production unwrapped.
 """
 
 import uuid
@@ -18,6 +20,8 @@ import requests
 import yaml
 
 from core.persona import persona_config_dir
+from tools.untrusted import (UNTRUSTED_CONTENT_INSTRUCTION, contains_injection_markers,
+                             wrap_untrusted)
 
 _ROOT = Path(__file__).parent.parent
 
@@ -176,11 +180,37 @@ def read_calendar(start_date: str, end_date: str) -> dict:
                 events.append(_format_event(raw))
 
     events.sort(key=lambda e: e.get("start", ""))
-    return {
-        "events": events,
+
+    # Calendar text is written by whoever sent the invite, not by the user. `title`,
+    # `description` and `location` are free-text fields an attacker controls outright,
+    # so the payload crosses the boundary here — at the tool return, which is the only
+    # place that knows the content is external.
+    #
+    # Wrapped once around the whole list rather than field by field: one boundary is
+    # harder to get wrong than 3N of them, and the JSON structure survives inside it, so
+    # agents still read titles and times exactly as before.
+    import json as _json
+
+    host = ""
+    try:
+        host = requests.utils.urlparse(url).netloc
+    except Exception:
+        pass
+
+    rendered = _json.dumps(events, indent=2, ensure_ascii=False)
+    markers = contains_injection_markers(rendered)
+    result = {
         "count": len(events),
         "range": {"start": start_date, "end": end_date},
+        "security_note": UNTRUSTED_CONTENT_INSTRUCTION,
+        "events": wrap_untrusted(rendered, source=f"calendar {host}".strip()),
     }
+    if markers:
+        # Recorded, never blocked: a legitimate invite may well say "disregard my last
+        # message". The value is that an attempt leaves a trace instead of passing
+        # silently.
+        result["injection_markers_detected"] = markers
+    return result
 
 
 def write_calendar_event(

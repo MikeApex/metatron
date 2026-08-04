@@ -39,10 +39,21 @@ while [ "$elapsed" -lt "$timeout" ]; do
     # so the system python3 is enough and the venv does not need activating.
     status=$(gcloud compute ssh metatron-vm --zone=us-central1-a --project=metatron-ai-499810 \
         --tunnel-through-iap --command="cd ~/multi-model-mcp && curl -sk -H \"Authorization: Bearer \$(python3 scripts/mint_token.py)\" https://localhost:8001/health" 2>/dev/null || echo "")
-    if [ -n "$status" ]; then
-        echo "Server is up: $status"
-        exit 0
-    fi
+    # Match on the payload, not on "did curl print anything". A 401 body
+    # ({"detail":"Authentication required."}) is non-empty, so a bare -n test would
+    # report a healthy server when the token mint had in fact failed — declaring
+    # success at exactly the moment the server was unreachable to every client.
+    case "$status" in
+        *'"status"'*ok*)
+            echo "Server is up: $status"
+            exit 0
+            ;;
+        *"Authentication required"*)
+            echo "Server responded but rejected the health token." >&2
+            echo "METATRON_AUTH_PASSWORD is probably missing or different in the VM's .env." >&2
+            exit 1
+            ;;
+    esac
     echo "Waiting for boot... (${elapsed}s / ${timeout}s)"
     sleep "$interval"
     elapsed=$((elapsed + interval))
