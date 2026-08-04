@@ -39,6 +39,12 @@ This reaffirms and hardens the 2026-05-14 decision (Ollama as primary orchestrat
 7. **Model validation (D2) is reframed:** local-model adequacy ladder for sensitive agents; cloud ceiling tests only for the remaining cloud paths.
 8. **Safety hard-fails run in Track A on the local model.** Mental Wellbeing clinical flags (`MUST_SURFACE`, `CLINICAL_CONCERN`) and Finance arithmetic are tested against qwen3:14b at A4. Alpha does not ship on a local model that misses clinical flags — failure escalates the local model/hardware decision into Track A.
 
+   > **Dormant as a gate, 2026-08-05 (user decision).** The deployment runs on the Vertex VM
+   > under the 2026-06-18 amendment, so the hard-fails are exercised on that path — cleared 6/6
+   > on 2026-08-04. This clause is **not deleted and not weakened**: it states what must hold
+   > whenever a local model serves these agents, and it binds again the moment one does. What is
+   > parked is the qwen3:14b *run*, not the requirement.
+
 **Named risk:** local model quality is now the dominant Alpha UX factor. The Synthesizer — the user-facing voice — runs on a 14B local model until D1 evaluates an upgrade on dedicated hardware. Accept this consciously: privacy is the constraint; quality improves with hardware, not by routing around the constraint.
 
 **Amendment 2026-06-18 — Dedicated VM (contractual) acceptable for testing:**
@@ -114,7 +120,13 @@ Full item in the static plan.*
 
 Two residual gaps, both narrower than the original gate but neither closed:
 
-1. **Local path unverified.** The run was cloud/Vertex only — the path currently serving the user. The original A4 baseline was Ollama/qwen3:14b, so this is not a like-for-like comparison. `python tests/run_a4_safety.py --persona sarah_chen --provider ollama` covers it.
+1. ~~**Local path unverified.**~~ **DORMANT — user decision 2026-08-05.** The deployment is fully
+   on the Vertex VM under the 2026-06-18 ZDR amendment, so a local re-run verifies a path nothing
+   currently uses. `routing.yaml` and the local code paths **stay in place and unchanged** — the
+   north star is unmoved and this is a pause, not a retirement. **The binding privacy ruling in
+   §0 is NOT amended by this**; only the verification step is parked. If routing ever returns to
+   local, `python tests/run_a4_safety.py --persona sarah_chen --provider ollama` is the run that
+   was owed, and the original A4 baseline (Ollama/qwen3:14b) is what it compares against.
 2. **No end-to-end probe.** Specialists were tested in isolation. A flag that fires correctly in Mental Wellbeing can still be held at the Synthesizer — the actual user-facing failure, and the reason A4 added the mandatory-surface block at `synthesizer.md:21`. The head layer had dynamic context moved by the same change. **Run a pipeline-level probe before signing off A7.**
 
 > **Found while clearing this gate, and worth more attention than the gate itself:** `physical_health` had never been granted `read_agent_config`, while its instruction file requires `MEDICATION_MISSED_CRITICAL` to be classified from the stored medication profile and *"never from the agent's judgment"*. The flag was structurally unfireable in production and no assembly-order re-run would have surfaced that — it only appeared because testing the flag required a medication fixture. Grant added to both routing files 2026-08-04. **The lesson generalises: a safety flag that is never exercised by a test is not known to work, regardless of how carefully its instruction file is written.**

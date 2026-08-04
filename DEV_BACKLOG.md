@@ -13,40 +13,52 @@ Refresh: `python3 scripts/sync_dev_backlog.py`
 
 ## Inbox
 
-- **[needs building]** 1) The email approval permission prompt is failing to render in the user's app interface. 2) The system needs a tool to read live Google Contacts directly; currently it only checks internal profile records.  
-  `2026-08-04T12:42:35.495275Z`
-- **[agent wanted a tool it lacks]** `logistics` attempted `write_archive` (category, content) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
-  `2026-08-04T12:48:56.486418Z`
-- **[needs building]** Implement email permission prompt bubble for user approval before sending outbound emails, and enable Google Contacts live sync/read capability.  
-  `2026-08-04T12:49:26.633029Z`
+*(nothing new — last triaged 2026-08-05)*
 
-- **[agent wanted a tool it lacks]** `logistics` attempted `read_agent_config` (agent_name) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
-  `2026-08-04T09:22:10.863364Z`
-- **[agent wanted a tool it lacks]** `logistics` attempted `search_memory` (query) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
-  `2026-08-04T09:22:11.898974Z`
-- **[agent wanted a tool it lacks]** `logistics` attempted `write_agent_config` (agent_name, value) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
-  `2026-08-04T09:22:14.148392Z`
-- **[agent wanted a tool it lacks]** `work_vocation` attempted `search_memory` (query) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
-  `2026-08-04T12:17:32.889116Z`
+---
 
-- **[agent wanted a tool it lacks]** `physical_health` attempted `read_agent_config` (agent_name) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
-  `2026-08-04T07:56:50.829916Z`
-- **[agent wanted a tool it lacks]** `logistics` attempted `write_agent_config` (agent_name, field, value) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
-  `2026-08-04T07:56:53.699518Z`
+## Triaged out of Inbox — 2026-08-05
 
-- **[agent wanted a tool it lacks]** `logistics` attempted `write_agent_config` (agent_name, field, value) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
-  `2026-08-03T17:04:20.418604Z`
-- **[agent wanted a tool it lacks]** `finance` attempted `read_archive` (category) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
-  `2026-08-03T17:06:28.655802Z`
-- **[agent wanted a tool it lacks]** `logistics` attempted `read_agent_config` (agent_name) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
-  `2026-08-03T17:09:34.625692Z`
-- **[needs building]** Fix interface bug causing text doubling/duplication and abruptly cutting off user input mid-sentence. Also prioritize fixing the live calendar connection so the system can read and write to the user's calendar.  
-  `2026-08-03T17:12:02.492018Z`
+Fourteen entries cleared. Nine were `TOOL_DENIED` warnings covering six distinct cases; each was
+matched to the conversation it happened in before any decision was taken, because the denial
+text alone says what was blocked and not what the agent was trying to do.
 
-- **[instruction change]** For all check-ins: maximum two sentences. If exactly one item genuinely needs attention, name it and stop; otherwise just ask what is on. Never list or recap pending items, and never manufacture a topic.  
-  `2026-08-03T15:12:14.933312Z`
+- ~~`logistics` → `read_agent_config`, `write_agent_config` (×4), `search_memory`,
+  `write_archive`; `work_vocation` → `search_memory`; `finance` → `read_archive`~~ —
+  **granted 2026-08-05, `9361537`.** Not a widening on request: `logistics.md:45` makes the
+  config store mandatory, `:189` states the recurring-obligation inventory lives there because
+  *"obligations are data rows, not scheduled jobs"*, and `:187` assigns `write_archive` four
+  named lists. **`write_schedule` was already granted 2026-08-03 (`2f74cd2`) and did not stop
+  the denials** — it is a different mechanism for a different thing, exactly as `:189` says.
+  Corroborated on disk: `sarah_chen`'s `logistics.json` already held `recurring_obligations`,
+  written through warn mode.
 
-*(nothing new)*
+- ~~`physical_health` → `read_agent_config`~~ — **already granted 2026-08-04 (`b3229ff`)**;
+  the warn-mode entry predated the grant. Stale on arrival.
+
+- **[DB-0805-01] `physical_health` can now write the profile its own safety flag reads.**
+  `write_agent_config` was granted 2026-08-05 (`9361537`), reversing the 2026-08-04 hold, with
+  `medication_profile` guarded in Python (`_GUARDED_KEYS`,
+  [tools/agent_config.py](tools/agent_config.py)). The guard is narrow by design and **only
+  covers the one key**. `physical_health.md:106` requires `MEDICATION_MISSED_CRITICAL` to
+  classify from stored data and *"never from the agent's judgment"* — if any other flag grows a
+  similar dependency, its key needs adding to the same set. **B2 should decide whether guarded
+  keys are the right mechanism or whether the confirmation gate supersedes them.**
+  *filed 2026-08-05 by dev session (Claude Code) · found while applying the grant decisions ·
+  origin SEQ — · verified 2026-08-05 against tools/agent_config.py*
+
+- **[DB-0805-02] Email approval prompt does not render in the app, and no live Google Contacts
+  read exists.** Two user reports, 2026-08-04 12:42Z and 12:49Z. **Owned by the CalDAV/email
+  window** — filed here for completeness, not for this session to work.
+  *filed 2026-08-04 by Mike via Synthesizer · origin SEQ 016/017 · not verified — other window's
+  active work*
+
+- **[DB-0803-01] Text doubling / input cut off mid-sentence in the app.** Reported 2026-08-03
+  17:12Z. The calendar half of the same report is **done** (CalDAV live 2026-08-03, `cfcd212`).
+  The text-doubling half is untouched and unverified — `static/index.html`. Note SEQ 004 on
+  2026-08-04 shows the Synthesizer asking whether the features being tested were aimed at *"that
+  text doubling bug"*, so it was still live then.
+  *filed 2026-08-03 by Mike via Synthesizer · origin SEQ 012 · not verified this session*
 
 ---
 
@@ -70,13 +82,13 @@ Refresh: `python3 scripts/sync_dev_backlog.py`
   medication profile and *"never from the agent's judgment"*, so without the read grant the flag
   was structurally unfireable. **Not yet deployed** — see the deploy-blocked item below.
 
-- **`physical_health` attempted `write_agent_config` — still open, deliberately.** Deliberately
-  *not* granted alongside the read. Writing a medication profile is a materially larger privilege
-  than reading one, and nothing has yet established that the agent needs to author it rather than
-  consult it. Decide: grant it, restrict it behind the human-in-the-loop confirmation gate that
-  B2 already calls for on `write_agent_config`/`write_config`, or drop the instruction from
-  `physical_health.md:129,184`. Note the same question is open for `logistics` (two Inbox entries)
-  and `finance` (`read_archive`) — worth deciding as one policy rather than three times.
+- ~~**`physical_health` attempted `write_agent_config` — still open, deliberately.**~~ —
+  **settled 2026-08-05, `9361537`.** Granted, with `medication_profile` guarded in Python rather
+  than the whole tool withheld. The blanket denial was costing the agent an ordinary config store
+  that every other specialist has, while the thing it protected — that
+  `MEDICATION_MISSED_CRITICAL` must classify from a profile the agent did not author — is
+  preserved exactly by the narrow guard. See **[DB-0805-01]** for the residual concern.
+  The `logistics` and `finance` entries this one pointed at were resolved in the same pass.
 
 ---
 
@@ -223,7 +235,21 @@ the history moved to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md), so anythi
 actionable had to come here or it would have gone quiet — the same way the unsurfaced-opportunity
 item "nearly aged out" (see Troubleshooting signal below).*
 
-- **⚠ `deploy.sh`'s drain is decorative — every deploy kills in-flight WebSocket exchanges.** `/active` counts only SSE streams, and `/session/stream` has no client at all, so the drain gate always sees zero and restarts immediately. The most user-visible defect on this list; unfiled since 2026-07-30. *`SESSION.md:317`, client/app audit.*
+- **[DB-0803-07] ⚠ `deploy.sh`'s drain is decorative — every deploy kills in-flight WebSocket
+  exchanges.** **Confirmed real 2026-08-05, by tracing the counter rather than re-reading the
+  entry.** `/active` returns `_active_streams` ([core/server.py:721](core/server.py#L721)),
+  which is incremented in exactly one place — the SSE generator in `/session/stream`
+  ([:433](core/server.py#L433)). The WebSocket exchange loop ([:600-655](core/server.py#L600))
+  never touches it, and the app talks over WebSocket. So the gate at
+  [deploy.sh:93](deploy.sh#L93) always reads `0` and restarts immediately.
+
+  **Fix:** wrap the WS in-flight block — from `producer = loop.run_in_executor(...)` through the
+  `_log_conversation()` / broadcast completion — in the same `_active_lock` increment/decrement,
+  `try`/`finally`. Count **in-flight exchanges, not connections**: an always-connected phone
+  would otherwise pin the counter above zero and make every deploy wait out its full 180s
+  timeout, which is a worse failure than the one being fixed.
+  *filed 2026-07-30 by dev session (client/app audit) · recovered from SESSION.md:317
+  2026-08-03 · verified 2026-08-05 against core/server.py:433,600,721*
 
 - ~~**Synthetic persona data trees are not gitignored.**~~ **Done 2026-08-04** — `.gitignore`
   now carries `data/personas/*/` in place of the enumerated per-persona list. Five trees were
@@ -244,19 +270,101 @@ item "nearly aged out" (see Troubleshooting signal below).*
   deletions, `git check-ignore` passes for all nine existing personas and an invented tenth,
   and `git add -A --dry-run` stages zero files under `data/personas/`.
 
-- **Memory indexer is reading the wrong source.** `[background] index log 2025-05-22 failed: Extra data: line 557 column 2 (char 82852)` fired twice against a **276-byte** file — the offset cannot come from that file, so the indexer is likely reading a different or concatenated source. Unexamined. *`SESSION.md:227`.*
+- **[DB-0803-03] Memory indexer is reading the wrong source — hypothesis now confirmed.**
+  Original entry: `[background] index log 2025-05-22 failed: Extra data: line 557 column 2 (char
+  82852)` against a 276-byte file, so the offset could not have come from the named file.
 
-- **`[vertex_cache] 404 cached content metadata`** — a stale cache ID is reused after expiry, so the call falls back to compat on every request. Silent cost and latency. *`SESSION.md:385`.*
+  **Verified 2026-08-05 and sharper than filed.** The VM journal still carries it, but the date
+  has moved on while the offset has not: `index log 2026-08-04 failed: Extra data: line 557
+  column 2 (char 82852)` — **the identical byte offset for a completely different log file**,
+  three times on 2026-08-04. A shared offset across unrelated files is not a coincidence about
+  the files; the indexer is parsing something fixed. `core/background.py` is where to start, and
+  the thing to find is what it opens instead of the per-day log.
+  *filed 2026-08-03 by dev session · recovered from SESSION.md:227 · verified 2026-08-05 against
+  the VM journal — still firing*
 
-- **`Object of type AgentRecord is not JSON serializable`** — trace serialization fails on every scheduler job. *`SESSION.md:384`.*
+- ~~**`[vertex_cache] 404 cached content metadata`**~~ — **believed fixed; closed 2026-08-05.**
+  Registry eviction on a 404 is present at [core/orchestrator.py:1417-1424](core/orchestrator.py#L1417)
+  (`"not_found" in text or ("404" in text and "cach" in text)` → `_vertex_cache_registry.pop`).
+  **Last occurrence in the VM journal: 2026-07-29 13:05** (cache id `3167247740363079680`), none
+  in the seven days since. Closing on that basis, with the caveat stated: seven clean days is
+  evidence, not proof, and 2026-07-29 sits at the edge of the retained window.
 
-- **`sw.js` has no `fetch` handler and caches nothing**, and `/` is served `no-store` — there is no offline shell, so an unreachable server shows a browser error page rather than the app. *`SESSION.md:320`.*
+  **Do not confuse this with what is in the log now.** Eleven `[vertex_cache]` warnings on
+  2026-08-04 are `NameResolutionError` on `oauth2.googleapis.com` — DNS failure during the
+  four-hour outage, a different cause with a similar-looking line. Anyone re-filing this on the
+  strength of a `grep vertex_cache` will re-file the outage.
+  *filed 2026-08-03 by dev session · recovered from SESSION.md:385 · verified 2026-08-05 against
+  the VM journal + core/orchestrator.py:1417*
 
-- **`shownIds` eviction cliff at `static/index.html:567`** — clears *after* adding, unlike the hardened site at L590 that was fixed in `eea3faf`. Separately, catch-up reuses `type:"history"`, so a reconnect wipes the conversation and re-renders only the delta. *`SESSION.md:319`.*
+- **[DB-0803-02] ⚠ `Object of type AgentRecord is not JSON serializable` — this is not a
+  logging nuisance, it is proactive sessions failing outright.** Elevated 2026-08-05 after
+  checking the live journal; the original entry called it *"trace serialization fails"*, which
+  understates it by a wide margin.
 
-- **`/session` (non-streaming) leaks the `[CONTEXT]{…}[/CONTEXT]` block** into the response body and never writes the context tracker — the parser exists only on the streaming path. No user impact today (the app uses WebSocket/SSE), but the CLI and any future non-streaming caller get raw control text. *`SESSION.md:386`.*
+  **What the journal actually shows (7 days to 2026-08-05):** 18 occurrences, and
+  `[scheduler error]` counts of `companion_checkin` ×13, `evening_close` ×2, `morning_brief`
+  ×2, `plant_watering_check` ×2 — **19 scheduler errors, 18 of them this one.** Still current:
+  4 on 2026-08-04. So essentially every scheduler failure in the last week is this bug, and the
+  jobs it kills are the proactive check-ins — the product's whole reason for having a scheduler.
 
-- **`write_config()` stores the Goals Interviewer's text verbatim including its own heading**, so `## Prime Directive` / `## Mission` are written into the file that is already titled that. `_titled()` papers over it at load time; the write-side cause is open. *`SESSION.md:387`.*
+  **Where it is not:** `core/trace.py` is clean. `_agent_to_dict()`
+  ([:220](core/trace.py#L220)) converts `AgentRecord` (recursing into `subagents`) and
+  `_serialize()` ([:253](core/trace.py#L253)) calls it before `json.dumps`. That has been in
+  place since 2026-06-22 (`c66ed03`), so the obvious suspect is not the culprit and reading
+  `trace.py` will not find it.
+
+  **Where to look:** the failing jobs are all `agent == "coordinator"`, which route through
+  `send_one()` → the server's WebSocket handler ([core/scheduler.py:281](core/scheduler.py#L281)),
+  not through `run_session` in-process. The payloads `remote_client` sends carry no
+  `AgentRecord`, so the exception is almost certainly raised **server-side** and returned as an
+  error frame, which `fire_session`'s handler ([:292](core/scheduler.py#L292)) then reports.
+  **Next step is the server-side traceback, not more code reading** — the scheduler only ever
+  sees the message text.
+  *filed 2026-08-03 by dev session · recovered from SESSION.md:384 · verified 2026-08-05 against
+  the VM journal; localised, root cause still open*
+
+- **[DB-0803-05] `sw.js` has no `fetch` handler and caches nothing**, and `/` is served
+  `no-store` — no offline shell, so an unreachable server shows a browser error page rather than
+  the app. **Confirmed still real 2026-08-05:** [static/sw.js](static/sw.js) registers exactly
+  four listeners — `install`, `activate`, `push`, `notificationclick`. No `fetch`.
+  *filed 2026-08-03 by dev session · recovered from SESSION.md:320 · verified 2026-08-05 against
+  static/sw.js*
+
+- **[DB-0803-06] `shownIds` eviction cliff — line references are stale, symptom unconfirmed.**
+  Original: eviction at `static/index.html:567` clears *after* adding, unlike the hardened site
+  at L590 fixed in `eea3faf`; and catch-up reuses `type:"history"`, so a reconnect wipes the
+  conversation and re-renders only the delta.
+
+  **Checked 2026-08-05: `shownIds` now lives at [static/index.html:706](static/index.html#L706)+**
+  — the file has moved several hundred lines since the entry was written, so neither cited line
+  number means anything now. The symptom may well survive; nobody has looked. **Re-derive
+  against the current file before working it**, and treat the `eea3faf` comparison as a lead
+  rather than a fact.
+  *filed 2026-08-03 by dev session · recovered from SESSION.md:319 · verified 2026-08-05 —
+  line references dead, symptom unconfirmed*
+
+- ~~**`/session` (non-streaming) leaks the `[CONTEXT]{…}[/CONTEXT]` block**~~ — **fixed;
+  closed 2026-08-05.** `run_session` now calls `split_context_block()` then `filter_output()`
+  before returning ([core/orchestrator.py:2690](core/orchestrator.py#L2690)), and
+  `persist_context_block()` writes the tracker on the same path — so both halves of the
+  complaint (leaked control text, tracker never written) are covered. The comment there records
+  the intent explicitly: *"one implementation so the two paths cannot drift apart again."*
+  *filed 2026-08-03 by dev session · recovered from SESSION.md:386 · verified 2026-08-05 against
+  core/orchestrator.py:2690*
+
+- **[DB-0803-04] `write_config()` heading duplication — needs re-derivation before anyone works
+  it.** The entry says `write_config()` stores the Goals Interviewer's text verbatim including
+  its own `## Prime Directive` / `## Mission` heading, and that `_titled()` papers over it at
+  load time.
+
+  **Checked 2026-08-05: the cited code does not exist.** [tools/config_writer.py](tools/config_writer.py)
+  is 84 lines, has no `_titled()` and no heading handling — it validates against
+  `ALLOWED_FILES = {prime_directive.md, mission.md}` and writes. Either the symptom lives
+  somewhere else entirely or it was fixed without this entry being closed. **Do not act on the
+  description.** Reproduce first: run a Goals Interview write and look at the resulting file.
+  *filed 2026-08-03 by dev session · recovered from SESSION.md:387 · verified 2026-08-05 —
+  cited code absent, symptom unconfirmed*
 
 - **Pre-2026 logs in mike's tree** (`2025-01-24`, `2025-05-13`–`16`) — believed genuine early-dev data, but the SEQ 021 session found one hallucinated log dated 14 months in the past. Worth confirming none of these are the same. *`SESSION.md:227`.*
 
@@ -266,9 +374,44 @@ item "nearly aged out" (see Troubleshooting signal below).*
 
 - **Data breadth — sleep is nearly the only thing consistently logged.** This is the *root cause* behind "too much focus on sleep": with one reliable signal and little else, any reasoning leans on it by default. The 2026-08-03 `synthesizer.md` rules mitigate the symptom (don't over-read a thin record; ask for what's missing) but cannot fix it. Needs a real answer on capturing training, food, work and mood with low enough friction that they actually get logged. Mike has also asked that sleep tracking itself shift to **total hours plus interruptions** rather than a disruption narrative (2026-08-03).
 
-- **Nothing in the system can actually set a reminder or calendar entry.** *"The calendar integration will do later. I don't understand why it didn't, why it triggered at all"* — SEQ 011, 2026-08-01. Confirmed independently in [agent_capability_gap_2026-08-02.md](archive/plans/agent_capability_gap_2026-08-02.md) Finding 3: CalDAV is `enabled: false` with empty credentials, `scheduler.yaml` jobs are static with no tool to add one, and `write_config` is allowlisted to two markdown files. A reminder can be *recorded* but never *delivered* — which is why it appeared to do nothing. Build order there: enable CalDAV → grant Logistics its config tools → `write_schedule`/`list_schedules`/`delete_schedule` → store a delivery preference.
+- ~~**Nothing in the system can actually set a reminder or calendar entry.**~~ — **the whole
+  build order it prescribes is complete; closed 2026-08-05.** *"The calendar integration will do
+  later. I don't understand why it didn't, why it triggered at all"* — SEQ 011, 2026-08-01.
 
-- **Voice transcription times out repeatedly.** *"There are transcription issues to address. Multiple timeouts"* — SEQ 014, 2026-08-02. Known cause on record: `/transcribe` and `/tts` run without `run_in_executor` (`core/server.py:597-646`, `561-594`), blocking the event loop for the whole of ffmpeg + Whisper; Whisper is `base.en` at float32, `beam_size=5`, no VAD, never warm-loaded, so the first call after every restart pays model construction on the loop. The correct pattern is already used at `server.py:252/311/425`.
+  Its four steps, each verified: **enable CalDAV** — live 2026-08-03 (`cfcd212`), with
+  recurrence, alarms and all-day support. **Grant Logistics its config tools** — 2026-08-05
+  (`9361537`). **`write_schedule`/`list_schedules`/`delete_schedule`** — built and granted
+  2026-08-03 (`078e618`, `2f74cd2`); present in [tools/schedule.py](tools/schedule.py) and
+  registered in `core/orchestrator.py`. **Delivery preference** — push is live.
+
+  **Worth recording, because it misled this session's own analysis:** the entry's claim that
+  *"`scheduler.yaml` jobs are static with no tool to add one"* went stale on 2026-08-03 and was
+  still being read as current on 2026-08-05, where it produced a recommendation to hold the
+  `logistics` `write_agent_config` grant pending work that had already shipped two days earlier.
+  A stale premise does not just waste the effort spent on it — it argues for the wrong decision,
+  persuasively.
+  *filed 2026-08-01 by Mike via Synthesizer · origin SEQ 011 · verified 2026-08-05 against
+  tools/schedule.py, both routing files, and the CalDAV commit*
+
+- **[DB-0802-01] Voice transcription — the recorded cause is fixed; the accuracy half is not.**
+  *"There are transcription issues to address. Multiple timeouts"* — SEQ 014, 2026-08-02.
+
+  ~~Blocking the event loop~~ — **done 2026-08-01** (`d42eefc`, `81fc6e2`), before this entry
+  was ever re-read. `/transcribe` and `/tts` now run on dedicated single-worker pools
+  (`_STT_EXECUTOR` / `_TTS_EXECUTOR`, [core/server.py:178](core/server.py#L178)), Whisper and
+  the memory model warm-load at startup, and `_transcribe_blocking` carries a comment explaining
+  the freeze it replaced. **Anyone working "transcription times out" from the old description
+  would have re-fixed a solved problem** — this is the clearest case in the sweep for why an
+  item is re-verified before it is worked.
+
+  **What is left is accuracy, which is a different fix in a different file.** Whisper runs
+  `base.en` with `beam_size=5` and no VAD
+  ([core/voice_pipeline.py:26,119](core/voice_pipeline.py#L26)). Evaluate `small.en` and a VAD
+  filter — but **measure on the VM's 2 vCPUs before adopting**, because STT is now on a
+  single-worker pool and a slower model serialises rather than merely being slower. Pairs with
+  the dictated-email item below; same root, different lever.
+  *filed 2026-08-02 by Mike via Synthesizer · origin SEQ 014 · verified 2026-08-05 against
+  core/server.py:178 and core/voice_pipeline.py:26 — cause closed, accuracy open*
 
 - **Dictated email addresses come through wrong and need correcting by hand.** Three corrections in three minutes on 2026-08-02 (`diamond.mic` → `diamond.mike`), plus `diamond.like.gmail.com` at SEQ 006. Partly Whisper tuning (above), but a known-values pass would fix it outright — the user's own email is in `profile.yaml`, so a transcript token close to a known contact string should snap to it rather than be passed through.
 
