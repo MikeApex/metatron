@@ -227,37 +227,51 @@ def read_email(count: int = 10, unread_only: bool = False, folder: str = "INBOX"
 
 
 def _own_addresses() -> set[str]:
-    """The user's own addresses — always a permitted recipient."""
-    out = set()
+    """
+    The user's own addresses — always a permitted recipient.
+
+    Note the exception handling here and below is narrow on purpose. The first version
+    wrapped both loaders in `except Exception: pass`, and when the profile function was
+    imported under the wrong name the ImportError was swallowed — producing an empty
+    allowlist, which refused *every* recipient including the user's own. It failed in the
+    safe direction, but silently, and looked exactly like "you have no contacts". A
+    missing file is an expected state and is tolerated; a wrong name is a bug and should
+    say so.
+    """
+    from tools.profile import _load
+
+    prof = {}
     try:
-        from tools.profile import _load_profile
-        prof = _load_profile() or {}
-        for v in (prof.get("account_email"), (prof.get("contact") or {}).get("email")):
-            if v:
-                out.add(str(v).strip().lower())
-    except Exception:
-        pass
+        prof = _load() or {}
+    except (OSError, ValueError):
+        return set()          # absent or malformed profile — no self-address available
+    out = set()
+    for v in (prof.get("account_email"), (prof.get("contact") or {}).get("email")):
+        if v:
+            out.add(str(v).strip().lower())
     return out
 
 
 def _known_recipients() -> dict:
     """
-    Addresses this tool may send to: the user's own, plus CRM contacts.
+    Addresses this tool may send to: the user's own, plus saved CRM contacts.
 
     Enforced here rather than in an agent instruction, deliberately. An injected email
     that talks the model into sending to an attacker's address fails at this check
-    regardless of how convincing it was — which is the whole point of putting the rule
-    in Python. Roadmap item 5, Decision C.
+    however convincing it was — which is the whole point of putting the rule in Python.
+    Roadmap item 5, Decision C.
     """
+    from tools.crm import _load_contacts
+
     allowed = {addr: "you" for addr in _own_addresses()}
     try:
-        from tools.crm import _load_contacts
-        for c in _load_contacts():
-            email = ((c.get("contact_info") or {}).get("email") or "").strip().lower()
-            if email:
-                allowed[email] = c.get("name") or c.get("id") or email
-    except Exception:
-        pass
+        contacts = _load_contacts()
+    except (OSError, ValueError):
+        contacts = []         # no contact store yet is normal
+    for c in contacts:
+        email = ((c.get("contact_info") or {}).get("email") or "").strip().lower()
+        if email:
+            allowed[email] = c.get("name") or c.get("id") or email
     return allowed
 
 
