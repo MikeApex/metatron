@@ -86,9 +86,77 @@ sat unrecorded. A false negative caused by the missing store, and exactly the fa
 **Drift noted:** `work_vocation` and `finance` hold `write_agent_config`
 (`routing_cloud.yaml:75,85`) while clinical `physical_health` was deliberately denied it.
 
+## Correction made mid-session — worth its own heading
+
+The tool-denial analysis above was **wrong on first pass**, and the user acted on it before the
+error surfaced. Recorded because the failure mode is the session's whole subject.
+
+I concluded logistics was "improvising around a store that does not exist" and recommended
+holding `write_agent_config` pending schedule/CalDAV work. Both halves were false:
+
+1. **`write_schedule`/`list_schedules`/`delete_schedule` already existed** — built `078e618`
+   and granted to logistics `2f74cd2`, both **2026-08-03 14:48**, *before every one of the
+   denials*. The work being waited on had shipped two days earlier.
+2. **`write_agent_config` is not a workaround for logistics — it is the specified store.**
+   `logistics.md:189` draws the distinction itself: the recurring-obligation inventory lives
+   there because *"obligations are data rows, not scheduled jobs."* `:45` makes it mandatory.
+
+The source of the error: I trusted the backlog's own line *"`scheduler.yaml` jobs are static
+with no tool to add one"*, true when written on 2026-08-01, stale by 2026-08-03. **A stale
+premise does not merely waste the effort spent on it — it produces a well-reasoned
+recommendation for the wrong decision.** That is now the stated rationale in `CLAUDE.md` and
+`/backlog` for verifying before acting, and it is a better argument than "checking is tidy."
+
 ## Work log
 
-- *(in progress — updated as steps land)*
+**Step 1 — counter fixed (`9361537`).** `count_items()` in `scripts/sync_dev_backlog.py`;
+`## Done` heading added to `DEV_BACKLOG.md`; struck-through excluded; untriaged and open
+reported separately. Reconciled by hand against `awk`. Fail-silent contract verified intact
+(exit 0 against an unreachable server, `--quiet` still silent).
+
+**Step 3 — nine denials resolved (`9361537`).** Granted: `logistics` +`read_agent_config`
++`write_agent_config` +`search_memory` +`read_archive` +`write_archive`; `work_vocation`
++`search_memory`; `finance` +`read_archive`; `physical_health` +`write_agent_config`. Both
+routing files in parity, verified by parsing both and diffing the tool lists.
+
+`_GUARDED_KEYS` added to `tools/agent_config.py` — `(physical_health, medication_profile)` is
+refused with an explanatory error. Tested four ways: blocked for that pair, allowed for another
+key on the same agent, allowed for the same key on another agent, reads unaffected. Test
+artifacts cleaned from `sarah_chen`'s tree.
+
+**Step 2 — sweep (`23057ee`).** Inbox 14 → 0 (plus 3 that arrived mid-session). Four items
+closed with evidence, three corrected, all survivors given `DB-MMDD-NN` IDs and provenance.
+
+*Live-journal evidence proved decisive three times, where code reading had been misleading:*
+
+- **AgentRecord serialization — elevated.** Filed as "trace serialization fails". Actually 18
+  occurrences in 7 days against 19 total scheduler errors, so **essentially every scheduler
+  failure is this bug**, and it kills proactive check-ins (`companion_checkin` ×13). `trace.py`
+  is clean — `_agent_to_dict` has recursed `AgentRecord` since `c66ed03` — so the failing path
+  is server-side via `send_one`. Localised; root cause open.
+- **vertex_cache 404 — closed.** Eviction present at `orchestrator.py:1417`; last occurrence
+  2026-07-29. The 11 `[vertex_cache]` warnings currently in the log are `NameResolutionError`
+  from the outage — a near-miss that would have caused a re-file on a `grep`.
+- **Memory indexer — confirmed and sharpened.** Same byte offset (`char 82852`) now appears
+  against `2026-08-04` as it did against `2025-05-22`. A shared offset across unrelated files
+  proves the indexer parses something fixed.
+
+**Step 4 — `/backlog` (`812ef1a`).** New command carrying the triage ritual. `/metatron-code`
+and `/archive` report the count and stop — no bulk chore attached to commands that run every
+session. `CLAUDE.md` gets a pointer plus the one rule.
+
+**Local path dormant (`23057ee`).** `ROADMAP.md` §A7 residual gap 1 and §0 item 8 annotated.
+Marked, not deleted; binding privacy ruling untouched.
+
+## Result
+
+`0 new · 0 untriaged · 45 open` — and all three numbers now mean what they say.
+
+## Needs deploying
+
+`9361537` touches `config/modules/routing*.yaml` and `tools/agent_config.py` — **needs
+`./deploy.sh`**. Coordinate with the CalDAV/email window, which owns `.env` and deploy. Until
+then the grants are Mac-only and warn mode continues to let the calls through on the VM.
 
 ## Deferred / not this session
 
