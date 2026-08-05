@@ -876,7 +876,7 @@ async def tts(req: TTSRequest):
         raise HTTPException(status_code=500, detail=f"Speech synthesis failed: {e}")
 
 
-def _transcribe_blocking(audio_bytes: bytes) -> dict:
+def _transcribe_blocking(audio_bytes: bytes, persona: str | None = None) -> dict:
     """
     ffmpeg decode + Whisper. Blocking — must run off the event loop.
 
@@ -918,8 +918,18 @@ def _transcribe_blocking(audio_bytes: bytes) -> dict:
     if audio_array.size == 0:
         raise HTTPException(status_code=422, detail="Recording contained no audio")
 
-    from core.voice_pipeline import transcribe as _transcribe
+    from core.voice_pipeline import correct_known_addresses, transcribe as _transcribe
     transcript = _transcribe(audio_array)
+
+    if persona and transcript:
+        # Snap a mis-transcribed dictated email address to the closest known
+        # one (the user's own, or a saved contact). Never raises into the
+        # response — a correction failure should degrade to the raw
+        # transcript, not break transcription.
+        try:
+            transcript = correct_known_addresses(transcript, persona)
+        except Exception as e:
+            print(f"[transcribe] address correction skipped: {e}")
 
     meta_path = date_dir / f"{ts}.json"
     with open(meta_path, "w") as f:
@@ -933,7 +943,7 @@ def _transcribe_blocking(audio_bytes: bytes) -> dict:
 
 
 @app.post("/transcribe")
-async def transcribe_audio(audio: UploadFile = File(...)) -> dict:
+async def transcribe_audio(audio: UploadFile = File(...), persona: str | None = None) -> dict:
     """
     Transcribe a voice recording with Whisper, locally. Audio never leaves this
     machine; the Web Speech API is deliberately not used.
@@ -941,6 +951,10 @@ async def transcribe_audio(audio: UploadFile = File(...)) -> dict:
     Runs on a dedicated executor. The semaphore returns a fast 503 on a
     concurrent request rather than queueing it invisibly until the client gives
     up — which previously surfaced as "Failed to fetch".
+
+    `persona` is optional: transcription itself needs no persona, only the
+    known-address correction pass does. Omit it and the raw Whisper output
+    is returned uncorrected, same as before this parameter existed.
     """
     audio_bytes = await audio.read()
     if not audio_bytes:
@@ -954,7 +968,9 @@ async def transcribe_audio(audio: UploadFile = File(...)) -> dict:
 
     async with _STT_SEMAPHORE:
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(_STT_EXECUTOR, _transcribe_blocking, audio_bytes)
+        return await loop.run_in_executor(
+            _STT_EXECUTOR, _transcribe_blocking, audio_bytes, persona
+        )
 
 
 @app.get("/")

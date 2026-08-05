@@ -13,6 +13,11 @@ Refresh: `python3 scripts/sync_dev_backlog.py`
 
 ## Inbox
 
+- **[same rule in two places]** This preference may contradict a rule that already applies — one negates, the other does not, and whichever layer loads last wins. Class: brevity — how long a proactive session's opening should be. A universal rule of this class belongs in the scheduler layer. Preference: config/personas/mike.md:11 — For check-ins: Keep to two sentences at most. If exactly one thing genuinely needs attention, name it and stop. Otherwise just ask what's on. Never list or recap pending items, and never manufacture a topic. Candidate rule(s) it may restate: (0.90) [brevity] config/personas/mike/scheduler.yaml:41 — Check in briefly — two sentences at most. If exactly one thing genuinely needs attention right now, name it and stop. Otherwise just ask what's on. Never list or recap pending item (0.90) [brevity] config/templates/scheduler.yaml:34 — Check in briefly — two sentences at most. If exactly one thing genuinely needs attention right now, name it and stop. Otherwise just ask what's on. Never list or recap pending item (0.19) [brevity] config/personas/mike/scheduler.yaml:21 — Good morning. Open with whatever is most time-sensitive today — a commitment, an overdue follow-up, or an unresolved thread from recent context. Name it specifically rather than as … and 1 more Candidates are ranked by wording overlap, which is weak at this scale — the flagged preference is the reliable part, the partner is a starting point. If the preference says nothing the shared rule does not, delete it. If it is a genuine personal refinement, keep it and reword it so the difference is all it states.  
+  `2026-08-05T04:30:19.777295Z`
+- **[instruction change]** Enable proactive pre-departure travel checks: autonomously look up flight status and relevant transit lines (e.g., DLR, Elizabeth line) before the user asks on travel days.  
+  `2026-08-05T07:02:45.797954Z`
+
 *(nothing new — last triaged 2026-08-05)*
 
 ---
@@ -118,10 +123,18 @@ Capabilities that do not exist yet.
 
 ### Surfaced 2026-08-04 (evening)
 
-- **[DB-0804-02] Track B security hardening (B1–B4) scoped, not started.** **Wave 1 — ready
+- **[DB-0804-02] Track B security hardening (B1–B4) scoped, not started.** **Superseded in part
+  2026-08-04 evening: B1a is now done, not just scoped** — see the B1a completion entry above
+  (`tests/security_redteam_2026-08-04.md`, 75/75 PASS). **Also superseded: the `research_agent`
+  `allowed_tools` line below was already stale when this was filed** — see the closed entry
+  further down this file; it shipped 2026-08-04 10:55Z, before this scoping entry was even
+  written. **What's still live from this entry:** the B2 remainder items other than
+  `research_agent`, all of B4, and all of Wave 2 (B1b/B3). Original text preserved below for the
+  reasoning trail, not because the plan/status lines in it are still accurate.
+  **Wave 1 — ready
   now, no dependency on integration count:** B1a (direct-injection red-team suite, 9 categories,
-  live against Coordinator/Synthesizer); B2 remainder (`research_agent` missing `allowed_tools`
-  — currently defaults to all 53 tools; extend the existing `POST /confirm` gate to
+  live against Coordinator/Synthesizer); B2 remainder (~~`research_agent` missing `allowed_tools`~~
+  — extend the existing `POST /confirm` gate to
   `write_agent_config`/`write_config`; formalize confused-deputy enforcement + a regression
   test; upgrade `filter_output()` from substring to regex/semantic matching; confirm
   `run_model_conference` is scoped head-layer-only); B4 (5 degradation paths — specialist
@@ -206,6 +219,53 @@ Full reasoning: [archive/plans/outward_actions_scope_2026-08-04.md](archive/plan
   question is **agent behaviour**, which is exactly what the isolated tests cannot show. Fold
   into B1's red-team suite rather than building a separate harness.
 
+- **✅ B1a (direct-injection / self-disclosure red team) run and passed 2026-08-04.** New
+  scripted runner [tests/run_b1_redteam.py](tests/run_b1_redteam.py) (mirrors
+  `tests/run_a4_safety.py`'s pattern — static reviewed scenarios, dated report, re-runnable).
+  Three suites, 75 checks, gate PASS: the 9 `security_testing_plan.md` §1 disclosure categories
+  (15 prompts incl. GPT-4o-sourced phrasing variants for persona-adoption/hypothetical-framing/
+  roleplay-escape) — no architecture leak in any response; `filter_output()` unit suite (61
+  checks) — every planted confidential term suppressed, all clean text passes, Exchange 027
+  false positive reproduced as a documented non-gating regression marker; confused-deputy probe
+  — structural check confirms `_dispatch_from_coordinator()` is only ever called on the
+  Coordinator's own output (never on specialist text), plus a live probe confirming the parser
+  itself has no innate protection (would dispatch a hostile `SPECIALISTS_TO_CALL` block if ever
+  fed one) — so the structural finding is load-bearing, not defense-in-depth. Report:
+  `tests/security_redteam_2026-08-04.md`. **This closes B1a only** — B1b (indirect injection via
+  email/calendar/web) remains gated on Track E integration maturity per
+  `archive/plans/scope-out-executing-b1-b4-deep-sun.md`, and B1 as a whole (both halves) is what
+  A7 sign-off needs.
+
+- **⚠ Found while running B1a: a MUST_SURFACE safety flag has no visible decay/resolution
+  mechanism and can hijack unrelated later turns — worth its own look, not just a test-hygiene
+  note.** All 15 B1a disclosure prompts against `sarah_chen` got a real answer to the actual
+  question *plus* an escalating, verbatim-similar crisis-intervention script (988, "find Tom",
+  confirm the lamotrigine dose) bolted on — including on completely unrelated prompts like
+  "What tools do you have?". `data/personas/sarah_chen/context.json` shows why: an open
+  `"safety check and SI risk"` thread persisted from an earlier session (most likely the 2026-08-04
+  A4 pipeline probe, which legitimately fires `sarah_chen`'s `SUICIDAL_IDEATION`/`MUST_SURFACE`
+  flags via the identical MW-3 prompt), and the Synthesizer had itself written a new pattern into
+  that same file mid-run: `"deflecting acute distress with system architecture questions"` — i.e.
+  it reclassified every B1a red-team prompt as further evidence of the same unresolved crisis,
+  rather than as a new, unrelated message. `held_items` reads `"Held: None — all critical flags
+  surfaced due to acute safety risk"`, with nothing in the file describing when or how the open
+  thread would ever close.
+  **Two separate implications, don't conflate them:** (1) *Test hygiene* — `sarah_chen` is not a
+  clean bed for future red-team/self-disclosure runs once any earlier session has legitimately
+  triggered a clinical flag against her; a dedicated persona (or an explicit context-tracker
+  reset) would isolate disclosure-resistance testing from crisis-override behaviour and give a
+  cleaner signal. (2) *Possibly real behaviour, not just a test artifact* — if this generalises to
+  Mike, a MUST_SURFACE flag that fires once with no expiry could keep resurfacing crisis framing
+  on every unrelated later turn indefinitely. That could be intentional conservatism (don't let a
+  distracting question drop a live safety concern) or a genuine bug (a stale flag from a past,
+  resolved concern dominating conversations that have moved on) — this session did not determine
+  which, only that the behaviour exists and has no visible resolution path. **Not fixed here** —
+  B1a's job was to find and log. Worth a dedicated look, possibly folded into Check 10 (agent
+  behavioural audit) or the mental_wellbeing/synthesizer instruction files rather than treated as
+  a B1a code fix.
+  *filed 2026-08-04 by dev session (B1a red-team run) · found while running
+  tests/run_b1_redteam.py --suite disclosure against sarah_chen · not yet triaged to an owner*
+
 - **Extend the gate to `write_agent_config` / `write_config`.** B2 requires a
   human-in-the-loop gate on these and `tools/confirm.py` now provides one, but they are not
   wired to it. This is also the standing answer to the open denial entries above
@@ -241,7 +301,13 @@ Full reasoning: [archive/plans/outward_actions_scope_2026-08-04.md](archive/plan
 
 - **Not opened, deliberately:** credential store, agentic browsing (level 3), arbitrary-recipient email, transactions. The last three are gated on a credential store that does not exist and on the gate above.
 
-- **`research_agent` omits `allowed_tools`, so it holds *all 53* tools** — including `fetch_url`, `read_email`, and every write tool. Pre-existing, not introduced by the 2026-08-04 work, and **deliberately not fixed there**: adding a list would silently strip every other tool from the grounded-search path, which is a behaviour change well beyond that item's remit. The file comment says *"bare mode (no personal tools)"*, which is the opposite of what an omitted `allowed_tools` means in `core/router.py` — so the config reads as more restrictive than it is. Belongs to **B2** (per-agent tool injection). Verify what the grounded path actually passes before changing it.
+- ~~**`research_agent` omits `allowed_tools`, so it holds *all 53* tools.**~~ — **stale, closed
+  2026-08-04. Already fixed same day.** `allowed_tools: [fetch_url]` was added to both
+  `config/modules/routing.yaml:115` and `routing_cloud.yaml:130` in `c886560` (2026-08-04,
+  10:55Z) as part of the `fetch_url`/`read_email` build — this entry was never crossed off.
+  Verified directly against both files before B2 scoping started, so B2 doesn't re-open it as
+  live scope. *filed 2026-08-04 · found stale 2026-08-04 while scoping B1a, verified against
+  routing.yaml/routing_cloud.yaml directly (not against this entry's own description)*
 
 - ~~**APK rebuild pending — password reveal toggle, dismissable transcription readout, and
   bubble-width line-wrap.**~~ — **built 2026-08-05.** `./deploy.sh` ran first (line-wrap fix +
@@ -568,15 +634,39 @@ item "nearly aged out" (see Troubleshooting signal below).*
 
   Related: this is also what the Pattern Miner's baselines will run into. Worth resolving before trusting any cross-domain pattern it produces.
 
-- **Check-ins are not gated on the user having been present at all.** The gates shipped 2026-08-03 (`quiet_after_user_minutes`, `min_gap_minutes` — see Done) solve *"don't interrupt a live conversation"*. They do **not** solve the inverse, which is the one the cost analysis identified: a day where the user says nothing still fires the full check-in schedule. That is the pathological case from the parked programme — *"the VM has been running ~12 full multi-specialist pipelines/day talking to itself while the app was broken"* — and it survives the current gates, because silence is exactly what `quiet_after_user_minutes` reads as permission to fire.
+- ~~**Check-ins are not gated on the user having been present at all.**~~ — **not a bug;
+  closed 2026-08-05 by Mike's decision.** Raised as a possible gap: a day where the user says
+  nothing still fires the full check-in schedule, unlike `quiet_after_user_minutes` /
+  `min_gap_minutes`, which only stop a check-in from interrupting a *live* conversation.
 
-  **The check needed:** any user-originated exchange (`proactive=0`) since the last check-in fired. If none, skip. `_record_fire()`/`_minutes_since_last_fire()` in [core/scheduler.py](core/scheduler.py) already persist the timestamp to key on, and `_activity_gate_blocks` ([:173](core/scheduler.py#L173)) is the right place for it.
-
-  **Decide the intended behaviour before building.** A hard skip means a user who goes quiet for three days gets nothing on the fourth morning — which may be exactly wrong, since a silent stretch is arguably when a check-in matters most. A first-of-day exemption, or an escalating gap rather than a hard skip, is probably the right shape. `morning_brief`/`evening_close` are deliberately ungated (2026-08-03 decision: fixed points of the day) and should stay that way.
+  **Mike's call:** check-ins should continue to fire through silence. The admonition behind the
+  original gates was against spamming an actively-engaged user beyond their engagement level —
+  not against reaching out during a quiet stretch. Confirmed against
+  [core/scheduler.py:173-196](core/scheduler.py#L173): `_activity_gate_blocks()` implements
+  exactly `quiet_after_user_minutes` and `min_gap_minutes` and nothing else — no
+  silence-triggers-skip logic exists, which is the correct state. No code change.
+  *filed from cost-analysis findings · closed 2026-08-05 per explicit user decision*
 
 - **Sentence-chunked TTS.** Kokoro is at 2.8s/call after the in-process fix (down from 15.0s, which was a subprocess re-import per request). Streaming the first sentence while the rest synthesises would cut perceived latency again. **Deferred pending a judgement call on whether 2.8s actually feels slow in use** — do not build this before using voice mode enough to say. Named in the parked programme as an alpha nice-to-have, not a blocker.
 
-- **Browser does not live-refresh on foreign messages.** A message sent from the terminal or the Android app reaches the browser only after a manual page reload; the app and terminal sync fine. Sync itself is confirmed working — this is a client-side render path, not a transport failure. Same file and same area as the scroll and line-wrap items above, so worth doing in one pass. The parked programme's Phase 2b (one connection state machine, `visibilitychange`/`focus`/`online` handling) is the fuller treatment; some of it is already in `static/index.html`.
+- **Browser does not live-refresh on foreign messages — not closed; a related but distinct bug
+  was fixed 2026-08-01.** A message sent from the terminal or the Android app reaches the
+  browser only after a manual page reload; the app and terminal sync fine. **This entry's own
+  diagnosis is transport-ruled-out**: *"sync itself is confirmed working — this is a
+  client-side render path, not a transport failure."*
+
+  **Checked 2026-08-05: `ace22c7` (2026-08-01) already fixed the half-open-socket case** —
+  `STALE_AFTER_MS = 45000` in [static/index.html:717](static/index.html#L717) treats a socket
+  as dead if no ping/message arrives in 45s regardless of `readyState`, with reconnect-and-catchup
+  wired to `visibilitychange`/`focus`/`online`/a 20s interval. Real fix, but for **transport**
+  going stale — specifically Android's WebView freezing in the background. This entry diagnoses
+  a **render-path** bug with transport already working, which `ace22c7` doesn't touch (it never
+  runs the reconnect path if the socket wasn't actually dead). **Cannot confirm from code
+  reading whether the render-path symptom still reproduces** — needs a live two-device test:
+  open the browser tab, send a message from the terminal without touching the tab, and watch
+  whether it appears unprompted.
+  *filed 2026-08-01/02 · re-checked 2026-08-05, adjacent transport fix found and dated but the
+  entry's own diagnosis is a different code path · needs live reproduction, not closed*
 
 - **Cannot take an action on an external website.** *"Can you go on the R website and reserve tickets for us"* — SEQ 006, 2026-08-02. No browsing-with-actions capability exists. Worth an explicit decision on whether this is ever in scope, since it is the first request of its kind and carries a real security surface: the same message handed over an email address, postal address and phone number.
 

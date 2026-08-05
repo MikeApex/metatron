@@ -1109,7 +1109,8 @@
       try {
         const fd = new FormData();
         fd.append('audio', blob, `${Date.now()}.webm`);
-        const res = await authFetch('/transcribe', { method: 'POST', body: fd });
+        const url = '/transcribe' + (currentPersona ? '?persona=' + encodeURIComponent(currentPersona) : '');
+        const res = await authFetch(url, { method: 'POST', body: fd });
         if (!res.ok) throw new Error((await res.json()).detail || 'Transcription failed');
         const { transcript: text } = await res.json();
         showTranscript(text);

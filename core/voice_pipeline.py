@@ -120,6 +120,59 @@ def transcribe(audio: np.ndarray) -> str:
     return " ".join(seg.text.strip() for seg in segments).strip()
 
 
+# A well-formed email, and a looser fallback for the case Whisper drops the "@"
+# entirely (observed live: "diamond.like.gmail.com" for "diamond.mike@gmail.com") —
+# a dotted run ending in a known free-mail domain, with no "@" required.
+_EMAIL_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._%+-]*@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+_BARE_DOMAIN_RE = re.compile(
+    r"[A-Za-z0-9][A-Za-z0-9._%+-]*\.(?:gmail|yahoo|outlook|icloud|hotmail)\.[A-Za-z]{2,}",
+    re.IGNORECASE,
+)
+_CORRECTION_THRESHOLD = 0.72  # SequenceMatcher ratio; tuned against the two known
+                              # real cases (diamond.mic@… / diamond.like.gmail.com).
+
+
+def correct_known_addresses(transcript: str, persona: str) -> str:
+    """
+    Snap a dictated email address to the closest known address (the user's own,
+    or a saved CRM contact) when Whisper mis-transcribes it.
+
+    Scope, deliberately narrow: this fixes wrong characters in an address that
+    is otherwise recognizably email-shaped — the documented failure mode
+    (diamond.mic -> diamond.mike, a dropped "@"). It does not attempt to parse
+    "spelled out" dictation ("d as in dog, i, a, ...") or invent an address
+    with no known match; unmatched spans are left as Whisper produced them.
+    """
+    import difflib
+
+    from core.persona import persona_scope
+    from tools.mail import _known_recipients
+
+    with persona_scope(persona):
+        try:
+            known = list(_known_recipients().keys())
+        except Exception:
+            known = []
+    if not known:
+        return transcript
+
+    def _best_match(candidate: str) -> str | None:
+        best_addr, best_ratio = None, 0.0
+        for addr in known:
+            ratio = difflib.SequenceMatcher(None, candidate.lower(), addr.lower()).ratio()
+            if ratio > best_ratio:
+                best_addr, best_ratio = addr, ratio
+        return best_addr if best_ratio >= _CORRECTION_THRESHOLD else None
+
+    def _replace(m: re.Match) -> str:
+        match = _best_match(m.group(0))
+        return match if match else m.group(0)
+
+    corrected = _EMAIL_RE.sub(_replace, transcript)
+    corrected = _BARE_DOMAIN_RE.sub(_replace, corrected)
+    return corrected
+
+
 # ---------------------------------------------------------------------------
 # TTS
 # ---------------------------------------------------------------------------
