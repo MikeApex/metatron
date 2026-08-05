@@ -1,6 +1,21 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-05 (two parallel sessions closed: AgentRecord/WS-drain fix, A7 pipeline probe) — **Proactive check-ins root-caused and fixed** (parallel session): `core/router.py:166`'s `log_model_error()` was handed a live `AgentRecord` instead of a string, crashed on `json.dump`, and masked the real underlying failure — 18 of 19 scheduler errors in 7 days. One-line fix, deployed `10bf194` and verified live on the VM (`ec55788` closes the backlog entry, docs-only). **Not yet confirmed: a real scheduled fire completing end-to-end** — filed as `[DB-0804-01]`, three time-gated checks (~23:03, 07:30, one-week count 2026-08-11). Same fast-forward also fixed `deploy.sh`'s decorative WS-drain gate and closed two stale backlog entries. **Separately, this session closed A7's last residual gap:** a `pipeline` suite added to `tests/run_a4_safety.py` runs the A4 clinical scenarios through the real Coordinator→Synthesizer path, inverting the check (flag substance must surface, raw token must not) — **3/3 PASS live against gemini**, tests-only, no deploy needed. **A7 itself is still not signed off** — checks 10/12 and B1 remain open by deliberate deprioritization. Unchanged: SMTP send path still never exercised, APK rebuild pending.*
+*Updated: 2026-08-05 (backlog quick-bucket sweep, first SMTP send, APK rebuild, dictated-email
+fix) — **Backlog 44 → 32 open**: 11 stale/already-fixed entries closed, 3 real bugs fixed
+(`run_a4_safety.py` report-filename collision, `.message` bubble line-wrap, spend-guard pricing
+~3.75x low on flash-lite output), one same-day wrong verification corrected (`write_config`
+heading dedup — `_titled()` actually lives in `core/orchestrator.py`, not
+`tools/config_writer.py`). DB-0803-06 (`shownIds` eviction) re-derived and confirmed real, left
+open. **First real email this system has ever sent** — full `send_email` confirm-gate path
+exercised live against `mike`. APK rebuilt and content-verified (mtime looked stale, contents
+weren't); on-device install still Mike's step. Two decisions by explicit user instruction:
+check-ins keep firing through silence (not a bug, closed — the original gate was against
+spamming an *active* user, not against reaching out during quiet); browser live-refresh stays
+**open** — a related but distinct fix (`ace22c7`, half-open sockets) doesn't cover this entry's
+own render-path diagnosis, confirmed before closing anything. Built and deployed: dictated-email
+correction (`core/voice_pipeline.py`, snaps a mis-transcribed address to the closest known
+contact via `/transcribe`'s new optional `persona` param). Unchanged: `[DB-0804-01]`
+scheduled-fire check still pending; A7 blocked on checks 10/12 and B1b.*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -45,31 +60,21 @@ subagent dispatch; threat model and security backlog (`archive/security/`); **se
 [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md)). Three checks on hold, deliberately
 deprioritised behind latency work:
 
-- **B1** — red team + automated security tests
+- **B1** — red team + automated security tests. **B1a done and passed 2026-08-04, 75/75 checks**
+  (`tests/security_redteam_2026-08-04.md`, status now also reflected in `ROADMAP.md` §B1).
+  **B1b (indirect injection) still open**, gated on Track E.
 - **Check 10** — agent behavioural audits (12 specialists; Coordinator/Synthesizer via pipeline probes)
 - **Check 12** — constitution alignment review
 
-> **✅ Pre-sign-off gate FULLY CLEARED on the cloud path — 2026-08-05.** Single-agent suites
-> 6/6 (2026-08-04, `python tests/run_a4_safety.py --persona sarah_chen --provider gemini`)
-> **plus the pipeline probe, 3/3 (2026-08-05,** `--suite pipeline` **— new).** MW-3/MW-7/PH-MED
-> run through the real Coordinator→specialist→Synthesizer path via `run_pipeline_session()`;
-> pass condition inverts the specialist-level check — raw flag tokens (`CLINICAL_CONCERN`,
-> `MUST_SURFACE`, etc.) absent from user-facing text, flag substance (crisis resources, a
-> caution framing, the medication name) present instead. Report:
-> `tests/a4_safety_rerun_2026-08-04_gemini_pipeline.md`. The local-path re-run is **dormant** —
-> see below. **This clears the regression gate, not A7 itself** — checks 10/12 and B1 remain
-> open by deliberate deprioritization (below).
-
-> **Local/Ollama path is DORMANT (2026-08-05, user decision).** The deployment is fully on the
-> Vertex VM under the 2026-06-18 ZDR amendment, so `--provider ollama` verifies a path nothing
-> uses. `routing.yaml` and the local code stay in place; `ROADMAP.md` §A7 and §0 item 8 are
-> annotated, not deleted. **The binding privacy ruling is unchanged** — what is parked is the
-> run, not the requirement.
+> **✅ Pre-sign-off gate FULLY CLEARED on the cloud path — 2026-08-05** (single-agent 6/6 +
+> pipeline probe 3/3, both against `sarah_chen`/gemini). **Clears the regression gate, not A7
+> itself** — checks 10/12 and B1 remain open. Local/Ollama path is **dormant** (2026-08-05, user
+> decision — the ZDR-VM path is what's live; the binding privacy ruling itself is unchanged, only
+> the local re-run is parked). Full detail: [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
 
 Two loose ends inside the gate, both discrete checklist items so they don't get skipped:
 
-- **A5b** — re-run `write_aspirational_baseline` with the A5 mission-level data; the A3 baseline is still a placeholder.
-- **A5c** — preference activation status recorded as "unknown, confirm if needed."
+- **A5b** — re-run `write_aspirational_baseline` with the A5 mission-level data (A3 baseline is still a placeholder). **A5c** — preference activation status recorded as "unknown, confirm if needed."
 
 **A8 — Pre-Alpha code refactor** — gated on A7. Module extraction from
 `core/orchestrator.py` and `core/server.py`. **Full spec, including the regression gate, is in
@@ -79,15 +84,16 @@ Two loose ends inside the gate, both discrete checklist items so they don't get 
 data first.** The Coordinator runs 1 turn, not the 7 the roadmap assumes (`logistics` measured
 at 8). See `DEV_BACKLOG.md`.
 
-**Track B2 — auth and the confirmation gate are done; enforcement is not.** Item 5's
-decisions A/B/C are **taken and built** ([outward_actions_scope_2026-08-04.md](archive/plans/outward_actions_scope_2026-08-04.md)):
-nothing outward-facing happens without a tap recorded by `POST /confirm`, and `send_email` is
-limited in code to Mike's addresses and saved contacts. Still open in B2: **tool permissions
-remain in warn mode by decision** (the 43 grant gaps are the intended build-out), and the same
-gate should now be extended to `write_agent_config`/`write_config`, which B2 also requires.
+**Track B2 — more done than previously believed.** Item 5's decisions A/B/C are **taken and
+built**; the per-agent `allowed_tools` whitelist is already *enforced*, not warn-mode
+(`core/orchestrator.py:2190-2193`), and `research_agent` now carries the key too
+(`allowed_tools: [fetch_url]`, shipped 2026-08-04). Remaining B2 gaps, plus the Wave 1/Wave 2
+execution split, are in
+[archive/sessions/2026-08-04 — B1-B4 Security Scoping.md](archive/sessions/2026-08-04%20—%20B1-B4%20Security%20Scoping.md).
 
-> **The SMTP send path has never been exercised** — every test stops at the gate, so this
-> system has not yet sent mail. First real send is also the first test of that code.
+> **✅ SMTP send path exercised live, 2026-08-05.** Full `send_email` confirm-gate path run
+> against `mike` — `request()` → approve → matching `confirm_token` → real Gmail SMTP. First
+> mail this system has ever sent. Detail: [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
 
 **✅ `[DB-0803-02]` proactive check-ins fixed and deployed 2026-08-04 (`10bf194`), re-verified
 live on the VM.** Root cause was `core/router.py:166` handing a live `AgentRecord` to
@@ -97,9 +103,10 @@ dead. Three time-gated checks filed (~23:03 tonight, 07:30 tomorrow, one-week co
 2026-08-11) — do not check before those times.
 
 **The backlog is the bin for everything outside this roadmap.** Work it with **`/backlog`**.
-The one rule: *no item is acted on, or re-filed, on the strength of its own description* — a
-2026-08-05 sweep found about a third stale, and one stale premise produced a well-argued
-recommendation for the wrong decision.
+Currently **32 open**, down from 44 after a 2026-08-05 quick-bucket sweep. The one rule: *no
+item is acted on, or re-filed, on the strength of its own description* — that sweep found a
+same-day verification of its own that was wrong (checked the wrong file), corrected in the same
+pass.
 
 ---
 
@@ -110,18 +117,15 @@ Newest first. Full detail for every entry — and everything older — is in
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-05 | **Backlog quick-bucket sweep, first SMTP send, APK rebuild, dictated-email fix** — 44→32 open; first real email ever sent; APK content-verified; check-ins-fire-through-silence and browser-live-refresh both resolved by explicit decision/verification | `2c097b3`, `a08e38a` |
+| 08-05 | **ROADMAP.md gap closed, `/archive` gets a sixth step** — B1a's completion had never reached `ROADMAP.md`; added a ✅ status note there and a new mandatory roadmap-check step to `.claude/commands/archive.md` | docs-only, no deploy |
+| 08-04 | **B1a red team executed** — new `tests/run_b1_redteam.py`; 9 disclosure categories (15 prompts incl. variants) + output-filter suite (61 checks) + confused-deputy probe, 75/75 PASS; found sticky MUST_SURFACE context contamination on `sarah_chen`, filed not fixed | tests-only, no deploy |
+| 08-04 | **B1–B4 security scoping** — Track B split into two waves (B1a/B2-remainder/B4 now, B1b/B3 gated on Track E); found B2 ~60% already done, PoLP allowlist actually enforced not warn-mode; new recurring security-review protocol | scoping only, no deploy |
 | 08-05 | **A7 pipeline probe** — `pipeline` suite added to `run_a4_safety.py`, running MW-3/MW-7/PH-MED through the real Coordinator→Synthesizer path; inverted pass condition (substance surfaces, token doesn't); 3/3 PASS live | tests-only, no deploy |
 | 08-04 | **Proactive check-ins fixed** — `[DB-0803-02]` root cause (`AgentRecord` handed to `log_model_error`) found and fixed; deploy.sh WS drain fixed; VM-down detection; live-VM re-verification; **`[DB-0804-01]` time-gated checks filed** | `10bf194`, `ec55788` |
 | 08-05 | **Backlog trust repair** — counter counted *up* when items closed; sweep found ~⅓ stale; IDs + provenance; nine tool grants; `/backlog` | `10bf194` (fast-forward) |
 | 08-04 | **Item 5 built** — out-of-band confirmation gate (`POST /confirm`), `send_email` to contacts, provenance rule; **Research could not fetch and now can** | `15b9a41` |
 | 08-04 | **App: transcription readout is dismissable** — height-capped, `✕` + 12s auto-hide. Needs deploy **and APK rebuild** | **no — pending** |
-| 08-04 | **Context second pass** — phase conventions → `docs/CONVENTIONS.md`, prose tightened, memory audit 43→39 files (two were actively wrong). Cold start 28k→26k | docs only |
-| 08-04 | **A4 safety gate cleared 6/6** (scripted); `physical_health` `read_agent_config` grant — `MEDICATION_MISSED_CRITICAL` was unfireable; persona trees gitignored; **4h VM outage** recovered | **no — blocked** |
-| 08-04 | **Auth live** (cookie+bearer, WS handshake, fail-closed) · `fetch_url` + `read_email` wrapped in `<untrusted_content>` · voice toggle · item 5 scoped | `8e5c47e` |
-| 08-03 | **Context-file audit** — `SESSION.md` 775→170 lines; `PROJECT_LOG.md`, `INFRASTRUCTURE.md`, abridged `ROADMAP.md`, `/archive`, load auditor. Cold start ~88k→~28k tokens | docs only |
-| 08-03 | `deploy.sh` verifies by **ancestry**, not HEAD equality — no more false failures when a parallel window pushes | `3492d42`, `c674a91` |
-| 08-03 | **Calendar delivers** — CalDAV live with recurrence/alarms/all-day; `get_weather` + `get_environmental_snapshot`; tool permissions in warn mode; VM backup | `cfcd212`, `6865058` |
-| 08-03 | Phase 4 scheduler grants · `update_goal` · Tier 1–2 backup | `2f74cd2`, `8e2983f` |
 
 ---
 

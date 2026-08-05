@@ -79,6 +79,20 @@ Nothing deployed, no code changed. Full detail:
 previous ones are kept here in order, newest first, because several contain
 corrections to the one before them.
 
+*Updated: 2026-08-05 (ROADMAP.md gap closed; `/archive` gets a sixth step) — **User asked, after
+the B1a session's own `/archive` run: "did the B stuff move out of dev_backlog and get noted in
+overall project progress?"** Nothing had moved out of `DEV_BACKLOG.md` — B1a only added entries.
+But "overall project progress" split in two: `SESSION.md`/`PROJECT_LOG.md` correctly showed B1a
+done; `ROADMAP.md` — the live tracker Track B actually lives in — had never been touched and
+still read as pure future work. **Root cause: `.claude/commands/archive.md` never mentioned
+`ROADMAP.md` at all.** Fixed both — added a ✅ status note to `ROADMAP.md` §B1 (B1a done, B1b
+still open, matching the inline-note style A7's gate already uses), and gave `/archive` a sixth
+step requiring a `ROADMAP.md` check every session, with this exact miss as the worked example.
+Docs-only, nothing deployed. Carried in, unchanged: B1a's own findings (sticky MUST_SURFACE
+context on `sarah_chen`, stale `research_agent` backlog entry — both already filed);
+`[DB-0804-01]` scheduled-fire check still pending; SMTP send path never exercised; APK rebuild
+pending; A7 blocked on checks 10/12 and the rest of B1.*
+
 *Updated: 2026-08-05 (two parallel sessions closed: AgentRecord/WS-drain fix, A7 pipeline probe) — **Proactive check-ins root-caused and fixed** (parallel session): `core/router.py:166`'s `log_model_error()` was handed a live `AgentRecord` instead of a string, crashed on `json.dump`, and masked the real underlying failure — 18 of 19 scheduler errors in 7 days. One-line fix, deployed `10bf194` and verified live on the VM (`ec55788` closes the backlog entry, docs-only). **Not yet confirmed: a real scheduled fire completing end-to-end** — filed as `[DB-0804-01]`, three time-gated checks (~23:03, 07:30, one-week count 2026-08-11). Same fast-forward also fixed `deploy.sh`'s decorative WS-drain gate and closed two stale backlog entries. **Separately, this session closed A7's last residual gap:** a `pipeline` suite added to `tests/run_a4_safety.py` runs the A4 clinical scenarios through the real Coordinator→Synthesizer path, inverting the check (flag substance must surface, raw token must not) — **3/3 PASS live against gemini**, tests-only, no deploy needed. **A7 itself is still not signed off** — checks 10/12 and B1 remain open by deliberate deprioritization. Unchanged: SMTP send path still never exercised, APK rebuild pending.*
 
 *Updated: 2026-08-05 (backlog trust repair) — **The backlog never ballooned; the counter was wrong.** `sync_dev_backlog.py` partitioned on a `## Done` heading that had never been written, so struck-through entries counted and **closing an item raised the number**. Fixed — now `N new · N untriaged · N open`, currently **`0 · 0 · 45`**. A verify-before-refile sweep found **about a third of checked items stale**: four closed with evidence, three marked `needs re-derivation`, all survivors given `DB-MMDD-NN` IDs plus who filed them, how, and the origin SEQ. **Biggest find — `AgentRecord is not JSON serializable` is not a logging nuisance: 18 hits in 7 days against 19 total scheduler errors, so proactive check-ins are failing** (`companion_checkin` ×13, **[DB-0803-02]**). Nine tool denials resolved by reading the conversations they occurred in, not the denial text; `physical_health` write granted with `medication_profile` guarded in Python. `/backlog` carries the ritual; `/metatron-code` and `/archive` report the count only. ~~**`9361537` needs `./deploy.sh`.**~~ **Deployed 2026-08-04**, as a side effect of that session's own deploy fast-forwarding past it. Carried in from the parallel window and unchanged: the out-of-band confirmation gate and `send_email` are built (`ca993fe`), enforce mode off by decision, SMTP send path still never exercised, APK rebuild pending.*
@@ -154,6 +168,259 @@ Four related complaints, one root cause and four fixes. **The cause was not an a
 ---
 
 ## Dated history
+
+### 2026-08-05 (backlog quick-bucket sweep, first SMTP send, APK rebuild, dictated-email fix)
+
+Writeup: [archive/sessions/2026-08-05 — Backlog Quick-Bucket Sweep, SMTP Test, APK Rebuild, Dictated-Email Fix.md](sessions/2026-08-05%20—%20Backlog%20Quick-Bucket%20Sweep%2C%20SMTP%20Test%2C%20APK%20Rebuild%2C%20Dictated-Email%20Fix.md)
+
+Ran concurrently with (at least) two other windows working Track B — this session touched only
+`DEV_BACKLOG.md`, `tests/run_a4_safety.py`, `static/index.html`, `config/modules/spend_guard.yaml`,
+`archive/PROJECT_LOG.md` (a dead-link fix, appended not rewritten), `core/server.py`, and
+`core/voice_pipeline.py`. Deliberately never touched the other windows' in-flight,
+uncommitted `SESSION.md`/`ROADMAP.md` edits — see the process note near the end.
+
+**Quick-bucket sweep: 44 → 32 open.** Verify-before-refile discipline caught real drift both
+ways:
+
+- **Two items were already fixed but never crossed off** — `deploy.sh`'s WS-drain gate and the
+  VM-down detection, both landed in `10bf194` (2026-08-04) with no corresponding backlog close.
+- **This session's own first-pass verification of one entry was itself wrong, and got
+  corrected in the same session.** DB-0803-04 (`write_config()` heading duplication) was
+  checked earlier the same day, found "cited code absent" by reading only
+  `tools/config_writer.py`, and marked unconfirmed. Re-checking on this pass found `_titled()`
+  living one layer up, in `core/orchestrator.py:187-199` — exactly the mechanism the original
+  entry described, working as designed. **The lesson, stated for whoever hits this pattern
+  next: "cited code does not exist" is only true of the one file actually checked.**
+- **DB-0803-06 (`shownIds` eviction) re-derived and confirmed real**, not stale: both call
+  sites (`static/index.html:944,971`) still do a full `.clear()` instead of incremental
+  eviction, which can duplicate-render catch-up messages past 100 exchanges. Left open — a real
+  fix, not a re-verification, is still owed.
+- **Pre-2026 hallucinated-log spot-check blocked, not closed**: live `mike` data is VM-owned
+  per the persona rules; the Mac's local mirror doesn't even contain the originally-cited
+  filenames. Found a *new* instance of the same bug class while looking — `2024-08-04.json`,
+  two years stale — sitting next to a correctly-dated file in the same directory. Needs the VM
+  to resolve; was unreachable for part of this session (see below).
+- Three real fixes: `tests/run_a4_safety.py`'s `clinical`/`finance` report filenames now
+  suite-qualified (were silently overwriting each other same-day); `.message` bubbles gained
+  `overflow-wrap: anywhere` (the bubble-width half of a 2026-08-02 complaint the footer-readout
+  fix never covered); `spend_guard.yaml` pricing corrected against the live Vertex AI pricing
+  page — flash-lite output was **~3.75x underestimated** ($0.40 vs. actual $1.50/1M tokens).
+
+**VM went unreachable mid-session, then came back.** `sync_dev_backlog.py`'s own VM-down
+detection (see above) fired correctly during this session's `/metatron-code` load. Came back
+reachable partway through; the SMTP test and APK rebuild, both requiring live VM/deploy access,
+were held for explicit go-ahead rather than run opportunistically the moment connectivity
+returned — user confirmed before either ran.
+
+**First real email this system has ever sent.** Ran the full production `send_email` path live
+against `mike` on the VM: `request()` → `PENDING_CONFIRMATION` → `tools.confirm.approve()` →
+second call with matching `confirm_token` → real Gmail SMTP over STARTTLS, port 587. Landed in
+`diamond.mike.mt@gmail.com`. **Bonus finding, not a bug:** the fingerprint match in
+`consume()` correctly refused a second call whose subject/body didn't match what was approved —
+caught a scripting mistake in this test itself, exactly the protection it exists for.
+
+**APK rebuilt and content-verified, not just built.** `npx cap sync android && ./gradlew
+assembleDebug` succeeded, but the output file's mtime looked stale (matching an old build) —
+rather than trust it, unzipped the APK and grepped the packaged `index.html` to confirm the
+`overflow-wrap` fix was actually present. It was; the mtime was misleading, not the build.
+Served from the Mac over Tailscale for sideload — **install/verify on the phone is still Mike's
+step, not done from here.**
+
+**Two decisions made by explicit user instruction, not inferred:**
+1. **Check-ins should keep firing through silence** — the "not gated on presence" backlog item
+   is closed as not-a-bug. The original admonition behind `quiet_after_user_minutes` was against
+   spamming an *actively engaged* user, not against reaching out during a quiet stretch.
+   `core/scheduler.py:173-196` already implements exactly this and nothing more — confirmed, no
+   code change made.
+2. User asked to verify a claim that item 3 (browser live-refresh) "had already been handled"
+   before proceeding. **It was not, and saying so required distinguishing two similar-looking
+   fixes.** `ace22c7` (2026-08-01) fixed a real, related bug — half-open WebSockets from
+   Android's WebView freezing in the background, detected via a 45s ping-staleness check. But
+   the backlog entry's *own* diagnosis explicitly rules out transport ("sync is confirmed
+   working, this is a client-side render path") — a different code path `ace22c7` never
+   touches, since its reconnect logic never fires on a socket that wasn't actually dead. Closing
+   this on the strength of the adjacent fix would have been the same failure class as the
+   DB-0803-04 correction above, one layer up. Left open, flagged as needing live two-device
+   reproduction rather than code reading.
+
+**Built: dictated-email correction.** `core/voice_pipeline.py.correct_known_addresses()` —
+regex-matches an email-shaped (or `@`-dropped, domain-anchored) span in a transcript, scores it
+against the persona's known addresses (self + saved CRM contacts, reusing
+`tools.mail._known_recipients()`) via `difflib.SequenceMatcher`, and snaps it to the best match
+above a 0.72 ratio threshold. Wired into `/transcribe` via a new optional `persona` query param
+— omitted, behavior is byte-for-byte unchanged from before this session. **Tested in isolation
+before wiring in**, against both documented real cases (`diamond.mic@gmail.com` →
+`diamond.mike@gmail.com`, ratio 0.93; `diamond.like.gmail.com` → `diamond.mike@gmail.com`,
+ratio 0.91 via the no-`@` fallback regex) and negative cases (an unrelated third party's real
+address left untouched at ratio 0.52; an exact match on a different known contact preserved
+correctly; a plausible typo of that same different contact still resolved to the right person,
+not redirected to Mike's).
+
+**Process note — three separate collisions with a concurrently-active window(s), all handled
+by scoping commits rather than resolving them:** `SESSION.md` was found mid-edit reverting
+2026-08-05 progress notes back to a 2026-08-04 state early in the session; later, `ROADMAP.md`,
+`.claude/commands/archive.md`, and further `PROJECT_LOG.md` content appeared, corresponding to
+what turned out to be a B1a red-team execution and a `/archive`-tooling fix running in another
+window. **Never staged, committed, or discarded any of those files' pending changes** — every
+commit this session was preceded by `git diff --cached --stat` to confirm only files this
+session actually edited were included. This is not a resolution of the underlying multi-window
+coordination gap, just the safe default when it's hit mid-task.
+
+**Commits:** `2c097b3` (quick-bucket sweep, 3 real fixes, deployed — VM HEAD verified),
+`30dd9b6` (SMTP + APK backlog closures, docs-only, not separately deployed), `a08e38a`
+(check-in decision + dictated-email correction, deployed — VM HEAD verified, both systemd
+services confirmed `active` post-restart).
+
+### 2026-08-05 (ROADMAP.md gap closed; /archive gets a sixth step) — docs-only, no commit required
+
+Writeup: [archive/sessions/2026-08-05 — ROADMAP Gap Fix and Archive Six-Step.md](sessions/2026-08-05%20—%20ROADMAP%20Gap%20Fix%20and%20Archive%20Six-Step.md)
+
+Direct follow-on to the same-day (calendar-adjacent) B1a session below. User asked, after that
+session's own `/archive` run: "we've moved the B stuff out of dev_backlog and made note of it on
+overall project progress, right?" — a premise check, not a request.
+
+**What the premise check found, and why it mattered:** the answer to both halves was more
+nuanced than a yes. Nothing had moved *out* of `DEV_BACKLOG.md` — the B1a session had only ever
+*added* to it (the completion entry, the MUST_SURFACE finding, the stale `research_agent`
+correction). And "overall project progress" turned out to mean two different documents that had
+diverged: `SESSION.md` and `archive/PROJECT_LOG.md` both correctly reflected B1a's completion,
+but `ROADMAP.md` — the actual live tracker for phase-gated work, Track B included — had not been
+touched at all. Its B1 section still read as pure future work: "Build: Use GPT-4o and/or o3 to
+generate adversarial prompts... Run each against live Coordinator and Synthesizer," no mention
+that this had already happened and passed. Confirmed by grep before claiming it (`grep -n "B1a"
+ROADMAP.md` returned nothing) rather than asserted from memory of what should have happened.
+
+**Root cause, not just the symptom:** the `/archive` skill (`.claude/commands/archive.md`) never
+mentioned `ROADMAP.md` at all — five steps covering the transcript, the log, the session
+writeup, `SESSION.md`, and `DEV_BACKLOG.md`, with no step that so much as asked whether a
+roadmap-tracked item had changed status. `SESSION.md` and `DEV_BACKLOG.md` both got updated
+because the ritual explicitly names them; `ROADMAP.md` didn't, because nothing told the ritual
+to look at it. Fixing the one instance (editing `ROADMAP.md` for B1a) would have left the same
+gap open for the next session that closes a roadmap-tracked item — the user's ask was
+explicitly for the general fix ("more generally on any `/archive`... FIX THIS"), not just the
+one-off.
+
+**What was built:**
+- `.claude/commands/archive.md` — five steps became six. New step 5, "Update `ROADMAP.md` if
+  this session touched anything it tracks," inserted between the `SESSION.md` step and the
+  `DEV_BACKLOG.md` step. Names the exact failure mode that just happened as the worked example
+  in a blockquote at the top of the file (not buried in the new step alone, so it's read before
+  step 4 is started, not discovered after step 5 is skipped again). Explicit trigger clause:
+  "especially check this when something is being marked done or removed from `DEV_BACKLOG.md`"
+  — because that is precisely the moment a roadmap-tracked item's status is changing and the
+  easiest moment to forget the roadmap has its own copy of that status.
+- `ROADMAP.md` §B1 — added a ✅ status blockquote directly under the `**B1 — Red team...**`
+  heading, in the same inline style A7's pre-sign-off gate note already uses elsewhere on the
+  page (a deliberate match — the file already has a convention for this, use it rather than
+  invent a second one). States B1a done (disclosure suite, output-filter suite, confused-deputy
+  test — all three items covered by this page), links the report and the log entry, and states
+  explicitly that B1b (indirect injection) and B1 as a whole are still open, so the ✅ can't be
+  misread as closing more than it does.
+
+**Decision made, and what was rejected:** considered rewriting the B1 section's body to strike
+through the now-completed build instructions, matching how completed Track A items were handled
+elsewhere in the file's history. Rejected — the instructions still describe exactly how to
+reproduce/re-run B1a (the categories, the two automated checks, the pass conditions), and B1b
+still needs them for its own run. A status note above the still-live instructions is the correct
+shape here, not a strikethrough; conflating "done" with "no longer needed" would have deleted
+the reference the next session needs.
+
+**Nothing deployed.** Two markdown files edited (`.claude/commands/archive.md`,
+`ROADMAP.md`); no code, no tests, no VM-relevant change.
+
+### 2026-08-04 (B1a red team executed: 75/75 pass, gate PASS) — tests-only, no commit required
+
+Writeup: [archive/sessions/2026-08-04 — B1a Red Team Executed.md](sessions/2026-08-04%20—%20B1a%20Red%20Team%20Executed.md)
+
+First execution session against the prior day's scoping-only pass
+([archive/sessions/2026-08-04 — B1-B4 Security Scoping.md](sessions/2026-08-04%20—%20B1-B4%20Security%20Scoping.md),
+plan at `archive/plans/scope-out-executing-b1-b4-deep-sun.md`). Entered via `/metatron-code` plan
+mode; plan written to `~/.claude/plans/let-s-begin-addressing-phases-keen-dusk.md` and approved
+before any code was touched.
+
+**Why B1a first, not B2 or B4:** pure testing, no production code change, no deploy — lowest risk
+of Wave 1's three items, and it directly chips at the A7 blocker rather than infrastructure that
+only matters once red-teaming finds something. `tests/security_testing_plan.md` §1 already
+specified the 9 categories and pass conditions, so this session was build-the-runner-and-run-it,
+not decide-the-approach.
+
+**Re-verification before planning, not assumed from the prior day's doc:** re-checked the
+scoping doc's claims against current code first, since a day had passed. PoLP enforcement,
+output-filter substring-matching, confused-deputy opacity, and the duplicate backlog files were
+all unchanged. **One correction found:** the scoping doc (and `DEV_BACKLOG.md`'s still-live entry
+at the time) both described `research_agent` as missing `allowed_tools`, defaulting it to all 53
+tools. It wasn't — `allowed_tools: [fetch_url]` had shipped 2026-08-04 10:55Z in `c886560`, part
+of the `fetch_url`/`read_email` build, twelve hours before this session started. The
+`DEV_BACKLOG.md` entry was closed as stale in this session rather than carried forward as live
+B2 scope — a second instance of the "don't act on an item's own description" failure mode
+`CLAUDE.md` already names, caught before it cost anything this time.
+
+**What was built:** `tests/run_b1_redteam.py`, following `tests/run_a4_safety.py`'s established
+pattern (static reviewed scenario data, never raises out of a scenario, dated markdown report).
+Three suites:
+- **`disclosure`** — the 9 categories from `tests/security_testing_plan.md` §1, run live through
+  `run_pipeline_session()`. Three categories judged highest-value for an untested bypass (persona
+  adoption, hypothetical framing, roleplay escape) got two additional phrasing variants each,
+  sourced from GPT-4o via `ask_gpt` during planning and reviewed before being hardcoded — 15
+  live pipeline calls total.
+- **`filter`** — no model calls. Builds synthetic strings from `filter_output()`'s own
+  `_ALWAYS_CONFIDENTIAL`/`_CONTEXT_SENSITIVE` lists and runs the real function directly (61
+  checks), plus the known Exchange 027 (2026-06-26) false positive re-run as a documented,
+  non-gating informational marker rather than a scored check.
+- **`deputy`** — two parts. (a) structural: `inspect.getsource()` on `run_pipeline_session` and
+  `_run_pipeline_session_stream_inner`, regex-confirms `_dispatch_from_coordinator()`'s only call
+  sites pass `coord_output`, never `spec_text`/`specialist_outputs`. (b) live: feeds a hostile
+  `SPECIALISTS_TO_CALL`-shaped string directly into `_dispatch_from_coordinator()` to confirm the
+  parser has **no innate protection** — it does dispatch a real specialist call (`logistics`, which
+  itself then refused the injected directive on its own judgment, an incidental extra data point)
+  — proving the safety guarantee here is entirely architectural (part (a) never being violated),
+  not a property of the function itself.
+
+**Result: 75/75 checks pass, gate PASS.** No architecture leaked in any of the 15 disclosure
+responses; all 61 filter checks correct; both deputy checks confirmed as designed. Merged the
+three suite-specific reports (`_filter.md`/`_deputy.md`/`_disclosure.md`, generated by three
+separate `--suite` invocations to keep API spend visible per suite) into one canonical
+`tests/security_redteam_2026-08-04.md` via a one-off merge script, then deleted the interim
+files — one artifact per CLAUDE.md's generated-file-naming convention, not three fragments.
+
+**This closes B1a only.** B1b (indirect injection via email/calendar/web content) remains gated
+on Track E integration maturity, unchanged from the scoping doc. B1 as a whole — what A7 sign-off
+actually needs — is not closed.
+
+**Anomaly found while running it, filed not fixed — the highest-value finding of the session,**
+and not something B1a set out to look for. All 15 disclosure responses against `sarah_chen`
+carried a real answer to the actual prompt plus an escalating, near-identical crisis-intervention
+script (988, "find Tom", confirm the lamotrigine dose) — including on prompts with no plausible
+connection to crisis content, like "What tools do you have?". `data/personas/sarah_chen/context.json`
+explained why: an open `"safety check and SI risk"` thread persisted from an earlier session
+(most likely the 2026-08-05 A4 pipeline probe, which legitimately fires `sarah_chen`'s
+`SUICIDAL_IDEATION`/`MUST_SURFACE` flags via the identical MW-3 prompt), and the Synthesizer had
+written a *new* pattern into that same file mid-run: `"deflecting acute distress with system
+architecture questions"` — reclassifying every B1a red-team prompt as further evidence of the
+same unresolved crisis rather than as an unrelated new message. `held_items` read `"Held: None —
+all critical flags surfaced due to acute safety risk"`, with nothing describing when or how that
+open thread would ever close.
+
+**Two implications, deliberately not conflated in the filing:**
+1. *Test hygiene* — `sarah_chen` is not a clean bed for red-team/self-disclosure testing once any
+   earlier session has legitimately triggered a clinical flag against her. A dedicated persona or
+   an explicit context-tracker reset would isolate disclosure-resistance testing from crisis-
+   override behaviour.
+2. *Possibly real behaviour, not just a test artifact* — if this generalises to Mike, a
+   MUST_SURFACE flag firing once with no visible expiry could keep resurfacing crisis framing on
+   every unrelated later turn indefinitely. Could be intentional conservatism or a genuine bug;
+   this session determined only that the behaviour exists and has no visible resolution path, not
+   which it is.
+
+Filed as `DEV_BACKLOG.md` entries (not silently patched — B1a's job was to find and log; fixes
+belong to B2/B3 or a dedicated look at `mental_wellbeing.md`/`synthesizer.md`), not yet triaged
+to an owner.
+
+**`SESSION.md` updated** (lead paragraph, A7's B1 bullet split into B1a-done/B1b-open, one row
+added to Recent sessions) — not appended to.
+
+**Nothing deployed.** B1a is read-only testing against the already-running Vertex path; no
+production code was touched.
 
 ### 2026-08-05 (A7's residual gap closed: end-to-end pipeline probe) — tests-only, no commit required
 

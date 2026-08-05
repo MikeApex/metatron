@@ -720,6 +720,40 @@ item "nearly aged out" (see Troubleshooting signal below).*
 
 Stale docs, paths, and low-priority corrections.
 
+- **[DB-0805-04] `tools/mail.py`'s module-level docstring is stale — says sending is deferred,
+  but `send_email` shipped and was exercised live today.** Lines 9-13: *"Read-only, and that is
+  a design decision rather than an unfinished feature. Sending is deferred with the rest of the
+  act-on-your-behalf work: reading a booby-trapped message is a bad answer, sending one is a
+  real loss."* That was true when written (`6739d62`, `read_email` only) but `send_email`
+  landed 2026-08-04 (`ca993fe`/`15b9a41`) in the same file, gated by `tools/confirm.py`, and was
+  proven working end-to-end 2026-08-05 (first real send). The docstring now contradicts the code
+  three lines below it. Low priority — doesn't affect behavior, but worth fixing before it
+  misleads whoever reads this file next expecting a read-only module.
+  *filed 2026-08-05 by dev session (Claude Code) · found while verifying the SMTP send path ·
+  not fixed this session*
+
+- **[DB-0805-05] Parallel Claude Code windows editing the same shared-state files
+  (`SESSION.md`, `ROADMAP.md`, `archive/PROJECT_LOG.md`) collide with no detection mechanism,
+  and it has now happened repeatedly.** This session found `SESSION.md` mid-edit by another
+  window early on (an uncommitted revert of the 2026-08-05 progress notes back to 2026-08-04
+  state), and later found `ROADMAP.md`, `.claude/commands/archive.md`, and further
+  `PROJECT_LOG.md` content appearing mid-session from at least one other active window (the
+  B1a-red-team and ROADMAP-gap-fix work). Handled this time by scoping every commit to only the
+  files this session actually touched (`git diff --cached --stat` checked before each commit)
+  and never staging, committing, or discarding the other window's pending changes — but that's
+  a workaround per-incident, not a fix. **The actual gap:** nothing warns a session that a file
+  it's about to rewrite (especially `SESSION.md`, which is explicitly "replaced, not appended")
+  has uncommitted changes from elsewhere. A session following the `/archive` ritual literally
+  and rewriting `SESSION.md`'s top paragraph without checking `git status` first would silently
+  discard a concurrent window's real work. **Possible cheap mitigation:** have `/archive`'s
+  `SESSION.md`/`ROADMAP.md` steps open with a `git diff --stat` check and a stop-and-ask if
+  either file already shows unstaged changes when the step begins, rather than assuming a clean
+  starting state. Not scoped further than that — needs a decision on whether that's sufficient
+  or whether real multi-window coordination (locking, or a designated "whoever closes last
+  reconciles" convention) is worth building.
+  *filed 2026-08-05 by dev session (Claude Code) · found repeatedly during this session's own
+  `/archive` and mid-session deploys · not fixed, no owner*
+
 - ~~**Transcript lines run too long on screen.**~~ — **the bubble-width half fixed, closed
   2026-08-05.** *"The transcript liners too long on the screen"* — SEQ 014, 2026-08-02. Two
   readings existed: the footer `#transcript` readout (capped to 3 lines with internal scroll,
