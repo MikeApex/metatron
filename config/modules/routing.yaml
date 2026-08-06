@@ -97,9 +97,11 @@ agents:
 
   logistics:
     local: true
-    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, get_weather, read_profile, write_profile, write_schedule, list_schedules, delete_schedule, fetch_url, read_email, send_email, read_agent_config, write_agent_config, search_memory, read_archive, write_archive]
+    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, update_calendar_event, delete_calendar_event, check_calendar_conflicts, get_weather, read_profile, write_profile, write_schedule, list_schedules, delete_schedule, fetch_url, read_email, send_email, read_agent_config, write_agent_config, search_memory, read_archive, write_archive]
     # read/write_agent_config, search_memory, read/write_archive granted 2026-08-05 — see
     # routing_cloud.yaml for the full rationale. Kept in parity.
+    # update_calendar_event, delete_calendar_event, check_calendar_conflicts added
+    # 2026-08-05 — see routing_cloud.yaml for the full rationale. Kept in parity.
     # fetch_url + read_email added 2026-08-04. Granted here and not more widely:
     # both return content written by strangers, so the blast radius of an injected
     # instruction is the holder's toolset. Logistics is the agent that actually needs

@@ -448,9 +448,11 @@ def register_tools() -> tuple[list[dict], dict]:
         WRITE_WISHES_SCHEMA, READ_WISHES_SCHEMA, GENERATE_EMERGENCY_CARD_SCHEMA,
     )
     from tools.caldav import (
-        read_calendar, write_calendar_event,
+        read_calendar, write_calendar_event, update_calendar_event, delete_calendar_event,
         READ_CALENDAR_SCHEMA, WRITE_CALENDAR_EVENT_SCHEMA,
+        UPDATE_CALENDAR_EVENT_SCHEMA, DELETE_CALENDAR_EVENT_SCHEMA,
     )
+    from tools.scheduling import check_calendar_conflicts, CHECK_CALENDAR_CONFLICTS_SCHEMA
     from tools.ambient import (
         get_weather, get_environmental_snapshot,
         GET_WEATHER_SCHEMA, GET_ENVIRONMENTAL_SNAPSHOT_SCHEMA,
@@ -489,6 +491,8 @@ def register_tools() -> tuple[list[dict], dict]:
         WRITE_AGENT_CONFIG_SCHEMA, READ_AGENT_CONFIG_SCHEMA,
         WRITE_WISHES_SCHEMA, READ_WISHES_SCHEMA, GENERATE_EMERGENCY_CARD_SCHEMA,
         READ_CALENDAR_SCHEMA, WRITE_CALENDAR_EVENT_SCHEMA,
+        UPDATE_CALENDAR_EVENT_SCHEMA, DELETE_CALENDAR_EVENT_SCHEMA,
+        CHECK_CALENDAR_CONFLICTS_SCHEMA,
         GET_WEATHER_SCHEMA, GET_ENVIRONMENTAL_SNAPSHOT_SCHEMA,
         WRITE_SCHEDULE_SCHEMA, LIST_SCHEDULES_SCHEMA, DELETE_SCHEDULE_SCHEMA,
         WRITE_QUALITY_EVENT_SCHEMA,
@@ -540,6 +544,9 @@ def register_tools() -> tuple[list[dict], dict]:
         "generate_emergency_card": generate_emergency_card,
         "read_calendar": read_calendar,
         "write_calendar_event": write_calendar_event,
+        "update_calendar_event": update_calendar_event,
+        "delete_calendar_event": delete_calendar_event,
+        "check_calendar_conflicts": check_calendar_conflicts,
         "get_weather": get_weather,
         "get_environmental_snapshot": get_environmental_snapshot,
         "write_schedule": write_schedule,

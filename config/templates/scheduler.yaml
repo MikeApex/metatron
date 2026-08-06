@@ -81,3 +81,23 @@ schedules:
     days: daily
     function: tools.rule_audit.audit_rules
     notification: false
+
+  # Sweeps the near-term calendar (7 days back, 60 ahead) for entries that look
+  # like accidental duplicates of each other rather than intentional recurrence
+  # — same evidence rules as the real-time check that runs on every calendar
+  # write (tools/scheduling.py), just applied pairwise across a window instead
+  # of one candidate against history. Catches what the write-time check
+  # structurally cannot: duplicates already on the calendar before it shipped,
+  # or created through any path that bypasses it. A function job, so it costs
+  # no model tokens.
+  #
+  # Deliberately silent to the user: a possible duplicate is worth a look, not
+  # an interruption. Findings go to the quality-event stream as
+  # CALENDAR_DUPLICATE and surface in DEV_BACKLOG.md. Each pair is reported
+  # once, never re-reported daily.
+  daily_calendar_dedup_audit:
+    enabled: true
+    time: "05:35"           # right after daily_rule_audit, same reasoning
+    days: daily
+    function: tools.calendar_audit.audit_calendar_duplicates
+    notification: false
