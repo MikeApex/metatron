@@ -75,7 +75,7 @@ def _save(data: dict) -> Path:
     return path
 
 
-def write_profile(field: str, value: str) -> str:
+def write_profile(field: str, value: str, confirm_token: str = "") -> str | dict:
     """
     Record one stable biographical fact about the user.
 
@@ -83,9 +83,14 @@ def write_profile(field: str, value: str) -> str:
         field: One of the permitted field names (see WRITABLE).
         value: The value to store. For 'other', the entry is appended to a list
                rather than replacing what is already there.
+        confirm_token: Only needed when *changing* an already-set contact field
+            (email/phone/address) — the token from a PENDING_CONFIRMATION response,
+            after the user has approved it. Omit for first-time capture of any field,
+            and for every non-contact field always.
 
     Returns:
-        Confirmation string, or an error naming the permitted fields.
+        Confirmation string once written, or a PENDING_CONFIRMATION dict when changing
+        an existing contact field, or an error naming the permitted fields.
     """
     key = field.strip().lower()
     if key not in WRITABLE:
@@ -102,6 +107,31 @@ def write_profile(field: str, value: str) -> str:
         return f"Error: no value given for '{key}'."
 
     data = _load()
+
+    # Contact fields (email, phone, address) are the highest-consequence entries in this
+    # store — a wrong one misdirects real communication, and they're exactly what voice
+    # transcription gets wrong most often (see relationships.md's read-back protocol for
+    # the same failure mode on CRM contacts). First-time capture writes immediately, same
+    # as every other field — synthesizer.md's "confirm at capture" clause covers that
+    # case with a spoken-back clause, not a blocking gate. *Changing* an already-set
+    # value is different: that's an explicit correction or a genuine life change, either
+    # way rare enough that a confirm-gate round trip costs nothing real. Same mechanism
+    # as write_config/write_agent_config's guarded keys — gate it in Python, don't rely
+    # on the agent remembering to ask.
+    if key in _CONTACT_FIELDS:
+        existing = (data.get("contact") or {}).get(key, "").strip()
+        if existing and existing.lower() != text.lower():
+            from tools.confirm import consume, request
+
+            args = {"field": key, "value": text}
+            ok, reason = consume(confirm_token or None, "write_profile_contact", args)
+            if not ok:
+                if confirm_token:
+                    return f"Error: not changed. {reason}"
+                return request(
+                    "write_profile_contact", args,
+                    description=f"Change stored {key} from '{existing}' to '{text}'?",
+                )
 
     if key == "other":
         entries = list(data.get("other") or [])
@@ -182,7 +212,11 @@ WRITE_PROFILE_SCHEMA = {
         "not lost: they should never have to give you the same detail twice. "
         "This is for facts about who they are. Preferences about how they want to "
         "be spoken to go to the persona file instead, and anything that is only "
-        "true this week belongs in the context tracker."
+        "true this week belongs in the context tracker. First-time capture of email/"
+        "phone/address writes immediately — say back what you captured in your reply. "
+        "*Changing* an already-set email, phone, or address returns PENDING_CONFIRMATION "
+        "instead of writing — show the user the change and call again with confirm_token "
+        "after they approve it in the app, same as send_email."
     ),
     "input_schema": {
         "type": "object",
@@ -198,6 +232,14 @@ WRITE_PROFILE_SCHEMA = {
                     "The value to store, exactly as the user gave it. For 'other', "
                     "a single short sentence stating one stable fact; it is appended "
                     "to the existing list rather than replacing it."
+                ),
+            },
+            "confirm_token": {
+                "type": "string",
+                "description": (
+                    "Only needed when changing an already-set email/phone/address: the "
+                    "token from a PENDING_CONFIRMATION response, after the user has "
+                    "approved it. Omit for first-time capture and for every other field."
                 ),
             },
         },

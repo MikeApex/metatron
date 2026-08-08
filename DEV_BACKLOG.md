@@ -13,12 +13,57 @@ Refresh: `python3 scripts/sync_dev_backlog.py`
 
 ## Inbox
 
+- **[instruction change]** User re-stated the strict check-in rule ('never list or recap pending items') because the previous response violated the existing persona config by listing two time-sensitive items. The persona constraint is present but failed to override the generic routing/integration behavior.  
+  `2026-08-07T09:13:05.841606Z`
+
+- **[needs building]** search_memory tool is throwing a JSON parse error: 'Extra data: line 557 column 2 (char 82852)'. The memory file parser needs debugging to restore CRM read access, which is currently blocking contact verification.  
+  `2026-08-06T16:49:21.836539Z`
+
+- **[needs building]** System must proactively detect when a scheduled calendar event passes without occurring, and automatically prompt the user to reschedule it. Financial tasks (like payroll) must remain prominently surfaced in daily proactive checks until explicitly closed.  
+  `2026-08-05T15:19:45.254683Z`
+- **[agent wanted a tool it lacks]** `finance` attempted `search_memory` (query) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
+  `2026-08-05T15:21:45.223926Z`
+
 - **[same rule in two places]** This preference may contradict a rule that already applies — one negates, the other does not, and whichever layer loads last wins. Class: brevity — how long a proactive session's opening should be. A universal rule of this class belongs in the scheduler layer. Preference: config/personas/mike.md:11 — For check-ins: Keep to two sentences at most. If exactly one thing genuinely needs attention, name it and stop. Otherwise just ask what's on. Never list or recap pending items, and never manufacture a topic. Candidate rule(s) it may restate: (0.90) [brevity] config/personas/mike/scheduler.yaml:41 — Check in briefly — two sentences at most. If exactly one thing genuinely needs attention right now, name it and stop. Otherwise just ask what's on. Never list or recap pending item (0.90) [brevity] config/templates/scheduler.yaml:34 — Check in briefly — two sentences at most. If exactly one thing genuinely needs attention right now, name it and stop. Otherwise just ask what's on. Never list or recap pending item (0.19) [brevity] config/personas/mike/scheduler.yaml:21 — Good morning. Open with whatever is most time-sensitive today — a commitment, an overdue follow-up, or an unresolved thread from recent context. Name it specifically rather than as … and 1 more Candidates are ranked by wording overlap, which is weak at this scale — the flagged preference is the reliable part, the partner is a starting point. If the preference says nothing the shared rule does not, delete it. If it is a genuine personal refinement, keep it and reword it so the difference is all it states.  
   `2026-08-05T04:30:19.777295Z`
 - **[instruction change]** Enable proactive pre-departure travel checks: autonomously look up flight status and relevant transit lines (e.g., DLR, Elizabeth line) before the user asks on travel days.  
   `2026-08-05T07:02:45.797954Z`
 
-*(nothing new — last triaged 2026-08-05)*
+*(nothing new — last triaged 2026-08-08)*
+
+---
+
+## Triaged out of Inbox — 2026-08-08
+
+- ~~**Develop a stronger protocol for onboarding new contacts to the CRM or Google
+  Contacts. Current handling resulted in misattributing the user's email to the
+  contact and silent failures during retrieval.**~~ — **built 2026-08-08.** Went through
+  a full detour first (Google Contacts OAuth, built then reversed same-day at Mike's
+  challenge — see `[DB-0808-01]`) before landing on the direct fix: `tools/crm.py`'s
+  `write_contact` had no validation against the user's own identity at all, which is the
+  literal bug. Added in Python (not a prompt instruction, per the standing "being told is
+  not being prevented" principle already applied to `write_agent_config`/`send_email`):
+  refuses outright on an *exact* match to the user's own email/phone from `profile.yaml`;
+  flags (via `difflib.SequenceMatcher`, threshold 0.80) and saves anyway on a *near*
+  match, since a hard block would also refuse a legitimate similar-looking contact.
+  Verified live: an exact match (`diamond.mike.mt@gmail.com` attributed to a new
+  contact) is refused; a realistic transcription near-miss
+  (`diamond.mic.mt@gmail.com`) is flagged with a warning but still saved; an unrelated
+  contact saves silently with no false-positive noise.
+
+  **Broader than the code check, per Mike's own follow-up:** most transcription errors
+  land on details the tool has no way to validate at all — a misspelled third-party name,
+  a garbled address, a transposed phone digit — since those aren't compared against
+  anything. Added a standing instruction to `relationships.md`: read back every new name,
+  email, address, handle, or phone number, not just the ones the code flags.
+
+  **"Silent failures during retrieval" is not addressed by this entry** — that half
+  named a `search_memory` JSON parse error (see `[DB-0803-03]`, still open, separate root
+  cause) rather than a CRM read path; kept separate rather than folded in, since the two
+  are unrelated bugs that happened to be filed in the same Inbox note.
+
+  *filed 2026-08-06 (Inbox) · fixed 2026-08-08 against tools/crm.py and
+  relationships.md, verified live*
 
 ---
 
@@ -120,6 +165,224 @@ Behavioural changes to how agents judge, prioritise, or decide what to raise. Ap
 ## Open — needs building
 
 Capabilities that do not exist yet.
+
+### Surfaced 2026-08-06
+
+- **[DB-0806-01] Pre-departure travel checks — both status lookups built; proactive
+  trigger still not wired.** Inbox request: *"Enable proactive pre-departure travel
+  checks: autonomously look up flight status and relevant transit lines... before the
+  user asks on travel days."*
+
+  - ~~**Transit status (DLR, Elizabeth line, etc.)**~~ — **built 2026-08-05/06, renamed
+    2026-08-07.** [tools/tfl_status.py](tools/tfl_status.py), `get_tfl_status(lines)`
+    against TfL's public API — no key required, verified live before any code was
+    written. Also covers bus routes and National Rail operators through the same call,
+    confirmed 2026-08-07 (see the routing entry below). **Renamed from
+    `tools/transit.py`/`get_transit_status`** at Mike's request, once it was clear the
+    tool is genuinely TfL/London-only and a generic name would misdescribe it — collided
+    in name (not design) with an unbuilt `get_transit_status(route)` GTFS-RT placeholder
+    that had sat in the original Phase 5/6 plan since 2026-05-26; that stub is now removed
+    from `logistics.md` and `research_agent.md`, the static planning docs that also
+    mention it are left untouched per their own never-edited convention.
+
+  - ~~**Flight status**~~ — **built 2026-08-07.** [tools/flights.py](tools/flights.py),
+    `get_flight_status(flight_number, date)` against AeroDataBox via RapidAPI's Basic plan
+    (free, unrestricted duration — confirmed against AeroDataBox's own pricing page after
+    an earlier marketplace mix-up: API.Market's Basic is a 7-day trial, RapidAPI's is the
+    genuinely ongoing one). Key in `.env` as `AERODATABOX_API_KEY`. Verified live end to
+    end through the actual tool function (not just a raw `curl`) — `get_flight_status("BA117")`
+    returned real data including a genuine departure delay, correctly flagged. Confirmed
+    the plan's 1 req/s rate limit is real by hitting it during testing; documented in both
+    the tool schema and `logistics.md` so the agent doesn't hammer it.
+
+  Both tools registered in `core/orchestrator.py`, granted to `logistics` in both routing
+  files, and documented in `config/agents/logistics.md`.
+
+  **What's still open: neither tool is wired to a proactive trigger.** Both exist and
+  work when called, but nothing calls either one automatically on a detected travel day —
+  that needs calendar-event travel-detection logic (recognizing a flight/trip on the
+  calendar and extracting a flight number or transit need from it), which is a separate,
+  non-trivial piece deliberately left for its own session rather than bolted on here.
+
+  *filed 2026-08-05 (Inbox) · transit built 2026-08-06 · flight built 2026-08-07 · transit
+  renamed to tfl_status 2026-08-07 · proactive-trigger wiring still open, not started*
+
+- **[DB-0807-01] `location_transition_flags` stub filled in — real routed travel time,
+  not just a raw-gap flag. Built 2026-08-07, corrected same day.** [tools/routing.py](tools/routing.py),
+  `get_travel_time(origin, destination, mode, arrive_by)` — provider-agnostic interface
+  (name, schema, and output shape carry no city/vendor specifics). **First version wired
+  TfL as the default backend for London transit/walking; this was backwards and Mike
+  corrected it same-day: Google Maps Routes API is the default router everywhere,
+  including inside London, for every mode (`transit`/`walking`/`driving`/`cycling`).**
+  Citymapper's developer API is fully discontinued (since 2023-06-23) — not viable, ruled
+  out with a direct check rather than assumed. Google Maps enables on the **existing**
+  `metatron-ai-499810` GCP project already used for Vertex AI (`gcloud services enable
+  routes.googleapis.com` + a key restricted to `routes.googleapis.com` only via
+  `--api-target`, so a leak can't spend on other Maps SKUs) — no new vendor account.
+  Verified live across all four modes and both success/failure paths (a real
+  San-Francisco-to-Palo-Alto driving route, an unresolvable-address error, an
+  unsupported-mode error) before calling it done.
+
+  **TfL's role is narrower and separate, not a routing backend at all:**
+  `get_tfl_status` (line/route disruption status, unchanged) plus a new
+  `get_regional_transit_info(city)` ([tools/regional_transit.py](tools/regional_transit.py))
+  reading a shared, non-persona-scoped library
+  ([config/modules/regional_transit.yaml](config/modules/regional_transit.yaml)) that
+  names which cities have a secondary cross-check tool and how to use it — today just
+  London → `get_tfl_status`, for disruption awareness and longer-range transit planning,
+  explicitly never as the default router. **Resolved per-query against whatever city is
+  actually relevant right now** (a calendar event's location, something the user said),
+  never cached against a persona's home city — the design question that surfaced this:
+  a NYC-based persona visiting London needs the same London entry a resident would get,
+  which a static "home region" cache would silently miss. Verified this costs nothing
+  extra in the common case: the lookup is a local file read either way, no network, no
+  API, no billing — caching would only have bought the same wrong-while-traveling bug for
+  zero performance gain.
+
+  **Wired into `check_calendar_conflicts`** ([tools/scheduling.py](tools/scheduling.py)):
+  `location_transition_flags` now calls `get_travel_time` for every tight-gap candidate
+  and adds `travel_time_minutes` + `feasible` (or `travel_time_unavailable` with a reason)
+  to the existing flag — the raw `gap_minutes` flag is never dropped just because routing
+  failed. This directly answers Mike's "there should already be an instruction for
+  Logistics to run the route and enter estimated time" question — there wasn't; there is
+  now, for the case where both calendar events already have locations set.
+
+  *filed and built 2026-08-07 by dev session (Claude Code) · default-backend priority
+  corrected same day per Mike's direction · regional-tool architecture question (traveling
+  personas) resolved same day via the shared-library + per-query-resolution design above*
+
+- **[DB-0808-01] Google Contacts (People API) — built 2026-08-07, reversed 2026-08-08 at
+  Mike's challenge, replaced by a simpler local fix.** The original need was two entries
+  above ("misattributing the user's email to the contact") and `[DB-0805-02]` ("no live
+  Google Contacts read exists"). Built a full OAuth 2.0 integration for it: Desktop-type
+  client, `scripts/google_contacts_authorize.py` (local-server consent flow), `tools/google_contacts.py`
+  (`read_google_contacts`, `contacts.readonly` scope), registered and granted to
+  `relationships`. Along the way, verified directly against Google's own support page
+  (not a paraphrase) that the app's Testing publishing status means consent — and the
+  refresh token — **expires 7 days after granting**, since `contacts.readonly` is a
+  "sensitive" scope; moving to Production removes this but needs 3–5 business days of
+  Google review plus a hosted privacy policy.
+
+  **Mike's challenge, before spending that review effort: does this need a third party at
+  all?** Checked `tools/crm.py`'s `write_contact` directly — it has no validation against
+  the user's own identity, which is the literal, actual bug (nothing stops a captured
+  email from being silently attributed to a contact even when it matches the user's own
+  address). That is a local, zero-dependency fix, not a reason to add OAuth. And the
+  "bring in contacts I already have" value — the actual reason Google Contacts looked
+  attractive — has a portable answer that isn't Google-specific: vCard (`.vcf`) is the
+  real interchange standard (Google, Apple, and Outlook all export to it), and Python's
+  `vobject` library (verified live on PyPI, v0.9.9) parses it directly, no OAuth, no
+  token-freshness problem, works identically for a non-Google persona.
+
+  **Reversed same day:** `read_google_contacts` unregistered from
+  [core/orchestrator.py](core/orchestrator.py) (import, schema, handler all removed —
+  the tool is now structurally undispatchable, not just ungranted) and removed from
+  `relationships`' `allowed_tools` in both routing files.
+  `people.googleapis.com` disabled on the GCP project (`gcloud services disable`).
+  **Deliberately left in place, dormant, not deleted:** `tools/google_contacts.py`,
+  `scripts/google_contacts_authorize.py`, the `GOOGLE_OAUTH_CLIENT_ID`/`_SECRET` pair in
+  `.env`, and the OAuth client/consent-screen configuration in Cloud Console (no CLI path
+  to delete that last one anyway) — in case this gets revisited, but none of it is wired
+  to anything live. **Replaced by:** a `write_contact` guardrail against
+  `profile.yaml`'s own contact fields, and a `vobject`-based vCard import tool — see the
+  entries this produced, filed the same session.
+
+  *filed and built 2026-08-07 · reversed 2026-08-08 at Mike's direction, root cause
+  (missing local validation) diagnosed and portable alternative (vCard) verified before
+  the reversal, not just after*
+
+- **[DB-0808-02] vCard (.vcf) contact import — built 2026-08-08.**
+  [scripts/import_vcard_contacts.py](scripts/import_vcard_contacts.py), using `vobject`
+  (verified live on PyPI, v0.9.9, added to `requirements.txt` along with its transitive
+  deps `python-dateutil`/`pytz`/`six`). The portable replacement for what Google Contacts
+  OAuth was actually for — Google, Apple, and Outlook all export to the same `.vcf`
+  standard, so this works regardless of which ecosystem the contacts came from, with no
+  OAuth and nothing to keep fresh. Every write goes through `write_contact`, so
+  `[DB-0808-01]`'s guardrail applies automatically — verified live with a realistic test
+  file: a normal contact imports cleanly, a card matching the user's own identity
+  (common — "My Contacts" exports often include yourself) is refused and reported as
+  such rather than silently imported, and a near-miss transcription-style email is
+  flagged but still imported. Dedup by email confirmed rerun-safe: a second import of
+  the same file skips everything already in the CRM rather than duplicating or
+  overwriting a contact that may have been refined further in conversation since.
+  *filed and built 2026-08-08 · verified live including refusal, flag, and dedup paths*
+
+- **[DB-0808-03] `write_profile` now gates *changes* to an already-set email, phone, or
+  address behind the confirm mechanism — built 2026-08-08, at Mike's direction.** These
+  are the highest-consequence fields in the profile store (a wrong one misdirects real
+  communication) and the ones voice transcription gets wrong most often. First-time
+  capture of any field, including contact fields, still writes immediately — gating that
+  too would just be friction on the common case, and `synthesizer.md`'s existing
+  "confirm at capture" clause (say back what was captured) already covers it. *Changing*
+  a value already on file now returns `PENDING_CONFIRMATION` (same mechanism as
+  `send_email`/`write_config`) instead of silently overwriting. Re-writing the identical
+  value is treated as a no-op, not a change — doesn't trigger the gate. Verified live:
+  first capture writes immediately; an overwrite attempt returns the pending token;
+  approving and retrying with the token completes the change; writing the same value
+  twice never gates. `synthesizer.md` and the tool schema both updated to describe the
+  new two-step flow for contact-field corrections specifically.
+  *filed and built 2026-08-08 · verified live across all four paths*
+
+- **[DB-0807-02] Two more Google APIs researched and noted where they'd plug in — neither
+  built, both scoped in the relevant agent file rather than only here.** Surfaced while
+  answering "any other Google APIs worth onboarding."
+
+  - **Google Places API** — Nearby/Text Search for restaurant/venue discovery (name,
+    cuisine, rating, price level). Noted in `logistics.md` (Enhancement Backlog, serves
+    its own `COORDINATION_OPPORTUNITY` concept) and `recreation_hobbies.md` (Enhancement
+    Backlog, grounds the `write_archive` places/venues list in real current options
+    instead of only what the user has already mentioned). Same GCP project, per-SKU free
+    allowance, tiered pricing by requested fields. **Blocked on a location signal that
+    doesn't exist yet** — no GPS capability in the system (see the pre-existing note on
+    real-time GPS from the lunch-recommendation conversation, 2026-08-07); "near a named
+    address/event" queries don't have that dependency and could ship sooner than "near
+    the user right now."
+  - **Google Pollen API** — 1–5 day forecast by tree/grass/weed and specific plant type,
+    0–5 Universal Pollen Index, health recommendation text. Noted in `research_agent.md`'s
+    "Phase 6 tools (deferred)" list. Worth flagging precisely: `coordinator.md` already
+    names this exact routing in a worked example ("sore throat" → Physical Health →
+    Research for "pollen?" → Logistics for medicine) — the instruction-level routing was
+    already written and waiting; only the actual data source was missing. Distinct API
+    and SKU from `tools/ambient.py`'s existing Open-Meteo air-quality call — different
+    pollutant, unrelated, both would coexist.
+
+  *filed 2026-08-07 by dev session (Claude Code) · noted in logistics.md,
+  recreation_hobbies.md, research_agent.md · neither built*
+
+- **[DB-0806-02] Level 3 web access — rendered-read tool scoped, not built; interactive
+  Level 3 explicitly still not started.** Full scoping document:
+  [archive/plans/level3_web_actions_scope_2026-08-06.md](archive/plans/level3_web_actions_scope_2026-08-06.md).
+  Split the "give Metatron a browser" ask into two capabilities of very different risk:
+  a **rendered-read** tool (`fetch_rendered(url)`, Playwright/headless Chromium, read-only,
+  never clicks/types/submits — proposed for pages `fetch_url` can't handle, like the
+  flight-status SPAs above) versus **interactive Level 3** (click/type/submit/login),
+  which stays exactly where the 2026-08-04 outward-actions scoping left it: gated on a
+  credential store that doesn't exist. Recommendation: build the rendered-read half —
+  same trust boundary as `fetch_url`, no new action surface — check VM memory headroom
+  before installing Chromium's dependency set. **Not built this session** — scoping only,
+  per the same "propose, don't build without a decision" discipline as the 2026-08-04
+  document it mirrors.
+  *filed 2026-08-06 by dev session (Claude Code) · scoping only, not built*
+
+### Surfaced 2026-08-05
+
+- **[DB-0805-01] Real travel-time computation + auto-inserted travel block — deferred follow-on
+  from the calendar conflict-detection build.** That build (`tools/scheduling.py`,
+  `check_calendar_conflicts`) ships a location-transition **stub**: it flags when two adjacent
+  same-day events have different non-empty locations and a gap under 30 minutes, but computes no
+  actual travel time. Real travel time needs the Google Maps Distance Matrix/Directions API —
+  `fetch_url` cannot do this reliably (no JS execution, and Maps' directions UI is JS-heavy) — which
+  means a new credentialed GCP service (API key, billing enabled on that API specifically) that
+  doesn't exist yet. **Two decisions already made when this was scoped, carry them into the
+  follow-on rather than re-deciding:** (1) ships separately from the conflict-detection build, not
+  folded in — it's its own credential/billing/sync-vs-async design, not an extension of a
+  self-contained hygiene fix; (2) when built, a computed travel block is **surfaced for
+  confirmation before insertion**, never auto-created silently — matches the existing
+  `PENDING_CONFIRMATION` pattern for every other unrequested Logistics write. Also undecided and
+  worth settling before starting: does Logistics call the Maps API synchronously while handling a
+  scheduling request (adds a network round-trip mid-write, a new failure mode) or as an async
+  follow-up after the event is created?
+  *filed 2026-08-05 by Mike via dev session (Claude Code) · scoped, not started*
 
 ### Surfaced 2026-08-04 (evening)
 
@@ -284,9 +547,18 @@ Full reasoning: [archive/plans/outward_actions_scope_2026-08-04.md](archive/plan
   *filed 2026-08-04 · superseded by the 2026-08-04 build · closed 2026-08-05 against
   tools/confirm.py, core/server.py:702, tools/mail.py:278-306*
 
-- **Provenance modifier for the action tiers (Decision A).** The tiers classify actions by what they do, not by who proposed them. That was sufficient until `fetch_url` and `read_email` shipped (2026-08-04) and content written by strangers began entering the pipeline. `<untrusted_content>` marks the *data*; nothing marks an *action derived from* it.
-
-  The failure case is not exotic: an email saying *"reply YES within 24 hours or your reservation is released"* satisfies every existing tier, and a legitimate email would be worded identically. Proposed rule — an action whose need is evidenced only by untrusted content is Confirm First regardless of tier and regardless of opt-in, and the confirmation must **quote the source** so the user confirms the evidence rather than just the act. One row plus a paragraph in the existing table; not a second framework.
+- ~~**Provenance modifier for the action tiers (Decision A).**~~ — **already built, closed
+  2026-08-05. Was stale in this file, not actually open.** [config/agents/synthesizer.md:350-368](config/agents/synthesizer.md#L350)
+  ("Where the idea came from changes the tier") implements exactly the proposed rule: the
+  same "would the need still stand if the external text vanished?" test, an externally
+  originated action moves up one tier, and anything outward-facing/irreversible/involving
+  money is Confirm First with the source quoted **even where an opt-in would otherwise
+  permit it** — the precise "regardless of tier and regardless of opt-in" clause this entry
+  asked for. Built in the same commit as Decisions B and C, `ca993fe` (2026-08-04), which
+  this file already credited for B and C but not A — this entry was never crossed off.
+  *filed 2026-08-04 · found already built 2026-08-05 against
+  config/agents/synthesizer.md:350-368 and `git log -- config/agents/synthesizer.md`,
+  commit ca993fe, 2026-08-04*
 
 - ~~**`send_email` restricted to the user's own address (Decision C).**~~ — **built, closed
   2026-08-05.** [tools/mail.py:229-262](tools/mail.py#L229) enforces it in Python: `_known_recipients()`
@@ -672,7 +944,20 @@ item "nearly aged out" (see Troubleshooting signal below).*
 
 - ~~**No tool can write a biographical fact.**~~ **Done 2026-08-03 (`35e53ee`)** — `tools/profile.py`. See the follow-on immediately below, which is the part that was *not* built.
 
-- **The user cannot see or correct what has been stored about them.** `write_profile` captures silently: a fact given in passing during a conversation is written to `profile.yaml` with no confirmation at the time and no way to review it afterwards. There is a write door and a read door for *agents* (`read_profile`), but nothing pointed at the user.
+- ~~**The user cannot see or correct what has been stored about them.**~~ — **fixed, closed
+  2026-08-05.** The tools existed and were already granted to `synthesizer`
+  ([config/modules/routing.yaml:44](config/modules/routing.yaml#L44)/`routing_cloud.yaml:35`) —
+  the actual gap was that [config/agents/synthesizer.md](config/agents/synthesizer.md) never
+  mentioned `read_profile`/`write_profile` by name, so the user-facing agent had the door but
+  no instruction to open it. Added a block under **Tools available** covering all three items
+  from the shape-of-fix below: **review** (`read_profile()` on "what do you know about me",
+  read back in plain language, not a raw dump), **correct** (`write_profile` overwrites the
+  field on a correction), and **confirm at capture** (one clause in the reply when a new fact
+  is written, e.g. "noted your address as X"). Config-only change, no code — matches the
+  project's own "config is the product" principle exactly.
+  *filed 2026-08-03 · fixed 2026-08-05 against config/agents/synthesizer.md § Tools available*
+
+  **Original entry, preserved for the reasoning:** `write_profile` captures silently: a fact given in passing during a conversation is written to `profile.yaml` with no confirmation at the time and no way to review it afterwards. There is a write door and a read door for *agents* (`read_profile`), but nothing pointed at the user.
 
   **Why it matters, concretely:** on 2026-08-02 contact details were captured into the wrong file and rode in every system prompt for a day before anyone noticed — and only because a human read the file. A wrong value (misheard email, stale address, an inferred occupation the user would not endorse) now persists indefinitely and is quoted back as fact by Logistics when booking. Dictated email addresses are already known to arrive wrong three times in three minutes (see the transcription item above), and `write_profile` will store whatever it is handed.
 
@@ -719,6 +1004,42 @@ item "nearly aged out" (see Troubleshooting signal below).*
 ## Open — housekeeping
 
 Stale docs, paths, and low-priority corrections.
+
+- **[DB-0806-03] No BigQuery billing export configured — cost anomalies can only be eyeballed
+  against console lag, not verified.** Surfaced when Mike asked why Compute Engine showed no
+  charges from Aug 4 onward while Vertex AI usage looked elevated on Aug 2 and Aug 4. Verified
+  directly against GCP (not the console): `metatron-vm` has been `RUNNING` continuously since
+  2026-08-03 23:47 PDT with no stop/start since, and no budget cap has fired — so the Compute
+  Engine gap is almost certainly GCE cost-report lag (GCE line items typically finalize 1–3 days
+  behind usage, unlike Vertex AI's same-day metered billing), not a real billing gap. The Vertex
+  spike lines up with real heavy-call activity already in `PROJECT_LOG.md` (A4 gate rerun, B1a
+  red-team's 75 live cases, decisions A/B/C testing) — plausible, not provably benign. This was
+  already recorded once as a lever in `PROJECT_LOG.md` (line ~1431, "recorded, not applied") and
+  is being re-filed here because it never became an actionable item. Enabling BigQuery billing
+  export is **not retroactive**, so today's gap can't be backfilled, but turning it on now gives
+  real per-SKU attribution for the next anomaly instead of inferring from `gcloud` state.
+  *filed 2026-08-06 by dev session (Claude Code) · found while investigating a billing question
+  in conversation · not built this session — investigation and recommendation only.*
+
+- **[DB-0806-04] Consider migrating `metatron-vm` from us-central1 to europe-west1 — real
+  latency win, small cost delta.** Raised by Mike asking about region choice given the app is
+  used from London. Pulled live pricing from the Cloud Billing Catalog API rather than
+  estimating: E2 vCPU/RAM carry a flat **10% premium** in europe-west1 vs us-central1 (disk and
+  static IP prices are identical in both), which works out to **~$2.60/mo more** on the current
+  e2-medium 24/7 setup (~$29.15 → ~$31.75). In exchange, the transatlantic leg of a voice turn —
+  paid twice per turn in the current app architecture (`POST /transcribe` round trip, then
+  time-to-first-token of the streamed response over the WebSocket) — drops from ~130–150ms RTT
+  to ~10–15ms RTT, an estimated **~200–280ms shaved per voice turn**. This does *not* compound
+  with the internal Coordinator→specialist→Synthesizer pipeline calls, since those stay on
+  Google's backbone (VM→Vertex `global` endpoint) regardless of VM region — only the two
+  client-facing edges of a turn are geography-sensitive. europe-west2 (London itself) was also
+  priced: a 22.7% CPU premium, roughly double europe-west1's gap, for a latency win too small
+  (Belgium↔London is already short) to be worth it. Not urgent — a real trade to make
+  deliberately, not a bug — but worth having sized out before it's next discussed. Migration
+  would follow the same playbook as the 2026-07-31 VPC rebuild (new VPC/subnet in the target
+  region, rebuild VM from the boot disk, Tailscale reclaims node identity automatically).
+  *filed 2026-08-06 by dev session (Claude Code) · exploratory question in conversation, no
+  decision made · not built this session.*
 
 - **[DB-0805-04] `tools/mail.py`'s module-level docstring is stale — says sending is deferred,
   but `send_email` shipped and was exercised live today.** Lines 9-13: *"Read-only, and that is

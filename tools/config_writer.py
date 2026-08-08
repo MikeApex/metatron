@@ -21,19 +21,40 @@ def _config_dir() -> Path:
     return persona_config_dir()
 
 
-def write_config(filename: str, content: str) -> str:
+def write_config(filename: str, content: str, confirm_token: str = "") -> str | dict:
     """
-    Write a narrative config file.
+    Write a narrative config file. Requires the user's explicit approval, given in the app.
+
+    Two-step by design, same mechanism as send_email: the first call returns
+    PENDING_CONFIRMATION and writes nothing. These are Tier 1/2 terminal values — the
+    least-changed files in the system — so a rewrite the user never asked for must not
+    happen silently, per B2's "no agent can permanently modify system behavior without
+    explicit user confirmation."
 
     Args:
         filename: 'prime_directive.md' or 'mission.md'.
         content: Markdown content to write.
+        confirm_token: The token from the PENDING_CONFIRMATION response, after the user
+            has approved it. Omit on the first call.
 
     Returns:
-        Confirmation string.
+        Confirmation string once written, or a PENDING_CONFIRMATION dict.
     """
+    from tools.confirm import consume, request
+
     if filename not in ALLOWED_FILES:
         return f"Error: '{filename}' is not allowed. Permitted: {sorted(ALLOWED_FILES)}"
+
+    args = {"filename": filename, "content": content}
+    ok, reason = consume(confirm_token or None, "write_config", args)
+    if not ok:
+        if confirm_token:
+            return f"Error: not written. {reason}"
+        preview = content if len(content) <= 400 else content[:400] + " […]"
+        return request(
+            "write_config", args,
+            description=f"Update {filename}:\n\n{preview}",
+        )
 
     path = _config_dir() / filename
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -64,7 +85,10 @@ WRITE_CONFIG_SCHEMA = {
     "description": (
         "Write a narrative config file — prime_directive.md or mission.md. "
         "Use at the end of a goals interview to record the user's terminal values "
-        "and current life mission. Both are Sensitive-tier and never leave the local system."
+        "and current life mission. Both are Sensitive-tier and never leave the local system. "
+        "Requires the user's explicit approval: the first call returns PENDING_CONFIRMATION "
+        "and writes nothing — show the user what will change and wait for them to approve "
+        "it in the app, then call again with confirm_token. Never claim it is written before that."
     ),
     "input_schema": {
         "type": "object",
@@ -77,6 +101,10 @@ WRITE_CONFIG_SCHEMA = {
             "content": {
                 "type": "string",
                 "description": "Markdown content to write to the file.",
+            },
+            "confirm_token": {
+                "type": "string",
+                "description": "The token from the PENDING_CONFIRMATION response, after the user has approved it. Omit on the first call.",
             },
         },
         "required": ["filename", "content"],

@@ -7,6 +7,7 @@ Contacts are stored locally in data/crm/contacts.json (sensitive-tier).
 For persona testing: data/personas/{persona}/crm/contacts.json.
 """
 
+import difflib
 import json
 import os
 import threading
@@ -17,6 +18,15 @@ from pathlib import Path
 from core.persona import persona_data_dir
 
 _CRM_LOCK = threading.Lock()
+
+# Above this similarity to the user's own email/phone (but not an exact match, which is
+# refused outright) a captured value is flagged rather than blocked — a voice
+# transcription near-miss ("diamond.mic@gmail.com" for "diamond.mike@gmail.com") is the
+# recorded failure mode, but a genuinely different, similar-looking address (a family
+# member, a colleague on the same domain) is a real case a hard block would wrongly
+# refuse. difflib.SequenceMatcher, same tool tools/scheduling.py already uses for
+# near-duplicate title matching — evidence for the agent to weigh, not a verdict.
+_OWN_IDENTITY_SIMILARITY_THRESHOLD = 0.80
 
 _ROOT = Path(__file__).parent.parent
 
@@ -96,8 +106,62 @@ def write_contact(
     contact is created.
 
     Returns the contact ID (new or existing).
+
+    Refuses if `contact_info` would attribute the user's own email or phone to this
+    contact — the recorded failure mode this guards against is a captured detail (a
+    dictated email, an inferred number) landing on the wrong record. Checked against
+    `profile.yaml`, in Python rather than relying on the agent noticing — being told not
+    to is not being prevented, the same reasoning `tools/mail.py`'s recipient check and
+    `tools/agent_config.py`'s `_GUARDED_KEYS` already apply elsewhere.
     """
     today = date.today().isoformat()
+
+    if contact_info:
+        from tools.profile import _load as _load_profile
+        try:
+            own = _load_profile().get("contact") or {}
+        except (OSError, ValueError):
+            own = {}
+        own_email = str(own.get("email", "")).strip().lower()
+        own_phone = str(own.get("phone", "")).strip().lower()
+        given_email = str(contact_info.get("email", "")).strip().lower()
+        given_phone = str(contact_info.get("phone", "")).strip().lower()
+        if own_email and given_email == own_email:
+            return (
+                f"Error: not saved. '{given_email}' is the user's own email, not this "
+                f"contact's — this looks like a misattribution. Confirm the correct "
+                f"address with the user before retrying."
+            )
+        if own_phone and given_phone == own_phone:
+            return (
+                f"Error: not saved. '{given_phone}' is the user's own phone number, not "
+                f"this contact's — this looks like a misattribution. Confirm the correct "
+                f"number with the user before retrying."
+            )
+
+    # Not an exact match, but close enough to be a plausible transcription error rather
+    # than a coincidence — saved (a hard block here would refuse legitimate similar-
+    # looking contacts, e.g. a family member on the same email domain), but flagged so
+    # the calling agent surfaces it instead of treating the capture as final.
+    _warning = ""
+    if contact_info:
+        if own_email and given_email and given_email != own_email:
+            ratio = difflib.SequenceMatcher(None, given_email, own_email).ratio()
+            if ratio >= _OWN_IDENTITY_SIMILARITY_THRESHOLD:
+                _warning = (
+                    f"'{given_email}' closely resembles the user's own email "
+                    f"('{own_email}') — likely a mis-transcription (common with voice "
+                    f"input on proper nouns/addresses), not necessarily wrong. Confirm "
+                    f"with the user before treating it as final."
+                )
+        if not _warning and own_phone and given_phone and given_phone != own_phone:
+            ratio = difflib.SequenceMatcher(None, given_phone, own_phone).ratio()
+            if ratio >= _OWN_IDENTITY_SIMILARITY_THRESHOLD:
+                _warning = (
+                    f"'{given_phone}' closely resembles the user's own phone number "
+                    f"('{own_phone}') — likely a transcription error, not necessarily "
+                    f"wrong. Confirm with the user before treating it as final."
+                )
 
     # String fields that follow the same update pattern
     _str_fields = [
@@ -141,7 +205,7 @@ def write_contact(
                             contact[field] = value
                     contact["updated"] = today
                     _save_contacts(contacts)
-                    return contact_id
+                    return f"{contact_id}\n\nWarning: {_warning}" if _warning else contact_id
             return f"Error: no contact found with id '{contact_id}'"
 
         new_contact: dict = {
@@ -173,7 +237,8 @@ def write_contact(
         }
         contacts.append(new_contact)
         _save_contacts(contacts)
-        return new_contact["id"]
+        cid = new_contact["id"]
+        return f"{cid}\n\nWarning: {_warning}" if _warning else cid
 
 
 def read_contact(contact_id: str = "", name: str = "") -> str:

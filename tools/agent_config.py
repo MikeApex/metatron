@@ -45,31 +45,49 @@ _GUARDED_KEYS: set[tuple[str, str]] = {
 }
 
 
-def write_agent_config(agent_name: str, key: str, value: str) -> str:
+def write_agent_config(agent_name: str, key: str, value: str, confirm_token: str = "") -> str | dict:
     """
     Write a key-value entry to this agent's persistent config store.
 
     Merges with existing data — does not overwrite the whole file.
     Value is stored as a string; for structured data, pass JSON-encoded string.
 
-    Refuses the (agent, key) pairs in _GUARDED_KEYS — data a safety flag classifies
-    from, which the agent must not be able to author.
+    Ordinary keys write immediately, as before — gating every routine specialist write
+    (workout plans, budget structures) behind approval would make the tool unusable.
+
+    The (agent, key) pairs in _GUARDED_KEYS are different: this is data a safety flag
+    classifies from, so the agent that reads it must not also be the one that wrote it.
+    Until 2026-08-05 that meant an outright refusal, which cost the agent an ordinary
+    config store over one specific value. Routed through the confirm gate instead: the
+    user can see the proposed change and approve it out of band, same mechanism as
+    send_email — "gate it rather than granting or refusing outright" (DB-0805-01).
 
     Args:
         agent_name: Name of the calling agent (e.g. 'physical_health', 'finance').
         key: Config key to set (e.g. 'active_workout_plan', 'budget_structure').
         value: Value to store. Use JSON encoding for structured objects.
+        confirm_token: For guarded keys only — the token from a PENDING_CONFIRMATION
+            response, after the user has approved it. Omit otherwise.
 
     Returns:
-        Confirmation string, or an error string naming the refusal.
+        Confirmation string once written, or a PENDING_CONFIRMATION dict for a guarded key.
     """
     if (agent_name, key) in _GUARDED_KEYS:
-        return (
-            f"Error: '{key}' is read-only for {agent_name} and was not written. "
-            f"This value is the evidence a safety classification depends on, so it "
-            f"cannot be set by the agent that reads it. Surface the change to the user "
-            f"for confirmation instead of writing it."
-        )
+        from tools.confirm import consume, request
+
+        args = {"agent_name": agent_name, "key": key, "value": value}
+        ok, reason = consume(confirm_token or None, "write_agent_config", args)
+        if not ok:
+            if confirm_token:
+                return f"Error: not written. {reason}"
+            preview = value if len(value) <= 400 else value[:400] + " […]"
+            return request(
+                "write_agent_config", args,
+                description=(
+                    f"{agent_name} wants to update '{key}', a value a safety flag "
+                    f"classifies from:\n\n{preview}"
+                ),
+            )
 
     config_dir = _agent_config_dir()
     config_dir.mkdir(parents=True, exist_ok=True)
@@ -127,7 +145,10 @@ WRITE_AGENT_CONFIG_SCHEMA = {
         "medication profiles, user preferences, or any structured data this agent "
         "manages across sessions. Merges with existing data — safe to call repeatedly. "
         "For structured values (objects, lists), pass a JSON-encoded string. "
-        "Sensitive-tier: local only."
+        "Sensitive-tier: local only. A small set of keys (e.g. physical_health's "
+        "medication_profile) are guarded: the first call returns PENDING_CONFIRMATION "
+        "instead of writing, and needs a second call with confirm_token after the user "
+        "approves it in the app. Ordinary keys write immediately, as always."
     ),
     "input_schema": {
         "type": "object",
@@ -153,6 +174,14 @@ WRITE_AGENT_CONFIG_SCHEMA = {
                 "description": (
                     "Value to store. For structured data (objects, lists), "
                     "pass a JSON-encoded string."
+                ),
+            },
+            "confirm_token": {
+                "type": "string",
+                "description": (
+                    "Only needed for guarded keys (e.g. medication_profile): the token "
+                    "from the PENDING_CONFIRMATION response, after the user has approved "
+                    "it. Omit for ordinary keys and on the first call for a guarded one."
                 ),
             },
         },

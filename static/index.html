@@ -707,6 +707,13 @@
   const shownIds = new Set();        // exchange_ids rendered on this device
   let lastSeenId = 0;
 
+  // Insertion order == "oldest first" for a Set, so drop only the overflow
+  // instead of wiping the whole set — a full clear() re-admits every
+  // already-rendered exchange as "unseen" on the next catch-up message.
+  function evictOldest(set, max) {
+    while (set.size > max) set.delete(set.values().next().value);
+  }
+
   // The server pings every 30s. If we have heard nothing for appreciably longer
   // than that, the socket is dead even if the browser still says OPEN — which is
   // exactly what happens when Android freezes the WebView: the connection dies
@@ -942,7 +949,7 @@
       shownIds.add(msg.exchange_id);
       if (msg.id > lastSeenId) lastSeenId = msg.id;
     }
-    if (shownIds.size > 100) shownIds.clear();
+    evictOldest(shownIds, 100);
     // Force: on load the newest exchange must be the one in view, whatever the
     // scroll position happened to be. Double rAF so the browser has laid the
     // messages out before scrollHeight is read.
@@ -969,7 +976,7 @@
       return;
     }
     const exchangeId = crypto.randomUUID();
-    if (shownIds.size > 100) shownIds.clear();
+    evictOldest(shownIds, 100);
     shownIds.add(exchangeId);
 
     addMessage('user', input);

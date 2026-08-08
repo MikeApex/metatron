@@ -457,6 +457,10 @@ def register_tools() -> tuple[list[dict], dict]:
         get_weather, get_environmental_snapshot,
         GET_WEATHER_SCHEMA, GET_ENVIRONMENTAL_SNAPSHOT_SCHEMA,
     )
+    from tools.tfl_status import get_tfl_status, GET_TFL_STATUS_SCHEMA
+    from tools.flights import get_flight_status, GET_FLIGHT_STATUS_SCHEMA
+    from tools.routing import get_travel_time, GET_TRAVEL_TIME_SCHEMA
+    from tools.regional_transit import get_regional_transit_info, GET_REGIONAL_TRANSIT_INFO_SCHEMA
     from tools.schedule import (
         write_schedule, list_schedules, delete_schedule,
         WRITE_SCHEDULE_SCHEMA, LIST_SCHEDULES_SCHEMA, DELETE_SCHEDULE_SCHEMA,
@@ -494,6 +498,10 @@ def register_tools() -> tuple[list[dict], dict]:
         UPDATE_CALENDAR_EVENT_SCHEMA, DELETE_CALENDAR_EVENT_SCHEMA,
         CHECK_CALENDAR_CONFLICTS_SCHEMA,
         GET_WEATHER_SCHEMA, GET_ENVIRONMENTAL_SNAPSHOT_SCHEMA,
+        GET_TFL_STATUS_SCHEMA,
+        GET_FLIGHT_STATUS_SCHEMA,
+        GET_TRAVEL_TIME_SCHEMA,
+        GET_REGIONAL_TRANSIT_INFO_SCHEMA,
         WRITE_SCHEDULE_SCHEMA, LIST_SCHEDULES_SCHEMA, DELETE_SCHEDULE_SCHEMA,
         WRITE_QUALITY_EVENT_SCHEMA,
         FETCH_URL_SCHEMA, READ_EMAIL_SCHEMA, SEND_EMAIL_SCHEMA,
@@ -549,6 +557,10 @@ def register_tools() -> tuple[list[dict], dict]:
         "check_calendar_conflicts": check_calendar_conflicts,
         "get_weather": get_weather,
         "get_environmental_snapshot": get_environmental_snapshot,
+        "get_tfl_status": get_tfl_status,
+        "get_flight_status": get_flight_status,
+        "get_travel_time": get_travel_time,
+        "get_regional_transit_info": get_regional_transit_info,
         "write_schedule": write_schedule,
         "list_schedules": list_schedules,
         "delete_schedule": delete_schedule,
@@ -746,7 +758,13 @@ def split_context_block(complete: str) -> tuple[str, dict | None]:
     if _CONTEXT_CLOSE in raw:
         raw = raw[:raw.index(_CONTEXT_CLOSE)]
     try:
-        return visible, json.loads(raw.strip())
+        # strict=False permits raw control characters (a literal \n typed into a JSON
+        # string value, rather than an escaped \\n) instead of rejecting the whole
+        # block — observed live 2026-08-02, where a single stray newline silently
+        # dropped both the context-tracker update and the dev_request in it. Still
+        # rejects actually malformed JSON (unquoted keys, trailing commas, etc.) —
+        # this only relaxes control-character handling, nothing else.
+        return visible, json.loads(raw.strip(), strict=False)
     except Exception as exc:
         logger.warning(f"[context_block] parse failed: {exc} — raw: {raw[:200]}")
         return visible, None

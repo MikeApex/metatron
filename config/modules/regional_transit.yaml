@@ -1,0 +1,23 @@
+# Shared library: which cities have a dedicated regional transit-status tool, and how an
+# agent should use it. Not persona-scoped — this is infrastructure knowledge (which tools
+# exist for which regions), the same way routing.yaml lists tool grants rather than user
+# data. A persona traveling to a city listed here gets the same entry a resident would;
+# nothing here is keyed to any one user.
+#
+# get_travel_time (Google Maps) is always the default router, everywhere, for every city
+# — including ones listed below. An entry here names a *secondary* tool worth cross-
+# checking a Maps route against, for disruption/status awareness or longer-range transit
+# planning. It is never a replacement default. A city with no entry just means Maps alone
+# is the complete answer — that is the expected common case, not a gap to fill.
+#
+# Add an entry only when the tool it names actually exists and is registered/granted —
+# this file describes what's built, not a wishlist. See DEV_BACKLOG.md for candidates.
+
+London:
+  tool: get_tfl_status
+  use_for: >
+    Cross-checking a Maps transit/walking route for live disruptions on the specific
+    lines/routes it uses, and for longer-range transit planning questions (e.g. "will the
+    Tube be running normally next Tuesday" style checks) where service-health awareness
+    matters more than raw route efficiency. Not the default router — get_travel_time
+    answers "how do I get there" and "how long"; get_tfl_status answers "is it disrupted".

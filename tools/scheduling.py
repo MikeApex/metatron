@@ -26,6 +26,7 @@ from datetime import datetime, timedelta
 
 from tools.caldav import _query_events
 from tools.crm import search_contacts
+from tools.routing import get_travel_time
 from tools.untrusted import UNTRUSTED_CONTENT_INSTRUCTION, wrap_untrusted
 
 # Near-duplicate candidate: title similarity at or above this is worth surfacing.
@@ -236,15 +237,36 @@ def _compute_conflicts(
             gap_before = (start_dt - ev_end).total_seconds() / 60
             gap_after = (ev_start - end_dt).total_seconds() / 60
             gap = None
+            travel_origin, travel_destination, arrive_by = None, None, None
             if 0 <= gap_before < _TIGHT_TRANSITION_MINUTES:
                 gap = gap_before
+                travel_origin, travel_destination, arrive_by = ev["location"], location, start_dt
             elif 0 <= gap_after < _TIGHT_TRANSITION_MINUTES:
                 gap = gap_after
+                travel_origin, travel_destination, arrive_by = location, ev["location"], ev_start
             if gap is not None:
-                location_transition_flags.append({
+                flag = {
                     "adjacent_event_uid": ev["uid"], "adjacent_title": ev["title"],
                     "gap_minutes": round(gap, 1), "locations": [location, ev["location"]],
-                })
+                }
+                # Real routed duration, not the flag's own gap re-stated. Best-effort:
+                # a route outside current coverage (see tools/routing.py) or an
+                # unresolvable address still leaves the raw gap_minutes flag standing —
+                # never silently drop the tight-transition warning because routing failed.
+                try:
+                    route = get_travel_time(
+                        travel_origin, travel_destination,
+                        arrive_by=arrive_by.strftime("%Y-%m-%dT%H:%M"),
+                    )
+                    journeys = route.get("journeys") or []
+                    if journeys:
+                        flag["travel_time_minutes"] = journeys[0]["duration_minutes"]
+                        flag["feasible"] = journeys[0]["duration_minutes"] <= gap
+                    else:
+                        flag["travel_time_unavailable"] = route.get("error", "No route found.")
+                except Exception as exc:
+                    flag["travel_time_unavailable"] = f"Route lookup failed: {exc}"
+                location_transition_flags.append(flag)
 
     day_digest = sorted(
         [{"uid": e["uid"], "title": e["title"], "start": e["start"], "end": e["end"], "location": e.get("location", "")}

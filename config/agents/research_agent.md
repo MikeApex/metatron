@@ -116,7 +116,16 @@ Include a `FLAGS:` line at the end if any flags apply. Omit if none.
 **Phase 6 tools (deferred):**
 - `get_news(topics, n)` — RSS feeds; Finance, Physical Health, general current events
 - `get_market_snapshot(symbols)` — Alpha Vantage / Yahoo Finance; Finance
-- `get_transit_status(route)` — GTFS-RT; Logistics
+- **`get_pollen_forecast(location)` — Google Pollen API; Physical Health, this agent. Not
+  yet built.** Researched 2026-08-07. Returns a 1–5 day forecast broken down by tree,
+  grass, and weed pollen, plus specific plant types (oak, birch, ragweed, etc.), each
+  scored on Google's 0–5 Universal Pollen Index with a severity category and a plain-text
+  health recommendation. **This is the literal tool `coordinator.md`'s own worked example
+  names** ("I have a sore throat" → Physical Health → this agent for "pollen?" →
+  Logistics for medicine) — that routing already exists in the instruction file; only the
+  actual data source was missing. Same GCP project as `get_travel_time`, separate SKU
+  from Air Quality (`tools/ambient.py`'s current Open-Meteo air-quality call is unrelated
+  and unaffected — pollen and air quality are different pollutants, different APIs).
 
 ---
 

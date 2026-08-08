@@ -97,7 +97,7 @@ agents:
 
   logistics:
     local: true
-    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, update_calendar_event, delete_calendar_event, check_calendar_conflicts, get_weather, read_profile, write_profile, write_schedule, list_schedules, delete_schedule, fetch_url, read_email, send_email, read_agent_config, write_agent_config, search_memory, read_archive, write_archive]
+    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, update_calendar_event, delete_calendar_event, check_calendar_conflicts, get_weather, get_tfl_status, get_flight_status, get_travel_time, get_regional_transit_info, read_profile, write_profile, write_schedule, list_schedules, delete_schedule, fetch_url, read_email, send_email, read_agent_config, write_agent_config, search_memory, read_archive, write_archive]
     # read/write_agent_config, search_memory, read/write_archive granted 2026-08-05 — see
     # routing_cloud.yaml for the full rationale. Kept in parity.
     # update_calendar_event, delete_calendar_event, check_calendar_conflicts added
