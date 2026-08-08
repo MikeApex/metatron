@@ -13,6 +13,7 @@ Good alternatives: en-US-GuyNeural, en-US-ChristopherNeural, en-GB-RyanNeural
 
 import argparse
 import asyncio
+import os
 import re
 import subprocess
 import tempfile
@@ -21,9 +22,38 @@ from pathlib import Path
 
 import numpy as np
 
-# Whisper model is loaded once at module level to avoid reload cost per session.
+# ---------------------------------------------------------------------------
+# Whisper STT settings
+#
+# Env-overridable so a model change is a config edit, not a code edit, and so
+# tests/bench_whisper_stt.py can sweep combinations without patching this file.
+#
+# SIZING CONSTRAINT — read before raising WHISPER_MODEL_SIZE. STT runs on a
+# dedicated single-worker pool (`_STT_EXECUTOR` in core/server.py:178) on a
+# 2-vCPU e2-medium. A model that is 2x slower does not make one transcription
+# 2x slower; it makes concurrent requests *queue*, because there is no second
+# worker to take them. Measure on the VM, not the Mac: an M-series laptop is
+# several times faster and will make an unaffordable model look fine.
+# Benchmark: `python3 tests/bench_whisper_stt.py` — run it on the VM.
+# ---------------------------------------------------------------------------
 _whisper_model = None
-WHISPER_MODEL_SIZE = "base.en"   # base.en: fast, English-only, ~150MB. Upgrade to "small.en" for accuracy.
+# MEASURED ON THE VM 2026-08-08 (tests/bench_whisper_stt.py, report in
+# tests/stt_bench_report_2026-08-08_vm.md). small.en was evaluated and REJECTED:
+#
+#   base.en  beam=5 vad=on   2.38s median   RTF 0.36   WER 3.9%
+#   small.en beam=5 vad=on  14.86s median   RTF 2.23   WER 5.0%
+#
+# small.en is 5.9x slower and *not* more accurate on this set. RTF above 1.0 means it
+# transcribes slower than the audio arrives, which on a one-worker pool turns a second
+# concurrent request into a queue. Do not adopt it on 2 vCPUs. Revisit only on D1 hardware.
+WHISPER_MODEL_SIZE = os.getenv("METATRON_WHISPER_MODEL", "base.en")
+# beam=1 was measured too: 15% faster, but WER worsened (3.9% -> 9.2% on the earlier scoring).
+# Not worth it — decode time is not the bottleneck at RTF 0.36.
+WHISPER_BEAM_SIZE = int(os.getenv("METATRON_WHISPER_BEAM", "5"))
+# VAD drops non-speech spans before decoding: ~7% faster at identical WER, and it suppresses
+# the filler Whisper hallucinates on silence ("Thank you.", "Bye.") — which the synthetic
+# benchmark fixtures cannot exercise but a real mic with room tone produces routinely.
+WHISPER_VAD = os.getenv("METATRON_WHISPER_VAD", "1") != "0"
 SAMPLE_RATE = 16000              # Whisper expects 16kHz
 
 # Kokoro TTS settings.
@@ -116,7 +146,12 @@ def transcribe(audio: np.ndarray) -> str:
         return ""
 
     model = _get_whisper()
-    segments, _ = model.transcribe(audio, beam_size=5, language="en")
+    segments, _ = model.transcribe(
+        audio,
+        beam_size=WHISPER_BEAM_SIZE,
+        language="en",
+        vad_filter=WHISPER_VAD,
+    )
     return " ".join(seg.text.strip() for seg in segments).strip()
 
 

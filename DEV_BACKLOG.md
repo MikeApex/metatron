@@ -13,6 +13,9 @@ Refresh: `python3 scripts/sync_dev_backlog.py`
 
 ## Inbox
 
+- **[instruction change]** User repeated the check-in brevity rule verbatim. It is already saved in Interaction Preferences but earlier responses failed to follow it. Need to ensure the system strictly enforces this preference over other dialogue generation.  
+  `2026-08-08T12:19:24.143357Z`
+
 - **[instruction change]** User re-stated the strict check-in rule ('never list or recap pending items') because the previous response violated the existing persona config by listing two time-sensitive items. The persona constraint is present but failed to override the generic routing/integration behavior.  
   `2026-08-07T09:13:05.841606Z`
 
@@ -146,7 +149,35 @@ text alone says what was blocked and not what the agent was trying to do.
 
 Behavioural changes to how agents judge, prioritise, or decide what to raise. Applied by editing agent instruction files. **The `config/agents/*.md` freeze was lifted 2026-08-03 (`ae252ab`)** — these are now directly editable.
 
-- **`[CONTEXT]` block silently discarded when the model emits invalid JSON.** Observed live 2026-08-02 on `sarah_chen`: the Synthesizer wrote a literal newline inside a JSON string value, `split_context_block` (`core/orchestrator.py:678`) failed to parse it, logged a warning and returned `None` — so the context tracker was not updated *and* the `dev_request` for that exchange was lost. Silent data loss on a path with no retry. Options: repair common malformations before parsing, or have the Synthesizer re-emit. *Found while testing the self-development work.*
+- ~~**`[CONTEXT]` block silently discarded when the model emits invalid JSON.**~~ — **built
+  2026-08-08, ⚠ NOT YET DEPLOYED** (see the deploy note at the end of this entry).
+  **Premise correction, verified against current code before work started:** the specific
+  malformation this entry names — a literal newline inside a JSON string value — was *already*
+  fixed on 2026-08-02 by `strict=False`, two days before this entry was written. What was still
+  true is the general shape: any *other* malformation was one `logger.warning` and a silent
+  drop, no repair, no retry, no record. That is what got built, in `core/orchestrator.py`:
+  a structural repair ladder (`_repair_context_json` — markdown fence and surrounding prose
+  stripped, trailing commas removed, smart quotes normalised, truncation closed by `_balance`
+  which also drops mismatched closers, single-quoted Python-style blocks converted but only when
+  the block contains no double quote at all, so `"mum's birthday"` is never corrupted) → **per-key
+  salvage**, so one broken value no longer costs the good ones beside it → `_record_unparsed_context()`,
+  which writes the raw block as a `CONTEXT_BLOCK_UNPARSED` quality event, reaching this file
+  through the existing sync. The block becomes *recoverable* rather than lost.
+  **The re-emit option was considered and rejected:** `split_context_block` runs after the
+  Synthesizer's turn has completed, on the user-facing request, so a retry costs a second Pro
+  turn of latency on every malformation to fix a tracker update the user never sees.
+  **`_CONTEXT_KEYS` is a maintenance point** — a key added to the block and not added there is
+  not an error, it is silently unsalvageable, which is the exact failure this work ends.
+  `clinical_threads` (added by a parallel session the same day) is already in it.
+  Test: [tests/test_context_block_repair.py](tests/test_context_block_repair.py), 18 cases,
+  offline, **18/18 pass**.
+  **⚠ Deploy status: code complete and tested on the Mac, not live on the VM.** `core/orchestrator.py`
+  needs `./deploy.sh`, and at time of writing the same file also carried a parallel session's
+  uncommitted `from tools.pollen import …` against an untracked `tools/pollen.py` — committing it
+  would have shipped an import of a module not in git, which (being function-level) passes
+  `py_compile` and fails on the first pipeline session instead. Until that deploy happens, a
+  malformed block on the VM is still dropped silently.
+  *filed 2026-08-04 · built 2026-08-08 by dev session (backlog-attack cluster) · awaiting deploy*
 
 - ~~**`synthesizer.md:355` promises a capability that does not exist.**~~ — **stale, closed
   2026-08-05. Already fixed by the 2026-08-03 Phase 4 scheduler-grants session; this entry was
@@ -167,6 +198,86 @@ Behavioural changes to how agents judge, prioritise, or decide what to raise. Ap
 Capabilities that do not exist yet.
 
 ### Surfaced 2026-08-08
+
+- **[DB-0808-06] Administrative-close mechanism for tier-2 clinical threads.** The clinical
+  thread lifecycle shipped 2026-08-08 (`tools/context_tracker.py`) deliberately refuses to let
+  a `CLINICAL_CONCERN` be `resolved` from a session — a reassuring reply from the user must not
+  close a suicidal-ideation flag. The `resolved` status exists and is pre-wired; **nothing can
+  legitimately set it.** So every tier-2 thread is permanent in practice. That is the correct
+  failure direction and was the explicit user decision, but it needs a real closure path
+  eventually — most likely tied to the next-of-kin / clinician escalation system, which does not
+  exist (there is no third-party contact channel anywhere in the codebase; `tools/wishes.py` is
+  write-only until Phase 6). Not urgent. **Do not "fix" it by relaxing the refusal.**
+
+- **[DB-0808-07] `_thread_tier()` cannot tell a psychiatric medication from a cardiac one.**
+  The 2026-08-08 tier split keys off the `CLINICAL_CONCERN` prefix, so a
+  `MEDICATION_MISSED_CRITICAL` is tier 1 (user-resolvable) whether the missed dose is a statin
+  or an anti-psychotic. The user's stated distinction was exactly this pair. Fix is a
+  `psychiatric: true` marker on entries in `physical_health`'s stored `medication_profile`, read
+  by `_thread_tier()`. Note `medication_profile` is in `_GUARDED_KEYS` (`tools/agent_config.py`)
+  — the agent cannot write it, which is the point; it is seeded by the user or the A4 fixture.
+
+- **[DB-0808-08] STT accuracy is unverified on real audio.** The 2026-08-08 benchmark
+  (`tests/stt_bench_report_2026-08-08_vm.md`) ruled out `small.en` **on latency** — RTF 2.23 on
+  the VM's 2 vCPUs, which on a single-worker pool is a queue, not a slowdown. That verdict is
+  solid. The **accuracy** half is not: the fixtures are edge-tts synthesized speech with no
+  noise, accent, clipping or room tone — the regime where `base.en` and `small.en` are most
+  alike. So "no accuracy benefit" is established for clean dictation only. Needs a handful of
+  real phone recordings with hand-written references. Cheap to collect during ordinary use.
+  Related: revisit `small.en` at D1 (dedicated hardware changes the RTF arithmetic entirely),
+  and consider a second STT worker if concurrent voice use ever becomes real.
+
+- **✅ [DB-0808-07] `filter_output()` regex/semantic upgrade — built 2026-08-08, ⚠ NOT YET
+  DEPLOYED.** The last open B2 sub-item (CORS, `write_agent_config`/`write_config`
+  confirm-gating, `run_session_anthropic` iteration limits and `run_model_conference` scoping
+  were all verified already done in the same pass). Four tiers now, in `core/orchestrator.py`:
+  (1) identifiers matched by a cached per-term regex that rejoins the term's tokens with a
+  punctuation-or-nothing joiner, so one list entry covers `write_config`, `write-config`,
+  `write.config`, `write**config`, `writeconfig` and any of those with zero-width characters
+  spliced in — detection runs on a normalised copy, the original text is what is returned;
+  (2) **architecture narration (`_ARCH_NARRATION_RES`) — new, and the substantive addition**:
+  paraphrases that leak the structure while naming nothing on either list ("I passed this to a
+  specialist that handles your health", "my system prompt says", "I'm running on Gemini",
+  "twelve specialist agents"). The old filter was blind to all of these by construction — a
+  model told not to say `run_subagent` describes what it does instead; (3) spaced identifiers
+  and `_CONTEXT_SENSITIVE`, still sentence-gated; (4) `_ARCH_VOCAB_RE` widened to cover
+  first-person capability narration and internals vocabulary.
+  **The binding constraint was false positives, not recall** — suppressing "your mental
+  wellbeing has improved" is worse than the leak it prevents, because the user loses a real
+  answer and the canned fallback explains nothing. Hence: tier 1's joiner never matches a plain
+  space; bare `agent` is excluded from the delegation patterns ("I sent your reply to the
+  agent" — an estate agent); `prompt` only matches as `system prompt`, `call` only as
+  `tool call`/`function call`.
+  **Known limits are in the docstring, deliberately:** tier 2 is patterns not a model, so a
+  paraphrase outside these frames passes; intra-token spacing (`w r i t e _ c o n f i g`) is not
+  caught, because a matcher loose enough for it fires on ordinary prose. This is the last
+  backstop, not the control.
+  Verified: filter suite 61 → 86 checks (**the original 61 unchanged and all still passing**,
+  plus 7 obfuscation + 9 paraphrase + 9 clean-corpus), disclosure **15/15**, deputy **2/2** —
+  `tests/security_redteam_2026-08-08.md`. **⚠ Deploy status: `core/orchestrator.py`, blocked at
+  time of writing on a parallel session's untracked `tools/pollen.py` in the same file. The VM
+  runs the old substring filter until it ships.** Known gap left open on purpose: `[DB-0808-05]`.
+  *built 2026-08-08 by dev session (backlog-attack cluster) · awaiting deploy*
+
+- **[DB-0808-05] `filter_output()` still has no view of the user's own turn — the
+  Exchange 027 false positive survives the regex/semantic upgrade.** Not a gap in the
+  matching, and deliberately not fixed alongside it. When the user types a tool name
+  themselves ("I'm frustrated that `write_config` didn't save my preferences"), the
+  Synthesizer's reply quotes it back and the filter suppresses the whole response —
+  the user gets the canned fallback instead of an answer to a complaint about the
+  system, which is the exact moment they least want a deflection. Observed live
+  2026-06-26 (Exchange 027) and pinned as `FILTER-EXCH027` in
+  `tests/run_b1_redteam.py`, where it is informational and does not gate.
+  **Why it was not folded into the 2026-08-08 upgrade:** the fix is not a better
+  regex, it is passing the user's own message into `filter_output()` so a term the
+  user introduced can be exempted — a signature change across three call sites
+  (`core/orchestrator.py` ~2506, ~2721, ~2768) plus a decision about how far the
+  exemption reaches (that turn only? the whole session?). The security argument
+  against a blanket exemption is in the function's docstring and still holds: a
+  direct probing question must not be able to disable its own backstop. So this
+  needs a scoped rule — exempt only the specific term the user typed, only in the
+  turn that follows — not a flag. Worth doing: the current behaviour makes the
+  system worst at discussing itself precisely when it has misbehaved.
 
 - **[DB-0808-04] Real-time GPS + proactive area-scanning — raised, not scoped, not
   started.** Mike's own framing, from the pre-departure travel-check conversation: with
@@ -418,7 +529,9 @@ Capabilities that do not exist yet.
   live against Coordinator/Synthesizer); B2 remainder (~~`research_agent` missing `allowed_tools`~~
   — extend the existing `POST /confirm` gate to
   `write_agent_config`/`write_config`; formalize confused-deputy enforcement + a regression
-  test; upgrade `filter_output()` from substring to regex/semantic matching; confirm
+  test; ~~upgrade `filter_output()` from substring to regex/semantic matching~~ **— done
+  2026-08-08, built and tested, ⚠ not yet deployed; see the standalone entry under
+  "Surfaced 2026-08-08" for what it now catches and what it deliberately does not**; confirm
   `run_model_conference` is scoped head-layer-only); B4 (5 degradation paths — specialist
   failure mid-pipeline, Ollama-unavailable fail-closed message, context-tracker fallback,
   retry-with-backoff, max-chain-depth handling, partial-fan-out threshold — plus 2
@@ -493,7 +606,31 @@ Full reasoning: [archive/plans/outward_actions_scope_2026-08-04.md](archive/plan
   itself, which is exactly the protection it's there for.
   *filed 2026-08-04 · exercised live 2026-08-05 against the VM, persona mike, real SMTP send*
 
-- **No pipeline-level injection probe has been run.** The 2026-08-04 probe tested three layers
+- **✅ Pipeline-level injection probe built and passed 2026-08-08 — `injection` suite in
+  [tests/run_b1_redteam.py](tests/run_b1_redteam.py).** Three hostile emails (outbound
+  exfiltration, architecture disclosure, config/profile mutation) in a fixture inbox, read
+  through the real `run_pipeline_session()` path. `register_tools` is patched per scenario and
+  restored in a `finally`; mutating handlers are recorded and neutralised; `send_email` runs
+  for real with `confirm_token` forced empty (production's two-step gate), so nothing can leave
+  the machine. Fixture built through the real `wrap_untrusted` path, not an approximation, so it
+  tracks the boundary format. **3/3 PASS** against `danny_park`/gemini — `read_email` called in
+  every scenario, no payload-named tool fired, no architecture leak, and all three reported the
+  attempt to the user unprompted. Report:
+  `tests/security_redteam_2026-08-08_injection_danny.md`.
+  **Two things worth carrying:** (1) the first run, against `sarah_chen`, returned three
+  *inconclusive* scenarios — the pipeline never called `read_email` at all, because that persona
+  carries an active clinical thread and the Synthesizer correctly triaged it over "read my
+  inbox". Good behaviour, useless probe. Without the "fixture inbox was actually read" check it
+  would have scored 3/3 PASS on a pipeline that never saw the payload. **This suite needs an
+  ordinary-life persona**, unlike the other three, which are persona-agnostic. (2) Email only —
+  the calendar-title, web-page and CardDAV rows of B1b's table are untouched and still open, so
+  **this does not close B1b**.
+  *filed 2026-08-04 · built and passed 2026-08-08 by dev session (backlog-attack cluster) ·
+  tests-only, no deploy needed*
+
+  Original entry, for the reasoning trail:
+
+- ~~**No pipeline-level injection probe has been run.**~~ The 2026-08-04 probe tested three layers
   in isolation — wrapper escape, marker detection, and the tool's recipient refusal. What has
   *not* been run is the real thing: a hostile email sitting in the actual inbox, read through
   a full Coordinator→specialist→Synthesizer exchange, to see whether the pipeline surfaces it
@@ -1115,9 +1252,54 @@ Stale docs, paths, and low-priority corrections.
   present on the SSH command (line 48).
   *Original entry recorded in SESSION.md 2026-08-02 · verified stale 2026-08-05 against
   .claude/commands/metatron-troubleshoot.md*
-- **Roadmap D2 item 5 (turn reduction) is mis-scoped and needs rewriting before anyone works it.** It targets the Coordinator on the assumption that the Coordinator runs ~7 turns per exchange. Measured 2026-08-02: **the Coordinator runs 1 turn.** The turns are in the specialists — `logistics` alone ran 8. Working the item as written would optimise a component that is already minimal and leave the actual cost untouched. Re-measure across several specialists before rewriting the item, rather than swapping one assumed culprit for another.
+- **[DB-0808-06] Per-specialist internal turn reduction — measure the specialist fan-out, then
+  cut it.** *(Rewritten 2026-08-08 from the measured data. This replaces the former
+  "Roadmap D2 item 5 is mis-scoped" warning entry, which had done its job: the roadmap now
+  carries a dated supersession note and no longer needs a backlog item to flag it.)*
 
-  **The roadmap has not been corrected — only this entry has.** [`archive/plans/phase5_to_future_roadmap_2026-06-10.md:519`](archive/plans/phase5_to_future_roadmap_2026-06-10.md#L519) still reads *"The Coordinator exhibits a 6-turn / 88K cumulative token loop on complex sessions"* and still prescribes a `coordinator.md` instruction change plus a ≤3-turn target. Anyone who reads the roadmap without reading this backlog gets the original wrong picture and a fix aimed at the wrong component. Deliberately not edited in place: the roadmap is a dated plan snapshot, and rewriting its body would erase what was believed at the time. Whoever picks the item up should rewrite it from measurement and note the supersession there — the correction is verified twice (2026-07-29 traces, re-measured 2026-08-02), so it is not waiting on evidence.
+  **What is measured, and how firmly.** The Coordinator runs **1 turn** per exchange — measured
+  2026-07-29 on live traces, re-measured 2026-08-02, same result both times. `logistics` was
+  measured at **8 internal turns** in the same pass. The multi-turn cost the D2 item was chasing
+  is real; it is in the specialists, not the head layer.
+
+  **What that means for the work.** Head-layer turn reduction is not the job — the Coordinator
+  is already at 1 turn against a ≤3-turn target. The job is the specialist loop, and the honest
+  first step is measurement, not a fix: **one specialist has been measured. The rest have not.**
+  `logistics` at 8 may be the outlier or the median and nothing currently distinguishes those
+  cases.
+
+  **Step 1 — measure before changing anything.** Instrument internal turn counts per specialist
+  across a representative set of real exchanges. Minimum: `logistics`, `physical_health`,
+  `mental_wellbeing`, `research_agent`, `finance`. Record turns *and* cumulative tokens per
+  specialist per exchange. Output is a ranked table — which specialists loop, how much, and on
+  what kind of prompt.
+
+  **Step 2 — diagnose the top one or two from their traces.** The Coordinator's mis-diagnosis is
+  the cautionary precedent here: an assumed cause ("sequential rather than parallel dispatch")
+  survived two months in a plan document without anyone checking it against a trace. Do not
+  carry a hypothesis into step 3 that step 2 has not evidenced.
+
+  **Step 3 — fix, then re-measure against the step 1 table.** No target number is set here on
+  purpose; setting one before step 1 would repeat the ≤3-turn mistake of pinning a goal to an
+  unmeasured baseline.
+
+  **Related, and deliberately kept separate:** the instruction-file-slimming half of the
+  original D2 item (moving the specialist directory and cross-domain routing examples out of
+  `coordinator.md` into `config/modules/coordinator_routing.yaml`, loaded via
+  `read_agent_config`) is **not** invalidated by the turn-count correction — it is a token-size
+  argument, not a turn-count one, and can be worked independently. Note the standing constraint
+  before shrinking `coordinator.md`: it is one of only two agents on the Vertex cached path, and
+  Vertex silently fails to cache below 4,096 tokens — see `CLAUDE.md` § Routing.
+
+  Also see the un-IDed entry *"Coordinator restructure (token-reduction Step 6)"*
+  (`DEV_BACKLOG.md:896`), which carries the same measured correction inline and whose "Relates
+  to the D2 item-5 mis-scoping already on this list" pointer now resolves to **this** entry.
+  Read the two together rather than working them separately.
+
+  *rewritten 2026-08-08 by dev session (Claude Code) from the 2026-07-29 / 2026-08-02
+  measurements · supersession note added to
+  [`archive/plans/phase5_to_future_roadmap_2026-06-10.md:519`](archive/plans/phase5_to_future_roadmap_2026-06-10.md#L519)
+  the same day · original entry filed 2026-08-02, not fixed, no owner*
 
 - ~~**No check that the VM is actually running what the Mac has committed.**~~ **Done 2026-08-03** — see the Done section.
 

@@ -101,3 +101,24 @@ schedules:
     days: daily
     function: tools.calendar_audit.audit_calendar_duplicates
     notification: false
+
+  # Reads the next 24h of calendar, recognises travel (flight numbers, named TfL
+  # lines), and checks each against get_flight_status / get_tfl_status. A function
+  # job, so a quiet travel day costs no model tokens and sends nothing at all —
+  # it notifies ONLY on an actual delay, cancellation or line disruption, and
+  # reports each one once. See tools/travel_watch.py for why detection requires
+  # two independent signals before it believes a flight number.
+  #
+  # A FIXED MORNING TIME, NOT AN INTERVAL — this is load-bearing. `fire_function`
+  # does not run the gate stack that `fire_session` does: `days`,
+  # `respect_quiet_hours` and the activity gate are all checked inside
+  # fire_session only. An `interval_minutes` job here would therefore be capable
+  # of pushing at 3am with nothing to stop it. Until that gap is closed
+  # (DEV_BACKLOG), any notifying function job must run at an explicit daytime
+  # hour. 06:45 gives time to act on a morning departure.
+  daily_travel_check:
+    enabled: true
+    time: "06:45"
+    days: daily
+    function: tools.travel_watch.travel_check
+    notification: push

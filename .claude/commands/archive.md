@@ -1,12 +1,22 @@
 ---
-description: Close out a session — verbatim transcript, project-log entry, session writeup, SESSION.md refresh, backlog filing
+description: Close out a session — verbatim transcript, project-log entry, session writeup, SESSION.md refresh, ROADMAP.md refresh, backlog filing
 ---
 
 Metatron — Archive This Session
 
-Five steps. **Do all five.** The order matters: the verbatim capture runs first because it is
-the only irreplaceable one, and `SESSION.md` is rewritten last because it depends on what the
-log entry says.
+Six steps. **Do all six.** The order matters: the verbatim capture runs first because it is
+the only irreplaceable one, and `SESSION.md`/`ROADMAP.md` are rewritten last because they depend
+on what the log entry says.
+
+> **Steps 4 and 5 are two different documents — do not do one and assume it covers the other.**
+> `SESSION.md` is a snapshot of *current state*; `ROADMAP.md` is the live tracker for *phase
+> gates and tracked items* (A7's checks, Track B's B1–B4, Track D). A session can update one and
+> leave the other describing finished work as if it hadn't started — this has already happened
+> (2026-08-04: B1a ran and passed, `SESSION.md` and `DEV_BACKLOG.md` both said so, `ROADMAP.md`'s
+> B1 section still read as if nothing had run). **Check both, every time, especially when
+> something tracked in either one got completed, split, or superseded this session** — that's
+> the case most likely to get skipped, because updating `DEV_BACKLOG.md` or `SESSION.md` already
+> feels like "the update."
 
 ---
 
@@ -75,7 +85,33 @@ session; update it rather than starting over.
 
 ---
 
-## 5. File anything actionable into `DEV_BACKLOG.md`
+## 5. Update `ROADMAP.md` if this session touched anything it tracks
+
+`ROADMAP.md` is edited, not append-only (unlike `PROJECT_LOG.md`) and not a snapshot you rewrite
+wholesale (unlike `SESSION.md`) — it's the live status of phase gates and tracked items: A7's
+sign-off checks, Track B (B1–B4), Track D, and anything else the file currently carries in full.
+**If this session completed, split, or superseded anything ROADMAP.md describes, update it
+here — do not rely on `SESSION.md` or `DEV_BACKLOG.md` having said so being enough.** Ask
+explicitly:
+
+- Did a check, sub-item, or whole tracked item (e.g. one of A7's 12 checks, one of B1–B4) get
+  completed, split into parts, or found to already be done this session?
+- Does the roadmap's own wording still match reality, or does it read as if the work is still
+  ahead when it isn't?
+
+**Especially check this when something is being marked done or removed from `DEV_BACKLOG.md`** —
+a completed backlog item that traces back to a roadmap-tracked item needs the roadmap updated in
+the same pass, not left for a future session to notice the mismatch.
+
+Mark status inline rather than rewriting the section — a ✅/short note/link to the session or log
+entry, the way A7's pre-sign-off gate note already does elsewhere in this file. Keep the
+roadmap's own abridgement discipline: dated reasoning belongs in `PROJECT_LOG.md`, not restated
+here. If nothing this session touches is in `ROADMAP.md` at all, say so and move on — this step
+is a check, not a mandatory edit.
+
+---
+
+## 6. File anything actionable into `DEV_BACKLOG.md`
 
 Bugs found but not fixed, deferrals, capability gaps, and any change the user asked for that
 was not done. Check it is not already listed before adding.

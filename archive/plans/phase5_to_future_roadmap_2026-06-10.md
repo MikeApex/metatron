@@ -518,6 +518,32 @@ Prompt structure optimization (informed by A4 safety hard-fail findings):
 - **Pattern Miner daily cadence as context-reduction lever:** Running Pattern Miner daily (vs. weekly) reduces the raw log load Coordinator must carry from ~1,500–3,000 tokens to ~300–600 tokens (one day's logs), replaced by a compressed insight report (~500–800 tokens). Net context reduction per session: ~1,000–2,500 tokens. Better signal quality too — synthesized Pattern Miner output vs. raw noisy log data. Factor into scheduler cadence planning at D1/E3.
 - **Coordinator instruction slimming — turn-count reduction (in progress pre-Alpha 2026-06-19):** The Coordinator exhibits a 6-turn / 88K cumulative token loop on complex sessions. The instruction file (~3,490 tokens) is within the size target; the problem is behavioral — the coordinator makes multiple sequential specialist calls across turns rather than fanning out in parallel. Fix: add explicit instruction to `coordinator.md`: "Dispatch all relevant specialists in a single parallel `run_subagent` batch in one turn. Do not make multiple sequential specialist calls across turns — fan out once, collect all results, then package." Consider moving the specialist directory and cross-domain routing examples to `config/modules/coordinator_routing.yaml` (loaded via `read_agent_config`), reducing the instruction file to routing rules only. Target: ≤3 turns, ≤40K cumulative tokens at coordinator done. Test: camping/guitar prompts complete within budget. *(Separate pre-Alpha chat; see D2 output compression for full context-reduction strategy.)*
 
+  > **⚠ SUPERSEDED 2026-08-08 — the premise above is measured wrong. The item's text is left
+  > unedited on purpose; this note replaces its scope.**
+  >
+  > **The Coordinator does not run 6–7 turns. It runs 1.** Measured twice on live traces —
+  > 2026-07-29, re-measured 2026-08-02 — so this is not waiting on further evidence. The
+  > multi-turn cost is real but it is **inside the specialists**, not in the head layer:
+  > `logistics` alone was measured at **8 internal turns**.
+  >
+  > What that invalidates, specifically:
+  > - The diagnosis — *"the coordinator makes multiple sequential specialist calls across turns
+  >   rather than fanning out in parallel"* — describes behaviour the Coordinator is not
+  >   exhibiting.
+  > - The prescribed fix — adding a fan-out-in-one-turn instruction to `coordinator.md` — would
+  >   instruct a component already doing the right thing, and change nothing.
+  > - The target — *"≤3 turns at coordinator done"* — is already met at 1, so the item would
+  >   read as complete on measurement while the actual cost sat untouched.
+  >
+  > Working this item as written optimises the one component that is already minimal. The
+  > re-scoped version — per-specialist internal turn reduction, starting from a measurement
+  > sweep across several specialists rather than swapping one assumed culprit for another —
+  > is live in `DEV_BACKLOG.md`. **Read it there, not here.**
+  >
+  > The instruction-file-slimming half of this item (moving the specialist directory and
+  > cross-domain routing examples to `config/modules/coordinator_routing.yaml`) is untouched by
+  > the correction — it stands or falls on token size, not turn count.
+
 Unlocks: E2 Wishes full build (encryption required); D1 local model upgrade decision data.
 
 ---

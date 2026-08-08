@@ -8,5 +8,20 @@
     "text": "{\"notes\": \"Initiating camping trip planning; user interested in summer trip but hasn't camped in years. Need to assess gear status and preferred locations/dates.\", \"date\": \"2026-06-19\"}",
     "source": "log",
     "date": "2026-06-19"
+  },
+  {
+    "text": "The user has returned after a two-month gap. Their first request upon returning is to process their inbox.",
+    "source": "journal",
+    "date": "2026-08-08"
+  },
+  {
+    "text": "{\"notes\": \"User requested inbox check, referring to 5:12 PM as 'this morning'.\", \"date\": \"2026-08-08\"}",
+    "source": "log",
+    "date": "2026-08-08"
+  },
+  {
+    "text": "{\"notes\": \"User requested an email check to handle urgent items.\", \"date\": \"2026-08-08\", \"tasks_completed\": [\"email check request\"]}",
+    "source": "log",
+    "date": "2026-08-08"
   }
 ]

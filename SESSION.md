@@ -1,23 +1,17 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-08 (travel/routing tools, Google API onboarding, CRM hardening) — `c4ff279`,
-deployed and verified live. Built pre-departure travel tools (`get_tfl_status`, `get_flight_status`
-via AeroDataBox/RapidAPI, `get_travel_time` via Google Maps Routes API as the default router
-everywhere) and a shared, non-persona-scoped `regional_transit.yaml` library so a traveling
-persona picks up the right city's cross-check tool, not their home one. **Built a full Google
-Contacts OAuth integration, then reversed it same day**: the recorded bug ("misattributing the
-user's email to the contact") turned out to need local validation in `write_contact`, not a
-third party with a 7-day token-refresh problem discovered along the way — replaced with a
-`write_contact` misattribution guardrail (exact-match refuse, near-miss flag), a standing
-read-back instruction in `relationships.md`, a confirm-gate on `write_profile`'s contact-field
-*changes*, and a portable `vobject`-based vCard importer. Deploy caught a real gap: `.env`
-doesn't travel with `deploy.sh`, so the two new API keys had to be appended to the VM separately
-or the new tools would have silently read as unconfigured — caught and fixed before calling it
-done. Google Places/Pollen APIs researched and documented, not built (Places blocked on a
-missing GPS/location capability, itself now filed as **[DB-0808-04]**, not scoped). Full detail:
-[archive/PROJECT_LOG.md](archive/PROJECT_LOG.md). Unchanged: `[DB-0804-01]` scheduled-fire check
-still pending; A7 blocked on checks 10/12, B1b; `[DB-0806-03]`/`[DB-0806-04]` (billing export,
-region migration) still open, not decided.*
+*Updated: 2026-08-08 (new `/backlog-attack` command) — docs-only, no deploy. Built
+[.claude/commands/backlog-attack.md](.claude/commands/backlog-attack.md): scores `DEV_BACKLOG.md`'s
+`## Open` items (importance × inverted difficulty), verifies only the shortlist against current
+code, then clusters the top items into 3 independent single-session prompts with no
+file/directory/deploy-target overlap. Kept separate from `/backlog` — that command works the bin
+(sync/triage/verify/ID-provenance); this one scores and clusters it — after Mike reviewed
+`backlog.md`'s current content. **Not yet run** — no scored list or cluster prompts exist yet for
+the current backlog. Full detail: [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md). Carried
+forward from 08-08 travel/CRM session: `[DB-0804-01]` scheduled-fire check still pending; A7
+blocked on checks 10/12, B1b; `[DB-0806-03]`/`[DB-0806-04]` (billing export, region migration)
+still open, not decided; Places/Pollen APIs researched not built, blocked on GPS/location
+(`[DB-0808-04]`).*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -98,9 +92,9 @@ execution split, are in
 fire completing end-to-end still hasn't been directly observed. One-week count due
 2026-08-11 — do not check before then.
 
-**The backlog is the bin for everything outside this roadmap.** Work it with **`/backlog`**.
-Currently **45 open, 6 untriaged** — the count grew this session (several real capabilities
-built and filed, plus new Inbox arrivals) more than it shrank. Includes one already-resolved
+**The backlog is the bin for everything outside this roadmap.** Work it with **`/backlog`**; use
+the new **`/backlog-attack`** to get a scored, clustered attack plan for the top items instead of
+triaging by hand. Currently **44 open, 6 untriaged, 0 new**. Includes one already-resolved
 Inbox line (pre-departure travel checks, built as `[DB-0806-01]`) waiting on a `/backlog` pass to
 clear it — left alone per `/archive`'s own "don't triage here" rule. The one rule: *no item is
 acted on, or re-filed, on the strength of its own description* — that sweep found a same-day
@@ -115,6 +109,7 @@ Newest first. Full detail for every entry — and everything older — is in
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-08 | **New `/backlog-attack` command** — scores `DEV_BACKLOG.md`'s open items and clusters the top ones into 3 non-overlapping single-session prompts; kept separate from `/backlog`; not yet run | docs-only, no deploy |
 | 08-08 | **Travel/routing tools, Google API onboarding, CRM hardening** — `get_tfl_status`/`get_flight_status`/`get_travel_time` (Google Maps default router) built; Google Contacts OAuth built then reversed same day for a simpler local fix (`write_contact` guardrail, vCard import, `write_profile` confirm-gate); Places/Pollen researched not built | `c4ff279` |
 | 08-06 | **Billing investigation + region latency analysis** — Compute Engine "no billing since Aug 4" traced to GCE report lag (VM confirmed running, no cap fired); europe-west1 vs us-central1 priced live (+10% compute, ~$2.60/mo, ~200–280ms/turn saved); investigation only, [DB-0806-03]/[DB-0806-04] filed | investigation only, no deploy |
 | 08-05 | **Backlog quick-bucket sweep, first SMTP send, APK rebuild, dictated-email fix** — 44→32 open; first real email ever sent; APK content-verified; check-ins-fire-through-silence and browser-live-refresh both resolved by explicit decision/verification | `2c097b3`, `a08e38a` |
@@ -122,7 +117,6 @@ Newest first. Full detail for every entry — and everything older — is in
 | 08-04 | **B1a red team executed** — new `tests/run_b1_redteam.py`; 9 disclosure categories (15 prompts incl. variants) + output-filter suite (61 checks) + confused-deputy probe, 75/75 PASS; found sticky MUST_SURFACE context contamination on `sarah_chen`, filed not fixed | tests-only, no deploy |
 | 08-04 | **B1–B4 security scoping** — Track B split into two waves (B1a/B2-remainder/B4 now, B1b/B3 gated on Track E); found B2 ~60% already done, PoLP allowlist actually enforced not warn-mode; new recurring security-review protocol | scoping only, no deploy |
 | 08-05 | **A7 pipeline probe** — `pipeline` suite added to `run_a4_safety.py`, running MW-3/MW-7/PH-MED through the real Coordinator→Synthesizer path; inverted pass condition (substance surfaces, token doesn't); 3/3 PASS live | tests-only, no deploy |
-| 08-04 | **Proactive check-ins fixed** — `[DB-0803-02]` root cause (`AgentRecord` handed to `log_model_error`) found and fixed; deploy.sh WS drain fixed; VM-down detection; live-VM re-verification; **`[DB-0804-01]` time-gated checks filed** | `10bf194`, `ec55788` |
 
 ---
 

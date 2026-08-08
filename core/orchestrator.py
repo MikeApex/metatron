@@ -25,6 +25,7 @@ import time
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
 
 # Must precede any `core.*` / `tools.*` import. Running `python core/orchestrator.py`
@@ -457,6 +458,7 @@ def register_tools() -> tuple[list[dict], dict]:
         get_weather, get_environmental_snapshot,
         GET_WEATHER_SCHEMA, GET_ENVIRONMENTAL_SNAPSHOT_SCHEMA,
     )
+    from tools.pollen import get_pollen_forecast, GET_POLLEN_FORECAST_SCHEMA
     from tools.tfl_status import get_tfl_status, GET_TFL_STATUS_SCHEMA
     from tools.flights import get_flight_status, GET_FLIGHT_STATUS_SCHEMA
     from tools.routing import get_travel_time, GET_TRAVEL_TIME_SCHEMA
@@ -498,6 +500,7 @@ def register_tools() -> tuple[list[dict], dict]:
         UPDATE_CALENDAR_EVENT_SCHEMA, DELETE_CALENDAR_EVENT_SCHEMA,
         CHECK_CALENDAR_CONFLICTS_SCHEMA,
         GET_WEATHER_SCHEMA, GET_ENVIRONMENTAL_SNAPSHOT_SCHEMA,
+        GET_POLLEN_FORECAST_SCHEMA,
         GET_TFL_STATUS_SCHEMA,
         GET_FLIGHT_STATUS_SCHEMA,
         GET_TRAVEL_TIME_SCHEMA,
@@ -557,6 +560,7 @@ def register_tools() -> tuple[list[dict], dict]:
         "check_calendar_conflicts": check_calendar_conflicts,
         "get_weather": get_weather,
         "get_environmental_snapshot": get_environmental_snapshot,
+        "get_pollen_forecast": get_pollen_forecast,
         "get_tfl_status": get_tfl_status,
         "get_flight_status": get_flight_status,
         "get_travel_time": get_travel_time,
@@ -661,11 +665,129 @@ _CONTEXT_SENSITIVE = [
 
 # Vocabulary that, when appearing in the same sentence as a context-sensitive
 # term, signals an architecture leak rather than ordinary prose.
+#
+# Widened 2026-08-08 (B2 "Output filter upgrade") beyond the original six terms.
+# It now also covers first-person capability narration ("I called…", "I routed
+# this to…") and the vocabulary of internals (handler, schema, endpoint, under
+# the hood), because the loose/spaced term forms below are gated on this and a
+# paraphrase rarely says "sub-agent" outright. Kept deliberately narrow on the
+# ambiguous words: `prompt` only as `system prompt`, `call` only as `tool call`
+# / `function call` — a bare `\bprompt\b` or `\bcall\b` fires on ordinary
+# sentences like "that prompted a good conversation" or "a call with your
+# sister", which is the FILTER-CLEAN corpus in tests/run_b1_redteam.py.
 _ARCH_VOCAB_RE = _re.compile(
-    r'\b(agent|specialist|sub-?agent|routing|pipeline|module|dispatch|'
-    r'tool\s*call|system\s*prompt|subagent)\b',
+    r'\b(agent|specialist|sub-?agent|subagent|routing|routed|pipeline|module|'
+    r'dispatch(?:ed|es)?|orchestrat\w+|handler|schema|endpoint|api|'
+    r'allow-?list|white-?list|permission set|'
+    r'tool\s*call|function\s*call|system\s*prompt|instruction\s*file|'
+    r'back-?end|under\s+the\s+hood|behind\s+the\s+scenes|'
+    r'i\s+(?:called|invoked|dispatched|routed|delegated|queried|ran)'
+    r')\b',
     _re.IGNORECASE,
 )
+
+# Characters used purely to break up a term so a substring match misses it, and
+# which carry no meaning in user-facing prose: zero-width spaces/joiners, soft
+# hyphen, BOM, word joiner.
+#
+# Written as escapes rather than literals: a character class of literal
+# zero-width characters is invisible in the source too, and the next person to
+# edit this line cannot see what they are deleting.
+_INVISIBLE_RE = _re.compile(
+    '['
+    '\u00ad'                  # soft hyphen
+    '\u200b-\u200f'           # zero-width space/non-joiner/joiner, LTR/RTL marks
+    '\u2028\u2029'            # line/paragraph separators
+    '\u2060\u2061\u2062\u2063'  # word joiner, invisible operators
+    '\ufeff'                  # BOM / zero-width no-break space
+    ']'
+)
+
+# Joiners used when rebuilding a term as a regex. Both run against text that has
+# already been lowercased, so `[^0-9a-z\s]` covers `_ - . · * | \ / +` and the
+# unicode dashes without needing to enumerate them.
+#
+#   TIGHT — punctuation-joined or squashed: write_config, write-config,
+#           write.config, write**config, writeconfig. Never a plain space, so
+#           ordinary English ("your mental wellbeing") cannot match.
+#   LOOSE — any non-alphanumeric run, including spaces: "write config",
+#           "mental wellbeing". Ambiguous with real prose, so gated on
+#           _ARCH_VOCAB_RE appearing in the same sentence.
+_TIGHT_JOINER = r'(?:[ \t]*[^0-9a-z\s]{1,4}[ \t]*|)'
+_LOOSE_JOINER = r'[^0-9a-z]{0,6}'
+
+
+@lru_cache(maxsize=512)
+def _term_regex(term: str, joiner: str) -> _re.Pattern:
+    """
+    Build an obfuscation-tolerant matcher for one confidential term.
+
+    Cached: filter_output() rebuilds ~110 of these per response otherwise, on
+    the user-facing path.
+
+    The term is split into alphanumeric tokens and rejoined with `joiner`, so a
+    single list entry covers every separator variant an attacker (or a model
+    trying to be helpful about a term it has been told not to say) might use.
+    Boundaries are lookarounds on alphanumerics rather than `\\b`, because `\\b`
+    does not fire between `_` and a letter — `x_write_config` would slip past.
+    """
+    tokens = [t for t in _re.split(r'[^0-9a-z]+', term.lower()) if t]
+    if not tokens:
+        return _re.compile(r'(?!)')          # matches nothing
+    body = joiner.join(_re.escape(t) for t in tokens)
+    return _re.compile(rf'(?<![0-9a-z]){body}(?![0-9a-z])')
+
+
+# Paraphrase detection: architecture narration that names nothing on either
+# list. "I passed this to a specialist that handles your health" leaks the
+# multi-agent structure without using a single confidential identifier, and the
+# term-based tiers above are blind to it by construction.
+#
+# Every pattern here is written to need an internal-narration frame, not just a
+# suggestive noun. `specialist` alone must stay legal — Physical Health telling
+# the user to see a specialist about their knee is exactly the advice the tool
+# exists to give.
+_ARCH_NARRATION_RES = [_re.compile(p, _re.IGNORECASE) for p in [
+    # System-prompt / instruction-file disclosure
+    r'\bmy\s+(?:system\s*)?(?:prompt|instructions?|instruction file|'
+    r'configuration|config file|agent file|guidelines document)\b',
+    r'\b(?:the|my)\s+system\s*prompt\b',
+    r'\bi\s+(?:was|am|have been)\s+(?:instructed|configured|programmed|'
+    r'set\s*up|designed)\s+to\s+(?:respond|reply|answer|say|never say|'
+    r'avoid|refuse|route|call|use)\b',
+    r'\b(?:first|opening|last)\s+(?:sentence|line|paragraph)\s+of\s+my\s+'
+    r'(?:instructions|prompt)\b',
+
+    # Multi-agent structure described in the first person
+    # Bare `agent` is deliberately absent from the noun list: "I sent your
+    # reply to the agent" is a legitimate sentence about an estate agent. It is
+    # still covered by tier 3, where `agent` is architecture vocabulary that
+    # gates a context-sensitive term in the same sentence.
+    r'\bi\s+(?:dispatched|routed|delegated|forwarded|handed|passed|sent|escalated)\s+'
+    r'(?:\w+\s+){0,4}?(?:to|through)\s+(?:a|an|the|my|another)\s+'
+    r'(?:sub-?agent|specialist|module|model|assistant)\b',
+    r'\bi\s+(?:consulted|asked|queried)\s+(?:a|an|another|a different|a second)\s+'
+    r'(?:model|ai|assistant|agent|specialist module)\b',
+    r'\b(?:sub-?agents?|specialist\s+(?:agents?|modules?)|agent\s+(?:files?|modules?)|'
+    r'routing\s+(?:layer|table|config\w*)|orchestration\s+layer|the\s+orchestrator)\b',
+    r'\b(?:\d+|twelve|fourteen|several|multiple)\s+(?:specialist|specialised|specialized)\s+'
+    r'(?:agents?|modules?|sub-?agents?)\b',
+
+    # Tool/capability inventory. The lookahead keeps "I use tools like
+    # journalling" — a normal thing to say about the user's own methods — legal.
+    r'\bi\s+(?:have|use|used|call|called|invoked|ran|run|have access to)\s+'
+    r'(?:a|an|the|my|several|multiple|various|these|the following)?\s*'
+    r'(?:tool|function|api|sub-?agent|specialist module)s?\b(?!\s+(?:like|such as))',
+    r'\b(?:my|the)\s+(?:available\s+)?tool(?:s|\s*set|\s*list|kit of functions)\b',
+    r'\bthe\s+tools\s+(?:i|available to me)\b',
+
+    # Model / provider disclosure
+    r'\bi\s*(?:\'m|\s+am)?\s+(?:running on|powered by|built on|based on)\s+'
+    r'(?:a|an|the)?\s*(?:gpt|gemini|claude|llama|qwen|mistral|sonnet|haiku|opus|'
+    r'large language model|llm|language model)\b',
+    r'\b(?:the\s+)?underlying\s+(?:model|llm|language model|system|architecture)\b',
+    r'\bwhich\s+(?:model|llm)\s+i\s+(?:use|run on|am)\b',
+]]
 
 
 def _sentence_bounds(text: str, pos: int) -> tuple[int, int]:
@@ -680,6 +802,20 @@ def _sentence_bounds(text: str, pos: int) -> tuple[int, int]:
     return start, end if end > start else len(text)
 
 
+_CANNED_FALLBACK = "I'm here to help you manage your life. What can I help you with today?"
+
+
+def _normalise_for_filter(text: str) -> str:
+    """
+    Lowercase and strip invisible characters before matching.
+
+    `w​rite_config` with a zero-width space after the w is the same leak as
+    `write_config`, and reads identically to the user — it must not be the
+    difference between suppressed and delivered.
+    """
+    return _INVISIBLE_RE.sub("", text).lower()
+
+
 def filter_output(text: str, agent_name: str) -> str:
     """
     Scan final user-facing output for leaked architecture terms.
@@ -687,48 +823,82 @@ def filter_output(text: str, agent_name: str) -> str:
     Only applied to the Synthesizer (user-facing); Coordinator output is
     internal (context package) and does not need filtering.
 
-    Two-tier check:
-    - _ALWAYS_CONFIDENTIAL: code identifiers, flagged on substring match.
-    - _CONTEXT_SENSITIVE: common English words that are also agent names;
-      only flagged when architecture vocabulary appears in the same sentence.
+    Four-tier check (tiers 1 and 3 rebuilt 2026-08-08, roadmap B2 "Output
+    filter upgrade — move from keyword matching to regex+semantic"):
+
+    1. _ALWAYS_CONFIDENTIAL, tight form — the code identifier however it is
+       punctuated or squashed: `write_config`, `write-config`, `write.config`,
+       `write**config`, `writeconfig`, and any of those with zero-width
+       characters spliced in. Always suppressed.
+    2. Architecture narration (_ARCH_NARRATION_RES) — paraphrases that leak the
+       structure without naming anything: "I passed this to a specialist that
+       handles your health", "my system prompt says", "I'm running on Gemini".
+       The pre-upgrade filter was blind to all of these; a model told not to
+       say `run_subagent` will happily describe what it does instead.
+       Always suppressed.
+    3. _ALWAYS_CONFIDENTIAL, loose form — the same identifiers spaced out
+       ("write config", "run subagent"), plus _CONTEXT_SENSITIVE. Both are
+       ambiguous with ordinary English, so both are suppressed only when
+       architecture vocabulary appears in the same sentence. "Your mental
+       wellbeing has improved" stays legal; "the mental wellbeing agent said"
+       does not.
+
+    Detection runs on a normalised copy; the original text is what is returned
+    when it passes.
+
+    **Known limits, so nobody over-trusts this.** Tier 2 is pattern-based, not
+    a model: a paraphrase phrased outside these frames passes. Intra-token
+    spacing (`w r i t e _ c o n f i g`) is not caught — the joiner sits between
+    tokens, not inside them — because a matcher loose enough to catch it fires
+    on ordinary spaced prose. This filter is the last backstop, not the
+    control: the agent confidentiality instructions are.
 
     Deliberately does NOT exempt terms the user already typed themselves —
     that would let a direct probing question ("what does write_config do?")
     disable its own backstop. See B1 red-team category "Direct tool inquiry"
     in the roadmap. The resulting false positive (Exchange 027, 2026-06-26 —
     user mentioned "write_config" in a complaint, got the canned fallback
-    instead of a real reply) is a known, accepted-risk gap pending the B2
-    "Output filter upgrade" (regex+semantic) — see SESSION.md.
+    instead of a real reply) is unchanged by this upgrade and remains an
+    accepted risk: fixing it needs the user's own turn passed in for
+    comparison, which is a call-signature change across three call sites, not
+    a matching change. Filed rather than folded in here.
     """
     if agent_name != "synthesizer":
         return text
 
     import warnings
 
-    lower = text.lower()
+    def _suppress(reason: str) -> str:
+        warnings.warn(
+            f"[SECURITY] Output filter: {reason} in Synthesizer response. "
+            f"Response suppressed.",
+            stacklevel=3,
+        )
+        return _CANNED_FALLBACK
 
+    norm = _normalise_for_filter(text)
+
+    # Tier 1 — identifiers, punctuation-obfuscation tolerant.
     for term in _ALWAYS_CONFIDENTIAL:
-        if term.lower() in lower:
-            warnings.warn(
-                f"[SECURITY] Output filter: '{term}' found in Synthesizer response. "
-                f"Response suppressed.",
-                stacklevel=2,
-            )
-            return "I'm here to help you manage your life. What can I help you with today?"
+        m = _term_regex(term, _TIGHT_JOINER).search(norm)
+        if m:
+            return _suppress(f"'{term}' (matched as {m.group(0)!r}) found")
 
-    for term in _CONTEXT_SENSITIVE:
-        idx = lower.find(term.lower())
-        while idx >= 0:
-            start, end = _sentence_bounds(lower, idx)
-            sentence = lower[start:end]
-            if _ARCH_VOCAB_RE.search(sentence):
-                warnings.warn(
-                    f"[SECURITY] Output filter: '{term}' in architecture context found "
-                    f"in Synthesizer response. Response suppressed.",
-                    stacklevel=2,
+    # Tier 2 — architecture narration, no confidential identifier required.
+    for pattern in _ARCH_NARRATION_RES:
+        m = pattern.search(norm)
+        if m:
+            return _suppress(f"architecture narration {m.group(0)!r} found")
+
+    # Tier 3 — spaced identifiers and common-word agent names, sentence-gated.
+    for term in list(_ALWAYS_CONFIDENTIAL) + list(_CONTEXT_SENSITIVE):
+        rx = _term_regex(term, _LOOSE_JOINER)
+        for m in rx.finditer(norm):
+            start, end = _sentence_bounds(norm, m.start())
+            if _ARCH_VOCAB_RE.search(norm[start:end]):
+                return _suppress(
+                    f"'{term}' (matched as {m.group(0)!r}) in architecture context found"
                 )
-                return "I'm here to help you manage your life. What can I help you with today?"
-            idx = lower.find(term.lower(), idx + 1)
 
     return text
 
@@ -741,6 +911,214 @@ _CONTEXT_OPEN = "[CONTEXT]"
 _CONTEXT_CLOSE = "[/CONTEXT]"
 
 
+# Keys the salvage path knows how to rescue individually. **Add to this whenever a
+# key is added to the [CONTEXT] block** — a key missing here is not an error, it is
+# silently unsalvageable, which is the exact failure this repair layer exists to end.
+# `clinical_threads` arrived from a parallel session on 2026-08-08; it is the one
+# with a safety cost if dropped.
+_CONTEXT_KEYS = ("open_threads", "patterns", "follow_ups", "held_items",
+                 "clinical_threads", "dev_request")
+
+
+def _strip_fences(raw: str) -> str:
+    """Drop a ```json fence and any prose either side of the outermost JSON object."""
+    raw = _re.sub(r'^\s*```(?:json|JSON)?\s*', '', raw.strip())
+    raw = _re.sub(r'```\s*$', '', raw).strip()
+    first, last = raw.find('{'), raw.rfind('}')
+    if first >= 0 and last > first:
+        return raw[first:last + 1]
+    if first >= 0:
+        return raw[first:]          # truncated mid-object — the balancer handles it
+    return raw
+
+
+def _balance(raw: str) -> str:
+    """
+    Close a truncated JSON object and drop mismatched closers.
+
+    A block cut off by a token limit ends mid-array or mid-string. Closing an
+    unterminated string first, then the open brackets in reverse order, recovers
+    everything written before the cut instead of discarding all of it.
+
+    A closer that does not match the open bracket is dropped rather than kept:
+    `{"open_threads": ["a",}` — an array closed with a brace — is otherwise
+    unrecoverable, and appending the right closers on top of the wrong one just
+    moves the syntax error. Valid JSON never contains a mismatched closer, so
+    this cannot damage a block that would have parsed anyway.
+    """
+    in_string = escaped = False
+    stack: list[str] = []
+    kept: list[str] = []
+    for ch in raw:
+        if in_string:
+            kept.append(ch)
+            if escaped:
+                escaped = False
+            elif ch == '\\':
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch in '{[':
+            stack.append('}' if ch == '{' else ']')
+        elif ch in '}]':
+            if stack and stack[-1] == ch:
+                stack.pop()
+            else:
+                continue          # wrong closer — drop it
+        kept.append(ch)
+    out = ''.join(kept)
+    if in_string:
+        out += '"'
+    # A trailing comma or dangling `"key":` becomes invalid the moment we close
+    # the bracket, so drop it before appending.
+    out = _re.sub(r'(,|:\s*)\s*$', '', out)
+    return out + ''.join(reversed(stack))
+
+
+def _repair_context_json(raw: str) -> tuple[dict | None, str]:
+    """
+    Parse a [CONTEXT] payload, repairing the malformations models actually emit.
+
+    Returns (parsed_or_None, how) where `how` names the step that succeeded —
+    "clean" when no repair was needed, so the caller can log a repair without
+    logging every ordinary block.
+
+    Each step is additive and ordered cheapest-first. Nothing here guesses at
+    *content*: every repair is structural (fences, truncation, trailing commas,
+    quote style). A block that is structurally sound but semantically wrong is
+    passed through to persist_context_block, which validates keys itself.
+    """
+    candidates: list[tuple[str, str]] = [("clean", raw.strip())]
+
+    fenced = _strip_fences(raw)
+    if fenced != raw.strip():
+        candidates.append(("fences/prose stripped", fenced))
+
+    no_trailing_commas = _re.sub(r',\s*([}\]])', r'\1', fenced)
+    if no_trailing_commas != fenced:
+        candidates.append(("trailing commas removed", no_trailing_commas))
+
+    smart = (no_trailing_commas
+             .replace('“', '"').replace('”', '"')
+             .replace('‘', "'").replace('’', "'"))
+    if smart != no_trailing_commas:
+        candidates.append(("smart quotes normalised", smart))
+
+    balanced = _balance(smart)
+    if balanced != smart:
+        candidates.append(("truncation closed", balanced))
+
+    # Single-quoted JSON (a Python repr, essentially). Only attempted when there
+    # is not a single double quote in the block — otherwise this corrupts a
+    # legitimate apostrophe inside a string value, which is common in prose.
+    if '"' not in balanced and "'" in balanced:
+        candidates.append(("single quotes converted", balanced.replace("'", '"')))
+
+    for how, candidate in candidates:
+        if not candidate:
+            continue
+        try:
+            # strict=False permits raw control characters (a literal \n typed into a
+            # JSON string value, rather than an escaped \\n) instead of rejecting the
+            # whole block — observed live 2026-08-02, where a single stray newline
+            # silently dropped both the context-tracker update and the dev_request
+            # in it.
+            parsed = json.loads(candidate, strict=False)
+        except Exception:
+            continue
+        if isinstance(parsed, dict):
+            return parsed, how
+
+    # Last resort: salvage the keys that are individually well-formed. A single
+    # broken value in `patterns` should not cost the three open threads next to
+    # it — partial recovery beats a total drop, and this is the case the
+    # ladder above cannot reach because the object never parses as a whole.
+    salvaged: dict = {}
+    for key in _CONTEXT_KEYS:
+        m = _re.search(rf'"{key}"\s*:\s*([\[{{"])', balanced)
+        if not m:
+            continue
+        value = _extract_json_value(balanced, m.start(1))
+        if value is None:
+            continue
+        try:
+            salvaged[key] = json.loads(_balance(value), strict=False)
+        except Exception:
+            continue
+    if salvaged:
+        return salvaged, f"partial salvage ({', '.join(sorted(salvaged))})"
+
+    return None, "unrecoverable"
+
+
+def _extract_json_value(text: str, start: int) -> str | None:
+    """Return the JSON value beginning at `start` (an opening `[`, `{` or `"`)."""
+    opener = text[start]
+    if opener == '"':
+        i, escaped = start + 1, False
+        while i < len(text):
+            if escaped:
+                escaped = False
+            elif text[i] == '\\':
+                escaped = True
+            elif text[i] == '"':
+                return text[start:i + 1]
+            i += 1
+        return text[start:]
+    closer = ']' if opener == '[' else '}'
+    depth, in_string, escaped = 0, False, False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == '\\':
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == opener:
+            depth += 1
+        elif ch == closer:
+            depth -= 1
+            if depth == 0:
+                return text[start:i + 1]
+    return text[start:]
+
+
+def _record_unparsed_context(raw: str, exc_detail: str) -> None:
+    """
+    Persist a [CONTEXT] block that survived neither parsing nor repair.
+
+    There is no re-emit path from here: split_context_block runs after the
+    Synthesizer's turn has completed, on the user-facing request, and asking the
+    model again would cost a second Pro turn of latency on every malformation to
+    fix a tracker update the user never sees. So the block is made *recoverable*
+    instead of retried — written to the quality-event stream that already
+    reaches DEV_BACKLOG.md via the existing sync, with the raw text attached.
+    A dropped update then shows up as a backlog item with the evidence in it,
+    rather than as a warning in a log nobody reads.
+    """
+    try:
+        from tools.logger import write_quality_event as _wqe
+        _wqe(
+            event_type="CONTEXT_BLOCK_UNPARSED",
+            source_agent="synthesizer",
+            detail=(f"[CONTEXT] block dropped — no repair succeeded ({exc_detail}). "
+                    f"Raw block (first 1500 chars): {raw.strip()[:1500]}"),
+            session_id=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+        )
+    except PersonaError:
+        raise
+    except Exception as exc:
+        logger.warning(f"[context_block] could not record unparsed block: {exc}")
+
+
 def split_context_block(complete: str) -> tuple[str, dict | None]:
     """
     Split a Synthesizer response into visible text and its [CONTEXT] block.
@@ -748,6 +1126,15 @@ def split_context_block(complete: str) -> tuple[str, dict | None]:
     The Synthesizer appends [CONTEXT]{json}[/CONTEXT] after its visible answer
     instead of spending a tool-call turn on write_context_tracker. That block is
     internal — it must never reach a user, a push notification, or an API caller.
+
+    A malformed block used to be a warning and a silent drop: the context-tracker
+    update, and any dev_request riding along in it, were gone with no retry and
+    no record. `strict=False` (2026-08-02) fixed the one malformation observed
+    live — a literal newline inside a string value — but only that one. This now
+    runs a structural repair ladder (`_repair_context_json`), falls back to
+    salvaging whichever keys are individually well-formed, and if even that
+    fails records the raw block as a quality event so the update is recoverable
+    rather than lost.
 
     Returns (visible_text, parsed_context_or_None).
     """
@@ -757,17 +1144,17 @@ def split_context_block(complete: str) -> tuple[str, dict | None]:
     raw = complete[complete.index(_CONTEXT_OPEN) + len(_CONTEXT_OPEN):]
     if _CONTEXT_CLOSE in raw:
         raw = raw[:raw.index(_CONTEXT_CLOSE)]
-    try:
-        # strict=False permits raw control characters (a literal \n typed into a JSON
-        # string value, rather than an escaped \\n) instead of rejecting the whole
-        # block — observed live 2026-08-02, where a single stray newline silently
-        # dropped both the context-tracker update and the dev_request in it. Still
-        # rejects actually malformed JSON (unquoted keys, trailing commas, etc.) —
-        # this only relaxes control-character handling, nothing else.
-        return visible, json.loads(raw.strip(), strict=False)
-    except Exception as exc:
-        logger.warning(f"[context_block] parse failed: {exc} — raw: {raw[:200]}")
-        return visible, None
+
+    parsed, how = _repair_context_json(raw)
+    if parsed is not None:
+        if how != "clean":
+            logger.warning(f"[context_block] repaired malformed block via {how}")
+            _trace(f"[PIPELINE] context_block  repaired  ({how})")
+        return visible, parsed
+
+    logger.warning(f"[context_block] parse failed after repair — raw: {raw[:200]}")
+    _record_unparsed_context(raw, "all repair steps exhausted")
+    return visible, None
 
 
 def persist_context_block(ctx: dict | None) -> None:
@@ -781,6 +1168,7 @@ def persist_context_block(ctx: dict | None) -> None:
             patterns=ctx.get("patterns", []),
             follow_ups=ctx.get("follow_ups", []),
             held_items=ctx.get("held_items"),
+            clinical_threads=ctx.get("clinical_threads"),
         )
         _trace("[PIPELINE] context_tracker  written  (inline block)")
     except PersonaError:

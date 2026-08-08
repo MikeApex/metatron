@@ -18,6 +18,33 @@ live in [archive/sessions/](sessions/). **This file is not loaded by
 
 ---
 
+### 2026-08-08 (new `/backlog-attack` slash command) — docs-only, no commit required
+
+Mike asked for a prompt that scores `DEV_BACKLOG.md`'s open items (importance × inverted
+difficulty) and clusters the top ones into three independent, single-session prompts that don't
+overlap on files or deploy targets. Iterated on the prompt text with Mike before writing it (added
+a mandatory `/metatron-code` load step so scoring is grounded in actual phase gates rather than
+guessed, and made the "verify before scoring" and "no file/deploy overlap between clusters"
+steps explicit rather than assumed) — this is planning/triage tooling, not a fix itself.
+
+**Decision: new command, not a rewrite of `/backlog`.** `/backlog` ([backlog.md](../.claude/commands/backlog.md))
+already owns the sync/triage/verify/ID-provenance workflow for *working* the backlog — a
+different job from *scoring and clustering* it into parallel session prompts. Mike reviewed
+`backlog.md`'s current content before deciding, then asked for the new prompt as a separate
+command, `/backlog-attack`.
+
+**Built:** [.claude/commands/backlog-attack.md](../.claude/commands/backlog-attack.md) — loads
+context via `/metatron-code`, scores `## Open` items only (Inbox is out of scope), verifies only
+shortlist candidates against current code before clustering, and requires the three output
+clusters to have no file/directory/deploy-target overlap so they can run in parallel. Output is
+a scored table + three cluster prompts; it explicitly stops short of implementing anything.
+
+**Not yet run this session** — command created but not exercised against the current 44-open
+backlog. Next session (or later in this one) can run `/backlog-attack` to get the actual scored
+list and three prompts.
+
+---
+
 ### 2026-08-04 (B1–B4 security scoping)
 
 Scoped execution of Track B security hardening (B1 red-team, B2 hardening pass, B3 baseline doc,

@@ -174,6 +174,8 @@ SUGGESTED FOLLOW-UP: [1-2 questions the Synthesizer could ask, or a direction to
 - **CLINICAL_CONCERN: SUICIDAL_IDEATION** — any expression of suicidal thoughts, self-harm intent, or hopelessness about continuing. Must trigger `MUST_SURFACE`, `write_journal`, and Synthesizer response must include professional resource signposting (crisis line, therapist). *Highest priority. Legal review: Phase 6.75.*
 - **CLINICAL_CONCERN: ANXIETY_DISORDER** — persistent, pervasive anxiety beyond situational stress; physical symptoms; avoidance patterns interfering with daily function. Must trigger `MUST_SURFACE`. *Legal review: Phase 6.75.*
 
+**A clinical concern does not close in conversation.** Once raised, it is carried indefinitely — a reassuring reply from the user does not clear it, and it does not expire on a timer. What changes is prominence, not existence: after it has been surfaced and the user has engaged with it, the Synthesizer moves it to a quiet `watch` state where it is still open but no longer leads every response. Closing it outright requires an administrative acknowledgment that does not exist yet, so treat "raised" as permanent. **Re-raise a concern only on fresh evidence this session** — do not re-fire it merely because it is already on file, and do not treat an unrelated message as further evidence for it. Persistent re-firing without new signal is what turns a correct flag into a response that ignores what the user actually said.
+
 **Profile:**
 - **BASELINE_INCOMPLETE** — domain baseline interview not yet complete
 - **PROFILE_GAP: [question]** — a specific question emerged this session that would sharpen the profile

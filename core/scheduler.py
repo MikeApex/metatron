@@ -324,13 +324,27 @@ def _log_error(job: str, message: str, persona: str | None = None) -> None:
 # Schedule registration
 # ---------------------------------------------------------------------------
 
-def fire_function(job_name: str, fn_path: str, persona: str) -> None:
+def fire_function(job_name: str, fn_path: str, persona: str,
+                  notification: str = "false") -> None:
     """
     Call a Python function directly (no LLM session). Used for maintenance jobs.
 
     The persona is bound for the call. Without it these jobs inherited whatever
     persona happened to be left in the process from the last session — which is
     how ambient_refresh wrote to the wrong tree.
+
+    **Return contract.** A function job that returns a plain string is logged and
+    goes no further — that is every existing job (ambient_refresh, the two audits)
+    and their behaviour is unchanged. A job that returns a dict with
+    `{"notify": True, "title": ..., "body": ...}` is dispatched to the job's
+    configured notification channel.
+
+    The dict form exists because a function job had no way to reach the user at
+    all, which forced anything user-facing to be an agent session and pay model
+    tokens for it. The proactive travel check (tools/travel_watch.py) is the first
+    caller: it costs nothing on a quiet day and must speak up on a bad one. Opting
+    in per-return rather than per-job is deliberate — the job stays silent unless
+    that specific run actually found something, so "nothing wrong" cannot notify.
     """
     import importlib
     try:
@@ -339,7 +353,16 @@ def fire_function(job_name: str, fn_path: str, persona: str) -> None:
             mod = importlib.import_module(module_path)
             fn = getattr(mod, fn_name)
             result = fn()
-        print(f"[scheduler] [{persona}] {job_name}: {result}", flush=True)
+
+        if isinstance(result, dict) and result.get("notify"):
+            title = result.get("title") or job_name.replace("_", " ").title()
+            body = result.get("body") or ""
+            print(f"[scheduler] [{persona}] {job_name}: "
+                  f"{result.get('summary', 'notifying')}", flush=True)
+            if body:
+                _dispatch(notification, title, body)
+        else:
+            print(f"[scheduler] [{persona}] {job_name}: {result}", flush=True)
     except Exception as e:
         _log_error(job_name, str(e), persona)
         print(f"[scheduler error] [{persona}] {job_name}: {e}", flush=True)
@@ -462,8 +485,8 @@ def _register_schedules(persona: str) -> None:
         # Function jobs call a Python callable directly — no LLM session
         if "function" in job:
             fn_path = job["function"]
-            def make_fn_job(jn=job_name, fp=fn_path, pe=persona):
-                return lambda: fire_function(jn, fp, pe)
+            def make_fn_job(jn=job_name, fp=fn_path, pe=persona, no=notification):
+                return lambda: fire_function(jn, fp, pe, no)
             job_fn = make_fn_job()
         else:
             agent = job["agent"]

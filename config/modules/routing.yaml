@@ -114,7 +114,11 @@ agents:
   research_agent:
     provider: gemini
     model: "models/gemini-3.1-pro-preview"   # grounded search; decontextualized only
-    allowed_tools: [fetch_url]
+    allowed_tools: [fetch_url, get_pollen_forecast]
+    # get_pollen_forecast added 2026-08-08. It is the data source for the pollen leg of
+    # the routing coordinator.md already carried ("sore throat" → Physical Health →
+    # Research (pollen?) → Logistics). Decontextualized by construction: a city name goes
+    # out, an index comes back, no personal context is involved.
     # Explicit list as of 2026-08-04, and the wording it replaced was misleading:
     # "no allowed_tools — bare mode (no personal tools)" conflated two different
     # things. Bare mode (orchestrator `_run_single_agent`) withholds personal

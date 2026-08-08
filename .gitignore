@@ -118,3 +118,7 @@ backups/
 # Local convenience file (empty, clicked to reduce editor context noise)
 dummy
 .dev_backlog_seen
+
+# STT benchmark fixtures — 1.6MB of synthesized audio, regenerable with
+# `python3 tests/bench_whisper_stt.py --generate`. Not worth carrying in git.
+tests/fixtures/stt/
