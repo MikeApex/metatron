@@ -30,14 +30,17 @@ Refresh: `python3 scripts/sync_dev_backlog.py`
 
 - **[same rule in two places]** This preference may contradict a rule that already applies — one negates, the other does not, and whichever layer loads last wins. Class: brevity — how long a proactive session's opening should be. A universal rule of this class belongs in the scheduler layer. Preference: config/personas/mike.md:11 — For check-ins: Keep to two sentences at most. If exactly one thing genuinely needs attention, name it and stop. Otherwise just ask what's on. Never list or recap pending items, and never manufacture a topic. Candidate rule(s) it may restate: (0.90) [brevity] config/personas/mike/scheduler.yaml:41 — Check in briefly — two sentences at most. If exactly one thing genuinely needs attention right now, name it and stop. Otherwise just ask what's on. Never list or recap pending item (0.90) [brevity] config/templates/scheduler.yaml:34 — Check in briefly — two sentences at most. If exactly one thing genuinely needs attention right now, name it and stop. Otherwise just ask what's on. Never list or recap pending item (0.19) [brevity] config/personas/mike/scheduler.yaml:21 — Good morning. Open with whatever is most time-sensitive today — a commitment, an overdue follow-up, or an unresolved thread from recent context. Name it specifically rather than as … and 1 more Candidates are ranked by wording overlap, which is weak at this scale — the flagged preference is the reliable part, the partner is a starting point. If the preference says nothing the shared rule does not, delete it. If it is a genuine personal refinement, keep it and reword it so the difference is all it states.  
   `2026-08-05T04:30:19.777295Z`
-- **[instruction change]** Enable proactive pre-departure travel checks: autonomously look up flight status and relevant transit lines (e.g., DLR, Elizabeth line) before the user asks on travel days.  
-  `2026-08-05T07:02:45.797954Z`
-
 *(nothing new — last triaged 2026-08-08)*
 
 ---
 
 ## Triaged out of Inbox — 2026-08-08
+
+- **[instruction change] Enable proactive pre-departure travel checks** — *"autonomously look
+  up flight status and relevant transit lines (e.g., DLR, Elizabeth line) before the user asks
+  on travel days"* (`2026-08-05T07:02:45`). Became `[DB-0806-01]`; **fully delivered and closed
+  2026-08-08** — see the Done section. Removed from the Inbox here rather than left sitting
+  under a request that has been satisfied.
 
 - ~~**Develop a stronger protocol for onboarding new contacts to the CRM or Google
   Contacts. Current handling resulted in misattributing the user's email to the
@@ -295,45 +298,6 @@ Capabilities that do not exist yet.
 
 ### Surfaced 2026-08-06
 
-- **[DB-0806-01] Pre-departure travel checks — both status lookups built; proactive
-  trigger still not wired.** Inbox request: *"Enable proactive pre-departure travel
-  checks: autonomously look up flight status and relevant transit lines... before the
-  user asks on travel days."*
-
-  - ~~**Transit status (DLR, Elizabeth line, etc.)**~~ — **built 2026-08-05/06, renamed
-    2026-08-07.** [tools/tfl_status.py](tools/tfl_status.py), `get_tfl_status(lines)`
-    against TfL's public API — no key required, verified live before any code was
-    written. Also covers bus routes and National Rail operators through the same call,
-    confirmed 2026-08-07 (see the routing entry below). **Renamed from
-    `tools/transit.py`/`get_transit_status`** at Mike's request, once it was clear the
-    tool is genuinely TfL/London-only and a generic name would misdescribe it — collided
-    in name (not design) with an unbuilt `get_transit_status(route)` GTFS-RT placeholder
-    that had sat in the original Phase 5/6 plan since 2026-05-26; that stub is now removed
-    from `logistics.md` and `research_agent.md`, the static planning docs that also
-    mention it are left untouched per their own never-edited convention.
-
-  - ~~**Flight status**~~ — **built 2026-08-07.** [tools/flights.py](tools/flights.py),
-    `get_flight_status(flight_number, date)` against AeroDataBox via RapidAPI's Basic plan
-    (free, unrestricted duration — confirmed against AeroDataBox's own pricing page after
-    an earlier marketplace mix-up: API.Market's Basic is a 7-day trial, RapidAPI's is the
-    genuinely ongoing one). Key in `.env` as `AERODATABOX_API_KEY`. Verified live end to
-    end through the actual tool function (not just a raw `curl`) — `get_flight_status("BA117")`
-    returned real data including a genuine departure delay, correctly flagged. Confirmed
-    the plan's 1 req/s rate limit is real by hitting it during testing; documented in both
-    the tool schema and `logistics.md` so the agent doesn't hammer it.
-
-  Both tools registered in `core/orchestrator.py`, granted to `logistics` in both routing
-  files, and documented in `config/agents/logistics.md`.
-
-  **What's still open: neither tool is wired to a proactive trigger.** Both exist and
-  work when called, but nothing calls either one automatically on a detected travel day —
-  that needs calendar-event travel-detection logic (recognizing a flight/trip on the
-  calendar and extracting a flight number or transit need from it), which is a separate,
-  non-trivial piece deliberately left for its own session rather than bolted on here.
-
-  *filed 2026-08-05 (Inbox) · transit built 2026-08-06 · flight built 2026-08-07 · transit
-  renamed to tfl_status 2026-08-07 · proactive-trigger wiring still open, not started*
-
 - **[DB-0807-01] `location_transition_flags` stub filled in — real routed travel time,
   not just a raw-gap flag. Built 2026-08-07, corrected same day.** [tools/routing.py](tools/routing.py),
   `get_travel_time(origin, destination, mode, arrive_by)` — provider-agnostic interface
@@ -450,9 +414,9 @@ Capabilities that do not exist yet.
   new two-step flow for contact-field corrections specifically.
   *filed and built 2026-08-08 · verified live across all four paths*
 
-- **[DB-0807-02] Two more Google APIs researched and noted where they'd plug in — neither
-  built, both scoped in the relevant agent file rather than only here.** Surfaced while
-  answering "any other Google APIs worth onboarding."
+- **[DB-0807-02] Two more Google APIs researched and noted where they'd plug in — Pollen now
+  BUILT (2026-08-08), Places still open.** Surfaced while answering "any other Google APIs
+  worth onboarding." The item stays open for Places only; the Pollen half is closed below.
 
   - **Google Places API** — Nearby/Text Search for restaurant/venue discovery (name,
     cuisine, rating, price level). Noted in `logistics.md` (Enhancement Backlog, serves
@@ -464,17 +428,25 @@ Capabilities that do not exist yet.
     real-time GPS from the lunch-recommendation conversation, 2026-08-07); "near a named
     address/event" queries don't have that dependency and could ship sooner than "near
     the user right now."
-  - **Google Pollen API** — 1–5 day forecast by tree/grass/weed and specific plant type,
-    0–5 Universal Pollen Index, health recommendation text. Noted in `research_agent.md`'s
-    "Phase 6 tools (deferred)" list. Worth flagging precisely: `coordinator.md` already
-    names this exact routing in a worked example ("sore throat" → Physical Health →
-    Research for "pollen?" → Logistics for medicine) — the instruction-level routing was
-    already written and waiting; only the actual data source was missing. Distinct API
-    and SKU from `tools/ambient.py`'s existing Open-Meteo air-quality call — different
-    pollutant, unrelated, both would coexist.
+  - ~~**Google Pollen API**~~ — **BUILT 2026-08-08, `7c70cd9`.**
+    [tools/pollen.py](tools/pollen.py), `get_pollen_forecast(location, days)` — 1–5 day
+    forecast by grass/tree/weed on the 0–5 Universal Pollen Index, with health
+    recommendations. Registered in `register_tools()` and granted to `research_agent` in
+    both routing files, which completes the chain `coordinator.md` already described
+    ("sore throat" → Physical Health → Research for "pollen?" → Logistics for medicine):
+    the instruction-level routing was written and waiting, and only the data source was
+    missing. Kept distinct from `tools/ambient.py`'s Open-Meteo air-quality call as
+    predicted — different exposure, different time shape (forecast vs. current), both
+    coexist and neither substitutes for the other. Location comes from the same wttr.in
+    geocode air quality already uses, so **this was never actually blocked on the missing
+    GPS signal** that blocks Places — a named city is enough.
+    **Caveat: no live call has been made** — parsing is tested against a synthetic payload,
+    but there is no API key yet, so coverage and real response shape are unverified.
+    See `[DB-0808-12]`.
 
   *filed 2026-08-07 by dev session (Claude Code) · noted in logistics.md,
-  recreation_hobbies.md, research_agent.md · neither built*
+  recreation_hobbies.md, research_agent.md · Pollen built 2026-08-08 · Places still
+  blocked on a location signal*
 
 - **[DB-0806-02] Level 3 web access — rendered-read tool scoped, not built; interactive
   Level 3 explicitly still not started.** Full scoping document:
@@ -1273,6 +1245,41 @@ region" ran to end of file and **closing an item made the reported number go up.
 
 Every entry keeps its ID and carries the commit or `file:line` that closed it. Closed without
 one is not closed.
+
+---
+
+### Closed 2026-08-08 — proactive travel trigger, pollen data source
+
+Both shipped in `7c70cd9` (swept into that commit by a concurrent window — the message
+describes a different session's work; the code is this session's).
+
+- **[DB-0806-01] Pre-departure travel checks — CLOSED, the proactive trigger is now wired.**
+  The two status lookups were already built (`get_tfl_status` 2026-08-06,
+  `get_flight_status` 2026-08-07); what stayed open was that *nothing called either one
+  automatically*. Now built: [tools/travel_watch.py](tools/travel_watch.py) reads the next
+  24h of calendar, recognises travel, extracts flight numbers and named TfL lines, and
+  dispatches the matching check. Registered as the `daily_travel_check` function job in
+  [config/templates/scheduler.yaml](config/templates/scheduler.yaml).
+
+  Three design points worth keeping, because each was a decision rather than a default:
+  1. **Detection needs two independent signals.** A flight-number regex alone matches
+     "Q4 2026" and "Room B12", and `get_flight_status` runs on a 600-unit/month,
+     1-req/sec plan — so a number is only believed when the event also carries travel
+     context (an airport, a terminal, the word "flight"). Tested against 11 positive and
+     negative cases.
+  2. **Silence on a good day.** An on-time flight and a Good Service line produce no
+     notification at all, and each finding is reported once — keyed on event *and* status,
+     so a worsening re-alerts but a standing delay does not nag.
+  3. **`fire_function` gained a notification path** ([core/scheduler.py](core/scheduler.py)):
+     a function job returning `{"notify": True, ...}` now dispatches, while a string-returning
+     job behaves exactly as before. This is what lets the check cost zero model tokens on a
+     quiet day and still speak up on a bad one. Backwards compatibility verified against all
+     three existing function jobs.
+
+  **Not yet firing for mike** — his `scheduler.yaml` is VM-owned and gitignored, so the job
+  entry must be added on the VM by hand: `[DB-0808-10]`. Gate-stack gap found while building:
+  `[DB-0808-11]`.
+  *filed 2026-08-05 (Inbox) · lookups built 08-06/08-07 · trigger built and closed 2026-08-08*
 
 ---
 
