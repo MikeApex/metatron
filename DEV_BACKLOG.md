@@ -150,7 +150,7 @@ text alone says what was blocked and not what the agent was trying to do.
 Behavioural changes to how agents judge, prioritise, or decide what to raise. Applied by editing agent instruction files. **The `config/agents/*.md` freeze was lifted 2026-08-03 (`ae252ab`)** — these are now directly editable.
 
 - ~~**`[CONTEXT]` block silently discarded when the model emits invalid JSON.**~~ — **built
-  2026-08-08, ⚠ NOT YET DEPLOYED** (see the deploy note at the end of this entry).
+  and DEPLOYED 2026-08-08 (`7c70cd9`).**
   **Premise correction, verified against current code before work started:** the specific
   malformation this entry names — a literal newline inside a JSON string value — was *already*
   fixed on 2026-08-02 by `strict=False`, two days before this entry was written. What was still
@@ -177,7 +177,7 @@ Behavioural changes to how agents judge, prioritise, or decide what to raise. Ap
   would have shipped an import of a module not in git, which (being function-level) passes
   `py_compile` and fails on the first pipeline session instead. Until that deploy happens, a
   malformed block on the VM is still dropped silently.
-  *filed 2026-08-04 · built 2026-08-08 by dev session (backlog-attack cluster) · awaiting deploy*
+  *filed 2026-08-04 · built 2026-08-08 by dev session (backlog-attack cluster) · deployed `7c70cd9`*
 
 - ~~**`synthesizer.md:355` promises a capability that does not exist.**~~ — **stale, closed
   2026-08-05. Already fixed by the 2026-08-03 Phase 4 scheduler-grants session; this entry was
@@ -199,6 +199,64 @@ Capabilities that do not exist yet.
 
 ### Surfaced 2026-08-08
 
+- **[DB-0808-10] `daily_travel_check` needs adding to mike's VM `scheduler.yaml` — the code
+  is deployed but nothing fires it.** `tools/travel_watch.py` and the `fire_function`
+  notification path shipped 2026-08-08, and the job entry is in the git-tracked
+  `config/templates/scheduler.yaml` so **new** personas get it automatically. Mike's own
+  `config/personas/mike/scheduler.yaml` is VM-owned and gitignored, so `deploy.sh` cannot
+  carry the entry — it must be added on the VM by hand, **after** the code deploy, per the
+  standing "config and its guard deploy together, guard first" rule. Until then the feature
+  is live in code and inert in practice. Copy the `daily_travel_check` block from the
+  template verbatim; it is `time: "06:45"`, `notification: push`.
+  *filed 2026-08-08 by dev session (Claude Code) · built the same session · blocked only on
+  a VM-side config edit*
+
+- **[DB-0808-11] `fire_function` runs no gate stack — `days`, `respect_quiet_hours` and the
+  activity gate are silently ignored for every function job.** All three checks live inside
+  `fire_session` (`core/scheduler.py`); `fire_function` has never had them. This did not
+  matter while every function job was silent (`ambient_refresh`, `daily_rule_audit`,
+  `daily_calendar_dedup_audit` all set `notification: false`), but `fire_function` gained a
+  notification path on 2026-08-08 and the gap is now reachable: **an `interval_minutes`
+  function job with `notification: push` would push at 3am and nothing would stop it.**
+  Worked around rather than fixed — `daily_travel_check` is pinned to a fixed daytime hour
+  (06:45) specifically because of this, with the reason recorded at the config site. Fix
+  properly by extracting the gate stack out of `fire_session` and calling it from both, then
+  the interval form becomes safe. Note the standing precedent for why this matters: a config
+  key shipped ahead of its gate once meant a check-in every thirty minutes on a live user.
+  *filed 2026-08-08 by dev session (Claude Code) · found while wiring the proactive travel
+  check · worked around, not fixed*
+
+- **[DB-0808-12] `get_pollen_forecast` is built and registered but has never made a live
+  call — no API key exists.** `tools/pollen.py` shipped 2026-08-08, is registered in
+  `register_tools()` and granted to `research_agent` in both routing files. Parsing is tested
+  against a synthetic payload (including the out-of-season case) and both error paths return
+  honest messages, but **the real Google Pollen API has not been called once.** Needs
+  `GOOGLE_POLLEN_API_KEY` in `.env` on the VM. It cannot reuse `GOOGLE_MAPS_API_KEY`: that key
+  was restricted to `routes.googleapis.com` at creation so a leak couldn't be spent on other
+  Maps SKUs (`tools/routing.py`), and it will 403 here. Either mint a second key restricted to
+  `pollen.googleapis.com` or widen the existing one — the former matches the existing posture.
+  Enables on the same `metatron-ai-499810` project, so no new vendor account. **Until a live
+  call is made, treat coverage and response shape as unverified** — Google's pollen coverage
+  is not global and the code's handling of an unsupported region is untested against reality.
+  *filed 2026-08-08 by dev session (Claude Code) · built the same session · blocked on a key*
+
+- **[DB-0808-13] `/archive`'s collision guard (`[DB-0805-05]`'s mitigation) could not be
+  written — `.claude/commands/archive.md` is `Edit`-locked while `/archive` is a loaded skill
+  in the session.** Attempted 2026-08-08 and blocked four times. Diagnosed by probe, not
+  guesswork: a new file created in `.claude/commands/` edits fine, then becomes un-editable
+  once it registers as a skill — same file, same tool, same one-character diff, opposite
+  results either side of registration. It is not a permission rule or a hook (there are no
+  `PreToolUse` hooks at any level and no `deny` entries), and not file permissions. **The work
+  itself is fully specified and agreed:** a new numbered step 4, "check and stop if dirty",
+  running `git status --short SESSION.md ROADMAP.md` before the two rewrite steps and stopping
+  to ask if either is dirty, with steps 4/5/6 renumbering to 5/6/7 and the "Steps 4 and 5 are
+  two different documents" warning updating to "Steps 5 and 6". Do it in a session that has
+  not loaded `/archive`, or via a non-`Edit` path. Sharpening the irony: `archive.md` had 41
+  insertions of *uncommitted* changes from another window sitting in the tree at the time —
+  the exact collision the guard is for.
+  *filed 2026-08-08 by dev session (Claude Code) · blocked by tooling, not by the work ·
+  supersedes nothing; `[DB-0805-05]` stays open until the guard actually lands*
+
 - **[DB-0808-06] Administrative-close mechanism for tier-2 clinical threads.** The clinical
   thread lifecycle shipped 2026-08-08 (`tools/context_tracker.py`) deliberately refuses to let
   a `CLINICAL_CONCERN` be `resolved` from a session — a reassuring reply from the user must not
@@ -209,7 +267,7 @@ Capabilities that do not exist yet.
   exist (there is no third-party contact channel anywhere in the codebase; `tools/wishes.py` is
   write-only until Phase 6). Not urgent. **Do not "fix" it by relaxing the refusal.**
 
-- **[DB-0808-07] `_thread_tier()` cannot tell a psychiatric medication from a cardiac one.**
+- **[DB-0808-14] `_thread_tier()` cannot tell a psychiatric medication from a cardiac one.**
   The 2026-08-08 tier split keys off the `CLINICAL_CONCERN` prefix, so a
   `MEDICATION_MISSED_CRITICAL` is tier 1 (user-resolvable) whether the missed dose is a statin
   or an anti-psychotic. The user's stated distinction was exactly this pair. Fix is a
@@ -227,8 +285,8 @@ Capabilities that do not exist yet.
   Related: revisit `small.en` at D1 (dedicated hardware changes the RTF arithmetic entirely),
   and consider a second STT worker if concurrent voice use ever becomes real.
 
-- **✅ [DB-0808-07] `filter_output()` regex/semantic upgrade — built 2026-08-08, ⚠ NOT YET
-  DEPLOYED.** The last open B2 sub-item (CORS, `write_agent_config`/`write_config`
+- **✅ [DB-0808-07] `filter_output()` regex/semantic upgrade — built and DEPLOYED 2026-08-08
+  (`7c70cd9`).** The last open B2 sub-item (CORS, `write_agent_config`/`write_config`
   confirm-gating, `run_session_anthropic` iteration limits and `run_model_conference` scoping
   were all verified already done in the same pass). Four tiers now, in `core/orchestrator.py`:
   (1) identifiers matched by a cached per-term regex that rejoins the term's tokens with a
@@ -254,10 +312,11 @@ Capabilities that do not exist yet.
   backstop, not the control.
   Verified: filter suite 61 → 86 checks (**the original 61 unchanged and all still passing**,
   plus 7 obfuscation + 9 paraphrase + 9 clean-corpus), disclosure **15/15**, deputy **2/2** —
-  `tests/security_redteam_2026-08-08.md`. **⚠ Deploy status: `core/orchestrator.py`, blocked at
-  time of writing on a parallel session's untracked `tools/pollen.py` in the same file. The VM
-  runs the old substring filter until it ships.** Known gap left open on purpose: `[DB-0808-05]`.
-  *built 2026-08-08 by dev session (backlog-attack cluster) · awaiting deploy*
+  `tests/security_redteam_2026-08-08.md`. **Deploy status: shipped in `7c70cd9` (2026-08-08),
+  committed together with the parallel session's `tools/pollen.py` — the function-level import
+  in `register_tools()` meant the two could not be split. Verified post-deploy with a live
+  `/session` call on the VM: coherent reply, no ImportError.** Known gap left open on purpose: `[DB-0808-05]`.
+  *built 2026-08-08 by dev session (backlog-attack cluster) · deployed `7c70cd9`*
 
 - **[DB-0808-05] `filter_output()` still has no view of the user's own turn — the
   Exchange 027 false positive survives the regex/semantic upgrade.** Not a gap in the
@@ -1252,7 +1311,7 @@ Stale docs, paths, and low-priority corrections.
   present on the SSH command (line 48).
   *Original entry recorded in SESSION.md 2026-08-02 · verified stale 2026-08-05 against
   .claude/commands/metatron-troubleshoot.md*
-- **[DB-0808-06] Per-specialist internal turn reduction — measure the specialist fan-out, then
+- **[DB-0808-09] Per-specialist internal turn reduction — measure the specialist fan-out, then
   cut it.** *(Rewritten 2026-08-08 from the measured data. This replaces the former
   "Roadmap D2 item 5 is mis-scoped" warning entry, which had done its job: the roadmap now
   carries a dated supersession note and no longer needs a backlog item to flag it.)*
