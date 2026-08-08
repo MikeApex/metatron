@@ -221,18 +221,6 @@ Capabilities that do not exist yet.
   the same session · extended by cluster B with two more (stale count baseline, ID collision) ·
   no code change proposed yet*
 
-- **[DB-0808-10] `daily_travel_check` needs adding to mike's VM `scheduler.yaml` — the code
-  is deployed but nothing fires it.** `tools/travel_watch.py` and the `fire_function`
-  notification path shipped 2026-08-08, and the job entry is in the git-tracked
-  `config/templates/scheduler.yaml` so **new** personas get it automatically. Mike's own
-  `config/personas/mike/scheduler.yaml` is VM-owned and gitignored, so `deploy.sh` cannot
-  carry the entry — it must be added on the VM by hand, **after** the code deploy, per the
-  standing "config and its guard deploy together, guard first" rule. Until then the feature
-  is live in code and inert in practice. Copy the `daily_travel_check` block from the
-  template verbatim; it is `time: "06:45"`, `notification: push`.
-  *filed 2026-08-08 by dev session (Claude Code) · built the same session · blocked only on
-  a VM-side config edit*
-
 - **[DB-0808-11] `fire_function` runs no gate stack — `days`, `respect_quiet_hours` and the
   activity gate are silently ignored for every function job.** All three checks live inside
   `fire_session` (`core/scheduler.py`); `fire_function` has never had them. This did not
@@ -247,20 +235,6 @@ Capabilities that do not exist yet.
   key shipped ahead of its gate once meant a check-in every thirty minutes on a live user.
   *filed 2026-08-08 by dev session (Claude Code) · found while wiring the proactive travel
   check · worked around, not fixed*
-
-- **[DB-0808-12] `get_pollen_forecast` is built and registered but has never made a live
-  call — no API key exists.** `tools/pollen.py` shipped 2026-08-08, is registered in
-  `register_tools()` and granted to `research_agent` in both routing files. Parsing is tested
-  against a synthetic payload (including the out-of-season case) and both error paths return
-  honest messages, but **the real Google Pollen API has not been called once.** Needs
-  `GOOGLE_POLLEN_API_KEY` in `.env` on the VM. It cannot reuse `GOOGLE_MAPS_API_KEY`: that key
-  was restricted to `routes.googleapis.com` at creation so a leak couldn't be spent on other
-  Maps SKUs (`tools/routing.py`), and it will 403 here. Either mint a second key restricted to
-  `pollen.googleapis.com` or widen the existing one — the former matches the existing posture.
-  Enables on the same `metatron-ai-499810` project, so no new vendor account. **Until a live
-  call is made, treat coverage and response shape as unverified** — Google's pollen coverage
-  is not global and the code's handling of an unsupported region is untested against reality.
-  *filed 2026-08-08 by dev session (Claude Code) · built the same session · blocked on a key*
 
 - **[DB-0808-13] `/archive`'s collision guard (`[DB-0805-05]`'s mitigation) could not be
   written — `.claude/commands/archive.md` is `Edit`-locked while `/archive` is a loaded skill
@@ -488,9 +462,8 @@ Capabilities that do not exist yet.
     coexist and neither substitutes for the other. Location comes from the same wttr.in
     geocode air quality already uses, so **this was never actually blocked on the missing
     GPS signal** that blocks Places — a named city is enough.
-    **Caveat: no live call has been made** — parsing is tested against a synthetic payload,
-    but there is no API key yet, so coverage and real response shape are unverified.
-    See `[DB-0808-12]`.
+    **Verified live 2026-08-08** against real London data (weed Moderate/in season, grass and
+    tree out) once `GOOGLE_POLLEN_API_KEY` was created and loaded — see `[DB-0808-12]` in Done.
 
   *filed 2026-08-07 by dev session (Claude Code) · noted in logistics.md,
   recreation_hobbies.md, research_agent.md · Pollen built 2026-08-08 · Places still
@@ -1293,6 +1266,60 @@ region" ran to end of file and **closing an item made the reported number go up.
 
 Every entry keeps its ID and carries the commit or `file:line` that closed it. Closed without
 one is not closed.
+
+---
+
+### Closed 2026-08-08 — maintenance jobs default for every persona; pollen key live
+
+Commit `8d798a8` (code) plus VM-side config edits, which `deploy.sh` cannot carry.
+
+- **[DB-0808-14] Template scheduler changes never reached existing personas — FIXED.** Found
+  while adding `daily_travel_check` by hand: `daily_calendar_dedup_audit` was *also* missing
+  from mike's `scheduler.yaml`. It shipped 2026-08-05 and had never run for him — live in the
+  repo, live in the template, inert in production, three days, nothing reporting it. Root
+  cause: `scripts/new_persona.sh` copies `config/templates/scheduler.yaml` **once, at persona
+  creation**, and no mechanism propagated a later change or reported the drift.
+
+  Fix, per Mike's steer that *"changes should happen across all users simultaneously"*: the
+  three silent, token-free maintenance jobs (`ambient_refresh`, `daily_rule_audit`,
+  `daily_calendar_dedup_audit`) now register from `_DEFAULT_JOBS` in
+  [core/scheduler.py](core/scheduler.py) for **every** persona. A new maintenance job is live
+  everywhere the moment it deploys. The dividing line is `CLAUDE.md`'s own — the scheduler owns
+  *mechanism*, never content — so a job with a prompt or a notification channel is a preference
+  and stays in per-persona config.
+
+  Persona config still wins outright, including `enabled: false`; merge is per-key rather than
+  deep, so a partial override cannot inherit a stray field and produce a job neither layer
+  describes. Removed the three from the template and from mike's live file — leaving a copy
+  would have pinned him to a stale version and re-created the same bug. The "no schedules"
+  warning now tests the persona's own config, since the merged set is never empty. Verified on
+  the VM: `3 default maintenance job(s) inherited`, all ten jobs registering.
+
+  Preference jobs can still drift, so `scripts/check_personas.py` now reports template jobs
+  missing from each persona's `scheduler.yaml` as a warning.
+  *found and fixed 2026-08-08 by dev session (Claude Code), from Mike's question "shouldn't the
+  dedup be active for every user?" · `8d798a8` · VM verified*
+
+- **[DB-0808-10] `daily_travel_check` added to mike's VM `scheduler.yaml` — CLOSED.** Added by
+  hand on the VM (gitignored, so `deploy.sh` cannot carry it), after the code deploy per the
+  "guard first" rule. `daily_calendar_dedup_audit` was added the same way, then both it and the
+  other two maintenance jobs were removed again once `_DEFAULT_JOBS` made them automatic —
+  `daily_travel_check` stays in the file because it notifies, which makes it a preference.
+  Live dry-run against the real calendar returned "no travel found in the next 24h" — correct,
+  and it proves the CalDAV read path works under his persona. Backups kept alongside the file.
+  *closed 2026-08-08 · VM config edit, no commit*
+
+- **[DB-0808-12] `get_pollen_forecast` has now made a live call — CLOSED.** Enabled
+  `pollen.googleapis.com` on `metatron-ai-499810` and created key `pollen-forecast`
+  (uid `d8cb56e5…`), restricted to `pollen.googleapis.com` at creation — matching the posture
+  of the existing routes key, so a leak can't be spent on other Maps SKUs. Loaded into the VM's
+  `.env` as `GOOGLE_POLLEN_API_KEY` (piped over stdin, never echoed; `.env` re-chmod 600).
+  First live call returned real London data: weed Moderate and in season, grass and tree out of
+  season, with health recommendations. **Cost: 5,000 free calls/month, then $10/1,000**
+  (SKU `6CDF-1930-8F86`, Pro tier) — checked against Google's current pricing list, not
+  memory, after two other pricing pages turned out not to carry per-SKU figures. This tool
+  makes a handful of calls a day, so it sits inside the free allowance.
+  *closed 2026-08-08 · key creation + VM `.env` edit, no commit*
 
 ---
 
