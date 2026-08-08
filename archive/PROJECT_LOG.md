@@ -196,6 +196,141 @@ Four related complaints, one root cause and four fixes. **The cause was not an a
 
 ## Dated history
 
+### 2026-08-08 (pollen tool, proactive travel trigger, scheduler defaults) — `8d798a8`, `be1d79e`, plus VM-side config; code also swept into `7c70cd9`
+
+Session writeup: [archive/sessions/2026-08-08 — Pollen Tool, Travel Trigger, Scheduler Defaults.md](sessions/2026-08-08%20—%20Pollen%20Tool,%20Travel%20Trigger,%20Scheduler%20Defaults.md).
+
+Four pre-verified items. Three shipped; one is blocked by tooling, not by the work.
+
+**1. Coordinator turn-reduction, rescoped from measurement.** The static plan's D2 item 5
+(line 519) assumed a 6–7 turn Coordinator. Measured 2026-07-29 and re-measured 2026-08-02: **the
+Coordinator runs 1 turn**; the cost is per-specialist internal turns (`logistics` at 8). The
+plan's diagnosis, its prescribed `coordinator.md` fix, and its ≤3-turn target are all invalidated
+— the target is *already met*, so the item would have read as complete on measurement while the
+real cost sat untouched.
+
+- **Rejected: editing item 5 in place.** The plan is a dated snapshot; rewriting its body erases
+  what was believed at the time. Added a dated `SUPERSEDED 2026-08-08` note beneath it instead,
+  mirroring the convention already at line 38 of that same file rather than inventing a form.
+- **Rejected: naming a fix in the rewritten backlog item.** Only one specialist has been
+  measured. `[DB-0808-09]` now leads with a measurement sweep across five specialists, and
+  deliberately sets **no target number** — pinning a goal to an unmeasured baseline is exactly
+  how the ≤3-turn error happened the first time.
+- The instruction-slimming half of the item survives untouched: it rests on token size, not turn
+  count.
+
+**2. Google Pollen API — built, and the "blocker" turned out not to exist.** `tools/pollen.py`,
+registered and granted to `research_agent` in both routing files. `coordinator.md` already
+carried the routing ("sore throat" → Physical Health → Research → Logistics); only the data
+source was missing.
+
+- **Correction to a belief carried since 2026-08-07:** `[DB-0807-02]` and `SESSION.md` both had
+  Pollen blocked on the missing GPS signal alongside Places. **It never was.** Pollen needs a
+  lat/lon, which the wttr.in geocode in `get_environmental_snapshot` already produces from a city
+  name. Places genuinely needs "near the user right now"; Pollen does not. The two were filed
+  together and inherited each other's blocker without anyone checking.
+- Kept deliberately distinct from the existing Open-Meteo air-quality call: different exposure
+  (allergenic vs. particulate), different time shape (forecast vs. instantaneous). Documented in
+  the module docstring so a future reader doesn't "consolidate" them.
+- Later the same session: API enabled, key `pollen-forecast` created **restricted to
+  `pollen.googleapis.com` at creation** (matching the routes key's posture — a leak can't be
+  spent on other Maps SKUs), loaded into the VM `.env` over stdin so the key never entered a
+  transcript or the process table. First live call returned real London data. Cost verified
+  against Google's current pricing list — 5,000 free calls/month, then $10/1,000 — **not from
+  memory**, after two other pricing pages proved not to carry per-SKU figures.
+
+**3. Proactive travel trigger — the missing caller for two working tools.** `get_tfl_status` and
+`get_flight_status` both worked and neither was ever called automatically. `tools/travel_watch.py`
+reads the next 24h of calendar, recognises travel, and dispatches the right check.
+
+- **Detection requires two independent signals.** A bare flight-number regex matches "Q4 2026",
+  "Room B12", "H1 review"; `get_flight_status` runs on 600 units/month at 1 req/s. So a number is
+  believed only when the event *also* carries travel context. The asymmetry is deliberate and
+  recorded: a missed check costs a surprise at the airport, a false one costs quota and teaches
+  the user to ignore the alerts — the second is what makes the feature worthless.
+- **Silence on a clean result**, and each finding reported once, keyed on event *and* status, so
+  a worsening re-alerts but a standing delay doesn't nag.
+- **`fire_function` gained a notification path** — a function job returning `{"notify": True…}`
+  dispatches; a string-returning job behaves exactly as before. Without it, anything user-facing
+  had to be an agent session and pay model tokens. **Rejected: making the travel check an agent
+  session** for that reason.
+- **Gap found, worked around not fixed (`[DB-0808-11]`):** `fire_function` has never run the gate
+  stack — `days`, `respect_quiet_hours`, the activity gate all live in `fire_session`. Harmless
+  while every function job was silent; now reachable, since an `interval_minutes` job with
+  `notification: push` would push at 3am. Pinned the job to a fixed 06:45 and recorded why at the
+  config site.
+
+**4. `/archive` collision guard — NOT DONE, blocked by tooling.** `.claude/commands/archive.md`
+cannot be edited while `/archive` is a loaded skill in the session. Four attempts failed.
+
+- **I was wrong twice before diagnosing it.** First I assumed the rejection was a wording or
+  structural objection and asked Mike to choose a shape; he chose the one I'd already tried.
+  Then I concluded the approval prompt was being mis-dismissed — stated after checking that no
+  `PreToolUse` hook and no `deny` rule existed. Both wrong. **The block is real and mechanical**,
+  proven by probe: a new file in `.claude/commands/` edits fine, then becomes un-editable once it
+  registers as a skill — same file, same tool, same one-character diff, opposite results either
+  side of registration. Lesson: a rejection that looks like a user decision can be a harness
+  constraint, and the way to tell is a controlled probe, not a second guess at intent.
+- Filed as `[DB-0808-13]` with the full agreed spec, so a session that hasn't loaded `/archive`
+  can write it in minutes. `[DB-0805-05]` stays open until the guard lands.
+
+**5. Scheduler defaults — found by Mike's question, not by the plan.** Adding
+`daily_travel_check` to the VM by hand surfaced that `daily_calendar_dedup_audit` was *also*
+missing: shipped 2026-08-05, never run for mike, **inert in production for three days** while
+being live in the repo and the template. Mike asked "shouldn't the dedup be active for every
+user?" — root cause: `scripts/new_persona.sh` copies the template **once, at persona creation**,
+and nothing propagated later changes or reported the drift.
+
+- **Decision (Mike's steer — "changes should happen across all users simultaneously"):
+  code-registered defaults.** The three silent, token-free maintenance jobs now register from
+  `_DEFAULT_JOBS` in `core/scheduler.py` for every persona.
+- **Rejected: a drift-check script alone.** It still leaves a human to notice and apply the fix
+  per persona — which is precisely the step that failed here. Kept as a *secondary* measure for
+  the preference jobs, which genuinely can't be defaulted.
+- **The dividing line is `CLAUDE.md`'s own** — the scheduler owns mechanism, never content. A job
+  with a prompt or a notification channel is a preference and stays per-persona. That is why
+  `daily_travel_check` stayed in mike's file: it pushes.
+- **Removed the three from the template *and* from mike's live file.** Not tidiness: leaving his
+  copies would pin him to stale values and re-create the identical bug on the next change —
+  `CLAUDE.md`'s "promotion deletes the original," applied after confirming the replacement was
+  live on the VM. Verified after removal: `3 default maintenance job(s) inherited`, all ten jobs
+  registering.
+- First dedup run found **7 real duplicate pairs** on mike's calendar — the sweep had been
+  earning nothing for three days.
+
+**Two mistakes worth recording.**
+
+1. **I fired live agent sessions by accident.** A verification script called `job_func()` on all
+   nine registered jobs to check one of them, having patched only `fire_function` — so
+   `companion_checkin`, `evening_close` and `weekly_pattern_miner` ran for real against
+   `sarah_chen` until a 2-minute timeout killed it. Roughly $0.10–0.50; no tracked files changed.
+   Redone with **both** firing paths stubbed. The general form: stubbing one dispatch path is not
+   isolation when the loop reaches several.
+2. **I reported a health check as failed when it was a 401.** `/health` sits behind the B2 shared
+   secret; my curl carried no token. The server was fine.
+
+**Concurrency — `[DB-0805-05]` demonstrated live, three times.** Several windows worked this repo
+all session. (a) Commit `7c70cd9` from another window **swept up this session's entire code
+diff**, so items 2–4 are in `origin/main` under a message describing unrelated work — nothing
+lost, every file verified in `HEAD`. (b) `[DB-0808-06]` was claimed by another window between my
+read and my write; renumbered to `09`. (c) `DEV_BACKLOG.md` was committed by another window in
+the gap between my `git add` and `git commit`, making that commit a no-op. All three are the
+exact failure the blocked guard exists to prevent — on the very file the guard was going into,
+which had 41 lines of another window's uncommitted changes in the tree at the time.
+
+**Outgoing handoff paragraph from `SESSION.md`** (second `/backlog-attack` cluster, memory race /
+`MUST_SURFACE` lifecycle / Whisper evaluation, deployed `7c70cd9` / `08766bb` / `2195fa9`):
+`search_memory`'s corruption was a cross-process race, not the "indexer reads the wrong source"
+hypothesis `[DB-0803-03]` carried for five days — two processes doing an unlocked
+read-modify-write of `metadata.json`; now `filelock` + atomic writes, corrupt VM file self-heals.
+`MUST_SURFACE` gained a lifecycle (`clinical_threads`, `active`/`watch`/`resolved`) — persistence
+was never the bug, prominence was; tier-2 `CLINICAL_CONCERN` can never be resolved from a
+session, enforced in Python. `small.en` rejected on the VM at RTF 2.23; VAD adopted. Two clusters
+ran in parallel windows, one joint commit, and the reported backlog count was a stale snapshot
+(real move 53 → 48).
+
+---
+
 ### 2026-08-08 (memory cross-process race, MUST_SURFACE lifecycle, Whisper STT evaluation) — `7c70cd9` / `08766bb` / `2195fa9`, deployed and verified live
 
 The second `/backlog-attack` cluster, run in a parallel window to the output-filter cluster

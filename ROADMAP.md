@@ -399,6 +399,17 @@ Prompt structure optimization (informed by A4 safety hard-fail findings):
 - **Pattern Miner daily cadence as context-reduction lever:** Running Pattern Miner daily (vs. weekly) reduces the raw log load Coordinator must carry from ~1,500–3,000 tokens to ~300–600 tokens (one day's logs), replaced by a compressed insight report (~500–800 tokens). Net context reduction per session: ~1,000–2,500 tokens. Better signal quality too — synthesized Pattern Miner output vs. raw noisy log data. Factor into scheduler cadence planning at D1/E3.
 - **Coordinator instruction slimming — turn-count reduction (in progress pre-Alpha 2026-06-19):** The Coordinator exhibits a 6-turn / 88K cumulative token loop on complex sessions. The instruction file (~3,490 tokens) is within the size target; the problem is behavioral — the coordinator makes multiple sequential specialist calls across turns rather than fanning out in parallel. Fix: add explicit instruction to `coordinator.md`: "Dispatch all relevant specialists in a single parallel `run_subagent` batch in one turn. Do not make multiple sequential specialist calls across turns — fan out once, collect all results, then package." Consider moving the specialist directory and cross-domain routing examples to `config/modules/coordinator_routing.yaml` (loaded via `read_agent_config`), reducing the instruction file to routing rules only. Target: ≤3 turns, ≤40K cumulative tokens at coordinator done. Test: camping/guitar prompts complete within budget. *(Separate pre-Alpha chat; see D2 output compression for full context-reduction strategy.)*
 
+  > **⚠ SUPERSEDED 2026-08-08 — the premise above is measured wrong.** The Coordinator does
+  > **not** run 6–7 turns. It runs **1** — measured 2026-07-29, re-measured 2026-08-02. The
+  > multi-turn cost is inside the **specialists** (`logistics` measured at 8). So the diagnosis
+  > ("sequential rather than parallel dispatch") describes behaviour the Coordinator isn't
+  > exhibiting, the prescribed `coordinator.md` fix would change nothing, and the ≤3-turn target
+  > is already met — the item would read as complete on measurement while the real cost sat
+  > untouched. **Rescoped as `[DB-0808-09]` in `DEV_BACKLOG.md`** (per-specialist turn reduction,
+  > starting from a measurement sweep — only one specialist has been measured so far). The
+  > instruction-slimming half above is unaffected: it rests on token size, not turn count.
+  > Dated reasoning: `archive/PROJECT_LOG.md` 2026-08-08.
+
 Unlocks: E2 Wishes full build (encryption required); D1 local model upgrade decision data.
 
 ---

@@ -1,19 +1,19 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-08 (second `/backlog-attack` cluster: memory race, `MUST_SURFACE` lifecycle,
-Whisper evaluation) — **deployed `7c70cd9` / `08766bb` / `2195fa9`, post-deploy verified with a
-live `/session` call**. `search_memory`'s corruption was a **cross-process race**, not the
-"indexer reads the wrong source" hypothesis `[DB-0803-03]` carried for five days — two processes
-doing an unlocked read-modify-write of `metadata.json`; now `filelock` + atomic writes, and the
-corrupt VM file self-heals. `MUST_SURFACE` now has a lifecycle (`clinical_threads`,
-`active`/`watch`/`resolved`): **persistence was never the bug, prominence was** — tier-2
-`CLINICAL_CONCERN` can never be resolved from a session, enforced in Python. `small.en`
-**rejected** on the VM at RTF 2.23 (a queue on the one-worker STT pool, and no more accurate);
-VAD adopted. **Two clusters ran in parallel windows again** — one joint commit, and the reported
-backlog count was a stale snapshot (real move: 53 → 48). Carried forward: `[DB-0804-01]`
-scheduled-fire check due 2026-08-11; A7 blocked on checks 10/12 and B1b; `[DB-0806-03]`/`-04`
-open, not decided; `[DB-0808-04]` GPS still blocks Places/Pollen; `[DB-0808-05]` open by choice.
-Full detail: [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).*
+*Updated: 2026-08-08 (pollen tool, proactive travel trigger, scheduler defaults) — **deployed
+`8d798a8` / `be1d79e`; items 2–4's code was swept into another window's `7c70cd9` before it could
+be committed here**. `get_pollen_forecast` built and **verified live** — and its GPS blocker never
+applied: a city name geocodes through the path air quality already uses, so `[DB-0807-02]` had
+Pollen inheriting Places' blocker for nothing. The travel trigger is wired (`tools/travel_watch.py`
++ `daily_travel_check`), giving `get_tfl_status`/`get_flight_status` the automatic caller they
+never had. **Mike's question "shouldn't the dedup be active for every user?" found the session's
+biggest thing:** the scheduler template is copied once at persona creation and never re-synced, so
+`daily_calendar_dedup_audit` had been inert in production for three days. Maintenance jobs now
+register from `_DEFAULT_JOBS` for every persona; its first real run found 7 duplicate pairs.
+**The `/archive` guard is still not written** — `archive.md` is `Edit`-locked while `/archive` is
+a loaded skill (`[DB-0808-13]`), and `[DB-0805-05]` fired three times live this session. Carried
+forward: `[DB-0804-01]` due 2026-08-11; A7 blocked on checks 10/12 and B1b; `[DB-0806-03]`/`-04`
+open. Full detail: [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -58,13 +58,11 @@ subagent dispatch; threat model and security backlog (`archive/security/`); **se
 [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md)). Three checks on hold, deliberately
 deprioritised behind latency work:
 
-- **B1** — red team + automated security tests. **B1a done and passed 2026-08-04**; re-run
-  2026-08-08 after the filter upgrade — **102 pass, 0 error**, the original 61 filter checks
-  unchanged (`tests/security_redteam_2026-08-08.md`). **B1b: the email row is now covered** by
-  the new end-to-end `injection` suite, 3/3 PASS against `danny_park`
-  (`…_injection_danny.md`). **B1b is not closed** — calendar, web page and CardDAV rows are
-  untouched, still gated on Track E. *That suite needs an ordinary-life persona: on `sarah_chen`
-  an active clinical thread correctly outranks "read my email" and the payload is never reached.*
+- **B1** — red team + automated security tests. **B1a passed**; re-run 2026-08-08 after the
+  filter upgrade — **102 pass, 0 error** (`tests/security_redteam_2026-08-08.md`). **B1b: the
+  email row is covered** (`injection` suite, 3/3 vs `danny_park`) but **not closed** — calendar,
+  web page and CardDAV rows untouched, still gated on Track E. That suite needs an
+  ordinary-life persona; reasoning in `PROJECT_LOG.md`.
 - **Check 10** — agent behavioural audits (12 specialists; Coordinator/Synthesizer via pipeline probes)
 - **Check 12** — constitution alignment review
 
@@ -80,9 +78,10 @@ Two loose ends inside the gate, both discrete checklist items so they don't get 
 `core/orchestrator.py` and `core/server.py`. **Full spec, including the regression gate, is in
 [ROADMAP.md](ROADMAP.md) § A8** — not restated here, it was a duplicate copy.
 
-**Open from the (complete) latency work:** Coordinator slimming — **re-scope against measured
-data first.** The Coordinator runs 1 turn, not the 7 the roadmap assumes (`logistics` measured
-at 8). See `DEV_BACKLOG.md`.
+**Open from the (complete) latency work:** ~~Coordinator slimming~~ — **rescoped 2026-08-08 and
+now `[DB-0808-09]`.** The Coordinator runs 1 turn, not the 6–7 the plan assumed; the cost is
+per-specialist internal turns (`logistics` at 8). The static plan carries a dated supersession
+note; the live item leads with a measurement sweep and sets no target until one exists.
 
 **Track B2 — all named sub-items now built.** PoLP allowlist enforced, both confirm-gates,
 CORS, `run_session_anthropic`'s iteration limit, `run_model_conference` scoping, and the output
@@ -94,13 +93,18 @@ filter upgrade (the last one, `7c70cd9`). Wave 1/Wave 2 split and any residual g
 fire completing end-to-end still hasn't been directly observed. One-week count due
 2026-08-11 — do not check before then.
 
+**Scheduler jobs now split two ways (2026-08-08).** Silent maintenance jobs register from
+`_DEFAULT_JOBS` in `core/scheduler.py` for **every** persona — a new one is live everywhere on
+deploy. Jobs with a prompt or a notification are preferences and stay in per-persona
+`scheduler.yaml`; `check_personas.py` warns when those drift from the template. **Do not re-add a
+maintenance job to a persona file** — that pins it to a stale copy, which is the bug this fixed.
+
 **The backlog is the bin for everything outside this roadmap.** Work it with **`/backlog`**; use
-the new **`/backlog-attack`** to get a scored, clustered attack plan for the top items — run once
-now, 2026-08-08; its first two clusters ran in parallel windows. **48 open, 7 untriaged, 0 new.**
+**`/backlog-attack`** for a scored, clustered attack plan. **48 open, 6 untriaged, 0 new.**
 The one rule: *no item is acted on, or re-filed, on the strength of its own description* — 08-08
-proved both halves of it. One cluster found an item already half-fixed two days earlier; the
-other found `[DB-0803-03]`'s *stated root cause* wrong (a cross-process race, not the indexer
-reading the wrong file) after five days as "hypothesis now confirmed".
+proved it three times over. Two clusters found stale premises (an item half-fixed two days
+earlier; `[DB-0803-03]`'s stated root cause wrong after five days as "confirmed"), and this
+session found `[DB-0807-02]` carrying a blocker that had never applied to half of it.
 
 ---
 
@@ -111,6 +115,7 @@ Newest first. Full detail for every entry — and everything older — is in
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-08 | **Pollen tool, proactive travel trigger, scheduler defaults** — `get_pollen_forecast` built and verified live (its GPS blocker never applied); `tools/travel_watch.py` gives the TfL/flight tools the automatic caller they lacked; maintenance jobs now register for every persona from code after `daily_calendar_dedup_audit` was found inert for 3 days. `/archive` guard blocked — `archive.md` is `Edit`-locked as a loaded skill | `8d798a8`, `be1d79e` + VM config; code swept into `7c70cd9` |
 | 08-08 | **Memory cross-process race, `MUST_SURFACE` lifecycle, Whisper STT evaluation** — `search_memory` corruption root-caused (a race, not the filed hypothesis) and fixed with `filelock` + atomic writes, self-healing; `clinical_threads` gives clinical flags a `watch` state so they persist without dominating; `small.en` rejected on the VM at RTF 2.23, VAD adopted. A4 gate re-run 6/6 | `7c70cd9`, `08766bb`, `2195fa9` — live-verified |
 | 08-08 | **Output filter regex/semantic upgrade, `[CONTEXT]` block repair, end-to-end injection probe** — B2's last sub-item built; malformed context blocks now repaired/salvaged/recorded instead of dropped; new `injection` suite in `run_b1_redteam.py` (3/3 PASS, email row of B1b). Gate: 102 pass / 0 error + 18/18 offline | `7c70cd9` — joint commit with the parallel session (one file, two authors), post-deploy verified live |
 | 08-08 | **New `/backlog-attack` command** — scores `DEV_BACKLOG.md`'s open items and clusters the top ones into 3 non-overlapping single-session prompts; kept separate from `/backlog`; not yet run | docs-only, no deploy |
@@ -118,7 +123,6 @@ Newest first. Full detail for every entry — and everything older — is in
 | 08-06 | **Billing investigation + region latency analysis** — Compute Engine "no billing since Aug 4" traced to GCE report lag (VM confirmed running, no cap fired); europe-west1 vs us-central1 priced live (+10% compute, ~$2.60/mo, ~200–280ms/turn saved); investigation only, [DB-0806-03]/[DB-0806-04] filed | investigation only, no deploy |
 | 08-05 | **Backlog quick-bucket sweep, first SMTP send, APK rebuild, dictated-email fix** — 44→32 open; first real email ever sent; APK content-verified; check-ins-fire-through-silence and browser-live-refresh both resolved by explicit decision/verification | `2c097b3`, `a08e38a` |
 | 08-05 | **ROADMAP.md gap closed, `/archive` gets a sixth step** — B1a's completion had never reached `ROADMAP.md`; added a ✅ status note there and a new mandatory roadmap-check step to `.claude/commands/archive.md` | docs-only, no deploy |
-| 08-04 | **B1a red team executed** — new `tests/run_b1_redteam.py`; 9 disclosure categories (15 prompts incl. variants) + output-filter suite (61 checks) + confused-deputy probe, 75/75 PASS; found sticky MUST_SURFACE context contamination on `sarah_chen` (**fixed 2026-08-08**) | tests-only, no deploy |
 
 ---
 

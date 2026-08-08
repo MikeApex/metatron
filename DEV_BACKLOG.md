@@ -217,9 +217,28 @@ Capabilities that do not exist yet.
   independently minted **`[DB-0808-07]`**; the collision was found by grep at close and cluster
   B's was renumbered `[DB-0808-14]`. A cheap mitigation for both: derive the next ID from a grep
   of the file at write time, and quote counts as a before/after diff rather than a bare number.
+  **Three more from the pollen/travel session, same day — including the first that risked actual
+  loss:** (6) **another window's commit swept up this session's entire uncommitted code diff.**
+  `7c70cd9` captured `tools/pollen.py`, `tools/travel_watch.py`, `core/scheduler.py`,
+  `core/orchestrator.py`, both routing files and the static-plan edit — none of them its own
+  work — so that code now sits in `origin/main` under a message describing unrelated changes.
+  Nothing was lost (every file verified against `HEAD` afterwards) but the commit history now
+  misattributes a session's work, and a `git checkout` or `git stash` in that window instead of a
+  commit would have destroyed it outright. This is a strictly worse class than incidents 1–5: it
+  is not rework, it is another session's uncommitted work being taken. (7) **`DEV_BACKLOG.md` was
+  committed by the other window in the gap between this one's `git add` and `git commit`** — the
+  commit became a silent no-op ("no changes added to commit") while appearing to run normally;
+  the changes were still in the worktree and had to be re-committed. **A no-op commit is the
+  quiet failure here** — nothing errors, and a session that didn't check `git log` afterwards
+  would believe it had committed. (8) `[DB-0808-06]` **and** `[DB-0808-14]` were both claimed by
+  other windows between draft and write in a single session, i.e. incident (2) twice more,
+  confirming ID collision is routine rather than unlucky. Note the additional detail that scoping
+  a commit with `git add <specific files>` does **not** protect against (6) — the sweeping window
+  is the one committing, and this window's staging discipline is irrelevant to it.
   *filed 2026-08-08 by dev session (backlog-attack cluster A), from three observed incidents in
   the same session · extended by cluster B with two more (stale count baseline, ID collision) ·
-  no code change proposed yet*
+  extended again by the pollen/travel session with three more, one involving another window
+  committing this session's uncommitted code · no code change proposed yet*
 
 - **[DB-0808-11] `fire_function` runs no gate stack — `days`, `respect_quiet_hours` and the
   activity gate are silently ignored for every function job.** All three checks live inside
@@ -1273,7 +1292,7 @@ one is not closed.
 
 Commit `8d798a8` (code) plus VM-side config edits, which `deploy.sh` cannot carry.
 
-- **[DB-0808-14] Template scheduler changes never reached existing personas — FIXED.** Found
+- **[DB-0808-17] Template scheduler changes never reached existing personas — FIXED.** Found
   while adding `daily_travel_check` by hand: `daily_calendar_dedup_audit` was *also* missing
   from mike's `scheduler.yaml`. It shipped 2026-08-05 and had never run for him — live in the
   repo, live in the template, inert in production, three days, nothing reporting it. Root
