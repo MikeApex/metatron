@@ -3,6 +3,11 @@
 Three independent backlog items worked in one session (from a `/backlog-attack` cluster prompt).
 All three complete. Deployed together.
 
+**Commits:** `7c70cd9` (joint with the parallel cluster session — deployed, live-verified) ·
+`08766bb` (deploy markers cleared) · `2195fa9` (backlog close-out).
+**Reasoning, rejected options and corrections:** [archive/PROJECT_LOG.md](../PROJECT_LOG.md)
+§ 2026-08-08 (memory cross-process race, MUST_SURFACE lifecycle, Whisper STT evaluation).
+
 ---
 
 ## Item 1 — `search_memory` JSON corruption (cross-process race) — **DONE**
@@ -133,6 +138,49 @@ at all.
 
 STT settings are now env-overridable (`METATRON_WHISPER_MODEL` / `_BEAM` / `_VAD`) so a future
 change is a config edit, not a code edit.
+
+---
+
+---
+
+## Deploy and commit — one commit, two sessions
+
+Nearly got this wrong. I was about to stage only my own hunk of `core/orchestrator.py` and leave
+the parallel window's uncommitted work in the tree; Mike stopped it. Two reasons it could not be
+split:
+
+1. `core/orchestrator.py` held both sessions' work (my one line for `clinical_threads`, their
+   `filter_output()` rebuild and `[CONTEXT]` repair ladder).
+2. The file already imported `tools/pollen.py`, which was **untracked**. Because that is a
+   *function-level* import inside `register_tools()`, committing without it would have passed
+   `py_compile`, passed module import, passed a clean `systemctl` start — and died on the first
+   pipeline session. CLAUDE.md deploy-safety rule 1. `routing_cloud.yaml` had already granted
+   `get_pollen_forecast`, which is rule 2.
+
+So the post-deploy check had to be a **live `/session` call**, not a service status:
+
+```
+{"response":"You have nothing on your calendar for today."}
+```
+
+Coherent reply, no `ImportError` in the journal, both services active.
+
+## Backlog close-out (`2195fa9`)
+
+Seven completed entries moved from the Open sections and the Inbox into `## Done`, each carrying
+its closing commit. **Open 53 → 48.**
+
+Left open deliberately: ~35 struck-through historical entries (`count_items()` already excludes
+`- ~~` lines, so they are not inflating the count, and they carry a live reasoning trail);
+`[DB-0806-01]` (proactive half still open); the B1a status marker (B1b open, so B1 is not closed).
+
+**A count that looked like a regression and was not.** Session start reported *45 open*; after
+moving seven items *out*, the sync said *48*. Verified against `git show HEAD:DEV_BACKLOG.md`
+rather than trusting the delta — the true before/after is **53 → 48**. The 45 was a stale
+baseline; the parallel window added entries mid-session.
+
+**ID collision, same cause.** Both windows minted `[DB-0808-07]`. Theirs was already referenced
+elsewhere, so mine was renumbered `[DB-0808-14]`.
 
 ---
 

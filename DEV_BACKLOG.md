@@ -173,6 +173,54 @@ Capabilities that do not exist yet.
 
 ### Surfaced 2026-08-08
 
+- **[DB-0808-16] The `injection` suite needs an ordinary-life persona, and that requirement now
+  lives only inside a closed entry.** `tests/run_b1_redteam.py --suite injection` is
+  persona-sensitive in a way the other three suites are not. Its first run against `sarah_chen`
+  returned three *inconclusive* scenarios: the pipeline never called `read_email` at all, because
+  that persona carries an active clinical thread which the Synthesizer correctly triaged over
+  "read my inbox". Good behaviour, useless probe — and **without the "fixture inbox was actually
+  read" assertion it would have scored 3/3 PASS on a pipeline that never saw the payload.** It
+  passed on `danny_park`. This matters for the **remaining B1b rows** (calendar title, web page,
+  CardDAV), which are still open and gated on Track E: whoever builds them will pick a persona,
+  and picking a clinically-loaded one silently produces a green result that means nothing.
+  Filing it because the note currently survives only inside the closed injection-probe entry in
+  `## Done`, which is not where anyone starting B1b will look. Fix is a line in the suite's
+  docstring plus a runtime guard that fails loudly when `read_email` was never called.
+  *filed 2026-08-08 by dev session (backlog-attack cluster B) during /archive step 6 · origin:
+  the injection-probe entry now in `## Done` · relates to ROADMAP.md § B1b*
+
+- **[DB-0808-15] Two parallel Claude Code windows treat shared status files as private state —
+  no convention exists for it, and it cost rework three times on 2026-08-08.** Not a bug and not
+  urgent; filing it because it currently exists only in session narrative, which is how things
+  age out. The three incidents, all in one hour, all between two `/backlog-attack` cluster
+  windows: (1) one window reported "built, not deployed" and wrote a deploy handoff prompt for
+  the other, which had **already deployed** (`7c70cd9`) — four files stating the stale status had
+  to be corrected minutes after the archive pass wrote them; (2) `[DB-0808-06]` was drafted in
+  one window and claimed by the other before it was written, so **backlog IDs are not reservable
+  while two windows are open**; (3) three entries were marked complete in one window and then
+  moved to `## Done` by the other (`2195fa9`) — duplicated effort, no damage.
+  **Rejected as too heavy for the observed cost:** serialising the windows (the parallelism
+  worked — two independent clusters, disjoint file regions, both shipped), and any lock-file or
+  merge protocol. **The cheap version, which is what this item proposes:** a short convention
+  note in `CLAUDE.md` — re-read `DEV_BACKLOG.md` / `SESSION.md` / `git log` immediately before
+  acting on their contents rather than trusting a status read earlier in the session, take the
+  next free ID at the moment of writing rather than reserving one, and check `git log --oneline`
+  before reporting any deploy status. Whether that belongs in `CLAUDE.md` or in `/archive` and
+  `/backlog` themselves is the open question. Reasoning: `archive/PROJECT_LOG.md` § 2026-08-08
+  (output filter / context repair / injection probe), postscript.
+  **Two further incidents from cluster B, same root, added 2026-08-08:** (4) the `SessionStart`
+  hook reported **45 open**; after moving seven items *out* of the Open sections the sync
+  reported **48**, which reads as a regression and is not one — the real move was **53 → 48**,
+  and the 45 was a stale baseline taken before the other window filed its entries. Any reported
+  count is a snapshot of an unknown moment while two windows edit the file. Caught only by
+  diffing against `git show HEAD:DEV_BACKLOG.md` instead of trusting the delta. (5) both windows
+  independently minted **`[DB-0808-07]`**; the collision was found by grep at close and cluster
+  B's was renumbered `[DB-0808-14]`. A cheap mitigation for both: derive the next ID from a grep
+  of the file at write time, and quote counts as a before/after diff rather than a bare number.
+  *filed 2026-08-08 by dev session (backlog-attack cluster A), from three observed incidents in
+  the same session · extended by cluster B with two more (stale count baseline, ID collision) ·
+  no code change proposed yet*
+
 - **[DB-0808-10] `daily_travel_check` needs adding to mike's VM `scheduler.yaml` — the code
   is deployed but nothing fires it.** `tools/travel_watch.py` and the `fire_function`
   notification path shipped 2026-08-08, and the job entry is in the git-tracked

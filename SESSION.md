@@ -1,17 +1,19 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-08 (new `/backlog-attack` command) — docs-only, no deploy. Built
-[.claude/commands/backlog-attack.md](.claude/commands/backlog-attack.md): scores `DEV_BACKLOG.md`'s
-`## Open` items (importance × inverted difficulty), verifies only the shortlist against current
-code, then clusters the top items into 3 independent single-session prompts with no
-file/directory/deploy-target overlap. Kept separate from `/backlog` — that command works the bin
-(sync/triage/verify/ID-provenance); this one scores and clusters it — after Mike reviewed
-`backlog.md`'s current content. **Not yet run** — no scored list or cluster prompts exist yet for
-the current backlog. Full detail: [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md). Carried
-forward from 08-08 travel/CRM session: `[DB-0804-01]` scheduled-fire check still pending; A7
-blocked on checks 10/12, B1b; `[DB-0806-03]`/`[DB-0806-04]` (billing export, region migration)
-still open, not decided; Places/Pollen APIs researched not built, blocked on GPS/location
-(`[DB-0808-04]`).*
+*Updated: 2026-08-08 (second `/backlog-attack` cluster: memory race, `MUST_SURFACE` lifecycle,
+Whisper evaluation) — **deployed `7c70cd9` / `08766bb` / `2195fa9`, post-deploy verified with a
+live `/session` call**. `search_memory`'s corruption was a **cross-process race**, not the
+"indexer reads the wrong source" hypothesis `[DB-0803-03]` carried for five days — two processes
+doing an unlocked read-modify-write of `metadata.json`; now `filelock` + atomic writes, and the
+corrupt VM file self-heals. `MUST_SURFACE` now has a lifecycle (`clinical_threads`,
+`active`/`watch`/`resolved`): **persistence was never the bug, prominence was** — tier-2
+`CLINICAL_CONCERN` can never be resolved from a session, enforced in Python. `small.en`
+**rejected** on the VM at RTF 2.23 (a queue on the one-worker STT pool, and no more accurate);
+VAD adopted. **Two clusters ran in parallel windows again** — one joint commit, and the reported
+backlog count was a stale snapshot (real move: 53 → 48). Carried forward: `[DB-0804-01]`
+scheduled-fire check due 2026-08-11; A7 blocked on checks 10/12 and B1b; `[DB-0806-03]`/`-04`
+open, not decided; `[DB-0808-04]` GPS still blocks Places/Pollen; `[DB-0808-05]` open by choice.
+Full detail: [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -56,17 +58,19 @@ subagent dispatch; threat model and security backlog (`archive/security/`); **se
 [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md)). Three checks on hold, deliberately
 deprioritised behind latency work:
 
-- **B1** — red team + automated security tests. **B1a done and passed 2026-08-04, 75/75 checks**
-  (`tests/security_redteam_2026-08-04.md`, status now also reflected in `ROADMAP.md` §B1).
-  **B1b (indirect injection) still open**, gated on Track E.
+- **B1** — red team + automated security tests. **B1a done and passed 2026-08-04**; re-run
+  2026-08-08 after the filter upgrade — **102 pass, 0 error**, the original 61 filter checks
+  unchanged (`tests/security_redteam_2026-08-08.md`). **B1b: the email row is now covered** by
+  the new end-to-end `injection` suite, 3/3 PASS against `danny_park`
+  (`…_injection_danny.md`). **B1b is not closed** — calendar, web page and CardDAV rows are
+  untouched, still gated on Track E. *That suite needs an ordinary-life persona: on `sarah_chen`
+  an active clinical thread correctly outranks "read my email" and the payload is never reached.*
 - **Check 10** — agent behavioural audits (12 specialists; Coordinator/Synthesizer via pipeline probes)
 - **Check 12** — constitution alignment review
 
-> **✅ Pre-sign-off gate FULLY CLEARED on the cloud path — 2026-08-05** (single-agent 6/6 +
-> pipeline probe 3/3, both against `sarah_chen`/gemini). **Clears the regression gate, not A7
-> itself** — checks 10/12 and B1 remain open. Local/Ollama path is **dormant** (2026-08-05, user
-> decision — the ZDR-VM path is what's live; the binding privacy ruling itself is unchanged, only
-> the local re-run is parked). Full detail: [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
+> **✅ Pre-sign-off gate FULLY CLEARED on the cloud path — 2026-08-05** (6/6 + pipeline 3/3).
+> Clears the regression gate, **not A7** — checks 10/12 and B1 remain open. Local/Ollama re-run
+> is dormant by user decision; the privacy ruling is unchanged. Detail: `PROJECT_LOG.md`.
 
 Two loose ends inside the gate, both discrete checklist items so they don't get skipped:
 
@@ -80,11 +84,9 @@ Two loose ends inside the gate, both discrete checklist items so they don't get 
 data first.** The Coordinator runs 1 turn, not the 7 the roadmap assumes (`logistics` measured
 at 8). See `DEV_BACKLOG.md`.
 
-**Track B2 — more done than previously believed.** Item 5's decisions A/B/C are **taken and
-built**; the per-agent `allowed_tools` whitelist is already *enforced*, not warn-mode
-(`core/orchestrator.py:2190-2193`), and `research_agent` now carries the key too
-(`allowed_tools: [fetch_url]`, shipped 2026-08-04). Remaining B2 gaps, plus the Wave 1/Wave 2
-execution split, are in
+**Track B2 — all named sub-items now built.** PoLP allowlist enforced, both confirm-gates,
+CORS, `run_session_anthropic`'s iteration limit, `run_model_conference` scoping, and the output
+filter upgrade (the last one, `7c70cd9`). Wave 1/Wave 2 split and any residual gaps:
 [archive/sessions/2026-08-04 — B1-B4 Security Scoping.md](archive/sessions/2026-08-04%20—%20B1-B4%20Security%20Scoping.md).
 
 **`[DB-0804-01]` still open** — proactive check-ins are fixed and deployed (`10bf194`,
@@ -93,12 +95,12 @@ fire completing end-to-end still hasn't been directly observed. One-week count d
 2026-08-11 — do not check before then.
 
 **The backlog is the bin for everything outside this roadmap.** Work it with **`/backlog`**; use
-the new **`/backlog-attack`** to get a scored, clustered attack plan for the top items instead of
-triaging by hand. Currently **44 open, 6 untriaged, 0 new**. Includes one already-resolved
-Inbox line (pre-departure travel checks, built as `[DB-0806-01]`) waiting on a `/backlog` pass to
-clear it — left alone per `/archive`'s own "don't triage here" rule. The one rule: *no item is
-acted on, or re-filed, on the strength of its own description* — that sweep found a same-day
-verification of its own that was wrong (checked the wrong file), corrected in the same pass.
+the new **`/backlog-attack`** to get a scored, clustered attack plan for the top items — run once
+now, 2026-08-08; its first two clusters ran in parallel windows. **48 open, 7 untriaged, 0 new.**
+The one rule: *no item is acted on, or re-filed, on the strength of its own description* — 08-08
+proved both halves of it. One cluster found an item already half-fixed two days earlier; the
+other found `[DB-0803-03]`'s *stated root cause* wrong (a cross-process race, not the indexer
+reading the wrong file) after five days as "hypothesis now confirmed".
 
 ---
 
@@ -109,14 +111,14 @@ Newest first. Full detail for every entry — and everything older — is in
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-08 | **Memory cross-process race, `MUST_SURFACE` lifecycle, Whisper STT evaluation** — `search_memory` corruption root-caused (a race, not the filed hypothesis) and fixed with `filelock` + atomic writes, self-healing; `clinical_threads` gives clinical flags a `watch` state so they persist without dominating; `small.en` rejected on the VM at RTF 2.23, VAD adopted. A4 gate re-run 6/6 | `7c70cd9`, `08766bb`, `2195fa9` — live-verified |
+| 08-08 | **Output filter regex/semantic upgrade, `[CONTEXT]` block repair, end-to-end injection probe** — B2's last sub-item built; malformed context blocks now repaired/salvaged/recorded instead of dropped; new `injection` suite in `run_b1_redteam.py` (3/3 PASS, email row of B1b). Gate: 102 pass / 0 error + 18/18 offline | `7c70cd9` — joint commit with the parallel session (one file, two authors), post-deploy verified live |
 | 08-08 | **New `/backlog-attack` command** — scores `DEV_BACKLOG.md`'s open items and clusters the top ones into 3 non-overlapping single-session prompts; kept separate from `/backlog`; not yet run | docs-only, no deploy |
 | 08-08 | **Travel/routing tools, Google API onboarding, CRM hardening** — `get_tfl_status`/`get_flight_status`/`get_travel_time` (Google Maps default router) built; Google Contacts OAuth built then reversed same day for a simpler local fix (`write_contact` guardrail, vCard import, `write_profile` confirm-gate); Places/Pollen researched not built | `c4ff279` |
 | 08-06 | **Billing investigation + region latency analysis** — Compute Engine "no billing since Aug 4" traced to GCE report lag (VM confirmed running, no cap fired); europe-west1 vs us-central1 priced live (+10% compute, ~$2.60/mo, ~200–280ms/turn saved); investigation only, [DB-0806-03]/[DB-0806-04] filed | investigation only, no deploy |
 | 08-05 | **Backlog quick-bucket sweep, first SMTP send, APK rebuild, dictated-email fix** — 44→32 open; first real email ever sent; APK content-verified; check-ins-fire-through-silence and browser-live-refresh both resolved by explicit decision/verification | `2c097b3`, `a08e38a` |
 | 08-05 | **ROADMAP.md gap closed, `/archive` gets a sixth step** — B1a's completion had never reached `ROADMAP.md`; added a ✅ status note there and a new mandatory roadmap-check step to `.claude/commands/archive.md` | docs-only, no deploy |
-| 08-04 | **B1a red team executed** — new `tests/run_b1_redteam.py`; 9 disclosure categories (15 prompts incl. variants) + output-filter suite (61 checks) + confused-deputy probe, 75/75 PASS; found sticky MUST_SURFACE context contamination on `sarah_chen`, filed not fixed | tests-only, no deploy |
-| 08-04 | **B1–B4 security scoping** — Track B split into two waves (B1a/B2-remainder/B4 now, B1b/B3 gated on Track E); found B2 ~60% already done, PoLP allowlist actually enforced not warn-mode; new recurring security-review protocol | scoping only, no deploy |
-| 08-05 | **A7 pipeline probe** — `pipeline` suite added to `run_a4_safety.py`, running MW-3/MW-7/PH-MED through the real Coordinator→Synthesizer path; inverted pass condition (substance surfaces, token doesn't); 3/3 PASS live | tests-only, no deploy |
+| 08-04 | **B1a red team executed** — new `tests/run_b1_redteam.py`; 9 disclosure categories (15 prompts incl. variants) + output-filter suite (61 checks) + confused-deputy probe, 75/75 PASS; found sticky MUST_SURFACE context contamination on `sarah_chen` (**fixed 2026-08-08**) | tests-only, no deploy |
 
 ---
 

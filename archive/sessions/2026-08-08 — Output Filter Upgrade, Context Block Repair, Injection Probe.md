@@ -180,7 +180,15 @@ run would have produced no new information.
 
 ---
 
-## Deploy — NOT DONE, and deliberately
+## Deploy — resolved: shipped in `7c70cd9`
+
+**Outcome first, since the section below was written while it was still blocked.** The parallel
+session committed `tools/pollen.py` together with both sessions' `core/orchestrator.py` work as
+`7c70cd9`, and verified it post-deploy with a live `/session` call on the VM — the only check
+that proves anything here, because `register_tools()` runs on a session, not on import. The
+analysis below is kept because it is *why* the commit had to be joint.
+
+## Why it was blocked (as written at the time)
 
 `core/orchestrator.py` changed, so this needs `./deploy.sh` — but **deploying right now
 would take production down**, for a reason that has nothing to do with this work.
@@ -212,4 +220,31 @@ to end.
 
 ## Filed
 
-- `[DB-0808-05]` — Exchange 027 / user-turn exemption for `filter_output()`.
+- `[DB-0808-05]` — Exchange 027 / user-turn exemption for `filter_output()`. **New, open.**
+- `[DB-0808-07]` — the filter upgrade itself, recorded as built + ⚠ not deployed.
+- Two existing entries marked complete rather than left reading as unstarted work: the
+  `[CONTEXT]`-block silent-discard entry, and "No pipeline-level injection probe has been run".
+  Both would otherwise have been re-scored as high-value untouched work by the next
+  `/backlog-attack` — the stale-premise failure mode `CLAUDE.md` already names.
+- The B2 Wave-1 scoping entry's `filter_output()` clause struck through, pointing at
+  `[DB-0808-07]`.
+
+`[DB-0808-06]` was taken by the parallel session (clinical-thread administrative close) while
+this session was running — IDs are not safe to reserve in advance when two windows are open.
+
+## Deferred / not done
+
+- **The deploy.** See above — blocked on another session's untracked `tools/pollen.py`.
+- **Full re-run of the suite against `danny_park`.** Disclosure/filter/deputy are
+  persona-agnostic and `sarah_chen` is their established baseline; a second 20-minute Vertex
+  run would produce no new information.
+- **The rest of B1b** — calendar event title, web page content, CardDAV contact note. Still
+  gated on Track E, unchanged by this session.
+
+## Loose end worth a look
+
+A skill named `zz_edit_probe` appeared in the available-skills listing mid-session, with an
+instruction fragment ("File anything actionable into `DEV_BACKLOG.md`" — a line lifted from
+`/archive`'s step 6) where its description should be, and an incrementing number each time it
+reappeared. Not invoked. Recorded here because it showed up during a session whose entire
+subject was instruction-shaped content arriving through a channel that is meant to carry data.

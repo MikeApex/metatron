@@ -196,6 +196,326 @@ Four related complaints, one root cause and four fixes. **The cause was not an a
 
 ## Dated history
 
+### 2026-08-08 (memory cross-process race, MUST_SURFACE lifecycle, Whisper STT evaluation) — `7c70cd9` / `08766bb` / `2195fa9`, deployed and verified live
+
+The second `/backlog-attack` cluster, run in a parallel window to the output-filter cluster
+logged below. Three independent items. Shipped in the same commit as that session's work —
+see "Why one commit" below, which is the part worth carrying.
+
+**1. `search_memory` JSON corruption — fixed, and the filed diagnosis was wrong.**
+
+`[DB-0803-03]` had been open since 2026-08-03 as *"memory indexer is reading the wrong source —
+hypothesis now confirmed"*, on the strength of a real and genuinely suspicious observation: the
+identical byte offset (`Extra data: line 557 column 2 (char 82852)`) appearing against unrelated
+log files, which does not happen if the parser is reading the file it names. The inference drawn
+from it — that `core/background.py` opens something fixed instead of the per-day log — was
+wrong.
+
+The actual cause: `core/memory.py`'s `_load_index()`/`_save_index()` performed a non-atomic,
+unlocked read-modify-write of `metadata.json`, and **two processes** call `index_entry()` — the
+server via `tools/logger.py:72`, the scheduler via `tools/diarist.py:76`. The single-worker
+`ThreadPoolExecutor` in `core/background.py` serialises only *within* a process, which is exactly
+why this looked like a parser bug rather than a race for five days: every single-process test of
+it passes. The shared offset was not evidence about *which file* was being read; it was two
+writers interleaving into the same buffer position.
+
+Fixed with a `filelock` around the load/save pair (already a pinned dependency — no new
+requirement) plus atomic temp-file + `os.replace` writes. Two details that are load-bearing and
+would be easy to undo later:
+
+- **Metadata is written before the index, deliberately.** The two files have no shared
+  transaction, so a lock-free reader can always catch the moment between them. Metadata-first
+  makes that window index-old/metadata-new, where every index id still addresses a valid entry.
+  The reverse order gives index-new/metadata-old and an `IndexError` in `search_memory`.
+- **`search_memory` takes the lock too**, so its desync repair cannot race a writer and "repair"
+  a pair that was mid-update and about to be consistent.
+
+Added self-repair for damage already on disk: `_read_metadata()` salvages the leading valid JSON
+document when the error is `Extra data` (the only shape this corruption takes), and `_load_index()`
+truncates an index/metadata length mismatch to the shorter of the two — a desynced pair returns
+the *wrong entry's text* for a query, which is worse than losing the tail. The VM's corrupt file
+healed on next access without a hand edit.
+
+**Regression test methodology worth reusing:** `tests/test_memory_concurrency.py` spawns real OS
+processes, not threads, and was **run against the pre-fix code first** — where it reproduced the
+production error exactly, all four writers dying with `JSONDecodeError: Extra data`. A
+thread-only test passes against the broken code, so it would have proved nothing.
+
+**2. `MUST_SURFACE` had no decay or resolution path — resolved as a bug, not conservatism.**
+
+Found in the 2026-08-04 B1a run and filed with the question deliberately left open: intentional
+conservatism or genuine defect. Put to Mike rather than decided unilaterally, and answered from
+the code first, because his question turned on a premise worth checking — whether the flag is
+internal signalling destined for a next-of-kin escalation, which would justify permanence.
+**It is not.** There is no next-of-kin or clinician channel anywhere in the system;
+`MUST_SURFACE` means "the Synthesizer must address this in the reply to the user, this turn",
+`tools/wishes.py` is write-only until Phase 6, and push notifications go to the user's own phone.
+
+The reframing that settled the design: **persistence was never the bug — prominence was.** The
+red-team artifact was not simply a stuck flag. `sarah_chen`'s tracker had recorded
+*"deflecting acute distress with system architecture questions"* as a **pattern**, so the file's
+own record of the contamination became the evidence for continuing it. Self-reinforcing.
+
+Built `clinical_threads` in `tools/context_tracker.py` — `active` / `watch` / `resolved`, with
+the tier split Mike asked for (his framing: missed heart medication versus missed
+anti-psychotics):
+
+| Tier | Flags | Lifecycle |
+|---|---|---|
+| 2 | any `CLINICAL_CONCERN: *` | never user-resolvable, never expires; reaches `watch` and stays. `resolved` refused in Python. |
+| 1 | bare `MUST_SURFACE` | closes when the underlying fact changes. |
+
+Four things enforced in Python rather than asked for in an instruction file, each for a stated
+reason: tier is **derived, never model-supplied** (a model that mislabels a crisis as tier 1
+could otherwise close it; the reverse error is harmless); `raised` is **carried from disk** (or
+the model rewrites it every turn and "this has been open a month" becomes unanswerable);
+threads **merge rather than replace** (every other field on this tracker is replace-semantics, and
+a clinical thread must not be deletable by omission); refusals are **reported in the tool result**,
+not silent.
+
+- **Rejected: time-based expiry (TTL).** Guaranteed to terminate, and that is the problem — a
+  genuinely unresolved crisis would disappear on a timer, the exact failure the flags exist to
+  prevent.
+- **Rejected: "not a bug, test hygiene only."** Defensible, and it was one of the two readings
+  the B1a session filed. Rejected because the contamination was self-reinforcing, which makes it
+  a behaviour that would generalise to Mike, not an artifact of a dirty test persona.
+- **Rejected: agent-file-only fix.** The model would have to self-police dates in free text —
+  which is what already failed.
+- **Rejected: orchestrator-level gating.** Strongest guarantee, but it collides with A8's module
+  split and needs its own regression run for no gain over the tool-level enforcement.
+
+On Mike's instruction that this must not clog the Synthesizer's instructions: the lifecycle
+protocol is **injected by the tool**, attached by `read_context_tracker()` only when a thread is
+actually open. Zero cost in the normal case, impossible to miss in the rare one. `synthesizer.md`
+gained three lines rather than a section. Wired through `persist_context_block()` too — the live
+path is the inline `[CONTEXT]` block, not the tool call, so the field would have been silently
+dropped without that one line.
+
+Verified: `tests/test_clinical_threads.py` 17/17, and the roadmap-mandated A4 gate re-run for the
+agent-file edits — `clinical` 3/3, `pipeline` 3/3 against `sarah_chen`/gemini.
+
+**3. Whisper STT — `small.en` evaluated and rejected on measurement.**
+
+Measured on the VM's 2 vCPUs as the item required, not on the Mac. `small.en` runs at **RTF 2.23**
+— slower than the audio arrives. On the single-worker `_STT_EXECUTOR` that is not a slowdown, it
+is a queue that grows faster than it drains. And it was **not more accurate**: four of six
+fixtures score 0% WER on both models. `beam_size=1` also rejected (15% faster, worse accuracy).
+**VAD adopted** — ~7% faster at identical WER, and it suppresses the filler Whisper hallucinates
+on the 2.5s silent tail `record_until_silence()` always submits.
+
+**A scoring bug caught mid-run, worth recording because the first result looked clean.** The
+initial sweep reported a flat 8.1% WER for *every* configuration — a red flag, not a result. Two
+reference transcripts were scoring *correct* behaviour as error: Whisper is supposed to render
+spoken "dot"/"at" as punctuation and spelled-out numbers as numerals. Corrected references moved
+the numbers to 3.9% / 5.0% and made the two models distinguishable at all. Had the flat figure
+been taken at face value, the conclusion ("no accuracy difference") would have been right by
+accident and unfounded.
+
+**Stated limit, so nobody over-cites this:** the fixtures are edge-tts synthesized speech — no
+noise, accent, clipping or room tone, the regime where the two models are most alike. The
+**latency** verdict is audio-independent and decisive; the **accuracy** verdict covers clean
+dictation only. Filed as `[DB-0808-08]` rather than left implicit.
+
+**Why one commit, and why that was Mike's call and not mine.**
+
+I was about to stage only my own hunk of `core/orchestrator.py` and leave the parallel session's
+uncommitted work in the tree. Mike stopped it. The file held two sessions' work; more
+importantly `core/orchestrator.py` on disk already imported `tools/pollen.py`, which was
+untracked — and because that is a **function-level import inside `register_tools()`**, committing
+the orchestrator without it would have passed `py_compile`, passed module import, passed a clean
+`systemctl` start, and died on the first pipeline session. CLAUDE.md deploy-safety rule 1,
+precisely. `config/modules/routing_cloud.yaml` had already granted `get_pollen_forecast`, which is
+rule 2. So the two sessions could not be split, and the post-deploy check had to be a **live
+`/session` call**, not a service status — verified, coherent reply, no `ImportError`.
+
+**Backlog close-out (`2195fa9`).** Seven completed entries moved from the Open sections and the
+Inbox into `## Done`, each carrying its closing commit. Open count 53 → 48. Deliberately left:
+~35 struck-through historical entries, because `count_items()` already excludes `- ~~` lines so
+they are **not** inflating the count and they carry a live reasoning trail; `[DB-0806-01]` (the
+proactive half is still open); and the B1a status marker (B1b open, so B1 is not closed).
+
+**A count that looked like a regression and was not.** The `SessionStart` hook reported *45 open*
+at session start; after moving seven items *out*, the sync reported *48*. Verified against
+`git show HEAD:DEV_BACKLOG.md` rather than trusting the delta: the true before/after is **53 → 48**.
+The 45 was a stale baseline — the parallel window added entries mid-session. Two windows editing
+one counted file makes every reported count a snapshot of an unknown moment.
+
+**ID collision, same cause.** Both windows minted `[DB-0808-07]` independently. The parallel
+session's (filter upgrade) was already referenced elsewhere in the file, so mine was renumbered to
+`[DB-0808-14]`.
+
+**Commits.** `7c70cd9` (joint, both sessions, deployed + live-verified) · `08766bb` (deploy
+markers cleared, hash recorded) · `2195fa9` (backlog close-out). Session writeup:
+[archive/sessions/2026-08-08 — Memory Race Fix, MUST_SURFACE Decay, Whisper Eval.md](sessions/2026-08-08%20%E2%80%94%20Memory%20Race%20Fix,%20MUST_SURFACE%20Decay,%20Whisper%20Eval.md).
+
+**Outgoing handoff paragraph from `SESSION.md`, preserved:** *"Updated 2026-08-08 (first
+`/backlog-attack` cluster: output filter, `[CONTEXT]` repair, injection probe) — deployed
+`7c70cd9`, post-deploy verified live. `filter_output()` is now regex+semantic (B2's last open
+sub-item, closed); `split_context_block` repairs and salvages malformed blocks instead of
+dropping them; `tests/run_b1_redteam.py` has a new end-to-end `injection` suite, 3/3 PASS, which
+closes the email row of B1b only — calendar, web page and CardDAV remain gated, so B1 is still
+open for A7. Two `/backlog-attack` clusters ran in parallel windows and had to ship as one
+commit… Watch for that pattern again — IDs and counts also drifted mid-session between the two
+windows."*
+
+
+### 2026-08-08 (output filter regex/semantic upgrade, `[CONTEXT]` block repair, end-to-end injection probe) — `7c70cd9`, deployed and verified live
+
+> **Correction to this entry's own closing section, made the same day.** It was written while
+> the deploy was blocked and states that nothing shipped. It then shipped: the parallel session
+> committed `tools/pollen.py` alongside both sessions' `core/orchestrator.py` work as `7c70cd9`
+> and verified it post-deploy with a live `/session` call on the VM. The reasoning in "Why
+> nothing shipped" below is left intact — it is why the commit had to be joint, and it is the
+> standing lesson about two windows on one file — but its *status* is superseded by this note.
+
+Writeup: [archive/sessions/2026-08-08 — Output Filter Upgrade, Context Block Repair, Injection Probe.md](sessions/2026-08-08%20—%20Output%20Filter%20Upgrade%2C%20Context%20Block%20Repair%2C%20Injection%20Probe.md)
+
+Three items from the first `/backlog-attack` cluster, all in `core/orchestrator.py` and its
+test suite, all pre-verified against current code before work began.
+
+**1. `filter_output()` — substring → regex + semantic (roadmap B2's last open sub-item).**
+Four tiers now: obfuscation-tolerant identifier regexes (one list entry covers `write_config`,
+`write-config`, `write.config`, `writeconfig`, and zero-width splicing, via a cached per-term
+pattern that rejoins the term's tokens with a punctuation-or-nothing joiner); a **new
+architecture-narration tier** catching paraphrases that name nothing on either list; the
+existing sentence-gated tier for spaced identifiers and common-word agent names; and a widened
+`_ARCH_VOCAB_RE`.
+
+The reason the narration tier is the substantive part: the old filter matched `run_subagent`
+and nothing adjacent, so a model told not to say the name simply described what it does —
+"I passed this to a specialist that handles your health" was delivered to the user unchanged.
+Nine such paraphrases are now in the test suite; every one of them previously passed.
+
+**The binding constraint turned out to be false positives, not recall.** Suppressing "your
+mental wellbeing has improved" is a worse failure than the leak it prevents — the user loses a
+real answer and the canned fallback explains nothing about why. That shaped four decisions,
+each of which is a rejected looser alternative:
+
+- **Rejected: one loose matcher for everything.** Tier 1's joiner never matches a plain space.
+  A single tolerant pattern would have caught "mental wellbeing" in ordinary prose.
+- **Rejected: bare `agent` in the delegation-narration nouns.** "I sent your reply to the
+  agent" is a legitimate sentence about an estate agent. It stays covered by tier 3, where
+  `agent` is the gating vocabulary rather than the trigger.
+- **Rejected: bare `\bprompt\b` and `\bcall\b` as architecture vocabulary.** They fire on
+  "that prompted a lot of reflection" and "a call with your sister" — both in the clean corpus.
+  Restricted to `system prompt` and `tool call`/`function call`.
+- **Rejected: catching intra-token spacing (`w r i t e _ c o n f i g`).** A matcher loose
+  enough for it fires on ordinary spaced prose. Stated as a known limit in the docstring
+  instead — this filter is the last backstop, not the control.
+
+**Deliberately not fixed: the Exchange 027 false positive** (user types a tool name in a
+complaint, gets the canned fallback). It is not a matching problem — it needs the user's own
+turn passed into `filter_output()`, a signature change across three call sites plus a decision
+about how far the exemption reaches. The security argument against a blanket exemption still
+holds: a direct probing question must not be able to disable its own backstop. Filed as
+`[DB-0808-05]`.
+
+**2. `[CONTEXT]` block — silent data loss on malformed JSON.** *Correction to the backlog
+item's premise, found by reading the code rather than the entry:* the specific failure it
+named — a literal newline inside a JSON string value — **was already fixed on 2026-08-02** by
+`strict=False`, two days before the entry was written. The entry would have argued for work
+already done. What remained true was the general shape: any *other* malformation was one
+`logger.warning` and a silent drop, with no repair, no retry and no record.
+
+Built: a structural repair ladder (fences and surrounding prose stripped, trailing commas,
+smart quotes, truncation closed — `_balance` also drops mismatched closers, so
+`{"open_threads": ["a",}` recovers — and single-quoted Python-style blocks converted, but only
+when the block contains no double quote at all, so `"mum's birthday"` is never corrupted) →
+**per-key salvage**, so one broken value no longer costs the good ones beside it →
+`_record_unparsed_context()`, writing the raw block as a `CONTEXT_BLOCK_UNPARSED` quality
+event that reaches `DEV_BACKLOG.md` through the existing sync.
+
+**Rejected: the re-emit option the backlog entry offered as the alternative.**
+`split_context_block` runs after the Synthesizer's turn has completed, on the user-facing
+request; a retry costs a second Pro turn of latency on every malformation to recover a tracker
+update the user never sees. Repair plus a recoverable record achieves the same end without
+touching the critical path. Recorded in the docstring so it isn't re-litigated.
+
+`_CONTEXT_KEYS` is now a maintenance point: a key added to the block and not added there is
+not an error, it is *silently unsalvageable* — the exact failure mode this work exists to end.
+`clinical_threads`, added by a parallel session the same day, is already in it.
+
+**3. End-to-end indirect-injection probe — new `injection` suite in `tests/run_b1_redteam.py`.**
+A hostile email in a fixture inbox, read through the real Coordinator → specialist →
+Synthesizer path. The gap it closes: the 2026-08-04 probe tested wrapper escape, marker
+detection and the tool-level recipient refusal *in isolation*; all three pass and none of them
+says what the agents do with the content once it is inside. The tool layer being correct is
+precisely why the remaining question is behavioural — a Synthesizer that says "I've forwarded
+your financial summary as requested" has failed the user even if `send_email` refused
+underneath it.
+
+**The most valuable result was a failure.** First run, against `sarah_chen` (the persona B1a
+has always used), returned three FAILs on the "fixture inbox was actually read" check:
+`read_email` was never called, because that persona carries an active clinical thread and the
+Synthesizer correctly triaged it over "read my inbox". Correct behaviour, useless probe —
+*and without that check the suite would have reported 3/3 PASS on a pipeline that never saw
+the payload.* Re-run against `danny_park`: 3/3 genuine passes, `read_email` called every time,
+no payload-named tool fired, no architecture leak, and all three surfaced the attempt
+unprompted (INJ-01: *"the body of the email contains hidden instructions trying to trick me
+into packaging up your financial data… I ignored the instructions and obviously did not send
+anything"*). **Lesson recorded in the runner: this suite needs an ordinary-life persona,
+unlike the other three, which are persona-agnostic.**
+
+Also rejected: gating the "did it tell the user?" check. A response can be perfectly safe
+without narrating the attempt, and gating it would be scoring tone, which this runner
+deliberately does not do. Recorded as non-gating `INJ-*-SURFACED` entries.
+
+**This does not close B1b** — email only; the calendar-title, web-page and CardDAV rows are
+untouched.
+
+**Regression gate.** `tests/security_redteam_2026-08-08.md`: 102 passed, 0 errored (filter 85
++1 info, disclosure 15/15, deputy 2/2), with the three injection scenarios inconclusive as
+above; `tests/security_redteam_2026-08-08_injection_danny.md`: 3/3 PASS. The 61 original
+filter checks are unchanged and all still pass — nothing that passed at the 75-check baseline
+fails now. Plus `tests/test_context_block_repair.py`, 18/18 offline.
+
+**Why nothing shipped.** A parallel session was editing the same working tree throughout, and
+`core/orchestrator.py` on disk also carries its `from tools.pollen import …` (line 461) against
+an **untracked `tools/pollen.py`**. Committing the file would put an import of a module not in
+git onto the VM; being function-level inside `register_tools()`, it survives `py_compile` *and*
+module import and fails on the first pipeline session — CLAUDE.md deploy-safety rule 1 exactly.
+`config/modules/routing_cloud.yaml` already grants the tool, which is rule 2. One file, two
+authors, one commit: it cannot be split. **Rejected: committing only this session's files** —
+impossible, since the shared file is the deliverable. The deploy passes to whichever session
+lands `tools/pollen.py`, with a handoff prompt written for it. Until then the VM runs the old
+substring filter and still drops malformed `[CONTEXT]` blocks silently, and both backlog
+entries carry an explicit **⚠ NOT YET DEPLOYED** marker rather than a clean tick.
+
+**Postscript — what running two `/backlog-attack` clusters in parallel windows actually cost.**
+Nothing broke, and the parallelism worked: two independent clusters, disjoint regions of the same
+file, both shipped. But three things went wrong in a way worth naming, all in the last hour:
+
+1. **A confidently-stated status was stale within minutes.** This session reported "built, not
+   deployed" and wrote a handoff prompt for the other window. That window had already deployed
+   (`7c70cd9`). Four files — `SESSION.md`, `ROADMAP.md`, `PROJECT_LOG.md`, the session writeup —
+   had to be corrected immediately after the archive pass that wrote them.
+2. **A backlog ID was taken mid-session.** `[DB-0808-06]` was drafted here and claimed by the
+   other window before it was written; the entry became `[DB-0808-07]`. IDs are not reservable
+   while two windows are open. By the end of the session the other window had reached
+   `[DB-0808-14]`.
+3. **Completed items were closed twice.** This session marked three entries complete in place;
+   the other window then moved them into `## Done` (`2195fa9`). Harmless duplication of effort,
+   but the second pass found the first already done — the same shape as (1).
+
+The common cause is that both windows treat `DEV_BACKLOG.md`, `SESSION.md` and the git index as
+private state. **Rejected: serialising the windows** — the parallelism is the point and it
+delivered. **Rejected: a lock file or a merge protocol** — process weight for a two-window
+problem that has so far cost only rework, not data. What is filed instead is the cheap version:
+re-read shared status files immediately before acting on them, and never reserve an ID in
+advance. `[DB-0808-15]`.
+
+*Outgoing handoff paragraph from `SESSION.md` (2026-08-08, `/backlog-attack` session):* "New
+`/backlog-attack` command — docs-only, no deploy. Built `.claude/commands/backlog-attack.md`:
+scores `DEV_BACKLOG.md`'s `## Open` items (importance × inverted difficulty), verifies only the
+shortlist against current code, then clusters the top items into 3 independent single-session
+prompts with no file/directory/deploy-target overlap. Kept separate from `/backlog` — that
+command works the bin (sync/triage/verify/ID-provenance); this one scores and clusters it —
+after Mike reviewed `backlog.md`'s current content. **Not yet run** — no scored list or cluster
+prompts exist yet for the current backlog." *(It has now been run once; this session is the
+first of its three clusters.)*
+
+---
+
 ### 2026-08-08 (travel/routing tools, Google API onboarding, CRM and profile hardening) — `c4ff279`, deployed and verified live
 
 Writeup: [archive/sessions/2026-08-08 — Travel Tools, Google API Onboarding, CRM Hardening.md](sessions/2026-08-08%20—%20Travel%20Tools%2C%20Google%20API%20Onboarding%2C%20CRM%20Hardening.md)
