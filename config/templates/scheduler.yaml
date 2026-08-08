@@ -60,47 +60,19 @@ schedules:
     prompt: "Run a weekly physical health review. Check sleep trends, exercise consistency, medication adherence, and nutrition logging for the past 7 days. Flag any trajectory concerns. Write a summary to the log."
     notification: terminal
 
-  ambient_refresh:
-    enabled: true
-    interval_minutes: 180   # every 3 hours
-    days: daily
-    function: tools.ambient.refresh_ambient_context
-    notification: false
-
-  # Checks this persona's stated preferences against the rules that already
-  # apply to everyone, and reports anything stated in two places. A function
-  # job, so it costs no model tokens — regex over config files, a few ms.
+  # NOTE — ambient_refresh, daily_rule_audit and daily_calendar_dedup_audit used
+  # to be listed here and deliberately are not any more (2026-08-08). They are
+  # silent, token-free infrastructure rather than preferences, so they now
+  # register for **every** persona from `_DEFAULT_JOBS` in core/scheduler.py.
   #
-  # Deliberately silent to the user: a duplicated rule is a development
-  # problem, not something to interrupt their day with. Findings go to the
-  # quality-event stream as RULE_CONFLICT and surface in DEV_BACKLOG.md.
-  # Each finding is reported once, never re-reported daily.
-  daily_rule_audit:
-    enabled: true
-    time: "05:30"           # before the morning brief, so a fix can land same-day
-    days: daily
-    function: tools.rule_audit.audit_rules
-    notification: false
-
-  # Sweeps the near-term calendar (7 days back, 60 ahead) for entries that look
-  # like accidental duplicates of each other rather than intentional recurrence
-  # — same evidence rules as the real-time check that runs on every calendar
-  # write (tools/scheduling.py), just applied pairwise across a window instead
-  # of one candidate against history. Catches what the write-time check
-  # structurally cannot: duplicates already on the calendar before it shipped,
-  # or created through any path that bypasses it. A function job, so it costs
-  # no model tokens.
+  # The reason is a real failure, not tidiness: this template is copied **once**,
+  # at persona creation, and nothing ever propagated a later change to an
+  # existing persona. daily_calendar_dedup_audit shipped 2026-08-05 and had never
+  # run for mike three days later — live in the repo, live in this file, inert in
+  # production, with nothing reporting the gap.
   #
-  # Deliberately silent to the user: a possible duplicate is worth a look, not
-  # an interruption. Findings go to the quality-event stream as
-  # CALENDAR_DUPLICATE and surface in DEV_BACKLOG.md. Each pair is reported
-  # once, never re-reported daily.
-  daily_calendar_dedup_audit:
-    enabled: true
-    time: "05:35"           # right after daily_rule_audit, same reasoning
-    days: daily
-    function: tools.calendar_audit.audit_calendar_duplicates
-    notification: false
+  # To change one for a single persona, define the same key in that persona's
+  # scheduler.yaml — persona config wins outright, including `enabled: false`.
 
   # Reads the next 24h of calendar, recognises travel (flight numbers, named TfL
   # lines), and checks each against get_flight_status / get_tfl_status. A function

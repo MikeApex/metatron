@@ -368,6 +368,54 @@ def fire_function(job_name: str, fn_path: str, persona: str,
         print(f"[scheduler error] [{persona}] {job_name}: {e}", flush=True)
 
 
+# ---------------------------------------------------------------------------
+# Default maintenance jobs — every persona, no config required
+# ---------------------------------------------------------------------------
+
+# These three are **infrastructure, not preference.** They are silent to the
+# user, cost no model tokens, carry no prompt, and there is no meaningful sense
+# in which one person wants the calendar-duplicate sweep configured differently
+# from another. That is the test for belonging here: a job with a prompt or a
+# notification channel is a preference and stays in the persona's scheduler.yaml.
+#
+# WHY THIS EXISTS. Until 2026-08-08 these lived only in
+# config/templates/scheduler.yaml, which scripts/new_persona.sh copies **once, at
+# persona creation.** Nothing propagated a template change to an already-existing
+# persona, and nothing reported the drift. The result: daily_calendar_dedup_audit
+# shipped 2026-08-05 and had never once run for mike three days later — the sweep
+# was live in the repo, in the template, and inert in production. It was found by
+# reading his config for an unrelated reason. daily_travel_check would have been
+# the second instance the same day.
+#
+# Registered here, a new maintenance job is live for every persona the moment it
+# deploys, which is the actual requirement. A persona overrides any of these by
+# defining the same key in its own scheduler.yaml — including `enabled: false` to
+# turn one off. Persona config always wins; this is a floor, not a ceiling.
+_DEFAULT_JOBS: dict[str, dict] = {
+    "ambient_refresh": {
+        "enabled": True,
+        "interval_minutes": 180,
+        "days": "daily",
+        "function": "tools.ambient.refresh_ambient_context",
+        "notification": False,
+    },
+    "daily_rule_audit": {
+        "enabled": True,
+        "time": "05:30",          # before the morning brief, so a fix can land same-day
+        "days": "daily",
+        "function": "tools.rule_audit.audit_rules",
+        "notification": False,
+    },
+    "daily_calendar_dedup_audit": {
+        "enabled": True,
+        "time": "05:35",          # right after daily_rule_audit, same reasoning
+        "days": "daily",
+        "function": "tools.calendar_audit.audit_calendar_duplicates",
+        "notification": False,
+    },
+}
+
+
 def _agent_schedules_path(persona: str) -> Path:
     """Agent-written jobs. Separate file from the user's scheduler.yaml — see
     tools/schedule.py for why they must never share one."""
@@ -452,7 +500,20 @@ def _fire_due_one_offs(persona: str) -> None:
 
 def _register_schedules(persona: str) -> None:
     cfg = _load_config(persona)
-    schedules_cfg = dict(cfg.get("schedules", {}))
+    persona_cfg = dict(cfg.get("schedules", {}))
+
+    # Default maintenance jobs form the base layer; the persona's own file is
+    # layered on top, so any key it defines wins outright — including turning a
+    # default off with `enabled: false`. Merged per-key rather than deep-merged:
+    # a persona that redefines a job owns the whole definition, so a half-stated
+    # override can't inherit a stray field from the default and produce a job
+    # neither layer actually describes.
+    schedules_cfg = {name: dict(job) for name, job in _DEFAULT_JOBS.items()}
+    inherited = [n for n in _DEFAULT_JOBS if n not in persona_cfg]
+    schedules_cfg.update(persona_cfg)
+    if inherited:
+        print(f"  [scheduler] {len(inherited)} default maintenance job(s) "
+              f"inherited: {', '.join(sorted(inherited))}", flush=True)
 
     # Agent-written jobs are merged in at registration. On a name collision the
     # user's own scheduler.yaml wins — an agent must not be able to redefine the
@@ -468,10 +529,15 @@ def _register_schedules(persona: str) -> None:
         print(f"  [scheduler] {len(agent_jobs)} agent-written job(s) from "
               f"{_agent_schedules_path(persona)}", flush=True)
 
-    if not schedules_cfg:
-        print(f"  [scheduler] WARNING: no schedules for persona {persona!r} "
-              f"({_scheduler_config_path(persona)}) — registering none", flush=True)
-        return
+    # Checked against the persona's *own* config, not the merged set — the
+    # merged set now always carries the default maintenance jobs, so testing it
+    # would silence this warning permanently. A persona with no scheduler.yaml
+    # still gets maintenance, but gets no brief, no check-in and no close, which
+    # is the thing worth saying out loud.
+    if not persona_cfg:
+        print(f"  [scheduler] WARNING: no persona schedules for {persona!r} "
+              f"({_scheduler_config_path(persona)}) — maintenance defaults only, "
+              f"no briefs or check-ins", flush=True)
 
     for job_name, job in schedules_cfg.items():
       # Registration runs once at daemon start. An uncaught raise here is a

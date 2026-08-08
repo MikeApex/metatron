@@ -23,6 +23,8 @@ import argparse
 import sys
 from pathlib import Path
 
+import yaml
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.persona import PersonaError, validate_persona_name  # noqa: E402
@@ -133,6 +135,46 @@ def main() -> int:
                 f"data/personas/{name}/ has no identity file — orphaned data, "
                 f"nothing can read it"
             )
+
+    # Scheduler drift — preference jobs only.
+    #
+    # The silent maintenance jobs no longer need checking: they register for
+    # every persona from _DEFAULT_JOBS in core/scheduler.py (2026-08-08). What
+    # still can't be defaulted is the class with a prompt or a notification
+    # channel — a morning brief's wording and timing are genuinely personal, so
+    # they stay in per-persona config and can therefore still drift from the
+    # template as it gains entries. That is exactly how daily_travel_check would
+    # have been missed, and how daily_calendar_dedup_audit was missed for three
+    # days before the defaults existed.
+    #
+    # Reported as a warning, never an error: a persona legitimately may not want
+    # the template's full set, and this script must stay safe to run in CI.
+    tmpl_path = ROOT / "config" / "templates" / "scheduler.yaml"
+    if tmpl_path.exists():
+        try:
+            tmpl_jobs = (yaml.safe_load(tmpl_path.read_text()) or {}).get("schedules", {}) or {}
+        except Exception as e:
+            warnings.append(f"could not read the scheduler template: {e}")
+            tmpl_jobs = {}
+
+        for name in sorted(identities):
+            sched = ROOT / "config" / "personas" / name / "scheduler.yaml"
+            if not sched.exists():
+                continue
+            try:
+                have = (yaml.safe_load(sched.read_text()) or {}).get("schedules", {}) or {}
+            except Exception as e:
+                warnings.append(f"{name}: scheduler.yaml does not parse — {e}")
+                continue
+            missing = [j for j in tmpl_jobs if j not in have]
+            if missing:
+                warnings.append(
+                    f"{name}: scheduler.yaml is missing {len(missing)} job(s) present in the "
+                    f"template — {', '.join(sorted(missing))}. The template is copied once at "
+                    f"persona creation and never re-synced, so these will not arrive on their "
+                    f"own; add them to the persona's own scheduler.yaml (on the VM, if that is "
+                    f"where the persona lives)."
+                )
 
     print()
     for w in warnings:
