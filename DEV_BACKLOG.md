@@ -166,6 +166,25 @@ Behavioural changes to how agents judge, prioritise, or decide what to raise. Ap
 
 Capabilities that do not exist yet.
 
+### Surfaced 2026-08-08
+
+- **[DB-0808-04] Real-time GPS + proactive area-scanning — raised, not scoped, not
+  started.** Mike's own framing, from the pre-departure travel-check conversation: with
+  real-time location, an agent could proactively notice a gap (no lunch on the calendar,
+  30 minutes to the user's normal lunch time) and search the area for a matching
+  restaurant against the user's known preferences (nutrition, cuisine, price, atmosphere)
+  — "scan the area for opportunities" as a general pattern, not just a lunch case.
+  Deliberately not built or scoped this session — it was flagged mid-conversation as
+  needing its own design pass (privacy tier for continuous location data, which app/OS
+  layer supplies it, how "opportunity scanning" bounds itself so it doesn't turn into
+  noise) rather than being bolted onto the travel-tools work in progress. Directly
+  depends on Google Places API (`[DB-0807-02]`), itself blocked on the same missing
+  location signal. **Recorded here specifically so it doesn't only exist in session
+  narrative** — this is the same failure mode that nearly lost the unsurfaced-opportunity
+  instrumentation item.
+  *filed 2026-08-08 by dev session (Claude Code), from Mike's own framing 2026-08-07 ·
+  not scoped, not started*
+
 ### Surfaced 2026-08-06
 
 - **[DB-0806-01] Pre-departure travel checks — both status lookups built; proactive

@@ -169,6 +169,146 @@ Four related complaints, one root cause and four fixes. **The cause was not an a
 
 ## Dated history
 
+### 2026-08-08 (travel/routing tools, Google API onboarding, CRM and profile hardening) — `c4ff279`, deployed and verified live
+
+Writeup: [archive/sessions/2026-08-08 — Travel Tools, Google API Onboarding, CRM Hardening.md](sessions/2026-08-08%20—%20Travel%20Tools%2C%20Google%20API%20Onboarding%2C%20CRM%20Hardening.md)
+
+Ran across several linked threads: closing a `DEV_BACKLOG.md` quick-scoring pass with real
+builds, onboarding a first batch of Google APIs, and — the most consequential part — a live
+mid-session reversal on Google Contacts that changed how this project weighs third-party
+integrations against local fixes.
+
+**Pre-departure travel checks, built in stages.** `tools/tfl_status.py` (`get_tfl_status`,
+renamed from `get_transit_status` — collided in name, not design, with an unbuilt GTFS-RT
+placeholder that had sat in the original Phase 5/6 plan since 2026-05-26) covers TfL line/bus/
+National-Rail status, no key needed. `tools/flights.py` (`get_flight_status`) uses AeroDataBox
+via RapidAPI — **first recommendation was wrong**: read API.Market's "Basic" plan as the ongoing-
+free option when it's actually a 7-day trial; RapidAPI's identically-named Basic plan is the one
+that's genuinely unrestricted-duration, confirmed only after fetching AeroDataBox's own pricing
+page directly rather than trusting an aggregator summary. `tools/routing.py`
+(`get_travel_time`) **also went through a real design reversal**: first version routed London
+transit/walking through TfL's Journey Planner by default, Google Maps as fallback — backwards.
+Mike corrected it: Google Maps Routes API is the default router everywhere, every mode; TfL is
+demoted to a secondary cross-check (`get_tfl_status` for disruption awareness, never for
+computing a route). That correction surfaced a real architecture question — a NYC-based persona
+visiting London needs London's cross-check tool the same way a resident would, which a
+persona-cached "home region" setting would silently miss — resolved by making
+`config/modules/regional_transit.yaml` a shared, non-persona-scoped library and
+`get_regional_transit_info(city)` resolve per-query against whatever city is actually relevant
+right now, never a cached home city. Confirmed this costs nothing extra in the common case: the
+lookup is a local file read either way, no network, no billing.
+
+**Google Maps Routes API onboarded onto the existing `metatron-ai-499810` GCP project** — no new
+vendor account, same billing caps already in place. Enabled via `gcloud services enable`, key
+created via `gcloud alpha services api-keys create` restricted to `routes.googleapis.com` only
+via `--api-target`, so a leak can't spend on other Maps Platform SKUs.
+
+**Google Contacts (People API) — built, then reversed same day, and the reversal is the more
+important artifact than the code.** Built a full OAuth 2.0 integration (Desktop-type client,
+local-server consent flow, `contacts.readonly` scope) to answer a real recorded need
+(`DEV_BACKLOG.md`: "misattributing the user's email to the contact"). Along the way, verified
+directly against Google's own support page that the app's Testing publishing status means
+consent — and the refresh token — expires **7 days** after granting, since `contacts.readonly`
+is a sensitive scope; Production removes this but costs 3–5 business days of review plus a
+hosted privacy policy. **Before spending that review effort, Mike asked the right question: does
+this need a third party at all?** Checking `tools/crm.py`'s `write_contact` directly showed the
+actual bug was local — zero validation against the user's own identity, nothing OAuth-related.
+And the "bring in contacts I already have" value has a portable, non-Google-specific answer:
+vCard (`.vcf`) is the real interchange standard (Google/Apple/Outlook all export to it), parsed
+with `vobject` (verified live on PyPI), no OAuth, no token to keep fresh. Reversed same day:
+`read_google_contacts` unregistered from `core/orchestrator.py` (import, schema, and handler all
+removed — structurally undispatchable, not just ungranted), `people.googleapis.com` disabled on
+the GCP project. Code and `.env` credentials left in place, dormant, not deleted, in case it's
+revisited. **Lesson worth carrying forward: the OAuth path was technically correct and fully
+working — the mistake was building the more complex answer before checking whether the recorded
+bug actually needed it.**
+
+**CRM and profile hardening, built from the reversal's diagnosis.** `write_contact` now refuses
+outright on an exact match to the user's own email/phone (`profile.yaml`), and flags — via
+`difflib.SequenceMatcher`, saves anyway — a near-miss, since a hard block would also refuse a
+legitimate similar-looking contact. Mike's own follow-up broadened this correctly: most
+transcription errors land on details no code check can validate (a misspelled third-party name,
+a garbled address), so `relationships.md` now carries a standing read-back instruction for every
+captured contact detail, not just the ones the code flags. Separately, `write_profile` now gates
+*changes* to an already-set email/phone/address behind the same confirm mechanism as
+`send_email`/`write_config` — first-time capture still writes immediately.
+
+**Also built:** `shownIds` oldest-first eviction fix (`static/index.html`, was a full `.clear()`
+past 100 exchanges, causing duplicate renders); Google Places and Pollen APIs researched and
+documented where they'd plug in (`logistics.md`, `recreation_hobbies.md`, `research_agent.md`),
+neither built — Places is blocked on a location signal (no GPS capability exists yet, raised but
+explicitly not scoped this session); Level 3 web-browsing access scoped
+(`archive/plans/level3_web_actions_scope_2026-08-06.md`) but not built, same "propose before
+building" discipline as the 2026-08-04 outward-actions document it mirrors.
+
+**Deploy caught a real gap, not just a formality.** `.env` never travels with a deploy;
+`AERODATABOX_API_KEY` and `GOOGLE_MAPS_API_KEY` didn't exist on the VM after the code push, which
+would have left the new tools silently returning "not configured." Appended (not overwritten)
+to the VM's `.env`, services restarted, journal checked directly for a clean startup rather than
+trusting `systemctl is-active` alone.
+
+**Commit scoped carefully around concurrent work.** Another window had `ROADMAP.md`,
+`SESSION.md`, `archive/PROJECT_LOG.md`, and several archive/test files staged or modified when
+this session went to commit. Used `git commit <explicit pathspec>` rather than `git add -A`, so
+the commit contains exactly this session's 25 files and the other window's pending work — staged
+or not — was left completely untouched, verified with `git status` before and after.
+
+---
+
+### 2026-08-06 (billing investigation + region latency analysis) — investigation only, no commits, no deploy
+
+Writeup: [archive/sessions/2026-08-06 — Billing Investigation and Region Latency Analysis.md](sessions/2026-08-06%20—%20Billing%20Investigation%20and%20Region%20Latency%20Analysis.md)
+
+Mike asked why Compute Engine billing showed nothing from Aug 4 onward while Vertex AI usage
+looked elevated on Aug 2 and Aug 4, then a follow-on pair of questions about whether us-central1
+is the right region given the app runs from London, and how much of that region latency is
+actually felt per turn.
+
+**Billing gap — checked `gcloud` directly rather than trusting the console.** `metatron-vm` has
+been `RUNNING` continuously since 2026-08-03 23:47 PDT (the stop/start pair right before that is
+the already-logged 4-hour outage recovery), no stop/start since, neither budget cap fired. **No
+BigQuery billing export dataset exists** — `bq ls` on the project is empty, so there is no
+per-SKU attribution available, only the console report view, which lags for GCE line items
+(typically 1–3 days) in a way Vertex AI's same-day metered billing does not. Read: the Compute
+Engine gap is very likely reporting lag, not an actual billing gap — the VM is confirmed running
+and charging. The Vertex spike lines up with real heavy-call activity already in this log for
+both dates (SEQ 021 + Synth self-development on the 2nd; the A4 gate rerun, B1a's 75 live
+red-team cases, and decisions A/B/C testing on the 4th) — a plausible explanation, not a proven
+one, since there's no SKU-level way to rule out something double-firing. **This BigQuery-export
+gap was already recorded once, in this log, as a lever "recorded, not applied" (line ~1431) and
+never became an actionable item — it is filed as [DB-0806-03] this time specifically so it
+doesn't happen again.**
+
+**Region pricing — pulled live from the Cloud Billing Catalog API rather than estimated from
+memory.** E2 vCPU and RAM both carry a flat **10.0% premium** in europe-west1 over us-central1;
+Balanced PD and static IP are identical in both. Applied to the actual e2-medium 24/7 numbers
+already in `CLAUDE.md` (~$29.15/mo), europe-west1 comes to **~$31.75/mo — about $2.60/mo more**.
+europe-west2 (London itself) was also priced for comparison: a 22.7% CPU premium, more than
+double europe-west1's gap, for a latency win too small over europe-west1 to justify it (Belgium
+to London is already a short hop).
+
+**Latency compounding — traced through the real code paths, not assumed.** The transatlantic
+leg is paid **twice per voice turn**, not once, given the app's actual flow: `POST /transcribe`
+(`static/index.html:1119`) is a full round trip for STT before the pipeline even starts, and the
+WebSocket send (`static/index.html:973`) then waits on time-to-first-token of the streamed
+response. On us-central1 that's roughly 260–300ms of pure geography tax per turn; on
+europe-west1, roughly 20–30ms. **This does not compound with the internal Coordinator →
+specialist(s) → Synthesizer pipeline** (`core/orchestrator.py:2396` dispatches specialists in
+parallel via a thread pool) — every one of those calls is VM → Vertex's `global` endpoint, which
+never leaves Google's backbone regardless of which region hosts the VM. Region choice only taxes
+the two client-facing edges of a turn, not the internal call count. Net estimate: **~200–280ms
+saved per turn** by moving to europe-west1 — real, but small against the multi-second-to-
+tens-of-seconds pipeline compute time itself, which the log elsewhere already describes as the
+dominant cost ("routing + specialist dispatch + synthesis, often tens of seconds").
+
+**No changes made.** Both topics are exploratory; nothing was decided or scheduled. Filed
+**[DB-0806-03]** (BigQuery billing export) and **[DB-0806-04]** (us-central1 → europe-west1
+migration, sized but not decided) into `DEV_BACKLOG.md`. Checked `ROADMAP.md` — neither topic is
+tracked there (Track D infrastructure covers dedicated-hardware migration and encryption, not
+GCP region choice), so no roadmap edit.
+
+---
+
 ### 2026-08-05 (backlog quick-bucket sweep, first SMTP send, APK rebuild, dictated-email fix)
 
 Writeup: [archive/sessions/2026-08-05 — Backlog Quick-Bucket Sweep, SMTP Test, APK Rebuild, Dictated-Email Fix.md](sessions/2026-08-05%20—%20Backlog%20Quick-Bucket%20Sweep%2C%20SMTP%20Test%2C%20APK%20Rebuild%2C%20Dictated-Email%20Fix.md)

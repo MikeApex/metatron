@@ -193,6 +193,14 @@ Unlocks: Phase 6 begins on a legible, modular codebase. B2 (PoLP) works in `core
 
 **B1 — Red team + automated security tests (6A / D3)**
 
+> **✅ B1a done — 2026-08-04, 75/75 checks, gate PASS.** The disclosure-category table below, the
+> output-filter automated suite, and the confused-deputy test (all three items on this page) ran
+> live via the new scripted runner `tests/run_b1_redteam.py` (mirrors `run_a4_safety.py`'s
+> pattern). Report: `tests/security_redteam_2026-08-04.md`. Full detail:
+> `archive/PROJECT_LOG.md` § 2026-08-04 (B1a red team executed). **The indirect-injection table
+> below (B1b) is still open** — unaffected by this, still gated on Track E per its own note.
+> **B1 as a whole — what A7 sign-off needs — is not closed until B1b also passes.**
+
 Build: Use GPT-4o and/or o3 to generate adversarial prompts across all attack categories below. Run each against live Coordinator and Synthesizer. Log result for each.
 
 Also build during B1 (automated, no adversarial generation needed — these are security testing plan checks 5 and 6):
@@ -232,7 +240,7 @@ Fix all findings from B1. Implement from `archive/security/security_backlog_2026
 
 - **Authentication on `/session` endpoint** — **shared secret / token auth** (decided 2026-06-10; not Tailscale ACL — D1's Android app removes the Tailscale-only substrate, and an ACL control would be invalidated by it). Tailscale remains defense-in-depth where present.
 - **Principle of Least Privilege** — per-agent tool injection whitelist in `orchestrator.register_tools()`; each session receives only the tools that agent legitimately needs
-- **`write_agent_config`/`write_config` access control** — human-in-the-loop confirmation gate in Python tool code (not a prompt instruction); no agent can permanently modify system behavior without explicit user confirmation
+- **`write_agent_config`/`write_config` access control** — human-in-the-loop confirmation gate in Python tool code (not a prompt instruction); no agent can permanently modify system behavior without explicit user confirmation. **✅ `write_config` fully gated 2026-08-05** (every write, no exceptions — matches `send_email`'s two-step pattern). **`write_agent_config` gated for its guarded-key subset only** (`_GUARDED_KEYS` in `tools/agent_config.py`, e.g. `physical_health`'s `medication_profile`) — a blanket gate on every routine specialist write (workout plans, budget structures) was scoped out deliberately as unusable friction on the common case; see `archive/PROJECT_LOG.md` 2026-08-05 for the reasoning. Whether this narrower scope satisfies the item as written, or whether it needs revisiting, is a B3 baseline-doc question, not decided here.
 - **Confused deputy enforcement** — sub-agent output treated as opaque strings in orchestrator; never eval'd, JSON-parsed for tool calls, or passed as raw system prompt content without wrapping
 - **`run_session_anthropic` loop iteration limit** — add iteration counter matching `_openai_compat_loop`'s `max_iterations=8`
 - **Output filter upgrade** — move from keyword matching to regex+semantic approach; catches paraphrases and obfuscated forms; verify coverage of Synthesizer output (not just Coordinator)

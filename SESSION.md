@@ -1,21 +1,23 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-05 (backlog quick-bucket sweep, first SMTP send, APK rebuild, dictated-email
-fix) — **Backlog 44 → 32 open**: 11 stale/already-fixed entries closed, 3 real bugs fixed
-(`run_a4_safety.py` report-filename collision, `.message` bubble line-wrap, spend-guard pricing
-~3.75x low on flash-lite output), one same-day wrong verification corrected (`write_config`
-heading dedup — `_titled()` actually lives in `core/orchestrator.py`, not
-`tools/config_writer.py`). DB-0803-06 (`shownIds` eviction) re-derived and confirmed real, left
-open. **First real email this system has ever sent** — full `send_email` confirm-gate path
-exercised live against `mike`. APK rebuilt and content-verified (mtime looked stale, contents
-weren't); on-device install still Mike's step. Two decisions by explicit user instruction:
-check-ins keep firing through silence (not a bug, closed — the original gate was against
-spamming an *active* user, not against reaching out during quiet); browser live-refresh stays
-**open** — a related but distinct fix (`ace22c7`, half-open sockets) doesn't cover this entry's
-own render-path diagnosis, confirmed before closing anything. Built and deployed: dictated-email
-correction (`core/voice_pipeline.py`, snaps a mis-transcribed address to the closest known
-contact via `/transcribe`'s new optional `persona` param). Unchanged: `[DB-0804-01]`
-scheduled-fire check still pending; A7 blocked on checks 10/12 and B1b.*
+*Updated: 2026-08-08 (travel/routing tools, Google API onboarding, CRM hardening) — `c4ff279`,
+deployed and verified live. Built pre-departure travel tools (`get_tfl_status`, `get_flight_status`
+via AeroDataBox/RapidAPI, `get_travel_time` via Google Maps Routes API as the default router
+everywhere) and a shared, non-persona-scoped `regional_transit.yaml` library so a traveling
+persona picks up the right city's cross-check tool, not their home one. **Built a full Google
+Contacts OAuth integration, then reversed it same day**: the recorded bug ("misattributing the
+user's email to the contact") turned out to need local validation in `write_contact`, not a
+third party with a 7-day token-refresh problem discovered along the way — replaced with a
+`write_contact` misattribution guardrail (exact-match refuse, near-miss flag), a standing
+read-back instruction in `relationships.md`, a confirm-gate on `write_profile`'s contact-field
+*changes*, and a portable `vobject`-based vCard importer. Deploy caught a real gap: `.env`
+doesn't travel with `deploy.sh`, so the two new API keys had to be appended to the VM separately
+or the new tools would have silently read as unconfigured — caught and fixed before calling it
+done. Google Places/Pollen APIs researched and documented, not built (Places blocked on a
+missing GPS/location capability, itself now filed as **[DB-0808-04]**, not scoped). Full detail:
+[archive/PROJECT_LOG.md](archive/PROJECT_LOG.md). Unchanged: `[DB-0804-01]` scheduled-fire check
+still pending; A7 blocked on checks 10/12, B1b; `[DB-0806-03]`/`[DB-0806-04]` (billing export,
+region migration) still open, not decided.*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -91,22 +93,18 @@ built**; the per-agent `allowed_tools` whitelist is already *enforced*, not warn
 execution split, are in
 [archive/sessions/2026-08-04 — B1-B4 Security Scoping.md](archive/sessions/2026-08-04%20—%20B1-B4%20Security%20Scoping.md).
 
-> **✅ SMTP send path exercised live, 2026-08-05.** Full `send_email` confirm-gate path run
-> against `mike` — `request()` → approve → matching `confirm_token` → real Gmail SMTP. First
-> mail this system has ever sent. Detail: [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
-
-**✅ `[DB-0803-02]` proactive check-ins fixed and deployed 2026-08-04 (`10bf194`), re-verified
-live on the VM.** Root cause was `core/router.py:166` handing a live `AgentRecord` to
-`log_model_error()`, masking the real failure. **`[DB-0804-01]` remains open** — a genuine
-scheduled fire completing end-to-end hasn't been observed yet, only the crash path is proven
-dead. Three time-gated checks filed (~23:03 tonight, 07:30 tomorrow, one-week count
-2026-08-11) — do not check before those times.
+**`[DB-0804-01]` still open** — proactive check-ins are fixed and deployed (`10bf194`,
+[archive/PROJECT_LOG.md](archive/PROJECT_LOG.md) has the root cause), but a genuine scheduled
+fire completing end-to-end still hasn't been directly observed. One-week count due
+2026-08-11 — do not check before then.
 
 **The backlog is the bin for everything outside this roadmap.** Work it with **`/backlog`**.
-Currently **32 open**, down from 44 after a 2026-08-05 quick-bucket sweep. The one rule: *no
-item is acted on, or re-filed, on the strength of its own description* — that sweep found a
-same-day verification of its own that was wrong (checked the wrong file), corrected in the same
-pass.
+Currently **45 open, 6 untriaged** — the count grew this session (several real capabilities
+built and filed, plus new Inbox arrivals) more than it shrank. Includes one already-resolved
+Inbox line (pre-departure travel checks, built as `[DB-0806-01]`) waiting on a `/backlog` pass to
+clear it — left alone per `/archive`'s own "don't triage here" rule. The one rule: *no item is
+acted on, or re-filed, on the strength of its own description* — that sweep found a same-day
+verification of its own that was wrong (checked the wrong file), corrected in the same pass.
 
 ---
 
@@ -117,15 +115,14 @@ Newest first. Full detail for every entry — and everything older — is in
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-08 | **Travel/routing tools, Google API onboarding, CRM hardening** — `get_tfl_status`/`get_flight_status`/`get_travel_time` (Google Maps default router) built; Google Contacts OAuth built then reversed same day for a simpler local fix (`write_contact` guardrail, vCard import, `write_profile` confirm-gate); Places/Pollen researched not built | `c4ff279` |
+| 08-06 | **Billing investigation + region latency analysis** — Compute Engine "no billing since Aug 4" traced to GCE report lag (VM confirmed running, no cap fired); europe-west1 vs us-central1 priced live (+10% compute, ~$2.60/mo, ~200–280ms/turn saved); investigation only, [DB-0806-03]/[DB-0806-04] filed | investigation only, no deploy |
 | 08-05 | **Backlog quick-bucket sweep, first SMTP send, APK rebuild, dictated-email fix** — 44→32 open; first real email ever sent; APK content-verified; check-ins-fire-through-silence and browser-live-refresh both resolved by explicit decision/verification | `2c097b3`, `a08e38a` |
 | 08-05 | **ROADMAP.md gap closed, `/archive` gets a sixth step** — B1a's completion had never reached `ROADMAP.md`; added a ✅ status note there and a new mandatory roadmap-check step to `.claude/commands/archive.md` | docs-only, no deploy |
 | 08-04 | **B1a red team executed** — new `tests/run_b1_redteam.py`; 9 disclosure categories (15 prompts incl. variants) + output-filter suite (61 checks) + confused-deputy probe, 75/75 PASS; found sticky MUST_SURFACE context contamination on `sarah_chen`, filed not fixed | tests-only, no deploy |
 | 08-04 | **B1–B4 security scoping** — Track B split into two waves (B1a/B2-remainder/B4 now, B1b/B3 gated on Track E); found B2 ~60% already done, PoLP allowlist actually enforced not warn-mode; new recurring security-review protocol | scoping only, no deploy |
 | 08-05 | **A7 pipeline probe** — `pipeline` suite added to `run_a4_safety.py`, running MW-3/MW-7/PH-MED through the real Coordinator→Synthesizer path; inverted pass condition (substance surfaces, token doesn't); 3/3 PASS live | tests-only, no deploy |
 | 08-04 | **Proactive check-ins fixed** — `[DB-0803-02]` root cause (`AgentRecord` handed to `log_model_error`) found and fixed; deploy.sh WS drain fixed; VM-down detection; live-VM re-verification; **`[DB-0804-01]` time-gated checks filed** | `10bf194`, `ec55788` |
-| 08-05 | **Backlog trust repair** — counter counted *up* when items closed; sweep found ~⅓ stale; IDs + provenance; nine tool grants; `/backlog` | `10bf194` (fast-forward) |
-| 08-04 | **Item 5 built** — out-of-band confirmation gate (`POST /confirm`), `send_email` to contacts, provenance rule; **Research could not fetch and now can** | `15b9a41` |
-| 08-04 | **App: transcription readout is dismissable** — height-capped, `✕` + 12s auto-hide. Needs deploy **and APK rebuild** | **no — pending** |
 
 ---
 
