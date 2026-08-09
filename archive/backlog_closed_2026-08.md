@@ -1870,3 +1870,30 @@ runs when a session runs.
 
   *closed 2026-08-09 · evidence `88b7614` deployed*
 
+
+## Closed 2026-08-09, later — key rotation
+
+- **[DB-0808-18] Live `OPENAI_API_KEY` sat in plaintext in `~/.zshrc:2`.** Rotated at
+  platform.openai.com (old key revoked), new key written to the gitignored `.env`
+  ([core/orchestrator.py:59](core/orchestrator.py#L59) `load_dotenv`s it at import, so
+  both named consumers — `:1626` and `:3154` — resolve it with no shell dependency), and
+  the `export` line deleted from `~/.zshrc` (backed up to `/tmp/zshrc.bak-*` first).
+  **The item's own "breaks nothing live" claim was wrong, in a way its own scope couldn't
+  see.** `~/.claude/claude.json`'s `ask_gpt` MCP server config held a literal
+  `${OPENAI_API_KEY}` placeholder, substituted from the shell environment at launch —
+  supplied, until this edit, by the very `~/.zshrc` line being deleted. Removing it broke
+  `ask_gpt` globally, for every project, the moment a new shell started. Caught before
+  handing back to Mike by checking consumers beyond this repo. Fixed by writing the real
+  key directly into `claude.json`'s `env` block instead of restoring the export — strictly
+  *less* exposure than before, since the key now reaches only the one process that needs
+  it rather than every shell on the machine, which is the same principle the item was
+  chasing, just satisfied one layer further out than it looked from inside this repo.
+  Also found and updated on Mike's flag: `~/Library/Application Support/Chorus/config.json`
+  (the separate "multi-model project" / Chorus app) held the old key in its own persistent
+  store, unaffected by any of the above — updated to the new key directly.
+  Verified: old key value returns zero hits across all four locations; new key confirmed
+  present and well-formed (164 chars, `sk-proj-` prefix) in `.env`, `claude.json`, and
+  Chorus's `config.json`. `.env` confirmed still untracked and unstaged.
+  *closed 2026-08-09 · evidence: `.env`, `~/.zshrc`, `~/.claude/claude.json`,
+  `~/Library/Application Support/Chorus/config.json` — all verified directly, no commit
+  (three of the four locations are outside this repo)*

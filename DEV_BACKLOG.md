@@ -36,23 +36,7 @@ re-ranked later that day when three closed and `[DB-0809-21]` entered at 3. Ever
 was checked and when; a verdict without that line is a description, and descriptions are what the
 standing rule distrusts.*
 
-- **1. [DB-0808-18] ⚠ Live `OPENAI_API_KEY` sits in plaintext in `~/.zshrc:2`.** *(Dev-session
-  find, kept here under the credential-exposure exception above.)* Rotate at platform.openai.com
-  (assume burned), move it into the gitignored `.env` — which does **not** carry it — and delete
-  the `export` line. **The repo question is answered: it never reached git** (`git log --all -S`
-  on the trailing fragment → 0 commits, 0 tracked files; `archive/transcripts/` gitignored at
-  [.gitignore:99](.gitignore#L99), not :97 as filed). No history rewrite; exposure is local only
-  — `~/.zshrc` plus 3 files in `archive/transcripts/raw/`. First because it is the cheapest item
-  here and the only one with a clock. **Correction 2026-08-09: the "3 files in
-  `archive/transcripts/raw/`" claim was false** — searching the literal 164-char value, a 24-char
-  mid-fragment, and any `sk-proj-` literal returns **zero** hits repo-wide. The original check
-  grepped the variable *name*, which appears in ~60 transcripts as ordinary discussion text. So
-  exposure is `~/.zshrc` alone and no transcript scrubbing is owed. No OpenAI model is in either
-  routing config, so deleting the export breaks nothing live; the only consumers are
-  `core/orchestrator.py:1591`/`:3083` and `tests/run_phase3.py:213`.
-  *filed 2026-08-08 by dev session · **verified 2026-08-09**, exposure scope corrected*
-
-- **2. [DB-0809-02] Do proactive sessions actually stay focused? — the mechanism half is fixed
+- **1. [DB-0809-02] Do proactive sessions actually stay focused? — the mechanism half is fixed
   and deployed; the guidance half is unproven.** **The original premise was wrong.** All 22 August
   `companion_checkin` openings were 1–2 sentences: the rule was obeyed, and four of the five
   "restatements" were the Synthesizer reading its *own* scheduler prompt as Mike's voice and firing
@@ -66,7 +50,7 @@ standing rule distrusts.*
   *filed 2026-08-09 · rewritten 2026-08-09 after measurement inverted it · full reasoning in
   `archive/PROJECT_LOG.md`*
 
-- **3. [DB-0809-21] Three deployed behaviour changes are unverified on the running system.** Mike
+- **2. [DB-0809-21] Three deployed behaviour changes are unverified on the running system.** Mike
   deferred the runs to batch them (*"test later with other changes"*), so this is the outstanding
   half of `6330029`, `b9ea29f` and `88b7614` — all live for `mike` now. Four things, one VM trip
   (**there is no `vertex-key.json` on the Mac**, so `provider: gemini` cannot resolve credentials
@@ -82,7 +66,7 @@ standing rule distrusts.*
   *filed 2026-08-09 · **Mike deferred it explicitly** — ranked 3 by Mike: cheapest item that can
   actually move, since 4 and 5 are blocked on an APK rebuild and a device*
 
-- **4. [DB-0803-01] Text doubling / input cut off mid-sentence in the app.** Reported 2026-08-03
+- **3. [DB-0803-01] Text doubling / input cut off mid-sentence in the app.** Reported 2026-08-03
   17:12Z; still live 2026-08-04 (SEQ 004). **Verified 2026-08-09 — it splits, and the doubling
   half is already fixed in code.** Doubling is the same defect as the now-closed `[DB-0803-06]`,
   fixed by `c4ff279` ([static/index.html:713-715](static/index.html#L713), call sites
@@ -103,7 +87,7 @@ standing rule distrusts.*
   *filed 2026-08-03 by Mike via Synthesizer · origin SEQ 012 · **verified 2026-08-09; half two
   diagnosed 2026-08-09***
 
-- **5. [DB-0805-02] Email approval prompt does not render in the app.** Two reports 2026-08-04
+- **4. [DB-0805-02] Email approval prompt does not render in the app.** Two reports 2026-08-04
   (12:42Z, 12:49Z). **Verified 2026-08-09 — premise drifted, the UI now exists:** `#confirm-bar`
   at [static/index.html:470-477](static/index.html#L470) (handlers
   [:1367-1384](static/index.html#L1367)) against `/pending-confirmations` and `POST /confirm`
@@ -114,7 +98,7 @@ standing rule distrusts.*
   unusable.
   *filed 2026-08-04 by Mike via Synthesizer · origin SEQ 016/017 · **verified 2026-08-09***
 
-- **6. [DB-0809-03] Dictated contact details come through wrong and need correcting by hand.**
+- **5. [DB-0809-03] Dictated contact details come through wrong and need correcting by hand.**
   Three corrections in three minutes on 2026-08-02 (`diamond.mic` → `diamond.mike`), plus
   `diamond.like.gmail.com` at SEQ 006. **Verified 2026-08-09:**
   [tools/crm.py:149](tools/crm.py#L149)/[:158](tools/crm.py#L158) already run difflib near-miss
@@ -130,7 +114,7 @@ standing rule distrusts.*
   *filed 2026-08-09, consolidating the 2026-08-02 reports · Mike via Synthesizer · origin SEQ 006
   · **verified 2026-08-09; collision noted 2026-08-09***
 
-- **7. [DB-0809-06] The browser tab does not live-refresh on messages sent from elsewhere.** A
+- **6. [DB-0809-06] The browser tab does not live-refresh on messages sent from elsewhere.** A
   message from the terminal or the Android app appears only after a manual reload; app and
   terminal sync fine. Transport is ruled out by the entry's own diagnosis — this is a
   client-side render path — **confirmed 2026-08-09, with two code-provable causes found:**
