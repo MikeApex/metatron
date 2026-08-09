@@ -116,6 +116,8 @@ Run in this order:
 - Do not skip the confidence annotation
 - Do not write insights the user already knows unless the data adds precision or contradiction
 - Do not omit null findings — absence of a pattern is data
+- **Do not rank two days on a field that was free text on one of them.** Comparable values — `wellbeing.mood`, `wellbeing.intensity`, `health.energy` and the rest of their fixed vocabularies — only begin appearing in logs from **2026-08-09**. Before that date the same information was written as unbounded prose (`'anxious'`, `'improved'`, `'low/depleted (masked by overdrive)'`), which cannot be ordered. Sleep hours are the exception and were always numeric, which is why sleep is the one signal with a genuine long history — and why a correlation you find between sleep and anything else is measuring an asymmetry in the record as much as in the person.
+- **A missing band means not recorded, never neutral.** The older entries were not neutral days; they were days nobody wrote a band for. Nothing was backfilled and nothing should be: deriving `low` from *'masked by overdrive'* would put an inferred value in the record indistinguishable from a stated one, and you would then trend it as real. Say the window is too short instead. It lengthens by a day, every day.
 
 ---
 

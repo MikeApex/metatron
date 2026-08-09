@@ -24,6 +24,37 @@ def _logs_dir() -> Path:
     return persona_data_dir() / "logs"
 
 
+def _deep_merge(base: dict, incoming: dict) -> dict:
+    """
+    Merge `incoming` into `base`, recursing into nested dicts.
+
+    This used to be `base.update(incoming)`, which is correct for the flat top-level keys
+    the log accumulated in practice and silently destructive for the nested blocks the
+    specialists actually declare. Physical Health writing `{"health": {"sleep_hours": 7.5,
+    "sleep_quality": "good"}}` in the morning and `{"health": {"energy": "low"}}` in the
+    evening ended the day with `health` holding energy alone — the morning's two fields
+    replaced wholesale, no error, no trace.
+
+    That is very likely part of why nothing ever adopted the nested shape: across 70 log
+    files the `health` and `wellbeing` blocks appear in 4, while flat `mood`/`energy`/`focus`
+    appear in ~60. A flat scalar survives `update()`; a nested sibling does not. So this
+    function is the guard that has to exist *before* anything encourages nested writes —
+    doing it the other way round would have converted a schema mismatch into data loss.
+    (`[DB-0809-20]`.)
+
+    Lists are replaced rather than concatenated. `tasks_completed` and `medications_logged`
+    are restatements of the day's state, not append-only feeds — merging them would
+    duplicate every entry on the second write of the day.
+    """
+    out = dict(base)
+    for key, value in incoming.items():
+        if isinstance(value, dict) and isinstance(out.get(key), dict):
+            out[key] = _deep_merge(out[key], value)
+        else:
+            out[key] = value
+    return out
+
+
 def write_log(content: dict | None = None, log_date: str = "") -> str:
     """
     Write a daily log entry to data/logs/YYYY-MM-DD.json.
@@ -54,7 +85,7 @@ def write_log(content: dict | None = None, log_date: str = "") -> str:
         if log_path.exists():
             with open(log_path) as f:
                 existing = json.load(f)
-        existing.update(content)
+        existing = _deep_merge(existing, content)
         existing["date"] = log_date
         with open(log_path, "w") as f:
             json.dump(existing, f, indent=2)
@@ -143,9 +174,23 @@ def write_quality_event(
 WRITE_LOG_SCHEMA = {
     "name": "write_log",
     "description": (
-        "Save a daily log entry. Use this after a check-in to record mood, energy, "
-        "focus, tasks completed, blockers, and any other relevant fields. "
-        "Merges with any existing entry for that date."
+        "Save a daily log entry. Use this after a check-in to record how the day went. "
+        "Merges with any existing entry for that date, including inside nested blocks, "
+        "so writing twice in one day is safe.\n\n"
+        "RECORD BOTH A COMPARABLE VALUE AND THE REAL WORDS. Days have to be rankable "
+        "against each other or nothing can be read as a trend: 'anxious' and 'mixed' sit "
+        "on no scale, while sleep hours do — which is why sleep ends up explaining "
+        "everything. So put the coarse value in the field that has a fixed set, and the "
+        "specific description in `notes` beside it. Never flatten the description away, "
+        "and never invent a value the user did not give: if they said 'shattered', that is "
+        "energy `low` plus notes 'shattered', not a number they never stated.\n\n"
+        "Shape: `wellbeing` = {mood: low|neutral|positive|mixed, intensity: "
+        "low|moderate|high, trajectory: rising|stable|declining|unclear, stress: "
+        "low|moderate|high, notes: free text}. `health` = {sleep_hours: number, "
+        "sleep_quality: good|fair|poor, energy: low|moderate|high, food_logged: bool, "
+        "exercise: {type, duration_minutes, intensity_rpe}, symptoms, medical_notes}. "
+        "Top level also takes `focus`, `blockers`, `wins`, `tasks_completed`, `notes`. "
+        "Your own agent file's `## Data written` section is authoritative for your domain."
     ),
     "input_schema": {
         "type": "object",
@@ -157,8 +202,10 @@ WRITE_LOG_SCHEMA = {
             "content": {
                 "type": "object",
                 "description": (
-                    "Log fields to record. Common keys: mood, energy, focus, "
-                    "blockers, wins, tasks_completed, notes."
+                    "Log fields to record, in the shape described above — domain values "
+                    "inside their `wellbeing` / `health` block, using the fixed vocabulary, "
+                    "with the specific wording in the `notes` beside them. Top level takes "
+                    "focus, blockers, wins, tasks_completed, notes."
                 ),
                 "additionalProperties": True,
             },
