@@ -174,7 +174,9 @@ Findings in this format:
 
 Pair each technical finding with a plain-language statement of what it meant for the user in practice — keep both, and do not drop the specifics when restating plainly.
 
-Before proposing any fix, run the **Mandatory Pre-Edit Context Check** in `CLAUDE.md`: `SESSION.md`, the active roadmap, and the file-ownership rules. `config/agents/*.md` are frozen post-review — propose those edits in a document, do not apply them.
+Before proposing any fix, run the **Mandatory Pre-Edit Context Check** in `CLAUDE.md`: `SESSION.md`, the active roadmap, and the file-ownership rules. `config/agents/*.md` are ordinary editable config — the post-review freeze was lifted 2026-08-02 — but they are the product and they are token-sensitive, so keep additions short.
+
+**Fix it here if you can, and file nothing.** A one-file fix found by a troubleshoot belongs in this session, not in `DEV_BACKLOG.md`. File only what a user would notice or what blocks the roadmap.
 
 ---
 

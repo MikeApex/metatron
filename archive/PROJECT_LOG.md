@@ -12,9 +12,133 @@ session — never rewritten.**
 
 Current state lives in [SESSION.md](../SESSION.md). Outstanding work lives in
 [DEV_BACKLOG.md](../DEV_BACKLOG.md). Deploy and recovery detail lives in
-[docs/INFRASTRUCTURE.md](../docs/INFRASTRUCTURE.md). Per-session full writeups
-live in [archive/sessions/](sessions/). **This file is not loaded by
+[docs/INFRASTRUCTURE.md](../docs/INFRASTRUCTURE.md). Closed backlog items live in
+[archive/backlog_closed_2026-08.md](backlog_closed_2026-08.md). **This file is not loaded by
 `/metatron-code`** — consult it deliberately.
+
+*Per-session writeups in [archive/sessions/](sessions/) stop at 2026-08-09; from that date this
+file is the only narrative record, alongside the verbatim transcripts.*
+
+---
+
+### 2026-08-09 (dev-workflow revamp — commands, backlog, archive ritual) — docs and scripts only, nothing deployed
+
+**The ask, in Mike's words:** the flow "doesn't seem well managed or designed to any sort of
+best practices… every time we cover one point, two more take its place… most machine generated
+items aren't as relevant as user generated bugs or feature requests." The core goal is to
+develop Metatron as rapidly as possible, "not dot every i and cross every t."
+
+**What the history showed.** A trace through `archive/sessions/` and this log found the tooling
+had become self-feeding, and that this was structural rather than a matter of effort:
+
+- Five slash commands totalling 639 lines. `DEV_BACKLOG.md` at **1,658 lines / 139 KB — 2.8×
+  the size that triggered the 2026-08-03 context audit**, having regrown through three
+  documented sweeps (197 → 564 → 851 → 1,593 → 1,658 in six days; open items 32 → 51 in four).
+- Roughly **9–10 of the 24 sessions since 2026-08-02 shipped no product code.** The starkest:
+  the session that built `/backlog-attack` recorded "no backlog items were fixed, triaged, or
+  filed this session — this was tooling only," and the command was never run.
+- **Five of eight live Inbox entries were the same complaint** — the check-in brevity rule
+  being ignored — filed once per restatement by the Synthesizer.
+- Simplifications kept growing back: a `SessionStart` hook removed for cause on 07-29 and
+  explicitly declined on 08-02 was live again by 08-03; a 08-03 audit that closed with the
+  recommendation "stop here" was followed by four ritual expansions in six days.
+
+**Four root causes, each fixed by a mechanism rather than a resolution:**
+
+1. **`/archive` filed but never closed** (until 08-09's step 6a), so the list could only grow.
+   Now: close *before* filing, and a bar on filing — *a user would notice, or the roadmap is
+   blocked*. An incidental nit is fixed on the spot or dropped.
+2. **No priority dimension**, so a plaintext key leak ranked with a stale docstring. Now
+   `## Now` (~10, **ranked — position is priority**) / `## Later`. **Mike decides both the tier
+   and the rank; Claude's job is to put each arriving item to him with a recommended position
+   and the reasoning behind it.** Two corrections landed here during review, both worth keeping:
+   an instruction that today's items are equal was first over-generalised into a standing "`Now`
+   is a set, not a ranking" rule — wrong, the ranking is permanent and only *this* batch is flat
+   — and a first fix then swung too far the other way, telling Claude not to pre-rank at all. A
+   bare "where does this go?" is as unhelpful as silently appending: he assesses a
+   recommendation, so there has to be one.
+   **The entry bar for `## Now` is that Mike raised it.** A dev session's find goes to `## Later`
+   however good it is, promoted the day he hits it — the asymmetry is the mechanism, not an
+   opinion about quality. One narrow exception: a live credential exposure or data-loss risk
+   enters regardless of who found it. Applied immediately on the day: of the ten items first
+   proposed, three were dev-session finds; two were demoted and `[DB-0808-18]` (a leaked API key)
+   stayed under that exception, leaving eight and room for the next two things Mike raises.
+3. **Machine events shared an Inbox with Mike's requests.** Now `## Machine log`, collapsed by
+   signature, with a ×3 escalation into the sync's count line so a *recurring* runtime failure
+   still surfaces — repetition being the signal that a process event has become a real one.
+4. **Every incident deposited permanent scar tissue in a command file.** New standing rule:
+   command files carry procedure, not history.
+
+**What changed:** `/backlog-attack` deleted and folded in as `/backlog attack`; `/archive`
+196 → 87 lines and 6 steps → 4; `DEV_BACKLOG.md` 1,658 → 246 with closed items moved verbatim
+to `archive/backlog_closed_2026-08.md`; `scripts/sync_dev_backlog.py` rewritten to route, dedupe
+and count per-section; new `docs/WORKFLOW.md` with a decision table, per-command cards and a
+worked example week.
+
+**A planned mechanism was measured and found wrong before it shipped.** The approved plan
+specified `difflib.SequenceMatcher` at 0.6 to collapse repeated user requests, asserting it
+would take the Inbox from 8 entries to 4. Tested against the five real check-in complaints: the
+first implementation collapsed **nothing** — character-level similarity across them ranges
+0.11–0.42, because they are the *Synthesizer's own summaries*, written fresh each time, and so
+share a topic and almost no phrasing. Switched to a Dice coefficient over content words and
+swept the threshold against the real data: 5 repeats → 3 entries at 0.15, with all four
+contemporaneous unrelated requests staying separate. **No threshold collapses all five without
+risking a false merge** — one real pair scores 0.06, the same as a completely unrelated calendar
+request. Chose the safe end and documented the limit in the code, because a wrong merge silently
+destroys a distinct request Mike made, which is worse than showing one complaint twice. The
+reliable dedupe is the machine-side `(agent, tool)` key, which collapses 4 denials to 1 exactly
+because it keys on structure rather than prose.
+
+**Options rejected:**
+
+- *Transcript-only archiving* (no hand-written narrative at all) — the log entry is what carries
+  rejected options and corrections, which no transcript search surfaces.
+- *Keeping `archive/sessions/` as slim stubs* — Mike: "one entry is fine." Two files meant two
+  hand-written near-duplicates per close, which is the cost being removed.
+- *Lazy re-bucketing of the existing pile* — chosen against because the pile was what obscured
+  priority; a hard reset was the point.
+- *Cutting `## Later` items to one line each* to hit the plan's 150-line target — rejected:
+  the standing rule is that no item is acted on from its own description, and a one-line item
+  guarantees re-derivation. The file landed at 246 and the ceiling was set at ~250 to match
+  reality rather than writing a rule that was violated on the day it shipped. Same for
+  `/archive` (~100) and `/backlog` (~130).
+- *Serialising parallel windows* — rejected again; the parallelism works, the collisions were
+  always in the close-out.
+
+**What earlier sessions believed that turned out wrong:** that the parallel-window problem was
+about code files. It was not — clusters had disjoint manifests and still collided, because
+every window ran `/archive` and edited the same three shared files. The fix is a
+coordinator/worker split with handoff files, which closes `[DB-0808-15]` and the status half of
+`[DB-0805-05]`; the *git* half stays open, since one window's commit sweeping up another's
+uncommitted diff is untouched by any of this.
+
+**Also closed by the revamp:** `[DB-0809-01]` (inflated open count — the `- **✅` notation trap
+is gone by construction now that closed items leave the file) and `[DB-0808-13]` (`/archive`
+collision guard, now step 0).
+
+**Final state, and the first run of the new ritual.** `DEV_BACKLOG.md` 1,658 → 256 lines
+(8 `Now`, 29 `Later`, 0 `Inbox`); commands 639 → 467 across four files; `SESSION.md` 199.
+Nothing committed and nothing deployed — docs, one script, and no change under `core/`,
+`config/` or `tools/`.
+
+This session then closed itself with the new `/archive`, which is the only real test it gets.
+Two observations from that first run, recorded rather than acted on:
+
+- **It worked as designed and took minutes** — step 0 checks, transcript, one log entry,
+  `SESSION.md`, backlog close. No writeup file, no six-target sweep.
+- **Step 0's dirty-file check cannot tell whose edits it is looking at.** It reports
+  `SESSION.md` and `PROJECT_LOG.md` as modified, which on this run was *this* session's own
+  work. A session that assumes "dirty means mine" and rewrites over a genuinely concurrent
+  window's edits hits the exact failure the guard exists to prevent, so the guard is currently
+  advisory rather than protective. Filed as `[DB-0809-17]`. **Do not "fix" it by removing the
+  check** — a prompt to look is still better than no prompt.
+  *(Filing it also exercised the "never reserve an ID, grep at write time" rule, which
+  immediately caught a collision: `DB-0809-07` was already the VM-networking item.)*
+
+The transcript exporter also derived a filename from a slash-command caveat rather than the
+first user message (`2026-08-09 — local-command-caveatCaveat The messages below were genera.md`).
+Cosmetic, the script lives outside this repo, and it fails the filing bar — noted here so the
+next person who sees it knows it is known and deliberately not filed.
 
 ---
 

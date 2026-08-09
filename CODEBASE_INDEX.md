@@ -10,6 +10,7 @@
 | [CLAUDE.md](CLAUDE.md) | Primary developer context — architecture, conventions, terminology, design principles. Read every session. | Current |
 | [~/.claude/CLAUDE.md](~/.claude/CLAUDE.md) | Global Claude Code instructions — session logging, commit style, file references, numbered lists, terminal command explanations. | Current |
 | [STATUS.md](STATUS.md) | Legacy phase handoff document. **Stale** — says "Phase 3 ready to begin." Superseded by CLAUDE.md + session continuation prompts. Do not rely on it. | Stale |
+| [docs/WORKFLOW.md](docs/WORKFLOW.md) | Which dev command to fire, when, and what it costs — decision table, per-command cards, worked example week. Read on demand; not loaded by default. | Current |
 | [config/constitution.md](config/constitution.md) | Tier 0 — Tool Constitution. Read-only at runtime. Never edit without explicit user instruction. Loaded into every agent context. | Current |
 | [config/prime_directive.md](config/prime_directive.md) | Tier 1 — User terminal values. Blank until Goals Interview runs. Sensitive tier — local only. | Blank |
 | [config/mission.md](config/mission.md) | Tier 2 — Current life chapter. Blank until Goals Interview runs. Sensitive tier. | Blank |

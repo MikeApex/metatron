@@ -40,13 +40,15 @@ jobs and no rule about ownership — `SESSION.md` had reached 775 lines, 80% of 
 |---|---|---|---|
 | `CLAUDE.md` | how to work here: rules, conventions, architecture | edited | auto, every session |
 | `SESSION.md` | **current state only** | **replaced** | `/metatron-code` |
-| `DEV_BACKLOG.md` | outstanding work, one entry per item | appended to `## Inbox`, curated below — ritual in `/backlog` | **on demand** — synced every session, read only when working the backlog |
+| `DEV_BACKLOG.md` | work outside the roadmap, in priority order | `## Inbox`/`## Machine log` machine-written, rest curated — ritual in `/backlog` | **on demand** — synced every session, read only when working the backlog |
 | [`ROADMAP.md`](ROADMAP.md) | **live** tracks, phase gates, freezes — abridged | edited | `/metatron-code` |
 | `archive/plans/phase5_to_future_roadmap_2026-06-10.md` | the full plan — completed tracks, Phase 6B/7 detail | **never edited — it is dated and static** | never — read when `ROADMAP.md` says it does not carry your area |
+| [`docs/WORKFLOW.md`](docs/WORKFLOW.md) | which command to fire, when, and what it costs | edited | never — read when unsure which ritual applies |
 | `CODEBASE_INDEX.md` | where things are | edited | on demand |
 | [`archive/PROJECT_LOG.md`](archive/PROJECT_LOG.md) | dated history, reasoning, rejected options | **appended, never rewritten** | never — consult deliberately |
+| `archive/backlog_closed_YYYY-MM.md` | closed backlog items with the evidence that closed them | appended, rolls monthly | never — consult before re-filing anything |
 | [`docs/INFRASTRUCTURE.md`](docs/INFRASTRUCTURE.md) | recreate-from-scratch, outage runbooks, APK build | edited | never — consult when deploying or recovering |
-| `archive/sessions/` | per-session full writeups | one new file per session | never |
+| `archive/sessions/` | **historical — pre-2026-08-09 per-session writeups** | no longer written; the log entry replaced it | never |
 
 **The rule in one line: `SESSION.md` has a 200-line ceiling.** Below it, grow freely — recording a
 new blocker is exactly what it is for. Crossing it means history is accumulating in the primer
@@ -56,12 +58,26 @@ History goes in the log; state goes in `SESSION.md`; work goes in `DEV_BACKLOG.m
 that closes by *appending* to `SESSION.md` has put it in the wrong place — see `/archive`.
 
 **`DEV_BACKLOG.md` is the single bin for work outside the roadmap, and `/backlog` is how it is
-worked.** The one rule worth carrying without reading that file: **no item is acted on, or
-re-filed, on the strength of its own description** — open it against the current code first. A
-sweep on 2026-08-05 found roughly a third of checked items stale: causes already fixed, cited
-functions that no longer existed, line numbers hundreds of lines out. The cost is not the wasted
-check. A stale premise *argues for the wrong decision, persuasively* — that day one produced a
-well-reasoned recommendation to hold a tool grant pending work that had shipped two days earlier.
+worked.** Two rules worth carrying without reading that file:
+
+1. **No item is acted on, or re-filed, on the strength of its own description** — open it
+   against the current code first. A sweep on 2026-08-05 found roughly a third of checked items
+   stale: causes already fixed, cited functions that no longer existed, line numbers hundreds of
+   lines out. The cost is not the wasted check. A stale premise *argues for the wrong decision,
+   persuasively* — that day one produced a well-reasoned recommendation to hold a tool grant
+   pending work that had shipped two days earlier.
+2. **File only what a user would notice or what blocks the roadmap.** An incidental nit is
+   fixed on the spot or dropped. Between 2026-08-03 and 08-09 the file grew 197 → 1,658 lines
+   while three separate sweeps ran, because every session filed everything it saw and `/archive`
+   had no step that closed anything. Both halves are fixed; the bar is what keeps it fixed.
+
+**Command files carry procedure, not history.** When an incident teaches something, the lesson
+goes to `archive/PROJECT_LOG.md` and the command gets at most a line. `/archive` reached 196
+lines the other way — counting traps, notation tables and a diff-tab diagnosis, none of it
+needed at close-out. Rough ceilings: `/archive` ~100 lines, `/backlog` ~130, `DEV_BACKLOG.md`
+~250. Crossing one is the signal to move something out, not a licence to trim something useful.
+
+→ Which command to fire and when: [docs/WORKFLOW.md](docs/WORKFLOW.md).
 
 ---
 
@@ -612,15 +628,22 @@ begins. Generated files — reports, archives, plan snapshots — follow
 
 ## Chat Archiving
 
-**Run `/archive`.** The whole ritual — verbatim transcript export, project-log append,
-session writeup, `SESSION.md` refresh, backlog filing — lives in
-`.claude/commands/archive.md` so the steps are executed, not remembered.
+**Run `/archive`.** Four steps — verbatim transcript, one project-log entry, `SESSION.md`
+refresh, backlog close-and-file — in `.claude/commands/archive.md` so they are executed, not
+remembered. It should take minutes.
 
 The one rule worth carrying in your head, because it is what keeps `SESSION.md` small:
 
 > **`archive/PROJECT_LOG.md` is appended. `SESSION.md` is replaced.**
 > Detail goes in the log; only current state stays in the primer. A session that closes by
 > adding a new dated section to `SESSION.md` has put it in the wrong file.
+
+**No per-session writeup since 2026-08-09.** `archive/sessions/` and the project-log entry had
+become near-duplicates written by hand at every close, so the writeup was dropped: the
+transcript is the verbatim record, the log entry is the narrative, `SESSION.md` is the state.
+Existing files there stay as history. (The global `~/.claude/CLAUDE.md` names a five-step ritual
+including a writeup; it also says a project's own `/archive` is authoritative where one exists,
+which this is.)
 
 **Source of truth for transcripts:** `~/.claude/tools/archive_chats.py` (auto-detects the
 project root). There was a second, older copy at `tools/archive_chats.py` until 2026-08-03;

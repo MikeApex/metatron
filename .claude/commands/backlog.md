@@ -1,84 +1,63 @@
+---
+description: Work DEV_BACKLOG.md — triage the Inbox and pick work; `deep` for a clustering sweep, `attack` for parallel work prompts
+---
+
 Metatron — Work the Development Backlog
 
-`DEV_BACKLOG.md` is the single bin for everything that arises outside the roadmap. Two feeds
-reach it: Mike in conversation (recorded by the Synthesizer on the VM, pulled down by the sync
-script) and development sessions filing what they find. This command is how the bin gets
-emptied.
+Three modes. Default is a triage pass; `$ARGUMENTS` selects the others.
 
-Run it when picking up backlog work, triaging the Inbox, or answering "what's actually
-outstanding." Not needed for ordinary coding — there the task comes from the user, not the list.
+| Mode | When |
+|---|---|
+| *(default)* | Picking up work, triaging the Inbox, answering "what's actually outstanding" |
+| `deep` | Counts creeping, items overlapping, machine log unswept — occasional, not scheduled |
+| `attack` | A day of parallel capacity: cluster `## Now` into independent single-session prompts |
+
+Not needed for ordinary coding — there the task comes from Mike, not the list.
 
 ---
 
-## 1. Sync
+## Default pass
 
-```bash
-python3 scripts/sync_dev_backlog.py
-```
+**1. Sync and read.** `python3 scripts/sync_dev_backlog.py`, then read `DEV_BACKLOG.md` in full
+(it is deliberately outside the default session load). The count line is
+`N new · N inbox · N now · N later`, plus `⚠ machine:` when a runtime signature has recurred
+three times or more — that ⚠ is the only reason to open `## Machine log` on a default pass.
 
-Reports `N new · N untriaged · N open`. Writes to disk, costs no context. Exits 0 silently when
-the VM is stopped — expected, not a failure.
+**2. Triage the Inbox — every entry goes somewhere.** For anything user-reported, find the
+exchange it came from: the request text says *what* was asked, never *what Mike was trying to
+do*, and that difference has inverted a decision at least once. Timestamps are in the entry;
+conversations are on the VM (`/monitor/conversations?persona=mike&since=ISO&limit=N` — auth
+pattern in `scripts/sync_dev_backlog.py`). Note the offset: quality-event timestamps are **UTC**,
+conversation `ts` is **VM-local**.
 
-**The three numbers mean different things.** *New* arrived this run. *Untriaged* is sitting in
-`## Inbox` — machine-written, never hand-edited, and it is a queue, not a backlog. *Open* is
-curated work below Inbox. A rising untriaged count means the bin is filling faster than it is
-emptied; a rising open count means real work is accumulating. They are not interchangeable and
-the script no longer conflates them.
+**Propose a tier per entry in one numbered table — `## Now`, `## Later`, or close — and let Mike
+set them.** One interaction for the batch, not one per item. Then rewrite each entry properly
+into its section and delete it from Inbox.
 
-## 2. Read the file
+`## Now` is capped at ~10 and **ranked: position is priority**. **When an item reaches `## Now`,
+put it to Mike with a recommended rank and the reasoning for it** — how relevant it is against
+what is already there: who raised it, what it blocks, what it costs the user while it sits. He
+makes the assessment; the recommendation is what he assesses against, so a bare "where does this
+go?" is as unhelpful as silently appending it. **The ranking is decided as each item arrives**,
+not inferred later or left to sort itself out.
 
-Read `DEV_BACKLOG.md` in full. It is deliberately outside the default session load, so this is
-the point at which it enters context.
+**The entry bar is that Mike raised it** — a dev-session find goes to `## Later` however good it
+is, and is promoted the day he hits it. Narrow exception: a live credential exposure or
+data-loss risk enters regardless of who found it. **State the reporter with every
+recommendation** — "this is a real bug" is not the same claim as "Mike asked for this."
 
-## 3. Triage the Inbox
+**3. Verify only what is about to be worked.**
 
-Every `## Inbox` entry goes somewhere. Do not leave a queue behind.
+> **No item is acted on, or re-filed, on the strength of its own description.**
 
-Machine-written entries carry a type. `TOOL_DENIED` means an agent reached for a tool it was not
-granted — **read the agent's instruction file before deciding**, because the file is a
-specification written ahead of the tools and an attempt is usually evidence of designed intent,
-not overreach. Group by (agent, tool); nine entries have collapsed to six cases before now.
-
-**For anything user-reported, find the exchange it came from.** The denial or request text says
-*what* was blocked, never *what the agent or user was trying to do*, and the difference has
-inverted a decision at least once. The timestamp is in the entry; conversations are on the VM:
-
-```bash
-# /monitor/conversations?persona=mike&since=ISO&limit=N — see scripts/sync_dev_backlog.py
-# for the auth pattern (core.auth.bearer_header, stdlib only).
-```
-
-Note the offset: quality-event timestamps are **UTC**, conversation `ts` is **VM-local**.
-
-Rewrite the entry properly into an Open section or into `## Done`, and delete it from Inbox.
-
-## 4. Verify before re-filing — this is the part that matters
-
-> **No item keeps its place on the strength of its own description.**
-
-Open every item against the current code before deciding it is real. On 2026-08-05 roughly a
-third of what was checked did not survive: causes already fixed, cited functions that no longer
-exist, line numbers several hundred lines stale. Two entries in this file's own history were
-written from a plausible re-reading and had to be withdrawn.
-
-A stale premise does not merely waste the time spent on it — **it argues for the wrong decision,
-persuasively.** On 2026-08-05 a stale line ("no tool to add a scheduler job", true until
-2026-08-03) produced a well-reasoned recommendation to hold a grant pending work that had
-already shipped two days earlier.
-
-Four verdicts:
-
-| Verdict | Action |
-|---|---|
-| **Fixed** | Strike it (`- ~~…~~`) **with the commit or `file:line` that closed it** — closed without one is not closed — and move it to `## Done`. Never delete: an item that resurfaces must show it was checked once. |
-| **Real** | Keep. Add the evidence it is still real: what you checked, where, today. |
-| **Drifted** | Symptom may survive, cited code has moved. Keep, but repoint at today's location or mark `needs re-derivation` and say what to reproduce. **Never carry a stale line number forward.** |
-| **Needs a decision** | Collect into one place and ask once, rather than interrupting per item. |
+Open it against current code. On 2026-08-05 roughly a third of what was checked did not survive
+— causes already fixed, cited functions gone, line numbers hundreds of lines stale. Verdicts:
+**fixed** → move to `archive/backlog_closed_2026-08.md` with the commit or `file:line`;
+**real** → note what you checked and when; **drifted** → repoint at today's location, never
+carry a stale line number forward; **needs a decision** → collect and ask once.
 
 **Runtime claims need the journal, not the code.** "Fails on every scheduler job", "fires twice
-a day", "falls back on every request" cannot be settled by reading — an error can persist
-despite correct-looking code, and code can look broken while nothing hits the path. One SSH
-round-trip answers several at once:
+a day" cannot be settled by reading — one SSH round-trip answers several at once:
 
 ```bash
 gcloud compute ssh metatron-vm --zone=us-central1-a --project=metatron-ai-499810 \
@@ -86,50 +65,70 @@ gcloud compute ssh metatron-vm --zone=us-central1-a --project=metatron-ai-499810
   --since '7 days ago' --no-pager | grep -c 'PATTERN'"
 ```
 
-Beware near-misses: on 2026-08-05 eleven `[vertex_cache]` warnings looked like a filed 404 bug
-and were `NameResolutionError` from an unrelated outage.
+Beware near-misses: eleven `[vertex_cache]` warnings once looked like a filed 404 bug and were
+`NameResolutionError` from an unrelated outage.
 
-## 5. ID and provenance
-
-Every curated item carries an ID and a provenance line:
-
-```markdown
-- **[DB-0803-07] ⚠ `deploy.sh`'s drain is decorative**
-  *filed 2026-07-30 by dev session (client/app audit) · recovered from SESSION.md:317
-  2026-08-03 · verified 2026-08-05 against core/server.py:433,600,721*
-```
-
-- **`DB-MMDD-NN`** — dated from filing, sequential within that date, **never reused**, kept by
-  closed items. Positional references (`#7`, `#19`) are not usable across chat windows: they
-  shift the moment anything is added or triaged, and have already caused ambiguity.
-- **filed … by …** — `Mike via Synthesizer`, `warn-mode tool denial`, `daily rule audit`, or
-  `dev session (Claude Code)` with a clause on what was being done at the time. This is the
-  field that answers "why did the list grow" later.
-- **origin SEQ** — the per-day conversation id, which `/metatron-troubleshoot` takes, so a
-  conversation-sourced item is re-openable against the exchange that produced it. `—` if it did
-  not come from a conversation.
-- **verified** — date plus what was checked. Where no filing date is recorded, say so rather
-  than inventing one.
-
-## 6. Close out
-
-Re-run the sync and confirm the count moved the way you expect. Then check:
+**4. Close out.** Re-run the sync and confirm the count moved the way you expect. Check for
+duplicate ids — expect nothing:
 
 ```bash
-# Duplicate ids — expect nothing. Anchored to the leading bullet so that a
-# cross-reference to another item ("see [DB-0805-01]") is not read as a second
-# definition of it; the unanchored form false-positives on every cross-reference.
 grep -o "^- \*\*\[DB-[0-9-]*\]" DEV_BACKLOG.md | grep -o "DB-[0-9-]*" | sort | uniq -d
 ```
 
-If code changed, note whether it needs `./deploy.sh` (anything under `core/`, `config/`,
-`tools/`) and whether a parallel window owns the file.
+If code changed, note whether it needs `./deploy.sh` (`core/`, `config/`, `tools/`).
 
 ---
 
-## What this command does not do
+## `deep` — the periodic sweep
 
-It does not work the whole backlog. Triage a batch, or the Inbox, or one item — the count at
-session start and close is the signal for when a pass is worth it, and that decision is Mike's.
-`/metatron-code` and `/archive` report the count and nothing more, deliberately: a recurring
-bulk chore is how a list stops being read at all.
+Everything above, plus the maintenance a default pass deliberately skips:
+
+- **Cluster and merge.** Read `## Later` for items describing the same underlying thing and
+  merge them into one, keeping both reasoning trails. Overlapping entries are how a list gets
+  argued over twice — three merges happened in the 2026-08-09 rebuild alone.
+- **Verify every `## Now` item**, not just the ones about to be worked.
+- **Sweep `## Machine log`.** Promote anything user-impacting; leave the rest collapsed.
+- **Roll closed items** into `archive/backlog_closed_YYYY-MM.md`, starting a new file each month.
+- **Check the shape:** `DEV_BACKLOG.md`'s ceiling is ~250 lines (the `CLAUDE.md` figure). Past
+  it, narrative is accumulating again — the detail belongs in the code, the log, or the archive.
+
+---
+
+## `attack` — parallel work prompts
+
+Planning only. Produce a scored list and up to three independent single-session prompts; do not
+fix anything in this pass.
+
+**Work `## Now` only, and take its order as given** — that ranking is Mike's, so do not re-derive
+importance or reorder against your own judgement. Score each item for **ease only** (1–10, 10 =
+easiest) to decide what fits one session: anything touching routing, persona identity, or the
+scheduler gate stack is ≤3 regardless of line count. Where ease forces a departure from rank —
+a top item too large to fit — **say so explicitly** rather than quietly promoting an easier one.
+Then verify the shortlist against current code (step 3 above) before it may enter a cluster.
+
+**Cluster into at most three groups, each with an exclusive file manifest.** Code, config *and*
+test files, cross-checked across groups. **A cluster that cannot be given a disjoint manifest is
+not parallelised** — it runs serially in this window instead. Flag any VM-owned files
+(`config/personas/**`) explicitly; those need the scp discipline, not a normal edit.
+
+**Then hand out prompts carrying this protocol verbatim, because the collisions were never in
+the code — they were in the close-out:**
+
+> You are a **worker**. Do not edit `SESSION.md`, `archive/PROJECT_LOG.md`, `DEV_BACKLOG.md`,
+> `ROADMAP.md`, or `.claude/commands/*`. Do not run `/archive` and do not run `./deploy.sh`.
+> Work only the files in your manifest. When done, run
+> `python3 ~/.claude/tools/archive_chats.py`, then write `archive/handoffs/YYYY-MM-DD-<slug>.md`
+> — about ten lines: what shipped, commits, which backlog items to close and with what evidence,
+> and anything `SESSION.md` must carry. Commit only your manifest files, and check
+> `git log --oneline -3` afterwards to confirm the commit was not a no-op.
+
+**This window is the coordinator.** When the workers finish, run `/archive` once, folding every
+handoff into the single log entry, the `SESSION.md` refresh, and the backlog close — then delete
+the consumed handoffs. **One deploy, owned by you, after consolidation.**
+
+Stop after presenting the prompts and ask which to run.
+
+---
+
+*Procedure only — under ~130 lines (the `CLAUDE.md` ceiling). What each collision cost and why
+the protocol looks like this: `archive/PROJECT_LOG.md` § 2026-08-08 and § 2026-08-09.*
