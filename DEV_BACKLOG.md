@@ -31,9 +31,10 @@ or `file:line` that closed them — closed without evidence is not closed.
 credential exposure or data-loss risk enters regardless of who found it. Both rituals — ranking
 each item as it arrives, and the reporter asymmetry — are in [docs/WORKFLOW.md](docs/WORKFLOW.md).
 
-*Ranked 2026-08-09 by Mike after a `/backlog deep` sweep verified all eight against current code.
-Every entry carries what was checked and when; a verdict without that line is a description, and
-descriptions are what the standing rule distrusts.*
+*Ranked 2026-08-09 by Mike after a `/backlog deep` sweep verified every entry against current code;
+re-ranked later that day when three closed and `[DB-0809-21]` entered at 3. Every entry carries what
+was checked and when; a verdict without that line is a description, and descriptions are what the
+standing rule distrusts.*
 
 - **1. [DB-0808-18] ⚠ Live `OPENAI_API_KEY` sits in plaintext in `~/.zshrc:2`.** *(Dev-session
   find, kept here under the credential-exposure exception above.)* Rotate at platform.openai.com
@@ -65,16 +66,44 @@ descriptions are what the standing rule distrusts.*
   *filed 2026-08-09 · rewritten 2026-08-09 after measurement inverted it · full reasoning in
   `archive/PROJECT_LOG.md`*
 
-- **3. [DB-0803-01] Text doubling / input cut off mid-sentence in the app.** Reported 2026-08-03
+- **3. [DB-0809-21] Three deployed behaviour changes are unverified on the running system.** Mike
+  deferred the runs to batch them (*"test later with other changes"*), so this is the outstanding
+  half of `6330029`, `b9ea29f` and `88b7614` — all live for `mike` now. Four things, one VM trip
+  (**there is no `vertex-key.json` on the Mac**, so `provider: gemini` cannot resolve credentials
+  locally): (1) **A4 `clinical` suite** against `sarah_chen` — 3 scenarios, ~$0.10–0.30, a regression
+  check only, since its pass criteria are `MEDICATION_MISSED_CRITICAL` and the clinical flags and
+  cannot reach the sleep edits; (2) **three targeted Physical Health calls** which *do* assert them —
+  5.5h single night (hours on the `SLEEP:` line, **no** `SLEEP_POOR`), two consecutive such nights
+  (flag fires), a logged run (`duration_minutes` + `intensity_rpe` pass through, not "logged");
+  (3) the **05:40 `daily_calendar_reconcile`** output once a real candidate exists — it must raise at
+  most one, as a question, never as a miss (may take days to arise naturally); (4) the first
+  `companion_checkin` after 07:00 showing `SCHEDULER DIRECTIVE`. Project the cost and get approval
+  before running, per `docs/CONVENTIONS.md` § Testing Cost Convention.
+  *filed 2026-08-09 · **Mike deferred it explicitly** — ranked 3 by Mike: cheapest item that can
+  actually move, since 4 and 5 are blocked on an APK rebuild and a device*
+
+- **4. [DB-0803-01] Text doubling / input cut off mid-sentence in the app.** Reported 2026-08-03
   17:12Z; still live 2026-08-04 (SEQ 004). **Verified 2026-08-09 — it splits, and the doubling
   half is already fixed in code.** Doubling is the same defect as the now-closed `[DB-0803-06]`,
   fixed by `c4ff279` ([static/index.html:713-715](static/index.html#L713), call sites
   [:952](static/index.html#L952)/[:979](static/index.html#L979)). **The fix is not on the phone** —
   the bundled APK asset still has `shownIds.clear()` (`[DB-0809-18]`), so the gating step is a
-  rebuild and re-test, not code. **"Input cut off mid-sentence" is a separate, untouched half.**
-  *filed 2026-08-03 by Mike via Synthesizer · origin SEQ 012 · **verified 2026-08-09***
+  rebuild and re-test, not code. **Half two is now diagnosed (2026-08-09) and is server-side, not
+  the app.** Ruled out the client: all five recordings from the report window end in silence with
+  terminal energy at 1–3% of their own mean, and the `SILENCE_MS = 2500` auto-stop waits out 2.5s of
+  quiet by construction, so it cannot cut mid-word. Cause is `vad_filter=True` at
+  [core/voice_pipeline.py:153](core/voice_pipeline.py#L153) — Silero drops the quiet tail before
+  Whisper decodes. `data/audio/2026-08-03/18-16-16.webm` is the clean case: VAD-on ends
+  *"...communicating"*, VAD-off continues *"...with what we put in."* Second effect, unexpected: VAD
+  also costs punctuation, turning that file into a run-on. **Do not simply set
+  `METATRON_WHISPER_VAD=0`** — [:53](core/voice_pipeline.py#L53) records why it is on (~7% faster,
+  suppresses the *"Thank you."* Whisper hallucinates on room tone). Tune Silero's `threshold` down
+  and `speech_pad_ms` up, and measure against the **12 days of retained audio on the VM**, which is
+  a regression corpus at zero API cost. Fix is mechanical from here.
+  *filed 2026-08-03 by Mike via Synthesizer · origin SEQ 012 · **verified 2026-08-09; half two
+  diagnosed 2026-08-09***
 
-- **4. [DB-0805-02] Email approval prompt does not render in the app.** Two reports 2026-08-04
+- **5. [DB-0805-02] Email approval prompt does not render in the app.** Two reports 2026-08-04
   (12:42Z, 12:49Z). **Verified 2026-08-09 — premise drifted, the UI now exists:** `#confirm-bar`
   at [static/index.html:470-477](static/index.html#L470) (handlers
   [:1367-1384](static/index.html#L1367)) against `/pending-confirmations` and `POST /confirm`
@@ -85,24 +114,6 @@ descriptions are what the standing rule distrusts.*
   unusable.
   *filed 2026-08-04 by Mike via Synthesizer · origin SEQ 016/017 · **verified 2026-08-09***
 
-- **5. [DB-0809-20] The daily log records prose where its own schemas declare enums, so almost
-  nothing can be compared across days.** `wellbeing.mood: low | neutral | positive | mixed` and
-  `health.energy: low | moderate | high` are declared in
-  [config/agents/mental_wellbeing.md:219](config/agents/mental_wellbeing.md#L219) and
-  [physical_health.md:155](config/agents/physical_health.md#L155). **Measured 2026-08-09 across 70
-  log files: those nested blocks appear in 4.** The other 66 write flat free-text top-level keys —
-  `mood` 63, `energy` 61, `focus` 61, with real values `'anxious'`, `'improved'`,
-  `'low/depleted (masked by overdrive)'`. Cause is a schema conflict, not agent sloppiness:
-  [tools/logger.py:146](tools/logger.py#L146) — the description the model reads *at the moment it
-  calls the tool* — names those keys flat, `additionalProperties: True`, no enums. The nearer
-  instruction wins over a config file read earlier in the session. Consequence: `sleep_hours` is
-  the only field two days can be ranked on, which is the root cause `[DB-0809-04]` was patched
-  around at the interpretation layer, and every Pattern Miner cross-domain result is computed over
-  unrankable prose. Fix is cheap — align the tool description with the two schemas already written
-  — but **the existing history stays unrankable**, so it does not fix itself by waiting.
-  *filed 2026-08-09 · **dev-session find, not Mike** — promoted to `## Now` by Mike as the parent
-  cause of `[DB-0809-04]`, which he did raise*
-
 - **6. [DB-0809-03] Dictated contact details come through wrong and need correcting by hand.**
   Three corrections in three minutes on 2026-08-02 (`diamond.mic` → `diamond.mike`), plus
   `diamond.like.gmail.com` at SEQ 006. **Verified 2026-08-09:**
@@ -111,21 +122,15 @@ descriptions are what the standing rule distrusts.*
   it — a different behaviour from what this asks for, and the snap exists nowhere. The user's
   addresses are in `profile.yaml` and contacts in the CRM, so a token close to a known string
   should snap rather than pass through or be rejected. Partly Whisper accuracy (`[DB-0808-08]`),
-  but the known-values pass fixes it independently.
+  but the known-values pass fixes it independently. **⚠ Live collision (2026-08-09):** this edits
+  `write_contact` at `tools/crm.py:149-158`, the exact function the parallel session's deferred
+  tone-pipeline Step 1 modifies (plan: `~/.claude/plans/3-everything-is-on-declarative-kurzweil.md`).
+  Whoever moves first commits before the other starts — and diff the file before staging it, per
+  `CLAUDE.md` § Deploy safety rule 4, which exists because that discipline already failed once today.
   *filed 2026-08-09, consolidating the 2026-08-02 reports · Mike via Synthesizer · origin SEQ 006
-  · **verified 2026-08-09***
+  · **verified 2026-08-09; collision noted 2026-08-09***
 
-- **7. [DB-0809-05] Nothing notices a calendar event that passed without happening.** Mike's ask:
-  detect it and prompt to reschedule; keep financial tasks (payroll) prominent in daily
-  proactive checks until explicitly closed. **Verified 2026-08-09: neither exists** — nothing in
-  `core/` or `tools/` reconciles a past event against reality; the scheduler only fires jobs.
-  **Designed 2026-08-09, not built** — the reframe (absence of evidence is not a miss), the
-  gather-vs-judge layer split, and Mike's three scope decisions are in
-  [archive/plans/calendar_reconcile_design_2026-08-09.md](archive/plans/calendar_reconcile_design_2026-08-09.md).
-  Adds a third dependent to the open `[DB-0808-11]`.
-  *filed 2026-08-09 from Inbox (2026-08-05T15:19Z) · Mike via Synthesizer · **verified 2026-08-09***
-
-- **8. [DB-0809-06] The browser tab does not live-refresh on messages sent from elsewhere.** A
+- **7. [DB-0809-06] The browser tab does not live-refresh on messages sent from elsewhere.** A
   message from the terminal or the Android app appears only after a manual reload; app and
   terminal sync fine. Transport is ruled out by the entry's own diagnosis — this is a
   client-side render path — **confirmed 2026-08-09, with two code-provable causes found:**
@@ -144,24 +149,6 @@ descriptions are what the standing rule distrusts.*
   *filed 2026-08-01/02 from conversation — the only `## Now` item whose provenance line does not
   name its reporter; treat "Mike raised it" as likely but unconfirmed · **diagnosed 2026-08-09**,
   both causes located; the fixes are small and mechanical*
-
-- **9. [DB-0809-04] Sleep gets over-weighted in interpretation — not because it is the only thing
-  logged.** Mike's *"once again you're making too much of the sleep disruption"*, raised more than
-  once. **Rewritten 2026-08-09: the entry blamed a thin record and the measurement it demanded
-  refutes that.** 20 days of `data/personas/mike/logs/2026-*.json` on the VM: `mood` 90%, `notes`
-  90%, `focus` 75%, `health` 70%, `energy` 70%, `tasks_completed` 60%; sleep is on 14/20 days
-  (70%) — roughly the **fifth** most-populated signal, not the only one. Its own guard (*don't
-  build weighting before checking the column is empty*) resolves the other way: **the columns are
-  not empty**, so domain-rotating check-ins and passive capture are both off the table. What
-  remains is a Synthesizer interpretation defect against an already-broad record — fix the
-  2026-08-03 `synthesizer.md` rules, not the log schema. The separate "hours plus interruptions,
-  not a narrative" ask is **largely already structural**: `sleep_hours` (11 days) and
-  `sleep_quality` (12 days) are distinct fields. Last because the expensive half just disappeared.
-  Still gates trusting any Pattern Miner cross-domain result.
-  *filed 2026-08-09 merging two 2026-08-01/02 entries · Mike via Synthesizer · **premise measured
-  and inverted 2026-08-09***
-
----
 
 ## Later
 

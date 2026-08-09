@@ -21,6 +21,120 @@ file is the only narrative record, alongside the verbatim transcripts.*
 
 ---
 
+### 2026-08-09, later (two more premises inverted; a second session's grant shipped inside my commit) — `6330029`, `b9ea29f`, `88b7614`, `9eb5ac4` all deployed
+
+The outgoing handoff said: *"Next: `[DB-0809-04]` (the last Opus item), then build `[DB-0809-05]`
+from its design doc; APK rebuild still gates items 3, 4 and 7."* Both were done. A third item was
+filed and built off the back of the first, and a parallel chat window turned into an incident.
+
+**`[DB-0809-04]` — sleep over-weighting. The 08-03 rule's premise was false, so the rule read as
+permission.** `synthesizer.md:86` said *"when one domain has far more logged data than the others"* —
+but sleep is on 14/20 days, **fifth of six** populated fields. A model reading that correctly
+concludes it does not apply. Chasing Mike's redirect (*"the tool should ask for other numbers to
+balance it"*) found the real mechanism, which is not availability but **comparability**: live logs
+hold `mood: 'anxious'`, `energy: 'improved'`, `focus: 'deep'` — none rankable against yesterday —
+beside `sleep_hours: 3`, which is. Sleep does not win for being loudest; it is the only signal the
+Synthesizer can reason *with*. Four amplifiers, all verified: it is the only field reported as a
+number every session, the only physical fact tripping a flag on **one** day (energy needs two,
+exercise five), the only fact flagged by **two** specialists, and the worked example in 7 places
+including inside the rule meant to suppress it.
+
+Changes: the premise rewritten around comparability; the correction is to *get* a comparable
+reading, not discount the one you have; a guard that the user's words are never converted into a
+number they did not give, because an inferred score is indistinguishable from a measured one and
+gets trended as real; `physical_health.md` stops flattening figures already in its schema ("logged"
+for a 45-minute run at RPE 7); `SLEEP_POOR` retimed to two consecutive nights with a new
+`SLEEP_ACUTE` holding the single night under four hours, so the A4 mania scenario still fires.
+
+**Rejected: editing `mental_wellbeing.md` to suppress its duplicate sleep flag.** The specialists
+run **in parallel on separate threads**, so neither can know the other flagged the same night — a
+"only flag if your read differs" instruction has nothing to compare against. The de-duplication
+rule went to the Synthesizer instead, where both outputs arrive, and it generalises past sleep to
+`FOOD_NOT_LOGGED`/`LIFESTYLE_GAP` and `ENERGY_CRASH`/`DRIFT_CHECK`. Side benefit: no instruction
+went near the clinical flags. **Also rejected: abstracting the sleep examples.** Only 1 of 7 taught
+sleep-as-cause from a single reading; the rest are multi-day, a question, or sleep-as-effect. Vaguer
+instructions is the direction that already failed here.
+
+**`[DB-0809-05]` — obligation store and passed-event reconciliation, built from its design doc.**
+Closure is inferred (Mike: *"in a dialogue these things will come up naturally"*), so
+`close_obligation` **requires** evidence and stores the user's words verbatim, and reopen keeps the
+original close on file. The 2026-08-07 failure (*"I thought I already told you that the Rowan
+transfer was handled"*) was not too few reminders — it was a closure that left no trace. The sweep
+**never returns a notify dict**, unlike `travel_watch`: a cancelled flight is a fact from an
+airline, crude text matching is not, so a function job gathers and a model session judges.
+**Correction to the design doc, recorded in it rather than edited away:** its table put the
+scheduler entry in `config/templates/scheduler.yaml` + the VM-owned persona file. Wrong class —
+silent token-free infrastructure goes in `_DEFAULT_JOBS`, because the template is copied *once* at
+persona creation and `daily_calendar_dedup_audit` already proved a later change never propagates.
+Following the table would have rebuilt that bug and touched a VM-owned file for nothing.
+
+**`[DB-0809-20]`, filed and built the same session — the third premise to invert.** Both specialists
+declare comparable enums; across 70 log files those nested blocks appear in **4**, while flat
+free-text `mood`/`energy`/`focus` appear in ~60. Cause is a schema conflict: `logger.py`'s tool
+description — read at the moment of the call — named the keys flat with no enums, and the nearer
+instruction beats a config file read earlier in the session. The item called the fix cheap.
+It was not: `write_log` merged with `existing.update()`, **shallow**, so
+`{"health": {sleep_hours, sleep_quality}}` in the morning and `{"health": {energy}}` in the evening
+ended the day with energy alone. The nested shape was not merely unused, it was **unsafe** — very
+likely *why* it was never adopted — and pointing agents at it without fixing the merge would have
+converted a schema mismatch into silent data loss. Guard first, then the config.
+
+**Rejected: backfilling the 66 older files.** Deriving `low` from `'low/depleted (masked by
+overdrive)'` is exactly what `6330029` had just forbidden the Synthesizer from doing, four commits
+earlier. `pattern_miner.md` carries the boundary instead: comparable bands begin 2026-08-09, a
+missing band means *not recorded* rather than *neutral*, and sleep's long history is an asymmetry in
+the record before it is anything about the person.
+
+**The incident: a parallel chat's uncommitted work shipped inside my commit, and I said it hadn't.**
+`git add <file>` stages the file's whole current content, including another session's uncommitted
+edits. `b9ea29f` — titled "Obligation store and passed-event reconciliation" — carried that
+session's `send_email` grant transfer in **both** `routing*.yaml` and its
+*"Messages to people are Relationships'"* paragraph in `logistics.md`. `./deploy.sh` put all of it
+on the VM while the `coordinator.md` routing and `relationships.md` instructions that governed it
+sat uncommitted. Result, live: Coordinator routed sends to Logistics, which no longer held
+`send_email` and had just been told not to write to anyone. **Email sending was dead in
+production.** Mitigation that limited it to that: `send_email` is two-step confirmation-gated, so
+the failure was inability to send, never an unapproved send.
+
+**What I got wrong, and it matters more than the break.** Asked to assess the collision, I checked
+`git show --stat` per commit, saw only my own filenames, and reported the commits clean. The
+collision was at *line* granularity inside a shared file; my check was at *file* granularity.
+"Stage by explicit filename" was the discipline in force and it does nothing here. Now `CLAUDE.md`
+§ Deploy safety rule **4**: diff every file before staging it, or `git add -p`.
+
+**A correction to the other session's handoff, too:** it attributed the sweep to `git add -A`. It
+was not — every commit used explicit paths. That distinction is the whole lesson, because
+"don't use `git add -A`" was already being followed.
+
+Fix chosen (Mike's call, from three options): **deploy `9eb5ac4`**, reuniting grant with guard,
+rather than reverting the transfer. Smaller change, and the split existed only because of my
+accident. Reviewed their `mail.py` diff before pushing since it was outward-facing and not mine —
+`disclosure_note` is additive, surfaced in the approval preview, and deliberately excluded from the
+confirmation fingerprint so a retry that omits it cannot mismatch. Gate untouched.
+
+**Their work, folded from the handoff:** Relationships now owns every message written to a person
+and Logistics keeps `read_email` only — rationale being that `_known_recipients()` already limited
+every recipient to the user's own address or a saved CRM contact, so sending was always a
+person-graph operation. `relationships.md` gains three-level disclosure discretion. `ROADMAP.md`
+§ Section 0 and `CLAUDE.md` record the **ZDR clarification**: the 2026-06-18 amendment is the
+project-wide default for the single-user development phase, so new sensitive paths need no separate
+ruling — which is what retroactively covers the obligation store holding the user's own words.
+Their own correction: they had called `[DB-0805-02]` a blocker on their own authority when
+`SESSION.md` already recorded it verified-and-stale. The tone-profile pipeline is designed and
+**unbuilt**; sharpest risk named as trust laundering.
+
+**`[DB-0803-01]` half two diagnosed, not fixed.** "Input cut off mid-sentence" is **not** the app's
+`SILENCE_MS` auto-stop: all five recordings from the report window end in silence with terminal
+energy at 1–3% of their own mean, and that path waits out 2.5s of quiet by construction. It is
+`vad_filter=True` at `voice_pipeline.py:153` — Silero drops the quiet tail before Whisper decodes.
+`18-16-16.webm` is the clean case: VAD-on ends *"...communicating"*, VAD-off continues *"...with
+what we put in."* Unexpected second effect: VAD also costs punctuation, turning that file into a
+run-on. Do **not** simply set `METATRON_WHISPER_VAD=0` — the file records why it is on (~7% faster,
+suppresses hallucinated *"Thank you."* on room tone). Tune `threshold` down and `speech_pad_ms` up
+against the 12 days of retained audio on the VM, which is a regression corpus at zero API cost.
+
+---
+
 ### 2026-08-09 (the scheduler was reporting itself as the user — `[DB-0809-02]` inverted) — `82d394b`, `a6d693e` deployed; `39d0560` docs
 
 The outgoing handoff said: *"Next: rebuild the APK (`[DB-0809-18]`), then work `## Now` top-down.

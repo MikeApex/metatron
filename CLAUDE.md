@@ -310,7 +310,7 @@ See `config/constitution.md` for the runtime expression of these principles. See
 - Config files: Markdown for narrative content, YAML for structured settings, JSON for data records
 - All sensitive data paths must be enforced in Python tool code, never in prompts
 
-### Deploy safety — three rules bought with real incidents
+### Deploy safety — four rules bought with real incidents
 
 1. **`py_compile` cannot catch a `NameError`.** A stale `_SCHEDULER_CONFIG` reference passed
    compile and then crash-looped the scheduler after deploy. When you remove a symbol, grep for
@@ -320,6 +320,19 @@ See `config/constitution.md` for the runtime expression of these principles. See
    Config and its guard deploy together, guard first.
 3. **`daemon-reload` before the deploy, not after** — `deploy.sh` restarts services, so an
    edited-but-unreloaded unit applies at the worst possible moment.
+4. **Staging by filename does not protect you from another session's lines *inside* that file.
+   `git diff <file>` before you stage it.** Two chats often run against this one working tree,
+   and `git add <path>` stages the file's whole current content — including edits another
+   session has not committed yet. On 2026-08-09 a commit titled "Obligation store and
+   passed-event reconciliation" carried a second session's `send_email` grant transfer in
+   `routing*.yaml`, and `./deploy.sh` put it on the VM: the grant went live while the agent
+   instructions and Coordinator routing that governed it sat uncommitted, so email sending
+   was **dead in production** — Coordinator still routed sends to Logistics, which no longer
+   held the tool. Staging by explicit filename was the discipline in force and it did not
+   help; the check was at file granularity against a line-granularity collision. Diff every
+   file before staging it, or use `git add -p`. When two sessions are live, also: one owns the
+   deploy, and one runs `/archive` — see `.claude/commands/backlog.md` § attack for the worker
+   protocol, which applies to any accidental parallel run and not only a planned one.
 
 ---
 

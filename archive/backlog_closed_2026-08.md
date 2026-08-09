@@ -1777,3 +1777,96 @@ runs when a session runs.
 
   *closed 2026-08-09 · evidence `82d394b` (promotion + VM deletions) and `a6d693e` (template);
   `config/agents/synthesizer.md` § Scheduled session conduct*
+
+## Closed 2026-08-09 — sleep interpretation, obligations, log comparability
+
+- **[DB-0809-04] Sleep gets over-weighted in interpretation — not because it is the only thing
+  logged.** Mike's *"once again you're making too much of the sleep disruption"*, raised more than
+  once. **Rewritten 2026-08-09: the entry blamed a thin record and the measurement it demanded
+  refutes that.** 20 days of `data/personas/mike/logs/2026-*.json` on the VM: `mood` 90%, `notes`
+  90%, `focus` 75%, `health` 70%, `energy` 70%, `tasks_completed` 60%; sleep is on 14/20 days
+  (70%) — roughly the **fifth** most-populated signal, not the only one. Its own guard (*don't
+  build weighting before checking the column is empty*) resolves the other way: **the columns are
+  not empty**, so domain-rotating check-ins and passive capture are both off the table. What
+  remains is a Synthesizer interpretation defect against an already-broad record — fix the
+  2026-08-03 `synthesizer.md` rules, not the log schema. The separate "hours plus interruptions,
+  not a narrative" ask is **largely already structural**: `sleep_hours` (11 days) and
+  `sleep_quality` (12 days) are distinct fields. Last because the expensive half just disappeared.
+  Still gates trusting any Pattern Miner cross-domain result.
+  *filed 2026-08-09 merging two 2026-08-01/02 entries · Mike via Synthesizer · **premise measured
+  and inverted 2026-08-09***
+
+---
+  Closed by the rewrite it asked for, but **its own premise inverted twice on the way**. It said the
+  defect was Synthesizer interpretation against an already-broad record, and that was right. The
+  layer it blamed — `synthesizer.md:86`, "when one domain has far more logged data than the others" —
+  had a **false antecedent**: sleep is on 14/20 days, fifth of six populated fields, so a model
+  reading that rule correctly concludes it does not apply, and a rule with a false premise reads as
+  permission. Mike's redirect (*"the tool should ask for other numbers to balance it"*) located the
+  real mechanism: **comparability, not availability.** `mood: 'anxious'` / `energy: 'improved'` sit on
+  no scale; `sleep_hours: 3` does. Sleep did not win for being loudest — it was the only signal the
+  Synthesizer could reason *with*. Four amplifiers verified: only field reported as a number every
+  session, only physical fact flagging on **one** day, only fact flagged by **two** specialists, and
+  the worked example in 7 places including inside the suppressing rule itself. Rejected: editing
+  `mental_wellbeing.md` (specialists run in parallel threads, so neither can suppress its own
+  duplicate — the de-dup rule went to the Synthesizer and now generalises past sleep); and
+  abstracting the examples (only 1 of 7 taught sleep-as-cause). Parent cause filed as
+  `[DB-0809-20]` and also closed.
+
+  *closed 2026-08-09 · evidence `6330029` deployed*
+
+- **[DB-0809-05] Nothing notices a calendar event that passed without happening.** Mike's ask:
+  detect it and prompt to reschedule; keep financial tasks (payroll) prominent in daily
+  proactive checks until explicitly closed. **Verified 2026-08-09: neither exists** — nothing in
+  `core/` or `tools/` reconciles a past event against reality; the scheduler only fires jobs.
+  **Designed 2026-08-09, not built** — the reframe (absence of evidence is not a miss), the
+  gather-vs-judge layer split, and Mike's three scope decisions are in
+  [archive/plans/calendar_reconcile_design_2026-08-09.md](archive/plans/calendar_reconcile_design_2026-08-09.md).
+  Adds a third dependent to the open `[DB-0808-11]`.
+  *filed 2026-08-09 from Inbox (2026-08-05T15:19Z) · Mike via Synthesizer · **verified 2026-08-09***
+  Built to the design doc, with one correction recorded **in** the doc rather than edited away: its
+  implementation table put the scheduler entry in `config/templates/scheduler.yaml` + the VM-owned
+  persona file. Wrong class — silent token-free infrastructure registers in `_DEFAULT_JOBS`, because
+  the template is copied once at persona creation and `daily_calendar_dedup_audit` had already proved
+  a later change never propagates. Following the table would have rebuilt that bug and touched a
+  VM-owned file for nothing. Shipped: `tools/obligations.py` (closure inferred, `close_obligation`
+  **requires** evidence in the user's words, reopen keeps the original close on file) and
+  `tools/calendar_reconcile.py`, which **never returns a notify dict** — a cancelled flight is a fact
+  from an airline, crude text matching is not. Verified live on the VM: registered at 05:40, sweep
+  ran clean against the real calendar, and the zero was confirmed as a true result rather than a
+  silent query failure. Every filter path unit-tested against synthetic events.
+
+  *closed 2026-08-09 · evidence `b9ea29f` deployed; design-doc correction `7a7d5a6`*
+
+- **[DB-0809-20] The daily log records prose where its own schemas declare enums, so almost
+  nothing can be compared across days.** `wellbeing.mood: low | neutral | positive | mixed` and
+  `health.energy: low | moderate | high` are declared in
+  [config/agents/mental_wellbeing.md:219](config/agents/mental_wellbeing.md#L219) and
+  [physical_health.md:155](config/agents/physical_health.md#L155). **Measured 2026-08-09 across 70
+  log files: those nested blocks appear in 4.** The other 66 write flat free-text top-level keys —
+  `mood` 63, `energy` 61, `focus` 61, with real values `'anxious'`, `'improved'`,
+  `'low/depleted (masked by overdrive)'`. Cause is a schema conflict, not agent sloppiness:
+  [tools/logger.py:146](tools/logger.py#L146) — the description the model reads *at the moment it
+  calls the tool* — names those keys flat, `additionalProperties: True`, no enums. The nearer
+  instruction wins over a config file read earlier in the session. Consequence: `sleep_hours` is
+  the only field two days can be ranked on, which is the root cause `[DB-0809-04]` was patched
+  around at the interpretation layer, and every Pattern Miner cross-domain result is computed over
+  unrankable prose. Fix is cheap — align the tool description with the two schemas already written
+  — but **the existing history stays unrankable**, so it does not fix itself by waiting.
+  *filed 2026-08-09 · **dev-session find, not Mike** — promoted to `## Now` by Mike as the parent
+  cause of `[DB-0809-04]`, which he did raise*
+  Filed and closed the same session, as `[DB-0809-04]`'s parent cause — and **its own "cheap fix"
+  premise inverted too**, which is the third inversion on this thread of work. The item said align
+  `write_log`'s tool description with the nested schemas the specialists already declare. Opening it
+  against the code found `write_log` merging with `existing.update()`, **shallow**: a morning
+  `{"health": {sleep_hours, sleep_quality}}` and an evening `{"health": {energy}}` ended the day with
+  energy alone, no error, no trace. So the nested shape was not merely unused, it was **unsafe** —
+  very likely *why* it was never adopted, since a flat scalar survives `update()` and a nested sibling
+  does not. Pointing agents at it without fixing the merge would have converted a schema mismatch
+  into silent data loss. Guard first, then the config. Rejected: **backfilling** the 66 older files —
+  deriving `low` from `'low/depleted (masked by overdrive)'` is exactly what `6330029` had forbidden
+  the Synthesizer from doing four commits earlier. `pattern_miner.md` carries the boundary instead:
+  bands begin 2026-08-09, a missing band means *not recorded* not *neutral*.
+
+  *closed 2026-08-09 · evidence `88b7614` deployed*
+
