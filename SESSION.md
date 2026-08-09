@@ -1,22 +1,18 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-09 (billing reconciliation, spend-accounting fixes, cap raise) — **deployed
-`c41baa0`, verified live**. Mike asked to poll GCP billing since Aug 1; the first-pass number
-($14) didn't match Google's console ($35), and finding the $21 gap became the session. Real
-causes, largest first: **thinking tokens were never recorded on either Gemini path** (Vertex's
-usage objects put reasoning tokens *outside* `completion_tokens`/`candidates_token_count` —
-confirmed by live probe, 11.8x undercount on one Pro call, not the OpenAI-spec placement
-assumed at first); **two independent `spend_guard` ledgers**, one per host, that had never been
-reconciled (Mac carried $8.44 of test-suite cost, almost entirely `sarah_chen` — confirmed
-Mike's guess that testing was the missing spend); **`run_session()` — the scheduler's entry
-point — never traced or gated a session**, so every scheduled job bypassed the daily stop
-entirely. All three fixed and deployed. **Explicit finding, not acted on by code:** `mental_
-wellbeing`/`physical_health` reach Flash-Lite via `complexity: quick` because no cloud-mode
-agent carries `local: true`, so A7 check 8's "sensitive agents stay local regardless" doesn't
-hold as worded on this path — **Mike's decision: keep MW/PH on Pro for deep, accept quick as
-routed**, filed as a test gap (`[DB-0808-17]`) instead. New standing convention: test suites
-above $1 projected cost need approval before running (`docs/CONVENTIONS.md`). GCP soft/hard
-caps raised $70/$150 → $100/$175 live. Full detail: [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).*
+*Updated: 2026-08-09 (`/archive` now closes backlog items) — **deployed `a86dd37`, VM verified**.
+`/archive` step 6 only ever *filed* work, never closed it, so `DEV_BACKLOG.md` could only grow:
+`## Done` was empty while 35 struck items sat in Open sections. Step 6 is now 6a (close what
+this session addressed — four-state verdict table, commit or `file:line` required) / 6b (file)
+/ 6c (count), and `/backlog` no longer contradicts it. **Counting trap now documented:**
+`sync_dev_backlog.py` skips `- ~~` but counts `- **✅`, so 3 tick-marked closed items inflate
+every reported open count. The "cannot capture its own tail" reminder is deleted from all three
+files that carried it. **Correction to what 08-08 believed:** `archive.md` is *not* "Edit-locked
+as a loaded skill" — edits failed because **⌘S accepts a diff tab and closing it rejects**
+(`files.autoSave` off), with four sessions sharing one editor surface. Four wrong theories
+preceded reading the extension log; the log answered it in one line. A narrow
+`Edit(.claude/commands/*.md)` allowlist is in place — `/archive`'s own targets are not covered
+and still need ⌘S. Full detail: [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -97,7 +93,7 @@ in per-persona `scheduler.yaml`. **Do not re-add a maintenance job to a persona 
 `archive/PROJECT_LOG.md`.
 
 **The backlog is the bin for everything outside this roadmap.** Work it with **`/backlog`**; use
-**`/backlog-attack`** for a scored, clustered attack plan. **50 open, 8 untriaged, 1 new.**
+**`/backlog-attack`** for a scored, clustered attack plan. **51 open, 8 untriaged, 0 new** (the open figure is inflated by 3 — see `[DB-0809-01]`).
 The one rule: *no item is acted on, or re-filed, on the strength of its own description* — 08-08
 proved it three times over. Two clusters found stale premises (an item half-fixed two days
 earlier; `[DB-0803-03]`'s stated root cause wrong after five days as "confirmed"), and 08-08
@@ -117,13 +113,13 @@ Newest first. Full detail for every entry — and everything older — is in
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-09 | **`/archive` closes backlog items; edit-interruption diagnosis** — step 6 split into 6a close / 6b file / 6c count, with a four-state verdict table and evidence required to close; `/backlog` de-conflicted; tail reminder removed from all 3 files. Found `sync_dev_backlog.py` counts `- **✅` as open (3 items, count inflated). Root-caused the recurring "user cancelled the edit": **⌘S accepts a diff, closing the tab rejects** — not the version skew, extension races, or an Edit-lock, all of which were checked and wrong | `a86dd37` — deployed, VM verified |
 | 08-09 | **Billing reconciliation + spend-accounting fixes** — $14 vs Google's $35 traced to three defects: thinking tokens excluded from every Gemini recording site (11.8x undercount, confirmed live); `run_session()` never traced or gated, so scheduler jobs bypassed the daily stop; two independent per-host `spend_guard` ledgers, one never checked (testing was ~half of Aug spend). MW/PH quick-tier routing finding surfaced, not changed — Mike's call, filed as test gap `[DB-0808-17]`. New testing-cost-projection convention; GCP caps raised $70/$150→$100/$175 | `c41baa0` — deployed, verified live |
-| 08-08 | **Pollen tool, proactive travel trigger, scheduler defaults** — `get_pollen_forecast` built and verified live (its GPS blocker never applied); `tools/travel_watch.py` gives the TfL/flight tools the automatic caller they lacked; maintenance jobs now register for every persona from code after `daily_calendar_dedup_audit` was found inert for 3 days. `/archive` guard blocked — `archive.md` is `Edit`-locked as a loaded skill | `8d798a8`, `be1d79e` + VM config; code swept into `7c70cd9` |
+| 08-08 | **Pollen tool, proactive travel trigger, scheduler defaults** — `get_pollen_forecast` built and verified live (its GPS blocker never applied); `tools/travel_watch.py` gives the TfL/flight tools the automatic caller they lacked; maintenance jobs now register for every persona from code after `daily_calendar_dedup_audit` was found inert for 3 days. (Its "`archive.md` is `Edit`-locked as a loaded skill" conclusion was **wrong** — corrected 08-09) | `8d798a8`, `be1d79e` + VM config; code swept into `7c70cd9` |
 | 08-08 | **Memory cross-process race, `MUST_SURFACE` lifecycle, Whisper STT evaluation** — `search_memory` corruption root-caused (a race, not the filed hypothesis) and fixed with `filelock` + atomic writes, self-healing; `clinical_threads` gives clinical flags a `watch` state so they persist without dominating; `small.en` rejected on the VM at RTF 2.23, VAD adopted. A4 gate re-run 6/6 | `7c70cd9`, `08766bb`, `2195fa9` — live-verified |
 | 08-08 | **Output filter regex/semantic upgrade, `[CONTEXT]` block repair, end-to-end injection probe** — B2's last sub-item built; malformed context blocks now repaired/salvaged/recorded instead of dropped; new `injection` suite in `run_b1_redteam.py` (3/3 PASS, email row of B1b). Gate: 102 pass / 0 error + 18/18 offline | `7c70cd9` — joint commit with the parallel session (one file, two authors), post-deploy verified live |
 | 08-08 | **New `/backlog-attack` command** — scores `DEV_BACKLOG.md`'s open items and clusters the top ones into 3 non-overlapping single-session prompts; kept separate from `/backlog`; not yet run | docs-only, no deploy |
 | 08-08 | **Travel/routing tools, Google API onboarding, CRM hardening** — `get_tfl_status`/`get_flight_status`/`get_travel_time` (Google Maps default router) built; Google Contacts OAuth built then reversed same day for a simpler local fix (`write_contact` guardrail, vCard import, `write_profile` confirm-gate); Places/Pollen researched not built | `c4ff279` |
-| 08-06 | **Billing investigation + region latency analysis** — Compute Engine "no billing since Aug 4" traced to GCE report lag (VM confirmed running, no cap fired); europe-west1 vs us-central1 priced live (+10% compute, ~$2.60/mo, ~200–280ms/turn saved); investigation only, [DB-0806-03]/[DB-0806-04] filed | investigation only, no deploy |
 
 ---
 

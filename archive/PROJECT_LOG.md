@@ -18,6 +18,148 @@ live in [archive/sessions/](sessions/). **This file is not loaded by
 
 ---
 
+### 2026-08-09 (`/archive` closes backlog items; four wrong diagnoses of an edit failure) — `a86dd37`, deployed and verified live
+
+Session writeup: [archive/sessions/2026-08-09 — Archive Closes Backlog Items, Edit Interruption Diagnosis.md](sessions/2026-08-09%20—%20Archive%20Closes%20Backlog%20Items,%20Edit%20Interruption%20Diagnosis.md).
+
+**The ask:** `/archive` does not effectively update `DEV_BACKLOG.md` — make it remove active
+items the session has addressed.
+
+**The gap was real and measurable.** Step 6 said only *"File anything actionable"*. It had no
+closing half at all, so the list could only grow: work shipped, `SESSION.md` and the writeup
+said so, and the backlog entry describing it as outstanding stayed live. Evidence at the time
+of the audit: `## Done` was **empty** while **35 struck-through closed items** sat inside the
+Open sections, and **3 items opened with `- **✅`**, which `sync_dev_backlog.py` counts as open
+because its filter only skips lines starting `- ~~` ([scripts/sync_dev_backlog.py:185](../scripts/sync_dev_backlog.py#L185)).
+The reported 49 open was really 46.
+
+**Built.** Step 6 split into 6a (close what this session addressed — a four-state verdict table:
+fully done / partly done / superseded / untouched, each requiring the commit or `file:line`),
+6b (file what it found, unchanged), 6c (count). The `- ~~` versus `- **✅` counting trap is now
+documented in the command itself. `backlog.md`'s "Fixed" verdict said *move to `## Done`* while
+the new step 6 says *strike in place* — the two commands now agree explicitly: `/archive`
+strikes mid-close, `/backlog` does the move as a deliberate whole-file pass.
+
+**Rejected: having `/archive` move struck items into `## Done`.** A botched move mid-close loses
+an item silently, and `/archive` runs every session — a bulk chore attached to it is how a list
+stops being read (the same reasoning that already keeps triage out of step 6). It stays a
+`/backlog` job.
+
+**Also removed: the "cannot capture its own tail" reminder**, at Mike's request — it fired on
+every single run and therefore distinguished nothing. It lived in **three** files
+(`archive.md` step 1, project `CLAUDE.md`, global `~/.claude/CLAUDE.md`); all three were
+corrected in the same pass, because leaving one is precisely the *One Home Per Rule Class*
+failure. A first attempt at the wording was rejected by Mike for being too vague — he wants the
+partial capture *taken*, just never *commented on*. The rewritten instruction says so
+explicitly.
+
+**Four consecutive wrong diagnoses, recorded because the pattern is the lesson.** Edits to
+`.claude/commands/*.md` kept dying with "The user doesn't want to proceed", four times, while
+Mike was not knowingly rejecting anything:
+
+1. **"The diff was too large"** — falsified: an 18-line edit to `DEV_BACKLOG.md` applied while a
+   1-line edit to `backlog.md` failed.
+2. **"CLI/extension version skew"** — the npm CLI was 2.1.170 against a 2.1.226 extension. This
+   drove a `sudo` password hunt, a native re-install, a PATH fix and a VS Code restart. **It was
+   wrong.** The extension runs its own bundled binary at
+   `~/.vscode/extensions/anthropic.claude-code-*/resources/native-binary/claude` and never used
+   the PATH `claude` at all. The check that missed it was `find -maxdepth 2` against a path three
+   levels deep — *a negative result from a search whose depth was never verified.*
+3. **"Four extension copies are racing"** — falsified: VS Code's `.obsolete` file already listed
+   all four as superseded, awaiting a restart. They were leftovers, not competitors.
+4. **"Only the first edit to a not-yet-open file fails"** — fitted seven data points, made a
+   falsifiable prediction, and the prediction failed on the eighth.
+
+**The actual mechanism, from the extension log** (`~/Library/Application Support/Code/logs/*/window1/exthost/Anthropic.claude-code/Claude VSCode.log`):
+
+```
+open_diff → ✻ [Claude Code] <file>
+files.autoSave is off, waiting for file save
+tab_closed ✻ [Claude Code] <file>
+{"behavior":"deny","message":"User cancelled the edit","interrupt":true}
+```
+
+**An edit diff is accepted by saving it (⌘S) and rejected by closing the tab.** With
+`files.autoSave` off the extension waits for the save; a tab that closes first is recorded as
+`deny + interrupt`, indistinguishable from a deliberate rejection. Two contributing conditions
+were confirmed: four Claude sessions live in one VS Code window sharing one editor surface
+(two seconds before one denial, a *different* session was granted a `gcloud compute ssh` command
+this session never ran — four distinct `sessionId`s appear in one window's log), and tab closes
+1.2–2s after opening, too fast to be a considered review.
+
+**The lesson worth keeping is not about VS Code.** Each of the four hypotheses was plausible,
+each explained the data available at the time, and three were tested only against the evidence
+that suggested them. The log — the system's own record of what happened — was consulted
+*fifth*, and answered it in one line. **Reach for the event log before the fourth theory, not
+after.**
+
+**Decision: narrow `Edit` allowlist, after an explicit risk discussion.** There was no `Edit` or
+`Write` rule anywhere in the settings, so *every* file edit raised a review tab that could be
+closed. Added to the (gitignored, unbacked) `.claude/settings.local.json`:
+
+```json
+"Edit(//Users/md-homefolder/Desktop/multi-model-mcp/.claude/commands/*.md)"
+```
+
+Five documentation files, no runtime effect, all git-tracked. **Rejected: a two-file rule**
+naming only `archive.md` and `backlog.md` — it covers every failure actually observed but would
+look arbitrary within a month. **Residual risk accepted, stated plainly:** these files govern
+Claude Code's own behaviour, so silent edits to them are a small self-modification loop whose
+realistic failure is *drift* — a future brevity pass trimming a hard-won rule's one-clause
+reason. Compensating habit: `git diff .claude/commands/` once per session before committing.
+**Known limit, hit immediately:** the rule covers only that directory, so `/archive`'s own
+targets — `PROJECT_LOG.md`, `SESSION.md`, `ROADMAP.md`, `DEV_BACKLOG.md`, `archive/sessions/` —
+still raise review tabs and still need ⌘S.
+
+**A correction issued mid-discussion, since it changed the risk calculus.** "Last write wins"
+was wrong for concurrent `Edit`s: `Edit` is a targeted find-and-replace against current on-disk
+content, so edits to different regions accumulate, and a collision on the *same* text fails
+loudly rather than clobbering. The real loss paths are `Write` (full overwrite from a stale
+view — which is what Mike's standing no-full-rewrites rule actually protects against), and
+`git checkout --` / `restore` / `stash` discarding another window's uncommitted work. **This
+session ran `git checkout -- .claude/commands/archive.md`** to revert; the file happened to be
+clean, but that was verified for an unrelated reason.
+
+**Cross-window contamination, observed live.** Commit `c41baa0` (the billing session) swept this
+session's uncommitted `DB-0808-18` backlog entry into its own commit. Nothing was lost, but the
+history now says a spend-accounting fix introduced an API-key backlog item. Same shared-desk
+problem as the diff tabs, one layer up.
+
+**Security item filed, not fixed — `[DB-0808-18]`.** A live `OPENAI_API_KEY` sits in plaintext
+in `~/.zshrc` and leaked into this session's context when `tail -3 ~/.zshrc` printed the
+surrounding lines while confirming the PATH edit. Transcripts are gitignored
+([.gitignore:97](../.gitignore#L97)) so the exposure is *probably* local-only — **that needs
+confirming with `git log -S`, not assuming**, before the item closes. The key still needs
+rotating; that action is Mike's and was open when the session ended.
+
+**Machine changes that were not the fix but were kept:** native CLI 2.1.226 installed to
+`~/.local/bin` (no `sudo` — the npm global dir is root-owned and Mike does not have the
+password to hand), `export PATH="$HOME/.local/bin:$PATH"` appended to `~/.zshrc` (backup at
+`~/.zshrc.bak-2026-08-08`), and the old npm 2.1.170 copy left in place at `/usr/local/bin`,
+shadowed, because removing it also needs `sudo`.
+
+**Outgoing rolling handoff, carried from `SESSION.md`:**
+
+> *Updated: 2026-08-09 (billing reconciliation, spend-accounting fixes, cap raise) — **deployed
+> `c41baa0`, verified live**. Mike asked to poll GCP billing since Aug 1; the first-pass number
+> ($14) didn't match Google's console ($35), and finding the $21 gap became the session. Real
+> causes, largest first: **thinking tokens were never recorded on either Gemini path** (Vertex's
+> usage objects put reasoning tokens *outside* `completion_tokens`/`candidates_token_count` —
+> confirmed by live probe, 11.8x undercount on one Pro call, not the OpenAI-spec placement
+> assumed at first); **two independent `spend_guard` ledgers**, one per host, that had never been
+> reconciled (Mac carried $8.44 of test-suite cost, almost entirely `sarah_chen` — confirmed
+> Mike's guess that testing was the missing spend); **`run_session()` — the scheduler's entry
+> point — never traced or gated a session**, so every scheduled job bypassed the daily stop
+> entirely. All three fixed and deployed. **Explicit finding, not acted on by code:** `mental_
+> wellbeing`/`physical_health` reach Flash-Lite via `complexity: quick` because no cloud-mode
+> agent carries `local: true`, so A7 check 8's "sensitive agents stay local regardless" doesn't
+> hold as worded on this path — **Mike's decision: keep MW/PH on Pro for deep, accept quick as
+> routed**, filed as a test gap (`[DB-0808-17]`) instead. New standing convention: test suites
+> above $1 projected cost need approval before running (`docs/CONVENTIONS.md`). GCP soft/hard
+> caps raised $70/$150 → $100/$175 live.*
+
+---
+
 ### 2026-08-09 (billing reconciliation, spend-accounting fixes, cap raise) — `c41baa0`, deployed and verified live
 
 Mike asked to poll Google Cloud billing and break down cost since Aug 1. First pass (VM-only

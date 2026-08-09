@@ -283,22 +283,27 @@ Capabilities that do not exist yet.
   *filed 2026-08-08 by dev session (Claude Code) · found while wiring the proactive travel
   check · worked around, not fixed*
 
-- **[DB-0808-13] `/archive`'s collision guard (`[DB-0805-05]`'s mitigation) could not be
-  written — `.claude/commands/archive.md` is `Edit`-locked while `/archive` is a loaded skill
-  in the session.** Attempted 2026-08-08 and blocked four times. Diagnosed by probe, not
-  guesswork: a new file created in `.claude/commands/` edits fine, then becomes un-editable
-  once it registers as a skill — same file, same tool, same one-character diff, opposite
-  results either side of registration. It is not a permission rule or a hook (there are no
-  `PreToolUse` hooks at any level and no `deny` entries), and not file permissions. **The work
-  itself is fully specified and agreed:** a new numbered step 4, "check and stop if dirty",
+- **[DB-0808-13] `/archive`'s collision guard (`[DB-0805-05]`'s mitigation) is still unwritten —
+  but it is NOT blocked. The "`Edit`-locked skill" premise is withdrawn.**
+  ~~`.claude/commands/archive.md` is `Edit`-locked while `/archive` is a loaded skill.~~
+  **Disproved 2026-08-09:** `archive.md` was edited five times in one session (`a86dd37`), and
+  the recurring "user cancelled the edit" has a confirmed mechanism in the extension log —
+  **⌘S accepts a diff tab, closing it rejects** (`files.autoSave` is off), with several Claude
+  sessions sharing one editor surface. Four blocked attempts on 08-08 are explained by that,
+  with no lock required. The 08-08 probe (a new command file editable before registration,
+  not after) is not re-derivable from here and may have been two cancels either side of a
+  coincidence — **do not re-file the lock claim without reproducing it against the log.**
+  Whoever picks this up: the work is ordinary, just do it. **The work itself is fully
+  specified and agreed:** a new numbered step 4, "check and stop if dirty",
   running `git status --short SESSION.md ROADMAP.md` before the two rewrite steps and stopping
   to ask if either is dirty, with steps 4/5/6 renumbering to 5/6/7 and the "Steps 4 and 5 are
   two different documents" warning updating to "Steps 5 and 6". Do it in a session that has
   not loaded `/archive`, or via a non-`Edit` path. Sharpening the irony: `archive.md` had 41
   insertions of *uncommitted* changes from another window sitting in the tree at the time —
   the exact collision the guard is for.
-  *filed 2026-08-08 by dev session (Claude Code) · blocked by tooling, not by the work ·
-  supersedes nothing; `[DB-0805-05]` stays open until the guard actually lands*
+  *filed 2026-08-08 by dev session (Claude Code) · ~~blocked by tooling, not by the work~~ ·
+  **unblocked 2026-08-09** — premise disproved against `.claude/commands/archive.md` and the
+  VS Code extension log · `[DB-0805-05]` stays open until the guard actually lands*
 
 - **[DB-0808-06] Administrative-close mechanism for tier-2 clinical threads.** The clinical
   thread lifecycle shipped 2026-08-08 (`tools/context_tracker.py`) deliberately refuses to let
@@ -1102,6 +1107,21 @@ item "nearly aged out" (see Troubleshooting signal below).*
 ## Open — housekeeping
 
 Stale docs, paths, and low-priority corrections.
+
+- **[DB-0809-01] The open count is inflated and `## Done` is empty — a `/backlog` housekeeping
+  pass, deliberately not done mid-`/archive`.** Three things found 2026-08-09 while building the
+  new step 6a, all in `DEV_BACKLOG.md` itself: (1) **3 items open with `- **✅`**, which
+  [scripts/sync_dev_backlog.py:185](scripts/sync_dev_backlog.py#L185) counts as open because its
+  filter only skips lines starting `- ~~` — they read as closed and inflate every reported count;
+  one of the three (`[DB-0808-07]`, filter upgrade built-not-deployed) is *genuinely* open and
+  just needs the ✅ dropped from its first line. (2) **35 struck-through closed items sit inside
+  the Open sections** while `## Done` holds nothing but its own explanatory header — they are not
+  miscounted, but they are why the file is 1,373 lines. (3) **Duplicate id `DB-0805-01`** — the
+  same id opens two different bullets, so it cannot be referenced unambiguously across windows;
+  the anchored duplicate check in `/backlog` step 6 catches it. Not urgent, but the count is the
+  signal `/metatron-code` and `/archive` report every session, and it is currently wrong by 3.
+  *filed 2026-08-09 by dev session (Claude Code) · found while auditing why `/archive` never
+  closed items · origin SEQ —*
 
 - **[DB-0808-18] ⚠ Live `OPENAI_API_KEY` sits in plaintext in `~/.zshrc`, and has now leaked
   into a session transcript.** Exposed 2026-08-08 when a `tail -3 ~/.zshrc` (confirming an
