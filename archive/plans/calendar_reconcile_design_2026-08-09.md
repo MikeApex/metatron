@@ -1,6 +1,18 @@
 # Calendar reconciliation & open obligations — design
 
-**Date:** 2026-08-09 · **Backlog item:** `[DB-0809-05]` (rank 6) · **Status:** designed, not built
+**Date:** 2026-08-09 · **Backlog item:** `[DB-0809-05]` · **Status:** **built and deployed
+2026-08-09 in `b9ea29f`.** Design below stands as written except for one correction, recorded
+where it was wrong rather than silently fixed:
+
+> **The scheduler entry belongs in `_DEFAULT_JOBS` (core/scheduler.py), not
+> `config/personas/mike/scheduler.yaml` + `config/templates/scheduler.yaml`** as the
+> implementation table said. This sweep is silent, token-free infrastructure that notifies
+> nothing, which is exactly the class that moved to `_DEFAULT_JOBS` on 2026-08-08 — because the
+> template is copied **once**, at persona creation, and nothing propagates a later change.
+> `daily_calendar_dedup_audit` shipped to the template on 2026-08-05 and had never run for mike
+> three days later. Following the table would have reproduced that, and it would also have meant
+> editing a VM-owned persona file for no reason. Registered at **05:40**, after the 05:35 dedup
+> audit and ~2h before the morning brief that consumes it.
 
 Mike's ask, verbatim from the Inbox (2026-08-05T15:19Z): detect a calendar event that passed
 without happening and prompt to reschedule; keep financial tasks (payroll) prominent in daily
