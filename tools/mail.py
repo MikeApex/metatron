@@ -275,12 +275,24 @@ def _known_recipients() -> dict:
     return allowed
 
 
-def send_email(to: str, subject: str, body: str, confirm_token: str = "") -> dict:
+def send_email(to: str, subject: str, body: str, confirm_token: str = "",
+               disclosure_note: str = "") -> dict:
     """
     Send an email. Requires the user's explicit approval, given in the app.
 
     Two-step by design: the first call returns PENDING_CONFIRMATION and sends nothing.
     Only after the user approves it out of band does a second call actually send.
+
+    `disclosure_note` names the other contact whose situation shaped this draft, when
+    something known about person A changed what gets written to person B without being
+    mentioned in it. It is surfaced in the approval preview and **deliberately kept out
+    of `args`**: the confirmation fingerprint covers what will actually be sent, so a
+    model that supplies the note on the first call and forgets it on the retry must not
+    trip a mismatch. It is also why the note costs nothing to include generously.
+
+    The note is a prompt-level control with no enforcement behind it — nothing here can
+    detect that a draft was shaped and the note omitted. It makes disclosed shaping
+    reviewable; it does not make undisclosed shaping impossible.
     """
     from tools.confirm import consume, request
 
@@ -308,10 +320,14 @@ def send_email(to: str, subject: str, body: str, confirm_token: str = "") -> dic
             # a fresh request, which would read to the model like a retry loop.
             return {"error": f"Not sent. {reason}"}
         preview = body if len(body) <= 400 else body[:400] + " […]"
+        shaped = (disclosure_note or "").strip()
         return request(
             "send_email", args,
             description=(f"Send an email to {who} ({to_norm})\n"
-                         f"Subject: {subject}\n\n{preview}"),
+                         f"Subject: {subject}\n\n{preview}"
+                         + (f"\n\n⚠ SHAPED BY OTHER CONTEXT — {shaped}\n"
+                            f"Nothing about this is stated in the message. Check the premise "
+                            f"still holds before approving." if shaped else "")),
         )
 
     cfg = _load_config()
@@ -360,6 +376,7 @@ SEND_EMAIL_SCHEMA = {
             "subject": {"type": "string", "description": "Subject line."},
             "body": {"type": "string", "description": "Plain-text message body."},
             "confirm_token": {"type": "string", "description": "The token from the PENDING_CONFIRMATION response, after the user has approved it. Omit on the first call."},
+            "disclosure_note": {"type": "string", "description": "Required whenever something you know about a DIFFERENT person shaped this message — a commitment hedged, a date declined, a subject avoided — without that reason appearing in the text. Name the contact and the reason, e.g. 'Sarah Chen's surprise party is that Saturday'. Shown to the user for approval and never sent to the recipient. Omit only when nothing about another contact influenced the draft."},
         },
         "required": ["to", "subject", "body"],
     },

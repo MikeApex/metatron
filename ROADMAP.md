@@ -57,6 +57,29 @@ The 2026-06-10 ruling used "cloud" as shorthand for shared infrastructure where 
 - "Testing phase" ends when the tool transitions to production use with real user data at scale. At that point, the default reverts to local/architectural, and cloud VM use requires a conscious per-deployment decision.
 - Fail-closed routing still applies: a VM with Ollama down still returns a hard error if Ollama is the designated local model. The amendment covers routing to a cloud model on a ZDR-compliant VM, not removing the fail-closed requirement.
 
+**Clarification 2026-08-09 (user decision) — the ZDR path is the project-wide default for now, not a per-feature exception.**
+
+The 2026-06-18 amendment is read as standing permission covering the whole project during the
+current phase, rather than something to be re-argued each time a new sensitive path is built. For
+the **single-user development phase** — one person's data, on the dedicated VM, under verified
+Vertex AI ZDR terms — sensitive-tier processing on that path is acceptable by default. This
+explicitly pre-clears **new** sensitive paths of the same shape, including
+correspondence-derived tone extraction (`tone_profiler`), without a separate ruling for each.
+
+Why this is a scope clarification and not a widening: the amendment already admits the ZDR VM for
+the testing phase, clause 8's local-model gate is already dormant by the 2026-08-05 decision, and
+the single-user condition means there is no cross-user mingling inside the deployment either — the
+exact hazard "cloud" was shorthand for in the 2026-06-10 ruling.
+
+What is unchanged, and is not weakened by this note:
+- **Fail-closed routing.** Unchanged. Where a local model is the designated route, it fails closed.
+- **The north star.** Architectural security on private hardware, replacing the VM path when it is
+  economically feasible.
+- **The expiry condition.** This lapses on the same trigger as the amendment it clarifies:
+  transition to production use with real user data at scale — and additionally the moment the
+  deployment stops being single-user, since that condition is load-bearing here.
+- **Decontextualization requirements** for genuinely open-tier cloud work are untouched.
+
 **~~What the ruling does NOT affect — development testing (clarified 2026-06-11)~~ — SUPERSEDED 2026-07-28.** The original carve-out permitted persona data (`config/personas/`, `data/personas/`) on any cloud model on the grounds that it was test data rather than real user data.
 
 **That carve-out no longer holds, for a practical reason rather than a philosophical one.** After the persona unification (2026-07-28) every persona is a complete universe — its own identity file, tier 1–3 config, settings, credentials and data tree — and **nothing at runtime distinguishes a synthetic persona from a real one.** That is the entire point of the change: one mechanism, no special cases, every session treated as real. A rule whose enforcement depends on a distinction the system deliberately no longer makes is a rule that will eventually be applied wrongly, and the failure mode is real user data on a cloud model.
