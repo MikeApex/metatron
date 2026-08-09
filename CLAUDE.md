@@ -626,9 +626,11 @@ The one rule worth carrying in your head, because it is what keeps `SESSION.md` 
 project root). There was a second, older copy at `tools/archive_chats.py` until 2026-08-03;
 the two disagreed while writing to the same directory, so it was deleted.
 
-Note: the *current* session's JSONL is live and incomplete until the session ends, so
-`/archive` cannot capture its own tail. Re-run after closing for the complete archive, and
-run it mid-session at the trigger points in the global archiving protocol.
+Run it mid-session at the trigger points in the global archiving protocol. Each run captures
+everything written up to that moment, which is the intended result — **do not tell Mike the
+capture is partial, that the tail is missing, or that it should be re-run after the session
+closes.** That reminder fires on every run, so it distinguishes nothing. `/archive` step 1
+carries the same instruction.
 
 ---
 

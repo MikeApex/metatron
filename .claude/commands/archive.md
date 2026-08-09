@@ -34,9 +34,13 @@ find a `tools/archive_chats.py` again, something has been restored by mistake.
 It is idempotent — already-archived sessions are skipped, and a session already captured is
 re-emitted as `updated` if it has grown.
 
-> **This cannot capture its own tail.** The current session's JSONL is live and incomplete
-> until the session ends, so a run now produces a partial capture. That is expected, not a
-> failure. Re-run after closing for the complete archive.
+> **The partial capture is the deliverable. Say nothing about the tail.**
+> The current session's JSONL is still being written, so this run captures everything up to
+> now and not the exchanges after it. **That is the intended outcome — capture it and move
+> on.** Do not describe the capture as partial or incomplete, do not flag the missing tail,
+> and do not suggest re-running the script after the session closes. Mike has this reminder
+> already and does not want it repeated: it fires on every single run, so it distinguishes
+> nothing. Report only what step 1 produced, then go to step 2.
 
 ---
 
@@ -111,7 +115,51 @@ is a check, not a mandatory edit.
 
 ---
 
-## 6. File anything actionable into `DEV_BACKLOG.md`
+## 6. `DEV_BACKLOG.md` — close what this session finished, then file what it found
+
+**Two halves, in this order.** Only the filing half was ever written down, so the list grew
+every session and shrank in none: work shipped, the writeup said so, and the entry describing it
+as outstanding stayed live. A stale *open* item is the same failure `/backlog` step 4 exists to
+catch — it argues persuasively for work already done — except the session that shipped it is the
+one session guaranteed to know.
+
+### 6a. Close what this session addressed
+
+Before filing anything new. Do not skip it because the work "wasn't from the backlog" — an item
+is closed by the fix existing, not by anyone having read the entry first.
+
+Find candidates rather than trusting recall: list what this session touched
+(`git status --porcelain`, plus `git diff --name-only` over this session's commits), then grep
+`DEV_BACKLOG.md` for those filenames, the symbols changed, and the symptom in the user's words.
+Read the surrounding item — an entry naming a file is often about a different fault in it.
+
+Judge each hit against what actually shipped, not against how close it sounds:
+
+| State | What to write |
+|---|---|
+| **Fully done** | Strike the item's first line — `- ~~**Title**~~ — **fixed YYYY-MM-DD**,` + the commit or `file:line` that closed it + whether it deployed. Leave it in place; the trail below stays readable. |
+| **Partly done** | **Stays open.** Rewrite the title to state what is *left*; put what shipped in the body. Built-but-undeployed is open — the deploy is the remaining work. |
+| **Superseded** | Strike it, and say what replaced it and where. |
+| **Untouched** | Leave it alone. Do not re-word an item just because this session read it. |
+
+**The two notations are not interchangeable.** `- ~~struck~~` is closed —
+`scripts/sync_dev_backlog.py` skips lines starting `- ~~`, and that is what makes the open count
+fall. A line opening `- **✅` is **counted as open**, because it does not start `- ~~`; three
+items have carried a leading ✅ that read as closed and counted as open anyway. Use ✅ inside a
+body line for a done sub-item, never to open a closed item's line.
+
+**Closed without evidence is not closed** — a commit, a `file:line`, or a named test. "Fixed"
+alone is a claim the next session cannot check and has to re-derive.
+
+Struck items stay where they are. Moving them into `## Done` is `/backlog` housekeeping, done
+deliberately over the whole file — not here, mid-close, where a botched move loses an item
+silently.
+
+> **If step 5 marked something done in `ROADMAP.md`, or step 3's writeup lists something built,
+> there is almost certainly a backlog line for it.** That pairing is the check: a session that
+> updates the roadmap and the writeup but not the backlog has updated two of the three places.
+
+### 6b. File anything actionable
 
 Bugs found but not fixed, deferrals, capability gaps, and any change the user asked for that
 was not done. Check it is not already listed before adding.
@@ -122,6 +170,8 @@ words, "nearly aged out."
 
 Give each new item an ID and a provenance line — `DB-MMDD-NN`, who filed it and how, the origin
 SEQ if it came from a conversation. Format and rationale: [backlog.md](backlog.md).
+
+### 6c. Count
 
 Then close with the count, and **only** the count:
 

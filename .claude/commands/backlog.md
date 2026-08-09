@@ -70,7 +70,7 @@ Four verdicts:
 
 | Verdict | Action |
 |---|---|
-| **Fixed** | Move to `## Done` **with the commit or `file:line` that closed it**. Closed without one is not closed. Never delete — an item that resurfaces must show it was checked once. |
+| **Fixed** | Strike it (`- ~~…~~`) **with the commit or `file:line` that closed it** — closed without one is not closed — and move it to `## Done`. Never delete: an item that resurfaces must show it was checked once. |
 | **Real** | Keep. Add the evidence it is still real: what you checked, where, today. |
 | **Drifted** | Symptom may survive, cited code has moved. Keep, but repoint at today's location or mark `needs re-derivation` and say what to reproduce. **Never carry a stale line number forward.** |
 | **Needs a decision** | Collect into one place and ask once, rather than interrupting per item. |
