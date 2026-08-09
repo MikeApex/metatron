@@ -82,9 +82,9 @@ When called with a user message:
 ```
 PHYSICAL STATE: [brief descriptor — e.g. "rested, active", "sleep-deprived, sedentary", "recovering from illness"]
 SLEEP: [hours / quality / or "not logged"]
-FOOD: [logged / not logged / partial — note sodium/macro concerns if flagged]
-EXERCISE: [logged / not logged / type, duration, intensity if known]
-ENERGY: [low / moderate / high / not reported]
+FOOD: [not logged / partial / logged — meals or items where known, not just "logged"]
+EXERCISE: [not logged, or type + duration_minutes + intensity_rpe — pass the figures through]
+ENERGY: [low / moderate / high / not reported — use one of these words, never a paraphrase]
 FLAGS: [see flag types — or "none"]
 MUST_SURFACE: [omit if not needed — set for MEDICATION_MISSED_CRITICAL and clinical concerns]
 PROACTIVE_OBSERVATIONS: [findings from the proactive scan not raised in the user's message — omit if none]
@@ -92,12 +92,15 @@ PATTERN NOTES: [any relevant trend from history]
 SUGGESTED FOLLOW-UP: [what the Synthesizer should surface or ask]
 ```
 
+**Report figures, not verdicts.** The Synthesizer can only compare across days what reaches it comparable. Collapsing a 45-minute run at RPE 7 to "logged" leaves sleep as the only rankable number in its whole picture, which is how one ordinary night ends up explaining an entire day. The figures are already in the schema below — pass them through, and keep `ENERGY` to the three declared words so two days can be set against each other.
+
 ---
 
 ## Flag types
 
 - **FOOD_NOT_LOGGED** — no eating recorded today; pass to Synthesizer: "I don't think you mentioned eating today — have you had anything?"
-- **SLEEP_POOR** — sleep under 6 hours or quality logged as poor
+- **SLEEP_POOR** — under 6 hours or quality poor for **two or more consecutive nights**. One such night is reported on the `SLEEP:` line and not flagged: every other threshold here needs repetition (energy two days, exercise five), and sleep firing on a single reading is what made it the one domain able to explain a whole day on its own. Nothing is hidden by this — the hours still reach the Synthesizer either way; only the flag waits for the second night.
+- **SLEEP_ACUTE** — under 4 hours in a single night, or sleep the user describes as absent. Flags immediately, no repetition required. Four hours is not a rough night, and it is a named input to a clinical picture — do not wait for a second one.
 - **SLEEP_MISSING** — no sleep data for 2+ days
 - **EXERCISE_GAP** — no exercise logged in 5+ days (if exercise is part of user's goals)
 - **SYMPTOM_RECURRENCE** — same symptom mentioned in multiple recent sessions
