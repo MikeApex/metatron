@@ -92,6 +92,10 @@ descriptions are what the standing rule distrusts.*
   detect it and prompt to reschedule; keep financial tasks (payroll) prominent in daily
   proactive checks until explicitly closed. **Verified 2026-08-09: neither exists** — nothing in
   `core/` or `tools/` reconciles a past event against reality; the scheduler only fires jobs.
+  **Designed 2026-08-09, not built** — the reframe (absence of evidence is not a miss), the
+  gather-vs-judge layer split, and Mike's three scope decisions are in
+  [archive/plans/calendar_reconcile_design_2026-08-09.md](archive/plans/calendar_reconcile_design_2026-08-09.md).
+  Adds a third dependent to the open `[DB-0808-11]`.
   *filed 2026-08-09 from Inbox (2026-08-05T15:19Z) · Mike via Synthesizer · **verified 2026-08-09***
 
 - **7. [DB-0809-06] The browser tab does not live-refresh on messages sent from elsewhere.** A
