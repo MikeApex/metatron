@@ -50,21 +50,29 @@ standing rule distrusts.*
   *filed 2026-08-09 · rewritten 2026-08-09 after measurement inverted it · full reasoning in
   `archive/PROJECT_LOG.md`*
 
-- **2. [DB-0809-21] Three deployed behaviour changes are unverified on the running system.** Mike
-  deferred the runs to batch them (*"test later with other changes"*), so this is the outstanding
-  half of `6330029`, `b9ea29f` and `88b7614` — all live for `mike` now. Four things, one VM trip
-  (**there is no `vertex-key.json` on the Mac**, so `provider: gemini` cannot resolve credentials
-  locally): (1) **A4 `clinical` suite** against `sarah_chen` — 3 scenarios, ~$0.10–0.30, a regression
-  check only, since its pass criteria are `MEDICATION_MISSED_CRITICAL` and the clinical flags and
-  cannot reach the sleep edits; (2) **three targeted Physical Health calls** which *do* assert them —
-  5.5h single night (hours on the `SLEEP:` line, **no** `SLEEP_POOR`), two consecutive such nights
-  (flag fires), a logged run (`duration_minutes` + `intensity_rpe` pass through, not "logged");
-  (3) the **05:40 `daily_calendar_reconcile`** output once a real candidate exists — it must raise at
-  most one, as a question, never as a miss (may take days to arise naturally); (4) the first
-  `companion_checkin` after 07:00 showing `SCHEDULER DIRECTIVE`. Project the cost and get approval
-  before running, per `docs/CONVENTIONS.md` § Testing Cost Convention.
-  *filed 2026-08-09 · **Mike deferred it explicitly** — ranked 3 by Mike: cheapest item that can
-  actually move, since 4 and 5 are blocked on an APK rebuild and a device*
+- **2. [DB-0809-21] Two of four verification steps done and passed; two are genuinely time-gated,
+  not yet observable.** Projected cost ~$0.08 (token-based estimate against `_run_single_agent`'s
+  actual single-agent shape, not the blended $8.44/50-session historical average, which is
+  dominated by B1's full-pipeline scenarios and would have overstated this run) — under the $1.00
+  approval line, ran without blocking per `docs/CONVENTIONS.md` § Testing Cost Convention.
+  **Done:** (1) **A4 `clinical` suite** against `sarah_chen` — 3/3 pass, confirms the regression
+  gate held; as expected it cannot reach the sleep edits, since its pass criteria are
+  `MEDICATION_MISSED_CRITICAL` and the clinical flags. (2) **Three targeted Physical Health calls**
+  against `danny_park`, which *do* assert `6330029`/`88b7614` — all three passed: a single 5.5h
+  night reported hours with **no** `SLEEP_POOR`; a second consecutive night under 6h fired the
+  flag; a 45-minute RPE-7 run passed those figures through rather than flattening to "logged" —
+  and the model correctly drew on the prior nights' sleep to contextualize the run's perceived
+  exertion, which is exactly what the deep-merge fix in `88b7614` was protecting.
+  **Still open, not a failure — time hasn't passed yet:** (3) `daily_calendar_reconcile` re-run
+  manually against `mike`'s real calendar (zero cost, no model call) — clean, 0 candidates, same
+  as its first run last night; confirms the mechanism still works, but **no live candidate has
+  existed yet to observe being raised as a question**, which needs a real unreferenced event, not
+  a forced one. (4) The first natural `companion_checkin` after 07:00 — deliberately **not**
+  forced by manually firing a session against Mike's real persona, since that would insert a
+  synthetic exchange into his actual conversation history for no real need. Check both again once
+  they've had a chance to occur naturally.
+  *filed 2026-08-09 · **Mike deferred it explicitly** · **half done, half genuinely time-gated
+  2026-08-10** — half the reason it can't move further today*
 
 - **3. [DB-0803-01] Text doubling / input cut off mid-sentence in the app.** Reported 2026-08-03
   17:12Z; still live 2026-08-04 (SEQ 004). **Verified 2026-08-09 — it splits, and the doubling
