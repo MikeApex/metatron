@@ -215,6 +215,32 @@ Every behavioural instruction lives in exactly one place. This is not tidiness. 
 
 **So: promotion deletes the original.** When a persona rule is generalised into an agent file or a scheduler prompt, remove the persona copy in the same pass — after confirming the replacement is actually live on the VM, not merely committed on the Mac. A persona file may still hold a *refinement* of a universal rule; if it does, word it so the difference is the only thing it states.
 
+### Two kinds of preference — ask which one it is
+
+**Mike is currently the only user, so most of what he states as a preference is actually him
+authoring the general design.** These read identically at the point of capture and belong in
+different layers, so the question has to be asked explicitly rather than inferred:
+
+| | Goes in | Test |
+|---|---|---|
+| **Design** — how Metatron should behave for anyone | `config/agents/*.md` | Would a second user want this too? |
+| **Deviation** — how *this* user differs from that | `config/personas/{p}.md` | Would it be wrong to impose on a second user? |
+
+Default to **design**. A preference filed as a deviation when it was really design is the
+expensive direction: it never reaches the agent layer, so every future persona starts without
+it and the same instruction gets rediscovered one user at a time — while the copy in the persona
+file competes with whatever the agent file says instead. Filing design as a deviation is also
+what generated the 2026-08-03 duplicate set above.
+
+Worked example: *"keep check-ins to two sentences"* was captured as a Mike preference. It is
+design — nobody wants an unfocused check-in — and once written into `synthesizer.md`
+§ Scheduled session conduct as guidance, the persona and scheduler copies had to go (2026-08-09).
+What genuinely remains a deviation is narrower and phrased as difference: *don't over-weight
+sleep*, *never say "enjoy"*.
+
+When it is unclear, ask. "Is this how you want Metatron to work, or how you want it to work for
+you?" is one question and it resolves the layer.
+
 **Three checks, at different speeds:**
 
 1. **Write time** — `write_persona` calls `check_new_rule()` ([core/rule_classes.py](core/rule_classes.py)) and appends a warning to the tool result when a new preference restates an existing rule. It **warns, never blocks**: refusing a write to keep the file tidy would discard something the user actually said, which is the worse failure.

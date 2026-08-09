@@ -2842,11 +2842,44 @@ def _dispatch_from_coordinator(
     return outputs
 
 
+# A scheduled session's opening text is written by scheduler.yaml, not by the user.
+# It used to arrive in the same slot as user speech, labelled "ORIGINAL USER MESSAGE",
+# with nothing marking the difference — `is_proactive` reached the trace and stopped
+# there. So the Synthesizer read its own check-in prompt as Mike typing a rule at it,
+# matched it against the identical rule already in his persona file, and fired the
+# repeated-instruction protocol (synthesizer.md) against text he never sent: four
+# times between 2026-08-07 and 08-09 it apologised for "not following" the rule and
+# logged an INSTRUCTION_CHANGE_REQUEST. Those events reached DEV_BACKLOG.md as five
+# user complaints and made [DB-0809-02] look like the most-repeated request in the
+# system's history. The rule was being obeyed in all 22 check-ins that month.
+#
+# Two consequences worth keeping in view: the system was reporting itself as the
+# user, and it narrated its own internals to him while doing so.
+_PROACTIVE_FRAME = (
+    "[SCHEDULED SESSION — the text below is a directive from the scheduler telling you "
+    "to open a session. The user has not spoken yet. Act on it; do not read it as "
+    "something the user said, do not reply to it as a request, and never mention it.]"
+)
+
+
+def _frame_proactive(user_input: str, is_proactive: bool) -> tuple[str, str]:
+    """
+    Return (coordinator_prefix, synthesizer_label) for one pipeline run.
+
+    The label is load-bearing: calling scheduler text "ORIGINAL USER MESSAGE" is the
+    specific thing that made it indistinguishable from user speech.
+    """
+    if not is_proactive:
+        return "", "ORIGINAL USER MESSAGE"
+    return f"{_PROACTIVE_FRAME}\n\n", "SCHEDULER DIRECTIVE (the user has not spoken yet)"
+
+
 def run_pipeline_session(user_input: str,
                          persona: str | None = None,
                          provider: str | None = None,
                          history: list[dict] | None = None,
-                         received_at: datetime | None = None) -> str:
+                         received_at: datetime | None = None,
+                         is_proactive: bool = False) -> str:
     """
     Run the two-pass Coordinator → Synthesizer pipeline.
 
@@ -2874,11 +2907,13 @@ def run_pipeline_session(user_input: str,
             from tools.ambient import format_receipt_time
             receipt_line = f"[This message received at: {format_receipt_time(received_at)}]\n\n"
 
+        proactive_prefix, synth_label = _frame_proactive(user_input, is_proactive)
+
         # Pre-load Pattern Miner insights (the one context source not in the system prompt).
         coord_context = _load_coordinator_context(persona)
         coord_input = (
-            f"{receipt_line}{user_input}\n\n---\n\n[Pre-loaded context]\n{coord_context}"
-            if coord_context else f"{receipt_line}{user_input}"
+            f"{proactive_prefix}{receipt_line}{user_input}\n\n---\n\n[Pre-loaded context]\n{coord_context}"
+            if coord_context else f"{proactive_prefix}{receipt_line}{user_input}"
         )
 
         # Pass 1: Coordinator — single-pass routing directive assembly
@@ -2912,7 +2947,7 @@ def run_pipeline_session(user_input: str,
 
         # Pass 2: Synthesizer — integration and user-facing response
         synthesizer_input = (
-            f"{receipt_line}ORIGINAL USER MESSAGE:\n{user_input}\n\n"
+            f"{proactive_prefix}{receipt_line}{synth_label}:\n{user_input}\n\n"
             f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"
             + (f"\n\nSPECIALIST OUTPUTS:\n{spec_text}" if spec_text else "")
         )
@@ -3002,9 +3037,10 @@ def _run_pipeline_session_stream_inner(
     # Pass 1: Coordinator — single-pass routing directive assembly (blocking)
     _trace("[PIPELINE] coordinator  starting")
     coord_context = _load_coordinator_context(persona)
+    proactive_prefix, synth_label = _frame_proactive(user_input, is_proactive)
     coord_input = (
-        f"{receipt_line}{user_input}\n\n---\n\n[Pre-loaded context]\n{coord_context}"
-        if coord_context else f"{receipt_line}{user_input}"
+        f"{proactive_prefix}{receipt_line}{user_input}\n\n---\n\n[Pre-loaded context]\n{coord_context}"
+        if coord_context else f"{proactive_prefix}{receipt_line}{user_input}"
     )
     coord_output = _run_single_agent("coordinator", coord_input, persona=persona, provider=provider)
     _trace(f"[PIPELINE] coordinator  done  ({len(coord_output)} chars) → dispatching specialists")
@@ -3019,7 +3055,7 @@ def _run_pipeline_session_stream_inner(
 
     # Build Synthesizer input
     synthesizer_input = (
-        f"{receipt_line}ORIGINAL USER MESSAGE:\n{user_input}\n\n"
+        f"{proactive_prefix}{receipt_line}{synth_label}:\n{user_input}\n\n"
         f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"
         + (f"\n\nSPECIALIST OUTPUTS:\n{spec_text}" if spec_text else "")
     )
