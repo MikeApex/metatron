@@ -42,19 +42,28 @@ descriptions are what the standing rule distrusts.*
   on the trailing fragment → 0 commits, 0 tracked files; `archive/transcripts/` gitignored at
   [.gitignore:99](.gitignore#L99), not :97 as filed). No history rewrite; exposure is local only
   — `~/.zshrc` plus 3 files in `archive/transcripts/raw/`. First because it is the cheapest item
-  here and the only one with a clock.
-  *filed 2026-08-08 by dev session · **verified 2026-08-09***
+  here and the only one with a clock. **Correction 2026-08-09: the "3 files in
+  `archive/transcripts/raw/`" claim was false** — searching the literal 164-char value, a 24-char
+  mid-fragment, and any `sk-proj-` literal returns **zero** hits repo-wide. The original check
+  grepped the variable *name*, which appears in ~60 transcripts as ordinary discussion text. So
+  exposure is `~/.zshrc` alone and no transcript scrubbing is owed. No OpenAI model is in either
+  routing config, so deleting the export breaks nothing live; the only consumers are
+  `core/orchestrator.py:1591`/`:3083` and `tests/run_phase3.py:213`.
+  *filed 2026-08-08 by dev session · **verified 2026-08-09**, exposure scope corrected*
 
-- **2. [DB-0809-02] Check-in brevity rule is not obeyed — Mike has restated it five times.** Five
-  restatements 2026-08-07 → 08-09, the most-repeated complaint in the system's history. Treat it
-  as a mechanism problem (prompt assembly order, or enforcement below the model), not a sixth
-  re-wording. **Verified 2026-08-09 on the VM — premise holds exactly, plus one narrowing fact:**
-  the rule is at `config/personas/mike.md:11` and near-verbatim at
-  `config/personas/mike/scheduler.yaml:41`, and `mike.md` is **11 lines long in total** — its
-  final line, in a file too short to bury anything. "Lost in a long prompt" is therefore not the
-  explanation. Resolve the duplication (see `## Machine log`) in the same pass.
-  *filed 2026-08-09 from 5 Inbox entries (2026-08-07T09:13 → 2026-08-09T09:06) · Mike via
-  Synthesizer · **verified 2026-08-09** against both live VM files*
+- **2. [DB-0809-02] Do proactive sessions actually stay focused? — the mechanism half is fixed
+  and deployed; the guidance half is unproven.** **The original premise was wrong.** All 22 August
+  `companion_checkin` openings were 1–2 sentences: the rule was obeyed, and four of the five
+  "restatements" were the Synthesizer reading its *own* scheduler prompt as Mike's voice and firing
+  the repeated-instruction protocol against text he never sent. Mike said it twice, both 08-03.
+  Fixed in `82d394b` (deployed): `_frame_proactive()` labels scheduler input as a directive in both
+  pipeline copies, and the protocol now requires the *user* to have repeated it. A ≤2-sentence cap
+  was **rejected** — the real target is focus, with length as its symptom — so
+  `config/agents/synthesizer.md` § Scheduled session conduct carries guidance instead.
+  **What is left: read a week of traces and judge whether the focus guidance holds**, and confirm
+  the first live check-in shows `SCHEDULER DIRECTIVE`. Do not re-word anything before then.
+  *filed 2026-08-09 · rewritten 2026-08-09 after measurement inverted it · full reasoning in
+  `archive/PROJECT_LOG.md`*
 
 - **3. [DB-0803-01] Text doubling / input cut off mid-sentence in the app.** Reported 2026-08-03
   17:12Z; still live 2026-08-04 (SEQ 004). **Verified 2026-08-09 — it splits, and the doubling
@@ -101,13 +110,22 @@ descriptions are what the standing rule distrusts.*
 - **7. [DB-0809-06] The browser tab does not live-refresh on messages sent from elsewhere.** A
   message from the terminal or the Android app appears only after a manual reload; app and
   terminal sync fine. Transport is ruled out by the entry's own diagnosis — this is a
-  client-side render path. `ace22c7` (2026-08-01) fixed the adjacent half-open-socket case
-  (`STALE_AFTER_MS`, confirmed still at [:724](static/index.html#L724) and
-  [:728](static/index.html#L728)) and never runs when the socket was not actually dead.
-  **Needs live reproduction before code:** open the tab, send from the terminal, watch.
+  client-side render path — **confirmed 2026-08-09, with two code-provable causes found:**
+  **(a) catch-up wipes the transcript.** `core/server.py:675` answers a `catchup` request with
+  `{type: "history", messages: <delta only>}`, and `renderHistory()` opens by clearing the
+  conversation (`static/index.html:942`). So any reconnect that missed anything replaces the
+  visible history with just the delta; a manual reload restores it because a fresh load sends no
+  catch-up. Fix: give catch-up its own type and route each row through the existing `case
+  'message'` handler, which already dedupes on `shownIds` and advances `lastSeenId`.
+  **(b) a hidden tab never checks its own socket.** Both liveness paths — the
+  `visibilitychange` handler (`:818`) and the 20s backstop (`:826`) — are gated on
+  `visibilityState === 'visible'`, so a background tab never runs the `STALE_AFTER_MS` detector
+  that exists precisely for sockets whose `onclose` never fires. Fix: one ungated interval.
+  Both end at "appears only after a manual reload", which is why the symptom was ambiguous.
+  (a) is a protocol change, so it needs the APK rebuild — `[DB-0809-18]` is upstream.
   *filed 2026-08-01/02 from conversation — the only `## Now` item whose provenance line does not
-  name its reporter; treat "Mike raised it" as likely but unconfirmed · re-checked 2026-08-05 and
-  2026-08-09, adjacent fix confirmed but a different code path*
+  name its reporter; treat "Mike raised it" as likely but unconfirmed · **diagnosed 2026-08-09**,
+  both causes located; the fixes are small and mechanical*
 
 - **8. [DB-0809-04] Sleep gets over-weighted in interpretation — not because it is the only thing
   logged.** Mike's *"once again you're making too much of the sleep disruption"*, raised more than
@@ -233,7 +251,13 @@ Real, not prioritised. One or two lines each — detail lives in the code, the l
   script running CLAUDE.md's executable claims. `deploy.sh`'s HEAD assertion is the model.
 - **[DB-0809-10]** `CLASSES` in `core/rule_classes.py` is incomplete by construction, so a clean
   rule-overlap report is not proof. **Widen a class in the same pass as any duplicate found by
-  hand** — that is the maintenance loop.
+  hand** — that is the maintenance loop. **Second blind spot, found 2026-08-09:** nothing checks
+  `config/templates/`, so a rule deleted from a persona survives in the file that seeds every new
+  one. That is how the check-in rule reached four copies with only three flagged.
+- **[DB-0809-19]** `tests/run_b1_redteam.py:52` inspects `run_pipeline_session()`'s *source*
+  structurally, and `82d394b` added a branch to it. Probably still passes, but B1 gates A7, so
+  confirm before the next red-team run rather than during it.
+  *filed 2026-08-09 by dev session*
 - **[DB-0809-14]** ROADMAP.md Track D is ~14 KB of a file loaded every `/metatron-code`, and
   parts have shipped. **Trim item-by-item against the log, never by line range.**
 - **[DB-0809-16]** Live dictation test of the dismissable transcription readout — code-verified
@@ -256,8 +280,6 @@ not a blackhole. Swept during `/backlog deep`.*
 - **[agent wanted a tool it lacks]** `finance` attempted `search_memory` (query) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
   `2026-08-05T15:21:45.223926Z`
 
-- **[same rule in two places]** The check-in brevity preference at `config/personas/mike.md:11` restates rules already in `config/personas/mike/scheduler.yaml:41` and `config/templates/scheduler.yaml:34`. Class: brevity. Superseded in practice by `[DB-0809-02]` — the rule is not being obeyed anywhere, which is the larger problem; resolve the duplication as part of that fix.  
-  `2026-08-05T04:30:19.777295Z` — **still valid: both live VM files confirmed by hand 2026-08-09.**
 
 ---
 

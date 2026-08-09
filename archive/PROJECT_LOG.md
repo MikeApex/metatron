@@ -21,6 +21,88 @@ file is the only narrative record, alongside the verbatim transcripts.*
 
 ---
 
+### 2026-08-09 (the scheduler was reporting itself as the user — `[DB-0809-02]` inverted) — `82d394b`, `a6d693e` deployed; `39d0560` docs
+
+The outgoing handoff said: *"Next: rebuild the APK (`[DB-0809-18]`), then work `## Now` top-down.
+`[DB-0804-01]`'s count is due 08-11."* Instead this session took `## Now` in rank order with the
+model split from the pre-compact breakdown — Opus on the ambiguous items, Sonnet deferred for the
+mechanical cluster — and rank 2 turned out not to be the bug it described.
+
+**`[DB-0809-02]` was inverted, and the count that ranked it was manufactured by the system.** The
+item said the check-in brevity rule was ignored and had been restated five times, the
+most-repeated complaint in the system's history, and recommended treating it as a mechanism
+problem rather than a sixth re-wording. Measurement first: every scheduled session in August,
+pulled from VM traces and conversation records. **All 22 `companion_checkin` openings were 1–2
+sentences — the rule was being obeyed without exception.** The five restatements were not Mike.
+Four of them are the *scheduler's own prompt* arriving in the `user` field, because
+`run_pipeline_session*` labelled it `ORIGINAL USER MESSAGE` and `is_proactive` reached only the
+trace. The Synthesizer read its own check-in prompt as Mike typing the rule at it, matched it
+against the identical rule in `mike.md:11`, and fired `synthesizer.md`'s repeated-instruction
+protocol — *"say plainly that you already have it and that it clearly isn't showing"* — against
+text he never sent, writing an `INSTRUCTION_CHANGE_REQUEST` each time. The sync lifted those into
+the Inbox as user complaints. **Mike said it twice, both on 08-03.** So the item's instinct
+("mechanism, not wording") was right and its named layer was wrong: prompt assembly was fine, the
+rule arrived three times over. The bug was that the system could not tell its own voice from his,
+and it narrated its internals to him four times while doing so.
+
+**A wrong finding of mine, corrected by Mike.** I flagged the 08-07 morning brief — *"You have two
+time-sensitive items… which should we handle first?"* — as violating the one-item cap, on a
+sentence count. Mike: *"a perfectly reasonable prompt… the issue is long run on check ins that
+don't have focus. Guidelines are probably stronger than hard and fast rules."* He is right; it has
+a point and asks a question. **Rejected: a ≤2-sentence cap across all three scheduled sessions** —
+the cap is what produced the false positive. What shipped instead is focus guidance in
+`synthesizer.md` § Scheduled session conduct: a proactive session opens on one thing, *length is a
+symptom of focus, not a target*, and once the user replies the notes stop applying. The genuine
+data-dump instance was the 08-09 evening close, which recited an entire email draft — so one
+mechanism rule did ship: an action awaiting approval is referred to, never recited.
+
+**There were four copies of the rule, not three.** `mike.md:11`, `mike/scheduler.yaml:41`, and —
+found only because `check_rule_overlap.py` still flagged it after the first two were deleted —
+`config/templates/scheduler.yaml:34`, the file every new persona is seeded from. That copy would
+have handed Mike's preference to each future user as though they had asked for it. It prompted a
+new `CLAUDE.md` convention, *§ Two kinds of preference — ask which one it is*: Mike is currently
+the only user, so most of what he states as preference is him **authoring the general design**;
+default to the agent layer, and the resolving question is *"is this how you want Metatron to work,
+or how you want it to work for you?"* Filing design as a deviation is the expensive direction —
+it never reaches the agent layer, so every future persona rediscovers it one at a time.
+
+**`[DB-0808-18]`'s exposure claim was also false.** The item said the key sat in `~/.zshrc` plus
+three files in `archive/transcripts/raw/`. Searching the literal 164-char value, a 24-char
+mid-fragment, and any `sk-proj-` literal returned **zero** hits repo-wide. The original check had
+grepped the variable *name*, which appears in ~60 transcripts as ordinary discussion text — I
+reproduced that same false positive on my first pass before switching to the value. No transcript
+scrubbing is owed; rotation still is. Also confirmed no OpenAI model is in either routing config,
+so removing the shell export breaks nothing live.
+
+**`[DB-0809-06]` (item 7) diagnosed, not fixed.** Two code-provable defects, both client-side as
+the item guessed: catch-up reuses `{type: "history"}` (`core/server.py:675`) and `renderHistory()`
+opens by wiping the transcript (`static/index.html:942`), so any reconnect that missed anything
+replaces the visible conversation with just the delta; and both liveness checks are gated on
+`visibilityState === 'visible'`, so a hidden tab never runs the `STALE_AFTER_MS` detector that
+exists precisely for sockets whose `onclose` never fires. Both end at "appears only after a manual
+reload", which is why the symptom was ambiguous. Fixes are Sonnet-sized but the protocol change
+needs the APK rebuild to reach the phone.
+
+**`[DB-0809-05]` designed, not built** — `archive/plans/calendar_reconcile_design_2026-08-09.md`.
+The load-bearing part is a reframe: **the system cannot detect that something did not happen**,
+only that no evidence of it exists, so the feature asks or stays silent and never asserts a miss.
+Split into durable open obligations (the payroll half — which already failed on 08-07 when Mike
+said a transfer was done and nothing recorded the close) and passed-event reconciliation. Conforms
+to the standing decision in `tools/schedule.py` that obligations are data read by a small number
+of sweeps, never one job each. Layer rule: **a function job may gather but must not judge; a model
+session may judge but must not poll** — so the sweep costs no tokens and never notifies; the
+morning brief decides what is worth raising. Mike's calls: every passed event (obligations-only
+left as a future toggle), closure **inferred** from dialogue with his own words stored as
+evidence, and pin to a fixed time rather than fixing `[DB-0808-11]` first. **Rejected: fixing the
+gate stack first** — recorded that this is the second workaround around the same missing thing and
+the third is the one that pushes at 3am.
+
+Deployed `82d394b` and `a6d693e`; VM HEAD verified both times, both services active, scheduler
+re-registered all six jobs. Quiet hours (22:00) began before any check-in could fire, so the first
+live confirmation of the framing is the next `companion_checkin` after 07:00. `39d0560` is docs
+only. Verified by dry-run instead: stubbed models, both pipeline copies, confirming the
+non-proactive path is byte-for-byte unchanged and the proactive one is unambiguous.
+
 ### 2026-08-09 (first `/backlog deep` sweep — all 8 `## Now` items verified, three premises wrong) — docs only, nothing deployed
 
 The outgoing handoff said: *"Next session should confirm the 08-11 `[DB-0804-01]` count, then work

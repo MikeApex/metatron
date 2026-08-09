@@ -1748,3 +1748,32 @@ runs when a session runs.
      remaining user-facing half on `[DB-0803-01]`.
 
   *closed 2026-08-09 by `/backlog deep` · evidence `c4ff279` + static/index.html:713-715,952,979*
+
+---
+
+## Closed 2026-08-09 — proactive-framing session
+
+- **[machine log: same rule in two places]** *(RULE_CONFLICT, `2026-08-05T04:30:19Z`)* The
+  check-in brevity preference restated across `config/personas/mike.md:11`,
+  `config/personas/mike/scheduler.yaml:41` and `config/templates/scheduler.yaml:34`. Class:
+  brevity.
+
+  **There were four copies, not the three the audit named** — the rule was also the whole content
+  of the two scheduler prompts, so the audit's own count undersold it. All copies removed: the
+  rule was promoted to `config/agents/synthesizer.md` § Scheduled session conduct as general
+  design (rewritten as focus guidance rather than a sentence cap — see the log entry), then
+  deleted from `mike.md`, from `mike/scheduler.yaml` on the VM, and from
+  `config/templates/scheduler.yaml`. `grep "two sentences at most" config/` now returns nothing;
+  both check-in prompts are `"Check in."`.
+
+  The template copy is the one that mattered most and the one nothing had flagged: it seeds every
+  new persona, so Mike's stated preference would have arrived in each future user's own config as
+  though they had asked for it. It is what prompted `CLAUDE.md` § *Two kinds of preference — ask
+  which one it is*.
+
+  Worth carrying: the audit's write-time and daily checks both saw this and its **suggested
+  partner was right while its count was wrong** — a reminder that the flagged rule is the reliable
+  part of that tool's output, as `CLAUDE.md` already says. Nothing checks the template.
+
+  *closed 2026-08-09 · evidence `82d394b` (promotion + VM deletions) and `a6d693e` (template);
+  `config/agents/synthesizer.md` § Scheduled session conduct*
