@@ -85,7 +85,25 @@ descriptions are what the standing rule distrusts.*
   unusable.
   *filed 2026-08-04 by Mike via Synthesizer · origin SEQ 016/017 · **verified 2026-08-09***
 
-- **5. [DB-0809-03] Dictated contact details come through wrong and need correcting by hand.**
+- **5. [DB-0809-20] The daily log records prose where its own schemas declare enums, so almost
+  nothing can be compared across days.** `wellbeing.mood: low | neutral | positive | mixed` and
+  `health.energy: low | moderate | high` are declared in
+  [config/agents/mental_wellbeing.md:219](config/agents/mental_wellbeing.md#L219) and
+  [physical_health.md:155](config/agents/physical_health.md#L155). **Measured 2026-08-09 across 70
+  log files: those nested blocks appear in 4.** The other 66 write flat free-text top-level keys —
+  `mood` 63, `energy` 61, `focus` 61, with real values `'anxious'`, `'improved'`,
+  `'low/depleted (masked by overdrive)'`. Cause is a schema conflict, not agent sloppiness:
+  [tools/logger.py:146](tools/logger.py#L146) — the description the model reads *at the moment it
+  calls the tool* — names those keys flat, `additionalProperties: True`, no enums. The nearer
+  instruction wins over a config file read earlier in the session. Consequence: `sleep_hours` is
+  the only field two days can be ranked on, which is the root cause `[DB-0809-04]` was patched
+  around at the interpretation layer, and every Pattern Miner cross-domain result is computed over
+  unrankable prose. Fix is cheap — align the tool description with the two schemas already written
+  — but **the existing history stays unrankable**, so it does not fix itself by waiting.
+  *filed 2026-08-09 · **dev-session find, not Mike** — promoted to `## Now` by Mike as the parent
+  cause of `[DB-0809-04]`, which he did raise*
+
+- **6. [DB-0809-03] Dictated contact details come through wrong and need correcting by hand.**
   Three corrections in three minutes on 2026-08-02 (`diamond.mic` → `diamond.mike`), plus
   `diamond.like.gmail.com` at SEQ 006. **Verified 2026-08-09:**
   [tools/crm.py:149](tools/crm.py#L149)/[:158](tools/crm.py#L158) already run difflib near-miss
@@ -97,7 +115,7 @@ descriptions are what the standing rule distrusts.*
   *filed 2026-08-09, consolidating the 2026-08-02 reports · Mike via Synthesizer · origin SEQ 006
   · **verified 2026-08-09***
 
-- **6. [DB-0809-05] Nothing notices a calendar event that passed without happening.** Mike's ask:
+- **7. [DB-0809-05] Nothing notices a calendar event that passed without happening.** Mike's ask:
   detect it and prompt to reschedule; keep financial tasks (payroll) prominent in daily
   proactive checks until explicitly closed. **Verified 2026-08-09: neither exists** — nothing in
   `core/` or `tools/` reconciles a past event against reality; the scheduler only fires jobs.
@@ -107,7 +125,7 @@ descriptions are what the standing rule distrusts.*
   Adds a third dependent to the open `[DB-0808-11]`.
   *filed 2026-08-09 from Inbox (2026-08-05T15:19Z) · Mike via Synthesizer · **verified 2026-08-09***
 
-- **7. [DB-0809-06] The browser tab does not live-refresh on messages sent from elsewhere.** A
+- **8. [DB-0809-06] The browser tab does not live-refresh on messages sent from elsewhere.** A
   message from the terminal or the Android app appears only after a manual reload; app and
   terminal sync fine. Transport is ruled out by the entry's own diagnosis — this is a
   client-side render path — **confirmed 2026-08-09, with two code-provable causes found:**
@@ -127,7 +145,7 @@ descriptions are what the standing rule distrusts.*
   name its reporter; treat "Mike raised it" as likely but unconfirmed · **diagnosed 2026-08-09**,
   both causes located; the fixes are small and mechanical*
 
-- **8. [DB-0809-04] Sleep gets over-weighted in interpretation — not because it is the only thing
+- **9. [DB-0809-04] Sleep gets over-weighted in interpretation — not because it is the only thing
   logged.** Mike's *"once again you're making too much of the sleep disruption"*, raised more than
   once. **Rewritten 2026-08-09: the entry blamed a thin record and the measurement it demanded
   refutes that.** 20 days of `data/personas/mike/logs/2026-*.json` on the VM: `mood` 90%, `notes`
