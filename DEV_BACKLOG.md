@@ -27,87 +27,99 @@ or `file:line` that closed them — closed without evidence is not closed.
 ## Now
 
 **Ranked — position is priority.** Capped at ~10, so something enters by displacing something.
-**Each item is ranked as it arrives:** it is put to Mike with a recommended position and the
-reasoning — who raised it, what it blocks, what it costs while it sits — and he makes the call.
-Not inferred, not appended, not left to sort out later.
+**The entry bar is that Mike raised it**, with one standing exception that must not widen: a live
+credential exposure or data-loss risk enters regardless of who found it. Both rituals — ranking
+each item as it arrives, and the reporter asymmetry — are in [docs/WORKFLOW.md](docs/WORKFLOW.md).
 
-*The eight below were set equal on 2026-08-09, so their current order carries no meaning — work
-whichever fits the session. The next item to arrive is ranked against them properly, and from
-then on the order means what it says.*
+*Ranked 2026-08-09 by Mike after a `/backlog deep` sweep verified all eight against current code.
+Every entry carries what was checked and when; a verdict without that line is a description, and
+descriptions are what the standing rule distrusts.*
 
-**The entry bar is that Mike raised it.** A dev session finding a real bug files it to `## Later`
-however good the find is — that asymmetry is the whole point, and it is what stopped this list
-growing faster than it shrank. One standing exception, stated so it does not quietly widen:
-a **live credential exposure or data-loss risk** enters regardless of who found it, because the
-cost of waiting is not proportional to who noticed.
+- **1. [DB-0808-18] ⚠ Live `OPENAI_API_KEY` sits in plaintext in `~/.zshrc:2`.** *(Dev-session
+  find, kept here under the credential-exposure exception above.)* Rotate at platform.openai.com
+  (assume burned), move it into the gitignored `.env` — which does **not** carry it — and delete
+  the `export` line. **The repo question is answered: it never reached git** (`git log --all -S`
+  on the trailing fragment → 0 commits, 0 tracked files; `archive/transcripts/` gitignored at
+  [.gitignore:99](.gitignore#L99), not :97 as filed). No history rewrite; exposure is local only
+  — `~/.zshrc` plus 3 files in `archive/transcripts/raw/`. First because it is the cheapest item
+  here and the only one with a clock.
+  *filed 2026-08-08 by dev session · **verified 2026-08-09***
 
-- **[DB-0809-02] Check-in brevity rule is not obeyed — Mike has restated it five times.** The
-  preference is saved (`config/personas/mike.md:11`, and again in `scheduler.yaml`) and the
-  Synthesizer keeps listing pending items anyway. Five restatements 2026-08-07 → 08-09 is the
-  most-repeated complaint in the system's history. The instruction layer has demonstrably
-  failed; treat it as a mechanism problem (prompt assembly order, or enforcement below the
-  model) rather than re-wording the rule a sixth time.
+- **2. [DB-0809-02] Check-in brevity rule is not obeyed — Mike has restated it five times.** Five
+  restatements 2026-08-07 → 08-09, the most-repeated complaint in the system's history. Treat it
+  as a mechanism problem (prompt assembly order, or enforcement below the model), not a sixth
+  re-wording. **Verified 2026-08-09 on the VM — premise holds exactly, plus one narrowing fact:**
+  the rule is at `config/personas/mike.md:11` and near-verbatim at
+  `config/personas/mike/scheduler.yaml:41`, and `mike.md` is **11 lines long in total** — its
+  final line, in a file too short to bury anything. "Lost in a long prompt" is therefore not the
+  explanation. Resolve the duplication (see `## Machine log`) in the same pass.
   *filed 2026-08-09 from 5 Inbox entries (2026-08-07T09:13 → 2026-08-09T09:06) · Mike via
-  Synthesizer*
+  Synthesizer · **verified 2026-08-09** against both live VM files*
 
-- **[DB-0808-18] ⚠ Live `OPENAI_API_KEY` sits in plaintext in `~/.zshrc` and leaked into a
-  session transcript.** *(A dev-session find, kept here under the credential-exposure exception
-  above — the rotation clock does not care who noticed.)* Rotate at platform.openai.com (assume
-  burned), move the replacement to
-  the gitignored project `.env`, delete the `export` line. Then confirm it never reached the
-  repo — `archive/transcripts/` is gitignored ([.gitignore:97](.gitignore#L97)) so exposure is
-  probably local, but `git log -S` for the fragment is the check, not the assumption. The
-  2026-07-29 history rewrite is the precedent for what "yes, it reached the remote" costs.
-  *filed 2026-08-08 by dev session · surfaced incidentally by a `tail ~/.zshrc`*
+- **3. [DB-0803-01] Text doubling / input cut off mid-sentence in the app.** Reported 2026-08-03
+  17:12Z; still live 2026-08-04 (SEQ 004). **Verified 2026-08-09 — it splits, and the doubling
+  half is already fixed in code.** Doubling is the same defect as the now-closed `[DB-0803-06]`,
+  fixed by `c4ff279` ([static/index.html:713-715](static/index.html#L713), call sites
+  [:952](static/index.html#L952)/[:979](static/index.html#L979)). **The fix is not on the phone** —
+  the bundled APK asset still has `shownIds.clear()` (`[DB-0809-18]`), so the gating step is a
+  rebuild and re-test, not code. **"Input cut off mid-sentence" is a separate, untouched half.**
+  *filed 2026-08-03 by Mike via Synthesizer · origin SEQ 012 · **verified 2026-08-09***
 
-- **[DB-0803-01] Text doubling / input cut off mid-sentence in the app.** `static/index.html`.
-  Reported 2026-08-03 17:12Z; still live 2026-08-04 (SEQ 004 references it). Untouched and
-  unverified since — the calendar half of the same report shipped, this half never did.
-  *filed 2026-08-03 by Mike via Synthesizer · origin SEQ 012 · not verified since*
+- **4. [DB-0805-02] Email approval prompt does not render in the app.** Two reports 2026-08-04
+  (12:42Z, 12:49Z). **Verified 2026-08-09 — premise drifted, the UI now exists:** `#confirm-bar`
+  at [static/index.html:470-477](static/index.html#L470) (handlers
+  [:1367-1384](static/index.html#L1367)) against `/pending-confirmations` and `POST /confirm`
+  ([core/server.py:693-717](core/server.py#L693)), landed `ca993fe` at 11:39Z — **three minutes
+  before the first report** — and present in the bundled APK asset too. So this is a stale install
+  or a runtime failure of code that exists: **live repro on a rebuilt APK is the next step, not a
+  build.** Ranked high because until approval works on the phone, every gated outward action is
+  unusable.
+  *filed 2026-08-04 by Mike via Synthesizer · origin SEQ 016/017 · **verified 2026-08-09***
 
-- **[DB-0805-02] Email approval prompt does not render in the app.** Two reports 2026-08-04
-  (12:42Z, 12:49Z). The confirm mechanism works server-side (`tools/confirm.py`,
-  `POST /confirm`) — what Mike cannot do is *approve* from the phone, which makes every gated
-  outward action unusable in practice. The "no live Google Contacts read" half of the original
-  report was answered by vCard import and is not part of this item.
-  *filed 2026-08-04 by Mike via Synthesizer · origin SEQ 016/017 · not verified*
-
-- **[DB-0809-03] Dictated contact details come through wrong and need correcting by hand.**
+- **5. [DB-0809-03] Dictated contact details come through wrong and need correcting by hand.**
   Three corrections in three minutes on 2026-08-02 (`diamond.mic` → `diamond.mike`), plus
-  `diamond.like.gmail.com` at SEQ 006. `write_contact` now refuses an exact self-match and
-  `write_profile` gates changes, but nothing snaps a near-miss to a known value. The user's own
-  addresses are in `profile.yaml` and contacts are in the CRM — a transcript token close to a
-  known string should snap rather than pass through. Partly Whisper accuracy (`[DB-0808-08]`),
-  but the known-values pass fixes it outright and independently.
-  *filed 2026-08-09, consolidating the 2026-08-02 reports · Mike via Synthesizer · origin SEQ 006*
+  `diamond.like.gmail.com` at SEQ 006. **Verified 2026-08-09:**
+  [tools/crm.py:149](tools/crm.py#L149)/[:158](tools/crm.py#L158) already run difflib near-miss
+  detection against the user's own email and phone, but they **refuse** the write rather than snap
+  it — a different behaviour from what this asks for, and the snap exists nowhere. The user's
+  addresses are in `profile.yaml` and contacts in the CRM, so a token close to a known string
+  should snap rather than pass through or be rejected. Partly Whisper accuracy (`[DB-0808-08]`),
+  but the known-values pass fixes it independently.
+  *filed 2026-08-09, consolidating the 2026-08-02 reports · Mike via Synthesizer · origin SEQ 006
+  · **verified 2026-08-09***
 
-- **[DB-0809-04] Sleep is nearly the only thing consistently logged, so everything gets
-  explained by sleep.** Mike's *"once again you're making too much of the sleep disruption"*,
-  raised more than once. The 2026-08-03 `synthesizer.md` rules (don't over-read a thin record;
-  ask for what's missing) are mitigation — they tell it to distrust its only signal without
-  giving it a second one. **Measure first:** count populated keys per day per domain in
-  `data/personas/mike/logs/*.json` over 30 days. Then decide whether check-ins should rotate
-  which domain they ask about, and what can be captured passively the way sleep is. **Do not
-  build a weighting algorithm before checking whether the column is simply empty.** Mike has
-  separately asked that sleep itself be logged as total hours plus interruptions rather than a
-  disruption narrative. Also blocks trusting any Pattern Miner cross-domain result.
-  *filed 2026-08-09, merging two overlapping entries from 2026-08-01/02 · Mike via Synthesizer*
-
-- **[DB-0809-05] Nothing notices a calendar event that passed without happening.** Mike's ask:
+- **6. [DB-0809-05] Nothing notices a calendar event that passed without happening.** Mike's ask:
   detect it and prompt to reschedule; keep financial tasks (payroll) prominent in daily
-  proactive checks until explicitly closed. Neither exists — the scheduler fires jobs, it does
-  not reconcile the calendar against reality.
-  *filed 2026-08-09 from Inbox (2026-08-05T15:19Z) · Mike via Synthesizer*
+  proactive checks until explicitly closed. **Verified 2026-08-09: neither exists** — nothing in
+  `core/` or `tools/` reconciles a past event against reality; the scheduler only fires jobs.
+  *filed 2026-08-09 from Inbox (2026-08-05T15:19Z) · Mike via Synthesizer · **verified 2026-08-09***
 
-- **[DB-0809-06] The browser tab does not live-refresh on messages sent from elsewhere.** A
+- **7. [DB-0809-06] The browser tab does not live-refresh on messages sent from elsewhere.** A
   message from the terminal or the Android app appears only after a manual reload; app and
   terminal sync fine. Transport is ruled out by the entry's own diagnosis — this is a
   client-side render path. `ace22c7` (2026-08-01) fixed the adjacent half-open-socket case
-  (`STALE_AFTER_MS`) and never runs when the socket was not actually dead. **Needs live
-  reproduction before code:** open the tab, send from the terminal, watch.
+  (`STALE_AFTER_MS`, confirmed still at [:724](static/index.html#L724) and
+  [:728](static/index.html#L728)) and never runs when the socket was not actually dead.
+  **Needs live reproduction before code:** open the tab, send from the terminal, watch.
   *filed 2026-08-01/02 from conversation — the only `## Now` item whose provenance line does not
-  name its reporter; treat "Mike raised it" as likely but unconfirmed · re-checked 2026-08-05,
-  adjacent fix found but different code path*
+  name its reporter; treat "Mike raised it" as likely but unconfirmed · re-checked 2026-08-05 and
+  2026-08-09, adjacent fix confirmed but a different code path*
+
+- **8. [DB-0809-04] Sleep gets over-weighted in interpretation — not because it is the only thing
+  logged.** Mike's *"once again you're making too much of the sleep disruption"*, raised more than
+  once. **Rewritten 2026-08-09: the entry blamed a thin record and the measurement it demanded
+  refutes that.** 20 days of `data/personas/mike/logs/2026-*.json` on the VM: `mood` 90%, `notes`
+  90%, `focus` 75%, `health` 70%, `energy` 70%, `tasks_completed` 60%; sleep is on 14/20 days
+  (70%) — roughly the **fifth** most-populated signal, not the only one. Its own guard (*don't
+  build weighting before checking the column is empty*) resolves the other way: **the columns are
+  not empty**, so domain-rotating check-ins and passive capture are both off the table. What
+  remains is a Synthesizer interpretation defect against an already-broad record — fix the
+  2026-08-03 `synthesizer.md` rules, not the log schema. The separate "hours plus interruptions,
+  not a narrative" ask is **largely already structural**: `sleep_hours` (11 days) and
+  `sleep_quality` (12 days) are distinct fields. Last because the expensive half just disappeared.
+  Still gates trusting any Pattern Miner cross-domain result.
+  *filed 2026-08-09 merging two 2026-08-01/02 entries · Mike via Synthesizer · **premise measured
+  and inverted 2026-08-09***
 
 ---
 
@@ -154,11 +166,6 @@ Real, not prioritised. One or two lines each — detail lives in the code, the l
   **due 2026-08-11, do not check before then.** Baseline 18 `AgentRecord` errors in 7 days.
 - **[DB-0803-05]** `sw.js` registers no `fetch` handler and `/` is served `no-store` — no
   offline shell, so an unreachable server shows a browser error page instead of the app.
-- **[DB-0803-06]** After ~100 exchanges the app renders messages twice: `shownIds` does a full
-  `.clear()` at [static/index.html:944](static/index.html#L944) and [:971](static/index.html#L971)
-  instead of evicting oldest-first, so the next reconnect repopulates and immediately empties it
-  and any catch-up `'message'` looks unseen. `eea3faf` fixed a narrower ordering bug in the same
-  lines. **Dev-session find, never reported — promote it the day Mike sees a doubled message.**
 - **[DB-0808-05]** The output filter suppresses the whole reply when Mike names a tool himself
   (*"`write_config` didn't save my preferences"*) — the canned fallback lands exactly when a
   complaint about the system deserves an answer. Observed live once (Exchange 027, 2026-06-26),
@@ -205,8 +212,18 @@ Real, not prioritised. One or two lines each — detail lives in the code, the l
   prevent, so it is advisory, not protective. Possible fix: compare against the session's start
   commit, or record touched files as the session goes. **Do not remove the check** — a prompt to
   look beats no prompt. *filed 2026-08-09 by dev session (first run of the new `/archive`)*
-- **[DB-0809-12]** Hallucinated log dates in mike's tree (`2024-08-04.json` alongside a correct
-  `2026-08-04.json`; earlier `2025-*` files). **Needs the VM** — the Mac copy is a stale mirror.
+- **[DB-0809-12]** Hallucinated log dates in mike's VM tree. **Re-verified 2026-08-09 and the
+  premise drifted: there is no `2024-08-04.json`.** The impossible set is 9 files, all 2025 —
+  `2025-01-24`, `2025-05-13/14/15/16`, `2025-07-20/21/25`, `2025-08-02`. The `2026-06-*` and
+  `2026-07-*` files are legitimate history, so a raw "23 of 32 are not 2026-08" count misleads.
+  Fix is a dated-filename guard at the write site, then move the 9 aside — not a bulk delete.
+- **[DB-0809-18]** The APK-bundled `android/app/src/main/assets/public/index.html` drifts from
+  `static/index.html` silently and nothing checks. Found 2026-08-09 while verifying
+  `[DB-0803-01]`: 3 diffs today — the `evictOldest` fix, and `/transcribe` missing its
+  `?persona=` param, so the phone transcribes without naming a persona. Small now, but it makes
+  every app-side bug report ambiguous about whether the shipped code was under test. Cheap fix: a
+  deploy-time assertion that the two files match, on `deploy.sh`'s HEAD-assertion model
+  (`[DB-0809-11]`). *filed 2026-08-09 by dev session*
 - **[DB-0809-11]** Docs record values the system changes underneath them and nothing checks.
   Mitigation in force (don't write down short-half-life values); the stronger fix is a smoke
   script running CLAUDE.md's executable claims. `deploy.sh`'s HEAD assertion is the model.
@@ -218,7 +235,8 @@ Real, not prioritised. One or two lines each — detail lives in the code, the l
 - **[DB-0809-16]** Live dictation test of the dismissable transcription readout — code-verified
   against every pass condition 2026-08-05, never run by a human with a microphone.
 - **[DB-0805-04]** `tools/mail.py`'s module docstring says sending is deferred; `send_email`
-  shipped 2026-08-04 and sent for real 2026-08-05, three lines below.
+  shipped 2026-08-04 and sent for real 2026-08-05. **Confirmed still wrong 2026-08-09** —
+  [tools/mail.py:9-11](tools/mail.py#L9). One-line fix.
 
 ---
 
@@ -235,7 +253,7 @@ not a blackhole. Swept during `/backlog deep`.*
   `2026-08-05T15:21:45.223926Z`
 
 - **[same rule in two places]** The check-in brevity preference at `config/personas/mike.md:11` restates rules already in `config/personas/mike/scheduler.yaml:41` and `config/templates/scheduler.yaml:34`. Class: brevity. Superseded in practice by `[DB-0809-02]` — the rule is not being obeyed anywhere, which is the larger problem; resolve the duplication as part of that fix.  
-  `2026-08-05T04:30:19.777295Z`
+  `2026-08-05T04:30:19.777295Z` — **still valid: both live VM files confirmed by hand 2026-08-09.**
 
 ---
 
@@ -250,6 +268,10 @@ Closed by the 2026-08-09 workflow revamp itself: `[DB-0809-01]` (inflated open c
 notation trap is gone by construction), `[DB-0808-13]` (`/archive` collision guard — now step 0),
 `[DB-0808-15]` (parallel-window status collisions — coordinator/handoff protocol, with the git
 half kept open as `[DB-0805-05]`).
+
+Closed by the 2026-08-09 `/backlog deep` sweep: `[DB-0803-06]` (`shownIds` full-`clear()` →
+oldest-first eviction, fixed by `c4ff279`; its "promote when Mike sees a doubled message"
+condition had already been met by `[DB-0803-01]`, which now carries the remaining APK half).
 
 ---
 

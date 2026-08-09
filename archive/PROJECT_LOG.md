@@ -21,6 +21,159 @@ file is the only narrative record, alongside the verbatim transcripts.*
 
 ---
 
+### 2026-08-09 (first `/backlog deep` sweep — all 8 `## Now` items verified, three premises wrong) — docs only, nothing deployed
+
+The outgoing handoff said: *"Next session should confirm the 08-11 `[DB-0804-01]` count, then work
+`## Now` top-down."* This session did neither, deliberately — Mike opened with `/backlog`, switched
+it to `deep` mid-pass, and the sweep found that working `## Now` top-down would have been working
+an unranked list containing three false premises. The `[DB-0804-01]` count is still due 08-11 and
+was correctly not checked early.
+
+**The sweep's actual product is not the ranking — it is that a third of `## Now` did not survive
+contact with the code.** That is the second time the one-third figure has held (2026-08-05 was the
+first), which is now enough to treat it as the expected rate rather than a bad week.
+
+**What was wrong, and why each one mattered:**
+
+1. **`[DB-0809-04]` inverted.** It claimed *"sleep is nearly the only thing consistently logged, so
+   everything gets explained by sleep"*, and prescribed domain-rotating check-ins plus passive
+   capture. Its own guard said *don't build a weighting algorithm before checking whether the
+   column is simply empty*. Measured on the VM across 20 days: `mood` 90%, `notes` 90%, `focus`
+   75%, `health` 70%, `energy` 70%, `tasks_completed` 60%, sleep 14/20 days — **the fifth
+   most-populated signal, not the only one.** The columns are not empty, so both prescribed work
+   items are off the table and what remains is a Synthesizer interpretation defect against an
+   already-broad record. `sleep_hours` and `sleep_quality` also already exist as distinct fields,
+   so Mike's "hours plus interruptions, not a narrative" ask is largely structural already. **This
+   is the case the standing rule was written for:** the entry was persuasive, actionable, and
+   would have produced a schema change to fix a prompt problem.
+2. **`[DB-0805-02]`'s premise drifted.** "Email approval prompt does not render in the app" — but
+   `#confirm-bar` exists (`static/index.html:470-477`, handlers `:1367-1384`) against
+   `/pending-confirmations` and `POST /confirm` (`core/server.py:693-717`), landed in `ca993fe` at
+   **11:39Z, three minutes before the first report at 12:42Z**, and is present in the bundled APK
+   asset too. So the item is now "stale install or runtime failure of code that exists," which is
+   a repro task, not a build task.
+3. **`[DB-0809-12]`'s premise drifted.** It cited a hallucinated `2024-08-04.json`. No `2024-*`
+   file exists. The real set is 9 impossible files, all 2025. Also noted: a raw "23 of 32 files are
+   not 2026-08" count misleads badly, because the `2026-06-*`/`2026-07-*` files are legitimate
+   history.
+
+**One item closed: `[DB-0803-06]`** (`shownIds` full-`clear()` → oldest-first eviction), fixed by
+`c4ff279`, evidence `static/index.html:713-715,952,979`. Two things about the close are worth more
+than the close:
+
+- **The entry said "never reported — promote it the day Mike sees a doubled message." It had been
+  reported five days earlier**, as `[DB-0803-01]` ("text doubling in the app", Mike, 08-03). Nobody
+  connected them because one was written in symptoms and the other in line numbers. **A
+  dev-session find and a user report of the same defect do not look alike** — that is the general
+  lesson, and it is an argument against trusting the reporter-asymmetry rule to keep pairs apart.
+- **The fix is not on the phone.** `android/app/src/main/assets/public/index.html` still carries
+  `shownIds.clear()`.
+
+**New finding, filed as `[DB-0809-18]`:** the APK-bundled `index.html` drifts from
+`static/index.html` silently and nothing checks. Only 3 diffs today — the `evictOldest` fix, and
+`/transcribe` missing its `?persona=` param, so the phone transcribes without naming a persona —
+but the consequence is that *every app-side bug report is ambiguous about whether shipped code was
+under test*. That ambiguity is what made `[DB-0803-01]` and `[DB-0805-02]` look like code problems.
+
+**Decisions made (all three put to Mike with a recommendation, all three accepted):** rewrite
+`[DB-0809-04]` as an over-weighting item rather than closing it; rebuild the APK and re-test rather
+than filing the drift and leaving both app items blocked; and rank `## Now` 1–8 (key rotation
+first as the cheapest item with a clock, brevity second as the most-restated complaint,
+`[DB-0809-04]` last now that its expensive half has evaporated).
+
+**Rejected:** closing `[DB-0809-04]` outright — the complaint is real even though its stated cause
+was not, and closing it would have discarded Mike's actual observation along with the wrong
+diagnosis. Also rejected: trimming the new verification detail out of `DEV_BACKLOG.md` purely to
+hit the 250-line ceiling. The file ended at 284 (it was already 262 before this pass); the
+procedural prose that duplicated `docs/WORKFLOW.md` was compressed, but evidence lines were kept,
+because deleting the thing the standing rule demands in order to satisfy a length rule is the
+wrong trade. **The correct fix is this entry** — the narrative belongs here, and a follow-up pass
+can reduce the backlog entries to one-line verdicts pointing at it.
+
+**Corrections to record:**
+
+- **My first check of `[DB-0809-02]` was a false negative.** I grepped `brief|brevity|concise`
+  against `config/personas/mike.md`, got nothing, and briefly concluded the rule duplication had
+  been resolved. The rule is there — it says *"Keep to two sentences."* Premise confirmed intact
+  on a second look, along with a new narrowing fact: `mike.md` is **11 lines long in total**, so
+  the rule is its final line in a file too short to bury anything. "Lost in a long prompt" is
+  therefore not the explanation, which strengthens the mechanism reading over a sixth re-wording.
+  A grep that returns nothing is weak evidence about a file written in natural language.
+- **`[DB-0808-18]`'s worst case is ruled out.** `git log --all -S` on the key's trailing fragment
+  returns 0 commits and 0 tracked files; `archive/transcripts/` is gitignored at `.gitignore:99`
+  (the entry said `:97`). No history rewrite needed — exposure is local only. Rotation still owed.
+- **`[DB-0809-17]` proved its own point at step 0 of this `/archive`.** `SESSION.md` and
+  `PROJECT_LOG.md` were dirty on arrival and the guard cannot say whose edits they are. Reading
+  them resolved it — they were the *previous* session's uncommitted close-out for `ed92acf`, not a
+  parallel window — but only reading resolved it. The guard is advisory, as filed.
+
+**Not deployed, and nothing needed deploying:** the only files touched were `DEV_BACKLOG.md`,
+`archive/backlog_closed_2026-08.md`, and these close-out files. No `core/`, `config/` or `tools/`
+changes. Note that `ed92acf`'s doc close-out was still uncommitted when this session started, so
+that commit and this session's docs should go together.
+
+**Model-split guidance produced for the ranked items** (Mike asked, in the context of the standing
+plan-mode convention): Opus for `[DB-0809-02]` (enforcement-layer decision), the app-side
+diagnosis trio, `[DB-0809-05]` (new capability needing a design pass) and `[DB-0809-04]`; Sonnet
+for the mechanical cluster (APK rebuild, `[DB-0809-18]` assertion, `[DB-0805-04]`, `[DB-0809-12]`);
+`[DB-0809-03]` as Sonnet-with-Opus-review, since a wrong contact snap corrupts data silently.
+
+---
+
+### 2026-08-09 (workflow revamp: Fable verification pass, commit, live-file bug fixes) — `ed92acf`, docs/scripts only, nothing deployed
+
+The previous entry closed with the revamp implemented and `/archive` run once as its own test,
+but nothing committed and the plan's optional Fable 5 verification pass not yet run. This
+session ran that pass, found real bugs it was designed to catch, fixed them, and committed.
+
+**What the verification pass found, reading `scripts/sync_dev_backlog.py` against the live
+`DEV_BACKLOG.md` rather than trusting that it ran clean:**
+
+1. **The dated Inbox placeholder (`*(nothing new — last triaged 2026-08-09)*`) would never be
+   removed.** The script's `PLACEHOLDERS` tuple matched three older literal spellings only —
+   Opus wrote a fourth, dated form into the live file that its own dedupe code couldn't match.
+   Confirmed by a synthetic-event test before fixing: a new Inbox entry landed with the stale
+   "nothing new" line still sitting under it. Fixed with a shape-matching regex
+   (`PLACEHOLDER_RE`) instead of an enumerated tuple.
+2. **New entries inserted above the section's explanatory preamble**, not below it — also
+   confirmed by test. `merge()` now finds the first real bullet (or the closing `---`) and
+   inserts there.
+3. **The ×3 machine-log escalation was one-shot.** It only printed `⚠ machine: …` on the exact
+   sync run where a signature's count crossed 3; printed once inside a `SessionStart` hook, that
+   is seen once and never again, defeating the stated purpose of "never miss a functional machine
+   item." Every doc (`WORKFLOW.md`'s Friday example, `metatron-code.md`) describes it as standing.
+   Added `escalated()`, which scans the file for `⚠` lines every run rather than tracking a
+   one-time crossing — the alert now persists in the count line until a `/backlog deep` sweep
+   handles it.
+4. **Cross-type merging in the machine log** — the prose-similarity fallback ignored event type,
+   so a `RULE_CONFLICT` and a `SELF_APPLIED` about the same config key could merge and corrupt
+   both counts. Added a same-label guard, machine side only (left the user-side Inbox fallback
+   as-is — the Synthesizer's FEATURE/INSTRUCTION classification is fuzzy enough that a hard type
+   guard there risks reintroducing the duplicates the dedupe exists to catch).
+
+All four confirmed by writing synthetic-event tests against the actual `merge()`/`escalated()`
+functions before and after the fix — not just re-running the script and reading output. The core
+dedupe math (Dice at 0.15, five real check-in repeats → three entries) was re-verified unchanged.
+
+**Two doc inconsistencies, also found by comparing files against each other rather than each
+against itself:** `archive.md` and `backlog.md` both cited stale line ceilings (60/80/150 lines)
+against their own actual length (92/134) and against the ceilings `CLAUDE.md` had already been
+corrected to (~100/~130/~250) in the same revamp — the two files were never reconciled with each
+other. Fixed to cite the `CLAUDE.md` figures directly rather than repeating a number. Also added
+the `docs/WORKFLOW.md` row to `CODEBASE_INDEX.md`, which the plan's own file-touched table
+specified but the implementation missed.
+
+**Not filed as backlog items** — these are fixes to files this session directly owns and
+verified, which is the normal "fix it and note it" path, not the "find and can't fix" path
+`DEV_BACKLOG.md` exists for.
+
+**Committed:** `ed92acf` — 14 files (10 modified, 3 new, 1 deleted), all under
+`.claude/commands/`, `docs/`, `archive/`, and three root docs, plus the one Mac-only dev script.
+Nothing under `core/`, `config/`, or `tools/`, so no `./deploy.sh`. Working tree confirmed clean
+before this archive run.
+
+---
+
 ### 2026-08-09 (dev-workflow revamp — commands, backlog, archive ritual) — docs and scripts only, nothing deployed
 
 **The ask, in Mike's words:** the flow "doesn't seem well managed or designed to any sort of

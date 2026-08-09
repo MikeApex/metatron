@@ -1721,3 +1721,30 @@ runs when a session runs.
   into B1's red-team suite rather than building a separate harness.
 
 
+
+---
+
+## Closed 2026-08-09 — `/backlog deep` sweep
+
+- **[DB-0803-06] `shownIds` eviction wipes the whole set instead of evicting incrementally** —
+  **CLOSED: fixed by `c4ff279` (2026-08-08).** `evictOldest(set, max)` now lives at
+  [static/index.html:713-715](static/index.html#L713) and both former `.clear()` call sites call it
+  with a cap of 100 — [:952](static/index.html#L952) in `renderHistory()` and
+  [:979](static/index.html#L979) in `sendViaWebSocket()`. No `.clear()` on `shownIds` remains
+  anywhere in the file. The full reasoning trail for why this was a real bug is preserved in the
+  2026-08-05 entry earlier in this file.
+
+  **Two things worth carrying forward, because the close is only half the story:**
+
+  1. **It was reported, and the entry said it hadn't been.** The entry read *"dev-session find,
+     never reported — promote it the day Mike sees a doubled message"*, but `[DB-0803-01]` ("text
+     doubling ... in the app", Mike, 2026-08-03) is the same defect described from the outside.
+     The promotion condition had been met for five days and nobody connected the two, because one
+     entry was written in symptoms and the other in line numbers. **A dev-session find and a user
+     report of the same bug will not look alike** — that is the general lesson.
+  2. **The fix is not on the phone.** `android/app/src/main/assets/public/index.html` still
+     carries `if (shownIds.size > 100) shownIds.clear()`, so the doubling survives on the installed
+     APK regardless of this close. Tracked as `[DB-0809-18]` (silent asset drift) with the
+     remaining user-facing half on `[DB-0803-01]`.
+
+  *closed 2026-08-09 by `/backlog deep` · evidence `c4ff279` + static/index.html:713-715,952,979*
