@@ -13,6 +13,9 @@ Refresh: `python3 scripts/sync_dev_backlog.py`
 
 ## Inbox
 
+- **[instruction change]** User reiterated existing check-in length instruction verbatim. Triggered repeated instruction protocol to flag that current check-ins are failing to adhere to the brevity rule.  
+  `2026-08-09T09:06:43.932199Z`
+
 - **[instruction change]** User has submitted the check-in rule multiple times in a row. The system must output strictly 'What  
   `2026-08-08T18:34:27.078188Z`
 

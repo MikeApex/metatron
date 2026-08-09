@@ -18,6 +18,111 @@ live in [archive/sessions/](sessions/). **This file is not loaded by
 
 ---
 
+### 2026-08-09 (billing reconciliation, spend-accounting fixes, cap raise) — `c41baa0`, deployed and verified live
+
+Mike asked to poll Google Cloud billing and break down cost since Aug 1. First pass (VM-only
+`spend_guard` state) reported ~$14; Google's console showed the project had just passed $35.
+Investigating the discrepancy became the bulk of the session.
+
+**What the $21 gap actually was, in order of size:**
+
+1. **Thinking tokens were never recorded, on either Gemini code path.** Assumed at first that
+   Vertex's OpenAI-compat endpoint followed the OpenAI spec (reasoning tokens as a breakdown
+   *within* `completion_tokens`) — checked this against a live probe instead of trusting the
+   assumption, and it was backwards. Vertex reports `prompt=36, completion=4, reasoning=306,
+   total=346` — reasoning sits **outside** `completion_tokens`, so the field the code was already
+   reading excluded nearly all of a thinking model's real output. Confirmed identically on the
+   native genai path (`thoughts_token_count` excluded from `candidates_token_count`). One live
+   Pro call during verification: 55 tokens recorded, 651 billed — an 11.8x undercount on that
+   single call, and this was the single largest contributor to the gap.
+2. **Two independent `spend_guard` state files.** The Mac holds Vertex ADC and runs the A4/B1
+   test suites locally; it had its own `data/diagnostics/spend_*.json` that the VM investigation
+   never looked at. Correction issued mid-conversation once found: the gap was 2.1x, not 4.7x,
+   once both hosts' recorded figures were summed ($15.69 total, not $7.06). **Per Mike's
+   follow-up question**, broke this down further by persona: VM $8.63 (mostly `mike`, real
+   production use, 140 sessions) vs Mac $8.44 (almost entirely `sarah_chen`, 50 sessions — the
+   A4/B1 test suites). Testing cost roughly as much as eight days of real use.
+3. **`run_session()` never started a trace or ran the spend gate.** Only `run_pipeline_session`
+   and its streaming twin called `_spend_gate()`; `core/scheduler.py` calls `run_session`
+   directly, so every scheduled job (check-ins, Pattern Miner, maintenance jobs) bypassed the
+   daily stop entirely — confirmed by an absent `pattern_miner` in every August trace file. This
+   directly answers Mike's question "wouldn't the hard stop still hit at $10/day?" — no, because
+   most traffic never reached the check that enforces it.
+4. **The fire-and-forget Diarist thread lost trace context.** `tools/subagent.py`'s background
+   thread never bound a trace, and `push_agent()` in `core/trace.py` silently dropped any
+   depth>0 agent whose pipeline was empty — exactly the Diarist's situation. **Correction made
+   mid-build:** `_set_current_agent()` sits outside the `if t is not None` guard in
+   `push_agent()`, so Diarist and scheduler tokens *were* reaching `spend_guard` (VM traced input
+   9.96M < VM spend_guard input 11.19M proves this) — what was lost was Book visibility, not
+   ledger accuracy. The earlier framing ("these calls are invisible to the ledger") was wrong and
+   corrected in the same turn it was checked.
+
+**Mike's four follow-up directives, addressed in order:**
+1. *"Reflect thinking tokens in spend_guard and the Book"* → fix 1 above; because it lands in
+   `record_turn_tokens`, both consumers get it from one change.
+2. *"Why are calls dropped — placeholders or real gaps?"* → verified real, not placeholder:
+   `start_request_trace` has exactly two call sites, both pipeline entry points. Not eliminable
+   by writing more tool code; eliminable by tracing `run_session` and the fire-and-forget thread.
+3. *"Locate which agents need Pro vs Flash before changing anything"* → measured per-agent from
+   August traces before recommending. Finding: Pro is $6.40 of $8.35 VM spend and $5.44 of that
+   is the Synthesizer alone, correctly pinned to Pro for safety-flag integration. **No Pro→Flash
+   downgrade recommended anywhere** — the real levers (Synthesizer prompt size, Logistics turn
+   count) are already-scoped D2/`[DB-0808-09]` work, not routing changes.
+4. Surfaced, not requested: `mental_wellbeing` (43 Flash-Lite calls vs 5 Pro) and
+   `physical_health` (58 vs 6) are reachable by `complexity: quick` because
+   `routing_cloud.yaml` carries no `local: true` agents, making the sensitivity guard in
+   `core/router.py` structurally inert in cloud mode — correct under the 2026-06-18 ZDR
+   amendment, but it means A7 check 8 ("sensitive agents stay local regardless") cannot pass on
+   this path as worded. **Decision: Mike kept the routing as-is** — MW/PH stay on Pro whenever
+   deep is called for; the quick tier is accepted as-is. Filed as a test gap instead
+   (`[DB-0808-17]`): the A4 hard-fails have only ever run on the deep path, so the clinical flags
+   are unverified on the model actually serving most clinical turns.
+
+**Built and deployed (`c41baa0`):**
+- `core/orchestrator.py`: `_reasoning_tokens_openai()` / `_thinking_tokens_gemini()` helpers,
+  applied at 5 usage-recording sites across 4 functions (grounded, cached-native, sync
+  OpenAI-compat, and both branches of the streaming loop). `run_session()` now owns a trace and
+  runs `_spend_gate()` only when no caller already established one — deliberately conditional,
+  since `run_subagent`'s synchronous path lands inside the Coordinator's existing trace and
+  starting a second one there would destroy the pipeline nesting the Book renders.
+- `core/trace.py`: `push_agent()` roots a depth>0 record with an empty pipeline instead of
+  dropping it — recovers the Diarist into the Book.
+- `core/spend_guard.py`: state now carries `host` (`socket.gethostname()`), surfaced in every
+  alert/stop message, documenting that the two-host split is a known, visible limitation rather
+  than solved — a shared counter was considered and rejected (no shared filesystem between Mac
+  and VM; a network round-trip inside a guard whose first rule is "never cause an outage" was
+  judged the wrong trade).
+- `config/modules/spend_guard.yaml`: `alert_usd_per_day`/`stop_usd_per_day` re-baselined 5/10 →
+  **6/15**, against Cloud Monitoring's actual Aug 1–8 figures rather than the guard's own
+  (previously wrong) output.
+- `docs/CONVENTIONS.md`: new § Testing Cost Convention — any live-call test suite must state a
+  projected cost (anchored to the last comparable run where one exists) before running; **above
+  $1.00 projected requires Mike's approval first**. Added after the sarah_chen-test-cost finding
+  above.
+- `DEV_BACKLOG.md`: `[DB-0808-17]` filed (A4 hard-fails never run on Flash-Lite).
+- GCP: created BigQuery dataset `metatron-ai-499810:billing_export` (the export itself is
+  Console-only, no gcloud equivalent — left for Mike to enable).
+
+**Verified, not just claimed:** `py_compile` + import check on all four edited modules (per the
+CLAUDE.md rule that `py_compile` cannot catch a `NameError`); a live `recreation_hobbies` session
+via bare `run_session` confirmed it now writes its own trace file and passes the spend gate; a
+live Pro call confirmed the 11.8x thinking-token undercount and that the fix closes it.
+
+**Follow-up ask, same session — GCP account-level caps raised.** Mike: raise soft cap to $100,
+hard cap to $175 (both applied live via `gcloud billing budgets update`, verified in the
+`gcloud billing budgets list` output). `CLAUDE.md` § Billing Protection updated to match,
+including the recomputed AI headroom (~$71/mo, up from ~$40/mo) and the reasoning: real spend
+was tracking to trip the old $70 soft cap around Aug 16, and the new testing-cost convention
+above is the process control meant to keep it from getting there again.
+
+**Deploy:** `./deploy.sh` run and verified — VM HEAD matches `c41baa0` by ancestry check, both
+`metatron-server` and `metatron-scheduler` confirmed `active`, `/health` returned the expected
+auth-required response (server up, auth enforcing).
+
+Session writeup: [archive/sessions/2026-08-09 — Billing Reconciliation and Spend Accounting.md](sessions/2026-08-09%20—%20Billing%20Reconciliation%20and%20Spend%20Accounting.md).
+
+---
+
 ### 2026-08-08 (new `/backlog-attack` slash command) — docs-only, no commit required
 
 Mike asked for a prompt that scores `DEV_BACKLOG.md`'s open items (importance × inverted

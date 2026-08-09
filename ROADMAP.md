@@ -116,6 +116,23 @@ Full item in the static plan.*
 | 11. Token budget logging | Token counts in session log across all three session paths; no turn exceeds 15K; 8K–15K turns show warning (from A6) |
 | 12. Constitution alignment | Process defined: a single Claude Code review session producing `archive/constitution_alignment_review_YYYY-MM-DD.md` — a matrix of 12 specialists × Tier 0 principles, plus a documented precedence order for the overlap domains (sleep, addiction, emotional state) used by Synthesizer synthesis. Pass: no specialist contradicts Tier 0; precedence table exists. |
 
+> **⚠ Check 8's wording doesn't hold on the cloud path, found 2026-08-09 during the billing
+> reconciliation session — flagged, not yet resolved.** "Sensitive agents stay local regardless"
+> presumes a `local: true` flag that `core/router.py`'s complexity-routing guard keys on
+> ([router.py:81](../core/router.py#L81)). `routing_cloud.yaml` carries no `local: true` agents
+> at all — correct under the 2026-06-18 ZDR amendment, which routes everything through Vertex —
+> so the guard is structurally inert in cloud mode and `complexity: quick` reaches
+> `mental_wellbeing`/`physical_health` same as any other agent. Measured Aug 1–8 on `mike`:
+> mental_wellbeing 43 Flash-Lite calls vs 5 Pro; physical_health 58 vs 6. **User decision
+> 2026-08-09: routing stays as-is** — MW/PH remain on Pro whenever `deep` is called for, and the
+> quick tier is accepted for these agents. What check 8 needs is either a re-word to describe
+> the cloud-path reality (e.g. "no agent routes to a lower-safety tier than its clinical
+> comment specifies, verified against actual quick/deep call counts") or an explicit dormancy
+> note matching §0 clause 8's pattern. Neither has been written yet — this is a flag for
+> whoever runs check 8, not a resolution. Filed alongside `[DB-0808-17]` (the A4 hard-fails have
+> never been run on the Flash-Lite path that serves most of this traffic). Full reasoning:
+> `archive/PROJECT_LOG.md` § 2026-08-09.
+
 **Pre-sign-off gate — prefix caching regression (2026-06-19): ✅ CLEARED ON THE CLOUD PATH 2026-08-04.** The `_run_single_agent()` system prompt restructure (prefix caching change) moved dynamic context from the system prompt into the user message turn, changing the system prompt assembly order for every agent. The A4 clinical-flag hard-fail scenarios were re-run against the updated order on 2026-08-04 and **passed 6/6** — report at `tests/a4_safety_rerun_2026-08-04_gemini.md`, runner at `tests/run_a4_safety.py` (the suites are now scripted; A8's regression gate below calls the same runner rather than the manual A4 procedure).
 
 Two residual gaps, one still open:
