@@ -32,7 +32,7 @@ agents:
   synthesizer:
     provider: gemini
     model: "models/gemini-3.1-pro-preview"  # user-facing voice; safety flag integration; keep on Pro
-    allowed_tools: [run_subagent, run_model_conference, write_persona, write_profile, read_profile, write_config, write_wishes, read_wishes, generate_emergency_card, write_quality_event, write_schedule, list_schedules, delete_schedule, update_goal]
+    allowed_tools: [run_subagent, run_model_conference, write_persona, write_profile, read_profile, write_config, write_wishes, read_wishes, generate_emergency_card, write_quality_event, write_schedule, list_schedules, delete_schedule, update_goal, open_obligation, close_obligation, reopen_obligation, list_obligations]
 
   # ── Data and analysis ────────────────────────────────────────────────────────
 
@@ -83,14 +83,14 @@ agents:
   relationships:
     provider: gemini
     model: "models/gemini-3.1-flash-lite"   # no clinical stakes
-    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, read_profile, write_profile]
+    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, read_profile, write_profile, send_email]
 
   finance:
     provider: gemini
     model: "models/gemini-3.1-flash-lite"   # arithmetic tracking; upgrade to Pro if hard-fail results were marginal
     # read_archive granted 2026-08-05: denied 2026-08-03 answering "what can you tell me about my
     # credit card payments" — a recall question it had no store to answer from.
-    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, read_archive]
+    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, read_archive, open_obligation, close_obligation, reopen_obligation, list_obligations]
 
   learning_growth:
     provider: gemini
@@ -105,7 +105,7 @@ agents:
   logistics:
     provider: gemini
     model: "models/gemini-3.1-flash-lite"
-    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, update_calendar_event, delete_calendar_event, check_calendar_conflicts, get_weather, get_tfl_status, get_flight_status, get_travel_time, get_regional_transit_info, read_profile, write_profile, write_schedule, list_schedules, delete_schedule, fetch_url, read_email, send_email, read_agent_config, write_agent_config, search_memory, read_archive, write_archive]
+    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, update_calendar_event, delete_calendar_event, check_calendar_conflicts, get_weather, get_tfl_status, get_flight_status, get_travel_time, get_regional_transit_info, read_profile, write_profile, write_schedule, list_schedules, delete_schedule, fetch_url, read_email, read_agent_config, write_agent_config, search_memory, read_archive, write_archive, open_obligation, close_obligation, reopen_obligation, list_obligations]
     # update_calendar_event, delete_calendar_event, check_calendar_conflicts added
     # 2026-08-05 — required to act on what the calendar-conflict build detects:
     # Logistics could previously only create events, never move, correct, or

@@ -413,6 +413,18 @@ _DEFAULT_JOBS: dict[str, dict] = {
         "function": "tools.calendar_audit.audit_calendar_duplicates",
         "notification": False,
     },
+    # Notes passed events that nothing in the record mentions, for the morning brief to
+    # decide about. `notification: False` is not a preference — reconcile_check returns a
+    # plain string and never a notify dict, because the check is crude text matching and
+    # cannot support the claim that anything was missed. Fixed time because fire_function
+    # runs no gate stack at all (`[DB-0808-11]`), so an interval job here could fire at 3am.
+    "daily_calendar_reconcile": {
+        "enabled": True,
+        "time": "05:40",          # after the dedup audit; ~2h before the morning brief reads it
+        "days": "daily",
+        "function": "tools.calendar_reconcile.reconcile_check",
+        "notification": False,
+    },
 }
 
 

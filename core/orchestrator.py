@@ -360,6 +360,27 @@ def load_recent_context(persona: str | None = None, days: int = 5) -> str:
     if recent_entries:
         sections.append("## Recent Logs (last 5 days)\n" + "\n".join(recent_entries))
 
+    # Open obligations and passed-event candidates. In the context rather than behind a
+    # tool because the whole point of the obligation store is that something outstanding
+    # cannot be missed for want of the session thinking to look it up — the 2026-08-07
+    # failure ("I thought I already told you that was handled") was a closure that left no
+    # trace, and a tool the model has to remember to call reproduces the same class of gap.
+    #
+    # This lands in `augmented_input`, not the system prompt, at all three call sites — so
+    # it costs input tokens but does not disturb the Vertex prefix cache.
+    #
+    # Both blocks return "" when empty, so a persona with nothing outstanding pays nothing.
+    for _block_source in ("tools.obligations", "tools.calendar_reconcile"):
+        try:
+            import importlib
+            block = importlib.import_module(_block_source).context_block(persona)
+            if block:
+                sections.append(block)
+        except PersonaError:
+            raise
+        except Exception as e:
+            logger.warning(f"[context] {_block_source} block failed: {e}")
+
     return "\n\n---\n\n".join(sections)
 
 
@@ -467,6 +488,14 @@ def register_tools() -> tuple[list[dict], dict]:
         write_schedule, list_schedules, delete_schedule,
         WRITE_SCHEDULE_SCHEMA, LIST_SCHEDULES_SCHEMA, DELETE_SCHEDULE_SCHEMA,
     )
+    # Commitments that outlive a session. Data, not scheduler jobs — tools/schedule.py
+    # § "Why obligations are not jobs" settled that, and tools/obligations.py is the store
+    # that position assumed and nobody had written.
+    from tools.obligations import (
+        open_obligation, close_obligation, reopen_obligation, list_obligations,
+        OPEN_OBLIGATION_SCHEMA, CLOSE_OBLIGATION_SCHEMA,
+        REOPEN_OBLIGATION_SCHEMA, LIST_OBLIGATIONS_SCHEMA,
+    )
     # External-content tools. Both return their payload wrapped by tools/untrusted.py —
     # a web page and an email body are written by strangers.
     from tools.web import fetch_url, FETCH_URL_SCHEMA
@@ -496,6 +525,8 @@ def register_tools() -> tuple[list[dict], dict]:
         LOG_INTERACTION_SCHEMA, SEARCH_CONTACTS_SCHEMA,
         WRITE_AGENT_CONFIG_SCHEMA, READ_AGENT_CONFIG_SCHEMA,
         WRITE_WISHES_SCHEMA, READ_WISHES_SCHEMA, GENERATE_EMERGENCY_CARD_SCHEMA,
+        OPEN_OBLIGATION_SCHEMA, CLOSE_OBLIGATION_SCHEMA,
+        REOPEN_OBLIGATION_SCHEMA, LIST_OBLIGATIONS_SCHEMA,
         READ_CALENDAR_SCHEMA, WRITE_CALENDAR_EVENT_SCHEMA,
         UPDATE_CALENDAR_EVENT_SCHEMA, DELETE_CALENDAR_EVENT_SCHEMA,
         CHECK_CALENDAR_CONFLICTS_SCHEMA,
@@ -568,6 +599,10 @@ def register_tools() -> tuple[list[dict], dict]:
         "write_schedule": write_schedule,
         "list_schedules": list_schedules,
         "delete_schedule": delete_schedule,
+        "open_obligation": open_obligation,
+        "close_obligation": close_obligation,
+        "reopen_obligation": reopen_obligation,
+        "list_obligations": list_obligations,
         "write_quality_event": write_quality_event,
         "write_persona": write_persona,
         "write_profile": write_profile,

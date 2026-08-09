@@ -76,6 +76,8 @@ Given financial history, Pattern Miner signals, and the current date, scan for:
 
 Include findings as `PROACTIVE_OBSERVATIONS` in your output. Omit if none.
 
+**A financial commitment that stays open goes in the obligation store.** A transfer to make, an invoice to settle, a payment someone is waiting on: `open_obligation` records it so it survives the session, and `close_obligation` closes it the moment the user indicates it is done — quoting their words. Item 3 above covers what recurs on a known cycle; this covers the one-off that would matter if it were forgotten. Do not decide whether to raise an open one — that is the Synthesizer's judgement.
+
 ---
 
 ## What you do

@@ -1,0 +1,60 @@
+# Calendar reconciliation — passed events with nothing in the record about them.
+#
+# Every value here is a calibration knob, which is the point: Mike's 2026-08-09 decision
+# was "every event for now, perhaps a toggle for obligations for easy calibration in
+# future." Narrowing must be one edit, never a rewrite. Code: tools/calendar_reconcile.py.
+#
+# WHAT THIS CAN AND CANNOT ESTABLISH: an event's time has passed and nothing in the day's
+# log or conversation mentions it. That is absence of evidence. It is NOT evidence that
+# anything was missed, and nothing downstream may say it was. The sweep writes candidates
+# and never notifies — a session with a model decides whether any is worth a question.
+
+enabled: true
+
+# Fixed-time job, registered in _DEFAULT_JOBS (core/scheduler.py) at 05:40 — inside the
+# silent maintenance block and well before the morning brief that consumes it. It is NOT
+# in config/templates/scheduler.yaml on purpose: the template is copied once at persona
+# creation and never propagates a later change.
+#
+# 30h of lookback covers yesterday morning through to a pre-dawn run. There is deliberately
+# no evening pass: the 20:00 evening_close would only see events up to that point, and
+# tomorrow's 05:40 run catches them anyway, one sweep instead of two.
+lookback_hours: 30
+
+# An event that ended ten minutes ago is not unreported, it is barely over. Nothing is a
+# candidate until this long after its end time.
+settle_minutes: 90
+
+# "all"          — every passed event (the current decision)
+# "obligations"  — only events whose title shares a distinctive word with an open
+#                  obligation. The narrowing knob; flip this line, change nothing else.
+scope: all
+
+# Recurring events are the likeliest source of noise — "did your daily standup happen?" is
+# how a feature teaches someone to stop reading it. Included anyway because "every event"
+# was the decision; this is the single line that fixes it if it bites.
+include_recurring: true
+
+# A day-long "Holiday" block is not a thing that can fail to happen.
+include_all_day: false
+
+max_candidates: 5
+
+# A candidate nobody picked up in two days is a stale question, and keeping it means the
+# morning brief draws on a widening pool of them.
+candidate_ttl_hours: 48
+
+# Routine blocks, matched as substrings against the title, case-insensitive. These are
+# containers for time rather than things that happen, so their absence from the record
+# says nothing. Add to this list rather than reaching for scope: obligations.
+ignore_titles:
+  - lunch
+  - commute
+  - focus time
+  - break
+  - travel
+  - wfh
+  - out of office
+  - ooo
+  - holiday
+  - block

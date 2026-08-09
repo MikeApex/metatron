@@ -41,7 +41,7 @@ agents:
 
   synthesizer:
     local: true
-    allowed_tools: [run_subagent, run_model_conference, write_persona, write_profile, read_profile, write_config, write_wishes, read_wishes, generate_emergency_card, write_quality_event, write_schedule, list_schedules, delete_schedule, update_goal]
+    allowed_tools: [run_subagent, run_model_conference, write_persona, write_profile, read_profile, write_config, write_wishes, read_wishes, generate_emergency_card, write_quality_event, write_schedule, list_schedules, delete_schedule, update_goal, open_obligation, close_obligation, reopen_obligation, list_obligations]
 
   # ── Data and analysis (local: reads/writes personal logs) ───────────────────
 
@@ -80,12 +80,12 @@ agents:
 
   relationships:
     local: true
-    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, read_profile, write_profile]
+    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, read_profile, write_profile, send_email]
 
   finance:
     local: true
     # read_archive granted 2026-08-05 — see routing_cloud.yaml. Kept in parity.
-    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, read_archive]
+    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, read_archive, open_obligation, close_obligation, reopen_obligation, list_obligations]
 
   learning_growth:
     local: true
@@ -97,7 +97,7 @@ agents:
 
   logistics:
     local: true
-    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, update_calendar_event, delete_calendar_event, check_calendar_conflicts, get_weather, get_tfl_status, get_flight_status, get_travel_time, get_regional_transit_info, read_profile, write_profile, write_schedule, list_schedules, delete_schedule, fetch_url, read_email, send_email, read_agent_config, write_agent_config, search_memory, read_archive, write_archive]
+    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, update_calendar_event, delete_calendar_event, check_calendar_conflicts, get_weather, get_tfl_status, get_flight_status, get_travel_time, get_regional_transit_info, read_profile, write_profile, write_schedule, list_schedules, delete_schedule, fetch_url, read_email, read_agent_config, write_agent_config, search_memory, read_archive, write_archive, open_obligation, close_obligation, reopen_obligation, list_obligations]
     # read/write_agent_config, search_memory, read/write_archive granted 2026-08-05 — see
     # routing_cloud.yaml for the full rationale. Kept in parity.
     # update_calendar_event, delete_calendar_event, check_calendar_conflicts added
