@@ -31,7 +31,13 @@ schedules:
     # firing, which in practice re-raised the same item all day. A check-in is
     # an open door, not a status report. (It also named "Mike" in a template
     # used to provision other people.)
-    prompt: "Check in briefly — two sentences at most. If exactly one thing genuinely needs attention right now, name it and stop. Otherwise just ask what's on. Never list or recap pending items, and never manufacture a topic."
+    #
+    # The shape of the opening lives in config/agents/synthesizer.md
+    # (§ Scheduled session conduct), where it applies to every persona. It was
+    # spelled out here too until 2026-08-09 — a fourth copy of the same rule,
+    # and the one that would have seeded it into every new persona as though it
+    # were their own preference. Do not restate it here.
+    prompt: "Check in."
     notification: push
     respect_quiet_hours: true
 
