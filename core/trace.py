@@ -154,12 +154,15 @@ def push_agent(agent: str, provider: str, model: str, context_sections: dict | N
     if t is not None:
         depth = int(os.environ.get("_SUBAGENT_DEPTH", "0"))
         with t._lock:
-            if depth == 0:
+            # `or not t.pipeline`: a depth>0 agent with no parent to nest under
+            # was silently dropped from the trace. That is the fire-and-forget
+            # Diarist, which runs on its own thread with _SUBAGENT_DEPTH=1 but
+            # owns a fresh trace with an empty pipeline. Root it instead.
+            if depth == 0 or not t.pipeline:
                 t.pipeline.append(rec)
             else:
                 # Subagent — nest under the first pipeline entry (coordinator)
-                if t.pipeline:
-                    t.pipeline[0].subagents.append(rec)
+                t.pipeline[0].subagents.append(rec)
     _set_current_agent(rec)
     return rec
 

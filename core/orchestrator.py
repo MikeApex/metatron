@@ -1737,6 +1737,39 @@ def _get_vertex_bearer_token() -> str:
     return credentials.token
 
 
+def _reasoning_tokens_openai(usage) -> int:
+    """
+    Thinking tokens from an OpenAI-compat usage object, which Vertex reports
+    *outside* `completion_tokens`.
+
+    This is a deliberate deviation from the OpenAI spec, where reasoning tokens
+    are a breakdown within completion_tokens and adding them would double-count.
+    Vertex is not: probed 2026-08-08 on gemini-3.1-pro-preview, one call returned
+    prompt=36, completion=4, reasoning=306, total=346 — i.e. total is the sum of
+    all three. Billing counts thinking as output, so omitting it understated
+    output tokens ~6x across August and left the spend guard's daily stop
+    denominated in a currency worth half what it claimed.
+
+    Re-probe if the endpoint changes: if prompt + completion == total, the tokens
+    are already included and this must return 0.
+    """
+    details = getattr(usage, "completion_tokens_details", None)
+    if details is None:
+        return 0
+    return int(getattr(details, "reasoning_tokens", 0) or 0)
+
+
+def _thinking_tokens_gemini(usage_metadata) -> int:
+    """
+    Thinking tokens from a native genai usage_metadata.
+
+    `candidates_token_count` excludes `thoughts_token_count` — verified on the
+    same 2026-08-08 probe (prompt 36 + candidates 4 + thoughts 269 == total 309).
+    See _reasoning_tokens_openai for why this matters.
+    """
+    return int(getattr(usage_metadata, "thoughts_token_count", 0) or 0)
+
+
 def _vertex_openai_base_url(project: str, location: str) -> str:
     """Return the Vertex AI OpenAI-compatible base URL."""
     if location == "global":
@@ -1993,7 +2026,8 @@ def run_session_gemini_grounded(system_prompt: str, user_input: str,
         # Token budget logging (native SDK field)
         if hasattr(response, "usage_metadata") and response.usage_metadata:
             input_tokens = getattr(response.usage_metadata, "prompt_token_count", 0) or 0
-            output_tokens = getattr(response.usage_metadata, "candidates_token_count", 0) or 0
+            output_tokens = (getattr(response.usage_metadata, "candidates_token_count", 0) or 0) \
+                + _thinking_tokens_gemini(response.usage_metadata)
             if input_tokens > 8000:
                 logger.warning(f"[token_budget] OVER_8K turn={turn} cumulative_input={input_tokens}")
             else:
@@ -2168,7 +2202,8 @@ def _run_gemini_native_loop(client, model_name: str,
 
         if hasattr(response, "usage_metadata") and response.usage_metadata:
             input_tokens = getattr(response.usage_metadata, "prompt_token_count", 0) or 0
-            output_tokens = getattr(response.usage_metadata, "candidates_token_count", 0) or 0
+            output_tokens = (getattr(response.usage_metadata, "candidates_token_count", 0) or 0) \
+                + _thinking_tokens_gemini(response.usage_metadata)
             cache_read = getattr(response.usage_metadata, "cached_content_token_count", 0) or 0
             cumulative_input_tokens += input_tokens
             _cache_suffix = f" cache_read={cache_read}" if cache_read else ""
@@ -2298,7 +2333,8 @@ def _openai_compat_loop(system_prompt: str, user_input: str,
 
         if response.usage:
             _in_tok = response.usage.prompt_tokens
-            _out_tok = getattr(response.usage, "completion_tokens", 0) or 0
+            _out_tok = (getattr(response.usage, "completion_tokens", 0) or 0) \
+                + _reasoning_tokens_openai(response.usage)
             cumulative_input_tokens += _in_tok
             if cumulative_input_tokens > 8000:
                 logger.warning(f"[token_budget] OVER_8K turn={turn_num} cumulative_input={cumulative_input_tokens}")
@@ -2414,7 +2450,8 @@ def _openai_compat_stream(
                 # Usage-only trailing chunk (include_usage=True) — standard OpenAI pattern
                 if hasattr(chunk, "usage") and chunk.usage and not _usage_recorded:
                     pts = chunk.usage.prompt_tokens or 0
-                    ots = getattr(chunk.usage, "completion_tokens", 0) or 0
+                    ots = (getattr(chunk.usage, "completion_tokens", 0) or 0) \
+                        + _reasoning_tokens_openai(chunk.usage)
                     if pts > 8000:
                         logger.warning(f"[token_budget] OVER_8K turn={turn_num} cumulative_input={pts}")
                         _trace(f"[TOKEN] turn={turn_num} input={pts} ⚠ OVER_8K")
@@ -2434,7 +2471,8 @@ def _openai_compat_stream(
             # a trailing chunk — capture it here as a fallback so Synth tokens are recorded.
             if choice.finish_reason and hasattr(chunk, "usage") and chunk.usage and not _usage_recorded:
                 pts = getattr(chunk.usage, "prompt_tokens", 0) or 0
-                ots = getattr(chunk.usage, "completion_tokens", 0) or 0
+                ots = (getattr(chunk.usage, "completion_tokens", 0) or 0) \
+                    + _reasoning_tokens_openai(chunk.usage)
                 if pts or ots:
                     if pts > 8000:
                         logger.warning(f"[token_budget] OVER_8K turn={turn_num} cumulative_input={pts}")
@@ -3147,13 +3185,40 @@ def run_session(agent_name: str, user_input: str,
                 user_input, persona=bound, provider=provider, history=history
             )
 
-        result = _run_single_agent(
-            agent_name, user_input,
-            persona=bound, provider=provider,
-            model_override=model_override, complexity=complexity,
-            history=history, bare=bare,
-        )
-        return filter_output(result, agent_name)
+        # Own a trace only when no caller established one. Two callers arrive here
+        # with none: core/scheduler.py (every scheduled job) and the fire-and-forget
+        # thread in tools/subagent.py (the Diarist), whose thread-local context is
+        # fresh. Both ran untraced — so neither appeared in the Book, and
+        # pattern_miner and diarist were absent from every August trace file.
+        #
+        # The condition is load-bearing, not defensive: run_subagent's synchronous
+        # path also lands here, inside the parent pipeline's trace. Starting a new
+        # one there would replace the parent's thread-local trace and lose the
+        # coordinator→specialist nesting the Book renders.
+        _owns_trace = _tr.get_trace() is None
+        if _owns_trace:
+            _tr.start_request_trace(user_input, bound)
+            # Gate here for the same reason: an owned trace means nothing upstream
+            # ran _spend_gate(). Scheduled sessions previously bypassed the daily
+            # stop entirely — the pipeline entry points were its only callers.
+            _guard_msg = _spend_gate()
+            if _guard_msg:
+                _tr.finish_request_trace(_guard_msg)
+                return _guard_msg
+
+        _out = ""
+        try:
+            result = _run_single_agent(
+                agent_name, user_input,
+                persona=bound, provider=provider,
+                model_override=model_override, complexity=complexity,
+                history=history, bare=bare,
+            )
+            _out = filter_output(result, agent_name)
+            return _out
+        finally:
+            if _owns_trace:
+                _tr.finish_request_trace(_out)
 
 
 # ---------------------------------------------------------------------------

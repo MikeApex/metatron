@@ -22,8 +22,24 @@ enabled: true
 # --- Spend thresholds (USD, per day, estimated from token counts) ---
 # Warn, then refuse. The gap is deliberate: a warning that is also a hard stop
 # gives no chance to intervene before the system goes silent.
-alert_usd_per_day: 5.0
-stop_usd_per_day: 10.0
+#
+# PER HOST. The VM and the Mac both bill the same Vertex project and each keeps
+# its own counter — see the header note in core/spend_guard.py. Two hosts means
+# the worst-case system ceiling is 2x the stop value below.
+#
+# Re-baselined 2026-08-08 against Cloud Monitoring rather than against the
+# guard's own output, which was the whole problem: thinking tokens were excluded
+# from every output count, so the old $5/$10 were denominated in a unit worth
+# roughly a third of a real dollar on Pro traffic. Measured Aug 1-8: 20.88M input
+# / 1.10M output actual, against 15.89M / 0.30M recorded across both hosts.
+#
+# The new values are runaway detectors, NOT a budget. Real days measured in that
+# window ran ~$2-4/host routine and ~$5-6/host when the A4/B1 suites ran, so an
+# alert at 6 stays quiet on a normal heavy day and a stop at 15 is unambiguously
+# abnormal. Budget enforcement is the GCP soft/hard caps, which are a different
+# mechanism with a different failure mode (see CLAUDE.md - Billing Protection).
+alert_usd_per_day: 6.0
+stop_usd_per_day: 15.0
 
 # --- Rate limit (pipeline sessions started, rolling 60 minutes) ---
 # Normal load is ~7 scheduled sessions/day plus interactive use. These are set

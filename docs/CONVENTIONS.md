@@ -34,6 +34,33 @@ Every development phase must have a testing plan at `tests/phase{N}_testing_plan
 
 Testing plans for all phases (including future phases) live in `tests/`. Amend them as gaps are discovered — do not create separate gap documents.
 
+### Testing Cost Convention
+
+Added 2026-08-09, after the Aug 1–8 billing reconciliation found that test-suite runs (A4
+clinical hard-fails, B1 red team) accounted for roughly half of that window's Vertex spend —
+one persona's test sessions (`sarah_chen`) cost as much as eight days of real production use.
+Test-suite cost is not a byproduct to notice afterward; it must be sized before the suite runs.
+
+**Before running any test suite that makes live model calls** (`tests/run_a4_safety.py`,
+`tests/run_b1_redteam.py`, an agent behavioral audit, a model-ceiling comparison, or any ad hoc
+"run this N times against sarah_chen/danny_park" session) — produce a projected cost:
+
+- **Anchor to a real number, not a guess.** The most recent comparable run's actual cost (from
+  its report file, or from `core/spend_guard.py`'s `today_summary()` if the run is imminent) is
+  a better estimate than counting scenarios and multiplying by a rate table. If no comparable
+  run exists, estimate from call count × expected tokens × the rate in
+  `config/modules/spend_guard.yaml`, and say so — an estimate built on a real prior run and one
+  built from scratch carry different confidence, and the reader should know which they're
+  getting.
+- **State the projection before starting**, not after — "this suite ran N checks × ~$X each in
+  its last run, ~$Y projected" as part of proposing the run, not as a footnote afterward.
+
+**Projected cost above $1.00 requires Mike's explicit approval before the suite runs.** Under
+$1.00, proceed and report the actual cost afterward. This is independent of `spend_guard.yaml`'s
+`stop_usd_per_day` — that catches runaway mid-session; this catches a suite that was always
+going to be expensive before the first call goes out. A suite denominated in real dollars is a
+decision, not a default.
+
 ### File naming convention
 
 All generated files — test reports, plans, analysis docs, session archives — must have names specific enough to survive alongside similar future files without collision. Include at minimum: purpose, date, and model/provider where relevant.

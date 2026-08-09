@@ -13,6 +13,9 @@ Refresh: `python3 scripts/sync_dev_backlog.py`
 
 ## Inbox
 
+- **[instruction change]** User has submitted the check-in rule multiple times in a row. The system must output strictly 'What  
+  `2026-08-08T18:34:27.078188Z`
+
 - **[instruction change]** Synthesizer is failing to adhere to the existing Interaction Preference for check-ins (max two sentences, name one urgent thing or ask what's on, no recaps). This preference needs to be enforced more strictly at the system/prompt level.  
   `2026-08-08T16:31:45.535165Z`
 
@@ -172,6 +175,28 @@ Behavioural changes to how agents judge, prioritise, or decide what to raise. Ap
 Capabilities that do not exist yet.
 
 ### Surfaced 2026-08-08
+
+- **[DB-0808-17] The A4 clinical hard-fails have never been run on Flash-Lite, which is the model
+  serving most clinical turns.** `quick_override` sends `complexity: quick` to
+  `gemini-3.1-flash-lite` for *every* agent in cloud mode, including `mental_wellbeing` and
+  `physical_health`, whose `routing_cloud.yaml` comments read "clinical flags; never downgrade"
+  and "same safety rationale as MW". Measured Aug 1–8 on the `mike` persona: **mental_wellbeing 43
+  Flash-Lite calls vs 5 Pro; physical_health 58 vs 6.** The guard that was meant to prevent this
+  keys on `agent_cfg.get("local")` ([core/router.py:81](core/router.py#L81)) — and in
+  `routing_cloud.yaml` no agent carries `local: true`, so it is inert by construction. That is
+  *correct* under the 2026-06-18 ZDR amendment; the side effect is that sensitivity no longer
+  blocks the quick tier. **User decision 2026-08-08: routing stays as is** — MW/PH remain on Pro
+  when deep is called for, and the quick tier is accepted. What is *not* settled is the test gap:
+  `tests/run_a4_safety.py` has only ever been run on the deep path, so the clinical flags are
+  unverified on the model that actually answers most clinical turns. Per ROADMAP.md's own lesson,
+  "a safety flag that is never exercised by a test is not known to work." Fix: add a
+  `--complexity quick` (or explicit Flash-Lite `--model`) run to the A4 suite and record the
+  result. Note this also bears on **A7 check 8**, which as written requires sensitive agents to
+  stay local regardless of complexity — that check cannot pass on the cloud path as worded, and
+  needs either a re-wording or an explicit dormancy note like the one §0 clause 8 already carries.
+  *filed 2026-08-08 by dev session (billing/spend-accounting investigation) · origin: per-agent
+  trace measurement while reconciling the $35 GCP bill · relates to ROADMAP.md § A7 check 8,
+  § 0 clause 8*
 
 - **[DB-0808-16] The `injection` suite needs an ordinary-life persona, and that requirement now
   lives only inside a closed entry.** `tests/run_b1_redteam.py --suite injection` is
@@ -1074,6 +1099,23 @@ item "nearly aged out" (see Troubleshooting signal below).*
 ## Open — housekeeping
 
 Stale docs, paths, and low-priority corrections.
+
+- **[DB-0808-18] ⚠ Live `OPENAI_API_KEY` sits in plaintext in `~/.zshrc`, and has now leaked
+  into a session transcript.** Exposed 2026-08-08 when a `tail -3 ~/.zshrc` (confirming an
+  appended PATH line) printed the surrounding lines, including the key, into Claude Code's
+  context — which `archive_chats.py` exports to `archive/transcripts/`. **Two actions, and the
+  first is time-sensitive:** (1) rotate the key at platform.openai.com — assume the current
+  value is burned; (2) move the replacement into the project `.env`, which is gitignored and is
+  where every other credential already lives, and delete the `export` line from `~/.zshrc`. A
+  key in a shell profile is readable by any process running as the user and is caught by any
+  command that happens to print that file, which is exactly how this one surfaced.
+  **Then check whether it already reached the repo:** transcripts under `archive/transcripts/`
+  are gitignored ([.gitignore:97](.gitignore#L97)), so the exposure is probably local-only —
+  but this needs confirming, not assuming, before the item is closed. `git log -S` for the key
+  fragment is the check. Same class as the 2026-07-29 history rewrite; that one is the
+  precedent for what it costs when the answer is "yes, it reached the remote."
+  *filed 2026-08-08 by dev session (Claude Code) · surfaced incidentally while fixing the
+  CLI/extension version skew, not from a security pass · origin SEQ —*
 
 - **[DB-0806-03] No BigQuery billing export configured — cost anomalies can only be eyeballed
   against console lag, not verified.** Surfaced when Mike asked why Compute Engine showed no

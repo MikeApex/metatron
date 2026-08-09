@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import logging
+import socket
 import threading
 from collections import deque
 from datetime import date, datetime
@@ -37,6 +38,19 @@ logger = logging.getLogger(__name__)
 _ROOT = Path(__file__).parent.parent
 _CONFIG_PATH = _ROOT / "config" / "modules" / "spend_guard.yaml"
 _STATE_DIR = _ROOT / "data" / "diagnostics"
+
+# The thresholds below are PER HOST, and more than one host bills the same
+# Vertex project. The VM runs production; the Mac holds Vertex ADC and runs the
+# A4/B1 suites against the same project — on 2026-08-08 it had spent $8.63 to the
+# VM's $7.06, in a state file the VM has never seen. Two hosts therefore mean two
+# independent daily budgets and an effective ceiling of 2x what the config reads.
+#
+# Not solved by a shared counter on purpose: the hosts share no filesystem, so
+# sharing state would put a network round-trip in front of every session inside a
+# guard whose first design rule is that it must never become a source of outage.
+# The host is recorded instead, so the split is visible in the state file and in
+# every alert, and the config thresholds are set with two hosts in mind.
+_HOST = socket.gethostname()
 
 _lock = threading.Lock()
 _config: dict | None = None
@@ -64,14 +78,21 @@ def _state_path(day: date | None = None) -> Path:
     return _STATE_DIR / f"spend_{(day or date.today()).isoformat()}.json"
 
 
+def _blank_state() -> dict:
+    return {"date": date.today().isoformat(), "host": _HOST,
+            "usd": 0.0, "calls": 0, "tokens_in": 0, "tokens_out": 0}
+
+
 def _read_state() -> dict:
     path = _state_path()
     if not path.exists():
-        return {"date": date.today().isoformat(), "usd": 0.0, "calls": 0, "tokens_in": 0, "tokens_out": 0}
+        return _blank_state()
     try:
-        return json.loads(path.read_text())
+        state = json.loads(path.read_text())
+        state.setdefault("host", _HOST)
+        return state
     except Exception:
-        return {"date": date.today().isoformat(), "usd": 0.0, "calls": 0, "tokens_in": 0, "tokens_out": 0}
+        return _blank_state()
 
 
 def _write_state(state: dict) -> None:
@@ -136,8 +157,7 @@ def record_tokens(model: str, tokens_in: int, tokens_out: int) -> None:
         with _lock:
             state = _read_state()
             if state.get("date") != date.today().isoformat():
-                state = {"date": date.today().isoformat(), "usd": 0.0,
-                         "calls": 0, "tokens_in": 0, "tokens_out": 0}
+                state = _blank_state()
                 globals()["_alerted_spend"] = False
             state["usd"] = round(state.get("usd", 0.0) + cost, 6)
             state["calls"] = state.get("calls", 0) + 1
@@ -156,10 +176,12 @@ def _maybe_alert_spend(state: dict, cfg: dict) -> None:
     if alert_at and state["usd"] >= alert_at and not _alerted_spend:
         _alerted_spend = True
         logger.warning(
-            f"[spend_guard] ALERT estimated spend today ${state['usd']:.2f} "
-            f"crossed ${alert_at:.2f} over {state['calls']} calls"
+            f"[spend_guard] ALERT estimated spend today ${state['usd']:.2f} on {_HOST} "
+            f"crossed ${alert_at:.2f} over {state['calls']} calls "
+            f"(this host only — other hosts count separately)"
         )
-        print(f"[spend_guard] ALERT ${state['usd']:.2f} today ({state['calls']} calls)", flush=True)
+        print(f"[spend_guard] ALERT ${state['usd']:.2f} today on {_HOST} "
+              f"({state['calls']} calls)", flush=True)
 
 
 def note_session_start() -> None:
@@ -208,9 +230,9 @@ def check_before_session() -> None:
         spend = _read_state().get("usd", 0.0)
         if stop_usd and spend >= stop_usd:
             raise SpendLimitExceeded(
-                f"Estimated AI spend today is ${spend:.2f}, at or above the daily limit of "
-                f"${stop_usd:.2f}. Sessions are paused until tomorrow, or until "
-                f"config/modules/spend_guard.yaml is changed."
+                f"Estimated AI spend today on {_HOST} is ${spend:.2f}, at or above the "
+                f"daily limit of ${stop_usd:.2f}. Sessions are paused until tomorrow, "
+                f"or until config/modules/spend_guard.yaml is changed."
             )
     except SpendLimitExceeded:
         raise

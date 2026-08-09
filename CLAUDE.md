@@ -369,13 +369,18 @@ Two tiers. The distinction is **recovery cost, not dollars**:
 
 | Tier | Amount | Fires | Action | Recovery |
 |---|---|---|---|---|
-| **Soft** | $70 | `budget-soft-cap` → `stop-vm` | stops `metatron-vm` | `gcloud compute instances start`, ~60s |
-| **Hard** | $150 | `billing-cap` → `stop-billing` | disables project billing | **days** — see below |
+| **Soft** | $100 | `budget-soft-cap` → `stop-vm` | stops `metatron-vm` | `gcloud compute instances start`, ~60s |
+| **Hard** | $175 | `billing-cap` → `stop-billing` | disables project billing | **days** — see below |
 
-Infrastructure alone is ~$29/mo before a single token (`e2-medium` 24/7 ~$24.50 + IP ~$3.65 +
-disk ~$1), so the soft cap leaves ~$40/mo of real AI headroom. Overrides are two *separate* GCS
-markers — `scripts/metatron-vm-override.sh` and `scripts/metatron-billing-override.sh` — so
-silencing one never silences the other.
+Raised from $70/$150 on 2026-08-09 after the Aug 1–8 billing reconciliation found real spend
+(~$35 by day 8, ~$4.38/day run rate) tracking to trip the old soft cap around Aug 16 — with
+roughly half of that window's cost coming from test-suite runs (A4/B1) rather than routine
+use. $30 headroom added to each tier as a buffer against test-suite spend now that spend_guard's
+per-session accounting is closer to accurate (see docs/CONVENTIONS.md § Testing Cost Convention
+for the projection-and-approval rule this pairs with). Infrastructure alone is ~$29/mo before a
+single token (`e2-medium` 24/7 ~$24.50 + IP ~$3.65 + disk ~$1), so the soft cap leaves ~$71/mo of
+real AI headroom. Overrides are two *separate* GCS markers — `scripts/metatron-vm-override.sh`
+and `scripts/metatron-billing-override.sh` — so silencing one never silences the other.
 
 > **Relink billing *before* writing an override.** The marker lives in a bucket inside the
 > project being disabled, so writing it while billing is off fails `403`. `metatron-resume.sh`
@@ -385,7 +390,7 @@ silencing one never silences the other.
 > **A hard-cap trip is an outage, not a cost event.** Disabling billing freezes the project VPC,
 > and GCE's asynchronous thaw **cannot be relied on** — here it never ran, giving 25+ hours of
 > `nic0 is frozen` and a 26-hour outage that ended only by building a new VPC and rebuilding the
-> VM. $150 is priced so reaching it means something is badly wrong.
+> VM. $175 is priced so reaching it means something is badly wrong.
 > → Recovery runbook, fastest first: [docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md) § Billing protection.
 
 Spend figures lag by hours, so neither cap catches a runaway. The fast path is
