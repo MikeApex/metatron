@@ -21,6 +21,111 @@ file is the only narrative record, alongside the verbatim transcripts.*
 
 ---
 
+### 2026-08-10 (Sonnet cluster closed out; a real WebSocket race found live, corrected once) — nine commits, all deployed
+
+The outgoing handoff said: *"Next: Sonnet on the mechanical cluster in `## Now` rank order;
+`[DB-0803-01]`'s truncation half is diagnosed... and specced."* This session was the model switch
+itself — Opus handed off, Sonnet worked the cluster top to bottom, and a live bug surfaced at the
+very end that needed a correction mid-diagnosis rather than a clean handoff.
+
+**`[DB-0808-18]` — the key rotation reached three systems, not one.** Rotating and moving
+`OPENAI_API_KEY` into `.env` was the filed scope, but checking consumers beyond this repo (a habit
+this session leaned on hard after the prior night's collision) found `~/.claude/claude.json`'s
+`ask_gpt` MCP server reading the key via `${OPENAI_API_KEY}` shell substitution — sourced by the
+exact `~/.zshrc` line the item said to delete. Deleting it would have broken `ask_gpt` globally,
+for every project, the next time a shell started. Fixed by writing the real key directly into
+`claude.json`'s `env` block instead of restoring the export — strictly *less* exposure than
+before, since the key now reaches one process instead of every shell on the machine. Also found
+and fixed, on Mike's flag: Chorus's own persistent config store held the old key independently.
+
+**`[DB-0809-21]` — two of four verification steps done, two correctly left alone.** A4 clinical
+suite 3/3, and three targeted Physical Health calls asserting the sleep-interpretation changes all
+passed — including the model correctly drawing on prior nights' sleep to contextualize a run's
+exertion, exactly what the deep-merge fix was protecting. The other two (a live reconcile candidate,
+a natural `companion_checkin`) were deliberately *not* forced — manually firing a session against
+Mike's real persona to save time would have written a synthetic exchange into his actual history
+for no real need. Confirmed the next morning: both `companion_checkin` (07:20) and `morning_brief`
+(07:30) fired clean, `is_proactive: true` recorded, and — the decisive check, since traces don't
+retain raw prompt text by design — zero quality events logged all day, meaning no
+`INSTRUCTION_CHANGE_REQUEST` fired the way the old bug did every time.
+
+**`[DB-0803-01]` half two — tuned Silero's VAD parameters against the full retained audio corpus,
+not four files.** 108 files across 16 days (more than the "12 days" the item estimated). Measured
+threshold/pad combinations against a VAD-off reference rather than guessing: defaults recovered
+97.6% of text on average; `threshold=0.30, speech_pad_ms=1500` recovers 98.07%, zero hallucination
+markers either way, and the file that motivated this — `18-16-16.webm` — goes from 85.9% to a full
+match. Explicitly not disabling VAD: the corpus is 108 files of real dictated speech and cannot
+exercise VAD's other job, suppressing hallucinated filler on pure silence, since that needs an
+accidental recording with no real speech in it at all. Zero hallucination markers here is evidence
+this tuning doesn't obviously break that job, not proof it's untouched.
+
+**`[DB-0809-03]` closed without a build — the filed citation was wrong.** It pointed at
+`tools/crm.py`'s `write_contact` misattribution guard and concluded the snap "exists nowhere."
+Pulling the real 2026-08-02 conversation off the VM showed the actual failure: Mike dictating his
+own email for a ticket booking, never touching `write_contact` at all. A fix for exactly that
+shipped 2026-08-05 (`a08e38a`, `correct_known_addresses()`), citing the same two failure strings in
+its own comments, wired into `/transcribe` before any tool sees the transcript. Verified live
+against real `mike` profile data: three variants including an invented one all snap correctly.
+The one real gap — the bundled APK never sending `?persona=`, silently disabling the correction on
+the phone — was independently found and fixed as `[DB-0809-18]`, then closed as a side effect of
+this session's APK rebuild. The flagged collision with the deferred tone-pipeline work never
+applied, since no `crm.py` edit was needed.
+
+**`[DB-0809-06]` — catch-up reused the wrong wire type.** `core/server.py`'s catch-up response
+shared `"history"` with a fresh connection's full load; the client's handler for that type wipes
+and rebuilds from only what it's given, correct for the one case, destructive for a delta —
+everything not in the catch-up window vanished until a manual reload restored it from a real
+`history` message. Gave catch-up its own type, routed each row through the same append-only path
+a live broadcast already used. Second cause, one line: the 20s liveness backstop was gated on
+`visibilityState === 'visible'`, so a hidden tab's staleness detector never ran at all.
+
+**`[DB-0809-18]`, `[DB-0805-04]`, `[DB-0809-12]` — the rest of the mechanical cluster, no surprises.**
+A deploy-time assertion (modeled on `deploy.sh`'s own HEAD check) now diffs the *built APK's*
+bundled asset against `static/index.html`, not just the intermediate copy step — tested against
+real drift, caught it correctly. A stale docstring in `tools/mail.py` corrected. `write_log` now
+refuses a `log_date` more than 7 days from the real clock rather than silently accepting one —
+refuse, not warn, because unlike a near-duplicate obligation there is no legitimate log_date a year
+removed from today. The 9 already-hallucinated 2025 files moved aside, not deleted.
+
+**`[DB-0805-02]` closed on a real phone, not a theory.** All three APK-bundled fixes — this item's
+confirm-bar, the doubling fix, the catch-up fix — needed a single sideload to verify. Blocked for
+hours on the phone being offline; confirmed the moment it reconnected that there was no remote
+path to install it myself (`adb` found no device, wireless debugging refused a connection) — this
+one genuinely needed Mike's hand. Closed the instant he sent a real message and got a reply:
+server logs showed `/transcribe?persona=mike` 200 OK, the message logged exactly once, and
+`/pending-confirmations` polling steadily throughout.
+
+**A live bug surfaced at the very end, and the first read of it was wrong in a way worth
+recording.** Mike reported visibly interleaved duplicate text in a real response. Server logs
+showed two WebSocket connections accepted the same second, one outliving the other by ~10s — both
+receiving the same stream, both writing into the same shared render buffer. First hypothesis:
+install-transition-specific, since it coincided with the auth token surviving the sideloaded
+update and auto-login firing. Mike restarted the app; the old message rendered correctly (proving
+the *stored* data was always clean — a client-side rendering artifact, not corruption) and a fresh
+test came through clean too. **That looked like confirmation the bug was a one-time install
+artifact — it was not.** Twelve minutes later, mid-session, with no install involved, the exact
+same two-connections-same-second signature appeared again (`10:14:16`/`10:14:19`, no close logged
+between them). Corrected the conclusion before it could be filed wrong: this is a real, recurring
+race in the reconnect path — `ws.close()` doesn't synchronously tear down the old connection, and
+during the real network round-trip before the server sees it close, both sockets are genuinely
+live. Only visible if a message is actively streaming during that narrow window, which is why most
+sends don't hit it. Filed as `[DB-0810-01]` rather than fixed — two real directions (client-side:
+wait for the old socket's `onclose` before trusting the new one; server-side: refuse a second live
+connection per persona outright) are a genuine design choice, not a mechanical one, and severity is
+low enough (cosmetic, self-healing, data never at risk) that it didn't need an in-session fix.
+
+**What stayed correctly untouched.** `## Now` closed from 9 items to 2 — both time-gated, not
+stuck: `[DB-0809-02]` needs a week of trace-watching (day 1 clean), `[DB-0809-21]`'s calendar
+candidate needs a real unreferenced event to arise naturally. Neither had an action either side
+could take today, which is the actual reason this session moved to closing out rather than any
+sign of being done early.
+
+Commits: `424c1a4`, `533eb85`, `948b01b`, `f7cad05`, `c2d5138`, `f34fadb`, one for the docstring,
+one for the dated-filename guard, `3ab36fe` (the WebSocket race, filed). All deployed, all
+verified on the VM; the last three verified against a real phone session, not a stub.
+
+---
+
 ### 2026-08-09, later (two more premises inverted; a second session's grant shipped inside my commit) — `6330029`, `b9ea29f`, `88b7614`, `9eb5ac4` all deployed
 
 The outgoing handoff said: *"Next: `[DB-0809-04]` (the last Opus item), then build `[DB-0809-05]`

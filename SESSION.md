@@ -1,21 +1,21 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-09, late (three items built; a parallel chat's work shipped inside my commit) —
-**VM at `88b7614`, all seven commits deployed and verified.** `[DB-0809-04]`, `[DB-0809-05]` and
-`[DB-0809-20]` are done. Sleep over-weighting was **not** availability: the 08-03 rule's premise was
-false — sleep is fifth of six populated fields — so it read as permission. The real mechanism is
-**comparability**: `mood: 'anxious'` cannot be ranked against yesterday and `sleep_hours: 3` can, so
-sleep was the only signal the Synthesizer could reason *with*. Fixing that parent cause found
-`write_log` merging **shallowly**, which made the declared nested schema actively unsafe and is
-likely why nothing ever adopted it — so guard shipped before config. **Nothing was backfilled**,
-deliberately; comparable bands begin 2026-08-09 and `pattern_miner.md` carries the boundary.
-**The incident worth carrying:** `git add <file>` stages another session's uncommitted lines *in
-that file*. `b9ea29f` carried their `send_email` transfer, and deploying it left **email sending
-dead in production** until `9eb5ac4` went out. I had reported those commits clean — a file-granular
-check against a line-granular collision. Now `CLAUDE.md` § Deploy safety rule **4**. **Next:** Sonnet
-on the mechanical cluster in `## Now` rank order; `[DB-0803-01]`'s truncation half is diagnosed
-(Whisper VAD, not the app) and specced. `[DB-0804-01]`'s count is due **08-11**. Full detail:
-[archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).*
+*Updated: 2026-08-10 (Sonnet cluster closed; a live WebSocket race found, corrected once, filed) —
+**nine commits, all deployed and verified — the last three against a real phone, not a stub.**
+`## Now` closed from 9 items to **2**, both genuinely time-gated: `[DB-0809-02]` needs a week of
+trace-watching (day 1 clean — `is_proactive: true` on both real firings, zero quality events all
+day); `[DB-0809-21]`'s calendar candidate needs a real unreferenced event to arise naturally.
+Highlights: `[DB-0803-01]` half two fixed by tuning Silero's VAD against all 108 retained audio
+files (98.07% avg recovered, 0 hallucination markers), not disabling it. `[DB-0809-03]` closed
+without a build — its citation was wrong; the real fix shipped 2026-08-05. `[DB-0809-06]` fixed
+both causes (catch-up wiped the transcript; hidden tabs never checked liveness). **A live bug at
+the end needed a correction, not just a diagnosis:** Mike saw doubled text; first read was
+"install-transition-specific," which a second occurrence 12 minutes later, mid-session, with no
+install involved, proved wrong. Real cause: `ws.close()` doesn't synchronously close, so a
+reconnect can leave two sockets briefly live, both writing into the same render buffer — rare,
+cosmetic, data never at risk, filed as `[DB-0810-01]` rather than fixed (a real design choice
+between a client-side and server-side defense). `[DB-0804-01]`'s count is due **08-11 — tomorrow**.
+Full detail: [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -75,26 +75,15 @@ Three checks still open:
 **`[DB-0804-01]` still open** — check-ins fixed/deployed (`10bf194`), but no end-to-end
 scheduled fire directly observed yet. One-week count due 2026-08-11 — do not check before then.
 
-**Awaiting live observation (2026-08-09), two items, both deployed and dry-run-verified only:**
-(1) the first real `companion_checkin` after 07:00 should show the Synthesizer `SCHEDULER
-DIRECTIVE`, not `ORIGINAL USER MESSAGE`; (2) `daily_calendar_reconcile` fires 05:40 and writes
-candidates for the morning brief — check it raises at most one, as a question, never as a miss.
+**Outbound messaging moved to Relationships (2026-08-09, `9eb5ac4`).** Logistics keeps `read_email`
+only; Coordinator routes any message-to-a-person to Relationships, which holds three-level
+disclosure discretion. **The ZDR clarification is now project-wide** (`ROADMAP.md` § Section 0) —
+a new sensitive path needs no separate ruling. Tone-profile pipeline **designed, not built** — plan
+at `~/.claude/plans/3-everything-is-on-declarative-kurzweil.md`; unresolved risk is trust laundering.
 
-**Outbound messaging moved to Relationships (2026-08-09, parallel session, `9eb5ac4` deployed).**
-Logistics keeps `read_email` only and is told not to write to anyone; Coordinator routes any
-message-to-a-person to Relationships, which holds the contact record and three-level disclosure
-discretion. Rationale: `_known_recipients()` already limited every recipient to the user's own
-address or a saved CRM contact. **The ZDR clarification is now project-wide** (`ROADMAP.md`
-§ Section 0): the 2026-06-18 amendment is the default for the single-user development phase, so a
-new sensitive path needs no separate ruling. Tone-profile pipeline **designed, not built** — plan
-at `~/.claude/plans/3-everything-is-on-declarative-kurzweil.md`; unresolved risk is trust
-laundering. **`[DB-0809-03]` collides with its Step 1** — both edit `tools/crm.py` `write_contact`;
-whoever moves first commits before the other starts.
-
-**Obligations are data, not jobs (2026-08-09).** `tools/obligations.py` + `data/personas/{p}/obligations.yaml`;
-closure is inferred from conversation and `close_obligation` **requires** evidence in the user's
-words. Open ones reach sessions via `load_recent_context`, not a tool call. The reconcile sweep
-**never notifies** — it writes candidates; a model session judges.
+**Obligations are data, not jobs.** `tools/obligations.py` + `data/personas/{p}/obligations.yaml`;
+closure is inferred, `close_obligation` **requires** evidence. The reconcile sweep **never
+notifies** — it writes candidates; a model session judges.
 
 **Scheduler jobs split two ways (2026-08-08):** silent maintenance jobs register from
 `_DEFAULT_JOBS` in `core/scheduler.py` for every persona; jobs with a prompt/notification stay
@@ -117,11 +106,11 @@ Newest first. Full detail for every entry — and everything older — is in
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-10 | **Sonnet cluster closed 9→2; a live WebSocket race found, corrected once, filed** — `[DB-0803-01]` half two fixed by tuning Silero's VAD against all 108 retained audio files (98.07% avg recovered, 0 hallucination markers) rather than disabling it. `[DB-0809-03]` closed with no build — its citation was wrong; the real fix shipped 2026-08-05. `[DB-0809-06]` fixed both causes (catch-up wiped the transcript on reconnect; hidden tabs never checked liveness). `[DB-0808-18]`'s key rotation reached three systems, not one — caught a regression before it shipped (deleting the old `~/.zshrc` export would have broken `ask_gpt` globally). `[DB-0805-02]` closed live against a real phone. **The correction:** doubled text looked install-specific until it recurred 12 minutes later with no install involved — real cause is `ws.close()` not synchronously closing, leaving two sockets briefly live during a reconnect; filed as `[DB-0810-01]`, not fixed, since the two real defenses are a genuine design choice | nine commits, all deployed and verified against the VM + a real phone session |
 | 08-09 | **Three premises inverted; a parallel chat's grant shipped inside my commit** — `[DB-0809-04]` sleep over-weighting was **comparability, not availability**: the 08-03 rule's antecedent was false (sleep is 5th of 6 populated fields) so it read as permission; the real cause is that `mood: 'anxious'` cannot be ranked against yesterday and `sleep_hours` can. `[DB-0809-05]` built — obligation store (closure inferred, evidence required) + a reconcile sweep that **never notifies**. `[DB-0809-20]` filed and built: `write_log` merged **shallowly**, so the declared nested schema was actively unsafe — guard before config; **no backfill**, boundary in `pattern_miner.md`. **Incident:** `git add <file>` staged another session's uncommitted `send_email` transfer; deploying it left email sending dead in production until `9eb5ac4`. I had called those commits clean — file-granular check, line-granular collision → `CLAUDE.md` Deploy safety rule 4. `[DB-0803-01]` half two diagnosed: Whisper VAD, not the app | `6330029`, `b9ea29f`, `88b7614`, `9eb5ac4` — all deployed, VM verified |
 | 08-09 | **The scheduler was reporting itself as the user** — `[DB-0809-02]` inverted by measurement: all 22 August check-ins were 1–2 sentences, and 4 of the 5 "restatements" were the Synthesizer reading its own scheduler prompt as Mike's voice (`is_proactive` reached only the trace) and firing the repeated-instruction protocol against text he never sent. Fixed in both pipeline copies + a protocol guard. A ≤2-sentence cap was **rejected** — Mike's target is focus, with length as its symptom — so `synthesizer.md` § Scheduled session conduct carries guidance instead; an action awaiting approval is now referred to, never recited. Found a **fourth** copy of the rule in `config/templates/scheduler.yaml`, which seeds every new persona → new `CLAUDE.md` § *Two kinds of preference*. `[DB-0809-06]` diagnosed (catch-up wipes the transcript; hidden tabs never check liveness), `[DB-0809-05]` designed | `82d394b`, `a6d693e` — deployed, VM verified |
 | 08-09 | **First `/backlog deep` sweep** — all 8 `## Now` items verified against current code; three premises wrong (`[DB-0809-04]` inverted by measurement — six domains >60% populated, sleep fifth, so it is a Synthesizer interpretation defect not a thin record; `[DB-0805-02]`'s approval UI exists and shipped 3 min before the report; `[DB-0809-12]`'s `2024-*` file does not exist). `[DB-0803-06]` closed (`c4ff279`) — and it had been reported 5 days earlier as `[DB-0803-01]`, unlinked because one entry was symptoms and the other line numbers. New `[DB-0809-18]`: the APK-bundled `index.html` drifts from `static/` silently, which is what made two app items look like code bugs. `## Now` ranked 1–8 | docs only, no deploy |
 | 08-09 | **Workflow revamp verified and committed** — a same-model verification pass against the live `DEV_BACKLOG.md` (not just re-running the script) found and fixed 4 real bugs: a placeholder regex missing the dated form actually written, new entries inserting above the section preamble, a ×3 escalation that was one-shot instead of standing, and cross-type entries able to merge in the machine log. Confirmed by synthetic-event tests. Two stale line-ceiling mentions and a missing `CODEBASE_INDEX.md` row also fixed | `ed92acf` — docs/scripts only, no deploy |
-| 08-09 | **Dev-workflow revamp** — 5 commands → 4 (`/backlog-attack` folded in as `/backlog attack`); `/archive` 6 steps → 4, no more per-session writeup; `DEV_BACKLOG.md` 1,658 → 246 lines restructured as Now/Later/Machine log with closed items in `archive/backlog_closed_2026-08.md`; sync script routes machine events away from Mike's, collapses repeats to ×N and escalates at ×3; new `docs/WORKFLOW.md`. **Measured, not assumed:** the planned SequenceMatcher dedupe was wrong — real repeats score 0.11–0.42, so it's Dice on content words at 0.15 (5 repeats → 3, zero false merges) | docs/scripts only, no deploy |
 
 ---
 
