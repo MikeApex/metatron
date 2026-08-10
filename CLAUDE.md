@@ -670,8 +670,10 @@ begins. Generated files — reports, archives, plan snapshots — follow
 **Run `/archive`.** Five steps — verbatim transcript, one project-log entry, `SESSION.md`
 refresh, backlog close-and-file, and a commit of exactly those files — in
 `.claude/commands/archive.md` so they are executed, not remembered. It should take minutes.
-The commit stages an explicit manifest and **never pushes or deploys**; a diff carrying lines
-the session did not write stops it rather than sweeping up a parallel window's work.
+The commit stages an explicit manifest and pushes for offsite backup, but **never deploys**;
+a diff carrying lines the session did not write stops it rather than sweeping up a parallel
+window's work. Push is safe there because `deploy.sh` pushes all of `main` anyway — what can
+reach the VM is decided by what you *commit* to `main`, not by who pushes it.
 
 The one rule worth carrying in your head, because it is what keeps `SESSION.md` small:
 

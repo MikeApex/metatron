@@ -84,13 +84,13 @@ list stops being read. The count is the signal; `/backlog` is where a pass happe
 
 ## 5. Commit the close-out
 
-**No push, no deploy** — durability, not delivery.
-
 Stage an explicit manifest: `SESSION.md`, `archive/PROJECT_LOG.md`, `DEV_BACKLOG.md`,
 `archive/backlog_closed_2026-08.md`, plus `ROADMAP.md` if step 3 touched it. Never `git add -A`,
 never a glob. **`git diff` each file before staging** — two windows run against this tree, and
 `git add <path>` stages that file's whole current content, a parallel session's uncommitted
-lines included (CLAUDE.md § Deploy safety, rule 4).
+lines included (CLAUDE.md § Deploy safety, rule 4). Then `git push origin main` — the offsite
+backup, not a release. **Never `./deploy.sh` here.** A rejected push stops the step and gets
+reported; pulling or merging to clear it entangles two sessions' work.
 
 **Lines this session did not write stop the commit.** Name them, stage nothing: you cannot tell
 your own edits from a parallel window's (`[DB-0805-05]`, open), so raising it is the step.

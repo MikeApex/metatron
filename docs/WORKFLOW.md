@@ -60,7 +60,7 @@ workers never touch shared state and never deploy; this window consolidates.*
 **`/archive`** — transcript, one `PROJECT_LOG.md` entry, `SESSION.md` refresh, backlog
 close-and-file, then a commit of exactly those files. Minutes, not a work block. *The rule:
 close before you file, and file only what a user would notice or what blocks the roadmap.*
-*The commit's rule: explicit manifest, no push, no deploy.*
+*The commit's rule: explicit manifest, push for backup, never deploy.*
 
 ---
 
