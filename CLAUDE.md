@@ -318,7 +318,21 @@ not granted it. The grant and the documentation ended up on opposite agents, and
 noticed for a week.
 
 **`python3 scripts/check_agent_tools.py`** reports all four classes. Exit 1 only on
-live-but-unbuilt. Stdlib plus PyYAML, zero model tokens, safe as a scheduler job.
+live-but-unbuilt. Stdlib plus PyYAML, zero model tokens.
+
+**It runs automatically — you do not have to remember it.** A `PostToolUse` hook in
+`.claude/settings.json` fires `scripts/hook_agent_tools.py` after any `Write`/`Edit` to
+`config/agents/*.md` or `config/modules/routing*.yaml`, and surfaces only classes 1 and
+2. A rule you have to remember is not a control: the `get_weather` split happened *inside
+a single commit* and survived a week because nothing re-checked the two halves against
+each other.
+
+**Scoped to what changed, deliberately.** An agent-file edit reports on that agent. A
+routing edit reads the uncommitted diff and reports only the agents whose block actually
+moved. The unscoped version emitted 37 findings on every grant edit — the volume that
+teaches you to skip the output, which is the same reason this guard is deliberately
+**not** wired into the quality-event stream or `DEV_BACKLOG.md`. It speaks when you have
+touched the thing it watches, and is silent otherwise.
 
 > **Known limit, so nobody over-trusts a clean report.** Detection is regex over
 > backticked `lower_snake_case` names, gated on evidence that a name is a *tool* — a

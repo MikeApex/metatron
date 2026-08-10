@@ -13,10 +13,12 @@ venv/
 **/.DS_Store
 
 # Claude Code local settings — not project config
-# ...except the slash commands. They are project tooling with no personal data
-# and no secrets, they get edited during development like any other source file,
-# and ignoring them has already cost us one: the original troubleshoot command
-# existed only in a chat transcript and had to be rebuilt by hand.
+# ...except the slash commands and settings.json. Both are project tooling with no
+# personal data and no secrets, they get edited during development like any other
+# source file, and ignoring them has already cost us one: the original troubleshoot
+# command existed only in a chat transcript and had to be rebuilt by hand.
+# settings.json carries the project's hooks — the agent-tool guard depends on it, and
+# an enforcement mechanism that lives only on one machine is not enforcement.
 # settings.local.json stays ignored — machine-specific paths.
 #
 # Note the shape: ".claude/" alone cannot be used, because git will not descend
@@ -26,6 +28,7 @@ venv/
 !.claude/commands/
 .claude/commands/*
 !.claude/commands/*.md
+!.claude/settings.json
 
 # TLS certs — never committed (IP-specific; regenerate with mkcert on each machine)
 certs/
