@@ -287,6 +287,47 @@ MY_TOOL_SCHEMA = {
 
 Register by adding `(my_tool, MY_TOOL_SCHEMA)` to the list in `orchestrator.register_tools()`.
 
+### A tool named in an agent file is a specification — do not delete it to make a check pass
+
+**Agent files are written ahead of the tools on purpose.** A capability named there
+before it exists is the design record: it says what this agent is *for*. So when a tool
+reference has no implementation behind it, the order of preference is **build it → grant
+it → move it to a deferred section. Deleting the line is the last resort**, and deleting
+it silently is how a planned capability disappears with no trace that it was ever wanted.
+This is the same reading `CLAUDE.md` already applies to `TOOL_DENIED` events: an agent
+reaching for a tool it lacks is evidence of designed intent, not misbehaviour.
+
+What actually went wrong with `web_search` was never the aspiration. It was that the
+aspiration sat in **live instruction text** with a mandatory-citation rule attached, so
+the model could not tell plan from capability and filled the gap by inventing sources
+(2026-08-10). **Aspiration is fine; aspiration the model reads as capability is not.**
+The fix is to mark it as planned, not to erase it.
+
+Three states, and each has a different correct response:
+
+| State | Meaning | Do |
+|---|---|---|
+| Named under a **deferred/backlog/Future** heading | the build queue | nothing — it is working as intended |
+| Named in **live instruction text**, not registered | the model reads it as present | build it, or move it under a deferred heading |
+| **Granted but never named** | the agent holds a tool it cannot know about | document it, or drop the grant |
+
+That third row is not hypothetical. `logistics` has been granted `get_weather` in both
+routing files since 2026-08-03 while `logistics.md` stopped mentioning weather entirely
+in the same commit — and `research_agent.md`, which documents `get_weather` in full, is
+not granted it. The grant and the documentation ended up on opposite agents, and nothing
+noticed for a week.
+
+**`python3 scripts/check_agent_tools.py`** reports all four classes. Exit 1 only on
+live-but-unbuilt. Stdlib plus PyYAML, zero model tokens, safe as a scheduler job.
+
+> **Known limit, so nobody over-trusts a clean report.** Detection is regex over
+> backticked `lower_snake_case` names, gated on evidence that a name is a *tool* — a
+> call paren, a leading bullet, or an invocation verb — because these files are full of
+> parameter names and JSON keys in the same notation. An ungated first version reported
+> 34 field names beside 1 real finding, which is the ratio that teaches a reader to skip
+> the report. Four bullet-leading JSON keys still slip through. Add to `_NOT_TOOLS` when
+> one does; a clean report is evidence, not proof.
+
 ---
 
 ## Design Principles
