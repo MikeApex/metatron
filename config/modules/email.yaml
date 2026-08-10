@@ -33,3 +33,19 @@ auth:
 
 # Mailbox read by default. Gmail exposes labels as folders, e.g. "[Gmail]/All Mail".
 default_folder: "INBOX"
+
+# ---------------------------------------------------------------------------------
+# THIS FILE IS READ BY NOTHING. The live config is per-persona
+# (config/personas/{persona}/email.yaml); the file new personas are provisioned from,
+# and the one `read_email` falls back to for defaults, is config/templates/email.yaml.
+#
+# Do not add a setting here expecting it to take effect, and do not mirror one that
+# lives in the template — a second copy is how these drift. The neighbouring
+# config/modules/caldav.yaml is the worked example: it still documents the
+# apidata.googleusercontent.com CalDAV endpoint that config/templates/caldav.yaml
+# records as verified-broken on 2026-08-03 (401s on app passwords), because nothing
+# reads it and so nothing caught it. See CLAUDE.md § One Home Per Rule Class.
+#
+# `check_interval_minutes` — how often the mailbox is worth re-reading — is defined in
+# config/templates/email.yaml, deliberately not here.
+# ---------------------------------------------------------------------------------

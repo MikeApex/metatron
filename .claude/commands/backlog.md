@@ -89,7 +89,8 @@ Everything above, plus the maintenance a default pass deliberately skips:
 - **Verify every `## Now` item**, not just the ones about to be worked.
 - **Sweep `## Machine log`.** Promote anything user-impacting; leave the rest collapsed.
 - **Roll closed items** into `archive/backlog_closed_YYYY-MM.md`, starting a new file each month.
-- **Check the shape:** `DEV_BACKLOG.md`'s ceiling is ~250 lines (the `CLAUDE.md` figure). Past
+- **Check the shape:** `DEV_BACKLOG.md`'s ceiling is the figure in `CLAUDE.md` § *Which File
+  Holds What* — read it there rather than trusting a number repeated here. Past
   it, narrative is accumulating again — the detail belongs in the code, the log, or the archive.
 
 ---

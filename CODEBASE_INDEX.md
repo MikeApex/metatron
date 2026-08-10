@@ -65,7 +65,8 @@ Each file is a Markdown instruction file loaded at runtime by the orchestrator. 
 |---|---|
 | [config/modules/routing.yaml](config/modules/routing.yaml) | Model routing assignments per agent + sensitivity tier. `local_enabled: false` — flip to `true` when Ollama running. |
 | [config/modules/scheduler.yaml](config/modules/scheduler.yaml) | Scheduler timing, session triggers, proactive initiation rules. |
-| [config/modules/caldav.yaml](config/modules/caldav.yaml) | CalDAV server configuration (URL, credentials path, sync settings). |
+| [config/templates/caldav.yaml](config/templates/caldav.yaml) | CalDAV config — the single home. New personas are provisioned from it; live config is per-persona at `config/personas/{p}/caldav.yaml` (gitignored, VM-owned). **`config/modules/caldav.yaml` is dead** — gitignored, Mac-local, read by nothing, and already drifted; do not edit it. |
+| [config/templates/email.yaml](config/templates/email.yaml) | Email defaults for every persona (`check_interval_minutes`). Provisioning source *and* runtime fallback — `tools/mail.py` reads it, because a template alone would reach only personas created after a change. |
 
 ---
 

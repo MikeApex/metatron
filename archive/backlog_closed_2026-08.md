@@ -19,6 +19,45 @@ sitting inside the Open sections. Reasoning: `archive/PROJECT_LOG.md` § 2026-08
 
 ---
 
+## Closed 2026-08-11 — live travel verified; mailbox cadence default
+
+- ~~**[DB-0810-14] Live travel status is fixed in code and unverified in production.**~~ —
+  **closed, verified live.** Trace **`8c9d8963`**, query *"What is the current status of the
+  Central Line on the London Underground?"*: routed Coordinator → Logistics → Synthesizer, with
+  **`get_tfl_status` actually called by `logistics` in turn 0** and recorded in the trace's tool-call
+  history. That was the pass condition, and it was chosen deliberately over "the answer looks
+  right" — the failure this item guarded against was *fabrication*, which reads as success.
+  Confirms `bc1a552` (the `or []` guards on `grounding_chunks`/`web_search_queries`, ending the
+  `'NoneType' object is not iterable` crash) and `d0774f8` (live travel status routed to Logistics,
+  which holds the feed) are both working in production. The 14:03 fabricated answer on 2026-08-10
+  fell in the 3-hour window *between* those two commits, which is why it was neither crash nor
+  correct. *Opened and closed inside 24h; the item existed only because two commits plausibly
+  covering a symptom are not evidence the symptom is gone.*
+
+- ~~**[DB-0810-16] No global default for how often the mailbox is checked.**~~ — **closed, built
+  and deployed.** Mike asked for a default *"for how often **any user** checks the mailbox"* — the
+  wording made it design, not a Mike deviation, so it had to land somewhere every persona inherits.
+  - **`config/templates/email.yaml` (new) is the single home**, holding `check_interval_minutes: 240`.
+    It doubles as the provisioning source *and* the runtime fallback, because a template is copied
+    once at persona creation and nothing propagates a later change — without the fallback the
+    default would reach only personas created after it, which for "any user" is the wrong half.
+  - **`tools/mail.py` — `check_interval_minutes(persona)`**: persona file → template → constant 240,
+    returned on both of `read_email`'s success paths. Every degenerate input tested (absent, null,
+    garbage, zero, negative all fall through; numeric string coerces).
+  - **`config/agents/logistics.md:215`** states the actual behaviour: a floor on *speculative*
+    re-reads, explicitly overridden when the user asks or a specific thing is being looked for.
+  - **`scripts/new_persona.sh:81`** — `email.yaml` added to the template copy list; it was absent,
+    so new personas were being provisioned with no `email.yaml` at all. Verified by provisioning a
+    throwaway `cadence_probe` persona, confirming it inherited the file and resolved 240, then
+    removing it.
+  - **Deploy-safety rule 2 does not apply** (*never add a config key before its gate is deployed*):
+    **nothing fires on this interval.** There is no job, no timer, no gate. `read_email` hands the
+    number to the agent that already called it. A scheduled version would have to wait on
+    `[DB-0808-11]` — `fire_function` runs no gate stack, so a scheduled mail check could push at
+    3am — and the template comment records that.
+  - **Rejected: mirroring the key into `config/modules/email.yaml`.** Checking the files first
+    showed that would reproduce a live failure sitting next to it — see the caldav note below.
+
 ## Closed 2026-08-10 — Research provenance
 
 - ~~**[DB-0810-08] Research Agent fabricates its sources, and the Book cannot see it.**~~ —

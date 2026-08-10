@@ -20,20 +20,8 @@ or `file:line` that closed them — closed without evidence is not closed.
 *Machine-written from what Mike said on the VM. Do not hand-edit — triage entries out into
 `## Now` or `## Later`, rewritten properly, and delete them from here.*
 
-- **[needs building]** Fix email dispatch silent failure: system confirms send to the user but the message does not reach the user's provider. Investigate why the tool is returning success without actual handoff.  
-  `2026-08-10T17:10:55.511151Z`
-
-- **[needs building]** Add multi-language support (English and Bulgarian) for voice transcription, or a UI setting to toggle between them. Current dictation forces English phonetic spelling on Bulgarian phrases.  
-  `2026-08-10T16:43:28.455756Z`
-
-- **[needs building]** Create a global default setting variable for mailbox check frequency to apply across all users.  ×2  
-  `2026-08-10T15:51:17.112387Z`
-
-- **[needs building]** User asked to look in CRM and get a total contact count. Needs an integration with their external CRM system.  
-  `2026-08-10T11:19:18.354306Z`
-
-- **[needs building]** Fix Research Agent returning blank results for live TfL transport queries (Bakerloo, Elizabeth, DLR).  
-  `2026-08-10T11:10:27.325451Z`
+*(empty — triaged 2026-08-10 by `/backlog deep`. All five entries verified against VM traces,
+journal and conversations before filing; one was a false report the system wrote about itself.)*
 
 ---
 ## Now
@@ -43,12 +31,36 @@ or `file:line` that closed them — closed without evidence is not closed.
 credential exposure or data-loss risk enters regardless of who found it. Both rituals — ranking
 each item as it arrives, and the reporter asymmetry — are in [docs/WORKFLOW.md](docs/WORKFLOW.md).
 
-*Ranked 2026-08-09 by Mike after a `/backlog deep` sweep verified every entry against current code;
-re-ranked later that day when three closed and `[DB-0809-21]` entered at 3. Every entry carries what
-was checked and when; a verdict without that line is a description, and descriptions are what the
+*Re-ranked 2026-08-10 by Mike after a `/backlog deep` sweep verified every entry against the VM
+(traces, journal, conversations) and corrected three whose stated evidence did not survive.
+Reasoning lives in `archive/PROJECT_LOG.md` § 2026-08-10, last. Every entry carries what was
+checked and when; a verdict without that line is a description, and descriptions are what the
 standing rule distrusts.*
 
-- **1. [DB-0810-09] 158 quality events have been written and never read — `USER_CORRECTION`
+- **1. [DB-0810-13] Specialists report actions they never took, and the Synthesizer relays it to
+  Mike as fact.** Three instances on 2026-08-10, one of them a real business email. **Email:** he
+  asked for a test message to Kathaleen sent to himself; the system said it had scheduled it for
+  Thursday, then that it had moved the send up, then *"That's sent."* Trace `b095aa33` shows
+  `relationships` called only `search_contacts`, `logistics` only `list_obligations`, and the
+  **Synthesizer made zero tool calls**. `send_email` appears in no trace; three days of journal
+  contain no SMTP line. **Calendar:** 15:11:45 `ROUTING_MISS | logistics` — *"received scheduling
+  directives but only returned a log write confirmation instead of taking the calendar actions."*
+  **Invented capability:** scheduled sending does not exist — `send_email` has no `send_at` and
+  nothing wires a scheduler job to a pending draft, so the "Thursday, August 13th" was fabricated
+  two turns before the false confirmation. **Cause, recorded by the system 90 minutes earlier and
+  never read:** 16:30:58 `ROUTING_MISS | relationships` — *"failed to send an email to the
+  explicitly provided address because it attempted a CRM lookup for the user."* The specialist
+  aborted on the lookup and returned; nothing checked that the action happened. **Do not scope
+  this to `send_email`** — Mike's call was to treat the class. Two halves: the specialists must
+  not report success for an unexecuted action, and the Synthesizer must not assert completion it
+  cannot evidence. Note seq 033 refers to an earlier Prudential email with the same symptom, so
+  this has fired at least twice. Also note `logistics` calls `send_email` without holding the
+  grant (only `relationships` has it) and the dispatcher runs it anyway — enforcing allowlists
+  would break email outright; see `[DB-0810-03]`.
+  *filed 2026-08-10 by Mike, via a bug report the system wrote incorrectly against itself ·
+  verified against traces, journal and conversations the same night · Mike ranked it Now #1*
+
+- **2. [DB-0810-09] 158 quality events have been written and never read — `USER_CORRECTION`
   (139), `ROUTING_MISS` (12), `CALENDAR_DUPLICATE` (7).** `tools/logger.py`'s
   `write_quality_event` appends to `data/personas/{p}/logs/quality_events.json`;
   `scripts/sync_dev_backlog.py` reads it through a hardcoded `WANTED = USER_TYPES |
@@ -71,92 +83,72 @@ standing rule distrusts.*
   holds all 7 calendar findings, so they stay suppressed until it is cleared — confirm before
   deleting a ledger on the VM. Those 7 are unreviewed and likely include the original Jonas
   triplication.
-  **A sixth collected type was added 2026-08-10 (later the same day): `MODEL_CALL_FAILED`,
-  emitted by `_log_api_failure()` in `core/orchestrator.py`.** Read this as one more entry the
-  structural fix has to absorb, *not* as a precedent for the allowlist edit this item forbids —
-  the ban is on collecting the three existing orphans that way, and this type was new, so both
-  sides were written together in one commit rather than a consumer being retrofitted to an
-  emitter that had been orphaned for months. It also arrives without the three specific
-  objections above: `_api_failure_signature()` gives it the stable key reason (b) demands
-  (`DENIAL_RE`'s precedent, keyed on error class so a varying "position N" cannot fragment it),
-  volume is ~5/fortnight rather than 139, and it has no legacy question. **When the registry or
-  reconciliation test lands, `MODEL_CALL_FAILED` registers there and its `MACHINE_TYPES` line
-  comes out.** Its purpose is interim: five Vertex `thought_signature` 400s went undiagnosed
-  because nothing surfaced them, and it escalates at three to prevent a sixth.
-  *filed 2026-08-10 by Mike via dev session · counts read live off the VM 2026-08-10 ·
-  full reasoning in `archive/PROJECT_LOG.md` § 2026-08-10 (Calendar conflict detection) ·
-  `MODEL_CALL_FAILED` note added 2026-08-10 by the thought_signature observability session*
+  **A sixth collected type was added 2026-08-10: `MODEL_CALL_FAILED`**, emitted by
+  `_log_api_failure()`. One more entry the structural fix must absorb — *not* a precedent for the
+  allowlist edit this item forbids: it was new, so both sides shipped in one commit, and it arrives
+  with the stable key reason (b) demands, ~5/fortnight volume, and no legacy question. When the
+  registry lands it registers there and its `MACHINE_TYPES` line comes out.
+  **PREREQUISITE, found 2026-08-10 — fix before building the consumer: 20 of 28 `USER_CORRECTION`
+  events that day carry `detail: None`.** The largest signal in the file is ~70% empty, so a
+  consumer built against it now would satisfy this item and surface nothing. Fix the emitter first.
+  **What this item is worth, concretely:** on 2026-08-10 a `ROUTING_MISS` at 16:30:58 recorded the
+  exact cause of `[DB-0810-13]` — the system's worst live failure that day — 90 minutes before the
+  model guessed at it, wrongly, in front of Mike. The diagnosis was on disk and nothing read it.
+  *filed 2026-08-10 by Mike via dev session · counts re-read live off the VM 2026-08-10 ·
+  full reasoning in `archive/PROJECT_LOG.md` § 2026-08-10 (Calendar conflict detection) and
+  § 2026-08-10, last*
 
-- **2. [DB-0810-12] Vertex rejects a `run_subagent` turn for a missing `thought_signature` and the
-  exchange is lost — five times 08-04→08-09, plus uncounted web-app hits.** Mike sees a raw SDK
-  400 and the message is never recorded, on the web app and the Android app both.
-  **Observability shipped (`8ae1ff9`); the fix did not.** *Do not act until a post-`8ae1ff9`
-  occurrence is in hand* — that commit exists to produce the `loop=` and `msgs=` fields that say
-  which loop raised, and the first diagnosis without them was wrong. Two candidates, both held
-  deliberately: **(a) the compat round-trip** — `_openai_compat_loop` already has the tc0-only
-  workaround, yet the 400's *"position 12"* matches `system(0) + 10 history + user(11) +
-  assistant(12)` exactly, so the signature is most likely lost serialising the returned
-  `ChatCompletionMessage` back into `messages` rather than never issued; the mechanism is
-  unproven, and at ~5 firings a fortnight a guess would pass every test you could run.
-  **(b) `_run_gemini_native_loop` has no workaround at all** — real but masked, since
-  `run_session_gemini_cached`'s `except Exception` swallows it and falls back to compat.
-  Porting the compat version verbatim would be a **regression**: it runs only `tc0` and
-  re-requests the rest, converting that loop's genuinely parallel `ThreadPoolExecutor` dispatch
-  into N sequential turns on a path already logging `cumulative_input=60744`. It has to be
-  guarded to fire only when parts are actually unsigned. Re-derive from the log line, not from
-  this description.
-  *filed 2026-08-10 by the thought_signature observability session · Mike ranked it Now #2 ·
-  full reasoning in `archive/PROJECT_LOG.md` § 2026-08-10, later still*
-- **3. [DB-0809-02] Do proactive sessions actually stay focused? — the mechanism half is fixed
-  and deployed; the guidance half is unproven.** **The original premise was wrong.** All 22 August
-  `companion_checkin` openings were 1–2 sentences: the rule was obeyed, and four of the five
-  "restatements" were the Synthesizer reading its *own* scheduler prompt as Mike's voice and firing
-  the repeated-instruction protocol against text he never sent. Mike said it twice, both 08-03.
-  Fixed in `82d394b` (deployed): `_frame_proactive()` labels scheduler input as a directive in both
-  pipeline copies, and the protocol now requires the *user* to have repeated it. A ≤2-sentence cap
-  was **rejected** — the real target is focus, with length as its symptom — so
-  `config/agents/synthesizer.md` § Scheduled session conduct carries guidance instead.
-  **Confirmed 2026-08-10: the first two live firings since deploy are clean.** Both
-  `companion_checkin` (07:20) and `morning_brief` (07:30) recorded `is_proactive: true` in
-  their trace, and — the decisive check — **zero quality events of any kind logged all
-  day**, meaning no `INSTRUCTION_CHANGE_REQUEST` fired, which is what the old bug produced
-  every time. (Traces don't retain raw prompt text, by design, so this is the strongest
-  check available without re-running something artificially.) Both responses also matched
-  the focus guidance's shape: one thing, a pending action referred to not recited, ends on
-  a real question. **What remains: read a week of traces** — one clean day is a good early
-  signal, not the week this item asked for. Do not re-word anything before then.
-  *filed 2026-08-09 · rewritten 2026-08-09 after measurement inverted it · **first live
-  firing confirmed clean 2026-08-10, day 1 of 7** · full reasoning in `archive/PROJECT_LOG.md`*
+- **3. [DB-0810-12] Vertex rejects a tool-call turn for a missing `thought_signature` and the
+  exchange is lost — five times 08-04→08-09, plus uncounted web-app hits.** *(Title corrected
+  2026-08-10: only **one** of the five was `run_subagent`; three were `write_quality_event`, one
+  `write_persona` — positions 12, 12, 12, 12, 14. Reading it as a `run_subagent` fault narrows the
+  search wrongly.)* Mike sees a raw SDK 400 and the message is never recorded, on both apps.
+  **Observability shipped (`8ae1ff9`); the fix did not. Verified 2026-08-10: no occurrence since —
+  so the `loop=`/`msgs=` fields it was built to produce have not fired, and the hold stands.**
+  *Do not act until a post-`8ae1ff9` occurrence is in hand*; the first diagnosis without them was
+  wrong. Two candidates, both held deliberately. **(a) The compat round-trip** — `_openai_compat_loop`
+  has the tc0-only workaround, yet *"position 12"* matches `system(0) + 10 history + user(11) +
+  assistant(12)` exactly, so the signature is likely lost re-serialising the returned
+  `ChatCompletionMessage` into `messages` rather than never issued. Unproven, and at ~5 firings a
+  fortnight a guess would pass every test you could run. **(b) `_run_gemini_native_loop` has no
+  workaround at all** — real but masked, since `run_session_gemini_cached`'s `except Exception`
+  falls back to compat. **Porting the compat version verbatim would be a regression**: it runs only
+  `tc0` and re-requests the rest, turning that loop's parallel `ThreadPoolExecutor` dispatch into N
+  sequential turns on a path already logging `cumulative_input=60744`. Guard it to fire only when
+  parts are genuinely unsigned. **Re-derive from the log line, not from this description.**
+  *filed 2026-08-10 · full reasoning in `archive/PROJECT_LOG.md` § 2026-08-10, later still*
+- **4. [DB-0809-02] Do proactive sessions actually stay focused? — mechanism fixed and deployed;
+  the guidance half is unproven.** The original premise was wrong: the openings were already
+  1–2 sentences, and the "restatements" were the Synthesizer reading its *own* scheduler prompt as
+  Mike's voice. Fixed in `82d394b` (deployed) — `_frame_proactive()` labels scheduler input as a
+  directive in both pipeline copies, and the repeated-instruction protocol now requires the *user*
+  to have repeated it. A ≤2-sentence cap was **rejected**; focus is the target, length only its
+  symptom, so `config/agents/synthesizer.md` § Scheduled session conduct carries guidance instead.
+  **Evidence corrected 2026-08-10 — this entry previously claimed "zero quality events of any kind
+  logged all day", which is false: 38 fired that day** (24 `USER_CORRECTION`, 7 `FEATURE_REQUEST`,
+  4 `ROUTING_MISS`, 3 `TOOL_DENIED`). The events file keys on **`timestamp`, not `ts`**; a read
+  against `ts` returns nothing and looks like a clean day — this sweep made the same misread before
+  catching it. The narrow conclusion survives: **no `INSTRUCTION_CHANGE_REQUEST` fired**, which is
+  what the old bug produced every time, and both 07:20/07:30 firings recorded `is_proactive: true`.
+  **What remains: read a week of traces.** Still day 1 of 7. Do not re-word anything before then.
+  *filed 2026-08-09 · rewritten 2026-08-09 after measurement inverted it · **evidence corrected
+  2026-08-10** — see `archive/PROJECT_LOG.md` § 2026-08-10, last*
 
-- **4. [DB-0809-21] Two of four verification steps done and passed; two are genuinely time-gated,
-  not yet observable.** Projected cost ~$0.08 (token-based estimate against `_run_single_agent`'s
-  actual single-agent shape, not the blended $8.44/50-session historical average, which is
-  dominated by B1's full-pipeline scenarios and would have overstated this run) — under the $1.00
-  approval line, ran without blocking per `docs/CONVENTIONS.md` § Testing Cost Convention.
-  **Done:** (1) **A4 `clinical` suite** against `sarah_chen` — 3/3 pass, confirms the regression
-  gate held; as expected it cannot reach the sleep edits, since its pass criteria are
-  `MEDICATION_MISSED_CRITICAL` and the clinical flags. (2) **Three targeted Physical Health calls**
-  against `danny_park`, which *do* assert `6330029`/`88b7614` — all three passed: a single 5.5h
-  night reported hours with **no** `SLEEP_POOR`; a second consecutive night under 6h fired the
-  flag; a 45-minute RPE-7 run passed those figures through rather than flattening to "logged" —
-  and the model correctly drew on the prior nights' sleep to contextualize the run's perceived
-  exertion, which is exactly what the deep-merge fix in `88b7614` was protecting.
-  (4) **The first natural `companion_checkin` — done, and it passed.** It fired at 07:20 on
-  2026-08-10 without being forced, and was clean: `is_proactive: true` recorded, zero quality
-  events all day. Deliberately never forced by firing a session against Mike's real persona,
-  which would have written a synthetic exchange into his actual conversation history for no real
-  need — the wait was the point, and it cost one night.
-  **Still open, not a failure — time hasn't passed yet:** (3) `daily_calendar_reconcile` re-run
-  manually against `mike`'s real calendar (zero cost, no model call) — clean, 0 candidates, same
-  as its first run the night before; confirms the mechanism still works, but **no live candidate
-  has existed yet to observe being raised as a question**, which needs a real unreferenced event,
-  not a forced one. That is the single remaining check.
-  *filed 2026-08-09 · **Mike deferred it explicitly** · **3 of 4 done 2026-08-10**; check (4) was
-  confirmed clean the same morning and the entry simply hadn't caught up with
-  `archive/PROJECT_LOG.md`, which already recorded it — corrected by the 08-10 `/backlog deep`
-  sweep. One check left, genuinely time-gated on a real unreferenced calendar event arising*
+- **5. [DB-0809-21] Three of four verification steps done and passed; one is genuinely time-gated.**
+  Ran at ~$0.08, under the $1.00 approval line (`docs/CONVENTIONS.md` § Testing Cost Convention).
+  **Done:** (1) A4 `clinical` suite vs `sarah_chen`, 3/3 — confirms the regression gate held.
+  (2) Three targeted Physical Health calls vs `danny_park`, which do assert `6330029`/`88b7614` —
+  all passed, including the deep-merge behaviour that fix protected. (4) The first natural
+  `companion_checkin` fired unforced at 07:20 on 08-10 and was clean *(its evidence line inherited
+  the same "zero quality events" error corrected in `[DB-0809-02]` above — the surviving check is
+  `is_proactive: true` plus no `INSTRUCTION_CHANGE_REQUEST`)*. Never forced against Mike's real
+  persona, which would have written a synthetic exchange into his real history.
+  **Open, time-gated:** (3) `daily_calendar_reconcile` re-ran clean with 0 candidates, so the
+  mechanism works, but **no live candidate has yet existed** to observe being raised as a question.
+  Needs a real unreferenced calendar event, not a forced one.
+  *filed 2026-08-09 · **Mike deferred it explicitly** · 3 of 4 done 2026-08-10*
 
-- **5. [DB-0810-05] The tone-profile pipeline has never touched a real mailbox.** Built and
+- **6. [DB-0810-05] The tone-profile pipeline has never touched a real mailbox.** Built and
   committed `88957e6`; **every test used stubs.** The distillation half is well covered — a hostile
   fixture confirmed unknown keys dropped, values truncated, lists capped, injection caught and the
   write refused, plus five `_extract` paths (single-direction refusal, thin-sample skip, injection
@@ -199,6 +191,35 @@ standing rule distrusts.*
   IMAP quoting bug found and fixed, original pass/fail criteria still unmet — no long-history
   contact exists yet to test against*
 
+- **7. [DB-0810-15] Voice transcription is English-only in two places, so Bulgarian cannot work.**
+  Mike tested it live (seq 031, *"I'm wondering if you can understand me if I speak in Bulgaria"*)
+  and asked for multi-language support or a toggle. **Not a config flip — it is blocked twice:**
+  (1) [core/voice_pipeline.py:177](core/voice_pipeline.py#L177) passes `language="en"` hardcoded;
+  (2) [core/voice_pipeline.py:49](core/voice_pipeline.py#L49) loads `base.en`, an **English-only
+  model** that cannot transcribe Bulgarian at any setting. Multilingual requires `base`, which
+  reopens the sizing constraint documented at [core/voice_pipeline.py:31](core/voice_pipeline.py#L31):
+  STT runs on a **single-worker pool on 2 vCPU**, and `small.en` was already measured and rejected
+  at RTF 2.23 (transcribes slower than audio arrives, so a second concurrent request queues).
+  **Benchmark `base` on the VM before choosing** — `python3 tests/bench_whisper_stt.py`, run there,
+  not on the Mac. Then decide auto-detect vs. an explicit UI toggle; auto-detect costs accuracy on
+  short utterances, which is most of what voice sends.
+  *filed 2026-08-10 by Mike, live during feature testing · both blockers verified in code same day*
+
+- **8. [DB-0810-17] "How many contacts do we have?" — and the answer was more wrong than it
+  looked.** At seq 009 Mike asked for a route *and* a CRM contact count; the system replied it had
+  *"no connection to your external CRM to pull a contact count"*. **That is only half true and it
+  should not have declined.** Metatron has its own contact store — `list_contacts`,
+  `search_contacts`, `read_contact`, `write_contact` in [tools/crm.py](tools/crm.py) — and
+  `relationships` is **already granted all of them**. It could have answered the count from data it
+  holds. So there are two separable pieces, and the cheap one is not a build:
+  **(a) Answer from the existing store** — instruction/routing only, no new code. A contact-count
+  question should reach `relationships` and be answered from `list_contacts`.
+  **(b) An external CRM bridge** — a genuine integration, and the one Mike means by "should be
+  built". Blocked on a decision this entry cannot make for him: *which* CRM, and whether contacts
+  sync in, out, or both. Sensitive-tier either way.
+  *filed 2026-08-10 by Mike · **(a) verified present and granted 2026-08-10** — the capability
+  exists and went unused, which makes this partly the same class as `[DB-0810-13]`*
+
 ## Later
 
 Real, not prioritised. One or two lines each — detail lives in the code, the log, or
@@ -239,33 +260,18 @@ to pick from when a `Now` item is time-gated.
   test, and Wave 2 (B1b, B3) gated on Track E. Detail in the archive file.
 
 **Reliability**
-- **[DB-0810-02] `core/trace.py`'s `pop_agent()` doesn't restore the prior thread-local
-  `current_agent`, so a synchronous nested `run_subagent` call misattributes its own tool-call
-  record to the child agent it just finished running.** Found while troubleshooting the
-  2026-08-10 research_agent grounding crash (seq 005): the trace looked like the Coordinator, or
-  `research_agent` itself, was calling `run_subagent` recursively — neither was true. What
-  actually happened: the Synthesizer called `run_subagent(research_agent, ...)` synchronously
-  (same thread); `push_agent()` for the nested `research_agent` session overwrote
-  `_ctx.current_agent`, and `pop_agent()` never set it back, so the outer `dispatch_tool()` call
-  (still resolving `rec = _agent_rec or _tr.get_current_agent()` for its own record-keeping)
-  wrote the "run_subagent" tool-call entry into the just-finished child's turn instead of the
-  Synthesizer's. Also, any depth>0 agent always nests under `t.pipeline[0]` (always Coordinator by
-  construction) regardless of which agent actually spawned it, which compounds the misreading.
-  Cosmetic/diagnostic only — does not affect runtime behavior — but makes The Book actively
-  misleading for any nested `run_subagent` call. Fix: have `push_agent()` return the previous
-  `current_agent` alongside the new record (or have callers save/restore it) so `pop_agent()` can
-  put it back. *filed 2026-08-10 by dev session — found, not fixed, during unrelated bugfix*
-- **[DB-0810-01] A reconnect can leave two live WebSocket connections briefly open, doubling a
-  streaming response into one on-screen bubble.** Live 2026-08-10, twice — the second time
-  mid-session with no install involved, which is what ruled out the install-transition reading.
-  Mechanism: `ws.close()` doesn't synchronously tear the connection down, so during the
-  round-trip both sockets are live and both receive the stream. Only visible if a message is
-  actively streaming in that window. **Data is never at risk** — the stored record was correct
-  throughout. Fix is a real design choice: wait for the old socket's `onclose` client-side, or
-  have the server refuse a second live connection per persona (more robust, bigger).
-  *filed 2026-08-10 · Mike, live · cosmetic and self-healing but a genuine recurring race — **do
-  not close on "restart fixed it"**, that only showed the stored data was clean. Full diagnosis:
-  `archive/PROJECT_LOG.md` § 2026-08-10*
+- **[DB-0810-02]** `core/trace.py`'s `pop_agent()` doesn't restore the prior thread-local
+  `current_agent`, so a synchronous nested `run_subagent` misattributes its tool-call record to the
+  child it just finished. Compounded by depth>0 agents always nesting under `t.pipeline[0]`.
+  Diagnostic only, but makes The Book **actively misleading** for nested calls — which is how it
+  cost a wrong diagnosis once. Fix: `push_agent()` returns the previous value for `pop_agent()` to
+  restore. *filed 2026-08-10 · full mechanism in `archive/PROJECT_LOG.md` § 2026-08-10*
+- **[DB-0810-01]** A reconnect can leave two live WebSockets briefly open, doubling a streaming
+  response into one bubble (`ws.close()` isn't synchronous). Live twice on 2026-08-10, the second
+  mid-session — which ruled out the install-transition reading. **Data is never at risk. Do not
+  close on "restart fixed it"** — that only showed the stored record was clean. Fix is a design
+  choice: await the old socket's `onclose`, or refuse a second live connection per persona
+  (more robust, bigger). *filed 2026-08-10 · Mike, live · diagnosis in `archive/PROJECT_LOG.md`*
 - **[DB-0808-11]** `fire_function` runs no gate stack — `days`, `respect_quiet_hours` and the
   activity gate are ignored for every function job. Reachable since it gained a notification
   path: an `interval_minutes` job with `notification: push` would push at 3am.
@@ -283,22 +289,17 @@ to pick from when a `Now` item is time-gated.
   offline shell, so an unreachable server shows a browser error page instead of the app.
 - **[DB-0808-05]** The output filter suppresses the whole reply when Mike names a tool himself
   (*"`write_config` didn't save my preferences"*) — the canned fallback lands exactly when a
-  complaint about the system deserves an answer. Observed live once (Exchange 027, 2026-06-26),
-  pinned non-gating as `FILTER-EXCH027`. Fix: pass the user's turn into `filter_output()` and
-  exempt **only the term he typed, only in the next turn** — three call sites
-  (`core/orchestrator.py` ~3191, ~3407, ~3477 — renumbered 2026-08-10 after `8ae1ff9` added
-  ~62 lines above them; grep `filter_output(` rather than trusting these). Not a blanket flag: a probing question must not
-  disable its own backstop. **Dev-session find; promote if it recurs.**
-- **[DB-0810-07] The Book's new thinking/output-text, tool-call ok flag, and `/monitor/model_errors`
-  fields (`ffaf7a7`, deployed 2026-08-10) haven't been checked against a real exchange yet** — only
-  `py_compile` and a service-health check ran. Also, the SSE live-update path (`_prepend_col1`)
-  reuses whatever `model_errors` list was loaded at the last full Load rather than re-fetching, so
-  an API failure that happens while watching live won't show a red tag until the next Load/refresh
-  — known and accepted at build time, not a bug to fix blind. Verify: trigger one exchange with a
-  successful tool call and one with a deliberately failing tool/model call, confirm the Book shows
-  the Output text collapsible, the ✓/✗ marker with resource label, and (for the API-failure case)
-  the `⚠ call failed` tag and API-errors block. *filed 2026-08-10 by dev session at close-out —
-  built and deployed, not yet exercised against live data*
+  complaint about the system deserves an answer. Live once (Exchange 027), pinned `FILTER-EXCH027`.
+  Fix: pass the user's turn into `filter_output()` and exempt **only the term he typed, only in the
+  next turn** — not a blanket flag, or a probing question disables its own backstop. Grep
+  `filter_output(` for the three call sites; line numbers have moved twice.
+  **Dev-session find; promote if it recurs.**
+- **[DB-0810-07]** The Book's thinking/output-text, tool-call ok flag and `/monitor/model_errors`
+  fields (`ffaf7a7`, deployed) have only had `py_compile` and a health check — never a real
+  exchange. Verify with one successful and one deliberately failing tool/model call. Known and
+  accepted at build time: the SSE path (`_prepend_col1`) reuses the `model_errors` list from the
+  last full Load, so a live API failure shows no red tag until refresh — **not a bug to fix blind.**
+  *filed 2026-08-10 · built and deployed, not exercised against live data*
 
 **Capability**
 - **[DB-0810-03]** **Tool allowlists are never audited against the instruction files, so an
@@ -323,8 +324,18 @@ to pick from when a `Now` item is time-gated.
   fleet, including `logistics.md:179` naming `write_journal` without holding it. Each needs a
   build/grant/defer decision. Worth a `/backlog` pass before A7 check 10, since check 10 requires
   no Fails and these are the same class as the Fail it just cleared.
+  **Two more real denials arrived 2026-08-10T15:00, both verified as live-instruction (class 2),
+  both waiting on a decision in (c):** `learning_growth` names `write_archive` four times without
+  holding it ([learning_growth.md:195](config/agents/learning_growth.md#L195) lists it as a held
+  tool; :74 and :130 make it a mandatory step), and `recreation_hobbies` names `write_agent_config`
+  ([recreation_hobbies.md:231](config/agents/recreation_hobbies.md#L231)) while holding only
+  `[read_log, write_log]`. Neither is speculative — both were denied in production.
+  **Sharpest argument for enforcing the allowlists is also the argument for not doing it yet:**
+  `logistics` calls `send_email` without the grant (only `relationships` holds it) and the
+  dispatcher executes it, so switching to enforce mode today would kill outbound email. See
+  `CLAUDE.md` § Security Architecture — correct the lists, verify, *then* enforce.
   *filed 2026-08-10 by the machine-log sweep · **(b) closed 2026-08-10**, (c) added the same day
-  from the guard's first full run*
+  from the guard's first full run · two denials added by the 08-10 `deep` sweep*
 - **[DB-0806-02]** Level 3 web access. Split into rendered-read (`fetch_rendered`, Playwright,
   read-only — recommended, same trust boundary as `fetch_url`; check VM memory first) and
   interactive click/type/submit, which stays gated on a credential store that does not exist.
@@ -343,22 +354,19 @@ to pick from when a `Now` item is time-gated.
   code on the `·` feedback dot, plus detecting `open_threads` that go quiet unresolved.
 
 **Performance and cost**
-- **[DB-0810-11]** Standing design question, raised by Mike 2026-08-05 and never given its own
-  session: **where should code replace LLM judgment**, for accuracy and for token cost? Three
-  strands — (a) deterministic lookups that feed agents evidence instead of asking them to
-  recall (`tools/scheduling.py` is the worked example; unbuilt: CRM contact dedup, where
-  `_find_by_name` is naive substring matching so "Jon"/"Jonathan"/"Jonathan Whitfield" become
-  three records; `write_archive` duplicate detection; `tools/wisdom.py` reloading
-  `SentenceTransformer` per call where `core/memory.py` caches a singleton); (b) code that
-  removes agent calls entirely — including Synthesizer dispatching a subagent purely to *check a
-  fact*, which trades an LLM round-trip for what a lookup would do, but cuts against the
-  head-layer/specialist split and PoLP; (c) a standing code/agent review protocol — the argument
-  for which is that `daily_calendar_dedup_audit` was correct, tested and deployed yet did nothing
-  for 3 days (template never propagated, fixed in `8d798a8`) and then had its output discarded
-  for 5 more by `[DB-0810-09]`, neither failure being a code bug or catchable by unit tests. Also
-  parked here: embeddings for semantic similarity, and `temperature` — **not plumbed through any
-  of the four provider paths** in `core/orchestrator.py`, most valuable for clinical flags and
-  Finance arithmetic rather than for dedup.
+- **[DB-0810-11]** Standing design question, raised by Mike 2026-08-05, never given its own
+  session: **where should code replace LLM judgment**, for accuracy and token cost? Three strands —
+  (a) deterministic lookups feeding agents evidence rather than asking them to recall
+  (`tools/scheduling.py` is the worked example; unbuilt: CRM contact dedup, where `_find_by_name`
+  is naive substring matching so "Jon"/"Jonathan"/"Jonathan Whitfield" become three records;
+  `write_archive` dedup; `tools/wisdom.py` reloading `SentenceTransformer` per call where
+  `core/memory.py` caches a singleton); (b) code that removes agent calls entirely — cuts against
+  the head-layer/specialist split and PoLP, so not free; (c) a standing code/agent review protocol.
+  The argument for (c): `daily_calendar_dedup_audit` was correct, tested and deployed yet did
+  nothing for 3 days (template never propagated, `8d798a8`), then had its output discarded for 5
+  more by `[DB-0810-09]` — **neither failure was a code bug or catchable by unit tests.** Also
+  parked here: embeddings for semantic similarity, and `temperature`, **not plumbed through any of
+  the four provider paths**, most valuable for clinical flags and Finance arithmetic.
   *filed 2026-08-10 · a full session prompt exists in that day's transcript*
 - **[DB-0808-09]** Per-specialist internal turn reduction. Coordinator is 1 turn (measured
   twice); `logistics` is 8; the other specialists are unmeasured. **Measure first, then diagnose
@@ -370,32 +378,21 @@ to pick from when a `Now` item is time-gated.
   console lag. Not retroactive — turning it on now only helps the next anomaly.
 
 **Housekeeping**
-- **[DB-0810-06] Every context-file ceiling is measured in lines, and lines stopped tracking the
-  cost.** `SESSION.md` hit exactly 200/200 on 2026-08-10 with **5.6 KB of its 17.9 KB sitting on
-  five lines** — `## Recent sessions` rows that had grown into paragraph-length restatements of
-  `archive/PROJECT_LOG.md`. They grew **wide, not numerous**, so the line ceiling could not see
-  them; the instance is fixed (`2e3e6e4`, 5.6 KB → 1.9 KB) but the **metric is still wrong
-  everywhere it is stated** — `SESSION.md` 200, `/archive` ~100, `/backlog` ~130,
-  `DEV_BACKLOG.md` ~250, all line-based, all in `CLAUDE.md` § *Which File Holds What* plus each
-  file's own footer. A byte or token ceiling would have caught this months earlier. **Check
-  before acting:** whether a second measure is worth the complexity, or whether the one-line-per-
-  row rule now in the section header is sufficient on its own — the cheap fix may already be in.
-  *filed 2026-08-10 · found while fixing the primer, not fixable in the same pass*
-- **[DB-0805-05]** **A session cannot tell its own edits from a parallel window's — the git
-  collisions and the `/archive` dirty-check are one cause, not two.** *(a)* A window's commit
-  swept up another's uncommitted diff (2026-08-08); `git add <files>` does **not** protect you,
-  because the collision is line-granular inside a file the committer legitimately owns.
-  *(b)* `/archive` step 0 flags dirty files but cannot say whose they are, so it is advisory, not
-  protective — **do not remove it**, a prompt to look beats no prompt. **Shared fix:** a
+- **[DB-0810-06]** Every context-file ceiling is measured in lines, and lines stopped tracking the
+  cost. `SESSION.md` hit 200/200 with **5.6 KB of its 17.9 KB on five lines** — rows that grew
+  **wide, not numerous**, so a line ceiling could not see them. Instance fixed (`2e3e6e4`); the
+  metric is still line-based everywhere it is stated (`CLAUDE.md` § *Which File Holds What* plus
+  each file's footer). **Check before acting:** whether a byte/token measure earns its complexity,
+  or whether the one-line-per-row rule already added is sufficient. *filed 2026-08-10*
+- **[DB-0805-05]** **A session cannot tell its own edits from a parallel window's** — the git
+  collisions and the `/archive` dirty-check are one cause, not two. `git add <file>` does **not**
+  protect you: the collision is line-granular inside a file the committer legitimately owns
+  (2026-08-08). `/archive` step 0 flags dirty files but cannot say whose — advisory, not
+  protective, and **do not remove it**; a prompt to look beats no prompt. **Fix:** a
   start-of-session commit to diff against, or record touched files as the session goes.
-  **Recurred 2026-08-10** — a `/backlog deep` sweep and a `/metatron-troubleshoot` close-out in
-  one tree both diagnosed the same crash independently, and the sweep nearly reused `[DB-0810-02]`,
-  an id the other window had taken minutes earlier. **Recurred again 2026-08-10, during the
-  session that built `[DB-0810-04]`'s commit step** — another window landed six commits mid-work,
-  two of them `/archive` runs, moving this session's `PROJECT_LOG.md` edit anchor and staling its
-  `DEV_BACKLOG.md` line numbers. Step 5's manual diff caught it because a human-shaped read was
-  in the loop; nothing automatic would have. *merged 2026-08-10 — absorbed `[DB-0809-17]`;
-  **×3 — the bar is met**, and `/archive` step 5 now depends on this being unsolved*
+  *merged 2026-08-10 (absorbed `[DB-0809-17]`) · **×3, the bar is met** — recurred twice more on
+  08-10, once nearly reusing an id another window had taken minutes earlier · `/archive` step 5
+  currently depends on this being unsolved*
 - **[DB-0809-11]** Docs record values the system changes underneath them and nothing checks.
   Mitigation in force (don't write down short-half-life values); the stronger fix is a smoke
   script running CLAUDE.md's executable claims. `deploy.sh`'s HEAD assertion is the model.
@@ -419,14 +416,9 @@ sync output line — repetition is the signal that a process event has become a 
 anything user-impacting into `## Now` or `## Later` like any other item; this is a holding pen,
 not a blackhole. Swept during `/backlog deep`.*
 
-*(swept 2026-08-10 — both `search_memory` denials promoted to `[DB-0810-03]`, which carries
-their timestamps as its occurrence count. Nothing outstanding.)*
-
-- **[agent wanted a tool it lacks]** `learning_growth` attempted `write_archive` (category, notes, status, title) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
-  `2026-08-10T15:00:13.188318Z`
-
-- **[agent wanted a tool it lacks]** `recreation_hobbies` attempted `write_agent_config` (agent_name, content) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
-  `2026-08-10T15:00:11.677489Z`
+*(swept 2026-08-10 twice — the `search_memory` denials promoted to `[DB-0810-03]`, then both
+`2026-08-10T15:00` denials verified and promoted into `[DB-0810-03](c)`, which is the decision
+queue for this exact class. Nothing outstanding.)*
 
 ---
 ## Done

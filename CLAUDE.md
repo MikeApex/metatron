@@ -75,7 +75,16 @@ worked.** Two rules worth carrying without reading that file:
 goes to `archive/PROJECT_LOG.md` and the command gets at most a line. `/archive` reached 196
 lines the other way — counting traps, notation tables and a diff-tab diagnosis, none of it
 needed at close-out. Rough ceilings: `/archive` ~100 lines, `/backlog` ~130, `DEV_BACKLOG.md`
-~250. Crossing one is the signal to move something out, not a licence to trim something useful.
+~450. Crossing one is the signal to move something out, not a licence to trim something useful.
+
+> **`DEV_BACKLOG.md` was raised 250 → ~450 on 2026-08-10.** 250 was never measured — it was set
+> during the 08-09 revamp and inherited. At 250 the file could not hold ten `## Now` items *with
+> the evidence each was verified against*, and dropping that evidence is what the file's own
+> standing rule exists to prevent: a description without a verdict line is what a stale premise
+> looks like. **`## Now`'s real cap is its 10-item limit, which is unchanged** — that is what
+> bounds the workload. The line ceiling now governs `## Later` accumulation, which is what
+> actually explodes (197 → 1,658 lines in six days). Related: `[DB-0810-06]`, which argues lines
+> are the wrong unit entirely, since width is invisible to a line count.
 
 → Which command to fire and when: [docs/WORKFLOW.md](docs/WORKFLOW.md).
 

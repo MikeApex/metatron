@@ -24,6 +24,9 @@ them. Bodies and subjects are wrapped by tools/untrusted.py at the return bounda
 Config: config/personas/{persona}/email.yaml — same per-persona pattern as caldav.yaml,
 and gitignored the same way. Gmail requires an app-specific password *and* IMAP enabled
 in the account settings; those are two separate things and the second is easy to miss.
+Defaults that apply to every user (currently `check_interval_minutes`) live in
+config/templates/email.yaml, which is both what new personas are provisioned from and
+what this module falls back to — not config/modules/email.yaml, which nothing reads.
 """
 
 from __future__ import annotations
@@ -33,6 +36,7 @@ import email.policy
 import imaplib
 import re
 from email.header import decode_header, make_header
+from pathlib import Path
 
 import yaml
 
@@ -67,6 +71,44 @@ def _load_config(persona: str | None = None) -> dict:
     if not path.exists():
         return {}
     return yaml.safe_load(path.read_text()) or {}
+
+
+# The provisioning template doubles as the default source. A template is copied once, at
+# persona creation, and nothing propagates a later change to an existing persona — so a
+# new key added there would otherwise reach only personas created after it, which for a
+# setting described as "the default for any user" is the wrong half of the userbase.
+_TEMPLATE_PATH = Path(__file__).parent.parent / "config" / "templates" / "email.yaml"
+
+DEFAULT_CHECK_INTERVAL_MINUTES = 240
+
+
+def _template_defaults() -> dict:
+    try:
+        return yaml.safe_load(_TEMPLATE_PATH.read_text()) or {}
+    except Exception:
+        return {}
+
+
+def check_interval_minutes(persona: str | None = None) -> int:
+    """
+    How often the mailbox is worth re-reading, in minutes.
+
+    Resolution order: the persona's own email.yaml, then config/templates/email.yaml,
+    then the constant above. Nothing fires on this interval — it is returned to the
+    calling agent as guidance, so a bad value costs a redundant read, never a surprise
+    one. See config/templates/email.yaml for why it is not a scheduled job.
+    """
+    for source in (_load_config(persona), _template_defaults()):
+        raw = source.get("check_interval_minutes")
+        if raw is None:
+            continue
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            return value
+    return DEFAULT_CHECK_INTERVAL_MINUTES
 
 
 def _decode(value: str | None) -> str:
@@ -196,6 +238,7 @@ def read_email(count: int = 10, unread_only: bool = False, folder: str = "INBOX"
                 "messages": "(no messages)",
                 "folder": folder,
                 "unread_only": unread_only,
+                "check_interval_minutes": check_interval_minutes(),
             }
         ids = ids[-count:][::-1]   # most recent first
 
@@ -232,6 +275,8 @@ def read_email(count: int = 10, unread_only: bool = False, folder: str = "INBOX"
         "count": len(messages),
         "folder": folder,
         "unread_only": unread_only,
+        # Guidance for the calling agent, not a schedule — nothing fires on this.
+        "check_interval_minutes": check_interval_minutes(),
         "security_note": UNTRUSTED_CONTENT_INSTRUCTION,
         "messages": wrap_untrusted(rendered, source=f"email inbox ({username})"),
     }

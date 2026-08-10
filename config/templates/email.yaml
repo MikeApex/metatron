@@ -1,0 +1,67 @@
+# Email integration (IMAP read, SMTP send) — the provisioning template.
+#
+# scripts/new_persona.sh copies this to config/personas/{persona}/email.yaml, which is
+# the live file and is gitignored, like caldav.yaml. This copy holds no credentials.
+#
+# It is also the DEFAULT SOURCE at runtime: tools/mail.py reads `check_interval_minutes`
+# from here whenever the persona's own file does not set it. That fallback is what makes
+# a default here reach personas provisioned before the key existed — a template is copied
+# once, at creation, and nothing has ever propagated a later change to an existing
+# persona. config/templates/scheduler.yaml carries the same warning for the same reason:
+# daily_calendar_dedup_audit shipped, sat in this directory, and had never run for mike
+# three days later.
+#
+# Reading is read-only by design. `read_email` never sends and never marks a message as
+# read (BODY.PEEK). `send_email` is the separate, confirmation-gated path and belongs to
+# the Relationships agent — see config/agents/relationships.md.
+#
+# Gmail needs TWO things, and the second is the one people miss:
+#   1. An app-specific password (Google Account → Security → App passwords).
+#      Requires 2-Step Verification to be on. The same app password works for
+#      CalDAV and IMAP, so the calendar's password can be reused — though a
+#      separate one is better hygiene, since it can be revoked independently.
+#   2. IMAP enabled: Gmail → Settings → Forwarding and POP/IMAP → Enable IMAP.
+#      A correct password with IMAP switched off fails at login and looks
+#      exactly like a wrong password.
+#
+# Other providers:
+#   iCloud   — imap.mail.me.com    (app-specific password required)
+#   Fastmail — imap.fastmail.com   (app password)
+#   Outlook  — outlook.office365.com
+
+enabled: false
+
+host: "imap.gmail.com"
+
+auth:
+  username: ""
+  # App-specific password — never the main account password.
+  password: ""
+
+# Mailbox read by default. Gmail exposes labels as folders, e.g. "[Gmail]/All Mail".
+default_folder: "INBOX"
+
+# How often the mailbox is worth re-reading, in minutes.
+#
+# THE DEFAULT FOR EVERY USER. This is design, not one person's preference — it belongs
+# here, where every persona inherits it, and not in any config/personas/{persona}/ file.
+# A persona may override it by setting this same key in its own email.yaml; absent that,
+# tools/mail.py falls back to the value below.
+#
+# WHAT IT DOES NOT DO: it does not schedule anything. No job fires `read_email` on a
+# timer and nothing polls the mailbox in the background. `read_email` returns this number
+# to the agent that called it, and config/agents/logistics.md treats it as the interval
+# below which re-reading is not worth another call. It is guidance shaping a tool call
+# the user already asked for, not automation.
+#
+# That distinction is deliberate and should survive any future edit here. An interval
+# that actually *fired* would be unrequested mail polling on a live user, and
+# `fire_function` in core/scheduler.py runs no gate stack at all — no quiet hours, no
+# activity gate (`[DB-0808-11]`) — so a scheduled version would push mail at 3am with
+# nothing to stop it. Config and its guard ship together, guard first: CLAUDE.md
+# § Deploy safety rule 2.
+#
+# 240 = four hours, so roughly four checks across a waking day. Raise it for a quiet
+# mailbox; lower it only if something genuinely time-critical arrives by email, since
+# every check costs an IMAP round trip plus the tokens to read what comes back.
+check_interval_minutes: 240

@@ -2,7 +2,12 @@
 tools/caldav.py — CalDAV calendar read/write.
 
 Uses raw requests + XML; does not require the caldav library.
-Config loaded from config/modules/caldav.yaml.
+Config loaded from config/personas/{persona}/caldav.yaml — per-persona and gitignored,
+resolved through persona_config_dir() below. **Not** config/modules/caldav.yaml, which
+nothing reads: that copy is gitignored, Mac-local, and has already drifted (it still
+documents the apidata.googleusercontent.com CalDAV endpoint that config/templates/caldav.yaml
+records as verified-broken on 2026-08-03 — it requires OAuth 2.0 and 401s on app passwords).
+New personas are provisioned from config/templates/caldav.yaml, which is the single home.
 
 Security note: all external calendar data is untrusted — the title, description and
 location of an invite are written by whoever sent it. `read_calendar` wraps its event
@@ -337,7 +342,7 @@ def write_calendar_event(
         return {
             "error": (
                 "No calendar_url configured. Set it "
-                "in config/modules/caldav.yaml."
+                "in this persona's caldav.yaml."
             )
         }
 
@@ -717,7 +722,7 @@ READ_CALENDAR_SCHEMA = {
     "description": (
         "Read calendar events between two dates from the user's CalDAV calendar. "
         "Returns a list of events with title, start, end, description, and location. "
-        "Requires CalDAV to be configured and enabled in config/modules/caldav.yaml."
+        "Requires CalDAV to be configured and enabled in this persona's caldav.yaml."
     ),
     "input_schema": {
         "type": "object",

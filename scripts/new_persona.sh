@@ -78,7 +78,7 @@ else
     created=$((created + 1))
 fi
 
-for f in profile.yaml scheduler.yaml caldav.yaml; do
+for f in profile.yaml scheduler.yaml caldav.yaml email.yaml; do
     if [[ -f "$CONFIG_DIR/$f" ]]; then
         echo "  exists   config/personas/$NAME/$f"
         skipped=$((skipped + 1))
