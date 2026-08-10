@@ -23,6 +23,56 @@ file is the only narrative record, alongside the verbatim transcripts.*
 
 ## Dated history
 
+### 2026-08-10 (The Book: thinking/output text capture, tool-call success/failure, plainspeak resource labels, whole-API-call failures) — `ffaf7a7`, **deployed**
+
+Mike flagged two gaps directly: (1) the Book wasn't showing thinking-token or output-token
+*text*, only counts — even after an earlier Book update; (2) tool calls in the Book (seq #011,
+2026-08-10) carried no success/failure signal, and raw tool names like `get_tfl_status` meant
+nothing without knowing the codebase.
+
+**Root cause for (1), found by tracing every provider loop in `core/orchestrator.py`:**
+`core/trace.py`'s `TurnRecord`/`ToolCallRecord` were designed to store token *counts* only —
+there was never a text field to write into, even where a provider's response text was sitting
+right there in `text_parts`/`result`. Two sub-findings sharpened this: the Anthropic loop
+(`run_session_anthropic`) never branched on `block.type == "thinking"` at all — extended
+thinking isn't currently requested, so this was latent, not yet lossy, but the block type was
+silently skipped rather than handled — and `run_session_ollama` was **actively discarding**
+`<think>...</think>` content that qwen3 emits despite `think=False`, rather than merely not
+counting it.
+
+**Fix, four files:**
+- `core/trace.py` — `TurnRecord` gained `output_text`/`thinking_text`; `ToolCallRecord` gained
+  `ok: bool`.
+- `core/orchestrator.py` — all eight `record_turn_tokens()` call sites, across every provider
+  loop (Anthropic streaming + non-streaming, OpenAI-compat loop + streaming, Gemini native +
+  grounded-search, Ollama), now pass the turn's actual text. `dispatch_tool()` now tracks and
+  records a structured `ok` flag instead of leaving failure detectable only by string-matching
+  the result for "Error".
+- `core/server.py` — new read-only `/monitor/model_errors` endpoint over
+  `data/diagnostics/model_errors.json`, added in a follow-up pass after the first commit/deploy,
+  because tool-call `ok` alone doesn't cover a whole-API-call exception (those are logged
+  separately by `core.router.log_model_error()` and never touched the trace).
+- `tools/metatron_monitor.py` — renders all of it: a "Thinking"/"Output text" Collapsible per
+  turn; a ✓/✗ marker plus a plainspeak resource label (`TfL API`, `Google Maps/Routes API`, `Web
+  Research`, `Calendar (CalDAV)`, `Local Metatron data`, etc.) on every tool call in both Column
+  2 and Column 3; and a `⚠ call failed` tag on the Column 1 exchange row. The exchange-level tag
+  correlates two different failure sources — tool-call `ok=False` anywhere in the pipeline
+  (including subagents), and whole-API-call failures matched by wall-clock window (`start_ts` →
+  `start_ts + duration_ms`, ±5s buffer) plus agent name, since `model_errors.json` entries carry
+  no trace/agent-record ID to join on directly.
+
+**Rejected/deferred:** live-refreshing `model_errors` on every SSE-pushed message, not just on
+full Load — the failures are rare enough that a stale-until-next-Load view was judged not worth
+a polling loop. Filed as `[DB-0810-07]` alongside the larger point: **none of this has been
+exercised against a real exchange yet** — only `py_compile` and a post-deploy service-health
+check ran. The Anthropic `thinking_text` path will also read as empty for every Anthropic-routed
+agent until extended thinking is actually turned on somewhere — expected, not a bug, but worth
+knowing before reading an empty Collapsible as broken.
+
+Deployed via `./deploy.sh` (`ffaf7a7`), VM confirmed at that commit, both services active.
+Pre-commit diff review found nothing outside this session's own edits — no parallel-window
+collision.
+
 ### 2026-08-10 (feature feasibility scan: photos, Google Drive, geolocation, agent backlog rollup) — docs/research only, no code, **nothing deployed**
 
 Pure scoping session, no implementation. Four passes, in order:

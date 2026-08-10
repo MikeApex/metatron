@@ -202,6 +202,16 @@ to pick from when a `Now` item is time-gated.
   exempt **only the term he typed, only in the next turn** — three call sites
   (`core/orchestrator.py` ~2506, ~2721, ~2768). Not a blanket flag: a probing question must not
   disable its own backstop. **Dev-session find; promote if it recurs.**
+- **[DB-0810-07] The Book's new thinking/output-text, tool-call ok flag, and `/monitor/model_errors`
+  fields (`ffaf7a7`, deployed 2026-08-10) haven't been checked against a real exchange yet** — only
+  `py_compile` and a service-health check ran. Also, the SSE live-update path (`_prepend_col1`)
+  reuses whatever `model_errors` list was loaded at the last full Load rather than re-fetching, so
+  an API failure that happens while watching live won't show a red tag until the next Load/refresh
+  — known and accepted at build time, not a bug to fix blind. Verify: trigger one exchange with a
+  successful tool call and one with a deliberately failing tool/model call, confirm the Book shows
+  the Output text collapsible, the ✓/✗ marker with resource label, and (for the API-failure case)
+  the `⚠ call failed` tag and API-errors block. *filed 2026-08-10 by dev session at close-out —
+  built and deployed, not yet exercised against live data*
 
 **Capability**
 - **[DB-0810-03]** **Tool allowlists are never audited against the instruction files, so an

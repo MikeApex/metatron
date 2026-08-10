@@ -1,21 +1,20 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-10, later still (feature feasibility scan, no code, nothing deployed) —
-aggregated the `## Enhancement backlog` from all 16 `config/agents/*.md` into one impact-ranked
-list, then scoped three prospective features: photo upload/logging, Google Drive read/write, and
-geolocation. **Geolocation is already tracked** — `[DB-0808-04]` names the exact gap; the
-sensitive-tier/local-only/coarsened classification is settled (2026-08-03), the continuous-signal
-mechanics are not designed. **Drive surfaced a warning worth carrying forward:** the near-identical
-OAuth build for Google Contacts (`tools/google_contacts.py`) shipped 2026-08-07 and was reversed
-the next day when "does this need a third party at all?" found a local fix instead — same question
-worth asking before Drive, and the same 7-day Testing-token / Production-review wall applies to
-any future Google OAuth scope. **Photos need a real orchestrator change, not just a new tool** —
-every message-building site in `_openai_compat_loop` forces `content` to a plain string; vision
-needs content-block support Vertex already accepts but the orchestrator doesn't send. Full
-per-feature breakdown and cost estimates: [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
+*Updated: 2026-08-10, later still (The Book: thinking/output text capture, tool-call
+success/failure, plainspeak resource labels, whole-API-call failures — `ffaf7a7`, deployed) —
+closed the gap the earlier-today thinking-token-breakout pass (`cb9f459`) left open: token
+*counts* were split out, but the actual thinking/output *text* was never captured anywhere —
+`core/trace.py`'s schema had no field for it, and `run_session_ollama` was **actively
+discarding** qwen3's `<think>` content rather than just not counting it. Fixed across every
+provider loop in `core/orchestrator.py`, plus a structured `ok` flag on tool calls (previously
+detectable only by string-matching "Error" in the result), plainspeak resource labels
+(`TfL API`, `Web Research`, etc.) in the Book, and a new `/monitor/model_errors` endpoint so
+whole-API-call failures — not just tool-call failures — get an exchange-level `⚠ call failed`
+tag. **Filed as `[DB-0810-07]`: none of it has been exercised against a real exchange yet**,
+only `py_compile` + a post-deploy health check. Full diagnosis and rejected options:
+`archive/PROJECT_LOG.md` § 2026-08-10.
 **Unchanged from earlier today:** `[DB-0804-01]`'s count is due **08-11 — tomorrow**; the IMAP
-half of tone profiling (`[DB-0810-05]`) is still unexercised, so the first live send should be a
-deliberate `refresh=true` on one contact, not an incidental draft.*
+half of tone profiling (`[DB-0810-05]`) is still unexercised.*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -114,13 +113,13 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-10 | **The Book: thinking/output text capture, tool-call success/failure, plainspeak resource labels, whole-API-call failures** — closes the gap the same-day token-breakout pass left open; text was never captured, only counts, and Ollama's `<think>` content was being discarded outright. New `/monitor/model_errors` endpoint. Filed `[DB-0810-07]`: unexercised against live data | `ffaf7a7` — deployed, VM verified |
 | 08-10 | **Feature feasibility scan** — agent-backlog rollup ranked by impact; photos (needs orchestrator content-block support), Google Drive (echoes the reversed Contacts OAuth build, same Testing/Production token wall), geolocation (already `[DB-0808-04]`, classification settled, mechanics not) | docs/research only, no code |
 | 08-10 | **`/archive` commits its own output** — step 5 added: explicit manifest, diff before staging, push for backup, **never deploy**, stop on foreign lines. Step 2 repointed at the top of `PROJECT_LOG.md`; primer compacted off its ceiling. `[DB-0805-05]` hit ×3 | `060f53a`…`3e1ae7b` (6) — docs only, **no deploy needed** |
 | 08-10 | **The Book: thinking-token breakout, ungrounded-answer flag** — split Vertex's reasoning tokens out of `output_tokens`; added a `grounded` flag after chat #007 was found answering with **zero tool calls** | `cb9f459` — deployed, VM verified |
 | 08-10 | **Outbound communication got one owner** — Relationships owns every message to a person; per-contact tone profiles built from real correspondence through a fixed JSON key set | `9eb5ac4`, `cae31df`, `88957e6` — deployed as a side effect of `cb9f459` |
 | 08-10 | **`/backlog deep`** — two items closed on premises that had stopped being true, two merged, and three specialists found instructed to use `search_memory` without holding it | `a96a3b3`, `a431472` — deployed, VM verified |
 | 08-10 | **research_agent grounded-search crash** — `getattr(gm, "grounding_chunks", [])` did not cover Gemini's None-valued attribute; broke every grounded query hitting that shape | `bc1a552` — deployed, VM verified |
-| 08-10 | **Sonnet cluster closed 9→2** — VAD tuned against all 108 retained audio files rather than disabled; a live WebSocket double-socket race found and filed as `[DB-0810-01]` | nine commits, all deployed |
 ---
 
 ## Useful context to pull as needed
