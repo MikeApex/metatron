@@ -1931,3 +1931,63 @@ runs when a session runs.
   was needed, so there was never a real collision with the deferred tone-pipeline work.
   *closed 2026-08-10 · evidence: `a08e38a` (pre-existing fix), verified live against `mike`
   on the VM, no code changed by this close*
+
+## Closed 2026-08-10 — catch-up render and hidden-tab liveness
+
+- **[DB-0809-06] The browser tab does not live-refresh on messages sent from elsewhere.**
+  Both diagnosed causes fixed in `f7cad05`, deployed and verified error-free on the VM.
+  **(a)** Catch-up gave its response a new `"catchup"` wire type instead of reusing
+  `"history"` — the client's `history` handler wipes and rebuilds from only what it's
+  given, correct for a fresh connection's full load, silently destructive for a delta.
+  Each catch-up row now runs through `applyCatchupRow()`, the same append-only,
+  dedup-on-`shownIds` path a live `message` broadcast already used (factored out so
+  neither duplicates the other's logic). Verified with a standalone re-implementation
+  against the exact row shape `_catchup_since` returns: a pre-existing exchange survives
+  a catch-up untouched, a proactive row shows no user turn, `lastSeenId` advances, and a
+  re-delivered catch-up does not duplicate.
+  **(b)** The 20s backstop interval was gated on `visibilityState === 'visible'`, so the
+  `STALE_AFTER_MS` staleness check never ran on a hidden tab — ungated it; this is the one
+  liveness path that has to run unconditionally.
+  Bundled into the same APK rebuilt for `[DB-0803-01]`/`[DB-0809-18]` — confirmed inside
+  the actual built binary (`applyCatchupRow`: 3 occurrences, `case 'catchup'`: 1).
+  *closed 2026-08-10 · evidence `f7cad05` deployed + rebuilt APK verified · sideload still
+  pending, tracked under `[DB-0805-02]`'s device dependency*
+
+## Closed 2026-08-10 — VAD truncation fixed; doubling fix confirmed in the rebuilt binary
+
+- **[DB-0803-01] Text doubling / input cut off mid-sentence in the app.** Both halves now
+  code-complete and deployed as far as this side can push.
+  **Half two (server-side truncation), fully closed:** `vad_filter=True` was dropping the
+  quiet tail of an utterance before Whisper decoded it. Tuned Silero's `threshold` (0.5→0.30)
+  and `speech_pad_ms` (400→1500) rather than disabling VAD — measured against all 108 files
+  retained in `data/audio/`: 98.07% avg recovered vs a VAD-off reference, 0 hallucination
+  markers, and the file that motivated this (`18-16-16.webm`) goes from 85.9% to a full
+  match. Deployed in `c2d5138`, verified live on the VM against the real `transcribe()` entry
+  point — the known failure string now appears correctly in the output.
+  **Half one (client-side doubling), fix was already deployed in `c4ff279`** — `evictOldest`
+  replaced `shownIds.clear()`. What was missing was the bundled APK asset, which drifted from
+  `static/index.html` (`[DB-0809-18]`). Rebuilt via `npx cap sync android` +
+  `./gradlew assembleDebug`; confirmed **inside the built binary itself**, not just the
+  intermediate assets folder — `evictOldest` present, `shownIds.clear()` absent.
+  **What remains is one shared human action, not three separate ones:** the rebuilt APK also
+  carries `[DB-0809-03]`'s `?persona=` fix and `[DB-0809-06]`'s catch-up/liveness fix, so a
+  single sideload verifies all three at once. Tracked under `[DB-0805-02]`, which already
+  exists to test the installed app — not re-opened here to avoid the same "needs sideload"
+  note sitting in three places.
+  *closed 2026-08-10 · evidence: `c2d5138` deployed + verified on VM; APK rebuilt and checked
+  against the actual binary; sideload dependency consolidated into `[DB-0805-02]`*
+
+## Closed 2026-08-10 — deploy-time APK-drift assertion
+
+- **[DB-0809-18] The APK-bundled index.html drifted from static/index.html silently.**
+  `scripts/check_apk_sync.sh`, modeled on `deploy.sh`'s HEAD assertion: extracts
+  `assets/public/index.html` from the **actual built APK** (not the intermediate
+  `android/app/src/main/assets/public/` copy step, which can be current while an
+  older, un-rebuilt APK sits in `outputs/` — the exact ambiguity this guards against)
+  and diffs it against `static/index.html`. Exits non-zero with the diff and a rebuild
+  command on mismatch; one clean line on match. Added as the last documented build
+  step in `docs/INFRASTRUCTURE.md` § Android app, after `assembleDebug`.
+  Tested against all three states: clean pass, injected drift caught with the correct
+  diff, clean again after revert.
+  *closed 2026-08-10 · evidence: `scripts/check_apk_sync.sh`, tested live against the
+  real APK built earlier this session*

@@ -238,6 +238,10 @@ cd ~/Desktop/multi-model-mcp
 npx cap sync android          # syncs web assets + plugins into the Android project
 cd android
 ./gradlew assembleDebug       # outputs APK to app/build/outputs/apk/debug/app-debug.apk
+cd ..
+./scripts/check_apk_sync.sh   # DB-0809-18: fails loudly if the built APK's bundled
+                               # index.html drifted from static/index.html — catches a
+                               # skipped sync or a stale, un-rebuilt APK before it ships
 ```
 
 **Sideload to phone:**

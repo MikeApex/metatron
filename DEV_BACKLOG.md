@@ -45,10 +45,17 @@ standing rule distrusts.*
   pipeline copies, and the protocol now requires the *user* to have repeated it. A ≤2-sentence cap
   was **rejected** — the real target is focus, with length as its symptom — so
   `config/agents/synthesizer.md` § Scheduled session conduct carries guidance instead.
-  **What is left: read a week of traces and judge whether the focus guidance holds**, and confirm
-  the first live check-in shows `SCHEDULER DIRECTIVE`. Do not re-word anything before then.
-  *filed 2026-08-09 · rewritten 2026-08-09 after measurement inverted it · full reasoning in
-  `archive/PROJECT_LOG.md`*
+  **Confirmed 2026-08-10: the first two live firings since deploy are clean.** Both
+  `companion_checkin` (07:20) and `morning_brief` (07:30) recorded `is_proactive: true` in
+  their trace, and — the decisive check — **zero quality events of any kind logged all
+  day**, meaning no `INSTRUCTION_CHANGE_REQUEST` fired, which is what the old bug produced
+  every time. (Traces don't retain raw prompt text, by design, so this is the strongest
+  check available without re-running something artificially.) Both responses also matched
+  the focus guidance's shape: one thing, a pending action referred to not recited, ends on
+  a real question. **What remains: read a week of traces** — one clean day is a good early
+  signal, not the week this item asked for. Do not re-word anything before then.
+  *filed 2026-08-09 · rewritten 2026-08-09 after measurement inverted it · **first live
+  firing confirmed clean 2026-08-10, day 1 of 7** · full reasoning in `archive/PROJECT_LOG.md`*
 
 - **2. [DB-0809-21] Two of four verification steps done and passed; two are genuinely time-gated,
   not yet observable.** Projected cost ~$0.08 (token-based estimate against `_run_single_agent`'s
@@ -74,28 +81,7 @@ standing rule distrusts.*
   *filed 2026-08-09 · **Mike deferred it explicitly** · **half done, half genuinely time-gated
   2026-08-10** — half the reason it can't move further today*
 
-- **3. [DB-0803-01] Text doubling / input cut off mid-sentence in the app.** Reported 2026-08-03
-  17:12Z; still live 2026-08-04 (SEQ 004). **Verified 2026-08-09 — it splits, and the doubling
-  half is already fixed in code.** Doubling is the same defect as the now-closed `[DB-0803-06]`,
-  fixed by `c4ff279` ([static/index.html:713-715](static/index.html#L713), call sites
-  [:952](static/index.html#L952)/[:979](static/index.html#L979)). **The fix is not on the phone** —
-  the bundled APK asset still has `shownIds.clear()` (`[DB-0809-18]`), so the gating step is a
-  rebuild and re-test, not code. **Half two is now diagnosed (2026-08-09) and is server-side, not
-  the app.** Ruled out the client: all five recordings from the report window end in silence with
-  terminal energy at 1–3% of their own mean, and the `SILENCE_MS = 2500` auto-stop waits out 2.5s of
-  quiet by construction, so it cannot cut mid-word. Cause is `vad_filter=True` at
-  [core/voice_pipeline.py:153](core/voice_pipeline.py#L153) — Silero drops the quiet tail before
-  Whisper decodes. `data/audio/2026-08-03/18-16-16.webm` is the clean case: VAD-on ends
-  *"...communicating"*, VAD-off continues *"...with what we put in."* Second effect, unexpected: VAD
-  also costs punctuation, turning that file into a run-on. **Do not simply set
-  `METATRON_WHISPER_VAD=0`** — [:53](core/voice_pipeline.py#L53) records why it is on (~7% faster,
-  suppresses the *"Thank you."* Whisper hallucinates on room tone). Tune Silero's `threshold` down
-  and `speech_pad_ms` up, and measure against the **12 days of retained audio on the VM**, which is
-  a regression corpus at zero API cost. Fix is mechanical from here.
-  *filed 2026-08-03 by Mike via Synthesizer · origin SEQ 012 · **verified 2026-08-09; half two
-  diagnosed 2026-08-09***
-
-- **4. [DB-0805-02] Email approval prompt does not render in the app.** Two reports 2026-08-04
+- **3. [DB-0805-02] Email approval prompt does not render in the app.** Two reports 2026-08-04
   (12:42Z, 12:49Z). **Verified 2026-08-09 — premise drifted, the UI now exists:** `#confirm-bar`
   at [static/index.html:470-477](static/index.html#L470) (handlers
   [:1367-1384](static/index.html#L1367)) against `/pending-confirmations` and `POST /confirm`
@@ -103,28 +89,14 @@ standing rule distrusts.*
   before the first report** — and present in the bundled APK asset too. So this is a stale install
   or a runtime failure of code that exists: **live repro on a rebuilt APK is the next step, not a
   build.** Ranked high because until approval works on the phone, every gated outward action is
-  unusable.
-  *filed 2026-08-04 by Mike via Synthesizer · origin SEQ 016/017 · **verified 2026-08-09***
-
-- **5. [DB-0809-06] The browser tab does not live-refresh on messages sent from elsewhere.** A
-  message from the terminal or the Android app appears only after a manual reload; app and
-  terminal sync fine. Transport is ruled out by the entry's own diagnosis — this is a
-  client-side render path — **confirmed 2026-08-09, with two code-provable causes found:**
-  **(a) catch-up wipes the transcript.** `core/server.py:675` answers a `catchup` request with
-  `{type: "history", messages: <delta only>}`, and `renderHistory()` opens by clearing the
-  conversation (`static/index.html:942`). So any reconnect that missed anything replaces the
-  visible history with just the delta; a manual reload restores it because a fresh load sends no
-  catch-up. Fix: give catch-up its own type and route each row through the existing `case
-  'message'` handler, which already dedupes on `shownIds` and advances `lastSeenId`.
-  **(b) a hidden tab never checks its own socket.** Both liveness paths — the
-  `visibilitychange` handler (`:818`) and the 20s backstop (`:826`) — are gated on
-  `visibilityState === 'visible'`, so a background tab never runs the `STALE_AFTER_MS` detector
-  that exists precisely for sockets whose `onclose` never fires. Fix: one ungated interval.
-  Both end at "appears only after a manual reload", which is why the symptom was ambiguous.
-  (a) is a protocol change, so it needs the APK rebuild — `[DB-0809-18]` is upstream.
-  *filed 2026-08-01/02 from conversation — the only `## Now` item whose provenance line does not
-  name its reporter; treat "Mike raised it" as likely but unconfirmed · **diagnosed 2026-08-09**,
-  both causes located; the fixes are small and mechanical*
+  unusable. **The rebuild happened 2026-08-10** (`npx cap sync android` + `assembleDebug`,
+  confirmed against the actual built binary) as part of closing `[DB-0803-01]`/`[DB-0809-06]`, so
+  this one APK now needs sideloading to verify all three at once: this item's confirm-bar repro,
+  `[DB-0803-01]`'s doubling fix, and `[DB-0809-06]`'s catch-up/liveness fix. Served locally at
+  `http://100.70.67.45:8888/android/app/build/outputs/apk/debug/app-debug.apk` — device needs to
+  be on Tailscale and browse to that URL, "install from unknown sources" allowed for the browser.
+  *filed 2026-08-04 by Mike via Synthesizer · origin SEQ 016/017 · **verified 2026-08-09; APK
+  rebuilt and served 2026-08-10, sideload is the only remaining step***
 
 ## Later
 
@@ -220,13 +192,6 @@ Real, not prioritised. One or two lines each — detail lives in the code, the l
   `2025-01-24`, `2025-05-13/14/15/16`, `2025-07-20/21/25`, `2025-08-02`. The `2026-06-*` and
   `2026-07-*` files are legitimate history, so a raw "23 of 32 are not 2026-08" count misleads.
   Fix is a dated-filename guard at the write site, then move the 9 aside — not a bulk delete.
-- **[DB-0809-18]** The APK-bundled `android/app/src/main/assets/public/index.html` drifts from
-  `static/index.html` silently and nothing checks. Found 2026-08-09 while verifying
-  `[DB-0803-01]`: 3 diffs today — the `evictOldest` fix, and `/transcribe` missing its
-  `?persona=` param, so the phone transcribes without naming a persona. Small now, but it makes
-  every app-side bug report ambiguous about whether the shipped code was under test. Cheap fix: a
-  deploy-time assertion that the two files match, on `deploy.sh`'s HEAD-assertion model
-  (`[DB-0809-11]`). *filed 2026-08-09 by dev session*
 - **[DB-0809-11]** Docs record values the system changes underneath them and nothing checks.
   Mitigation in force (don't write down short-half-life values); the stronger fix is a smoke
   script running CLAUDE.md's executable claims. `deploy.sh`'s HEAD assertion is the model.
