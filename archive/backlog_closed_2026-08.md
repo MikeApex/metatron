@@ -19,6 +19,35 @@ sitting inside the Open sections. Reasoning: `archive/PROJECT_LOG.md` § 2026-08
 
 ---
 
+## Closed 2026-08-10 — Research provenance
+
+- ~~**[DB-0810-08] Research Agent fabricates its sources, and the Book cannot see it.**~~ —
+  **closed, all three phases built, deployed and verified live** (`a36d8c2`, `e3904fd`,
+  `6cb077b`, `924a66e`, `a3b43c5`).
+  - **Config:** all five `SOURCES:` mandates removed from `research_agent.md` — the plan named
+    four, line 62 carried a fifth that would have kept the fabrication path fully open.
+    `synthesizer.md` now reads the provenance line; `coordinator.md` carries the general
+    Logistics/Research boundary alongside the flights/TfL example.
+  - **Python-authored provenance:** `_strip_model_sources()` removes any model-written block
+    before `run_session_gemini_grounded` appends its own — `SOURCES (N retrieved): <urls>` or
+    `[RETRIEVAL: NONE]` — generated from what the SDK reports. `web_search_queries` harvested
+    per turn.
+  - **`trace.py:289` fixed**, but *not* as the plan specified. `grounded` is now
+    `bool(retrieved_sources)`, per-agent and tri-state. The plan's
+    `sources or web_search_queries` was disproved by a live run: 6 searches, 0 sources scored
+    *grounded* while the same response said `[RETRIEVAL: NONE]`. A `has_tool_calls()` fallback
+    was also rejected — an agent calling `write_log` is active, not grounded.
+  - **Guard:** `scripts/check_agent_tools.py` reports four classes against `register_tools()`.
+    Acceptance test per the plan: flags `web_search` against the pre-fix file (exit 1), clean
+    after (exit 0). A `PostToolUse` hook runs it automatically on agent/routing edits.
+  - **Bundled** the `tools/flights.py` `delayed`-means-*later-than* fix, as instructed.
+  - **Verified live:** mile-record query → 2 queries, 5 sources, one code-authored provenance
+    line, zero stray blocks. Obscure query → `[RETRIEVAL: NONE]`, no invented citations.
+  - *Does not close A7 check 10* — the 12-specialist audit is still unrun; the Fail known in
+    advance is gone. Reasoning: `PROJECT_LOG.md` § 2026-08-10.
+
+---
+
 ## Closed 2026-08-09 — by the workflow revamp itself
 
 *Docs and scripts only; nothing deployed. Reasoning:

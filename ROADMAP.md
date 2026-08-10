@@ -156,14 +156,21 @@ Full item in the static plan.*
 > never been run on the Flash-Lite path that serves most of this traffic). Full reasoning:
 > `archive/PROJECT_LOG.md` § 2026-08-09.
 
-> **⚠ Check 10 has a known Fail waiting for it: `research_agent` fabricates its sources**
-> (found 2026-08-10, exchanges 008/014). `web_search` does not exist in the codebase yet
-> `research_agent.md` names it four times while line 80 makes a `SOURCES:` field mandatory — so
-> the agent invents citations, and asserted live retrieval most confidently when the user
-> challenged it. Check 10 requires no Fails, so this must be fixed before the audit is run, not
-> discovered during it. Fix planned in
-> `archive/plans/research_provenance_handoff_2026-08-10.md`; reasoning in
-> `archive/PROJECT_LOG.md` § 2026-08-10.
+> **✅ Check 10's known Fail is fixed — 2026-08-10, `a36d8c2`/`e3904fd`, deployed and verified
+> live.** `research_agent` fabricated its sources (exchanges 008/014): `web_search` did not
+> exist yet was named four times while line 80 made a `SOURCES:` field mandatory, so the agent
+> invented citations and asserted live retrieval most confidently when challenged. Provenance is
+> now authored in Python from what the SDK reports and the model is stripped if it writes its
+> own; `research_agent.md` no longer asks for sources at all. Verified live: a grounded query
+> returns `SOURCES (5 retrieved)` with real URLs and no model-authored block; an ungroundable
+> one returns `[RETRIEVAL: NONE]` with no invented citations.
+>
+> **This does not itself close check 10** — the 12-specialist behavioural audit has still not
+> been run. What changed is that the one Fail known in advance is no longer waiting for it.
+> New guard against the whole class: `scripts/check_agent_tools.py` plus a `PostToolUse` hook
+> (`6cb077b`, `a3b43c5`). Run it before the audit — it found a second live instance the same
+> day (`get_weather` granted to `logistics`, documented only on `research_agent`, `924a66e`).
+> Reasoning: `archive/PROJECT_LOG.md` § 2026-08-10.
 
 **Pre-sign-off gate — prefix caching regression (2026-06-19): ✅ CLEARED ON THE CLOUD PATH 2026-08-04.** The `_run_single_agent()` system prompt restructure (prefix caching change) moved dynamic context from the system prompt into the user message turn, changing the system prompt assembly order for every agent. The A4 clinical-flag hard-fail scenarios were re-run against the updated order on 2026-08-04 and **passed 6/6** — report at `tests/a4_safety_rerun_2026-08-04_gemini.md`, runner at `tests/run_a4_safety.py` (the suites are now scripted; A8's regression gate below calls the same runner rather than the manual A4 procedure).
 

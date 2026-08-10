@@ -20,6 +20,15 @@ or `file:line` that closed them — closed without evidence is not closed.
 *Machine-written from what Mike said on the VM. Do not hand-edit — triage entries out into
 `## Now` or `## Later`, rewritten properly, and delete them from here.*
 
+- **[needs building]** Fix email dispatch silent failure: system confirms send to the user but the message does not reach the user's provider. Investigate why the tool is returning success without actual handoff.  
+  `2026-08-10T17:10:55.511151Z`
+
+- **[needs building]** Add multi-language support (English and Bulgarian) for voice transcription, or a UI setting to toggle between them. Current dictation forces English phonetic spelling on Bulgarian phrases.  
+  `2026-08-10T16:43:28.455756Z`
+
+- **[needs building]** Create a global default setting variable for mailbox check frequency to apply across all users.  ×2  
+  `2026-08-10T15:51:17.112387Z`
+
 - **[needs building]** User asked to look in CRM and get a total contact count. Needs an integration with their external CRM system.  
   `2026-08-10T11:19:18.354306Z`
 
@@ -39,27 +48,7 @@ re-ranked later that day when three closed and `[DB-0809-21]` entered at 3. Ever
 was checked and when; a verdict without that line is a description, and descriptions are what the
 standing rule distrusts.*
 
-- **1. [DB-0810-08] Research Agent fabricates its sources, and the Book cannot see it.**
-  `web_search` **does not exist anywhere in the codebase** (zero hits in `core/`, `tools/`), yet
-  `config/agents/research_agent.md` names it four times and line 80 makes a `SOURCES:` field
-  mandatory on every response. Research's real web access is Vertex-native grounding
-  (`orchestrator.py:2048`), which is not a tool and produces no tool calls. An agent required to
-  cite, with nothing to cite and no tool to call, invents — in exchange 014 it emitted
-  `SOURCES: Trip.com, Flightradar24, Aviability` on a turn with zero tool calls, then escalated to
-  *"(via live web search)"* when Mike asked directly whether it had retrieved anything live.
-  `orchestrator.py:2145-2149` appends the honest `SOURCES: training knowledge` *below* the
-  fabricated block, so Synthesizer sees two contradictory claims and believes the specific one.
-  **The Book's detector cannot catch this:** `trace.py:289` computes `grounded` as
-  `any(a.has_tool_calls())`, and grounded search makes zero tool calls by construction — so a
-  genuine and a fabricated Research answer both read `false`. **Blocks A7 check 10**, which
-  requires no Fails. Fix is scoped in three phases (config → Python-authored provenance → a
-  `check_agent_tools.py` guard so a nonexistent tool cannot sit in a live agent file again):
-  `archive/plans/research_provenance_handoff_2026-08-10.md`. **Bundle the uncommitted
-  `tools/flights.py` `delayed`-means-*changed* fix into that deploy.**
-  *filed 2026-08-10 by Mike via `/metatron-troubleshoot` on seq 011 · ranked 1 by Mike ·
-  reasoning in `archive/PROJECT_LOG.md` § 2026-08-10*
-
-- **2. [DB-0809-02] Do proactive sessions actually stay focused? — the mechanism half is fixed
+- **1. [DB-0809-02] Do proactive sessions actually stay focused? — the mechanism half is fixed
   and deployed; the guidance half is unproven.** **The original premise was wrong.** All 22 August
   `companion_checkin` openings were 1–2 sentences: the rule was obeyed, and four of the five
   "restatements" were the Synthesizer reading its *own* scheduler prompt as Mike's voice and firing
@@ -80,7 +69,7 @@ standing rule distrusts.*
   *filed 2026-08-09 · rewritten 2026-08-09 after measurement inverted it · **first live
   firing confirmed clean 2026-08-10, day 1 of 7** · full reasoning in `archive/PROJECT_LOG.md`*
 
-- **3. [DB-0809-21] Two of four verification steps done and passed; two are genuinely time-gated,
+- **2. [DB-0809-21] Two of four verification steps done and passed; two are genuinely time-gated,
   not yet observable.** Projected cost ~$0.08 (token-based estimate against `_run_single_agent`'s
   actual single-agent shape, not the blended $8.44/50-session historical average, which is
   dominated by B1's full-pipeline scenarios and would have overstated this run) — under the $1.00
@@ -108,7 +97,7 @@ standing rule distrusts.*
   `archive/PROJECT_LOG.md`, which already recorded it — corrected by the 08-10 `/backlog deep`
   sweep. One check left, genuinely time-gated on a real unreferenced calendar event arising*
 
-- **4. [DB-0810-05] The tone-profile pipeline has never touched a real mailbox.** Built and
+- **3. [DB-0810-05] The tone-profile pipeline has never touched a real mailbox.** Built and
   committed `88957e6`; **every test used stubs.** The distillation half is well covered — a hostile
   fixture confirmed unknown keys dropped, values truncated, lists capped, injection caught and the
   write refused, plus five `_extract` paths (single-direction refusal, thin-sample skip, injection
@@ -244,12 +233,20 @@ to pick from when a `Now` item is time-gated.
   in `routing*.yaml` are demand-driven, not audited — each carries a comment citing one observed
   denial, and nobody ever swept the instruction files against the allowlists. Denials so far:
   `relationships` 08-10T06:30, `finance` 08-05T15:21 — both now granted.
-  **Still open:** *(a)* `recreation_hobbies` has never been denied it, so granting it would be the
-  file's first speculative grant — it waits for a real denial. *(b)* **The systemic half — nothing
-  sweeps `config/agents/*.md` against `allowed_tools`**, so the next gap surfaces the same way,
-  only when a user hits it. A one-off script comparing the two would have found all three.
-  *filed 2026-08-10 by the machine-log sweep · **partly closed the same day** (`a96a3b3`); the
-  audit gap is the part that survives*
+  ~~*(b)* **The systemic half — nothing sweeps `config/agents/*.md` against `allowed_tools`.**~~
+  **Closed 2026-08-10** — `scripts/check_agent_tools.py` (`6cb077b`) plus a `PostToolUse` hook
+  that runs it on every agent-file and routing-grant edit (`a3b43c5`). It found a live instance
+  within a day: `get_weather` granted to `logistics` but documented only on `research_agent`
+  (`924a66e`). Deliberately **not** wired to the quality-event stream — 70 fleet-wide findings
+  as machine events would bury the Inbox (Mike's call).
+  **Still open:** *(a)* `recreation_hobbies` has never been denied `search_memory`, so granting it
+  would be the file's first speculative grant — it waits for a real denial. *(c)* **The sweep's
+  backlog is unreviewed:** 35 named-but-not-granted and 35 granted-but-undocumented across the
+  fleet, including `logistics.md:179` naming `write_journal` without holding it. Each needs a
+  build/grant/defer decision. Worth a `/backlog` pass before A7 check 10, since check 10 requires
+  no Fails and these are the same class as the Fail it just cleared.
+  *filed 2026-08-10 by the machine-log sweep · **(b) closed 2026-08-10**, (c) added the same day
+  from the guard's first full run*
 - **[DB-0806-02]** Level 3 web access. Split into rendered-read (`fetch_rendered`, Playwright,
   read-only — recommended, same trust boundary as `fetch_url`; check VM memory first) and
   interactive click/type/submit, which stays gated on a credential store that does not exist.

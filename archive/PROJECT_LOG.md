@@ -23,6 +23,75 @@ file is the only narrative record, alongside the verbatim transcripts.*
 
 ## Dated history
 
+### 2026-08-10 (Research provenance authored by Python; the agent-tool guard; weather returned to Logistics) — `a36d8c2`…`a3b43c5`, **deployed**
+
+Executed `archive/plans/research_provenance_handoff_2026-08-10.md` phases 1–3. Incoming state:
+routing fixed and verified at seq 016, but Research still fabricated its sources — `web_search`
+named four times in a file where nothing of that name exists, with a mandatory `SOURCES:` rule
+attached, so the model invented citations and did so most confidently when challenged.
+
+**Provenance now has exactly one author.** `run_session_gemini_grounded` strips any
+model-written `SOURCES:`/`CITATIONS:`/`REFERENCES:` block before appending its own, generated
+from what the SDK reports: `SOURCES (N retrieved): <urls>` or `[RETRIEVAL: NONE]`.
+`web_search_queries` is harvested per turn — the only direct evidence retrieval happened, since
+grounded search fires server-side and produces no tool calls. Instruction files no longer ask
+for sources at all; the Python is the enforcement, the instruction merely agrees with it.
+
+**Three things the plan got wrong, all caught by running it rather than reading it.**
+
+1. **The `grounded` formula.** The plan specified `sources or web_search_queries`. Live, an
+   obscure query issued 6 searches and retrieved 0 sources — scoring *grounded* while its own
+   response said `[RETRIEVAL: NONE]`. Two provenance signals contradicting each other about one
+   answer is the disease, not the cure. `is_grounded()` is now `bool(retrieved_sources)`, the
+   same predicate the text keys off, so they cannot disagree. Searching and finding nothing is
+   the *more* dangerous shape: the model judged the question to need checking and answered
+   anyway. Also rejected: a `has_tool_calls()` fallback, which would have rebuilt finding 5's
+   false signal one level down — an agent calling `write_log` is active, not grounded.
+2. **The strip regex matched the bare word**, so an answer with a paragraph opening "Sources
+   disagree on this" would have been truncated and the rest silently discarded. Now requires a
+   colon or a bare heading line. Losing a good answer to catch a bad citation is the wrong trade.
+3. **The plan's four `web_search` references were all bare prose**, so the guard's first
+   paren-anchored pattern missed the one defect it exists to catch. Its own acceptance test
+   caught it.
+
+**`scripts/check_agent_tools.py`** (`6cb077b`) reports four classes against `register_tools()`,
+called rather than parsed. Framing was corrected mid-build on Mike's instruction and matters
+more than the code: **agent files are a specification written ahead of the tools**, so an
+unbuilt tool is the design record — build it, grant it, or mark it deferred, with deleting the
+line as the last resort. What went wrong with `web_search` was never the aspiration; it was an
+aspiration sitting in live instruction text where the model could not tell plan from
+capability. An ungated first version reported 34 parameter names beside 1 real finding — the
+ratio that teaches a reader to skip the report, so class 1 now requires positive evidence (call
+paren, leading bullet, or invocation verb; never a following colon). 34 → 4.
+
+**Weather** (`924a66e`). An audit of 10 days of agent-file commits, run at Mike's request,
+found one real loss: `logistics` had held `get_weather` in both routing files since 2026-08-03
+while `logistics.md` stopped mentioning weather **in the same commit**, and `research_agent.md`
+documented it in full while granted neither. Grant and documentation on opposite agents for a
+week; a live tool that silently does nothing, because nothing errors. It is a real API pair
+(wttr.in + Open-Meteo for `days_since_rain`), not model knowledge — which settles ownership:
+weather is a live feed about the state of the user's world, and an input to what Logistics
+already owns. Docs restored to `logistics.md`, `get_environmental_snapshot` granted (it was
+registered, working and granted to **nobody**), both bullets dropped from `research_agent.md`.
+
+**The guard now runs itself** (`a3b43c5`) — a `PostToolUse` hook on agent files and routing
+grants. A rule you have to remember is not a control: the `get_weather` split happened inside a
+single commit and survived a week because nothing re-checked the halves against each other.
+Scoped deliberately — a routing edit reads the uncommitted diff and reports only the agents
+whose block moved, because the unscoped version emitted 37 findings per grant edit. **Rejected:
+wiring it into the quality-event stream / `DEV_BACKLOG.md`** (Mike's call) — 70 findings
+arriving as machine events would bury the Inbox and train the reader to ignore the sync line,
+the exact failure `rule_audit.py` exists to prevent. Also found: `.claude/*` was gitignored, so
+the hook would have lived on one machine only; `settings.json` joins the slash-command
+exception, since enforcement that is not committed is not enforcement.
+
+Live verification: mile-record query → 2 queries, 5 sources, one code-authored provenance line,
+zero stray blocks; obscure query → `[RETRIEVAL: NONE]`, no invented citations. Bundled the
+pending `tools/flights.py` fix (`delayed` means *later than* scheduled, not *different from*).
+`tools/metatron_monitor.py` is local-only and not deployed. A parallel session held
+uncommitted `static/index.html` throughout; every commit staged an explicit manifest and it was
+never touched.
+
 ### 2026-08-10 (Flight/transit queries routed to an agent with no travel feeds — and Research fabricating its sources) — `d0774f8`, **deployed**
 
 Opened as a `/metatron-troubleshoot` on seq 011, "`get_tfl_status` doesn't seem to be working."
