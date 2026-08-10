@@ -1,26 +1,17 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-10, later still (The Book: thinking-token breakout, ungrounded-answer flag) —
-`cb9f459`, **deployed, VM HEAD verified**. Mike asked why the Book showed input tokens but not
-output/thinking tokens, and why chat #007's tool calls weren't evident. Both turned out to have
-real causes, found by pulling `data/personas/mike/traces/2026-08-10.jsonl` from the VM rather than
-trusting the (stale, pre-07-29) local checkout: (1) Gemini/Vertex already return a separate
-thinking-token figure but it was folded into `output_tokens` before saving — now split in
-`core/trace.py`/`core/orchestrator.py` and rendered in the Book. (2) chat #007's flight/weather
-answers genuinely had **zero tool calls** — `research_agent` hit the `run_subagent` recursion guard
-(`tools/subagent.py:38-46`) and answered anyway; the Book was accurate, just not visible enough. Added
-a `grounded` flag + `⚠ no tool calls` tag so this is visible without SSHing in. One suspected
-`push_agent()` nesting pattern was checked and ruled out (guard-blocked, no fix needed) — does
-**not** clear `[DB-0810-02]`, a different still-open bug in the same pair, untouched this
-session. **Not filed:** whether flight/weather/transport need a real tool — a design question
-for Mike, not yet a backlog item. **Side effect worth flagging:**
-`./deploy.sh` for this change also carried the previously-undeployed outbound-messaging/tone-profile
-work (`9eb5ac4`, `88957e6`) since deploy pushes all of `main` — **`[DB-0810-05]`'s deploy
-prerequisite is now met**, which means `get_tone_shape` can now self-seed unattended on the first
-draft to any profile-less contact. The IMAP half is still entirely unexercised against a real
-mailbox — **the first live send should still be a deliberate `refresh=true` on one contact**,
-not an incidental first draft. `[DB-0804-01]`'s count is due **08-11 — tomorrow**. Full detail:
-[archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).*
+*Updated: 2026-08-10, latest (`/archive` now commits its own output) — `060f53a`, `b5600a8`,
+`bb1d9da`, **docs only, nothing deployed**. `/archive` is **five steps**: step 5 stages an
+explicit manifest, diffs each file first, and **never pushes or deploys**; a diff carrying lines
+the session did not write stops the commit rather than sweeping up a parallel window's work.
+`[DB-0805-05]` reached **×3** — it recurred during the session fixing the step that guards it, so
+step 5 is deliberately written to depend on it being unsolved. **Still live from earlier today:**
+The Book's thinking-token split and `⚠ no tool calls` flag are deployed and VM-verified
+(`cb9f459`); that deploy also carried the outbound-messaging/tone work, so **`[DB-0810-05]`'s
+deploy prerequisite is met** and `get_tone_shape` can self-seed unattended on a first draft — the
+IMAP half is still unexercised, so **the first live send should be a deliberate `refresh=true` on
+one contact**, not an incidental draft. `[DB-0804-01]`'s count is due **08-11 — tomorrow**. Full
+detail for all of it: [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -113,16 +104,18 @@ which command and when: [docs/WORKFLOW.md](docs/WORKFLOW.md); its three rules: `
 
 ## Recent sessions
 
-Newest first. Full detail for every entry — and everything older — is in
-[archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
+Newest first, **one line each** — this is an index, not a summary. Reasoning, rejected options
+and corrections live in [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md); a row that starts
+restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
-| 08-10 | **The Book: thinking-token breakout, ungrounded-answer flag** — split Gemini/Vertex's already-returned reasoning-token figure out of `output_tokens` (was folded in before saving) and rendered it in the Book. Real finding from pulling the live VM trace for chat #007: flight/weather answers had **zero tool calls** — `research_agent` hit the `run_subagent` recursion guard and answered anyway; added a `grounded` flag + UI tag so this is visible without SSHing in. Ruled out one suspected subagent-nesting pattern (guard-blocked, no fix needed) — does not clear `[DB-0810-02]`, a different still-open bug in the same `push_agent`/`pop_agent` pair, untouched this session. This deploy also carried the previously-pending outbound-messaging/tone work, clearing `[DB-0810-05]`'s deploy prerequisite | `cb9f459` — deployed, VM verified |
-| 08-10 | **Outbound communication got one owner; per-contact tone profiles built** — the design question ("a public-facing comms agent, or the existing suite?") reversed twice, both times on code rather than reasoning. Final: **Relationships owns every message to a person**, because `_known_recipients()` already limits every recipient to a saved CRM contact — sending was always a person-graph operation. The old split had Relationships generating all outreach with no send tool and Logistics holding `send_email` with no way to resolve a name; `_resolve_attendees()` had already patched around that seam in Python. **Rejected a dedicated Comms agent** — it would still need the CRM, recreating the boundary one step over. `send_email` gained `disclosure_note`, kept **out of `args`** so a forgotten note on the retry cannot fail the send. Tone profiles distil real correspondence through a **fixed JSON key set reassembled in Python** — the trust-laundering defence, since the source is attacker-writable mail and the destination is read back as trusted prompt text. **Two corrections:** I called `[DB-0805-02]` a blocker on its title alone when SESSION.md already had it verified-stale; and the comms baseline was headed for the persona template until the pre-edit check caught `CLAUDE.md` § *Two kinds of preference*. **Plan deviation:** skipped the specified `_SUBAGENT_DEPTH=99` — `run_session()` never reads it and `os.environ` is process-global, so it would race concurrent sessions; the empty tool grant is the real control | `9eb5ac4`, `cae31df`, `88957e6` — **not deployed**, gated on `[DB-0810-05]` |
-| 08-10 | **`/backlog deep` — two items closed on premises that had stopped being true, a live grant gap shipped** — `[DB-0809-15]` closed stale: the confirm-gate wiring it asked for already existed (`config_writer.py:43`, `agent_config.py:76`), and the surviving question was already open as `[DB-0805-01]` — **the same question filed twice, once falsely**. `[DB-0809-19]` closed by re-running B1's `DEPUTY-STRUCT` standalone (no model call): PASS after `82d394b`. `[DB-0809-21]` corrected 2-of-4 → **3 of 4** — its `companion_checkin` check had passed that morning and only the entry lagged. Merged `[DB-0807-02]`→`[DB-0808-04]`, `[DB-0809-17]`→`[DB-0805-05]`. Machine log exposed **3 specialists instructed to use `search_memory` holding none of it**; granted `relationships`+`finance` with denials cited, **`recreation_hobbies` withheld** — never denied it, so it would be the file's first speculative grant. Filed `[DB-0810-03]`, `[DB-0810-04]` (`/archive` has no commit step). **Two windows in one tree both diagnosed the same crash independently** → `[DB-0805-05]` at 2 occurrences | `a96a3b3`, `a431472` — deployed, VM verified |
-| 08-10 | **`/metatron-troubleshoot` seq 005 — research_agent grounded-search crash found and fixed** — `getattr(gm, "grounding_chunks", [])`'s default only covers a missing attribute, not Gemini's None-valued one; broke TfL/weather/pollen and every other grounded query hitting that response shape, both direct dispatch and Synthesizer's `run_subagent` retries. Reproduced on the VM before and after the fix. Also noted (not fixed): `core/trace.py`'s `pop_agent()` doesn't restore the prior thread-local `current_agent`, so nested `run_subagent` tool-call records can misattribute to the child agent in The Book | `bc1a552` — deployed, VM verified, no crash loop |
-| 08-10 | **Sonnet cluster closed 9→2; a live WebSocket race found, corrected once, filed** — `[DB-0803-01]` half two fixed by tuning Silero's VAD against all 108 retained audio files (98.07% avg recovered, 0 hallucination markers) rather than disabling it. `[DB-0809-03]` closed with no build — its citation was wrong; the real fix shipped 2026-08-05. `[DB-0809-06]` fixed both causes (catch-up wiped the transcript on reconnect; hidden tabs never checked liveness). `[DB-0808-18]`'s key rotation reached three systems, not one — caught a regression before it shipped (deleting the old `~/.zshrc` export would have broken `ask_gpt` globally). `[DB-0805-02]` closed live against a real phone. **The correction:** doubled text looked install-specific until it recurred 12 minutes later with no install involved — real cause is `ws.close()` not synchronously closing, leaving two sockets briefly live during a reconnect; filed as `[DB-0810-01]`, not fixed, since the two real defenses are a genuine design choice | nine commits, all deployed and verified against the VM + a real phone session |
+| 08-10 | **`/archive` commits its own output** — step 5 added: explicit manifest, diff before staging, no push, no deploy, stop on foreign lines. Step 2 repointed at the top of `PROJECT_LOG.md`. `[DB-0805-05]` hit ×3 | `060f53a`, `b5600a8`, `bb1d9da` — docs only, **no deploy needed** |
+| 08-10 | **The Book: thinking-token breakout, ungrounded-answer flag** — split Vertex's reasoning tokens out of `output_tokens`; added a `grounded` flag after chat #007 was found answering with **zero tool calls** | `cb9f459` — deployed, VM verified |
+| 08-10 | **Outbound communication got one owner** — Relationships owns every message to a person; per-contact tone profiles built from real correspondence through a fixed JSON key set | `9eb5ac4`, `cae31df`, `88957e6` — deployed as a side effect of `cb9f459` |
+| 08-10 | **`/backlog deep`** — two items closed on premises that had stopped being true, two merged, and three specialists found instructed to use `search_memory` without holding it | `a96a3b3`, `a431472` — deployed, VM verified |
+| 08-10 | **research_agent grounded-search crash** — `getattr(gm, "grounding_chunks", [])` did not cover Gemini's None-valued attribute; broke every grounded query hitting that shape | `bc1a552` — deployed, VM verified |
+| 08-10 | **Sonnet cluster closed 9→2** — VAD tuned against all 108 retained audio files rather than disabled; a live WebSocket double-socket race found and filed as `[DB-0810-01]` | nine commits, all deployed |
 ---
 
 ## Useful context to pull as needed
