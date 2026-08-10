@@ -105,9 +105,10 @@ standing rule distrusts.*
   3. **Batched `BODY.PEEK[]` parsing** in `_fetch_bodies()` — chunks of 50, tuple-shaped responses.
      Most likely single point of failure; a malformed chunk is skipped silently by design, so a
      partial parse would look like a thin mailbox rather than a bug.
-  **Requires a deploy first** — `email.yaml` is VM-only and gitignored, so this cannot be run from
-  the Mac at all. **Do not let the first run be the automatic one.** `get_tone_shape` self-seeds on
-  first draft to any contact lacking a profile; the first execution should instead be a deliberate
+  **Deploy prerequisite now met** — `cb9f459` (2026-08-10, unrelated Book work) carried this
+  commit to the VM as a side effect of pushing `main`; `88957e6` is live. **Do not let the first
+  run be the automatic one** — `get_tone_shape` self-seeds on first draft to any contact lacking
+  a profile, and it can now fire unattended. The first execution should instead be a deliberate
   `refresh=true` against one long-history contact, on the VM, with the result read before anything
   is trusted. **Pass:** `sent_folder_found: true`, both `counts.written_by_user` and
   `counts.received` non-zero, and a `tone_shape` that a human recognises as accurate about that

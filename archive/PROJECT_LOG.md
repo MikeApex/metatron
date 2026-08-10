@@ -21,6 +21,72 @@ file is the only narrative record, alongside the verbatim transcripts.*
 
 ---
 
+### 2026-08-10, later still (The Book: thinking-token breakout, ungrounded-answer flag) — `cb9f459`, deployed
+
+Mike asked for two things about the Book (`tools/metatron_monitor.py`): show output tokens
+(thinking + proper output separately), and check why chat #007 (Aug 10) didn't seem to show
+tool calls it apparently used. Read-only exploration first (an Explore agent, then direct
+inspection of `core/trace.py` and `core/orchestrator.py`) found the display code for
+input/output tokens and tool calls already existed and worked — so both symptoms needed a real
+diagnosis, not a display fix assumed from the description.
+
+**Thinking tokens:** Gemini and Vertex (OpenAI-compat) calls already return a separate
+reasoning/thinking-token figure (`_thinking_tokens_gemini`, `_reasoning_tokens_openai` in
+`core/orchestrator.py`), but it was summed into `output_tokens` before being saved —
+`core/trace.py` had no field to hold the split. Added `thinking_tokens` to `TurnRecord`,
+threaded it through `record_turn_tokens()` and all 5 Gemini/Vertex call sites, and rendered it
+in the Book wherever tokens already show (`1,440 out (320 thinking)`). Anthropic calls don't
+request extended thinking at all — declined to add that (Mike's call, asked directly), so
+nothing to show there. **Caught in review, not in the plan:** `record_turn_tokens()` also feeds
+`spend_guard.record_tokens()` for cost tracking — thinking tokens are billed as output tokens by
+every provider that reports them, so splitting the *display* figure without also passing
+`output_tokens + thinking_tokens` to spend_guard would have silently undercounted real spend.
+Fixed in the same edit, not caught by the plan review.
+
+**Tool-call visibility — the real finding:** rather than trust the local checkout (which only
+had trace data through 07-29), pulled `data/personas/mike/traces/2026-08-10.jsonl` from the VM
+directly to inspect chat #007. `read_profile`/`search_memory` calls for the CRM/transit query
+(idx 17) were captured and rendered correctly — no bug. But the flight-status (BA844) and
+weather/transport queries in the same session (idx 9, 15) showed **zero tool calls on every
+turn** — `research_agent` tried to delegate further via `run_subagent` and was hard-blocked by
+the recursion guard in `tools/subagent.py:38-46` ("Only the Coordinator may spawn subagents"),
+then answered anyway, e.g. asserting a specific Heathrow departure window with nothing behind
+it. The Book was reporting the truth; it just wasn't visible enough to catch without SSHing in.
+**Also ruled out one suspected structural bug, but not the whole area** — initially misread two
+sibling `research_agent` subagent-of-subagent entries as evidence `push_agent()`'s "nest any
+depth>0 record under `pipeline[0]`" logic (`core/trace.py:161-165`) flattens real nesting.
+Re-checked against `tools/subagent.py`'s recursion guard: 2+-level *specialist-to-specialist*
+nesting is impossible in this codebase, so the two siblings were two independent
+Coordinator-initiated calls, not a flattened nested one — no fix made there. **This does not
+clear the area, though** — `[DB-0810-02]` (filed 08-10, still open) is a related but distinct,
+already-confirmed bug: a *synchronous, same-thread* `run_subagent` call (Synthesizer calling
+`research_agent` directly, not through the depth-guarded specialist path) leaves `pop_agent()`
+failing to restore the prior thread-local `current_agent`, misattributing the `run_subagent`
+tool-call record to the just-finished child instead of the caller. Neither this session's diff
+nor the ruled-out check touched `push_agent()`/`pop_agent()` — `[DB-0810-02]` is untouched and
+still accurately describes a real gap in the Book for that specific call pattern.
+
+Added a `grounded` flag to the serialized trace (`core/trace.py`: true if any turn anywhere in
+the pipeline fired a tool call) and a `⚠ no tool calls` tag in the Book wherever a conversation
+or agent's tokens already render — column 1, column 3, the chat-context snapshot, and the
+markdown export. Confirmed by direct schema smoke-test (wrote and inspected a synthetic trace
+record, then deleted it) before touching the display code.
+
+**Flagged, not fixed:** whether flight-status/weather/transport should have a real tool
+registered so `research_agent` doesn't fall back to guessing — an agent-capability gap, not a
+Book bug. Not filed to `DEV_BACKLOG.md` this session (bar is "user would notice or roadmap is
+blocked" — this is closer to a design question Mike should weigh in on than an actionable item
+with a clear fix).
+
+Committed `cb9f459` (`core/trace.py`, `core/orchestrator.py`, `tools/metatron_monitor.py`) and
+deployed — VM HEAD verified matching post-deploy. Plan-mode process note: research (Explore
+agent + direct VM SSH) happened *before* the plan was written, which is why the written plan
+matched the code on the first pass — the two scope questions (enable Claude thinking mode?
+include the grounded indicator?) were resolved via `AskUserQuestion` before implementation, not
+discovered mid-edit.
+
+---
+
 ### 2026-08-09 → 08-10 (outbound communication: one owner, disclosure discretion, per-contact tone) — `9eb5ac4`, `cae31df`, `88957e6`, **not deployed**
 
 The outgoing handoff described the scheduler reading its own prompt as Mike's voice, fixed in
