@@ -2027,19 +2027,25 @@ def _strip_model_sources(text: str) -> str:
     return _MODEL_SOURCES_RE.sub("", text).rstrip()
 
 
-def _log_ungrounded_answer(user_input: str, text: str) -> None:
+def _log_ungrounded_answer(user_input: str, search_queries: list[str]) -> None:
     """Record a Research answer that retrieved nothing, so these become countable.
+
+    The query count is the useful half of the detail. "Searched 6 times, retrieved
+    nothing" and "never searched" are different faults with different fixes — the
+    first is a retrieval problem, the second is the agent not reaching for the web at
+    all — and a signature that collapsed them would send the reader the wrong way.
 
     Never raises: this is observability on the response path, and a logging failure
     must not cost the user their answer.
     """
     try:
         from tools.logger import write_quality_event
+        searched = (f"{len(search_queries)} search(es) ran but returned no sources"
+                    if search_queries else "no search was issued")
         write_quality_event(
             event_type="UNGROUNDED_ANSWER",
             source_agent="research_agent",
-            detail=(f"No search queries issued and no sources retrieved. "
-                    f"Query: {user_input[:200]}"),
+            detail=f"Answered with nothing retrieved — {searched}. Query: {user_input[:200]}",
             session_id="research_grounding",
         )
     except Exception:
@@ -2211,8 +2217,12 @@ def run_session_gemini_grounded(system_prompt: str, user_input: str,
         text = f"{text}\n\n[RETRIEVAL: NONE — not checked against any live source]"
 
     _tr.record_retrieval(_tr.get_current_agent(), search_queries, sources)
-    if not sources and not search_queries:
-        _log_ungrounded_answer(user_input, text)
+    # Fires on "no sources", not "no queries". A search that ran and returned nothing
+    # still leaves the answer resting on training knowledge, and that case is worth
+    # counting *more* than the no-search case, not less: the model has already decided
+    # the question needed checking, and is answering anyway.
+    if not sources:
+        _log_ungrounded_answer(user_input, search_queries)
 
     return text
 

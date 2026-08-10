@@ -113,10 +113,20 @@ class AgentRecord:
         Note what is deliberately *not* here: a `has_tool_calls()` fallback. An agent
         that called `write_log` is active, not grounded, and folding tool activity back
         in would rebuild the same false signal one level down.
+
+        Nor is it `sources or search_queries`, which the 2026-08-10 plan specified and
+        a live run disproved: asking six questions and retrieving nothing scored as
+        grounded while the response it accompanied said `[RETRIEVAL: NONE]`. Two
+        provenance signals disagreeing about the same answer is the failure this whole
+        change exists to remove. Searching and finding nothing means the answer came
+        from training knowledge — that is ungrounded, and it is the more dangerous
+        shape of the two, because the model has *tried* and may still assert freely.
+        The queries remain on the record as diagnostics: they explain a wrong answer
+        that was nonetheless grounded, which the source list alone cannot.
         """
         if not self.retrieval_recorded:
             return None
-        return bool(self.retrieved_sources or self.search_queries)
+        return bool(self.retrieved_sources)
 
 
 class RequestTrace:
