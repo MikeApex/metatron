@@ -75,6 +75,27 @@ def write_log(content: dict | None = None, log_date: str = "") -> str:
 
     if not log_date:
         log_date = date.today().isoformat()
+    else:
+        # [DB-0809-12]: a specialist computing "today" itself, rather than reading the
+        # clock line every directive carries, has invented a wrong year before — a
+        # credit-card reminder landed in a log dated 2025-05-22, fourteen months in the
+        # past, on 2026-08-02. Nine such files accumulated silently before anyone
+        # noticed. No legitimate write needs a date this far from the real clock: a
+        # session crossing midnight or backfilling a missed day explains ±1, nothing
+        # explains ±1 year. Refused rather than warned — unlike a near-duplicate
+        # obligation or an over-cap write, there is no reading of a year-old log_date
+        # that this would wrongly block.
+        try:
+            parsed = date.fromisoformat(log_date)
+        except ValueError:
+            return (f"Error: log_date {log_date!r} is not a valid YYYY-MM-DD date. "
+                    f"Omit it to default to today.")
+        drift_days = abs((parsed - date.today()).days)
+        if drift_days > 7:
+            return (f"Error: log_date {log_date!r} is {drift_days} days from today "
+                    f"({date.today().isoformat()}) — refused as a likely hallucinated "
+                    f"date rather than a real backdate. Use the date from your clock "
+                    f"line, or omit log_date to default to today.")
 
     logs_dir = _logs_dir()
     logs_dir.mkdir(parents=True, exist_ok=True)

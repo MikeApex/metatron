@@ -187,11 +187,6 @@ Real, not prioritised. One or two lines each — detail lives in the code, the l
   prevent, so it is advisory, not protective. Possible fix: compare against the session's start
   commit, or record touched files as the session goes. **Do not remove the check** — a prompt to
   look beats no prompt. *filed 2026-08-09 by dev session (first run of the new `/archive`)*
-- **[DB-0809-12]** Hallucinated log dates in mike's VM tree. **Re-verified 2026-08-09 and the
-  premise drifted: there is no `2024-08-04.json`.** The impossible set is 9 files, all 2025 —
-  `2025-01-24`, `2025-05-13/14/15/16`, `2025-07-20/21/25`, `2025-08-02`. The `2026-06-*` and
-  `2026-07-*` files are legitimate history, so a raw "23 of 32 are not 2026-08" count misleads.
-  Fix is a dated-filename guard at the write site, then move the 9 aside — not a bulk delete.
 - **[DB-0809-11]** Docs record values the system changes underneath them and nothing checks.
   Mitigation in force (don't write down short-half-life values); the stronger fix is a smoke
   script running CLAUDE.md's executable claims. `deploy.sh`'s HEAD assertion is the model.

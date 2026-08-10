@@ -2002,3 +2002,24 @@ runs when a session runs.
   tonight's outbound-messaging move (`config/agents/relationships.md` § Disclosure
   discretion, confirmed present).
   *closed 2026-08-10 · evidence: tools/mail.py:1-15, no other stale reference found*
+
+## Closed 2026-08-10 — hallucinated log dates: guarded at the write site, moved not deleted
+
+- **[DB-0809-12] Hallucinated log dates in mike's VM tree.** Re-verified 2026-08-10: all 9
+  named 2025 files still present, exactly those 9, plus 3 legitimately non-dated system
+  files (`quality_events.json`, `scheduler_errors.json`, `scheduler_last_fired.json`) that
+  must not be touched by anything matching this pattern.
+  **Guard added at `write_log()` in `tools/logger.py`**, refusing rather than warning — a
+  drift of more than 7 days from the real system clock returns an error string telling the
+  caller to use its clock line or omit `log_date`. Chose refuse-not-warn deliberately,
+  unlike the project's usual soft-cap/near-duplicate warnings: there is no legitimate
+  `log_date` a year removed from today, so refusing here can't wrongly block a real write
+  the way refusing a near-duplicate obligation could. Tested against 7 cases: a real
+  hallucinated date, an invalid format, today (implicit and explicit), a legitimate
+  yesterday backdate, and the ±7-day boundary exactly (6 days passes, 8 days refused).
+  **The 9 files moved to `data/personas/mike/logs/_hallucinated_2025/`** on the VM — not
+  deleted, per the project's data-is-never-deleted convention. Checked `tools/baselines.py`,
+  the only other place that globs the logs directory directly (`*.json`, non-recursive) —
+  a subdirectory doesn't match that pattern, so nothing else needed to change.
+  *closed 2026-08-10 · evidence: tools/logger.py guard + 9-case-verified test, files moved
+  on the VM (data/ is gitignored, no commit needed for the move itself)*
