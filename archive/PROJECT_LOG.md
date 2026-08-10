@@ -23,6 +23,69 @@ file is the only narrative record, alongside the verbatim transcripts.*
 
 ## Dated history
 
+### 2026-08-10 (Calendar conflict detection; the quality-event sink gap) — `a20febe`, **deployed 08-05**
+
+One long session, 08-05 to 08-10. It opened on a general question — *where should code replace
+LLM judgment, for accuracy and for token cost?* — with the Jonas meeting, scheduled three times
+in duplicate, offered as an example. The example became the work; the general question never got
+its own session and is now the reason for a fresh one.
+
+**What the bug actually was.** `write_calendar_event` had **no duplicate check of any kind** —
+it built an iCal blob and `PUT` it under a fresh UUID every call, unconditionally. The guard
+was `CONFLICT_POSSIBLE` in `config/agents/logistics.md`, i.e. the agent noticing for itself.
+That is the same "told but not prevented" shape `tools/agent_config.py` already documents
+(logistics was told it lacked `write_agent_config` and called it anyway, three times in
+production). Also found: **no `update_calendar_event` or `delete_calendar_event` existed at
+all**, only create and read — so half the requested scenarios (a meeting moved, a cascade
+reschedule, merging a flagged duplicate) were unreachable regardless of detection quality.
+
+Built: `tools/scheduling.py` (`check_calendar_conflicts` — overlaps, exact/near duplicates,
+recurring-series fit, tight location transitions, day digest), the check wired **inside**
+`write_calendar_event` so it cannot be skipped, `update_calendar_event`/`delete_calendar_event`,
+structured `attendees` cross-referenced against CRM, and `tools/calendar_audit.py` — a daily
+zero-token `function:` sweep for duplicates the write-time check structurally cannot see
+(anything predating it, including the original three Jonas events). 24 mocked tests,
+`tests/run_calendar_conflict_tests.py`. **No live scheduling exchange has ever been run against
+this** — every test is mocked.
+
+**Decisions, and what was rejected.** Exact duplicates are *refused* pending an explicit
+override, not warned about — a warning cannot stop a retry or duplicate dispatch, which is one
+of the two candidate root causes and was never conclusively ruled out. Attendees are structured
+rather than parsed from title text. Travel time shipped as a **stub** (different non-empty
+locations, tight gap, no real distance) with the Maps API deferred as its own credential/billing
+decision — since built by a later session and now wired into these same flags. On check failure
+Mike **overrode a fail-closed recommendation**: the write proceeds and the event is marked for
+re-checking, availability over strictness, on the reasoning that a CalDAV hiccup should not
+block scheduling outright. Rejected: having the model emit three candidate titles and take the
+majority — self-consistency voting cancels *within-call* sampling noise, but the observed
+variance is *between* sessions (different conversations phrasing the same commitment
+differently), which three samples from one context cannot see.
+
+**Three things believed true that were not.**
+1. Embeddings were ruled off the hot path on latency grounds. That reasoning was incomplete —
+   it generalised from `tools/wisdom.py`, which reloads `SentenceTransformer` from disk on every
+   call, without checking `core/memory.py`, which caches it as a module-level singleton. With
+   that pattern the load is paid once per process and the tradeoff changes.
+2. `tools/calendar_audit.py`'s own docstring asserts findings reach `DEV_BACKLOG.md` "same route
+   as `RULE_CONFLICT`". They do not — see below.
+3. The close-out left a manual instruction to hand-edit `mike`'s gitignored `scheduler.yaml`.
+   Nobody did it, the audit sat **inert in production for three days**, and a later session found
+   it by accident and fixed it *structurally* (`_DEFAULT_JOBS`, `8d798a8`) so maintenance jobs
+   register for every persona from code. The manual step was the wrong shape, not just undone.
+
+**The sink gap — diagnosed, deliberately not fixed.** `scripts/sync_dev_backlog.py` filters
+`quality_events.json` on a hardcoded `WANTED` allowlist. Live counts on the VM: `USER_CORRECTION`
+**139**, `ROUTING_MISS` **12**, `CALENDAR_DUPLICATE` **7** — none collected, ever. 158 events
+across three types written and silently discarded, the largest being the single highest-value
+quality signal in the system (the user correcting it). The audit's 7 findings are also in
+`.calendar_dedup_seen`, so they are permanently suppressed until that ledger is cleared. Mike
+**stopped a one-line allowlist patch**, correctly: `ed92acf` had since restructured
+`DEV_BACKLOG.md` into Now/Later/Machine log and `UNGROUNDED_ANSWER` had been added to
+`MACHINE_TYPES`, so the obvious fix would have been wrong, and adding 139 `USER_CORRECTION`
+entries to the Inbox would defeat that restructure's purpose. The real deliverable is structural:
+nothing reconciles emitters against the consumer, so **every future audit inherits this failure
+by default**. Filed for a fresh session with a written prompt.
+
 ### 2026-08-10 (Message-bubble timestamps, web + APK) — `a65a199`, **deployed**
 
 Added a timestamp under every user and assistant bubble in `static/index.html`. Server already

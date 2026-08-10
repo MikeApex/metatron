@@ -1,17 +1,18 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-10, latest (message-bubble timestamps, web + APK) — added a timestamp under
-every user and assistant bubble in `static/index.html`, sourced from the `ts` column the server
-already carried but never sent to the client (history/catchup/`message` rows); live/streaming
-bubbles stamp with the client's current time since the server has none yet for those. Kept as a
-sibling of the bubble, not a child, so the streaming code's repeated `textContent` overwrites
-don't clobber it. Deployed (`a65a199`, VM HEAD verified) and confirmed on a rebuilt, sideloaded
-APK (`check_apk_sync.sh` passed). Held the commit for a parallel session's build/deploy to land
-first; no conflict.
-Earlier the same day: **provenance is now authored by Python, never the model** — the grounded
-loop strips any model-written `SOURCES:` block and appends its own from what the SDK reports
-(`a36d8c2`, deployed). New **`scripts/check_agent_tools.py`** + a `PostToolUse` hook catch
-agent-file/tool-registry drift; it already found one, `get_weather` (fixed, `924a66e`).
+*Updated: 2026-08-10, latest (calendar conflict detection; quality-event sink gap found) — a
+long 08-05→08-10 session. **Shipped 08-05 and deployed (`a20febe`):** `tools/scheduling.py`'s
+`check_calendar_conflicts` wired *inside* `write_calendar_event` so it cannot be skipped, plus
+`update_calendar_event`/`delete_calendar_event` (neither existed before), structured attendees,
+and `tools/calendar_audit.py`, a daily zero-token sweep. 24 mocked tests pass; **no live
+scheduling exchange has been run against any of it.**
+**Found 08-10, diagnosed and deliberately not fixed — the bigger item:** `scripts/sync_dev_backlog.py`
+filters `quality_events.json` on a hardcoded allowlist, so `USER_CORRECTION` (**139**),
+`ROUTING_MISS` (**12**) and `CALENDAR_DUPLICATE` (**7**) have **never** reached
+`DEV_BACKLOG.md` — 158 events discarded, including the highest-value signal in the system. A
+one-line patch was stopped, correctly: `ed92acf` restructured the backlog since, and 139
+corrections in the Inbox would defeat that. Needs a structural fix so future audits don't
+inherit it. Written prompt in `[DB-0810-09]`.
 **Unchanged:** `[DB-0804-01]`'s count is due **08-11 — tomorrow**; `[DB-0810-05]` (IMAP tone
 profiling) and `[DB-0810-07]` (Book capture) are still unexercised against live data.*
 
@@ -112,13 +113,13 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-10 | **Calendar conflict detection + the quality-event sink gap** — `write_calendar_event` had no duplicate check at all and no update/delete counterpart; both built, check runs inside the write so it cannot be skipped. Then found `sync_dev_backlog.py` discards `USER_CORRECTION` (139), `ROUTING_MISS` (12) and `CALENDAR_DUPLICATE` (7) — 158 events never read. Diagnosed, not fixed | `a20febe` — deployed 08-05; sink gap **open**, `[DB-0810-09]` |
 | 08-10 | **Message-bubble timestamps** — user and assistant bubbles show a time, sourced from the server's existing `ts` column for replayed messages, client clock for live/streaming ones. Verified on webapp and a rebuilt, sideloaded APK | `a65a199` — deployed, VM verified |
 | 08-10 | **Research provenance authored by Python, not the model** — strips model-written `SOURCES:`, appends `SOURCES (N retrieved)`/`[RETRIEVAL: NONE]` from the SDK; `grounded` is now retrieval-based and tri-state. Built `check_agent_tools.py` + a `PostToolUse` hook on agent/routing edits; it found `get_weather` granted to Logistics but documented only on Research — weather returned to Logistics | `a36d8c2`…`a3b43c5` (5) — deployed, VM verified |
 | 08-10 | **Flight/transit queries routed to an agent with no travel feeds** — Coordinator sent flight status to Research (grant: `fetch_url`, `get_pollen_forecast`); `get_flight_status` is Logistics-only and healthy. Fixed + verified in seq 016. Second, **open** defect found: Research fabricates `SOURCES:` because `web_search` does not exist yet is named 4× and citing is mandatory | `d0774f8` — deployed, verified |
 | 08-10 | **The Book: thinking/output text capture, tool-call success/failure, plainspeak resource labels, whole-API-call failures** — closes the gap the same-day token-breakout pass left open; text was never captured, only counts, and Ollama's `<think>` content was being discarded outright. New `/monitor/model_errors` endpoint. Filed `[DB-0810-07]`: unexercised against live data | `ffaf7a7` — deployed, VM verified |
 | 08-10 | **Feature feasibility scan** — agent-backlog rollup ranked by impact; photos (needs orchestrator content-block support), Google Drive (echoes the reversed Contacts OAuth build, same Testing/Production token wall), geolocation (already `[DB-0808-04]`, classification settled, mechanics not) | docs/research only, no code |
 | 08-10 | **`/archive` commits its own output** — step 5 added: explicit manifest, diff before staging, push for backup, **never deploy**, stop on foreign lines. Step 2 repointed at the top of `PROJECT_LOG.md`; primer compacted off its ceiling. `[DB-0805-05]` hit ×3 | `060f53a`…`3e1ae7b` (6) — docs only, **no deploy needed** |
-| 08-10 | **The Book: thinking-token breakout, ungrounded-answer flag** — split Vertex's reasoning tokens out of `output_tokens`; added a `grounded` flag after chat #007 was found answering with **zero tool calls** | `cb9f459` — deployed, VM verified |
 ---
 
 ## Useful context to pull as needed

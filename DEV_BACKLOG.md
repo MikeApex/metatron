@@ -48,7 +48,33 @@ re-ranked later that day when three closed and `[DB-0809-21]` entered at 3. Ever
 was checked and when; a verdict without that line is a description, and descriptions are what the
 standing rule distrusts.*
 
-- **1. [DB-0809-02] Do proactive sessions actually stay focused? — the mechanism half is fixed
+- **1. [DB-0810-09] 158 quality events have been written and never read — `USER_CORRECTION`
+  (139), `ROUTING_MISS` (12), `CALENDAR_DUPLICATE` (7).** `tools/logger.py`'s
+  `write_quality_event` appends to `data/personas/{p}/logs/quality_events.json`;
+  `scripts/sync_dev_backlog.py` reads it through a hardcoded `WANTED = USER_TYPES |
+  MACHINE_TYPES`. Anything not on that list is silently discarded. `USER_CORRECTION` — the user
+  telling the system it got something wrong, and by volume the largest signal in the file — has
+  **never once** reached this backlog, despite `write_quality_event`'s own docstring naming it a
+  canonical type. **Do not fix with a one-line allowlist edit**; that was attempted 2026-08-10
+  and correctly stopped. Three reasons it is wrong: (a) `ed92acf` restructured this file into
+  Now/Later/Machine log specifically to separate machine noise from user requests, and dumping
+  139 corrections into the Inbox defeats that — the right home may be a digest or a new section,
+  not `MACHINE_TYPES`; (b) `CALENDAR_DUPLICATE` needs a stable signature keyed on the event-uid
+  pair before it is collected, because `signature()`'s prose fallback at
+  `SIMILARITY_THRESHOLD = 0.15` will collapse distinct duplicate pairs into one `×N` entry, the
+  detail strings being mostly shared boilerplate (`DENIAL_RE` is the precedent to copy);
+  (c) `ROUTING_MISS` may be legacy — grep the emitters before deciding. **The actual deliverable
+  is structural:** nothing reconciles emitters against the consumer, so every future audit
+  inherits this by default. Options — a shared registry both sides import, a startup
+  reconciliation warning, or a test asserting every emitted `event_type` is either collected or
+  explicitly listed as intentionally dropped. Also: `data/personas/mike/logs/.calendar_dedup_seen`
+  holds all 7 calendar findings, so they stay suppressed until it is cleared — confirm before
+  deleting a ledger on the VM. Those 7 are unreviewed and likely include the original Jonas
+  triplication.
+  *filed 2026-08-10 by Mike via dev session · counts read live off the VM 2026-08-10 ·
+  full reasoning in `archive/PROJECT_LOG.md` § 2026-08-10 (Calendar conflict detection)*
+
+- **2. [DB-0809-02] Do proactive sessions actually stay focused? — the mechanism half is fixed
   and deployed; the guidance half is unproven.** **The original premise was wrong.** All 22 August
   `companion_checkin` openings were 1–2 sentences: the rule was obeyed, and four of the five
   "restatements" were the Synthesizer reading its *own* scheduler prompt as Mike's voice and firing
@@ -69,7 +95,7 @@ standing rule distrusts.*
   *filed 2026-08-09 · rewritten 2026-08-09 after measurement inverted it · **first live
   firing confirmed clean 2026-08-10, day 1 of 7** · full reasoning in `archive/PROJECT_LOG.md`*
 
-- **2. [DB-0809-21] Two of four verification steps done and passed; two are genuinely time-gated,
+- **3. [DB-0809-21] Two of four verification steps done and passed; two are genuinely time-gated,
   not yet observable.** Projected cost ~$0.08 (token-based estimate against `_run_single_agent`'s
   actual single-agent shape, not the blended $8.44/50-session historical average, which is
   dominated by B1's full-pipeline scenarios and would have overstated this run) — under the $1.00
@@ -97,7 +123,7 @@ standing rule distrusts.*
   `archive/PROJECT_LOG.md`, which already recorded it — corrected by the 08-10 `/backlog deep`
   sweep. One check left, genuinely time-gated on a real unreferenced calendar event arising*
 
-- **3. [DB-0810-05] The tone-profile pipeline has never touched a real mailbox.** Built and
+- **4. [DB-0810-05] The tone-profile pipeline has never touched a real mailbox.** Built and
   committed `88957e6`; **every test used stubs.** The distillation half is well covered — a hostile
   fixture confirmed unknown keys dropped, values truncated, lists capped, injection caught and the
   write refused, plus five `_extract` paths (single-direction refusal, thin-sample skip, injection
@@ -139,6 +165,12 @@ promoting); and **`Now` is cleared before `Later` is started**, so this is not a
 to pick from when a `Now` item is time-gated.
 
 **Safety and test gaps**
+- **[DB-0810-10]** The calendar conflict build (`a20febe`, deployed 08-05) has **never had a
+  live scheduling exchange run against it** — all 24 tests in
+  `tests/run_calendar_conflict_tests.py` are mocked against CalDAV, so the refuse-on-exact-
+  duplicate path, the `[VERIFY]` fail-open marker and `update`/`delete` have only ever run
+  against fixtures. It is the write path for every calendar event Logistics creates.
+  *filed 2026-08-10 · shipped and deployed but unexercised in production*
 - **[DB-0808-17]** A4 clinical hard-fails have never run on Flash-Lite, which serves most MW/PH
   turns (43 vs 5, 58 vs 6, Aug 1–8). Routing stays as-is by Mike's decision; the *test* gap is
   the item. Add `--complexity quick` to the A4 suite. Bears on ROADMAP § A7 check 8's wording.
@@ -265,6 +297,23 @@ to pick from when a `Now` item is time-gated.
   code on the `·` feedback dot, plus detecting `open_threads` that go quiet unresolved.
 
 **Performance and cost**
+- **[DB-0810-11]** Standing design question, raised by Mike 2026-08-05 and never given its own
+  session: **where should code replace LLM judgment**, for accuracy and for token cost? Three
+  strands — (a) deterministic lookups that feed agents evidence instead of asking them to
+  recall (`tools/scheduling.py` is the worked example; unbuilt: CRM contact dedup, where
+  `_find_by_name` is naive substring matching so "Jon"/"Jonathan"/"Jonathan Whitfield" become
+  three records; `write_archive` duplicate detection; `tools/wisdom.py` reloading
+  `SentenceTransformer` per call where `core/memory.py` caches a singleton); (b) code that
+  removes agent calls entirely — including Synthesizer dispatching a subagent purely to *check a
+  fact*, which trades an LLM round-trip for what a lookup would do, but cuts against the
+  head-layer/specialist split and PoLP; (c) a standing code/agent review protocol — the argument
+  for which is that `daily_calendar_dedup_audit` was correct, tested and deployed yet did nothing
+  for 3 days (template never propagated, fixed in `8d798a8`) and then had its output discarded
+  for 5 more by `[DB-0810-09]`, neither failure being a code bug or catchable by unit tests. Also
+  parked here: embeddings for semantic similarity, and `temperature` — **not plumbed through any
+  of the four provider paths** in `core/orchestrator.py`, most valuable for clinical flags and
+  Finance arithmetic rather than for dedup.
+  *filed 2026-08-10 · a full session prompt exists in that day's transcript*
 - **[DB-0808-09]** Per-specialist internal turn reduction. Coordinator is 1 turn (measured
   twice); `logistics` is 8; the other specialists are unmeasured. **Measure first, then diagnose
   from traces, then fix.** Absorbs the old "Coordinator restructure" entry. Slimming
