@@ -19,6 +19,7 @@ Note Android Chrome blocks the mic on plain HTTP — see the cert hint printed a
 
 import argparse
 import asyncio
+import logging
 import os
 import sys
 import tempfile
@@ -47,6 +48,8 @@ KOKORO_VOICE = "af_heart"
 KOKORO_SPEAK = Path(__file__).parent.parent / "tools" / "kokoro" / "speak.py"
 KOKORO_PYTHON = Path(__file__).parent.parent / ".venv" / "bin" / "python"
 EDGE_VOICE = "en-US-JennyNeural"
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Life Manager")
 
@@ -446,6 +449,14 @@ async def session_stream(req: SessionRequest):
                 asyncio.run_coroutine_threadsafe(queue.put(response), loop).result()
                 asyncio.run_coroutine_threadsafe(queue.put("[DONE]"), loop).result()
             except Exception as e:
+                # Log before handing it to the client. This branch returned the raw
+                # exception text to the browser and wrote nothing server-side, so a
+                # web-app failure existed only in the message the user was looking
+                # at — five Vertex thought_signature 400s were diagnosed from the
+                # scheduler's copies because the web ones left no trace at all.
+                logger.exception(
+                    f"[sse_error] persona={persona} agent={req.agent} error={e}"
+                )
                 asyncio.run_coroutine_threadsafe(queue.put(f"[ERROR] {e}"), loop).result()
             finally:
                 asyncio.run_coroutine_threadsafe(queue.put(None), loop).result()

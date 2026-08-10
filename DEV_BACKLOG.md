@@ -71,8 +71,21 @@ standing rule distrusts.*
   holds all 7 calendar findings, so they stay suppressed until it is cleared — confirm before
   deleting a ledger on the VM. Those 7 are unreviewed and likely include the original Jonas
   triplication.
+  **A sixth collected type was added 2026-08-10 (later the same day): `MODEL_CALL_FAILED`,
+  emitted by `_log_api_failure()` in `core/orchestrator.py`.** Read this as one more entry the
+  structural fix has to absorb, *not* as a precedent for the allowlist edit this item forbids —
+  the ban is on collecting the three existing orphans that way, and this type was new, so both
+  sides were written together in one commit rather than a consumer being retrofitted to an
+  emitter that had been orphaned for months. It also arrives without the three specific
+  objections above: `_api_failure_signature()` gives it the stable key reason (b) demands
+  (`DENIAL_RE`'s precedent, keyed on error class so a varying "position N" cannot fragment it),
+  volume is ~5/fortnight rather than 139, and it has no legacy question. **When the registry or
+  reconciliation test lands, `MODEL_CALL_FAILED` registers there and its `MACHINE_TYPES` line
+  comes out.** Its purpose is interim: five Vertex `thought_signature` 400s went undiagnosed
+  because nothing surfaced them, and it escalates at three to prevent a sixth.
   *filed 2026-08-10 by Mike via dev session · counts read live off the VM 2026-08-10 ·
-  full reasoning in `archive/PROJECT_LOG.md` § 2026-08-10 (Calendar conflict detection)*
+  full reasoning in `archive/PROJECT_LOG.md` § 2026-08-10 (Calendar conflict detection) ·
+  `MODEL_CALL_FAILED` note added 2026-08-10 by the thought_signature observability session*
 
 - **2. [DB-0809-02] Do proactive sessions actually stay focused? — the mechanism half is fixed
   and deployed; the guidance half is unproven.** **The original premise was wrong.** All 22 August

@@ -2052,6 +2052,68 @@ def _log_ungrounded_answer(user_input: str, search_queries: list[str]) -> None:
         pass
 
 
+def _api_failure_signature(exc: Exception) -> str:
+    """A stable one-line class for an API failure, so repeats collapse.
+
+    The backlog sync groups machine events by signature and escalates at three.
+    Interpolating the turn number, the model's echoed arguments or a byte offset
+    would make every occurrence unique, which is the same as not collapsing.
+    """
+    text = str(exc)
+    if "thought_signature" in text:
+        return "missing thought_signature on a function call (400)"
+    if "RESOURCE_EXHAUSTED" in text or " 429" in text:
+        return "rate limited (429)"
+    # Anchored to how a status code is actually written, not any three digits:
+    # a bare \b(4\d\d)\b matches the ":443" in an oauth2.googleapis.com
+    # connection error and files every DNS blip as "API error 443".
+    code = _re.search(r"(?:Error code:|['\"]code['\"]\s*:)\s*(\d{3})", text)
+    if code:
+        return f"API error {code.group(1)}"
+    if "NameResolutionError" in text or "Failed to resolve" in text:
+        return "DNS resolution failed"
+    return text[:120]
+
+
+def _log_api_failure(loop: str, model: str, exc: Exception,
+                     turn: int | None = None, agent: str | None = None,
+                     extra: str = "") -> None:
+    """Record a model-call failure, naming the loop that made the call.
+
+    Five `thought_signature` 400s between 2026-08-04 and 08-09 could not be
+    attributed to a code path. Two of the five model-call sites — both in the
+    streaming loop — logged nothing at all, and the SSE handler returned the
+    error to the client without logging it, so the only trace of a web-app
+    failure was the text the user saw. A failure nobody can locate is not a
+    signal: every call site now names itself.
+
+    The failure also becomes a quality event, so a *recurring* one reaches
+    `DEV_BACKLOG.md` through the existing sync rather than living in journald
+    where nothing re-reads it.
+
+    `extra` carries per-occurrence diagnostics (message counts, turn state). It
+    reaches the log and never the quality event: the sync collapses on the event
+    detail, so a varying field there would make every occurrence its own item.
+    """
+    from core.router import log_model_error
+    who = agent or _tr.get_current_agent() or "unknown"
+    turn_s = f" turn={turn}" if turn is not None else ""
+    extra_s = f" {extra}" if extra else ""
+    logger.error(f"[model_error] loop={loop} agent={who} model={model}{turn_s}{extra_s} error={exc}")
+    log_model_error(who, loop, model, f"{loop}{turn_s}{extra_s}: {exc}")
+    try:
+        from tools.logger import write_quality_event
+        write_quality_event(
+            event_type="MODEL_CALL_FAILED",
+            source_agent=who,
+            detail=f"{loop}: {_api_failure_signature(exc)}",
+            session_id=datetime.now().strftime("%Y-%m-%d"),
+        )
+    except Exception:
+        # Observability must never cost the caller its own error.
+        pass
+
+
 def run_session_gemini_grounded(system_prompt: str, user_input: str,
                                 tool_schemas: list[dict] | None = None,
                                 tool_handlers: dict | None = None,
@@ -2133,10 +2195,8 @@ def run_session_gemini_grounded(system_prompt: str, user_input: str,
                 model=model_name, contents=contents, config=config,
             )
         except Exception as _api_exc:
-            from core.router import log_model_error
-            _agent = _tr.get_current_agent() or "research_agent"
-            logger.error(f"[model_error] agent={_agent} provider=gemini-grounded model={model_name} error={_api_exc}")
-            log_model_error(_agent, "gemini-grounded", model_name, str(_api_exc))
+            _log_api_failure("gemini_grounded", model_name, _api_exc, turn=turn,
+                             agent=_tr.get_current_agent() or "research_agent")
             raise
 
         # Token budget logging (native SDK field)
@@ -2474,10 +2534,10 @@ def _openai_compat_loop(system_prompt: str, user_input: str,
                 **({"extra_body": extra_body} if extra_body else {}),
             )
         except Exception as _api_exc:
-            from core.router import log_model_error
-            _agent = _tr.get_current_agent() or "unknown"
-            logger.error(f"[model_error] agent={_agent} provider={_provider_label} model={model} turn={turn_num} error={_api_exc}")
-            log_model_error(_agent, _provider_label, model, str(_api_exc))
+            # msgs= is the index base for the "position N" Vertex quotes in a
+            # thought_signature 400 — it is what tells us which message it means.
+            _log_api_failure(f"openai_compat[{_provider_label}]", model, _api_exc,
+                             turn=turn_num, extra=f"msgs={len(messages)}")
             raise
 
         choice = response.choices[0]
@@ -2580,15 +2640,19 @@ def _openai_compat_stream(
         # Snapshot messages before this turn so we can replay blocking if tool calls appear.
         messages_snapshot = list(messages)
 
-        stream = client.chat.completions.create(
-            model=model,
-            **{token_kwarg: 4096},
-            **({"tools": oai_tools} if oai_tools else {}),
-            messages=messages,
-            stream=True,
-            stream_options={"include_usage": True},
-            **({"extra_body": extra_body} if extra_body else {}),
-        )
+        try:
+            stream = client.chat.completions.create(
+                model=model,
+                **{token_kwarg: 4096},
+                **({"tools": oai_tools} if oai_tools else {}),
+                messages=messages,
+                stream=True,
+                stream_options={"include_usage": True},
+                **({"extra_body": extra_body} if extra_body else {}),
+            )
+        except Exception as _api_exc:
+            _log_api_failure("openai_compat_stream", model, _api_exc, turn=turn_num)
+            raise
 
         text_parts: list[str] = []
         tool_calls_raw: dict[int, dict] = {}  # delta index → accumulated data
@@ -2666,14 +2730,22 @@ def _openai_compat_stream(
         # then apply the same workaround used in _openai_compat_loop.
         # The streaming text already yielded above is correct; this replay is used only to
         # build the signed assistant message — its text is not re-yielded.
-        blocking_resp = client.chat.completions.create(
-            model=model,
-            **{token_kwarg: 4096},
-            **({"tools": oai_tools} if oai_tools else {}),
-            messages=messages_snapshot,
-            stream=False,
-            **({"extra_body": extra_body} if extra_body else {}),
-        )
+        try:
+            blocking_resp = client.chat.completions.create(
+                model=model,
+                **{token_kwarg: 4096},
+                **({"tools": oai_tools} if oai_tools else {}),
+                messages=messages_snapshot,
+                stream=False,
+                **({"extra_body": extra_body} if extra_body else {}),
+            )
+        except Exception as _api_exc:
+            # Names the tools the stream had asked for: a thought_signature 400 here
+            # means the *replay* was rejected, which distinguishes a signature that
+            # was never issued from one lost on the way back into `messages`.
+            _wanted = ",".join(sorted({t["name"] for t in tool_calls_raw.values() if t.get("name")})) or "none"
+            _log_api_failure(f"openai_compat_stream:replay[{_wanted}]", model, _api_exc, turn=turn_num)
+            raise
         blocking_msg = blocking_resp.choices[0].message
 
         # Apply the same thought_signature workaround as _openai_compat_loop using the

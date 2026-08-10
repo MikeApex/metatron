@@ -45,7 +45,8 @@ USER_TYPES = {"FEATURE_REQUEST", "INSTRUCTION_CHANGE_REQUEST"}
 # What the runtime noticed about itself. Real signals, but nobody asked for
 # them, and they arrive far faster than they are worked. They reach
 # '## Machine log', collapsed by signature — see ESCALATE_AT.
-MACHINE_TYPES = {"TOOL_DENIED", "RULE_CONFLICT", "SELF_APPLIED", "UNGROUNDED_ANSWER"}
+MACHINE_TYPES = {"TOOL_DENIED", "RULE_CONFLICT", "SELF_APPLIED", "UNGROUNDED_ANSWER",
+                 "MODEL_CALL_FAILED"}
 
 WANTED = USER_TYPES | MACHINE_TYPES
 
@@ -75,6 +76,11 @@ LABELS = {
     # the thing to look at: it means an agent that is supposed to be checking the world
     # has stopped doing so, which is invisible from the answer itself.
     "UNGROUNDED_ANSWER": "answered without retrieving anything",
+    # A model API call that failed outright, tagged with the loop that made it.
+    # One is weather. A repeating signature is a code path that cannot complete
+    # a turn — the user sees an error and the exchange is never recorded, which
+    # is invisible from the conversation log precisely because nothing was written.
+    "MODEL_CALL_FAILED": "a model call failed outright",
 }
 
 ROOT = Path(__file__).resolve().parent.parent
