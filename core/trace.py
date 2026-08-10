@@ -49,6 +49,7 @@ class ToolCallRecord:
     duration_ms: float
     input_tokens: int = 0
     output_tokens: int = 0
+    ok: bool = True
 
 
 @dataclass
@@ -57,6 +58,8 @@ class TurnRecord:
     input_tokens: int = 0
     output_tokens: int = 0
     thinking_tokens: int = 0
+    output_text: str = ""
+    thinking_text: str = ""
     tool_calls: list[ToolCallRecord] = field(default_factory=list)
 
 
@@ -184,13 +187,16 @@ def pop_agent(rec: AgentRecord) -> None:
 
 def record_turn_tokens(rec: AgentRecord | None, turn_num: int,
                        input_tokens: int, output_tokens: int,
-                       thinking_tokens: int = 0) -> None:
+                       thinking_tokens: int = 0,
+                       output_text: str = "", thinking_text: str = "") -> None:
     if rec is None:
         return
     tr = rec.ensure_turn(turn_num)
     tr.input_tokens = input_tokens
     tr.output_tokens = output_tokens
     tr.thinking_tokens = thinking_tokens
+    tr.output_text = output_text
+    tr.thinking_text = thinking_text
 
     # Every provider path already reports here, so this is the one place the
     # spend guard needs to observe. It never raises.
@@ -205,14 +211,15 @@ def record_turn_tokens(rec: AgentRecord | None, turn_num: int,
 
 def record_tool_call(rec: AgentRecord | None, turn_num: int,
                      name: str, args: dict, result: str, duration_ms: float,
-                     input_tokens: int = 0, output_tokens: int = 0) -> None:
+                     input_tokens: int = 0, output_tokens: int = 0,
+                     ok: bool = True) -> None:
     if rec is None:
         return
     preview = result[:800] if len(result) > 800 else result
     tr = rec.ensure_turn(turn_num)
     tr.tool_calls.append(ToolCallRecord(
         name=name, args=args, result_preview=preview, duration_ms=duration_ms,
-        input_tokens=input_tokens, output_tokens=output_tokens,
+        input_tokens=input_tokens, output_tokens=output_tokens, ok=ok,
     ))
     # Extract any file paths written by this tool call (from args values + result)
     candidates: set[str] = set()
@@ -243,6 +250,8 @@ def _agent_to_dict(a: AgentRecord) -> dict:
                 "input_tokens": tr.input_tokens,
                 "output_tokens": tr.output_tokens,
                 "thinking_tokens": tr.thinking_tokens,
+                "output_text": tr.output_text,
+                "thinking_text": tr.thinking_text,
                 "tool_calls": [
                     {
                         "name": tc.name,
@@ -251,6 +260,7 @@ def _agent_to_dict(a: AgentRecord) -> dict:
                         "duration_ms": tc.duration_ms,
                         "input_tokens": tc.input_tokens,
                         "output_tokens": tc.output_tokens,
+                        "ok": tc.ok,
                     }
                     for tc in tr.tool_calls
                 ],

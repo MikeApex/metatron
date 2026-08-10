@@ -1132,6 +1132,39 @@ async def monitor_traces(
     return {"traces": traces}
 
 
+@app.get("/monitor/model_errors")
+async def monitor_model_errors(since: str | None = None, limit: int | None = None) -> dict:
+    """
+    Return whole-model-call failures logged by core.router.log_model_error()
+    (data/diagnostics/model_errors.json) — API exceptions, as opposed to
+    tool-call failures, which travel with the trace itself.
+    """
+    import json as _json
+    from datetime import datetime as _dt
+    path = DATA_DIR / "diagnostics" / "model_errors.json"
+    entries: list = []
+    if path.exists():
+        try:
+            with open(path) as f:
+                entries = _json.load(f)
+        except Exception:
+            entries = []
+    since_dt = _dt.fromisoformat(since) if since else None
+    if since_dt:
+        filtered = []
+        for e in entries:
+            try:
+                if _dt.fromisoformat(e.get("timestamp", "")[:19]) >= since_dt:
+                    filtered.append(e)
+            except (ValueError, TypeError):
+                filtered.append(e)
+        entries = filtered
+    entries.sort(key=lambda e: e.get("timestamp", ""), reverse=True)
+    if limit is not None:
+        entries = entries[:limit]
+    return {"entries": entries}
+
+
 @app.get("/monitor/stream")
 async def monitor_stream(persona: str | None = None, since: str | None = None):
     """

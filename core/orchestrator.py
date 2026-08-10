@@ -1368,6 +1368,7 @@ def dispatch_tool(name: str, inputs: dict, handlers: dict,
     _trace(f"  [TOOL] {name}")
     t0 = time.monotonic()
     fn = handlers[name]
+    ok = True
     try:
         # Bind first, so a wrong-argument error can name the right arguments.
         # A bare "got an unexpected keyword argument 'content'" tells the model its
@@ -1383,6 +1384,7 @@ def dispatch_tool(name: str, inputs: dict, handlers: dict,
             result = f"Error calling tool '{name}': {bind_err}."
             if hint:
                 result += f" Correct usage: {hint}"
+            ok = False
         else:
             result = fn(**inputs)
             if isinstance(result, dict):
@@ -1391,6 +1393,7 @@ def dispatch_tool(name: str, inputs: dict, handlers: dict,
                 result = str(result)
     except Exception as e:
         result = f"Error running tool '{name}': {e}"
+        ok = False
     duration_ms = round((time.monotonic() - t0) * 1000, 1)
     rec = _agent_rec or _tr.get_current_agent()
     # For run_subagent, pull token counts from the subagent record that was just created.
@@ -1406,7 +1409,7 @@ def dispatch_tool(name: str, inputs: dict, handlers: dict,
                     out_tok = sub.total_output_tokens()
                     break
     _tr.record_tool_call(rec, _turn_num, name, inputs, result, duration_ms,
-                         input_tokens=in_tok, output_tokens=out_tok)
+                         input_tokens=in_tok, output_tokens=out_tok, ok=ok)
     return result
 
 
@@ -1456,15 +1459,21 @@ def run_session_anthropic(system_prompt: str, user_input: str,
         else:
             logger.info(f"[token_budget] turn={turn_num} cumulative_input={cumulative_input_tokens}{_cache_suffix}")
             _trace(f"[TOKEN] turn={turn_num} input={_in_tok} cumulative={cumulative_input_tokens}{_cache_suffix}")
-        _tr.record_turn_tokens(_tr.get_current_agent(), turn_num, _in_tok, _out_tok)
 
         text_parts = []
+        thinking_parts = []
         tool_calls = []
         for block in response.content:
             if block.type == "text":
                 text_parts.append(block.text)
+            elif block.type == "thinking":
+                thinking_parts.append(block.thinking)
             elif block.type == "tool_use":
                 tool_calls.append(block)
+
+        _tr.record_turn_tokens(_tr.get_current_agent(), turn_num, _in_tok, _out_tok,
+                               output_text="\n".join(text_parts),
+                               thinking_text="\n".join(thinking_parts))
 
         if not tool_calls:
             return "\n".join(text_parts)
@@ -1574,7 +1583,11 @@ def _anthropic_stream(
             else:
                 logger.info(f"[token_budget] turn={turn_num} input={pts}{_cache_suffix}")
                 _trace(f"[TOKEN] turn={turn_num} input={pts}{_cache_suffix}")
-            _tr.record_turn_tokens(_tr.get_current_agent(), turn_num, pts, ots)
+            _thinking_text = "\n".join(
+                block.thinking for block in final.content if block.type == "thinking"
+            )
+            _tr.record_turn_tokens(_tr.get_current_agent(), turn_num, pts, ots,
+                                   output_text="".join(text_parts), thinking_text=_thinking_text)
 
         tool_calls = [block for block in final.content if block.type == "tool_use"]
 
@@ -1679,6 +1692,7 @@ def run_session_ollama(system_prompt: str, user_input: str,
         )
 
         content_parts: list[str] = []
+        thinking_parts: list[str] = []
         tool_calls: list = []
         header_printed = False
         in_think = False
@@ -1695,13 +1709,19 @@ def run_session_ollama(system_prompt: str, user_input: str,
             if msg.content:
                 text = msg.content
 
-                # Filter thinking blocks — buffer until we see the closing tag
+                # Filter thinking blocks out of the printed/returned text — buffer until
+                # we see the closing tag — but keep the buffered text for the trace so
+                # it isn't just discarded (it fires despite think=False on qwen3).
                 if in_think or "<think>" in text:
                     think_buf += text
                     if not in_think:
                         in_think = True
                     if "</think>" in think_buf:
-                        after = think_buf[think_buf.index("</think>") + len("</think>"):]
+                        idx = think_buf.index("</think>")
+                        thinking_parts.append(
+                            think_buf[:idx].replace("<think>", "", 1)
+                        )
+                        after = think_buf[idx + len("</think>"):]
                         think_buf = ""
                         in_think = False
                         text = after
@@ -1726,7 +1746,9 @@ def run_session_ollama(system_prompt: str, user_input: str,
                 else:
                     logger.info(f"[token_budget] turn={_turn} input={prompt_tokens}")
                     _trace(f"[TOKEN] turn={_turn} input={prompt_tokens}")
-            _tr.record_turn_tokens(_tr.get_current_agent(), _turn, prompt_tokens, eval_tokens)
+            _tr.record_turn_tokens(_tr.get_current_agent(), _turn, prompt_tokens, eval_tokens,
+                                   output_text="".join(content_parts),
+                                   thinking_text="".join(thinking_parts))
 
         if header_printed:
             print("\n", flush=True)
@@ -2070,7 +2092,14 @@ def run_session_gemini_grounded(system_prompt: str, user_input: str,
                 logger.warning(f"[token_budget] OVER_8K turn={turn} cumulative_input={input_tokens}")
             else:
                 logger.info(f"[token_budget] turn={turn} cumulative_input={input_tokens}")
-            _tr.record_turn_tokens(_tr.get_current_agent(), turn, input_tokens, output_tokens, thinking_tokens)
+            # response.text raises when the turn's only content is a function_call
+            # (no text part) — catch rather than let a trace-only read break the turn.
+            try:
+                _turn_text = response.text or ""
+            except Exception:
+                _turn_text = ""
+            _tr.record_turn_tokens(_tr.get_current_agent(), turn, input_tokens, output_tokens, thinking_tokens,
+                                   output_text=_turn_text)
 
         # Grounding sources accumulate across turns — a citation found on turn 1 is still
         # a source for the final answer even if turn 2 fetched a page directly.
@@ -2255,7 +2284,6 @@ def _run_gemini_native_loop(client, model_name: str,
             else:
                 logger.info(f"[token_budget] turn={turn_num} cumulative_input={cumulative_input_tokens}{_cache_suffix}")
                 _trace(f"[TOKEN] turn={turn_num} input={input_tokens} cumulative={cumulative_input_tokens}{_cache_suffix}")
-            _tr.record_turn_tokens(_tr.get_current_agent(), turn_num, input_tokens, output_tokens, thinking_tokens)
 
         model_content = response.candidates[0].content
         contents.append(model_content)
@@ -2268,6 +2296,9 @@ def _run_gemini_native_loop(client, model_name: str,
             elif part.text:
                 text_parts.append(part.text)
 
+        if hasattr(response, "usage_metadata") and response.usage_metadata:
+            _tr.record_turn_tokens(_tr.get_current_agent(), turn_num, input_tokens, output_tokens, thinking_tokens,
+                                   output_text="\n".join(text_parts))
 
         # Capture text even when tool calls are also present — Gemini can emit text
         # and function_call in the same response. Without this, the user-facing text
@@ -2373,6 +2404,15 @@ def _openai_compat_loop(system_prompt: str, user_input: str,
             log_model_error(_agent, _provider_label, model, str(_api_exc))
             raise
 
+        choice = response.choices[0]
+        message = choice.message
+
+        # Capture any text content now — Gemini can emit text + tool_call in the same turn.
+        # Without this, the user-facing response text gets discarded when the loop continues
+        # to execute the tool call, and the model returns nothing on the following turn.
+        if message.content:
+            result = message.content
+
         if response.usage:
             _in_tok = response.usage.prompt_tokens
             _out_tok = getattr(response.usage, "completion_tokens", 0) or 0
@@ -2384,16 +2424,8 @@ def _openai_compat_loop(system_prompt: str, user_input: str,
             else:
                 logger.info(f"[token_budget] turn={turn_num} cumulative_input={cumulative_input_tokens}")
                 _trace(f"[TOKEN] turn={turn_num} input={_in_tok} cumulative={cumulative_input_tokens}")
-            _tr.record_turn_tokens(_tr.get_current_agent(), turn_num, _in_tok, _out_tok, _think_tok)
-
-        choice = response.choices[0]
-        message = choice.message
-
-        # Capture any text content now — Gemini can emit text + tool_call in the same turn.
-        # Without this, the user-facing response text gets discarded when the loop continues
-        # to execute the tool call, and the model returns nothing on the following turn.
-        if message.content:
-            result = message.content
+            _tr.record_turn_tokens(_tr.get_current_agent(), turn_num, _in_tok, _out_tok, _think_tok,
+                                   output_text=message.content or "")
 
         # Return on any non-tool-call finish
         if choice.finish_reason != "tool_calls" or not message.tool_calls:
@@ -2500,7 +2532,8 @@ def _openai_compat_stream(
                     else:
                         logger.info(f"[token_budget] turn={turn_num} cumulative_input={pts}")
                         _trace(f"[TOKEN] turn={turn_num} input={pts}")
-                    _tr.record_turn_tokens(_tr.get_current_agent(), turn_num, pts, ots, thts)
+                    _tr.record_turn_tokens(_tr.get_current_agent(), turn_num, pts, ots, thts,
+                                           output_text="".join(text_parts))
                     _usage_recorded = True
                 continue
 
@@ -2522,7 +2555,8 @@ def _openai_compat_stream(
                     else:
                         logger.info(f"[token_budget] turn={turn_num} cumulative_input={pts}")
                         _trace(f"[TOKEN] turn={turn_num} input={pts}")
-                    _tr.record_turn_tokens(_tr.get_current_agent(), turn_num, pts, ots, thts)
+                    _tr.record_turn_tokens(_tr.get_current_agent(), turn_num, pts, ots, thts,
+                                           output_text="".join(text_parts))
                     _usage_recorded = True
 
             if delta.content:

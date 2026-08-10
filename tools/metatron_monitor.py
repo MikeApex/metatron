@@ -22,7 +22,7 @@ import os
 import shlex
 import sys
 import tempfile
-from datetime import datetime
+from datetime import datetime, timedelta
 
 try:
     import httpx
@@ -97,19 +97,90 @@ def fmt_out_tokens(output_tokens: int, thinking_tokens: int = 0) -> str:
 
 
 GROUNDED_TAG = " [red]⚠ no tool calls[/]"
+FAILED_TAG = " [red]⚠ call failed[/]"
+
+# Plainspeak label for what external resource a tool call actually reaches —
+# shown next to the raw tool name so the technical name and the plain
+# description are both visible without having to know the codebase.
+_TOOL_RESOURCE_LABELS: dict[str, str] = {
+    "get_pollen_forecast": "Google Pollen API",
+    "get_tfl_status": "TfL API",
+    "get_travel_time": "Google Maps/Routes API",
+    "fetch_url": "Web Research",
+    "get_flight_status": "Flight status API",
+    "read_google_contacts": "Google Contacts API",
+    "get_weather": "Weather/Air Quality/News",
+    "get_environmental_snapshot": "Weather/Air Quality/News",
+    "read_email": "Email (IMAP)",
+    "send_email": "Email (SMTP)",
+    "search_correspondence": "Email (IMAP)",
+}
+_CALENDAR_PREFIXES = ("read_calendar", "write_calendar", "update_calendar", "delete_calendar", "check_calendar_conflicts")
+
+
+def resource_label(tool_name: str) -> str:
+    """Plainspeak description of the external resource a tool call reaches."""
+    if tool_name in _TOOL_RESOURCE_LABELS:
+        return _TOOL_RESOURCE_LABELS[tool_name]
+    if tool_name.startswith(_CALENDAR_PREFIXES):
+        return "Calendar (CalDAV)"
+    return "Local Metatron data"
 
 
 # ---------------------------------------------------------------------------
 # Custom list items
 # ---------------------------------------------------------------------------
 
+def _match_model_errors(errors: list[dict], start_ts: str, duration_ms: int,
+                        agent_name: str | None = None) -> list[dict]:
+    """
+    Whole-API-call failures (data/diagnostics/model_errors.json, via
+    core.router.log_model_error) aren't part of the trace record — they're
+    logged separately because the exception happens before any turn completes.
+    Correlate by wall-clock window instead: does the error's timestamp fall
+    within [start_ts, start_ts + duration_ms], with a small buffer for clock/
+    logging skew? Optionally narrow further to one agent by name.
+    """
+    if not errors or not start_ts:
+        return []
+    try:
+        start = datetime.fromisoformat(start_ts)
+    except Exception:
+        return []
+    end = start + timedelta(milliseconds=duration_ms or 0) + timedelta(seconds=5)
+    window_start = start - timedelta(seconds=5)
+    matched = []
+    for e in errors:
+        if agent_name is not None and e.get("agent") != agent_name:
+            continue
+        try:
+            e_ts = datetime.fromisoformat(e.get("timestamp", ""))
+        except Exception:
+            continue
+        if window_start <= e_ts <= end:
+            matched.append(e)
+    return matched
+
+
+def _pipeline_has_failure(agent_recs: list[dict]) -> bool:
+    """True if any tool call anywhere in the pipeline (including subagents) failed."""
+    for a in agent_recs:
+        for t in a.get("turns", []):
+            if any(not tc.get("ok", True) for tc in t.get("tool_calls", [])):
+                return True
+        if _pipeline_has_failure(a.get("subagents", [])):
+            return True
+    return False
+
+
 class MessageBlock(ListItem):
     """A [user, synth] or [proactive, user, synth] block in Column 1."""
 
-    def __init__(self, entry: dict, trace: dict | None, **kwargs):
+    def __init__(self, entry: dict, trace: dict | None, api_errors: list[dict] | None = None, **kwargs):
         super().__init__(**kwargs)
         self.entry = entry
         self.trace = trace
+        self.api_errors = api_errors or []
 
     def compose(self) -> ComposeResult:
         ts_raw = self.entry.get("ts", "")
@@ -118,20 +189,33 @@ class MessageBlock(ListItem):
         synth_full = self.entry.get("response", "")
         is_proactive = self.trace.get("is_proactive", False) if self.trace else False
         is_grounded = self.trace.get("grounded", True) if self.trace else True
+        has_failure = (
+            (_pipeline_has_failure(self.trace.get("pipeline", [])) if self.trace else False)
+            or bool(self.api_errors)
+        )
         seq = self.entry.get("seq", "")
 
         proactive_tag = " [yellow]⊕[/]" if is_proactive else ""
         grounded_tag = GROUNDED_TAG if not is_grounded else ""
+        failed_tag = FAILED_TAG if has_failure else ""
         if seq:
             ts_prefix = f"[dim]#{seq}[/] [bold cyan]{fmt_ts_short(ts_raw)}[/]"
         else:
             ts_prefix = f"[bold cyan]{fmt_ts(ts_raw)}[/]"
         title = (
-            f"{ts_prefix} [dim]{persona}[/]{proactive_tag}{grounded_tag}  "
+            f"{ts_prefix} [dim]{persona}[/]{proactive_tag}{grounded_tag}{failed_tag}  "
             f"[dim]{truncate(user_full, 60)}[/]"
         )
+        api_error_block = ""
+        if self.api_errors:
+            lines = "\n".join(
+                f"  [red]✗[/] {e.get('provider','?')}/{e.get('model','?')} "
+                f"({e.get('agent','?')}): {e.get('error','')}"
+                for e in self.api_errors
+            )
+            api_error_block = f"\n\n[red]API errors:[/]\n{lines}"
         yield Collapsible(
-            Static(f"[dim]You:[/]\n{user_full}\n\n[dim]Metatron:[/]\n{synth_full}"),
+            Static(f"[dim]You:[/]\n{user_full}\n\n[dim]Metatron:[/]\n{synth_full}{api_error_block}"),
             title=title,
             collapsed=True,
         )
@@ -140,9 +224,10 @@ class MessageBlock(ListItem):
 class AgentLogItem(ListItem):
     """One agent call row in Column 2."""
 
-    def __init__(self, agent_rec: dict, **kwargs):
+    def __init__(self, agent_rec: dict, api_errors: list[dict] | None = None, **kwargs):
         super().__init__(**kwargs)
         self.agent_rec = agent_rec
+        self.api_errors = api_errors or []
 
     def compose(self) -> ComposeResult:
         r = self.agent_rec
@@ -155,25 +240,29 @@ class AgentLogItem(ListItem):
         duration = r.get("duration_ms", 0)
         turns = r.get("turns", [])
 
-        tool_names = [
-            tc.get("name", "?")
-            for t in turns
-            for tc in t.get("tool_calls", [])
+        tool_calls_flat = [
+            tc for t in turns for tc in t.get("tool_calls", [])
         ]
         model_short = model.split("/")[-1] if "/" in model else model
         indent = "  " if r.get("_indent") else ""
 
         header = f"{indent}[bold]{name}[/]  [dim]{provider}/{model_short}[/]"
+        if self.api_errors:
+            header += FAILED_TAG
         tokens = (
             f"{indent}[green]{total_in:,}[/] in / "
             f"[yellow]{fmt_out_tokens(total_out, total_think)}[/]  [dim]{duration}ms[/]"
         )
         turns_line = f"{indent}[dim]{len(turns)} turn{'s' if len(turns) != 1 else ''}[/]"
-        if tool_names:
-            shown = "  ".join(f"[blue]{t}[/]" for t in tool_names[:4])
+        if tool_calls_flat:
+            def _chip(tc: dict) -> str:
+                mark = "" if tc.get("ok", True) else "[red]✗ [/]"
+                tc_name = tc.get("name", "?")
+                return f"{mark}[blue]{tc_name}[/] [dim]({resource_label(tc_name)})[/]"
+            shown = "  ".join(_chip(tc) for tc in tool_calls_flat[:4])
             turns_line += f"  {shown}"
-            if len(tool_names) > 4:
-                turns_line += f"  [dim]+{len(tool_names) - 4} more[/]"
+            if len(tool_calls_flat) > 4:
+                turns_line += f"  [dim]+{len(tool_calls_flat) - 4} more[/]"
 
         sublines = [
             f"  [dim]↳ {s.get('agent','?')}  "
@@ -363,6 +452,7 @@ class TheBookApp(App):
         self.server = server.rstrip("/")
         self.conversations: list[dict] = []
         self.traces: list[dict] = []
+        self.model_errors: list[dict] = []
         self._sse_worker = None
         self._selected_trace: dict | None = None
         self._selected_agent_rec: dict | None = None
@@ -523,9 +613,17 @@ class TheBookApp(App):
                     f"{self.server}/monitor/traces", params=params,
                 )
                 trace_r.raise_for_status()
+                # No persona field on model_errors entries (log_model_error doesn't
+                # record one) — filtered by time window only, same params otherwise.
+                err_params = {k: v for k, v in params.items() if k != "persona"}
+                err_r = await client.get(
+                    f"{self.server}/monitor/model_errors", params=err_params,
+                )
+                err_r.raise_for_status()
 
             self.conversations = conv_r.json().get("entries", [])
             self.traces = trace_r.json().get("traces", [])
+            self.model_errors = err_r.json().get("entries", [])
             self._populate_col1()
             self._set_status(
                 f"{persona} — {len(self.conversations)} messages, "
@@ -556,19 +654,24 @@ class TheBookApp(App):
                 return t
         return None
 
+    def _errors_for_trace(self, trace: dict | None) -> list[dict]:
+        if trace is None:
+            return []
+        return _match_model_errors(self.model_errors, trace.get("ts", ""), trace.get("duration_ms", 0))
+
     def _populate_col1(self) -> None:
         lst = self.query_one("#msg-list", ListView)
         lst.clear()
         sorted_convs = sorted(self.conversations, key=lambda e: e.get("ts", ""), reverse=True)
         for entry in sorted_convs:
             trace = self._trace_for_conv(entry)
-            lst.append(MessageBlock(entry, trace))
+            lst.append(MessageBlock(entry, trace, self._errors_for_trace(trace)))
         lst.scroll_home(animate=False)
 
     def _prepend_col1(self, entry: dict, trace: dict | None) -> None:
         """Insert a new (most recent) message at the top of Column 1."""
         lst = self.query_one("#msg-list", ListView)
-        block = MessageBlock(entry, trace)
+        block = MessageBlock(entry, trace, self._errors_for_trace(trace))
         if lst.children:
             lst.mount(block, before=lst.children[0])
         else:
@@ -595,13 +698,16 @@ class TheBookApp(App):
         if trace is None:
             lst.append(ListItem(Static("[dim]No trace for this message — run a conversation after deploying.[/]")))
             return
+        trace_errors = self._errors_for_trace(trace)
         pipeline = trace.get("pipeline", [])
         for agent_rec in pipeline:
-            lst.append(AgentLogItem(agent_rec))
+            agent_errors = [e for e in trace_errors if e.get("agent") == agent_rec.get("agent")]
+            lst.append(AgentLogItem(agent_rec, agent_errors))
             for sub in agent_rec.get("subagents", []):
                 sub_copy = dict(sub)
                 sub_copy["_indent"] = True
-                lst.append(AgentLogItem(sub_copy))
+                sub_errors = [e for e in trace_errors if e.get("agent") == sub.get("agent")]
+                lst.append(AgentLogItem(sub_copy, sub_errors))
 
     # ------------------------------------------------------------------
     # Column 2 → Column 3
@@ -613,13 +719,13 @@ class TheBookApp(App):
         if not isinstance(item, AgentLogItem):
             return
         self._selected_agent_rec = item.agent_rec
-        await self._populate_col3(item.agent_rec)
+        await self._populate_col3(item.agent_rec, item.api_errors)
 
     def _clear_col3(self) -> None:
         scroller = self.query_one("#detail-scroll", ScrollableContainer)
         scroller.remove_children()
 
-    async def _populate_col3(self, agent_rec: dict) -> None:
+    async def _populate_col3(self, agent_rec: dict, api_errors: list[dict] | None = None) -> None:
         scroller = self.query_one("#detail-scroll", ScrollableContainer)
         scroller.remove_children()
 
@@ -641,6 +747,12 @@ class TheBookApp(App):
             )
         ]
 
+        if api_errors:
+            err_lines = "\n".join(
+                f"  [red]✗[/] {e.get('timestamp','')}  {e.get('error','')}" for e in api_errors
+            )
+            widgets.append(Static(f"[red]⚠ API call failure(s):[/]\n{err_lines}"))
+
         # Context sections — each a top-level Collapsible
         for key, label in [
             ("agent_file", "Agent Instructions"),
@@ -661,12 +773,19 @@ class TheBookApp(App):
             t_in = t.get("input_tokens", 0)
             t_out = t.get("output_tokens", 0)
             t_think = t.get("thinking_tokens", 0)
+            t_output_text = t.get("output_text", "")
+            t_thinking_text = t.get("thinking_text", "")
             tool_calls = t.get("tool_calls", [])
 
             widgets.append(Static(
                 f"\n[dim]── Turn {turn_num}  "
                 f"[green]{t_in:,}[/]in  [yellow]{fmt_out_tokens(t_out, t_think)}[/] ──[/]"
             ))
+
+            if t_thinking_text:
+                widgets.append(Collapsible(Static(t_thinking_text), title="Thinking", collapsed=True))
+            if t_output_text:
+                widgets.append(Collapsible(Static(t_output_text), title="Output text", collapsed=True))
 
             if not tool_calls:
                 widgets.append(Static("  [dim]no tool calls[/]"))
@@ -729,10 +848,13 @@ class TheBookApp(App):
                     tc_result = tc.get("result_preview", "")
                     tc_in = tc.get("input_tokens", 0)
                     tc_out = tc.get("output_tokens", 0)
+                    tc_ok = tc.get("ok", True)
                     tok_str = f"  [green]{tc_in:,}[/]in/[yellow]{tc_out:,}[/]out" if (tc_in or tc_out) else ""
+                    mark = "[green]✓[/]" if tc_ok else "[red]✗[/]"
                     widgets.append(Collapsible(
                         Static(f"Args:\n{tc_args}\n\nResult:\n{tc_result}"),
-                        title=f"⚙ {tc_name}{tok_str}  [dim]{tc_dur:.1f}ms[/]",
+                        title=(f"{mark} ⚙ {tc_name}  [dim]({resource_label(tc_name)})[/]"
+                               f"{tok_str}  [dim]{tc_dur:.1f}ms[/]"),
                         collapsed=True,
                     ))
 
