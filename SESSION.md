@@ -111,7 +111,7 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
-| 08-10 | **`/archive` commits its own output** — step 5 added: explicit manifest, diff before staging, no push, no deploy, stop on foreign lines. Step 2 repointed at the top of `PROJECT_LOG.md`. `[DB-0805-05]` hit ×3 | `060f53a`, `b5600a8`, `bb1d9da` — docs only, **no deploy needed** |
+| 08-10 | **`/archive` commits its own output** — step 5 added: explicit manifest, diff before staging, push for backup, **never deploy**, stop on foreign lines. Step 2 repointed at the top of `PROJECT_LOG.md`; primer compacted off its ceiling. `[DB-0805-05]` hit ×3 | `060f53a`…`3e1ae7b` (6) — docs only, **no deploy needed** |
 | 08-10 | **The Book: thinking-token breakout, ungrounded-answer flag** — split Vertex's reasoning tokens out of `output_tokens`; added a `grounded` flag after chat #007 was found answering with **zero tool calls** | `cb9f459` — deployed, VM verified |
 | 08-10 | **Outbound communication got one owner** — Relationships owns every message to a person; per-contact tone profiles built from real correspondence through a fixed JSON key set | `9eb5ac4`, `cae31df`, `88957e6` — deployed as a side effect of `cb9f459` |
 | 08-10 | **`/backlog deep`** — two items closed on premises that had stopped being true, two merged, and three specialists found instructed to use `search_memory` without holding it | `a96a3b3`, `a431472` — deployed, VM verified |

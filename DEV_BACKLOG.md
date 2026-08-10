@@ -248,6 +248,17 @@ to pick from when a `Now` item is time-gated.
   console lag. Not retroactive — turning it on now only helps the next anomaly.
 
 **Housekeeping**
+- **[DB-0810-06] Every context-file ceiling is measured in lines, and lines stopped tracking the
+  cost.** `SESSION.md` hit exactly 200/200 on 2026-08-10 with **5.6 KB of its 17.9 KB sitting on
+  five lines** — `## Recent sessions` rows that had grown into paragraph-length restatements of
+  `archive/PROJECT_LOG.md`. They grew **wide, not numerous**, so the line ceiling could not see
+  them; the instance is fixed (`2e3e6e4`, 5.6 KB → 1.9 KB) but the **metric is still wrong
+  everywhere it is stated** — `SESSION.md` 200, `/archive` ~100, `/backlog` ~130,
+  `DEV_BACKLOG.md` ~250, all line-based, all in `CLAUDE.md` § *Which File Holds What* plus each
+  file's own footer. A byte or token ceiling would have caught this months earlier. **Check
+  before acting:** whether a second measure is worth the complexity, or whether the one-line-per-
+  row rule now in the section header is sufficient on its own — the cheap fix may already be in.
+  *filed 2026-08-10 · found while fixing the primer, not fixable in the same pass*
 - **[DB-0805-05]** **A session cannot tell its own edits from a parallel window's — the git
   collisions and the `/archive` dirty-check are one cause, not two.** *(a)* A window's commit
   swept up another's uncommitted diff (2026-08-08); `git add <files>` does **not** protect you,
