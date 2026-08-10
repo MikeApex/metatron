@@ -21,6 +21,8 @@ file is the only narrative record, alongside the verbatim transcripts.*
 
 ---
 
+## Dated history
+
 ### 2026-08-10, later still (The Book: thinking-token breakout, ungrounded-answer flag) — `cb9f459`, deployed
 
 Mike asked for two things about the Book (`tools/metatron_monitor.py`): show output tokens
@@ -1302,7 +1304,7 @@ Four related complaints, one root cause and four fixes. **The cause was not an a
 
 ---
 
-## Dated history
+## Dated history (continued — 2026-08-08 and earlier)
 
 ### 2026-08-08 (pollen tool, proactive travel trigger, scheduler defaults) — `8d798a8`, `be1d79e`, plus VM-side config; code also swept into `7c70cd9`
 

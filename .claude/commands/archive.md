@@ -4,9 +4,8 @@ description: Close out a session — verbatim transcript, one project-log entry,
 
 Metatron — Archive This Session
 
-Four steps, in order. Should take minutes, not a work block. The verbatim capture runs first
-because it is the only irreplaceable one; `SESSION.md` is rewritten last because it depends on
-what the log entry says.
+Five steps, in order — minutes, not a work block. Verbatim capture first (the only
+irreplaceable one), `SESSION.md` after the log entry it depends on, commit last.
 
 ## 0. Two checks before you start
 
@@ -23,14 +22,14 @@ what the log entry says.
 python3 ~/.claude/tools/archive_chats.py
 ```
 
-Canonical copy, auto-detects the project root, writes to `archive/transcripts/`, idempotent.
-Report what it produced and move on. **Say nothing about the tail** — this captures everything
-up to now, which is the intended result; Mike has that reminder already and it fires on every
-run, so it distinguishes nothing.
+Idempotent; writes to `archive/transcripts/`. Report what it produced and move on. **Say
+nothing about the tail** — this captures everything up to now, which is the intended result;
+Mike has that reminder already and it fires on every run, so it distinguishes nothing.
 
 ## 2. **Append** one entry to `archive/PROJECT_LOG.md`
 
-Newest first, under `## Dated history`. One `### <date> (<short title>)` section, ~20–40 lines:
+**At the top of the file** — directly under `## Dated history` (~line 23), above the current
+newest entry. One `### <date> (<short title>)` section, ~20–40 lines:
 
 - what changed and **why** — the reasoning, not the diff
 - decisions made, and **options rejected with the reason**
@@ -40,9 +39,6 @@ Newest first, under `## Dated history`. One `### <date> (<short title>)` section
 
 Carry the outgoing `SESSION.md` handoff paragraph into this entry so the narrative stays
 unbroken. **This file is only ever appended to.**
-
-There is no separate `archive/sessions/` writeup — the transcript is the verbatim record, this
-entry is the narrative, `SESSION.md` is the state. (Files there predate 2026-08-09; leave them.)
 
 ## 3. **Replace** the changed parts of `SESSION.md`
 
@@ -86,7 +82,19 @@ python3 scripts/sync_dev_backlog.py
 **Do not triage here.** `/archive` runs every session, and a bulk chore attached to it is how a
 list stops being read. The count is the signal; `/backlog` is where a pass happens.
 
+## 5. Commit the close-out
+
+**No push, no deploy** — durability, not delivery.
+
+Stage an explicit manifest: `SESSION.md`, `archive/PROJECT_LOG.md`, `DEV_BACKLOG.md`,
+`archive/backlog_closed_2026-08.md`, plus `ROADMAP.md` if step 3 touched it. Never `git add -A`,
+never a glob. **`git diff` each file before staging** — two windows run against this tree, and
+`git add <path>` stages that file's whole current content, a parallel session's uncommitted
+lines included (CLAUDE.md § Deploy safety, rule 4).
+
+**Lines this session did not write stop the commit.** Name them, stage nothing: you cannot tell
+your own edits from a parallel window's (`[DB-0805-05]`, open), so raising it is the step.
+
 ---
 
-*Procedure only. Incident history and the reasoning behind these steps live in
-`archive/PROJECT_LOG.md`; this file stays under ~100 lines (the `CLAUDE.md` ceiling).*
+*Procedure only — incident history lives in `archive/PROJECT_LOG.md`. Ceiling ~100 lines (`CLAUDE.md`).*

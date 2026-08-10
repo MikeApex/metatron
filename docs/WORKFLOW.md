@@ -58,8 +58,9 @@ counts creep or the file feels messy. Occasional; never scheduled.
 workers never touch shared state and never deploy; this window consolidates.*
 
 **`/archive`** — transcript, one `PROJECT_LOG.md` entry, `SESSION.md` refresh, backlog
-close-and-file. Minutes, not a work block. *The rule: close before you file, and file only what
-a user would notice or what blocks the roadmap.*
+close-and-file, then a commit of exactly those files. Minutes, not a work block. *The rule:
+close before you file, and file only what a user would notice or what blocks the roadmap.*
+*The commit's rule: explicit manifest, no push, no deploy.*
 
 ---
 
@@ -130,7 +131,8 @@ escalates itself into the count line.
 `/archive` and edited the same three files, and once a window's commit swept up another's
 uncommitted work. Stopped by the coordinator/worker split: one window owns shared state and the
 deploy; workers write a handoff file. `/archive` step 0 checks for both dirty shared files and
-today's handoffs before it does anything.
+today's handoffs before it does anything, and step 5 stops the close-out commit outright if a
+staged file's diff carries lines the session did not write.
 
 ---
 

@@ -667,9 +667,11 @@ begins. Generated files — reports, archives, plan snapshots — follow
 
 ## Chat Archiving
 
-**Run `/archive`.** Four steps — verbatim transcript, one project-log entry, `SESSION.md`
-refresh, backlog close-and-file — in `.claude/commands/archive.md` so they are executed, not
-remembered. It should take minutes.
+**Run `/archive`.** Five steps — verbatim transcript, one project-log entry, `SESSION.md`
+refresh, backlog close-and-file, and a commit of exactly those files — in
+`.claude/commands/archive.md` so they are executed, not remembered. It should take minutes.
+The commit stages an explicit manifest and **never pushes or deploys**; a diff carrying lines
+the session did not write stops it rather than sweeping up a parallel window's work.
 
 The one rule worth carrying in your head, because it is what keeps `SESSION.md` small:
 
