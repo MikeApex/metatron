@@ -1,20 +1,20 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-10, later still (The Book: thinking/output text capture, tool-call
-success/failure, plainspeak resource labels, whole-API-call failures — `ffaf7a7`, deployed) —
-closed the gap the earlier-today thinking-token-breakout pass (`cb9f459`) left open: token
-*counts* were split out, but the actual thinking/output *text* was never captured anywhere —
-`core/trace.py`'s schema had no field for it, and `run_session_ollama` was **actively
-discarding** qwen3's `<think>` content rather than just not counting it. Fixed across every
-provider loop in `core/orchestrator.py`, plus a structured `ok` flag on tool calls (previously
-detectable only by string-matching "Error" in the result), plainspeak resource labels
-(`TfL API`, `Web Research`, etc.) in the Book, and a new `/monitor/model_errors` endpoint so
-whole-API-call failures — not just tool-call failures — get an exchange-level `⚠ call failed`
-tag. **Filed as `[DB-0810-07]`: none of it has been exercised against a real exchange yet**,
-only `py_compile` + a post-deploy health check. Full diagnosis and rejected options:
-`archive/PROJECT_LOG.md` § 2026-08-10.
-**Unchanged from earlier today:** `[DB-0804-01]`'s count is due **08-11 — tomorrow**; the IMAP
-half of tone profiling (`[DB-0810-05]`) is still unexercised.*
+*Updated: 2026-08-10, latest (flight/transit misrouting fixed — Research provenance not) — a
+troubleshoot on seq 011 found `get_tfl_status` healthy, but seq 008/014 showed Coordinator
+routing **flight-status questions to Research Agent**, which holds no travel feeds and answered
+from training knowledge. Routing fixed at `coordinator.md:171` (`d0774f8`, deployed, **verified
+in seq 016** — BA332 → `logistics` → `get_flight_status`). The second defect is **open and is
+the bigger one: Research fabricates its sources.** `web_search` does not exist anywhere in the
+codebase, yet `research_agent.md` names it four times and line 80 mandates a `SOURCES:` field —
+so an agent with nothing to cite invents citations, and did so most confidently when challenged.
+The Book cannot see this: `trace.py:289`'s `grounded` flag is `any(has_tool_calls())`, and
+grounded search makes **zero** tool calls by construction. Next session implements the fix —
+provenance authored by Python, never the model — per
+`archive/plans/research_provenance_handoff_2026-08-10.md`. `tools/flights.py` carries an
+uncommitted `delayed`-means-*changed* fix to bundle into that deploy.
+**Unchanged:** `[DB-0804-01]`'s count is due **08-11 — tomorrow**; `[DB-0810-05]` (IMAP tone
+profiling) and `[DB-0810-07]` (Book capture) are still unexercised against live data.*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -113,13 +113,13 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-10 | **Flight/transit queries routed to an agent with no travel feeds** — Coordinator sent flight status to Research (grant: `fetch_url`, `get_pollen_forecast`); `get_flight_status` is Logistics-only and healthy. Fixed + verified in seq 016. Second, **open** defect found: Research fabricates `SOURCES:` because `web_search` does not exist yet is named 4× and citing is mandatory | `d0774f8` — deployed, verified |
 | 08-10 | **The Book: thinking/output text capture, tool-call success/failure, plainspeak resource labels, whole-API-call failures** — closes the gap the same-day token-breakout pass left open; text was never captured, only counts, and Ollama's `<think>` content was being discarded outright. New `/monitor/model_errors` endpoint. Filed `[DB-0810-07]`: unexercised against live data | `ffaf7a7` — deployed, VM verified |
 | 08-10 | **Feature feasibility scan** — agent-backlog rollup ranked by impact; photos (needs orchestrator content-block support), Google Drive (echoes the reversed Contacts OAuth build, same Testing/Production token wall), geolocation (already `[DB-0808-04]`, classification settled, mechanics not) | docs/research only, no code |
 | 08-10 | **`/archive` commits its own output** — step 5 added: explicit manifest, diff before staging, push for backup, **never deploy**, stop on foreign lines. Step 2 repointed at the top of `PROJECT_LOG.md`; primer compacted off its ceiling. `[DB-0805-05]` hit ×3 | `060f53a`…`3e1ae7b` (6) — docs only, **no deploy needed** |
 | 08-10 | **The Book: thinking-token breakout, ungrounded-answer flag** — split Vertex's reasoning tokens out of `output_tokens`; added a `grounded` flag after chat #007 was found answering with **zero tool calls** | `cb9f459` — deployed, VM verified |
 | 08-10 | **Outbound communication got one owner** — Relationships owns every message to a person; per-contact tone profiles built from real correspondence through a fixed JSON key set | `9eb5ac4`, `cae31df`, `88957e6` — deployed as a side effect of `cb9f459` |
 | 08-10 | **`/backlog deep`** — two items closed on premises that had stopped being true, two merged, and three specialists found instructed to use `search_memory` without holding it | `a96a3b3`, `a431472` — deployed, VM verified |
-| 08-10 | **research_agent grounded-search crash** — `getattr(gm, "grounding_chunks", [])` did not cover Gemini's None-valued attribute; broke every grounded query hitting that shape | `bc1a552` — deployed, VM verified |
 ---
 
 ## Useful context to pull as needed

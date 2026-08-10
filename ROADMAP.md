@@ -156,6 +156,15 @@ Full item in the static plan.*
 > never been run on the Flash-Lite path that serves most of this traffic). Full reasoning:
 > `archive/PROJECT_LOG.md` § 2026-08-09.
 
+> **⚠ Check 10 has a known Fail waiting for it: `research_agent` fabricates its sources**
+> (found 2026-08-10, exchanges 008/014). `web_search` does not exist in the codebase yet
+> `research_agent.md` names it four times while line 80 makes a `SOURCES:` field mandatory — so
+> the agent invents citations, and asserted live retrieval most confidently when the user
+> challenged it. Check 10 requires no Fails, so this must be fixed before the audit is run, not
+> discovered during it. Fix planned in
+> `archive/plans/research_provenance_handoff_2026-08-10.md`; reasoning in
+> `archive/PROJECT_LOG.md` § 2026-08-10.
+
 **Pre-sign-off gate — prefix caching regression (2026-06-19): ✅ CLEARED ON THE CLOUD PATH 2026-08-04.** The `_run_single_agent()` system prompt restructure (prefix caching change) moved dynamic context from the system prompt into the user message turn, changing the system prompt assembly order for every agent. The A4 clinical-flag hard-fail scenarios were re-run against the updated order on 2026-08-04 and **passed 6/6** — report at `tests/a4_safety_rerun_2026-08-04_gemini.md`, runner at `tests/run_a4_safety.py` (the suites are now scripted; A8's regression gate below calls the same runner rather than the manual A4 procedure).
 
 Two residual gaps, one still open:

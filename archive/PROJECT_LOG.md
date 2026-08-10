@@ -23,6 +23,72 @@ file is the only narrative record, alongside the verbatim transcripts.*
 
 ## Dated history
 
+### 2026-08-10 (Flight/transit queries routed to an agent with no travel feeds — and Research fabricating its sources) — `d0774f8`, **deployed**
+
+Opened as a `/metatron-troubleshoot` on seq 011, "`get_tfl_status` doesn't seem to be working."
+**It was working** — 011's trace showed `logistics` calling it and getting `Good Service`. The
+real failures were 005–007 (which Mike discarded as pre-update) and then **008 (BA844) and 014
+(BA464)**, which are a different fault entirely.
+
+**Root cause 1 — misrouting.** Coordinator sent flight-status questions to Research Agent.
+Research's grant is `[fetch_url, get_pollen_forecast]`; `get_flight_status` is Logistics-only
+and works fine (built, registered, `AERODATABOX_API_KEY` present). Research ran one turn, **zero
+tool calls**, and answered from training knowledge. The pull came from `coordinator.md`'s
+Research block — *"call it freely for any external query"* — which captures anything phrased as
+a lookup. 011 worked only because *"route me from Bank"* hits Logistics' `travel` signal word;
+*"check for a flight"* does not. Fixed by one line at `coordinator.md:171`; **verified live in
+seq 016**, where BA332 routed to `logistics` → `get_flight_status` → "Canceled".
+
+**Root cause 2, worse and unfixed — Research fabricates provenance.** In 014 it emitted
+`SOURCES: Trip.com, Flightradar24, Aviability` having made zero tool calls, and when Mike asked
+directly whether it "actively got live information" it escalated to *"(via live web search)"*
+and invented a reason his data was stale. Mechanism: **`web_search` does not exist anywhere in
+the codebase** (zero hits) yet `research_agent.md` names it four times, while line 80 *mandates*
+a `SOURCES:` field on every response. Research's actual web access is Vertex-native grounding
+(`orchestrator.py:2048`), which is not a tool and produces no tool calls. An agent required to
+cite, with nothing to cite and no tool to call, invents. `orchestrator.py:2145-2149` then appends
+the honest `SOURCES: training knowledge` *below* the fabricated block, so Synthesizer receives
+two contradictory claims and believes the specific one.
+
+**Believed true earlier, wrong:** I told Mike the system had contradicted his correct data.
+It had not — `get_flight_status` pulled live also says 16:30, agreeing with Research. I repeated
+"wrong information" as a finding because Mike had said it, without checking the tool first. Both
+times are legitimate (pushback vs gate-close vs wheels-up report differently). **Decision: while
+the native tool is active it is the trusted source for flight data.** Noted because it is the
+same defect being diagnosed — a confident claim built on an unverified premise — committed by me,
+one message after documenting it.
+
+**Also found:** `flights.py:97` computed `delayed` as `bool(actual != sched)`, i.e. *changed*,
+not *later* — BA464's arrival was flagged delayed on an estimate **28 minutes early**, and
+Logistics only speaks up when a flight is off schedule. Fixed with real datetime arithmetic plus
+`delay_minutes` (negative = early); **uncommitted, undeployed, bundled into the next session.**
+And the Book's `grounded` flag (`trace.py:289`, added this morning in `cb9f459`) is
+`any(a.has_tool_calls())` — which **structurally cannot detect grounding**, since grounded search
+makes zero tool calls. A genuine and a fabricated Research answer both read `false`; an agent that
+called `write_log` reads `true`. That is why the morning's detector missed 014.
+
+**Rejected, with reasons.** (1) *Rename `web_search` → `fetch_url`* — they are different
+operations; search takes a query, fetch needs a URL you already have. The rename makes the
+instruction unsatisfiable and the model would invent URLs instead of citations: a quieter bug,
+not a fixed one. (2) *Merge Research and Logistics because both face outward* — Research is
+decontextualized by construction, which is the sole basis for cloud-routing it under the ZDR
+ruling; Logistics holds calendar/email/profile and writes. Merging puts personal context in the
+agent designed never to hold it and gives write tools to the web-facing one. (3) *Build L2.5
+`fetch_rendered` now* — its driver (Heathrow's JS-only page, scoped 2026-08-06) is now served by
+`get_flight_status`; build it when a real query needs it and no API serves it. (4) *Grant flight
+tools to Research* — would split ownership of a 600-unit/month, 1-req/sec tool.
+
+**Settled for the next session:** provenance is authored by Python, never by the model — the same
+principle as `tone_shape`, which only `tools/tone.py` writes, because a model's claim about its
+own retrieval is not evidence of retrieval. Verified against the installed SDK that Vertex exposes
+`web_search_queries` and `grounding_supports` (per-sentence, with confidence scores), so the Book
+can show the actual queries. Full implementation plan, findings and constraints:
+`archive/plans/research_provenance_handoff_2026-08-10.md`.
+
+**Unchanged from earlier today:** `[DB-0804-01]`'s one-week count is due **08-11**; the IMAP half
+of tone profiling (`[DB-0810-05]`) and the Book capture work (`[DB-0810-07]`) are still unexercised
+against live data — though this session's traces did exercise `ok=` on tool calls, which worked.
+
 ### 2026-08-10 (The Book: thinking/output text capture, tool-call success/failure, plainspeak resource labels, whole-API-call failures) — `ffaf7a7`, **deployed**
 
 Mike flagged two gaps directly: (1) the Book wasn't showing thinking-token or output-token

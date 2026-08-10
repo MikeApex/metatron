@@ -39,7 +39,27 @@ re-ranked later that day when three closed and `[DB-0809-21]` entered at 3. Ever
 was checked and when; a verdict without that line is a description, and descriptions are what the
 standing rule distrusts.*
 
-- **1. [DB-0809-02] Do proactive sessions actually stay focused? — the mechanism half is fixed
+- **1. [DB-0810-08] Research Agent fabricates its sources, and the Book cannot see it.**
+  `web_search` **does not exist anywhere in the codebase** (zero hits in `core/`, `tools/`), yet
+  `config/agents/research_agent.md` names it four times and line 80 makes a `SOURCES:` field
+  mandatory on every response. Research's real web access is Vertex-native grounding
+  (`orchestrator.py:2048`), which is not a tool and produces no tool calls. An agent required to
+  cite, with nothing to cite and no tool to call, invents — in exchange 014 it emitted
+  `SOURCES: Trip.com, Flightradar24, Aviability` on a turn with zero tool calls, then escalated to
+  *"(via live web search)"* when Mike asked directly whether it had retrieved anything live.
+  `orchestrator.py:2145-2149` appends the honest `SOURCES: training knowledge` *below* the
+  fabricated block, so Synthesizer sees two contradictory claims and believes the specific one.
+  **The Book's detector cannot catch this:** `trace.py:289` computes `grounded` as
+  `any(a.has_tool_calls())`, and grounded search makes zero tool calls by construction — so a
+  genuine and a fabricated Research answer both read `false`. **Blocks A7 check 10**, which
+  requires no Fails. Fix is scoped in three phases (config → Python-authored provenance → a
+  `check_agent_tools.py` guard so a nonexistent tool cannot sit in a live agent file again):
+  `archive/plans/research_provenance_handoff_2026-08-10.md`. **Bundle the uncommitted
+  `tools/flights.py` `delayed`-means-*changed* fix into that deploy.**
+  *filed 2026-08-10 by Mike via `/metatron-troubleshoot` on seq 011 · ranked 1 by Mike ·
+  reasoning in `archive/PROJECT_LOG.md` § 2026-08-10*
+
+- **2. [DB-0809-02] Do proactive sessions actually stay focused? — the mechanism half is fixed
   and deployed; the guidance half is unproven.** **The original premise was wrong.** All 22 August
   `companion_checkin` openings were 1–2 sentences: the rule was obeyed, and four of the five
   "restatements" were the Synthesizer reading its *own* scheduler prompt as Mike's voice and firing
@@ -60,7 +80,7 @@ standing rule distrusts.*
   *filed 2026-08-09 · rewritten 2026-08-09 after measurement inverted it · **first live
   firing confirmed clean 2026-08-10, day 1 of 7** · full reasoning in `archive/PROJECT_LOG.md`*
 
-- **2. [DB-0809-21] Two of four verification steps done and passed; two are genuinely time-gated,
+- **3. [DB-0809-21] Two of four verification steps done and passed; two are genuinely time-gated,
   not yet observable.** Projected cost ~$0.08 (token-based estimate against `_run_single_agent`'s
   actual single-agent shape, not the blended $8.44/50-session historical average, which is
   dominated by B1's full-pipeline scenarios and would have overstated this run) — under the $1.00
@@ -88,7 +108,7 @@ standing rule distrusts.*
   `archive/PROJECT_LOG.md`, which already recorded it — corrected by the 08-10 `/backlog deep`
   sweep. One check left, genuinely time-gated on a real unreferenced calendar event arising*
 
-- **3. [DB-0810-05] The tone-profile pipeline has never touched a real mailbox.** Built and
+- **4. [DB-0810-05] The tone-profile pipeline has never touched a real mailbox.** Built and
   committed `88957e6`; **every test used stubs.** The distillation half is well covered — a hostile
   fixture confirmed unknown keys dropped, values truncated, lists capped, injection caught and the
   write refused, plus five `_extract` paths (single-direction refusal, thin-sample skip, injection
@@ -310,7 +330,11 @@ not a blackhole. Swept during `/backlog deep`.*
 *(swept 2026-08-10 — both `search_memory` denials promoted to `[DB-0810-03]`, which carries
 their timestamps as its occurrence count. Nothing outstanding.)*
 
+- **[agent wanted a tool it lacks]** `learning_growth` attempted `write_archive` (category, notes, status, title) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
+  `2026-08-10T15:00:13.188318Z`
 
+- **[agent wanted a tool it lacks]** `recreation_hobbies` attempted `write_agent_config` (agent_name, content) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
+  `2026-08-10T15:00:11.677489Z`
 
 ---
 ## Done
