@@ -21,6 +21,132 @@ file is the only narrative record, alongside the verbatim transcripts.*
 
 ---
 
+### 2026-08-10, later (`/backlog deep` — two items closed on false or spent premises, two merged, a live grant gap found) — `a96a3b3`, `a431472`, deployed
+
+The outgoing handoff described the research_agent grounded-search crash, fixed and deployed by a
+concurrent window as `bc1a552`; that entry is directly below and its narrative is unbroken.
+
+**Both `## Now` items verified against current code.** `[DB-0809-02]` untouched and correctly
+time-gated at day 1 of 7. `[DB-0809-21]` **corrected from "2 of 4 checks done" to 3 of 4** — check
+(4), the first natural `companion_checkin`, had fired clean at 07:20 that morning and *this file
+already recorded it*; only the backlog entry had not caught up. A verification item can go stale in
+the direction of understating progress, which is the direction nobody checks.
+
+**Two closed, and both had stopped being true:**
+
+- `[DB-0809-15]` claimed `write_agent_config`/`write_config` "are still not wired to
+  `tools/confirm.py`." They were, and were before the item was filed — `write_config` gates every
+  call unconditionally (`config_writer.py:43`), `write_agent_config` gates on `_GUARDED_KEYS`
+  (`agent_config.py:76`), whose docstring cites `DB-0805-01` by name. The surviving question —
+  whether a one-entry guarded-key set is the right mechanism — was already open as `[DB-0805-01]`.
+  **The same question was filed twice, once with a false premise**, and the false copy was the one
+  arguing for work.
+- `[DB-0809-19]` asked for the B1 `DEPUTY-STRUCT` source check to be confirmed before the next
+  red-team run rather than during it, since B1 gates A7. Re-ran the assertion standalone — static
+  source inspection, no model call, no cost: one `_dispatch_from_coordinator` call site in each of
+  `run_pipeline_session` and `_run_pipeline_session_stream_inner`, both on `coord_output`. PASS
+  after `82d394b`. The confused-deputy protection is architectural and intact.
+
+**Two merges, both because one cause was being argued as two problems.** `[DB-0807-02]` (Places
+API) folded into `[DB-0808-04]` — it was blocked on the same absent location signal, and the only
+separable part, "near a named address", needs no GPS. `[DB-0809-17]` (the `/archive` dirty-check
+cannot attribute edits) folded into `[DB-0805-05]` (parallel windows collide in git): a session
+that cannot tell its own edits from another window's is one defect, and the shared fix is a
+start-of-session commit to diff against.
+
+**That merged item then recurred inside this session, which is why it is worth writing down.** A
+`/backlog deep` sweep and a `/metatron-troubleshoot` close-out ran against one working tree.
+Both independently diagnosed the identical `research_agent` crash minutes apart — duplicated
+effort neither could see — and the sweep was about to file its new item as `[DB-0810-02]`, an id
+the other window had already taken and not yet committed. Caught only by reading the working-tree
+diff before editing. Logged at 2 occurrences against the ×3 bar. The other window's own discipline
+held: it diffed before staging and committed only `core/orchestrator.py`, leaving this session's
+work alone.
+
+**The machine log produced a real gap, and the fix was narrower than the finding.** Two denials
+(`relationships` 08-10T06:30, `finance` 08-05T15:21) turned out to be three agents — those two
+plus `recreation_hobbies` — each *instructed* to use `search_memory` in two places, none holding
+it. Cause: grants in `routing*.yaml` are demand-driven, never audited. Every existing grant
+carries a comment citing one observed denial, so a gap surfaces only when a user hits it; nobody
+had ever swept the instruction files against the allowlists. **Rejected: granting all three.**
+`recreation_hobbies` has never been denied the tool, and granting it would be the file's first
+speculative grant — it waits for a real denial like every other entry. Granted `relationships` and
+`finance` in both routing files with the denials cited (`a96a3b3`), deployed and verified live.
+
+**Mike set two standing rules, now written into the `## Later` preamble rather than remembered:**
+an item promotes to `## Now` once its error has been **recorded three times**, and **`Now` clears
+before `Later` opens** — `Later` is not a parallel track to raid when a `Now` item is time-gated.
+
+**Filed `[DB-0810-04]`: `/archive` has no commit step**, so a correct close-out leaves its own
+output dirty — observed live, the concurrent session wrote `SESSION.md` and a 47-line entry here
+and left both uncommitted. **Rejected: `git commit -a`.** An unattended commit from a session that
+cannot attribute its own edits is `[DB-0805-05]` automated; the shape is an explicit manifest,
+each file diffed before staging, no push and no deploy.
+
+**Wrong in my own execution, twice.** The sweep pushed `DEV_BACKLOG.md` from 256 to 310 lines
+while the section preamble says "one or two lines each" — narrative accumulating in exactly the
+place the ceiling guards. A second pass cut 36 lines back out; it still closed at 285, ~35 over,
+with the remainder in two live `## Now` entries that will take 61 lines with them when they close.
+Second: a VS Code diff-window complaint was chased into a feature-flag hunt (`tengu_code_diff_cli`,
+a server-side rollout) before Mike clarified it was one tab with two panes — the standard diff
+editor, not a regression at all. The flag was a red herring and the answer was VS Code layout.
+
+**Found while running this archive:** `PROJECT_LOG.md` has **two** `## Dated history` positions —
+its newest entries begin at line 24 under no heading, while a vestigial `## Dated history` sits
+~1000 lines below, above the *older* entries. `/archive` step 2 says to append "under
+`## Dated history`", so following it literally files a new entry into the middle of 2026-08.
+That is exactly what happened to the research_agent entry, which has been relocated to the top
+here, byte-identical. Folded into `[DB-0810-04]` since both are `/archive` defects.
+
+---
+
+### 2026-08-10 (research_agent grounded-search crash, `/metatron-troubleshoot` SEQ 005) — `bc1a552`, deployed
+
+Ran `/metatron-troubleshoot` against seq 005, Mike's own multi-feature test message asking for
+Bakerloo/Elizabeth/DLR status, Thursday's weather, and this week's pollen counts. Synthesizer told
+him it couldn't pull any of it — "the research tool is returning an error on my end."
+
+**Root cause, reproduced twice on the VM before touching anything:** `run_session_gemini_grounded()`
+in `core/orchestrator.py` (line 2077) crashed with `TypeError: 'NoneType' object is not iterable`.
+The code read `getattr(gm, "grounding_chunks", [])` — but `getattr`'s default only fires when the
+attribute is *missing*. Gemini's grounding response sometimes sets `grounding_chunks` to `None`
+explicitly (grounding ran, found nothing groundable) rather than omitting it, so `for chunk in None`
+raised. This broke every grounded Research Agent call that hit that response shape — both the
+direct SPECIALISTS_TO_CALL dispatch and the Synthesizer's own `run_subagent` recovery retries (it
+tried twice, `quick` then `deep`, both failed identically).
+
+**Tracing note, in case the same shape of confusion happens again:** the raw trace initially looked
+like the *Coordinator* was calling `run_subagent` on itself, or like `research_agent` was calling
+`run_subagent` recursively on itself — neither is true. `core/trace.py`'s `pop_agent()` does not
+restore the previous thread-local `current_agent` after a nested agent session finishes, so when
+the Synthesizer calls `run_subagent` synchronously (same thread, not a new one), the tool-call
+record for that call gets attributed to the just-finished nested `research_agent` record instead of
+to the Synthesizer's own turn. The Book's nesting under `pipeline[0]` is also always "under
+Coordinator" regardless of which agent actually spawned the subagent, since `pipeline[0]` is always
+Coordinator by construction. Cosmetic/diagnostic-only — did not affect runtime behavior, only
+readability of the trace — and not fixed this session; noted here so the next person who reads a
+trace like this doesn't re-derive it from scratch.
+
+**Fix:** one line, `getattr(gm, "grounding_chunks", None) or []`. Verified by reproducing the exact
+crash on the VM with Mike's real query, confirming the patched file (tested via `scp` to `/tmp`,
+not the live path) fixed both the direct-dispatch and `run_subagent` paths, then restoring the
+VM's original file before asking Mike whether to deploy. He said yes; committed, pushed, `./deploy.sh`
+ran clean, `metatron-server` restarted with no crash loop, verified via fresh `journalctl` output.
+
+**Not tested this session:** Mike's original ask named a longer list — Google Maps, Flight Status,
+CRM, Email Sending, Scheduling reminders and duplicate-catching. Only the TfL/weather/pollen leg
+had actually run as an exchange (seq 005 was the only entry logged today); the rest have no trace
+to troubleshoot yet and need a live message first.
+
+Two unrelated files (`DEV_BACKLOG.md`, `archive/backlog_closed_2026-08.md`) were dirty in the
+working tree from a concurrent session's `/backlog deep` sweep when this session went to commit.
+Per the CLAUDE.md deploy-safety rule (diff before staging, not just filename), staged only
+`core/orchestrator.py` — left the other session's uncommitted work untouched. `deploy.sh`'s
+subsequent `git pull` fast-forwarded cleanly past that session's own already-pushed commits with no
+conflict.
+
+---
+
 ### 2026-08-10 (Sonnet cluster closed out; a real WebSocket race found live, corrected once) — nine commits, all deployed
 
 The outgoing handoff said: *"Next: Sonnet on the mechanical cluster in `## Now` rank order;
@@ -1020,53 +1146,6 @@ Four related complaints, one root cause and four fixes. **The cause was not an a
 ---
 
 ## Dated history
-
-### 2026-08-10 (research_agent grounded-search crash, `/metatron-troubleshoot` SEQ 005) — `bc1a552`, deployed
-
-Ran `/metatron-troubleshoot` against seq 005, Mike's own multi-feature test message asking for
-Bakerloo/Elizabeth/DLR status, Thursday's weather, and this week's pollen counts. Synthesizer told
-him it couldn't pull any of it — "the research tool is returning an error on my end."
-
-**Root cause, reproduced twice on the VM before touching anything:** `run_session_gemini_grounded()`
-in `core/orchestrator.py` (line 2077) crashed with `TypeError: 'NoneType' object is not iterable`.
-The code read `getattr(gm, "grounding_chunks", [])` — but `getattr`'s default only fires when the
-attribute is *missing*. Gemini's grounding response sometimes sets `grounding_chunks` to `None`
-explicitly (grounding ran, found nothing groundable) rather than omitting it, so `for chunk in None`
-raised. This broke every grounded Research Agent call that hit that response shape — both the
-direct SPECIALISTS_TO_CALL dispatch and the Synthesizer's own `run_subagent` recovery retries (it
-tried twice, `quick` then `deep`, both failed identically).
-
-**Tracing note, in case the same shape of confusion happens again:** the raw trace initially looked
-like the *Coordinator* was calling `run_subagent` on itself, or like `research_agent` was calling
-`run_subagent` recursively on itself — neither is true. `core/trace.py`'s `pop_agent()` does not
-restore the previous thread-local `current_agent` after a nested agent session finishes, so when
-the Synthesizer calls `run_subagent` synchronously (same thread, not a new one), the tool-call
-record for that call gets attributed to the just-finished nested `research_agent` record instead of
-to the Synthesizer's own turn. The Book's nesting under `pipeline[0]` is also always "under
-Coordinator" regardless of which agent actually spawned the subagent, since `pipeline[0]` is always
-Coordinator by construction. Cosmetic/diagnostic-only — did not affect runtime behavior, only
-readability of the trace — and not fixed this session; noted here so the next person who reads a
-trace like this doesn't re-derive it from scratch.
-
-**Fix:** one line, `getattr(gm, "grounding_chunks", None) or []`. Verified by reproducing the exact
-crash on the VM with Mike's real query, confirming the patched file (tested via `scp` to `/tmp`,
-not the live path) fixed both the direct-dispatch and `run_subagent` paths, then restoring the
-VM's original file before asking Mike whether to deploy. He said yes; committed, pushed, `./deploy.sh`
-ran clean, `metatron-server` restarted with no crash loop, verified via fresh `journalctl` output.
-
-**Not tested this session:** Mike's original ask named a longer list — Google Maps, Flight Status,
-CRM, Email Sending, Scheduling reminders and duplicate-catching. Only the TfL/weather/pollen leg
-had actually run as an exchange (seq 005 was the only entry logged today); the rest have no trace
-to troubleshoot yet and need a live message first.
-
-Two unrelated files (`DEV_BACKLOG.md`, `archive/backlog_closed_2026-08.md`) were dirty in the
-working tree from a concurrent session's `/backlog deep` sweep when this session went to commit.
-Per the CLAUDE.md deploy-safety rule (diff before staging, not just filename), staged only
-`core/orchestrator.py` — left the other session's uncommitted work untouched. `deploy.sh`'s
-subsequent `git pull` fast-forwarded cleanly past that session's own already-pushed commits with no
-conflict.
-
----
 
 ### 2026-08-08 (pollen tool, proactive travel trigger, scheduler defaults) — `8d798a8`, `be1d79e`, plus VM-side config; code also swept into `7c70cd9`
 

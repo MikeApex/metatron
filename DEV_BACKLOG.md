@@ -20,10 +20,10 @@ or `file:line` that closed them — closed without evidence is not closed.
 *Machine-written from what Mike said on the VM. Do not hand-edit — triage entries out into
 `## Now` or `## Later`, rewritten properly, and delete them from here.*
 
-*(nothing new — last triaged 2026-08-10)*
+- **[needs building]** Fix Research Agent returning blank results for live TfL transport queries (Bakerloo, Elizabeth, DLR).  
+  `2026-08-10T11:10:27.325451Z`
 
 ---
-
 ## Now
 
 **Ranked — position is priority.** Capped at ~10, so something enters by displacing something.
@@ -170,15 +170,22 @@ to pick from when a `Now` item is time-gated.
   disable its own backstop. **Dev-session find; promote if it recurs.**
 
 **Capability**
-- **[DB-0810-03]** **`relationships`, `finance` and `recreation_hobbies` are each instructed to
-  use `search_memory` and none hold it** (named twice per file — a procedure step and their tool
+- **[DB-0810-03]** **Tool allowlists are never audited against the instruction files, so an
+  agent can be told to use a tool it does not hold.** *(Two of three grants shipped `a96a3b3`,
+  deployed 2026-08-10 — `relationships` and `finance`. What remains is `recreation_hobbies` and
+  the systemic half.)* The gap as found: three specialists were each instructed to
+  use `search_memory` and none held it (named twice per file — a procedure step and their tool
   list; e.g. [relationships.md:196](config/agents/relationships.md#L196)). Only 5 of 14 agents are
   granted it, so these three silently lose recall mid-conversation. **Why it was missed:** grants
   in `routing*.yaml` are demand-driven, not audited — each carries a comment citing one observed
   denial, and nobody ever swept the instruction files against the allowlists. Denials so far:
-  `relationships` 08-10T06:30, `finance` 08-05T15:21. **`recreation_hobbies` has never been denied
-  it**, so granting that one would be the file's first speculative grant — it waits.
-  *filed 2026-08-10 by the machine-log sweep — **2 occurrences**, below the ×3 bar*
+  `relationships` 08-10T06:30, `finance` 08-05T15:21 — both now granted.
+  **Still open:** *(a)* `recreation_hobbies` has never been denied it, so granting it would be the
+  file's first speculative grant — it waits for a real denial. *(b)* **The systemic half — nothing
+  sweeps `config/agents/*.md` against `allowed_tools`**, so the next gap surfaces the same way,
+  only when a user hits it. A one-off script comparing the two would have found all three.
+  *filed 2026-08-10 by the machine-log sweep · **partly closed the same day** (`a96a3b3`); the
+  audit gap is the part that survives*
 - **[DB-0806-02]** Level 3 web access. Split into rendered-read (`fetch_rendered`, Playwright,
   read-only — recommended, same trust boundary as `fetch_url`; check VM memory first) and
   interactive click/type/submit, which stays gated on a credential store that does not exist.
@@ -217,7 +224,14 @@ to pick from when a `Now` item is time-gated.
   tell its own edits from a parallel window's is `[DB-0805-05]` automated. The shape is an
   explicit manifest (`SESSION.md`, `archive/PROJECT_LOG.md`, `DEV_BACKLOG.md`,
   `archive/backlog_closed_YYYY-MM.md`), each diffed before staging, and **no push, no deploy**.
-  *filed 2026-08-10 · Mike raised it · ~10 lines in the command file*
+  **Second `/archive` defect, same file, found running it 2026-08-10:** step 2 says to append the
+  entry "under `## Dated history`" — but `PROJECT_LOG.md`'s newest entries begin at **line 24 under
+  no heading at all**, while a vestigial `## Dated history` sits ~1,000 lines below, above the
+  *older* entries. Following the instruction literally files today's entry into the middle of
+  2026-08, which is exactly what happened to the research_agent entry (relocated by hand, content
+  byte-identical). Fix both together: point step 2 at the top of the file, and either delete the
+  stray heading or move it above line 24.
+  *filed 2026-08-10 · Mike raised the commit half · ~10 lines in the command file*
 - **[DB-0805-05]** **A session cannot tell its own edits from a parallel window's — the git
   collisions and the `/archive` dirty-check are one cause, not two.** *(a)* A window's commit
   swept up another's uncommitted diff (2026-08-08); `git add <files>` does **not** protect you,
