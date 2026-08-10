@@ -56,6 +56,7 @@ class TurnRecord:
     turn: int
     input_tokens: int = 0
     output_tokens: int = 0
+    thinking_tokens: int = 0
     tool_calls: list[ToolCallRecord] = field(default_factory=list)
 
 
@@ -81,6 +82,12 @@ class AgentRecord:
 
     def total_output_tokens(self) -> int:
         return sum(t.output_tokens for t in self.turns)
+
+    def total_thinking_tokens(self) -> int:
+        return sum(t.thinking_tokens for t in self.turns)
+
+    def has_tool_calls(self) -> bool:
+        return any(t.tool_calls for t in self.turns) or any(s.has_tool_calls() for s in self.subagents)
 
 
 class RequestTrace:
@@ -176,18 +183,22 @@ def pop_agent(rec: AgentRecord) -> None:
 # ---------------------------------------------------------------------------
 
 def record_turn_tokens(rec: AgentRecord | None, turn_num: int,
-                       input_tokens: int, output_tokens: int) -> None:
+                       input_tokens: int, output_tokens: int,
+                       thinking_tokens: int = 0) -> None:
     if rec is None:
         return
     tr = rec.ensure_turn(turn_num)
     tr.input_tokens = input_tokens
     tr.output_tokens = output_tokens
+    tr.thinking_tokens = thinking_tokens
 
     # Every provider path already reports here, so this is the one place the
     # spend guard needs to observe. It never raises.
     try:
         from core.spend_guard import record_tokens
-        record_tokens(rec.model or "", input_tokens, output_tokens)
+        # Thinking tokens are billed as output tokens by every provider that
+        # reports them separately — spend_guard needs the combined figure.
+        record_tokens(rec.model or "", input_tokens, output_tokens + thinking_tokens)
     except Exception:
         pass
 
@@ -231,6 +242,7 @@ def _agent_to_dict(a: AgentRecord) -> dict:
                 "turn": tr.turn,
                 "input_tokens": tr.input_tokens,
                 "output_tokens": tr.output_tokens,
+                "thinking_tokens": tr.thinking_tokens,
                 "tool_calls": [
                     {
                         "name": tc.name,
@@ -249,6 +261,7 @@ def _agent_to_dict(a: AgentRecord) -> dict:
         "output_files": a.output_files,
         "total_input_tokens": a.total_input_tokens(),
         "total_output_tokens": a.total_output_tokens(),
+        "total_thinking_tokens": a.total_thinking_tokens(),
         "duration_ms": a.duration_ms,
     }
 
@@ -263,6 +276,7 @@ def _serialize(t: RequestTrace, duration_ms: int) -> dict:
         "is_proactive": t.is_proactive,
         "duration_ms": duration_ms,
         "pipeline": [_agent_to_dict(a) for a in t.pipeline],
+        "grounded": any(a.has_tool_calls() for a in t.pipeline),
     }
 
 

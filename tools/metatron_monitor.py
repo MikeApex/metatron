@@ -90,6 +90,15 @@ def truncate(text: str, n: int = 120) -> str:
     return text[:n] + "…" if len(text) > n else text
 
 
+def fmt_out_tokens(output_tokens: int, thinking_tokens: int = 0) -> str:
+    """'{out:,} out' with a '(N thinking)' suffix only when thinking tokens were reported."""
+    base = f"{output_tokens:,} out"
+    return f"{base} ({thinking_tokens:,} thinking)" if thinking_tokens else base
+
+
+GROUNDED_TAG = " [red]⚠ no tool calls[/]"
+
+
 # ---------------------------------------------------------------------------
 # Custom list items
 # ---------------------------------------------------------------------------
@@ -108,15 +117,17 @@ class MessageBlock(ListItem):
         user_full = self.entry.get("user", "")
         synth_full = self.entry.get("response", "")
         is_proactive = self.trace.get("is_proactive", False) if self.trace else False
+        is_grounded = self.trace.get("grounded", True) if self.trace else True
         seq = self.entry.get("seq", "")
 
         proactive_tag = " [yellow]⊕[/]" if is_proactive else ""
+        grounded_tag = GROUNDED_TAG if not is_grounded else ""
         if seq:
             ts_prefix = f"[dim]#{seq}[/] [bold cyan]{fmt_ts_short(ts_raw)}[/]"
         else:
             ts_prefix = f"[bold cyan]{fmt_ts(ts_raw)}[/]"
         title = (
-            f"{ts_prefix} [dim]{persona}[/]{proactive_tag}  "
+            f"{ts_prefix} [dim]{persona}[/]{proactive_tag}{grounded_tag}  "
             f"[dim]{truncate(user_full, 60)}[/]"
         )
         yield Collapsible(
@@ -140,6 +151,7 @@ class AgentLogItem(ListItem):
         model = r.get("model", "")
         total_in = r.get("total_input_tokens", 0)
         total_out = r.get("total_output_tokens", 0)
+        total_think = r.get("total_thinking_tokens", 0)
         duration = r.get("duration_ms", 0)
         turns = r.get("turns", [])
 
@@ -152,7 +164,10 @@ class AgentLogItem(ListItem):
         indent = "  " if r.get("_indent") else ""
 
         header = f"{indent}[bold]{name}[/]  [dim]{provider}/{model_short}[/]"
-        tokens = f"{indent}[green]{total_in:,}[/] in / [yellow]{total_out:,}[/] out  [dim]{duration}ms[/]"
+        tokens = (
+            f"{indent}[green]{total_in:,}[/] in / "
+            f"[yellow]{fmt_out_tokens(total_out, total_think)}[/]  [dim]{duration}ms[/]"
+        )
         turns_line = f"{indent}[dim]{len(turns)} turn{'s' if len(turns) != 1 else ''}[/]"
         if tool_names:
             shown = "  ".join(f"[blue]{t}[/]" for t in tool_names[:4])
@@ -162,7 +177,8 @@ class AgentLogItem(ListItem):
 
         sublines = [
             f"  [dim]↳ {s.get('agent','?')}  "
-            f"{s.get('total_input_tokens',0):,}in / {s.get('total_output_tokens',0):,}out  "
+            f"{s.get('total_input_tokens',0):,}in / "
+            f"{fmt_out_tokens(s.get('total_output_tokens',0), s.get('total_thinking_tokens',0))}  "
             f"{s.get('duration_ms',0)}ms[/]"
             for s in r.get("subagents", [])
         ]
@@ -615,12 +631,13 @@ class TheBookApp(App):
         model = agent_rec.get("model", "")
         total_in = agent_rec.get("total_input_tokens", 0)
         total_out = agent_rec.get("total_output_tokens", 0)
+        total_think = agent_rec.get("total_thinking_tokens", 0)
         dur = agent_rec.get("duration_ms", 0)
 
         widgets: list = [
             Static(
                 f"[bold]{name}[/]  [dim]{provider}[/]  [cyan]{model}[/]\n"
-                f"[green]{total_in:,}[/] in / [yellow]{total_out:,}[/] out  [dim]{dur}ms[/]"
+                f"[green]{total_in:,}[/] in / [yellow]{fmt_out_tokens(total_out, total_think)}[/]  [dim]{dur}ms[/]"
             )
         ]
 
@@ -643,11 +660,12 @@ class TheBookApp(App):
             turn_num = t.get("turn", "?")
             t_in = t.get("input_tokens", 0)
             t_out = t.get("output_tokens", 0)
+            t_think = t.get("thinking_tokens", 0)
             tool_calls = t.get("tool_calls", [])
 
             widgets.append(Static(
                 f"\n[dim]── Turn {turn_num}  "
-                f"[green]{t_in:,}[/]in  [yellow]{t_out:,}[/]out ──[/]"
+                f"[green]{t_in:,}[/]in  [yellow]{fmt_out_tokens(t_out, t_think)}[/] ──[/]"
             ))
 
             if not tool_calls:
@@ -667,6 +685,7 @@ class TheBookApp(App):
                     if sub:
                         s_in = sub.get("total_input_tokens", 0)
                         s_out = sub.get("total_output_tokens", 0)
+                        s_think = sub.get("total_thinking_tokens", 0)
                         s_dur = sub.get("duration_ms", 0)
                         s_model = sub.get("model", "").split("/")[-1]
                         s_files = sub.get("output_files", [])
@@ -674,7 +693,7 @@ class TheBookApp(App):
 
                         inner: list = [Static(
                             f"[dim]{sub.get('provider','')}/{s_model}[/]  "
-                            f"[green]{s_in:,}[/]in / [yellow]{s_out:,}[/]out  [dim]{s_dur}ms[/]"
+                            f"[green]{s_in:,}[/]in / [yellow]{fmt_out_tokens(s_out, s_think)}[/]  [dim]{s_dur}ms[/]"
                         )]
                         for st in s_turns:
                             stcs = st.get("tool_calls", [])
@@ -684,7 +703,7 @@ class TheBookApp(App):
                             inner.append(Static(
                                 f"  Turn {st.get('turn')}  "
                                 f"[green]{st.get('input_tokens',0):,}[/]in  "
-                                f"[yellow]{st.get('output_tokens',0):,}[/]out"
+                                f"[yellow]{fmt_out_tokens(st.get('output_tokens',0), st.get('thinking_tokens',0))}[/]"
                                 + (f"  {stc_line}" if stc_line else "")
                             ))
                         if s_files:
@@ -692,7 +711,7 @@ class TheBookApp(App):
                             for fp in s_files:
                                 inner.append(Button(fp, name=fp, classes="file-link"))
 
-                        tok_str = f"  [green]{s_in:,}[/]in/[yellow]{s_out:,}[/]out" if (s_in or s_out) else ""
+                        tok_str = f"  [green]{s_in:,}[/]in/[yellow]{fmt_out_tokens(s_out, s_think)}[/]" if (s_in or s_out) else ""
                         widgets.append(Collapsible(
                             *inner,
                             title=f"→ {called}{tok_str}  [dim]{s_dur:.1f}ms[/]",
@@ -876,18 +895,20 @@ class TheBookApp(App):
                 f"User: {(t.get('user_input') or t.get('user',''))[:120]}"
             )
             lines.append(f"Total duration: {t.get('duration_ms','?')}ms")
+            if not t.get("grounded", True):
+                lines.append("  (no tool calls fired anywhere in this pipeline)")
             for ag in t.get("pipeline", []):
                 m = ag.get("model","").split("/")[-1]
                 lines.append(
                     f"  Agent {ag.get('agent')}  {ag.get('provider')}/{m}  "
-                    f"{ag.get('total_input_tokens',0):,}in/{ag.get('total_output_tokens',0):,}out  "
+                    f"{ag.get('total_input_tokens',0):,}in/{fmt_out_tokens(ag.get('total_output_tokens',0), ag.get('total_thinking_tokens',0))}  "
                     f"{ag.get('duration_ms',0)}ms  {len(ag.get('turns',[]))} turns"
                 )
                 for sub in ag.get("subagents", []):
                     sm = sub.get("model","").split("/")[-1]
                     lines.append(
                         f"    ↳ {sub.get('agent')}  {sub.get('provider')}/{sm}  "
-                        f"{sub.get('total_input_tokens',0):,}in/{sub.get('total_output_tokens',0):,}out  "
+                        f"{sub.get('total_input_tokens',0):,}in/{fmt_out_tokens(sub.get('total_output_tokens',0), sub.get('total_thinking_tokens',0))}  "
                         f"{sub.get('duration_ms',0)}ms"
                     )
                     for fp in sub.get("output_files", []):
@@ -896,7 +917,7 @@ class TheBookApp(App):
             ag = self._selected_agent_rec
             lines.append(
                 f"Focused agent: {ag.get('agent')}  "
-                f"{ag.get('total_input_tokens',0):,}in/{ag.get('total_output_tokens',0):,}out  "
+                f"{ag.get('total_input_tokens',0):,}in/{fmt_out_tokens(ag.get('total_output_tokens',0), ag.get('total_thinking_tokens',0))}  "
                 f"{len(ag.get('turns',[]))} turns"
             )
             for turn in ag.get("turns", []):
@@ -1007,19 +1028,20 @@ class TheBookApp(App):
                 f"User: {t.get('user_input', t.get('user', '—'))}",
                 f"Response: {(t.get('synth_response', '') or '')[:300]}",
                 f"Duration: {t.get('duration_ms', '—')}ms",
+                f"Grounded: {'yes' if t.get('grounded', True) else 'no — no tool calls fired'}",
                 "",
                 "### Pipeline",
             ]
             for i, ag in enumerate(t.get("pipeline", []), 1):
                 lines.append(
                     f"{i}. {ag.get('agent','?')}  {ag.get('provider','')}/{ag.get('model','').split('/')[-1]}"
-                    f"  {ag.get('total_input_tokens',0):,}in / {ag.get('total_output_tokens',0):,}out"
+                    f"  {ag.get('total_input_tokens',0):,}in / {fmt_out_tokens(ag.get('total_output_tokens',0), ag.get('total_thinking_tokens',0))}"
                     f"  {ag.get('duration_ms',0)}ms"
                 )
                 for sub in ag.get("subagents", []):
                     lines.append(
                         f"   ↳ {sub.get('agent','?')}  {sub.get('total_input_tokens',0):,}in"
-                        f" / {sub.get('total_output_tokens',0):,}out  {sub.get('duration_ms',0)}ms"
+                        f" / {fmt_out_tokens(sub.get('total_output_tokens',0), sub.get('total_thinking_tokens',0))}  {sub.get('duration_ms',0)}ms"
                     )
                     for fp in sub.get("output_files", []):
                         lines.append(f"      wrote: {fp}")
@@ -1033,7 +1055,7 @@ class TheBookApp(App):
                 "## Selected Agent (Column 3 focus)",
                 f"Agent: {ag.get('agent','?')}",
                 f"Provider/Model: {ag.get('provider','')}/{ag.get('model','')}",
-                f"Tokens: {ag.get('total_input_tokens',0):,}in / {ag.get('total_output_tokens',0):,}out",
+                f"Tokens: {ag.get('total_input_tokens',0):,}in / {fmt_out_tokens(ag.get('total_output_tokens',0), ag.get('total_thinking_tokens',0))}",
                 f"Duration: {ag.get('duration_ms',0)}ms",
                 f"Turns: {len(ag.get('turns',[]))}",
                 "",

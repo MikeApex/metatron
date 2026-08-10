@@ -2064,13 +2064,13 @@ def run_session_gemini_grounded(system_prompt: str, user_input: str,
         # Token budget logging (native SDK field)
         if hasattr(response, "usage_metadata") and response.usage_metadata:
             input_tokens = getattr(response.usage_metadata, "prompt_token_count", 0) or 0
-            output_tokens = (getattr(response.usage_metadata, "candidates_token_count", 0) or 0) \
-                + _thinking_tokens_gemini(response.usage_metadata)
+            output_tokens = getattr(response.usage_metadata, "candidates_token_count", 0) or 0
+            thinking_tokens = _thinking_tokens_gemini(response.usage_metadata)
             if input_tokens > 8000:
                 logger.warning(f"[token_budget] OVER_8K turn={turn} cumulative_input={input_tokens}")
             else:
                 logger.info(f"[token_budget] turn={turn} cumulative_input={input_tokens}")
-            _tr.record_turn_tokens(_tr.get_current_agent(), turn, input_tokens, output_tokens)
+            _tr.record_turn_tokens(_tr.get_current_agent(), turn, input_tokens, output_tokens, thinking_tokens)
 
         # Grounding sources accumulate across turns — a citation found on turn 1 is still
         # a source for the final answer even if turn 2 fetched a page directly.
@@ -2244,8 +2244,8 @@ def _run_gemini_native_loop(client, model_name: str,
 
         if hasattr(response, "usage_metadata") and response.usage_metadata:
             input_tokens = getattr(response.usage_metadata, "prompt_token_count", 0) or 0
-            output_tokens = (getattr(response.usage_metadata, "candidates_token_count", 0) or 0) \
-                + _thinking_tokens_gemini(response.usage_metadata)
+            output_tokens = getattr(response.usage_metadata, "candidates_token_count", 0) or 0
+            thinking_tokens = _thinking_tokens_gemini(response.usage_metadata)
             cache_read = getattr(response.usage_metadata, "cached_content_token_count", 0) or 0
             cumulative_input_tokens += input_tokens
             _cache_suffix = f" cache_read={cache_read}" if cache_read else ""
@@ -2255,7 +2255,7 @@ def _run_gemini_native_loop(client, model_name: str,
             else:
                 logger.info(f"[token_budget] turn={turn_num} cumulative_input={cumulative_input_tokens}{_cache_suffix}")
                 _trace(f"[TOKEN] turn={turn_num} input={input_tokens} cumulative={cumulative_input_tokens}{_cache_suffix}")
-            _tr.record_turn_tokens(_tr.get_current_agent(), turn_num, input_tokens, output_tokens)
+            _tr.record_turn_tokens(_tr.get_current_agent(), turn_num, input_tokens, output_tokens, thinking_tokens)
 
         model_content = response.candidates[0].content
         contents.append(model_content)
@@ -2375,8 +2375,8 @@ def _openai_compat_loop(system_prompt: str, user_input: str,
 
         if response.usage:
             _in_tok = response.usage.prompt_tokens
-            _out_tok = (getattr(response.usage, "completion_tokens", 0) or 0) \
-                + _reasoning_tokens_openai(response.usage)
+            _out_tok = getattr(response.usage, "completion_tokens", 0) or 0
+            _think_tok = _reasoning_tokens_openai(response.usage)
             cumulative_input_tokens += _in_tok
             if cumulative_input_tokens > 8000:
                 logger.warning(f"[token_budget] OVER_8K turn={turn_num} cumulative_input={cumulative_input_tokens}")
@@ -2384,7 +2384,7 @@ def _openai_compat_loop(system_prompt: str, user_input: str,
             else:
                 logger.info(f"[token_budget] turn={turn_num} cumulative_input={cumulative_input_tokens}")
                 _trace(f"[TOKEN] turn={turn_num} input={_in_tok} cumulative={cumulative_input_tokens}")
-            _tr.record_turn_tokens(_tr.get_current_agent(), turn_num, _in_tok, _out_tok)
+            _tr.record_turn_tokens(_tr.get_current_agent(), turn_num, _in_tok, _out_tok, _think_tok)
 
         choice = response.choices[0]
         message = choice.message
@@ -2492,15 +2492,15 @@ def _openai_compat_stream(
                 # Usage-only trailing chunk (include_usage=True) — standard OpenAI pattern
                 if hasattr(chunk, "usage") and chunk.usage and not _usage_recorded:
                     pts = chunk.usage.prompt_tokens or 0
-                    ots = (getattr(chunk.usage, "completion_tokens", 0) or 0) \
-                        + _reasoning_tokens_openai(chunk.usage)
+                    ots = getattr(chunk.usage, "completion_tokens", 0) or 0
+                    thts = _reasoning_tokens_openai(chunk.usage)
                     if pts > 8000:
                         logger.warning(f"[token_budget] OVER_8K turn={turn_num} cumulative_input={pts}")
                         _trace(f"[TOKEN] turn={turn_num} input={pts} ⚠ OVER_8K")
                     else:
                         logger.info(f"[token_budget] turn={turn_num} cumulative_input={pts}")
                         _trace(f"[TOKEN] turn={turn_num} input={pts}")
-                    _tr.record_turn_tokens(_tr.get_current_agent(), turn_num, pts, ots)
+                    _tr.record_turn_tokens(_tr.get_current_agent(), turn_num, pts, ots, thts)
                     _usage_recorded = True
                 continue
 
@@ -2513,8 +2513,8 @@ def _openai_compat_stream(
             # a trailing chunk — capture it here as a fallback so Synth tokens are recorded.
             if choice.finish_reason and hasattr(chunk, "usage") and chunk.usage and not _usage_recorded:
                 pts = getattr(chunk.usage, "prompt_tokens", 0) or 0
-                ots = (getattr(chunk.usage, "completion_tokens", 0) or 0) \
-                    + _reasoning_tokens_openai(chunk.usage)
+                ots = getattr(chunk.usage, "completion_tokens", 0) or 0
+                thts = _reasoning_tokens_openai(chunk.usage)
                 if pts or ots:
                     if pts > 8000:
                         logger.warning(f"[token_budget] OVER_8K turn={turn_num} cumulative_input={pts}")
@@ -2522,7 +2522,7 @@ def _openai_compat_stream(
                     else:
                         logger.info(f"[token_budget] turn={turn_num} cumulative_input={pts}")
                         _trace(f"[TOKEN] turn={turn_num} input={pts}")
-                    _tr.record_turn_tokens(_tr.get_current_agent(), turn_num, pts, ots)
+                    _tr.record_turn_tokens(_tr.get_current_agent(), turn_num, pts, ots, thts)
                     _usage_recorded = True
 
             if delta.content:
