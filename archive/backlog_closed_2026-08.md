@@ -2066,3 +2066,24 @@ runs when a session runs.
   site, **both on `coord_output`**, neither on `spec_text`/`specialist_outputs`. That pair is the
   whole assertion the suite makes ([`tests/run_b1_redteam.py:456-457`](../tests/run_b1_redteam.py#L456-L457)).
   The confused-deputy protection is intact after `82d394b`. *verified 2026-08-10*
+
+- ~~**[DB-0810-04] `/archive` never commits, so a correct close-out leaves its own output dirty
+  in the tree** — and step 2 pointed at the wrong heading.~~ — **both halves shipped, `060f53a`.**
+  Step 5 stages an explicit manifest (`SESSION.md`, `archive/PROJECT_LOG.md`, `DEV_BACKLOG.md`,
+  `archive/backlog_closed_YYYY-MM.md`, plus `ROADMAP.md` if step 3 touched it), diffs each file
+  before staging, and **neither pushes nor deploys**
+  ([`.claude/commands/archive.md:85-95`](../.claude/commands/archive.md#L85-L95)). A diff
+  carrying lines the session did not write **stops** the commit — `[DB-0805-05]` stays open and
+  the step is written to depend on it being unsolved, not to paper over it.
+  **Heading half:** `## Dated history` added above the newest entry, the vestigial copy ~1,280
+  lines down retitled `## Dated history (continued — 2026-08-08 and earlier)`. One exact-string
+  match now exists, which is the part that stops the next session filing into the middle; no
+  entry text moved, so the append-only rule holds.
+  **Checked against `ed92acf` first** (Fable's revamp, which cut this file 6 steps → 4): the
+  removed steps were the `archive/sessions/` writeup and the standalone ROADMAP step — **a commit
+  step never existed in any version**, so nothing deliberate was reintroduced. That check also
+  killed a planned edit: compressing step 1's tail reminder, which `a86dd37` and `ed92acf` had
+  already rewritten twice in three days. Lines came from the `archive/sessions/` note instead
+  (history, duplicated in `CLAUDE.md`), holding the file at exactly **100 lines**.
+  Step count also corrected in `CLAUDE.md` and `docs/WORKFLOW.md` — the stale-cross-reference
+  class `ed92acf`'s verification pass was built to catch. *closed 2026-08-10*

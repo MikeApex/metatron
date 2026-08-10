@@ -248,24 +248,6 @@ to pick from when a `Now` item is time-gated.
   console lag. Not retroactive — turning it on now only helps the next anomaly.
 
 **Housekeeping**
-- **[DB-0810-04] `/archive` never commits, so a correct close-out leaves its own output dirty in
-  the tree.** [.claude/commands/archive.md](.claude/commands/archive.md) names git only passively —
-  recording *"commit hashes, and whether it deployed"* in the log entry, and citing a commit as
-  the evidence that closes a backlog item. There is no commit step. **Observed 2026-08-10:** a
-  `/metatron-troubleshoot` session wrote `SESSION.md` and a 47-line `PROJECT_LOG.md` entry, did
-  everything the ritual asks, and left both uncommitted — the work looked finished and wasn't
-  durable. **Do not fix with `git commit -a`**: an unattended commit from a session that cannot
-  tell its own edits from a parallel window's is `[DB-0805-05]` automated. The shape is an
-  explicit manifest (`SESSION.md`, `archive/PROJECT_LOG.md`, `DEV_BACKLOG.md`,
-  `archive/backlog_closed_YYYY-MM.md`), each diffed before staging, and **no push, no deploy**.
-  **Second `/archive` defect, same file, found running it 2026-08-10:** step 2 says to append the
-  entry "under `## Dated history`" — but `PROJECT_LOG.md`'s newest entries begin at **line 24 under
-  no heading at all**, while a vestigial `## Dated history` sits ~1,000 lines below, above the
-  *older* entries. Following the instruction literally files today's entry into the middle of
-  2026-08, which is exactly what happened to the research_agent entry (relocated by hand, content
-  byte-identical). Fix both together: point step 2 at the top of the file, and either delete the
-  stray heading or move it above line 24.
-  *filed 2026-08-10 · Mike raised the commit half · ~10 lines in the command file*
 - **[DB-0805-05]** **A session cannot tell its own edits from a parallel window's — the git
   collisions and the `/archive` dirty-check are one cause, not two.** *(a)* A window's commit
   swept up another's uncommitted diff (2026-08-08); `git add <files>` does **not** protect you,
@@ -275,8 +257,12 @@ to pick from when a `Now` item is time-gated.
   start-of-session commit to diff against, or record touched files as the session goes.
   **Recurred 2026-08-10** — a `/backlog deep` sweep and a `/metatron-troubleshoot` close-out in
   one tree both diagnosed the same crash independently, and the sweep nearly reused `[DB-0810-02]`,
-  an id the other window had taken minutes earlier. *merged 2026-08-10 — absorbed `[DB-0809-17]`;
-  **2 occurrences**, one short of the ×3 bar*
+  an id the other window had taken minutes earlier. **Recurred again 2026-08-10, during the
+  session that built `[DB-0810-04]`'s commit step** — another window landed six commits mid-work,
+  two of them `/archive` runs, moving this session's `PROJECT_LOG.md` edit anchor and staling its
+  `DEV_BACKLOG.md` line numbers. Step 5's manual diff caught it because a human-shaped read was
+  in the loop; nothing automatic would have. *merged 2026-08-10 — absorbed `[DB-0809-17]`;
+  **×3 — the bar is met**, and `/archive` step 5 now depends on this being unsolved*
 - **[DB-0809-11]** Docs record values the system changes underneath them and nothing checks.
   Mitigation in force (don't write down short-half-life values); the stronger fix is a smoke
   script running CLAUDE.md's executable claims. `deploy.sh`'s HEAD assertion is the model.
