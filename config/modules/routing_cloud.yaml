@@ -83,14 +83,21 @@ agents:
   relationships:
     provider: gemini
     model: "models/gemini-3.1-flash-lite"   # no clinical stakes
-    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, read_profile, write_profile, send_email]
+    # search_memory granted 2026-08-10: denied 2026-08-10T06:30 mid-conversation.
+    # relationships.md:196 makes it a numbered procedure step ("Search for relevant history…
+    # prior mentions of the person") and :297 lists it as a held tool — the agent was
+    # instructed to use a capability it did not have, and silently lost recall.
+    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, read_profile, write_profile, send_email, search_memory]
 
   finance:
     provider: gemini
     model: "models/gemini-3.1-flash-lite"   # arithmetic tracking; upgrade to Pro if hard-fail results were marginal
     # read_archive granted 2026-08-05: denied 2026-08-03 answering "what can you tell me about my
     # credit card payments" — a recall question it had no store to answer from.
-    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, read_archive, open_obligation, close_obligation, reopen_obligation, list_obligations]
+    # search_memory granted 2026-08-10: denied 2026-08-05T15:21, the same class of recall
+    # question read_archive only half-answered. finance.md:89 makes it a procedure step
+    # ("spending patterns, income history, budget trends") and :204 lists it as held.
+    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, read_archive, open_obligation, close_obligation, reopen_obligation, list_obligations, search_memory]
 
   learning_growth:
     provider: gemini

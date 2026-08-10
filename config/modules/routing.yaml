@@ -80,12 +80,14 @@ agents:
 
   relationships:
     local: true
-    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, read_profile, write_profile, send_email]
+    # search_memory granted 2026-08-10 — see routing_cloud.yaml. Kept in parity.
+    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, read_profile, write_profile, send_email, search_memory]
 
   finance:
     local: true
-    # read_archive granted 2026-08-05 — see routing_cloud.yaml. Kept in parity.
-    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, read_archive, open_obligation, close_obligation, reopen_obligation, list_obligations]
+    # read_archive granted 2026-08-05, search_memory 2026-08-10 — see routing_cloud.yaml.
+    # Kept in parity.
+    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, read_archive, open_obligation, close_obligation, reopen_obligation, list_obligations, search_memory]
 
   learning_growth:
     local: true
