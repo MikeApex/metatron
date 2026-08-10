@@ -87,7 +87,27 @@ standing rule distrusts.*
   full reasoning in `archive/PROJECT_LOG.md` § 2026-08-10 (Calendar conflict detection) ·
   `MODEL_CALL_FAILED` note added 2026-08-10 by the thought_signature observability session*
 
-- **2. [DB-0809-02] Do proactive sessions actually stay focused? — the mechanism half is fixed
+- **2. [DB-0810-12] Vertex rejects a `run_subagent` turn for a missing `thought_signature` and the
+  exchange is lost — five times 08-04→08-09, plus uncounted web-app hits.** Mike sees a raw SDK
+  400 and the message is never recorded, on the web app and the Android app both.
+  **Observability shipped (`8ae1ff9`); the fix did not.** *Do not act until a post-`8ae1ff9`
+  occurrence is in hand* — that commit exists to produce the `loop=` and `msgs=` fields that say
+  which loop raised, and the first diagnosis without them was wrong. Two candidates, both held
+  deliberately: **(a) the compat round-trip** — `_openai_compat_loop` already has the tc0-only
+  workaround, yet the 400's *"position 12"* matches `system(0) + 10 history + user(11) +
+  assistant(12)` exactly, so the signature is most likely lost serialising the returned
+  `ChatCompletionMessage` back into `messages` rather than never issued; the mechanism is
+  unproven, and at ~5 firings a fortnight a guess would pass every test you could run.
+  **(b) `_run_gemini_native_loop` has no workaround at all** — real but masked, since
+  `run_session_gemini_cached`'s `except Exception` swallows it and falls back to compat.
+  Porting the compat version verbatim would be a **regression**: it runs only `tc0` and
+  re-requests the rest, converting that loop's genuinely parallel `ThreadPoolExecutor` dispatch
+  into N sequential turns on a path already logging `cumulative_input=60744`. It has to be
+  guarded to fire only when parts are actually unsigned. Re-derive from the log line, not from
+  this description.
+  *filed 2026-08-10 by the thought_signature observability session · Mike ranked it Now #2 ·
+  full reasoning in `archive/PROJECT_LOG.md` § 2026-08-10, later still*
+- **3. [DB-0809-02] Do proactive sessions actually stay focused? — the mechanism half is fixed
   and deployed; the guidance half is unproven.** **The original premise was wrong.** All 22 August
   `companion_checkin` openings were 1–2 sentences: the rule was obeyed, and four of the five
   "restatements" were the Synthesizer reading its *own* scheduler prompt as Mike's voice and firing
@@ -108,7 +128,7 @@ standing rule distrusts.*
   *filed 2026-08-09 · rewritten 2026-08-09 after measurement inverted it · **first live
   firing confirmed clean 2026-08-10, day 1 of 7** · full reasoning in `archive/PROJECT_LOG.md`*
 
-- **3. [DB-0809-21] Two of four verification steps done and passed; two are genuinely time-gated,
+- **4. [DB-0809-21] Two of four verification steps done and passed; two are genuinely time-gated,
   not yet observable.** Projected cost ~$0.08 (token-based estimate against `_run_single_agent`'s
   actual single-agent shape, not the blended $8.44/50-session historical average, which is
   dominated by B1's full-pipeline scenarios and would have overstated this run) — under the $1.00
@@ -136,7 +156,7 @@ standing rule distrusts.*
   `archive/PROJECT_LOG.md`, which already recorded it — corrected by the 08-10 `/backlog deep`
   sweep. One check left, genuinely time-gated on a real unreferenced calendar event arising*
 
-- **4. [DB-0810-05] The tone-profile pipeline has never touched a real mailbox.** Built and
+- **5. [DB-0810-05] The tone-profile pipeline has never touched a real mailbox.** Built and
   committed `88957e6`; **every test used stubs.** The distillation half is well covered — a hostile
   fixture confirmed unknown keys dropped, values truncated, lists capped, injection caught and the
   write refused, plus five `_extract` paths (single-direction refusal, thin-sample skip, injection
@@ -254,7 +274,8 @@ to pick from when a `Now` item is time-gated.
   complaint about the system deserves an answer. Observed live once (Exchange 027, 2026-06-26),
   pinned non-gating as `FILTER-EXCH027`. Fix: pass the user's turn into `filter_output()` and
   exempt **only the term he typed, only in the next turn** — three call sites
-  (`core/orchestrator.py` ~2506, ~2721, ~2768). Not a blanket flag: a probing question must not
+  (`core/orchestrator.py` ~3191, ~3407, ~3477 — renumbered 2026-08-10 after `8ae1ff9` added
+  ~62 lines above them; grep `filter_output(` rather than trusting these). Not a blanket flag: a probing question must not
   disable its own backstop. **Dev-session find; promote if it recurs.**
 - **[DB-0810-07] The Book's new thinking/output-text, tool-call ok flag, and `/monitor/model_errors`
   fields (`ffaf7a7`, deployed 2026-08-10) haven't been checked against a real exchange yet** — only

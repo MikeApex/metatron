@@ -23,6 +23,57 @@ file is the only narrative record, alongside the verbatim transcripts.*
 
 ## Dated history
 
+### 2026-08-10, later still (every model call site names itself; the SSE errors that reached only the user) — `8ae1ff9`, **deployed**
+
+Opened on a 400 Mike hit in the web app — *"Function call is missing a thought_signature in
+functionCall parts … function call `default_api:run_subagent`, position 12"* — with the message
+never recorded on Metatron's side. He had seen it on the Android app too.
+
+**The first diagnosis was wrong, and the second is unproven.** The opening read was: Coordinator
+is on the cached native path, `_run_gemini_native_loop` lacks the parallel-call workaround
+`_openai_compat_loop` has, so the unsigned `tc1+` parts go back to Vertex and it 400s. The first
+three steps of that are true. The conclusion was not: `run_session_gemini_cached`'s `except
+Exception` catches *any* native-loop failure and falls back to compat unconditionally — the
+nested `try` only handles cache eviction and still falls through when it fails. **The native-loop
+gap cannot produce a user-visible error at all.** It is real but masked, and the proposed fix
+would not have touched what Mike was seeing. Caught only by re-reading the handler on Mike's
+"second opinion" request, having already offered to implement it.
+
+**What the VM showed.** Five occurrences (08-04, 08-05 ×2, 08-07, 08-09), every logged one from
+the *scheduler* (`[scheduler error] companion_checkin`, `heathrow_transit_check`). Mike's
+web-app hits appear nowhere, because `/session/stream` caught the exception, sent `[ERROR] {e}`
+to the browser and logged nothing — the failure existed only in the text on his screen. Two of
+the five model-call sites, both in `_openai_compat_stream`, had no `try/except` whatsoever.
+
+**Still unattributed, deliberately.** The scheduler's path runs through two sites that *were*
+instrumented, and neither logged — so the raiser is not yet known. `msgs=N` was added to the
+compat loop because "position 12" matches `system(0) + 10 history + user(11) + assistant(12)`
+exactly, which would place it in compat rather than native; that is a hypothesis the next
+occurrence confirms or kills. **Rejected: fixing the compat round-trip now.** The mechanism is
+unknown, the bug fires ~5×/fortnight so a few passing test messages prove nothing, and without
+the SSE logging the web path — the one Mike uses — is unobservable. Shipping a guess into a
+blind spot is how it sits undetected for weeks.
+
+**Rejected: porting the workaround to the native loop verbatim.** It executes only `tc0` and
+lets the model re-request the rest, turning N parallel calls into N sequential turns. The native
+loop currently dispatches genuinely in parallel via `ThreadPoolExecutor`, and the token logs
+already show `cumulative_input=60744` on a four-turn session. If the native loop is not the
+raiser, that trade is pure loss. It waits for evidence and must be guarded, not unconditional.
+
+**`MODEL_CALL_FAILED` and `[DB-0810-09]`.** Failures became quality events so a recurring one
+escalates at three. This collided head-on with the sink-gap item the parallel window filed hours
+earlier, which says in terms *do not fix with a one-line allowlist edit*. Put to Mike rather than
+decided unilaterally; he chose to include it with the item annotated. The reasoning: its three
+stated objections are about retrofitting a consumer to three orphaned types — volume (139
+`USER_CORRECTION`), an unstable signature, and a possibly-legacy type — and none apply to a new
+type written with both sides in one commit, ~5/fortnight, with `_api_failure_signature()` keying
+on error class. It folds into the registry when the structural fix lands.
+
+**Own bug, caught in test:** the signature regex matched any three digits and filed every DNS
+blip as `API error 443` — the port in an `oauth2.googleapis.com` connection error.
+
+Deployed and verified: VM HEAD `8ae1ff9`, both services `active`, `NRestarts=0`, no tracebacks.
+
 ### 2026-08-10 (Calendar conflict detection; the quality-event sink gap) — `a20febe`, **deployed 08-05**
 
 One long session, 08-05 to 08-10. It opened on a general question — *where should code replace
