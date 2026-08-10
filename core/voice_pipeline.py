@@ -52,8 +52,33 @@ WHISPER_MODEL_SIZE = os.getenv("METATRON_WHISPER_MODEL", "base.en")
 WHISPER_BEAM_SIZE = int(os.getenv("METATRON_WHISPER_BEAM", "5"))
 # VAD drops non-speech spans before decoding: ~7% faster at identical WER, and it suppresses
 # the filler Whisper hallucinates on silence ("Thank you.", "Bye.") — which the synthetic
-# benchmark fixtures cannot exercise but a real mic with room tone produces routinely.
+# benchmark fixtures cannot exercise but a real mic with room tone produces routinely. Do
+# not disable it to fix truncation — tune it instead (below).
 WHISPER_VAD = os.getenv("METATRON_WHISPER_VAD", "1") != "0"
+# [DB-0803-01], diagnosed 2026-08-09: at Silero's defaults (threshold=0.5,
+# speech_pad_ms=400), a clause trailing off in volume crosses the threshold before real
+# silence, and 400ms of padding isn't enough to recover it. 18-16-16.webm ended
+# "...communicating" instead of "...communicating with what we put in." — the whole
+# trailing clause dropped, silently, no error.
+#
+# Tuned 2026-08-10 against all 108 files retained in data/audio/ (report:
+# /tmp/vad_final.log, not committed — regenerate with the script in that session's
+# archive/PROJECT_LOG.md entry if these values are ever revisited). Measured against a
+# VAD-off transcription as the practical ceiling for each file:
+#
+#   defaults (0.5  / 400ms)   97.6% avg recovered, 0 files with hallucination markers
+#   tuned    (0.30 / 1500ms)  98.1% avg recovered, 0 files with hallucination markers,
+#                             and the one file that motivated this — 18-16-16.webm —
+#                             goes from 85.9% to a full match.
+#
+# The corpus is 108 files of real dictated speech and cannot exercise VAD's OTHER job —
+# suppressing hallucinated filler on pure silence/room tone, which needs an accidental
+# recording with no real speech in it at all. Zero hallucination markers here is evidence
+# this tuning doesn't obviously break that, not proof it's untouched. That is the reasoning
+# for tuning VAD rather than disabling it: loosen the parameters that caused the measured
+# failure, keep the mechanism whose failure mode this corpus can't measure.
+WHISPER_VAD_THRESHOLD = float(os.getenv("METATRON_WHISPER_VAD_THRESHOLD", "0.30"))
+WHISPER_VAD_SPEECH_PAD_MS = int(os.getenv("METATRON_WHISPER_VAD_SPEECH_PAD_MS", "1500"))
 SAMPLE_RATE = 16000              # Whisper expects 16kHz
 
 # Kokoro TTS settings.
@@ -151,6 +176,10 @@ def transcribe(audio: np.ndarray) -> str:
         beam_size=WHISPER_BEAM_SIZE,
         language="en",
         vad_filter=WHISPER_VAD,
+        vad_parameters={
+            "threshold": WHISPER_VAD_THRESHOLD,
+            "speech_pad_ms": WHISPER_VAD_SPEECH_PAD_MS,
+        } if WHISPER_VAD else None,
     )
     return " ".join(seg.text.strip() for seg in segments).strip()
 
