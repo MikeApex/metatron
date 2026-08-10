@@ -89,9 +89,35 @@ Step count also corrected in `CLAUDE.md` and `docs/WORKFLOW.md` — the stale-cr
 `ed92acf`'s verification pass was built to catch, and which would otherwise have gone unnoticed
 exactly as the ceiling figures did.
 
-`SESSION.md` **deliberately not rewritten** — it sat at 200/200 lines carrying the other window's
-handoff paragraph from minutes earlier, and this file is appended while that one is replaced.
-Nothing under `core/`, `config/` or `tools/`, so **no `./deploy.sh`**.
+**Two decisions came after the above was written, and correct it.**
+
+**Step 5 now pushes** (`66cbccf`). I had specified *"no push, no deploy"* and Mike asked whether
+push belonged in the step. It does: `deploy.sh` pushes all of `main` anyway, so what can reach
+the VM is decided by what a session **commits to `main`**, not by who pushes it — `88957e6`
+reached production that way this morning. Withholding push therefore protects nothing and only
+delays the offsite copy, while a commit living solely on one laptop is not the durability
+`[DB-0810-04]` asked for. The caveat is the load-bearing half: **a rejected push stops the step
+and gets reported**, because pulling or merging to clear a non-fast-forward inside `/archive`
+entangles two sessions' work — precisely what the step exists to prevent. Held at 100 lines by
+folding push into the manifest paragraph. **Mike rejected the funding edit I proposed for it** —
+removing *"this is the whole reason the list used to grow every session and shrink in none"* from
+step 4 — on the grounds that ignoring non-functional nits is essential to progress, so the
+sentence justifying the filing bar is not scar tissue. Correct, and worth recording: *"command
+files carry procedure, not history"* does **not** license deleting the rationale that makes a
+rule stick. Fable's own step-1 tail note was spared on the same reasoning earlier in the session.
+
+**`SESSION.md` was rewritten after all** (`2e3e6e4`), once a check showed the other window idle
+for 25 minutes rather than mid-archive — its JSONL last wrote at 13:00:23, matching its final
+commit to the second. **The primer's ceiling had stopped measuring what it was built to
+measure.** The file sat at exactly 200/200 lines, but the weight was in five `## Recent sessions`
+rows that had grown **wide, not numerous** — 5.6 KB of paragraph-length summaries restating this
+file's entries, carried on five lines that a line-count ceiling cannot see. Compressed to one
+line each (5.6 KB → 1.9 KB; file 17.9 KB → 13.3 KB, 200 → 193 lines) and the rule stated in the
+section header: *an index, not a summary.* The handoff paragraph was rewritten rather than
+stacked, carrying forward the facts still live from earlier today. A byte or token ceiling would
+have caught this months earlier than the line ceiling did.
+
+Nothing under `core/`, `config/` or `tools/`, so **no `./deploy.sh`**. Pushed to GitHub.
 
 ### 2026-08-10, later still (The Book: thinking-token breakout, ungrounded-answer flag) — `cb9f459`, deployed
 

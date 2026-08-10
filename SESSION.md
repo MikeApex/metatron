@@ -1,9 +1,10 @@
 # Session Primer — Personal AI Life Manager
 
 *Updated: 2026-08-10, latest (`/archive` now commits its own output) — `060f53a`, `b5600a8`,
-`bb1d9da`, **docs only, nothing deployed**. `/archive` is **five steps**: step 5 stages an
-explicit manifest, diffs each file first, and **never pushes or deploys**; a diff carrying lines
-the session did not write stops the commit rather than sweeping up a parallel window's work.
+`bb1d9da`, `2e3e6e4`, `66cbccf`, **docs only, nothing deployed**. `/archive` is **five steps**:
+step 5 stages an explicit manifest, diffs each file first, then pushes for offsite backup but
+**never deploys**; a diff carrying lines the session did not write stops the commit rather than
+sweeping up a parallel window's work, and a rejected push stops it too.
 `[DB-0805-05]` reached **×3** — it recurred during the session fixing the step that guards it, so
 step 5 is deliberately written to depend on it being unsolved. **Still live from earlier today:**
 The Book's thinking-token split and `⚠ no tool calls` flag are deployed and VM-verified
