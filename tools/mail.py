@@ -45,6 +45,19 @@ MAX_BODY_CHARS = 4_000
 TIMEOUT_SECONDS = 20
 
 
+def _imap_quote(mailbox: str) -> str:
+    """
+    Quote a mailbox name for IMAP SELECT/EXAMINE.
+
+    imaplib does not do this itself — a bare name is only safe for single-word
+    mailboxes like INBOX. Gmail's Sent folder is "[Gmail]/Sent Mail", which the
+    server rejects as unparsable without quoting. Escape backslash and quote
+    characters per RFC 3501 quoted-string, then wrap.
+    """
+    escaped = mailbox.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
 def _config_path(persona: str | None = None):
     return persona_config_dir(persona) / "email.yaml"
 
@@ -168,7 +181,7 @@ def read_email(count: int = 10, unread_only: bool = False, folder: str = "INBOX"
             )}
 
         # readonly=True: SELECT rather than EXAMINE semantics, so nothing is flagged.
-        status, _ = conn.select(folder, readonly=True)
+        status, _ = conn.select(_imap_quote(folder), readonly=True)
         if status != "OK":
             return {"error": f"Could not open folder '{folder}'."}
 
@@ -299,7 +312,7 @@ def _sent_folder(cfg: dict, conn) -> str | None:
 
     for guess in ("[Gmail]/Sent Mail", "Sent"):
         try:
-            if conn.select(guess, readonly=True)[0] == "OK":
+            if conn.select(_imap_quote(guess), readonly=True)[0] == "OK":
                 return guess
         except Exception:
             continue
@@ -368,7 +381,7 @@ def _fetch_bodies(conn, ids: list[bytes]) -> list[str]:
 
 def _sample_direction(conn, folder: str, criterion: str, address: str) -> list[str]:
     """Run the tiered sample in one mailbox. `criterion` is FROM or TO."""
-    if conn.select(folder, readonly=True)[0] != "OK":
+    if conn.select(_imap_quote(folder), readonly=True)[0] != "OK":
         return []
 
     picked: list[bytes] = []

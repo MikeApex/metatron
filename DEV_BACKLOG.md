@@ -173,19 +173,31 @@ standing rule distrusts.*
   3. **Batched `BODY.PEEK[]` parsing** in `_fetch_bodies()` — chunks of 50, tuple-shaped responses.
      Most likely single point of failure; a malformed chunk is skipped silently by design, so a
      partial parse would look like a thin mailbox rather than a bug.
-  **Deploy prerequisite now met** — `cb9f459` (2026-08-10, unrelated Book work) carried this
-  commit to the VM as a side effect of pushing `main`; `88957e6` is live. **Do not let the first
-  run be the automatic one** — `get_tone_shape` self-seeds on first draft to any contact lacking
-  a profile, and it can now fire unattended. The first execution should instead be a deliberate
-  `refresh=true` against one long-history contact, on the VM, with the result read before anything
-  is trusted. **Pass:** `sent_folder_found: true`, both `counts.written_by_user` and
-  `counts.received` non-zero, and a `tone_shape` that a human recognises as accurate about that
-  relationship. **Fail loudly on:** a profile containing any life event, date, or third-party name —
-  that is the vocabulary-in/events-out line failing at the model layer, where no code check
-  can catch it. Cost is negligible (~3¢ on Flash-Lite), so this is a correctness check, not a
-  spend one.
-  *filed 2026-08-10 by Mike, who asked for it directly at the close of the build session · **not
-  yet verified against anything live — that is the whole item***
+  **Read 2026-08-10.** The unattended run (trace `f6d7efe5`, 21:52, the Iva invite) wrote
+  `tone_shape: ""` — nothing leaked, but not for the reason this item was written to check.
+  `_sample_direction()` passed the Gmail Sent folder name (`[Gmail]/Sent Mail`) to
+  `conn.select()` **unquoted**; IMAP requires quoting for names with spaces, so the call threw
+  `imaplib.IMAP4.error: BAD Could not parse command`, uncaught, before the model extractor ever
+  ran. Confirmed by reproducing directly on the VM and by re-reading the (previously
+  self-filtered-out) `journalctl` warning. This is not contact-specific — it fires on **every**
+  sent-side query against this mailbox. **Fixed same session:** `_imap_quote()` added to
+  [tools/mail.py](tools/mail.py), applied at all three `conn.select()` call sites; re-verified
+  live against the same address post-fix — `sent_folder_found: true`, clean `counts` dict, no
+  crash.
+  **Still open — the item's real question is unanswered.** Point 1 above predicted this class of
+  failure but not this exact shape; points 2 and 3 (SEARCH term ordering, batched body parsing)
+  and the actual target — the model extractor running against real correspondence, schema
+  reduction and injection-marker backstop holding under live data — have **never fired**, because
+  nothing got past the Sent-folder select until now. Also found while investigating: the
+  dedicated mailbox (`diamond.mike.mt@gmail.com`) has essentially no history yet — 1 Sent message
+  (to self), 6 Inbox messages total — so **no contact currently has enough real correspondence to
+  run the intended test against.** Re-run `get_tone_shape(refresh=true)` once a contact has real
+  back-and-forth in that mailbox. **Pass:** `sent_folder_found: true`, both
+  `counts.written_by_user` and `counts.received` non-zero, and a `tone_shape` a human recognises
+  as accurate. **Fail loudly on:** any life event, date, or third-party name in the profile.
+  *filed 2026-08-10 by Mike at the close of the build session · re-investigated 2026-08-10:
+  IMAP quoting bug found and fixed, original pass/fail criteria still unmet — no long-history
+  contact exists yet to test against*
 
 ## Later
 
