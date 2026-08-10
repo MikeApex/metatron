@@ -208,10 +208,6 @@ Real, not prioritised. One or two lines each — detail lives in the code, the l
   parts have shipped. **Trim item-by-item against the log, never by line range.**
 - **[DB-0809-16]** Live dictation test of the dismissable transcription readout — code-verified
   against every pass condition 2026-08-05, never run by a human with a microphone.
-- **[DB-0805-04]** `tools/mail.py`'s module docstring says sending is deferred; `send_email`
-  shipped 2026-08-04 and sent for real 2026-08-05. **Confirmed still wrong 2026-08-09** —
-  [tools/mail.py:9-11](tools/mail.py#L9). One-line fix.
-
 ---
 
 ## Machine log

@@ -1,16 +1,20 @@
 """
-tools/mail.py — read-only email access over IMAP.
+tools/mail.py — email access over IMAP (read) and SMTP (send).
 
 Deliberately not named `tools/email.py`: `tools/` goes on sys.path, so that filename
 would shadow the standard library's `email` package — which is the very thing this
 module needs to parse messages. The failure would surface as an unrelated import error
 somewhere else entirely.
 
-**Read-only, and that is a design decision rather than an unfinished feature.** Sending
-is deferred with the rest of the act-on-your-behalf work: reading a booby-trapped
-message is a bad answer, sending one is a real loss. Nothing here opens a socket that
-can write to the mailbox — messages are fetched with BODY.PEEK so they are not even
-marked as read.
+**Reading is read-only by design, not by omission.** Messages are fetched with
+BODY.PEEK so they are not even marked as read — nothing here opens a socket that can
+write to the mailbox from the read side. `send_email` (shipped 2026-08-04, sending for
+real since 2026-08-05) is the separate, deliberate act-on-your-behalf path: two-step
+confirmation-gated (`confirm_token`), and every recipient is checked against
+`_known_recipients()` in Python, not left to an agent instruction — the same reasoning
+that keeps reading BODY.PEEK-only applies to keeping the send gate out of the model's
+hands. Outbound ownership belongs to the Relationships agent, not whoever calls this
+module (`config/agents/relationships.md` § Disclosure discretion).
 
 Everything returned crosses the trust boundary. An email body is written by whoever
 sent it, and "summarise my inbox" is the classic indirect prompt injection delivery

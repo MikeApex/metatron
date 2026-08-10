@@ -1991,3 +1991,14 @@ runs when a session runs.
   diff, clean again after revert.
   *closed 2026-08-10 · evidence: `scripts/check_apk_sync.sh`, tested live against the
   real APK built earlier this session*
+
+## Closed 2026-08-10 — stale docstring
+
+- **[DB-0805-04]** `tools/mail.py`'s module docstring said sending was deferred and the
+  module was read-only; `send_email` shipped 2026-08-04 and has sent for real since
+  2026-08-05. Rewrote to describe what's actually true — reading is read-only *by
+  design*, sending is the separate, deliberately confirmation-gated act-on-your-behalf
+  path, recipient-checked in Python not by instruction, owned by Relationships since
+  tonight's outbound-messaging move (`config/agents/relationships.md` § Disclosure
+  discretion, confirmed present).
+  *closed 2026-08-10 · evidence: tools/mail.py:1-15, no other stale reference found*
