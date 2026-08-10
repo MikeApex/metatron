@@ -2074,7 +2074,11 @@ def run_session_gemini_grounded(system_prompt: str, user_input: str,
         if response.candidates:
             gm = getattr(response.candidates[0], "grounding_metadata", None)
             if gm:
-                for chunk in getattr(gm, "grounding_chunks", []):
+                # grounding_chunks is a real attribute that Gemini sometimes sets to
+                # None (grounding_metadata present, no groundable chunks) rather than
+                # omitting it — getattr's default only covers a missing attribute, so
+                # `or []` is required to catch the None-valued case too.
+                for chunk in getattr(gm, "grounding_chunks", None) or []:
                     web = getattr(chunk, "web", None)
                     if web and getattr(web, "uri", None) and web.uri not in sources:
                         sources.append(web.uri)
