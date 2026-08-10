@@ -1,19 +1,19 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-10 (`/backlog deep` — two items closed on premises that had stopped being true,
-two merged, a live tool-grant gap found and shipped) — `## Now` holds **2**, both genuinely
-time-gated: `[DB-0809-02]` needs a week of traces (day 1 clean), `[DB-0809-21]` is **3 of 4** after
-its `companion_checkin` check was confirmed clean and only the entry had lagged. Closed
-`[DB-0809-15]` (the confirm-gate wiring it wanted already existed — the same question was filed
-twice, once falsely) and `[DB-0809-19]` (re-ran B1's `DEPUTY-STRUCT` standalone: PASS after
-`82d394b`). Merged `[DB-0807-02]`→`[DB-0808-04]` and `[DB-0809-17]`→`[DB-0805-05]`. The machine log
-exposed **three specialists instructed to use `search_memory` while holding none of it** — granted
-to `relationships` and `finance` with their denials cited (`a96a3b3`, deployed); `recreation_hobbies`
-withheld, never denied it, and a speculative grant would be the file's first. Mike set two rules,
-now in the `## Later` preamble: **×3 recorded errors promotes to `Now`**, and **`Now` clears before
-`Later` opens**. Two windows ran in one tree and both diagnosed the same crash independently —
-logged on `[DB-0805-05]`. `[DB-0804-01]`'s count is due **08-11 — tomorrow**.
-Full detail: [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).*
+*Updated: 2026-08-10 (outbound communication consolidated under Relationships; tone-profile pipeline
+built) — `9eb5ac4`, `88957e6`, **neither deployed**. Relationships now owns every message written to
+a person and carries three-level disclosure discretion, including the case where knowledge of one
+contact shapes a message to another: inference allowed, disclosure and **fabrication** not.
+Logistics keeps `read_email` only. The deciding fact was in code — `_known_recipients()` already
+limits every recipient to a saved CRM contact, so sending was always a person-graph operation. The
+ZDR clarification is now project-wide (`ROADMAP.md` § Section 0): new sensitive paths need no
+separate ruling. **`## Now` holds 3.** The new one, `[DB-0810-05]`, is the gate on everything just
+built: **no part of the IMAP half has touched a real mailbox** — distillation is covered by a
+hostile fixture, but `_sent_folder()` discovery, tier `SEARCH` syntax and batched `BODY.PEEK`
+parsing are unexercised. It needs a deploy (`email.yaml` is VM-only), but deploying also makes
+`get_tone_shape` self-seed unattended on the first draft to any profile-less contact — so the first
+run should be a deliberate `refresh=true` on one contact. `[DB-0804-01]`'s count is due **08-11 —
+tomorrow**. Full detail: [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -73,11 +73,18 @@ Three checks still open:
 **`[DB-0804-01]` still open** — check-ins fixed/deployed (`10bf194`), but no end-to-end
 scheduled fire directly observed yet. One-week count due 2026-08-11 — do not check before then.
 
-**Outbound messaging moved to Relationships (2026-08-09, `9eb5ac4`).** Logistics keeps `read_email`
-only; Coordinator routes any message-to-a-person to Relationships, which holds three-level
-disclosure discretion. **The ZDR clarification is now project-wide** (`ROADMAP.md` § Section 0) —
-a new sensitive path needs no separate ruling. Tone-profile pipeline **designed, not built** — plan
-at `~/.claude/plans/3-everything-is-on-declarative-kurzweil.md`; unresolved risk is trust laundering.
+**Outbound messaging is Relationships' alone** (`9eb5ac4`). Logistics keeps `read_email`; Coordinator
+routes any message-to-a-person to Relationships, which holds three-level disclosure discretion and
+the communication-style baseline. `send_email`'s `disclosure_note` is **outside the confirm
+fingerprint** by design — do not move it into `args`. **The ZDR clarification is project-wide**
+(`ROADMAP.md` § Section 0).
+
+**Tone profiles built, not deployed, never run live** (`88957e6`) — `tools/tone.py`,
+`config/agents/tone_profiler.md`, `search_correspondence`, `tone_shape` on the contact record.
+`tone_shape` is accepted by `write_contact` but **deliberately absent from its schema**: only
+`tone.py` writes it, because the source is attacker-writable mail and the field is read back as
+trusted prompt text. The fixed JSON key set reassembled in Python is that defence — the injection
+check is only a backstop. Gate is **`[DB-0810-05]`**: the IMAP half is entirely unexercised.
 
 **Obligations are data, not jobs.** `tools/obligations.py` + `data/personas/{p}/obligations.yaml`;
 closure is inferred, `close_obligation` **requires** evidence. The reconcile sweep **never
@@ -104,11 +111,11 @@ Newest first. Full detail for every entry — and everything older — is in
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-10 | **Outbound communication got one owner; per-contact tone profiles built** — the design question ("a public-facing comms agent, or the existing suite?") reversed twice, both times on code rather than reasoning. Final: **Relationships owns every message to a person**, because `_known_recipients()` already limits every recipient to a saved CRM contact — sending was always a person-graph operation. The old split had Relationships generating all outreach with no send tool and Logistics holding `send_email` with no way to resolve a name; `_resolve_attendees()` had already patched around that seam in Python. **Rejected a dedicated Comms agent** — it would still need the CRM, recreating the boundary one step over. `send_email` gained `disclosure_note`, kept **out of `args`** so a forgotten note on the retry cannot fail the send. Tone profiles distil real correspondence through a **fixed JSON key set reassembled in Python** — the trust-laundering defence, since the source is attacker-writable mail and the destination is read back as trusted prompt text. **Two corrections:** I called `[DB-0805-02]` a blocker on its title alone when SESSION.md already had it verified-stale; and the comms baseline was headed for the persona template until the pre-edit check caught `CLAUDE.md` § *Two kinds of preference*. **Plan deviation:** skipped the specified `_SUBAGENT_DEPTH=99` — `run_session()` never reads it and `os.environ` is process-global, so it would race concurrent sessions; the empty tool grant is the real control | `9eb5ac4`, `cae31df`, `88957e6` — **not deployed**, gated on `[DB-0810-05]` |
 | 08-10 | **`/backlog deep` — two items closed on premises that had stopped being true, a live grant gap shipped** — `[DB-0809-15]` closed stale: the confirm-gate wiring it asked for already existed (`config_writer.py:43`, `agent_config.py:76`), and the surviving question was already open as `[DB-0805-01]` — **the same question filed twice, once falsely**. `[DB-0809-19]` closed by re-running B1's `DEPUTY-STRUCT` standalone (no model call): PASS after `82d394b`. `[DB-0809-21]` corrected 2-of-4 → **3 of 4** — its `companion_checkin` check had passed that morning and only the entry lagged. Merged `[DB-0807-02]`→`[DB-0808-04]`, `[DB-0809-17]`→`[DB-0805-05]`. Machine log exposed **3 specialists instructed to use `search_memory` holding none of it**; granted `relationships`+`finance` with denials cited, **`recreation_hobbies` withheld** — never denied it, so it would be the file's first speculative grant. Filed `[DB-0810-03]`, `[DB-0810-04]` (`/archive` has no commit step). **Two windows in one tree both diagnosed the same crash independently** → `[DB-0805-05]` at 2 occurrences | `a96a3b3`, `a431472` — deployed, VM verified |
 | 08-10 | **`/metatron-troubleshoot` seq 005 — research_agent grounded-search crash found and fixed** — `getattr(gm, "grounding_chunks", [])`'s default only covers a missing attribute, not Gemini's None-valued one; broke TfL/weather/pollen and every other grounded query hitting that response shape, both direct dispatch and Synthesizer's `run_subagent` retries. Reproduced on the VM before and after the fix. Also noted (not fixed): `core/trace.py`'s `pop_agent()` doesn't restore the prior thread-local `current_agent`, so nested `run_subagent` tool-call records can misattribute to the child agent in The Book | `bc1a552` — deployed, VM verified, no crash loop |
 | 08-10 | **Sonnet cluster closed 9→2; a live WebSocket race found, corrected once, filed** — `[DB-0803-01]` half two fixed by tuning Silero's VAD against all 108 retained audio files (98.07% avg recovered, 0 hallucination markers) rather than disabling it. `[DB-0809-03]` closed with no build — its citation was wrong; the real fix shipped 2026-08-05. `[DB-0809-06]` fixed both causes (catch-up wiped the transcript on reconnect; hidden tabs never checked liveness). `[DB-0808-18]`'s key rotation reached three systems, not one — caught a regression before it shipped (deleting the old `~/.zshrc` export would have broken `ask_gpt` globally). `[DB-0805-02]` closed live against a real phone. **The correction:** doubled text looked install-specific until it recurred 12 minutes later with no install involved — real cause is `ws.close()` not synchronously closing, leaving two sockets briefly live during a reconnect; filed as `[DB-0810-01]`, not fixed, since the two real defenses are a genuine design choice | nine commits, all deployed and verified against the VM + a real phone session |
 | 08-09 | **Three premises inverted; a parallel chat's grant shipped inside my commit** — `[DB-0809-04]` sleep over-weighting was **comparability, not availability**: the 08-03 rule's antecedent was false (sleep is 5th of 6 populated fields) so it read as permission; the real cause is that `mood: 'anxious'` cannot be ranked against yesterday and `sleep_hours` can. `[DB-0809-05]` built — obligation store (closure inferred, evidence required) + a reconcile sweep that **never notifies**. `[DB-0809-20]` filed and built: `write_log` merged **shallowly**, so the declared nested schema was actively unsafe — guard before config; **no backfill**, boundary in `pattern_miner.md`. **Incident:** `git add <file>` staged another session's uncommitted `send_email` transfer; deploying it left email sending dead in production until `9eb5ac4`. I had called those commits clean — file-granular check, line-granular collision → `CLAUDE.md` Deploy safety rule 4. `[DB-0803-01]` half two diagnosed: Whisper VAD, not the app | `6330029`, `b9ea29f`, `88b7614`, `9eb5ac4` — all deployed, VM verified |
-| 08-09 | **The scheduler was reporting itself as the user** — `[DB-0809-02]` inverted by measurement: all 22 August check-ins were 1–2 sentences, and 4 of the 5 "restatements" were the Synthesizer reading its own scheduler prompt as Mike's voice (`is_proactive` reached only the trace) and firing the repeated-instruction protocol against text he never sent. Fixed in both pipeline copies + a protocol guard. A ≤2-sentence cap was **rejected** — Mike's target is focus, with length as its symptom — so `synthesizer.md` § Scheduled session conduct carries guidance instead; an action awaiting approval is now referred to, never recited. Found a **fourth** copy of the rule in `config/templates/scheduler.yaml`, which seeds every new persona → new `CLAUDE.md` § *Two kinds of preference*. `[DB-0809-06]` diagnosed (catch-up wipes the transcript; hidden tabs never check liveness), `[DB-0809-05]` designed | `82d394b`, `a6d693e` — deployed, VM verified |
 
 ---
 

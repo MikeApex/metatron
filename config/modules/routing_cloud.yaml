@@ -123,7 +123,7 @@ agents:
   logistics:
     provider: gemini
     model: "models/gemini-3.1-flash-lite"
-    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, update_calendar_event, delete_calendar_event, check_calendar_conflicts, get_weather, get_tfl_status, get_flight_status, get_travel_time, get_regional_transit_info, read_profile, write_profile, write_schedule, list_schedules, delete_schedule, fetch_url, read_email, read_agent_config, write_agent_config, search_memory, read_archive, write_archive, open_obligation, close_obligation, reopen_obligation, list_obligations, get_tone_shape]
+    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, update_calendar_event, delete_calendar_event, check_calendar_conflicts, get_weather, get_tfl_status, get_flight_status, get_travel_time, get_regional_transit_info, read_profile, write_profile, write_schedule, list_schedules, delete_schedule, fetch_url, read_email, read_agent_config, write_agent_config, search_memory, read_archive, write_archive, open_obligation, close_obligation, reopen_obligation, list_obligations]
     # update_calendar_event, delete_calendar_event, check_calendar_conflicts added
     # 2026-08-05 — required to act on what the calendar-conflict build detects:
     # Logistics could previously only create events, never move, correct, or

@@ -20,6 +20,9 @@ or `file:line` that closed them — closed without evidence is not closed.
 *Machine-written from what Mike said on the VM. Do not hand-edit — triage entries out into
 `## Now` or `## Later`, rewritten properly, and delete them from here.*
 
+- **[needs building]** User asked to look in CRM and get a total contact count. Needs an integration with their external CRM system.  
+  `2026-08-10T11:19:18.354306Z`
+
 - **[needs building]** Fix Research Agent returning blank results for live TfL transport queries (Bakerloo, Elizabeth, DLR).  
   `2026-08-10T11:10:27.325451Z`
 
@@ -84,6 +87,36 @@ standing rule distrusts.*
   confirmed clean the same morning and the entry simply hadn't caught up with
   `archive/PROJECT_LOG.md`, which already recorded it — corrected by the 08-10 `/backlog deep`
   sweep. One check left, genuinely time-gated on a real unreferenced calendar event arising*
+
+- **3. [DB-0810-05] The tone-profile pipeline has never touched a real mailbox.** Built and
+  committed `88957e6`; **every test used stubs.** The distillation half is well covered — a hostile
+  fixture confirmed unknown keys dropped, values truncated, lists capped, injection caught and the
+  write refused, plus five `_extract` paths (single-direction refusal, thin-sample skip, injection
+  block, happy path, mailbox error). **What is entirely unexercised is the IMAP half**, which is
+  the part most likely to behave differently against live Gmail:
+  1. **`_sent_folder()` discovery** ([tools/mail.py](tools/mail.py)) — `conn.list()` parsing for the
+     `\Sent` SPECIAL-USE attribute, with `[Gmail]/Sent Mail` and `Sent` as fallbacks. If this
+     returns `None` the run refuses by design, so the *visible* failure is "nothing happened"; if it
+     returns the **wrong** mailbox the profile is silently built from one direction, which is the
+     failure the refusal exists to prevent.
+  2. **Tier `SEARCH` syntax** — four `FROM`/`TO` + `BEFORE`/`SINCE` queries per direction. Date
+     arithmetic and tier contiguity were verified offline (no gaps, no overlap, correct across year
+     boundaries); what is untested is whether Gmail accepts the term ordering as constructed.
+  3. **Batched `BODY.PEEK[]` parsing** in `_fetch_bodies()` — chunks of 50, tuple-shaped responses.
+     Most likely single point of failure; a malformed chunk is skipped silently by design, so a
+     partial parse would look like a thin mailbox rather than a bug.
+  **Requires a deploy first** — `email.yaml` is VM-only and gitignored, so this cannot be run from
+  the Mac at all. **Do not let the first run be the automatic one.** `get_tone_shape` self-seeds on
+  first draft to any contact lacking a profile; the first execution should instead be a deliberate
+  `refresh=true` against one long-history contact, on the VM, with the result read before anything
+  is trusted. **Pass:** `sent_folder_found: true`, both `counts.written_by_user` and
+  `counts.received` non-zero, and a `tone_shape` that a human recognises as accurate about that
+  relationship. **Fail loudly on:** a profile containing any life event, date, or third-party name —
+  that is the vocabulary-in/events-out line failing at the model layer, where no code check
+  can catch it. Cost is negligible (~3¢ on Flash-Lite), so this is a correctness check, not a
+  spend one.
+  *filed 2026-08-10 by Mike, who asked for it directly at the close of the build session · **not
+  yet verified against anything live — that is the whole item***
 
 ## Later
 

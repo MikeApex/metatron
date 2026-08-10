@@ -21,6 +21,97 @@ file is the only narrative record, alongside the verbatim transcripts.*
 
 ---
 
+### 2026-08-09 → 08-10 (outbound communication: one owner, disclosure discretion, per-contact tone) — `9eb5ac4`, `cae31df`, `88957e6`, **not deployed**
+
+The outgoing handoff described the scheduler reading its own prompt as Mike's voice, fixed in
+`82d394b`/`a6d693e`. This session started from a design question instead: does a publicly-facing
+communications agent make sense, or do the existing agents cover it?
+
+**The answer changed twice, and both reversals were driven by reading code rather than reasoning
+from the design.** First answer — no new agent, extend Logistics, because discretion is
+cross-cutting and channel tone is a persona preference. That held until a check of who actually
+holds what found the split was broken: **Relationships generates every outbound suggestion and had
+no send tool; Logistics held `send_email` and no CRM tool**, so it could not resolve "email Sarah"
+to an address, and `_known_recipients()` rejects anything it guesses. The seam had already been
+patched around once in Python — `_resolve_attendees()` reaches from the calendar into the CRM on
+Logistics' behalf. Second answer, and the one shipped: **consolidate under Relationships**, on the
+strength of `_known_recipients()` limiting every possible recipient to a saved CRM contact. There
+is no such thing as sending to a non-contact, so sending was always a person-graph operation.
+
+**Rejected: a dedicated Communications agent** (the user's original framing). It would still need
+the CRM, so the boundary problem reappears one step over — unless it also owned the CRM, at which
+point it is Relationships renamed. **Rejected: status quo plus a read-only CRM grant to Logistics**
+— workable, but leaves the discretion rule split across two files. `read_email` deliberately stayed
+with Logistics: reading is an injection risk, not a disclosure one, and `routing.yaml` already
+justifies that grant on those grounds.
+
+**Disclosure discretion is three levels, and the third is the one with teeth.** Level 1, what the
+recipient learns about the user. Level 2, what they learn about *other contacts* — the surprise-party
+case, which no single-user assistant has because no single-user assistant holds data on many people
+at once. Level 3, acting on what you know about A when writing to B without revealing it: inference
+allowed, disclosure not, and **fabrication not**. That last clause is the load-bearing one — an
+invented excuse is a lie the user must then maintain in their own voice, possibly for years, and
+they may not catch it at approval. `send_email` gained `disclosure_note`, kept **out of `args`** so
+the confirm fingerprint is untouched and a model that supplies it on call 1 and forgets it on the
+retry cannot fail the send. Proven live: flag reaches the preview, retry without it succeeds,
+tampered body still rejected.
+
+**Two corrections worth recording.** (1) I named `[DB-0805-02]` a blocker on the strength of its
+title; `SESSION.md` had already recorded it verified-and-stale — the approval UI shipped three
+minutes before the first report. Exactly the failure `CLAUDE.md` warns about, made while holding the
+warning. It closed for real on 08-10 (`8a250ed`), which cleared the risk anyway. (2) The
+communication-style baseline was planned for the persona template; the pre-edit check caught
+`CLAUDE.md` § *Two kinds of preference*, written the day before after a rule seeded that way turned
+out to be its own fourth copy. "Warm and friendly, more cordial for business" passes the design
+test, so it went to `relationships.md` and `new_persona.sh` was left alone.
+
+**The tone pipeline is built around one hazard: trust laundering.** Source is email
+(attacker-writable); destination is a CRM field read back as trusted prompt text. So `tone_profiler`
+returns JSON against a fixed key set and never text used as text — Python drops unknown keys,
+truncates to 120 chars, caps lists, strips markup, reassembles the string itself.
+`contains_injection_markers()` aborts the write as a backstop, **not** as the defence. `tone_shape`
+is accepted by `write_contact` but deliberately absent from its schema, commented so it does not
+read as an oversight.
+
+**Two design points that came from Mike pushing back.** The original caps (24 months, 20 messages)
+were inherited placeholders; challenged, they were re-derived — background execution makes IMAP
+latency free, so cost is the only real constraint, and pet names and running jokes are *rare events*
+that only breadth finds. Budget is now ~500k chars across four recency-weighted tiers with no time
+floor, sized under the 200k-token step where Vertex pricing rises. Second: the ban on "private"
+content was wrong, and the objection was correct — it is all private-side already. The real reasons
+are narrower (cross-contact leakage, injection, staleness), so the line became **vocabulary in,
+events out**, with `pet_names` and `shared_phrases` added as first-class fields. Costing done from
+`spend_guard.yaml`: Flash-Lite at ~3¢ for a long-history contact against 25¢ on Pro.
+
+**A third correction, caught during the archive itself.** Reading `[DB-0810-03]` (tool allowlists
+never audited against instruction files) against this session's own diff found a dead grant I had
+just added: `get_tone_shape` on `logistics`, specified by a plan written *before* the decision that
+moved outbound comms to Relationships. Logistics no longer writes to anyone, so it has no use for
+how the user sounds to someone — and it was granted without being documented in `logistics.md`,
+which is the same offered-but-not-told drift that item is about. Removed from both routing files.
+Not filed: an inert grant is neither user-visible nor roadmap-blocking, and the backlog's own bar
+sends that class to fixed-on-the-spot rather than onto a ranked list. A told-vs-held sweep across
+both agents afterwards is clean on all six tools checked.
+
+**Deviation from the approved plan:** it specified setting `_SUBAGENT_DEPTH=99` around extraction.
+Not done — `run_session()` never reads that variable (only `run_subagent` does) and `os.environ` is
+process-global, so mutating it from a background thread would race concurrent sessions while
+protecting nothing. `tone_profiler`'s **empty tool grant** is the real control.
+
+**A parallel `/backlog` session was running in the same working tree, and committed with `git add
+-A`.** Commit `b9ea29f` swept in this session's `logistics.md` pointer and both `routing*.yaml`
+grant moves, so they sit in history under a message about obligation stores. Handled by committing
+by explicit filename from then on, and by `archive/handoffs/2026-08-09-public-communications.md`
+naming both halves — since `9eb5ac4` read alone shows Relationships told to send with no grant
+behind it. That handoff was consumed and the directory is empty again.
+
+**Not deployed, and the reason is in `[DB-0810-04]`: none of the IMAP half has touched a real
+mailbox.** Distillation is well covered by a hostile fixture; `_sent_folder()` discovery, tier
+`SEARCH` syntax and batched `BODY.PEEK` parsing are entirely unexercised. The live test needs a
+deploy (`email.yaml` is VM-only), but deploying also makes `get_tone_shape` self-seed on the first
+draft to any profile-less contact — so untested IMAP would first run unattended. First execution
+should be a deliberate `refresh=true` on one contact.
+
 ### 2026-08-10, later (`/backlog deep` — two items closed on false or spent premises, two merged, a live grant gap found) — `a96a3b3`, `a431472`, deployed
 
 The outgoing handoff described the research_agent grounded-search crash, fixed and deployed by a
