@@ -106,23 +106,7 @@ standing rule distrusts.*
   unusable.
   *filed 2026-08-04 by Mike via Synthesizer · origin SEQ 016/017 · **verified 2026-08-09***
 
-- **5. [DB-0809-03] Dictated contact details come through wrong and need correcting by hand.**
-  Three corrections in three minutes on 2026-08-02 (`diamond.mic` → `diamond.mike`), plus
-  `diamond.like.gmail.com` at SEQ 006. **Verified 2026-08-09:**
-  [tools/crm.py:149](tools/crm.py#L149)/[:158](tools/crm.py#L158) already run difflib near-miss
-  detection against the user's own email and phone, but they **refuse** the write rather than snap
-  it — a different behaviour from what this asks for, and the snap exists nowhere. The user's
-  addresses are in `profile.yaml` and contacts in the CRM, so a token close to a known string
-  should snap rather than pass through or be rejected. Partly Whisper accuracy (`[DB-0808-08]`),
-  but the known-values pass fixes it independently. **⚠ Live collision (2026-08-09):** this edits
-  `write_contact` at `tools/crm.py:149-158`, the exact function the parallel session's deferred
-  tone-pipeline Step 1 modifies (plan: `~/.claude/plans/3-everything-is-on-declarative-kurzweil.md`).
-  Whoever moves first commits before the other starts — and diff the file before staging it, per
-  `CLAUDE.md` § Deploy safety rule 4, which exists because that discipline already failed once today.
-  *filed 2026-08-09, consolidating the 2026-08-02 reports · Mike via Synthesizer · origin SEQ 006
-  · **verified 2026-08-09; collision noted 2026-08-09***
-
-- **6. [DB-0809-06] The browser tab does not live-refresh on messages sent from elsewhere.** A
+- **5. [DB-0809-06] The browser tab does not live-refresh on messages sent from elsewhere.** A
   message from the terminal or the Android app appears only after a manual reload; app and
   terminal sync fine. Transport is ruled out by the entry's own diagnosis — this is a
   client-side render path — **confirmed 2026-08-09, with two code-provable causes found:**
@@ -274,12 +258,13 @@ sync output line — repetition is the signal that a process event has become a 
 anything user-impacting into `## Now` or `## Later` like any other item; this is a holding pen,
 not a blackhole. Swept during `/backlog deep`.*
 
+- **[agent wanted a tool it lacks]** `relationships` attempted `search_memory` (query) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
+  `2026-08-10T06:30:12.978385Z`
+
 - **[agent wanted a tool it lacks]** `finance` attempted `search_memory` (query) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
   `2026-08-05T15:21:45.223926Z`
 
-
 ---
-
 ## Done
 
 **Closed items live in [`archive/backlog_closed_2026-08.md`](archive/backlog_closed_2026-08.md)**,

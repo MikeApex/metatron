@@ -1897,3 +1897,37 @@ runs when a session runs.
   *closed 2026-08-09 · evidence: `.env`, `~/.zshrc`, `~/.claude/claude.json`,
   `~/Library/Application Support/Chorus/config.json` — all verified directly, no commit
   (three of the four locations are outside this repo)*
+
+## Closed 2026-08-10 — dictated-address correction already built and working
+
+- **[DB-0809-03] Dictated contact details come through wrong and need correcting by hand.**
+  **The item's own citation was wrong, and its premise was stale.** It pointed at
+  [tools/crm.py:149](tools/crm.py#L149)/[:158](tools/crm.py#L158) — a difflib check inside
+  `write_contact` that guards against *misattributing* the user's own address to a contact
+  record, a different purpose entirely — and concluded "the snap exists nowhere."
+  Real evidence says otherwise: pulled the actual 2026-08-02 conversation
+  (`data/personas/mike/conversations/2026-08-02.jsonl`, VM). The failure was Mike dictating
+  **his own email for a ticket booking** (via Logistics/`write_profile`, never touching
+  `write_contact`), mis-transcribed three ways in three minutes —
+  `diamond.like.gmail.com` (dropped `@`), `diamond.mic at gmail.com`, corrected by hand to
+  `diamond.mike@gmail.com`.
+  A fix for exactly this shipped **2026-08-05**, three days after the incident:
+  [core/voice_pipeline.py](core/voice_pipeline.py) `correct_known_addresses()`
+  (`a08e38a`), whose own code comments cite these same two failure strings. It runs inside
+  `/transcribe` ([core/server.py:924](core/server.py#L924)) before the transcript ever
+  reaches a tool, checking against `_known_recipients()` — the user's own address **and**
+  every CRM contact's, broader than the item even asked for. Verified live against real
+  `mike` profile data tonight: `diamond.mic@gmail.com`, `diamond.like.gmail.com`, and a third
+  invented variant `diamondmic@gmail.com` all correctly snap to `diamond.mike@gmail.com`.
+  **The one real gap:** the bundled APK never sent `?persona=` on `/transcribe` (the second
+  `[DB-0809-18]` diff), so `if persona and transcript:` silently skipped the correction on
+  the phone specifically. Fixed as a side effect of tonight's `[DB-0803-01]` rebuild — same
+  root symptom class, independent discovery.
+  **Address dictation** (street name/postcode, also wrong in that conversation) is a
+  categorically different problem — no fixed enum of "known good addresses" exists to snap
+  against the way email/phone do — and is out of scope for this mechanism; not filed as a
+  new item since Mike hasn't re-raised it.
+  **The live collision warning was withdrawn along with the citation** — no `crm.py` edit
+  was needed, so there was never a real collision with the deferred tone-pipeline work.
+  *closed 2026-08-10 · evidence: `a08e38a` (pre-existing fix), verified live against `mike`
+  on the VM, no code changed by this close*
