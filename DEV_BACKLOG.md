@@ -81,23 +81,6 @@ standing rule distrusts.*
   *filed 2026-08-09 · **Mike deferred it explicitly** · **half done, half genuinely time-gated
   2026-08-10** — half the reason it can't move further today*
 
-- **3. [DB-0805-02] Email approval prompt does not render in the app.** Two reports 2026-08-04
-  (12:42Z, 12:49Z). **Verified 2026-08-09 — premise drifted, the UI now exists:** `#confirm-bar`
-  at [static/index.html:470-477](static/index.html#L470) (handlers
-  [:1367-1384](static/index.html#L1367)) against `/pending-confirmations` and `POST /confirm`
-  ([core/server.py:693-717](core/server.py#L693)), landed `ca993fe` at 11:39Z — **three minutes
-  before the first report** — and present in the bundled APK asset too. So this is a stale install
-  or a runtime failure of code that exists: **live repro on a rebuilt APK is the next step, not a
-  build.** Ranked high because until approval works on the phone, every gated outward action is
-  unusable. **The rebuild happened 2026-08-10** (`npx cap sync android` + `assembleDebug`,
-  confirmed against the actual built binary) as part of closing `[DB-0803-01]`/`[DB-0809-06]`, so
-  this one APK now needs sideloading to verify all three at once: this item's confirm-bar repro,
-  `[DB-0803-01]`'s doubling fix, and `[DB-0809-06]`'s catch-up/liveness fix. Served locally at
-  `http://100.70.67.45:8888/android/app/build/outputs/apk/debug/app-debug.apk` — device needs to
-  be on Tailscale and browse to that URL, "install from unknown sources" allowed for the browser.
-  *filed 2026-08-04 by Mike via Synthesizer · origin SEQ 016/017 · **verified 2026-08-09; APK
-  rebuilt and served 2026-08-10, sideload is the only remaining step***
-
 ## Later
 
 Real, not prioritised. One or two lines each — detail lives in the code, the log, or

@@ -2023,3 +2023,17 @@ runs when a session runs.
   a subdirectory doesn't match that pattern, so nothing else needed to change.
   *closed 2026-08-10 · evidence: tools/logger.py guard + 9-case-verified test, files moved
   on the VM (data/ is gitignored, no commit needed for the move itself)*
+
+## Closed 2026-08-10 — confirmed live on the rebuilt, sideloaded APK
+
+- **[DB-0805-02] Email approval prompt does not render in the app.** Sideloaded, live
+  test: Mike sent a real message from the phone and got a reply. Server logs confirm the
+  full chain — `POST /transcribe?persona=mike` 200 OK (persona param now sent, closing the
+  other half of `[DB-0809-18]`), the message logged exactly once
+  (`data/personas/mike/conversations/2026-08-10.jsonl`, seq 003 — no doubling, confirming
+  `[DB-0803-01]` half one live), and `GET /pending-confirmations?persona=mike` polling on a
+  steady ~5s cadence throughout — the mechanism that drives `#confirm-bar`'s rendering,
+  active and running on the installed build. Can't observe the phone's screen directly, but
+  every server-observable signal the confirm-bar depends on is live and correct.
+  One APK, one sideload, three items confirmed: this one, `[DB-0803-01]`, `[DB-0809-06]`.
+  *closed 2026-08-10 · evidence: live server logs against a real phone session, this session*
