@@ -1,16 +1,17 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-10, latest (Research provenance closed; agent-tool guard built; weather back
-on Logistics) — **provenance is now authored by Python and never by the model.** The grounded
-loop strips any model-written `SOURCES:` block and appends its own from what the SDK reports:
-`SOURCES (N retrieved)` or `[RETRIEVAL: NONE]`; `web_search_queries` is captured as the only
-direct evidence retrieval happened. `trace.py`'s `grounded` flag is now `bool(retrieved_sources)`
-and tri-state — a live run disproved the plan's `sources or queries` formula, which scored a
-6-search/0-source answer as grounded while its own text said `[RETRIEVAL: NONE]`. Verified live
-(`a36d8c2`, `e3904fd`, deployed). New **`scripts/check_agent_tools.py`** + a `PostToolUse` hook
-that fires on agent-file and routing-grant edits, scoped to what changed. It immediately found
-a week-old defect: `logistics` held `get_weather` while its file never mentioned weather, and
-`research_agent` documented it while holding no grant — fixed, weather is Logistics' (`924a66e`).
+*Updated: 2026-08-10, latest (message-bubble timestamps, web + APK) — added a timestamp under
+every user and assistant bubble in `static/index.html`, sourced from the `ts` column the server
+already carried but never sent to the client (history/catchup/`message` rows); live/streaming
+bubbles stamp with the client's current time since the server has none yet for those. Kept as a
+sibling of the bubble, not a child, so the streaming code's repeated `textContent` overwrites
+don't clobber it. Deployed (`a65a199`, VM HEAD verified) and confirmed on a rebuilt, sideloaded
+APK (`check_apk_sync.sh` passed). Held the commit for a parallel session's build/deploy to land
+first; no conflict.
+Earlier the same day: **provenance is now authored by Python, never the model** — the grounded
+loop strips any model-written `SOURCES:` block and appends its own from what the SDK reports
+(`a36d8c2`, deployed). New **`scripts/check_agent_tools.py`** + a `PostToolUse` hook catch
+agent-file/tool-registry drift; it already found one, `get_weather` (fixed, `924a66e`).
 **Unchanged:** `[DB-0804-01]`'s count is due **08-11 — tomorrow**; `[DB-0810-05]` (IMAP tone
 profiling) and `[DB-0810-07]` (Book capture) are still unexercised against live data.*
 
@@ -111,13 +112,13 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-10 | **Message-bubble timestamps** — user and assistant bubbles show a time, sourced from the server's existing `ts` column for replayed messages, client clock for live/streaming ones. Verified on webapp and a rebuilt, sideloaded APK | `a65a199` — deployed, VM verified |
 | 08-10 | **Research provenance authored by Python, not the model** — strips model-written `SOURCES:`, appends `SOURCES (N retrieved)`/`[RETRIEVAL: NONE]` from the SDK; `grounded` is now retrieval-based and tri-state. Built `check_agent_tools.py` + a `PostToolUse` hook on agent/routing edits; it found `get_weather` granted to Logistics but documented only on Research — weather returned to Logistics | `a36d8c2`…`a3b43c5` (5) — deployed, VM verified |
 | 08-10 | **Flight/transit queries routed to an agent with no travel feeds** — Coordinator sent flight status to Research (grant: `fetch_url`, `get_pollen_forecast`); `get_flight_status` is Logistics-only and healthy. Fixed + verified in seq 016. Second, **open** defect found: Research fabricates `SOURCES:` because `web_search` does not exist yet is named 4× and citing is mandatory | `d0774f8` — deployed, verified |
 | 08-10 | **The Book: thinking/output text capture, tool-call success/failure, plainspeak resource labels, whole-API-call failures** — closes the gap the same-day token-breakout pass left open; text was never captured, only counts, and Ollama's `<think>` content was being discarded outright. New `/monitor/model_errors` endpoint. Filed `[DB-0810-07]`: unexercised against live data | `ffaf7a7` — deployed, VM verified |
 | 08-10 | **Feature feasibility scan** — agent-backlog rollup ranked by impact; photos (needs orchestrator content-block support), Google Drive (echoes the reversed Contacts OAuth build, same Testing/Production token wall), geolocation (already `[DB-0808-04]`, classification settled, mechanics not) | docs/research only, no code |
 | 08-10 | **`/archive` commits its own output** — step 5 added: explicit manifest, diff before staging, push for backup, **never deploy**, stop on foreign lines. Step 2 repointed at the top of `PROJECT_LOG.md`; primer compacted off its ceiling. `[DB-0805-05]` hit ×3 | `060f53a`…`3e1ae7b` (6) — docs only, **no deploy needed** |
 | 08-10 | **The Book: thinking-token breakout, ungrounded-answer flag** — split Vertex's reasoning tokens out of `output_tokens`; added a `grounded` flag after chat #007 was found answering with **zero tool calls** | `cb9f459` — deployed, VM verified |
-| 08-10 | **Outbound communication got one owner** — Relationships owns every message to a person; per-contact tone profiles built from real correspondence through a fixed JSON key set | `9eb5ac4`, `cae31df`, `88957e6` — deployed as a side effect of `cb9f459` |
 ---
 
 ## Useful context to pull as needed

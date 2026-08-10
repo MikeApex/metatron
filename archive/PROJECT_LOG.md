@@ -23,6 +23,36 @@ file is the only narrative record, alongside the verbatim transcripts.*
 
 ## Dated history
 
+### 2026-08-10 (Message-bubble timestamps, web + APK) — `a65a199`, **deployed**
+
+Added a timestamp under every user and assistant bubble in `static/index.html`. Server already
+carried a `ts` column (`core/server.py`'s `_get_recent_exchanges`/`_catchup_since`/the `message`
+WS broadcast) unused by the client — no backend change needed, only wiring.
+
+**Structure, not just a label.** `addMessage()` previously set `div.textContent` directly on
+the bubble, and streaming assistant replies overwrite that same property on every chunk
+(`ownBubble.textContent = ownAccumulated + '▍'`). A timestamp written *inside* that div would
+have been wiped on the next token. Fixed by wrapping bubble + a `.msg-meta` row (timestamp, and
+the existing miss-tap dot, both previously direct children of `#conversation`) in a `.message-row`
+sibling structure — `addMessage()` still returns the bare bubble, so none of the six existing
+`.textContent =` call sites needed to change. `ts` is passed through where the server has it
+(history load, catchup, live `message` broadcast to other devices); live-typed and
+still-streaming bubbles have none yet (the server never sends `ts` back to the sender of its own
+exchange) and stamp with the client's current time instead — close enough at minute granularity.
+
+**Coordination note, not a defect.** A parallel session was mid-build/deploy when this work
+finished; held the commit until that session's push landed (`83462b5`) rather than staging over
+it — `DEV_BACKLOG.md` had unrelated machine-synced inbox entries in the working tree at the time
+from that session and was correctly left out of this commit (`git diff` before staging, per
+CLAUDE.md's rule 4). Deployed via `./deploy.sh`, VM HEAD verified at `a65a199`. APK rebuilt
+(`npx cap sync android && gradlew assembleDebug`), `scripts/check_apk_sync.sh` confirmed the
+bundled `index.html` matched before sideload. Live-tested on both surfaces by the user.
+
+One incidental fix in passing: `python3 -m http.server 8888` for the sideload found the port
+already bound to a process **8 days old** (`ps -o etime` confirmed before killing) — stale from
+some earlier session, not the parallel one running concurrently. Killed and restarted; not filed,
+since nothing about it recurs on its own.
+
 ### 2026-08-10 (Research provenance authored by Python; the agent-tool guard; weather returned to Logistics) — `a36d8c2`…`a3b43c5`, **deployed**
 
 Executed `archive/plans/research_provenance_handoff_2026-08-10.md` phases 1–3. Incoming state:
