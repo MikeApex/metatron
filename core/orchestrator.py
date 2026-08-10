@@ -2001,6 +2001,51 @@ def run_session_gemini(system_prompt: str, user_input: str,
     )
 
 
+# A model-authored provenance block: a SOURCES:/CITATIONS:/REFERENCES: heading at the
+# start of a line, plus everything after it to the end of the text. Deliberately greedy
+# to the end, because these blocks are always terminal — a half-stripped one would leave
+# exactly the invented URLs this exists to remove.
+#
+# The heading must look like a heading: the keyword followed by a colon, or alone on its
+# line. Matching the bare word would truncate a contested-topic answer at a paragraph
+# opening "Sources disagree on this" and silently discard the rest of it — losing a good
+# answer to catch a bad citation is the wrong trade.
+_MODEL_SOURCES_RE = _re.compile(
+    r'\n*^[ \t]*(?:\*\*|__)?\s*(?:SOURCES?|CITATIONS?|REFERENCES?)'
+    r'(?:\*\*|__)?[ \t]*(?::|$).*\Z',
+    _re.MULTILINE | _re.DOTALL | _re.IGNORECASE,
+)
+
+
+def _strip_model_sources(text: str) -> str:
+    """Remove any sources block the model wrote for itself.
+
+    `research_agent.md` no longer asks for one, but instruction files are guidance and
+    this is the enforcement — a model that writes a citation it did not retrieve must
+    not be able to put it in front of the Synthesizer regardless of what it was told.
+    """
+    return _MODEL_SOURCES_RE.sub("", text).rstrip()
+
+
+def _log_ungrounded_answer(user_input: str, text: str) -> None:
+    """Record a Research answer that retrieved nothing, so these become countable.
+
+    Never raises: this is observability on the response path, and a logging failure
+    must not cost the user their answer.
+    """
+    try:
+        from tools.logger import write_quality_event
+        write_quality_event(
+            event_type="UNGROUNDED_ANSWER",
+            source_agent="research_agent",
+            detail=(f"No search queries issued and no sources retrieved. "
+                    f"Query: {user_input[:200]}"),
+            session_id="research_grounding",
+        )
+    except Exception:
+        pass
+
+
 def run_session_gemini_grounded(system_prompt: str, user_input: str,
                                 tool_schemas: list[dict] | None = None,
                                 tool_handlers: dict | None = None,
@@ -2064,6 +2109,11 @@ def run_session_gemini_grounded(system_prompt: str, user_input: str,
 
     contents = [types.Content(role="user", parts=[types.Part(text=user_input)])]
     sources: list[str] = []
+    # The queries Gemini actually issued to Google Search. This is the only direct
+    # evidence that retrieval happened at all: grounded search fires server-side and
+    # produces zero tool calls, so nothing else in the trace distinguishes a genuinely
+    # grounded answer from one written straight out of training knowledge.
+    search_queries: list[str] = []
     text = ""
     # Low deliberately. Research fetches a page or two to check a source; it is not an
     # agentic browser, and an unbounded loop here would be a token sink on the one path
@@ -2114,6 +2164,10 @@ def run_session_gemini_grounded(system_prompt: str, user_input: str,
                     web = getattr(chunk, "web", None)
                     if web and getattr(web, "uri", None) and web.uri not in sources:
                         sources.append(web.uri)
+                # Same None-valued-attribute caveat as grounding_chunks above.
+                for q in getattr(gm, "web_search_queries", None) or []:
+                    if q and q not in search_queries:
+                        search_queries.append(q)
 
         calls = getattr(response, "function_calls", None) or []
         if not calls or not tool_handlers:
@@ -2142,11 +2196,23 @@ def run_session_gemini_grounded(system_prompt: str, user_input: str,
         text += ("\n\n[Note: stopped after the tool-call limit; this answer may be "
                  "incomplete.]")
 
+    # Provenance is authored here and nowhere else. Before 2026-08-10 the model wrote
+    # its own SOURCES: block into the text and this appended a second, honest one — so a
+    # turn with zero retrieval carried both "SOURCES: Flightradar24, FlightAware ... (via
+    # live web search)" and "SOURCES: training knowledge", and the Synthesizer believed
+    # the specific, confident, fabricated one. A model's claim about its own retrieval is
+    # not evidence of retrieval; only what the SDK reports back is.
+    text = _strip_model_sources(text)
+
     if sources:
         sources_block = "\n".join(f"- {url}" for url in sources)
-        text = f"{text}\n\nSOURCES:\n{sources_block}"
+        text = f"{text}\n\nSOURCES ({len(sources)} retrieved):\n{sources_block}"
     else:
-        text = f"{text}\n\nSOURCES: training knowledge"
+        text = f"{text}\n\n[RETRIEVAL: NONE — not checked against any live source]"
+
+    _tr.record_retrieval(_tr.get_current_agent(), search_queries, sources)
+    if not sources and not search_queries:
+        _log_ungrounded_answer(user_input, text)
 
     return text
 

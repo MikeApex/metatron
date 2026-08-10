@@ -17,6 +17,7 @@ checks on travel days, not a polling loop.
 from __future__ import annotations
 
 import os
+from datetime import datetime
 
 import requests
 
@@ -88,13 +89,28 @@ def get_flight_status(flight_number: str, date: str = "") -> dict:
             or (point.get("predictedTime") or {}).get("local")
             or ""
         )
+        # "delayed" means *later than* scheduled, not merely *different from* it. Comparing
+        # the two strings flagged BA464's arrival as delayed on an estimate 28 minutes
+        # EARLY (2026-08-10). Logistics only speaks up when a flight is off schedule, so
+        # that turned every early arrival into a delay warning. An unparseable stamp falls
+        # back to not-delayed: a missed delay is quieter than an invented one.
+        delta_minutes = 0
+        if actual and actual != sched:
+            try:
+                delta_minutes = round(
+                    (datetime.fromisoformat(actual) - datetime.fromisoformat(sched)).total_seconds() / 60
+                )
+            except ValueError:
+                delta_minutes = 0
         return {
             "airport": airport.get("name", "?"),
             "iata": airport.get("iata", "?"),
             "terminal": point.get("terminal", ""),
             "scheduled_local": sched,
             "current_estimate_local": actual or sched,
-            "delayed": bool(actual and actual != sched),
+            # Negative = running early. Both are worth knowing; only positive is a delay.
+            "delay_minutes": delta_minutes,
+            "delayed": delta_minutes > 0,
         }
 
     flights = []

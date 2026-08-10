@@ -96,8 +96,38 @@ def fmt_out_tokens(output_tokens: int, thinking_tokens: int = 0) -> str:
     return f"{base} ({thinking_tokens:,} thinking)" if thinking_tokens else base
 
 
-GROUNDED_TAG = " [red]⚠ no tool calls[/]"
+GROUNDED_TAG = " [red]⚠ ungrounded[/]"
 FAILED_TAG = " [red]⚠ call failed[/]"
+
+
+def _grounded_text(grounded: bool | None) -> str:
+    if grounded is None:
+        return "n/a — no agent in this pipeline retrieves live sources"
+    if grounded:
+        return "yes — answered against retrieved sources"
+    return "no — live retrieval was available and returned nothing"
+
+
+def retrieval_summary(agent_rec: dict) -> str:
+    """One-line account of what an agent actually retrieved, or "" if it never retrieves.
+
+    `grounded` is tri-state and the three states mean genuinely different things:
+    None  — this agent performs no retrieval; say nothing, it is not a warning.
+    True  — search fired and returned sources.
+    False — search was available and produced nothing. This is the state that was
+            invisible before 2026-08-10, because grounded search makes zero tool calls
+            and the old flag counted tool calls.
+    """
+    grounded = agent_rec.get("grounded")
+    if grounded is None:
+        return ""
+    queries = agent_rec.get("search_queries") or []
+    sources = agent_rec.get("retrieved_sources") or []
+    if not queries and not sources:
+        return "[red]Web Research — no retrieval[/]"
+    q = f"{len(queries)} quer{'y' if len(queries) == 1 else 'ies'}"
+    s = f"{len(sources)} source{'' if len(sources) == 1 else 's'}"
+    return f"[blue]Web Research[/] [dim]— {q} → {s}[/]"
 
 # Plainspeak label for what external resource a tool call actually reaches —
 # shown next to the raw tool name so the technical name and the plain
@@ -188,7 +218,9 @@ class MessageBlock(ListItem):
         user_full = self.entry.get("user", "")
         synth_full = self.entry.get("response", "")
         is_proactive = self.trace.get("is_proactive", False) if self.trace else False
-        is_grounded = self.trace.get("grounded", True) if self.trace else True
+        # None (no retrieval-capable agent ran) must not read as a warning — that is
+        # the ordinary case for most conversations.
+        is_grounded = self.trace.get("grounded") is not False if self.trace else True
         has_failure = (
             (_pipeline_has_failure(self.trace.get("pipeline", [])) if self.trace else False)
             or bool(self.api_errors)
@@ -264,6 +296,16 @@ class AgentLogItem(ListItem):
             if len(tool_calls_flat) > 4:
                 turns_line += f"  [dim]+{len(tool_calls_flat) - 4} more[/]"
 
+        retrieval = retrieval_summary(r)
+        retrieval_lines = []
+        if retrieval:
+            retrieval_lines.append(f"{indent}{retrieval}")
+            # The queries themselves, not just the count. "Did search fire?" and "did it
+            # search for the right thing?" are different questions, and only the second
+            # one explains a wrong answer that was nonetheless grounded.
+            for q in (r.get("search_queries") or [])[:3]:
+                retrieval_lines.append(f"{indent}  [dim]· {truncate(q, 70)}[/]")
+
         sublines = [
             f"  [dim]↳ {s.get('agent','?')}  "
             f"{s.get('total_input_tokens',0):,}in / "
@@ -272,7 +314,7 @@ class AgentLogItem(ListItem):
             for s in r.get("subagents", [])
         ]
 
-        yield Static("\n".join([header, tokens, turns_line] + sublines))
+        yield Static("\n".join([header, tokens, turns_line] + retrieval_lines + sublines))
 
 
 # ---------------------------------------------------------------------------
@@ -1017,8 +1059,8 @@ class TheBookApp(App):
                 f"User: {(t.get('user_input') or t.get('user',''))[:120]}"
             )
             lines.append(f"Total duration: {t.get('duration_ms','?')}ms")
-            if not t.get("grounded", True):
-                lines.append("  (no tool calls fired anywhere in this pipeline)")
+            if t.get("grounded") is False:
+                lines.append("  (an agent that can retrieve live sources retrieved none)")
             for ag in t.get("pipeline", []):
                 m = ag.get("model","").split("/")[-1]
                 lines.append(
@@ -1150,7 +1192,7 @@ class TheBookApp(App):
                 f"User: {t.get('user_input', t.get('user', '—'))}",
                 f"Response: {(t.get('synth_response', '') or '')[:300]}",
                 f"Duration: {t.get('duration_ms', '—')}ms",
-                f"Grounded: {'yes' if t.get('grounded', True) else 'no — no tool calls fired'}",
+                f"Grounded: {_grounded_text(t.get('grounded'))}",
                 "",
                 "### Pipeline",
             ]

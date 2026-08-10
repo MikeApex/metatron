@@ -72,6 +72,12 @@ class AgentRecord:
     turns: list[TurnRecord] = field(default_factory=list)
     subagents: list[AgentRecord] = field(default_factory=list)
     output_files: list[str] = field(default_factory=list)
+    # Server-side retrieval (Vertex-native Google Search grounding). Populated only
+    # by the grounded path, which produces no tool calls — so these two lists are the
+    # only record that retrieval happened. See is_grounded() below.
+    search_queries: list[str] = field(default_factory=list)
+    retrieved_sources: list[str] = field(default_factory=list)
+    retrieval_recorded: bool = False
     start_mono: float = field(default_factory=time.monotonic)
     duration_ms: int = 0
 
@@ -91,6 +97,26 @@ class AgentRecord:
 
     def has_tool_calls(self) -> bool:
         return any(t.tool_calls for t in self.turns) or any(s.has_tool_calls() for s in self.subagents)
+
+    def is_grounded(self) -> bool | None:
+        """Did this agent's answer rest on something retrieved from outside the model?
+
+        Returns None when the question does not apply — which is most agents. Grounding
+        is a claim about *retrieval*, and only an agent that can retrieve can fail it.
+
+        This replaced `any(has_tool_calls())`, which measured the wrong thing in both
+        directions: Vertex-native grounded search fires server-side and produces zero
+        tool calls, so a genuinely grounded Research answer scored false, while an agent
+        that merely called `write_log` scored true. That is why the flag added in
+        `cb9f459` did not catch the fabricated-sources exchange it was built for.
+
+        Note what is deliberately *not* here: a `has_tool_calls()` fallback. An agent
+        that called `write_log` is active, not grounded, and folding tool activity back
+        in would rebuild the same false signal one level down.
+        """
+        if not self.retrieval_recorded:
+            return None
+        return bool(self.retrieved_sources or self.search_queries)
 
 
 class RequestTrace:
@@ -209,6 +235,23 @@ def record_turn_tokens(rec: AgentRecord | None, turn_num: int,
         pass
 
 
+def record_retrieval(rec: AgentRecord | None,
+                     search_queries: list[str] | None,
+                     sources: list[str] | None) -> None:
+    """Record server-side retrieval for an agent, from the SDK's own report.
+
+    Called once, after the grounded loop finishes. `retrieval_recorded` is set even
+    when both lists are empty — "we asked and nothing was retrieved" is a different
+    and much more useful state than "this agent never retrieves", and collapsing the
+    two is what made the old flag unreadable.
+    """
+    if rec is None:
+        return
+    rec.search_queries = list(search_queries or [])
+    rec.retrieved_sources = list(sources or [])
+    rec.retrieval_recorded = True
+
+
 def record_tool_call(rec: AgentRecord | None, turn_num: int,
                      name: str, args: dict, result: str, duration_ms: float,
                      input_tokens: int = 0, output_tokens: int = 0,
@@ -269,6 +312,11 @@ def _agent_to_dict(a: AgentRecord) -> dict:
         ],
         "subagents": [_agent_to_dict(s) for s in a.subagents],
         "output_files": a.output_files,
+        "search_queries": a.search_queries,
+        "retrieved_sources": a.retrieved_sources,
+        # None = grounding does not apply to this agent. The monitor renders the
+        # three states differently; do not collapse it to a bool here.
+        "grounded": a.is_grounded(),
         "total_input_tokens": a.total_input_tokens(),
         "total_output_tokens": a.total_output_tokens(),
         "total_thinking_tokens": a.total_thinking_tokens(),
@@ -286,8 +334,31 @@ def _serialize(t: RequestTrace, duration_ms: int) -> dict:
         "is_proactive": t.is_proactive,
         "duration_ms": duration_ms,
         "pipeline": [_agent_to_dict(a) for a in t.pipeline],
-        "grounded": any(a.has_tool_calls() for a in t.pipeline),
+        # Trace-level roll-up, for the one-line header tag only. False means an agent
+        # that *can* retrieve did not — the state worth flagging. It is deliberately
+        # NOT `any(has_tool_calls())`: see AgentRecord.is_grounded().
+        "grounded": _trace_grounded(t),
     }
+
+
+def _walk_agents(agents: list[AgentRecord]):
+    for a in agents:
+        yield a
+        yield from _walk_agents(a.subagents)
+
+
+def _trace_grounded(t: RequestTrace) -> bool | None:
+    """True if every retrieval-capable agent retrieved something; False if any did not.
+
+    None when no agent in the pipeline performs retrieval at all — the ordinary case,
+    and one the monitor must not render as a warning. Most conversations never touch a
+    live source and there is nothing wrong with that.
+    """
+    states = [a.is_grounded() for a in _walk_agents(t.pipeline)]
+    applicable = [s for s in states if s is not None]
+    if not applicable:
+        return None
+    return all(applicable)
 
 
 def _write(data: dict, persona: str | None) -> None:

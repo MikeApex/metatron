@@ -45,7 +45,7 @@ USER_TYPES = {"FEATURE_REQUEST", "INSTRUCTION_CHANGE_REQUEST"}
 # What the runtime noticed about itself. Real signals, but nobody asked for
 # them, and they arrive far faster than they are worked. They reach
 # '## Machine log', collapsed by signature — see ESCALATE_AT.
-MACHINE_TYPES = {"TOOL_DENIED", "RULE_CONFLICT", "SELF_APPLIED"}
+MACHINE_TYPES = {"TOOL_DENIED", "RULE_CONFLICT", "SELF_APPLIED", "UNGROUNDED_ANSWER"}
 
 WANTED = USER_TYPES | MACHINE_TYPES
 
@@ -70,6 +70,11 @@ LABELS = {
     # its own work, which is why they belong in a development backlog and never
     # in front of the user.
     "RULE_CONFLICT": "same rule in two places",
+    # Research answered with no search queries issued and no sources retrieved. One is
+    # unremarkable — plenty of questions do not need the web. A recurring signature is
+    # the thing to look at: it means an agent that is supposed to be checking the world
+    # has stopped doing so, which is invisible from the answer itself.
+    "UNGROUNDED_ANSWER": "answered without retrieving anything",
 }
 
 ROOT = Path(__file__).resolve().parent.parent
