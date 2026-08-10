@@ -23,6 +23,76 @@ file is the only narrative record, alongside the verbatim transcripts.*
 
 ## Dated history
 
+### 2026-08-10, latest (`/archive` commits its own output; the plan-vs-recent-work check earns itself) — `060f53a`, `b5600a8`, docs/commands only, **nothing deployed**
+
+`[DB-0810-04]`, both halves. **The commit half:** `/archive` named git only passively — recording
+commit hashes in the log entry, citing a commit as the evidence that closes a backlog item — and
+never committed. A `/metatron-troubleshoot` session had done everything the ritual asks and left
+`SESSION.md` and a 47-line log entry dirty; the work looked finished and wasn't durable, and a
+second window committed it on Mike's behalf, which is not the fix. New step 5: explicit manifest
+(`SESSION.md`, `archive/PROJECT_LOG.md`, `DEV_BACKLOG.md`, `archive/backlog_closed_YYYY-MM.md`,
+plus `ROADMAP.md` if step 3 touched it), `git diff` each file before staging, **no push, no
+deploy**, and a diff carrying lines the session did not write **stops** the commit.
+
+**The step is deliberately written to depend on `[DB-0805-05]` being unsolved.** It raises the
+collision rather than resolving it, because a session still cannot tell its own edits from a
+parallel window's. **Rejected: `git commit -a`** — an unattended commit from a session with that
+blind spot is `[DB-0805-05]` automated rather than mitigated.
+
+**The heading half:** step 2 said to append *"under `## Dated history`"*, but the newest entries
+sat under **no heading**, while a vestigial copy of that heading sat ~1,280 lines below, above
+the *older* entries — so following the instruction literally filed the day's entry into the
+middle of 2026-08, which is what had happened to the research_agent entry. Added the heading at
+the top, retitled the lower one `(continued — 2026-08-08 and earlier)`. **Rejected: deleting the
+stray heading** (Mike's other sanctioned option) — the pre-08-08 entries would then have sat
+under `## Closed backlog items`, which they are not. The chronology is genuinely split by two
+interposed sections; making the split visible beats pretending it away. The load-bearing result
+is that **one exact-string match now exists**, which is what stops the next session filing into
+the middle. No entry text moved, so the append-only rule holds.
+
+**Mike rejected the first plan with an instruction that changed the outcome:** *"run this model
+against the plan that Fable constructed and executed yesterday… to ensure your plan doesn't
+disrupt something intentional."* `ed92acf` had cut this file 6 steps → 4, so adding a step needed
+clearing. Diffing `ed92acf~1` showed the removed steps were the `archive/sessions/` writeup and a
+standalone ROADMAP step — **a commit step has never existed in any version**, so nothing
+deliberate was reintroduced. It also showed ROADMAP.md *was* its own close-out step until Fable
+folded it in, which is what justified the conditional 5th manifest entry.
+
+**The check killed a planned edit, which is the part worth keeping.** To fund step 5 inside the
+~100-line ceiling I had intended to compress step 1's *"say nothing about the tail"* rationale.
+That passage had already been deliberately rewritten twice in three days (`a86dd37`, then
+`ed92acf` cutting it 4 lines → 3), and its reasoning clause is precisely what stops a model
+re-adding the caveat. Trimming it again is the *simplifications grow back* pattern Fable's own
+entry documents. Left untouched; the lines came from the `archive/sessions/` note instead
+(history, and duplicated verbatim in `CLAUDE.md`). File landed at exactly **100 lines**.
+**Generalised into memory:** before executing a plan against a file another model recently
+restructured, diff that commit and state in the plan what the check confirmed *and what it
+killed*.
+
+**`[DB-0805-05]` reached ×3 during the session that was fixing the step which guards it.**
+Another window landed six commits mid-work — two of them `/archive` runs — which moved this
+session's `PROJECT_LOG.md` edit anchor and staled its `DEV_BACKLOG.md` line numbers. The item had
+been sitting at *"2 occurrences, one short of the ×3 bar"*; the bar is now met. Step 5's manual
+diff is what caught it, because a human-shaped read was in the loop. **Nothing automatic would
+have.**
+
+**Two things I got wrong in the plan.** (1) The line arithmetic: I predicted 100 and landed 102,
+having miscounted the step-5 block by two lines — found by measuring rather than by trusting the
+estimate, and paid for by dropping a duplicated script description and rewrapping the footer.
+(2) The verification I was proudest of is **void, not passed** — I meant to prove the manifest
+discipline by showing `tools/crm.py` and `tools/mail.py` stayed dirty through my commit, but the
+other window committed both in `88957e6` mid-session, so the pass condition ceased to exist. The
+discipline did hold (`git log --stat` shows only the six intended files), but the demonstration
+was lost, and reporting it as a pass would have been false.
+
+Step count also corrected in `CLAUDE.md` and `docs/WORKFLOW.md` — the stale-cross-reference class
+`ed92acf`'s verification pass was built to catch, and which would otherwise have gone unnoticed
+exactly as the ceiling figures did.
+
+`SESSION.md` **deliberately not rewritten** — it sat at 200/200 lines carrying the other window's
+handoff paragraph from minutes earlier, and this file is appended while that one is replaced.
+Nothing under `core/`, `config/` or `tools/`, so **no `./deploy.sh`**.
+
 ### 2026-08-10, later still (The Book: thinking-token breakout, ungrounded-answer flag) — `cb9f459`, deployed
 
 Mike asked for two things about the Book (`tools/metatron_monitor.py`): show output tokens
