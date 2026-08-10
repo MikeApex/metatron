@@ -1,20 +1,20 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-10 (Sonnet cluster closed; a live WebSocket race found, corrected once, filed) —
-**nine commits, all deployed and verified — the last three against a real phone, not a stub.**
-`## Now` closed from 9 items to **2**, both genuinely time-gated: `[DB-0809-02]` needs a week of
-trace-watching (day 1 clean — `is_proactive: true` on both real firings, zero quality events all
-day); `[DB-0809-21]`'s calendar candidate needs a real unreferenced event to arise naturally.
-Highlights: `[DB-0803-01]` half two fixed by tuning Silero's VAD against all 108 retained audio
-files (98.07% avg recovered, 0 hallucination markers), not disabling it. `[DB-0809-03]` closed
-without a build — its citation was wrong; the real fix shipped 2026-08-05. `[DB-0809-06]` fixed
-both causes (catch-up wiped the transcript; hidden tabs never checked liveness). **A live bug at
-the end needed a correction, not just a diagnosis:** Mike saw doubled text; first read was
-"install-transition-specific," which a second occurrence 12 minutes later, mid-session, with no
-install involved, proved wrong. Real cause: `ws.close()` doesn't synchronously close, so a
-reconnect can leave two sockets briefly live, both writing into the same render buffer — rare,
-cosmetic, data never at risk, filed as `[DB-0810-01]` rather than fixed (a real design choice
-between a client-side and server-side defense). `[DB-0804-01]`'s count is due **08-11 — tomorrow**.
+*Updated: 2026-08-10 (`/metatron-troubleshoot` on seq 005 — research_agent grounded-search crash
+found, fixed, deployed) — Mike's own multi-feature test (TfL status, Thursday weather, pollen)
+failed with a generic "the research tool is returning an error." Root cause: `getattr(gm,
+"grounding_chunks", [])` in `run_session_gemini_grounded()` — the `[]` default only covers a
+*missing* attribute, but Gemini sometimes sets `grounding_chunks` to `None` explicitly, so
+iterating it raised `TypeError`. Broke every grounded Research Agent call that hit that response
+shape, both the direct dispatch and the Synthesizer's own `run_subagent` recovery retries.
+Reproduced twice on the VM before touching anything; fix verified against Mike's real query before
+deploy. One line (`... or []`), committed as `bc1a552`, deployed clean, `metatron-server` restarted
+with no crash loop. **Trace-reading note for next time:** the raw trace looked like the Coordinator
+or `research_agent` was calling `run_subagent` on itself — it wasn't; `core/trace.py`'s
+`pop_agent()` doesn't restore the previous thread-local `current_agent`, so a synchronous nested
+`run_subagent` call's tool-record gets misattributed to the child it just finished. Cosmetic only,
+not fixed this session. Mike's fuller test list (Google Maps, Flight Status, CRM, Email, Scheduling
+duplicates) never generated an exchange to troubleshoot — still needs a live run.
 Full detail: [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
@@ -106,11 +106,11 @@ Newest first. Full detail for every entry — and everything older — is in
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-10 | **`/metatron-troubleshoot` seq 005 — research_agent grounded-search crash found and fixed** — `getattr(gm, "grounding_chunks", [])`'s default only covers a missing attribute, not Gemini's None-valued one; broke TfL/weather/pollen and every other grounded query hitting that response shape, both direct dispatch and Synthesizer's `run_subagent` retries. Reproduced on the VM before and after the fix. Also noted (not fixed): `core/trace.py`'s `pop_agent()` doesn't restore the prior thread-local `current_agent`, so nested `run_subagent` tool-call records can misattribute to the child agent in The Book | `bc1a552` — deployed, VM verified, no crash loop |
 | 08-10 | **Sonnet cluster closed 9→2; a live WebSocket race found, corrected once, filed** — `[DB-0803-01]` half two fixed by tuning Silero's VAD against all 108 retained audio files (98.07% avg recovered, 0 hallucination markers) rather than disabling it. `[DB-0809-03]` closed with no build — its citation was wrong; the real fix shipped 2026-08-05. `[DB-0809-06]` fixed both causes (catch-up wiped the transcript on reconnect; hidden tabs never checked liveness). `[DB-0808-18]`'s key rotation reached three systems, not one — caught a regression before it shipped (deleting the old `~/.zshrc` export would have broken `ask_gpt` globally). `[DB-0805-02]` closed live against a real phone. **The correction:** doubled text looked install-specific until it recurred 12 minutes later with no install involved — real cause is `ws.close()` not synchronously closing, leaving two sockets briefly live during a reconnect; filed as `[DB-0810-01]`, not fixed, since the two real defenses are a genuine design choice | nine commits, all deployed and verified against the VM + a real phone session |
 | 08-09 | **Three premises inverted; a parallel chat's grant shipped inside my commit** — `[DB-0809-04]` sleep over-weighting was **comparability, not availability**: the 08-03 rule's antecedent was false (sleep is 5th of 6 populated fields) so it read as permission; the real cause is that `mood: 'anxious'` cannot be ranked against yesterday and `sleep_hours` can. `[DB-0809-05]` built — obligation store (closure inferred, evidence required) + a reconcile sweep that **never notifies**. `[DB-0809-20]` filed and built: `write_log` merged **shallowly**, so the declared nested schema was actively unsafe — guard before config; **no backfill**, boundary in `pattern_miner.md`. **Incident:** `git add <file>` staged another session's uncommitted `send_email` transfer; deploying it left email sending dead in production until `9eb5ac4`. I had called those commits clean — file-granular check, line-granular collision → `CLAUDE.md` Deploy safety rule 4. `[DB-0803-01]` half two diagnosed: Whisper VAD, not the app | `6330029`, `b9ea29f`, `88b7614`, `9eb5ac4` — all deployed, VM verified |
 | 08-09 | **The scheduler was reporting itself as the user** — `[DB-0809-02]` inverted by measurement: all 22 August check-ins were 1–2 sentences, and 4 of the 5 "restatements" were the Synthesizer reading its own scheduler prompt as Mike's voice (`is_proactive` reached only the trace) and firing the repeated-instruction protocol against text he never sent. Fixed in both pipeline copies + a protocol guard. A ≤2-sentence cap was **rejected** — Mike's target is focus, with length as its symptom — so `synthesizer.md` § Scheduled session conduct carries guidance instead; an action awaiting approval is now referred to, never recited. Found a **fourth** copy of the rule in `config/templates/scheduler.yaml`, which seeds every new persona → new `CLAUDE.md` § *Two kinds of preference*. `[DB-0809-06]` diagnosed (catch-up wipes the transcript; hidden tabs never check liveness), `[DB-0809-05]` designed | `82d394b`, `a6d693e` — deployed, VM verified |
 | 08-09 | **First `/backlog deep` sweep** — all 8 `## Now` items verified against current code; three premises wrong (`[DB-0809-04]` inverted by measurement — six domains >60% populated, sleep fifth, so it is a Synthesizer interpretation defect not a thin record; `[DB-0805-02]`'s approval UI exists and shipped 3 min before the report; `[DB-0809-12]`'s `2024-*` file does not exist). `[DB-0803-06]` closed (`c4ff279`) — and it had been reported 5 days earlier as `[DB-0803-01]`, unlinked because one entry was symptoms and the other line numbers. New `[DB-0809-18]`: the APK-bundled `index.html` drifts from `static/` silently, which is what made two app items look like code bugs. `## Now` ranked 1–8 | docs only, no deploy |
-| 08-09 | **Workflow revamp verified and committed** — a same-model verification pass against the live `DEV_BACKLOG.md` (not just re-running the script) found and fixed 4 real bugs: a placeholder regex missing the dated form actually written, new entries inserting above the section preamble, a ×3 escalation that was one-shot instead of standing, and cross-type entries able to merge in the machine log. Confirmed by synthetic-event tests. Two stale line-ceiling mentions and a missing `CODEBASE_INDEX.md` row also fixed | `ed92acf` — docs/scripts only, no deploy |
 
 ---
 

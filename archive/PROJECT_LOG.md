@@ -1021,6 +1021,53 @@ Four related complaints, one root cause and four fixes. **The cause was not an a
 
 ## Dated history
 
+### 2026-08-10 (research_agent grounded-search crash, `/metatron-troubleshoot` SEQ 005) — `bc1a552`, deployed
+
+Ran `/metatron-troubleshoot` against seq 005, Mike's own multi-feature test message asking for
+Bakerloo/Elizabeth/DLR status, Thursday's weather, and this week's pollen counts. Synthesizer told
+him it couldn't pull any of it — "the research tool is returning an error on my end."
+
+**Root cause, reproduced twice on the VM before touching anything:** `run_session_gemini_grounded()`
+in `core/orchestrator.py` (line 2077) crashed with `TypeError: 'NoneType' object is not iterable`.
+The code read `getattr(gm, "grounding_chunks", [])` — but `getattr`'s default only fires when the
+attribute is *missing*. Gemini's grounding response sometimes sets `grounding_chunks` to `None`
+explicitly (grounding ran, found nothing groundable) rather than omitting it, so `for chunk in None`
+raised. This broke every grounded Research Agent call that hit that response shape — both the
+direct SPECIALISTS_TO_CALL dispatch and the Synthesizer's own `run_subagent` recovery retries (it
+tried twice, `quick` then `deep`, both failed identically).
+
+**Tracing note, in case the same shape of confusion happens again:** the raw trace initially looked
+like the *Coordinator* was calling `run_subagent` on itself, or like `research_agent` was calling
+`run_subagent` recursively on itself — neither is true. `core/trace.py`'s `pop_agent()` does not
+restore the previous thread-local `current_agent` after a nested agent session finishes, so when
+the Synthesizer calls `run_subagent` synchronously (same thread, not a new one), the tool-call
+record for that call gets attributed to the just-finished nested `research_agent` record instead of
+to the Synthesizer's own turn. The Book's nesting under `pipeline[0]` is also always "under
+Coordinator" regardless of which agent actually spawned the subagent, since `pipeline[0]` is always
+Coordinator by construction. Cosmetic/diagnostic-only — did not affect runtime behavior, only
+readability of the trace — and not fixed this session; noted here so the next person who reads a
+trace like this doesn't re-derive it from scratch.
+
+**Fix:** one line, `getattr(gm, "grounding_chunks", None) or []`. Verified by reproducing the exact
+crash on the VM with Mike's real query, confirming the patched file (tested via `scp` to `/tmp`,
+not the live path) fixed both the direct-dispatch and `run_subagent` paths, then restoring the
+VM's original file before asking Mike whether to deploy. He said yes; committed, pushed, `./deploy.sh`
+ran clean, `metatron-server` restarted with no crash loop, verified via fresh `journalctl` output.
+
+**Not tested this session:** Mike's original ask named a longer list — Google Maps, Flight Status,
+CRM, Email Sending, Scheduling reminders and duplicate-catching. Only the TfL/weather/pollen leg
+had actually run as an exchange (seq 005 was the only entry logged today); the rest have no trace
+to troubleshoot yet and need a live message first.
+
+Two unrelated files (`DEV_BACKLOG.md`, `archive/backlog_closed_2026-08.md`) were dirty in the
+working tree from a concurrent session's `/backlog deep` sweep when this session went to commit.
+Per the CLAUDE.md deploy-safety rule (diff before staging, not just filename), staged only
+`core/orchestrator.py` — left the other session's uncommitted work untouched. `deploy.sh`'s
+subsequent `git pull` fast-forwarded cleanly past that session's own already-pushed commits with no
+conflict.
+
+---
+
 ### 2026-08-08 (pollen tool, proactive travel trigger, scheduler defaults) — `8d798a8`, `be1d79e`, plus VM-side config; code also swept into `7c70cd9`
 
 Session writeup: [archive/sessions/2026-08-08 — Pollen Tool, Travel Trigger, Scheduler Defaults.md](sessions/2026-08-08%20—%20Pollen%20Tool,%20Travel%20Trigger,%20Scheduler%20Defaults.md).

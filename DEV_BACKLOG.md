@@ -20,7 +20,7 @@ or `file:line` that closed them — closed without evidence is not closed.
 *Machine-written from what Mike said on the VM. Do not hand-edit — triage entries out into
 `## Now` or `## Later`, rewritten properly, and delete them from here.*
 
-*(nothing new — last triaged 2026-08-09)*
+*(nothing new — last triaged 2026-08-10)*
 
 ---
 
@@ -70,21 +70,30 @@ standing rule distrusts.*
   flag; a 45-minute RPE-7 run passed those figures through rather than flattening to "logged" —
   and the model correctly drew on the prior nights' sleep to contextualize the run's perceived
   exertion, which is exactly what the deep-merge fix in `88b7614` was protecting.
+  (4) **The first natural `companion_checkin` — done, and it passed.** It fired at 07:20 on
+  2026-08-10 without being forced, and was clean: `is_proactive: true` recorded, zero quality
+  events all day. Deliberately never forced by firing a session against Mike's real persona,
+  which would have written a synthetic exchange into his actual conversation history for no real
+  need — the wait was the point, and it cost one night.
   **Still open, not a failure — time hasn't passed yet:** (3) `daily_calendar_reconcile` re-run
   manually against `mike`'s real calendar (zero cost, no model call) — clean, 0 candidates, same
-  as its first run last night; confirms the mechanism still works, but **no live candidate has
-  existed yet to observe being raised as a question**, which needs a real unreferenced event, not
-  a forced one. (4) The first natural `companion_checkin` after 07:00 — deliberately **not**
-  forced by manually firing a session against Mike's real persona, since that would insert a
-  synthetic exchange into his actual conversation history for no real need. Check both again once
-  they've had a chance to occur naturally.
-  *filed 2026-08-09 · **Mike deferred it explicitly** · **half done, half genuinely time-gated
-  2026-08-10** — half the reason it can't move further today*
+  as its first run the night before; confirms the mechanism still works, but **no live candidate
+  has existed yet to observe being raised as a question**, which needs a real unreferenced event,
+  not a forced one. That is the single remaining check.
+  *filed 2026-08-09 · **Mike deferred it explicitly** · **3 of 4 done 2026-08-10**; check (4) was
+  confirmed clean the same morning and the entry simply hadn't caught up with
+  `archive/PROJECT_LOG.md`, which already recorded it — corrected by the 08-10 `/backlog deep`
+  sweep. One check left, genuinely time-gated on a real unreferenced calendar event arising*
 
 ## Later
 
 Real, not prioritised. One or two lines each — detail lives in the code, the log, or
 `archive/backlog_closed_2026-08.md`.
+
+**Two standing rules, both Mike's (2026-08-10):** an item promotes to `## Now` once its error
+has been **recorded three times** (the ×3 threshold the machine log uses — count before
+promoting); and **`Now` is cleared before `Later` is started**, so this is not a parallel track
+to pick from when a `Now` item is time-gated.
 
 **Safety and test gaps**
 - **[DB-0808-17]** A4 clinical hard-fails have never run on Flash-Lite, which serves most MW/PH
@@ -100,40 +109,43 @@ Real, not prioritised. One or two lines each — detail lives in the code, the l
 - **[DB-0808-14]** `_thread_tier()` cannot tell a psychiatric medication from a cardiac one — a
   missed statin and a missed anti-psychotic are both tier 1. Fix: `psychiatric: true` on
   `medication_profile` entries, read by `_thread_tier()`.
-- **[DB-0805-01]** `physical_health`'s `write_agent_config` grant is guarded on one key only
-  (`medication_profile`, `_GUARDED_KEYS`). Another flag growing the same dependency needs its
-  key added. B2 should decide whether guarded keys or the confirm gate is the mechanism.
-- **[DB-0809-15]** `write_agent_config`/`write_config` are still not wired to `tools/confirm.py`
-  — the standing B2 requirement, and the standing answer to every agent tool-denial.
+- **[DB-0805-01]** `_GUARDED_KEYS` holds exactly one pair
+  ([tools/agent_config.py:43-45](tools/agent_config.py#L43-L45)), so another flag growing the same
+  dependency needs its key added by hand and nothing detects that it should. B2 decides the
+  mechanism: hand-maintained guarded keys, or the confirm gate as default. **The wiring half is
+  not open** — both writers already gate (`config_writer.py:43`, `agent_config.py:76`); that was
+  `[DB-0809-15]`, closed as stale, do not re-file it. *verified 2026-08-10*
 - **[DB-0804-02]** Track B remainder: B4's 5 degradation paths, B2's confused-deputy regression
   test, and Wave 2 (B1b, B3) gated on Track E. Detail in the archive file.
 
 **Reliability**
-- **[DB-0810-01] A reconnect can leave two live WebSocket connections briefly open,
-  doubling a streaming response into the same on-screen bubble.** Live on 2026-08-10:
-  Mike sent a message and got back visibly interleaved duplicate text
-  (*"coming through loud... to Iva aboComing through loud..."*). Server logs show two
-  connections accepted the same second, one staying open ~10s past the other. **Not
-  install-specific** — first seen right after sideloading an app update (auth token
-  survived the update, so auto-login's unconditional `enterApp()` at
-  [static/index.html:1457](static/index.html#L1457) fired once, cleanly — the double
-  connection is not that call itself), but it recurred ~12 minutes later, mid-session,
-  with no install involved (`10:14:16` and `10:14:19`, 3s apart, no close logged between
-  them). Mechanism: `ws.onclose` schedules a reconnect; when `ensureConnected()` decides
-  the current socket needs replacing, `ws.close()` doesn't synchronously tear the old
-  connection down — there's a real network round-trip before the server sees it close —
-  and during that gap both sockets are genuinely live and both receive the same stream.
-  **Only visible if a message is actively streaming during that few-second window**,
-  which is why most sends don't hit it (confirmed: two later test messages the same
-  session came through clean). **Data is never at risk** — the server-side conversation
-  record was the correct, non-garbled text throughout; reloading history always shows it
-  right. Two real fix directions, a genuine design choice rather than a mechanical one:
-  wait for the old socket's `onclose` before trusting the new one is authoritative
-  (client-side), or have the server refuse a second live connection per persona outright
-  (more robust — can't be fooled by client-side timing assumptions, but a bigger change).
-  *filed 2026-08-10 · Mike, live · low severity (cosmetic, self-healing) but a real,
-  recurring race, not a one-off — do not close on "restart fixed it," that only showed
-  the stored data was clean, not that the race stopped happening*
+- **[DB-0810-02] `core/trace.py`'s `pop_agent()` doesn't restore the prior thread-local
+  `current_agent`, so a synchronous nested `run_subagent` call misattributes its own tool-call
+  record to the child agent it just finished running.** Found while troubleshooting the
+  2026-08-10 research_agent grounding crash (seq 005): the trace looked like the Coordinator, or
+  `research_agent` itself, was calling `run_subagent` recursively — neither was true. What
+  actually happened: the Synthesizer called `run_subagent(research_agent, ...)` synchronously
+  (same thread); `push_agent()` for the nested `research_agent` session overwrote
+  `_ctx.current_agent`, and `pop_agent()` never set it back, so the outer `dispatch_tool()` call
+  (still resolving `rec = _agent_rec or _tr.get_current_agent()` for its own record-keeping)
+  wrote the "run_subagent" tool-call entry into the just-finished child's turn instead of the
+  Synthesizer's. Also, any depth>0 agent always nests under `t.pipeline[0]` (always Coordinator by
+  construction) regardless of which agent actually spawned it, which compounds the misreading.
+  Cosmetic/diagnostic only — does not affect runtime behavior — but makes The Book actively
+  misleading for any nested `run_subagent` call. Fix: have `push_agent()` return the previous
+  `current_agent` alongside the new record (or have callers save/restore it) so `pop_agent()` can
+  put it back. *filed 2026-08-10 by dev session — found, not fixed, during unrelated bugfix*
+- **[DB-0810-01] A reconnect can leave two live WebSocket connections briefly open, doubling a
+  streaming response into one on-screen bubble.** Live 2026-08-10, twice — the second time
+  mid-session with no install involved, which is what ruled out the install-transition reading.
+  Mechanism: `ws.close()` doesn't synchronously tear the connection down, so during the
+  round-trip both sockets are live and both receive the stream. Only visible if a message is
+  actively streaming in that window. **Data is never at risk** — the stored record was correct
+  throughout. Fix is a real design choice: wait for the old socket's `onclose` client-side, or
+  have the server refuse a second live connection per persona (more robust, bigger).
+  *filed 2026-08-10 · Mike, live · cosmetic and self-healing but a genuine recurring race — **do
+  not close on "restart fixed it"**, that only showed the stored data was clean. Full diagnosis:
+  `archive/PROJECT_LOG.md` § 2026-08-10*
 - **[DB-0808-11]** `fire_function` runs no gate stack — `days`, `respect_quiet_hours` and the
   activity gate are ignored for every function job. Reachable since it gained a notification
   path: an `interval_minutes` job with `notification: push` would push at 3am.
@@ -158,16 +170,26 @@ Real, not prioritised. One or two lines each — detail lives in the code, the l
   disable its own backstop. **Dev-session find; promote if it recurs.**
 
 **Capability**
+- **[DB-0810-03]** **`relationships`, `finance` and `recreation_hobbies` are each instructed to
+  use `search_memory` and none hold it** (named twice per file — a procedure step and their tool
+  list; e.g. [relationships.md:196](config/agents/relationships.md#L196)). Only 5 of 14 agents are
+  granted it, so these three silently lose recall mid-conversation. **Why it was missed:** grants
+  in `routing*.yaml` are demand-driven, not audited — each carries a comment citing one observed
+  denial, and nobody ever swept the instruction files against the allowlists. Denials so far:
+  `relationships` 08-10T06:30, `finance` 08-05T15:21. **`recreation_hobbies` has never been denied
+  it**, so granting that one would be the file's first speculative grant — it waits.
+  *filed 2026-08-10 by the machine-log sweep — **2 occurrences**, below the ×3 bar*
 - **[DB-0806-02]** Level 3 web access. Split into rendered-read (`fetch_rendered`, Playwright,
   read-only — recommended, same trust boundary as `fetch_url`; check VM memory first) and
   interactive click/type/submit, which stays gated on a credential store that does not exist.
   Covers Mike's *"reserve tickets on the R website"* ask. Scope:
   `archive/plans/level3_web_actions_scope_2026-08-06.md`.
-- **[DB-0808-04]** Real-time GPS + proactive area-scanning ("notice no lunch on the calendar,
-  find somewhere matching known preferences"). Mike's framing; needs its own design pass —
-  privacy tier for continuous location, which layer supplies it, how scanning bounds itself.
-- **[DB-0807-02]** Google Places API — venue discovery for `logistics` and `recreation_hobbies`.
-  Blocked on the same missing location signal; "near a named address" could ship sooner.
+- **[DB-0808-04]** **Location signal + the venue discovery gated on it.** *(a)* Real-time GPS
+  and proactive area-scanning (Mike's framing) needs a design pass: privacy tier for continuous
+  location, which layer supplies it, how scanning bounds itself. *(b)* Google Places venue
+  discovery for `logistics`/`recreation_hobbies` is blocked on exactly that signal — but
+  **"near a named address" needs no GPS and could ship first**.
+  *merged 2026-08-10 — absorbed `[DB-0807-02]`, the same blocker restated*
 - **[DB-0809-13]** Sentence-chunked TTS. Kokoro is at 2.8s/call. **Do not build before using
   voice enough to say whether 2.8s actually feels slow.**
 - **[DB-0809-08]** "Unsurfaced opportunities" is the one troubleshooting category with no
@@ -185,16 +207,28 @@ Real, not prioritised. One or two lines each — detail lives in the code, the l
   console lag. Not retroactive — turning it on now only helps the next anomaly.
 
 **Housekeeping**
-- **[DB-0805-05]** Parallel Claude Code windows still collide in *git*, which the handoff
-  protocol does not cover: one window's commit swept up another's entire uncommitted diff
-  (2026-08-08), and a `git add`/`commit` race produced a silent no-op commit. Scoping a commit
-  with `git add <files>` does not protect you — the sweeping window is the one committing.
-- **[DB-0809-17]** `/archive` step 0's dirty-file check cannot tell whose edits it is looking at
-  — on its first run it flagged this session's own `SESSION.md`/`PROJECT_LOG.md`. A session that
-  reasons "dirty means mine" and rewrites anyway hits the exact failure the guard exists to
-  prevent, so it is advisory, not protective. Possible fix: compare against the session's start
-  commit, or record touched files as the session goes. **Do not remove the check** — a prompt to
-  look beats no prompt. *filed 2026-08-09 by dev session (first run of the new `/archive`)*
+- **[DB-0810-04] `/archive` never commits, so a correct close-out leaves its own output dirty in
+  the tree.** [.claude/commands/archive.md](.claude/commands/archive.md) names git only passively —
+  recording *"commit hashes, and whether it deployed"* in the log entry, and citing a commit as
+  the evidence that closes a backlog item. There is no commit step. **Observed 2026-08-10:** a
+  `/metatron-troubleshoot` session wrote `SESSION.md` and a 47-line `PROJECT_LOG.md` entry, did
+  everything the ritual asks, and left both uncommitted — the work looked finished and wasn't
+  durable. **Do not fix with `git commit -a`**: an unattended commit from a session that cannot
+  tell its own edits from a parallel window's is `[DB-0805-05]` automated. The shape is an
+  explicit manifest (`SESSION.md`, `archive/PROJECT_LOG.md`, `DEV_BACKLOG.md`,
+  `archive/backlog_closed_YYYY-MM.md`), each diffed before staging, and **no push, no deploy**.
+  *filed 2026-08-10 · Mike raised it · ~10 lines in the command file*
+- **[DB-0805-05]** **A session cannot tell its own edits from a parallel window's — the git
+  collisions and the `/archive` dirty-check are one cause, not two.** *(a)* A window's commit
+  swept up another's uncommitted diff (2026-08-08); `git add <files>` does **not** protect you,
+  because the collision is line-granular inside a file the committer legitimately owns.
+  *(b)* `/archive` step 0 flags dirty files but cannot say whose they are, so it is advisory, not
+  protective — **do not remove it**, a prompt to look beats no prompt. **Shared fix:** a
+  start-of-session commit to diff against, or record touched files as the session goes.
+  **Recurred 2026-08-10** — a `/backlog deep` sweep and a `/metatron-troubleshoot` close-out in
+  one tree both diagnosed the same crash independently, and the sweep nearly reused `[DB-0810-02]`,
+  an id the other window had taken minutes earlier. *merged 2026-08-10 — absorbed `[DB-0809-17]`;
+  **2 occurrences**, one short of the ×3 bar*
 - **[DB-0809-11]** Docs record values the system changes underneath them and nothing checks.
   Mitigation in force (don't write down short-half-life values); the stronger fix is a smoke
   script running CLAUDE.md's executable claims. `deploy.sh`'s HEAD assertion is the model.
@@ -203,10 +237,6 @@ Real, not prioritised. One or two lines each — detail lives in the code, the l
   hand** — that is the maintenance loop. **Second blind spot, found 2026-08-09:** nothing checks
   `config/templates/`, so a rule deleted from a persona survives in the file that seeds every new
   one. That is how the check-in rule reached four copies with only three flagged.
-- **[DB-0809-19]** `tests/run_b1_redteam.py:52` inspects `run_pipeline_session()`'s *source*
-  structurally, and `82d394b` added a branch to it. Probably still passes, but B1 gates A7, so
-  confirm before the next red-team run rather than during it.
-  *filed 2026-08-09 by dev session*
 - **[DB-0809-14]** ROADMAP.md Track D is ~14 KB of a file loaded every `/metatron-code`, and
   parts have shipped. **Trim item-by-item against the log, never by line range.**
 - **[DB-0809-16]** Live dictation test of the dismissable transcription readout — code-verified
@@ -222,11 +252,10 @@ sync output line — repetition is the signal that a process event has become a 
 anything user-impacting into `## Now` or `## Later` like any other item; this is a holding pen,
 not a blackhole. Swept during `/backlog deep`.*
 
-- **[agent wanted a tool it lacks]** `relationships` attempted `search_memory` (query) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
-  `2026-08-10T06:30:12.978385Z`
+*(swept 2026-08-10 — both `search_memory` denials promoted to `[DB-0810-03]`, which carries
+their timestamps as its occurrence count. Nothing outstanding.)*
 
-- **[agent wanted a tool it lacks]** `finance` attempted `search_memory` (query) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
-  `2026-08-05T15:21:45.223926Z`
+
 
 ---
 ## Done

@@ -2037,3 +2037,32 @@ runs when a session runs.
   every server-observable signal the confirm-bar depends on is live and correct.
   One APK, one sideload, three items confirmed: this one, `[DB-0803-01]`, `[DB-0809-06]`.
   *closed 2026-08-10 · evidence: live server logs against a real phone session, this session*
+
+---
+
+## Closed 2026-08-10 — by the `/backlog deep` sweep
+
+*Verification only; no code changed to close these two. Reasoning:
+[`PROJECT_LOG.md`](PROJECT_LOG.md) § 2026-08-10.*
+
+- ~~**[DB-0809-15] `write_agent_config`/`write_config` are still not wired to
+  `tools/confirm.py`.**~~ — **stale; they were wired before the item was filed.**
+  `write_config` gates **every** call unconditionally
+  ([`tools/config_writer.py:43`](../tools/config_writer.py#L43) — `consume()` then `request()`
+  with a 400-char preview). `write_agent_config` gates on `_GUARDED_KEYS`
+  ([`tools/agent_config.py:76`](../tools/agent_config.py#L76)), and its docstring already cites
+  `DB-0805-01` and the `send_email` precedent by name. What the item actually described —
+  whether a **one-entry** `_GUARDED_KEYS` set (`("physical_health", "medication_profile")`,
+  [`tools/agent_config.py:43-45`](../tools/agent_config.py#L43-L45)) is the right mechanism, or
+  whether the confirm gate should be the default — is the *surviving* question and was already
+  open as `[DB-0805-01]`. The two entries were the same question filed twice, one of them with a
+  false premise. **Do not re-file the wiring half.** *verified 2026-08-10*
+
+- ~~**[DB-0809-19] `tests/run_b1_redteam.py` inspects `run_pipeline_session()`'s source
+  structurally, and `82d394b` added a branch to it.**~~ — **checked; PASS.** The item asked for
+  exactly this: confirm before the next red-team run rather than during it, since B1 gates A7.
+  Re-ran the `DEPUTY-STRUCT` assertion standalone (static source inspection, **no model call, no
+  cost**): `run_pipeline_session` → 1 call site, `_run_pipeline_session_stream_inner` → 1 call
+  site, **both on `coord_output`**, neither on `spec_text`/`specialist_outputs`. That pair is the
+  whole assertion the suite makes ([`tests/run_b1_redteam.py:456-457`](../tests/run_b1_redteam.py#L456-L457)).
+  The confused-deputy protection is intact after `82d394b`. *verified 2026-08-10*
