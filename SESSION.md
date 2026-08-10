@@ -1,18 +1,21 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-10, latest (`/archive` now commits its own output) — `060f53a`, `b5600a8`,
-`bb1d9da`, `2e3e6e4`, `66cbccf`, **docs only, nothing deployed**. `/archive` is **five steps**:
-step 5 stages an explicit manifest, diffs each file first, then pushes for offsite backup but
-**never deploys**; a diff carrying lines the session did not write stops the commit rather than
-sweeping up a parallel window's work, and a rejected push stops it too.
-`[DB-0805-05]` reached **×3** — it recurred during the session fixing the step that guards it, so
-step 5 is deliberately written to depend on it being unsolved. **Still live from earlier today:**
-The Book's thinking-token split and `⚠ no tool calls` flag are deployed and VM-verified
-(`cb9f459`); that deploy also carried the outbound-messaging/tone work, so **`[DB-0810-05]`'s
-deploy prerequisite is met** and `get_tone_shape` can self-seed unattended on a first draft — the
-IMAP half is still unexercised, so **the first live send should be a deliberate `refresh=true` on
-one contact**, not an incidental draft. `[DB-0804-01]`'s count is due **08-11 — tomorrow**. Full
-detail for all of it: [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).*
+*Updated: 2026-08-10, later still (feature feasibility scan, no code, nothing deployed) —
+aggregated the `## Enhancement backlog` from all 16 `config/agents/*.md` into one impact-ranked
+list, then scoped three prospective features: photo upload/logging, Google Drive read/write, and
+geolocation. **Geolocation is already tracked** — `[DB-0808-04]` names the exact gap; the
+sensitive-tier/local-only/coarsened classification is settled (2026-08-03), the continuous-signal
+mechanics are not designed. **Drive surfaced a warning worth carrying forward:** the near-identical
+OAuth build for Google Contacts (`tools/google_contacts.py`) shipped 2026-08-07 and was reversed
+the next day when "does this need a third party at all?" found a local fix instead — same question
+worth asking before Drive, and the same 7-day Testing-token / Production-review wall applies to
+any future Google OAuth scope. **Photos need a real orchestrator change, not just a new tool** —
+every message-building site in `_openai_compat_loop` forces `content` to a plain string; vision
+needs content-block support Vertex already accepts but the orchestrator doesn't send. Full
+per-feature breakdown and cost estimates: [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
+**Unchanged from earlier today:** `[DB-0804-01]`'s count is due **08-11 — tomorrow**; the IMAP
+half of tone profiling (`[DB-0810-05]`) is still unexercised, so the first live send should be a
+deliberate `refresh=true` on one contact, not an incidental draft.*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -111,6 +114,7 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-10 | **Feature feasibility scan** — agent-backlog rollup ranked by impact; photos (needs orchestrator content-block support), Google Drive (echoes the reversed Contacts OAuth build, same Testing/Production token wall), geolocation (already `[DB-0808-04]`, classification settled, mechanics not) | docs/research only, no code |
 | 08-10 | **`/archive` commits its own output** — step 5 added: explicit manifest, diff before staging, push for backup, **never deploy**, stop on foreign lines. Step 2 repointed at the top of `PROJECT_LOG.md`; primer compacted off its ceiling. `[DB-0805-05]` hit ×3 | `060f53a`…`3e1ae7b` (6) — docs only, **no deploy needed** |
 | 08-10 | **The Book: thinking-token breakout, ungrounded-answer flag** — split Vertex's reasoning tokens out of `output_tokens`; added a `grounded` flag after chat #007 was found answering with **zero tool calls** | `cb9f459` — deployed, VM verified |
 | 08-10 | **Outbound communication got one owner** — Relationships owns every message to a person; per-contact tone profiles built from real correspondence through a fixed JSON key set | `9eb5ac4`, `cae31df`, `88957e6` — deployed as a side effect of `cb9f459` |

@@ -23,7 +23,48 @@ file is the only narrative record, alongside the verbatim transcripts.*
 
 ## Dated history
 
-### 2026-08-10, latest (`/archive` commits its own output; the plan-vs-recent-work check earns itself) — `060f53a`, `b5600a8`, docs/commands only, **nothing deployed**
+### 2026-08-10 (feature feasibility scan: photos, Google Drive, geolocation, agent backlog rollup) — docs/research only, no code, **nothing deployed**
+
+Pure scoping session, no implementation. Four passes, in order:
+
+1. **Aggregated the `## Enhancement backlog` section from all 16 `config/agents/*.md` files** into
+   a single impact-ranked list (feature / agent / non-researched size guess), confirming
+   `SESSION.md`'s note that this is the only copy — no `DEV_BACKLOG.md` or roadmap mirror exists.
+   Flagged credential/account management (Logistics) as the single highest-leverage item since it
+   gates three other backlog entries (grocery ordering, travel booking, knowledge-base access).
+2. **Photo upload/logging feasibility.** Voice pipeline (`/transcribe`) is a reusable template for
+   the client→multipart→disk pattern, but vision support needs a real orchestrator change —
+   `_openai_compat_loop` and every message-building site force `content` to a plain string, never
+   a content-block array, even though Vertex's OpenAI-compat endpoint supports one natively.
+   `physical_health.md` names "photo of meal" as a backlog bullet with zero scaffolding. Cost
+   estimate: ~$0.0003–0.0006/photo on Flash-Lite, ~$0.003–0.005/photo on Pro — immaterial even at
+   heavy use. No VM/ZDR changes needed; flagged one unverifiable assumption (does the ZDR
+   agreement cover image input, not just text — couldn't confirm from the repo).
+3. **Google Drive read/write feasibility — surfaced a directly relevant precedent.** A
+   near-identical OAuth build (`tools/google_contacts.py`, People API) shipped 2026-08-07 and was
+   **reversed the next day** — not broken, but Mike's "does this need a third party at all?"
+   exposed a local fix instead (vCard import). Code is dormant, not deleted; `read_google_contacts`
+   is unregistered, `people.googleapis.com` disabled. Real constraint carried forward: OAuth
+   **Testing**-status refresh tokens expire after 7 days; unattended use needs **Production**
+   verification (3–5 business days + hosted privacy policy) — same wall Drive scopes would hit,
+   since they're also sensitive/restricted. CalDAV dodged OAuth entirely via Google's legacy
+   Basic-Auth endpoint; Drive has no equivalent fallback. Recommended asking the same
+   "does this need Drive-the-API" question before committing to the Production-review runway.
+4. **Geolocation feasibility — found it's already a live backlog item.** `[DB-0808-04]` (absorbed
+   `[DB-0807-02]` on 2026-08-10) already names this exact gap. Classification is **settled**
+   (2026-08-03: sensitive-tier, local-only, coarsened) but the continuous-signal mechanics
+   (coarsening, scan-bounding, which layer owns it) are explicitly undesigned. `get_travel_time`
+   already accepts `"lat,lon"` as a plain origin string, so wiring a captured location into
+   *existing* routing calls is near-trivial once captured — the real gap is that no
+   client→server→tool context channel exists at all (`SessionRequest` has four fields, none for
+   location; the WebSocket protocol has no metadata field either). Google Places is confirmed
+   fully unbuilt (researched only, no file, no key, no GCP enablement).
+
+**Nothing rejected, nothing built.** Session closed by request — labeled explicitly (transcript
+renamed) so all four scans are easy to find on revisit: photo upload, Google Drive, geolocation,
+and the agent-backlog rollup.
+
+### 2026-08-10 (`/archive` commits its own output; the plan-vs-recent-work check earns itself) — `060f53a`, `b5600a8`, docs/commands only, **nothing deployed**
 
 `[DB-0810-04]`, both halves. **The commit half:** `/archive` named git only passively — recording
 commit hashes in the log entry, citing a commit as the evidence that closes a backlog item — and
