@@ -41,6 +41,17 @@ agents:
     model: "models/gemini-3.1-flash-lite"   # write-only; fire-and-forget target
     allowed_tools: [write_journal, write_archive, write_log, write_wisdom]
 
+  tone_profiler:
+    provider: gemini
+    model: "models/gemini-3.1-flash-lite"   # bounded, mechanical, strict-schema extraction
+    # Empty tool grant, deliberately. This agent reads a large sample of real
+    # correspondence -- attacker-writable text -- and an extractor with no tools cannot
+    # act on anything it finds there. It is also the *only* thing barring it from
+    # spawning further sessions: run_session() does not check _SUBAGENT_DEPTH, and that
+    # variable is process-global, so mutating it from tone.py's background thread would
+    # race concurrent sessions rather than protect anything. No tools is the real control.
+    allowed_tools: []
+
   pattern_miner:
     provider: gemini
     model: "models/gemini-3.1-pro-preview"  # analytical depth; scheduler task, not on real-time path
@@ -87,7 +98,7 @@ agents:
     # relationships.md:196 makes it a numbered procedure step ("Search for relevant history…
     # prior mentions of the person") and :297 lists it as a held tool — the agent was
     # instructed to use a capability it did not have, and silently lost recall.
-    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, read_profile, write_profile, send_email, search_memory]
+    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, read_profile, write_profile, send_email, search_memory, get_tone_shape]
 
   finance:
     provider: gemini
@@ -112,7 +123,7 @@ agents:
   logistics:
     provider: gemini
     model: "models/gemini-3.1-flash-lite"
-    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, update_calendar_event, delete_calendar_event, check_calendar_conflicts, get_weather, get_tfl_status, get_flight_status, get_travel_time, get_regional_transit_info, read_profile, write_profile, write_schedule, list_schedules, delete_schedule, fetch_url, read_email, read_agent_config, write_agent_config, search_memory, read_archive, write_archive, open_obligation, close_obligation, reopen_obligation, list_obligations]
+    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, update_calendar_event, delete_calendar_event, check_calendar_conflicts, get_weather, get_tfl_status, get_flight_status, get_travel_time, get_regional_transit_info, read_profile, write_profile, write_schedule, list_schedules, delete_schedule, fetch_url, read_email, read_agent_config, write_agent_config, search_memory, read_archive, write_archive, open_obligation, close_obligation, reopen_obligation, list_obligations, get_tone_shape]
     # update_calendar_event, delete_calendar_event, check_calendar_conflicts added
     # 2026-08-05 — required to act on what the calendar-conflict build detects:
     # Logistics could previously only create events, never move, correct, or

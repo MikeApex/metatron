@@ -52,6 +52,11 @@ agents:
     # Diarist silently lost both whenever DEPLOYMENT_MODE was local.
     allowed_tools: [write_journal, write_archive, write_log, write_wisdom]
 
+  tone_profiler:
+    local: true
+    # Parity with routing_cloud.yaml -- see the note there for why the grant is empty.
+    allowed_tools: []
+
   pattern_miner:
     local: true
     allowed_tools: [get_log_window, write_insight_report, read_recent_insights, write_baseline_period, read_baseline_periods, write_retrospective, get_baseline_context, create_semantic_anchor, shuffled_null_score, score_against_anchors]
@@ -81,7 +86,7 @@ agents:
   relationships:
     local: true
     # search_memory granted 2026-08-10 — see routing_cloud.yaml. Kept in parity.
-    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, read_profile, write_profile, send_email, search_memory]
+    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, read_profile, write_profile, send_email, search_memory, get_tone_shape]
 
   finance:
     local: true
@@ -99,7 +104,7 @@ agents:
 
   logistics:
     local: true
-    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, update_calendar_event, delete_calendar_event, check_calendar_conflicts, get_weather, get_tfl_status, get_flight_status, get_travel_time, get_regional_transit_info, read_profile, write_profile, write_schedule, list_schedules, delete_schedule, fetch_url, read_email, read_agent_config, write_agent_config, search_memory, read_archive, write_archive, open_obligation, close_obligation, reopen_obligation, list_obligations]
+    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, update_calendar_event, delete_calendar_event, check_calendar_conflicts, get_weather, get_tfl_status, get_flight_status, get_travel_time, get_regional_transit_info, read_profile, write_profile, write_schedule, list_schedules, delete_schedule, fetch_url, read_email, read_agent_config, write_agent_config, search_memory, read_archive, write_archive, open_obligation, close_obligation, reopen_obligation, list_obligations, get_tone_shape]
     # read/write_agent_config, search_memory, read/write_archive granted 2026-08-05 — see
     # routing_cloud.yaml for the full rationale. Kept in parity.
     # update_calendar_event, delete_calendar_event, check_calendar_conflicts added

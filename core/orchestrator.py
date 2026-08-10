@@ -461,6 +461,7 @@ def register_tools() -> tuple[list[dict], dict]:
         WRITE_CONTACT_SCHEMA, READ_CONTACT_SCHEMA, LIST_CONTACTS_SCHEMA,
         LOG_INTERACTION_SCHEMA, SEARCH_CONTACTS_SCHEMA,
     )
+    from tools.tone import get_tone_shape, GET_TONE_SHAPE_SCHEMA
     from tools.agent_config import (
         write_agent_config, read_agent_config,
         WRITE_AGENT_CONFIG_SCHEMA, READ_AGENT_CONFIG_SCHEMA,
@@ -523,6 +524,7 @@ def register_tools() -> tuple[list[dict], dict]:
         RUN_MODEL_CONFERENCE_SCHEMA,
         WRITE_CONTACT_SCHEMA, READ_CONTACT_SCHEMA, LIST_CONTACTS_SCHEMA,
         LOG_INTERACTION_SCHEMA, SEARCH_CONTACTS_SCHEMA,
+        GET_TONE_SHAPE_SCHEMA,
         WRITE_AGENT_CONFIG_SCHEMA, READ_AGENT_CONFIG_SCHEMA,
         WRITE_WISHES_SCHEMA, READ_WISHES_SCHEMA, GENERATE_EMERGENCY_CARD_SCHEMA,
         OPEN_OBLIGATION_SCHEMA, CLOSE_OBLIGATION_SCHEMA,
@@ -576,6 +578,7 @@ def register_tools() -> tuple[list[dict], dict]:
         "list_contacts": list_contacts,
         "log_interaction": log_interaction,
         "search_contacts": search_contacts,
+        "get_tone_shape": get_tone_shape,
         "write_agent_config": write_agent_config,
         "read_agent_config": read_agent_config,
         "fetch_url": fetch_url,
@@ -684,7 +687,7 @@ _ALWAYS_CONFIDENTIAL = [
     "write_retrospective", "get_baseline_context", "read_context_tracker",
     "write_context_tracker", "find_duplicate_wisdom", "merge_wisdom_entries",
     "write_contact", "read_contact", "list_contacts", "log_interaction",
-    "search_contacts", "write_persona",
+    "search_contacts", "write_persona", "get_tone_shape", "tone_profiler",
     # Routing / architecture terms
     "cloud_deep", "cloud_fast", "cloud_analytical", "routing.yaml",
     "run_session", "config/agents",

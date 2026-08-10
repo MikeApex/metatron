@@ -96,6 +96,7 @@ def write_contact(
     important_dates: list[dict] | None = None,
     tags: list[str] | None = None,
     notes: str = "",
+    tone_shape: str = "",
     contact_id: str = "",
 ) -> str:
     """
@@ -181,6 +182,10 @@ def write_contact(
         ("how_met", how_met),
         ("timezone", timezone),
         ("notes", notes),
+        # Assembled in Python by tools/tone.py from a fixed key set — never free model
+        # text. It is derived from correspondence, which is attacker-writable, and it is
+        # read back as trusted prompt text when drafting. See tone.py for the schema.
+        ("tone_shape", tone_shape),
     ]
     # List/dict fields: update when not None (passing [] or {} clears the field)
     _collection_fields = [
@@ -231,6 +236,7 @@ def write_contact(
             "important_dates": important_dates if important_dates is not None else [],
             "tags": tags if tags is not None else [],
             "notes": notes,
+            "tone_shape": tone_shape,
             "interaction_log": [],
             "created": today,
             "updated": today,
@@ -574,6 +580,12 @@ WRITE_CONTACT_SCHEMA = {
                 "type": "string",
                 "description": "Free-text field for personality, context, and anything that doesn't fit the schema.",
             },
+            # `tone_shape` is deliberately NOT offered here, though write_contact accepts it.
+            # It is assembled in Python by tools/tone.py from a fixed key set and is read back
+            # as trusted prompt text when drafting a message. Exposing it to a model would let
+            # free text — ultimately derived from attacker-writable mail — be written straight
+            # into that position, which is the whole thing the fixed schema prevents. Agents
+            # read it via read_contact; only tone.py writes it. Do not add it as a property.
             "contact_id": {
                 "type": "string",
                 "description": (

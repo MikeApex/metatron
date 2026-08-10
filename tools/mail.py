@@ -230,6 +230,241 @@ def read_email(count: int = 10, unread_only: bool = False, folder: str = "INBOX"
     return result
 
 
+# --- Correspondence sampling, for tone profiling (tools/tone.py) -------------------
+#
+# Sized against cost, which is the only real constraint here: the sweep runs in the
+# background (so IMAP latency is nearly free) and the extraction model's context window
+# is far larger than this. ~500k chars is ~125k tokens, deliberately under the 200k
+# context step where Vertex pricing rises — see config/modules/spend_guard.yaml.
+#
+# Recency-weighted, with no time floor. Tone converges quickly, but the things actually
+# worth harvesting — pet names, running jokes, a habitual greeting — are *rare events*
+# that may appear a handful of times across years. Breadth is what finds them; recency
+# is what keeps the register current. Hence tiers rather than a single cutoff.
+_TIERS = [                     # (label, months_back_start, months_back_end, cap/direction)
+    ("0-6mo",   0,    6,   150),
+    ("6-24mo",  6,    24,  120),
+    ("2-5y",    24,   60,  90),
+    ("5y+",     60,   None, 60),
+]
+_CORR_HEAD_CHARS = 400
+_CORR_TAIL_CHARS = 200
+_CORR_CHAR_BUDGET = 500_000
+_FETCH_CHUNK = 50
+
+
+def _imap_date(months_back: int) -> str:
+    """IMAP SEARCH wants dd-Mmm-yyyy, in English, regardless of locale."""
+    from datetime import date as _date
+    today = _date.today()
+    m = today.month - 1 - months_back
+    y = today.year + m // 12
+    m = m % 12 + 1
+    day = min(today.day, 28)          # 28 avoids month-length edge cases entirely
+    months = ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
+              "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+    return f"{day:02d}-{months[m - 1]}-{y}"
+
+
+def _sent_folder(cfg: dict, conn) -> str | None:
+    """
+    Find the Sent mailbox.
+
+    Both directions matter and they teach different things: Sent shows how the *user*
+    writes to this person, INBOX shows what the person calls *them*. A profile built from
+    INBOX alone is a portrait of the contact's voice wearing the user's name, which is
+    worse than no profile — so the caller refuses to write when this returns None.
+
+    Order: explicit config, then the RFC 6154 \\Sent SPECIAL-USE attribute, then the two
+    common literal names. Gmail's is "[Gmail]/Sent Mail" and is not guessable from the
+    others.
+    """
+    explicit = (cfg.get("sent_folder") or "").strip()
+    if explicit:
+        return explicit
+
+    try:
+        status, boxes = conn.list()
+    except Exception:
+        return None
+    if status == "OK" and boxes:
+        for raw in boxes:
+            if not raw:
+                continue
+            line = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else str(raw)
+            if "\\Sent" in line:
+                # Trailing quoted name is the mailbox; unquoted fallback is the last token.
+                m = re.search(r'"([^"]*)"\s*$', line)
+                return m.group(1) if m else line.split()[-1]
+
+    for guess in ("[Gmail]/Sent Mail", "Sent"):
+        try:
+            if conn.select(guess, readonly=True)[0] == "OK":
+                return guess
+        except Exception:
+            continue
+    return None
+
+
+def _strip_quoted(body: str) -> str:
+    """
+    Drop quoted reply chains.
+
+    Without this the other party's words get counted as the user's inside their own sent
+    mail, which is the fastest way to produce a tone profile that is a blend of two people
+    and reads like neither.
+    """
+    lines = []
+    for ln in body.splitlines():
+        s = ln.lstrip()
+        if s.startswith(">"):
+            continue
+        if re.match(r"^On .{0,80}\bwrote:\s*$", s):
+            break
+        if re.match(r"^-{2,}\s*(Original Message|Forwarded message)", s, re.I):
+            break
+        lines.append(ln)
+    return "\n".join(lines).strip()
+
+
+def _head_and_tail(body: str) -> str:
+    """
+    Keep the opening and the closing, drop the middle.
+
+    Greeting and sign-off — the highest-value tone signal — sit at the two ends; the bulk
+    in between is subject matter, which is exactly what must *not* reach the profile. This
+    is the cheapest part of the design and the most useful: same signal, a third of the
+    tokens, and less opportunity for content to leak.
+    """
+    body = body.strip()
+    if len(body) <= _CORR_HEAD_CHARS + _CORR_TAIL_CHARS:
+        return body
+    return f"{body[:_CORR_HEAD_CHARS].strip()}\n[…]\n{body[-_CORR_TAIL_CHARS:].strip()}"
+
+
+def _fetch_bodies(conn, ids: list[bytes]) -> list[str]:
+    """Batch-fetch and trim message bodies. BODY.PEEK so nothing is marked read."""
+    out: list[str] = []
+    for i in range(0, len(ids), _FETCH_CHUNK):
+        chunk = b",".join(ids[i:i + _FETCH_CHUNK]).decode()
+        try:
+            status, data = conn.fetch(chunk, "(BODY.PEEK[])")
+        except Exception:
+            continue
+        if status != "OK" or not data:
+            continue
+        for item in data:
+            if not isinstance(item, tuple) or len(item) < 2:
+                continue
+            try:
+                msg = email.message_from_bytes(item[1], policy=email.policy.default)
+            except Exception:
+                continue
+            trimmed = _head_and_tail(_strip_quoted(_body_text(msg)))
+            if trimmed:
+                out.append(trimmed)
+    return out
+
+
+def _sample_direction(conn, folder: str, criterion: str, address: str) -> list[str]:
+    """Run the tiered sample in one mailbox. `criterion` is FROM or TO."""
+    if conn.select(folder, readonly=True)[0] != "OK":
+        return []
+
+    picked: list[bytes] = []
+    for _label, start, end, cap in _TIERS:
+        terms = [criterion, f'"{address}"', "BEFORE", _imap_date(start)] if start else \
+                [criterion, f'"{address}"']
+        if end is not None:
+            terms += ["SINCE", _imap_date(end)]
+        try:
+            status, data = conn.search(None, *terms)
+        except Exception:
+            continue
+        if status != "OK" or not data or not data[0]:
+            continue
+        ids = data[0].split()
+        picked.extend(ids[-cap:])          # newest within the tier
+
+    return _fetch_bodies(conn, picked)
+
+
+def search_correspondence(address: str, char_budget: int = _CORR_CHAR_BUDGET) -> dict:
+    """
+    Sample real correspondence with one person, both directions, for tone profiling.
+
+    Internal — granted to no agent. Everything it returns is attacker-writable text and
+    is wrapped accordingly; the only caller is tools/tone.py, which distils it through a
+    fixed schema rather than letting any of it reach a drafting context directly.
+    """
+    cfg = _load_config()
+    if not cfg.get("enabled"):
+        return {"error": "Email is not configured for this persona."}
+
+    host = (cfg.get("host") or "").strip()
+    auth = cfg.get("auth") or {}
+    username = (auth.get("username") or "").strip()
+    password = auth.get("password") or ""
+    if not (host and username and password):
+        return {"error": "email.yaml needs host and auth.username / auth.password."}
+
+    address = (address or "").strip().lower()
+    if not address:
+        return {"error": "No address given."}
+
+    try:
+        conn = imaplib.IMAP4_SSL(host, timeout=TIMEOUT_SECONDS)
+    except Exception as e:
+        return {"error": f"Could not connect to {host}: {e}"}
+
+    try:
+        try:
+            conn.login(username, password)
+        except imaplib.IMAP4.error as e:
+            return {"error": f"IMAP login rejected for {username}: {e}"}
+
+        sent = _sent_folder(cfg, conn)
+        received = _sample_direction(conn, "INBOX", "FROM", address)
+        written = _sample_direction(conn, sent, "TO", address) if sent else []
+    finally:
+        for close in (conn.close, conn.logout):
+            try:
+                close()
+            except Exception:
+                pass
+
+    # Interleave so a budget cut cannot silently drop one whole direction — truncating
+    # to "their voice only" is the failure _sent_folder exists to prevent.
+    merged: list[str] = []
+    used = 0
+    for i in range(max(len(written), len(received))):
+        for src, tag in ((written, "user"), (received, "them")):
+            if i < len(src):
+                block = f"[{tag}] {src[i]}"
+                if used + len(block) > char_budget:
+                    break
+                merged.append(block)
+                used += len(block)
+        else:
+            continue
+        break
+
+    rendered = "\n\n---\n\n".join(merged)
+    result = {
+        "address": address,
+        "sent_folder_found": sent is not None,
+        "sent_folder": sent,
+        "counts": {"written_by_user": len(written), "received": len(received),
+                   "sampled": len(merged), "chars": used},
+        "security_note": UNTRUSTED_CONTENT_INSTRUCTION,
+        "correspondence": wrap_untrusted(rendered, source=f"mail history with {address}"),
+    }
+    markers = contains_injection_markers(rendered)
+    if markers:
+        result["injection_markers_detected"] = markers
+    return result
+
+
 def _own_addresses() -> set[str]:
     """
     The user's own addresses — always a permitted recipient.
