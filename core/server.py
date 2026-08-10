@@ -488,7 +488,8 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
       {type: "catchup", since_id}                   — fetch missed exchanges on reconnect
 
     Server → client message types:
-      {type: "history", messages, last_id}           — initial history / catch-up response
+      {type: "history", messages, last_id}           — initial full history on connect (wipes and rebuilds)
+      {type: "catchup", messages, last_id}           — delta since_id response (appends only — DB-0809-06)
       {type: "stream_start", exchange_id, user}      — foreign exchange starting (not this device)
       {type: "chunk", exchange_id, text}             — token from the LLM (own or foreign)
       {type: "done", exchange_id}                    — exchange complete; commit text
@@ -669,11 +670,18 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                         _active_streams -= 1
 
             elif msg_type == "catchup":
+                # Deliberately a distinct type from the initial "history" load below.
+                # Both used to share "history", and the client's handler for that type
+                # wipes the whole conversation and rebuilds from only what it's given
+                # ([DB-0809-06]) — correct for a fresh page load's full history, wrong
+                # for a delta: everything not in this catch-up window vanished until a
+                # manual reload restored it. "catchup" rows are applied one at a time
+                # through the same append-only path as a live "message" broadcast.
                 since_id = int(data.get("since_id", 0))
                 rows = await _catchup_since(persona_key, since_id)
                 if rows:
                     await websocket.send_json({
-                        "type": "history",
+                        "type": "catchup",
                         "messages": rows,
                         "last_id": rows[-1]["id"],
                     })

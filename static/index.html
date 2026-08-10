@@ -821,10 +821,13 @@
   window.addEventListener('online', ensureConnected);
 
   // Backstop for the case where the app stays open but the network drops out
-  // underneath it — no event fires at all there.
-  setInterval(() => {
-    if (document.visibilityState === 'visible') ensureConnected();
-  }, 20000);
+  // underneath it — no event fires at all there. Deliberately NOT gated on
+  // visibilityState: a hidden tab's socket can die the same silent half-open
+  // way a foreground one can, and gating this meant the staleness check
+  // never ran while the tab was in the background — so returning to it
+  // relied entirely on the `visibilitychange` handler firing fresh, with no
+  // catch-up in between. This is the one place that must stay unconditional.
+  setInterval(ensureConnected, 20000);
 
   function handleWsMessage(msg) {
     switch (msg.type) {
@@ -909,13 +912,16 @@
       }
 
       case 'message': {
-        // Completed exchange arriving for catch-up (missed while disconnected)
-        if (!shownIds.has(msg.exchange_id)) {
-          if (!msg.proactive) addMessage('user', msg.user);
-          addMessage('assistant', msg.assistant);
-          shownIds.add(msg.exchange_id);
-        }
-        if (msg.id > lastSeenId) lastSeenId = msg.id;
+        // A completed exchange broadcast live from another device.
+        applyCatchupRow(msg);
+        break;
+      }
+
+      case 'catchup': {
+        // Delta since_id response — append-only, never wipes. See the comment on
+        // this type at core/server.py's /ws handler for why it is not "history".
+        for (const row of msg.messages) applyCatchupRow(row);
+        if (msg.last_id && msg.last_id > lastSeenId) lastSeenId = msg.last_id;
         break;
       }
 
@@ -934,6 +940,19 @@
         break;
       }
     }
+  }
+
+  // Shared by the live 'message' broadcast and the 'catchup' delta — append one
+  // exchange if not already shown, and advance lastSeenId. Never clears the
+  // conversation; that is renderHistory's job alone, for the one case (a fresh
+  // connection's initial load) where wiping and rebuilding is actually correct.
+  function applyCatchupRow(row) {
+    if (!shownIds.has(row.exchange_id)) {
+      if (!row.proactive) addMessage('user', row.user);
+      addMessage('assistant', row.assistant);
+      shownIds.add(row.exchange_id);
+    }
+    if (row.id > lastSeenId) lastSeenId = row.id;
   }
 
   function renderHistory(messages) {
