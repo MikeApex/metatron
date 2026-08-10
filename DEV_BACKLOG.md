@@ -109,6 +109,31 @@ Real, not prioritised. One or two lines each — detail lives in the code, the l
   test, and Wave 2 (B1b, B3) gated on Track E. Detail in the archive file.
 
 **Reliability**
+- **[DB-0810-01] A reconnect can leave two live WebSocket connections briefly open,
+  doubling a streaming response into the same on-screen bubble.** Live on 2026-08-10:
+  Mike sent a message and got back visibly interleaved duplicate text
+  (*"coming through loud... to Iva aboComing through loud..."*). Server logs show two
+  connections accepted the same second, one staying open ~10s past the other. **Not
+  install-specific** — first seen right after sideloading an app update (auth token
+  survived the update, so auto-login's unconditional `enterApp()` at
+  [static/index.html:1457](static/index.html#L1457) fired once, cleanly — the double
+  connection is not that call itself), but it recurred ~12 minutes later, mid-session,
+  with no install involved (`10:14:16` and `10:14:19`, 3s apart, no close logged between
+  them). Mechanism: `ws.onclose` schedules a reconnect; when `ensureConnected()` decides
+  the current socket needs replacing, `ws.close()` doesn't synchronously tear the old
+  connection down — there's a real network round-trip before the server sees it close —
+  and during that gap both sockets are genuinely live and both receive the same stream.
+  **Only visible if a message is actively streaming during that few-second window**,
+  which is why most sends don't hit it (confirmed: two later test messages the same
+  session came through clean). **Data is never at risk** — the server-side conversation
+  record was the correct, non-garbled text throughout; reloading history always shows it
+  right. Two real fix directions, a genuine design choice rather than a mechanical one:
+  wait for the old socket's `onclose` before trusting the new one is authoritative
+  (client-side), or have the server refuse a second live connection per persona outright
+  (more robust — can't be fooled by client-side timing assumptions, but a bigger change).
+  *filed 2026-08-10 · Mike, live · low severity (cosmetic, self-healing) but a real,
+  recurring race, not a one-off — do not close on "restart fixed it," that only showed
+  the stored data was clean, not that the race stopped happening*
 - **[DB-0808-11]** `fire_function` runs no gate stack — `days`, `respect_quiet_hours` and the
   activity gate are ignored for every function job. Reachable since it gained a notification
   path: an `interval_minutes` job with `notification: push` would push at 3am.
