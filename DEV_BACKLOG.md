@@ -128,7 +128,26 @@ standing rule distrusts.*
   `tc0` and re-requests the rest, turning that loop's parallel `ThreadPoolExecutor` dispatch into N
   sequential turns on a path already logging `cumulative_input=60744`. Guard it to fire only when
   parts are genuinely unsigned. **Re-derive from the log line, not from this description.**
-  *filed 2026-08-10 · full reasoning in `archive/PROJECT_LOG.md` § 2026-08-10, later still*
+  **UNBLOCKED 2026-08-13 — four post-`8ae1ff9` occurrences are in hand, and they answer the
+  question the observability commit was built to answer.** All four: `write_quality_event`,
+  **position 12**, agent `synthesizer` on `gemini-3.1-pro-preview`. Attribution is
+  **`loop=openai_compat_stream`** — so it is **(a), the compat family, not (b) the native loop**,
+  which can now be de-prioritised. Two refinements the item did not have:
+  **(i) It is the *streaming* variant `_openai_compat_stream`, not `_openai_compat_loop`.** The
+  cause is upstream of re-serialisation: **stream deltas do not carry `thought_signature` at all**
+  (the function's own comment says so), so a message reconstructed from deltas is unsigned by
+  construction. There is already a mitigation — replay the turn blocking to obtain a real signed
+  Vertex message — so the bug is in when that mitigation does *not* apply.
+  **(ii) The label is bare `loop=openai_compat_stream`, never `openai_compat_stream:replay[...]`.**
+  That distinction was built in deliberately, and it rules the replay out: the 400 hits the *main
+  stream call*, meaning an unsigned assistant message from an **earlier** turn is already sitting
+  in `messages`. **Leading hypothesis, not proven:** the `else` branch where the blocking replay
+  returns no tool calls falls back to the delta-reconstructed message with no signature — the one
+  path that writes an unsigned message — and the next stream request 400s. Its own comment calls
+  that divergence "rare", which matches ~4/fortnight. **Verify by instrumenting that branch before
+  fixing it**; do not assume, the first two diagnoses here were both wrong.
+  *filed 2026-08-10 · **unblocked 2026-08-13**, occurrences and loop attribution read live off the
+  VM · full reasoning in `archive/PROJECT_LOG.md` § 2026-08-10, later still*
 - **4. [DB-0809-02] Do proactive sessions actually stay focused? — mechanism fixed and deployed;
   the guidance half is unproven.** The original premise was wrong: the openings were already
   1–2 sentences, and the "restatements" were the Synthesizer reading its *own* scheduler prompt as
@@ -295,8 +314,6 @@ to pick from when a `Now` item is time-gated.
 - **[DB-0809-09]** The scheduler can only skip a time-anchored job, never defer it — blocked
   means gone for the day. Current state is correct (`morning_brief`/`evening_close` carry no
   activity gate deliberately). Only pick up if a fixed-time session should ever wait for a lull.
-- **[DB-0804-01]** One-week count confirming `[DB-0803-02]`'s fix under real scheduler fires —
-  **due 2026-08-11, do not check before then.** Baseline 18 `AgentRecord` errors in 7 days.
 - **[DB-0803-05]** `sw.js` registers no `fetch` handler and `/` is served `no-store` — no
   offline shell, so an unreachable server shows a browser error page instead of the app.
 - **[DB-0808-05]** The output filter suppresses the whole reply when Mike names a tool himself

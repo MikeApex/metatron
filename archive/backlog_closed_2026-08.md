@@ -19,6 +19,16 @@ sitting inside the Open sections. Reasoning: `archive/PROJECT_LOG.md` § 2026-08
 
 ---
 
+## Closed 2026-08-13 — the one-week AgentRecord count came due and passed
+
+- ~~**[DB-0804-01]** One-week count confirming `[DB-0803-02]`'s fix under real scheduler fires.~~ —
+  **closed, passed.** The item was time-gated (*"due 2026-08-11, do not check before then"*) and
+  went unchecked for two days after coming due; found by a `/backlog` verification pass on 08-13.
+  **Baseline 18 `AgentRecord` errors in 7 days → 2.** Counted on the VM over the same 7-day window
+  and the same journal units as the baseline, so the comparison is like-for-like. The fix holds.
+  *The lesson is not about the fix — it is that a date-gated item has no mechanism to announce
+  itself when its date arrives, and this one sat done-but-unread for 48 hours.*
+
 ## Closed 2026-08-11 — live travel verified; mailbox cadence default
 
 - ~~**[DB-0810-14] Live travel status is fixed in code and unverified in production.**~~ —
