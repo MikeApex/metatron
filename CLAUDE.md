@@ -53,7 +53,8 @@ jobs and no rule about ownership — `SESSION.md` had reached 775 lines, 80% of 
 |---|---|---|---|
 | `CLAUDE.md` | how to work here: rules, conventions, architecture | edited | auto, every session |
 | `SESSION.md` | **current state only** | **replaced** | `/metatron-code` |
-| `DEV_BACKLOG.md` | work outside the roadmap, in priority order | `## Inbox`/`## Machine log` machine-written, rest curated — ritual in `/backlog` | **on demand** — synced every session, read only when working the backlog |
+| `DEV_BACKLOG.md` | **Metatron** work outside the roadmap, in priority order | `## Inbox`/`## Machine log` machine-written, rest curated — ritual in `/backlog` | **on demand** — synced every session, read only when working the backlog |
+| `HARNESS_BACKLOG.md` | defects in the tooling we *build with* — hooks, worktrees, the permission matcher, `deploy.sh`'s lock, `/fix`. **Reconciled within the build that opened it, never carried** | curated by hand — no sync, no fragments | never — read when working the throughput plan |
 | [`ROADMAP.md`](ROADMAP.md) | **live** tracks, phase gates, freezes — abridged | edited | `/metatron-code` |
 | `archive/plans/phase5_to_future_roadmap_2026-06-10.md` | the full plan — completed tracks, Phase 6B/7 detail | **never edited — it is dated and static** | never — read when `ROADMAP.md` says it does not carry your area |
 | [`docs/WORKFLOW.md`](docs/WORKFLOW.md) | which command to fire, when, and what it costs | edited | never — read when unsure which ritual applies |
@@ -71,8 +72,13 @@ instead of the log. (It hit **775** before the 2026-08-03 split; it sits near 17
 History goes in the log; state goes in `SESSION.md`; work goes in `DEV_BACKLOG.md`. A session
 that closes by *appending* to `SESSION.md` has put it in the wrong place — see `/archive`.
 
-**`DEV_BACKLOG.md` is the single bin for work outside the roadmap, and `/backlog` is how it is
-worked.** Two rules worth carrying without reading that file:
+**`DEV_BACKLOG.md` is the single bin for *Metatron* work outside the roadmap, and `/backlog` is
+how it is worked.** The one exception is `HARNESS_BACKLOG.md`, added 2026-08-13: defects in the
+development tooling itself — Claude Code hooks, worktrees, the permission matcher — which have
+no Metatron content and would dilute both the line ceiling and the `now`/`later` counts that
+make this file's workload legible. That file is **reconciled within the build that opened it**;
+a harness backlog that outlives its build has become a second permanent bin, which is what this
+rule exists to prevent. Two rules worth carrying without reading `DEV_BACKLOG.md`:
 
 1. **No item is acted on, or re-filed, on the strength of its own description** — open it
    against the current code first. A sweep on 2026-08-05 found roughly a third of checked items
