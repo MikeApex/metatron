@@ -34,18 +34,10 @@ journal and conversations before filing; one was a false report the system wrote
 
 - **[needs building]** User requested stopping the read-back of triaged emails (applied to persona) and requested implementing a ticket-based system for managing the mailbox more effectively (needs building).  
   `2026-08-11T08:36:03.236643Z`
-- **[dev-workflow]** `scripts/hook_commit_guard.py` blocks on routine shell it cannot parse:
-  a trailing `echo "exit=$?"` after a `git commit` was reported as an unaccountable path
-  expression and the commit was refused. Failing closed is correct by design (`a66a706`), but
-  this is a routine-path block, not a risky one — the same "noisy blocks on routine ones" theme
-  `/code-review high` flagged across this guard. Consider ignoring tokens that follow a `;`
-  and contain no `/`. Filed from the throughput session, 2026-08-13.
-- **[dev-workflow]** `.claude/settings.json` requests `defaultMode: auto` but sessions run in
-  `default`, so the phase-1 permission policy is **not actually in effect** — the measured
-  85–88% prompt reduction is not being realised. Detected live by
-  `scripts/hook_context_gate.py`'s fallback detector, 2026-08-13. Fix is likely an explicit
-  `permissions.allow` list rather than `defaultMode` (compound commands are matched
-  per-subcommand, so an allowlist reaches the same coverage). Filed from the throughput session.
+*(Two `[dev-workflow]` items — the commit guard blocking routine shell, and `defaultMode: auto`
+not being in effect — moved to [`HARNESS_BACKLOG.md`](HARNESS_BACKLOG.md) on 2026-08-13. They are
+defects in the tooling we build with, carry no Metatron content, and both remain open there. This
+file is Metatron work; see `CLAUDE.md` § Which File Holds What.)*
 
 ---
 

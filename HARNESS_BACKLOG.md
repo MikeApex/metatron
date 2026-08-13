@@ -105,6 +105,20 @@ actually run. Items below are marked *confirmed* only where they were reproduced
   git rev-parse HEAD` after step 5 and say so plainly, because *"I ran the command"* and
   *"the commits are offsite"* are not the same claim.
 
+- **The commit guard blocks routine shell it cannot parse, and the routine cases keep piling
+  up.** Failing closed on unparseable input is correct by design (`a66a706`), but every instance
+  so far has been a *routine* path, not a risky one — the "noisy blocks on routine ones" theme
+  `/code-review high` already flagged across this guard. Three now: a trailing `echo "exit=$?"`
+  after `git commit`; **`git commit --amend` with no path arguments** (reported as an
+  unaccountable path expression, though an amend of the message touches nothing); and **any file
+  written by a script rather than `Edit`/`Write`**, whose `PostToolUse` hash is never recorded so
+  the file looks changed-underneath — hit twice on 2026-08-13, once from a `python3` heredoc and
+  once from `sync_dev_backlog.py` writing `DEV_BACKLOG.md`. Suggested narrowing: ignore tokens
+  following a `;` that contain no `/`, and treat a pathless `--amend` as message-only.
+  **Note this was strictly worse until today** — the documented override did not work either, so
+  each of these was an unconditional block. *(Filed 2026-08-13 from the throughput session; moved
+  here from `DEV_BACKLOG.md` when this file was created.)*
+
 - **`defaultMode: auto` is not in effect; sessions run `default`.** Phase 1's measured
   85–88% prompt reduction is therefore unrealised — the plan's headline outcome has never
   been observed (plan §10, hypothesis H5). Detected by `scripts/hook_context_gate.py`'s
