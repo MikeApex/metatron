@@ -278,10 +278,13 @@ standing rule distrusts.*
 Real, not prioritised. One or two lines each — detail lives in the code, the log, or
 `archive/backlog_closed_2026-08.md`.
 
-**Two standing rules, both Mike's (2026-08-10):** an item promotes to `## Now` once its error
-has been **recorded three times** (the ×3 threshold the machine log uses — count before
-promoting); and **`Now` is cleared before `Later` is started**, so this is not a parallel track
-to pick from when a `Now` item is time-gated.
+**Two standing rules, both Mike's (2026-08-10):** a **machine-originated** item promotes to
+`## Now` once its error has been **recorded three times** (the ×3 threshold the machine log
+uses — count before promoting), while **anything Mike raises promotes on first report**, no
+count — the ×3 bar is a floor for things nobody asked for, not a hurdle for a user report
+(clarified 2026-08-13; the rule read "an item", which contradicted `## Now`'s entry bar and
+`/backlog`'s "promoted the day he hits it"); and **`Now` is cleared before `Later` is started**,
+so this is not a parallel track to pick from when a `Now` item is time-gated.
 
 **Safety and test gaps**
 - **[DB-0810-10]** The calendar conflict build (`a20febe`, deployed 08-05) has **never had a
