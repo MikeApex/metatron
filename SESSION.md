@@ -1,6 +1,6 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-13 (§10a substrate pre-flight). `## Now` is **8**. Live runtime items:
+*Updated: 2026-08-13 (§1 permissions, deploy lock). `## Now` is **8**. Live runtime items:
 **`[DB-0810-13]` is Now #1 and untouched** — specialists report actions they never took, so
 anything the system says it *did* (email, calendar, scheduling) is unverified. **`[DB-0810-12]` is
 UNBLOCKED**: four post-`8ae1ff9` occurrences, all `write_quality_event` at position 12 on
@@ -10,20 +10,19 @@ diagnoses were both wrong.** `[DB-0810-05]` is blocked on **data, not code** (ma
 / 6 Inbox; no contact has enough correspondence to profile). **Blocker for any live test: both
 Tailscale clients are off the tailnet**; VM and server healthy.*
 
-*Dev-workflow track — no runtime code changed, nothing deployed. **Phases 0–2, 3a, 3b, 4, 6, 8,
-5 and §10a are done.** Only **§10b** remains — the two-window rehearsal, ~40–60k — and it is
-**blocked**: H5 (`defaultMode: auto` not in effect) is one of its five hypotheses and
-Verification check 1 is explicitly untestable until it lands. A parallel window holds H5, the
-`Write` deny hole and H2; §10b runs after it reports. **13 defects across this plan, every one
-found by running, none by reading** — the 13th was `worker_ledger.py` reporting 3 worker runs out
-of 41 and looking entirely plausible doing it. **All harness defects, fixed and open, are in
-[`HARNESS_BACKLOG.md`](HARNESS_BACKLOG.md)**, not `DEV_BACKLOG.md`, and it is reconciled within
-this build rather than carried. What changes how you work today: **`/fix` and `/backlog attack`
-must not use `isolation: "worktree"`** (it checks workers out from `origin/main`, 11 commits
-stale) — use `new_worktree.sh` and pass the absolute path; **only deploy from the main tree**
-until H2 lands, because the lock is blind across worktrees; and **a cold worker costs 50–60k, not
-32k** — measure with `python3 scripts/worker_ledger.py` rather than asserting it. Standing rules
-unchanged: `PROJECT_LOG.md` is GENERATED from `archive/log/` fragments, backlog items go to
+*Dev-workflow track — no runtime code changed, nothing deployed. **Every phase is done except
+§10b**, the two-window rehearsal (~40–60k), which §1's permissions work (`502e560`) has now
+unblocked. **14 defects across this plan, every one found by running, none by reading.** The
+14th is the one to carry: **`permissions.ask` does not gate in this harness — it resolves to
+ALLOW**, so `./deploy.sh`, `git push` and agent-file edits are **ungated in any non-interactive
+session** (`deny` is enforced; a plain-CLI session auto-*denies* the same prompt). **Open
+decision: whether the Red tier moves to `deny`** — first test whether an *interactive* session
+honours `ask`, which narrows it. Three more rules for today: **`/fix` and `/backlog attack` must
+not use `isolation: "worktree"`** (workers check out from `origin/main`, 11 commits stale) — use
+`new_worktree.sh` with an absolute path; **deploying from a worktree is now safe**; and **a cold
+worker costs 50–60k, not 32k** (`python3 scripts/worker_ledger.py`). Harness defects — **three
+open, eight closed** — are in [`HARNESS_BACKLOG.md`](HARNESS_BACKLOG.md); it **does not retire
+with this build**, and each of the three stayed open for a stated reason. Standing: `PROJECT_LOG.md` is GENERATED from `archive/log/` fragments, backlog items go to
 `.claude/backlog_inbox/`, `qa_sweep.sh` is free.*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
@@ -123,10 +122,9 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-13 | **The permission matcher, the deploy lock, and a Red tier that never prompted.** `defaultMode: "auto"` parsed cleanly and **never took effect**, so the plan's measured 85–88% prompt reduction had never once been observed; replaced with a blanket `allow` list (Mike's call over a curated one — 201 of 1,185 prompts were unclassifiable compounds, and an enumerated list is incomplete by construction). Five `Write(path)` deny rules were **silently ignored** — only `Edit(path)` matches file edits — leaving Tier 0 `constitution.md` reachable by `Write`; the audit found `Bash(./deploy.sh)` was exact-match, so `./deploy.sh --anything` escaped the Red tier. `deploy.sh`'s lock now shared via `--git-common-dir`, proven by holding it in the main tree while a real worktree's copy refused. **Found in passing and worse than either: `ask` does not gate in this harness — it auto-approves**, so the Red tier is ungated unattended (H7, decision open). Rejected: hunk attribution for shared-tree commits — already killed by the Chorus round; the answer is `new_worktree.sh` | `502e560` — **not deployed** |
 | 08-13 | **Attention-ping hooks, and the transcript titler that had been mangling names since June** — `~/.claude/alert.sh` + `Notification`/`Stop` hooks, toggled by the marker file `~/.claude/.alerts_off` (`alert` in `.zshrc`): **a shell variable cannot gate a hook**, hooks are subprocesses. `PreToolUse` was the wrong event — it would have pinged on every tool call. `archive_chats.py` was stripping **one of a slash command's five tags**, so caveat boilerplate leaked into titles *and* transcript bodies; titles also took the first user message unconditionally. Both fixed, verified over 109 sessions; 31 of 32 historical transcripts retitled, 1 unrecoverable (JSONL deleted). Hand-renaming a transcript is useless — the script re-derives the name and unlinks the old file | no repo commits — `~/.claude/`, **not deployed** |
 | 08-13 | **Throughput §8 + §5 — the workflow doc, `/backlog verify`, and a worker cost ledger.** `docs/WORKFLOW.md` rewritten for Mike (149 → 304 lines, five sections); it deliberately omits `/backlog verify` until it existed, documents `/qa` as the script it is rather than the ninth command the plan counts, and states the two open defects that change what he should do today. `/backlog verify` fans verification to workers and returns one verdict table — **run on one real item, where a Sonnet worker answered a question `[DB-0810-09]` had left open for three days** (`ROUTING_MISS` is emitted from nowhere) and found a type the item missed. It cost **58,879 tokens against a ~42k estimate**, retiring the flat-32k model the batching rested on; `scripts/worker_ledger.py` now reads real per-worker cost out of the transcripts for free, retrospectively, across all 112 sessions. **A parallel window hand-edited the generated `PROJECT_LOG.md` and `qa_sweep` caught it** — first defect on this plan found by a guard, not a person. Rejected: instrumenting the `SubagentStop` hook to measure worker cost | `c82ed47`, `9ee4057`, `83e77a2` — **not deployed** |
-| 08-13 | **§10a substrate pre-flight — seven defects, every one only by running** (12 for 12 across this plan). `isolation: "worktree"` checks workers out from **`origin/main`, not local `HEAD`** — 11 commits stale, no `qa_sweep.sh` in their tree, reading rules retired that afternoon; `/fix` now uses `new_worktree.sh` instead. The gate swept the session's tree not the worker's, and its own new ledger logged to the ephemeral worktree — keeping the failures, losing the successes. **`METATRON_COMMIT_GUARD=off` was inoperative**: it blocked, printed the remedy, and blocked the remedy. §10 split — §10b rehearsal moved to after 8 and 5, on Mike's challenge. Rejected: keeping `origin/main` current as a standing habit — it makes worker freshness a reason to publish. New `HARNESS_BACKLOG.md`, reconciled within this build | `8ebc5a4`, `75fee3a`, `b2c310d`, `7d196df`, `6e1fc75` — **not deployed** |
-| 08-13 | **Coordinator close-out: two workers landed, `[DB-0810-12]` unblocked** — `[DB-0810-14]` closed (trace `8c9d8963`, `get_tfl_status` in-trace, not a plausible answer), `[DB-0810-16]` closed, `[DB-0804-01]` closed (came due 08-11, sat unread 2 days; 18 `AgentRecord` errors/7d → 2). Four post-`8ae1ff9` `thought_signature` 400s attributed `loop=openai_compat_stream` — candidate (a), streaming, deltas carry no signature. Found `tools/caldav.py` naming a dead config file in three strings, one the `read_calendar` schema | `7e0e302`, `4fcc170` — deployed |
 ---
 
 ## Useful context to pull as needed
@@ -198,7 +196,6 @@ python core/scheduler.py
 
 ## Key design decisions
 
-**Moved to [CLAUDE.md](CLAUDE.md) → Key Design Decisions.** This file carried a second list
-under an almost identical heading, with different contents, so whichever you found first looked
-like the whole set. The two unique entries here — the 2026-06-18 ZDR amendment and
-archive-on-merge — were merged into that list, which is now the only one.
+**Moved to [CLAUDE.md](CLAUDE.md) → Key Design Decisions**, which is now the only list. This
+file carried a second one under an almost identical heading with different contents, so
+whichever you found first looked like the whole set.
