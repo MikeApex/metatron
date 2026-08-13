@@ -44,6 +44,7 @@ import fnmatch
 import hashlib
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -136,12 +137,39 @@ def record(payload: dict) -> int:
 # Command parsing — token-level, so quoted text is never mistaken for a command
 # --------------------------------------------------------------------------
 
+def _strip_heredocs(command: str) -> str:
+    """Remove heredoc *bodies*, keeping the command line that introduces them.
+
+    A heredoc body is data, not shell. It routinely contains apostrophes — every
+    commit message with the word "session's" in it — and feeding that to shlex
+    raises on unbalanced quotes. That made the guard silently pass on exactly the
+    commits it exists to check: `git commit -F - <<'MSG' … MSG` was unparseable,
+    and unparseable used to mean pass. Demonstrated live on this guard's own
+    close-out commit, 2026-08-13.
+    """
+    out, lines, i = [], command.split("\n"), 0
+    while i < len(lines):
+        line = lines[i]
+        out.append(line)
+        m = re.search(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1", line)
+        if m:
+            marker = m.group(2)
+            i += 1
+            while i < len(lines) and lines[i].strip() != marker:
+                i += 1                      # drop the body
+            if i < len(lines):
+                i += 1                      # drop the closing marker too
+            continue
+        i += 1
+    return "\n".join(out)
+
+
 def _segments(command: str):
     """Split a shell command into token lists at separators. None if unparseable."""
     try:
-        tokens = shlex.split(command, comments=False)
+        tokens = shlex.split(_strip_heredocs(command), comments=False)
     except ValueError:
-        return None                       # unbalanced quotes — cannot reason about it
+        return None                       # still unbalanced — caller fails CLOSED
     segments, current = [], []
     for tok in tokens:
         if tok in _SEPARATORS:
@@ -265,7 +293,16 @@ def check(payload: dict) -> int:
 
     writes = _git_writes(command)
     if writes is None:
-        return 0     # unparseable shell; not our place to block on a quoting quirk
+        # Unparseable even after heredoc bodies are stripped. The command mentions
+        # git, so it may well stage something — and "cannot determine" must never
+        # read as safe. This is the same fail-closed stance as an unqueryable git.
+        print(
+            "COMMIT GUARD: cannot parse this command well enough to tell what it "
+            "stages (unbalanced quoting). Refusing to vouch for it.\n"
+            "  split it into separate calls, or METATRON_COMMIT_GUARD=off to override.",
+            file=sys.stderr,
+        )
+        return 2
     if not writes:
         return 0
 
