@@ -23,6 +23,73 @@ file is the only narrative record, alongside the verbatim transcripts.*
 
 ## Dated history
 
+### 2026-08-13, later (coordinator close-out: two workers landed, `[DB-0810-12]` unblocked, `[DB-0804-01]` came due) — `7e0e302`, `4fcc170`, **deployed**
+
+Close-out of the session that opened with the 08-10 `/backlog deep` sweep and ran three worker
+prompts off it. This entry covers the coordinator half: consolidating the workers, the latent
+maintenance they surfaced, and a verification pass that changed the state of two items.
+
+**Shipped and deployed (`7e0e302`).** `[DB-0810-14]` closed (live travel verified, trace
+`8c9d8963` — `get_tfl_status` actually called by Logistics, the pass condition chosen because the
+failure mode was fabrication rather than error). `[DB-0810-16]` closed (mailbox cadence default in
+`config/templates/email.yaml`, resolving 240 on the VM). `[DB-0810-05]` stayed open, rewritten:
+the unattended tone run wrote an empty profile because of an **unquoted IMAP folder name**, not
+because the safety design held — `_imap_quote()` fixed it in `3a2bb29`, and the item is now
+blocked on data, since the mailbox holds 1 Sent and 6 Inbox messages with no contact carrying
+enough correspondence to test against.
+
+**Found by the coordinator pass, unprompted: `tools/caldav.py` told users to configure a file
+nothing reads.** It resolves `persona_config_dir(persona)/caldav.yaml`, while three strings still
+named `config/modules/caldav.yaml` — the docstring, a returned error, and **the `read_calendar`
+tool schema description, which the model reads and would relay to Mike as setup instructions.**
+`CODEBASE_INDEX.md` named the dead file as canonical too. All four corrected. Same class as the
+week's other findings: an instruction pointing at something that is not there.
+
+**Corrected a worker's framing.** `config/modules/caldav.yaml` was reported as a repo problem with
+a personal address baked in. It is **gitignored** (`.gitignore:98`, untracked since 2026-07-28) —
+not in the repo, not in history, never deployed. The drift is Mac-local and the credentials were
+never exposed. **Rejected deleting it:** once the three live pointers are corrected, removing an
+untracked local file buys nothing and is not reversible from the repo.
+
+**Ceiling raised: `DEV_BACKLOG.md` 250 → ~450 lines**, on Mike's instruction to cross-check
+against Fable's 08-09 pass first. **No conflict** — that pass never validated 250; it fixed files
+citing *stale* ceilings (60/80/150) and established "cite `CLAUDE.md` rather than repeat a
+number", which constrains where the figure lives, not what it is. `.claude/commands/backlog.md`
+had already drifted back to a literal `250` and now cites. The reasoning for the raise: at 250 the
+file cannot hold ten `## Now` items *with the evidence each was verified against*, and dropping
+that evidence is precisely what the file's standing rule exists to prevent. `## Now`'s 10-item cap
+is unchanged and is what actually bounds workload.
+
+**The verification pass (`4fcc170`) changed two items, both because time had passed and nothing
+announced it.**
+
+1. **`[DB-0810-12]` is unblocked.** The item said *do not act until a post-`8ae1ff9` occurrence is
+   in hand*. **Four are.** All four: `write_quality_event`, **position 12**, agent `synthesizer` on
+   `gemini-3.1-pro-preview`, attributed **`loop=openai_compat_stream`**. That settles candidate (a)
+   over (b) — the native loop can be de-prioritised — and sharpens it twice. **(i)** It is the
+   *streaming* variant, and the cause sits upstream of re-serialisation: **stream deltas carry no
+   `thought_signature` at all**, so a delta-reconstructed message is unsigned by construction.
+   **(ii)** The label is bare, never `openai_compat_stream:replay[...]` — a distinction built into
+   `8ae1ff9` deliberately — which rules out the replay and puts the 400 on the main stream call,
+   meaning an unsigned message from an *earlier* turn was already in `messages`. Leading
+   hypothesis, **recorded as a hypothesis**: the `else` branch after a diverged blocking replay is
+   the only path that writes an unsigned message, and its own comment calls that divergence
+   "rare", which matches ~4/fortnight. **Instrument before fixing — the first two diagnoses of
+   this bug were both wrong.**
+2. **`[DB-0804-01]` came due 2026-08-11 and sat unread for two days.** Baseline 18 `AgentRecord`
+   errors per 7 days → **2**. Closed. The transferable lesson is not about the fix: **a date-gated
+   item has no mechanism to announce itself when its date arrives.**
+
+**Believed true earlier and wrong:** that closing an item settles the question it decided. Logged
+separately above for `[DB-0810-16]` — the layer decision was re-violated in the persona file
+within four hours — and the same shape appears here, in that `[DB-0804-01]` was "done" for 48
+hours before anyone looked.
+
+**State at close:** `## Now` is 8. VM HEAD `7e0e302`, both services active, `check_interval_minutes('mike')` → 240.
+**Both Tailscale clients are off the tailnet** (phone offline 1h, Mac stopped) — the VM and server
+are healthy, so this is client-side and is the first thing to fix before any real-world test.
+**Not triaged, deliberately deferred by Mike:** 4 new Inbox entries and a ⚠ machine signature at ×4.
+
 ### 2026-08-13 (the mailbox default was contradicted in the persona layer within hours of shipping) — VM-side edit, no commit
 
 Close-out of the conversation that built `[DB-0810-16]`. The build itself is logged under

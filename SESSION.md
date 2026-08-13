@@ -1,19 +1,21 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-13 (mailbox cadence closed out) — the mailbox default shipped in `7e0e302` and
-was contradicted in the persona layer within four hours. `[DB-0810-16]`'s whole argument was a
-layer one: Mike said *"how often **any user** checks the mailbox"*, so it is design and belongs in
-`config/templates/email.yaml`, never in `config/personas/mike/`. By 04:30 on 08-11 `mike.md:14`
-read *"Check inbox every six hours in the background"* — same rule, wrong layer, different value,
-and describing background polling that **does not exist** (nothing fires on this interval; a
-scheduled version waits on `[DB-0808-11]`). Mike kept four hours; the line is removed on the VM.
-**The lesson is the open thread:** a layer decision enforced only in a config file is re-violated
-by the next runtime write to the persona file, and `daily_rule_audit` reports rather than
-prevents — it flagged this ×4 while naming the wrong partner, since it scans rule files and
-structurally cannot see `email.yaml`. **Note `SESSION.md` was skipped by 08-11's close-out**, so
-its two sessions are only now recorded here. **Unchanged:** `[DB-0810-09]` (158 quality events
-never read) is Now #1; `[DB-0810-12]`'s raiser is still unknown and awaiting a post-`8ae1ff9`
-occurrence; `[DB-0810-05]`, `[DB-0810-07]`, `[DB-0810-10]` remain unexercised live.*
+*Updated: 2026-08-13, later (coordinator close-out) — `## Now` is **8**, down from 10.
+`[DB-0810-14]` closed (live travel verified, trace `8c9d8963`: `get_tfl_status` actually called by
+Logistics — the pass condition was tool-in-trace, not a plausible answer, because the failure mode
+was fabrication). `[DB-0810-16]` closed. `[DB-0804-01]` closed — it came due 08-11 and **sat
+unread two days**; 18 `AgentRecord` errors/7d → 2. `[DB-0810-05]` stays open but is now blocked on
+**data, not code**: the empty tone profile was an unquoted IMAP folder name (`_imap_quote()`,
+`3a2bb29`), and the mailbox holds 1 Sent / 6 Inbox, so no contact has enough correspondence to
+test against. **`[DB-0810-12]` is UNBLOCKED** — four post-`8ae1ff9` occurrences, all
+`write_quality_event` at position 12 on `synthesizer`, attributed `loop=openai_compat_stream`:
+candidate (a), the *streaming* variant, where deltas carry no `thought_signature` at all. Bare
+label (never `:replay[...]`) puts the 400 on the main stream call. **Instrument the diverged-replay
+`else` branch before fixing — the first two diagnoses were both wrong.** `[DB-0810-13]` (specialists
+report actions they never took) is Now #1 and **untouched**: anything the system says it *did* —
+email, calendar, scheduling — is unverified. **Blocker for any live test: both Tailscale clients
+are off the tailnet**; VM and server are healthy. Ceiling raised 250 → ~450 (no conflict with
+Fable's 08-09 pass, which never validated 250). Deferred by Mike: 4 Inbox entries, ⚠ machine ×4.*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -70,21 +72,21 @@ Three checks still open:
 `core/orchestrator.py` and `core/server.py`. **Full spec, including the regression gate, is in
 [ROADMAP.md](ROADMAP.md) § A8** — not restated here, it was a duplicate copy.
 
-**`[DB-0804-01]` still open** — check-ins fixed/deployed (`10bf194`), but no end-to-end
-scheduled fire directly observed yet. One-week count due 2026-08-11 — do not check before then.
-
 **Outbound messaging is Relationships' alone** (`9eb5ac4`). Logistics keeps `read_email`; Coordinator
 routes any message-to-a-person to Relationships, which holds three-level disclosure discretion and
 the communication-style baseline. `send_email`'s `disclosure_note` is **outside the confirm
 fingerprint** by design — do not move it into `args`. **The ZDR clarification is project-wide**
 (`ROADMAP.md` § Section 0).
 
-**Tone profiles built, not deployed, never run live** (`88957e6`) — `tools/tone.py`,
-`config/agents/tone_profiler.md`, `search_correspondence`, `tone_shape` on the contact record.
-`tone_shape` is accepted by `write_contact` but **deliberately absent from its schema**: only
-`tone.py` writes it, because the source is attacker-writable mail and the field is read back as
-trusted prompt text. The fixed JSON key set reassembled in Python is that defence — the injection
-check is only a backstop. Gate is **`[DB-0810-05]`**: the IMAP half is entirely unexercised.
+**Tone profiles deployed and now runnable, but untestable for lack of data** (`88957e6`,
+`3a2bb29`) — `tools/tone.py`, `config/agents/tone_profiler.md`, `search_correspondence`,
+`tone_shape` on the contact record. `tone_shape` is accepted by `write_contact` but **deliberately
+absent from its schema**: only `tone.py` writes it, because the source is attacker-writable mail
+and the field is read back as trusted prompt text. The fixed JSON key set reassembled in Python is
+that defence — the injection check is only a backstop. **`_imap_quote()` fixed the unquoted
+`[Gmail]/Sent Mail` select that had been failing every sent-side query;** `[DB-0810-05]` is now
+blocked on **data, not code** — the mailbox holds 1 Sent / 6 Inbox, so no contact has enough
+correspondence to profile.
 
 **Obligations are data, not jobs.** `tools/obligations.py` + `data/personas/{p}/obligations.yaml`;
 closure is inferred, `close_obligation` **requires** evidence. The reconcile sweep **never
@@ -112,13 +114,13 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-13 | **Coordinator close-out: two workers landed, `[DB-0810-12]` unblocked** — `[DB-0810-14]` closed (trace `8c9d8963`, `get_tfl_status` in-trace, not a plausible answer), `[DB-0810-16]` closed, `[DB-0804-01]` closed (came due 08-11, sat unread 2 days; 18 `AgentRecord` errors/7d → 2). Four post-`8ae1ff9` `thought_signature` 400s attributed `loop=openai_compat_stream` — candidate (a), streaming, deltas carry no signature. Found `tools/caldav.py` naming a dead config file in three strings, one the `read_calendar` schema | `7e0e302`, `4fcc170` — deployed |
 | 08-13 | **The mailbox default was contradicted in the persona layer within four hours of shipping** — `mike.md:14` said "check inbox every six hours in the background" against a template default of 240 min, describing polling that does not exist. Mike kept four hours; line removed on the VM. `daily_rule_audit` caught the preference ×4 but named the wrong partner — it cannot see `email.yaml`. **A layer rule in a config file does not survive the next runtime write to the persona file** | VM-side edit only — `mike.md` is gitignored |
 | 08-11 | **Mailbox cadence default + three pointers at files nothing reads** — `config/templates/email.yaml` is the single home, doubling as provisioning source and runtime fallback; `new_persona.sh` was missing `email.yaml` entirely. Rejected mirroring the key into `config/modules/email.yaml` — that builds the duplicate-home failure, and caldav is the live worked example. Surfaced that `tools/caldav.py` named the dead file in three strings, one of them the `read_calendar` schema the model relays | `7e0e302` — deployed, VM verified |
 | 08-10 | **Every model call site names itself; SSE errors are logged** — five Vertex `thought_signature` 400s (08-04→08-09) could not be attributed to a code path: two of the five model-call sites had no `try/except`, and `/session/stream` sent `[ERROR]` to the browser while logging nothing, so web-app failures left no server-side trace. `_log_api_failure()` on all five + `MODEL_CALL_FAILED` escalating at 3. **Raiser still unknown** — the first diagnosis was wrong, the native-loop fallback swallows it. Two fixes held deliberately: `[DB-0810-12]` | `8ae1ff9` — deployed, VM verified |
 | 08-10 | **Calendar conflict detection + the quality-event sink gap** — `write_calendar_event` had no duplicate check at all and no update/delete counterpart; both built, check runs inside the write so it cannot be skipped. Then found `sync_dev_backlog.py` discards `USER_CORRECTION` (139), `ROUTING_MISS` (12) and `CALENDAR_DUPLICATE` (7) — 158 events never read. Diagnosed, not fixed | `a20febe` — deployed 08-05; sink gap **open**, `[DB-0810-09]` |
 | 08-10 | **Message-bubble timestamps** — user and assistant bubbles show a time, sourced from the server's existing `ts` column for replayed messages, client clock for live/streaming ones. Verified on webapp and a rebuilt, sideloaded APK | `a65a199` — deployed, VM verified |
 | 08-10 | **Research provenance authored by Python, not the model** — strips model-written `SOURCES:`, appends `SOURCES (N retrieved)`/`[RETRIEVAL: NONE]` from the SDK; `grounded` is now retrieval-based and tri-state. Built `check_agent_tools.py` + a `PostToolUse` hook on agent/routing edits; it found `get_weather` granted to Logistics but documented only on Research — weather returned to Logistics | `a36d8c2`…`a3b43c5` (5) — deployed, VM verified |
-| 08-10 | **Flight/transit queries routed to an agent with no travel feeds** — Coordinator sent flight status to Research (grant: `fetch_url`, `get_pollen_forecast`); `get_flight_status` is Logistics-only and healthy. Fixed + verified in seq 016. Second, **open** defect found: Research fabricates `SOURCES:` because `web_search` does not exist yet is named 4× and citing is mandatory | `d0774f8` — deployed, verified |
 ---
 
 ## Useful context to pull as needed
