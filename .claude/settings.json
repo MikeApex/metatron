@@ -1,7 +1,37 @@
 {
   "permissions": {
-    "defaultMode": "auto",
+    "_comment_allow": [
+      "REPLACED defaultMode 'auto' on 2026-08-13. That value was accepted by the settings",
+      "parser and then silently never took effect: scripts/hook_context_gate.py reported",
+      "'requests auto, running default' on every Write/Edit, so Phase 1's measured 85-88%",
+      "prompt reduction had NEVER been observed. A blanket allow is the same policy stated",
+      "in a form the matcher honours -- 'deny the destructive, ask the Red row, allow",
+      "everything else'. Verified by running, not reading: with allow:[Bash] in force, a",
+      "deny rule still blocked and an ask rule still prompted, so the two lists below keep",
+      "their teeth. Blanket rather than an enumerated safe-command list on purpose: 201 of",
+      "1,185 backtested prompts were unclassifiable compounds, and an enumerated list is",
+      "incomplete by construction, so every command not on it keeps prompting -- which is",
+      "the failure this replaces.",
+      "Residual risk, accepted knowingly and unchanged from the plan: a destructive command",
+      "nobody thought to deny. The posture is growing the deny list when something slips,",
+      "not pretending it is complete."
+    ],
+    "allow": [
+      "Bash",
+      "Read",
+      "Edit",
+      "Write"
+    ],
 
+    "_comment_deny": [
+      "Edit(path) rules cover ALL file-editing tools, including Write. The paired",
+      "Write(path) entries that used to sit here were silently ignored -- 'claude config",
+      "list' names each one -- so config/constitution.md, a Tier 0 file, was blocked",
+      "against Edit and reachable by Write. Removed rather than kept as belt-and-braces,",
+      "because a rule that does not match is indistinguishable from one that does until",
+      "someone tests it. Verified by running: a deny of Edit(./probe_target.txt) refused a",
+      "Write to that path, and the file was untouched. Do NOT re-add Write(path) rules."
+    ],
     "deny": [
       "Read(./.env)",
       "Read(./.env.*)",
@@ -10,14 +40,10 @@
       "Edit(./vertex-key.json)",
 
       "Edit(./config/constitution.md)",
-      "Write(./config/constitution.md)",
 
       "Edit(./config/personas/mike.md)",
-      "Write(./config/personas/mike.md)",
       "Edit(./config/personas/mike/**)",
-      "Write(./config/personas/mike/**)",
       "Edit(./data/personas/**)",
-      "Write(./data/personas/**)",
 
       "Bash(rm -rf *)",
       "Bash(rm -fr *)",
@@ -35,13 +61,27 @@
       "Bash(gcloud compute networks delete *)"
     ],
 
+    "_comment_ask": [
+      "The Red tier. Bash(./deploy.sh) was an EXACT-match rule, so './deploy.sh --anything'",
+      "escaped it entirely; the ' *' variants below close that. Write(./config/agents/*.md)",
+      "was one of the five silently-ignored Write rules -- the Edit entry already covers the",
+      "Write tool.",
+      "KNOWN LIMIT, measured 2026-08-13 and not fixed by this file: in the VS Code /",
+      "Agent-SDK harness running non-interactively, an ask rule does not prompt and does not",
+      "block -- it resolves to ALLOW. 'git push --dry-run origin main' reached GitHub with no",
+      "prompt, and a throwaway ask rule on a novel command allowed it. deny still blocks",
+      "there. So this list protects interactive sessions only; anything that must never",
+      "happen unattended belongs in deny, not here. In a plain-CLI headless session the same",
+      "prompt auto-DENIES instead, so the two harnesses fail in opposite directions."
+    ],
     "ask": [
       "Bash(./deploy.sh)",
+      "Bash(./deploy.sh *)",
+      "Bash(bash ./deploy.sh *)",
       "Bash(git push *)",
       "Bash(git push)",
 
       "Edit(./config/agents/*.md)",
-      "Write(./config/agents/*.md)",
       "Edit(./config/modules/routing.yaml)",
       "Edit(./config/modules/routing_cloud.yaml)",
 

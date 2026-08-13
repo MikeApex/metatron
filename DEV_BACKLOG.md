@@ -36,7 +36,8 @@ journal and conversations before filing; one was a false report the system wrote
   `2026-08-11T08:36:03.236643Z`
 *(Two `[dev-workflow]` items — the commit guard blocking routine shell, and `defaultMode: auto`
 not being in effect — moved to [`HARNESS_BACKLOG.md`](HARNESS_BACKLOG.md) on 2026-08-13. They are
-defects in the tooling we build with, carry no Metatron content, and both remain open there. This
+defects in the tooling we build with and carry no Metatron content. `defaultMode` closed there
+2026-08-13; the commit-guard item remains open. This
 file is Metatron work; see `CLAUDE.md` § Which File Holds What.)*
 
 ---

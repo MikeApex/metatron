@@ -24,17 +24,28 @@ actually run. Items below are marked *confirmed* only where they were reproduced
 
 ## Open
 
-- **[H2] The deploy lock is blind across worktrees — two deploys can still interleave.**
-  *Confirmed live 2026-08-13.* `deploy.sh` computes
-  `LOCK_DIR="$(dirname "${BASH_SOURCE[0]}")/.deploy.lock"`, and a worktree carries its own
-  tracked copy of `deploy.sh`, so it computes `metatron-wt-<slug>/.deploy.lock` — a
-  different path. Both `mkdir` calls succeed, then both `git push origin main` and both SSH
-  the same VM. This is precisely the 2026-08-09 interleave the lock was built to prevent,
-  reintroduced by the worktree system.
-  **Fix is Red-tier** (`deploy.sh`), so it was not made inline. The lock needs a path shared
-  by every worktree; `git rev-parse --git-common-dir` resolves to the main tree's `.git`
-  from inside any worktree and is the obvious candidate. Note the refusal message already
-  prints `$LOCK_DIR` — this was visible to anyone who read it.
+- **[H7] `permissions.ask` does not gate in the VS Code / Agent-SDK harness — it resolves to
+  ALLOW.** *Found and confirmed live 2026-08-13, while fixing H5.* A prompt that cannot be
+  shown is auto-**approved** here, not auto-denied: `git push --dry-run origin main` reached
+  GitHub with no prompt, and a throwaway `ask` rule on a novel harmless command
+  (`Bash(sw_vers *)`, added to `settings.local.json` and removed after) allowed it. `deny`
+  is enforced in the same session and hot-reloads without a restart (`git clean -n` blocked
+  before and after the settings edit; a throwaway `Bash(uptime *)` deny blocked immediately).
+  **So the entire Red tier — `./deploy.sh`, `git push`, agent-file and
+  router/persona/scheduler/spend_guard edits — is ungated in a non-interactive session**,
+  which is the one place nobody is watching. The session reported `permission_mode: default`
+  in the hook payload, so this is not a deliberate mode switch.
+  **The opposite failure in the other harness:** a plain-CLI `claude -p` session auto-DENIES
+  the same prompt (verified in isolated scratch projects). The two harnesses fail in
+  opposite directions from identical settings.
+  **Not a regression from H5's blanket allow** — precedence was tested with `allow: ["Bash"]`
+  in force and both `deny` and `ask` still outranked it. The Red tier was already ungated
+  here before the allow list existed.
+  **Open decision, deliberately not taken inline:** whether `./deploy.sh` and `git push`
+  move from `ask` to `deny` (lifted explicitly per deploy) — the strongest guarantee, at the
+  cost of a settings edit per deploy. **Untested and worth testing first: whether an
+  *interactive* VS Code session honours `ask`.** If it does, the defect is scoped to
+  unattended sessions and the decision is narrower than it looks.
 
 - **[H6] Workers spawned with `isolation: "worktree"` check out `origin/main`, not local
   `HEAD`.** *Confirmed live 2026-08-13.* Two probe workers landed on `53f99f7` while local
@@ -74,22 +85,6 @@ actually run. Items below are marked *confirmed* only where they were reproduced
   breaking a *tracked* file inside a worktree the payload never named: the gate blocked and
   labelled the failure with that worktree's path.
 
-- **The Denied permission tier is not enforced against `Write` — only `Edit` rules match.**
-  `claude config list` says so plainly: *"Permission deny rule
-  (`.claude/settings.json`): `Write(./config/constitution.md)` is not matched by file
-  permission checks — only `Edit(path)` rules are."* The same warning fires for
-  `config/personas/mike.md`, `config/personas/mike/**`, `data/personas/**`, and the *ask*
-  rule on `config/agents/*.md`. So the paths `CLAUDE.md` documents as *"blocked; must be
-  lifted explicitly"* — including `config/constitution.md`, which is Tier 0 — are blocked
-  against `Edit` and reachable by `Write`, and the Red-tier prompt on agent files can be
-  sidestepped the same way. Found incidentally 2026-08-13; nothing was written to any of
-  those paths.
-  Fix is mechanical (`Edit(path)` covers all file-editing tools), but `.claude/settings.json`
-  is the authority for the whole change-tier table, so it wants its own gate.
-  **While in there: check whether any other rule in that file is expressed in a form the
-  matcher silently ignores** — a deny rule that does not match is indistinguishable from one
-  that does until someone tests it.
-
 - **`/archive`'s push is never verified, and it silently did not happen for 11 commits.**
   Step 5 ends with `git push origin main` — *"the offsite backup, not a release"* — and
   handles only the loud case: *"a rejected push stops the step and gets reported."* Nothing
@@ -119,17 +114,65 @@ actually run. Items below are marked *confirmed* only where they were reproduced
   each of these was an unconditional block. *(Filed 2026-08-13 from the throughput session; moved
   here from `DEV_BACKLOG.md` when this file was created.)*
 
-- **`defaultMode: auto` is not in effect; sessions run `default`.** Phase 1's measured
-  85–88% prompt reduction is therefore unrealised — the plan's headline outcome has never
-  been observed (plan §10, hypothesis H5). Detected by `scripts/hook_context_gate.py`'s
-  fallback detector. Likely fix is an explicit `permissions.allow` list rather than
-  `defaultMode`, since compound commands are matched per-subcommand and an allowlist reaches
-  the same coverage. *(Also filed in `DEV_BACKLOG.md` Inbox before this file existed — close
-  it there when this closes.)*
-
 ---
 
 ## Closed in this build
+
+- **[H5] `defaultMode: auto` was never in effect; sessions ran `default`.** *Confirmed live,
+  then fixed — 2026-08-13.* The value parsed cleanly and then silently did nothing, so Phase
+  1's measured 85–88% prompt reduction had **never been observed**: the plan's headline
+  outcome was unrealised for the life of the file. Reproduced in this session — the
+  `PreToolUse` gate fired *"requests defaultMode 'auto' but this session is running
+  'default'"* on the first `Write`.
+  Replaced with `allow: ["Bash", "Read", "Edit", "Write"]`, which is the same policy the plan
+  specified — *deny the destructive, ask the Red row, allow everything else* — stated in a
+  form the matcher honours. **Blanket rather than an enumerated safe-command list**, because
+  201 of the 1,185 backtested prompts were unclassifiable compounds and an enumerated list is
+  incomplete by construction, so everything omitted keeps prompting.
+  **Verified by running, four ways.** (1) The allow list is honoured: the edited file copied
+  into an isolated trusted project ran a command that the identical file with `allow` removed
+  refused — the only difference being that key. (2) `deny` still outranks it: `git clean -n`
+  was blocked in the live session after the edit. (3) `ask` still outranks it, tested with
+  `allow: ["Bash"]` in force. (4) Compound commands are matched per-subcommand, confirmed
+  twice by accident — a `cp … ; git clean -n` compound was refused on its second subcommand.
+  **The `_comment_*` keys inside `permissions` do not break parsing** — checked in the same
+  isolated run, not assumed.
+  *(Was also filed in `DEV_BACKLOG.md`'s Inbox before this file existed — close it there.)*
+
+- **The Denied tier was not enforced against `Write` — only `Edit` rules matched.**
+  *Confirmed, then fixed — 2026-08-13.* `claude config list` named five silently-ignored
+  rules: `Write(./config/constitution.md)`, `Write(./config/personas/mike.md)`,
+  `Write(./config/personas/mike/**)`, `Write(./data/personas/**)` and the *ask* rule
+  `Write(./config/agents/*.md)`. So `config/constitution.md` — Tier 0 — was blocked against
+  `Edit` and reachable by `Write`, and the Red-tier gate on agent files could be sidestepped
+  the same way. Nothing had been written to any of those paths.
+  Fixed by **deleting** the `Write(path)` entries rather than keeping them as belt-and-braces:
+  `Edit(path)` covers every file-editing tool, and a rule that does not match is
+  indistinguishable from one that does until someone tests it.
+  **Verified by running, on a decoy first** — a `deny` of `Edit(./probe_target.txt)` refused a
+  `Write` to that path and left the file byte-unchanged, so the semantics were proven before
+  the constitution was left relying on them. `claude config list` now reports **zero**
+  permission-rule warnings.
+  **The audit the item asked for was done and found two more silently-broken rules:**
+  `Bash(./deploy.sh)` was an *exact-match* rule, so `./deploy.sh --anything` escaped the Red
+  tier entirely; `Bash(./deploy.sh *)` and `Bash(bash ./deploy.sh *)` now close it. It also
+  turned up **[H7]**, which is worse than either defect this item names.
+
+- **[H2] The deploy lock was blind across worktrees.** *Confirmed live, then fixed —
+  2026-08-13.* `LOCK_DIR` was `BASH_SOURCE`-relative and a worktree carries its own tracked
+  copy of `deploy.sh`, so each tree computed a different lock path, both `mkdir` calls
+  succeeded, and both deploys pushed and SSH'd the same VM — the 2026-08-09 interleave,
+  reintroduced by the worktree system.
+  Now resolved from `git rev-parse --git-common-dir`, which points at the main tree's `.git`
+  from inside any worktree. Resolved **relative to the script's own directory, not the
+  caller's cwd**, and made absolute — the raw output is the bare string `.git` at a repo top
+  level, which would otherwise put the lock wherever the caller happened to be standing.
+  Falls back to the old path outside a repo or on a git too old for the flag.
+  **Verified by running the script's verbatim lock block**, not by reading it: all four of
+  main-tree, worktree-invoked-from-main, worktree-invoked-from-itself, and a non-git cwd
+  resolve to the same `…/multi-model-mcp/.git/.deploy.lock`. Then the property itself — the
+  main tree took the lock and held it while a real `new_worktree.sh` worktree's copy was run:
+  **DEPLOY REFUSED, exit 1, naming the holding PID**. The lock was released cleanly on exit.
 
 - **[H1] The `SubagentStop` gate swept the session's tree, not the worker's.** *Confirmed
   live, then fixed —* `8ebc5a4`. The gate resolved its root from `CLAUDE_PROJECT_DIR`, the

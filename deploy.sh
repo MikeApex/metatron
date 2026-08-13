@@ -43,7 +43,29 @@ set -e
 # would be worse than none: the second window would sit there learning nothing,
 # and the 2026-08-09 incident is precisely a case where a person needed to be
 # told what the other session was doing.
-LOCK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.deploy.lock"
+# The lock path must be SHARED BY EVERY WORKTREE, not derived from this script's
+# own location. A worktree carries its own tracked copy of deploy.sh, so a
+# BASH_SOURCE-relative path resolved to metatron-wt-<slug>/.deploy.lock — a
+# different directory — and both `mkdir` calls succeeded. Two deploys then pushed
+# and SSH'd the same VM: exactly the 2026-08-09 interleave this lock exists to
+# prevent, reintroduced by the worktree system (confirmed live 2026-08-13).
+#
+# `git rev-parse --git-common-dir` resolves to the MAIN tree's .git from inside
+# any worktree, which is the one directory every worktree agrees on. It is
+# resolved relative to this script's directory, not the caller's cwd, and made
+# absolute — the raw output is the relative string ".git" when run from a repo
+# top level, which would put the lock wherever the caller happened to be standing.
+# Falls back to the old behaviour outside a git repo, or on a git too old to know
+# the flag, because a lock in the wrong place still beats an unbound `set -e`.
+_deploy_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_deploy_common_dir="$(cd "$_deploy_script_dir" && git rev-parse --git-common-dir 2>/dev/null)" || _deploy_common_dir=""
+if [ -n "$_deploy_common_dir" ] &&
+   _deploy_lock_root="$(cd "$_deploy_script_dir" && cd "$_deploy_common_dir" 2>/dev/null && pwd)" &&
+   [ -n "$_deploy_lock_root" ]; then
+    LOCK_DIR="$_deploy_lock_root/.deploy.lock"
+else
+    LOCK_DIR="$_deploy_script_dir/.deploy.lock"
+fi
 
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
     LOCK_PID=$(cat "$LOCK_DIR/pid" 2>/dev/null || echo "")

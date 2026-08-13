@@ -113,6 +113,12 @@ copy here would go stale and the stale copy would keep being read. Read it there
 | **Red** | `config/agents/*.md`, `routing*.yaml`, `core/{router,persona,scheduler,spend_guard}.py`, `./deploy.sh`, `git push` | prompts every time |
 | **Denied** | `config/constitution.md`, `config/personas/mike*`, `data/personas/**`, `.env`, `vertex-key.json` | blocked; must be lifted explicitly |
 
+> **Red does not actually prompt in a non-interactive session (measured 2026-08-13).** In the
+> VS Code / Agent-SDK harness a prompt that cannot be shown is auto-**approved**, so `ask`
+> resolves to allow and `./deploy.sh` and `git push` are ungated there; `deny` is enforced.
+> **Anything that must never happen unattended belongs in the Denied row, not the Red one.**
+> Evidence and the open decision: `HARNESS_BACKLOG.md` § H7.
+
 The Denied row turns two standing prose rules into mechanism: the constitution is Tier 0, and
 **the VM owns live persona config** (see Personas below). Red is also the line for *who builds*:
 Red-tier work is not delegated to a subagent, because there the judgement is the work.
