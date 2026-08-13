@@ -1,5 +1,93 @@
 {
+  "permissions": {
+    "defaultMode": "auto",
+
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./vertex-key.json)",
+      "Edit(./.env)",
+      "Edit(./vertex-key.json)",
+
+      "Edit(./config/constitution.md)",
+      "Write(./config/constitution.md)",
+
+      "Edit(./config/personas/mike.md)",
+      "Write(./config/personas/mike.md)",
+      "Edit(./config/personas/mike/**)",
+      "Write(./config/personas/mike/**)",
+      "Edit(./data/personas/**)",
+      "Write(./data/personas/**)",
+
+      "Bash(rm -rf *)",
+      "Bash(rm -fr *)",
+      "Bash(sudo rm *)",
+      "Bash(dd *)",
+      "Bash(chmod 777 *)",
+      "Bash(git reset --hard *)",
+      "Bash(git clean *)",
+      "Bash(git push --force *)",
+      "Bash(git push -f *)",
+      "Bash(git filter-branch *)",
+      "Bash(git checkout .)",
+      "Bash(gcloud compute instances delete *)",
+      "Bash(gcloud projects delete *)",
+      "Bash(gcloud compute networks delete *)"
+    ],
+
+    "ask": [
+      "Bash(./deploy.sh)",
+      "Bash(git push *)",
+      "Bash(git push)",
+
+      "Edit(./config/agents/*.md)",
+      "Write(./config/agents/*.md)",
+      "Edit(./config/modules/routing.yaml)",
+      "Edit(./config/modules/routing_cloud.yaml)",
+
+      "Edit(./core/router.py)",
+      "Edit(./core/persona.py)",
+      "Edit(./core/scheduler.py)",
+      "Edit(./core/spend_guard.py)"
+    ]
+  },
+
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/scripts/hook_context_gate.py\"",
+            "timeout": 15,
+            "statusMessage": "Checking session context..."
+          }
+        ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/scripts/hook_agent_spawn.py\"",
+            "timeout": 15,
+            "statusMessage": "Recording worker spawn..."
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/scripts/hook_commit_guard.py\"",
+            "timeout": 20,
+            "statusMessage": "Checking commit provenance..."
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Write|Edit",
@@ -9,6 +97,12 @@
             "command": "python3 \"$CLAUDE_PROJECT_DIR/scripts/hook_agent_tools.py\"",
             "timeout": 90,
             "statusMessage": "Checking agent tool references..."
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/scripts/hook_commit_guard.py\"",
+            "timeout": 15,
+            "statusMessage": "Recording file state..."
           }
         ]
       }
