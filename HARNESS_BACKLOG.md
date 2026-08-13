@@ -7,18 +7,24 @@ kept out of `DEV_BACKLOG.md` deliberately: that file has a line ceiling and a re
 for product work, and its `now / later` counts stop meaning anything if harness items are
 mixed in.
 
-> **Reconciliation status, 2026-08-13 (end of the throughput build).** Eleven items opened,
-> **eight** closed with evidence (H1, H2, H5, H6, the `Write` deny hole, the gate ledger, the
-> broken override, `/archive`'s unverified push) — counted from the file rather than from
-> either window's memory of it, because the first pass wrote "five" above a list of eight.
-> **Three remain open, each deliberately and with a
-> reason — none by drift:** **H7** needs a decision from Mike plus one test this harness cannot
-> run on itself (whether an *interactive* VS Code session honours `ask`); **the commit-guard
-> narrowing** is ergonomics, not correctness, now that the override works; **H8** is a proposal
-> list filed today, and is the successor work rather than a defect of this build.
-> **So this file does not retire today.** It is the one outcome its own contract calls a
-> failure, and saying so is better than closing three live items to make a rule come out even.
-> The contract still binds: whatever carries these three names the build that owns them.
+> **Reconciliation status, 2026-08-13 (updated at the close of the code-not-rules build).**
+> Eleven items opened, **ten** closed with evidence — the eight below plus **[H8]**, closed in
+> `4a0177f` with all three checks built and each verified by injecting the fault it exists to
+> catch. Counted from the file rather than from memory of it, because an earlier pass wrote
+> "five" above a list of eight.
+>
+> **One remains open, and one is deferred with a reason — neither by drift.** **[H7]** needs a
+> decision from Mike plus one test **this harness cannot run on itself**: `ask` auto-approves in
+> a non-interactive session, so a missing prompt is the expected null result whether the
+> mechanism works or not. It must be run in an interactive window — iTerm first as the clean
+> control, then the VS Code chat panel, which is the harness actually under test. Procedure and
+> the decision table for each outcome:
+> `archive/plans/next_session_prompt_2026-08-13b_throughput_10b_and_backlog.md` § task 1.
+> **The commit-guard narrowing** stays deferred as ergonomics, not correctness, now that the
+> override works.
+>
+> **So this file still does not retire — but it is one decision away.** When H7 lands it has
+> done its job and must not outlive the build that opened it.
 
 > **This list is reconciled within the build that opened it — it is not carried.**
 > It exists because the development-throughput plan
@@ -81,6 +87,42 @@ actually run. Items below are marked *confirmed* only where they were reproduced
   > block it was this morning — and the narrowing touches the one guard whose failure mode is
   > *blocking commits*, which is not work to rush at the end of a build. **Revisit when a case
   > appears that the override does not clear.** Ergonomics, not correctness.
+
+> ### ✅ [H8] CLOSED 2026-08-13 — all three built, `4a0177f`. Item text kept below for its
+> reasoning; what actually shipped, and where it diverged, is here.
+>
+> `qa_sweep.sh` went 7 → 9 checks, ~6.6s, still zero model tokens.
+>
+> 1. **Permission-rule liveness — built, but NOT by the mechanism specified.** The item said
+>    `claude config list` "already prints" the warning. **There is no `config` subcommand** —
+>    not in the native install (2.1.226) nor the npm-global 2.1.170 at `/usr/local/bin/claude`.
+>    The CLI parses `claude config list` as a **prompt** and spends a nested agent turn
+>    answering it; that is how this was found, by running it and getting a chat reply. A check
+>    written to that spec would have grepped an agent's prose for a string no tool emits and
+>    passed forever — the H5 failure shape exactly. Replaced with a static shape linter over
+>    `settings.json` (`scripts/check_claude_md_claims.py`) needing no CLI. **The finding
+>    underneath is untouched**: the `Write(path)` deny hole was proven on a decoy probe, never
+>    on that string. **Do not restore the `claude config list` approach.**
+>    Built jointly with `[DB-0809-11]` as the item instructed. Found two live instances on its
+>    first run: `config/frameworks.md` has **never existed in any commit**, and
+>    `.claude/show_phase_progress.py` reads a `STATUS.md` deleted months ago — a silent no-op
+>    `Stop` hook, left for Mike since it is in his `settings.local.json`.
+> 2. **Session token accounting** — `scripts/hook_session_tokens.py`, registered `Stop` hook.
+>    Two corrections a naive version misses: **dedup by `requestId`** (41 assistant records
+>    against 25 real requests; a flat sum overcounts **1.74×** — the `worker_ledger.py` failure
+>    class, so it was checked, not assumed) and **weighting into input-token equivalents**,
+>    because a raw total is 98% cache reads billed at 0.1×. ⚠ **This is a third unit**: it is
+>    not comparable to `worker_ledger.py`'s `subagent_tokens`, which is what §10b's ~165k budget
+>    is denominated in. Never convert between them.
+> 3. **Deploy-lock invariant** — `scripts/check_deploy_lock.sh`. Runs `deploy.sh`'s **verbatim**
+>    lock block from a throwaway `--detach` worktree and the main tree, asserts one path.
+>    **Its first version was a false pass**: `BASH_SOURCE` cannot be assigned, `set -u` aborted
+>    both evals identically, and two empty strings compared equal and printed `ok`. **A guard
+>    that fails identically on both sides looks like agreement.** Fixed, then made to speak
+>    against both regression shapes (dropping `--git-common-dir`, and the subtler one that keeps
+>    the line while making the path worktree-local). `deploy.sh` restored byte-clean.
+>
+> **Rejected: hunk attribution for shared-tree commits**, as the item said — unchanged.
 
 - **[H8] Three rules this build enforces by memory that a script should enforce instead.**
   *Filed 2026-08-13, from the observation that every defect here was found by running
