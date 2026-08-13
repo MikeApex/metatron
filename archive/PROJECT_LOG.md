@@ -116,6 +116,36 @@ systemic fixes legitimately span five files (the 2026-08-10 observability work) 
 `[DB-0808-09]` is the case where fixing at the assumed scale would have "passed" atomically
 while the real cost sat untouched.
 
+**Addendum — the guard failed live, on its own close-out commit (`a66a706`).** After committing,
+a routine check of the session manifest showed `SESSION.md` **differing from its recorded hash**:
+it had been recorded by the `PostToolUse` hook, then rewritten through a Python heredoc — the
+exact "changed underneath me" shape the guard exists to block. It returned 0.
+
+Cause: the commit message contained apostrophes (*a file's own rule*, *this session's edits*), so
+`shlex.split` hit unbalanced quotes **inside the heredoc body**, `_segments` returned `None`, and
+`check()` treated unparseable as pass. **Every `git commit -F - <<'MSG'` carrying prose trips
+this**, so the guard was effectively off for the commits that matter most.
+
+**This is the same defect class the high-effort review flagged as finding 5 — silent pass on an
+uncertain path — reintroduced by my own fix.** The rewrite failed closed when git could not be
+queried and open when the command could not be parsed, and I had written a comment justifying it
+("not our place to block on a quoting quirk"). Fixed by stripping heredoc *bodies* before
+tokenizing (a heredoc body is data, not shell) and returning 2 on anything still unparseable.
+
+Two lessons, both already rules here and both re-earned:
+
+1. **`py_compile` is not sufficient.** The fix dropped the `re` import during the shlex rewrite;
+   compile passed and it was a `NameError` at runtime — deploy safety rule 1, demonstrated on
+   itself within an hour of the file being edited to cite it.
+2. **`git add A B C` aborts entirely if one path is bad.** Staging the diet commit failed on
+   `STATUS.md` (already deleted via `git rm`, so no path to add), bash aborted the whole `add`,
+   and the commit captured **only the deletion** under a message describing eight files. Exit
+   code was 0. Caught by reading `git show --stat`, not by trusting the return value. Amended.
+
+**Both defects were found by running things, not by reading them** — which is the same finding
+the guard's own design note makes about safety flags, one layer up: a control that has never been
+exercised is not known to work.
+
 ---
 
 ### 2026-08-13, later (coordinator close-out: two workers landed, `[DB-0810-12]` unblocked, `[DB-0804-01]` came due) — `7e0e302`, `4fcc170`, **deployed**
