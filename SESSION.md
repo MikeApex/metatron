@@ -11,15 +11,20 @@ diagnoses were both wrong.** `[DB-0810-05]` is blocked on **data, not code** (ma
 Tailscale clients are off the tailnet**; VM and server healthy. Closed 08-13: `[DB-0810-14]`,
 `[DB-0810-16]`, `[DB-0804-01]` — detail in the log.*
 
-*Dev-workflow track — no runtime code changed, nothing deployed. Phases 0–2, 3a, 3b, 4, 6 done;
-**5, 8 and the verification table remain** (`~/.claude/plans/jaunty-kindling-clarke.md`). Three
-rules now bind daily work: **`archive/PROJECT_LOG.md` is GENERATED** from `archive/log/` fragments
-— never hand-edit it; **new backlog items go to `.claude/backlog_inbox/<slug>.md`**, not the Inbox
-by hand; **`./scripts/qa_sweep.sh`** is 7 checks in ~6s for zero tokens, and a `SubagentStop` gate
-blocks any worker failing it. **Next: the plan's new §10 integration test, before phase 5** —
-everything so far was tested in isolation against the main tree while the system's point is
-worktrees, and the gate may be checking the wrong tree. **`defaultMode: auto` is not in effect**,
-so phase 1's prompt reduction is unrealised (filed). Estimates ran 1.3–1.5× over plan.*
+*Dev-workflow track — no runtime code changed, nothing deployed. Phases 0–2, 3a, 3b, 4, 6 done.
+**§10 was split**: §10a (substrate) is DONE; **§10b — the full two-window rehearsal — moves to
+AFTER phases 5 and 8**, by user decision, so it tests the finished mechanism. **Next: 8, then 5,
+then §10b.** §10a found **seven defects, every one only by running**; four
+fixed (`8ebc5a4`, `75fee3a`, `b2c310d`), four open. **All of them — fixed and open, with
+evidence — are in [`HARNESS_BACKLOG.md`](HARNESS_BACKLOG.md), which is where harness defects now
+go instead of `DEV_BACKLOG.md`**, and which is reconciled within this build rather than carried.
+The two that change how you work today: **`/fix` no longer uses `isolation: "worktree"`** (it
+checked workers out from `origin/main`, 11 commits stale) — it makes a `new_worktree.sh` tree and
+passes the absolute path, and the gate now sweeps every dirty git worktree because a worker cannot
+persistently `cd`; and **`METATRON_COMMIT_GUARD=off` only started working today**, so any earlier
+session that hit a false positive had no way past it. Three standing rules unchanged:
+`PROJECT_LOG.md` is GENERATED, backlog items go to `.claude/backlog_inbox/`, `qa_sweep.sh` is
+free. **A cold worker costs a flat ~32k before any 1.3–1.5× multiplier** — three probes cost 96k.*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
