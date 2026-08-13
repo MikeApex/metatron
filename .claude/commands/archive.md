@@ -92,6 +92,21 @@ lines included (CLAUDE.md § Deploy safety, rule 4). Then `git push origin main`
 backup, not a release. **Never `./deploy.sh` here.** A rejected push stops the step and gets
 reported; pulling or merging to clear it entangles two sessions' work.
 
+**Then assert the push landed — do not infer it from the command having run:**
+
+```bash
+[ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] && echo "offsite: ok" || \
+  echo "OFFSITE FAILED — local ahead of origin/main by $(git rev-list --count origin/main..HEAD)"
+```
+
+*"I ran the push"* and *"the commits are offsite"* are not the same claim, and only the loud
+failure was ever handled. On 2026-08-13 `origin/main` sat **11 commits and six hours** behind
+local `main` — and one of those commits was itself an `Archive:` commit, so this step had run
+and silently lost its push more than once. Two costs, one invisible: the backup was stale on the
+day the repo gained five components, and worker freshness keyed off `origin/main` at the time, so
+an unpushed archive quietly staled every worker. `deploy.sh` has captured `EXPECTED_SHA` after
+its push for exactly this reason; this is the same assertion.
+
 **Lines this session did not write stop the commit.** Name them, stage nothing: you cannot tell
 your own edits from a parallel window's (`[DB-0805-05]`, open), so raising it is the step.
 
