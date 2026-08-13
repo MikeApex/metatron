@@ -1,20 +1,19 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-10, latest (model-call observability) — Mike hit a Vertex `thought_signature`
-400 in the web app, message unrecorded. Five had fired 08-04→08-09 and none could be attributed
-to a code path: two of the five model-call sites (both in `_openai_compat_stream`) had no
-`try/except` at all, and `/session/stream` returned the error to the browser while logging
-nothing, so **every web-app failure left no server-side trace** — all five diagnosed copies are
-the scheduler's. `8ae1ff9` (deployed, VM verified): `_log_api_failure()` backs all five sites
-with loop/turn/`msgs=N`, SSE errors are logged, and failures become `MODEL_CALL_FAILED` quality
-events escalating at three. **The raiser is still unknown and that is the open thread** — the
-first diagnosis (native loop) was wrong, its fallback swallows the error; `msgs=N` decides it on
-the next occurrence, expected within days. Two fixes held deliberately: the compat round-trip
-(mechanism unproven) and the native-loop parallel workaround (would convert working
-`ThreadPoolExecutor` dispatch into N sequential turns). Both in `[DB-0810-12]`.
-**Unchanged:** `[DB-0810-09]` (158 quality events never read) is Now #1, now annotated where
-`MODEL_CALL_FAILED` touches it; `[DB-0804-01]`'s count is due **08-11 — tomorrow**;
-`[DB-0810-05]`, `[DB-0810-07]` and the calendar build `[DB-0810-10]` are unexercised live.*
+*Updated: 2026-08-13 (mailbox cadence closed out) — the mailbox default shipped in `7e0e302` and
+was contradicted in the persona layer within four hours. `[DB-0810-16]`'s whole argument was a
+layer one: Mike said *"how often **any user** checks the mailbox"*, so it is design and belongs in
+`config/templates/email.yaml`, never in `config/personas/mike/`. By 04:30 on 08-11 `mike.md:14`
+read *"Check inbox every six hours in the background"* — same rule, wrong layer, different value,
+and describing background polling that **does not exist** (nothing fires on this interval; a
+scheduled version waits on `[DB-0808-11]`). Mike kept four hours; the line is removed on the VM.
+**The lesson is the open thread:** a layer decision enforced only in a config file is re-violated
+by the next runtime write to the persona file, and `daily_rule_audit` reports rather than
+prevents — it flagged this ×4 while naming the wrong partner, since it scans rule files and
+structurally cannot see `email.yaml`. **Note `SESSION.md` was skipped by 08-11's close-out**, so
+its two sessions are only now recorded here. **Unchanged:** `[DB-0810-09]` (158 quality events
+never read) is Now #1; `[DB-0810-12]`'s raiser is still unknown and awaiting a post-`8ae1ff9`
+occurrence; `[DB-0810-05]`, `[DB-0810-07]`, `[DB-0810-10]` remain unexercised live.*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -113,13 +112,13 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-13 | **The mailbox default was contradicted in the persona layer within four hours of shipping** — `mike.md:14` said "check inbox every six hours in the background" against a template default of 240 min, describing polling that does not exist. Mike kept four hours; line removed on the VM. `daily_rule_audit` caught the preference ×4 but named the wrong partner — it cannot see `email.yaml`. **A layer rule in a config file does not survive the next runtime write to the persona file** | VM-side edit only — `mike.md` is gitignored |
+| 08-11 | **Mailbox cadence default + three pointers at files nothing reads** — `config/templates/email.yaml` is the single home, doubling as provisioning source and runtime fallback; `new_persona.sh` was missing `email.yaml` entirely. Rejected mirroring the key into `config/modules/email.yaml` — that builds the duplicate-home failure, and caldav is the live worked example. Surfaced that `tools/caldav.py` named the dead file in three strings, one of them the `read_calendar` schema the model relays | `7e0e302` — deployed, VM verified |
 | 08-10 | **Every model call site names itself; SSE errors are logged** — five Vertex `thought_signature` 400s (08-04→08-09) could not be attributed to a code path: two of the five model-call sites had no `try/except`, and `/session/stream` sent `[ERROR]` to the browser while logging nothing, so web-app failures left no server-side trace. `_log_api_failure()` on all five + `MODEL_CALL_FAILED` escalating at 3. **Raiser still unknown** — the first diagnosis was wrong, the native-loop fallback swallows it. Two fixes held deliberately: `[DB-0810-12]` | `8ae1ff9` — deployed, VM verified |
 | 08-10 | **Calendar conflict detection + the quality-event sink gap** — `write_calendar_event` had no duplicate check at all and no update/delete counterpart; both built, check runs inside the write so it cannot be skipped. Then found `sync_dev_backlog.py` discards `USER_CORRECTION` (139), `ROUTING_MISS` (12) and `CALENDAR_DUPLICATE` (7) — 158 events never read. Diagnosed, not fixed | `a20febe` — deployed 08-05; sink gap **open**, `[DB-0810-09]` |
 | 08-10 | **Message-bubble timestamps** — user and assistant bubbles show a time, sourced from the server's existing `ts` column for replayed messages, client clock for live/streaming ones. Verified on webapp and a rebuilt, sideloaded APK | `a65a199` — deployed, VM verified |
 | 08-10 | **Research provenance authored by Python, not the model** — strips model-written `SOURCES:`, appends `SOURCES (N retrieved)`/`[RETRIEVAL: NONE]` from the SDK; `grounded` is now retrieval-based and tri-state. Built `check_agent_tools.py` + a `PostToolUse` hook on agent/routing edits; it found `get_weather` granted to Logistics but documented only on Research — weather returned to Logistics | `a36d8c2`…`a3b43c5` (5) — deployed, VM verified |
 | 08-10 | **Flight/transit queries routed to an agent with no travel feeds** — Coordinator sent flight status to Research (grant: `fetch_url`, `get_pollen_forecast`); `get_flight_status` is Logistics-only and healthy. Fixed + verified in seq 016. Second, **open** defect found: Research fabricates `SOURCES:` because `web_search` does not exist yet is named 4× and citing is mandatory | `d0774f8` — deployed, verified |
-| 08-10 | **The Book: thinking/output text capture, tool-call success/failure, plainspeak resource labels, whole-API-call failures** — closes the gap the same-day token-breakout pass left open; text was never captured, only counts, and Ollama's `<think>` content was being discarded outright. New `/monitor/model_errors` endpoint. Filed `[DB-0810-07]`: unexercised against live data | `ffaf7a7` — deployed, VM verified |
-| 08-10 | **Feature feasibility scan** — agent-backlog rollup ranked by impact; photos (needs orchestrator content-block support), Google Drive (echoes the reversed Contacts OAuth build, same Testing/Production token wall), geolocation (already `[DB-0808-04]`, classification settled, mechanics not) | docs/research only, no code |
 ---
 
 ## Useful context to pull as needed

@@ -23,6 +23,54 @@ file is the only narrative record, alongside the verbatim transcripts.*
 
 ## Dated history
 
+### 2026-08-13 (the mailbox default was contradicted in the persona layer within hours of shipping) — VM-side edit, no commit
+
+Close-out of the conversation that built `[DB-0810-16]`. The build itself is logged under
+2026-08-11 and shipped in `7e0e302`; this entry is the two-day tail, and it is a correction.
+
+**What was believed and was wrong: that closing `[DB-0810-16]` settled where the mailbox cadence
+lives.** The whole argument of that item was a layer argument — Mike said *"how often **any user**
+checks the mailbox"*, so it is design, and it belongs in `config/templates/email.yaml` where every
+persona inherits it, never in `config/personas/mike/`. That shipped at 00:10 on 08-11. By
+**04:30 the same morning**, `config/personas/mike.md:14` read *"Check inbox every six hours in the
+background."* — the same rule, in the layer the build had just finished arguing it out of, at a
+different value. Closing the backlog item did nothing to prevent that, and nothing in what was
+built could have: the guard is `daily_rule_audit`, which detects and reports, and a report is not
+a control. **A layer decision enforced only in a config file is re-violated by the next runtime
+write to the persona file.**
+
+Three separate defects in one line, worth naming because only the first is obvious:
+1. **It contradicted the shipped default** — template `check_interval_minutes: 240`, prose says
+   six hours, and `config/personas/mike/email.yaml` carries **no override**, so code resolved 240
+   while the text every agent reads said 360.
+2. **"In the background" describes a capability that does not exist.** Nothing polls the mailbox
+   on a timer — that was the deliberate design decision, because `fire_function` runs no gate
+   stack (`[DB-0808-11]`). This is the `research_agent`/`web_search` fabrication shape that
+   ROADMAP § A7 check 10 had just cleared, reappearing in a persona file instead of an agent file.
+3. **The audit named the wrong partner.** It matched the preference against `"Check in."` in
+   `scheduler.yaml` and `templates/scheduler.yaml` at 1.00 wording overlap — meaningless. The real
+   partner is `check_interval_minutes`, which the audit **structurally cannot see**: it scans rule
+   files, not `email.yaml`. Exactly the limit `CLAUDE.md` states — the flagged preference is the
+   reliable half, the candidate is a starting point. It held, at ×4.
+
+**Mike's call: keep four hours.** Removed the line from `config/personas/mike.md` on the VM
+(backup `/tmp/mike.md.bak.20260813-104228`), matched on exact text with an abort-unless-exactly-one
+guard rather than by line number, since the running system writes to that file. Perms still `600`;
+`check_interval_minutes('mike')` resolves to `240`. No restart needed — `identity_path.read_text()`
+in `_run_single_agent` is a fresh read per session; the only `lru_cache` in `core/orchestrator.py`
+is on the output-filter regex builder.
+
+**Rejected:** setting `check_interval_minutes: 360` in mike's `email.yaml` to ratify the six hours,
+and raising the template default to 360 for everyone — both were live options, Mike chose the
+existing default over the newer prose. **Deferred by Mike:** `mike.md` lines 15–16 (don't read back
+triaged mail; don't report null results for email checks) stay as written, along with four
+untriaged Inbox items on the same theme. Those two are the same shape as the line removed — prose
+describing a scheduled check that does not exist — just narrower. Whoever takes the email backlog
+inherits that.
+
+Not committed or deployed: `mike.md` is VM-only and gitignored. The next
+`scripts/metatron-backup.sh` carries it back.
+
 ### 2026-08-11 (three workers off the 08-10 sweep: travel verified, an IMAP quoting bug, mailbox cadence) — `3a2bb29` + this commit, **deployed**
 
 The 08-10 `deep` sweep ended with four worked prompts. Three ran; `[DB-0810-17]` (CRM) did not.

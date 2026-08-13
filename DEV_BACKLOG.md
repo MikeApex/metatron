@@ -23,6 +23,18 @@ or `file:line` that closed them — closed without evidence is not closed.
 *(empty — triaged 2026-08-10 by `/backlog deep`. All five entries verified against VM traces,
 journal and conversations before filing; one was a false report the system wrote about itself.)*
 
+- **[instruction change]** Silence 'nothing found' reports for scheduled inbox checks. The system should only notify the user when new actionable mail arrives that requires their triage. Specifically, stop surfacing that pending emails (like the Prudential follow-up) have not arrived.  
+  `2026-08-12T08:27:42.379965Z`
+
+- **[needs building]** Stop assuming passed calendar events are completed. Implement a reconciliation loop to check back on scheduled blocks and actively alert/push the user in the right direction based on calendar intent versus actual reality.  
+  `2026-08-12T08:25:16.368492Z`
+
+- **[needs building]** Bug fix: Evening close scheduler fired 3 repetitive messages; restrict follow-up prompts to a single line. Feature request: Build a mechanism to automatically age out stale state/context (like 'post-travel recovery' lingering for two weeks) to keep live context relevant.  
+  `2026-08-12T08:23:28.940968Z`
+
+- **[needs building]** User requested stopping the read-back of triaged emails (applied to persona) and requested implementing a ticket-based system for managing the mailbox more effectively (needs building).  
+  `2026-08-11T08:36:03.236643Z`
+
 ---
 ## Now
 
@@ -401,6 +413,18 @@ to pick from when a `Now` item is time-gated.
   hand** — that is the maintenance loop. **Second blind spot, found 2026-08-09:** nothing checks
   `config/templates/`, so a rule deleted from a persona survives in the file that seeds every new
   one. That is how the check-in rule reached four copies with only three flagged.
+  **Third blind spot, found 2026-08-13 and the sharpest of the three: the audit reads rule/prose
+  files and never settings files, so for a rule whose real counterpart is a *config key* it cannot
+  name the partner at any score.** `mike.md:14` ("check inbox every six hours in the background")
+  restated `check_interval_minutes: 240` in `config/templates/email.yaml`; the audit flagged the
+  preference correctly ×4 and matched it to `"Check in."` in `scheduler.yaml` at 1.00 wording
+  overlap — noise. The preference was removed 2026-08-13 (Mike kept four hours), so this is the
+  *mechanism*, not an open instance. **The larger half is that reporting is not preventing:**
+  `write_persona` writes to `mike.md` at runtime, so a layer decision enforced only in a config
+  file is re-violated by the next such write — that is what happened here, four hours after
+  `7e0e302` shipped `[DB-0810-16]` specifically to move this rule out of the persona layer. Any
+  fix should cover the write-time check in `check_new_rule()`, not just the daily sweep.
+  *third blind spot filed 2026-08-13 during `/archive`, from a live instance*
 - **[DB-0809-14]** ROADMAP.md Track D is ~14 KB of a file loaded every `/metatron-code`, and
   parts have shipped. **Trim item-by-item against the log, never by line range.**
 - **[DB-0809-16]** Live dictation test of the dismissable transcription readout — code-verified
@@ -419,6 +443,12 @@ not a blackhole. Swept during `/backlog deep`.*
 *(swept 2026-08-10 twice — the `search_memory` denials promoted to `[DB-0810-03]`, then both
 `2026-08-10T15:00` denials verified and promoted into `[DB-0810-03](c)`, which is the decision
 queue for this exact class. Nothing outstanding.)*
+
+- **[already applied by the tool]** Updated interaction preferences: evening check-ins (13 Franklin virtues + 1 food log) will now be delivered as a single consolidated message rather than item-by-item, allowing the user to highlight only the exceptions.  
+  `2026-08-12T08:21:14.706181Z`
+
+- ⚠ **[same rule in two places]** This preference may already be covered by a rule that applies to everyone. Preference: config/personas/mike.md:14 — Check inbox every six hours in the background. Candidate rule(s) it may restate: (1.00) [wording only] config/personas/mike/scheduler.yaml:43 — Check in. (1.00) [wording only] config/templates/scheduler.yaml:40 — Check in. Candidates are ranked by wording overlap, which is weak at this scale — the flagged preference is the reliable part, the partner is a starting point. If the preference says nothing the shared rule does not, delete it. If it is a genuine personal refinement, keep it and reword it so the difference is all it states.  ×4  
+  `2026-08-11T04:30:15.629388Z`
 
 ---
 ## Done
