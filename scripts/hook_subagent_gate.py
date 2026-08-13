@@ -28,6 +28,22 @@ its own breakage would strand real finished work, and the same reasoning already
 governs hook_context_gate.py (warn, never block) and sync_dev_backlog.py (never
 break a session start). A sweep that runs and FAILS is a different thing entirely,
 and that does block.
+
+IT MUST SWEEP THE WORKER'S TREE, NOT THE SESSION'S
+--------------------------------------------------
+CLAUDE_PROJECT_DIR is the tree the SESSION started in. A worker spawned with
+isolation="worktree" -- which is what /fix dispatches -- works somewhere else
+entirely. Swept against CLAUDE_PROJECT_DIR the gate would pass workers whose
+worktree is broken and fail them for the main tree's state, which is worse than
+no gate: it reports assurance it does not have. So the payload's cwd wins, and
+the env var is only a fallback. Each candidate is checked for qa_sweep.sh before
+being used, so a cwd pointing outside any project tree degrades to fail-open
+rather than sweeping the wrong thing.
+
+Every run appends one line to .claude/.session_state/subagent_gate.log recording
+which tree was chosen and why -- because "the gate ran" and "the gate ran against
+the right tree" look identical from the outside, and that is precisely the
+failure mode being guarded against.
 """
 from __future__ import annotations
 
@@ -35,10 +51,47 @@ import json
 import os
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 SWEEP_TIMEOUT_SECONDS = 180
 MAX_DETAIL_CHARS = 4000
+
+
+def _candidate_roots(payload: dict) -> list[tuple[str, Path]]:
+    """Trees this gate might sweep, best first. See the module docstring."""
+    out: list[tuple[str, Path]] = []
+    cwd = payload.get("cwd")
+    if cwd:
+        out.append(("payload.cwd", Path(cwd)))
+    env = os.environ.get("CLAUDE_PROJECT_DIR")
+    if env:
+        out.append(("CLAUDE_PROJECT_DIR", Path(env)))
+    out.append(("process cwd", Path(".")))
+    return out
+
+
+def _resolve_root(payload: dict) -> tuple[str, Path | None]:
+    for source, path in _candidate_roots(payload):
+        try:
+            resolved = path.resolve()
+        except OSError:
+            continue
+        if (resolved / "scripts" / "qa_sweep.sh").is_file():
+            return source, resolved
+    return "none", None
+
+
+def _log(root: Path | None, line: str) -> None:
+    """Best-effort diagnostic. Never interferes with the gate's decision."""
+    try:
+        base = root or Path(os.environ.get("CLAUDE_PROJECT_DIR") or ".")
+        ledger_dir = base.resolve() / ".claude" / ".session_state"
+        ledger_dir.mkdir(parents=True, exist_ok=True)
+        with open(ledger_dir / "subagent_gate.log", "a") as fh:
+            fh.write(line + "\n")
+    except OSError:
+        pass
 
 
 def main() -> int:
@@ -52,10 +105,17 @@ def main() -> int:
     if payload.get("stop_hook_active"):
         return 0
 
-    root = Path(os.environ.get("CLAUDE_PROJECT_DIR", ".")).resolve()
-    sweep = root / "scripts" / "qa_sweep.sh"
-    if not sweep.is_file():
+    source, root = _resolve_root(payload)
+    stamp = datetime.now().isoformat(timespec="seconds")
+    env_seen = os.environ.get("CLAUDE_PROJECT_DIR") or "(unset)"
+    cwd_seen = payload.get("cwd") or "(absent)"
+
+    if root is None:
+        _log(None, f"{stamp}\tNO-SWEEP\tcwd={cwd_seen}\tenv={env_seen}\t"
+                   "no candidate tree carried scripts/qa_sweep.sh — fail-open")
         return 0
+
+    sweep = root / "scripts" / "qa_sweep.sh"
 
     try:
         proc = subprocess.run(
@@ -65,10 +125,15 @@ def main() -> int:
             text=True,
             timeout=SWEEP_TIMEOUT_SECONDS,
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except (OSError, subprocess.TimeoutExpired) as exc:
         # See the fail-open note above: the gate's own breakage must not strand
         # a worker's finished work.
+        _log(root, f"{stamp}\tSWEEP-ERROR\troot={root}\tvia={source}\t"
+                   f"cwd={cwd_seen}\tenv={env_seen}\t{type(exc).__name__}")
         return 0
+
+    _log(root, f"{stamp}\texit={proc.returncode}\troot={root}\tvia={source}\t"
+               f"cwd={cwd_seen}\tenv={env_seen}")
 
     if proc.returncode == 0:
         return 0
