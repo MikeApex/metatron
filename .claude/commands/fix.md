@@ -57,14 +57,34 @@ stop — that is a complete and useful outcome, not a failed `/fix`.
 
 ### 3. Dispatch
 
-**Green / Amber** → one worker, explicitly named:
+**Green / Amber** → make the worktree first, then dispatch into it by absolute path:
 
+```bash
+./scripts/new_worktree.sh <slug>          # add --with-personas if it runs a suite
 ```
-Agent(model: "sonnet", isolation: "worktree", subagent_type: "general-purpose")
 ```
+Agent(model: "sonnet", subagent_type: "general-purpose")     # NO isolation flag
+```
+
+**Not `isolation: "worktree"`.** That flag checks the worker out from
+**`origin/main`, not local `HEAD`** — measured 2026-08-13, workers landed 11
+commits and six hours behind, on a base with no `qa_sweep.sh` in it at all, and
+`origin/main` only moves when something pushes. `new_worktree.sh` branches from
+local `HEAD`, so the worker is always current, and worker freshness stays
+decoupled from publication — which matters, because pushing is the irreversible
+step guarded by a review window that exists because `git add -A` once swept 41
+files of journals and clinical logs to GitHub.
+
+**Give the worker the absolute worktree path and tell it to work there.** A
+worker cannot persistently `cd` — the shell resets between calls — so it must
+edit by absolute path. The `SubagentStop` gate does not depend on the worker
+getting this right: it sweeps every git worktree carrying uncommitted work, so
+it finds the change wherever it landed.
 
 The brief must carry, because a worker starts cold and inherits none of this
 conversation:
+
+- **the absolute path of the worktree it owns**, and that all edits go there
 
 - what to change and what "done" looks like
 - **the hard stop: if the fix requires a Red-tier file, report and do not edit it**

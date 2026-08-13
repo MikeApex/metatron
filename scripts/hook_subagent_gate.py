@@ -57,6 +57,10 @@ from pathlib import Path
 
 SWEEP_TIMEOUT_SECONDS = 180
 MAX_DETAIL_CHARS = 4000
+# Bound on trees swept in one gate run, so a pile of stale worktrees cannot blow
+# the 200s hook timeout. Three concurrent workers is the standing cap, plus the
+# session tree.
+MAX_TREES = 4
 
 
 def _candidate_roots(payload: dict) -> list[tuple[str, Path]]:
@@ -81,6 +85,60 @@ def _resolve_root(payload: dict) -> tuple[str, Path | None]:
         if (resolved / "scripts" / "qa_sweep.sh").is_file():
             return source, resolved
     return "none", None
+
+
+def _dirty_worktrees(root: Path) -> list[Path]:
+    """Registered git worktrees carrying uncommitted work, excluding `root`.
+
+    ASKING GIT BEATS BEING TOLD. A worker cannot persistently cd -- the shell
+    resets between calls -- so a worker dispatched into a worktree edits it by
+    ABSOLUTE PATH while its payload cwd stays pinned to the main tree. Measured
+    2026-08-13: the gate swept the main tree and passed while the worker's real
+    change sat unswept in the worktree. Preferring payload.cwd is therefore not
+    enough on its own.
+
+    Both dispatch styles register a real git worktree, though -- the harness's
+    isolation="worktree" trees under .claude/worktrees/ and new_worktree.sh's
+    trees alike -- so `git worktree list` finds the work wherever it went,
+    without the worker cooperating and without any ID to correlate.
+
+    KNOWN LIMIT, so a green gate is not over-trusted: this attributes by
+    dirtiness, not by authorship. A worktree another window left dirty will be
+    swept too, and could block a worker for a fault that is not its own. The
+    block message names the tree and tells the worker to say so, which is the
+    same stance the sweep already takes on pre-existing failures. Bounded by
+    MAX_TREES so a pile of stale worktrees cannot blow the hook's timeout.
+    """
+    try:
+        listing = subprocess.run(
+            ["git", "worktree", "list", "--porcelain"],
+            cwd=str(root), capture_output=True, text=True, timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    if listing.returncode != 0:
+        return []
+
+    out: list[Path] = []
+    for line in listing.stdout.splitlines():
+        if not line.startswith("worktree "):
+            continue
+        try:
+            path = Path(line[len("worktree "):].strip()).resolve()
+        except OSError:
+            continue
+        if path == root or not (path / "scripts" / "qa_sweep.sh").is_file():
+            continue
+        try:
+            status = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=str(path), capture_output=True, text=True, timeout=15,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if status.returncode == 0 and status.stdout.strip():
+            out.append(path)
+    return out[:MAX_TREES]
 
 
 def _log(line: str) -> None:
@@ -123,39 +181,51 @@ def main() -> int:
              "no candidate tree carried scripts/qa_sweep.sh — fail-open")
         return 0
 
-    sweep = root / "scripts" / "qa_sweep.sh"
+    # The tree the worker reported from, plus anywhere else it may actually have
+    # worked. See _dirty_worktrees for why asking git beats being told.
+    trees = [(source, root)]
+    trees += [("dirty worktree", w) for w in _dirty_worktrees(root)]
 
-    try:
-        proc = subprocess.run(
-            ["bash", str(sweep)],
-            cwd=str(root),
-            capture_output=True,
-            text=True,
-            timeout=SWEEP_TIMEOUT_SECONDS,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        # See the fail-open note above: the gate's own breakage must not strand
-        # a worker's finished work.
-        _log(f"{stamp}\tSWEEP-ERROR\troot={root}\tvia={source}\t"
-             f"cwd={cwd_seen}\tenv={env_seen}\t{type(exc).__name__}")
+    failures: list[tuple[Path, str]] = []
+    for tree_source, tree in trees:
+        try:
+            proc = subprocess.run(
+                ["bash", str(tree / "scripts" / "qa_sweep.sh")],
+                cwd=str(tree),
+                capture_output=True,
+                text=True,
+                timeout=SWEEP_TIMEOUT_SECONDS,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            # See the fail-open note above: the gate's own breakage must not
+            # strand a worker's finished work.
+            _log(f"{stamp}\tSWEEP-ERROR\troot={tree}\tvia={tree_source}\t"
+                 f"cwd={cwd_seen}\tenv={env_seen}\t{type(exc).__name__}")
+            continue
+
+        _log(f"{stamp}\texit={proc.returncode}\troot={tree}\tvia={tree_source}\t"
+             f"cwd={cwd_seen}\tenv={env_seen}")
+
+        if proc.returncode != 0:
+            failures.append((tree, (proc.stdout or "") + (proc.stderr or "")))
+
+    if not failures:
         return 0
 
-    _log(f"{stamp}\texit={proc.returncode}\troot={root}\tvia={source}\t"
-         f"cwd={cwd_seen}\tenv={env_seen}")
-
-    if proc.returncode == 0:
-        return 0
-
-    detail = (proc.stdout or "") + (proc.stderr or "")
+    detail = "\n".join(
+        f"--- {tree} ---\n{text.strip()}" for tree, text in failures
+    )
     if len(detail) > MAX_DETAIL_CHARS:
         detail = detail[:MAX_DETAIL_CHARS] + "\n… (truncated — run scripts/qa_sweep.sh for the rest)"
 
     reason = (
         "SUBAGENT GATE: scripts/qa_sweep.sh failed — you may not report done yet.\n\n"
         f"{detail}\n"
-        "Fix what the sweep names, then finish. If a failure is pre-existing and "
-        "not yours, say so explicitly in your report rather than silently leaving "
-        "it — the coordinator needs to know which it is.\n\n"
+        "Each failure is labelled with the tree it came from. Fix what the sweep "
+        "names. If a failure is pre-existing, or is in a tree you never touched — "
+        "another window's worktree is swept too when it carries uncommitted work — "
+        "say so explicitly in your report rather than silently leaving it. The "
+        "coordinator needs to know which it is.\n\n"
         "Note: the sweep is a STATIC check. Passing it does not mean the change "
         "works; py_compile parses without executing. Run what you changed."
     )

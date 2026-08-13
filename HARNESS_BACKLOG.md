@@ -56,9 +56,23 @@ actually run. Items below are marked *confirmed* only where they were reproduced
     mechanism over memory, and a rule you have to remember is not a control. Viable only if
     something enforces it.
   - *Stop using `isolation: "worktree"` in `/fix`* and dispatch into a
-    `scripts/new_worktree.sh` tree, which correctly branches from local `HEAD`. Structural,
-    but changes how the worker is addressed and needs the gate's `payload.cwd` path
-    re-checked against it.
+    `scripts/new_worktree.sh` tree, which correctly branches from local `HEAD`.
+
+  **RESOLVED 2026-08-13 — the second option, and the gate had to change with it.** Chosen
+  because the first couples "I want to dispatch a worker" to "publish everything I have
+  committed", and pushing is the irreversible step guarded by a review window that exists
+  because `git add -A` once swept 41 files of journals and clinical logs to GitHub
+  (`archive/PROJECT_LOG.md:4187`). Worker freshness must not be a reason to publish.
+
+  The re-check that option needed found the trap: **a worker cannot persistently `cd`** —
+  the shell resets between calls — so a worker dispatched into a worktree edits it by
+  absolute path while `payload.cwd` stays pinned to the main tree. Measured live: the gate
+  swept the main tree, passed, and the worker's real change sat unswept. Preferring
+  `payload.cwd` would have reintroduced H1 in a new costume. Fixed by having the gate ask
+  git rather than be told — it now sweeps every registered worktree carrying uncommitted
+  work, which covers both dispatch styles without the worker cooperating. Verified by
+  breaking a *tracked* file inside a worktree the payload never named: the gate blocked and
+  labelled the failure with that worktree's path.
 
 - **The Denied permission tier is not enforced against `Write` — only `Edit` rules match.**
   `claude config list` says so plainly: *"Permission deny rule
@@ -75,6 +89,21 @@ actually run. Items below are marked *confirmed* only where they were reproduced
   **While in there: check whether any other rule in that file is expressed in a form the
   matcher silently ignores** — a deny rule that does not match is indistinguishable from one
   that does until someone tests it.
+
+- **`/archive`'s push is never verified, and it silently did not happen for 11 commits.**
+  Step 5 ends with `git push origin main` — *"the offsite backup, not a release"* — and
+  handles only the loud case: *"a rejected push stops the step and gets reported."* Nothing
+  asserts the outcome. On 2026-08-13 `origin/main` sat at `53f99f7` while local `main` was at
+  `983f50c`, **11 commits and six hours behind**, and `983f50c` is *itself* an `Archive:`
+  commit — so the ritual ran, committed, and either skipped or silently lost its own push,
+  more than once. Two costs, one of them invisible: the offsite backup was six hours stale on
+  the day the repo gained five new components, and **H6's entire blast radius depended on
+  this** — worker freshness silently keys off `origin/main`, so an unpushed archive quietly
+  staled every worker.
+  `deploy.sh` already has the pattern to copy: it captures `EXPECTED_SHA=$(git rev-parse HEAD)`
+  after its push and asserts against it. `/archive` should assert `git rev-parse origin/main ==
+  git rev-parse HEAD` after step 5 and say so plainly, because *"I ran the command"* and
+  *"the commits are offsite"* are not the same claim.
 
 - **`defaultMode: auto` is not in effect; sessions run `default`.** Phase 1's measured
   85–88% prompt reduction is therefore unrealised — the plan's headline outcome has never
