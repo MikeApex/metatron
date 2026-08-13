@@ -1,16 +1,17 @@
 ---
-description: Work DEV_BACKLOG.md — triage the Inbox and pick work; `deep` for a clustering sweep, `attack` for parallel work prompts
+description: Work DEV_BACKLOG.md — triage the Inbox and pick work; `verify` to re-check items against current code, `deep` for a clustering sweep, `attack` for parallel work
 ---
 
 Metatron — Work the Development Backlog
 
-Three modes. Default is a triage pass; `$ARGUMENTS` selects the others.
+Four modes. Default is a triage pass; `$ARGUMENTS` selects the others.
 
 | Mode | When |
 |---|---|
 | *(default)* | Picking up work, triaging the Inbox, answering "what's actually outstanding" |
+| `verify` | Re-checking items against current code — fanned out to workers, returns one verdict table |
 | `deep` | Counts creeping, items overlapping, machine log unswept — occasional, not scheduled |
-| `attack` | A day of parallel capacity: cluster `## Now` into independent single-session prompts |
+| `attack` | A day of parallel capacity: cluster `## Now` into independent workers |
 
 Not needed for ordinary coding — there the task comes from Mike, not the list.
 
@@ -46,27 +47,10 @@ is, and is promoted the day he hits it. Narrow exception: a live credential expo
 data-loss risk enters regardless of who found it. **State the reporter with every
 recommendation** — "this is a real bug" is not the same claim as "Mike asked for this."
 
-**3. Verify only what is about to be worked.**
+**3. Verify only what is about to be worked** — inline for one or two items, or run `verify`
+below for a batch. Either way the rule and the verdicts are the same:
 
 > **No item is acted on, or re-filed, on the strength of its own description.**
-
-Open it against current code. On 2026-08-05 roughly a third of what was checked did not survive
-— causes already fixed, cited functions gone, line numbers hundreds of lines stale. Verdicts:
-**fixed** → move to `archive/backlog_closed_2026-08.md` with the commit or `file:line`;
-**real** → note what you checked and when; **drifted** → repoint at today's location, never
-carry a stale line number forward; **needs a decision** → collect and ask once.
-
-**Runtime claims need the journal, not the code.** "Fails on every scheduler job", "fires twice
-a day" cannot be settled by reading — one SSH round-trip answers several at once:
-
-```bash
-gcloud compute ssh metatron-vm --zone=us-central1-a --project=metatron-ai-499810 \
-  --tunnel-through-iap --command="sudo journalctl -u metatron-server -u metatron-scheduler \
-  --since '7 days ago' --no-pager | grep -c 'PATTERN'"
-```
-
-Beware near-misses: eleven `[vertex_cache]` warnings once looked like a filed 404 bug and were
-`NameResolutionError` from an unrelated outage.
 
 **4. Close out.** Re-run the sync and confirm the count moved the way you expect. Check for
 duplicate ids — expect nothing:
@@ -79,6 +63,55 @@ If code changed, note whether it needs `./deploy.sh` (`core/`, `config/`, `tools
 
 ---
 
+## `verify` — re-check items against current code
+
+**The best fan-out target in the project**, because verification is read-only, self-contained,
+and embarrassingly parallel. On 2026-08-05 roughly a third of what was checked did not survive —
+causes already fixed, cited functions gone, line numbers hundreds of lines stale. **You see a
+verdict table, not ten investigations.**
+
+`$ARGUMENTS` names the items; bare `verify` takes all of `## Now`. **Cap: 10 items.**
+
+**Batch across at most 3 workers — do not spawn one per item.** A cold worker costs a **flat
+~32k tokens** before it reads a thing, so ten workers is 320k spent on ten briefings. Three
+workers carrying three or four items each is the same coverage for about a third of the cost.
+(Plan §5 said one-per-item; it was written before that flat cost was measured.)
+
+Dispatch: `Agent(model: "sonnet", subagent_type: "general-purpose")`, **no `isolation` flag** —
+it checks workers out from `origin/main`, not local `HEAD`. Verification is read-only, so these
+workers need no worktree; they read the main tree.
+
+The brief must carry, because a worker starts cold:
+
+- **the full text of each item it owns** — it cannot see `DEV_BACKLOG.md`'s context
+- **read-only, and say it plainly: edit nothing, commit nothing, run nothing that writes.**
+  Nothing enforces this — `qa_sweep.sh` checks seven specific things, not tree cleanliness, and
+  the `SubagentStop` gate excludes the main tree from its dirty-worktree sweep. The prohibition
+  in the brief is the whole control.
+- per item, one of four verdicts **with its evidence**: **fixed** (commit or `file:line`) ·
+  **real** (what was checked, and where) · **drifted** (today's location) · **needs a decision**
+- that a tool named in an agent file is a *specification*, not a bug to delete
+
+**Runtime claims need the journal, not the code** — "fails on every scheduler job", "fires twice
+a day". Workers do not SSH; collect those and run one round-trip here:
+
+```bash
+gcloud compute ssh metatron-vm --zone=us-central1-a --project=metatron-ai-499810 \
+  --tunnel-through-iap --command="sudo journalctl -u metatron-server -u metatron-scheduler \
+  --since '7 days ago' --no-pager | grep -c 'PATTERN'"
+```
+
+Beware near-misses: eleven `[vertex_cache]` warnings once looked like a filed 404 bug and were
+`NameResolutionError` from an unrelated outage.
+
+**This window owns every write.** Workers report; you move items to
+`archive/backlog_closed_2026-08.md` with their evidence, repoint drifted line numbers, and put
+the decisions to Mike in one batch. A verdict without a `file:line`, commit or named test is a
+description, and descriptions are what the standing rule distrusts — send it back rather than
+recording it.
+
+---
+
 ## `deep` — the periodic sweep
 
 Everything above, plus the maintenance a default pass deliberately skips:
@@ -86,7 +119,9 @@ Everything above, plus the maintenance a default pass deliberately skips:
 - **Cluster and merge.** Read `## Later` for items describing the same underlying thing and
   merge them into one, keeping both reasoning trails. Overlapping entries are how a list gets
   argued over twice — three merges happened in the 2026-08-09 rebuild alone.
-- **Verify every `## Now` item**, not just the ones about to be worked.
+- **Verify every `## Now` item**, not just the ones about to be worked — this is `verify` above,
+  run over the whole list. Fanning it out is what makes `deep` cheap enough to run when counts
+  drift, rather than a day of serial reading.
 - **Sweep `## Machine log`.** Promote anything user-impacting; leave the rest collapsed.
 - **Roll closed items** into `archive/backlog_closed_YYYY-MM.md`, starting a new file each month.
 - **Check the shape:** `DEV_BACKLOG.md`'s ceiling is the figure in `CLAUDE.md` § *Which File
@@ -95,10 +130,11 @@ Everything above, plus the maintenance a default pass deliberately skips:
 
 ---
 
-## `attack` — parallel work prompts
+## `attack` — parallel work
 
-Planning only. Produce a scored list and up to three independent single-session prompts; do not
-fix anything in this pass.
+Score, cluster, show Mike the plan, then **spawn the workers yourself** once he approves. Show
+the cluster plan first — he still decides what runs — but do not make him the transport layer
+for prompts you just wrote.
 
 **Work `## Now` only, and take its order as given** — that ranking is Mike's, so do not re-derive
 importance or reorder against your own judgement. Score each item for **ease only** (1–10, 10 =
@@ -112,8 +148,24 @@ test files, cross-checked across groups. **A cluster that cannot be given a disj
 not parallelised** — it runs serially in this window instead. Flag any VM-owned files
 (`config/personas/**`) explicitly; those need the scp discipline, not a normal edit.
 
-**Then hand out prompts carrying this protocol verbatim, because the collisions were never in
-the code — they were in the close-out:**
+**Then, per approved cluster: make its worktree first, and dispatch into it by absolute path.**
+
+```bash
+./scripts/new_worktree.sh <slug>          # add --with-personas if it runs the A4 or B1 suites
+```
+```
+Agent(model: "sonnet", subagent_type: "general-purpose")     # NO isolation flag
+```
+
+**Not `isolation: "worktree"`** — that checks the worker out from `origin/main`, not local
+`HEAD`; measured 2026-08-13 at 11 commits and six hours stale, on a base with no `qa_sweep.sh`
+in it. `new_worktree.sh` branches from local `HEAD`. **Give the worker the absolute path and
+tell it to work there** — a worker cannot persistently `cd`, the shell resets between calls.
+Without `--with-personas` the fixture trees are hollow rather than absent, so a suite runs
+against incomplete data instead of failing loudly.
+
+**Each prompt carries this protocol verbatim, because the collisions were never in the code —
+they were in the close-out:**
 
 > You are a **worker**. Do not edit `SESSION.md`, `archive/PROJECT_LOG.md`, `DEV_BACKLOG.md`,
 > `ROADMAP.md`, or `.claude/commands/*`. Do not run `/archive` and do not run `./deploy.sh`.
@@ -127,9 +179,12 @@ the code — they were in the close-out:**
 handoff into the single log entry, the `SESSION.md` refresh, and the backlog close — then delete
 the consumed handoffs. **One deploy, owned by you, after consolidation.**
 
-Stop after presenting the prompts and ask which to run.
+Present the cluster plan and ask which to run. Then spawn them — the asking is the gate, not the
+hand-off.
 
 ---
 
-*Procedure only — under ~130 lines (the `CLAUDE.md` ceiling). What each collision cost and why
-the protocol looks like this: `archive/PROJECT_LOG.md` § 2026-08-08 and § 2026-08-09.*
+*Procedure only. **187 lines against the ~130 recorded in `CLAUDE.md`** — the overage is the
+fourth mode and the dispatch block, both added 2026-08-13, not narrative creep; either raise the
+recorded figure or move a mode out, but do not quietly ignore it. What each collision cost and
+why the protocol looks like this: `archive/PROJECT_LOG.md` § 2026-08-08 and § 2026-08-09.*

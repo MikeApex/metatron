@@ -92,7 +92,14 @@ standing rule distrusts.*
   pair before it is collected, because `signature()`'s prose fallback at
   `SIMILARITY_THRESHOLD = 0.15` will collapse distinct duplicate pairs into one `×N` entry, the
   detail strings being mostly shared boilerplate (`DENIAL_RE` is the precedent to copy);
-  (c) `ROUTING_MISS` may be legacy — grep the emitters before deciding. **The actual deliverable
+  (c) ~~`ROUTING_MISS` may be legacy — grep the emitters before deciding.~~ **Answered
+  2026-08-13: it is legacy — `ROUTING_MISS` is emitted from nowhere in the codebase.** It
+  survives only as docstring and schema prose (`tools/logger.py:165`, `:257`, `:265`), so the 12
+  events predate its removal and no new ones can arrive. Collecting it would wire up a dead
+  type. **Same check found a type the item missed: `CALENDAR_DUPLICATE` is emitted live**
+  (`tools/calendar_audit.py:190`) **and is not in `WANTED`** — so the dropped set today is
+  `USER_CORRECTION` + `CALENDAR_DUPLICATE`, and reason (b)'s stable-signature prerequisite
+  governs the second one. **The actual deliverable
   is structural:** nothing reconciles emitters against the consumer, so every future audit
   inherits this by default. Options — a shared registry both sides import, a startup
   reconciliation warning, or a test asserting every emitted `event_type` is either collected or
@@ -112,6 +119,12 @@ standing rule distrusts.*
   exact cause of `[DB-0810-13]` — the system's worst live failure that day — 90 minutes before the
   model guessed at it, wrongly, in front of Mike. The diagnosis was on disk and nothing read it.
   *filed 2026-08-10 by Mike via dev session · counts re-read live off the VM 2026-08-10 ·
+  **code re-verified 2026-08-13** (`/backlog verify` smoke test): `WANTED` at
+  `scripts/sync_dev_backlog.py:43-51` still excludes `USER_CORRECTION`; every other cited symbol
+  — `write_quality_event` (`tools/logger.py:155`), `SIMILARITY_THRESHOLD = 0.15` (`:134`),
+  `DENIAL_RE` (`:152`), `signature()` (`:325`), `_log_api_failure` (`core/orchestrator.py:2078`)
+  — is where the item says it is; still nothing reconciles emitters against the consumer, and
+  `tests/` has no test touching this at all. **Live counts not re-checked — they are on the VM.** ·
   full reasoning in `archive/PROJECT_LOG.md` § 2026-08-10 (Calendar conflict detection) and
   § 2026-08-10, last*
 

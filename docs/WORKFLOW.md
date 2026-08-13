@@ -47,13 +47,18 @@ review what comes back, then one diff for you to approve once.
 
 **`/backlog`** — reads `DEV_BACKLOG.md` in full (~4k tokens), sorts the Inbox into `Now` and
 `Later` with you setting the priorities, and checks anything about to be worked against the real
-code first. Two extra modes:
+code first. Three extra modes:
+- **`/backlog verify`** — re-checks items against today's code, farmed out to up to three
+  workers at once, and hands back a single table: fixed / still real / moved / needs your call.
+  You read verdicts, not investigations. This is the one that stops the list rotting — a third
+  of what was checked in a 2026-08-05 sweep turned out to be describing a world that no longer
+  existed.
 - **`/backlog deep`** — the above plus merging duplicate items, re-checking all of `Now`,
   sweeping the machine log, and rolling closed items into the monthly archive. Run when the
   counts creep. Occasional, never scheduled.
 - **`/backlog attack`** — scores the `Now` list, clusters the top items into up to three groups
-  that touch no files in common, and writes one worker prompt per group. Planning only; it
-  fixes nothing.
+  that touch no files in common, shows you the plan, and then starts the workers once you
+  approve. You choose what runs; you don't have to ferry the instructions yourself.
 
 *The rule that matters most: no item is acted on, or re-filed, on the strength of its own
 description. A 2026-08-05 sweep found about a third of checked items stale — and a stale
@@ -91,6 +96,7 @@ deploys.*
 | …change something, fix a bug, make an edit | `/fix <what you want>` |
 | …work out why Metatron replied badly | `/metatron-troubleshoot DATE SEQ "what went wrong"` |
 | …know what's outstanding, or pick something up | `/backlog` |
+| …find out whether the list is still true | `/backlog verify` |
 | …tidy a list that's drifting | `/backlog deep` |
 | …use a day of parallel capacity | `/backlog attack` |
 | …check nothing is obviously broken | `./scripts/qa_sweep.sh` |
@@ -241,9 +247,11 @@ is the thing that gets pushed by mistake.
 
 - **`/fix`** dispatches one worker for Green and Amber work, into a worktree, given as an
   absolute path. Red-tier work is never delegated.
-- **`/backlog attack`** plans up to three, each with a list of files no other worker touches. A
-  group that can't be given its own exclusive file list **is not parallelised** — it runs one
-  after another in this window instead.
+- **`/backlog attack`** starts up to three after you approve the plan, each with a list of files
+  no other worker touches. A group that can't be given its own exclusive file list **is not
+  parallelised** — it runs one after another in this window instead.
+- **`/backlog verify`** starts up to three as well, but they only read — no worktrees, no edits,
+  no commits. They come back with verdicts and this window makes every change.
 
 Cap: **three workers**. A cold worker costs about 32,000 tokens before it does anything at all,
 because it has to read itself into the project from nothing. That flat cost is why small work is
