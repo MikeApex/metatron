@@ -1,4 +1,10 @@
-.venv/
+# No trailing slash on .venv / certs, deliberately: `foo/` matches a directory
+# but NOT a symlink to one, and scripts/new_worktree.sh links both into every
+# worktree. With the slash they showed as untracked there, which made
+# rm_worktree.sh's "would this lose work?" check refuse every single time —
+# training --force as the routine path and destroying the check. Matching the
+# main tree's real directories is unaffected.
+.venv
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -31,7 +37,8 @@ venv/
 !.claude/settings.json
 
 # TLS certs — never committed (IP-specific; regenerate with mkcert on each machine)
-certs/
+# No trailing slash — see the .venv note at the top of this file.
+certs
 certs_backup/
 
 # Android build — Capacitor generated; regenerate with: npx cap add android
