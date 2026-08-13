@@ -7,6 +7,17 @@ kept out of `DEV_BACKLOG.md` deliberately: that file has a line ceiling and a re
 for product work, and its `now / later` counts stop meaning anything if harness items are
 mixed in.
 
+> **Reconciliation status, 2026-08-13 (end of the throughput build).** Eight items opened, five
+> closed with evidence (H1, H2, H5, H6, the `Write` deny hole, the gate ledger, the broken
+> override, `/archive`'s unverified push). **Three remain open, each deliberately and with a
+> reason — none by drift:** **H7** needs a decision from Mike plus one test this harness cannot
+> run on itself (whether an *interactive* VS Code session honours `ask`); **the commit-guard
+> narrowing** is ergonomics, not correctness, now that the override works; **H8** is a proposal
+> list filed today, and is the successor work rather than a defect of this build.
+> **So this file does not retire today.** It is the one outcome its own contract calls a
+> failure, and saying so is better than closing three live items to make a rule come out even.
+> The contract still binds: whatever carries these three names the build that owns them.
+
 > **This list is reconciled within the build that opened it — it is not carried.**
 > It exists because the development-throughput plan
 > (`~/.claude/plans/jaunty-kindling-clarke.md`) found defects in its own components faster
@@ -47,8 +58,77 @@ actually run. Items below are marked *confirmed* only where they were reproduced
   *interactive* VS Code session honours `ask`.** If it does, the defect is scoped to
   unattended sessions and the decision is narrower than it looks.
 
-- **[H6] Workers spawned with `isolation: "worktree"` check out `origin/main`, not local
-  `HEAD`.** *Confirmed live 2026-08-13.* Two probe workers landed on `53f99f7` while local
+- **The commit guard blocks routine shell it cannot parse, and the routine cases keep piling
+  up.** Failing closed on unparseable input is correct by design (`a66a706`), but every instance
+  so far has been a *routine* path, not a risky one — the "noisy blocks on routine ones" theme
+  `/code-review high` already flagged across this guard. Three now: a trailing `echo "exit=$?"`
+  after `git commit`; **`git commit --amend` with no path arguments** (reported as an
+  unaccountable path expression, though an amend of the message touches nothing); and **any file
+  written by a script rather than `Edit`/`Write`**, whose `PostToolUse` hash is never recorded so
+  the file looks changed-underneath — hit twice on 2026-08-13, once from a `python3` heredoc and
+  once from `sync_dev_backlog.py` writing `DEV_BACKLOG.md`. Suggested narrowing: ignore tokens
+  following a `;` that contain no `/`, and treat a pathless `--amend` as message-only.
+  **Note this was strictly worse until today** — the documented override did not work either, so
+  each of these was an unconditional block. *(Filed 2026-08-13 from the throughput session; moved
+  here from `DEV_BACKLOG.md` when this file was created.)*
+
+  > **DEFERRED 2026-08-13, with a reason rather than by drift.** Two more instances landed the
+  > same day (a `printf` append to a log fragment; the pathless `--amend` in this session), which
+  > is evidence for the item, not new items. It stays open-but-deferred because the **override
+  > now works** (`75fee3a`), so every case is a one-token annoyance rather than the unconditional
+  > block it was this morning — and the narrowing touches the one guard whose failure mode is
+  > *blocking commits*, which is not work to rush at the end of a build. **Revisit when a case
+  > appears that the override does not clear.** Ergonomics, not correctness.
+
+- **[H8] Three rules this build enforces by memory that a script should enforce instead.**
+  *Filed 2026-08-13, from the observation that every defect here was found by running
+  something rather than by anyone remembering to check.*
+  1. **Permission-rule liveness, into `scripts/qa_sweep.sh`.** `claude config list` already
+     prints *"is not matched by file permission checks"* for every silently-ignored rule — it
+     printed it for five of them, to nobody, for as long as they existed. A string match and
+     an exit code closes the whole class, including the next well-intentioned `Write(path)`
+     addition. **Highest value of the three: the Write hole was found incidentally, and
+     nothing would have found it otherwise.**
+  2. **Session token accounting as a `Stop` hook.** The work-block gate requires an estimate
+     and a close-out actual; on 2026-08-13 the estimate was 45–60k and the actual 438k, a 7×
+     miss, because a model estimating its own context growth is not measuring the billed
+     total. It is four lines of arithmetic over the JSONL. Making it mechanical also gives
+     the estimate something to be checked against.
+  3. **The deploy-lock invariant as a sweep check.** Run `deploy.sh`'s lock block from a
+     temporary worktree and assert it resolves to the same path as from the main tree.
+     Nothing currently stops a later session simplifying `--git-common-dir` back to something
+     worktree-local — which is precisely how H2 arrived.
+
+  **Item 1 is the harness-side instance of `[DB-0809-11]`** (*"docs record values the system
+  changes underneath them and nothing checks"*, whose stated fix is a smoke script running
+  `CLAUDE.md`'s executable claims). This session is a clean example: the change-tier table said
+  Red *"prompts every time"* and that was false. Build them as one thing, not twice.
+
+  **Deliberately NOT proposed: hunk attribution for shared-tree commits.** Splitting one
+  window's hunk from another's inside a single file was the most laborious part of this
+  session, but that is the fingerprinting design the Chorus round rejected for a fatal false
+  negative on a shared tree. The mechanism for that problem already exists and is
+  `scripts/new_worktree.sh`.
+
+---
+
+## Closed in this build
+
+- **`/archive`'s push was never verified, and it silently did not happen for 11 commits.**
+  *Fixed 2026-08-13.* Step 5 ended with `git push origin main` and handled only the loud case —
+  *"a rejected push stops the step and gets reported"* — while nothing asserted the outcome. On
+  2026-08-13 `origin/main` sat at `53f99f7` with local `main` at `983f50c`, **11 commits and six
+  hours behind**, and `983f50c` is *itself* an `Archive:` commit, so the ritual ran and lost its
+  own push more than once. Two costs, one invisible: the offsite backup was stale on the day the
+  repo gained five components, and **H6's blast radius depended on this** — worker freshness
+  keyed off `origin/main`, so an unpushed archive quietly staled every worker.
+  `/archive` step 5 now asserts `git rev-parse HEAD == git rev-parse origin/main` and prints the
+  commit count when it fails, the same pattern `deploy.sh` already used with `EXPECTED_SHA`.
+  **Tested in both directions**, and its first real run reported a true failure: local was 4
+  commits ahead at the time of writing.
+
+- **[H6] Workers spawned with `isolation: "worktree"` checked out `origin/main`, not local
+  `HEAD`.** *Confirmed live, then resolved — `7d196df`, 2026-08-13.* Two probe workers landed on `53f99f7` while local
   main was `983f50c` — 11 commits and six hours behind — and a third landed on the new HEAD
   immediately after a push, which pins the base to `origin/main` exactly. `origin/main` only
   advances when something pushes, and the convention here is commit-locally-often,
@@ -84,39 +164,6 @@ actually run. Items below are marked *confirmed* only where they were reproduced
   work, which covers both dispatch styles without the worker cooperating. Verified by
   breaking a *tracked* file inside a worktree the payload never named: the gate blocked and
   labelled the failure with that worktree's path.
-
-- **`/archive`'s push is never verified, and it silently did not happen for 11 commits.**
-  Step 5 ends with `git push origin main` — *"the offsite backup, not a release"* — and
-  handles only the loud case: *"a rejected push stops the step and gets reported."* Nothing
-  asserts the outcome. On 2026-08-13 `origin/main` sat at `53f99f7` while local `main` was at
-  `983f50c`, **11 commits and six hours behind**, and `983f50c` is *itself* an `Archive:`
-  commit — so the ritual ran, committed, and either skipped or silently lost its own push,
-  more than once. Two costs, one of them invisible: the offsite backup was six hours stale on
-  the day the repo gained five new components, and **H6's entire blast radius depended on
-  this** — worker freshness silently keys off `origin/main`, so an unpushed archive quietly
-  staled every worker.
-  `deploy.sh` already has the pattern to copy: it captures `EXPECTED_SHA=$(git rev-parse HEAD)`
-  after its push and asserts against it. `/archive` should assert `git rev-parse origin/main ==
-  git rev-parse HEAD` after step 5 and say so plainly, because *"I ran the command"* and
-  *"the commits are offsite"* are not the same claim.
-
-- **The commit guard blocks routine shell it cannot parse, and the routine cases keep piling
-  up.** Failing closed on unparseable input is correct by design (`a66a706`), but every instance
-  so far has been a *routine* path, not a risky one — the "noisy blocks on routine ones" theme
-  `/code-review high` already flagged across this guard. Three now: a trailing `echo "exit=$?"`
-  after `git commit`; **`git commit --amend` with no path arguments** (reported as an
-  unaccountable path expression, though an amend of the message touches nothing); and **any file
-  written by a script rather than `Edit`/`Write`**, whose `PostToolUse` hash is never recorded so
-  the file looks changed-underneath — hit twice on 2026-08-13, once from a `python3` heredoc and
-  once from `sync_dev_backlog.py` writing `DEV_BACKLOG.md`. Suggested narrowing: ignore tokens
-  following a `;` that contain no `/`, and treat a pathless `--amend` as message-only.
-  **Note this was strictly worse until today** — the documented override did not work either, so
-  each of these was an unconditional block. *(Filed 2026-08-13 from the throughput session; moved
-  here from `DEV_BACKLOG.md` when this file was created.)*
-
----
-
-## Closed in this build
 
 - **[H5] `defaultMode: auto` was never in effect; sessions ran `default`.** *Confirmed live,
   then fixed — 2026-08-13.* The value parsed cleanly and then silently did nothing, so Phase
