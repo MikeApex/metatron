@@ -17,6 +17,11 @@ email, calendar, scheduling — is unverified. **Blocker for any live test: both
 are off the tailnet**; VM and server are healthy. Ceiling raised 250 → ~450 (no conflict with
 Fable's 08-09 pass, which never validated 250). Deferred by Mike: 4 Inbox entries, ⚠ machine ×4.*
 
+*Dev-workflow window, merged — no runtime code changed, nothing deployed (`0dd3375`, `c94baf5`).
+`.claude/settings.json` owns permission policy; **`hook_commit_guard.py` blocks a commit carrying
+another session's uncommitted work** (`METATRON_COMMIT_GUARD=off` overrides). `CLAUDE.md` 810 →
+507; load ~31.5k → ~27.1k. **Phases 3–9 unstarted:** `~/.claude/plans/jaunty-kindling-clarke.md`.*
+
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
 > **Ceiling: 200 lines.** Growing a little is fine — a new blocker is worth a line. Crossing 200
@@ -114,13 +119,10 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-13 | **Development throughput: permission policy, three hooks, context diet** — 822 approval prompts measured across 25 sessions, ~19 of them decisions. Two premises I argued from were wrong and the docs corrected both (compound commands *are* matched per-subcommand; a built-in read-only set never prompts in any mode). Commit guard designed twice — hunk fingerprinting has a fatal false negative on a shared tree and **would not have caught the 2026-08-09 incident it was built for**; `/code-review high` then found 9 defects in the blob-hash replacement, all one theme: silent passes on risky paths, noisy blocks on routine ones. `CLAUDE.md` 810 → 507. Rejected: conditional roadmap loading, and adopting GSD/OMC | `0dd3375`, `c94baf5` — **not deployed** (no runtime code) |
 | 08-13 | **Coordinator close-out: two workers landed, `[DB-0810-12]` unblocked** — `[DB-0810-14]` closed (trace `8c9d8963`, `get_tfl_status` in-trace, not a plausible answer), `[DB-0810-16]` closed, `[DB-0804-01]` closed (came due 08-11, sat unread 2 days; 18 `AgentRecord` errors/7d → 2). Four post-`8ae1ff9` `thought_signature` 400s attributed `loop=openai_compat_stream` — candidate (a), streaming, deltas carry no signature. Found `tools/caldav.py` naming a dead config file in three strings, one the `read_calendar` schema | `7e0e302`, `4fcc170` — deployed |
 | 08-13 | **The mailbox default was contradicted in the persona layer within four hours of shipping** — `mike.md:14` said "check inbox every six hours in the background" against a template default of 240 min, describing polling that does not exist. Mike kept four hours; line removed on the VM. `daily_rule_audit` caught the preference ×4 but named the wrong partner — it cannot see `email.yaml`. **A layer rule in a config file does not survive the next runtime write to the persona file** | VM-side edit only — `mike.md` is gitignored |
 | 08-11 | **Mailbox cadence default + three pointers at files nothing reads** — `config/templates/email.yaml` is the single home, doubling as provisioning source and runtime fallback; `new_persona.sh` was missing `email.yaml` entirely. Rejected mirroring the key into `config/modules/email.yaml` — that builds the duplicate-home failure, and caldav is the live worked example. Surfaced that `tools/caldav.py` named the dead file in three strings, one of them the `read_calendar` schema the model relays | `7e0e302` — deployed, VM verified |
-| 08-10 | **Every model call site names itself; SSE errors are logged** — five Vertex `thought_signature` 400s (08-04→08-09) could not be attributed to a code path: two of the five model-call sites had no `try/except`, and `/session/stream` sent `[ERROR]` to the browser while logging nothing, so web-app failures left no server-side trace. `_log_api_failure()` on all five + `MODEL_CALL_FAILED` escalating at 3. **Raiser still unknown** — the first diagnosis was wrong, the native-loop fallback swallows it. Two fixes held deliberately: `[DB-0810-12]` | `8ae1ff9` — deployed, VM verified |
-| 08-10 | **Calendar conflict detection + the quality-event sink gap** — `write_calendar_event` had no duplicate check at all and no update/delete counterpart; both built, check runs inside the write so it cannot be skipped. Then found `sync_dev_backlog.py` discards `USER_CORRECTION` (139), `ROUTING_MISS` (12) and `CALENDAR_DUPLICATE` (7) — 158 events never read. Diagnosed, not fixed | `a20febe` — deployed 08-05; sink gap **open**, `[DB-0810-09]` |
-| 08-10 | **Message-bubble timestamps** — user and assistant bubbles show a time, sourced from the server's existing `ts` column for replayed messages, client clock for live/streaming ones. Verified on webapp and a rebuilt, sideloaded APK | `a65a199` — deployed, VM verified |
-| 08-10 | **Research provenance authored by Python, not the model** — strips model-written `SOURCES:`, appends `SOURCES (N retrieved)`/`[RETRIEVAL: NONE]` from the SDK; `grounded` is now retrieval-based and tri-state. Built `check_agent_tools.py` + a `PostToolUse` hook on agent/routing edits; it found `get_weather` granted to Logistics but documented only on Research — weather returned to Logistics | `a36d8c2`…`a3b43c5` (5) — deployed, VM verified |
 ---
 
 ## Useful context to pull as needed

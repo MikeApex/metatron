@@ -253,6 +253,15 @@ standing rule distrusts.*
 
 ## Later
 
+- **[DB-0813-02] `OPENAI_API_KEY` is invalid — `ask_gpt` has been silently dead.** A live
+  `mcp__ask_gpt__ask_gpt` call returns `401 invalid_api_key` against the key in `.env`. Nothing
+  announces this: a multi-model round just comes back with two voices instead of three, and the
+  missing one looks like a choice rather than a failure. Found 2026-08-13 while running a Chorus
+  review of the commit-guard design — Gemini answered, GPT did not, and the round proceeded
+  one voice short. **Fix is a key rotation, not code.** Worth checking whether the other keys in
+  `.env` are still live at the same time. *filed 2026-08-13 by a dev session · verified live,
+  not inferred*
+
 Real, not prioritised. One or two lines each — detail lives in the code, the log, or
 `archive/backlog_closed_2026-08.md`.
 
