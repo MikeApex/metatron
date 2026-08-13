@@ -33,12 +33,20 @@ import sys
 from pathlib import Path
 from statistics import median
 
-# TWO formats exist in the transcripts and matching only one is not a partial
-# result, it is a wrong one: the first version of this script reported 3 runs out
-# of 41 and looked entirely plausible doing it. Older sessions carry XML-ish
-# element tags, newer ones a plain `key: value` block. Found by running it.
-#   <usage><subagent_tokens>68131</subagent_tokens><tool_uses>15</tool_uses>…
-#   <usage>subagent_tokens: 81561\ntool_uses: 17\nduration_ms: 77080</usage>
+# TWO record shapes exist, and matching only one is not a partial result, it is a
+# wrong one: this script reported 3 runs and looked entirely plausible doing it.
+# The first repair guessed the difference was the *regex* and widened it to accept
+# both text formats -- which changed nothing, because the formats were never the
+# problem. The difference is WHERE the record lives and WHAT joins it:
+#
+#   old  rec.content                            -- a <task-notification> string,
+#        <usage><subagent_tokens>68131</...>       joined by a <tool-use-id> tag
+#   new  rec.message.content[].content[].text   -- a tool_result block, joined by
+#        <usage>subagent_tokens: 81561...          that block's tool_use_id FIELD
+#
+# The old code `continue`d past every record carrying a dict `message`, so all ten
+# new-shape records were skipped before any regex ran. Found by walking the JSONL
+# and asking where the string actually was, not by reading the regex again.
 USAGE_RE = re.compile(
     r"<usage>\s*(?:<subagent_tokens>\s*(?P<t1>\d+)|subagent_tokens:\s*(?P<t2>\d+))"
     r".*?(?:<tool_uses>\s*(?P<c1>\d+)|tool_uses:\s*(?P<c2>\d+))"
@@ -46,8 +54,43 @@ USAGE_RE = re.compile(
     re.S,
 )
 TOOL_USE_ID_RE = re.compile(r"<tool-use-id>(\S+?)</tool-use-id>")
+
+# This script's own source quotes real usage numbers in the comment above, and
+# that source is echoed back into the transcripts every time the file is read or
+# edited -- so a naive scan counts the documentation as data. Both extractors
+# therefore require proof the string is a genuine completion payload: the old
+# shape must carry a <task-notification> wrapper, the new one an `agentId:` line.
+def _is_completion(text: str, marker: str) -> bool:
+    return "<usage>" in text and "subagent_tokens" in text and marker in text
 TASK_ID_RE = re.compile(r"<task-id>(\S+?)</task-id>")
 SUMMARY_RE = re.compile(r"<summary>Agent \"(.*?)\" finished</summary>", re.S)
+
+
+def _record(results: dict, key: str, text: str, session: str) -> None:
+    """Store one completion, keyed by tool-use id, largest usage winning.
+
+    A task may notify more than once -- a finished agent can be resumed, and the
+    same notification is also re-emitted into later transcript files. Summing
+    would double-count a resumed agent, so the largest reading wins.
+    """
+    usage = USAGE_RE.search(text)
+    if not usage:
+        return
+    g = usage.groupdict()
+    tokens = int(g["t1"] or g["t2"])
+    prior = results.get(key)
+    if prior and prior["tokens"] >= tokens:
+        return
+    summary = SUMMARY_RE.search(text)
+    task = TASK_ID_RE.search(text)
+    results[key] = {
+        "tokens": tokens,
+        "tool_uses": int(g["c1"] or g["c2"]),
+        "minutes": int(g["d1"] or g["d2"]) / 60000.0,
+        "summary": summary.group(1).strip() if summary else "",
+        "task": task.group(1)[:9] if task else "",
+        "session": session,
+    }
 
 
 def _project_root() -> Path:
@@ -106,46 +149,45 @@ def collect(transcripts: Path, session: str | None) -> list[dict]:
             except ValueError:
                 continue
 
+            # A record can carry BOTH a dispatch and a completion, so neither
+            # branch may `continue` past the other -- that is the bug that hid ten
+            # of thirteen runs.
             msg = rec.get("message")
             if isinstance(msg, dict):
                 for block in msg.get("content") or []:
-                    if not isinstance(block, dict) or block.get("name") != "Agent":
+                    if not isinstance(block, dict):
                         continue
-                    args = block.get("input") or {}
-                    briefs[block.get("id", "")] = {
-                        "session": path.stem[:8],
-                        "model": args.get("model") or "inherited",
-                        "type": args.get("subagent_type") or "general-purpose",
-                        "desc": args.get("description") or "(none)",
-                        "brief_chars": len(args.get("prompt") or ""),
-                    }
-                continue
+                    if block.get("name") == "Agent":
+                        args = block.get("input") or {}
+                        briefs[block.get("id", "")] = {
+                            "session": path.stem[:8],
+                            "model": args.get("model") or "inherited",
+                            "type": args.get("subagent_type") or "general-purpose",
+                            "desc": args.get("description") or "(none)",
+                            "brief_chars": len(args.get("prompt") or ""),
+                        }
+                        continue
+                    # New shape: a tool_result whose content is a list of text
+                    # blocks. The join key is this block's tool_use_id FIELD --
+                    # there is no <tool-use-id> tag anywhere in the text.
+                    if block.get("type") != "tool_result":
+                        continue
+                    key = block.get("tool_use_id")
+                    if not key:
+                        continue
+                    for ib in block.get("content") or []:
+                        if not isinstance(ib, dict):
+                            continue
+                        text = ib.get("text") or ""
+                        if _is_completion(text, "agentId:"):
+                            _record(results, key, text, path.stem[:8])
 
+            # Old shape: the whole notification is one string on the record.
             content = rec.get("content")
-            if not isinstance(content, str) or "subagent_tokens" not in content:
-                continue
-            usage = USAGE_RE.search(content)
-            tuid = TOOL_USE_ID_RE.search(content)
-            if not usage or not tuid:
-                continue
-            g = usage.groupdict()
-            tokens = int(g["t1"] or g["t2"])
-            tool_uses = int(g["c1"] or g["c2"])
-            duration = int(g["d1"] or g["d2"])
-            key = tuid.group(1)
-            prior = results.get(key)
-            if prior and prior["tokens"] >= tokens:
-                continue
-            summary = SUMMARY_RE.search(content)
-            task = TASK_ID_RE.search(content)
-            results[key] = {
-                "tokens": tokens,
-                "tool_uses": tool_uses,
-                "minutes": duration / 60000.0,
-                "summary": summary.group(1).strip() if summary else "",
-                "task": task.group(1)[:9] if task else "",
-                "session": path.stem[:8],
-            }
+            if isinstance(content, str) and _is_completion(content, "<task-notification>"):
+                tuid = TOOL_USE_ID_RE.search(content)
+                if tuid:
+                    _record(results, tuid.group(1), content, path.stem[:8])
 
     rows = []
     for key, res in results.items():
