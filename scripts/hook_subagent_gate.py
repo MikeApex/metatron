@@ -40,10 +40,11 @@ the env var is only a fallback. Each candidate is checked for qa_sweep.sh before
 being used, so a cwd pointing outside any project tree degrades to fail-open
 rather than sweeping the wrong thing.
 
-Every run appends one line to .claude/.session_state/subagent_gate.log recording
-which tree was chosen and why -- because "the gate ran" and "the gate ran against
-the right tree" look identical from the outside, and that is precisely the
-failure mode being guarded against.
+Every run appends one line to the SESSION tree's .claude/.session_state/
+subagent_gate.log recording which tree was chosen and why -- because "the gate
+ran" and "the gate ran against the right tree" look identical from the outside,
+and that is precisely the failure mode being guarded against. See _log for why
+the session tree and not the swept one.
 """
 from __future__ import annotations
 
@@ -82,10 +83,17 @@ def _resolve_root(payload: dict) -> tuple[str, Path | None]:
     return "none", None
 
 
-def _log(root: Path | None, line: str) -> None:
-    """Best-effort diagnostic. Never interferes with the gate's decision."""
+def _log(line: str) -> None:
+    """Best-effort diagnostic. Never interferes with the gate's decision.
+
+    Always written to the SESSION tree, never to the tree just swept. An
+    isolation="worktree" worktree is deleted the moment the worker finishes
+    without changes, taking its .claude/ with it -- so logging beside the swept
+    tree loses exactly the runs where the gate worked and keeps the ones where
+    it fell back. Found by running it, not by reading it.
+    """
     try:
-        base = root or Path(os.environ.get("CLAUDE_PROJECT_DIR") or ".")
+        base = Path(os.environ.get("CLAUDE_PROJECT_DIR") or ".")
         ledger_dir = base.resolve() / ".claude" / ".session_state"
         ledger_dir.mkdir(parents=True, exist_ok=True)
         with open(ledger_dir / "subagent_gate.log", "a") as fh:
@@ -111,8 +119,8 @@ def main() -> int:
     cwd_seen = payload.get("cwd") or "(absent)"
 
     if root is None:
-        _log(None, f"{stamp}\tNO-SWEEP\tcwd={cwd_seen}\tenv={env_seen}\t"
-                   "no candidate tree carried scripts/qa_sweep.sh — fail-open")
+        _log(f"{stamp}\tNO-SWEEP\tcwd={cwd_seen}\tenv={env_seen}\t"
+             "no candidate tree carried scripts/qa_sweep.sh — fail-open")
         return 0
 
     sweep = root / "scripts" / "qa_sweep.sh"
@@ -128,12 +136,12 @@ def main() -> int:
     except (OSError, subprocess.TimeoutExpired) as exc:
         # See the fail-open note above: the gate's own breakage must not strand
         # a worker's finished work.
-        _log(root, f"{stamp}\tSWEEP-ERROR\troot={root}\tvia={source}\t"
-                   f"cwd={cwd_seen}\tenv={env_seen}\t{type(exc).__name__}")
+        _log(f"{stamp}\tSWEEP-ERROR\troot={root}\tvia={source}\t"
+             f"cwd={cwd_seen}\tenv={env_seen}\t{type(exc).__name__}")
         return 0
 
-    _log(root, f"{stamp}\texit={proc.returncode}\troot={root}\tvia={source}\t"
-               f"cwd={cwd_seen}\tenv={env_seen}")
+    _log(f"{stamp}\texit={proc.returncode}\troot={root}\tvia={source}\t"
+         f"cwd={cwd_seen}\tenv={env_seen}")
 
     if proc.returncode == 0:
         return 0

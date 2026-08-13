@@ -283,11 +283,34 @@ def _match(paths, candidates, root: Path):
     return matched, unresolved
 
 
-def check(payload: dict) -> int:
+def _override_requested(command: str) -> bool:
+    """Is the escape hatch being invoked, by either route?
+
+    The documented form is an inline prefix -- METATRON_COMMIT_GUARD=off git
+    commit ... -- and reading os.environ ALONE never sees it. This hook runs as
+    a separate process spawned with the SESSION's environment; the prefix lives
+    only in the command string it is handed, and is applied by the shell to the
+    git process afterwards. So the documented override was inoperative: it
+    blocked, printed "METATRON_COMMIT_GUARD=off to override", and then blocked
+    that too. Found by trying to use it (2026-08-13).
+
+    Both routes are honoured now: the inline prefix, and a session-wide env var
+    for anyone who wants it off for a whole session.
+    """
     if os.environ.get("METATRON_COMMIT_GUARD", "").lower() == "off":
+        return True
+    return re.search(
+        r"(?:^|[;&|]|\s)METATRON_COMMIT_GUARD=(?:off|'off'|\"off\")(?:\s|$)",
+        command,
+        re.IGNORECASE,
+    ) is not None
+
+
+def check(payload: dict) -> int:
+    command = (payload.get("tool_input") or {}).get("command", "")
+    if _override_requested(command):
         return 0
 
-    command = (payload.get("tool_input") or {}).get("command", "")
     if "git" not in command:
         return 0                                   # cheap prefilter only
 
