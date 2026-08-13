@@ -125,6 +125,9 @@ data/diagnostics/
 # Local backups pulled from the VM — real user data, never committed
 backups/
 
+# deploy.sh's mutual-exclusion lock — runtime state, one machine only
+.deploy.lock/
+
 # Local convenience file (empty, clicked to reduce editor context noise)
 dummy
 .dev_backlog_seen

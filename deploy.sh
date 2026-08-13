@@ -26,6 +26,62 @@
 # archives that.
 #
 set -e
+
+# --- Deploy lock: one deploy at a time ----------------------------------------
+#
+# Two windows deploying at once is not hypothetical. The post-deploy assertion
+# below already carries the scar: on 2026-08-03 a parallel window pushed between
+# this script's push and the VM's pull, and the VM ended up running two sessions'
+# commits — which the assertion then had to learn to describe rather than call a
+# failure. This lock stops the interleave happening in the first place.
+#
+# mkdir, not flock: flock is util-linux and DOES NOT EXIST on macOS, which is
+# where this script runs. `mkdir` is atomic on POSIX — it either creates the
+# directory or fails — which is the whole property a lock needs.
+#
+# It refuses LOUDLY and names the holder. A lock that silently blocks or hangs
+# would be worse than none: the second window would sit there learning nothing,
+# and the 2026-08-09 incident is precisely a case where a person needed to be
+# told what the other session was doing.
+LOCK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.deploy.lock"
+
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+    LOCK_PID=$(cat "$LOCK_DIR/pid" 2>/dev/null || echo "")
+    LOCK_WHEN=$(cat "$LOCK_DIR/started" 2>/dev/null || echo "unknown time")
+
+    if [ -n "$LOCK_PID" ] && kill -0 "$LOCK_PID" 2>/dev/null; then
+        echo "" >&2
+        echo "DEPLOY REFUSED — another deploy is already running." >&2
+        echo "" >&2
+        echo "    holder PID:  $LOCK_PID" >&2
+        echo "    started:     $LOCK_WHEN" >&2
+        echo "    lock:        $LOCK_DIR" >&2
+        echo "" >&2
+        echo "    Nothing has been pushed and the VM is untouched." >&2
+        echo "" >&2
+        echo "    Wait for that deploy to finish, then re-run. Deploying on top of" >&2
+        echo "    an in-flight deploy is how one window's uncommitted-adjacent work" >&2
+        echo "    ends up live under another window's commit (2026-08-09)." >&2
+        echo "" >&2
+        echo "    If that PID is genuinely dead, clear it:  rm -rf \"$LOCK_DIR\"" >&2
+        exit 1
+    fi
+
+    # Holder is gone — a previous deploy was killed before its trap ran. Take it
+    # over rather than making someone clear it by hand, but say so: a lock that
+    # was left behind means a deploy did not finish, and that is worth knowing
+    # before starting another one.
+    echo "Stale deploy lock from PID ${LOCK_PID:-unknown} (started $LOCK_WHEN) —" >&2
+    echo "that deploy did not finish cleanly. Taking the lock over." >&2
+fi
+
+# Released on any exit path, including Ctrl-C and the `set -e` aborts below.
+trap 'rm -rf "$LOCK_DIR"' EXIT INT TERM
+
+mkdir -p "$LOCK_DIR"
+echo "$$" > "$LOCK_DIR/pid"
+date '+%Y-%m-%d %H:%M:%S' > "$LOCK_DIR/started"
+
 echo "Pushing to GitHub..."
 git push origin main
 

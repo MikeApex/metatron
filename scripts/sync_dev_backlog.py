@@ -85,6 +85,9 @@ LABELS = {
 
 ROOT = Path(__file__).resolve().parent.parent
 BACKLOG = ROOT / "DEV_BACKLOG.md"
+# One file per filed item, folded into '## Inbox' on each sync. See
+# fold_fragments() for why this is a directory rather than a hand-edited section.
+INBOX_FRAGMENTS = ROOT / ".claude" / "backlog_inbox"
 
 # Which events have already been pulled. A separate ledger, not a scan of the
 # markdown: keying off "does this timestamp appear in the file" means an entry
@@ -434,6 +437,72 @@ def merge(block: str, event: dict, machine: bool) -> tuple[str, bool, int]:
     return body, True, 1
 
 
+def fold_fragments(text: str) -> tuple[str, list]:
+    """Fold `.claude/backlog_inbox/*.md` into '## Inbox'.
+
+    Why fragments exist at all: '## Inbox' is hand-edited, and two windows filing
+    an item at the same time collide on the same lines. A file per item cannot
+    collide, and it kills "never reserve an ID" as a rule you have to remember —
+    two windows cannot create the same filename without one of them noticing.
+
+    Fragments are deliberately NOT committed (`.claude/*` is gitignored). They are
+    transient: written by whichever window has something to file, folded into
+    DEV_BACKLOG.md on the next sync, then deleted. Their permanent home is the
+    backlog, which is tracked.
+
+    Write one item per file, in the same bullet form '## Inbox' already uses:
+
+        .claude/backlog_inbox/tone-profile-empty.md
+
+    Returns the updated text and the fragments that were folded. The caller
+    deletes them only AFTER the backlog write succeeds — losing a filed item to a
+    failed write would be exactly the silent loss this is meant to prevent.
+    """
+    if not INBOX_FRAGMENTS.is_dir():
+        return text, []
+
+    frags = sorted(
+        p for p in INBOX_FRAGMENTS.iterdir()
+        if p.suffix == ".md" and not p.name.startswith("_")
+    )
+    if not frags:
+        return text, []
+
+    additions = []
+    folded = []
+    for p in frags:
+        try:
+            body = p.read_text().strip()
+        except OSError:
+            continue
+        # An empty fragment is still folded (and so deleted) — it carries nothing,
+        # and leaving it would make it reappear in every future run's count.
+        if body:
+            additions.append(body)
+        folded.append(p)
+
+    if not additions:
+        return text, folded
+
+    head, _, tail = text.partition(INBOX_HEADING)
+    block = _section(text, INBOX_HEADING)
+    rest = tail[len(block):]
+
+    # _section() runs to the next '## ', so the block carries the '---' rule that
+    # closes the section. Appending past it puts new items visually OUTSIDE the
+    # Inbox, under a horizontal rule that reads as "end of section" — which is
+    # where the first version of this put them. Split the rule off, insert, and
+    # put it back.
+    body = block.rstrip("\n")
+    trailer = ""
+    if body.endswith("---"):
+        body = body[: -len("---")].rstrip("\n")
+        trailer = "\n\n---"
+
+    merged = body + "\n" + "\n".join(additions) + trailer + "\n"
+    return f"{head}{INBOX_HEADING}{merged}{rest}", folded
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--persona", default=DEFAULT_PERSONA)
@@ -482,7 +551,20 @@ def main() -> int:
             if appended:
                 added += 1
 
+    # Locally-filed items fold in alongside the VM's events, so a window with
+    # something to file does not need the VM to be up for it to land.
+    text, folded = fold_fragments(text)
+    added += len(folded)
+
+    if new or folded:
         BACKLOG.write_text(text)
+        # Only now that the item is durably in the backlog. A fragment deleted
+        # before a failed write is a silently lost change request.
+        for frag in folded:
+            try:
+                frag.unlink()
+            except OSError:
+                pass
 
     inbox, now, later = count_items(text)
     escalations = escalated(text)
