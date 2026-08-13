@@ -7,9 +7,11 @@ kept out of `DEV_BACKLOG.md` deliberately: that file has a line ceiling and a re
 for product work, and its `now / later` counts stop meaning anything if harness items are
 mixed in.
 
-> **Reconciliation status, 2026-08-13 (end of the throughput build).** Eight items opened, five
-> closed with evidence (H1, H2, H5, H6, the `Write` deny hole, the gate ledger, the broken
-> override, `/archive`'s unverified push). **Three remain open, each deliberately and with a
+> **Reconciliation status, 2026-08-13 (end of the throughput build).** Eleven items opened,
+> **eight** closed with evidence (H1, H2, H5, H6, the `Write` deny hole, the gate ledger, the
+> broken override, `/archive`'s unverified push) — counted from the file rather than from
+> either window's memory of it, because the first pass wrote "five" above a list of eight.
+> **Three remain open, each deliberately and with a
 > reason — none by drift:** **H7** needs a decision from Mike plus one test this harness cannot
 > run on itself (whether an *interactive* VS Code session honours `ask`); **the commit-guard
 > narrowing** is ergonomics, not correctness, now that the override works; **H8** is a proposal
