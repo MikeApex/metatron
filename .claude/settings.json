@@ -128,6 +128,18 @@
         ]
       }
     ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/scripts/hook_session_tokens.py\"",
+            "timeout": 20,
+            "statusMessage": "Totalling session tokens..."
+          }
+        ]
+      }
+    ],
     "SubagentStop": [
       {
         "hooks": [

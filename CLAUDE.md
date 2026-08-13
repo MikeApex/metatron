@@ -364,7 +364,14 @@ teaches you to skip the output, which is the same reason this guard is deliberat
 
 **The tool surfaces hypotheses, not verdicts.** Interviews, check-ins, and audits produce a working hypothesis about who the user is and what they want — a first draft that gets verified or falsified through daily use and regular re-interviews. Build features with this in mind: output should invite correction, not foreclose it. This framing is internal to the development context and is never surfaced to users.
 
-See `config/constitution.md` for the runtime expression of these principles. See `config/frameworks.md` for the theoretical literature informing them.
+See `config/constitution.md` for the runtime expression of these principles.
+*(A companion config/frameworks.md — unbackticked deliberately, see below — was
+the theoretical literature informing them. It was referenced here as though it existed and
+**never has** — no such file in any commit, found 2026-08-13 by `scripts/check_claude_md_claims.py`.
+Kept as a named intention rather than deleted, per this file's own rule that a named thing is a
+specification. **Planned, not present — do not send a session to read it.** The backticks are
+off because that script reads a backticked path as a claim the file is live, and this one is
+not; re-add them in the same commit that creates the file.)*
 
 ---
 

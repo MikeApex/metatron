@@ -137,6 +137,20 @@ dev_markers() {
 }
 run_check "dev-markers" dev_markers
 
+# --- 8. CLAUDE.md's executable claims ----------------------------------------
+# `[DB-0809-11]` + `[H8].1`. Asserts what the docs and settings say about
+# themselves: no permission rule that parses and then never matches, no hook
+# pointing at a deleted script, no CLAUDE.md path that has been renamed away.
+# Line ceilings warn rather than fail, matching how the prose states them.
+run_check "claude-md-claims" "$PY" scripts/check_claude_md_claims.py
+
+# --- 9. Deploy-lock invariant ------------------------------------------------
+# `[H8].3`. Runs deploy.sh's own lock block from a throwaway worktree and from
+# the main tree, and asserts one path. H2 was two trees computing different
+# locks and both deploying to the same VM; nothing but this stops a later
+# session simplifying `--git-common-dir` back out.
+run_check "deploy-lock" bash scripts/check_deploy_lock.sh
+
 # --- Report ------------------------------------------------------------------
 echo
 if [[ ${#FAILURES[@]} -eq 0 ]]; then

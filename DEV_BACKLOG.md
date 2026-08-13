@@ -461,9 +461,6 @@ so this is not a parallel track to pick from when a `Now` item is time-gated.
   *merged 2026-08-10 (absorbed `[DB-0809-17]`) · **×3, the bar is met** — recurred twice more on
   08-10, once nearly reusing an id another window had taken minutes earlier · `/archive` step 5
   currently depends on this being unsolved*
-- **[DB-0809-11]** Docs record values the system changes underneath them and nothing checks.
-  Mitigation in force (don't write down short-half-life values); the stronger fix is a smoke
-  script running CLAUDE.md's executable claims. `deploy.sh`'s HEAD assertion is the model.
 - **[DB-0809-10]** `CLASSES` in `core/rule_classes.py` is incomplete by construction, so a clean
   rule-overlap report is not proof. **Widen a class in the same pass as any duplicate found by
   hand** — that is the maintenance loop. **Second blind spot, found 2026-08-09:** nothing checks

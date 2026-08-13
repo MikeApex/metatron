@@ -10,22 +10,24 @@ diagnoses were both wrong.** `[DB-0810-05]` is blocked on **data, not code** (ma
 / 6 Inbox; no contact has enough correspondence to profile). **Blocker for any live test: both
 Tailscale clients are off the tailnet**; VM and server healthy.*
 
-*Dev-workflow track — no runtime code changed, nothing deployed. **All phases done except §10b**,
-now **deferred with its budget corrected to ~165k** (the plan's 40–60k assumed the flat-32k worker
-retired the same day). **Next session runs backlog → H7 → code-not-rules → §10b** — that order is
-load-bearing: **run 2 attempts `./deploy.sh` from both windows, and per H7 that is ungated in a
-non-interactive session**, so it would really deploy, twice. Brief:
-[`next_session_prompt_2026-08-13_throughput_10b.md`](archive/plans/next_session_prompt_2026-08-13_throughput_10b.md).
-**16 defects, every one found by running** — the last two both *looked like passes*:
-`worker_ledger.py` reported 3 runs out of a real 13 (the records were never where the regex was
-looking, so widening it changed nothing), and the H5 detector went silent because it had stopped
-being able to fire. **Trust no guard whose silence you have not made speak.** Rules for today:
-**never `isolation: "worktree"`** (use `new_worktree.sh`, absolute path); **deploying from a
-worktree is now safe** (H2 verified live); **a cold worker costs 50–64k**
-(`scripts/worker_ledger.py`, now accurate); **`ask` does not gate here**. Harness defects —
-**three open, eight closed** — in [`HARNESS_BACKLOG.md`](HARNESS_BACKLOG.md), which **does not
-retire with this build**, each for a stated reason. Standing: `PROJECT_LOG.md` is GENERATED from
-`archive/log/` fragments, backlog items go to `.claude/backlog_inbox/`, `qa_sweep.sh` is free.*
+*Dev-workflow track — no runtime code changed, nothing deployed. **`[H8]` is built and closed:**
+`qa_sweep.sh` is now **9 checks, ~6.6s**, zero tokens, and a `Stop` hook reports real session cost
+so no work block estimates its own spend again. **Two remain — `[H7]` and §10b — and `[H7]` goes
+first because it cannot be done here**: `ask` auto-approves in a non-interactive session, so
+testing it returns the expected null result either way. Run it in **iTerm** (clean control), then
+the **VS Code chat panel** (the harness actually under test); the decision table is in the brief.
+**§10b run 2 must not start until H7 is settled** — it attempts `./deploy.sh` from both windows,
+ungated. Brief:
+[`next_session_prompt_2026-08-13b_throughput_10b_and_backlog.md`](archive/plans/next_session_prompt_2026-08-13b_throughput_10b_and_backlog.md).
+**20 defects, every one found by running** — the newest four were all *inside the checks built to
+catch defects*; the worst was a **false pass**, the deploy-lock check reporting `ok` on two empty
+strings that compared equal. **A guard that fails identically on both sides looks like agreement.**
+⚠ **Three quantities are called "tokens" here** (`subagent_tokens`, raw, weighted) — §10b's ~165k
+is in the first; **never compare across them**. Also: **`claude config list` is not a command** (it
+costs a nested agent turn). Harness defects — **one open, ten closed** — in
+[`HARNESS_BACKLOG.md`](HARNESS_BACKLOG.md), which retires when `[H7]` lands. Standing:
+`PROJECT_LOG.md` is GENERATED from `archive/log/` fragments, backlog items go to
+`.claude/backlog_inbox/`, `qa_sweep.sh` is free.*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -123,8 +125,8 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-13 | **Code-not-rules: token accounting, a claims smoke test, the deploy-lock invariant.** `[H8]` closed in full; `qa_sweep.sh` 7 → 9 checks. **`[H8].1` was unbuildable as written** — it specified grepping `claude config list`, and **there is no `config` subcommand** in either installed binary (2.1.226 / 2.1.170); the CLI parses it as a *prompt* and spends a nested agent turn. Mechanism replaced with a static shape linter needing no CLI; the finding underneath was always proven on a decoy probe. Merged with `[DB-0809-11]` into `check_claude_md_claims.py`, which on first run found **`config/frameworks.md` has never existed in any commit** (marked planned-not-present) and that `.claude/show_phase_progress.py` reads a long-deleted `STATUS.md` — a silent no-op `Stop` hook, left for Mike. Token hook: **dedup by `requestId` is load-bearing** (41 records = 25 requests; a flat sum overcounts **1.74×**) and a raw total is 98% cache reads at 0.1×, so it reports **weighted input-equivalents**. Deploy-lock check **first reported `ok` on two empty strings** — `BASH_SOURCE` cannot be assigned and `set -u` killed both evals identically; fixed, then made to speak against both regression shapes. Estimated 110k, measured **3,423k weighted / 23,934k raw** — wrong quantity, not wrong arithmetic | *(uncommitted at time of writing)* — **not deployed** |
 | 08-13 | **The ledger that measured nothing, `verify` scoping, harness reconcile.** `worker_ledger.py` reported **3 worker runs out of a real 13** — and the committed fix for it had changed nothing, because the diagnosis (too-narrow regex) was wrong: ten completions live in a `tool_result` block at `message.content[].content[].text`, joined by that block's `tool_use_id` *field*, and the code `continue`d past every record with a dict `message` before any regex ran. The briefed expectation of "~40 runs" was also wrong — grep hits on a literal the script's own docs contain. Real: floor 30,023 · median 49,902 · worst 108,792. **The H5 detector's silence was not success** — it could no longer fire; found by dumping a real hook payload. H2 verified live (both trees → one lock path; mutual exclusion holds). `/backlog verify` gained pre-dispatch scoping from measured medians + a checkability screen before splitting; dispatch block de-duplicated into `/fix` § 3, `journalctl` into `INFRASTRUCTURE.md`; ceiling set to **200, not the approved 170** — 170 was estimated before the content existed. `/archive` now asserts its own push, and its first run reported a true failure. §10b deferred; next-session prompt reordered on Mike's challenge | `3fc6489`, `daf314d`, `b4abdde`, `6368311`, `7285d94`, `7147293`, `fa69900` — **not deployed** |
-| 08-13 | **The permission matcher, the deploy lock, and a Red tier that never prompted.** `defaultMode: "auto"` parsed cleanly and **never took effect**, so the plan's measured 85–88% prompt reduction had never once been observed; replaced with a blanket `allow` list (Mike's call over a curated one — 201 of 1,185 prompts were unclassifiable compounds, and an enumerated list is incomplete by construction). Five `Write(path)` deny rules were **silently ignored** — only `Edit(path)` matches file edits — leaving Tier 0 `constitution.md` reachable by `Write`; the audit found `Bash(./deploy.sh)` was exact-match, so `./deploy.sh --anything` escaped the Red tier. `deploy.sh`'s lock now shared via `--git-common-dir`, proven by holding it in the main tree while a real worktree's copy refused. **Found in passing and worse than either: `ask` does not gate in this harness — it auto-approves**, so the Red tier is ungated unattended (H7, decision open). Rejected: hunk attribution for shared-tree commits — already killed by the Chorus round; the answer is `new_worktree.sh` | `502e560` — **not deployed** |
 ---
 
 ## Useful context to pull as needed

@@ -2165,3 +2165,16 @@ runs when a session runs.
   (history, duplicated in `CLAUDE.md`), holding the file at exactly **100 lines**.
   Step count also corrected in `CLAUDE.md` and `docs/WORKFLOW.md` — the stale-cross-reference
   class `ed92acf`'s verification pass was built to catch. *closed 2026-08-10*
+
+- **[DB-0809-11]** Docs record values the system changes underneath them and nothing checks.
+  **Closed 2026-08-13** by `scripts/check_claude_md_claims.py`, wired into `scripts/qa_sweep.sh`
+  as check 8. Built jointly with `[H8].1` (permission-rule liveness) because `HARNESS_BACKLOG.md`
+  identified them as one thing, not two: both are "the docs assert something and nothing
+  re-checks it". Asserts that every backticked path in `CLAUDE.md` exists, every hook target
+  exists, and no permission rule parses cleanly while matching nothing. **It found two live
+  instances on its first run**: `config/frameworks.md`, referenced in `CLAUDE.md` as holding the
+  theoretical literature, has **never existed in any commit** (now marked planned-not-present);
+  and `.claude/show_phase_progress.py`, a registered `Stop` hook, reads a `STATUS.md` deleted
+  months ago — a silent no-op on every turn since. Line ceilings warn rather than fail, matching
+  how the prose states them. Verified by injecting all five fault classes in an isolated tree and
+  checking exit codes in both directions. *closed 2026-08-13*
