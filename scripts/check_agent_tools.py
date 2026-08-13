@@ -106,6 +106,14 @@ _NOT_TOOLS = {
     "grounding_chunks", "web_search_queries", "quality_events", "clinical_threads",
     "disclosure_note", "fire_and_forget", "untrusted_content", "context_tracker",
     "max_iterations", "thought_signature", "system_prompt", "user_input",
+    # Added 2026-08-13, when qa_sweep.sh made this script's exit code load-bearing
+    # and these four were the entire reason it failed on a clean tree. All are the
+    # bullet-leading JSON-key class this file's docstring already predicts:
+    # open_threads / follow_ups / held_items are context-tracker FIELD DEFINITIONS
+    # in synthesizer.md, and overdue_only is a PARAMETER of list_contacts() in
+    # relationships.md. None is a tool; nothing was deleted from an agent file to
+    # clear them, which would have been the wrong fix.
+    "open_threads", "follow_ups", "held_items", "overdue_only",
 }
 
 # Headings under which a named tool is understood to be unbuilt. Matched against

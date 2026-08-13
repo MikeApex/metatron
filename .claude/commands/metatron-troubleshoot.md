@@ -178,6 +178,8 @@ Before proposing any fix, run the **Mandatory Pre-Edit Context Check** in `CLAUD
 
 **Fix it here if you can, and file nothing.** A one-file fix found by a troubleshoot belongs in this session, not in `DEV_BACKLOG.md`. File only what a user would notice or what blocks the roadmap.
 
+**When it is bigger than that, hand it to `/fix` directly — do not retype the diagnosis.** `/fix` accepts a troubleshoot finding as its input: this command answers *what went wrong*, `/fix` answers *make this change*. Pass the finding, the file(s) implicated, and what was already ruled out, so step 2's premise check starts from evidence rather than from a restatement. (`.claude/commands/fix.md` carries the same line pointing back here, so neither drifts from the other.)
+
 ---
 
 The issue reported for this exchange: $3
