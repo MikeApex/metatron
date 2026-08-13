@@ -93,7 +93,11 @@ rule exists to prevent. Two rules worth carrying without reading `DEV_BACKLOG.md
 
 **Command files carry procedure, not history.** When an incident teaches something, the lesson
 goes to `archive/PROJECT_LOG.md` and the command gets at most a line. Rough ceilings:
-`/archive` ~100 lines, `/backlog` ~130, `DEV_BACKLOG.md` ~450 (raised from an unmeasured 250 on
+`/archive` ~100 lines, `/backlog` **~200** (raised from ~130 on 2026-08-13: the file gained a
+fourth mode, `verify`, and its pre-dispatch scoping step — growth by capability, not narrative
+creep. The same pass de-duplicated the dispatch block into `/fix` § 3 and moved the `journalctl`
+invocation to `docs/INFRASTRUCTURE.md`, and it still landed at 196), `DEV_BACKLOG.md` ~450
+(raised from an unmeasured 250 on
 2026-08-10; `## Now`'s real cap is its **10-item limit**, which is what bounds the workload —
 the line ceiling governs `## Later` accumulation, which is what actually explodes). Crossing one
 is the signal to move something out, not a licence to trim something useful.
