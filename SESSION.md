@@ -1,26 +1,25 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-13, later (coordinator close-out) — `## Now` is **8**, down from 10.
-`[DB-0810-14]` closed (live travel verified, trace `8c9d8963`: `get_tfl_status` actually called by
-Logistics — the pass condition was tool-in-trace, not a plausible answer, because the failure mode
-was fabrication). `[DB-0810-16]` closed. `[DB-0804-01]` closed — it came due 08-11 and **sat
-unread two days**; 18 `AgentRecord` errors/7d → 2. `[DB-0810-05]` stays open but is now blocked on
-**data, not code**: the empty tone profile was an unquoted IMAP folder name (`_imap_quote()`,
-`3a2bb29`), and the mailbox holds 1 Sent / 6 Inbox, so no contact has enough correspondence to
-test against. **`[DB-0810-12]` is UNBLOCKED** — four post-`8ae1ff9` occurrences, all
-`write_quality_event` at position 12 on `synthesizer`, attributed `loop=openai_compat_stream`:
-candidate (a), the *streaming* variant, where deltas carry no `thought_signature` at all. Bare
-label (never `:replay[...]`) puts the 400 on the main stream call. **Instrument the diverged-replay
-`else` branch before fixing — the first two diagnoses were both wrong.** `[DB-0810-13]` (specialists
-report actions they never took) is Now #1 and **untouched**: anything the system says it *did* —
-email, calendar, scheduling — is unverified. **Blocker for any live test: both Tailscale clients
-are off the tailnet**; VM and server are healthy. Ceiling raised 250 → ~450 (no conflict with
-Fable's 08-09 pass, which never validated 250). Deferred by Mike: 4 Inbox entries, ⚠ machine ×4.*
+*Updated: 2026-08-13 (throughput 3a/3b/6/4). `## Now` is **8**. Live runtime items:
+**`[DB-0810-13]` is Now #1 and untouched** — specialists report actions they never took, so
+anything the system says it *did* (email, calendar, scheduling) is unverified. **`[DB-0810-12]` is
+UNBLOCKED**: four post-`8ae1ff9` occurrences, all `write_quality_event` at position 12 on
+`synthesizer`, `loop=openai_compat_stream` — the *streaming* variant, where deltas carry no
+`thought_signature`. **Instrument the diverged-replay `else` branch before fixing — the first two
+diagnoses were both wrong.** `[DB-0810-05]` is blocked on **data, not code** (mailbox holds 1 Sent
+/ 6 Inbox; no contact has enough correspondence to profile). **Blocker for any live test: both
+Tailscale clients are off the tailnet**; VM and server healthy. Closed 08-13: `[DB-0810-14]`,
+`[DB-0810-16]`, `[DB-0804-01]` — detail in the log.*
 
-*Dev-workflow window, merged — no runtime code changed, nothing deployed (`0dd3375`, `c94baf5`).
-`.claude/settings.json` owns permission policy; **`hook_commit_guard.py` blocks a commit carrying
-another session's uncommitted work** (`METATRON_COMMIT_GUARD=off` overrides). `CLAUDE.md` 810 →
-507; load ~31.5k → ~27.1k. **Phases 3–9 unstarted:** `~/.claude/plans/jaunty-kindling-clarke.md`.*
+*Dev-workflow track — no runtime code changed, nothing deployed. Phases 0–2, 3a, 3b, 4, 6 done;
+**5, 8 and the verification table remain** (`~/.claude/plans/jaunty-kindling-clarke.md`). Three
+rules now bind daily work: **`archive/PROJECT_LOG.md` is GENERATED** from `archive/log/` fragments
+— never hand-edit it; **new backlog items go to `.claude/backlog_inbox/<slug>.md`**, not the Inbox
+by hand; **`./scripts/qa_sweep.sh`** is 7 checks in ~6s for zero tokens, and a `SubagentStop` gate
+blocks any worker failing it. **Next: the plan's new §10 integration test, before phase 5** —
+everything so far was tested in isolation against the main tree while the system's point is
+worktrees, and the gate may be checking the wrong tree. **`defaultMode: auto` is not in effect**,
+so phase 1's prompt reduction is unrealised (filed). Estimates ran 1.3–1.5× over plan.*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -119,6 +118,7 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-13 | **Throughput 3a/3b/6/4: worktrees, shared-state fragments, QA sweep, `/fix`** — five components, **five defects that appeared only when run**, all having passed static reasoning first. `PROJECT_LOG.md` became generated from fragments (history frozen verbatim, rebuild proven byte-identical by SHA-256 — the plan's per-entry split was rejected as not mechanically reliable). `qa_sweep` needed three fixes before it was usable, all the same fault: scoped by path not by tracked-ness, incl. a `py_compile` sweep that was really 11,247 files. Rejected: deleting agent-file tool references to clear a check | `ef3499b`, `dd237e1`, `fcac265`, `65b96a5` — **not deployed** |
 | 08-13 | **Development throughput: permission policy, three hooks, context diet** — 822 approval prompts measured across 25 sessions, ~19 of them decisions. Two premises I argued from were wrong and the docs corrected both (compound commands *are* matched per-subcommand; a built-in read-only set never prompts in any mode). Commit guard designed twice — hunk fingerprinting has a fatal false negative on a shared tree and **would not have caught the 2026-08-09 incident it was built for**; `/code-review high` then found 9 defects in the blob-hash replacement, all one theme: silent passes on risky paths, noisy blocks on routine ones. `CLAUDE.md` 810 → 507. Rejected: conditional roadmap loading, and adopting GSD/OMC | `0dd3375`, `c94baf5` — **not deployed** (no runtime code) |
 | 08-13 | **Coordinator close-out: two workers landed, `[DB-0810-12]` unblocked** — `[DB-0810-14]` closed (trace `8c9d8963`, `get_tfl_status` in-trace, not a plausible answer), `[DB-0810-16]` closed, `[DB-0804-01]` closed (came due 08-11, sat unread 2 days; 18 `AgentRecord` errors/7d → 2). Four post-`8ae1ff9` `thought_signature` 400s attributed `loop=openai_compat_stream` — candidate (a), streaming, deltas carry no signature. Found `tools/caldav.py` naming a dead config file in three strings, one the `read_calendar` schema | `7e0e302`, `4fcc170` — deployed |
 | 08-13 | **The mailbox default was contradicted in the persona layer within four hours of shipping** — `mike.md:14` said "check inbox every six hours in the background" against a template default of 240 min, describing polling that does not exist. Mike kept four hours; line removed on the VM. `daily_rule_audit` caught the preference ×4 but named the wrong partner — it cannot see `email.yaml`. **A layer rule in a config file does not survive the next runtime write to the persona file** | VM-side edit only — `mike.md` is gitignored |
