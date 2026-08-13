@@ -72,14 +72,36 @@ verdict table, not ten investigations.**
 
 `$ARGUMENTS` names the items; bare `verify` takes all of `## Now`. **Cap: 10 items.**
 
-**Batch across at most 3 workers — do not spawn one per item.** A cold worker costs a **flat
-~32k tokens** before it reads a thing, so ten workers is 320k spent on ten briefings. Three
-workers carrying three or four items each is the same coverage for about a third of the cost.
-(Plan §5 said one-per-item; it was written before that flat cost was measured.)
+**First screen for checkability, then split.** An item a worker *cannot* reach is not a small
+item, it is an unanswerable one, and a worker handed it will flail — burning a full briefing to
+report that it could not look. Keep in this window anything needing VM traces, journal output or
+a live session (`[DB-0810-13]` is the standing example: specialists reporting actions they never
+took, answerable only from traces on the VM). Split only what is settleable by reading the tree.
+
+**Then scope each worker in advance, with a cost estimate.** The target is one optimal context
+lifetime per worker: enough items that the briefing is amortised, few enough that it is not still
+reading at 100k. Estimate from measured medians — `python3 scripts/worker_ledger.py` reports
+them, and they are per-model:
+
+| Model | Median run | n | Use for |
+|---|---|---|---|
+| `haiku` | ~32k | 4 | mechanical checks — does this symbol still exist, is this line number current |
+| `sonnet` | ~59k | 1 | ordinary verification: read the code, form a verdict |
+| *inherited* | ~64k | 8 | items needing judgement about what a failure means |
+
+**Batch across at most 3 workers — do not spawn one per item.** The floor is ~30k before a
+worker reads anything, so ten workers is ~300k spent on ten briefings. State the estimate per
+worker before dispatching: *items × expected cost*, from the row you are actually dispatching.
+The flat ~32k this section used to assert was wrong in both directions — it matched the
+mechanical probes and nothing else, and the worst observed run is 108,792.
 
 Dispatch: `Agent(model: "sonnet", subagent_type: "general-purpose")`, **no `isolation` flag** —
 it checks workers out from `origin/main`, not local `HEAD`. Verification is read-only, so these
 workers need no worktree; they read the main tree.
+
+**After the run, record actual against estimate** — one line, so the medians calibrate instead of
+ossifying: `python3 scripts/worker_ledger.py --session <id>`, then note the variance in the
+close-out. An estimate never checked against an outcome is the flat-32k failure again, slower.
 
 The brief must carry, because a worker starts cold:
 
@@ -93,16 +115,9 @@ The brief must carry, because a worker starts cold:
 - that a tool named in an agent file is a *specification*, not a bug to delete
 
 **Runtime claims need the journal, not the code** — "fails on every scheduler job", "fires twice
-a day". Workers do not SSH; collect those and run one round-trip here:
-
-```bash
-gcloud compute ssh metatron-vm --zone=us-central1-a --project=metatron-ai-499810 \
-  --tunnel-through-iap --command="sudo journalctl -u metatron-server -u metatron-scheduler \
-  --since '7 days ago' --no-pager | grep -c 'PATTERN'"
-```
-
-Beware near-misses: eleven `[vertex_cache]` warnings once looked like a filed 404 bug and were
-`NameResolutionError` from an unrelated outage.
+a day". Workers do not SSH; collect those and run one round-trip here — the invocation and its
+near-miss warning are in [docs/INFRASTRUCTURE.md](../../docs/INFRASTRUCTURE.md) § Service
+management.
 
 **This window owns every write.** Workers report; you move items to
 `archive/backlog_closed_2026-08.md` with their evidence, repoint drifted line numbers, and put
@@ -148,21 +163,11 @@ test files, cross-checked across groups. **A cluster that cannot be given a disj
 not parallelised** — it runs serially in this window instead. Flag any VM-owned files
 (`config/personas/**`) explicitly; those need the scp discipline, not a normal edit.
 
-**Then, per approved cluster: make its worktree first, and dispatch into it by absolute path.**
-
-```bash
-./scripts/new_worktree.sh <slug>          # add --with-personas if it runs the A4 or B1 suites
-```
-```
-Agent(model: "sonnet", subagent_type: "general-purpose")     # NO isolation flag
-```
-
-**Not `isolation: "worktree"`** — that checks the worker out from `origin/main`, not local
-`HEAD`; measured 2026-08-13 at 11 commits and six hours stale, on a base with no `qa_sweep.sh`
-in it. `new_worktree.sh` branches from local `HEAD`. **Give the worker the absolute path and
-tell it to work there** — a worker cannot persistently `cd`, the shell resets between calls.
-Without `--with-personas` the fixture trees are hollow rather than absent, so a suite runs
-against incomplete data instead of failing loudly.
+**Then, per approved cluster: dispatch exactly as `/fix` step 3 does** — worktree first via
+`./scripts/new_worktree.sh <slug>`, no `isolation` flag, absolute path in the brief. That step
+owns the mechanics and the reasons behind each one; it is not restated here, because a rule kept
+in two files is edited in one (`CLAUDE.md` § One Home Per Rule Class). The only addition for a
+cluster is that **each worker gets its own worktree**, one per manifest.
 
 **Each prompt carries this protocol verbatim, because the collisions were never in the code —
 they were in the close-out:**
@@ -184,7 +189,8 @@ hand-off.
 
 ---
 
-*Procedure only. **187 lines against the ~130 recorded in `CLAUDE.md`** — the overage is the
-fourth mode and the dispatch block, both added 2026-08-13, not narrative creep; either raise the
-recorded figure or move a mode out, but do not quietly ignore it. What each collision cost and
+*Procedure only. **196 lines against the ~200 recorded in `CLAUDE.md`** — raised from ~130 on
+2026-08-13, after the fourth mode (`verify`) and its scoping step. That is growth by capability,
+not narrative creep: the same pass moved the dispatch block to `/fix` § 3 and the `journalctl`
+invocation to `docs/INFRASTRUCTURE.md`, and the file still grew. What each collision cost and
 why the protocol looks like this: `archive/PROJECT_LOG.md` § 2026-08-08 and § 2026-08-09.*

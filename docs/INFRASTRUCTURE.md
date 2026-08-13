@@ -448,6 +448,23 @@ sudo journalctl -u metatron-scheduler -f
 Both units are enabled at boot, so nothing needs restarting after a VM resume.
 Unit files verbatim: § systemd unit files above.
 
+### Counting a runtime signature from the Mac (no SSH session)
+
+A one-shot round trip, for checking whether a claimed runtime behaviour — *"fails on every
+scheduler job"*, *"fires twice a day"* — is actually in the logs. This is the query
+`/backlog verify` sends here, because workers cannot SSH and a runtime claim cannot be settled
+by reading code:
+
+```bash
+gcloud compute ssh metatron-vm --zone=us-central1-a --project=metatron-ai-499810 \
+  --tunnel-through-iap --command="sudo journalctl -u metatron-server -u metatron-scheduler \
+  --since '7 days ago' --no-pager | grep -c 'PATTERN'"
+```
+
+**Read the matches, not just the count.** Eleven `[vertex_cache]` warnings once looked like
+confirmation of a filed 404 bug and were `NameResolutionError` from an unrelated outage — a
+near-miss that would have closed the wrong item with a number attached to it.
+
 ---
 
 ## Pausing / resuming (cost control while not developing)
