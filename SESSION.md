@@ -1,6 +1,6 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-13 (§1 permissions, deploy lock). `## Now` is **8**. Live runtime items:
+*Updated: 2026-08-13 (ledger fix, `verify` scoping, harness reconcile). `## Now` is **8**. Live runtime items:
 **`[DB-0810-13]` is Now #1 and untouched** — specialists report actions they never took, so
 anything the system says it *did* (email, calendar, scheduling) is unverified. **`[DB-0810-12]` is
 UNBLOCKED**: four post-`8ae1ff9` occurrences, all `write_quality_event` at position 12 on
@@ -10,20 +10,22 @@ diagnoses were both wrong.** `[DB-0810-05]` is blocked on **data, not code** (ma
 / 6 Inbox; no contact has enough correspondence to profile). **Blocker for any live test: both
 Tailscale clients are off the tailnet**; VM and server healthy.*
 
-*Dev-workflow track — no runtime code changed, nothing deployed. **Every phase is done except
-§10b**, the two-window rehearsal (~40–60k), which §1's permissions work (`502e560`) has now
-unblocked. **14 defects across this plan, every one found by running, none by reading.** The
-14th is the one to carry: **`permissions.ask` does not gate in this harness — it resolves to
-ALLOW**, so `./deploy.sh`, `git push` and agent-file edits are **ungated in any non-interactive
-session** (`deny` is enforced; a plain-CLI session auto-*denies* the same prompt). **Open
-decision: whether the Red tier moves to `deny`** — first test whether an *interactive* session
-honours `ask`, which narrows it. Three more rules for today: **`/fix` and `/backlog attack` must
-not use `isolation: "worktree"`** (workers check out from `origin/main`, 11 commits stale) — use
-`new_worktree.sh` with an absolute path; **deploying from a worktree is now safe**; and **a cold
-worker costs 50–60k, not 32k** (`python3 scripts/worker_ledger.py`). Harness defects — **three
-open, eight closed** — are in [`HARNESS_BACKLOG.md`](HARNESS_BACKLOG.md); it **does not retire
-with this build**, and each of the three stayed open for a stated reason. Standing: `PROJECT_LOG.md` is GENERATED from `archive/log/` fragments, backlog items go to
-`.claude/backlog_inbox/`, `qa_sweep.sh` is free.*
+*Dev-workflow track — no runtime code changed, nothing deployed. **All phases done except §10b**,
+now **deferred with its budget corrected to ~165k** (the plan's 40–60k assumed the flat-32k worker
+retired the same day). **Next session runs backlog → H7 → code-not-rules → §10b** — that order is
+load-bearing: **run 2 attempts `./deploy.sh` from both windows, and per H7 that is ungated in a
+non-interactive session**, so it would really deploy, twice. Brief:
+[`next_session_prompt_2026-08-13_throughput_10b.md`](archive/plans/next_session_prompt_2026-08-13_throughput_10b.md).
+**16 defects, every one found by running** — the last two both *looked like passes*:
+`worker_ledger.py` reported 3 runs out of a real 13 (the records were never where the regex was
+looking, so widening it changed nothing), and the H5 detector went silent because it had stopped
+being able to fire. **Trust no guard whose silence you have not made speak.** Rules for today:
+**never `isolation: "worktree"`** (use `new_worktree.sh`, absolute path); **deploying from a
+worktree is now safe** (H2 verified live); **a cold worker costs 50–64k**
+(`scripts/worker_ledger.py`, now accurate); **`ask` does not gate here**. Harness defects —
+**three open, eight closed** — in [`HARNESS_BACKLOG.md`](HARNESS_BACKLOG.md), which **does not
+retire with this build**, each for a stated reason. Standing: `PROJECT_LOG.md` is GENERATED from
+`archive/log/` fragments, backlog items go to `.claude/backlog_inbox/`, `qa_sweep.sh` is free.*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -92,9 +94,8 @@ fingerprint** by design — do not move it into `args`. **The ZDR clarification 
 absent from its schema**: only `tone.py` writes it, because the source is attacker-writable mail
 and the field is read back as trusted prompt text. The fixed JSON key set reassembled in Python is
 that defence — the injection check is only a backstop. **`_imap_quote()` fixed the unquoted
-`[Gmail]/Sent Mail` select that had been failing every sent-side query;** `[DB-0810-05]` is now
-blocked on **data, not code** — the mailbox holds 1 Sent / 6 Inbox, so no contact has enough
-correspondence to profile.
+`[Gmail]/Sent Mail` select that had been failing every sent-side query** (the blocker is stated
+once, above).
 
 **Obligations are data, not jobs.** `tools/obligations.py` + `data/personas/{p}/obligations.yaml`;
 closure is inferred, `close_obligation` **requires** evidence. The reconcile sweep **never
@@ -122,9 +123,8 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-13 | **The ledger that measured nothing, `verify` scoping, harness reconcile.** `worker_ledger.py` reported **3 worker runs out of a real 13** — and the committed fix for it had changed nothing, because the diagnosis (too-narrow regex) was wrong: ten completions live in a `tool_result` block at `message.content[].content[].text`, joined by that block's `tool_use_id` *field*, and the code `continue`d past every record with a dict `message` before any regex ran. The briefed expectation of "~40 runs" was also wrong — grep hits on a literal the script's own docs contain. Real: floor 30,023 · median 49,902 · worst 108,792. **The H5 detector's silence was not success** — it could no longer fire; found by dumping a real hook payload. H2 verified live (both trees → one lock path; mutual exclusion holds). `/backlog verify` gained pre-dispatch scoping from measured medians + a checkability screen before splitting; dispatch block de-duplicated into `/fix` § 3, `journalctl` into `INFRASTRUCTURE.md`; ceiling set to **200, not the approved 170** — 170 was estimated before the content existed. `/archive` now asserts its own push, and its first run reported a true failure. §10b deferred; next-session prompt reordered on Mike's challenge | `3fc6489`, `daf314d`, `b4abdde`, `6368311`, `7285d94`, `7147293`, `fa69900` — **not deployed** |
 | 08-13 | **The permission matcher, the deploy lock, and a Red tier that never prompted.** `defaultMode: "auto"` parsed cleanly and **never took effect**, so the plan's measured 85–88% prompt reduction had never once been observed; replaced with a blanket `allow` list (Mike's call over a curated one — 201 of 1,185 prompts were unclassifiable compounds, and an enumerated list is incomplete by construction). Five `Write(path)` deny rules were **silently ignored** — only `Edit(path)` matches file edits — leaving Tier 0 `constitution.md` reachable by `Write`; the audit found `Bash(./deploy.sh)` was exact-match, so `./deploy.sh --anything` escaped the Red tier. `deploy.sh`'s lock now shared via `--git-common-dir`, proven by holding it in the main tree while a real worktree's copy refused. **Found in passing and worse than either: `ask` does not gate in this harness — it auto-approves**, so the Red tier is ungated unattended (H7, decision open). Rejected: hunk attribution for shared-tree commits — already killed by the Chorus round; the answer is `new_worktree.sh` | `502e560` — **not deployed** |
-| 08-13 | **Attention-ping hooks, and the transcript titler that had been mangling names since June** — `~/.claude/alert.sh` + `Notification`/`Stop` hooks, toggled by the marker file `~/.claude/.alerts_off` (`alert` in `.zshrc`): **a shell variable cannot gate a hook**, hooks are subprocesses. `PreToolUse` was the wrong event — it would have pinged on every tool call. `archive_chats.py` was stripping **one of a slash command's five tags**, so caveat boilerplate leaked into titles *and* transcript bodies; titles also took the first user message unconditionally. Both fixed, verified over 109 sessions; 31 of 32 historical transcripts retitled, 1 unrecoverable (JSONL deleted). Hand-renaming a transcript is useless — the script re-derives the name and unlinks the old file | no repo commits — `~/.claude/`, **not deployed** |
-| 08-13 | **Throughput §8 + §5 — the workflow doc, `/backlog verify`, and a worker cost ledger.** `docs/WORKFLOW.md` rewritten for Mike (149 → 304 lines, five sections); it deliberately omits `/backlog verify` until it existed, documents `/qa` as the script it is rather than the ninth command the plan counts, and states the two open defects that change what he should do today. `/backlog verify` fans verification to workers and returns one verdict table — **run on one real item, where a Sonnet worker answered a question `[DB-0810-09]` had left open for three days** (`ROUTING_MISS` is emitted from nowhere) and found a type the item missed. It cost **58,879 tokens against a ~42k estimate**, retiring the flat-32k model the batching rested on; `scripts/worker_ledger.py` now reads real per-worker cost out of the transcripts for free, retrospectively, across all 112 sessions. **A parallel window hand-edited the generated `PROJECT_LOG.md` and `qa_sweep` caught it** — first defect on this plan found by a guard, not a person. Rejected: instrumenting the `SubagentStop` hook to measure worker cost | `c82ed47`, `9ee4057`, `83e77a2` — **not deployed** |
 ---
 
 ## Useful context to pull as needed
@@ -196,6 +196,5 @@ python core/scheduler.py
 
 ## Key design decisions
 
-**Moved to [CLAUDE.md](CLAUDE.md) → Key Design Decisions**, which is now the only list. This
-file carried a second one under an almost identical heading with different contents, so
-whichever you found first looked like the whole set.
+**The only list is [CLAUDE.md](CLAUDE.md) → Key Design Decisions.** *(Why this file no longer
+carries a second: `archive/PROJECT_LOG.md` § 2026-08-03.)*
