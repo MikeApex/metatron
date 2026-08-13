@@ -7,9 +7,9 @@
 
 | File | Description | Status |
 |---|---|---|
-| [CLAUDE.md](CLAUDE.md) | Primary developer context — architecture, conventions, terminology, design principles. Read every session. | Current |
+| [CLAUDE.md](CLAUDE.md) | Primary developer context — architecture, terminology, design principles, file ownership, change tiers, infrastructure *traps*. Auto-loaded every session. **Slimmed 810 → 507 lines on 2026-08-13**: operational infrastructure detail moved to `docs/INFRASTRUCTURE.md`, module/tool/model-ID recipes to `docs/CONVENTIONS.md`. It holds judgement; the `docs/` files hold reference. | Current |
 | [~/.claude/CLAUDE.md](~/.claude/CLAUDE.md) | Global Claude Code instructions — session logging, commit style, file references, numbered lists, terminal command explanations. | Current |
-| [STATUS.md](STATUS.md) | Legacy phase handoff document. **Stale** — says "Phase 3 ready to begin." Superseded by CLAUDE.md + session continuation prompts. Do not rely on it. | Stale |
+| ~~STATUS.md~~ | **Deleted 2026-08-13.** Retirement had been pending since 2026-06-09, flagged in the roadmap and three sessions. It was worse than stale: its own line 3 told every session to read it while this row said not to — two files in the repo giving opposite instructions about the same file. Recover with `git show HEAD~1:STATUS.md` if ever needed. | Removed |
 | [docs/WORKFLOW.md](docs/WORKFLOW.md) | Which dev command to fire, when, and what it costs — decision table, per-command cards, worked example week. Read on demand; not loaded by default. | Current |
 | [config/constitution.md](config/constitution.md) | Tier 0 — Tool Constitution. Read-only at runtime. Never edit without explicit user instruction. Loaded into every agent context. | Current |
 | [config/prime_directive.md](config/prime_directive.md) | Tier 1 — User terminal values. Blank until Goals Interview runs. Sensitive tier — local only. | Blank |

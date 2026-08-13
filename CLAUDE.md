@@ -2,6 +2,13 @@
 
 This file is loaded into every Claude Code session. It describes the project architecture, conventions, and key design principles for the developer (Claude Code). It is NOT the runtime system — that is `core/orchestrator.py`.
 
+> **Ceiling: ~250 lines.** Anthropic's guidance is under 200; this file was **810** on
+> 2026-08-13 — 4× over, and paid on every session including the ones doing unrelated work.
+> The cut removed **duplication and dead content only**: no live rule was deleted, shortened
+> or made conditional, and every rule kept its rationale sentence. What left went to files
+> that already held it in full. If you are about to add something here, first ask whether it
+> is *judgement* (belongs here) or *reference* (belongs in `docs/`).
+
 ---
 
 ## What This Project Is
@@ -29,6 +36,12 @@ This applies even to small, well-intentioned additions made in service of a good
 
 If `SESSION.md` or the roadmap doesn't clearly resolve whether a file is safe to edit right now, ask before editing — don't infer permission from the fact that the conversation reached an implementation-shaped request.
 
+> **This check is now also enforced mechanically.** `scripts/hook_context_gate.py`
+> (`PreToolUse` on `Write|Edit`) warns once per session when an edit begins before
+> `SESSION.md` and `ROADMAP.md` have been read. It **warns, never blocks** — refusing an
+> edit to enforce a reading habit would discard work the user asked for, which is the worse
+> failure. The prose above is still the rule; the hook is what stops it being skimmed past.
+
 ---
 
 ## Which File Holds What
@@ -44,10 +57,11 @@ jobs and no rule about ownership — `SESSION.md` had reached 775 lines, 80% of 
 | [`ROADMAP.md`](ROADMAP.md) | **live** tracks, phase gates, freezes — abridged | edited | `/metatron-code` |
 | `archive/plans/phase5_to_future_roadmap_2026-06-10.md` | the full plan — completed tracks, Phase 6B/7 detail | **never edited — it is dated and static** | never — read when `ROADMAP.md` says it does not carry your area |
 | [`docs/WORKFLOW.md`](docs/WORKFLOW.md) | which command to fire, when, and what it costs | edited | never — read when unsure which ritual applies |
+| [`docs/CONVENTIONS.md`](docs/CONVENTIONS.md) | phase review/testing, file naming, **adding a module, the tool pattern, model-ID maintenance** | edited | never — read when doing one of those |
+| [`docs/INFRASTRUCTURE.md`](docs/INFRASTRUCTURE.md) | **all** deploy/VM/Vertex/Tailscale/systemd/billing/env/APK detail, outage runbooks | edited | never — consult when deploying or recovering |
 | `CODEBASE_INDEX.md` | where things are | edited | on demand |
 | [`archive/PROJECT_LOG.md`](archive/PROJECT_LOG.md) | dated history, reasoning, rejected options | **appended, never rewritten** | never — consult deliberately |
 | `archive/backlog_closed_YYYY-MM.md` | closed backlog items with the evidence that closed them | appended, rolls monthly | never — consult before re-filing anything |
-| [`docs/INFRASTRUCTURE.md`](docs/INFRASTRUCTURE.md) | recreate-from-scratch, outage runbooks, APK build | edited | never — consult when deploying or recovering |
 | `archive/sessions/` | **historical — pre-2026-08-09 per-session writeups** | no longer written; the log entry replaced it | never |
 
 **The rule in one line: `SESSION.md` has a 200-line ceiling.** Below it, grow freely — recording a
@@ -72,21 +86,30 @@ worked.** Two rules worth carrying without reading that file:
    had no step that closed anything. Both halves are fixed; the bar is what keeps it fixed.
 
 **Command files carry procedure, not history.** When an incident teaches something, the lesson
-goes to `archive/PROJECT_LOG.md` and the command gets at most a line. `/archive` reached 196
-lines the other way — counting traps, notation tables and a diff-tab diagnosis, none of it
-needed at close-out. Rough ceilings: `/archive` ~100 lines, `/backlog` ~130, `DEV_BACKLOG.md`
-~450. Crossing one is the signal to move something out, not a licence to trim something useful.
-
-> **`DEV_BACKLOG.md` was raised 250 → ~450 on 2026-08-10.** 250 was never measured — it was set
-> during the 08-09 revamp and inherited. At 250 the file could not hold ten `## Now` items *with
-> the evidence each was verified against*, and dropping that evidence is what the file's own
-> standing rule exists to prevent: a description without a verdict line is what a stale premise
-> looks like. **`## Now`'s real cap is its 10-item limit, which is unchanged** — that is what
-> bounds the workload. The line ceiling now governs `## Later` accumulation, which is what
-> actually explodes (197 → 1,658 lines in six days). Related: `[DB-0810-06]`, which argues lines
-> are the wrong unit entirely, since width is invisible to a line count.
+goes to `archive/PROJECT_LOG.md` and the command gets at most a line. Rough ceilings:
+`/archive` ~100 lines, `/backlog` ~130, `DEV_BACKLOG.md` ~450 (raised from an unmeasured 250 on
+2026-08-10; `## Now`'s real cap is its **10-item limit**, which is what bounds the workload —
+the line ceiling governs `## Later` accumulation, which is what actually explodes). Crossing one
+is the signal to move something out, not a licence to trim something useful.
 
 → Which command to fire and when: [docs/WORKFLOW.md](docs/WORKFLOW.md).
+
+---
+
+## Change tiers — what needs Mike's approval
+
+**`.claude/settings.json` is the authority, not this table.** It is machine-enforced; a second
+copy here would go stale and the stale copy would keep being read. Read it there. In summary:
+
+| Tier | Roughly | Behaviour |
+|---|---|---|
+| **Green / Amber** | `tests/`, `scripts/`, `docs/`, `tools/`, most of `core/` | applied without a prompt |
+| **Red** | `config/agents/*.md`, `routing*.yaml`, `core/{router,persona,scheduler,spend_guard}.py`, `./deploy.sh`, `git push` | prompts every time |
+| **Denied** | `config/constitution.md`, `config/personas/mike*`, `data/personas/**`, `.env`, `vertex-key.json` | blocked; must be lifted explicitly |
+
+The Denied row turns two standing prose rules into mechanism: the constitution is Tier 0, and
+**the VM owns live persona config** (see Personas below). Red is also the line for *who builds*:
+Red-tier work is not delegated to a subagent, because there the judgement is the work.
 
 ---
 
@@ -132,7 +155,7 @@ config/   Config files — the product. Edit these to change behavior.
 data/     User data — append-only, sensitive-tier, local only
 tools/    MCP tool implementations (Python)
 scripts/  Operational scripts (deploy, backup, pause/resume, audits)
-docs/     Reference read on demand — INFRASTRUCTURE.md, CONVENTIONS.md
+docs/     Reference read on demand — INFRASTRUCTURE.md, CONVENTIONS.md, WORKFLOW.md
 archive/  plans/ sessions/ transcripts/ security/ + PROJECT_LOG.md
 ```
 
@@ -141,6 +164,7 @@ files, per-persona tiers, module settings — and **`core/orchestrator.py` is th
 loads it. Changing behaviour should mean editing `config/`, not `core/`.
 
 → File-by-file index: [CODEBASE_INDEX.md](CODEBASE_INDEX.md).
+→ Adding a module, the tool pattern, model-ID maintenance: [docs/CONVENTIONS.md](docs/CONVENTIONS.md).
 
 ---
 
@@ -174,7 +198,7 @@ Persona names are validated against `^[a-z0-9][a-z0-9_]{0,39}$`. They become fil
 `config/personas/{persona}.md` and `config/personas/{persona}/` are gitignored *and* deliberately absent from the deploy. This is not a gap to be closed:
 
 - **The running system writes to them.** `write_persona()` edits `config/personas/{persona}.md`; `write_config()` edits `prime_directive.md` and `mission.md`. Both happen on the VM, in response to what the user asks for mid-conversation. On 2026-08-03 the VM's `mike.md` held five interaction preferences recorded that morning which the Mac copy knew nothing about — a Mac→VM push would have erased all five.
-- **They hold Tier 1–3 content**, which is sensitive-tier under the data-privacy table above. A private repo is not a reason to relax that; the 2026-07-29 history rewrite is the precedent for what it costs to get this wrong.
+- **They hold Tier 1–3 content**, which is sensitive-tier under the data-privacy table below. A private repo is not a reason to relax that; the 2026-07-29 history rewrite is the precedent for what it costs to get this wrong.
 
 So the rule is directional:
 
@@ -260,50 +284,14 @@ you?" is one question and it resolves the layer.
 
 ---
 
-## Adding a New Module
-
-1. Create `config/agents/{module_name}.md` — agent instruction file
-2. Add tools to `tools/{module_name}.py` — Python functions + JSON schemas
-3. Add `config/modules/{module_name}.yaml` — settings if needed
-4. Register tools in `core/orchestrator.py` → `register_tools()`
-
-No other code changes required.
-
----
-
-## Tool Pattern
-
-Every tool follows this pattern in `tools/`:
-
-```python
-def my_tool(param: str) -> str:
-    """Does the thing."""
-    # implementation
-    return result
-
-MY_TOOL_SCHEMA = {
-    "name": "my_tool",
-    "description": "Does the thing.",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "param": {"type": "string", "description": "What param does"}
-        },
-        "required": ["param"]
-    }
-}
-```
-
-Register by adding `(my_tool, MY_TOOL_SCHEMA)` to the list in `orchestrator.register_tools()`.
-
-### A tool named in an agent file is a specification — do not delete it to make a check pass
+## A tool named in an agent file is a specification — do not delete it to make a check pass
 
 **Agent files are written ahead of the tools on purpose.** A capability named there
 before it exists is the design record: it says what this agent is *for*. So when a tool
 reference has no implementation behind it, the order of preference is **build it → grant
 it → move it to a deferred section. Deleting the line is the last resort**, and deleting
 it silently is how a planned capability disappears with no trace that it was ever wanted.
-This is the same reading `CLAUDE.md` already applies to `TOOL_DENIED` events: an agent
+This is the same reading this file already applies to `TOOL_DENIED` events: an agent
 reaching for a tool it lacks is evidence of designed intent, not misbehaviour.
 
 What actually went wrong with `web_search` was never the aspiration. It was that the
@@ -331,17 +319,16 @@ live-but-unbuilt. Stdlib plus PyYAML, zero model tokens.
 
 **It runs automatically — you do not have to remember it.** A `PostToolUse` hook in
 `.claude/settings.json` fires `scripts/hook_agent_tools.py` after any `Write`/`Edit` to
-`config/agents/*.md` or `config/modules/routing*.yaml`, and surfaces only classes 1 and
-2. A rule you have to remember is not a control: the `get_weather` split happened *inside
-a single commit* and survived a week because nothing re-checked the two halves against
-each other.
+`config/agents/*.md` or `config/modules/routing*.yaml`, and surfaces only the two
+actionable classes. A rule you have to remember is not a control: the `get_weather` split
+happened *inside a single commit* and survived a week because nothing re-checked the two
+halves against each other.
 
 **Scoped to what changed, deliberately.** An agent-file edit reports on that agent. A
 routing edit reads the uncommitted diff and reports only the agents whose block actually
 moved. The unscoped version emitted 37 findings on every grant edit — the volume that
 teaches you to skip the output, which is the same reason this guard is deliberately
-**not** wired into the quality-event stream or `DEV_BACKLOG.md`. It speaks when you have
-touched the thing it watches, and is silent otherwise.
+**not** wired into the quality-event stream or `DEV_BACKLOG.md`.
 
 > **Known limit, so nobody over-trusts a clean report.** Detection is regex over
 > backticked `lower_snake_case` names, gated on evidence that a name is a *tool* — a
@@ -374,6 +361,9 @@ See `config/constitution.md` for the runtime expression of these principles. See
 - Config files: Markdown for narrative content, YAML for structured settings, JSON for data records
 - All sensitive data paths must be enforced in Python tool code, never in prompts
 
+→ Adding a module, the tool schema pattern, model-ID maintenance, phase review and testing
+conventions, generated-file naming: [docs/CONVENTIONS.md](docs/CONVENTIONS.md).
+
 ### Deploy safety — four rules bought with real incidents
 
 1. **`py_compile` cannot catch a `NameError`.** A stale `_SCHEDULER_CONFIG` reference passed
@@ -391,341 +381,59 @@ See `config/constitution.md` for the runtime expression of these principles. See
    passed-event reconciliation" carried a second session's `send_email` grant transfer in
    `routing*.yaml`, and `./deploy.sh` put it on the VM: the grant went live while the agent
    instructions and Coordinator routing that governed it sat uncommitted, so email sending
-   was **dead in production** — Coordinator still routed sends to Logistics, which no longer
-   held the tool. Staging by explicit filename was the discipline in force and it did not
-   help; the check was at file granularity against a line-granularity collision. Diff every
-   file before staging it, or use `git add -p`. When two sessions are live, also: one owns the
-   deploy, and one runs `/archive` — see `.claude/commands/backlog.md` § attack for the worker
-   protocol, which applies to any accidental parallel run and not only a planned one.
+   was **dead in production**. Staging by explicit filename was the discipline in force and it
+   did not help; the check was at file granularity against a line-granularity collision. Diff
+   every file before staging it, or use `git add -p`. When two sessions are live, also: one
+   owns the deploy, and one runs `/archive` — see `.claude/commands/backlog.md` § attack.
+
+   > **Now also enforced mechanically** by `scripts/hook_commit_guard.py`, which hashes each
+   > file this session writes and blocks a commit when one changed underneath it. The rule
+   > above still stands: the guard covers *uncommitted* overlap on the main tree, not a
+   > worktree merge or a file a script wrote. Override with `METATRON_COMMIT_GUARD=off`.
 
 ---
 
-## Deployment Infrastructure
-
-This section describes the full production topology as of 2026-06-20. An engineer reading this should be able to recreate it from scratch.
-
----
-
-### Topology
-
-```
-Mac (dev)
-  │  git push → github.com/MikeApex/metatron (private)
-  │               │
-  │               └── VM pulls via deploy key (read-only SSH)
-  │
-  └── ./deploy.sh ──► GCP VM (metatron-vm, us-central1-a)
-                            │  runs: metatron-server.service (port 8001)
-                            │        metatron-scheduler.service
-                            │
-                            ├──► Vertex AI (Gemini 3.1 Pro / Flash-Lite)
-                            │         GCP project: metatron-ai-499810
-                            │
-                            └──► Tailscale VPN (IP: 100.64.226.49)
-                                      │
-                                 Android phone
-                                 (Metatron app → https://metatron-vm.tail0acc5d.ts.net:8001)
-```
-
-The VM's external IP is never used. All client access is through the Tailscale WireGuard tunnel. The server listens on **HTTPS** port 8001 using the Tailscale-issued cert for `metatron-vm.tail0acc5d.ts.net`, which is publicly trusted — so no CA install is needed on any client. (Tailscale would encrypt the transport regardless; the cert exists so browsers and the Android WebView treat the origin as secure.)
-
----
-
-### GCP VM
-
-`metatron-vm` — `e2-medium` Debian 12 in `us-central1-a`, project `metatron-ai-499810`,
-OS user `md-homefolder`, repo at `~/multi-model-mcp`, Python 3.11. On VPC `metatron-net`
-(**not** `default`). Tailscale IP `100.64.226.49` — the production client address, unchanged
-across the 2026-07-31 rebuild. No public ingress: SSH is IAP-only.
-
-```bash
-gcloud compute ssh metatron-vm --zone=us-central1-a --project=metatron-ai-499810 --tunnel-through-iap
-```
-
-> **The external IP looks removable and is not.** Nothing connects *to* it — every client
-> arrives over Tailscale — so it reads as dead weight worth deleting for the ~$3.65/mo it
-> costs. It is also the VM's **sole egress path.** There is no Cloud NAT on `metatron-net`
-> (`routers list` → 0 items) and `metatron-subnet` has `privateIpGoogleAccess: False`, so
-> deleting the access config would cut off Vertex AI, the Tailscale bootstrap that makes the VM
-> reachable at all, `git pull` on deploy, apt/pip, and every outbound integration. Cloud NAT is
-> not a cheaper substitute — it consumes a public IP at the *same* $0.005/hour and adds gateway
-> and per-GB charges on top. **This was recommended as a saving once and was wrong**; the error
-> was reasoning from "nothing connects inbound" to "unused" without checking egress.
-
-> **Do not record the external IP's literal value anywhere.** It reassigns on every stop/start,
-> and there is an active pause/resume workflow. It was written into four places with three
-> different values, none wrong when written, and the live value was a fourth. Look it up:
-> `gcloud compute instances describe metatron-vm --zone=us-central1-a --project=metatron-ai-499810 --format="value(networkInterfaces[0].accessConfigs[0].natIP)"`.
-> **Generalised: do not write down values with a short half-life.**
-
-→ Full spec table (machine type, VPC ranges, firewall rule, system packages):
-[docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md) § VM spec.
-
----
-
-### Vertex AI
-
-Project `metatron-ai-499810`, location **`global`** — required for Gemini 3.x; `us-central1`
-does not work. Service account `metatron-vertex@…` with `roles/aiplatform.user`; key at
-`~/multi-model-mcp/vertex-key.json` (gitignored), pointed to by `GOOGLE_APPLICATION_CREDENTIALS`.
-
-**How the orchestrator uses it:** all Gemini agents go through `_openai_compat_loop()` via the
-Vertex OpenAI-compatible endpoint. The native genai SDK loop (`_run_gemini_native_loop`) is
-retained in code but **unused** — abandoned over an unworkable `thought_signature` bug on
-parallel tool calls. The grounded search path (`run_session_gemini_grounded`) uses the native
-SDK and is unaffected.
-
-**Model ID note:** Vertex drops the `models/` prefix that AI Studio requires. The orchestrator
-strips it automatically when `GOOGLE_CLOUD_PROJECT` is set.
-
-→ Full credentials table: [docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md) § Vertex AI credentials.
-
----
-
-### Billing Protection
-
-Two tiers. The distinction is **recovery cost, not dollars**:
-
-| Tier | Amount | Fires | Action | Recovery |
-|---|---|---|---|---|
-| **Soft** | $100 | `budget-soft-cap` → `stop-vm` | stops `metatron-vm` | `gcloud compute instances start`, ~60s |
-| **Hard** | $175 | `billing-cap` → `stop-billing` | disables project billing | **days** — see below |
-
-Raised from $70/$150 on 2026-08-09 after the Aug 1–8 billing reconciliation found real spend
-(~$35 by day 8, ~$4.38/day run rate) tracking to trip the old soft cap around Aug 16 — with
-roughly half of that window's cost coming from test-suite runs (A4/B1) rather than routine
-use. $30 headroom added to each tier as a buffer against test-suite spend now that spend_guard's
-per-session accounting is closer to accurate (see docs/CONVENTIONS.md § Testing Cost Convention
-for the projection-and-approval rule this pairs with). Infrastructure alone is ~$29/mo before a
-single token (`e2-medium` 24/7 ~$24.50 + IP ~$3.65 + disk ~$1), so the soft cap leaves ~$71/mo of
-real AI headroom. Overrides are two *separate* GCS markers — `scripts/metatron-vm-override.sh`
-and `scripts/metatron-billing-override.sh` — so silencing one never silences the other.
-
-> **Relink billing *before* writing an override.** The marker lives in a bucket inside the
-> project being disabled, so writing it while billing is off fails `403`. `metatron-resume.sh`
-> had these reversed until 2026-07-30 and aborted under `set -e` before the relink — its
-> automatic recovery had never once completed.
-
-> **A hard-cap trip is an outage, not a cost event.** Disabling billing freezes the project VPC,
-> and GCE's asynchronous thaw **cannot be relied on** — here it never ran, giving 25+ hours of
-> `nic0 is frozen` and a 26-hour outage that ended only by building a new VPC and rebuilding the
-> VM. $175 is priced so reaching it means something is badly wrong.
-> → Recovery runbook, fastest first: [docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md) § Billing protection.
-
-Spend figures lag by hours, so neither cap catches a runaway. The fast path is
-`core/spend_guard.py`, which sees every call as it happens.
-
----
-
-### Tailscale
-
-Tailscale creates a WireGuard mesh VPN between the Mac, VM, and phone. It is the sole access path to the server — no public firewall ports are open on the VM.
-
-| Device | Tailscale hostname / IP |
-|---|---|
-| Mac | `mikes-macbook-air` |
-| VM | `100.64.226.49` |
-| Phone | auto-assigned |
-
-Setup on a new device: install Tailscale, sign in with the same account, and the device joins the tailnet automatically. The VM was added via `curl -fsSL https://tailscale.com/install.sh | sh && sudo tailscale up`.
-
----
-
-### systemd Services
-
-Both services run as user `md-homefolder`, load env from `.env`, restart on crash,
-and are enabled at boot — no manual restart after a VM resume.
-
-| Unit | Runs |
-|---|---|
-| `metatron-server.service` | `core/server.py --persona mike --port 8001` |
-| `metatron-scheduler.service` | `core/scheduler.py --persona mike` |
-
-> **`--persona mike` on the scheduler is load-bearing (added 2026-07-28).** Without it the
-> scheduler resolved no persona and every scheduled session — check-ins, Diarist, Pattern
-> Miner — wrote to the global `data/` tree while the server wrote to `data/personas/mike/`.
-> That split the user's history across two trees. **Both units must name a persona.**
-
-> **Edit a unit file? `daemon-reload` *before* the deploy, not after.** `deploy.sh` restarts
-> the services, so a unit edited but not reloaded is applied at the worst moment — a near-miss
-> once briefly ran production fail-closed.
-
-→ Both unit files verbatim: [docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md) § systemd unit files.
-
-Common service management commands (run on VM):
-```bash
-sudo systemctl status metatron-server metatron-scheduler
-sudo systemctl restart metatron-server metatron-scheduler
-sudo journalctl -u metatron-server -f        # live logs
-sudo journalctl -u metatron-scheduler -f
-```
-
----
-
-### Pausing / Resuming (cost control while not developing)
-
-```bash
-./scripts/metatron-pause.sh     # stops metatron-vm — halts compute + scheduler Vertex spend
-./scripts/metatron-resume.sh    # starts it, waits for health check
-```
-
-Both services are enabled at boot, so nothing needs restarting after a resume. The phone app is
-unreachable while paused; a stopped VM still incurs a small disk fee but no compute or Vertex
-charges. If `metatron-resume.sh` finds billing *disabled* it relinks and sets an override first;
-a routine resume skips that path entirely.
-
-> **Known issue — Tailscale DNS after resume.** A stop/start has at least once brought up
-> Tailscale's DNS relay unhealthy, silently blocking **all** outbound DNS on the VM (not just
-> tailnet), because Tailscale had taken over system resolution. Symptom: `NameResolutionError`
-> on Google APIs while the metadata server is reachable. Check `sudo tailscale status`; fix with
-> `sudo tailscale set --accept-dns=false`. Root cause unknown; restarting `tailscaled` alone did
-> not fix it.
-
----
-
-### GitHub and Deploy Pipeline
-
-| Property | Value |
-|---|---|
-| GitHub account | `MikeApex` |
-| Repo | `github.com/MikeApex/metatron` (private) |
-| Mac SSH key | `~/.ssh/github_mikeapex` (push access) |
-| VM deploy key | `~/.ssh/github_deploy` (read-only pull; registered as deploy key on the repo) |
-| VM git config | `pull.rebase false` (set to avoid divergent branch errors) |
-
-**`deploy.sh`** (project root, run from Mac):
-```bash
-# Pushes to GitHub, then SSHes to VM to pull + reinstall + restart
-./deploy.sh
-```
-What it does: `git push origin main` → `gcloud compute ssh metatron-vm` → `git pull origin main` → `pip install -q -r requirements.txt` → `sudo systemctl restart metatron-server metatron-scheduler`.
-
-**Post-commit hook** (`.git/hooks/post-commit`): prints a reminder to run `./deploy.sh` after every commit. Does not auto-deploy — deployment is always manual.
-
----
-
-### Python Environment
-
-```bash
-# On VM (or Mac for local dev)
-cd ~/multi-model-mcp
-python3.11 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt       # 95 packages as of 2026-06-20
-```
-
-`requirements.txt` is committed to the repo and regenerated from the venv when dependencies change.
-
-Kokoro TTS has its own isolated venv at `tools/kokoro/venv/` — it is separate from the main venv because Kokoro has conflicting dependencies. The `tools/kokoro/speak.py` script uses its own interpreter path directly.
-
----
-
-### Environment Variables (`.env`)
-
-Project root on both Mac and VM. **Gitignored — `deploy.sh` cannot carry it**; transfer to a new
-machine manually via `gcloud compute scp`.
-
-The two that change behaviour rather than just supplying credentials:
-
-| Var | Effect |
-|---|---|
-| `DEPLOYMENT_MODE` | `cloud` → `routing_cloud.yaml` (Vertex). Absent or `local` → `routing.yaml` (Ollama). |
-| `GOOGLE_CLOUD_PROJECT` | When set, the orchestrator strips the `models/` prefix from Gemini IDs. |
-
-The rest are API keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `HF_TOKEN`),
-the Vertex credential path, `GOOGLE_CLOUD_LOCATION=global`, and `VAPID_CLAIMS_SUB`.
-
-> **Account convention (2026-08-03):** all `mike` persona integrations — calendar, mail, push —
-> use the purpose-built account **`diamond.mike.mt@gmail.com`**, not the owner's personal
-> address. Recorded in `config/personas/mike/profile.yaml` as `account_email`.
-
-→ Full annotated listing: [docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md) § Environment variables.
-
----
-
-### Routing / Deployment Mode
-
-`DEPLOYMENT_MODE` (set in `.env`) controls which routing config loads. Evaluated at call time in `core/router.py` — not at import time, so `.env` load order does not matter.
-
-| `DEPLOYMENT_MODE` | Routing file | Model path |
-|---|---|---|
-| `cloud` | `config/modules/routing_cloud.yaml` | All agents → Vertex AI Gemini 3.1 Pro or Flash-Lite |
-| `local` or unset | `config/modules/routing.yaml` | Sensitive agents → Ollama (qwen3:14b); open agents → cloud |
-
-Current model assignments (cloud mode) are in `config/modules/routing_cloud.yaml`. See "Model Version Maintenance" below for how to update model IDs.
-
-> **Vertex will not create a cache below 4,096 tokens, and fails silently when you cross that
-> floor.** The 2026-06-24 token-reduction work shrank the Coordinator/Synthesizer prompts under
-> it, so every cache attempt failed and every call ran uncached — for a month, with no error.
-> `_pad_for_vertex_cache()` in `core/orchestrator.py` now absorbs the gap. **Any future
-> prompt-shrinking pass on `coordinator` or `synthesizer`** — the only two agents on the cached
-> path — must re-check that real prompt sizes stay clear of the floor, or confirm the padding
-> still covers it. Token reduction and prompt caching pull in opposite directions here.
-
----
-
-### Android App (Metatron)
-
-Capacitor 8.4.0 wrapper around `static/index.html` — no bundled backend; it calls
-the VM server over Tailscale at `https://metatron-vm.tail0acc5d.ts.net:8001`.
-App ID `com.mike.metatron`.
-
-**When to rebuild the APK:** any time `static/index.html` changes the `SERVER`
-constant, the login flow, or UI structure. Pure server-side changes (agent files,
-orchestrator logic) do **not** require a rebuild.
-
-→ Build prerequisites, `gradlew` steps, sideload procedure and icon config:
-[docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md) § Android app.
-
----
-
-### Local dev mode (Mac / Ollama)
-
-Remove `DEPLOYMENT_MODE` from `.env` (or set it to `local`) to load `routing.yaml`
-and route sensitive agents to Ollama at `localhost:11434`. The Mac is no longer the
-primary host — local mode is for development and testing only.
-
-> **Two things must be activated before switching to local Mac routing:**
-> 1. `sudo pmset -a sleep 0 disksleep 0` — prevent Mac sleep
-> 2. `launchctl load ~/Library/LaunchAgents/com.metatron.server.plist` — keep the server alive
->
-> Reverse with `sudo pmset -a sleep 10 disksleep 10` and `launchctl unload ...`.
-
-→ Full local-dev settings table (Whisper model size, TTS voice, TLS certs):
-[docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md) § Local dev mode.
-
----
-
-### Rebuilding from scratch
-
-→ Ordered 10-step checklist (GCP project → billing caps → service account → VM →
-Tailscale → GitHub → repo → systemd → deploy → APK):
-[docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md) § Recreate from scratch.
-## Model Version Maintenance
-
-Model IDs in `core/orchestrator.py` and `config/modules/routing.yaml` drift as providers release new versions. Check and update at the start of each new phase, or when a provider announces a new model in a session:
-
-| What to check | Where | How |
-|---|---|---|
-| Anthropic models | `ANTHROPIC_MODEL`, `routing.yaml` cloud_deep | console.anthropic.com/docs/models |
-| OpenAI models | `OPENAI_MODEL` | platform.openai.com/docs/models |
-| Gemini models | `GEMINI_MODEL`, `GEMINI_PRO_MODEL`, `routing.yaml` cloud_fast/cloud_deep | aistudio.google.com / Gemini API docs |
-| MCP ask_gemini | session-level via `mcp__ask_gemini__set_model` | MCP tool description lists available options |
-| Ollama | `OLLAMA_MODEL` | `ollama list` on the local machine |
-
-Current model IDs (updated 2026-06-20): Sonnet 4.6, o3, gemini-3.1-flash-lite (flash), gemini-3.1-pro-preview (pro).
-
----
-
-## Phase Review and Testing Conventions
-
-Every phase opens with a **review** (findings paired with implications, never findings alone)
-and requires a **testing plan** at `tests/phase{N}_testing_plan.md` written *before* the phase
-begins. Generated files — reports, archives, plan snapshots — follow
-`{purpose}_{YYYY-MM-DD}_{qualifier}.{ext}`; generic names like `report.md` are not acceptable.
-
-→ Full conventions, including the review checklist and the finding/implication format:
-[docs/CONVENTIONS.md](docs/CONVENTIONS.md).
+## Infrastructure traps
+
+**The seven things that fail *silently* if you don't already know them.** Everything else about
+deploy, the VM, Vertex, Tailscale, systemd, billing, env vars, the APK and local dev is in
+[docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md) — that material fails *loudly*, so you notice
+the moment you need it and go find it. These do not.
+
+1. **The VM's external IP looks removable and is not.** Nothing connects *to* it — every client
+   arrives over Tailscale — so it reads as dead weight worth deleting for ~$3.65/mo. It is also
+   the VM's **sole egress path**: there is no Cloud NAT on `metatron-net` and
+   `metatron-subnet` has `privateIpGoogleAccess: False`, so deleting it cuts off Vertex AI, the
+   Tailscale bootstrap, `git pull` on deploy, apt/pip and every outbound integration. Cloud NAT
+   is not a cheaper substitute — same $0.005/hour plus gateway and per-GB charges. **This was
+   recommended as a saving once and was wrong.**
+2. **Do not record values with a short half-life.** The external IP reassigns on every
+   stop/start. It was written into four places with three different values, none wrong when
+   written, and the live value was a fourth. Look it up; don't store it.
+3. **A hard-cap billing trip is an outage, not a cost event.** Disabling billing freezes the
+   project VPC, and GCE's asynchronous thaw cannot be relied on — it once gave 25+ hours of
+   `nic0 is frozen` and a 26-hour outage that ended only by building a new VPC.
+   **Thresholds live in `docs/INFRASTRUCTURE.md` § Billing protection — never quote them from
+   memory.**
+4. **Relink billing *before* writing an override.** The marker lives in a bucket inside the
+   project being disabled, so writing it while billing is off fails `403`.
+5. **`--persona mike` on both systemd units is load-bearing.** Without it the scheduler resolves
+   no persona and writes to the global `data/` tree while the server writes to
+   `data/personas/mike/`, splitting the user's history in two.
+6. **Vertex will not create a cache below 4,096 tokens, and fails silently when you cross that
+   floor.** The 2026-06-24 token-reduction work shrank the Coordinator/Synthesizer prompts under
+   it, so every cache attempt failed and every call ran uncached — for a month, with no error.
+   `_pad_for_vertex_cache()` absorbs the gap now. **Any future prompt-shrinking pass on
+   `coordinator` or `synthesizer`** — the only two agents on the cached path — must re-check
+   that real prompt sizes stay clear of the floor.
+7. **Tailscale DNS can come up unhealthy after a VM resume**, silently blocking *all* outbound
+   DNS, not just tailnet. Symptom: `NameResolutionError` on Google APIs while the metadata
+   server is reachable. Check `sudo tailscale status`; fix with
+   `sudo tailscale set --accept-dns=false`.
+
+Two more that are one line each: `DEPLOYMENT_MODE=cloud` in `.env` selects
+`routing_cloud.yaml` (absent or `local` selects `routing.yaml`), and all `mike` integrations use
+the purpose-built account **`diamond.mike.mt@gmail.com`**, not the owner's personal address.
 
 ---
 
@@ -734,10 +442,7 @@ begins. Generated files — reports, archives, plan snapshots — follow
 **Run `/archive`.** Five steps — verbatim transcript, one project-log entry, `SESSION.md`
 refresh, backlog close-and-file, and a commit of exactly those files — in
 `.claude/commands/archive.md` so they are executed, not remembered. It should take minutes.
-The commit stages an explicit manifest and pushes for offsite backup, but **never deploys**;
-a diff carrying lines the session did not write stops it rather than sweeping up a parallel
-window's work. Push is safe there because `deploy.sh` pushes all of `main` anyway — what can
-reach the VM is decided by what you *commit* to `main`, not by who pushes it.
+The commit stages an explicit manifest and pushes for offsite backup, but **never deploys**.
 
 The one rule worth carrying in your head, because it is what keeps `SESSION.md` small:
 
@@ -745,22 +450,14 @@ The one rule worth carrying in your head, because it is what keeps `SESSION.md` 
 > Detail goes in the log; only current state stays in the primer. A session that closes by
 > adding a new dated section to `SESSION.md` has put it in the wrong file.
 
-**No per-session writeup since 2026-08-09.** `archive/sessions/` and the project-log entry had
-become near-duplicates written by hand at every close, so the writeup was dropped: the
-transcript is the verbatim record, the log entry is the narrative, `SESSION.md` is the state.
-Existing files there stay as history. (The global `~/.claude/CLAUDE.md` names a five-step ritual
-including a writeup; it also says a project's own `/archive` is authoritative where one exists,
-which this is.)
-
 **Source of truth for transcripts:** `~/.claude/tools/archive_chats.py` (auto-detects the
-project root). There was a second, older copy at `tools/archive_chats.py` until 2026-08-03;
-the two disagreed while writing to the same directory, so it was deleted.
+project root). Run it mid-session at the trigger points in the global archiving protocol. Each
+run captures everything written up to that moment, which is the intended result — **do not tell
+Mike the capture is partial, that the tail is missing, or that it should be re-run after the
+session closes.** That reminder fires on every run, so it distinguishes nothing.
 
-Run it mid-session at the trigger points in the global archiving protocol. Each run captures
-everything written up to that moment, which is the intended result — **do not tell Mike the
-capture is partial, that the tail is missing, or that it should be re-run after the session
-closes.** That reminder fires on every run, so it distinguishes nothing. `/archive` step 1
-carries the same instruction.
+*(No per-session writeup since 2026-08-09; `archive/sessions/` is history. Why, and how the
+global `~/.claude/CLAUDE.md` five-step ritual reconciles with this one: `archive/PROJECT_LOG.md`.)*
 
 ---
 

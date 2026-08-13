@@ -23,6 +23,101 @@ file is the only narrative record, alongside the verbatim transcripts.*
 
 ## Dated history
 
+### 2026-08-13 (development throughput: permission policy, three hooks, context diet) — `0dd3375` + this session's diet commit, **not deployed**
+
+*Parallel session. The coordinator window was running `/archive` and `/backlog` against the same
+tree throughout; that window's commits are the entry below.*
+
+**The problem, measured rather than assumed.** 25 sessions of transcripts: **822 real approval
+prompts, ~33 per session.** Almost none carried a decision — Red-tier edits (agent files,
+routing, `router`/`persona`/`scheduler`/`spend_guard`) were **19 of the 822**. Two premises I
+argued from were wrong and the docs corrected both:
+
+1. I claimed an allowlist "tops out at 76% because ~200 compound commands can't be classified."
+   **False** — Claude Code splits on `&&`, `||`, `;`, `|` and checks each subcommand
+   independently. A user decision (deny-list inversion over allowlist) had been made on that bad
+   premise and was revisited.
+2. A built-in read-only set (`ls`, `cat`, `grep`, `find`, `cd`, read-only `git`, …) **never
+   prompts in any mode and is not configurable**, so my first backtest of 1,185 counted calls
+   that were already free.
+
+Settled on `defaultMode: auto` + `ask` on the Red tier + `deny` on the never-list, rather than
+`bypassPermissions` — the docs restrict that to isolated containers and it skips writes to
+protected paths like `.git` and `.claude`, which is wrong for a machine holding real user data.
+
+**The `deny` list turns two prose rules into mechanism:** the constitution is Tier 0, and the VM
+owns live persona config. Both had been restated repeatedly *because* prose does not enforce.
+
+**Three hooks.** `hook_context_gate.py` makes the Mandatory Pre-Edit Context Check mechanical —
+warns once per session when an edit begins before `SESSION.md`/`ROADMAP.md` are read, and
+separately detects a **silent permission-mode fallback**, whose only other symptom is prompts
+that were supposed to stop. `hook_agent_spawn.py` announces and ledgers worker spawns: removing
+~800 prompts removes the pause that was *also* the status display. `hook_commit_guard.py` blocks
+a commit carrying another session's uncommitted work.
+
+**The guard was designed twice, and the first design was fatally wrong — worth recording because
+the failure is subtle.** Version one fingerprinted each `git diff` hunk after every edit. A
+Chorus round (Gemini 3.1; **GPT unreachable — `OPENAI_API_KEY` returns 401, `ask_gpt` has been
+silently dead**) found the disqualifying flaw: the recorder runs `git diff` on a *shared* tree,
+so it returns **both** sessions' hunks and session B's manifest silently ingests A's as its own.
+B commits, the staged diff matches B's manifest exactly, and A's work ships. **It would not have
+caught the 2026-08-09 incident it was built for.** Replaced with expected-state blob hashing:
+hash the whole file after writing it, re-hash before staging. "Is this file as I left it" is a
+byte comparison, not a diff parse.
+
+**`/code-review high` then found nine defects in the replacement**, with one theme: *built
+backwards*. It passed silently on globbed paths — including `git add config/modules/routing*.yaml`,
+the literal 2026-08-09 command — and blocked loudly on routine ones (`git stash list`, a
+read-only `python3 -c` whose string contained "git add", `git commit -m "handle -allocator case"`
+parsed as `-a`). **That combination is self-defeating: frequent false blocks train a permanent
+`METATRON_COMMIT_GUARD=off`, which disables the guard for the real case.** Fixed by
+token-level `shlex` parsing and by narrowing the block policy to the one case actually proven —
+**BLOCK** when a file this session wrote changed underneath it, **WARN** on dirty files it never
+wrote (script-generated files are legitimate constantly). Fails closed when git cannot be
+queried, which is precisely the parallel-worker `.git/index.lock` case.
+
+**Context diet — `CLAUDE.md` 810 → 507 lines.** Anthropic's documented guidance is under 200;
+this file was 4× over and paid on every session. **`## Deployment Infrastructure` alone was 301
+lines — 37% of the file — duplicating `docs/INFRASTRUCTURE.md`, which already held it in full.**
+
+The rule applied throughout: **does this fail loudly or silently if nobody reads it?** A spec
+table fails loudly — you notice when you need it and go find it. A trap fails silently. So the
+reference material moved and **seven traps stayed**: the external IP that looks removable and is
+the sole egress path, the do-not-record-short-half-life-values rule, the hard-cap-is-an-outage
+warning, relink-before-override, `--persona mike` being load-bearing, the Vertex 4,096-token
+cache floor, and Tailscale DNS after resume.
+
+**Found while mapping it: `daemon-reload before the deploy` appeared *twice in `CLAUDE.md`*** —
+as deploy-safety rule 3 and again under systemd. The one-home-per-rule-class violation, inside
+the file that warns about it. Deleted the second copy.
+
+**The projected saving was wrong and is corrected here: ~3.2k tokens, not ~8.8k.** The estimate
+was made before the section-by-section pass; the `KEEP`-classified judgement content is ~400
+lines on its own. Hitting 250 would have meant cutting judgement, which the outline forbade —
+so the target moved rather than the content. Total session load ~31.5k → ~24k.
+
+**`STATUS.md` deleted.** Retirement had been pending since **2026-06-09**, carried in the
+roadmap and flagged in three sessions. It was worse than stale: its own line 3 told every
+session to read it while `CODEBASE_INDEX.md` said it was superseded and not to rely on it — two
+files in the repo giving opposite instructions about the same file.
+
+**Rejected: making `ROADMAP.md` load conditionally.** It would save more than any trim, and it
+is wrong — a session does not know it needs the roadmap until it is already mid-edit, which is
+exactly the failure the Mandatory Pre-Edit Context Check exists to prevent. Mike's framing
+settled it: *better to avoid a mistake at a marginal token cost than to save tokens and take a
+large downside.* The gate hook is the replacement.
+
+**Also rejected: adopting GSD or oh-my-claudecode.** Both cover much of this ground, and both
+arrive with their own conventions and instruction files — adopting a framework to *fix* context
+bloat by *adding* instruction files is the wrong direction. OMC's headline feature is
+auto-dispatch, which is the one mechanism established here as unreliable. Taken from GSD:
+atomic commits, narrowed to **"one commit, one reason" — not one commit, one file**, because
+systemic fixes legitimately span five files (the 2026-08-10 observability work) and
+`[DB-0808-09]` is the case where fixing at the assumed scale would have "passed" atomically
+while the real cost sat untouched.
+
+---
+
 ### 2026-08-13, later (coordinator close-out: two workers landed, `[DB-0810-12]` unblocked, `[DB-0804-01]` came due) — `7e0e302`, `4fcc170`, **deployed**
 
 Close-out of the session that opened with the 08-10 `/backlog deep` sweep and ran three worker

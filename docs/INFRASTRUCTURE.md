@@ -5,24 +5,39 @@ paid for on every chat. Nothing here is optional knowledge — it is the knowled
 you need *at a specific moment*, and this file is that moment's home.
 
 **Read this when:**
+- You are deploying, or anything about the deploy pipeline is unclear.
 - A billing cap has tripped and the VM or the project is down.
 - `instances start` reports `nic0 is frozen` after a billing relink.
 - You are rebuilding the VM, the VPC, or the whole project from nothing.
 - You are rebuilding or sideloading the Android APK.
-- You are setting up local Mac / Ollama development.
-- You need a systemd unit file verbatim.
+- You are setting up local Mac / Ollama development, or pausing/resuming the VM.
+- You need a systemd unit file, an env var, a service command, or the topology.
 
-Operational day-to-day material — topology, deploy pipeline, service commands,
-billing cap thresholds, pause/resume, env vars, routing mode — stays in
-[CLAUDE.md](../CLAUDE.md) → **Deployment Infrastructure**. History and reasoning
-live in [archive/PROJECT_LOG.md](../archive/PROJECT_LOG.md).
+> **Scope widened 2026-08-13.** This file previously held only recovery-time
+> detail, and `CLAUDE.md` carried a 301-line operational summary *plus* a pointer
+> to here — 37% of a file loaded on every session, duplicating a file nobody had
+> to load at all. The operational material now lives here in full.
+>
+> **What deliberately did *not* move: the traps.** `CLAUDE.md` keeps a short
+> `Infrastructure traps` block, because those warnings fail *silently* — the
+> external IP that looks removable and is the sole egress path, the Vertex 4,096-
+> token cache floor, `--persona mike` being load-bearing. You only learn you
+> needed them afterwards. Everything here fails *loudly*: you notice the moment
+> you need it, and you come and find it.
+
+History and reasoning live in [archive/PROJECT_LOG.md](../archive/PROJECT_LOG.md).
 
 ---
 
 ## systemd unit files (verbatim)
 
 Both services run as user `md-homefolder`, load env from `.env`, and restart
-automatically on crash. Service management commands are in `CLAUDE.md`.
+automatically on crash. Day-to-day commands: § Service management below.
+
+> **`--persona mike` on both units is load-bearing.** Without it the scheduler
+> resolves no persona and every scheduled session writes to the global `data/`
+> tree while the server writes to `data/personas/mike/`, splitting the user's
+> history across two trees (2026-07-28).
 
 **`/etc/systemd/system/metatron-server.service`**
 ```ini
@@ -94,8 +109,34 @@ WantedBy=multi-user.target
 
 ## Billing protection — full mechanism and recovery
 
-Thresholds, the override scripts and the normal recovery command are in
-`CLAUDE.md`. This is the detail behind them, plus the recovery runbook.
+**This section is the source of truth for the thresholds — do not quote them from
+memory or from another file.** They have been raised four times.
+
+| Tier | Amount | Fires | Action | Recovery |
+|---|---|---|---|---|
+| **Soft** | $100 | `budget-soft-cap` → `stop-vm` | stops `metatron-vm` | `gcloud compute instances start`, ~60s |
+| **Hard** | $175 | `billing-cap` → `stop-billing` | disables project billing | **days** — runbook below |
+
+Raised from $70/$150 on 2026-08-09 after the Aug 1–8 reconciliation found ~$35 by
+day 8 (~$4.38/day) tracking to trip the old soft cap around Aug 16, with roughly
+half that window's cost coming from test-suite runs rather than routine use. $30
+headroom added to each tier as a buffer. Infrastructure alone is ~$29/mo before a
+single token (`e2-medium` 24/7 ~$24.50 + IP ~$3.65 + disk ~$1), so the soft cap
+leaves ~$71/mo of real AI headroom.
+
+Overrides are two **separate** GCS markers — `scripts/metatron-vm-override.sh` and
+`scripts/metatron-billing-override.sh` — so silencing one never silences the other.
+
+> **Relink billing *before* writing an override.** The marker lives in a bucket
+> inside the project being disabled, so writing it while billing is off fails
+> `403`. `metatron-resume.sh` had these reversed until 2026-07-30 and aborted under
+> `set -e` before the relink — its automatic recovery had never once completed.
+
+Spend figures lag by hours, so neither cap catches a runaway. The fast path is
+`core/spend_guard.py`, which sees every call as it happens.
+
+The rest of this section is the mechanism behind those thresholds, plus the
+recovery runbook.
 
 > **Why the hard cap was demoted.** On 2026-07-30 `stop-billing` fired at ~$31 against a budget already raised to $40, acting on a stale notification. Disabling billing froze the project's VPC. Billing was relinked within hours, but Google's asynchronous network thaw never ran — 25+ hours later `instances start` still returned `UNSUPPORTED_OPERATION: The default network interface [nic0] is frozen`, and creating any instance on `networks/default` returned `not ready`. Support escalated with a 3–5 business day estimate. Recovery came from building a **new VPC** (`metatron-net`) and rebuilding the VM on it.
 >
@@ -337,3 +378,136 @@ Follow this order. Each step depends on the ones before it.
 
 ---
 
+
+## Topology
+
+```
+Mac (dev)
+  │  git push → github.com/MikeApex/metatron (private)
+  │               └── VM pulls via deploy key (read-only SSH)
+  └── ./deploy.sh ──► GCP VM (metatron-vm, us-central1-a)
+                            │  metatron-server.service (port 8001)
+                            │  metatron-scheduler.service
+                            ├──► Vertex AI (Gemini 3.1 Pro / Flash-Lite)
+                            │      GCP project: metatron-ai-499810
+                            └──► Tailscale VPN (IP: 100.64.226.49)
+                                      └── Android phone
+                                          https://metatron-vm.tail0acc5d.ts.net:8001
+```
+
+The VM's external IP is never used for access. All clients arrive over the
+Tailscale WireGuard tunnel. The server listens on **HTTPS** 8001 using the
+Tailscale-issued cert for `metatron-vm.tail0acc5d.ts.net`, which is publicly
+trusted — no CA install on any client. Tailscale would encrypt the transport
+regardless; the cert exists so browsers and the Android WebView treat the origin
+as secure.
+
+SSH is IAP-only, no public ingress:
+
+```bash
+gcloud compute ssh metatron-vm --zone=us-central1-a \
+  --project=metatron-ai-499810 --tunnel-through-iap
+```
+
+---
+
+## Tailscale
+
+A WireGuard mesh between Mac, VM and phone. It is the sole access path — no
+public firewall ports are open on the VM.
+
+| Device | Tailscale hostname / IP |
+|---|---|
+| Mac | `mikes-macbook-air` |
+| VM | `100.64.226.49` |
+| Phone | auto-assigned |
+
+New device: install Tailscale, sign in with the same account, it joins
+automatically. The VM was added with
+`curl -fsSL https://tailscale.com/install.sh | sh && sudo tailscale up`.
+
+> **Known issue — DNS after a resume.** A stop/start has at least once brought up
+> Tailscale's DNS relay unhealthy, silently blocking **all** outbound DNS on the
+> VM, not just tailnet, because Tailscale had taken over system resolution.
+> Symptom: `NameResolutionError` on Google APIs while the metadata server is
+> reachable. Check `sudo tailscale status`; fix with
+> `sudo tailscale set --accept-dns=false`. Root cause unknown; restarting
+> `tailscaled` alone did not fix it.
+
+---
+
+## Service management
+
+```bash
+sudo systemctl status metatron-server metatron-scheduler
+sudo systemctl restart metatron-server metatron-scheduler
+sudo journalctl -u metatron-server -f
+sudo journalctl -u metatron-scheduler -f
+```
+
+Both units are enabled at boot, so nothing needs restarting after a VM resume.
+Unit files verbatim: § systemd unit files above.
+
+---
+
+## Pausing / resuming (cost control while not developing)
+
+```bash
+./scripts/metatron-pause.sh     # stops metatron-vm — halts compute + scheduler Vertex spend
+./scripts/metatron-resume.sh    # starts it, waits for health check
+```
+
+The phone app is unreachable while paused; a stopped VM still incurs a small disk
+fee but no compute or Vertex charges. If `metatron-resume.sh` finds billing
+*disabled* it relinks and sets an override first; a routine resume skips that
+path entirely.
+
+---
+
+## GitHub and the deploy pipeline
+
+| Property | Value |
+|---|---|
+| GitHub account | `MikeApex` |
+| Repo | `github.com/MikeApex/metatron` (private) |
+| Mac SSH key | `~/.ssh/github_mikeapex` (push) |
+| VM deploy key | `~/.ssh/github_deploy` (read-only pull) |
+| VM git config | `pull.rebase false` |
+
+`./deploy.sh` from the Mac: `git push origin main` → `gcloud compute ssh
+metatron-vm` → `git pull origin main` → `pip install -q -r requirements.txt` →
+`sudo systemctl restart metatron-server metatron-scheduler`.
+
+`.git/hooks/post-commit` prints a reminder to deploy. It does **not** auto-deploy
+— deployment is always manual.
+
+---
+
+## Python environment
+
+```bash
+cd ~/multi-model-mcp
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+`requirements.txt` is committed and regenerated from the venv when dependencies
+change. **Kokoro TTS has its own isolated venv** at `tools/kokoro/venv/` because
+its dependencies conflict with the main environment; `tools/kokoro/speak.py` uses
+that interpreter path directly.
+
+---
+
+## Routing / deployment mode
+
+`DEPLOYMENT_MODE` in `.env` decides which routing config loads. Evaluated at call
+time in `core/router.py`, not at import, so `.env` load order does not matter.
+
+| `DEPLOYMENT_MODE` | Routing file | Model path |
+|---|---|---|
+| `cloud` | `config/modules/routing_cloud.yaml` | all agents → Vertex Gemini 3.1 Pro / Flash-Lite |
+| `local` or unset | `config/modules/routing.yaml` | sensitive agents → Ollama (qwen3:14b); open agents → cloud |
+
+Current assignments live in those files. Updating model IDs:
+[docs/CONVENTIONS.md](CONVENTIONS.md) § Model version maintenance.

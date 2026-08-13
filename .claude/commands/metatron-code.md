@@ -44,7 +44,8 @@ Do not summarise these back to Mike. Read them, then continue with whatever he a
 | `DEV_BACKLOG.md` | **Working the backlog** — picking up an item, triaging, or asked what's outstanding. Kept current by the sync whether or not it is read. Not for ordinary coding, where the task comes from Mike. |
 | `archive/PROJECT_LOG.md` | You need **why** something was built as it is, whether an approach was already tried, or which of two conflicting docs drifted. |
 | `archive/backlog_closed_*.md` | Checking whether something was already fixed, or why an item was withdrawn. |
-| `docs/INFRASTRUCTURE.md` | Deploying, recovering from a billing/VPC incident, rebuilding the VM, building the APK, or setting up local Ollama. |
+| `docs/INFRASTRUCTURE.md` | **Anything operational.** Deploying or the deploy pipeline; the VM, VPC or a billing/VPC incident; systemd units or service commands; Tailscale; pause/resume; environment variables; the topology; routing mode; the APK; local Ollama. **Scope widened 2026-08-13** — this file now holds the operational detail `CLAUDE.md` used to summarise, so the old trigger ("recovering, rebuilding") is too narrow to find it. |
+| `docs/CONVENTIONS.md` | Adding a module, writing a tool + schema, checking whether a model ID has gone stale, opening or closing a phase, or naming a generated file. |
 | `docs/WORKFLOW.md` | Unsure which command to fire, or when. |
 
 Reading one on the right trigger is correct. Reading one "to be thorough" is the habit this

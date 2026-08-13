@@ -76,3 +76,71 @@ Examples:
 Apply this to: test reports (`run_phase*.py` output), session archives, analysis documents, plan snapshots, and any file a script writes automatically. Generic names like `report.md`, `output.json`, or `plan.md` are not acceptable for generated files.
 
 ---
+
+---
+
+## Adding a new module
+
+*Moved here from `CLAUDE.md` 2026-08-13 — it is a recipe consulted when adding a
+module, which is the definition of on-demand.*
+
+1. Create `config/agents/{module_name}.md` — agent instruction file
+2. Add tools to `tools/{module_name}.py` — Python functions + JSON schemas
+3. Add `config/modules/{module_name}.yaml` — settings if needed
+4. Register tools in `core/orchestrator.py` → `register_tools()`
+
+No other code changes required.
+
+> Before writing the agent file, read `CLAUDE.md` § *A tool named in an agent file
+> is a specification*. Naming a tool you have not built yet is legitimate and is
+> the design record — but it must sit under a deferred heading, not in live
+> instruction text, or the model reads it as a capability it has.
+
+---
+
+## Tool pattern
+
+Every tool follows this pattern in `tools/`:
+
+```python
+def my_tool(param: str) -> str:
+    """Does the thing."""
+    # implementation
+    return result
+
+MY_TOOL_SCHEMA = {
+    "name": "my_tool",
+    "description": "Does the thing.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "param": {"type": "string", "description": "What param does"}
+        },
+        "required": ["param"]
+    }
+}
+```
+
+Register by adding `(my_tool, MY_TOOL_SCHEMA)` to the list in
+`orchestrator.register_tools()`.
+
+---
+
+## Model version maintenance
+
+Model IDs in `core/orchestrator.py` and `config/modules/routing*.yaml` drift as
+providers release new versions. Check and update at the start of each new phase, or
+when a provider announces a new model in a session.
+
+| What to check | Where | How |
+|---|---|---|
+| Anthropic models | `ANTHROPIC_MODEL`, `routing.yaml` cloud_deep | console.anthropic.com/docs/models |
+| OpenAI models | `OPENAI_MODEL` | platform.openai.com/docs/models |
+| Gemini models | `GEMINI_MODEL`, `GEMINI_PRO_MODEL`, `routing.yaml` cloud_fast/cloud_deep | aistudio.google.com / Gemini API docs |
+| MCP ask_gemini | session-level via `mcp__ask_gemini__set_model` | MCP tool description lists options |
+| Ollama | `OLLAMA_MODEL` | `ollama list` on the local machine |
+
+> **The live IDs are in `SESSION.md` § Model IDs, not here.** This table says *where
+> to look and how to check*; recording the current values in a second place is how
+> they go stale. `SESSION.md` is rewritten every session, so it is the copy that
+> stays true.
