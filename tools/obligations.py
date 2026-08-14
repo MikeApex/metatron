@@ -104,6 +104,9 @@ def _save(items: list[dict], persona: str | None = None) -> None:
 
 
 def _new_id(what: str) -> str:
+    # Shape is ob_YYMMDD_<6 hex>: readable date up front, collision tail behind it.
+    # The digest covers the full second-resolution stamp, not just the date, so two
+    # obligations opened the same day with identical text still get distinct ids.
     stamp = datetime.now().strftime("%Y%m%d%H%M%S")
     digest = hashlib.sha256(f"{stamp}|{what}".encode()).hexdigest()[:6]
     return f"ob_{stamp[2:8]}_{digest}"

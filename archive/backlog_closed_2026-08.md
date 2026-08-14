@@ -53,6 +53,40 @@ checked once — and the second of these describes a capability the system alrea
 
 ---
 
+## Closed 2026-08-14 — the due-date marker, and the false positive tagging it produced
+
+- ~~**[DB-0813-01]** A date-gated backlog item comes due and nothing announces it.~~ — **closed:
+  mechanism built (`20ad1ff`), and the tag that makes it fire landed 2026-08-14.**
+  `sync_dev_backlog.py` defines and parses a `due: YYYY-MM-DD` marker and surfaces `⚠ due:` in the
+  count line beside `⚠ machine:`; `--today` is its testing seam. `[DB-0809-02]` now carries
+  `due: 2026-08-17` (the end of the trace week it was filed against), verified on both sides of the
+  boundary: `--today 2026-08-16` prints no clause, `--today 2026-08-17` prints
+  `⚠ due: DB-0809-02`.
+
+  **Found by running that verification, not by reading the code — defect 24 of 24.** The first
+  `--today 2026-08-17` run named **two** items, `DB-0809-02` *and* `DB-0813-01`. The second was a
+  false positive with an instructive cause: this item's own body said *"Remaining: add
+  `due: 2026-08-17` to `[DB-0809-02]`"*, and `DUE_RE` matched the marker **in the prose that
+  described it**. The colon anchor documented at `scripts/sync_dev_backlog.py:149-155` was chosen
+  so a prose date (*"due 2026-08-11, do not check before then"*) would not match — it does that
+  correctly. What it cannot distinguish is prose that **quotes the marker verbatim**, which is
+  exactly what any item documenting the convention will contain.
+
+  **The obvious fix — ignore markers inside backticks — is worse than the bug**, because every
+  real marker is written in backticks too (`[DB-0809-02]`'s included); it would disable the
+  feature outright. No code change was made. The false positive is self-limiting: it existed only
+  while an item was open *about* the convention, and closing this item removed it. The class is
+  recorded here so the next occurrence is recognised rather than re-diagnosed — if an item must
+  quote the marker in future, write it without the colon (`a due marker dated 2026-08-17`).
+
+  **Do not tag `[DB-0809-21]`.** It is event-gated, not date-gated — it needs a real unreferenced
+  calendar event to exist — so no date will ever make it genuinely due, and a marker on it would
+  fire every day forever.
+  *filed 2026-08-13 — the delay, not the fix, was the item · built 2026-08-14 in §10b run 1 ·
+  closed 2026-08-14 on the tag landing*
+
+---
+
 ## Closed 2026-08-13 — the one-week AgentRecord count came due and passed
 
 - ~~**[DB-0804-01]** One-week count confirming `[DB-0803-02]`'s fix under real scheduler fires.~~ —

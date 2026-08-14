@@ -35,6 +35,28 @@ the `METATRON_COMMIT_GUARD=off` override now works, so each is a one-token annoy
 block. Revisit only when a case appears the override does not clear. **Do not re-file it here** —
 this file is Metatron work. Full record: `archive/PROJECT_LOG.md` § 2026-08-14; see also
 `CLAUDE.md` § Which File Holds What.)*
+Not filed as an item — recorded so the next occurrence is recognised, not re-diagnosed.
+
+`sync_dev_backlog.py`'s `DUE_RE` matches a `due: YYYY-MM-DD` marker quoted inside an item's own
+prose, so an item that *documents* the convention tags itself as due. Hit live on 2026-08-14:
+`[DB-0813-01]` fired alongside `[DB-0809-02]` because its body said "add `due: 2026-08-17` to
+[DB-0809-02]".
+
+Deliberately NOT fixed. The obvious fix — ignore markers inside backticks — would disable the
+feature, since every real marker is backticked too. Self-limiting in practice: it only occurs
+while an item is open about the convention. Workaround if it recurs: write the reference without
+the colon ("a due marker dated 2026-08-17").
+
+Fails the "file only what a user would notice or what blocks the roadmap" bar, which is why this
+is a note and not an item. Full reasoning: archive/backlog_closed_2026-08.md § Closed 2026-08-14.
+`tools/obligations.py` — `context_block()` sorts by `str(it.get("due") or "9999")`, so a vague
+`due` phrase sorts lexically *after* the `"9999"` no-due sentinel: `["2026-08-20", "2026-09-01",
+None, "next week"]` is the actual order (verified 2026-08-14). With `_CONTEXT_MAX = 6`, an
+obligation the user gave a soft deadline to is therefore ranked below every undated one and is
+the first thing dropped from the session context block — the opposite of the intended priority,
+and `OPEN_OBLIGATION_SCHEMA` explicitly invites the vague phrase ("or short phrase if genuinely
+vague"). User-noticeable: the store silently stops surfacing a commitment that carries a deadline.
+Not fixed here — this session was comment-only on a file a second window was also editing.
 
 ---
 
@@ -176,7 +198,8 @@ standing rule distrusts.*
   against `ts` returns nothing and looks like a clean day — this sweep made the same misread before
   catching it. The narrow conclusion survives: **no `INSTRUCTION_CHANGE_REQUEST` fired**, which is
   what the old bug produced every time, and both 07:20/07:30 firings recorded `is_proactive: true`.
-  **What remains: read a week of traces.** Still day 1 of 7. Do not re-word anything before then.
+  **What remains: read a week of traces** — `due: 2026-08-17`, the end of the week filed 08-09.
+  Still day 1 of 7. Do not re-word anything before then.
   **⚠ THE FIX DID NOT HOLD — a post-fix recurrence is in hand, and it changes what this item is.**
   Mike reported on **2026-08-12** that evening close *"fired 3 repetitive messages"* and asked that
   follow-up prompts be restricted to a single line. `82d394b` — the fix above — landed **2026-08-09**,
@@ -484,20 +507,9 @@ so this is not a parallel track to pick from when a `Now` item is time-gated.
   console lag. Not retroactive — turning it on now only helps the next anomaly.
 
 **Housekeeping**
-- **[DB-0813-01]** **MECHANISM BUILT (`20ad1ff`) — open only for the one-line tag that makes it
-  fire.** `[DB-0804-01]` said *"due 2026-08-11, do not check before then"*, came due, and sat
-  done-but-unread for two days — found only because an unrelated verification pass happened to
-  read it. The check itself took one command and passed (18 → 2). `sync_dev_backlog.py` now
-  defines and parses a `due: YYYY-MM-DD` marker and surfaces `⚠ due:` in the count line beside
-  `⚠ machine:`; `--today` is its testing seam. **Remaining: add `due: 2026-08-17` to
-  `[DB-0809-02]`.** Until some item carries a marker the feature displays nothing.
-  **Correction — this item's own "two live instances" was wrong on both counts (2026-08-14).**
-  `[DB-0809-21]` is **event-gated, not date-gated** (it needs a real unreferenced calendar event
-  to exist), so no date will ever make it due and **it must never carry a `due:` marker** — one
-  would fire forever. `[DB-0809-02]` is genuinely date-gated but at ~08-17, so nothing was
-  actually due when this was filed.
-  *filed 2026-08-13 by dev session — the delay, not the fix, is the item · built and premise
-  corrected 2026-08-14 in the §10b run-1 rehearsal*
+*(`[DB-0813-01]` — the due-date marker — closed 2026-08-14 once `[DB-0809-02]` carried its tag.
+Its verification found a false-positive class worth knowing before anyone documents the convention
+again: `archive/backlog_closed_2026-08.md` § Closed 2026-08-14.)*
 - **[DB-0810-06]** Every context-file ceiling is measured in lines, and lines stopped tracking the
   cost. `SESSION.md` hit 200/200 with **5.6 KB of its 17.9 KB on five lines** — rows that grew
   **wide, not numerous**, so a line ceiling could not see them. Instance fixed (`2e3e6e4`); the
