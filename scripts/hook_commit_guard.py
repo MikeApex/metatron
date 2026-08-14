@@ -238,8 +238,17 @@ def _wants_all(flags) -> bool:
 # --------------------------------------------------------------------------
 
 def _status(root: Path):
-    """(tracked_modified, untracked). None if git could not be queried."""
-    lines = _git(root, "status", "--porcelain=v1")
+    """(tracked_modified, untracked). None if git could not be queried.
+
+    `-uall` matters: without it git collapses untracked files in a *new*
+    directory to a single "newdir/" entry, so an explicitly-named new file
+    inside one matches nothing in the pool and lands in `unresolved` -- a block,
+    on a file with no other writer. A new file in an already-tracked directory
+    is listed individually and was always fine, which is why this went unnoticed
+    until `.claude/rules/` was created on 2026-08-14 and blocked its own commit.
+    Ignored files stay hidden either way, so this does not enumerate junk.
+    """
+    lines = _git(root, "status", "--porcelain=v1", "-uall")
     if lines is None:
         return None
     tracked, untracked = [], []
