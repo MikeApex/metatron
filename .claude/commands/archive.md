@@ -26,10 +26,20 @@ Idempotent; writes to `archive/transcripts/`. Report what it produced and move o
 nothing about the tail** — this captures everything up to now, which is the intended result;
 Mike has that reminder already and it fires on every run, so it distinguishes nothing.
 
-## 2. **Append** one entry to `archive/PROJECT_LOG.md`
+## 2. Write **one fragment**, then regenerate `archive/PROJECT_LOG.md`
 
-**At the top of the file** — directly under `## Dated history` (~line 23), above the current
-newest entry. One `### <date> (<short title>)` section, ~20–40 lines:
+**Never hand-edit `archive/PROJECT_LOG.md` — it is GENERATED** by
+`scripts/build_project_log.py` from `archive/log/`, and an edit there is silently discarded by
+the next build. *(This step said "append at the top of the file" until 2026-08-14, three
+sessions after the file became generated.)* Write:
+
+```
+archive/log/YYYY-MM-DD-NN-<slug>.md      # NN = next free number that date
+python3 scripts/build_project_log.py     # regenerate; qa_sweep runs --check
+```
+
+One `### <date> (<short title>)` heading, ~20–40 lines, and **the fragment owns its trailing
+blank line**:
 
 - what changed and **why** — the reasoning, not the diff
 - decisions made, and **options rejected with the reason**
@@ -37,8 +47,9 @@ newest entry. One `### <date> (<short title>)` section, ~20–40 lines:
   content in this file
 - commit hashes, and whether it deployed
 
-Carry the outgoing `SESSION.md` handoff paragraph into this entry so the narrative stays
-unbroken. **This file is only ever appended to.**
+Carry the outgoing `SESSION.md` handoff paragraph into the fragment so the narrative stays
+unbroken. **One file per session is the whole point** — unique filenames cannot collide, so two
+windows closing out at once produce two fragments rather than one merge conflict.
 
 ## 3. **Replace** the changed parts of `SESSION.md`
 

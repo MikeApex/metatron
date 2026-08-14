@@ -23,17 +23,9 @@ or `file:line` that closed them — closed without evidence is not closed.
 *(empty — triaged 2026-08-10 by `/backlog deep`. All five entries verified against VM traces,
 journal and conversations before filing; one was a false report the system wrote about itself.)*
 
-- **[instruction change]** Silence 'nothing found' reports for scheduled inbox checks. The system should only notify the user when new actionable mail arrives that requires their triage. Specifically, stop surfacing that pending emails (like the Prudential follow-up) have not arrived.  
-  `2026-08-12T08:27:42.379965Z`
-
-- **[needs building]** Stop assuming passed calendar events are completed. Implement a reconciliation loop to check back on scheduled blocks and actively alert/push the user in the right direction based on calendar intent versus actual reality.  
-  `2026-08-12T08:25:16.368492Z`
-
-- **[needs building]** Bug fix: Evening close scheduler fired 3 repetitive messages; restrict follow-up prompts to a single line. Feature request: Build a mechanism to automatically age out stale state/context (like 'post-travel recovery' lingering for two weeks) to keep live context relevant.  
-  `2026-08-12T08:23:28.940968Z`
-
-- **[needs building]** User requested stopping the read-back of triaged emails (applied to persona) and requested implementing a ticket-based system for managing the mailbox more effectively (needs building).  
-  `2026-08-11T08:36:03.236643Z`
+*(empty — triaged 2026-08-14. All four entries were opened against current code before filing,
+and **two were not what their description said**: the calendar reconciliation loop already exists,
+and the evening-close repetition is a post-fix recurrence rather than a new bug.)*
 *(Two `[dev-workflow]` items — the commit guard blocking routine shell, and `defaultMode: auto`
 not being in effect — were moved out to a `HARNESS_BACKLOG.md` on 2026-08-13, because they are
 defects in the tooling we build with and carry no Metatron content. **That file was retired and
@@ -185,8 +177,21 @@ standing rule distrusts.*
   catching it. The narrow conclusion survives: **no `INSTRUCTION_CHANGE_REQUEST` fired**, which is
   what the old bug produced every time, and both 07:20/07:30 firings recorded `is_proactive: true`.
   **What remains: read a week of traces.** Still day 1 of 7. Do not re-word anything before then.
+  **⚠ THE FIX DID NOT HOLD — a post-fix recurrence is in hand, and it changes what this item is.**
+  Mike reported on **2026-08-12** that evening close *"fired 3 repetitive messages"* and asked that
+  follow-up prompts be restricted to a single line. `82d394b` — the fix above — landed **2026-08-09**,
+  three days earlier, and `_frame_proactive()` is live in both pipeline copies
+  ([core/orchestrator.py:3089](core/orchestrator.py#L3089), called at `:3134` and `:3264`). So one
+  of three things is true and the trace week must say which: the fix is incomplete, `evening_close`
+  reaches a path `_frame_proactive()` does not cover, or the repetition has a different cause
+  entirely and the original diagnosis was right about the mechanism but wrong about the scope.
+  **Do not re-apply the ≤2-sentence cap** — it was rejected deliberately, focus being the target and
+  length only its symptom. **Read the 08-12 evening_close trace specifically** rather than sampling
+  the week; a recurrence with a known date is worth more than seven ordinary days.
   *filed 2026-08-09 · rewritten 2026-08-09 after measurement inverted it · **evidence corrected
-  2026-08-10** — see `archive/PROJECT_LOG.md` § 2026-08-10, last*
+  2026-08-10** — see `archive/PROJECT_LOG.md` § 2026-08-10, last · **recurrence merged in from the
+  Inbox 2026-08-14**, reported by Mike via the VM (2026-08-12T08:23Z); fix date verified against
+  `git log` the same day*
 
 - **5. [DB-0809-21] Three of four verification steps done and passed; one is genuinely time-gated.**
   Ran at ~$0.08, under the $1.00 approval line (`docs/CONVENTIONS.md` § Testing Cost Convention).
@@ -273,6 +278,34 @@ standing rule distrusts.*
   sync in, out, or both. Sensitive-tier either way.
   *filed 2026-08-10 by Mike · **(a) verified present and granted 2026-08-10** — the capability
   exists and went unused, which makes this partly the same class as `[DB-0810-13]`*
+
+- **9. [DB-0814-01] The scheduled inbox check reports "nothing found", six times a day.**
+  Mike asked for it to notify **only when new actionable mail arrives** — specifically to stop
+  surfacing that a pending email (the Prudential follow-up) has *not* arrived. **Verified 2026-08-14:**
+  `check_interval_minutes: 240` at [config/templates/email.yaml:67](config/templates/email.yaml#L67),
+  so the job runs every four hours and a null result is most of those runs. **This is an
+  instruction/config change, not a build** — the fix is that a null check produces no user-facing
+  report at all, not that the report gets shorter. **Treat it as design, not a Mike preference:**
+  nobody wants six null reports a day, so it belongs in the agent/scheduler layer, and if a persona
+  copy is written it must be deleted in the same pass (`CLAUDE.md` § One Home Per Rule Class).
+  Related in kind but do not merge: `[DB-0810-05]`'s mailbox is nearly empty, so a *"nothing found"*
+  today is often literally true.
+  *filed 2026-08-14 by Mike via the VM (2026-08-12T08:27Z) · interval verified in config the same
+  day · Mike ranked it Now #9*
+
+- **10. [DB-0814-02] Nothing ages out stale context — "post-travel recovery" stayed live for two
+  weeks.** Mike asked for a mechanism that keeps live context relevant by expiring state that has
+  stopped being true. **Verified 2026-08-14: structurally impossible today.** `open_threads` is a
+  bare `list[str]` ([tools/context_tracker.py:198](tools/context_tracker.py#L198), written at
+  `:250`) — **the entries carry no timestamp**, so nothing can age them even in principle. The only
+  lifecycle in the file is `clinical_threads` (`active`/`watch`/`resolved`), which is deliberately
+  *not* the model to copy wholesale: tier-2 clinical threads never auto-expire by design
+  (`:43`), and `[DB-0808-06]` is the open item about that. **So the first deliverable is a
+  timestamp on the thread, not an expiry policy** — the policy is unbuildable until the data
+  supports it. Same class as `[DB-0810-13]`: the system reasoning confidently from state that is
+  no longer true. Lower ranked because stale context misleads rather than making a false claim.
+  *filed 2026-08-14 by Mike via the VM (2026-08-12T08:23Z) · absence of timestamps verified in
+  code the same day · Mike ranked it Now #10*
 
 ## Later
 
@@ -400,6 +433,15 @@ so this is not a parallel track to pick from when a `Now` item is time-gated.
   `CLAUDE.md` § Security Architecture — correct the lists, verify, *then* enforce.
   *filed 2026-08-10 by the machine-log sweep · **(b) closed 2026-08-10**, (c) added the same day
   from the guard's first full run · two denials added by the 08-10 `deep` sweep*
+- **[DB-0814-03]** **Ticket-based mailbox management.** Mike's framing: manage the mailbox as
+  tickets rather than as a stream, so a thread has a state rather than being re-read each pass.
+  Real and unbuilt. **Blocked on a design decision this entry cannot make** — what a ticket *is*
+  (a thread, a sender, an obligation), where state lives, and how it relates to two things that
+  already exist and overlap it: `tools/obligations.py` (obligations are data with inferred closure
+  and evidence-required `close_obligation` — much of a ticket lifecycle, already built) and
+  `[DB-0814-01]`'s null-report silencing, which is arguably the same want expressed smaller. **Scope
+  against obligations before designing anything new.** *filed 2026-08-14 by Mike via the VM
+  (2026-08-11T08:36Z)*
 - **[DB-0806-02]** Level 3 web access. Split into rendered-read (`fetch_rendered`, Playwright,
   read-only — recommended, same trust boundary as `fetch_url`; check VM memory first) and
   interactive click/type/submit, which stays gated on a credential store that does not exist.

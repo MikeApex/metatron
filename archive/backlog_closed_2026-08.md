@@ -19,6 +19,40 @@ sitting inside the Open sections. Reasoning: `archive/PROJECT_LOG.md` § 2026-08
 
 ---
 
+## Closed 2026-08-14 — two Inbox entries that were not what they said
+
+*Both closed at triage, before any work was scheduled against them. Recorded here rather than
+dropped, because the standing rule is that an item which resurfaces must be able to show it was
+checked once — and the second of these describes a capability the system already has.*
+
+- ~~**[inbox 2026-08-12T08:25Z]** "Stop assuming passed calendar events are completed. Implement a
+  reconciliation loop to check back on scheduled blocks and **actively alert/push** the user based
+  on calendar intent versus actual reality."~~ — **closed: already built, and the alert half was
+  deliberately rejected in code.** `daily_calendar_reconcile` is a `_DEFAULT_JOBS` entry firing
+  05:40 daily for every persona (`core/scheduler.py:421`), calling `reconcile_check()` at
+  [tools/calendar_reconcile.py:323](../tools/calendar_reconcile.py#L323); it notes passed events
+  nothing in the record mentions, for the morning brief to decide about. **The push half is not an
+  omission.** The job's own comment states it: *"`notification: False` is not a preference —
+  `reconcile_check` returns a plain string and never a notify dict, because the check is crude text
+  matching and cannot support the claim that anything was missed."* Pushing on a crude text match
+  is the false-confidence failure `[DB-0810-13]` exists for. **The genuinely open remainder is
+  `[DB-0809-21]`(3)**, which is time-gated on a real unreferenced calendar event existing — the
+  mechanism re-ran clean with 0 candidates, so it works and has never had anything to find.
+  *Do not re-file this as new; it is `[DB-0809-21]`(3) wearing different words.* *closed 2026-08-14*
+
+- ~~**[inbox 2026-08-11T08:36Z, first half]** "Stop the read-back of triaged emails."~~ —
+  **closed: already applied.** The entry records it as applied to the persona at the time of
+  reporting. **Filed with a caveat that outlived it:** this is *design*, not a Mike deviation —
+  nobody wants their triaged mail read back — so a persona-only copy is the wrong home and should
+  be promoted to the agent layer with the persona copy deleted in the same pass
+  (`CLAUDE.md` § One Home Per Rule Class). Not re-opened as an item, because the user-visible
+  behaviour is correct; noted here so that whoever next audits `mike.md` against the agent files
+  knows this line is a promotion candidate rather than a genuine refinement. The second half of
+  that Inbox entry — ticket-based mailbox management — is live as `[DB-0814-03]`.
+  *closed 2026-08-14*
+
+---
+
 ## Closed 2026-08-13 — the one-week AgentRecord count came due and passed
 
 - ~~**[DB-0804-01]** One-week count confirming `[DB-0803-02]`'s fix under real scheduler fires.~~ —

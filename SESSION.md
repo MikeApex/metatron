@@ -1,14 +1,16 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-14 (H7 closed; harness backlog retired). `## Now` is **8**. Live runtime items:
+*Updated: 2026-08-14 (H7 closed; harness backlog retired; Inbox cleared). `## Now` is **10 — at
+cap**, so anything new displaces something. Live runtime items:
 **`[DB-0810-13]` is Now #1 and untouched** — specialists report actions they never took, so
 anything the system says it *did* (email, calendar, scheduling) is unverified. **`[DB-0810-12]` is
 UNBLOCKED**: four post-`8ae1ff9` occurrences, all `write_quality_event` at position 12 on
 `synthesizer`, `loop=openai_compat_stream` — the *streaming* variant, where deltas carry no
 `thought_signature`. **Instrument the diverged-replay `else` branch before fixing — the first two
 diagnoses were both wrong.** `[DB-0810-05]` is blocked on **data, not code** (mailbox holds 1 Sent
-/ 6 Inbox; no contact has enough correspondence to profile). **Blocker for any live test: both
-Tailscale clients are off the tailnet**; VM and server healthy.*
+/ 6 Inbox; no contact has enough correspondence to profile). **⚠ `[DB-0809-02]`'s fix DID NOT HOLD** —
+`82d394b` landed 08-09, Mike reported the same repetition 08-12; read that trace, not the week.
+**Blocker for any live test: both Tailscale clients are off the tailnet**; VM and server healthy.*
 
 *Dev-workflow track — no runtime code changed, nothing deployed. **`[H7]` and `[H8]` are closed
 and `HARNESS_BACKLOG.md` is retired and deleted** (11 opened, 11 resolved; only the commit-guard
@@ -17,14 +19,15 @@ false positives deferred, override works). **Only §10b remains.** `qa_sweep.sh`
 spend. **`ask` splits by tool family, not interactivity** — `Edit` rules gate in this panel, `Bash`
 rules resolve to allow. `./deploy.sh` is now `deny`; **`git push` is knowingly inert here.**
 ⚠ **§10b run 2's double-deploy leg needs the deny lifted deliberately, or re-scoped to a decoy.**
-Brief: [`next_session_prompt_2026-08-13b_throughput_10b_and_backlog.md`](archive/plans/next_session_prompt_2026-08-13b_throughput_10b_and_backlog.md).
-**21 defects, every one found by running** — four *inside the checks built to catch defects*, the
-worst a **false pass**. Three rules bought the hard way: ⚠ **three quantities are called "tokens"**
-(`subagent_tokens`, raw, weighted) and §10b's ~165k is the first — **never compare across them**;
-**`claude config list` is not a command**; **never test a `Bash` permission rule by running the
-real command** — it only executes in the branch where the rule fails. Standing:
-`PROJECT_LOG.md` is GENERATED from `archive/log/` fragments, backlog items go to
-`.claude/backlog_inbox/`, `qa_sweep.sh` is free.*
+Brief: [`next_session_prompt_2026-08-14_throughput_10b_rehearsal.md`](archive/plans/next_session_prompt_2026-08-14_throughput_10b_rehearsal.md)
+— run **3 first** (checks 10 and 11, cheapest), then 1 on the approved Green item `[DB-0813-01]`,
+then 2. **Checks 4 and 10 have never been observed.**
+**21 defects, every one found by running.** Rules bought the hard way: ⚠ **three quantities are
+called "tokens"** (`subagent_tokens`, raw, weighted) and §10b's ~165k is the first — **never
+compare across them**; **never test a `Bash` permission rule by running the real command**, it only
+executes in the branch where the rule fails. Standing: **`PROJECT_LOG.md` is GENERATED** from
+`archive/log/` fragments — write a fragment, never edit it; backlog items go to
+`.claude/backlog_inbox/`; `qa_sweep.sh` is free.*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -87,14 +90,12 @@ the communication-style baseline. `send_email`'s `disclosure_note` is **outside 
 fingerprint** by design — do not move it into `args`. **The ZDR clarification is project-wide**
 (`ROADMAP.md` § Section 0).
 
-**Tone profiles deployed and now runnable, but untestable for lack of data** (`88957e6`,
-`3a2bb29`) — `tools/tone.py`, `config/agents/tone_profiler.md`, `search_correspondence`,
-`tone_shape` on the contact record. `tone_shape` is accepted by `write_contact` but **deliberately
-absent from its schema**: only `tone.py` writes it, because the source is attacker-writable mail
-and the field is read back as trusted prompt text. The fixed JSON key set reassembled in Python is
-that defence — the injection check is only a backstop. **`_imap_quote()` fixed the unquoted
-`[Gmail]/Sent Mail` select that had been failing every sent-side query** (the blocker is stated
-once, above).
+**Tone profiles deployed and runnable, untestable for lack of data** (`88957e6`, `3a2bb29`) —
+`tools/tone.py`, `config/agents/tone_profiler.md`, `search_correspondence`, `tone_shape`.
+`tone_shape` is accepted by `write_contact` but **deliberately absent from its schema**: only
+`tone.py` writes it, because the source is attacker-writable mail read back as trusted prompt
+text, and the fixed JSON key set reassembled in Python is that defence — the injection check is
+only a backstop.
 
 **Obligations are data, not jobs.** `tools/obligations.py` + `data/personas/{p}/obligations.yaml`;
 closure is inferred, `close_obligation` **requires** evidence. The reconcile sweep **never
@@ -122,9 +123,8 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
-| 08-14 | **`[H7]` closed; `HARNESS_BACKLOG.md` retired (11 opened, 11 resolved).** `ask` splits by **tool family**, not interactivity — `Edit` gates here, `Bash` does not. `./deploy.sh` → `deny`; `git push` left inert knowingly | *(this session)* — **not deployed** |
+| 08-14 | **`[H7]` closed; `HARNESS_BACKLOG.md` retired (11 opened, 11 resolved); Inbox 4 → 0.** `ask` splits by **tool family**, not interactivity — `Edit` gates here, `Bash` does not. `./deploy.sh` → `deny`. Two Inbox entries were **already built or already rejected in code**; `/archive` step 2 was telling sessions to hand-edit a generated file | `e123c39` + close-out — **not deployed** |
 | 08-13 | **Code-not-rules: token accounting, a claims smoke test, the deploy-lock invariant.** `[H8]` closed; `qa_sweep.sh` 7 → 9 checks. `[H8].1` was unbuildable as specified; four defects, all inside the checks themselves | `4a0177f`, `47a469f` — **not deployed** |
-| 08-13 | **The ledger that measured nothing, `verify` scoping, harness reconcile.** `worker_ledger.py` saw 3 of 13 worker runs and the committed "fix" had changed nothing — the diagnosis was wrong, not the code | `3fc6489`, `daf314d`, `b4abdde`, `6368311`, `7285d94`, `7147293`, `fa69900` — **not deployed** |
 ---
 
 ## Useful context to pull as needed

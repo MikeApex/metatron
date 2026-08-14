@@ -1,8 +1,15 @@
 # Project Log — Personal AI Life Manager
 
 Full dated history: what was built, why, what was decided, what was rejected,
-and what turned out to be wrong. Newest first. **Appended at the close of every
-session — never rewritten.**
+and what turned out to be wrong. Newest first.
+
+> **⚠ THIS FILE IS GENERATED — do not edit it.** It is assembled by
+> `scripts/build_project_log.py` from one fragment per session in `archive/log/`,
+> newest first, on top of the frozen `_history.md`. **An edit made here is silently
+> discarded by the next build.** To add a session entry, write
+> `archive/log/YYYY-MM-DD-NN-<slug>.md` and run the script. Each fragment owns its
+> trailing blank line. `python3 scripts/build_project_log.py --check` verifies the
+> committed file matches its fragments, and `qa_sweep.sh` runs that check.
 
 **Read this when:**
 - You need to know *why* something was built the way it is, not just what it does.
