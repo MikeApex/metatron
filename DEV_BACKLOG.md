@@ -34,7 +34,7 @@ resolved. `defaultMode` was fixed; **the commit-guard false positives are deferr
 the `METATRON_COMMIT_GUARD=off` override now works, so each is a one-token annoyance rather than a
 block. Revisit only when a case appears the override does not clear. **Do not re-file it here** —
 this file is Metatron work. Full record: `archive/PROJECT_LOG.md` § 2026-08-14; see also
-`CLAUDE.md` § Which File Holds What.)*
+`.claude/rules/docs-and-logs.md`.)*
 *(empty — triaged 2026-08-14 at close-out. Two notes filed by the §10b run-2 windows: window B's
 became `[DB-0814-04]` in `## Later`; window A's was a `sync_dev_backlog.py` observation that
 deliberately fails the filing bar and is recorded in `archive/backlog_closed_2026-08.md`
@@ -292,7 +292,7 @@ standing rule distrusts.*
   instruction/config change, not a build** — the fix is that a null check produces no user-facing
   report at all, not that the report gets shorter. **Treat it as design, not a Mike preference:**
   nobody wants six null reports a day, so it belongs in the agent/scheduler layer, and if a persona
-  copy is written it must be deleted in the same pass (`CLAUDE.md` § One Home Per Rule Class).
+  copy is written it must be deleted in the same pass (`.claude/rules/agent-files.md` § One Home Per Rule Class).
   Related in kind but do not merge: `[DB-0810-05]`'s mailbox is nearly empty, so a *"nothing found"*
   today is often literally true.
   *filed 2026-08-14 by Mike via the VM (2026-08-12T08:27Z) · interval verified in config the same
@@ -451,7 +451,7 @@ so this is not a parallel track to pick from when a `Now` item is time-gated.
   **Sharpest argument for enforcing the allowlists is also the argument for not doing it yet:**
   `logistics` calls `send_email` without the grant (only `relationships` holds it) and the
   dispatcher executes it, so switching to enforce mode today would kill outbound email. See
-  `CLAUDE.md` § Security Architecture — correct the lists, verify, *then* enforce.
+  `.claude/rules/agent-files.md` — correct the lists, verify, *then* enforce.
   *filed 2026-08-10 by the machine-log sweep · **(b) closed 2026-08-10**, (c) added the same day
   from the guard's first full run · two denials added by the 08-10 `deep` sweep*
 - **[DB-0814-03]** **Ticket-based mailbox management.** Mike's framing: manage the mailbox as
@@ -511,7 +511,7 @@ again: `archive/backlog_closed_2026-08.md` § Closed 2026-08-14.)*
 - **[DB-0810-06]** Every context-file ceiling is measured in lines, and lines stopped tracking the
   cost. `SESSION.md` hit 200/200 with **5.6 KB of its 17.9 KB on five lines** — rows that grew
   **wide, not numerous**, so a line ceiling could not see them. Instance fixed (`2e3e6e4`); the
-  metric is still line-based everywhere it is stated (`CLAUDE.md` § *Which File Holds What* plus
+  metric is still line-based everywhere it is stated (`.claude/rules/docs-and-logs.md` § Ceilings plus
   each file's footer). **Check before acting:** whether a byte/token measure earns its complexity,
   or whether the one-line-per-row rule already added is sufficient. *filed 2026-08-10 ·
   **second blind spot found 2026-08-14, still open:** a whole-file line count also cannot tell
