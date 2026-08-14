@@ -35,28 +35,10 @@ the `METATRON_COMMIT_GUARD=off` override now works, so each is a one-token annoy
 block. Revisit only when a case appears the override does not clear. **Do not re-file it here** —
 this file is Metatron work. Full record: `archive/PROJECT_LOG.md` § 2026-08-14; see also
 `CLAUDE.md` § Which File Holds What.)*
-Not filed as an item — recorded so the next occurrence is recognised, not re-diagnosed.
-
-`sync_dev_backlog.py`'s `DUE_RE` matches a `due: YYYY-MM-DD` marker quoted inside an item's own
-prose, so an item that *documents* the convention tags itself as due. Hit live on 2026-08-14:
-`[DB-0813-01]` fired alongside `[DB-0809-02]` because its body said "add `due: 2026-08-17` to
-[DB-0809-02]".
-
-Deliberately NOT fixed. The obvious fix — ignore markers inside backticks — would disable the
-feature, since every real marker is backticked too. Self-limiting in practice: it only occurs
-while an item is open about the convention. Workaround if it recurs: write the reference without
-the colon ("a due marker dated 2026-08-17").
-
-Fails the "file only what a user would notice or what blocks the roadmap" bar, which is why this
-is a note and not an item. Full reasoning: archive/backlog_closed_2026-08.md § Closed 2026-08-14.
-`tools/obligations.py` — `context_block()` sorts by `str(it.get("due") or "9999")`, so a vague
-`due` phrase sorts lexically *after* the `"9999"` no-due sentinel: `["2026-08-20", "2026-09-01",
-None, "next week"]` is the actual order (verified 2026-08-14). With `_CONTEXT_MAX = 6`, an
-obligation the user gave a soft deadline to is therefore ranked below every undated one and is
-the first thing dropped from the session context block — the opposite of the intended priority,
-and `OPEN_OBLIGATION_SCHEMA` explicitly invites the vague phrase ("or short phrase if genuinely
-vague"). User-noticeable: the store silently stops surfacing a commitment that carries a deadline.
-Not fixed here — this session was comment-only on a file a second window was also editing.
+*(empty — triaged 2026-08-14 at close-out. Two notes filed by the §10b run-2 windows: window B's
+became `[DB-0814-04]` in `## Later`; window A's was a `sync_dev_backlog.py` observation that
+deliberately fails the filing bar and is recorded in `archive/backlog_closed_2026-08.md`
+§ Closed 2026-08-14 instead.)*
 
 ---
 
@@ -331,6 +313,22 @@ standing rule distrusts.*
   code the same day · Mike ranked it Now #10*
 
 ## Later
+
+- **[DB-0814-04] An obligation with a *vague* due date is the first thing dropped from session
+  context — the exact opposite of the intended priority.** `context_block()` in
+  [tools/obligations.py](tools/obligations.py) sorts by `str(it.get("due") or "9999")`. The
+  `"9999"` sentinel is meant to sink undated obligations to the bottom, and it does — but a
+  vague phrase sorts **lexically after it**: `["2026-08-20", "2026-09-01", None, "next week"]`
+  is the real order, verified by running it 2026-08-14. With `_CONTEXT_MAX = 6`, an obligation
+  the user gave a soft deadline to therefore ranks below every undated one and is dropped first.
+  **`OPEN_OBLIGATION_SCHEMA` explicitly invites the vague phrase** (*"or short phrase if
+  genuinely vague"*), so this is the schema's own documented input hitting a lexical sort, not
+  misuse. User-noticeable: the store silently stops surfacing a commitment that carries a
+  deadline — which is the failure the obligation store was built for in the first place
+  (see the module docstring's 2026-08-07 incident). Not fixed on the spot: the file was under a
+  two-window collision at the time and that session was comment-only.
+  *filed 2026-08-14 by the §10b run-2 window B, which verified the sort order by running it
+  rather than reading it · not raised by Mike, so `## Later` by the standing rule*
 
 - **[DB-0813-02] `OPENAI_API_KEY` is invalid — `ask_gpt` has been silently dead.** A live
   `mcp__ask_gpt__ask_gpt` call returns `401 invalid_api_key` against the key in `.env`. Nothing

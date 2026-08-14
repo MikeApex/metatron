@@ -116,5 +116,18 @@ delimiter. And B's own finding is a real one: `context_block()` sorts by
 the first thing dropped from the context block — while `OPEN_OBLIGATION_SCHEMA` explicitly invites
 that phrasing. It is in the Inbox as user-noticeable.
 
+**The development-throughput plan is finished.** Every check §10 owns is observed; check 12
+(`/backlog verify`) was always scheduled after §10 and is not outstanding against it. Run 2's
+own commit is `73e24a9`. Final tally across the plan: **25 defects, none of them found by
+reading.** The two added here were found by running a *verification* — the due-marker boundary
+test, and the check-4 observation that contradicted the document specifying it.
+
+**Owed, and deliberately not taken in this session:** the two-line correction to `CLAUDE.md`
+§ Deploy safety rule 4, whose description of the commit guard is loose in both the ways found
+above. `CLAUDE.md` carried a parallel window's uncommitted edit for this session's whole
+duration, so the correction waits for that diff to land rather than being stacked on top of it.
+The next session should make it — the wording is what a reader will trust when deciding which
+window to watch.
+
 `qa_sweep.sh` 9/9 throughout. **Not deployed — no runtime code changed.**
 
