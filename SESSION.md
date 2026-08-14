@@ -1,6 +1,6 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-14 (**the context split is done** — area rules moved to `.claude/rules/`; Phase 5 verifies it).
+*Updated: 2026-08-14 (**the context split is done and verified** — rule delivery works, on `Read` only).
 `## Now` is **10 — at cap**, so anything new displaces something. Live runtime items:
 **`[DB-0810-13]` is Now #1 and untouched** — specialists report actions they never took, so
 anything the system says it *did* (email, calendar, scheduling) is unverified. **`[DB-0810-12]` is
@@ -15,19 +15,20 @@ It now carries `due: 2026-08-17`, so the sync's count line will name it on the 1
 unreachable"* at 09:30 and pulled 29 events cleanly at 09:35. Re-check before concluding a live
 test is blocked; VM and server healthy.*
 
-*Dev-workflow track — **the context split has shipped; only its verification is left.** Phases
-2–3 landed at `275bc51`: `CLAUDE.md` is **282 against a 300 ceiling** (Mike set 300, not the
-plan's 200 — the binding keep-list does not fit under 200, and a permanently-violated ceiling
-trains you to skip the warning), and the area rules now live in five path-scoped
-`.claude/rules/*.md` files delivered on **read** of a matching path. A **rules index** in
-`CLAUDE.md` names them, which is what a high-level session gets when no rule fires. ⚠ **Rule
-delivery is UNVERIFIED and cannot be tested in the session that builds it** — `.claude/rules/` is
-discovered at session start. **Phase 5 is the next dev-workflow action, in a fresh session:**
-prompt ready at `~/.claude/plans/context_phase5_prompt_2026-08-14.md`; the load-bearing unknown
-is whether a **Grep-only** survey triggers delivery, because `/backlog attack` workers survey by
-grep. **Phase 4 (ROADMAP split) stays deferred** — re-checked and still valid, nothing depends on
-it. **Nothing retired**; `CODEBASE_INDEX.md` still loads. Nothing deployed, `./deploy.sh` stays
-denied. **Next is product: `[DB-0810-13]`.** Still open: `/backlog deep` is wanted (`DEV_BACKLOG.md` is
+*Dev-workflow track — **the context split has shipped AND its delivery is verified.** `CLAUDE.md`
+is 282 against a 300 ceiling; five path-scoped `.claude/rules/*.md` files carry the area rules; a
+**rules index** in `CLAUDE.md` is what a high-level session gets when no rule fires. **Phase 5
+measured delivery 08-14: a `Read` of a governed path delivers its rule in full (3/3); a Bash
+`grep` does NOT; a `Write` does NOT either.** Delivery is **Read-only**, so an edit-only or
+survey-only session gets the context gate's governing-rule *pointer* and no rules — which makes
+that pointer the primary control for those sessions, not a backstop. ⚠ **Three gaps need a
+different session:** the **Grep *tool*** (`/backlog attack` workers use it), **delivery inside a
+worktree session**, and `/context`. `scripts/hook_instructions_loaded.py` is committed **but NOT
+registered** — snippet and rationale are in the script's header, because `settings.json` takes
+`_comment_*` keys **only inside `permissions`**. Also owed: `scripts/audit_context_load.py:34-49`
+still describes the pre-split architecture and will score correct sessions wrong. **Phase 4
+(ROADMAP split) stays deferred.** **Nothing retired**; `CODEBASE_INDEX.md` still loads. Nothing
+deployed, `./deploy.sh` stays denied. **Next is product: `[DB-0810-13]`.** Still open: `/backlog deep` is wanted (`DEV_BACKLOG.md` is
 **598 against ~450**) and the `⚠ machine: ×5` (`mike.md:13`, consolidated evening check-in) is
 unactioned — it is **design**, so it belongs in `synthesizer.md` with the `mike.md` copy deleted
 in the same pass; `mike.md` is **VM-owned**, pull it down, never reconstruct it. ⚠ **Two
@@ -131,8 +132,9 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
-| 08-14 | **The always-on tier split into five path-scoped rule files.** Phases 2–3 in one commit; `CLAUDE.md` 554 → 282, ceiling set to **300** not 200 because the keep-list does not fit under it. Four defects caught by re-verifying premises, two of which would have shipped silent: the `paths:` parser read only the inline YAML form, and `.claude/*` being gitignored would have kept the rules out of every worktree — re-creating the bypass closed hours earlier. The commit guard then blocked its own enabling commit (a new *directory* collapses in `git status`), fixed at `c1ac03b`. **Rule delivery is unverified — it cannot be, in the session that builds it** | `275bc51`, `c1ac03b` — **not deployed** |
-| 08-14 | **The context gate became a per-file briefing, and stopped skipping worktrees.** Phase 1 + regrowth branch only. Verified the worktree fix against the *old* hook — silent before, briefing after — and membership against a real second repo. The pre-code check sharpened its own premise: a fragment-only grep does not fail, it returns two files of *commentary* while the evidence sits in `_history.md`, which is worse than nothing. Testing killed three beliefs: the `__file__`-only anchor, a truncation that dropped all history at once, and a regrowth message that called path-scoped rule files always-on | `8981862` — **not deployed** |
+| 08-14 | **Phase 5 — rule delivery verified, and it is Read-only.** `Read` delivers; Bash `grep` and `Write` do not. Grep-tool, worktree-session and `/context` still unmeasured; retirement held | logger committed unregistered — **not deployed** |
+| 08-14 | **The always-on tier split into five path-scoped rule files.** `CLAUDE.md` 554 → 282, ceiling 300; four defects caught by re-verifying premises | `275bc51`, `c1ac03b` — **not deployed** |
+| 08-14 | **The context gate became a per-file briefing, and stopped skipping worktrees.** Testing killed three of its own stated beliefs | `8981862` — **not deployed** |
 ---
 
 ## Useful context to pull as needed
