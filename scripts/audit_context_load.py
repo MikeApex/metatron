@@ -36,7 +36,12 @@ EXPECTED = {                      # /metatron-code should read these
     "ROADMAP.md":        "abridged live roadmap",
 }
 CONDITIONAL = {
-    "CODEBASE_INDEX.md": "only when locating a file/tool/plan",
+    "CODEBASE_INDEX.md":        "only when locating a file/tool/plan",
+    ".claude/rules/agent-files.md":   "only on Read of config/agents/**, config/modules/routing*.yaml",
+    ".claude/rules/personas.md":      "only on Read of config/personas/**, core/persona.py",
+    ".claude/rules/orchestrator.md":  "only on Read of core/**, tools/**",
+    ".claude/rules/deploy.md":        "only on Read of scripts/**, deploy.sh, .claude/settings.json",
+    ".claude/rules/docs-and-logs.md": "only on Read of SESSION.md, DEV_BACKLOG.md, archive/**, docs/**, .claude/commands/**",
 }
 DO_NOT_READ_BY_DEFAULT = {        # deliberately outside the default load
     "DEV_BACKLOG.md":          "only when working the backlog (removed from autoload 2026-08-03)",
