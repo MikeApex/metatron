@@ -164,7 +164,7 @@ def _regrowth_note(p: Path, parts: str) -> str:
         f"{label} — {rel}: {verdict}\n"
         f"{cost} Before moving on: is this rule binding-everywhere, or area-specific — "
         "and if it is area-specific, which rule file is the area? "
-        "Area-specific rules belong with their area (CLAUDE.md § Which File Holds What); "
+        "Area-specific rules belong with their area (CLAUDE.md § The rules index); "
         "only what must survive /compact belongs in the always-on tier."
     )
 
@@ -227,7 +227,7 @@ def main() -> int:
            + "\n".join(unique)
            + "\nA tool named in an agent file is a specification: build it, grant it, or "
              "move it under a deferred heading. Deleting the line is the last resort "
-             "(CLAUDE.md § A tool named in an agent file is a specification).")
+             "(.claude/rules/agent-files.md).")
     print(json.dumps({
         "systemMessage": msg,
         "hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": msg},

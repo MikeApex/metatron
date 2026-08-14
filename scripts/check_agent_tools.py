@@ -13,7 +13,7 @@ That is the general shape and it is worth stating plainly: **an instruction that
 names a capability the agent does not have is not inert.** The model does not
 reply "I lack that tool" — it produces the *output shape* the instruction asks
 for, sourced from nothing. Same class as the `logistics`/`write_agent_config`
-case in CLAUDE.md § Security Architecture, where an agent merely *told* about a
+case in .claude/rules/agent-files.md, where an agent merely *told* about a
 tool could still call it because the dispatcher did not check.
 
 **What a finding means, and what it does not.** These files are a specification

@@ -40,7 +40,7 @@ go to `.claude/backlog_inbox/`; `qa_sweep.sh` is free (9 checks, ~3s).*
 > `## Current state` and `## Recent sessions`, which are the only sections a close-out rewrites.
 > Everything below them is reference; leave it closed unless the session made it wrong.
 > Both numbers come from `python3 scripts/check_claude_md_claims.py`. Growing a little is fine —
-> a new blocker is worth a line; see `CLAUDE.md` → **Which File Holds What**.
+> a new blocker is worth a line; see `.claude/rules/docs-and-logs.md`.
 
 ---
 

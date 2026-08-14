@@ -35,6 +35,15 @@ venv/
 .claude/commands/*
 !.claude/commands/*.md
 !.claude/settings.json
+# .claude/rules/ admitted 2026-08-14, same reasoning as settings.json above and
+# for a sharper reason: `git worktree add` checks out tracked files only, so an
+# ignored rules directory is absent from every worktree. That would have silently
+# re-created the exact bypass the 08-14 context-gate fix closed -- `/backlog
+# attack` workers, the thinnest-context sessions there are, getting no area rules
+# at all. Caught before the commit, not after.
+!.claude/rules/
+.claude/rules/*
+!.claude/rules/*.md
 
 # TLS certs — never committed (IP-specific; regenerate with mkcert on each machine)
 # No trailing slash — see the .venv note at the top of this file.

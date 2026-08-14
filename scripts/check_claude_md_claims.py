@@ -191,7 +191,13 @@ def check_hooks() -> None:
 
 
 def check_named_paths() -> None:
-    text = (ROOT / "CLAUDE.md").read_text()
+    # `.claude/rules/*.md` are scanned too, from 2026-08-14. When the area rules
+    # moved out of CLAUDE.md the claim count fell 36 -> 28: eight paths left
+    # coverage along with the prose naming them. The doc-rot class did not move
+    # with them -- it followed the text, so the check has to as well, or the
+    # split would have quietly bought a smaller number by checking less.
+    sources = [ROOT / "CLAUDE.md", *sorted((ROOT / ".claude" / "rules").glob("*.md"))]
+    text = "\n".join(p.read_text() for p in sources if p.exists())
     # Only paths with a directory component and a known code/config extension.
     # A bare `deploy.sh` in prose is ambiguous; `scripts/qa_sweep.sh` is not.
     candidates = set(
@@ -214,11 +220,45 @@ def check_named_paths() -> None:
 # these WARN rather than fail, matching how the prose describes them.
 
 CEILINGS = {
-    "CLAUDE.md": 250,
+    # 250 -> 300 on 2026-08-14 (Mike's decision), with the .claude/rules/ split.
+    #
+    # Anthropic's stated target is 200 and the file landed at 279, NOT the ~180
+    # the plan projected: the plan's own keep-list (infrastructure traps, change
+    # tiers, terminology, four-tier hierarchy, privacy tiers, design decisions)
+    # sums past 200 on its own, and that arithmetic was never done when the
+    # target was set. Rather than delete safety-binding content to hit a number
+    # -- the ratchet this project's conventions warn against -- the ceiling is
+    # set at 300: a hard limit the file is genuinely under, with room to record
+    # a new binding rule without the next session having to argue one out first.
+    #
+    # A ceiling the file permanently violates is the failure mode this codebase
+    # documents repeatedly: a standing WARN teaches the reader to skip the
+    # output, and then it catches nothing. 300 warns only on real regrowth.
+    "CLAUDE.md": 300,
     "SESSION.md": 200,
     "DEV_BACKLOG.md": 450,
     ".claude/commands/archive.md": 100,
     ".claude/commands/backlog.md": 200,
+    # Path-scoped rule files (added 2026-08-14 with the directory itself).
+    #
+    # These do NOT load every session -- they inject in full when a file in
+    # their area is read. That makes length cheaper than it is in CLAUDE.md,
+    # but not free: when the rule fires, the whole file arrives, so a bloated
+    # rule file recreates the adherence problem for exactly the sessions doing
+    # the highest-stakes work in that area. An earlier draft of the plan said
+    # these lines "cost nothing"; that was wrong, and this table is the fix.
+    #
+    # Each is set just above what the relocation actually measured, following
+    # the SESSION_VOLATILE_BUDGET precedent below -- deliberately not set to
+    # the measured value, which would make the next honest sentence a failure.
+    # agent-files.md is the largest because it absorbed two whole rule classes
+    # (the tool-specification rule and One Home Per Rule Class) plus the lifted
+    # freeze; that is the merge, not creep.
+    ".claude/rules/agent-files.md": 180,
+    ".claude/rules/personas.md": 110,
+    ".claude/rules/orchestrator.md": 90,
+    ".claude/rules/deploy.md": 100,
+    ".claude/rules/docs-and-logs.md": 150,
 }
 
 

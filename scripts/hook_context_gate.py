@@ -74,19 +74,20 @@ _GENERIC_BASENAMES = {
     "index.html", "settings.json", "conftest.py", "types.py",
 }
 
-# Which area's rules govern a path, and where those rules live *today*.
+# Which area's rules govern a path, and the one-line gist of what they say.
 #
-# Phase 3 of the context-system plan would move these into `.claude/rules/*.md`
-# with `paths:` frontmatter; it is deferred, and that directory does not exist.
-# Naming a file that has never existed is the `config/frameworks.md` failure this
-# project already documents, so these point at the live `CLAUDE.md` sections. If
-# a `.claude/rules/` file ever claims the path, `_rule_file_for()` finds it and it
-# is named alongside.
+# The rules themselves moved to `.claude/rules/*.md` on 2026-08-14 (Phase 3), and
+# `_rule_file_for()` names the file that claims the path. These strings are the
+# *gist*, not the rule: they exist because a path-scoped rule is not re-injected
+# after `/compact`, so a session that read the rules early and edits late has
+# lost them. Keep them short and keep them true — a longer copy here would drift
+# from the rule file and the stale copy would keep being read, which is the
+# duplication failure `.claude/rules/agent-files.md` § One Home Per Rule Class
+# exists to prevent.
 GOVERNED = (
     (("config/agents/*.md", "config/modules/routing*.yaml", "config/modules/routing*.yml"),
      "agent files and tool grants",
-     "CLAUDE.md § 'A tool named in an agent file is a specification' and § One Home "
-     "Per Rule Class. A tool named in an agent file is a spec: build it, grant it, or "
+     ".claude/rules/agent-files.md. A tool named in an agent file is a spec: build it, grant it, or "
      "move it under a deferred heading — deleting the line is the last resort. "
      "scripts/check_agent_tools.py runs automatically after this edit."),
 
@@ -97,38 +98,39 @@ GOVERNED = (
 
     (("config/personas/*", "config/personas/**", "core/persona.py"),
      "personas and identity resolution",
-     "CLAUDE.md § Personas. The VM owns live persona config — the Mac copy is stale by "
+     ".claude/rules/personas.md. The VM owns live persona config — the Mac copy is stale by "
      "construction and pushing it erases what the running system wrote. Identity "
      "resolution is fail-closed; never read METATRON_PERSONA directly."),
 
     (("core/*.py", "core/**"),
      "the runtime harness",
-     "CLAUDE.md § Security Architecture and § Key Design Decisions. core/orchestrator.py "
+     ".claude/rules/orchestrator.md. core/orchestrator.py "
      "carries the A8 module-split refactor — check whether pending work relocates this "
      "code before adding to it. Behaviour changes belong in config/, not core/."),
 
     (("tools/*.py", "tools/**"),
      "MCP tool implementations",
-     "docs/CONVENTIONS.md § the tool pattern. Sensitive-data routing is enforced here, "
+     ".claude/rules/orchestrator.md and docs/CONVENTIONS.md § the tool pattern. Sensitive-data routing is enforced here, "
      "in Python — never in prompts."),
 
     (("scripts/*", "scripts/**", "deploy.sh", ".claude/settings.json", ".claude/hooks/**"),
      "deploy and harness scripts",
-     "CLAUDE.md § Deploy safety — four rules bought with real incidents. py_compile cannot "
+     ".claude/rules/deploy.md. py_compile cannot "
      "catch a NameError; config never ships before the code that gates it; daemon-reload "
      "before the deploy; git diff every file before staging it."),
 
     (("CLAUDE.md", "SESSION.md", "ROADMAP.md", "DEV_BACKLOG.md",
       "CODEBASE_INDEX.md", ".claude/commands/*.md"),
      "project records",
-     "CLAUDE.md § Which File Holds What. PROJECT_LOG.md is appended and SESSION.md is "
+     ".claude/rules/docs-and-logs.md. PROJECT_LOG.md is appended and SESSION.md is "
      "replaced; history in the primer is the failure this split exists to prevent. Each "
      "of these files has a line ceiling — see CEILINGS in scripts/check_claude_md_claims.py."),
 
     (("config/modules/*.yaml", "config/modules/*.yml"),
      "module configuration",
-     "CLAUDE.md § Which File Holds What — config/ is the product. docs/CONVENTIONS.md "
-     "covers adding a module."),
+     "config/ is the product — behaviour changes belong here, not in core/. "
+     "docs/CONVENTIONS.md covers adding a module. (Routing files are additionally "
+     "governed by .claude/rules/agent-files.md.)"),
 
     (("tests/*", "tests/**"),
      "tests",
@@ -366,12 +368,42 @@ def _tier(root: Path, rel: str) -> str:
     return ""
 
 
-def _rule_file_for(root: Path, rel: str) -> str:
-    """A `.claude/rules/*.md` whose `paths:` frontmatter claims this path, if any.
+def _paths_globs(head: str) -> list[str]:
+    """Every glob in a rule file's `paths:` frontmatter, in either YAML form.
 
-    Nothing creates these yet (Phase 3 is deferred). This exists so the briefing
-    starts naming them the moment they appear, rather than needing a second edit.
+    Both forms have to work, and the one that matters is the block list:
+
+        paths:                      paths: ["a/**", "b/**"]
+          - "a/**"
+          - "b/**"
+
+    The block list is the form Claude Code's own docs use, so it is the form the
+    rule files are written in — and the first version of this parser read only
+    the remainder of the `paths:` line, which is *empty* there. It matched the
+    inline form, which is what made it look correct: every rule file written the
+    documented way would have been invisible to this briefing, silently, while a
+    hand-tested inline probe passed. Measured before the rule files existed.
     """
+    globs: list[str] = []
+    in_block = False
+    for line in head.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("paths:"):
+            rest = stripped.split(":", 1)[1]
+            globs.extend(re.findall(r"[\w./*\-]+", rest))
+            in_block = not rest.strip()  # nothing inline -> a block list follows
+            continue
+        if in_block:
+            if stripped.startswith("-"):
+                globs.extend(re.findall(r"[\w./*\-]+", stripped[1:]))
+                continue
+            if stripped:  # a sibling key ends the block
+                in_block = False
+    return globs
+
+
+def _rule_file_for(root: Path, rel: str) -> str:
+    """A `.claude/rules/*.md` whose `paths:` frontmatter claims this path, if any."""
     rules_dir = root / ".claude" / "rules"
     if not rules_dir.is_dir():
         return ""
@@ -380,13 +412,9 @@ def _rule_file_for(root: Path, rel: str) -> str:
             head = rf.read_text(errors="ignore").split("---")[1]
         except (OSError, IndexError):
             continue
-        for line in head.splitlines():
-            if not line.strip().startswith("paths:"):
-                continue
-            globs = line.split(":", 1)[1]
-            for g in re.findall(r"[\w./*\-]+", globs):
-                if fnmatch.fnmatch(rel, g.replace("**", "*")):
-                    return f".claude/rules/{rf.name}"
+        for g in _paths_globs(head):
+            if fnmatch.fnmatch(rel, g.replace("**", "*")):
+                return f".claude/rules/{rf.name}"
     return ""
 
 

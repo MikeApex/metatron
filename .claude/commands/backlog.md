@@ -166,7 +166,7 @@ not parallelised** — it runs serially in this window instead. Flag any VM-owne
 **Then, per approved cluster: dispatch exactly as `/fix` step 3 does** — worktree first via
 `./scripts/new_worktree.sh <slug>`, no `isolation` flag, absolute path in the brief. That step
 owns the mechanics and the reasons behind each one; it is not restated here, because a rule kept
-in two files is edited in one (`CLAUDE.md` § One Home Per Rule Class). The only addition for a
+in two files is edited in one (`.claude/rules/agent-files.md` § One Home Per Rule Class). The only addition for a
 cluster is that **each worker gets its own worktree**, one per manifest.
 
 **Each prompt carries this protocol verbatim, because the collisions were never in the code —
