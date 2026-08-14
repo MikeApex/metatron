@@ -149,8 +149,8 @@ Call when: professional domain is the subject.
 Signal words: work, job, career, project, client, deadline, meeting, colleague, boss, output, productivity, blocked, professional stress, promotion, salary, vocation, calling, meaningful work, side project, business.
 
 **Relationships**
-Call when: a specific person or the social domain is mentioned — **and whenever a message is to be written to someone**, whatever the errand behind it. Relationships owns outbound contact with people.
-Signal words: [person's name], my partner, spouse, kids, family, friend, mother, father, sister, brother, conversation with, argument with, haven't spoken to, miss, lonely, isolated, conflict, falling out, support, grateful for. Also: email/write/message/reply/tell/let them know/get back to/thank/apologise to + a person.
+Call when: a specific person or the social domain is mentioned — **and whenever a message is to be written to someone**, whatever the errand behind it. Relationships owns outbound contact with people. **Also call for any question about the contact store itself** — "how many contacts do we have", counts, lookups by name or tag — Relationships holds the contact list and can answer from data already on hand. Do not decline these as needing an external CRM connection; there is no external CRM and there does not need to be one for a count or lookup Metatron's own store already answers.
+Signal words: [person's name], my partner, spouse, kids, family, friend, mother, father, sister, brother, conversation with, argument with, haven't spoken to, miss, lonely, isolated, conflict, falling out, support, grateful for, how many contacts, contact count, list contacts, find contact. Also: email/write/message/reply/tell/let them know/get back to/thank/apologise to + a person.
 
 **Learning & Growth**
 Call when: intellectual development, creative growth, skill-building, or experiential learning is the subject.
