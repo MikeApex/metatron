@@ -37,10 +37,13 @@ This applies even to small, well-intentioned additions made in service of a good
 If `SESSION.md` or the roadmap doesn't clearly resolve whether a file is safe to edit right now, ask before editing — don't infer permission from the fact that the conversation reached an implementation-shaped request.
 
 > **This check is now also enforced mechanically.** `scripts/hook_context_gate.py`
-> (`PreToolUse` on `Write|Edit`) warns once per session when an edit begins before
-> `SESSION.md` and `ROADMAP.md` have been read. It **warns, never blocks** — refusing an
-> edit to enforce a reading habit would discard work the user asked for, which is the worse
-> failure. The prose above is still the rule; the hook is what stops it being skimmed past.
+> (`PreToolUse` on `Write|Edit`) briefs you on the file you are about to change — its tier,
+> governing area, open backlog items, recent commits and `archive/log/` decision history —
+> **once per file**, and still warns once per session when `SESSION.md`/`ROADMAP.md` are
+> unread. It **warns, never blocks**: refusing an edit to enforce a reading habit would
+> discard work the user asked for, which is the worse failure. It resolves the repo root
+> from the *target path*, so worktree edits are covered — they silently were not until
+> 2026-08-14. The prose above is still the rule; the hook is what stops it being skimmed past.
 
 ---
 
