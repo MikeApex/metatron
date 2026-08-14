@@ -29,6 +29,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import date
 from pathlib import Path
 
 # HTTPS, and the Tailscale hostname rather than the raw IP: the server runs
@@ -144,6 +145,18 @@ STOPWORDS = frozenset(
 # Trailing "  ×3" on an entry's first line. Two leading spaces are a markdown
 # hard break, so the count must be matched before them, not after.
 COUNT_RE = re.compile(r"\s+×(\d+)\s*$")
+
+# The due-date marker convention this script defines ([DB-0813-01] — nothing
+# machine-parseable existed before). Written inline in an item's own text as
+# "due: YYYY-MM-DD". Anchored on "due:" *with the colon* so it never matches a
+# prose date ("due 2026-08-11, do not check before then" — the exact case that
+# went unread for two days and is why this exists) or the "*filed 2026-08-13 by
+# ...*" footer every item carries; neither has a colon after "due".
+DUE_RE = re.compile(r"\bdue:\s*(\d{4}-\d{2}-\d{2})\b")
+
+# An item's own id, e.g. "[DB-0809-02]". Used to name what's due in the count
+# line rather than quoting the whole entry.
+ID_RE = re.compile(r"\[DB-\d{4}-\d{2}\]")
 
 # TOOL_DENIED details read "`finance` attempted `search_memory` (query) but ...",
 # so (agent, tool) is recoverable and is a far better dedup key than the prose,
@@ -297,6 +310,68 @@ def count_items(text: str) -> tuple[int, int, int]:
         _items(_section(text, NOW_HEADING)),
         _items(_section(text, LATER_HEADING)),
     )
+
+
+def _entries(block: str) -> list[str]:
+    """
+    Split a section body into top-level entries — one per '- ' bullet, plus its
+    indented/continuation lines — using the same boundary _items() counts
+    against, so a due-date marker anywhere in an item's body (not just its
+    first line) is still associated with the right item.
+
+    A struck-through line ('- ~~') ends the entry in progress without starting
+    a new one, matching _items()'s "closed items don't count" rule — a due
+    marker should not fire again off an item that is already gone from Now/Later
+    in every way except still sitting on the page for a moment.
+    """
+    entries: list[str] = []
+    current: list[str] = []
+    for line in block.splitlines():
+        if line.startswith("- ~~"):
+            if current:
+                entries.append("\n".join(current))
+            current = []
+        elif line.startswith("- "):
+            if current:
+                entries.append("\n".join(current))
+            current = [line]
+        elif current:
+            current.append(line)
+    if current:
+        entries.append("\n".join(current))
+    return entries
+
+
+def due_now(text: str, today: str) -> list[str]:
+    """
+    Ids of Now/Later items whose 'due: YYYY-MM-DD' marker has arrived — on or
+    before `today`, an ISO date string.
+
+    A garbage or unparseable date (the marker itself missing, `today` malformed,
+    or a date like 2026-13-99) is treated as "no usable due date", not an error —
+    consistent with this script's fail-silent contract. That is also why this
+    returns [] rather than raising: a broken date must never be the reason the
+    whole sync line disappears.
+    """
+    try:
+        cutoff = date.fromisoformat(today)
+    except ValueError:
+        return []
+
+    ids = []
+    for heading in (NOW_HEADING, LATER_HEADING):
+        for entry in _entries(_section(text, heading)):
+            due_match = DUE_RE.search(entry)
+            if not due_match:
+                continue
+            try:
+                due = date.fromisoformat(due_match.group(1))
+            except ValueError:
+                continue
+            id_match = ID_RE.search(entry)
+            if id_match and due <= cutoff:
+                ids.append(id_match.group(0)[1:-1])
+    return ids
 
 
 def escalated(text: str) -> list[str]:
@@ -508,6 +583,14 @@ def main() -> int:
     ap.add_argument("--persona", default=DEFAULT_PERSONA)
     ap.add_argument("--server", default=DEFAULT_SERVER)
     ap.add_argument("--quiet", action="store_true", help="print nothing when there is nothing new")
+    # Testing seam for due_now(), not a feature for normal use: at the time this
+    # was written nothing in the real backlog comes due for three more days, so
+    # without an override the ⚠ due: clause could not be observed at all until
+    # then. A CLI flag rather than an env var to match how --server/--persona
+    # already override this script's defaults, and so it's discoverable via
+    # --help without reading source.
+    ap.add_argument("--today", default=None,
+                     help="override today's date (YYYY-MM-DD) for due-date checks; default real date")
     args = ap.parse_args()
 
     if not BACKLOG.exists():
@@ -569,9 +652,11 @@ def main() -> int:
     inbox, now, later = count_items(text)
     escalations = escalated(text)
     alert = f" · ⚠ machine: {', '.join(escalations)}" if escalations else ""
+    due_ids = due_now(text, args.today or date.today().isoformat())
+    due_clause = f" · ⚠ due: {', '.join(due_ids)}" if due_ids else ""
     if new or not args.quiet or vm_warning:
         print(f"DEV_BACKLOG.md: {added} new · {inbox} inbox · {now} now · "
-              f"{later} later{alert}{vm_warning}")
+              f"{later} later{alert}{due_clause}{vm_warning}")
     return 0
 
 
