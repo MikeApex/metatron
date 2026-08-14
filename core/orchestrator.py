@@ -249,6 +249,18 @@ def load_config(persona: str | None = None) -> str:
         if self_dev:
             sections.append(_titled("Working on Metatron", self_dev))
 
+    # Optional, per-persona: a structured evening reflection ritual — the virtue
+    # review, its delivery format, and what gets logged. The content belongs to
+    # one user, so it must not sit in config/agents/synthesizer.md, which every
+    # persona loads (.claude/rules/agent-files.md § One Home Per Rule Class).
+    # Moving it here in 2026-08 was token-neutral for the persona that has one
+    # and a saving for every persona that does not.
+    evening_ritual_path = config_dir / "evening_ritual.md"
+    if evening_ritual_path.exists():
+        evening_ritual = evening_ritual_path.read_text().strip()
+        if evening_ritual:
+            sections.append(_titled("Evening ritual", evening_ritual))
+
     profile = load_profile(persona=resolved)
     if profile:
         sections.append(profile)

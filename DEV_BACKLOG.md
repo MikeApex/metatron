@@ -564,11 +564,27 @@ not a blackhole. Swept during `/backlog deep`.*
 `2026-08-10T15:00` denials verified and promoted into `[DB-0810-03](c)`, which is the decision
 queue for this exact class. Nothing outstanding.)*
 
-- **[already applied by the tool]** Updated interaction preferences: evening check-ins (13 Franklin virtues + 1 food log) will now be delivered as a single consolidated message rather than item-by-item, allowing the user to highlight only the exceptions.  
-  `2026-08-12T08:21:14.706181Z`
-
-- ⚠ **[same rule in two places]** This preference may already be covered by a rule that applies to everyone. Preference: config/personas/mike.md:13 — For evening check-ins, deliver all 14 points (13 virtues + food log) in a single consolidated message. Mike will reply by highlighting only the exceptions or things out of the ordinary. Candidate rule(s) it may restate: (1.00) [wording only] config/personas/mike/scheduler.yaml:43 — Check in. (1.00) [wording only] config/templates/scheduler.yaml:40 — Check in. Candidates are ranked by wording overlap, which is weak at this scale — the flagged preference is the reliable part, the partner is a starting point. If the preference says nothing the shared rule does not, delete it. If it is a genuine personal refinement, keep it and reword it so the difference is all it states.  ×5  
-  `2026-08-14T04:30:08.340600Z`
+*(swept 2026-08-15 — the `mike.md:13` consolidated-evening-check-in preference (×5, first seen
+2026-08-12T08:21Z) is resolved, but **not the way the design-by-default rule predicted, and the
+correction is the useful part**. It was first read as design and written into
+`config/agents/synthesizer.md`; **Mike rejected that** — the Franklin virtue review is his
+personal ritual, not how Metatron should behave for anyone. The whole ritual therefore **left
+`synthesizer.md` entirely** for a new per-persona subject file,
+`config/personas/mike/evening_ritual.md`, loaded by `load_config()` exactly as the existing
+optional `self_development.md` is. `synthesizer.md` § Evening close is now generic ("conduct the
+user's evening ritual if one is defined"), as is its morning catch-up line, which had hardcoded
+`franklin_virtues`.
+**Two things worth carrying.** (1) The move was **token-neutral for Mike and a saving for every
+other persona** — the 2,097-byte virtue block was in a global agent file every persona loaded, so
+this removed it for everyone it never applied to. Per-persona subject files are the pattern
+`ROADMAP.md` § D2 already prescribes, naming *"virtue lists"* verbatim. (2) The audit's candidate
+partner (`scheduler.yaml:43` — *"Check in."*, 1.00 wording overlap) was **noise**, exactly as the
+`⚠` entry's own caveat predicts: the flagged preference is the reliable half, the partner is not.
+**Do not re-file this as a duplicate** — it never was one.
+**One regression, deliberate and recorded:** the ritual's `write_log` call moved into a persona
+file, which `scripts/check_agent_tools.py` does not scan — so `synthesizer`'s missing `write_log`
+grant is now **invisible to the guard** while still working only by `dispatch_tool()`'s lack of
+enforcement. Same class as `[DB-0810-03]`; the gap did not change, the ability to see it did.)*
 
 ---
 ## Done
