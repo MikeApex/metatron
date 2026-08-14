@@ -109,6 +109,11 @@ def _new_id(what: str) -> str:
     return f"ob_{stamp[2:8]}_{digest}"
 
 
+# Returning None is a real signal, not a lazy default. `close_obligation` and
+# `reopen_obligation` both branch on it to produce their "no obligation with id ..." error,
+# which is what tells a session it has quoted an id that does not exist rather than silently
+# doing nothing. Anything that made a miss indistinguishable from a hit — raising, or
+# returning an empty dict — would take that message away.
 def _find(items: list[dict], obligation_id: str) -> dict | None:
     for it in items:
         if it.get("id") == obligation_id:
