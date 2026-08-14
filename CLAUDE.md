@@ -72,15 +72,10 @@ History goes in the log; state goes in `SESSION.md`; work goes in `DEV_BACKLOG.m
 that closes by *appending* to `SESSION.md` has put it in the wrong place — see `/archive`.
 
 **`DEV_BACKLOG.md` is the single bin for *Metatron* work outside the roadmap, and `/backlog` is
-how it is worked.** It has had exactly one exception and **that exception is now closed.**
-`HARNESS_BACKLOG.md` existed 2026-08-13 to 08-14 for defects in the development tooling itself —
-hooks, worktrees, the permission matcher, `deploy.sh`'s lock — which carry no Metatron content and
-would have diluted both the line ceiling and the `now`/`later` counts that make this file's
-workload legible. It was **reconciled within the build that opened it** and deleted on closing:
-eleven items opened, eleven resolved. *The rule that governed it is the reason it is gone —* a
-harness backlog that outlives its build has become a second permanent bin, which is what this
-rule exists to prevent. **Do not recreate it as a standing file.** If a future build needs one,
-it opens with a named build, a stated retirement condition, and it closes with that build.
+how it is worked.** A second bin may be opened only for one named build, with a stated retirement
+condition, and it closes with that build — a backlog that outlives its build has become a second
+permanent bin, which is what this rule exists to prevent. **No standing second file.**
+*(The one instance, `HARNESS_BACKLOG.md`, 2026-08-13 to 08-14: `archive/PROJECT_LOG.md`.)*
 Two rules worth carrying without reading `DEV_BACKLOG.md`:
 
 1. **No item is acted on, or re-filed, on the strength of its own description** — open it

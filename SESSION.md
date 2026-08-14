@@ -15,19 +15,17 @@ It now carries `due: 2026-08-17`, so the sync's count line will name it on the 1
 unreachable"* at 09:30 and pulled 29 events cleanly at 09:35. Re-check before concluding a live
 test is blocked; VM and server healthy.*
 
-*Dev-workflow track — **THE PLAN IS FINISHED**; no runtime code changed, nothing deployed
-(`73e24a9`). Run 2 observed **check 4**, the last unobserved check — and found **the plan
-describes it backwards**, which is the finding to carry: the commit guard fires at `git add`,
-not `git commit`, and it blocks the **first** writer, not the second. Window B held the freshest
-hash and committed with no refusal; window A was stopped. A session trusting the plan's wording
-watches the wrong window and records a false negative. Checks 5, 8 and 13 and the backlog fold
-all passed; check 8 twice, incl. cross-worktree (H2), via `scripts/probe_deploy.sh` — a decoy
-carrying `deploy.sh`'s lock block extracted verbatim at run time. **`./deploy.sh` stays denied.**
-**25 defects across the plan, every one found by running.**
-⚠ **OWED, one small edit:** `CLAUDE.md` § Deploy safety rule 4 describes the
-guard as blocking *"a commit"* — loose in both ways above. Held this session because a parallel
-window's uncommitted `CLAUDE.md` edit was live throughout; make it once that lands.
-**Next: `/backlog deep`** — `DEV_BACKLOG.md` is **600 against ~450**, and the `⚠ machine: ×5`
+*Dev-workflow track — **THE PLAN IS FINISHED** (`73e24a9`), 25 defects, every one found by
+running; nothing deployed and `./deploy.sh` stays denied. Detail moved to
+`archive/PROJECT_LOG.md` § 2026-08-14 and the row below. The one live carry-over: **the commit
+guard fires at `git add`, not `git commit`, and blocks the FIRST writer** — a session trusting
+the old wording watches the wrong window and records a false negative.
+⚠ **OWED, one small edit — NOW UNBLOCKED:** `CLAUDE.md` § Deploy safety rule 4
+(line ~429) describes the guard as blocking *"a commit"* — loose in both ways above. The parallel
+window's uncommitted `CLAUDE.md` edit that held it **has landed**; make the edit.
+**Next: the context-gate build, then product** —
+`archive/plans/next_session_prompt_2026-08-14c_context_gate_briefing.md`. Then `[DB-0810-13]`.
+`/backlog deep` is still wanted (`DEV_BACKLOG.md` is **600 against ~450**) and the `⚠ machine: ×5`
 (`mike.md:13`, consolidated evening check-in) is unactioned: it is **design**, so it belongs in
 `synthesizer.md` with the `mike.md` copy deleted in the same pass — `mike.md` is **VM-owned**,
 pull it down, never reconstruct it. ⚠ **Two divergences still open for a decision:**
@@ -37,6 +35,17 @@ newer and is the only copy; and `docs/CONVENTIONS.md:143` points here for live M
 from `archive/log/` fragments — write a fragment, never edit it; **a fragment is also the
 collision-safe half of `/archive` when two windows are live**, which run 2 exercised directly;
 backlog items go to `.claude/backlog_inbox/`; `qa_sweep.sh` is free (9 checks, ~6.6s).*
+
+*Context system — **planned, nothing built.** The premise it rests on is **obsolete**: Claude Code
+has three loading tiers, this project uses one, and the official target is 200 lines against 546 —
+bloat *reduces* adherence, so the file may **cause** the thin-context edits it was written to
+prevent. ⚠ **Live defect, unfixed: `hook_context_gate.py`:160-163 returns `None` for any path
+outside the main tree, so every worktree edit bypasses the gate — `/backlog attack` workers get no
+gate at all.** **Approved: minimal scope only** — gate becomes a per-file history briefing, plus a
+regrowth branch in `hook_agent_tools.py`; ~65k, one session, nothing retired. Phases 2–5 deferred
+on file. Adopted: **no new standing harness script or hook without naming what it retires.**
+**A7 unchanged by decision** — features first, Phase closed before Alpha. Why, the measurements,
+and the four premises that proved wrong: `archive/PROJECT_LOG.md` § 2026-08-14.*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -96,27 +105,22 @@ Three checks still open:
 `core/orchestrator.py` and `core/server.py`. **Full spec, including the regression gate, is in
 [ROADMAP.md](ROADMAP.md) § A8** — not restated here, it was a duplicate copy.
 
-**Outbound messaging is Relationships' alone** (`9eb5ac4`). Logistics keeps `read_email`; Coordinator
-routes any message-to-a-person to Relationships, which holds three-level disclosure discretion and
-the communication-style baseline. `send_email`'s `disclosure_note` is **outside the confirm
-fingerprint** by design — do not move it into `args`. **The ZDR clarification is project-wide**
-(`ROADMAP.md` § Section 0).
-
-**Tone profiles deployed and runnable, untestable for lack of data** (`88957e6`, `3a2bb29`) —
-`tools/tone.py`, `config/agents/tone_profiler.md`, `search_correspondence`, `tone_shape`.
-`tone_shape` is accepted by `write_contact` but **deliberately absent from its schema**: only
-`tone.py` writes it, because the source is attacker-writable mail read back as trusted prompt
-text, and the fixed JSON key set reassembled in Python is that defence — the injection check is
-only a backstop.
-
-**Obligations are data, not jobs.** `tools/obligations.py` + `data/personas/{p}/obligations.yaml`;
-closure is inferred, `close_obligation` **requires** evidence. The reconcile sweep **never
-notifies** — it writes candidates; a model session judges.
-
-**Scheduler jobs split two ways (2026-08-08):** silent maintenance jobs register from
-`_DEFAULT_JOBS` in `core/scheduler.py` for every persona; jobs with a prompt/notification stay
-in per-persona `scheduler.yaml`. **Do not re-add a maintenance job to a persona file.** Reasoning:
+**Built, with the constraint that must not be undone** — reasoning for all four:
 `archive/PROJECT_LOG.md`.
+
+- **Outbound messaging is Relationships' alone** (`9eb5ac4`); Logistics keeps `read_email`, and
+  **Coordinator routes any message-to-a-person to Relationships**, which holds three-level
+  disclosure discretion and the communication-style baseline. `send_email`'s `disclosure_note` is
+  **outside the confirm fingerprint** — do not move it into `args`. **The ZDR clarification is
+  project-wide** (`ROADMAP.md` § Section 0).
+- **Tone profiles** deployed, untestable for lack of data (`88957e6`, `3a2bb29`). `tone_shape` is
+  accepted by `write_contact` but **deliberately absent from its schema** — only `tone.py` writes
+  it, because the source is attacker-writable mail read back as trusted prompt text.
+- **Obligations are data, not jobs.** `close_obligation` **requires** evidence; the reconcile
+  sweep **never notifies** — it writes candidates, a model session judges.
+- **Scheduler jobs split two ways** (08-08): maintenance jobs from `_DEFAULT_JOBS` in
+  `core/scheduler.py`; prompt/notification jobs in per-persona `scheduler.yaml`. **Do not re-add a
+  maintenance job to a persona file.**
 
 **The backlog is the bin for everything outside this roadmap**; live counts come from the sync
 line, not here. Work it with **`/backlog`** (`deep` = clustering, `attack` = parallel prompts) —
@@ -135,8 +139,8 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-14 | **Context system: the premise it was built on is obsolete.** Three loading tiers exist, the project uses one; official target is 200 lines against 546, and bloat *reduces* adherence — so the file may cause the thin-context edits it was written to prevent. Found `hook_context_gate.py` silently bypasses every worktree edit. Fable review over two passes killed my own "rule files cost nothing" claim and a history channel that would have surfaced only 48 hours. **Minimal scope approved; nothing built** | close-out only — **not deployed** |
 | 08-14 | **§10b run 2 — the plan is finished. Check 4 observed, and the plan describes it backwards:** the guard fires at `git add` and blocks the **first** writer, so window B committed clean while A was stopped. Check 8 observed twice incl. cross-worktree, via a decoy carrying `deploy.sh`'s verbatim lock block; the `deny` held. Check 5 taken only after B's lines were safely in history — overriding earlier would have caused the exact damage the guard had just prevented | `73e24a9`, `688b53f` — **not deployed** |
-| 08-14 | **§10b runs 3 and 1: checks 10 and 11 observed, 10 for the first time.** H1 is real — the gate's `payload.cwd` is the main tree, so only the dirty-worktree sweep catches a broken worker. Two defects found by running: a `CLAUDE.md` example four days stale that cost a wasted worker, and a worktree re-pulling all 29 events for an unseeded ledger — where the obvious `link_back` fix would have silently lost them instead | `20ad1ff`, `9316284`, `7d7e349` — **not deployed** |
 ---
 
 ## Useful context to pull as needed
