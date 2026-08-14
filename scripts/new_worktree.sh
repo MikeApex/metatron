@@ -145,6 +145,29 @@ link_back "vertex-key.json"
 link_back "certs"
 link_back ".claude/settings.local.json"
 
+# .dev_backlog_seen is COPIED, not linked — the one exception above, and the
+# asymmetry is the whole point.
+#
+# Without it a worktree starts with an empty ledger, so the SessionStart sync
+# re-pulls the ENTIRE VM event history as new and writes it into that tree's
+# DEV_BACKLOG.md. Measured 2026-08-14 in a §10b rehearsal: 29 new, 16 inbox, in a
+# tree that was deleted minutes later. Committing that file from a worktree would
+# resurrect already-closed items into the tracked backlog — precisely what the
+# ledger exists to prevent (see its comment in sync_dev_backlog.py).
+#
+# Linking it back would be the obvious fix and is strictly worse. A shared ledger
+# lets a worktree mark 29 events seen and then vanish with rm_worktree.sh, after
+# which the main tree never pulls them again: a noisy duplicate becomes a SILENT
+# LOST change request, which is the failure fold_fragments() is built to avoid.
+# A copy is stale in the safe direction — the worst case is re-pulling an event
+# into the main tree, where it gets filed properly.
+if [[ -f "$ROOT/.dev_backlog_seen" ]]; then
+    cp "$ROOT/.dev_backlog_seen" "$DEST/.dev_backlog_seen"
+    echo "  copied   .dev_backlog_seen  (snapshot — see comment: NOT a symlink)"
+else
+    echo "  absent   .dev_backlog_seen  (main tree has none yet — skipped)"
+fi
+
 if [[ "$WITH_PERSONAS" -eq 1 ]]; then
     echo
     echo "Copying synthetic persona fixtures (--with-personas):"
