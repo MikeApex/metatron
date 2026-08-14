@@ -15,22 +15,20 @@ It now carries `due: 2026-08-17`, so the sync's count line will name it on the 1
 unreachable"* at 09:30 and pulled 29 events cleanly at 09:35. Re-check before concluding a live
 test is blocked; VM and server healthy.*
 
-*Dev-workflow track — **the context split has shipped AND its delivery is verified.** `CLAUDE.md`
-is 282 against a 300 ceiling; five path-scoped `.claude/rules/*.md` files carry the area rules; a
-**rules index** in `CLAUDE.md` is what a high-level session gets when no rule fires. **Phase 5
-measured delivery 08-14: a `Read` of a governed path delivers its rule in full (3/3); a Bash
-`grep` does NOT; a `Write` does NOT either.** Delivery is **Read-only**, so an edit-only or
-survey-only session gets the context gate's governing-rule *pointer* and no rules — which makes
-that pointer the primary control for those sessions, not a backstop. **Phase 5's tail closed
-same day (`b07f5da`): `InstructionsLoaded` is now registered** (no matcher, logs to
-`.claude/instructions_loaded.jsonl`, gitignored), **and `scripts/audit_context_load.py`'s tables
-now describe the post-split architecture.** ⚠ **Two gaps still need a different session, once the
-log has real entries:** the **Grep *tool*** (`/backlog attack` workers use it — only Bash `grep`
-was tested, and it does not deliver), and **delivery inside a worktree session** (rule files
-present on disk, delivery unmeasured). Next-session prompt at
-`~/.claude/plans/context_phase5_close_prompt_2026-08-14.md` — it also carries the hook's
-retirement: delete the registration, the script and the log once both are answered. **Phase 4
-(ROADMAP split) stays deferred.** **Nothing retired**; `CODEBASE_INDEX.md` still loads. Nothing
+*Dev-workflow track — **Phase 5 is CLOSED.** `CLAUDE.md` is 282 against a 300 ceiling; five
+path-scoped `.claude/rules/*.md` files carry the area rules; a **rules index** in `CLAUDE.md` is
+what a high-level session gets when no rule fires. Delivery is **Read-only**: a `Read` of a
+governed path delivers its rule in full; Bash `grep` and `Write` do not; **a worktree session
+does** (confirmed 08-14 via `EnterWorktree` — `path_glob_match` fired on reading a governed file
+inside one). **The Grep-tool question dissolved rather than resolved**: this Claude Code install
+has no Grep or Glob tool anywhere (checked in two independent sessions), so every grep-based
+survey — `/backlog attack` workers included — necessarily uses Bash grep, already known not to
+deliver. Mike's call: not filed to `DEV_BACKLOG.md`, since it adds no new gap beyond the known
+Bash-grep result. **`InstructionsLoaded` retired same day** — hook deregistered,
+`scripts/hook_instructions_loaded.py` and its log deleted, per the script's own retirement
+condition once both questions closed. `qa_sweep.sh` 9/9 after. Full findings:
+`archive/log/2026-08-14-12-phase5-closed-instructionsloaded-retired.md`. **Phase 4 (ROADMAP
+split) stays deferred.** **Nothing else retired**; `CODEBASE_INDEX.md` still loads. Nothing
 deployed, `./deploy.sh` stays denied. **Next is product: `[DB-0810-13]`.** Still open: `/backlog deep` is wanted (`DEV_BACKLOG.md` is
 **598 against ~450**) and the `⚠ machine: ×5` (`mike.md:13`, consolidated evening check-in) is
 unactioned — it is **design**, so it belongs in `synthesizer.md` with the `mike.md` copy deleted
@@ -135,9 +133,9 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-14 | **Phase 5 CLOSED.** Worktree delivery confirmed (yes, via `EnterWorktree`); Grep-tool question dissolved (no Grep tool exists in this install, checked twice); `InstructionsLoaded` deregistered, script and log deleted | not deployed |
 | 08-14 | **Phase 5 tail closed — `InstructionsLoaded` logger registered, `audit_context_load.py` tables fixed.** Grep-tool and worktree delivery still unmeasured (need real log entries); close prompt saved | `b07f5da` — **not deployed** |
 | 08-14 | **Phase 5 — rule delivery verified, and it is Read-only.** `Read` delivers; Bash `grep` and `Write` do not. Grep-tool, worktree-session and `/context` still unmeasured; retirement held | logger committed unregistered — **not deployed** |
-| 08-14 | **The always-on tier split into five path-scoped rule files.** `CLAUDE.md` 554 → 282, ceiling 300; four defects caught by re-verifying premises | `275bc51`, `c1ac03b` — **not deployed** |
 ---
 
 ## Useful context to pull as needed
