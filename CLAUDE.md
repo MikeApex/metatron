@@ -341,11 +341,15 @@ Three states, and each has a different correct response:
 | Named in **live instruction text**, not registered | the model reads it as present | build it, or move it under a deferred heading |
 | **Granted but never named** | the agent holds a tool it cannot know about | document it, or drop the grant |
 
-That third row is not hypothetical. `logistics` has been granted `get_weather` in both
-routing files since 2026-08-03 while `logistics.md` stopped mentioning weather entirely
-in the same commit — and `research_agent.md`, which documents `get_weather` in full, is
+That third row is not hypothetical. `logistics` **was** granted `get_weather` in both
+routing files on 2026-08-03 while `logistics.md` stopped mentioning weather entirely
+in the same commit — and `research_agent.md`, which documented `get_weather` in full, was
 not granted it. The grant and the documentation ended up on opposite agents, and nothing
-noticed for a week.
+noticed for a week. **Fixed 2026-08-10 (`924a66e`); kept as the worked example because it
+is the rule's evidence, not a live defect.** Its stale present tense survived here until
+2026-08-14, when it argued a §10b rehearsal into building a test on a premise four days
+dead — inside the section warning that a stale premise argues persuasively for the wrong
+thing. **A worked example needs a tense that says whether it is still true.**
 
 **`python3 scripts/check_agent_tools.py`** reports all four classes. Exit 1 only on
 live-but-unbuilt. Stdlib plus PyYAML, zero model tokens.
