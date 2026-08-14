@@ -426,7 +426,12 @@ conventions, generated-file naming: [docs/CONVENTIONS.md](docs/CONVENTIONS.md).
    owns the deploy, and one runs `/archive` — see `.claude/commands/backlog.md` § attack.
 
    > **Now also enforced mechanically** by `scripts/hook_commit_guard.py`, which hashes each
-   > file this session writes and blocks a commit when one changed underneath it. The rule
+   > file this session writes and blocks when one changed underneath it. Two things the old
+   > wording *"blocks a commit"* got loose, both observed 2026-08-14: it fires at **stage time**
+   > — `git add` as well as `git commit`/`git stash` — so a session watching only the commit
+   > watches the wrong window; and it blocks the **first** writer, not the sweeper. The later
+   > writer re-hashed the file after both sets of lines had landed, so it stages clean and
+   > commits, while the earlier session is stopped. The rule
    > above still stands: the guard covers *uncommitted* overlap on the main tree, not a
    > worktree merge or a file a script wrote. Override with `METATRON_COMMIT_GUARD=off`.
 

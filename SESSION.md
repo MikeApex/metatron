@@ -20,9 +20,8 @@ running; nothing deployed and `./deploy.sh` stays denied. Detail moved to
 `archive/PROJECT_LOG.md` § 2026-08-14 and the row below. The one live carry-over: **the commit
 guard fires at `git add`, not `git commit`, and blocks the FIRST writer** — a session trusting
 the old wording watches the wrong window and records a false negative.
-⚠ **OWED, one small edit — NOW UNBLOCKED:** `CLAUDE.md` § Deploy safety rule 4
-(line ~429) describes the guard as blocking *"a commit"* — loose in both ways above. The parallel
-window's uncommitted `CLAUDE.md` edit that held it **has landed**; make the edit.
+✅ **That owed `CLAUDE.md` edit is DONE** (2026-08-14) — § Deploy safety rule 4 now names both
+the stage-time trigger and the first-writer asymmetry instead of *"blocks a commit"*.
 **Next: the context-gate build, then product** —
 `archive/plans/next_session_prompt_2026-08-14c_context_gate_briefing.md`. Then `[DB-0810-13]`.
 `/backlog deep` is still wanted (`DEV_BACKLOG.md` is **600 against ~450**) and the `⚠ machine: ×5`
