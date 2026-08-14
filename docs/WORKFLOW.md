@@ -156,7 +156,6 @@ that is exactly how it once reached 775 lines, most of it history, loaded on eve
 | `SESSION.md` | current state, nothing dated | **replaced** | every session |
 | `ROADMAP.md` | live phase gates and tracked items | edited inline | every session |
 | `DEV_BACKLOG.md` | Metatron work outside the roadmap, in priority order | curated | `/backlog` only |
-| `HARNESS_BACKLOG.md` | defects in the development tooling itself | curated by hand | when working on the tooling |
 | `archive/PROJECT_LOG.md` | dated history, reasoning, rejected options, corrections | **generated from `archive/log/` fragments — never hand-edited** | on demand |
 | `archive/backlog_closed_*.md` | closed items with their evidence | appended, monthly | on demand |
 | `archive/transcripts/` | verbatim chat | by script | never |
@@ -214,10 +213,17 @@ The override is `METATRON_COMMIT_GUARD=off` in front of the command. *(Worth kno
 override was itself broken until 2026-08-13 — it blocked, printed the remedy, and blocked the
 remedy. Any earlier session that hit a false positive had no way past it.)*
 
-> **Open, as of 2026-08-13:** the permission mode meant to cut routine prompts by ~85% is not
-> actually in effect, so you are seeing more approval prompts than the design intends. Tracked in
-> `HARNESS_BACKLOG.md`. Separately, the *Denied* tier above is only enforced against edits to
-> existing files, not against writing a new one over the top — also open, also tracked there.
+> **Both fixed 2026-08-13 — noted because the earlier text here said they were open.** The
+> permission mode meant to cut routine prompts had never actually been in effect (`defaultMode:
+> auto` parsed and did nothing); it is now a blanket `allow` list, which is the same policy in a
+> form the matcher honours. The *Denied* tier's `Write` hole is closed too — `Edit(path)` rules
+> cover every file-editing tool, so the paired `Write(path)` entries were deleted rather than
+> kept, since a rule that does not match is indistinguishable from one that does.
+>
+> **Still true, and it is the live one to know:** `ask` rules gate `Edit` here but **not `Bash`** —
+> the VS Code panel never renders a Bash prompt, so those resolve to allow. `./deploy.sh` is
+> therefore in the *Denied* tier, and `git push` is knowingly ungated in this harness (it gates in
+> the iTerm REPL). Full reasoning: `CLAUDE.md` § Change tiers.
 
 ---
 
@@ -271,11 +277,14 @@ Workers instead write a short handoff file (`archive/handoffs/YYYY-MM-DD-<slug>.
 shipped, the commits, which backlog items to close and with what evidence. `/archive` step 0
 looks for those before it does anything, so a worker running it by mistake is caught.
 
-> **One deploy, one window — and right now that is a convention, not a mechanism.** The lock that
-> is supposed to stop two deploys running at once computes a different lock path inside each
-> worktree, so both would succeed and both would push. Confirmed 2026-08-13, tracked in
-> `HARNESS_BACKLOG.md`, unfixed because the fix touches `deploy.sh`, which is Red. **Until it
-> lands: only ever deploy from the main folder.**
+> **One deploy, one window — and as of 2026-08-13 that is a mechanism, not just a convention.**
+> The lock used to compute a different path inside each worktree, so both trees could deploy and
+> both would push. It now derives from `git rev-parse --git-common-dir`, the one directory every
+> worktree agrees on. **Verified by running, not reading:** main tree, worktree-invoked-from-main,
+> worktree-invoked-from-itself and a non-git cwd all resolve to the same lock; then the main tree
+> held it while a real worktree's copy ran — *DEPLOY REFUSED, exit 1, naming the holding PID*.
+> `scripts/check_deploy_lock.sh` in the QA sweep asserts this every run, so a later simplification
+> back to a worktree-local path trips a check rather than reaching production.
 
 ### Three failure modes, and what stops each
 

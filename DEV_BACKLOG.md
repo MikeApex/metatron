@@ -35,10 +35,14 @@ journal and conversations before filing; one was a false report the system wrote
 - **[needs building]** User requested stopping the read-back of triaged emails (applied to persona) and requested implementing a ticket-based system for managing the mailbox more effectively (needs building).  
   `2026-08-11T08:36:03.236643Z`
 *(Two `[dev-workflow]` items — the commit guard blocking routine shell, and `defaultMode: auto`
-not being in effect — moved to [`HARNESS_BACKLOG.md`](HARNESS_BACKLOG.md) on 2026-08-13. They are
-defects in the tooling we build with and carry no Metatron content. `defaultMode` closed there
-2026-08-13; the commit-guard item remains open. This
-file is Metatron work; see `CLAUDE.md` § Which File Holds What.)*
+not being in effect — were moved out to a `HARNESS_BACKLOG.md` on 2026-08-13, because they are
+defects in the tooling we build with and carry no Metatron content. **That file was retired and
+deleted on 2026-08-14** when the build that opened it closed: eleven items opened, eleven
+resolved. `defaultMode` was fixed; **the commit-guard false positives are deferred, not fixed** —
+the `METATRON_COMMIT_GUARD=off` override now works, so each is a one-token annoyance rather than a
+block. Revisit only when a case appears the override does not clear. **Do not re-file it here** —
+this file is Metatron work. Full record: `archive/PROJECT_LOG.md` § 2026-08-14; see also
+`CLAUDE.md` § Which File Holds What.)*
 
 ---
 
@@ -500,8 +504,8 @@ queue for this exact class. Nothing outstanding.)*
 - **[already applied by the tool]** Updated interaction preferences: evening check-ins (13 Franklin virtues + 1 food log) will now be delivered as a single consolidated message rather than item-by-item, allowing the user to highlight only the exceptions.  
   `2026-08-12T08:21:14.706181Z`
 
-- ⚠ **[same rule in two places]** This preference may already be covered by a rule that applies to everyone. Preference: config/personas/mike.md:14 — Check inbox every six hours in the background. Candidate rule(s) it may restate: (1.00) [wording only] config/personas/mike/scheduler.yaml:43 — Check in. (1.00) [wording only] config/templates/scheduler.yaml:40 — Check in. Candidates are ranked by wording overlap, which is weak at this scale — the flagged preference is the reliable part, the partner is a starting point. If the preference says nothing the shared rule does not, delete it. If it is a genuine personal refinement, keep it and reword it so the difference is all it states.  ×4  
-  `2026-08-11T04:30:15.629388Z`
+- ⚠ **[same rule in two places]** This preference may already be covered by a rule that applies to everyone. Preference: config/personas/mike.md:13 — For evening check-ins, deliver all 14 points (13 virtues + food log) in a single consolidated message. Mike will reply by highlighting only the exceptions or things out of the ordinary. Candidate rule(s) it may restate: (1.00) [wording only] config/personas/mike/scheduler.yaml:43 — Check in. (1.00) [wording only] config/templates/scheduler.yaml:40 — Check in. Candidates are ranked by wording overlap, which is weak at this scale — the flagged preference is the reliable part, the partner is a starting point. If the preference says nothing the shared rule does not, delete it. If it is a genuine personal refinement, keep it and reword it so the difference is all it states.  ×5  
+  `2026-08-14T04:30:08.340600Z`
 
 ---
 ## Done

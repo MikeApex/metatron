@@ -54,7 +54,6 @@ jobs and no rule about ownership — `SESSION.md` had reached 775 lines, 80% of 
 | `CLAUDE.md` | how to work here: rules, conventions, architecture | edited | auto, every session |
 | `SESSION.md` | **current state only** | **replaced** | `/metatron-code` |
 | `DEV_BACKLOG.md` | **Metatron** work outside the roadmap, in priority order | `## Inbox`/`## Machine log` machine-written, rest curated — ritual in `/backlog` | **on demand** — synced every session, read only when working the backlog |
-| `HARNESS_BACKLOG.md` | defects in the tooling we *build with* — hooks, worktrees, the permission matcher, `deploy.sh`'s lock, `/fix`. **Reconciled within the build that opened it, never carried** | curated by hand — no sync, no fragments | never — read when working the throughput plan |
 | [`ROADMAP.md`](ROADMAP.md) | **live** tracks, phase gates, freezes — abridged | edited | `/metatron-code` |
 | `archive/plans/phase5_to_future_roadmap_2026-06-10.md` | the full plan — completed tracks, Phase 6B/7 detail | **never edited — it is dated and static** | never — read when `ROADMAP.md` says it does not carry your area |
 | [`docs/WORKFLOW.md`](docs/WORKFLOW.md) | which command to fire, when, and what it costs | edited | never — read when unsure which ritual applies |
@@ -73,12 +72,16 @@ History goes in the log; state goes in `SESSION.md`; work goes in `DEV_BACKLOG.m
 that closes by *appending* to `SESSION.md` has put it in the wrong place — see `/archive`.
 
 **`DEV_BACKLOG.md` is the single bin for *Metatron* work outside the roadmap, and `/backlog` is
-how it is worked.** The one exception is `HARNESS_BACKLOG.md`, added 2026-08-13: defects in the
-development tooling itself — Claude Code hooks, worktrees, the permission matcher — which have
-no Metatron content and would dilute both the line ceiling and the `now`/`later` counts that
-make this file's workload legible. That file is **reconciled within the build that opened it**;
-a harness backlog that outlives its build has become a second permanent bin, which is what this
-rule exists to prevent. Two rules worth carrying without reading `DEV_BACKLOG.md`:
+how it is worked.** It has had exactly one exception and **that exception is now closed.**
+`HARNESS_BACKLOG.md` existed 2026-08-13 to 08-14 for defects in the development tooling itself —
+hooks, worktrees, the permission matcher, `deploy.sh`'s lock — which carry no Metatron content and
+would have diluted both the line ceiling and the `now`/`later` counts that make this file's
+workload legible. It was **reconciled within the build that opened it** and deleted on closing:
+eleven items opened, eleven resolved. *The rule that governed it is the reason it is gone —* a
+harness backlog that outlives its build has become a second permanent bin, which is what this
+rule exists to prevent. **Do not recreate it as a standing file.** If a future build needs one,
+it opens with a named build, a stated retirement condition, and it closes with that build.
+Two rules worth carrying without reading `DEV_BACKLOG.md`:
 
 1. **No item is acted on, or re-filed, on the strength of its own description** — open it
    against the current code first. A sweep on 2026-08-05 found roughly a third of checked items
@@ -114,14 +117,28 @@ copy here would go stale and the stale copy would keep being read. Read it there
 | Tier | Roughly | Behaviour |
 |---|---|---|
 | **Green / Amber** | `tests/`, `scripts/`, `docs/`, `tools/`, most of `core/` | applied without a prompt |
-| **Red** | `config/agents/*.md`, `routing*.yaml`, `core/{router,persona,scheduler,spend_guard}.py`, `./deploy.sh`, `git push` | prompts every time |
-| **Denied** | `config/constitution.md`, `config/personas/mike*`, `data/personas/**`, `.env`, `vertex-key.json` | blocked; must be lifted explicitly |
+| **Red** | `config/agents/*.md`, `routing*.yaml`, `core/{router,persona,scheduler,spend_guard}.py`, `git push` | prompts every time — **except `git push`, see below** |
+| **Denied** | `config/constitution.md`, `config/personas/mike*`, `data/personas/**`, `.env`, `vertex-key.json`, **`./deploy.sh`** | blocked; must be lifted explicitly |
 
-> **Red does not actually prompt in a non-interactive session (measured 2026-08-13).** In the
-> VS Code / Agent-SDK harness a prompt that cannot be shown is auto-**approved**, so `ask`
-> resolves to allow and `./deploy.sh` and `git push` are ungated there; `deny` is enforced.
-> **Anything that must never happen unattended belongs in the Denied row, not the Red one.**
-> Evidence and the open decision: `HARNESS_BACKLOG.md` § H7.
+> **`ask` is honoured for `Edit` rules here and ignored for `Bash` ones (measured in both
+> harnesses by hand, 2026-08-14).** The split is by **tool family**, not by whether a session
+> is interactive — an earlier note here said the latter and was too broad. So the Red row's
+> file-editing rules genuinely prompt in this harness; `git push` does not, and runs silently.
+> `deny` is enforced for both families.
+>
+> **`./deploy.sh` therefore moved to Denied** (Mike's decision, 2026-08-14) — it was the only
+> ungated irreversible action, and it pushes, SSHs the VM, pulls, installs and restarts both
+> units. **`git push` stays Red and stays inert here, knowingly:** denying it would break
+> `/archive`'s push-and-assert step every run, for a gate on a private-repo push.
+>
+> **Two consequences worth carrying.** *Anything that must never happen unattended belongs in
+> the Denied row.* And **probe a permission rule per tool family, never once** — this harness
+> has produced two tool-family matcher splits (`Edit` vs `Write`, `Edit` vs `Bash`), and in
+> both the working family made the broken one look fine.
+>
+> **Never test a `Bash` permission rule by running the real command.** The test only reaches
+> execution in the branch where the rule fails, so a negative result *is* the damage. Use an
+> inert decoy with the same rule shape.
 
 The Denied row turns two standing prose rules into mechanism: the constitution is Tier 0, and
 **the VM owns live persona config** (see Personas below). Red is also the line for *who builds*:
