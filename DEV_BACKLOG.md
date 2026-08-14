@@ -452,8 +452,19 @@ so this is not a parallel track to pick from when a `Now` item is time-gated.
   `logistics` calls `send_email` without the grant (only `relationships` holds it) and the
   dispatcher executes it, so switching to enforce mode today would kill outbound email. See
   `.claude/rules/agent-files.md` — correct the lists, verify, *then* enforce.
+  **Fourth blind spot, found 2026-08-15 and created by that day's own change: the guard scans
+  `config/agents/*.md` and never `config/personas/**`, so a tool named in a persona file is
+  invisible to it.** `6913ad7` moved Mike's evening ritual — which instructs a `write_log` call —
+  out of `synthesizer.md` into `config/personas/mike/evening_ritual.md`. The `write_log` finding
+  **disappeared from the guard's output between two edits in one session**, and not because it was
+  fixed: `synthesizer` still lacks the grant and still succeeds only because `dispatch_tool()` does
+  not enforce. Per-persona subject files are a pattern `ROADMAP.md` § D2 actively encourages, so
+  this widens every time one is added. **Do not fix by reverting the move** — extend the guard's
+  scan to persona files, noting they are VM-only, so a Mac-side run cannot see the real ones and a
+  clean local report proves nothing about `mike`.
   *filed 2026-08-10 by the machine-log sweep · **(b) closed 2026-08-10**, (c) added the same day
-  from the guard's first full run · two denials added by the 08-10 `deep` sweep*
+  from the guard's first full run · two denials added by the 08-10 `deep` sweep · fourth blind spot
+  filed 2026-08-15 by the session that caused it*
 - **[DB-0814-03]** **Ticket-based mailbox management.** Mike's framing: manage the mailbox as
   tickets rather than as a stream, so a thread has a state rather than being re-read each pass.
   Real and unbuilt. **Blocked on a design decision this entry cannot make** — what a ticket *is*

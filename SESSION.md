@@ -1,45 +1,39 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-14 (**the context split is done and verified** — rule delivery works, on `Read` only).
-`## Now` is **10 — at cap**, so anything new displaces something. Live runtime items:
-**`[DB-0810-13]` is Now #1 and untouched** — specialists report actions they never took, so
-anything the system says it *did* (email, calendar, scheduling) is unverified. **`[DB-0810-12]` is
+*Updated: 2026-08-15 (**a deploy is owed — read this first**). `6913ad7` moved Mike's Franklin
+virtue ritual out of `config/agents/synthesizer.md` into a new per-persona file,
+`config/personas/mike/evening_ritual.md`, loaded by `load_config()` through the same optional-file
+path `self_development.md` uses. **Committed, NOT deployed, and the gap is live:** the VM still
+runs the old `synthesizer.md` while `mike.md:13` is already deleted, so the consolidated-delivery
+instruction is in neither place the running system reads, and `evening_ritual.md` sits on the VM
+unloaded. **Run `./deploy.sh`** (Denied tier — a session cannot). **The lesson is the rejected
+first attempt:** `.claude/rules/agent-files.md` says default to *design*, so this went into
+`synthesizer.md` first and Mike rejected it — a ritual can be personal even when its delivery
+format reads like generic good sense. The default is a default, not a verdict.
+`## Now` is **10 — at cap**. **`[DB-0810-13]` is Now #1 and untouched** — specialists report
+actions they never took, so anything the system says it *did* is unverified. **`[DB-0810-12]` is
 UNBLOCKED**: four post-`8ae1ff9` occurrences, all `write_quality_event` at position 12 on
 `synthesizer`, `loop=openai_compat_stream` — the *streaming* variant, where deltas carry no
 `thought_signature`. **Instrument the diverged-replay `else` branch before fixing — the first two
-diagnoses were both wrong.** `[DB-0810-05]` is blocked on **data, not code** (mailbox holds 1 Sent
-/ 6 Inbox; no contact has enough correspondence to profile). **⚠ `[DB-0809-02]`'s fix DID NOT HOLD** —
-`82d394b` landed 08-09, Mike reported the same repetition 08-12; read that trace, not the week.
-It now carries `due: 2026-08-17`, so the sync's count line will name it on the 17th.
-**Tailnet is INTERMITTENT, not down** — on 2026-08-14 a sync reported *"VM running but
-unreachable"* at 09:30 and pulled 29 events cleanly at 09:35. Re-check before concluding a live
-test is blocked; VM and server healthy.*
+diagnoses were both wrong.** `[DB-0810-05]` is blocked on **data, not code**. **⚠ `[DB-0809-02]`'s
+fix DID NOT HOLD** — `82d394b` landed 08-09, Mike reported the same repetition 08-12; read that
+trace, not the week. It carries `due: 2026-08-17`. **Tailnet is INTERMITTENT, not down**; SSH to
+the VM is **IAP-only** (`gcloud compute ssh --tunnel-through-iap`) — a direct connection times out
+and that is not an outage.*
 
-*Dev-workflow track — **Phase 5 is CLOSED.** `CLAUDE.md` is 282 against a 300 ceiling; five
-path-scoped `.claude/rules/*.md` files carry the area rules; a **rules index** in `CLAUDE.md` is
-what a high-level session gets when no rule fires. Delivery is **Read-only**: a `Read` of a
-governed path delivers its rule in full; Bash `grep` and `Write` do not; **a worktree session
-does** (confirmed 08-14 via `EnterWorktree` — `path_glob_match` fired on reading a governed file
-inside one). **The Grep-tool question dissolved rather than resolved**: this Claude Code install
-has no Grep or Glob tool anywhere (checked in two independent sessions), so every grep-based
-survey — `/backlog attack` workers included — necessarily uses Bash grep, already known not to
-deliver. Mike's call: not filed to `DEV_BACKLOG.md`, since it adds no new gap beyond the known
-Bash-grep result. **`InstructionsLoaded` retired same day** — hook deregistered,
-`scripts/hook_instructions_loaded.py` and its log deleted, per the script's own retirement
-condition once both questions closed. `qa_sweep.sh` 9/9 after. Full findings:
-`archive/log/2026-08-14-12-phase5-closed-instructionsloaded-retired.md`. **Phase 4 (ROADMAP
-split) stays deferred.** **Nothing else retired**; `CODEBASE_INDEX.md` still loads. Nothing
-deployed, `./deploy.sh` stays denied. **Next is product: `[DB-0810-13]`.** Still open: `/backlog deep` is wanted (`DEV_BACKLOG.md` is
-**598 against ~450**) and the `⚠ machine: ×5` (`mike.md:13`, consolidated evening check-in) is
-unactioned — it is **design**, so it belongs in `synthesizer.md` with the `mike.md` copy deleted
-in the same pass; `mike.md` is **VM-owned**, pull it down, never reconstruct it. ⚠ **Two
-divergences still open for a decision:** `DEV_BACKLOG.md` says `[DB-0810-12]`'s hold stands while
-this file says unblocked — this file is newer and is the only copy; and `docs/CONVENTIONS.md:143`
-points here for live Model IDs, but § Model IDs below still reads *updated 2026-07-27*.
-**A7 unchanged by decision** — features first, Phase closed before Alpha. Standing:
-**`PROJECT_LOG.md` is GENERATED** from `archive/log/` fragments — write a fragment, never edit it,
-and a fragment is the collision-safe half of `/archive` when two windows are live; backlog items
-go to `.claude/backlog_inbox/`; `qa_sweep.sh` is free (9 checks, ~3s).*
+*Dev-workflow track — **Phase 5 is CLOSED**, five path-scoped `.claude/rules/*.md` files carry the
+area rules, and rule delivery is **Read-only** (Bash `grep` and `Write` do not deliver; a worktree
+session does). Full findings:
+`archive/log/2026-08-14-12-phase5-closed-instructionsloaded-retired.md`. **Phase 4 (ROADMAP split)
+stays deferred.** `/backlog deep` ran on 08-15 and did **half** the job: the `⚠ machine: ×5` is
+resolved, but the clustering half found no un-cross-referenced merge candidates and
+**`DEV_BACKLOG.md` is 614 against ~450** — the overage is evidence-dense `## Now` entries, not
+narrative creep, so nothing was cut to hit the number. ⚠ **One divergence still open:**
+`docs/CONVENTIONS.md:143` points here for live Model IDs, but § Model IDs below still reads
+*updated 2026-07-27*. **A7 unchanged by decision** — features first, Phase closed before Alpha.
+Standing: **`PROJECT_LOG.md` is GENERATED** from `archive/log/` fragments — write a fragment, never
+edit it, and a fragment is the collision-safe half of `/archive` when two windows are live;
+backlog items go to `.claude/backlog_inbox/`; `qa_sweep.sh` is free (9 checks, ~3s).*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -133,9 +127,9 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-15 | **Mike's Franklin ritual leaves `synthesizer.md`** for a new per-persona `evening_ritual.md`, loaded like `self_development.md`. Token-neutral for Mike, a saving for every other persona. First attempt filed it as *design* and was rejected | `6913ad7` — **DEPLOY OWED** |
 | 08-14 | **Phase 5 CLOSED.** Worktree delivery confirmed (yes, via `EnterWorktree`); Grep-tool question dissolved (no Grep tool exists in this install, checked twice); `InstructionsLoaded` deregistered, script and log deleted | not deployed |
 | 08-14 | **Phase 5 tail closed — `InstructionsLoaded` logger registered, `audit_context_load.py` tables fixed.** Grep-tool and worktree delivery still unmeasured (need real log entries); close prompt saved | `b07f5da` — **not deployed** |
-| 08-14 | **Phase 5 — rule delivery verified, and it is Read-only.** `Read` delivers; Bash `grep` and `Write` do not. Grep-tool, worktree-session and `/context` still unmeasured; retirement held | logger committed unregistered — **not deployed** |
 ---
 
 ## Useful context to pull as needed
