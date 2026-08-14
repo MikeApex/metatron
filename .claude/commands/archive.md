@@ -57,8 +57,22 @@ A snapshot, not a ledger. Rewrite the rolling handoff paragraph (~150 words — 
 new one above the old). Move finished items out rather than marking them done. Add one row to
 `## Recent sessions` and let the oldest drop. Delete what is now superseded.
 
-**Ceiling: 200 lines.** A new blocker earning a line is fine; crossing 200 means dated detail
-is accumulating here instead of in the log.
+**Edit the volatile sections only** — the handoff paragraph, `## Current state`, and
+`## Recent sessions`. `## Read these`, `## Useful context`, `## Quick start` and `## Model IDs`
+are reference: leave them closed unless this session made one of them *wrong*. Re-deciding
+static content every run is what made this step expensive.
+
+**A rule that has been promoted does not stay here** — once something is written into
+`CLAUDE.md`, `ROADMAP.md` or a `docs/` file, cut it and leave the pointer. Same rule `CLAUDE.md`
+applies to persona files, turned on the primer. Likewise anything with a `[DB-…]` id: carry the
+id and a one-line status, never the evidence, which `DEV_BACKLOG.md` holds in full.
+
+**Ceiling: 200 lines — but the number to watch is the volatile part.** Both come from
+`python3 scripts/check_claude_md_claims.py`, run it directly: these are warnings, and
+`qa_sweep.sh` prints a passing check's output only under `--verbose`. A primer pinned at its
+ceiling is not stable, it is one where each session pays to argue a line out to let a line in.
+Crossing either budget means move a *section* out, not trim a sentence. *(Why, and the 08-14
+pass that set it: `archive/PROJECT_LOG.md`.)*
 
 **Same pass:** if this session completed, split, or superseded anything `ROADMAP.md` tracks
 (A7's checks, B1–B4, Track D), mark it there now — inline ✅ or a short note, not a rewrite.

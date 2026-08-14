@@ -231,7 +231,60 @@ def check_ceilings() -> list[str]:
         lines = len(path.read_text().splitlines())
         if lines > ceiling:
             warnings.append(f"{rel}: {lines} lines, ceiling {ceiling}")
+    warnings.extend(check_session_volatile())
     return warnings
+
+
+# --- 4b. SESSION.md's volatile half ------------------------------------------
+# The 200-line ceiling measures the wrong thing on its own. SESSION.md sat at
+# 195-205 lines for twenty consecutive commits (08-10 -> 08-14) -- not stable,
+# but pinned: every session paid to argue one line out so it could put one line
+# in. The static sections are not what grows, so a whole-file number cannot say
+# whether the primer is healthy or merely full.
+#
+# These headings are rewritten or re-decided every session; everything else is
+# reference that should be read on demand. A heading that disappears is not an
+# error -- the budget is only ever advisory.
+
+SESSION_VOLATILE_HEADINGS = ("## Current state", "## Recent sessions")
+
+# Set to 120 on 2026-08-14, just above the 105 measured immediately after the
+# dedup pass that introduced this check. Deliberately NOT set to the measured
+# value: a budget that warns on the day it ships is one a reader learns to skip,
+# which is the failure mode that keeps check_agent_tools.py out of the quality
+# stream. It should fire on real accumulation, not on arrival.
+SESSION_VOLATILE_BUDGET = 120
+
+
+def check_session_volatile() -> list[str]:
+    path = ROOT / "SESSION.md"
+    if not path.exists():
+        return []
+    lines = path.read_text().splitlines()
+
+    # The handoff paragraph is everything above the first `---`, which is the
+    # densest and most-rewritten part of the file.
+    handoff = len(lines)
+    for i, line in enumerate(lines):
+        if line.strip() == "---":
+            handoff = i
+            break
+
+    volatile = handoff
+    in_section = False
+    for line in lines:
+        if line.startswith("## "):
+            in_section = any(line.startswith(h) for h in SESSION_VOLATILE_HEADINGS)
+        if in_section:
+            volatile += 1
+
+    if volatile > SESSION_VOLATILE_BUDGET:
+        return [
+            f"SESSION.md volatile sections: {volatile} lines "
+            f"(handoff {handoff} + {'/'.join(SESSION_VOLATILE_HEADINGS)}), "
+            f"budget {SESSION_VOLATILE_BUDGET} — move a section out, do not trim a sentence"
+        ]
+    return []
 
 
 def main() -> int:

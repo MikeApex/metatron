@@ -315,6 +315,34 @@ When running locally instead of on the VM:
 
 Note: the Mac is no longer the primary host. Local mode is for development and testing only. Tailscale + HTTP transport encryption means TLS certs are not needed for phone access in either mode.
 
+### Running it on the Mac
+
+Moved here from `SESSION.md` § Quick start on 2026-08-14 — the primer keeps the two commands
+that get typed daily and points here for the rest, so the reference stops being re-read on
+every session that never runs the server.
+
+```bash
+cd ~/Desktop/multi-model-mcp
+source .venv/bin/activate
+
+# PWA server (Vertex cloud routing — the default; no Ollama needed)
+python core/server.py --persona mike --port 8001
+
+# Port 8001 already held? Kill and restart:
+lsof -ti :8001 | xargs kill -9 && python core/server.py --persona mike --port 8001
+
+# One agent directly, outside the pipeline
+python core/orchestrator.py --agent research_agent --provider gemini
+
+# Scheduler daemon
+python core/scheduler.py
+```
+
+`--persona` is required on both `core/server.py` and `core/scheduler.py` — identity
+resolution is fail-closed and there is no shared fallback path. Which routing file loads:
+§ Routing / deployment mode below. Switching to Ollama needs the sleep and launchd steps in
+the table above **first**.
+
 ---
 
 ## Recreate from scratch (ordered checklist)

@@ -61,6 +61,24 @@ $1.00, proceed and report the actual cost afterward. This is independent of `spe
 going to be expensive before the first call goes out. A suite denominated in real dollars is a
 decision, not a default.
 
+### Three different quantities are called "tokens" — never compare across them
+
+Learned 2026-08-13 during the §10b throughput work, and promoted here from `SESSION.md` on
+2026-08-14 so it survives the primer being rewritten. At least three distinct numbers travel
+under the name *tokens*, and a figure quoted from one against a budget set in another is
+wrong by a large factor, silently:
+
+| Quantity | What it counts | Where it comes from |
+|---|---|---|
+| `subagent_tokens` | one specialist dispatch only | `tools/subagent.py` |
+| raw | every token the provider billed, all agents, all turns | provider usage fields |
+| weighted | raw adjusted for cached vs. uncached input rates | `core/spend_guard.py` |
+
+§10b's ~165k figure is the **first** of these, and reading it as the second is the mistake
+this note exists to prevent. **State which quantity a number is whenever you quote one** —
+a bare token count is not a measurement, and the Testing Cost Convention above depends on
+the distinction holding.
+
 ### File naming convention
 
 All generated files — test reports, plans, analysis docs, session archives — must have names specific enough to survive alongside similar future files without collision. Include at minimum: purpose, date, and model/provider where relevant.

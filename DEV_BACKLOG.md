@@ -497,7 +497,12 @@ so this is not a parallel track to pick from when a `Now` item is time-gated.
   **wide, not numerous**, so a line ceiling could not see them. Instance fixed (`2e3e6e4`); the
   metric is still line-based everywhere it is stated (`CLAUDE.md` § *Which File Holds What* plus
   each file's footer). **Check before acting:** whether a byte/token measure earns its complexity,
-  or whether the one-line-per-row rule already added is sufficient. *filed 2026-08-10*
+  or whether the one-line-per-row rule already added is sufficient. *filed 2026-08-10 ·
+  **second blind spot found 2026-08-14, still open:** a whole-file line count also cannot tell
+  static lines from volatile ones, so it pressures a session to cut live state while reference
+  sits untouched. `SESSION.md` sat at 195–205 for twenty commits on that basis. Mitigated for
+  this one file by a volatile-section budget in `check_claude_md_claims.py` — which is **still
+  line-based**, so it narrows the item rather than closing it*
 - **[DB-0805-05]** **A session cannot tell its own edits from a parallel window's** — the git
   collisions and the `/archive` dirty-check are one cause, not two. `git add <file>` does **not**
   protect you: the collision is line-granular inside a file the committer legitimately owns

@@ -12,27 +12,36 @@ diagnoses were both wrong.** `[DB-0810-05]` is blocked on **data, not code** (ma
 `82d394b` landed 08-09, Mike reported the same repetition 08-12; read that trace, not the week.
 **Blocker for any live test: both Tailscale clients are off the tailnet**; VM and server healthy.*
 
-*Dev-workflow track — no runtime code changed, nothing deployed. **`[H7]` and `[H8]` are closed
-and `HARNESS_BACKLOG.md` is retired and deleted** (11 opened, 11 resolved; only the commit-guard
-false positives deferred, override works). **Only §10b remains.** `qa_sweep.sh` is **9 checks,
-~6.6s**, zero tokens; a `Stop` hook reports real session cost, so no work block estimates its own
-spend. **`ask` splits by tool family, not interactivity** — `Edit` rules gate in this panel, `Bash`
-rules resolve to allow. `./deploy.sh` is now `deny`; **`git push` is knowingly inert here.**
-⚠ **§10b run 2's double-deploy leg needs the deny lifted deliberately, or re-scoped to a decoy.**
+*Dev-workflow track — no runtime code changed, nothing deployed. **This primer is now split by
+volatility**: it was pinned at 195–205 lines for twenty commits, so every close-out had to argue
+a line out to let a line in. Reference moved to `docs/` and `CODEBASE_INDEX.md`; **only the
+handoff, `## Current state` and `## Recent sessions` are rewritten at close** — 200 → 178, with
+a 120-line volatile budget (measured 105) in `check_claude_md_claims.py`. ⚠ **Two divergences
+found and left for a decision:** `DEV_BACKLOG.md` says `[DB-0810-12]`'s hold stands while this
+file says unblocked — this file is newer and is the only copy; and `docs/CONVENTIONS.md:143`
+points here for live Model IDs on the ground that a second copy goes stale, but § Model IDs below
+still reads *updated 2026-07-27*. **`[H7]` and `[H8]` are closed
+and `HARNESS_BACKLOG.md` is retired and deleted** — the count and the rule that retired it are in
+`CLAUDE.md` § Which File Holds What. **Only §10b remains.**
+⚠ **§10b run 2's double-deploy leg needs the `deny` lifted deliberately, or re-scoped to a decoy.**
 Brief: [`next_session_prompt_2026-08-14_throughput_10b_rehearsal.md`](archive/plans/next_session_prompt_2026-08-14_throughput_10b_rehearsal.md)
 — run **3 first** (checks 10 and 11, cheapest), then 1 on the approved Green item `[DB-0813-01]`,
 then 2. **Checks 4 and 10 have never been observed.**
-**21 defects, every one found by running.** Rules bought the hard way: ⚠ **three quantities are
-called "tokens"** (`subagent_tokens`, raw, weighted) and §10b's ~165k is the first — **never
-compare across them**; **never test a `Bash` permission rule by running the real command**, it only
-executes in the branch where the rule fails. Standing: **`PROJECT_LOG.md` is GENERATED** from
+**21 defects, every one found by running.** Standing: **`PROJECT_LOG.md` is GENERATED** from
 `archive/log/` fragments — write a fragment, never edit it; backlog items go to
-`.claude/backlog_inbox/`; `qa_sweep.sh` is free.*
+`.claude/backlog_inbox/`; `qa_sweep.sh` is free (9 checks, ~6.6s) and a `Stop` hook reports real
+session cost. **Rules promoted out of this paragraph on 2026-08-14, do not re-add them here:**
+permission-matcher behaviour (`ask` splits by tool family, `./deploy.sh` is `deny`, `git push`
+inert, never probe a `Bash` rule with the real command) is in `CLAUDE.md` § Change tiers; the
+three-quantities-called-tokens rule is in [docs/CONVENTIONS.md](docs/CONVENTIONS.md).*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
-> **Ceiling: 200 lines.** Growing a little is fine — a new blocker is worth a line. Crossing 200
-> means history is accumulating here instead of in the log; see `CLAUDE.md` → **Which File Holds What**.
+> **Ceiling: 200 lines, and a 120-line budget on the volatile part** — this paragraph plus
+> `## Current state` and `## Recent sessions`, which are the only sections a close-out rewrites.
+> Everything below them is reference; leave it closed unless the session made it wrong.
+> Both numbers come from `python3 scripts/check_claude_md_claims.py`. Growing a little is fine —
+> a new blocker is worth a line; see `CLAUDE.md` → **Which File Holds What**.
 
 ---
 
@@ -123,59 +132,37 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-14 | **Primer split by volatility — 200 → 178, volatile budget 120.** It had been pinned at 195–205 for twenty commits, which is a file paying to swap one line for another every close. Reference → `docs/`/`CODEBASE_INDEX.md`; `/archive` § 3 edits volatile sections only. Model-IDs move **killed** by a documented decision whose premise is stale | close-out — **not deployed** |
 | 08-14 | **`[H7]` closed; `HARNESS_BACKLOG.md` retired (11 opened, 11 resolved); Inbox 4 → 0.** `ask` splits by **tool family**, not interactivity — `Edit` gates here, `Bash` does not. `./deploy.sh` → `deny`. Two Inbox entries were **already built or already rejected in code**; `/archive` step 2 was telling sessions to hand-edit a generated file | `e123c39` + close-out — **not deployed** |
 | 08-13 | **Code-not-rules: token accounting, a claims smoke test, the deploy-lock invariant.** `[H8]` closed; `qa_sweep.sh` 7 → 9 checks. `[H8].1` was unbuildable as specified; four defects, all inside the checks themselves | `4a0177f`, `47a469f` — **not deployed** |
 ---
 
 ## Useful context to pull as needed
 
+**[CODEBASE_INDEX.md](CODEBASE_INDEX.md) answers "where is X".** It already indexes every agent
+file, every tool, `config/modules/routing*.yaml`, `archive/security/`, `tests/`, and
+`archive/plans/future_phases.md` — the lookup table that sat here restated eleven of its rows and
+was cut on 2026-08-14. The three docs pointers it does not own are in **Read these** above.
+
+One row survived, because no other file carries it:
+
 | Question | Where to look |
 |---|---|
-| What does each agent do? | `config/agents/` |
-| What tools exist and what they do | `tools/` — all registered in `core/orchestrator.py → register_tools()` |
-| What's the security posture? | `archive/security/threat_model_2026-06-04.md`, `archive/security/security_backlog_2026-06-04.md` |
-| What are the test criteria for this phase? | `tests/phase5_testing_plan.md` |
-| What's parked for later phases? | `archive/plans/future_phases.md` |
 | Agent enhancement backlogs | `## Enhancement backlog` at the bottom of each `config/agents/*.md` — **the only copy**; the `DEV_BACKLOG.md` and roadmap mirrors were deleted 2026-08-03 |
-| Why was this built this way? | [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md) — dated history, reasoning, corrections |
-| Deploy / recovery / rebuild detail | [docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md) |
-| Session history | [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md) — one entry per session, newest first (`archive/sessions/` is pre-08-09 only) |
-| Which command to fire, and when | [docs/WORKFLOW.md](docs/WORKFLOW.md) |
-| Model routing assignments | `config/modules/routing.yaml` |
-| How to run the system | See Quick Start below |
 
 ---
 
 ## Quick start
 
-> **⚠ Switching to local Mac routing (Ollama)?** Two things must be activated first:
-> 1. `sudo pmset -a sleep 0 disksleep 0` — prevent Mac sleep
-> 2. `launchctl load ~/Library/LaunchAgents/com.metatron.server.plist` — keep server alive (create plist first if not done — see `archive/sessions/2026-06-20 — VM Provisioning, GitHub, Deploy Pipeline.md`)
-> Reverse with: `sudo pmset -a sleep 10 disksleep 10` and `launchctl unload ~/Library/LaunchAgents/com.metatron.server.plist`
-
 ```bash
-cd ~/Desktop/multi-model-mcp
-source .venv/bin/activate
-
-# Start the PWA server (Vertex cloud routing — default as of 2026-06-19)
-# No Ollama needed — DEPLOYMENT_MODE=cloud in .env routes all agents to Vertex
+cd ~/Desktop/multi-model-mcp && source .venv/bin/activate
 python core/server.py --persona mike --port 8001
-
-# Kill a stuck server on port 8001 and restart
-lsof -ti :8001 | xargs kill -9 && python core/server.py --persona mike --port 8001
-
-# Run a specific agent directly
-python core/orchestrator.py --agent research_agent --provider gemini
-
-# Run the scheduler daemon
-python core/scheduler.py
 ```
 
-**Deployment mode:** `DEPLOYMENT_MODE=cloud` is set in `.env` — loads `config/modules/routing_cloud.yaml` (all agents → Vertex Gemini 3.1 Pro). To use local Ollama instead, remove or unset `DEPLOYMENT_MODE`.
-
-**Vertex credentials:** ADC configured via gcloud on this machine. GCP project: `metatron-ai-499810`, location: `global`.
-
-**If using local Ollama:** `ollama serve` at `localhost:11434`, model `qwen3:14b`.
+Running on `DEPLOYMENT_MODE=cloud` (Vertex; no Ollama needed). **Everything else** — the
+port-8001 kill, running one agent directly, the scheduler daemon, Vertex credentials, the GCP
+project, and the sleep/launchd steps that must precede any switch to local Ollama —
+[docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md) § Local dev mode.
 
 ---
 
