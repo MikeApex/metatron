@@ -21,12 +21,15 @@ is 282 against a 300 ceiling; five path-scoped `.claude/rules/*.md` files carry 
 measured delivery 08-14: a `Read` of a governed path delivers its rule in full (3/3); a Bash
 `grep` does NOT; a `Write` does NOT either.** Delivery is **Read-only**, so an edit-only or
 survey-only session gets the context gate's governing-rule *pointer* and no rules — which makes
-that pointer the primary control for those sessions, not a backstop. ⚠ **Three gaps need a
-different session:** the **Grep *tool*** (`/backlog attack` workers use it), **delivery inside a
-worktree session**, and `/context`. `scripts/hook_instructions_loaded.py` is committed **but NOT
-registered** — snippet and rationale are in the script's header, because `settings.json` takes
-`_comment_*` keys **only inside `permissions`**. Also owed: `scripts/audit_context_load.py:34-49`
-still describes the pre-split architecture and will score correct sessions wrong. **Phase 4
+that pointer the primary control for those sessions, not a backstop. **Phase 5's tail closed
+same day (`b07f5da`): `InstructionsLoaded` is now registered** (no matcher, logs to
+`.claude/instructions_loaded.jsonl`, gitignored), **and `scripts/audit_context_load.py`'s tables
+now describe the post-split architecture.** ⚠ **Two gaps still need a different session, once the
+log has real entries:** the **Grep *tool*** (`/backlog attack` workers use it — only Bash `grep`
+was tested, and it does not deliver), and **delivery inside a worktree session** (rule files
+present on disk, delivery unmeasured). Next-session prompt at
+`~/.claude/plans/context_phase5_close_prompt_2026-08-14.md` — it also carries the hook's
+retirement: delete the registration, the script and the log once both are answered. **Phase 4
 (ROADMAP split) stays deferred.** **Nothing retired**; `CODEBASE_INDEX.md` still loads. Nothing
 deployed, `./deploy.sh` stays denied. **Next is product: `[DB-0810-13]`.** Still open: `/backlog deep` is wanted (`DEV_BACKLOG.md` is
 **598 against ~450**) and the `⚠ machine: ×5` (`mike.md:13`, consolidated evening check-in) is
@@ -132,9 +135,9 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-14 | **Phase 5 tail closed — `InstructionsLoaded` logger registered, `audit_context_load.py` tables fixed.** Grep-tool and worktree delivery still unmeasured (need real log entries); close prompt saved | `b07f5da` — **not deployed** |
 | 08-14 | **Phase 5 — rule delivery verified, and it is Read-only.** `Read` delivers; Bash `grep` and `Write` do not. Grep-tool, worktree-session and `/context` still unmeasured; retirement held | logger committed unregistered — **not deployed** |
 | 08-14 | **The always-on tier split into five path-scoped rule files.** `CLAUDE.md` 554 → 282, ceiling 300; four defects caught by re-verifying premises | `275bc51`, `c1ac03b` — **not deployed** |
-| 08-14 | **The context gate became a per-file briefing, and stopped skipping worktrees.** Testing killed three of its own stated beliefs | `8981862` — **not deployed** |
 ---
 
 ## Useful context to pull as needed

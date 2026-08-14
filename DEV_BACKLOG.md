@@ -314,23 +314,6 @@ standing rule distrusts.*
 
 ## Later
 
-- **[DB-0814-05] Finish Phase 5 of the context system: register the `InstructionsLoaded` logger
-  and correct `audit_context_load.py`.** Both were in Phase 5's scope and were deferred at
-  close-out 2026-08-14 rather than rushed. (1) `scripts/hook_instructions_loaded.py` is committed
-  but **inert** — nothing in `.claude/settings.json` references it. The registration snippet and
-  the full rationale are in the script's own header, because `settings.json` accepts `_comment_*`
-  keys **only inside `permissions`** (two edits were rejected and auto-reverted proving this).
-  Register with **no matcher** — the matcher filters on load reason, which is the thing being
-  measured. (2) `scripts/audit_context_load.py:34-49` hardcodes the pre-split architecture in its
-  `EXPECTED`/`CONDITIONAL`/`SUPERSEDED` tables, and the file carries its own instruction at line
-  31 to update them when the architecture changes; left stale, **the measuring instrument reports
-  correct sessions as wrong.** What the hook is *for*: the two questions no session can answer
-  about itself — does a **Grep-tool** survey trigger `path_glob_match` (Bash grep provably does
-  not, nor does a `Write`), and do rules load in a **worktree session**. It is **disposable** —
-  delete hook, registration and script once both are answered; that retirement condition is the
-  standing rule in `.claude/rules/deploy.md`. Evidence and full measurements:
-  `archive/log/2026-08-14-10-rule-delivery-verified-read-only.md`
-
 - **[DB-0814-04] An obligation with a *vague* due date is the first thing dropped from session
   context — the exact opposite of the intended priority.** `context_block()` in
   [tools/obligations.py](tools/obligations.py) sorts by `str(it.get("due") or "9999")`. The

@@ -19,6 +19,18 @@ sitting inside the Open sections. Reasoning: `archive/PROJECT_LOG.md` § 2026-08
 
 ---
 
+## Closed 2026-08-14 — Phase 5 tail: logger registered, audit tables fixed
+
+- ~~**[DB-0814-05]** Finish Phase 5 of the context system: register the `InstructionsLoaded`
+  logger and correct `audit_context_load.py`.~~ — **closed: `b07f5da`.** `InstructionsLoaded`
+  registered in `.claude/settings.json` with no matcher; `scripts/audit_context_load.py:34-49`'s
+  `CONDITIONAL` table now lists the five `.claude/rules/*.md` files instead of the pre-split
+  architecture, verified by running the script against a real session. **Not the same as retiring
+  the hook** — that needs a later session to read `.claude/instructions_loaded.jsonl` once it has
+  real entries and answer the two questions the hook exists for (Grep-tool delivery, worktree
+  delivery); next-session prompt at `~/.claude/plans/context_phase5_close_prompt_2026-08-14.md`.
+  Full reasoning: `archive/PROJECT_LOG.md` § 2026-08-14, `2026-08-14-11-phase5-tail-closed-logger-registered.md`.
+
 ## Closed 2026-08-14 — two Inbox entries that were not what they said
 
 *Both closed at triage, before any work was scheduled against them. Recorded here rather than
