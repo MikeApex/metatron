@@ -10,30 +10,30 @@ UNBLOCKED**: four post-`8ae1ff9` occurrences, all `write_quality_event` at posit
 diagnoses were both wrong.** `[DB-0810-05]` is blocked on **data, not code** (mailbox holds 1 Sent
 / 6 Inbox; no contact has enough correspondence to profile). **⚠ `[DB-0809-02]`'s fix DID NOT HOLD** —
 `82d394b` landed 08-09, Mike reported the same repetition 08-12; read that trace, not the week.
-**Blocker for any live test: both Tailscale clients are off the tailnet**; VM and server healthy.*
+**Tailnet is INTERMITTENT, not down** — on 2026-08-14 a sync reported *"VM running but
+unreachable"* at 09:30 and pulled 29 events cleanly at 09:35. Re-check before concluding a live
+test is blocked; VM and server healthy.*
 
-*Dev-workflow track — no runtime code changed, nothing deployed. **This primer is now split by
-volatility**: it was pinned at 195–205 lines for twenty commits, so every close-out had to argue
-a line out to let a line in. Reference moved to `docs/` and `CODEBASE_INDEX.md`; **only the
-handoff, `## Current state` and `## Recent sessions` are rewritten at close** — 200 → 178, with
-a 120-line volatile budget (measured 105) in `check_claude_md_claims.py`. ⚠ **Two divergences
-found and left for a decision:** `DEV_BACKLOG.md` says `[DB-0810-12]`'s hold stands while this
-file says unblocked — this file is newer and is the only copy; and `docs/CONVENTIONS.md:143`
-points here for live Model IDs on the ground that a second copy goes stale, but § Model IDs below
-still reads *updated 2026-07-27*. **`[H7]` and `[H8]` are closed
-and `HARNESS_BACKLOG.md` is retired and deleted** — the count and the rule that retired it are in
-`CLAUDE.md` § Which File Holds What. **Only §10b remains.**
-⚠ **§10b run 2's double-deploy leg needs the `deny` lifted deliberately, or re-scoped to a decoy.**
-Brief: [`next_session_prompt_2026-08-14_throughput_10b_rehearsal.md`](archive/plans/next_session_prompt_2026-08-14_throughput_10b_rehearsal.md)
-— run **3 first** (checks 10 and 11, cheapest), then 1 on the approved Green item `[DB-0813-01]`,
-then 2. **Checks 4 and 10 have never been observed.**
-**21 defects, every one found by running.** Standing: **`PROJECT_LOG.md` is GENERATED** from
-`archive/log/` fragments — write a fragment, never edit it; backlog items go to
-`.claude/backlog_inbox/`; `qa_sweep.sh` is free (9 checks, ~6.6s) and a `Stop` hook reports real
-session cost. **Rules promoted out of this paragraph on 2026-08-14, do not re-add them here:**
-permission-matcher behaviour (`ask` splits by tool family, `./deploy.sh` is `deny`, `git push`
-inert, never probe a `Bash` rule with the real command) is in `CLAUDE.md` § Change tiers; the
-three-quantities-called-tokens rule is in [docs/CONVENTIONS.md](docs/CONVENTIONS.md).*
+*Dev-workflow track — no runtime code changed, nothing deployed. **§10b runs 3 and 1 are DONE;
+run 2 is the last thing in the plan.** Checks 10 and 11 were observed (10 for the first time —
+a worker briefed as ordinary work stopped rather than edit a Red file), leaving **check 4 as the
+only unobserved check.** Run 1 shipped `[DB-0813-01]` (`20ad1ff`). ⚠ **One step deliberately
+unfinished: `[DB-0809-02]` still needs its `due: 2026-08-17` marker** — held because a second
+window was rewriting this file — and until it lands the feature displays nothing. **Do NOT tag
+`[DB-0809-21]`: it is event-gated, not date-gated.** **Run 2's deploy leg is DECIDED — a decoy
+carrying `deploy.sh`'s verbatim lock block; the `deny` stays.** Brief, and run it INTERACTIVELY:
+[`next_session_prompt_2026-08-14b_throughput_10b_run2.md`](archive/plans/next_session_prompt_2026-08-14b_throughput_10b_run2.md).
+**23 defects, every one found by running** — the newest two being a `CLAUDE.md` worked example
+four days stale that argued a whole test into the wrong shape, and a worktree that re-pulled the
+entire event history because `.dev_backlog_seen` was not seeded. ⚠ **Two divergences still open
+for a decision:** `DEV_BACKLOG.md` says `[DB-0810-12]`'s hold stands while this file says
+unblocked — this file is newer and is the only copy; and `docs/CONVENTIONS.md:143` points here
+for live Model IDs, but § Model IDs below still reads *updated 2026-07-27*. Standing:
+**`PROJECT_LOG.md` is GENERATED** from `archive/log/` fragments — write a fragment, never edit
+it; **a fragment is also the collision-safe half of `/archive` when two windows are live**;
+backlog items go to `.claude/backlog_inbox/`; `qa_sweep.sh` is free (9 checks, ~6.6s). **Promoted
+out of this paragraph on 2026-08-14, do not re-add:** permission-matcher behaviour →
+`CLAUDE.md` § Change tiers; three-quantities-called-tokens → [docs/CONVENTIONS.md](docs/CONVENTIONS.md).*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -132,9 +132,9 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-14 | **§10b runs 3 and 1: checks 10 and 11 observed, 10 for the first time.** H1 is real — the gate's `payload.cwd` is the main tree, so only the dirty-worktree sweep catches a broken worker. Two defects found by running: a `CLAUDE.md` example four days stale that cost a wasted worker, and a worktree re-pulling all 29 events for an unseeded ledger — where the obvious `link_back` fix would have silently lost them instead | `20ad1ff`, `9316284`, `7d7e349` — **not deployed** |
 | 08-14 | **Primer split by volatility — 200 → 178, volatile budget 120.** It had been pinned at 195–205 for twenty commits, which is a file paying to swap one line for another every close. Reference → `docs/`/`CODEBASE_INDEX.md`; `/archive` § 3 edits volatile sections only. Model-IDs move **killed** by a documented decision whose premise is stale | close-out — **not deployed** |
 | 08-14 | **`[H7]` closed; `HARNESS_BACKLOG.md` retired (11 opened, 11 resolved); Inbox 4 → 0.** `ask` splits by **tool family**, not interactivity — `Edit` gates here, `Bash` does not. `./deploy.sh` → `deny`. Two Inbox entries were **already built or already rejected in code**; `/archive` step 2 was telling sessions to hand-edit a generated file | `e123c39` + close-out — **not deployed** |
-| 08-13 | **Code-not-rules: token accounting, a claims smoke test, the deploy-lock invariant.** `[H8]` closed; `qa_sweep.sh` 7 → 9 checks. `[H8].1` was unbuildable as specified; four defects, all inside the checks themselves | `4a0177f`, `47a469f` — **not deployed** |
 ---
 
 ## Useful context to pull as needed

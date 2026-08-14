@@ -484,14 +484,20 @@ so this is not a parallel track to pick from when a `Now` item is time-gated.
   console lag. Not retroactive — turning it on now only helps the next anomaly.
 
 **Housekeeping**
-- **[DB-0813-01]** **A date-gated backlog item has no mechanism to announce itself when its date
-  arrives.** `[DB-0804-01]` said *"due 2026-08-11, do not check before then"*, came due, and sat
+- **[DB-0813-01]** **MECHANISM BUILT (`20ad1ff`) — open only for the one-line tag that makes it
+  fire.** `[DB-0804-01]` said *"due 2026-08-11, do not check before then"*, came due, and sat
   done-but-unread for two days — found only because an unrelated verification pass happened to
-  read it. The check itself took one command and passed (18 → 2). **Two live instances right now:**
-  `[DB-0809-02]` (a week of traces from 08-10, so ~08-17) and `[DB-0809-21]`'s remaining
-  calendar check. Cheapest fix is probably `sync_dev_backlog.py` surfacing a `⚠ due:` in the count
-  line the way it already does `⚠ machine:` — the mechanism exists, it just doesn't parse dates.
-  *filed 2026-08-13 by dev session — the delay, not the fix, is the item*
+  read it. The check itself took one command and passed (18 → 2). `sync_dev_backlog.py` now
+  defines and parses a `due: YYYY-MM-DD` marker and surfaces `⚠ due:` in the count line beside
+  `⚠ machine:`; `--today` is its testing seam. **Remaining: add `due: 2026-08-17` to
+  `[DB-0809-02]`.** Until some item carries a marker the feature displays nothing.
+  **Correction — this item's own "two live instances" was wrong on both counts (2026-08-14).**
+  `[DB-0809-21]` is **event-gated, not date-gated** (it needs a real unreferenced calendar event
+  to exist), so no date will ever make it due and **it must never carry a `due:` marker** — one
+  would fire forever. `[DB-0809-02]` is genuinely date-gated but at ~08-17, so nothing was
+  actually due when this was filed.
+  *filed 2026-08-13 by dev session — the delay, not the fix, is the item · built and premise
+  corrected 2026-08-14 in the §10b run-1 rehearsal*
 - **[DB-0810-06]** Every context-file ceiling is measured in lines, and lines stopped tracking the
   cost. `SESSION.md` hit 200/200 with **5.6 KB of its 17.9 KB on five lines** — rows that grew
   **wide, not numerous**, so a line ceiling could not see them. Instance fixed (`2e3e6e4`); the

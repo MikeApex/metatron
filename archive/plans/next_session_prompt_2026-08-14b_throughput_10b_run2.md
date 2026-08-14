@@ -152,3 +152,8 @@ it is **design**, belongs in `synthesizer.md`, and the `mike.md` copy is deleted
 `mike.md` is **VM-owned**, so pull it down, never reconstruct it on the Mac.
 
 MODEL: Opus. Run 2 is two live windows and judgement about what a failure means.
+
+**RUN THIS SESSION INTERACTIVELY (Mike's instruction, 2026-08-14).** Run 2 needs a second live
+window opened deliberately, and its pass conditions are things you *watch happen* — a guard
+refusing a commit, a lock naming the window that holds it. Neither is observable from a
+non-interactive run.
