@@ -514,6 +514,9 @@ Tailscale remains on the VM for developer access. This item removes it from the 
   Mandatory Pre-Edit Context Check exists to prevent. The replacement is
   `scripts/hook_context_gate.py`, which warns when an edit starts before `SESSION.md` and this
   file have been read. Reasoning: `archive/PROJECT_LOG.md` § 2026-08-13.
+  **Extended 2026-08-14 (`8981862`):** that hook now emits a **per-file briefing** — tier,
+  governing area, open backlog items, commits and `archive/log/` history — and resolves the repo
+  root from the target path, so worktree edits are covered; they silently were not.
   **Second pass 2026-08-14 — `SESSION.md` split by volatility, 200 → 178.** The 08-13 cut removed
   content; this one separated *reference* from *state*, because the line ceiling alone cannot tell
   120 static lines from 80 live ones and so pressures a session to cut the live half. A volatile

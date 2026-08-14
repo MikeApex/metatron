@@ -1,6 +1,6 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-14 (§10b run 2 done — **the development-throughput plan is finished**).
+*Updated: 2026-08-14 (**the context-gate build is done** — the pre-edit gate is now a per-file briefing).
 `## Now` is **10 — at cap**, so anything new displaces something. Live runtime items:
 **`[DB-0810-13]` is Now #1 and untouched** — specialists report actions they never took, so
 anything the system says it *did* (email, calendar, scheduling) is unverified. **`[DB-0810-12]` is
@@ -15,36 +15,24 @@ It now carries `due: 2026-08-17`, so the sync's count line will name it on the 1
 unreachable"* at 09:30 and pulled 29 events cleanly at 09:35. Re-check before concluding a live
 test is blocked; VM and server healthy.*
 
-*Dev-workflow track — **THE PLAN IS FINISHED** (`73e24a9`), 25 defects, every one found by
-running; nothing deployed and `./deploy.sh` stays denied. Detail moved to
-`archive/PROJECT_LOG.md` § 2026-08-14 and the row below. The one live carry-over: **the commit
-guard fires at `git add`, not `git commit`, and blocks the FIRST writer** — a session trusting
-the old wording watches the wrong window and records a false negative.
-✅ **That owed `CLAUDE.md` edit is DONE** (2026-08-14) — § Deploy safety rule 4 now names both
-the stage-time trigger and the first-writer asymmetry instead of *"blocks a commit"*.
-**Next: the context-gate build, then product** —
-`archive/plans/next_session_prompt_2026-08-14c_context_gate_briefing.md`. Then `[DB-0810-13]`.
-`/backlog deep` is still wanted (`DEV_BACKLOG.md` is **600 against ~450**) and the `⚠ machine: ×5`
-(`mike.md:13`, consolidated evening check-in) is unactioned: it is **design**, so it belongs in
-`synthesizer.md` with the `mike.md` copy deleted in the same pass — `mike.md` is **VM-owned**,
-pull it down, never reconstruct it. ⚠ **Two divergences still open for a decision:**
-`DEV_BACKLOG.md` says `[DB-0810-12]`'s hold stands while this file says unblocked — this file is
-newer and is the only copy; and `docs/CONVENTIONS.md:143` points here for live Model IDs, but
-§ Model IDs below still reads *updated 2026-07-27*. Standing: **`PROJECT_LOG.md` is GENERATED**
-from `archive/log/` fragments — write a fragment, never edit it; **a fragment is also the
-collision-safe half of `/archive` when two windows are live**, which run 2 exercised directly;
-backlog items go to `.claude/backlog_inbox/`; `qa_sweep.sh` is free (9 checks, ~6.6s).*
-
-*Context system — **planned, nothing built.** The premise it rests on is **obsolete**: Claude Code
-has three loading tiers, this project uses one, and the official target is 200 lines against 546 —
-bloat *reduces* adherence, so the file may **cause** the thin-context edits it was written to
-prevent. ⚠ **Live defect, unfixed: `hook_context_gate.py`:160-163 returns `None` for any path
-outside the main tree, so every worktree edit bypasses the gate — `/backlog attack` workers get no
-gate at all.** **Approved: minimal scope only** — gate becomes a per-file history briefing, plus a
-regrowth branch in `hook_agent_tools.py`; ~65k, one session, nothing retired. Phases 2–5 deferred
-on file. Adopted: **no new standing harness script or hook without naming what it retires.**
-**A7 unchanged by decision** — features first, Phase closed before Alpha. Why, the measurements,
-and the four premises that proved wrong: `archive/PROJECT_LOG.md` § 2026-08-14.*
+*Dev-workflow track — **BOTH PLANS ARE FINISHED, and the procedural block is over.** The
+throughput plan closed at `73e24a9` (25 defects, every one found by running); the context-gate
+build closed at `8981862`. The `PreToolUse` gate is now a **per-file briefing** — tier, governing
+area, open backlog items, commits, and `archive/log/` history *including `_history.md`* — and the
+**worktree bypass is fixed**, so `/backlog attack` workers finally get a gate. A regrowth branch
+in `hook_agent_tools.py` reports count-vs-ceiling on `CLAUDE.md`. Phases 2–5 of the context plan
+stay deferred **by decision**; nothing was retired. Nothing deployed, `./deploy.sh` stays denied.
+**Next is product: `[DB-0810-13]`.** Still open: `/backlog deep` is wanted (`DEV_BACKLOG.md` is
+**598 against ~450**) and the `⚠ machine: ×5` (`mike.md:13`, consolidated evening check-in) is
+unactioned — it is **design**, so it belongs in `synthesizer.md` with the `mike.md` copy deleted
+in the same pass; `mike.md` is **VM-owned**, pull it down, never reconstruct it. ⚠ **Two
+divergences still open for a decision:** `DEV_BACKLOG.md` says `[DB-0810-12]`'s hold stands while
+this file says unblocked — this file is newer and is the only copy; and `docs/CONVENTIONS.md:143`
+points here for live Model IDs, but § Model IDs below still reads *updated 2026-07-27*.
+**A7 unchanged by decision** — features first, Phase closed before Alpha. Standing:
+**`PROJECT_LOG.md` is GENERATED** from `archive/log/` fragments — write a fragment, never edit it,
+and a fragment is the collision-safe half of `/archive` when two windows are live; backlog items
+go to `.claude/backlog_inbox/`; `qa_sweep.sh` is free (9 checks, ~3s).*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -138,8 +126,8 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
-| 08-14 | **Context system: the premise it was built on is obsolete.** Three loading tiers exist, the project uses one; official target is 200 lines against 546, and bloat *reduces* adherence — so the file may cause the thin-context edits it was written to prevent. Found `hook_context_gate.py` silently bypasses every worktree edit. Fable review over two passes killed my own "rule files cost nothing" claim and a history channel that would have surfaced only 48 hours. **Minimal scope approved; nothing built** | close-out only — **not deployed** |
-| 08-14 | **§10b run 2 — the plan is finished. Check 4 observed, and the plan describes it backwards:** the guard fires at `git add` and blocks the **first** writer, so window B committed clean while A was stopped. Check 8 observed twice incl. cross-worktree, via a decoy carrying `deploy.sh`'s verbatim lock block; the `deny` held. Check 5 taken only after B's lines were safely in history — overriding earlier would have caused the exact damage the guard had just prevented | `73e24a9`, `688b53f` — **not deployed** |
+| 08-14 | **The context gate became a per-file briefing, and stopped skipping worktrees.** Phase 1 + regrowth branch only. Verified the worktree fix against the *old* hook — silent before, briefing after — and membership against a real second repo. The pre-code check sharpened its own premise: a fragment-only grep does not fail, it returns two files of *commentary* while the evidence sits in `_history.md`, which is worse than nothing. Testing killed three beliefs: the `__file__`-only anchor, a truncation that dropped all history at once, and a regrowth message that called path-scoped rule files always-on | `8981862` — **not deployed** |
+| 08-14 | **Context system: the premise it was built on is obsolete.** Three loading tiers exist, the project uses one; official target is 200 lines against 546, and bloat *reduces* adherence. Fable review killed my own "rule files cost nothing" claim and a history channel that would have surfaced only 48 hours. **Minimal scope approved; nothing built** | close-out only — **not deployed** |
 ---
 
 ## Useful context to pull as needed
