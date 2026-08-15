@@ -244,9 +244,22 @@ def _strip_heredocs(command: str) -> str:
 
 
 def _segments(command: str):
-    """Split a shell command into token lists at separators. None if unparseable."""
+    """Split a shell command into token lists at separators. None if unparseable.
+
+    `punctuation_chars=True` is load-bearing and was added 2026-08-15. Plain
+    `shlex.split` only sees a separator when it is already whitespace-delimited,
+    so `echo hi; git add x` tokenised as `['echo', 'hi;', 'git', 'add', 'x']` —
+    ONE segment whose first token is not `git`. `_git_writes` then found no git
+    write at all and the guard **passed silently on a real staging command**.
+    That is a fail-OPEN, and it is the failure this guard exists to prevent;
+    every `;` typed without a leading space disabled it. Quoting is still
+    honoured, so a commit message containing a semicolon stays one token.
+    """
     try:
-        tokens = shlex.split(_strip_heredocs(command), comments=False)
+        lex = shlex.shlex(_strip_heredocs(command), posix=True,
+                          punctuation_chars=True)
+        lex.whitespace_split = True
+        tokens = list(lex)
     except ValueError:
         return None                       # still unbalanced — caller fails CLOSED
     segments, current = [], []
@@ -301,27 +314,45 @@ def _git_writes(command: str):
     return found
 
 
-def _git_c_dir(command: str):
-    """The first `git -C <dir>` value in the command, if any.
+def _command_anchor(command: str):
+    """The directory the git call in `command` will actually run in, if stated.
 
-    An explicit -C overrides the session's cwd for that git call, so it is the
-    most authoritative statement of which tree is about to be staged.
+    Two forms, and the second is the one that matters in practice:
+
+      git -C <dir> add …          explicit, authoritative for that call
+      cd <dir> && git add …       a worker's ONLY option
+
+    A subagent cannot persistently `cd` — the shell resets between calls — so it
+    reaches its worktree by chaining `cd` into the same command. Its payload cwd
+    is still the MAIN tree. Handling only `-C` and cwd (the 2026-08-15 first cut)
+    therefore left every worker still blocked, and one lost a full run to it
+    before this was noticed. Walks segments in order so the `cd` nearest before
+    the git call wins.
     """
     segments = _segments(command)
     if segments is None:
         return None
+    pending_cd = None
     for seg in segments:
         i = 0
         while i < len(seg) and "=" in seg[i] and not seg[i].startswith("-"):
             i += 1
-        if i >= len(seg) or os.path.basename(seg[i]) != "git":
+        if i >= len(seg):
+            continue
+        head = os.path.basename(seg[i])
+        if head == "cd" and i + 1 < len(seg):
+            pending_cd = seg[i + 1]
+            continue
+        if head != "git":
             continue
         rest = seg[i + 1:]
         for j, tok in enumerate(rest):
             if tok == "-C" and j + 1 < len(rest):
-                return rest[j + 1]
+                return rest[j + 1]        # -C beats a preceding cd
             if not tok.startswith("-"):
                 break
+        if pending_cd:
+            return pending_cd
     return None
 
 
@@ -334,7 +365,7 @@ def _root_for_command(payload: dict) -> Path:
     without cwd is never worse off than before.
     """
     command = (payload.get("tool_input") or {}).get("command", "")
-    for anchor in (_git_c_dir(command), payload.get("cwd")):
+    for anchor in (_command_anchor(command), payload.get("cwd")):
         if not anchor:
             continue
         root = _resolve_root(Path(anchor))
