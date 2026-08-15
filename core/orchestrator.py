@@ -347,7 +347,14 @@ def load_recent_context(persona: str | None = None, days: int = 5) -> str:
             tracker = _json.loads(tracker_path.read_text())
             lines = [f"## Session Context (last session: {tracker.get('last_session', 'unknown')})"]
             if tracker.get("open_threads"):
-                lines.append("**Open threads:** " + " | ".join(tracker["open_threads"]))
+                # Entries are {"text": ..., "added": <ISO date or None>} as of the
+                # open_threads timestamp change — tolerate old bare-string entries too,
+                # in case this reads a tracker file this session itself hasn't migrated yet.
+                thread_texts = [
+                    t.get("text", "") if isinstance(t, dict) else str(t)
+                    for t in tracker["open_threads"]
+                ]
+                lines.append("**Open threads:** " + " | ".join(thread_texts))
             if tracker.get("patterns"):
                 lines.append("**Patterns noted:** " + " | ".join(tracker["patterns"]))
             if tracker.get("follow_ups"):
