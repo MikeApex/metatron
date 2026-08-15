@@ -46,10 +46,32 @@ USER_TYPES = {"FEATURE_REQUEST", "INSTRUCTION_CHANGE_REQUEST"}
 # What the runtime noticed about itself. Real signals, but nobody asked for
 # them, and they arrive far faster than they are worked. They reach
 # '## Machine log', collapsed by signature — see ESCALATE_AT.
+#
+# USER_CORRECTION and CALENDAR_DUPLICATE landed here 2026-08-15 ([DB-0810-09]),
+# closing the gap where write_quality_event emitted them and nothing collected
+# them — 158 events, 139 of them USER_CORRECTION, silently discarded before
+# this. CALENDAR_DUPLICATE gets a stable uid-pair signature() below, same
+# precedent as DENIAL_RE, so distinct duplicate pairs do not collapse into one
+# entry on prose alone. USER_CORRECTION does not: [DB-0810-09] itself flags
+# that Machine log's per-entry, prose-collapsed shape may be the wrong home for
+# 139/day of these (it suggested a digest or a dedicated section instead) —
+# that redesign needs a new DEV_BACKLOG.md heading, out of scope for this pass,
+# which only had to stop the silent drop. Revisit if Machine log volume from
+# this type alone becomes the noise problem the item predicted.
 MACHINE_TYPES = {"TOOL_DENIED", "RULE_CONFLICT", "SELF_APPLIED", "UNGROUNDED_ANSWER",
-                 "MODEL_CALL_FAILED"}
+                 "MODEL_CALL_FAILED", "USER_CORRECTION", "CALENDAR_DUPLICATE",
+                 "CONTEXT_BLOCK_UNPARSED"}
 
 WANTED = USER_TYPES | MACHINE_TYPES
+
+# Emitted historically but confirmed dead 2026-08-13 ([DB-0810-09]): grepped the
+# whole codebase and nothing calls write_quality_event with this type anymore.
+# It survives only as docstring/schema prose in tools/logger.py. Named here so
+# a reconciliation check (tests/test_quality_event_reconciliation.py) can tell
+# "dropped on purpose" apart from "dropped because nobody noticed" — the exact
+# failure mode this item exists to close off. Do not add it to WANTED; do not
+# delete this line either, it is the record that the check was made.
+KNOWN_DEAD_TYPES = {"ROUTING_MISS"}
 
 # A machine signature seen this many times stops being noise and starts being
 # evidence the runtime is failing repeatedly — the point at which a process
@@ -82,6 +104,23 @@ LABELS = {
     # a turn — the user sees an error and the exchange is never recorded, which
     # is invisible from the conversation log precisely because nothing was written.
     "MODEL_CALL_FAILED": "a model call failed outright",
+    # The user re-stated or corrected a prior turn. By volume the largest signal
+    # in the events file — see the MACHINE_TYPES comment above for why it lands
+    # here rather than a dedicated section, for now.
+    "USER_CORRECTION": "user corrected a prior turn",
+    # From the calendar audit: two events that look like the same thing twice.
+    # Application-level dedup already suppresses a uid pair once seen
+    # (tools/calendar_audit.py's .calendar_dedup_seen ledger); signature() below
+    # gives distinct pairs a stable key so they don't also collapse into each
+    # other here on prose alone.
+    "CALENDAR_DUPLICATE": "possible duplicate calendar entries",
+    # A [CONTEXT] block from the Synthesizer that survived neither parsing nor
+    # repair — found by building the reconciliation test for [DB-0810-09], not
+    # named in the item itself. _record_unparsed_context()'s own docstring in
+    # core/orchestrator.py claims this "already reaches DEV_BACKLOG.md via the
+    # existing sync"; it did not until this line. Carries the raw block, so a
+    # dropped context-tracker update is now recoverable instead of just logged.
+    "CONTEXT_BLOCK_UNPARSED": "a [CONTEXT] block was dropped, unrecovered",
 }
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -163,6 +202,15 @@ ID_RE = re.compile(r"\[DB-\d{4}-\d{2}\]")
 # which varies with the arguments. Falls back to prose similarity when the
 # shape does not match.
 DENIAL_RE = re.compile(r"`([a-z_0-9]+)`\s+attempted\s+`([a-z_0-9]+)`")
+
+# CALENDAR_DUPLICATE details read "...'<title>' (<start>, uid=<uid1>) and
+# '<title>' (<start>, uid=<uid2>). title_similarity=..." (tools/calendar_audit.py
+# _detail()) — almost all of that is shared boilerplate across every finding, so
+# the uid pair, not the prose, is what tells two distinct duplicate pairs apart.
+# Same precedent as DENIAL_RE: without this, SIMILARITY_THRESHOLD's prose
+# fallback would collapse unrelated pairs that merely share the boilerplate
+# wording ([DB-0810-09] reason (b)).
+CALENDAR_UID_RE = re.compile(r"uid=([^\s,)]+).*?uid=([^\s,)]+)")
 
 
 def _auth_header() -> dict:
@@ -403,13 +451,20 @@ def signature(event: dict) -> str:
 
     A denial's prose carries the arguments, which vary per call, so nine entries
     covering six real cases is the normal shape. Keying on the pair collapses
-    them at the source instead of at triage time.
+    them at the source instead of at triage time. CALENDAR_DUPLICATE gets the
+    same treatment via the uid pair rather than DENIAL_RE's (agent, tool) shape
+    — see CALENDAR_UID_RE.
     """
     kind = event.get("event_type", "")
     detail = " ".join(str(event.get("detail", "")).split())
     match = DENIAL_RE.search(detail)
     if match:
         return f"{kind}:{match.group(1)}/{match.group(2)}"
+    if kind == "CALENDAR_DUPLICATE":
+        uid_match = CALENDAR_UID_RE.search(detail)
+        if uid_match:
+            uid_a, uid_b = sorted((uid_match.group(1), uid_match.group(2)))
+            return f"{kind}:{uid_a}/{uid_b}"
     return f"{kind}:{detail[:80].lower()}"
 
 
@@ -478,6 +533,11 @@ def merge(block: str, event: dict, machine: bool) -> tuple[str, bool, int]:
             match = DENIAL_RE.search(line)
             if match:
                 existing_sig = f"{event.get('event_type','')}:{match.group(1)}/{match.group(2)}"
+            elif event.get("event_type") == "CALENDAR_DUPLICATE":
+                uid_match = CALENDAR_UID_RE.search(line)
+                if uid_match:
+                    uid_a, uid_b = sorted((uid_match.group(1), uid_match.group(2)))
+                    existing_sig = f"CALENDAR_DUPLICATE:{uid_a}/{uid_b}"
             same_label = f"**[{LABELS.get(event.get('event_type', ''), '')}]**" in line
             alike = (existing_sig == sig) if existing_sig else (
                 same_label

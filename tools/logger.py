@@ -164,12 +164,31 @@ def write_quality_event(
     Args:
         event_type: ROUTING_MISS | USER_CORRECTION (or any future type)
         source_agent: Which agent emitted or missed the signal
-        detail: Brief description of what was missed or corrected
+        detail: Brief description of what was missed or corrected. Required in
+            practice despite the empty default kept for signature compatibility —
+            see the ValueError below.
         session_id: Any string identifying the current session (date/time or short ID)
+
+    Raises:
+        ValueError: if `detail` is blank. A quality event with no detail cannot be
+            attributed to anything downstream — `scripts/sync_dev_backlog.py` reads
+            these into a human-facing backlog, and an empty entry there is worse
+            than a missing one. A sample of USER_CORRECTION events found ~70% with
+            `detail: None` before this guard existed (2026-08-10), all written by a
+            caller that skipped the parameter the schema never required. Every
+            current call site already supplies real detail; this only stops a new
+            one from silently regressing to the empty default.
 
     Returns:
         Confirmation string.
     """
+    detail = (detail or "").strip()
+    if not detail:
+        raise ValueError(
+            f"write_quality_event({event_type!r}): detail is required and cannot be "
+            "blank — pass a real description of what happened, not the empty default."
+        )
+
     logs_dir = _logs_dir()
     logs_dir.mkdir(parents=True, exist_ok=True)
     events_path = logs_dir / "quality_events.json"
@@ -255,7 +274,9 @@ WRITE_QUALITY_EVENT_SCHEMA = {
     "description": (
         "Log a quality event for the self-improvement protocol. "
         "Use event_type ROUTING_MISS when the original message carried a signal no specialist surfaced. "
-        "Use event_type USER_CORRECTION when the user re-states or corrects a prior turn."
+        "Use event_type USER_CORRECTION when the user re-states or corrects a prior turn. "
+        "`detail` is required and rejected if blank — a quality event nobody can read back is worse "
+        "than no event at all."
     ),
     "input_schema": {
         "type": "object",
@@ -270,13 +291,17 @@ WRITE_QUALITY_EVENT_SCHEMA = {
             },
             "detail": {
                 "type": "string",
-                "description": "Brief description of what was missed or corrected",
+                "description": (
+                    "What actually happened, specifically — for a USER_CORRECTION, name what was "
+                    "wrong and what the user said instead, not just 'user corrected something'. "
+                    "Required — the call is rejected if this is blank."
+                ),
             },
             "session_id": {
                 "type": "string",
                 "description": "Any string identifying this session — use the date/time or a short ID",
             },
         },
-        "required": ["event_type"],
+        "required": ["event_type", "detail"],
     },
 }
