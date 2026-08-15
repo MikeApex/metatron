@@ -25,6 +25,7 @@ Sensitive-tier, local-only. Written 0600.
 """
 
 import os
+import re
 from pathlib import Path
 
 import yaml
@@ -119,6 +120,57 @@ _CODE_TO_NAME = {v: k.title() for k, v in _LANGUAGE_NAMES.items()}
 _PROMPT_EXCLUDED = _CONTACT_FIELDS | {"health_notes"}
 
 
+# [DB-0815-05] profile.yaml's `name` field was found holding the literal sentence
+# "Contact name updated from Eva to Iva." — a CRM correction that landed in the
+# user's own identity instead of tools/crm.py's write_contact, and rendered into
+# every head-layer system prompt via load_profile() until caught. Narrow guard,
+# not broad heuristic: needs a subject word AND a correction verb AND a
+# "from ... to ..." span all at once, or (for 'name' specifically) an
+# implausibly long value that ends like a sentence. An ordinary fact — "Allergic
+# to peanuts.", "Prefers to work from home.", "Mike Diamond" — trips none of these.
+_CORRECTION_SUBJECT_WORDS = {"contact", "name"}
+_CORRECTION_VERB_WORDS = {"updated", "changed", "corrected", "renamed", "fixed"}
+_FROM_TO_RE = re.compile(r"\bfrom\b.+\bto\b", re.IGNORECASE)
+
+
+def _third_party_correction_reason(field: str, text: str) -> str:
+    """
+    Returns a refusal reason if `text` reads as a note about someone *else's*
+    contact record being corrected rather than a fact about the user, or ""
+    if the value looks ordinary. Two independent checks — either is enough:
+
+    1. All three of: a subject word ('contact'/'name'), a correction verb
+       ('updated'/'changed'/'corrected'/'renamed'/'fixed'), and a "from ... to
+       ..." span in the same value. The recorded failure text hits all three;
+       an everyday fact essentially never does, because it needs neither the
+       subject nor the verb, and rarely both prepositions together.
+    2. field == 'name' specifically, and the value is long (more than 5 words)
+       and ends in sentence punctuation (. ! ?) — a real name is short and is
+       not a sentence. Five words comfortably clears a name with a suffix
+       ("Robert Smith Jr." is 3), so this does not catch an ordinary long name.
+
+    Deliberately does not attempt to catch arbitrary third-party facts in
+    general (e.g. "Kathleen's birthday is July 10th") — that needs real entity
+    recognition and would risk refusing legitimate 'other' entries; this only
+    catches the specific "a contact's name/info was corrected" phrasing that
+    produced the recorded bug.
+    """
+    lower = text.lower()
+    words = {w.strip(".,!?;:'\"") for w in lower.split()}
+    if (
+        (words & _CORRECTION_SUBJECT_WORDS)
+        and (words & _CORRECTION_VERB_WORDS)
+        and _FROM_TO_RE.search(lower)
+    ):
+        return (
+            f"'{text}' reads like a note that a contact's name or details were "
+            f"corrected, not a fact about the user."
+        )
+    if field == "name" and len(text.split()) > 5 and text.rstrip().endswith((".", "!", "?")):
+        return f"'{text}' reads like a sentence describing an event, not a name."
+    return ""
+
+
 def _profile_path() -> Path:
     return persona_config_dir() / "profile.yaml"
 
@@ -175,6 +227,17 @@ def write_profile(field: str, value: str, confirm_token: str = "") -> str | dict
     text = str(value).strip()
     if not text:
         return f"Error: no value given for '{key}'."
+
+    # [DB-0815-05]: refuse a correction about someone else's contact record before
+    # it lands in the user's own profile — see _third_party_correction_reason.
+    if key in {"name", "other"}:
+        reason = _third_party_correction_reason(key, text)
+        if reason:
+            return (
+                f"Error: not saved. {reason} write_profile is for stable facts "
+                f"about the user; a correction to a contact's name or details "
+                f"belongs in write_contact instead."
+            )
 
     data = _load()
 
@@ -301,7 +364,10 @@ WRITE_PROFILE_SCHEMA = {
         "in the app is what applies it; do not call this tool a second time, same as send_email. "
         "'input_language' and 'output_language' are independent — set one without the other. "
         "'input_language' is what the user writes/speaks to you in; 'output_language' is what "
-        "you respond in. They do not have to match."
+        "you respond in. They do not have to match. "
+        "This tool is for facts about the user themselves — a note that someone else's contact "
+        "record was corrected (e.g. 'Contact name updated from Eva to Iva') is refused; that "
+        "correction belongs in write_contact instead."
     ),
     "input_schema": {
         "type": "object",
