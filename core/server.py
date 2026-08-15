@@ -851,6 +851,26 @@ async def feedback() -> dict:
 class TTSRequest(BaseModel):
     text: str
 
+
+# [DB-0810-15] / [DB-0815-02] Speech-out for a non-English response language.
+#
+# Kokoro is the primary engine and CANNOT do Bulgarian: its pipeline is built per language code
+# and it ships American/British English, Spanish, French, Hindi, Italian, Japanese, Portuguese
+# and Chinese — there is no Bulgarian model to select. edge-tts does have bg-BG neural voices,
+# so a non-Kokoro language must fall through to edge-tts rather than being spoken by an English
+# voice reading foreign words phonetically, which is worse than useless on a voice-first product.
+#
+# Only languages actually verified as available are listed. An unlisted language deliberately
+# falls back to the English voice and text still works — the alternative, refusing to speak at
+# all, would break voice for a persona whose text path is fine.
+_EDGE_VOICE_BY_LANG = {
+    "bg": "bg-BG-KalinaNeural",
+}
+
+# Language codes Kokoro can serve, so the engine choice is derived from one list rather than
+# hardcoded per branch. English maps to the existing default and changes nothing.
+_KOKORO_LANGS = {"en"}
+
 _kokoro_pipeline = None
 _kokoro_lock = threading.Lock()
 
@@ -918,8 +938,24 @@ async def tts(req: TTSRequest):
     if not req.text.strip():
         raise HTTPException(status_code=400, detail="Text is empty.")
 
+    # [DB-0810-15] Pick the engine from the persona's response language, not from availability
+    # alone. Kokoro is preferred where it can serve the language; where it cannot (Bulgarian) an
+    # English Kokoro voice would read the text phonetically, so edge-tts wins instead.
+    edge_voice = EDGE_VOICE
+    lang_code = ""
     try:
-        if _kokoro_available():
+        from core.translate import response_language
+        lang = response_language()
+        if lang is not None:
+            lang_code = lang[0]
+            edge_voice = _EDGE_VOICE_BY_LANG.get(lang_code, EDGE_VOICE)
+    except Exception:
+        logger.warning("[tts] could not resolve response language — using the default voice")
+
+    kokoro_can_serve = (not lang_code) or lang_code in _KOKORO_LANGS
+
+    try:
+        if _kokoro_available() and kokoro_can_serve:
             loop = asyncio.get_running_loop()
             audio_path = await loop.run_in_executor(_TTS_EXECUTOR, _kokoro_blocking, req.text)
             media_type = "audio/wav"
@@ -927,7 +963,7 @@ async def tts(req: TTSRequest):
             tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
             tmp.close()
             # edge_tts is already async — it does not block the loop.
-            communicate = edge_tts.Communicate(req.text, EDGE_VOICE)
+            communicate = edge_tts.Communicate(req.text, edge_voice)
             await communicate.save(tmp.name)
             media_type = "audio/mpeg"
             audio_path = tmp.name

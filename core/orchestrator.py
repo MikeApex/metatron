@@ -3526,7 +3526,28 @@ def run_pipeline_session(user_input: str,
         _tr.set_trace(None)
         raise
     _tr.finish_request_trace(filtered)
-    return filtered
+    # [DB-0810-15] Translation is the last thing that happens, after the trace and after
+    # `history` above have both taken the English text. That is deliberate: the model's own
+    # context and the debugging record stay in one language, and only the string handed to the
+    # user changes. Running this earlier would feed translated text back as conversation
+    # history and drift the Synthesizer's working language turn by turn.
+    return _translate_for_user(filtered, persona)
+
+
+def _translate_for_user(text: str, persona: str | None) -> str:
+    """
+    Render `text` in the persona's response language, if one is set. See core/translate.py.
+
+    A no-op for every persona without `output_language` — which is all of them by default, so
+    this cannot change existing behaviour. Never raises: `translate()` fails open.
+    """
+    from core.translate import response_language, translate
+
+    lang = response_language(persona)
+    if lang is None:
+        return text
+    code, name = lang
+    return translate(text, code, name)
 
 
 def run_pipeline_session_stream(
@@ -3701,6 +3722,25 @@ def _run_pipeline_session_stream_inner(
     # parsed, and written to the context tracker directly — no tool call turn needed.
     _LOOKAHEAD = len(_CONTEXT_OPEN) - 1   # chars to hold back in case delimiter spans chunks
 
+    # [DB-0810-15] A persona with a response language cannot be streamed token by token:
+    # translation needs a complete message, so there is nothing correct to emit mid-generation.
+    # Streaming English chunks and replacing them afterwards was considered and rejected — the
+    # user would watch a language they did not ask for arrive and then vanish, and on the voice
+    # path TTS would already have spoken it. So for these personas the text is withheld and
+    # delivered once, translated, below. Everyone else streams exactly as before.
+    #
+    # This is the known cost of the feature, recorded rather than hidden: response latency for
+    # a translated persona becomes generation + one translation call. Sentence-chunked
+    # translation would recover most of the streaming feel and pairs naturally with
+    # [DB-0809-13] (sentence-chunked TTS); it is not built here because correctness first.
+    _out_lang = None
+    try:
+        from core.translate import response_language
+        _out_lang = response_language(persona)
+    except Exception:   # never let a profile read break a response
+        logger.warning("[translate] could not resolve response language — streaming untranslated")
+    _stream_to_client = _out_lang is None
+
     buffer: list[str] = []
     pending: str = ""          # buffered but not yet yielded (delimiter lookahead window)
     context_started: bool = False
@@ -3711,17 +3751,18 @@ def _run_pipeline_session_stream_inner(
             pending += chunk
             if _CONTEXT_OPEN in pending:
                 idx = pending.index(_CONTEXT_OPEN)
-                if idx > 0:
+                if idx > 0 and _stream_to_client:
                     yield pending[:idx]   # flush everything before the delimiter
                 context_started = True
                 pending = ""
             elif len(pending) > _LOOKAHEAD:
                 safe = len(pending) - _LOOKAHEAD
-                yield pending[:safe]
+                if _stream_to_client:
+                    yield pending[:safe]
                 pending = pending[safe:]
 
     # Flush any remaining visible text if the delimiter was never seen
-    if not context_started and pending:
+    if not context_started and pending and _stream_to_client:
         yield pending
 
     complete = "".join(buffer)
@@ -3742,8 +3783,19 @@ def _run_pipeline_session_stream_inner(
         history.append({"role": "assistant", "content": filtered if filtered == visible else ""})
         del history[:-10]
     if filtered != visible:
+        # Suppressed. Nothing is delivered in either mode, so there is nothing to translate —
+        # and the canned fallback must not be translated by a model call that could itself
+        # leak, which is why this branch returns before the translation step below.
         yield "[RETRACT]"
     else:
+        if not _stream_to_client:
+            # Withheld above; deliver the whole translated message as one chunk. Translation
+            # runs after filter_output on purpose — see core/translate.py § ORDER IS
+            # LOAD-BEARING. If it fails it returns the English text, so the user still gets
+            # their answer.
+            code, name = _out_lang
+            from core.translate import translate
+            yield translate(filtered, code, name)
         yield "[DONE]"
 
     _trace(f"[PIPELINE] synthesizer  done  ({len(visible)} chars visible)")
