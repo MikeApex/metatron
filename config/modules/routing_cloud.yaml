@@ -98,7 +98,7 @@ agents:
     # relationships.md:196 makes it a numbered procedure step ("Search for relevant history…
     # prior mentions of the person") and :297 lists it as a held tool — the agent was
     # instructed to use a capability it did not have, and silently lost recall.
-    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, read_profile, write_profile, send_email, search_memory, get_tone_shape]
+    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, merge_contacts, read_profile, write_profile, send_email, search_memory, get_tone_shape]
 
   finance:
     provider: gemini

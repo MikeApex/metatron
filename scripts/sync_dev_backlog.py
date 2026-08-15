@@ -438,6 +438,21 @@ def _marked(block: str, pattern: re.Pattern) -> int:
     return sum(1 for entry in _entries(block) if pattern.search(entry))
 
 
+def count_machine(text: str) -> tuple[int, int]:
+    """
+    (entries, escalated) in `## Machine log` — **monitoring, not workload.**
+
+    Counted separately and never folded into `later`, because they are not tasks: nobody
+    asked for them, they are the runtime reporting on itself, and one signature reaching ×3
+    is what promotes it into real work. Mike, 2026-08-15: he could not tell from the sync
+    line whether the 109 entries here were part of the 40 in `## Later` or invisible. They
+    were invisible, which made the backlog look smaller than the thing being monitored.
+    """
+    block = _section(text, MACHINE_HEADING)
+    lines = [ln for ln in block.splitlines() if ln.startswith("- ") and not ln.startswith("- ~~")]
+    return len(lines), sum(1 for ln in lines if ln.startswith("- ⚠"))
+
+
 def count_states(text: str) -> dict:
     """
     Cross-cutting counts over `## Now` + `## Later` — how much of the list is actually
@@ -841,25 +856,54 @@ def main() -> int:
                 pass
 
     inbox, now, later = count_items(text)
-    escalations = escalated(text)
-    alert = f" · ⚠ machine: {', '.join(escalations)}" if escalations else ""
+    # Show the three loudest by count, not all of them. The full tally is already in the
+    # `N machine (M ⚠)` clause, so listing all eight 40-character fragments made the line
+    # unreadable and buried the counts that precede it — which is what a SessionStart line
+    # is for. `/backlog deep` reads the section itself; this is a pointer, not a report.
+    escalations = sorted(
+        escalated(text),
+        key=lambda s: int(m.group(1)) if (m := re.search(r"×(\d+)$", s)) else 1,
+        reverse=True,
+    )
+    shown = escalations[:3]
+    more = f", +{len(escalations) - len(shown)} more" if len(escalations) > len(shown) else ""
+    alert = f" · ⚠ {', '.join(shown)}{more}" if escalations else ""
     due_ids = due_now(text, args.today or date.today().isoformat())
     due_clause = f" · ⚠ due: {', '.join(due_ids)}" if due_ids else ""
 
-    # [DB-0815-10] Blocked/kind counts ride in parentheses, never as extra bare numbers.
-    # inbox/now/later are a partition of the list; these are properties of the same items,
-    # and printing them as peers would read as a total of five sections.
+    # [DB-0815-10] The line answers one question: how much work is actually sitting here?
+    #
+    #   inbox/now/later  the partition — every curated item is in exactly one
+    #   workable         the derived number Mike asked for: items nothing is blocking
+    #   parked           waiting on an event, or needing a session with him
+    #   machine          monitoring, NOT workload — counted apart, never added to `later`
+    #
+    # Blocked counts ride in parentheses rather than as peers: they are properties of items
+    # already counted, and printing them alongside inbox/now/later would read as five
+    # sections and double-count the same item — the bug count_items() carries history about.
     st = count_states(text)
-    blocked = [f"{st['waiting']} waiting" if st["waiting"] else "",
-               f"{st['session']} session" if st["session"] else ""]
-    kinds = [f"{st['bug']} bug" if st["bug"] else "",
-             f"{st['feature']} feature" if st["feature"] else ""]
-    parts = [p for p in blocked + kinds if p]
-    state_clause = f" ({', '.join(parts)})" if parts else ""
+    parked = st["waiting"] + st["session"]
+    workable = max(now + later - parked, 0)
+
+    detail = [f"{st['waiting']} waiting" if st["waiting"] else "",
+              f"{st['session']} session" if st["session"] else ""]
+    # Kind counts are suppressed until most items carry a marker. Tagging is partial
+    # (only items touched on 2026-08-15), so "6 bug, 4 feature" against 49 items reads as
+    # a breakdown when it is a floor — a misleading number is worse than no number.
+    if st["bug"] + st["feature"] >= (now + later) / 2:
+        detail += [f"{st['bug']} bug" if st["bug"] else "",
+                   f"{st['feature']} feature" if st["feature"] else ""]
+    parked_clause = f" ({', '.join(p for p in detail if p)})" if any(detail) else ""
+
+    machine, escalated_n = count_machine(text)
+    machine_clause = f" · {machine} machine" if machine else ""
+    if escalated_n:
+        machine_clause += f" ({escalated_n} ⚠)"
 
     if new or not args.quiet or vm_warning:
         print(f"DEV_BACKLOG.md: {added} new · {inbox} inbox · {now} now · "
-              f"{later} later{state_clause}{alert}{due_clause}{vm_warning}")
+              f"{later} later · {workable} workable{parked_clause}"
+              f"{machine_clause}{alert}{due_clause}{vm_warning}")
     return 0
 
 

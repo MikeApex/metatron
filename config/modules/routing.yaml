@@ -86,7 +86,7 @@ agents:
   relationships:
     local: true
     # search_memory granted 2026-08-10 — see routing_cloud.yaml. Kept in parity.
-    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, read_profile, write_profile, send_email, search_memory, get_tone_shape]
+    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, merge_contacts, read_profile, write_profile, send_email, search_memory, get_tone_shape]
 
   finance:
     local: true

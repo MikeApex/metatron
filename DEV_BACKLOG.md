@@ -27,6 +27,16 @@ saying it cannot be picked up today.
 | `@kind: bug\|feature\|chore` | a defect vs. something requested vs. upkeep | `N bug`, `N feature` |
 | `` `due: YYYY-MM-DD` `` | a **clock** review date — the older convention, unchanged | `⚠ due:` |
 
+**The sync line reads: `N new · N inbox · N now · N later · N workable (…) · N machine (M ⚠)`.**
+`workable` is `now + later` minus anything `@waiting:` or `@session:` — *how much work is actually
+sitting here*, which is the question the raw counts could not answer. **`machine` is counted apart
+and is never added to `later`**: machine-log entries are the runtime reporting on itself, not
+tasks, and one only becomes work when its signature reaches ×3. Before 2026-08-15 they were
+counted nowhere at all, so 109 of them were invisible beside 40 curated items.
+
+**Kind counts are suppressed until at least half the items carry `@kind:`** — a partial tally
+reads as a breakdown when it is a floor, and a misleading number is worse than none.
+
 `@waiting:` and `due:` are different questions and an item may carry both: *blocked on this,
 re-check on that date*.
 
