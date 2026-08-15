@@ -47,7 +47,44 @@ _SCALAR_FIELDS = {
 _CONTACT_FIELDS = {"email", "phone", "address"}
 _LOCATION_FIELDS = {"city", "country", "timezone"}
 
-WRITABLE = _SCALAR_FIELDS | _CONTACT_FIELDS | _LOCATION_FIELDS | {"other"}
+# [DB-0810-15]: input vs output language, independently settable, so a persona
+# can send in one language and be answered in another. Deliberately two flat
+# keys rather than one nested "language" dict, same reasoning as _LOCATION_FIELDS
+# vs _CONTACT_FIELDS being separate groups — setting one must never touch the
+# other, and a shared dict makes that guarantee a matter of code discipline
+# instead of structure.
+_LANGUAGE_FIELDS = {"input_language", "output_language"}
+
+# Stored value is an ISO 639-1 code ("bg"), not the free-text name the user
+# actually says ("Bulgarian"), for two reasons: (1) it's the canonical, unambiguous
+# form other code can key off without re-parsing prose, matching how birth_year/age
+# are normalized to int rather than kept as spoken text; (2) [DB-0815-02] (voice,
+# filed Later) will need a stored language value to pick an edge-tts voice tag like
+# "bg-BG" — an ISO 639-1 code is the language half of that tag and composes with a
+# region without re-migrating this field, where a free-text name would need a
+# separate normalization pass at that point anyway. _LANGUAGE_NAMES below is the
+# small map from what a user actually says to the code that gets stored; it is not
+# meant to be exhaustive, only to cover the languages Mike has actually used
+# (English, Bulgarian) plus common neighbors, and a code can always be given
+# directly. Free text that isn't recognized is refused rather than stored
+# unnormalized — a value nothing downstream can key off of is worse than none.
+_LANGUAGE_NAMES = {
+    "english": "en",
+    "bulgarian": "bg",
+    "spanish": "es",
+    "french": "fr",
+    "german": "de",
+    "italian": "it",
+    "portuguese": "pt",
+    "russian": "ru",
+    "greek": "el",
+    "turkish": "tr",
+    "romanian": "ro",
+    "serbian": "sr",
+    "ukrainian": "uk",
+}
+
+WRITABLE = _SCALAR_FIELDS | _CONTACT_FIELDS | _LOCATION_FIELDS | _LANGUAGE_FIELDS | {"other"}
 
 # Never rendered into the system prompt by load_profile(). Retrieved on demand.
 _PROMPT_EXCLUDED = _CONTACT_FIELDS
@@ -82,7 +119,11 @@ def write_profile(field: str, value: str, confirm_token: str = "") -> str | dict
     Args:
         field: One of the permitted field names (see WRITABLE).
         value: The value to store. For 'other', the entry is appended to a list
-               rather than replacing what is already there.
+               rather than replacing what is already there. For 'input_language'/
+               'output_language', a language name ('Bulgarian') or ISO 639-1 code
+               ('bg') — the two are independent, and setting one never sets the
+               other, since a persona can be spoken to in one language and
+               answered in another.
         confirm_token: Only needed when *changing* an already-set contact field
             (email/phone/address) — the token from a PENDING_CONFIRMATION response,
             after the user has approved it. Omit for first-time capture of any field,
@@ -152,6 +193,17 @@ def write_profile(field: str, value: str, confirm_token: str = "") -> str | dict
             data[key] = int(text)
         except ValueError:
             return f"Error: '{key}' must be a whole number, got '{text}'."
+    elif key in _LANGUAGE_FIELDS:
+        code = _LANGUAGE_NAMES.get(text.lower())
+        if code is None and len(text) == 2 and text.isalpha() and text.lower() in _LANGUAGE_NAMES.values():
+            code = text.lower()
+        if code is None:
+            return (
+                f"Error: '{text}' is not a recognized language. Give a language name "
+                f"(e.g. 'Bulgarian') or an ISO 639-1 code (e.g. 'bg'). Recognized names: "
+                f"{', '.join(sorted(n.title() for n in _LANGUAGE_NAMES))}."
+            )
+        data[key] = code
     else:
         data[key] = text
 
@@ -207,7 +259,8 @@ WRITE_PROFILE_SCHEMA = {
     "name": "write_profile",
     "description": (
         "Record a stable biographical fact the user has given you — email, phone, "
-        "address, occupation, household, health notes, age, or where they live. "
+        "address, occupation, household, health notes, age, where they live, or which "
+        "language to use with them. "
         "Use this whenever the user supplies such a detail in passing, so it is "
         "not lost: they should never have to give you the same detail twice. "
         "This is for facts about who they are. Preferences about how they want to "
@@ -216,7 +269,10 @@ WRITE_PROFILE_SCHEMA = {
         "phone/address writes immediately — say back what you captured in your reply. "
         "*Changing* an already-set email, phone, or address returns PENDING_CONFIRMATION "
         "instead of writing — show the user the change and leave it with them. Approving it "
-        "in the app is what applies it; do not call this tool a second time, same as send_email."
+        "in the app is what applies it; do not call this tool a second time, same as send_email. "
+        "'input_language' and 'output_language' are independent — set one without the other. "
+        "'input_language' is what the user writes/speaks to you in; 'output_language' is what "
+        "you respond in. They do not have to match."
     ),
     "input_schema": {
         "type": "object",
