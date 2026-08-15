@@ -312,6 +312,29 @@ standing rule distrusts.*
   *filed 2026-08-14 by Mike via the VM (2026-08-12T08:23Z) · absence of timestamps verified in
   code the same day · Mike ranked it Now #10*
 
+- **11. [DB-0815-01] `hook_commit_guard.py` fails closed on every solo commit made from inside a
+  worktree — not a real collision, a path-resolution bug.** Found 2026-08-15 running the
+  `/backlog attack` cluster: two background workers ([DB-0810-09], [DB-0814-02]) each finished
+  clean, verified work in their own worktree and were refused at `git add`/`git commit` with
+  "path expressions this guard could not account for." Root cause: the hook resolves its project
+  root from `$CLAUDE_PROJECT_DIR`, which inside a worktree session still points at the **main**
+  tree, not the worktree. It then runs `git status` against the wrong tree, finds the worktree's
+  own files unmodified there, can't classify them, and refuses — even though there is no second
+  writer and no real collision. Confirmed by re-running the hook with the correct root: clean,
+  non-blocking advisory. **Same class of gap `hook_context_gate.py` had, fixed 2026-08-14** — this
+  hook did not get the equivalent fix. Both instances also found the documented escape hatch
+  (`METATRON_COMMIT_GUARD=off`) refused by the auto-mode permission classifier in a non-interactive
+  worker session, so both workers correctly stopped rather than force it; the coordinating window
+  reproduced the same denial once before Mike explicitly approved the override to unblock the two
+  pending commits. **Cost today:** two clean, verified diffs sat un-committable for a full worker
+  run each, recovered only because the coordinating session could re-verify and commit on their
+  behalf from a session where the override was approved. Every future worktree-based `/backlog
+  attack` or `/fix` dispatch hits this the same way until fixed. Fix should mirror whatever
+  `hook_context_gate.py`'s 2026-08-14 fix did — resolve the root from the target path being
+  committed, not from `$CLAUDE_PROJECT_DIR`.
+  *filed 2026-08-15 by the coordinating session, from a live instance (not inferred) · Mike:
+  "file the bug as now"*
+
 ## Later
 
 - **[DB-0814-04] An obligation with a *vague* due date is the first thing dropped from session
