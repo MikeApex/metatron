@@ -43,17 +43,36 @@ own cwd (or its `-C`), never from `CLAUDE_PROJECT_DIR` alone — that env var st
 names the MAIN tree inside a worktree session, so the guard used to check the wrong
 tree and refuse every solo worktree commit. See `_resolve_root`.
 
-THE SECOND BLIND SPOT IS STILL OPEN, DELIBERATELY. Staging a file this session
-edited *and* a Bash-invoked script then rewrote (the `sync_dev_backlog.py` ->
-`DEV_BACKLOG.md` case) still BLOCKS: the file is in the manifest, its hash moved,
-and nothing distinguishes "my own script did that" from "another session did that".
-[DB-0815-01] proposes trusting a session's own recent Bash writes. **Rejected on
-inspection 2026-08-15:** the manifest holds files this session wrote via Edit, so
-re-hashing them after any Bash call would absorb a *parallel* session's lines into
-this session's baseline — reopening 2026-08-09, the incident this guard exists for,
-in exchange for removing a one-token override. A narrower fix (script->output
-mapping) is a hand-maintained list, which is the [DB-0805-01] antipattern. Left for
-Mike to decide; the override is the interim answer and it works.
+THE SECOND BLIND SPOT, CLOSED 2026-08-15 BY ATTRIBUTION ([DB-0815-01]). Staging a
+file this session edited *and* a Bash-invoked script then rewrote — the
+`sync_dev_backlog.py` -> `DEV_BACKLOG.md` case, and any edit made by a script
+rather than the Edit tool — used to BLOCK: the file was in the manifest, its hash
+had moved, and nothing distinguished "my own script did that" from "another session
+did that".
+
+It can be distinguished, and the evidence was already on disk. Every session's
+manifest is in `.claude/.session_edits/`. So before blocking, ask: **does any OTHER
+session's manifest record this file at the hash it has right now?** If one does,
+that session wrote it last and this is a real collision — block, exactly as before.
+If none does, no other session's Edit produced the bytes on disk, so the change came
+from this session's own tooling — warn loudly and let it through. See `_attribute`.
+
+WHY THIS IS NOT THE FIX THE ITEM PROPOSED, which was rejected. [DB-0815-01]
+suggested trusting a session's own recent Bash writes by re-hashing after any Bash
+call. That *writes* to the baseline, so it would absorb a parallel session's lines
+into this session's manifest and reopen 2026-08-09 — the incident this guard exists
+for. Attribution only *reads* other manifests; no baseline is ever updated by it, so
+the 2026-08-09 shape still blocks. Verified in `tests/test_commit_guard.py`, which
+replays that incident as its first case.
+
+KNOWN LIMIT OF THE ATTRIBUTION, accepted. A file this session Edit-wrote and ANOTHER
+session then rewrote *via Bash* now warns where it used to block: no manifest claims
+the current bytes, so it is indistinguishable from this session's own script. That
+class was already almost entirely unguarded — a file only another session's Bash
+touched, and never in this manifest, has always been advisory-only — so this narrows
+coverage at one edge while removing a block that fired on routine work. A guard that
+blocks routine work trains the override that disables it for the real case; that
+trade is the whole reason the two severities exist.
 """
 from __future__ import annotations
 
@@ -176,6 +195,47 @@ def _load_manifest(root: Path, session_id: str) -> dict:
             return json.load(fh)
     except (OSError, ValueError):
         return {}
+
+
+def _attribute(root: Path, session_id: str, rel: str, digest: str):
+    """Which OTHER session's Edit produced the bytes now on disk, if any.
+
+    Returns that session's id, or None if no other manifest claims this file at
+    this exact hash.
+
+    This is the whole of the [DB-0815-01] fix, and it is deliberately read-only.
+    A file whose hash has moved since this session wrote it has two possible
+    causes, and until 2026-08-15 the guard treated them alike:
+
+      * another session Edit-wrote it after us  -> the 2026-08-09 incident. Its
+        manifest records the file at the hash on disk right now, because it wrote
+        those bytes. Found here, and still blocked.
+      * this session's own Bash tooling rewrote it -> a script this session ran,
+        or an edit made with `python - <<PY` instead of the Edit tool. No other
+        manifest names the current bytes, so nothing is found and it warns.
+
+    Matching on the *current* hash is what makes it safe. A manifest entry from a
+    session that edited the file yesterday and committed it carries the old hash,
+    so it cannot claim content it did not write, and stale manifests never
+    manufacture a collision.
+    """
+    state = root / STATE_DIR
+    try:
+        entries = sorted(state.glob("*.json"))
+    except OSError:
+        return None
+    for path in entries:
+        other = path.stem
+        if other == session_id:
+            continue
+        try:
+            with open(path) as fh:
+                claims = json.load(fh)
+        except (OSError, ValueError):
+            continue                      # a torn or foreign file proves nothing
+        if isinstance(claims, dict) and claims.get(rel) == digest:
+            return other
+    return None
 
 
 # --------------------------------------------------------------------------
@@ -525,15 +585,32 @@ def check(payload: dict) -> int:
     session_id = payload.get("session_id", "unknown")
     manifest = _load_manifest(root, session_id)
 
-    blocking = [f for f in sorted(targets)
-                if f in manifest and _sha(root / f) != manifest[f]]
+    # A file this session wrote whose bytes have moved. Attribution splits it: an
+    # identifiable other session blocks; an unattributable change is this session's
+    # own Bash tooling and warns. See _attribute.
+    blocking, unattributed = [], []
+    for f in sorted(targets):
+        if f not in manifest:
+            continue
+        digest = _sha(root / f)
+        if digest is None:
+            unresolved.append(f)          # unreadable: unknown never reads as safe
+            continue
+        if digest == manifest[f]:
+            continue
+        owner = _attribute(root, session_id, f, digest)
+        if owner:
+            blocking.append((f, owner))
+        else:
+            unattributed.append(f)
+
     warning = [f for f in sorted(targets) if f not in manifest]
 
     if blocking or unresolved:
         out = ["COMMIT GUARD: blocked.", ""]
         if blocking:
             out.append("Changed by another writer since this session wrote them:")
-            out += [f"  ! {f}" for f in blocking]
+            out += [f"  ! {f}   (written by session {owner[:8]})" for f, owner in blocking]
             out += [
                 "",
                 "  This is the 2026-08-09 shape exactly: a file you legitimately",
@@ -552,6 +629,22 @@ def check(payload: dict) -> int:
         ]
         print("\n".join(out), file=sys.stderr)
         return 2
+
+    if unattributed:
+        # Named separately from `warning` because the shape is different and worth
+        # reading: this session DID write these, and something rewrote them that was
+        # not another session. Almost always its own script or a `python - <<PY`
+        # edit. Still surfaced, because "no other manifest claims it" is evidence,
+        # not proof — another session's Bash write looks identical from here.
+        print(
+            "COMMIT GUARD (advisory, not blocking): "
+            + ", ".join(unattributed[:6])
+            + ("…" if len(unattributed) > 6 else "")
+            + " changed since this session wrote them, but no other session's"
+            " manifest claims the current contents — so this is your own tooling,"
+            " not a collision. Diff before you stage if that surprises you.",
+            file=sys.stderr,
+        )
 
     if warning:
         print(
