@@ -78,58 +78,7 @@ standing rule distrusts.*
   *filed 2026-08-10 by Mike, via a bug report the system wrote incorrectly against itself ·
   verified against traces, journal and conversations the same night · Mike ranked it Now #1*
 
-- **2. [DB-0810-09] 158 quality events have been written and never read — `USER_CORRECTION`
-  (139), `ROUTING_MISS` (12), `CALENDAR_DUPLICATE` (7).** `tools/logger.py`'s
-  `write_quality_event` appends to `data/personas/{p}/logs/quality_events.json`;
-  `scripts/sync_dev_backlog.py` reads it through a hardcoded `WANTED = USER_TYPES |
-  MACHINE_TYPES`. Anything not on that list is silently discarded. `USER_CORRECTION` — the user
-  telling the system it got something wrong, and by volume the largest signal in the file — has
-  **never once** reached this backlog, despite `write_quality_event`'s own docstring naming it a
-  canonical type. **Do not fix with a one-line allowlist edit**; that was attempted 2026-08-10
-  and correctly stopped. Three reasons it is wrong: (a) `ed92acf` restructured this file into
-  Now/Later/Machine log specifically to separate machine noise from user requests, and dumping
-  139 corrections into the Inbox defeats that — the right home may be a digest or a new section,
-  not `MACHINE_TYPES`; (b) `CALENDAR_DUPLICATE` needs a stable signature keyed on the event-uid
-  pair before it is collected, because `signature()`'s prose fallback at
-  `SIMILARITY_THRESHOLD = 0.15` will collapse distinct duplicate pairs into one `×N` entry, the
-  detail strings being mostly shared boilerplate (`DENIAL_RE` is the precedent to copy);
-  (c) ~~`ROUTING_MISS` may be legacy — grep the emitters before deciding.~~ **Answered
-  2026-08-13: it is legacy — `ROUTING_MISS` is emitted from nowhere in the codebase.** It
-  survives only as docstring and schema prose (`tools/logger.py:165`, `:257`, `:265`), so the 12
-  events predate its removal and no new ones can arrive. Collecting it would wire up a dead
-  type. **Same check found a type the item missed: `CALENDAR_DUPLICATE` is emitted live**
-  (`tools/calendar_audit.py:190`) **and is not in `WANTED`** — so the dropped set today is
-  `USER_CORRECTION` + `CALENDAR_DUPLICATE`, and reason (b)'s stable-signature prerequisite
-  governs the second one. **The actual deliverable
-  is structural:** nothing reconciles emitters against the consumer, so every future audit
-  inherits this by default. Options — a shared registry both sides import, a startup
-  reconciliation warning, or a test asserting every emitted `event_type` is either collected or
-  explicitly listed as intentionally dropped. Also: `data/personas/mike/logs/.calendar_dedup_seen`
-  holds all 7 calendar findings, so they stay suppressed until it is cleared — confirm before
-  deleting a ledger on the VM. Those 7 are unreviewed and likely include the original Jonas
-  triplication.
-  **A sixth collected type was added 2026-08-10: `MODEL_CALL_FAILED`**, emitted by
-  `_log_api_failure()`. One more entry the structural fix must absorb — *not* a precedent for the
-  allowlist edit this item forbids: it was new, so both sides shipped in one commit, and it arrives
-  with the stable key reason (b) demands, ~5/fortnight volume, and no legacy question. When the
-  registry lands it registers there and its `MACHINE_TYPES` line comes out.
-  **PREREQUISITE, found 2026-08-10 — fix before building the consumer: 20 of 28 `USER_CORRECTION`
-  events that day carry `detail: None`.** The largest signal in the file is ~70% empty, so a
-  consumer built against it now would satisfy this item and surface nothing. Fix the emitter first.
-  **What this item is worth, concretely:** on 2026-08-10 a `ROUTING_MISS` at 16:30:58 recorded the
-  exact cause of `[DB-0810-13]` — the system's worst live failure that day — 90 minutes before the
-  model guessed at it, wrongly, in front of Mike. The diagnosis was on disk and nothing read it.
-  *filed 2026-08-10 by Mike via dev session · counts re-read live off the VM 2026-08-10 ·
-  **code re-verified 2026-08-13** (`/backlog verify` smoke test): `WANTED` at
-  `scripts/sync_dev_backlog.py:43-51` still excludes `USER_CORRECTION`; every other cited symbol
-  — `write_quality_event` (`tools/logger.py:155`), `SIMILARITY_THRESHOLD = 0.15` (`:134`),
-  `DENIAL_RE` (`:152`), `signature()` (`:325`), `_log_api_failure` (`core/orchestrator.py:2078`)
-  — is where the item says it is; still nothing reconciles emitters against the consumer, and
-  `tests/` has no test touching this at all. **Live counts not re-checked — they are on the VM.** ·
-  full reasoning in `archive/PROJECT_LOG.md` § 2026-08-10 (Calendar conflict detection) and
-  § 2026-08-10, last*
-
-- **3. [DB-0810-12] Vertex rejects a tool-call turn for a missing `thought_signature` and the
+- **2. [DB-0810-12] Vertex rejects a tool-call turn for a missing `thought_signature` and the
   exchange is lost — five times 08-04→08-09, plus uncounted web-app hits.** *(Title corrected
   2026-08-10: only **one** of the five was `run_subagent`; three were `write_quality_event`, one
   `write_persona` — positions 12, 12, 12, 12, 14. Reading it as a `run_subagent` fault narrows the
@@ -167,7 +116,7 @@ standing rule distrusts.*
   fixing it**; do not assume, the first two diagnoses here were both wrong.
   *filed 2026-08-10 · **unblocked 2026-08-13**, occurrences and loop attribution read live off the
   VM · full reasoning in `archive/PROJECT_LOG.md` § 2026-08-10, later still*
-- **4. [DB-0809-02] Do proactive sessions actually stay focused? — mechanism fixed and deployed;
+- **3. [DB-0809-02] Do proactive sessions actually stay focused? — mechanism fixed and deployed;
   the guidance half is unproven.** The original premise was wrong: the openings were already
   1–2 sentences, and the "restatements" were the Synthesizer reading its *own* scheduler prompt as
   Mike's voice. Fixed in `82d394b` (deployed) — `_frame_proactive()` labels scheduler input as a
@@ -198,7 +147,7 @@ standing rule distrusts.*
   Inbox 2026-08-14**, reported by Mike via the VM (2026-08-12T08:23Z); fix date verified against
   `git log` the same day*
 
-- **5. [DB-0809-21] Three of four verification steps done and passed; one is genuinely time-gated.**
+- **4. [DB-0809-21] Three of four verification steps done and passed; one is genuinely time-gated.**
   Ran at ~$0.08, under the $1.00 approval line (`docs/CONVENTIONS.md` § Testing Cost Convention).
   **Done:** (1) A4 `clinical` suite vs `sarah_chen`, 3/3 — confirms the regression gate held.
   (2) Three targeted Physical Health calls vs `danny_park`, which do assert `6330029`/`88b7614` —
@@ -212,7 +161,7 @@ standing rule distrusts.*
   Needs a real unreferenced calendar event, not a forced one.
   *filed 2026-08-09 · **Mike deferred it explicitly** · 3 of 4 done 2026-08-10*
 
-- **6. [DB-0810-05] The tone-profile pipeline has never touched a real mailbox.** Built and
+- **5. [DB-0810-05] The tone-profile pipeline has never touched a real mailbox.** Built and
   committed `88957e6`; **every test used stubs.** The distillation half is well covered — a hostile
   fixture confirmed unknown keys dropped, values truncated, lists capped, injection caught and the
   write refused, plus five `_extract` paths (single-direction refusal, thin-sample skip, injection
@@ -255,7 +204,7 @@ standing rule distrusts.*
   IMAP quoting bug found and fixed, original pass/fail criteria still unmet — no long-history
   contact exists yet to test against*
 
-- **7. [DB-0810-15] Voice transcription is English-only in two places, so Bulgarian cannot work.**
+- **6. [DB-0810-15] Voice transcription is English-only in two places, so Bulgarian cannot work.**
   Mike tested it live (seq 031, *"I'm wondering if you can understand me if I speak in Bulgaria"*)
   and asked for multi-language support or a toggle. **Not a config flip — it is blocked twice:**
   (1) [core/voice_pipeline.py:177](core/voice_pipeline.py#L177) passes `language="en"` hardcoded;
@@ -269,50 +218,29 @@ standing rule distrusts.*
   short utterances, which is most of what voice sends.
   *filed 2026-08-10 by Mike, live during feature testing · both blockers verified in code same day*
 
-- **8. [DB-0810-17] "How many contacts do we have?" — and the answer was more wrong than it
-  looked.** At seq 009 Mike asked for a route *and* a CRM contact count; the system replied it had
-  *"no connection to your external CRM to pull a contact count"*. **That is only half true and it
-  should not have declined.** Metatron has its own contact store — `list_contacts`,
-  `search_contacts`, `read_contact`, `write_contact` in [tools/crm.py](tools/crm.py) — and
-  `relationships` is **already granted all of them**. It could have answered the count from data it
-  holds. So there are two separable pieces, and the cheap one is not a build:
-  **(a) Answer from the existing store** — instruction/routing only, no new code. A contact-count
-  question should reach `relationships` and be answered from `list_contacts`.
-  **(b) An external CRM bridge** — a genuine integration, and the one Mike means by "should be
-  built". Blocked on a decision this entry cannot make for him: *which* CRM, and whether contacts
-  sync in, out, or both. Sensitive-tier either way.
-  *filed 2026-08-10 by Mike · **(a) verified present and granted 2026-08-10** — the capability
-  exists and went unused, which makes this partly the same class as `[DB-0810-13]`*
+- **7. [DB-0810-17] An external CRM bridge — the count question itself is answered.** At seq 009
+  Mike asked for a route *and* a CRM contact count; the system declined it as needing an external
+  connection it doesn't have, when Metatron's own contact store (`list_contacts`, `search_contacts`
+  in [tools/crm.py](tools/crm.py)) already held the answer. **(a) closed 2026-08-15** —
+  `coordinator.md`'s Relationships routing block now calls out contact-store questions explicitly
+  and says not to decline them (`b11e775`). **(b) remains: an external CRM bridge**, the genuine
+  integration Mike means by "should be built" — blocked on a decision this entry cannot make for
+  him: *which* CRM, and whether contacts sync in, out, or both. Sensitive-tier either way.
+  *filed 2026-08-10 by Mike · (a) closed 2026-08-15, see `archive/backlog_closed_2026-08.md`*
 
-- **9. [DB-0814-01] The scheduled inbox check reports "nothing found", six times a day.**
-  Mike asked for it to notify **only when new actionable mail arrives** — specifically to stop
-  surfacing that a pending email (the Prudential follow-up) has *not* arrived. **Verified 2026-08-14:**
-  `check_interval_minutes: 240` at [config/templates/email.yaml:67](config/templates/email.yaml#L67),
-  so the job runs every four hours and a null result is most of those runs. **This is an
-  instruction/config change, not a build** — the fix is that a null check produces no user-facing
-  report at all, not that the report gets shorter. **Treat it as design, not a Mike preference:**
-  nobody wants six null reports a day, so it belongs in the agent/scheduler layer, and if a persona
-  copy is written it must be deleted in the same pass (`.claude/rules/agent-files.md` § One Home Per Rule Class).
-  Related in kind but do not merge: `[DB-0810-05]`'s mailbox is nearly empty, so a *"nothing found"*
-  today is often literally true.
-  *filed 2026-08-14 by Mike via the VM (2026-08-12T08:27Z) · interval verified in config the same
-  day · Mike ranked it Now #9*
+- **8. [DB-0814-02] The timestamp shipped; the expiry policy is still the open question.**
+  `open_threads` was a bare `list[str]` with no metadata — "post-travel recovery" stayed live for
+  two weeks because nothing could even ask how old it was. **Closed 2026-08-15 as scoped**
+  (`d40e73c`): entries are now `{"text": str, "added": <ISO date, server-stamped>}`, matching the
+  `clinical_threads` convention of never trusting the model for a date; a thread carried forward
+  unchanged keeps its original `added` date; old bare-string data migrates safely on read. **What
+  remains is the actual ask** — Mike wanted stale context to stop misleading, and a timestamp on
+  its own does not do that. Deciding what counts as stale and what happens then (auto-drop, flag
+  for review) is a fresh design question, not a continuation of this build.
+  *filed 2026-08-14 by Mike via the VM (2026-08-12T08:23Z) · timestamp shipped 2026-08-15, see
+  `archive/backlog_closed_2026-08.md`*
 
-- **10. [DB-0814-02] Nothing ages out stale context — "post-travel recovery" stayed live for two
-  weeks.** Mike asked for a mechanism that keeps live context relevant by expiring state that has
-  stopped being true. **Verified 2026-08-14: structurally impossible today.** `open_threads` is a
-  bare `list[str]` ([tools/context_tracker.py:198](tools/context_tracker.py#L198), written at
-  `:250`) — **the entries carry no timestamp**, so nothing can age them even in principle. The only
-  lifecycle in the file is `clinical_threads` (`active`/`watch`/`resolved`), which is deliberately
-  *not* the model to copy wholesale: tier-2 clinical threads never auto-expire by design
-  (`:43`), and `[DB-0808-06]` is the open item about that. **So the first deliverable is a
-  timestamp on the thread, not an expiry policy** — the policy is unbuildable until the data
-  supports it. Same class as `[DB-0810-13]`: the system reasoning confidently from state that is
-  no longer true. Lower ranked because stale context misleads rather than making a false claim.
-  *filed 2026-08-14 by Mike via the VM (2026-08-12T08:23Z) · absence of timestamps verified in
-  code the same day · Mike ranked it Now #10*
-
-- **11. [DB-0815-01] `hook_commit_guard.py` fails closed on every solo commit made from inside a
+- **9. [DB-0815-01] `hook_commit_guard.py` fails closed on every solo commit made from inside a
   worktree — not a real collision, a path-resolution bug.** Found 2026-08-15 running the
   `/backlog attack` cluster: two background workers ([DB-0810-09], [DB-0814-02]) each finished
   clean, verified work in their own worktree and were refused at `git add`/`git commit` with
@@ -619,6 +547,123 @@ partner (`scheduler.yaml:43` — *"Check in."*, 1.00 wording overlap) was **nois
 file, which `scripts/check_agent_tools.py` does not scan — so `synthesizer`'s missing `write_log`
 grant is now **invisible to the guard** while still working only by `dispatch_tool()`'s lack of
 enforcement. Same class as `[DB-0810-03]`; the gap did not change, the ability to see it did.)*
+
+- **[user corrected a prior turn]** N/A  
+  `2026-08-14T20:02:29.913465Z`
+
+- **[user corrected a prior turn]** N/A  
+  `2026-08-14T14:01:52.439999Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Date Day: The Mousetrap' (2026-08-18T00:00:00, uid=64dc9379-ce64-4c15-a96a-c6cb4df8e432@ai-life-manager) and 'The Mousetrap Matinee' (2026-08-18T15:00:00, uid=efdc94bb-07b2-49ef-be3a-a43431d8014d@ai-life-manager). title_similarity=0.59, shared_attendees=[], shared_words=['mousetrap']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-08-14T04:35:08.871922Z`
+
+- **[user corrected a prior turn]** The user corrected the communication flow regarding email monitoring, explicitly stating that they do not want to be notified when routine checks return no results.  
+  `2026-08-12T08:26:35.580796Z`
+
+- **[user corrected a prior turn]** Dropping the Manny/protest thread and modifying the check-in format to a consolidated 14-point list.  
+  `2026-08-12T08:20:17.031497Z`
+
+- ⚠ **[user corrected a prior turn]** Missed the user's previously stated Thursday deadline for the Prudential email and prompted action on it prematurely.  ×5  
+  `2026-08-11T11:13:14.252775Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Draft & Send Prudential Follow-up to Mike' (2026-08-13T00:00:00, uid=a77d8ee0-d0a5-4376-8c33-1c82ed8b0624@ai-life-manager) and 'Check for Prudential scheduling email (Kathleen Jermyn)' (2026-08-13T00:00:00, uid=509f27f7-9d19-4d62-a3cf-ac01eac292fc@ai-life-manager). title_similarity=0.4, shared_attendees=[], shared_words=['prudential']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-08-11T04:35:16.777905Z`
+
+- **[user corrected a prior turn]** The user corrected the grocery reminder logic (not every Friday, but 3 days after the date of an order).  ×2  
+  `2026-08-10T15:46:40.890480Z`
+
+- ⚠ **[user corrected a prior turn]** User clarified they wanted to know the mechanism/tools for routing, not the route itself.  ×3  
+  `2026-08-10T12:29:39.464756Z`
+
+- ⚠ **[user corrected a prior turn]** Noted that Giva is likely a reference to Iva Diamond, who was previously noted as the lunch partner.  ×3  
+  `2026-08-12T12:47:55.686306Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Meeting with Jonas at Cross Keys\, Bank' (2026-08-05T17:40:00, uid=696faa2c-1194-4bfd-9ef4-ba9fb500918a@ai-life-manager) and 'Meeting with Jonas at The Cross Keys\, Bank' (2026-08-05T17:40:00, uid=e715ca00-1b55-48c1-953f-f5f10b44cbcf@ai-life-manager). title_similarity=0.95, shared_attendees=[], shared_words=['bank', 'cross', 'jonas', 'keys\\', 'meeting']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-08-08T17:13:23.351554Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Meeting with Jonas' (2026-08-05T17:40:00, uid=8d0414f4-5be3-4f5b-96e8-1cd78041dd04@ai-life-manager) and 'Meeting with Jonas at The Cross Keys\, Bank' (2026-08-05T17:40:00, uid=e715ca00-1b55-48c1-953f-f5f10b44cbcf@ai-life-manager). title_similarity=0.59, shared_attendees=[], shared_words=['jonas', 'meeting']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-08-08T17:13:23.351323Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Meeting with Jonas' (2026-08-05T17:40:00, uid=8d0414f4-5be3-4f5b-96e8-1cd78041dd04@ai-life-manager) and 'Meeting with Jonas at Cross Keys\, Bank' (2026-08-05T17:40:00, uid=696faa2c-1194-4bfd-9ef4-ba9fb500918a@ai-life-manager). title_similarity=0.63, shared_attendees=[], shared_words=['jonas', 'meeting']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-08-08T17:13:23.351136Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Meeting with Jonas at The Cross Keys\, Bank' (2026-08-05T17:40:00, uid=ece109dd-12ed-4212-b633-88329d40e772@ai-life-manager) and 'Meeting with Jonas at The Cross Keys\, Bank' (2026-08-05T17:40:00, uid=e715ca00-1b55-48c1-953f-f5f10b44cbcf@ai-life-manager). title_similarity=1.0, shared_attendees=[], shared_words=['bank', 'cross', 'jonas', 'keys\\', 'meeting']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-08-08T17:13:23.350926Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Meeting with Jonas at The Cross Keys\, Bank' (2026-08-05T17:40:00, uid=ece109dd-12ed-4212-b633-88329d40e772@ai-life-manager) and 'Meeting with Jonas at Cross Keys\, Bank' (2026-08-05T17:40:00, uid=696faa2c-1194-4bfd-9ef4-ba9fb500918a@ai-life-manager). title_similarity=0.95, shared_attendees=[], shared_words=['bank', 'cross', 'jonas', 'keys\\', 'meeting']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-08-08T17:13:23.350722Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Meeting with Jonas at The Cross Keys\, Bank' (2026-08-05T17:40:00, uid=ece109dd-12ed-4212-b633-88329d40e772@ai-life-manager) and 'Meeting with Jonas' (2026-08-05T17:40:00, uid=8d0414f4-5be3-4f5b-96e8-1cd78041dd04@ai-life-manager). title_similarity=0.59, shared_attendees=[], shared_words=['jonas', 'meeting']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-08-08T17:13:23.350509Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Depart for Heathrow (LHR) Airport' (2026-08-05T11:00:00, uid=6a7cd62e-f48c-44ab-9caf-b3acd2075dbf@ai-life-manager) and 'Heathrow drop-off' (2026-08-05T11:00:00, uid=0e217f61-00f3-4213-9296-437c87c16adb@ai-life-manager). title_similarity=0.48, shared_attendees=[], shared_words=['heathrow']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-08-08T17:13:23.350103Z`
+
+- **[user corrected a prior turn]** N/A  
+  `2026-08-07T06:11:35.754575Z`
+
+- ⚠ **[user corrected a prior turn]** User previously confirmed Rowan transfer was handled, but system asked for details again.  ×3  
+  `2026-08-07T16:22:17.434741Z`
+
+- ⚠ **[user corrected a prior turn]** User pasted the check-in preference for a third time. In previous turns, the Synthesizer failed to adhere strictly to 'Otherwise just ask what's on', adding filler ('Nothing urgently needs your attention...' and 'I already have that instruction...'). The system needs to recognize strict negative constraints.  ×3  
+  `2026-08-09T12:27:20.856785Z`
+
+- **[user corrected a prior turn]** [N/A]  
+  `2026-08-04T13:59:16.811749Z`
+
+- **[user corrected a prior turn]** The user is correcting the system for failing to proactively manage the Apex meeting and payroll tasks, which they expect to be handled automatically.  ×2  
+  `2026-08-05T15:19:21.740492Z`
+
+- **[user corrected a prior turn]** [N/A]  
+  `2026-08-04T13:57:17.397614Z`
+
+- ⚠ **[user corrected a prior turn]** Corrected contact name from "Eva" (previously appearing in logs) to "Iba".  ×5  
+  `2026-08-04T12:42:13.046792Z`
+
+- ⚠ **[user corrected a prior turn]** User corrected the assumption that scheduled calendar events imply completion, requesting active reconciliation and pushing alerts instead of passive tracking.  ×16  
+  `2026-08-12T08:25:12.628744Z`
+
+- **[user corrected a prior turn]** User opted to close the CalDAV integration thread.  ×2  
+  `2026-08-04T12:37:18.994165Z`
+
+- **[user corrected a prior turn]** User corrected system for excessive repetition of pending tasks, over-indexing on sleep disruption, and intrusive scheduled check-ins during active dialogue.  ×2  
+  `2026-08-02T17:48:22.011991Z`
+
+- **[user corrected a prior turn]** User explicitly requested to stop being told to "enjoy things" after Synthesizer used the phrase "Enjoy the museum" in the previous turn.  ×2  
+  `2026-08-02T14:05:23.180476Z`
+
+- ⚠ **[user corrected a prior turn]** Correction of the RAF Museum schedule (user was there yesterday, not this evening).  ×4  
+  `2026-08-03T09:10:59.166436Z`
+
+- ⚠ **[user corrected a prior turn]** User restated 'rucking and high intensity' to correct a prior dictation error ('rocking and hop and swing both balls') and reaffirm their fitness baseline.  ×4  
+  `2026-08-03T17:15:55.567859Z`
+
+- ⚠ **[user corrected a prior turn]** The user corrected the system's outdated belief that they are still in "post-travel recovery," confirming that period is over and requesting the system adjust its internal state accordingly.  ×6  
+  `2026-08-12T08:23:05.655993Z`
+
+- **[user corrected a prior turn]** User noted the system echoed the user-provided time '953' for the 'banana' test rather than checking the actual message receipt log (9:52 AM).  ×2  
+  `2026-08-01T08:53:41.172516Z`
+
+- **[user corrected a prior turn]** Mike is correcting the assumption that his 'fit it in' approach to work creates negative pressure; he finds it manageable and beneficial for his family balance.  
+  `2026-06-26T21:35:02.264614Z`
+
+- ⚠ **[user corrected a prior turn]** None.  ×83  
+  `2026-08-14T19:00:30.242958Z`
+
+- **[user corrected a prior turn]** User is flagging that the previous exchange produced no response and that an expected write_config action was not executed — this is a pipeline/execution failure, not a content correction per se, but note that the prior turn's intended output did not reach the user and the write_config call was missed.  
+  `2026-06-26T15:51:48.929810Z`
+
+- **[user corrected a prior turn]** Mike corrected tone — too cheerful, parroting back what he says, cheerleading. Also corrected assumption that last night's sleep was unknown — he states it's already in context.  ×2  
+  `2026-06-26T15:38:52.421775Z`
+
+- **[user corrected a prior turn]** User implies a date was previously returned by the system as if it had real-time access — Synthesizer should clarify honestly how prior dates were produced (likely from context/logs, not live tool access) while delivering whatever the Research Agent returns.  
+  `2026-06-26T14:32:21.391602Z`
+
+- **[user corrected a prior turn]** Two corrections: (1) Location recorded as Brisbane — user is actually in London, UK. BOM weather advice from prior session is invalid. (2) Synthesizer implied sleep records were missing; user pushed back. Logs actually contain data through June 25 confirmed, June 26 ambiguous, June 27 onward absent.  ×2  
+  `2026-06-26T14:30:23.078064Z`
+
+- **[user corrected a prior turn]** Log entries were recorded with datestamp only — user corrected to require timestamp included on all future entries.  ×2  
+  `2026-06-26T14:02:14.841386Z`
 
 ---
 ## Done

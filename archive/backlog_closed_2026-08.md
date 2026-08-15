@@ -19,6 +19,54 @@ sitting inside the Open sections. Reasoning: `archive/PROJECT_LOG.md` § 2026-08
 
 ---
 
+## Closed 2026-08-15 — `/backlog attack`, two clusters
+
+- ~~**[DB-0810-09]** 158 quality events written and never read — `USER_CORRECTION` (139),
+  `CALENDAR_DUPLICATE` (7) silently dropped by `scripts/sync_dev_backlog.py`'s `WANTED` set.~~
+  — **closed: `048e937`.** Prerequisite fixed first — `write_quality_event()` now raises on
+  blank `detail` (was ~70% empty on `USER_CORRECTION`). Both types added to `WANTED`;
+  `CALENDAR_DUPLICATE` given a stable uid-pair `signature()` key (`CALENDAR_UID_RE`, same
+  precedent as `DENIAL_RE`) so distinct duplicate pairs don't collapse on shared boilerplate
+  prose. The structural fix is `tests/test_quality_event_reconciliation.py` — asserts every
+  `event_type` literal emitted anywhere in `core/`/`tools/` is either in `WANTED` or explicitly
+  named as intentionally dead (`KNOWN_DEAD_TYPES = {"ROUTING_MISS"}`), rather than a shared
+  import, because `sync_dev_backlog.py` is deliberately stdlib-only (SessionStart hook, no
+  venv). The test caught a third silently-dropped type not named in the original item,
+  `CONTEXT_BLOCK_UNPARSED`, fixed in the same commit. **Not closed: where `USER_CORRECTION`'s
+  139/day belongs long-term** — the item itself flagged that dumping it into `MACHINE_TYPES`'s
+  per-entry Machine log may be the wrong home (a digest or dedicated section was suggested
+  instead); that redesign needs its own `DEV_BACKLOG.md` heading and wasn't in scope here. Landed
+  in `MACHINE_TYPES` for now so the silent drop stops. *deploy owed — `tools/logger.py` runs on
+  the VM.*
+
+- ~~**[DB-0810-17]**(a) "How many contacts do we have?" — Coordinator declined a CRM
+  contact-count question as needing an external connection it doesn't have, when Relationships
+  already holds `list_contacts`/`search_contacts` and could have answered from data on hand.~~
+  — **(a) closed: `b11e775`** (instruction-only — `coordinator.md`'s Relationships routing block
+  now calls out contact-store questions explicitly and says not to decline them). **(b) — an
+  external CRM bridge — stays open**, blocked on a decision only Mike can make (which CRM, sync
+  direction); carried forward, see `DEV_BACKLOG.md` for current wording.
+
+- ~~**[DB-0814-01]** The scheduled inbox check reports "nothing found" up to six times a day —
+  Mike asked for it to notify only when new actionable mail arrives.~~ — **closed: `b11e775`.**
+  Instruction-only, as scoped: `logistics.md`'s horizon scan now distinguishes checking a
+  pending item (fine, every session) from reporting it unchanged (not fine) — a pending
+  confirmation whose status hasn't changed since it was last surfaced no longer repeats in
+  `HORIZON_ITEMS`/`PENDING CONFIRMATION` until something actually changes or it's genuinely aged.
+
+*Not closed, retitled to state what's left:* **[DB-0814-02]** (`open_threads` now carries a
+server-stamped `added` date per entry, `d40e73c` — the *expiry policy* deliberately remains
+undecided, that was never this item's scope). See `DEV_BACKLOG.md` for current wording.
+
+*All three worktree branches merged into `main` clean (`2fcf0bc`, `66fd00b`), `qa_sweep.sh` 9/9
+on the integrated tree. Both worker commits were blocked at commit time by a `hook_commit_guard.py`
+bug (worktree sessions resolve the wrong project root) — re-verified independently and committed
+by the coordinating session with Mike's explicit approval; the bug itself is filed as
+`[DB-0815-01]`. Full reasoning: `archive/PROJECT_LOG.md` § 2026-08-15 (`/backlog attack` — three
+clusters).*
+
+---
+
 ## Closed 2026-08-14 — Phase 5 tail: logger registered, audit tables fixed
 
 - ~~**[DB-0814-05]** Finish Phase 5 of the context system: register the `InstructionsLoaded`

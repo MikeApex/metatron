@@ -1,39 +1,43 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-15 (**a deploy is owed — read this first**). `6913ad7` moved Mike's Franklin
-virtue ritual out of `config/agents/synthesizer.md` into a new per-persona file,
-`config/personas/mike/evening_ritual.md`, loaded by `load_config()` through the same optional-file
-path `self_development.md` uses. **Committed, NOT deployed, and the gap is live:** the VM still
-runs the old `synthesizer.md` while `mike.md:13` is already deleted, so the consolidated-delivery
-instruction is in neither place the running system reads, and `evening_ritual.md` sits on the VM
-unloaded. **Run `./deploy.sh`** (Denied tier — a session cannot). **The lesson is the rejected
-first attempt:** `.claude/rules/agent-files.md` says default to *design*, so this went into
-`synthesizer.md` first and Mike rejected it — a ritual can be personal even when its delivery
-format reads like generic good sense. The default is a default, not a verdict.
-`## Now` is **10 — at cap**. **`[DB-0810-13]` is Now #1 and untouched** — specialists report
-actions they never took, so anything the system says it *did* is unverified. **`[DB-0810-12]` is
-UNBLOCKED**: four post-`8ae1ff9` occurrences, all `write_quality_event` at position 12 on
-`synthesizer`, `loop=openai_compat_stream` — the *streaming* variant, where deltas carry no
-`thought_signature`. **Instrument the diverged-replay `else` branch before fixing — the first two
-diagnoses were both wrong.** `[DB-0810-05]` is blocked on **data, not code**. **⚠ `[DB-0809-02]`'s
-fix DID NOT HOLD** — `82d394b` landed 08-09, Mike reported the same repetition 08-12; read that
-trace, not the week. It carries `due: 2026-08-17`. **Tailnet is INTERMITTENT, not down**; SSH to
-the VM is **IAP-only** (`gcloud compute ssh --tunnel-through-iap`) — a direct connection times out
-and that is not an outage.*
+*Updated: 2026-08-15 (**a deploy is owed — read this first, the list grew**). Six files are
+committed but not on the VM: `6913ad7`'s evening-ritual move (`synthesizer.md` →
+`config/personas/mike/evening_ritual.md`, still live-broken on the VM — see prior paragraph,
+unchanged), plus today's `/backlog attack` output — `tools/logger.py`, `tools/context_tracker.py`,
+`core/orchestrator.py`, `config/agents/coordinator.md`, `config/agents/logistics.md`. **Run
+`./deploy.sh`** (Denied tier — a session cannot).
+`## Now` is **9**, back under cap after two closures. **`[DB-0810-13]` is still Now #1,
+untouched.** **`[DB-0810-12]` (now #2) is still UNBLOCKED and unfixed** — instrument the
+diverged-replay `else` branch in `_openai_compat_stream` before fixing; the first two diagnoses
+were both wrong. `[DB-0809-02]` (now #3) still carries `due: 2026-08-17`. **Closed today:**
+`[DB-0810-09]` (quality-event registry, `048e937`), `[DB-0814-01]` (null inbox reports,
+`b11e775`). **Partially closed, retitled:** `[DB-0810-17]`(a) done (`b11e775`), (b) — the
+external CRM bridge — still open, still Mike's decision to make; `[DB-0814-02]`'s timestamp
+shipped (`d40e73c`), the expiry policy is a fresh open question, not a continuation. **New:**
+`[DB-0815-01]`, Now #9 — `hook_commit_guard.py` resolves `$CLAUDE_PROJECT_DIR` to the main tree
+inside a worktree session and fails closed on ordinary solo commits; same class of gap
+`hook_context_gate.py` had, fixed 2026-08-14, this one didn't get it. **`DEV_BACKLOG.md` grew to
+693 lines** — not narrative, the DB-0810-09 fix means `USER_CORRECTION`/`CALENDAR_DUPLICATE`
+events are surfacing in `## Machine log` for the first time ever, several already past the ×3
+⚠ threshold (`none.` ×83 among them) — **a `/backlog deep` sweep of the Machine log is owed**,
+skipped here deliberately per step 4's "do not triage here." **Tailnet is INTERMITTENT, not
+down**; SSH to the VM is **IAP-only** (`gcloud compute ssh --tunnel-through-iap`) — a direct
+connection times out and that is not an outage.*
 
 *Dev-workflow track — **Phase 5 is CLOSED**, five path-scoped `.claude/rules/*.md` files carry the
 area rules, and rule delivery is **Read-only** (Bash `grep` and `Write` do not deliver; a worktree
 session does). Full findings:
 `archive/log/2026-08-14-12-phase5-closed-instructionsloaded-retired.md`. **Phase 4 (ROADMAP split)
-stays deferred.** `/backlog deep` ran on 08-15 and did **half** the job: the `⚠ machine: ×5` is
-resolved, but the clustering half found no un-cross-referenced merge candidates and
-**`DEV_BACKLOG.md` is 614 against ~450** — the overage is evidence-dense `## Now` entries, not
-narrative creep, so nothing was cut to hit the number. ⚠ **One divergence still open:**
-`docs/CONVENTIONS.md:143` points here for live Model IDs, but § Model IDs below still reads
-*updated 2026-07-27*. **A7 unchanged by decision** — features first, Phase closed before Alpha.
-Standing: **`PROJECT_LOG.md` is GENERATED** from `archive/log/` fragments — write a fragment, never
-edit it, and a fragment is the collision-safe half of `/archive` when two windows are live;
-backlog items go to `.claude/backlog_inbox/`; `qa_sweep.sh` is free (9 checks, ~3s).*
+stays deferred.** ⚠ **One divergence still open:** `docs/CONVENTIONS.md:143` points here for live
+Model IDs, but § Model IDs below still reads *updated 2026-07-27*. **A7 unchanged by decision** —
+features first, Phase closed before Alpha. **New this session:** a `/backlog attack` run
+confirmed worktree-based parallel dispatch works end to end (score → cluster → verify → dispatch
+→ independently re-verify → merge to `main` → clean up), but exposed
+`hook_commit_guard.py` as broken for it — see `[DB-0815-01]` above; every future worktree
+dispatch hits the same wall until it's fixed. Standing: **`PROJECT_LOG.md` is GENERATED** from
+`archive/log/` fragments — write a fragment, never edit it, and a fragment is the collision-safe
+half of `/archive` when two windows are live; backlog items go to `.claude/backlog_inbox/`;
+`qa_sweep.sh` is free (9 checks, ~3s).*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -127,9 +131,9 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-15 | **`/backlog attack`, three clusters.** Two worker worktrees ([DB-0810-09] quality-event registry, [DB-0814-02] `open_threads` timestamp) plus one direct Red-tier fix ([DB-0810-17]a, [DB-0814-01]). Both workers hit `hook_commit_guard.py` failing closed on worktree commits — filed as [DB-0815-01]. Coordinator re-verified and committed on their behalf, merged to `main` | `b11e775`, `048e937`, `d40e73c` — **DEPLOY OWED** |
 | 08-15 | **Mike's Franklin ritual leaves `synthesizer.md`** for a new per-persona `evening_ritual.md`, loaded like `self_development.md`. Token-neutral for Mike, a saving for every other persona. First attempt filed it as *design* and was rejected | `6913ad7` — **DEPLOY OWED** |
 | 08-14 | **Phase 5 CLOSED.** Worktree delivery confirmed (yes, via `EnterWorktree`); Grep-tool question dissolved (no Grep tool exists in this install, checked twice); `InstructionsLoaded` deregistered, script and log deleted | not deployed |
-| 08-14 | **Phase 5 tail closed — `InstructionsLoaded` logger registered, `audit_context_load.py` tables fixed.** Grep-tool and worktree delivery still unmeasured (need real log entries); close prompt saved | `b07f5da` — **not deployed** |
 ---
 
 ## Useful context to pull as needed
