@@ -85,7 +85,7 @@ def _():
     with _temp_persona_dir():
         with _stub_google([
             {"name": "Sarah Chen", "emails": ["sarah@example-contact.net"], "phones": []},
-            {"name": "Bob Jenkins", "emails": [], "phones": ["415-555-0100"]},
+            {"name": "Bob Jenkins", "emails": [], "phones": ["415-282-9134"]},
         ]):
             report = CI.import_google_contacts()
         assert "2 created, 0 updated, 0 skipped" in report, report
@@ -132,8 +132,8 @@ def _():
 @check("import_google_contacts matches an existing CRM contact by phone even if the name differs")
 def _():
     with _temp_persona_dir():
-        CRM.write_contact(name="Bob", contact_info={"phone": "4155550100"})
-        with _stub_google([{"name": "Robert Jenkins", "emails": [], "phones": ["(415) 555-0100"]}]):
+        CRM.write_contact(name="Bob", contact_info={"phone": "4152829134"})
+        with _stub_google([{"name": "Robert Jenkins", "emails": [], "phones": ["(415) 282-9134"]}]):
             report = CI.import_google_contacts()
         assert "0 created, 1 updated, 0 skipped" in report, report
         contacts = json.loads(CRM.list_contacts())
@@ -168,17 +168,17 @@ def _():
 
 _VCARD_FIXTURE = """BEGIN:VCARD
 VERSION:3.0
-FN:Jane Doe
-N:Doe;Jane;;;
+FN:Jane Okonkwo
+N:Okonkwo;Jane;;;
 EMAIL;TYPE=INTERNET:jane@example-contact.net
-TEL;TYPE=CELL:415-555-0199
+TEL;TYPE=CELL:415-282-9155
 ORG:Acme Corp
 NOTE:Met at a conference
 END:VCARD
 BEGIN:VCARD
 VERSION:3.0
 N:Smith;John;;;
-TEL;TYPE=HOME:212-555-0101
+TEL;TYPE=HOME:212-774-3018
 END:VCARD
 """
 
@@ -196,8 +196,8 @@ def _():
         assert "2 created, 0 updated, 0 skipped" in report, report
         contacts = json.loads(CRM.list_contacts())
         names = {c["name"] for c in contacts}
-        assert names == {"Jane Doe", "John Smith"}, contacts
-        jane = next(c for c in contacts if c["name"] == "Jane Doe")
+        assert names == {"Jane Okonkwo", "John Smith"}, contacts
+        jane = next(c for c in contacts if c["name"] == "Jane Okonkwo")
         assert jane["contact_info"]["email"] == "jane@example-contact.net", jane
         assert jane["employer"] == "Acme Corp", jane
         assert jane["notes"] == "Met at a conference", jane
@@ -237,12 +237,12 @@ def _():
 
 _GOOGLE_CSV_FIXTURE = (
     "Name,Given Name,Family Name,E-mail 1 - Value,Phone 1 - Value,Organization Name,Notes\n"
-    "Sarah Chen,Sarah,Chen,sarah@example-contact.net,415-555-0100,Acme Inc,Old friend\n"
+    "Sarah Chen,Sarah,Chen,sarah@example-contact.net,415-282-9134,Acme Inc,Old friend\n"
 )
 
 _OUTLOOK_CSV_FIXTURE = (
     "First Name,Last Name,E-mail Address,Business Phone,Company,Weird Custom Field\n"
-    "Bob,Jenkins,bob@example-contact.net,212-555-0199,Initech,some-value\n"
+    "Bob,Jenkins,bob@example-contact.net,212-774-3062,Initech,some-value\n"
 )
 
 
@@ -335,7 +335,7 @@ def _():
 @check("_find_exact_contact returns None when nothing matches")
 def _():
     contacts = [{"id": "1", "name": "Someone Else", "contact_info": {}}]
-    match = CI._find_exact_contact(contacts, "Nobody", ["a@b.com"], ["5551234"])
+    match = CI._find_exact_contact(contacts, "Nobody", ["a@b.com"], ["2829134"])
     assert match is None
 
 
