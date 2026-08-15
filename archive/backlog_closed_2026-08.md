@@ -19,6 +19,39 @@ sitting inside the Open sections. Reasoning: `archive/PROJECT_LOG.md` § 2026-08
 
 ---
 
+## Closed 2026-08-15 — action provenance
+
+- ~~**[DB-0810-13]** Specialists report actions they never took, and the Synthesizer relays it to
+  Mike as fact — *"That's sent"* on 2026-08-10 for an email nothing had sent.~~
+  — **closed: `0a3706c` (Python half), `1831730` (`synthesizer.md` half), both deployed and
+  verified live on the VM.** Diagnosed the session before as a **missing-information** failure
+  (design: `archive/plans/db081013_action_provenance_design_2026-08-15.md`), which is why no
+  agent-file-only fix was attempted: the Synthesizer's input carried the Coordinator's directives
+  and the specialists' prose, and nothing about which tools ran. Every request now ends with an
+  `ACTIONS EXECUTED THIS REQUEST` block generated in Python from the trace — the state-changing
+  tools that executed, failures marked, or an explicit `NONE`. Evidence, not a claim; no model is
+  asked whether an action happened.
+  **The classification is the substance**, not the line: `core/actions.py` sorts all 71 registered
+  tools into actions and reads in one place, because a line listing `search_contacts` would repeat
+  the `is_grounded()` mistake documented at `core/trace.py:107-118`. `tests/test_action_provenance.py`
+  fails if a registered tool is in neither set, so the next tool added forces a classification
+  instead of silently vanishing from the line.
+  **Scoped to the request, not the agent** — `[DB-0810-02]` makes per-specialist attribution
+  unreliable, and the design's per-specialist sketch was overridden by Mike on that basis. The
+  fire-and-forget Diarist falls out of scope automatically as a consequence.
+  **Evidence that closed it:** `NONE` on a request that changed nothing; `write_log — completed`;
+  post-deploy `write_calendar_event`, `update_calendar_event` and `close_obligation` all
+  correct, with no read tool ever on the line. Both calendar actions were also **confirmed to
+  Mike** — the evidence that half 2 is not over-firing, which was the specific risk the deploy
+  ordering existed to prevent. **The one case that cannot be staged** is the negative: whether the
+  Synthesizer stays quiet when an action does not happen. That is now a matter of watching the
+  next real failure, and the journal's `[actions]` line is how to audit it.
+  **Out of scope by the design, still unfiled:** the *invented capability* half — scheduled
+  sending does not exist, yet "Thursday, August 13th" was produced two turns before the false
+  confirmation. Provenance stops the confirmation, not the invention. *closed 2026-08-15*
+
+---
+
 ## Closed 2026-08-15 — `/backlog attack`, two clusters
 
 - ~~**[DB-0810-09]** 158 quality events written and never read — `USER_CORRECTION` (139),

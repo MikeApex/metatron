@@ -1,24 +1,24 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-15, fourth session — **docs/scripts only, nothing to deploy; the deploy queue is
-clear.** `## Now` is **9**, unchanged in count. **`[DB-0810-13]` (Now #1) is now DIAGNOSED, not built** — read
-`archive/plans/db081013_action_provenance_design_2026-08-15.md` before touching it. It is a
-**missing-information** failure: specialists' tool calls never reach the Synthesizer, so nothing
-could contradict "That's sent." **An agent-file-only fix will test clean and fail in production** —
-Mike confirmed the Python provenance track and that the verification is not an LLM task. Binding
-order: the Python half deploys before the `synthesizer.md` half is written. **`[DB-0810-12]` (#2)
-— instrumentation landed `c8d0c69` and is live; do not close, do not fix.** It needs one live
-occurrence: grep the VM journal for `[signature_probe]` ~a week out. `[DB-0809-02]` (#3) still
-carries `due: 2026-08-17`. **`[DB-0810-15]` (#6) rescoped by Mike** to a per-persona pair of
-*independent* input/output language settings plus translation of surfaced content — text is
-unblocked today; voice split out as **`[DB-0815-02]`, `## Later`, low priority**, carrying a
-previously-unfiled half (TTS output is hardcoded English in both voices). **`[DB-0815-01]` (#9) is
-now only its Bash-write half** — the worktree block is fixed and proven, and chasing it found the
-guard **failing open** on any `;` without a leading space. **Two communication rules promoted:**
-`.claude/commands/backlog.md` (an id is not a description) and `~/.claude/CLAUDE.md` § Reporting
-Level. **A `/backlog deep` sweep of `## Machine log` is still owed.** **Tailnet is INTERMITTENT,
-not down**; SSH is **IAP-only** (`gcloud compute ssh --tunnel-through-iap`) — a direct connection
-timing out is not an outage.*
+*Updated: 2026-08-15, fifth session — **deployed and verified live; the deploy queue is clear.**
+`## Now` is **9**: `[DB-0810-13]` closed, one new item filed in its place. **`[DB-0810-13]` is
+CLOSED** — action provenance built, deployed, confirmed on the VM (`0a3706c`, `1831730`). Every
+request now carries an `ACTIONS EXECUTED THIS REQUEST` block generated from the trace;
+`core/actions.py` is **the one place** tools are classified as actions vs reads, and
+`tests/test_action_provenance.py` fails if a newly registered tool is in neither set — that test is
+the control, not the sets. **It found the new Now #1 within the hour: `[DB-0815-03]` — an action
+Mike approves in the app is never executed.** `POST /confirm` records the approval and nothing ever
+spends it; the record expires at its 600s TTL. Every gated tool, not just email. **`[DB-0810-12]`
+(#2) is UNBLOCKED, not fixed** — the awaited occurrence fired and is captured
+(`src=stream_delta_fallback`, `pos=12`), naming the branch that had only been hypothesised; **its
+own probe was writing the entire system prompt to `journalctl`, fixed `cbe7d94`**, and the journal
+is captured to the MacBook and vacuumed. `[DB-0809-02]` (#3) still carries `due: 2026-08-17`. **A
+`/backlog deep` sweep of `## Machine log` is still owed**; `DEV_BACKLOG.md` is 820/450. **The commit
+guard false-positived twice more today and the override needs Mike** — the permission classifier
+blocks `METATRON_COMMIT_GUARD=off` whoever authorises it; that is `[DB-0815-01]` (#9), and a
+standing permission rule was considered and rejected as treating the symptom. **Tailnet is
+INTERMITTENT, not down**; SSH is **IAP-only** (`gcloud compute ssh --tunnel-through-iap`) — a direct
+connection timing out is not an outage.*
 
 *Dev-workflow track — **Phase 5 is CLOSED**, five path-scoped `.claude/rules/*.md` files carry the
 area rules, and rule delivery is **Read-only** (Bash `grep` and `Write` do not deliver; a worktree
@@ -128,9 +128,9 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-15 | **[DB-0810-13] built and closed — action provenance.** Python generates an `ACTIONS` block from the trace into the Synthesizer's input; `core/actions.py` classifies all 71 tools as actions vs reads in one place, with a test that fails when a new tool is in neither set. Verified live before the agent-file half was written, which is what the ordering rule bought. **It then found [DB-0815-03] within the hour** — an approved action is never executed — and the [DB-0810-12] probe was caught dumping the whole system prompt to `journalctl` | `0a3706c`, `cbe7d94`, `1831730`, `b2163fa` — **deployed** |
 | 08-15 | **`/archive` audited against the other four commands.** Steps 1–3 and the push are uncontested — `/fix` commits but never pushes, so `/archive` is the only offsite path. Two faults fixed: step 4 was still minting ids into ranked sections after `.claude/backlog_inbox/` existed, and the command was mandated for read-only sessions where three of five steps are no-ops. A separate `/close` command was rejected — second standing skill to keep in sync | `859ec3a` — docs/scripts, nothing to deploy |
 | 08-15 | **`/backlog attack` round 2, two clusters** — most of `## Now` is blocked on Mike or a clock, and Now #1 is Red-tier, so it was worked here. [DB-0810-13] diagnosed as missing-information + design; [DB-0810-12] instrumented; [DB-0810-15] rescoped and its voice half split to [DB-0815-02]. **The commit guard was failing OPEN** on any `;` without a leading space — found only by chasing a worker's false block | `6ad3dec`, `ff8f4cc`, `c8d0c69`, `7da7d50`, `c0e2cd8`, `2dfd494` — **deployed** |
-| 08-15 | **`/backlog attack`, three clusters.** Two worker worktrees ([DB-0810-09] quality-event registry, [DB-0814-02] `open_threads` timestamp) plus one direct Red-tier fix ([DB-0810-17]a, [DB-0814-01]). Both workers hit `hook_commit_guard.py` failing closed on worktree commits — filed as [DB-0815-01] | `b11e775`, `048e937`, `d40e73c` — deployed |
 ---
 
 ## Useful context to pull as needed

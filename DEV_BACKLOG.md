@@ -55,47 +55,7 @@ Reasoning lives in `archive/PROJECT_LOG.md` § 2026-08-10, last. Every entry car
 checked and when; a verdict without that line is a description, and descriptions are what the
 standing rule distrusts.*
 
-- **1. [DB-0810-13] Specialists report actions they never took, and the Synthesizer relays it to
-  Mike as fact.** Three instances on 2026-08-10, one of them a real business email. **Email:** he
-  asked for a test message to Kathaleen sent to himself; the system said it had scheduled it for
-  Thursday, then that it had moved the send up, then *"That's sent."* Trace `b095aa33` shows
-  `relationships` called only `search_contacts`, `logistics` only `list_obligations`, and the
-  **Synthesizer made zero tool calls**. `send_email` appears in no trace; three days of journal
-  contain no SMTP line. **Calendar:** 15:11:45 `ROUTING_MISS | logistics` — *"received scheduling
-  directives but only returned a log write confirmation instead of taking the calendar actions."*
-  **Invented capability:** scheduled sending does not exist — `send_email` has no `send_at` and
-  nothing wires a scheduler job to a pending draft, so the "Thursday, August 13th" was fabricated
-  two turns before the false confirmation. **Cause, recorded by the system 90 minutes earlier and
-  never read:** 16:30:58 `ROUTING_MISS | relationships` — *"failed to send an email to the
-  explicitly provided address because it attempted a CRM lookup for the user."* The specialist
-  aborted on the lookup and returned; nothing checked that the action happened. **Do not scope
-  this to `send_email`** — Mike's call was to treat the class. Two halves: the specialists must
-  not report success for an unexecuted action, and the Synthesizer must not assert completion it
-  cannot evidence.
-  **DIAGNOSED 2026-08-15, design committed `c0e2cd8` — read it before touching this:
-  [archive/plans/db081013_action_provenance_design_2026-08-15.md](archive/plans/db081013_action_provenance_design_2026-08-15.md).**
-  This is a **missing-information** failure, not a prompt-adherence one. The Synthesizer's input is
-  the Coordinator's *directives* plus the specialists' *prose*; tool calls never travel
-  (`outputs[a] = future.result()`, [core/orchestrator.py:3080](core/orchestrator.py#L3080)). Nothing
-  in its context could contradict "That's sent." **An agent-file-only fix will test clean and fail
-  in production identically** — do not attempt one. The fix generalises the retrieval provenance
-  line already built for the fabricated-sources incident (orchestrator.py:2294/2296 +
-  [synthesizer.md:109-112](config/agents/synthesizer.md#L109-L112), *"evidence rather than a
-  claim"*) into an **action** provenance line generated from the trace. Mike confirmed the Python
-  track 2026-08-15 and that **the verification is not an LLM task**. Real work is classifying tools
-  as actions vs reads, so the line means "changed the world" not "looked something up"; it then
-  covers email, calendar create/move/delete, contact and log writes with no per-tool work.
-  **Ordering is binding: the Python half deploys before the `synthesizer.md` half is written**, or
-  the Synthesizer declines to confirm things that did happen. Attribution caveat: `[DB-0810-02]`
-  makes per-agent attribution unreliable — scope to request level until that is fixed.
-  Note seq 033 refers to an earlier Prudential email with the same symptom, so
-  this has fired at least twice. Also note `logistics` calls `send_email` without holding the
-  grant (only `relationships` has it) and the dispatcher runs it anyway — enforcing allowlists
-  would break email outright; see `[DB-0810-03]`.
-  *filed 2026-08-10 by Mike, via a bug report the system wrote incorrectly against itself ·
-  verified against traces, journal and conversations the same night · Mike ranked it Now #1*
-
-- **2. [DB-0815-03] An action Mike approves in the app is never executed — the approval is
+- **1. [DB-0815-03] An action Mike approves in the app is never executed — the approval is
   recorded and nothing spends it.** Found live 2026-08-15 while closing `[DB-0810-13]`. He asked
   for a test email to Kathaleen, the app raised the approval card, he tapped Approve, and the
   reply told him it was *"waiting for your approval in the app"*. The new action-provenance line
@@ -123,7 +83,7 @@ standing rule distrusts.*
   from `tools/confirm.py`, `core/server.py` and a grep of every consumer, not from the item
   description · Claude proposes Now #2; ranking is Mike's*
 
-- **3. [DB-0810-12] Vertex rejects a tool-call turn for a missing `thought_signature` and the
+- **2. [DB-0810-12] Vertex rejects a tool-call turn for a missing `thought_signature` and the
   exchange is lost — five times 08-04→08-09, plus uncounted web-app hits.** *(Title corrected
   2026-08-10: only **one** of the five was `run_subagent`; three were `write_quality_event`, one
   `write_persona` — positions 12, 12, 12, 12, 14. Reading it as a `run_subagent` fault narrows the
@@ -171,11 +131,27 @@ standing rule distrusts.*
   *assumed* to return signed calls and nothing ever checked, so it may be a silent no-op and the
   `else` branch may not be the only unsigned path. Also corrected: the docstring claimed the
   Synthesizer never calls tools, yet all four captures are exactly that.
+  **THE AWAITED OCCURRENCE ARRIVED 2026-08-15, hours after the instrumentation deployed, and it
+  is captured** — `pos=12:turn=1:src=stream_delta_fallback:tools=run_subagent`, agent
+  `synthesizer` on `gemini-3.1-pro-preview`, verbatim in this session's transcript. **`src` names
+  the branch: the delta-reconstruction fallback, which is the leading hypothesis above, now
+  evidenced rather than assumed.** Position 12 again, and `tools=run_subagent` — so the corrected
+  title's point stands, the tool identity varies and is not the signal. **This unblocks the fix;
+  the item stays open because nothing has been fixed.** Note the ledger's other half
+  (`msgs=N unsigned=[...]`, replayed at the failure site) was **not** captured before Mike
+  vacuumed the journal the same day — if the branch needs confirming beyond `src=`, it costs one
+  more occurrence, not a re-read.
+  **Its instrumentation leaked the system prompt, and that is fixed (`cbe7d94`, deployed
+  2026-08-15).** `_note_unsigned()` interpolated the `AgentRecord` itself, whose repr carries
+  `context_sections` — so its first live firing wrote the whole assembled system prompt,
+  constitution and persona config to `journalctl` in plain text. It logs the agent's *name* now.
+  Journal captured to the MacBook and vacuumed; **`journalctl` deletes only from the oldest end**,
+  so removing the newest entries meant removing all of them.
   **How it closes:** no test Mike can run — grep the VM journal for `[signature_probe]` about a week
   after 2026-08-15, or immediately if he reports a vanished message with a date.
   *filed 2026-08-10 · **unblocked 2026-08-13**, occurrences and loop attribution read live off the
   VM · full reasoning in `archive/PROJECT_LOG.md` § 2026-08-10, later still*
-- **4. [DB-0809-02] Do proactive sessions actually stay focused? — mechanism fixed and deployed;
+- **3. [DB-0809-02] Do proactive sessions actually stay focused? — mechanism fixed and deployed;
   the guidance half is unproven.** The original premise was wrong: the openings were already
   1–2 sentences, and the "restatements" were the Synthesizer reading its *own* scheduler prompt as
   Mike's voice. Fixed in `82d394b` (deployed) — `_frame_proactive()` labels scheduler input as a
@@ -206,7 +182,7 @@ standing rule distrusts.*
   Inbox 2026-08-14**, reported by Mike via the VM (2026-08-12T08:23Z); fix date verified against
   `git log` the same day*
 
-- **5. [DB-0809-21] Three of four verification steps done and passed; one is genuinely time-gated.**
+- **4. [DB-0809-21] Three of four verification steps done and passed; one is genuinely time-gated.**
   Ran at ~$0.08, under the $1.00 approval line (`docs/CONVENTIONS.md` § Testing Cost Convention).
   **Done:** (1) A4 `clinical` suite vs `sarah_chen`, 3/3 — confirms the regression gate held.
   (2) Three targeted Physical Health calls vs `danny_park`, which do assert `6330029`/`88b7614` —
@@ -220,7 +196,7 @@ standing rule distrusts.*
   Needs a real unreferenced calendar event, not a forced one.
   *filed 2026-08-09 · **Mike deferred it explicitly** · 3 of 4 done 2026-08-10*
 
-- **6. [DB-0810-05] The tone-profile pipeline has never touched a real mailbox.** Built and
+- **5. [DB-0810-05] The tone-profile pipeline has never touched a real mailbox.** Built and
   committed `88957e6`; **every test used stubs.** The distillation half is well covered — a hostile
   fixture confirmed unknown keys dropped, values truncated, lists capped, injection caught and the
   write refused, plus five `_extract` paths (single-direction refusal, thin-sample skip, injection
@@ -263,7 +239,7 @@ standing rule distrusts.*
   IMAP quoting bug found and fixed, original pass/fail criteria still unmet — no long-history
   contact exists yet to test against*
 
-- **7. [DB-0810-15] A persona should be able to send in one language and receive in another —
+- **6. [DB-0810-15] A persona should be able to send in one language and receive in another —
   independently.** *(Rescoped 2026-08-15 by Mike. The original entry was "voice transcription is
   English-only"; that was the symptom he hit, not the need. The voice half is now `[DB-0815-02]` in
   `## Later`, low priority — **text is the actionable path and it is not blocked by anything**,
@@ -299,7 +275,7 @@ standing rule distrusts.*
   short utterances, which is most of what voice sends.
   *filed 2026-08-10 by Mike, live during feature testing · both blockers verified in code same day*
 
-- **8. [DB-0810-17] An external CRM bridge — the count question itself is answered.** At seq 009
+- **7. [DB-0810-17] An external CRM bridge — the count question itself is answered.** At seq 009
   Mike asked for a route *and* a CRM contact count; the system declined it as needing an external
   connection it doesn't have, when Metatron's own contact store (`list_contacts`, `search_contacts`
   in [tools/crm.py](tools/crm.py)) already held the answer. **(a) closed 2026-08-15** —
@@ -309,7 +285,7 @@ standing rule distrusts.*
   him: *which* CRM, and whether contacts sync in, out, or both. Sensitive-tier either way.
   *filed 2026-08-10 by Mike · (a) closed 2026-08-15, see `archive/backlog_closed_2026-08.md`*
 
-- **9. [DB-0814-02] The timestamp shipped; the expiry policy is still the open question.**
+- **8. [DB-0814-02] The timestamp shipped; the expiry policy is still the open question.**
   `open_threads` was a bare `list[str]` with no metadata — "post-travel recovery" stayed live for
   two weeks because nothing could even ask how old it was. **Closed 2026-08-15 as scoped**
   (`d40e73c`): entries are now `{"text": str, "added": <ISO date, server-stamped>}`, matching the
@@ -321,7 +297,7 @@ standing rule distrusts.*
   *filed 2026-08-14 by Mike via the VM (2026-08-12T08:23Z) · timestamp shipped 2026-08-15, see
   `archive/backlog_closed_2026-08.md`*
 
-- **10. [DB-0815-01] `hook_commit_guard.py` fails closed on every solo commit made from inside a
+- **9. [DB-0815-01] `hook_commit_guard.py` fails closed on every solo commit made from inside a
   worktree — not a real collision, a path-resolution bug.** Found 2026-08-15 running the
   `/backlog attack` cluster: two background workers ([DB-0810-09], [DB-0814-02]) each finished
   clean, verified work in their own worktree and were refused at `git add`/`git commit` with
@@ -684,8 +660,8 @@ enforcement. Same class as `[DB-0810-03]`; the gap did not change, the ability t
 - **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Date Day: The Mousetrap' (2026-08-18T00:00:00, uid=64dc9379-ce64-4c15-a96a-c6cb4df8e432@ai-life-manager) and 'The Mousetrap Matinee' (2026-08-18T15:00:00, uid=efdc94bb-07b2-49ef-be3a-a43431d8014d@ai-life-manager). title_similarity=0.59, shared_attendees=[], shared_words=['mousetrap']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
   `2026-08-14T04:35:08.871922Z`
 
-- **[user corrected a prior turn]** The user corrected the communication flow regarding email monitoring, explicitly stating that they do not want to be notified when routine checks return no results.  
-  `2026-08-12T08:26:35.580796Z`
+- **[user corrected a prior turn]** User corrected the previous exercise log, stating the run was only a test and requested its removal.  ×2  
+  `2026-08-15T11:13:42.274343Z`
 
 - **[user corrected a prior turn]** Dropping the Manny/protest thread and modifying the check-in format to a consolidated 14-point list.  
   `2026-08-12T08:20:17.031497Z`
@@ -768,14 +744,14 @@ enforcement. Same class as `[DB-0810-03]`; the gap did not change, the ability t
 - ⚠ **[user corrected a prior turn]** The user corrected the system's outdated belief that they are still in "post-travel recovery," confirming that period is over and requesting the system adjust its internal state accordingly.  ×6  
   `2026-08-12T08:23:05.655993Z`
 
-- **[user corrected a prior turn]** User noted the system echoed the user-provided time '953' for the 'banana' test rather than checking the actual message receipt log (9:52 AM).  ×2  
-  `2026-08-01T08:53:41.172516Z`
+- ⚠ **[user corrected a prior turn]** The user is correcting the log entry for 2026-08-15 by stating the morning run was a test and should be removed.  ×3  
+  `2026-08-15T11:13:18.513588Z`
 
 - **[user corrected a prior turn]** Mike is correcting the assumption that his 'fit it in' approach to work creates negative pressure; he finds it manageable and beneficial for his family balance.  
   `2026-06-26T21:35:02.264614Z`
 
-- ⚠ **[user corrected a prior turn]** None.  ×85  
-  `2026-08-15T09:12:16.632243Z`
+- ⚠ **[user corrected a prior turn]** None  ×88  
+  `2026-08-15T11:34:38.621050Z`
 
 - **[user corrected a prior turn]** User is flagging that the previous exchange produced no response and that an expected write_config action was not executed — this is a pipeline/execution failure, not a content correction per se, but note that the prior turn's intended output did not reach the user and the write_config call was missed.  
   `2026-06-26T15:51:48.929810Z`
