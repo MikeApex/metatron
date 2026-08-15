@@ -1,24 +1,23 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-15, fifth session — **deployed and verified live; the deploy queue is clear.**
-`## Now` is **9**: `[DB-0810-13]` closed, one new item filed in its place. **`[DB-0810-13]` is
-CLOSED** — action provenance built, deployed, confirmed on the VM (`0a3706c`, `1831730`). Every
-request now carries an `ACTIONS EXECUTED THIS REQUEST` block generated from the trace;
-`core/actions.py` is **the one place** tools are classified as actions vs reads, and
-`tests/test_action_provenance.py` fails if a newly registered tool is in neither set — that test is
-the control, not the sets. **It found the new Now #1 within the hour: `[DB-0815-03]` — an action
-Mike approves in the app is never executed.** `POST /confirm` records the approval and nothing ever
-spends it; the record expires at its 600s TTL. Every gated tool, not just email. **`[DB-0810-12]`
-(#2) is UNBLOCKED, not fixed** — the awaited occurrence fired and is captured
-(`src=stream_delta_fallback`, `pos=12`), naming the branch that had only been hypothesised; **its
-own probe was writing the entire system prompt to `journalctl`, fixed `cbe7d94`**, and the journal
-is captured to the MacBook and vacuumed. `[DB-0809-02]` (#3) still carries `due: 2026-08-17`. **A
-`/backlog deep` sweep of `## Machine log` is still owed**; `DEV_BACKLOG.md` is 820/450. **The commit
-guard false-positived twice more today and the override needs Mike** — the permission classifier
-blocks `METATRON_COMMIT_GUARD=off` whoever authorises it; that is `[DB-0815-01]` (#9), and a
-standing permission rule was considered and rejected as treating the symptom. **Tailnet is
-INTERMITTENT, not down**; SSH is **IAP-only** (`gcloud compute ssh --tunnel-through-iap`) — a direct
-connection timing out is not an outage.*
+*Updated: 2026-08-15, sixth session — **deployed and verified; the deploy queue is clear.** Two
+`## Now` items closed. **`[DB-0815-03]` is CLOSED and LIVE** (`2602e2e`, deployed, **APK
+rebuilt**): `POST /confirm` now carries the approved action out itself, through the tool's own
+`consume()` — fingerprint, single-use and expiry unchanged, and the model is out of the
+*execution* path as well as the consent path. The outcome is written as an exchange and broadcast,
+so the user reads what happened. **The item's premise was wrong in one detail that mattered:** a
+trigger did exist — the app nudged the pipeline after each tap — and was unspendable, because the
+token lives in a tool result the model no longer has by the next turn. Scope ran wider than the
+item by design: the four **tool schemas** instructed the retry, and those bind harder than the
+agent file. **`[DB-0815-01]` is CLOSED** (`c3f2ac8`, local harness, nothing to deploy) — the guard
+now asks whether another session's manifest claims a file at its *current* hash before blocking,
+so this session's own script no longer reads as a collision. **The override no longer needs Mike on
+the routine path**, and `tests/test_commit_guard.py` is the first coverage this hook has had across
+six corrections. **`[DB-0810-12]` is UNBLOCKED, not fixed** — the awaited occurrence is captured
+(`src=stream_delta_fallback`, `pos=12`), naming the branch that had only been hypothesised.
+`[DB-0809-02]` still carries `due: 2026-08-17`. **A `/backlog deep` sweep of `## Machine log` is
+still owed**; `## Now` is **7** and `DEV_BACKLOG.md` is 716/450. **Tailnet is INTERMITTENT, not down**; SSH is **IAP-only**
+(`gcloud compute ssh --tunnel-through-iap`) — a direct connection timing out is not an outage.*
 
 *Dev-workflow track — **Phase 5 is CLOSED**, five path-scoped `.claude/rules/*.md` files carry the
 area rules, and rule delivery is **Read-only** (Bash `grep` and `Write` do not deliver; a worktree
@@ -27,8 +26,9 @@ session does). Full findings:
 stays deferred.** ⚠ **One divergence still open:** `docs/CONVENTIONS.md:143` points here for live
 Model IDs, but § Model IDs below still reads *updated 2026-07-27*. **A7 unchanged by decision** —
 features first, Phase closed before Alpha. **Worktree-based parallel dispatch now works end to end**
-(score → cluster → verify → dispatch → re-verify → merge → clean up); `hook_commit_guard.py` no
-longer blocks it, and its remaining half is in `[DB-0815-01]`. **`/archive` was audited against the other four commands and rescoped** (`859ec3a`): step 0 now has
+(score → cluster → verify → dispatch → re-verify → merge → clean up), and `hook_commit_guard.py` no
+longer blocks it or a session's own script — both halves closed 08-15, with a probe suite behind
+them. **`/archive` was audited against the other four commands and rescoped** (`859ec3a`): step 0 now has
 a **lean path** — a session that changed no tracked file and made no commit runs step 1 (transcript)
 and stops; and **step 4 files to `.claude/backlog_inbox/` rather than minting an id and editing a
 ranked section**, which it had been doing since after the fragment route existed. Ranking is
@@ -128,9 +128,9 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-15 | **Two `/fix` runs: an approved action now runs, and the commit guard learns to attribute.** [DB-0815-03] — `/confirm` executes server-side through the tool's own `consume()`; the item's "no trigger" premise was wrong in a way that mattered, and the four tool schemas needed correcting because they bind harder than the agent file. [DB-0815-01] — the guard checks whether *another* session's manifest claims a file's current hash before blocking, so its own script stops reading as a collision; first-ever probe suite, verified discriminating against the pre-fix guard | `2602e2e` — **deployed + APK**; `c3f2ac8` — local harness |
 | 08-15 | **[DB-0810-13] built and closed — action provenance.** Python generates an `ACTIONS` block from the trace into the Synthesizer's input; `core/actions.py` classifies all 71 tools as actions vs reads in one place, with a test that fails when a new tool is in neither set. Verified live before the agent-file half was written, which is what the ordering rule bought. **It then found [DB-0815-03] within the hour** — an approved action is never executed — and the [DB-0810-12] probe was caught dumping the whole system prompt to `journalctl` | `0a3706c`, `cbe7d94`, `1831730`, `b2163fa` — **deployed** |
 | 08-15 | **`/archive` audited against the other four commands.** Steps 1–3 and the push are uncontested — `/fix` commits but never pushes, so `/archive` is the only offsite path. Two faults fixed: step 4 was still minting ids into ranked sections after `.claude/backlog_inbox/` existed, and the command was mandated for read-only sessions where three of five steps are no-ops. A separate `/close` command was rejected — second standing skill to keep in sync | `859ec3a` — docs/scripts, nothing to deploy |
-| 08-15 | **`/backlog attack` round 2, two clusters** — most of `## Now` is blocked on Mike or a clock, and Now #1 is Red-tier, so it was worked here. [DB-0810-13] diagnosed as missing-information + design; [DB-0810-12] instrumented; [DB-0810-15] rescoped and its voice half split to [DB-0815-02]. **The commit guard was failing OPEN** on any `;` without a leading space — found only by chasing a worker's false block | `6ad3dec`, `ff8f4cc`, `c8d0c69`, `7da7d50`, `c0e2cd8`, `2dfd494` — **deployed** |
 ---
 
 ## Useful context to pull as needed

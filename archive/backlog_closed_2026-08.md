@@ -2339,3 +2339,41 @@ runs when a session runs.
   months ago — a silent no-op on every turn since. Line ceilings warn rather than fail, matching
   how the prose states them. Verified by injecting all five fault classes in an isolated tree and
   checking exit codes in both directions. *closed 2026-08-13*
+
+- **[DB-0815-03]** An action Mike approves in the app is never executed — the approval is
+  recorded and nothing spends it. **Closed 2026-08-15** by `2602e2e`, deployed, APK rebuilt.
+  `POST /confirm` now carries the action out itself via `tools/confirm.py`'s new `execute()`,
+  which spends the approval through the tool's own `consume()` — single-use, expiry and the
+  argument fingerprint all unchanged, so the consent property the file was built for is intact
+  and the model is additionally out of the *execution* path. The outcome is written as an
+  ordinary exchange and broadcast, so the user reads what happened rather than inferring it.
+  **The filed premise was wrong in one detail:** step 4 was said to have "no trigger", but
+  `static/index.html` did nudge the pipeline after each tap — it was simply unspendable, because
+  the token is returned inside a tool result and is gone from the model's context by the next
+  turn. Had the fix been scoped from the item text, that nudge would have survived and kept
+  firing at a server that had already acted. **Scope ran wider than the item, deliberately:** the
+  four tool schemas (`send_email`, `write_config`, `write_profile`, `write_agent_config`) and
+  `synthesizer.md` all instructed the retry, and a schema binds harder than an agent file.
+  **Rejected:** the push notification the item asked for — the tap comes from an open app and the
+  outcome arrives over the socket, so it duplicates an on-screen line; offered to Mike and not
+  taken. `tests/test_confirmation_gate.py` gained five cases; every prior test stopped at the
+  gate, which is why the missing half was invisible for eleven days. *closed 2026-08-15*
+
+- **[DB-0815-01]** `hook_commit_guard.py` fails closed on a session's own Bash-written file.
+  **Closed 2026-08-15** by `c3f2ac8`; local harness, nothing to deploy. The worktree half had
+  closed earlier the same day (`6ad3dec`, `ff8f4cc`). The remaining half: a file this session
+  Edit-wrote and its own tooling then rewrote was blocked as a collision, because the manifest
+  held a hash that had moved and nothing distinguished "my script did that" from "another session
+  did that". **The item's own proposed fix stayed rejected** — trusting a session's recent Bash
+  writes *writes* to the baseline and would absorb a parallel session's lines, reopening
+  2026-08-09. Built instead: attribution, which only *reads*. Before blocking, check whether any
+  **other** session's manifest in `.claude/.session_edits/` records the file at the hash it has
+  **right now**; matching on the current hash is what makes it safe, since a stale entry carries
+  the old hash and cannot claim content it did not write. **Accepted limit, documented in the
+  module:** another session's *Bash* rewrite of a file this session Edit-wrote now warns rather
+  than blocks — a class that was already advisory-only whenever this session had not written the
+  file. Hit live twice before the fix, including one commit that needed Mike's explicit override.
+  Adds `tests/test_commit_guard.py`, the first coverage this hook has had across six corrections,
+  four of which were fail-open or block-routine-work defects found only by a human tripping over
+  them: ten cases against real git trees, the 2026-08-09 incident replayed as case one, and
+  verified *discriminating* against the pre-fix guard. *closed 2026-08-15*

@@ -55,35 +55,7 @@ Reasoning lives in `archive/PROJECT_LOG.md` § 2026-08-10, last. Every entry car
 checked and when; a verdict without that line is a description, and descriptions are what the
 standing rule distrusts.*
 
-- **1. [DB-0815-03] An action Mike approves in the app is never executed — the approval is
-  recorded and nothing spends it.** Found live 2026-08-15 while closing `[DB-0810-13]`. He asked
-  for a test email to Kathaleen, the app raised the approval card, he tapped Approve, and the
-  reply told him it was *"waiting for your approval in the app"*. The new action-provenance line
-  is what proved the outcome rather than the prose: `[actions] write_log — completed` on that
-  request, **no `send_email`**. **Cause, verified against current code the same hour:**
-  [tools/confirm.py](tools/confirm.py) documents a four-step flow, and step 4 — *"Agent calls
-  send_email(..., confirm_token=...)"* — **has no trigger**. [`POST /confirm`](core/server.py#L721)
-  only marks the record approved. Grepping every consumer of the store outside `confirm.py`
-  itself returns the two server endpoints and the four tools that *create* pending records
-  (`mail`, `config_writer`, `profile`, `agent_config`) — **nothing reads an approved record
-  back**: no scheduler sweep, no context injection. The approval then expires silently at the
-  600s TTL. Any tool behind the gate is affected, not just email: a `write_config`, a profile
-  correction to a phone number, a guarded `write_agent_config`. **The failure is worse than not
-  sending** — the user has performed the deliberate act the whole design rests on and has every
-  reason to believe it landed, which is precisely the state `synthesizer.md` calls "the worst
-  available outcome". **Claude's proposed fix, for Mike's decision:** have `/confirm` consume the
-  record and execute the tool server-side. The pending record already stores the exact arguments
-  and `consume()` already refuses if they differ, so this takes the model out of the *execution*
-  path as well as the *consent* path — which is the file's own stated intent. Needs a journal
-  line and a push so the user sees "sent" rather than inferring it. **Rejected alternative:**
-  injecting approved-pending actions into the next session's context for the Synthesizer to
-  finish — it keeps the current shape but still depends on the model choosing to re-call, and on
-  the user sending another message at all, which is the fragility that caused this.
-  *filed 2026-08-15 by Claude, from a live occurrence Mike hit in the app · cause read directly
-  from `tools/confirm.py`, `core/server.py` and a grep of every consumer, not from the item
-  description · Claude proposes Now #2; ranking is Mike's*
-
-- **2. [DB-0810-12] Vertex rejects a tool-call turn for a missing `thought_signature` and the
+- **1. [DB-0810-12] Vertex rejects a tool-call turn for a missing `thought_signature` and the
   exchange is lost — five times 08-04→08-09, plus uncounted web-app hits.** *(Title corrected
   2026-08-10: only **one** of the five was `run_subagent`; three were `write_quality_event`, one
   `write_persona` — positions 12, 12, 12, 12, 14. Reading it as a `run_subagent` fault narrows the
@@ -151,7 +123,7 @@ standing rule distrusts.*
   after 2026-08-15, or immediately if he reports a vanished message with a date.
   *filed 2026-08-10 · **unblocked 2026-08-13**, occurrences and loop attribution read live off the
   VM · full reasoning in `archive/PROJECT_LOG.md` § 2026-08-10, later still*
-- **3. [DB-0809-02] Do proactive sessions actually stay focused? — mechanism fixed and deployed;
+- **2. [DB-0809-02] Do proactive sessions actually stay focused? — mechanism fixed and deployed;
   the guidance half is unproven.** The original premise was wrong: the openings were already
   1–2 sentences, and the "restatements" were the Synthesizer reading its *own* scheduler prompt as
   Mike's voice. Fixed in `82d394b` (deployed) — `_frame_proactive()` labels scheduler input as a
@@ -182,7 +154,7 @@ standing rule distrusts.*
   Inbox 2026-08-14**, reported by Mike via the VM (2026-08-12T08:23Z); fix date verified against
   `git log` the same day*
 
-- **4. [DB-0809-21] Three of four verification steps done and passed; one is genuinely time-gated.**
+- **3. [DB-0809-21] Three of four verification steps done and passed; one is genuinely time-gated.**
   Ran at ~$0.08, under the $1.00 approval line (`docs/CONVENTIONS.md` § Testing Cost Convention).
   **Done:** (1) A4 `clinical` suite vs `sarah_chen`, 3/3 — confirms the regression gate held.
   (2) Three targeted Physical Health calls vs `danny_park`, which do assert `6330029`/`88b7614` —
@@ -196,7 +168,7 @@ standing rule distrusts.*
   Needs a real unreferenced calendar event, not a forced one.
   *filed 2026-08-09 · **Mike deferred it explicitly** · 3 of 4 done 2026-08-10*
 
-- **5. [DB-0810-05] The tone-profile pipeline has never touched a real mailbox.** Built and
+- **4. [DB-0810-05] The tone-profile pipeline has never touched a real mailbox.** Built and
   committed `88957e6`; **every test used stubs.** The distillation half is well covered — a hostile
   fixture confirmed unknown keys dropped, values truncated, lists capped, injection caught and the
   write refused, plus five `_extract` paths (single-direction refusal, thin-sample skip, injection
@@ -239,7 +211,7 @@ standing rule distrusts.*
   IMAP quoting bug found and fixed, original pass/fail criteria still unmet — no long-history
   contact exists yet to test against*
 
-- **6. [DB-0810-15] A persona should be able to send in one language and receive in another —
+- **5. [DB-0810-15] A persona should be able to send in one language and receive in another —
   independently.** *(Rescoped 2026-08-15 by Mike. The original entry was "voice transcription is
   English-only"; that was the symptom he hit, not the need. The voice half is now `[DB-0815-02]` in
   `## Later`, low priority — **text is the actionable path and it is not blocked by anything**,
@@ -275,7 +247,7 @@ standing rule distrusts.*
   short utterances, which is most of what voice sends.
   *filed 2026-08-10 by Mike, live during feature testing · both blockers verified in code same day*
 
-- **7. [DB-0810-17] An external CRM bridge — the count question itself is answered.** At seq 009
+- **6. [DB-0810-17] An external CRM bridge — the count question itself is answered.** At seq 009
   Mike asked for a route *and* a CRM contact count; the system declined it as needing an external
   connection it doesn't have, when Metatron's own contact store (`list_contacts`, `search_contacts`
   in [tools/crm.py](tools/crm.py)) already held the answer. **(a) closed 2026-08-15** —
@@ -285,7 +257,7 @@ standing rule distrusts.*
   him: *which* CRM, and whether contacts sync in, out, or both. Sensitive-tier either way.
   *filed 2026-08-10 by Mike · (a) closed 2026-08-15, see `archive/backlog_closed_2026-08.md`*
 
-- **8. [DB-0814-02] The timestamp shipped; the expiry policy is still the open question.**
+- **7. [DB-0814-02] The timestamp shipped; the expiry policy is still the open question.**
   `open_threads` was a bare `list[str]` with no metadata — "post-travel recovery" stayed live for
   two weeks because nothing could even ask how old it was. **Closed 2026-08-15 as scoped**
   (`d40e73c`): entries are now `{"text": str, "added": <ISO date, server-stamped>}`, matching the
@@ -296,58 +268,6 @@ standing rule distrusts.*
   for review) is a fresh design question, not a continuation of this build.
   *filed 2026-08-14 by Mike via the VM (2026-08-12T08:23Z) · timestamp shipped 2026-08-15, see
   `archive/backlog_closed_2026-08.md`*
-
-- **9. [DB-0815-01] `hook_commit_guard.py` fails closed on every solo commit made from inside a
-  worktree — not a real collision, a path-resolution bug.** Found 2026-08-15 running the
-  `/backlog attack` cluster: two background workers ([DB-0810-09], [DB-0814-02]) each finished
-  clean, verified work in their own worktree and were refused at `git add`/`git commit` with
-  "path expressions this guard could not account for." Root cause: the hook resolves its project
-  root from `$CLAUDE_PROJECT_DIR`, which inside a worktree session still points at the **main**
-  tree, not the worktree. It then runs `git status` against the wrong tree, finds the worktree's
-  own files unmodified there, can't classify them, and refuses — even though there is no second
-  writer and no real collision. Confirmed by re-running the hook with the correct root: clean,
-  non-blocking advisory. **Same class of gap `hook_context_gate.py` had, fixed 2026-08-14** — this
-  hook did not get the equivalent fix. Both instances also found the documented escape hatch
-  (`METATRON_COMMIT_GUARD=off`) refused by the auto-mode permission classifier in a non-interactive
-  worker session, so both workers correctly stopped rather than force it; the coordinating window
-  reproduced the same denial once before Mike explicitly approved the override to unblock the two
-  pending commits. **Cost today:** two clean, verified diffs sat un-committable for a full worker
-  run each, recovered only because the coordinating session could re-verify and commit on their
-  behalf from a session where the override was approved. Every future worktree-based `/backlog
-  attack` or `/fix` dispatch hits this the same way until fixed. Fix should mirror whatever
-  `hook_context_gate.py`'s 2026-08-14 fix did — resolve the root from the target path being
-  committed, not from `$CLAUDE_PROJECT_DIR`.
-  **Second blind spot found same day, same session, not worktree-related:** staging
-  `DEV_BACKLOG.md` after `sync_dev_backlog.py` ran via Bash (not the Edit tool) tripped the guard's
-  *other* failure mode — "changed by another writer" — because the guard attributes writes by tool
-  path, and a Bash-invoked script's edits aren't attributed to the session that ran it. Verified as
-  a false positive (no other dirty files, no lock file, content matched the already-reviewed sync
-  output) and cleared with the override. So the guard now has at least two distinct blind spots,
-  not one: (1) wrong root resolution inside a worktree, (2) writer attribution blind to
-  Bash-mediated edits within the same session. Fix for this one likely needs the guard to check
-  session identity rather than tool-call provenance, or to trust a session's own recent Bash
-  writes the way it trusts its own Edit calls.
-  **WORKTREE HALF CLOSED 2026-08-15 (`6ad3dec` + `ff8f4cc`); this item is now ONLY the Bash-write
-  half.** Root resolves from `git -C`, else a `cd` in the same command, else the session cwd.
-  **The first fix was called verified and was not** — it handled `-C` and cwd only, and a subagent
-  cannot persistently `cd`, so it reaches its worktree with `cd <wt> && git add` and stayed blocked;
-  a second worker lost its commit before this was caught. Proven by committing that worker's
-  stranded work with the previously-blocked command.
-  **Found while chasing it, and worse than the block: the guard was failing OPEN.** `shlex.split`
-  only sees a whitespace-delimited separator, so `echo hi; git add x` parsed as one segment whose
-  first token is not `git` — no git write found, hook passed silently on a real staging command.
-  Every `;` without a leading space disabled the guard. Fixed with `shlex(punctuation_chars=True)`;
-  quoting still holds. 11/11 probe cases.
-  **The item's own proposed fix is REJECTED** — trusting a session's own Bash writes would re-hash
-  manifest entries after any Bash call, absorbing a *parallel* session's lines into this session's
-  baseline and reopening 2026-08-09, to remove a one-token override. **Mike 2026-08-15: "No manual
-  maintenance here"** — so the script→output mapping is out too.
-  **Recommended remaining fix, unbuilt:** attribute from the session manifests already on disk in
-  `.claude/.session_edits/` — if no *other* session's manifest claims the file at its current hash,
-  it is not a collision. Automatic, no list to maintain, ~20 lines. Worth doing because a guard that
-  blocks routine work trains the override that disables it for the real case.
-  *filed 2026-08-15 by the coordinating session, from a live instance (not inferred) · Mike:
-  "file the bug as now"*
 
 ## Later
 
