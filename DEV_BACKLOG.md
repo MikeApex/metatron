@@ -39,26 +39,13 @@ this file is Metatron work. Full record: `archive/PROJECT_LOG.md` § 2026-08-14;
 became `[DB-0814-04]` in `## Later`; window A's was a `sync_dev_backlog.py` observation that
 deliberately fails the filing bar and is recorded in `archive/backlog_closed_2026-08.md`
 § Closed 2026-08-14 instead.)*
-**A safety flag's own instruction file can be quoted to the user, and only the filter stops it.**
-
-Tier 4 of `filter_output()` (`bbda875`) now suppresses a response reproducing 10+ verbatim words
-from the agent's instruction file or the constitution — built after the Synthesizer printed its own
-deliberation to Mike on 2026-08-12. **The filter is the backstop; the instruction layer is the
-control, and the instruction layer is what failed.** Nothing currently detects *why* the model
-emitted deliberation as its visible answer, and the leak was truncated mid-sentence, which suggests
-the response was cut off rather than completed — so the shape may recur without tripping tier 4 at
-all if the quoted span happens to be shorter or paraphrased.
-
-Worth one look at whether Gemini reasoning content can reach `text_parts` on the streaming path,
-which would make this a plumbing fault rather than a model-behaviour one. If it can, that is the
-real fix and tier 4 is belt-and-braces.
-
-*Filed 2026-08-15 by a dev session (not raised by Mike — he never saw the fix, only the original
-leak, which is closed). Evidence: `/monitor/conversations` persona=mike ts=2026-08-12T00:14:57,
-711 chars, all deliberation, no `[CONTEXT]` block.*
-
-- **[needs building]** Fix speech-to-text for Bulgarian. When user speaks Bulgarian, the transcription model defaults to English and produces phonetic garbage/small English words instead of correct Bulgarian text.  
-  `2026-08-15T13:49:35.728044Z`
+*(empty — triaged 2026-08-15 by the second `/backlog deep` sweep. Two entries, both filed out:
+the machine-written Bulgarian STT report was a **duplicate of `[DB-0815-02](a)`**, which Mike had
+filed by hand the same day — closed to `archive/backlog_closed_2026-08.md` rather than opened as a
+second item. The dev-session deliberation-leak note went to `## Later` under Safety and test gaps,
+by the standing reporter rule. **The duplicate is worth one line of attention:** nothing checks a
+machine-filed Inbox entry against items Mike filed himself that day, so the machine can restate a
+report he has already made.)*
 
 ---
 ## Now
@@ -79,14 +66,30 @@ standing rule distrusts.*
   **the agent receives Cyrillic and understands it correctly**, so input and comprehension are
   fine — what is wrong is what the app puts on screen. The response renders transliterated
   ("Dobro utro") instead of Cyrillic ("Добро утро").
-  **Not yet diagnosed, and there are two candidates that need separating before any fix:**
+  **Three candidates, and (c) was found 2026-08-15 by the `/backlog deep` machine-log sweep. It is
+  the most likely of the three and it was not visible from the app at all:**
   *(a)* the translation backend is returning transliteration — `core/translate.py`'s prompt says
-  "translate into Bulgarian" and does not say *in Cyrillic script*, which a model can satisfy with
-  romanisation; *(b)* the client mangles it — `static/index.html` serves both web and APK, so a
-  font or encoding fault would show in both. **Check (a) first and cheaply**: call
-  `translate("Good morning.", "bg", "Bulgarian")` on the VM and look at the raw string. If it
-  comes back Cyrillic, the fault is client-side; if Latin, it is the prompt and the fix is one
-  line. Do not change both at once.
+  "Translate the user's message into {language}" and does **not** say *in Cyrillic script*, which a
+  model can satisfy with romanisation. **Confirmed present in the prompt, but it cannot be the whole
+  story** — `core/translate.py` contains no transliteration logic anywhere, and it does not run at
+  all for a persona with no `output_language` set.
+  *(b)* the client mangles it — `static/index.html` serves both web and APK, so a font or encoding
+  fault would show in both.
+  *(c)* **the Synthesizer decided to answer in Latin script and wrote itself a rule saying so.** A
+  `SELF_APPLIED` quality event at `2026-08-15T13:51:39Z` reads verbatim: *"Switched output to
+  Bulgarian transliteration (Latin alphabet) to match user's STT workaround."* — two minutes after
+  Mike's STT complaint at `13:49:35Z`. So the system read his Latin-script workaround (forced on him
+  by the English-only STT model, `[DB-0815-02](a)`) as a standing preference and self-applied it.
+  **This is the second wrong self-applied preference in four days** — the first was the evening
+  check-in consolidation on 08-12 — and both were silent.
+  **Check (c) first, and it is one look, not a test:** does `config/personas/mike/mike.md` or
+  `profile.yaml` **on the VM** now carry a transliteration or Latin-script line? If yes, the Latin
+  render is a stored preference, the fix is removing it *and* stopping `write_persona` self-applying
+  script choices, and (a) becomes belt-and-braces. If no, fall back to (a) — call
+  `translate("Good morning.", "bg", "Bulgarian")` on the VM and read the raw string; Cyrillic means
+  the fault is client-side, Latin means it is the prompt and the fix is one line.
+  **Do not change more than one at a time.** *(The VM read was attempted by the 08-15 sweep and
+  blocked by the permission classifier — this needs Mike or a lifted rule, not another attempt.)*
   *filed 2026-08-15 by Mike from live testing · the feature otherwise works — he confirmed
   Bulgarian in and out before switching back to English*
 
@@ -169,34 +172,18 @@ standing rule distrusts.*
   continuing it. **Do not re-apply the ≤2-sentence cap**; it was rejected deliberately, focus being
   the target and length only its symptom. Same family as `[DB-0814-02]` (stale context that nothing
   ages out), and worth scoping against it.
-  *The 2026-08-17 due marker is spent (de-tagged 2026-08-15 so it cannot false-wake the sync) — the recurrence with a known date was worth more than seven ordinary
-  days, exactly as the item predicted. History follows.*
-
-  **Prior state — mechanism fixed and deployed; the guidance half was unproven.** The original premise was wrong: the openings were already
-  1–2 sentences, and the "restatements" were the Synthesizer reading its *own* scheduler prompt as
-  Mike's voice. Fixed in `82d394b` (deployed) — `_frame_proactive()` labels scheduler input as a
-  directive in both pipeline copies, and the repeated-instruction protocol now requires the *user*
-  to have repeated it. A ≤2-sentence cap was **rejected**; focus is the target, length only its
-  symptom, so `config/agents/synthesizer.md` § Scheduled session conduct carries guidance instead.
-  **Evidence corrected 2026-08-10 — this entry previously claimed "zero quality events of any kind
-  logged all day", which is false: 38 fired that day** (24 `USER_CORRECTION`, 7 `FEATURE_REQUEST`,
-  4 `ROUTING_MISS`, 3 `TOOL_DENIED`). The events file keys on **`timestamp`, not `ts`**; a read
-  against `ts` returns nothing and looks like a clean day — this sweep made the same misread before
-  catching it. The narrow conclusion survives: **no `INSTRUCTION_CHANGE_REQUEST` fired**, which is
-  what the old bug produced every time, and both 07:20/07:30 firings recorded `is_proactive: true`.
-  **What remains: read a week of traces** — dated 2026-08-17, the end of the week filed 08-09.
-  Still day 1 of 7. Do not re-word anything before then.
-  **⚠ THE FIX DID NOT HOLD — a post-fix recurrence is in hand, and it changes what this item is.**
-  Mike reported on **2026-08-12** that evening close *"fired 3 repetitive messages"* and asked that
-  follow-up prompts be restricted to a single line. `82d394b` — the fix above — landed **2026-08-09**,
-  three days earlier, and `_frame_proactive()` is live in both pipeline copies
-  ([core/orchestrator.py:3089](core/orchestrator.py#L3089), called at `:3134` and `:3264`). So one
-  of three things is true and the trace week must say which: the fix is incomplete, `evening_close`
-  reaches a path `_frame_proactive()` does not cover, or the repetition has a different cause
-  entirely and the original diagnosis was right about the mechanism but wrong about the scope.
-  **Do not re-apply the ≤2-sentence cap** — it was rejected deliberately, focus being the target and
-  length only its symptom. **Read the 08-12 evening_close trace specifically** rather than sampling
-  the week; a recurrence with a known date is worth more than seven ordinary days.
+  *The 2026-08-17 due marker is spent (de-tagged 2026-08-15 so it cannot false-wake the sync) — the
+  recurrence with a known date was worth more than seven ordinary days, exactly as the item
+  predicted.*
+  **The fix that is already in and must not be undone:** `82d394b` (deployed) —
+  `_frame_proactive()` labels scheduler input as a directive in both pipeline copies
+  ([core/orchestrator.py:3089](core/orchestrator.py#L3089), called at `:3134` and `:3264`), and the
+  repeated-instruction protocol requires the *user* to have repeated it. It works; it just does not
+  address this.
+  **Two prior diagnoses were confidently wrong before this one — the narrative is in
+  `archive/backlog_closed_2026-08.md` § Closed 2026-08-15, and it is worth reading before proposing
+  a third.** The reusable trap: the quality-events file keys on **`timestamp`, not `ts`**, so a read
+  against `ts` returns nothing and looks like a clean day.
   *filed 2026-08-09 · rewritten 2026-08-09 after measurement inverted it · **evidence corrected
   2026-08-10** — see `archive/PROJECT_LOG.md` § 2026-08-10, last · **recurrence merged in from the
   Inbox 2026-08-14**, reported by Mike via the VM (2026-08-12T08:23Z); fix date verified against
@@ -232,16 +219,12 @@ standing rule distrusts.*
   because that list happens not to render them, while `profile.py`'s docstring says they are
   *"deliberately excluded"*. **Nothing enforces it.** Documented in place 2026-08-15; the real fix
   is to make `load_profile()` derive from the set. Same class as the unenforced tool allowlists.
-  **✅ Boundary decided 2026-08-15 by Mike: the Synthesizer's output, and only there.**
-  **⚠ AMENDED the same day, by Mike, on cost — and the amendment is the live design.** A first cut
-  wrote the translation rule into `config/agents/synthesizer.md` as prose. **Rejected on two
-  grounds, both correct:** (1) it is durable token bloat in a file loaded on every head-layer call,
-  for a setting that changes almost never; (2) **the Synthesizer runs on the most expensive model,
-  and translation is cheap work** — paying premium rates to restate text is the wrong place to
-  spend. **✅ BUILT AND COMMITTED `8a7d1d7`, not deployed. Design as shipped:** the boundary stays where Mike put it — the Synthesizer's
-  *output*, one place, no per-tool logic — but the translation runs **after** it as a Python
-  post-processing step against a cheap model, the same shape as `filter_output()`, which already
-  post-processes the response. `synthesizer.md` gains at most one short line.
+  **✅ Boundary decided 2026-08-15 by Mike: the Synthesizer's output, and only there. BUILT AND
+  DEPLOYED (`8a7d1d7`, `b3ff108`).** Translation runs **after** `filter_output()` as a Python
+  post-processing step against a cheap model — one place, no per-tool logic. **Two designs were
+  tried and rejected first (prose in `synthesizer.md`; a `translate` tool the model calls); both
+  refusals and their reasoning are permanent in `core/translate.py`'s module docstring**, which is
+  where a session that needs them will be standing. Do not re-propose either.
   **Both known costs were accepted and are live in the code, not hidden:**
   1. **It breaks streaming.** A translation pass needs the complete response, so a persona with an
      output language set loses token-by-token streaming — the same constraint behind the
@@ -260,38 +243,15 @@ standing rule distrusts.*
      `tests/run_a4_safety.py --suite pipeline` against a translated persona before any persona
      with clinical history gets a response language.**
   3. Speech-in is still English-only — `[DB-0815-02](a)`, unchanged.
-  *Do not implement the prose-in-`synthesizer.md` version; it was tried and rejected 2026-08-15.* One place,
-  one instruction, no per-tool translation logic and no extra model round-trip per tool call — and
-  it keeps the "config is the product" line, since the whole feature becomes a setting plus a
-  prompt rule. **The known cost of this choice, to be watched rather than designed around now:**
-  content the Synthesizer treats as a verbatim quote (an email body it is relaying) may pass
-  through in its source language. If that shows up in real use, the fix is to tag source language
-  on tool returns and let the Synthesizer act on the tag — *not* to move translation into the
-  tools, which is the option this decision rejected.
-  **⚠ The stated write mechanism below is wrong — verified 2026-08-15.** `write_config`'s
-  `ALLOWED_FILES` is `{prime_directive.md, mission.md}` only
-  ([tools/config_writer.py:17](tools/config_writer.py#L17)); it writes narrative files, and this is
-  a structured setting. A home must be chosen before building: `tools/profile.py`
-  (per-persona `profile.yaml`, already has a `WRITABLE` schema boundary and a location/timezone
-  group these two fields sit naturally beside) is the closest fit; `write_agent_config` is
-  per-agent state and wrong for a persona-wide setting. Still settable by chat either way.
-  Applies from the next turn: Python reads the value before the
-  model runs, so it cannot retro-apply to the utterance that requested it.
+  4. **The known cost to watch, not to design around now:** content the Synthesizer treats as a
+     verbatim quote (an email body it is relaying) may pass through in its source language. If that
+     shows up in real use, the fix is to tag source language on tool returns and let the Synthesizer
+     act on the tag — *not* to move translation into the tools, which is the option this decision
+     rejected.
   Privacy note: translation of personal content is sensitive-tier and stays on the ZDR path.
   *original filed 2026-08-10 by Mike live during feature testing · rescoped 2026-08-15 by Mike ·
-  the `METATRON_WHISPER_LANGUAGE` knob shipped `1d858f2` and is **not** this item*
-  Mike tested it live (seq 031, *"I'm wondering if you can understand me if I speak in Bulgaria"*)
-  and asked for multi-language support or a toggle. **Not a config flip — it is blocked twice:**
-  (1) [core/voice_pipeline.py:177](core/voice_pipeline.py#L177) passes `language="en"` hardcoded;
-  (2) [core/voice_pipeline.py:49](core/voice_pipeline.py#L49) loads `base.en`, an **English-only
-  model** that cannot transcribe Bulgarian at any setting. Multilingual requires `base`, which
-  reopens the sizing constraint documented at [core/voice_pipeline.py:31](core/voice_pipeline.py#L31):
-  STT runs on a **single-worker pool on 2 vCPU**, and `small.en` was already measured and rejected
-  at RTF 2.23 (transcribes slower than audio arrives, so a second concurrent request queues).
-  **Benchmark `base` on the VM before choosing** — `python3 tests/bench_whisper_stt.py`, run there,
-  not on the Mac. Then decide auto-detect vs. an explicit UI toggle; auto-detect costs accuracy on
-  short utterances, which is most of what voice sends.
-  *filed 2026-08-10 by Mike, live during feature testing · both blockers verified in code same day*
+  the `METATRON_WHISPER_LANGUAGE` knob shipped `1d858f2` and is **not** this item · the voice
+  blockers live in `[DB-0815-02]`, which owns them — a duplicate copy was cut from here 2026-08-15*
 
 - **7. [DB-0810-17] An external CRM bridge — the count question itself is answered.** At seq 009
   Mike asked for a route *and* a CRM contact count; the system declined it as needing an external
@@ -454,17 +414,8 @@ items unworkable, which is what made the ranked list misleading: `## Now` must m
   *filed 2026-08-14 by Mike via the VM · timestamp half closed 2026-08-15 · expiry half built and
   deployed 2026-08-15, thresholds unvalidated*
 
-  **Prior state — the timestamp half, closed.**
-  `open_threads` was a bare `list[str]` with no metadata — "post-travel recovery" stayed live for
-  two weeks because nothing could even ask how old it was. **Closed 2026-08-15 as scoped**
-  (`d40e73c`): entries are now `{"text": str, "added": <ISO date, server-stamped>}`, matching the
-  `clinical_threads` convention of never trusting the model for a date; a thread carried forward
-  unchanged keeps its original `added` date; old bare-string data migrates safely on read. **What
-  remains is the actual ask** — Mike wanted stale context to stop misleading, and a timestamp on
-  its own does not do that. Deciding what counts as stale and what happens then (auto-drop, flag
-  for review) is a fresh design question, not a continuation of this build.
-  *filed 2026-08-14 by Mike via the VM (2026-08-12T08:23Z) · timestamp shipped 2026-08-15, see
-  `archive/backlog_closed_2026-08.md`*
+  *The timestamp half (`d40e73c`) closed 2026-08-15 — narrative in
+  `archive/backlog_closed_2026-08.md` § Closed 2026-08-15.*
   `due: 2026-08-22`
 
 
@@ -505,6 +456,35 @@ count — the ×3 bar is a floor for things nobody asked for, not a hurdle for a
 so this is not a parallel track to pick from when a `Now` item is time-gated.
 
 **Safety and test gaps**
+- **[DB-0815-08] The Synthesizer quoted its own instruction file to Mike, and only the filter
+  stopped it — nothing detects why it happened.** Tier 4 of `filter_output()` (`bbda875`) now
+  suppresses a response reproducing 10+ verbatim words from the agent's instruction file or the
+  constitution, built after the Synthesizer printed its own deliberation to Mike on 2026-08-12.
+  **The filter is the backstop; the instruction layer is the control, and the instruction layer is
+  what failed.** The leak was truncated mid-sentence, which suggests the response was cut off rather
+  than completed — so the same shape can recur without tripping tier 4 at all if the quoted span is
+  shorter or paraphrased. **One cheap check first:** whether Gemini reasoning content can reach
+  `text_parts` on the streaming path. If it can, this is a plumbing fault, that is the real fix, and
+  tier 4 is belt-and-braces. Bears on `ROADMAP.md` § A7 check 5, which has this on record as a live
+  Fail. *filed 2026-08-15 by a dev session — **not raised by Mike**, who saw only the original leak,
+  which is closed. Evidence: `/monitor/conversations` persona=mike ts=2026-08-12T00:14:57, 711
+  chars, all deliberation, no `[CONTEXT]` block*
+- **[DB-0815-09] Half the system's self-reported corrections say nothing, and the noise now leads
+  Mike's session-start line.** Measured 2026-08-15 against the live VM: **93 of 174
+  `USER_CORRECTION` events carry a `detail` of `None` / `None.` / `N/A` / `[None]` — 53%**, 78 of
+  them in August alone. That is why `None. ×90` is the loudest signature in the `⚠ machine:` clause,
+  crowding out the real ones (`×16`, `×6`, `×5`). Two candidate causes, and one look separates them:
+  the classifier over-fires `USER_CORRECTION` on turns that are not corrections and the summariser
+  honestly reports none, **or** the summary is simply not being populated. The first is the more
+  useful finding, because it would mean the correction *count* is inflated too — and that count is
+  the ×3 promotion bar in this file.
+  **Second finding, same measurement, and it changes how a `×N` should be read: the counts are
+  similarity clusters, not repeats.** The `×16` "scheduled calendar events imply completion"
+  signature resolves to exactly **one** event fuzzy-matched with fifteen differently-worded others.
+  Nobody should treat a `×N` as "Mike said this N times" — `merge()` in
+  `scripts/sync_dev_backlog.py` collapses on `similar()`. Worth a line in the `## Machine log`
+  preamble whichever way the first half resolves.
+  *filed 2026-08-15 by the `/backlog deep` machine-log sweep — **not raised by Mike***
 - **[DB-0810-10]** The calendar conflict build (`a20febe`, deployed 08-05) has **never had a
   live scheduling exchange run against it** — all 24 tests in
   `tests/run_calendar_conflict_tests.py` are mocked against CalDAV, so the refuse-on-exact-
@@ -701,6 +681,13 @@ again: `archive/backlog_closed_2026-08.md` § Closed 2026-08-14.)*
   sits untouched. `SESSION.md` sat at 195–205 for twenty commits on that basis. Mitigated for
   this one file by a volatile-section budget in `check_claude_md_claims.py` — which is **still
   line-based**, so it narrows the item rather than closing it*
+  **Third input, and it names a concrete replacement metric — Mike, 2026-08-15: a backlog's ceiling
+  should probably be tied to the number of *items* in it, not its line count.** Raised while
+  deciding a trim on a 922/450 file, and the reasoning is that the item count is what bounds the
+  workload while the line count is what pressures a session to cut evidence out of well-documented
+  entries. `DEV_BACKLOG.md` already half-agrees with him — `## Now`'s real cap is its 10-item limit.
+  **This is the first Mike-raised strand in this item**, so the item is now promotable on his say-so
+  rather than needing the ×3 machine bar; it stays in `## Later` until he wants it.
 - **[DB-0805-05]** **A session cannot tell its own edits from a parallel window's** — the git
   collisions and the `/archive` dirty-check are one cause, not two. `git add <file>` does **not**
   protect you: the collision is line-granular inside a file the committer legitimately owns
@@ -768,8 +755,18 @@ file, which `scripts/check_agent_tools.py` does not scan — so `synthesizer`'s 
 grant is now **invisible to the guard** while still working only by `dispatch_tool()`'s lack of
 enforcement. Same class as `[DB-0810-03]`; the gap did not change, the ability to see it did.)*
 
+*(swept again 2026-08-15 by the second `/backlog deep`, read live off the VM rather than off this
+file. Three results. **(1) The transliteration `SELF_APPLIED` below is not a process event — it is
+the likeliest cause of `## Now` #1**, and has been promoted into `[DB-0815-04]` as candidate (c);
+it sat here for hours looking like housekeeping. **(2) No new `TOOL_DENIED` since
+2026-08-10T15:00** — all 20 on record are the ones already promoted into `[DB-0810-03](c)`, so that
+item's evidence is current and nothing new is waiting. **(3) The empty-detail finding and the
+"`×N` is a similarity cluster, not a repeat count" finding are filed as `[DB-0815-09]`** — read that
+before trusting any count in this section.)*
+
 - **[already applied by the tool]** Switched output to Bulgarian transliteration (Latin alphabet) to match user's STT workaround.  
   `2026-08-15T13:51:39.676925Z`
+  → **promoted 2026-08-15 into `[DB-0815-04]` candidate (c). Do not re-file.**
 
 - **[user corrected a prior turn]** User is confirming the necessity of a workaround for the Bulgarian language recognition bug.  
   `2026-08-15T13:50:27.705106Z`
@@ -876,8 +873,8 @@ enforcement. Same class as `[DB-0810-03]`; the gap did not change, the ability t
 - **[user corrected a prior turn]** Mike is correcting the assumption that his 'fit it in' approach to work creates negative pressure; he finds it manageable and beneficial for his family balance.  
   `2026-06-26T21:35:02.264614Z`
 
-- ⚠ **[user corrected a prior turn]** None  ×89  
-  `2026-08-15T13:10:47.809182Z`
+- ⚠ **[user corrected a prior turn]** None.  ×90  
+  `2026-08-15T19:29:01.706119Z`
 
 - **[user corrected a prior turn]** User is flagging that the previous exchange produced no response and that an expected write_config action was not executed — this is a pipeline/execution failure, not a content correction per se, but note that the prior turn's intended output did not reach the user and the write_config call was missed.  
   `2026-06-26T15:51:48.929810Z`

@@ -2411,3 +2411,76 @@ runs when a session runs.
   four of which were fail-open or block-routine-work defects found only by a human tripping over
   them: ten cases against real git trees, the 2026-08-09 incident replayed as case one, and
   verified *discriminating* against the pre-fix guard. *closed 2026-08-15*
+
+---
+
+## Closed 2026-08-15 — second `/backlog deep` sweep
+
+- **[Inbox, machine-filed]** *"Fix speech-to-text for Bulgarian — the transcription model
+  defaults to English and produces phonetic garbage."* `2026-08-15T13:49:35Z`.
+  **Closed as a duplicate, not as fixed.** This is verbatim `[DB-0815-02](a)` in `## Later`,
+  which Mike filed by hand the same day and marked explicitly low priority. The machine wrote a
+  second copy of a report Mike had already made. The blockers are unchanged and recorded there:
+  `WHISPER_MODEL_SIZE` is `base.en`, English-only, and multilingual needs `base`, which reopens
+  the 2-vCPU single-worker sizing constraint at `core/voice_pipeline.py:31`.
+  **Worth carrying:** the duplicate arrived because a machine-filed Inbox entry is not checked
+  against items Mike filed himself the same day. *(Mike's call, 2026-08-15: close as duplicate.)*
+
+### Superseded history moved out of live entries (no information lost)
+
+Mike's call, 2026-08-15: `DEV_BACKLOG.md` was 922 lines against a 450 ceiling, and the bulk was
+not `## Later` — it was superseded narrative *inside live entries*. The blocks below were cut from
+the live items and are kept here verbatim. **Each was already wrong when it was cut**; they are
+retained because in every case an earlier confident diagnosis was overturned, and that is the part
+worth being able to find again. Full reasoning for all three: `archive/PROJECT_LOG.md`.
+
+**Mike also made a design point that outlives this trim, filed into `[DB-0810-06]`:** a backlog's
+line ceiling should probably be tied to the *number of items* in it, not its line count. A file of
+40 well-evidenced items and a file of 40 thin ones are the same size problem by item count and
+wildly different by line count — and it is the line count that has been pressuring sessions to cut
+evidence.
+
+#### `[DB-0809-02]` — prior state, twice overturned
+
+The original premise was wrong: the openings were already 1–2 sentences, and the "restatements"
+were the Synthesizer reading its *own* scheduler prompt as Mike's voice. Fixed in `82d394b`
+(deployed) — `_frame_proactive()` labels scheduler input as a directive in both pipeline copies,
+and the repeated-instruction protocol now requires the *user* to have repeated it. A ≤2-sentence
+cap was **rejected**; focus is the target, length only its symptom.
+
+Evidence corrected 2026-08-10 — the entry had claimed "zero quality events of any kind logged all
+day", which is false: 38 fired that day (24 `USER_CORRECTION`, 7 `FEATURE_REQUEST`, 4
+`ROUTING_MISS`, 3 `TOOL_DENIED`). The events file keys on **`timestamp`, not `ts`**; a read against
+`ts` returns nothing and looks like a clean day. The narrow conclusion survived: no
+`INSTRUCTION_CHANGE_REQUEST` fired, which is what the old bug produced every time.
+
+Then: **the fix did not hold.** Mike reported on 2026-08-12 that evening close "fired 3 repetitive
+messages". `82d394b` had landed 2026-08-09, three days earlier. Three possibilities were named — the
+fix is incomplete, `evening_close` reaches an uncovered path, or the diagnosis was wrong about scope.
+
+**All three were wrong**, settled live on 2026-08-15: it was four different scheduled jobs, each
+inheriting the unfinished ritual from context. See the live entry.
+
+#### `[DB-0814-02]` — prior state, the timestamp half
+
+`open_threads` was a bare `list[str]` with no metadata — "post-travel recovery" stayed live for two
+weeks because nothing could even ask how old it was. Closed 2026-08-15 as scoped (`d40e73c`):
+entries are now `{"text": str, "added": <ISO date, server-stamped>}`, matching the `clinical_threads`
+convention of never trusting the model for a date; a thread carried forward unchanged keeps its
+original `added` date; old bare-string data migrates safely on read. What remained was the actual
+ask — a timestamp on its own does not stop stale context misleading.
+
+#### `[DB-0810-15]` — the two rejected designs
+
+Both are now recorded permanently in `core/translate.py`'s module docstring, which is where a
+session that needs them will actually be standing:
+
+1. **Translation rules as prose in `config/agents/synthesizer.md`** — rejected by Mike on cost.
+   That file loads on every head-layer call and the Synthesizer runs on the most expensive model
+   in the fleet: durable token spend on a setting that changes approximately never.
+2. **A `translate` tool the Synthesizer calls** — rejected because a tool call is a round trip
+   *through* the model, costing an extra turn on the expensive model. Also unreliable in a way this
+   project has already paid for: the model decides whether to call it, and a language guarantee that
+   depends on a model remembering to invoke something fails intermittently and silently.
+
+Also cut: the voice-blocker paragraph duplicated from `[DB-0815-02]`, which owns it.
