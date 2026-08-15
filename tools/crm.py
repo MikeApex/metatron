@@ -10,6 +10,7 @@ For persona testing: data/personas/{persona}/crm/contacts.json.
 import difflib
 import json
 import os
+import re
 import threading
 import uuid
 from datetime import date, timedelta
@@ -52,6 +53,45 @@ _PLACEHOLDER_EMAIL_DOMAINS = {
     "test", "invalid", "localhost",
 }
 _RESERVED_EMAIL_TLDS = {"test", "example", "invalid", "localhost"}
+
+# [DB-0815-06] Same refusal as the email guard above, extended to phone, address,
+# social handle, and name — the recorded pattern is one root cause (a field that
+# looks required gets filled with something plausible rather than left out), not
+# four separate ones. Each registry below is scoped to values that are *known*
+# placeholders — reserved ranges, textbook example strings, literal stock names —
+# never to "looks fake" heuristics, because a false positive here blocks real
+# input. Where a value could plausibly be real (e.g. "123 Main Street" with a real
+# city attached, "Doe" as a real surname), it is deliberately left uncaught; see
+# each _is_placeholder_* docstring for the specific line it draws.
+
+# NANP reserves the 555 exchange with subscriber numbers 0100-0199 nationwide for
+# fiction/directory-assistance use — no real subscriber is ever issued one of
+# these, regardless of area code. Ofcom reserves 07700 900000-900999 the same way
+# for UK film/TV/drama use (a real UK mobile is 07700 8xxxxx, 07700 1xxxxx, etc. —
+# never the 900xxx block). Matched against normalized digits so formatting
+# (spaces, dashes, brackets, a +/00 international prefix) doesn't hide the match.
+_NANP_FICTIONAL_RE = re.compile(r"55501\d\d$")
+_UK_DRAMA_RE = re.compile(r"7700900\d{3}$")
+_PLACEHOLDER_PHONE_EXACT_DIGITS = {"1234567890", "0123456789"}
+
+# Bare textbook street addresses with nothing else attached — a real address this
+# short and this exact ("123 Main Street", full stop) is the specific shape a
+# model reaches for; the same street number+name followed by a real city/state
+# does not match this set and is not caught (see _is_placeholder_address).
+_PLACEHOLDER_ADDRESS_EXACT = {
+    "123 main st", "123 main street",
+    "1234 elm st", "1234 elm street",
+}
+
+# Generic placeholder handles used in documentation/examples — never issued as a
+# real platform username, so an exact match (case-insensitive, leading @ ignored)
+# carries no false-positive risk the way a "looks fake" heuristic would.
+_PLACEHOLDER_SOCIAL_HANDLES = {"username", "handle", "example", "yourname", "yourhandle"}
+
+# The two canonical stand-in names for "a person" in English-language documents
+# and forms. Matched only against the *full* name (or first+last combined) so a
+# real surname "Doe" paired with any other first name still passes.
+_PLACEHOLDER_NAMES = {"john doe", "jane doe"}
 
 _ROOT = Path(__file__).parent.parent
 
@@ -186,6 +226,79 @@ def _is_placeholder_email_domain(domain: str) -> bool:
     return domain.rsplit(".", 1)[-1] in _RESERVED_EMAIL_TLDS
 
 
+def _normalize_phone_digits(phone: str) -> str:
+    """Strip spaces/dashes/dots/brackets, then a leading +/00 international
+    prefix, leaving only digits — so '555 010 0' and '+44 (0)7700 900123' match
+    the same way their unformatted equivalents would."""
+    s = re.sub(r"[\s\-.()]", "", phone or "")
+    if s.startswith("+"):
+        s = s[1:]
+    elif s.startswith("00"):
+        s = s[2:]
+    return re.sub(r"\D", "", s)
+
+
+def _is_placeholder_phone(phone: str) -> str | None:
+    """Reason string if `phone` falls in a known fictional/reserved number range,
+    else None. Deliberately narrow: a real UK mobile outside 07700 900xxx (e.g.
+    07700 800123) and a real NANP number outside the 555-0100/0199 block are never
+    flagged — only the specific ranges reserved for fiction/documentation are."""
+    digits = _normalize_phone_digits(phone)
+    if not digits:
+        return None
+    if len(digits) >= 7 and _NANP_FICTIONAL_RE.search(digits):
+        return "NANP fictional/directory-assistance range (555-0100 to 555-0199)"
+    if _UK_DRAMA_RE.search(digits):
+        return "UK Ofcom drama/fiction range (07700 900xxx)"
+    if digits in _PLACEHOLDER_PHONE_EXACT_DIGITS:
+        return "a textbook sequential placeholder number"
+    if len(digits) >= 4 and re.fullmatch(r"0+", digits):
+        return "an all-zero placeholder number"
+    return None
+
+
+def _normalize_address(address: str) -> str:
+    s = (address or "").strip().casefold()
+    s = re.sub(r"[.,]", "", s)
+    return re.sub(r"\s+", " ", s)
+
+
+def _is_placeholder_address(address: str) -> str | None:
+    """Reason string if `address` is a known placeholder, else None. 'Anytown' is
+    caught wherever it appears (it is never a real place name, so no legitimate
+    address can contain it as a whole word). The bare street strings are only
+    caught as an *exact, whole-field* match — '123 Main Street' with a real city
+    and state attached does not match this set and is not flagged, because that
+    combination is a plausible real address, not a known placeholder."""
+    norm = _normalize_address(address)
+    if not norm:
+        return None
+    if re.search(r"\banytown\b", norm):
+        return "'Anytown' is a generic placeholder city name, never a real one"
+    if norm in _PLACEHOLDER_ADDRESS_EXACT:
+        return "a textbook placeholder street address with no real city/state attached"
+    return None
+
+
+def _is_placeholder_social_handle(handle: str) -> str | None:
+    """Reason string if `handle` is a generic placeholder handle (leading @
+    ignored, case-insensitive), else None."""
+    norm = (handle or "").strip().casefold().lstrip("@")
+    if norm in _PLACEHOLDER_SOCIAL_HANDLES:
+        return f"'@{norm}' is a generic placeholder handle, not a real one"
+    return None
+
+
+def _is_placeholder_name(name: str) -> str | None:
+    """Reason string if `name` is a canonical stand-in name ('John Doe' /
+    'Jane Doe'), else None. Only the full name is checked — a real surname 'Doe'
+    on its own, or paired with a different first name, is not flagged."""
+    norm = re.sub(r"\s+", " ", (name or "").strip().casefold())
+    if norm in _PLACEHOLDER_NAMES:
+        return "a well-known stand-in name for 'a person', not a captured one"
+    return None
+
+
 def _name_similarity(a: str, b: str) -> float:
     """Best of whole-string and first-token similarity. Whole-string alone misses
     a name later expanded with a surname ("Iva" vs "Iva Diamond" scores 0.29);
@@ -266,10 +379,18 @@ def write_contact(
     to is not being prevented, the same reasoning `tools/mail.py`'s recipient check and
     `tools/agent_config.py`'s `_GUARDED_KEYS` already apply elsewhere.
 
-    Also refuses an email on a reserved/placeholder domain (example.com, .test,
-    .invalid, localhost, ...) — a real address is never on one of these, so a value
-    there is an invented placeholder, not a mistyped real one. [DB-0815-06]: a
-    fabricated address ('eva@example.com') was previously accepted and persisted.
+    Also refuses known-placeholder values in email, phone, address, social handle,
+    and name — a real address/number/name is never one of these, so a value there
+    is an invented placeholder, not a captured one. Covers: an email on a
+    reserved/placeholder domain (example.com, .test, .invalid, localhost, ...); a
+    phone in the NANP 555-0100/0199 or UK Ofcom 07700 900xxx fictional ranges, or a
+    sequential/all-zero number; a bare textbook street address ('123 Main Street'
+    with nothing else) or one containing 'Anytown'; a generic social handle
+    ('@username', '@handle', ...); or the name 'John Doe'/'Jane Doe'. Each check is
+    scoped to known placeholders only — a real address with a real city, a real
+    UK/NANP number outside those exact ranges, and a real surname 'Doe' all still
+    save. [DB-0815-06]: a fabricated address ('eva@example.com') was previously
+    accepted and persisted.
 
     When creating a new contact (contact_id empty), also checks `name` against
     existing contacts and, if a close match is found, returns it as evidence
@@ -278,6 +399,19 @@ def write_contact(
     with no dedup on the write path.
     """
     today = date.today().isoformat()
+
+    # [DB-0815-06] Same refusal shape as the email domain check below, applied to
+    # name: a canonical stand-in ("John Doe"/"Jane Doe") reached for when a name
+    # looks required is refused rather than persisted.
+    for _candidate_name in (name, f"{first_name} {last_name}".strip()):
+        if _candidate_name:
+            _name_reason = _is_placeholder_name(_candidate_name)
+            if _name_reason:
+                return (
+                    f"Error: not saved. '{_candidate_name}' looks like a placeholder "
+                    f"name ({_name_reason}) rather than a real contact. Ask the user "
+                    f"for the real name, or omit the contact rather than inventing one."
+                )
 
     if contact_info:
         given_email = str(contact_info.get("email", "")).strip().lower()
@@ -291,6 +425,41 @@ def write_contact(
                     f"a captured one. Ask the user for the real address, or leave "
                     f"contact_info without an email until you have one."
                 )
+
+        given_phone_raw = str(contact_info.get("phone", "")).strip()
+        if given_phone_raw:
+            _phone_reason = _is_placeholder_phone(given_phone_raw)
+            if _phone_reason:
+                return (
+                    f"Error: not saved. '{given_phone_raw}' falls in a known "
+                    f"placeholder/fictional number range ({_phone_reason}) — this "
+                    f"looks like an invented value, not a captured one. Ask the user "
+                    f"for the real number, or leave contact_info without a phone "
+                    f"until you have one."
+                )
+
+        given_address_raw = str(contact_info.get("address", "")).strip()
+        if given_address_raw:
+            _address_reason = _is_placeholder_address(given_address_raw)
+            if _address_reason:
+                return (
+                    f"Error: not saved. '{given_address_raw}' looks like a "
+                    f"placeholder address ({_address_reason}) rather than a "
+                    f"captured one. Ask the user for the real address, or leave "
+                    f"contact_info without an address until you have one."
+                )
+
+        given_social = contact_info.get("social")
+        if isinstance(given_social, dict):
+            for _platform, _handle in given_social.items():
+                _handle_reason = _is_placeholder_social_handle(str(_handle))
+                if _handle_reason:
+                    return (
+                        f"Error: not saved. contact_info.social['{_platform}'] = "
+                        f"'{_handle}' — {_handle_reason} rather than a captured one. "
+                        f"Ask the user for the real handle, or leave that platform "
+                        f"out of social until you have one."
+                    )
 
         from tools.profile import _load as _load_profile
         try:
@@ -820,8 +989,11 @@ WRITE_CONTACT_SCHEMA = {
         "On creation, if the name closely matches an existing contact, the response "
         "includes that match as evidence (not a refusal) — the record is still created; "
         "if it turns out to be the same person, call merge_contacts to fold the two "
-        "together instead of leaving both. Refuses an email on a reserved/placeholder "
-        "domain (example.com and similar) rather than storing an invented address."
+        "together instead of leaving both. Refuses known-placeholder values — an "
+        "email on a reserved/placeholder domain (example.com and similar), a phone "
+        "in a known fictional range, a textbook placeholder address, a generic "
+        "social handle, or the name 'John Doe'/'Jane Doe' — rather than storing an "
+        "invented value."
     ),
     "input_schema": {
         "type": "object",
