@@ -3055,6 +3055,42 @@ def _failed_tool_calls(rec) -> list[str]:
     return [f"- {name}: {msg}" for name, msg in failures.items() if name not in succeeded]
 
 
+def _action_block() -> str:
+    """The ACTIONS provenance block for the Synthesizer — evidence, not a claim.
+
+    Called after _dispatch_from_coordinator() returns, which is the first moment
+    every blocking specialist has finished and its tool calls are on the trace.
+    Two things follow from reading the trace here rather than inside the dispatch
+    loop, and both are deliberate:
+
+    - It is **request-scoped**, per Mike's 2026-08-15 decision. Per-agent
+      attribution is unreliable until [DB-0810-02] is fixed (`pop_agent()` does
+      not restore the previous `current_agent`), and a provenance line built on a
+      known-broken attribution path would be worse than none.
+    - The fire-and-forget Diarist is excluded automatically: it runs on its own
+      thread with a fresh trace (see trace.push_agent), so its journal write is
+      not on this one. Good — it is still running when this is read, and a line
+      whose contents depended on thread timing would not be evidence of anything.
+
+    Classification of which tools count lives in core/actions.py, in one place.
+    """
+    from core.actions import action_provenance_block
+    block = action_provenance_block(_tr.get_trace())
+    # Also emitted to the journal, at INFO on its own logger for the reason given
+    # at _dev_request_log: the module logger is pinned to WARNING and _trace() is
+    # a no-op in the service. This is what makes the line checkable in production
+    # without reading a trace file — "did the system know an action ran" is then
+    # answered by grep, not by asking a model.
+    _actions_log.info("[actions] " + " | ".join(
+        ln.lstrip("- ") for ln in block.splitlines()[1:]
+    ))
+    return block
+
+
+_actions_log = logging.getLogger("metatron.actions")
+_actions_log.setLevel(logging.INFO)
+
+
 def _dispatch_from_coordinator(
     coord_output: str,
     persona: str | None = None,
@@ -3278,11 +3314,14 @@ def run_pipeline_session(user_input: str,
             if "dispatched (async)" not in output
         )
 
-        # Pass 2: Synthesizer — integration and user-facing response
+        # Pass 2: Synthesizer — integration and user-facing response.
+        # The ACTIONS block goes last, closest to the response, and is always
+        # present: see _action_block().
         synthesizer_input = (
             f"{proactive_prefix}{receipt_line}{synth_label}:\n{user_input}\n\n"
             f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"
             + (f"\n\nSPECIALIST OUTPUTS:\n{spec_text}" if spec_text else "")
+            + f"\n\n{_action_block()}"
         )
         _trace("[PIPELINE] synthesizer  starting")
         recent_history = list(history[-10:]) if history else None
@@ -3386,11 +3425,12 @@ def _run_pipeline_session_stream_inner(
     )
     _trace("[PIPELINE] synthesizer  streaming")
 
-    # Build Synthesizer input
+    # Build Synthesizer input — ACTIONS block last and unconditional, as above.
     synthesizer_input = (
         f"{proactive_prefix}{receipt_line}{synth_label}:\n{user_input}\n\n"
         f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"
         + (f"\n\nSPECIALIST OUTPUTS:\n{spec_text}" if spec_text else "")
+        + f"\n\n{_action_block()}"
     )
 
     # Load Synthesizer prompt — mirrors _run_single_agent internals
