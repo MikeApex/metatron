@@ -15,6 +15,12 @@ Four modes. Default is a triage pass; `$ARGUMENTS` selects the others.
 
 Not needed for ordinary coding — there the task comes from Mike, not the list.
 
+> **An id is not a description. Every time an item is named to Mike — triage table, cluster plan,
+> verdict, close-out — lead with the plain-language problem, then the id and the technical detail.**
+> *"Specialists say they sent an email they never sent `[DB-0810-13]`"*, not *"`[DB-0810-13]`, ease 2"*.
+> He is reading about work he did not just read the file for; a bare code makes him look it up to
+> know what is being decided, and that cost lands on every item in a table of ten.
+
 ---
 
 ## Default pass
@@ -189,8 +195,5 @@ hand-off.
 
 ---
 
-*Procedure only. **196 lines against the ~200 recorded in `CLAUDE.md`** — raised from ~130 on
-2026-08-13, after the fourth mode (`verify`) and its scoping step. That is growth by capability,
-not narrative creep: the same pass moved the dispatch block to `/fix` § 3 and the `journalctl`
-invocation to `docs/INFRASTRUCTURE.md`, and the file still grew. What each collision cost and
-why the protocol looks like this: `archive/PROJECT_LOG.md` § 2026-08-08 and § 2026-08-09.*
+*Procedure only; ceiling in `CEILINGS`. Why the protocol looks like this, and what each collision
+cost: `archive/PROJECT_LOG.md` § 2026-08-08, § 2026-08-09, § 2026-08-15.*
