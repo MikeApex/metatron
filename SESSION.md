@@ -1,24 +1,31 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-15, seventh session — **`/backlog attack`, two worker clusters, all merged and
-deployed by Mike.** **`[DB-0810-12]` is CLOSED** (`5cf0a5e`): a Vertex 400 on a missing
-`thought_signature` no longer destroys the exchange — an unsigned tool-call turn is recorded
-signature-free, and the never-checked `blocking_replay` route was real and is closed too. Closed on
-Mike's argument that a user-visible recurrence would raise its own ticket; **the residual is that
-the fix makes recurrence silent**, so the one check left is his — grep the VM journal for
-`[signature_probe]` around 08-29. **Two new user-facing faults were found in the VM traces and
-fixed:** the Synthesizer read its own instructions aloud to Mike on 08-12 (filter tier 4,
-`bbda875` — a 10-word verbatim span from the agent file or constitution; validated against 237 real
-responses, one suppression, the leak itself), and a session fired at 00:11, so **quiet hours are now
-opt-out** (`451f622`) with Mike's rule built in: a user-asked one-off in the night gets disturb
-permission automatically, an agent-invented job never does. That work exposed a live defect —
-`fire_session` read job settings from `scheduler.yaml` only, so **every agent-written job resolved to
-`{}`** and could carry no setting to any gate. **`[DB-0814-02]` stays open**: expiry now keys on the
-user engaging a thread, not the Synthesizer resending it, but neither grace threshold is measured
-against real output. **`[DB-0809-02]` is answered early and inverted — see `## Current state`.**
-`## Now` is **7**. **A `/backlog deep` sweep of `## Machine log` is still owed.** **Tailnet is
-INTERMITTENT, not down**; SSH is **IAP-only** (`gcloud compute ssh --tunnel-through-iap`) — a direct
-connection timing out is not an outage.*
+*Updated: 2026-08-15, eighth session — **a persona can now be answered in a language it was not
+addressed in.** `[DB-0810-15]` built and **deployed**: two independent per-persona language fields,
+translation as **Python post-processing after `filter_output()`**. Three constraints that must not
+be undone — **order** (translate before filtering and the English confidentiality checks go blind),
+**scope** (visible message only; `[CONTEXT]`, history and traces stay English because
+`open_threads` is matched by exact text), and **placement** (never prose in `synthesizer.md`, never
+a tool the model calls — both rejected, reasons in the log). Privacy needed **no new ruling**.
+Bulgarian verified live both directions, then reverted. **`## Now` is 7. Tailnet reachable; SSH
+IAP-only.***
+
+*Three faults found by looking, not by testing — full detail in the log fragment. **Mike's
+`profile.yaml` `name` field read "Contact name updated from Eva to Iva."**, rendered into every
+head-layer call, and is the likely mechanism behind a correction he made **five times**; data
+fixed on the VM, **write path not** (`[DB-0815-05]`). **`_PROMPT_EXCLUDED` enforced nothing** and
+now derives, with `health_notes` added — learned detail belongs at the level that needs it.
+**`Eva` and `Iva Diamond` were one person**, merged by hand: the CRM has **no merge or delete
+tooling** (`[DB-0815-06]`, `[DB-0815-07]`). Open: the app renders Latin though the agent receives
+Cyrillic (`[DB-0815-04]`).*
+
+*Backlog structure changed, and it is the reusable part: **time-gated items live in `## Later`
+with a `due:` marker** — `due_now()` scans both sections and surfaces `⚠ due:` at **every session
+start**, so `## Now` can mean *workable*. An attack found three of six unworkable and ran one
+worker, not three. Review date, not deadline. **`[DB-0814-02]` cannot close as written** (no write
+history; expiry cannot fire before ~08-22; traces omit the write). **Standing rule (Mike): clinical
+hard-fails do not gate feature work until Alpha/Beta.** `DEV_BACKLOG.md` 922/450 — `/backlog deep`
+owed.*
 
 *Dev-workflow track — **Phase 5 is CLOSED**, five path-scoped `.claude/rules/*.md` files carry the
 area rules, and rule delivery is **Read-only** (Bash `grep` and `Write` do not deliver; a worktree
@@ -132,9 +139,9 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-15 | **Answer the user in their own language, and stop broadcasting profile detail.** `[DB-0810-15]` shipped as Python post-processing after `filter_output()` — prose-in-`synthesizer.md` and a model-called tool were both rejected, the second because a tool call is an extra turn *through* the expensive model. Bulgarian verified live. Found by verifying the render: Mike's `name` field held a contact correction and rode every prompt; `_PROMPT_EXCLUDED` enforced nothing; `Eva`/`Iva Diamond` were one person and the CRM has no merge tooling. Backlog gained `due:`-marked time-gating | `8a7d1d7`, `f9ffd2a`, `b3ff108` — **deployed** |
 | 08-15 | **`/backlog attack` — two clusters merged, and the traces found two live user-facing faults.** `[DB-0810-12]` closed: an unsigned tool-call turn is recorded signature-free, so a Vertex 400 no longer destroys the exchange; the never-checked `blocking_replay` route was real. **New:** the Synthesizer quoted `synthesizer.md` verbatim to Mike (filter tier 4 — exactness, not vocabulary; 237 real responses, one suppression), and a session fired at 00:11 (quiet hours now opt-out, with automatic disturb permission for a user-asked one-off). That exposed `fire_session` reading job settings from `scheduler.yaml` only, so every agent-written job carried no settings at all. `[DB-0814-02]` reworked — grace keys on the user, not the Synthesizer's resend | `5cf0a5e`, `bbda875`, `451f622`, `eb01025` — **deployed** |
 | 08-15 | **Two `/fix` runs: an approved action now runs, and the commit guard learns to attribute.** [DB-0815-03] — `/confirm` executes server-side through the tool's own `consume()`; the item's "no trigger" premise was wrong in a way that mattered, and the four tool schemas needed correcting because they bind harder than the agent file. [DB-0815-01] — the guard checks whether *another* session's manifest claims a file's current hash before blocking, so its own script stops reading as a collision; first-ever probe suite, verified discriminating against the pre-fix guard | `2602e2e` — **deployed + APK**; `c3f2ac8` — local harness |
-| 08-15 | **[DB-0810-13] built and closed — action provenance.** Python generates an `ACTIONS` block from the trace into the Synthesizer's input; `core/actions.py` classifies all 71 tools as actions vs reads in one place, with a test that fails when a new tool is in neither set. Verified live before the agent-file half was written, which is what the ordering rule bought. **It then found [DB-0815-03] within the hour** — an approved action is never executed — and the [DB-0810-12] probe was caught dumping the whole system prompt to `journalctl` | `0a3706c`, `cbe7d94`, `1831730`, `b2163fa` — **deployed** |
 ---
 
 ## Useful context to pull as needed

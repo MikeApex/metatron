@@ -57,8 +57,10 @@ real fix and tier 4 is belt-and-braces.
 leak, which is closed). Evidence: `/monitor/conversations` persona=mike ts=2026-08-12T00:14:57,
 711 chars, all deliberation, no `[CONTEXT]` block.*
 
----
+- **[needs building]** Fix speech-to-text for Bulgarian. When user speaks Bulgarian, the transcription model defaults to English and produces phonetic garbage/small English words instead of correct Bulgarian text.  
+  `2026-08-15T13:49:35.728044Z`
 
+---
 ## Now
 
 **Ranked — position is priority.** Capped at ~10, so something enters by displacing something.
@@ -109,7 +111,46 @@ standing rule distrusts.*
   cheaper than an instruction.
   *filed 2026-08-15 · data corrected the same day, cause open*
 
-- **3. [DB-0809-02] Every scheduled job re-asks the same unanswered question, so one unfinished
+- **3. [DB-0815-06] The system invented an email address and stored it as fact.** The `Eva`
+  contact carried **`eva@example.com`** — `example.com` is the IANA-reserved documentation
+  domain, so this is not a mistyped real address, it is a placeholder the model produced and
+  `write_contact` accepted and persisted. Mike, 2026-08-15: *"That shouldn't happen."*
+  **Same class as the `research_agent` source fabrication** closed 2026-08-10 (`a36d8c2`) — a
+  model filling a required-looking field with something plausible rather than leaving it empty.
+  That one was fixed by having Python author the value instead of the model. **Here the fix is
+  refusal, not authorship:** `write_contact` should reject reserved and obviously-placeholder
+  domains (`example.com/net/org`, `test`, `invalid`, `localhost`) outright, the way
+  `_OWN_IDENTITY_SIMILARITY_THRESHOLD` already refuses an exact match on the user's own address.
+  A stored fake address is worse than a blank field — it will eventually be *sent to*.
+  *filed 2026-08-15 by Mike, from the live CRM dump · value removed during the Eva/Iva merge*
+
+- **4. [DB-0815-07] CRM writes are never deduplicated against existing contacts, so the same
+  person accumulates records.** Three live instances in eight records, found 2026-08-15:
+  *(a)* **`Eva` and `Iva Diamond` were one person** — Mike's family member, surname Diamond,
+  first name spoken as "Eva". He corrected the name **five times** (machine log, ×5) and the
+  correction never merged the records; both survived every correction. Merged by hand 2026-08-15,
+  Eva archived with a `merged_into` pointer.
+  *(b)* **`Kathaleen Jermyn` vs `Kathleen Jermyn`** — the spoken name did not match the spelling
+  in the email. Mike: unimportant contact, **no action on this instance**, but it is the shape to
+  catch.
+  *(c)* `_find_by_name` is naive substring matching, so `Jon`/`Jonathan`/`Jonathan Whitfield`
+  become three records — already noted under `[DB-0810-11]`.
+  **Mike's requirement, 2026-08-15: "CRM entries should be intentionally deduplicated against
+  existing entries, otherwise this will happen often."** So dedup is a write-path check, not a
+  periodic sweep — `write_contact` should surface near-matches as evidence before creating, the
+  same "evidence, not a verdict" pattern `tools/scheduling.py` and the calendar duplicate audit
+  already use. Fuzzy matching must cover **speech-to-text near-misses** (Eva/Iva, Kathaleen/
+  Kathleen), which is exactly what `difflib.SequenceMatcher` is already used for elsewhere in
+  this same file.
+  **Blocking prerequisite, found the same day: the CRM has no merge or archive tooling at all.**
+  No `delete`, no merge, no `merged_into` support — the 2026-08-15 fix was hand-written JSON, and
+  the project's standing **archive-on-merge** rule (data is never deleted, it moves to archive
+  with a pointer) is therefore unimplemented here. Detecting a duplicate is useless without a
+  supported way to resolve one. **Build the merge path first.**
+  *filed 2026-08-15 by Mike · (a) resolved in data, cause open · this is the same dedup risk
+  flagged for the Google Contacts pull in `[DB-0810-17]` — a bulk import makes it acute*
+
+- **5. [DB-0809-02] Every scheduled job re-asks the same unanswered question, so one unfinished
   ritual arrives as three or four separate messages.** *(Retitled 2026-08-15 — the trace week is
   **answered three days early and all three prior hypotheses are wrong**. Read the finding below
   before the history; the history is kept because two earlier diagnoses were also confidently
@@ -161,7 +202,7 @@ standing rule distrusts.*
   Inbox 2026-08-14**, reported by Mike via the VM (2026-08-12T08:23Z); fix date verified against
   `git log` the same day*
 
-- **4. [DB-0810-15] A persona should be able to send in one language and receive in another —
+- **6. [DB-0810-15] A persona should be able to send in one language and receive in another —
   independently.** *(Rescoped 2026-08-15 by Mike. The original entry was "voice transcription is
   English-only"; that was the symptom he hit, not the need. The voice half is now `[DB-0815-02]` in
   `## Later`, low priority — **text is the actionable path and it is not blocked by anything**,
@@ -252,7 +293,7 @@ standing rule distrusts.*
   short utterances, which is most of what voice sends.
   *filed 2026-08-10 by Mike, live during feature testing · both blockers verified in code same day*
 
-- **5. [DB-0810-17] An external CRM bridge — the count question itself is answered.** At seq 009
+- **7. [DB-0810-17] An external CRM bridge — the count question itself is answered.** At seq 009
   Mike asked for a route *and* a CRM contact count; the system declined it as needing an external
   connection it doesn't have, when Metatron's own contact store (`list_contacts`, `search_contacts`
   in [tools/crm.py](tools/crm.py)) already held the answer. **(a) closed 2026-08-15** —
@@ -726,6 +767,15 @@ partner (`scheduler.yaml:43` — *"Check in."*, 1.00 wording overlap) was **nois
 file, which `scripts/check_agent_tools.py` does not scan — so `synthesizer`'s missing `write_log`
 grant is now **invisible to the guard** while still working only by `dispatch_tool()`'s lack of
 enforcement. Same class as `[DB-0810-03]`; the gap did not change, the ability to see it did.)*
+
+- **[already applied by the tool]** Switched output to Bulgarian transliteration (Latin alphabet) to match user's STT workaround.  
+  `2026-08-15T13:51:39.676925Z`
+
+- **[user corrected a prior turn]** User is confirming the necessity of a workaround for the Bulgarian language recognition bug.  
+  `2026-08-15T13:50:27.705106Z`
+
+- **[user corrected a prior turn]** [N/A - the user's message is a shift in intent, not a correction of a past error.]  
+  `2026-08-15T13:48:33.030203Z`
 
 - **[user corrected a prior turn]** N/A  
   `2026-08-14T20:02:29.913465Z`
