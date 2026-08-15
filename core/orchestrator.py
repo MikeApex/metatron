@@ -120,9 +120,19 @@ def load_profile(persona: str | None = None) -> str:
     except Exception:
         return ""
 
+    # Fields tools/profile.py marks as retrieved-on-demand are skipped here rather than being
+    # excluded by this function happening not to mention them. Until 2026-08-15 _PROMPT_EXCLUDED
+    # was documentary only and this list was the real, unstated policy — so the two could drift
+    # silently, and a new render line was all it took to leak a contact detail into every
+    # head-layer prompt. `_show()` is the enforcement.
+    from tools.profile import _PROMPT_EXCLUDED
+
+    def _show(field: str):
+        return None if field in _PROMPT_EXCLUDED else profile.get(field)
+
     lines = []
 
-    if profile.get("name"):
+    if _show("name"):
         lines.append(f"Name: {profile['name']}")
 
     loc = profile.get("location") or {}
@@ -132,8 +142,8 @@ def load_profile(persona: str | None = None) -> str:
     if loc.get("timezone"):
         lines.append(f"Timezone: {loc['timezone']}")
 
-    age = profile.get("age")
-    birth_year = profile.get("birth_year")
+    age = _show("age")
+    birth_year = _show("birth_year")
     if age:
         lines.append(f"Age: {age}")
     elif birth_year:
@@ -148,16 +158,16 @@ def load_profile(persona: str | None = None) -> str:
     # English: no preference must stay distinguishable from a preference for English.
     from tools.profile import language_name
 
-    if profile.get("input_language"):
+    if _show("input_language"):
         lines.append(f"The user writes and speaks to you in: {language_name(profile['input_language'])}")
-    if profile.get("output_language"):
+    if _show("output_language"):
         lines.append(f"Respond to the user in: {language_name(profile['output_language'])}")
 
-    if profile.get("occupation"):
+    if _show("occupation"):
         lines.append(f"Occupation: {profile['occupation']}")
-    if profile.get("household"):
+    if _show("household"):
         lines.append(f"Household: {profile['household']}")
-    if profile.get("health_notes"):
+    if _show("health_notes"):
         lines.append(f"Health notes: {profile['health_notes']}")
 
     for item in (profile.get("other") or []):

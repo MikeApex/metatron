@@ -97,20 +97,26 @@ def language_name(code: str) -> str:
 
 _CODE_TO_NAME = {v: k.title() for k, v in _LANGUAGE_NAMES.items()}
 
-# Never rendered into the system prompt by load_profile(). Retrieved on demand.
+# Never rendered into the system prompt by load_profile(). Retrieved on demand via read_profile.
 #
-# ⚠ THIS NAME PROMISES ENFORCEMENT IT DOES NOT PROVIDE — found 2026-08-15.
-# It has exactly one reference in the codebase: this definition. `load_profile()` lives in
-# core/orchestrator.py and is a hand-written per-field list that does not consult this set, or
-# WRITABLE, at all. Contact details stay out of the system prompt only because that list happens
-# not to render them — not because anything stops it. Adding an `email` line there would leak a
-# contact detail into every head-layer prompt with nothing to catch it, and this module's own
-# docstring ("contact details are deliberately excluded") would still read as though it were
-# guarded. Same "being told is not being prevented" class as the tool allowlists in
-# `.claude/rules/agent-files.md`. Left in place rather than deleted because the *intent* is
-# right and is the correct spec for a real check; the fix is to make `load_profile()` derive
-# from it. Do not treat a clean read of this constant as evidence of anything.
-_PROMPT_EXCLUDED = _CONTACT_FIELDS
+# THIS IS NOW ENFORCED. Until 2026-08-15 it was not: this constant had exactly one reference in
+# the codebase — its own definition — while `load_profile()` in core/orchestrator.py rendered a
+# hand-written per-field list that never consulted it. Contact details stayed out of the prompt
+# only because that list happened not to render them, so adding an `email` line there would have
+# leaked a contact detail into every head-layer prompt with nothing to catch it, while this
+# module's docstring went on claiming they were "deliberately excluded". `load_profile()` now
+# skips any field named here, so the constant is the control it always read as.
+#
+# `health_notes` was added 2026-08-15 (Mike). It is a real fact worth keeping — his was
+# "Standard oatmeal: 60g oats, 100g 2% milk..." — but a standing breakfast composition does not
+# belong in the system prompt of every scheduled job and every unrelated conversation. The rule
+# he stated generalises past this one field: **detail the tool learns about a user belongs at
+# the level that needs it, retrieved when relevant, not broadcast on every call.** Physical
+# Health's diet tracking wants this; the morning brief does not. Agents that need it call
+# `read_profile('health_notes')` at the point of use — the same pattern already used for
+# contact details, and the same argument as ROADMAP § D2's move of domain data out of
+# instruction files into on-demand config.
+_PROMPT_EXCLUDED = _CONTACT_FIELDS | {"health_notes"}
 
 
 def _profile_path() -> Path:

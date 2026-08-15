@@ -72,7 +72,44 @@ Reasoning lives in `archive/PROJECT_LOG.md` § 2026-08-10, last. Every entry car
 checked and when; a verdict without that line is a description, and descriptions are what the
 standing rule distrusts.*
 
-- **1. [DB-0809-02] Every scheduled job re-asks the same unanswered question, so one unfinished
+- **1. [DB-0815-04] In Bulgarian mode the app shows Latin letters where it should show
+  Cyrillic.** Mike verified live 2026-08-15 with `output_language: bg` set on his own persona:
+  **the agent receives Cyrillic and understands it correctly**, so input and comprehension are
+  fine — what is wrong is what the app puts on screen. The response renders transliterated
+  ("Dobro utro") instead of Cyrillic ("Добро утро").
+  **Not yet diagnosed, and there are two candidates that need separating before any fix:**
+  *(a)* the translation backend is returning transliteration — `core/translate.py`'s prompt says
+  "translate into Bulgarian" and does not say *in Cyrillic script*, which a model can satisfy with
+  romanisation; *(b)* the client mangles it — `static/index.html` serves both web and APK, so a
+  font or encoding fault would show in both. **Check (a) first and cheaply**: call
+  `translate("Good morning.", "bg", "Bulgarian")` on the VM and look at the raw string. If it
+  comes back Cyrillic, the fault is client-side; if Latin, it is the prompt and the fix is one
+  line. Do not change both at once.
+  *filed 2026-08-15 by Mike from live testing · the feature otherwise works — he confirmed
+  Bulgarian in and out before switching back to English*
+
+- **2. [DB-0815-05] Contact corrections were being written into Mike's own identity, and rode in
+  every system prompt.** Found 2026-08-15 while verifying the language render on the VM. His
+  `profile.yaml` `name` field contained **"Contact name updated from Eva to Iva."**, and the
+  `other` list held six facts about *other people* (Iva Diamond, Horatiu Stefan, Eva's office
+  availability). `load_profile()` renders all of it, so every head-layer call — every session,
+  every scheduled job — was told the user's name was that sentence.
+  **This is almost certainly the mechanism behind a correction Mike has made five times**: the
+  machine log's `corrected contact name from "eva"` sits at ×5. Each correction appears to have
+  landed in the profile rather than the contact record, so the system kept getting the name wrong
+  *and* accreted the evidence of getting it wrong into its own view of who the user is.
+  **Same class as the incident `tools/profile.py` was built for** (2026-08-02: email, postal
+  address and phone landing in the persona preferences file and riding in every prompt) —
+  recurred in a new direction, contact data into the profile rather than out of it.
+  **Data corrected on the VM 2026-08-15** (`name` → `Mike`, `other` cleared, backup at
+  `profile.yaml.bak-2026-08-15`). **The write path is NOT fixed and is the item**: nothing stops
+  the next contact correction going to the same place. Find which tool call wrote it — `crm.py`'s
+  `write_contact` and `profile.py`'s `write_profile` are both reachable from the same turn, and
+  the model chose wrong. A schema-level fix (profile refuses text naming a third party) is
+  cheaper than an instruction.
+  *filed 2026-08-15 · data corrected the same day, cause open*
+
+- **3. [DB-0809-02] Every scheduled job re-asks the same unanswered question, so one unfinished
   ritual arrives as three or four separate messages.** *(Retitled 2026-08-15 — the trace week is
   **answered three days early and all three prior hypotheses are wrong**. Read the finding below
   before the history; the history is kept because two earlier diagnoses were also confidently
@@ -124,7 +161,7 @@ standing rule distrusts.*
   Inbox 2026-08-14**, reported by Mike via the VM (2026-08-12T08:23Z); fix date verified against
   `git log` the same day*
 
-- **2. [DB-0810-15] A persona should be able to send in one language and receive in another —
+- **4. [DB-0810-15] A persona should be able to send in one language and receive in another —
   independently.** *(Rescoped 2026-08-15 by Mike. The original entry was "voice transcription is
   English-only"; that was the symptom he hit, not the need. The voice half is now `[DB-0815-02]` in
   `## Later`, low priority — **text is the actionable path and it is not blocked by anything**,
@@ -215,7 +252,7 @@ standing rule distrusts.*
   short utterances, which is most of what voice sends.
   *filed 2026-08-10 by Mike, live during feature testing · both blockers verified in code same day*
 
-- **3. [DB-0810-17] An external CRM bridge — the count question itself is answered.** At seq 009
+- **5. [DB-0810-17] An external CRM bridge — the count question itself is answered.** At seq 009
   Mike asked for a route *and* a CRM contact count; the system declined it as needing an external
   connection it doesn't have, when Metatron's own contact store (`list_contacts`, `search_contacts`
   in [tools/crm.py](tools/crm.py)) already held the answer. **(a) closed 2026-08-15** —
