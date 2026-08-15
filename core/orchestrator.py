@@ -1280,8 +1280,18 @@ def split_context_block(complete: str) -> tuple[str, dict | None]:
     return visible, None
 
 
-def persist_context_block(ctx: dict | None) -> None:
-    """Write a parsed [CONTEXT] block to the tracker. Best-effort; never blocks a response."""
+def persist_context_block(ctx: dict | None, user_text: str | None = None) -> None:
+    """
+    Write a parsed [CONTEXT] block to the tracker. Best-effort; never blocks a response.
+
+    `user_text` is the user's own turn, and it is what keeps an open thread alive.
+    The Synthesizer re-emits the entire `open_threads` list on every response, so
+    its resending a thread says nothing about whether the thread still matters —
+    "post-travel recovery" survived two weeks on exactly that. Thread expiry
+    therefore keys on the *user* engaging a thread, the same correction `82d394b`
+    made to the repeated-instruction protocol: the system's own output is not
+    evidence of the user's intent.
+    """
     if not ctx:
         return
     try:
@@ -1292,6 +1302,7 @@ def persist_context_block(ctx: dict | None) -> None:
             follow_ups=ctx.get("follow_ups", []),
             held_items=ctx.get("held_items"),
             clinical_threads=ctx.get("clinical_threads"),
+            user_text=user_text,
         )
         _trace("[PIPELINE] context_tracker  written  (inline block)")
     except PersonaError:
@@ -3489,7 +3500,11 @@ def run_pipeline_session(user_input: str,
         # terminal output and the non-streaming /session endpoint verbatim, and
         # the context tracker is never updated for proactive sessions.
         visible, _ctx = split_context_block(synth_result)
-        persist_context_block(_ctx)
+        # Only a real user turn keeps a thread alive. On a proactive session
+        # `user_input` is the scheduler's own prompt, and passing that would
+        # let the system grant its own threads a reprieve — the same mistake
+        # `82d394b` fixed in the repeated-instruction protocol.
+        persist_context_block(_ctx, user_text=None if is_proactive else user_input)
         filtered = filter_output(visible, "synthesizer")
         if history is not None:
             history.append({"role": "user", "content": user_input})
@@ -3704,7 +3719,9 @@ def _run_pipeline_session_stream_inner(
     visible, _ctx = split_context_block(complete)
     if _ctx is None and _CONTEXT_OPEN not in complete:
         logger.warning("[context_block] no [CONTEXT] block in Synthesizer response")
-    persist_context_block(_ctx)
+    # See the note at the non-streaming call site: a scheduler prompt is not
+    # the user speaking, so it must not grace an open thread.
+    persist_context_block(_ctx, user_text=None if is_proactive else user_input)
 
     _tr.pop_agent(_synth_rec)
     filtered = filter_output(visible, "synthesizer")
