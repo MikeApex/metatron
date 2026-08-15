@@ -316,13 +316,26 @@ def _load_coordinator_context(persona: str | None = None) -> str:
 
 
 def _handle_user_correction(coord_output: str) -> None:
-    """Extract USER_CORRECTION from Coordinator output and log it via write_quality_event."""
+    """
+    Extract USER_CORRECTION from Coordinator output and log it via write_quality_event.
+
+    [DB-0815-09] A null-ish payload means "no correction happened" and must not become an
+    event. `coordinator.md:88` carries this as a slot in a fixed output template annotated
+    "omit if not applicable", and a model filling a template answers the slot rather than
+    deleting it — so 93 of 174 live events on 2026-08-15 said "None" / "N/A". They collapsed
+    into one `None. ×90` entry that drowned the real signatures in Mike's session-start line.
+    Dropping them here rather than at the display layer keeps the *count* honest too, which
+    matters because a machine item's ×3 promotion bar is read off these events.
+    """
     import re as _re
     match = _re.search(r'^USER_CORRECTION:\s*(.+)$', coord_output, _re.MULTILINE)
     if match:
         try:
-            from tools.logger import write_quality_event
-            write_quality_event("USER_CORRECTION", "coordinator", match.group(1).strip())
+            from tools.logger import write_quality_event, is_null_ish
+            detail = match.group(1).strip()
+            if is_null_ish(detail):
+                return
+            write_quality_event("USER_CORRECTION", "coordinator", detail)
         except Exception as e:
             logger.warning(f"[PIPELINE] USER_CORRECTION log failed: {e}")
 

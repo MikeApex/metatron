@@ -171,14 +171,45 @@ PLACEHOLDER_RE = re.compile(r"^\*\(nothing[^)]*\)\*\s*$|^\*\(empty\)\*\s*$")
 # The reliable dedup is `signature()` on the machine side, which keys on
 # structure rather than prose. Human triage in `/backlog` is what actually
 # merges the rest — this only takes the top off the pile.
-SIMILARITY_THRESHOLD = 0.15
+# 0.15 -> 0.45 on 2026-08-15 (Mike's call, [DB-0815-09]).
+#
+# At 0.15 with Dice over content words, two entries merged on ~15% shared words — and
+# because `merge()` REPLACES the displayed line with the newest member's text, matching
+# is against the last link rather than the original. Adjacent pairs each cleared 0.15
+# while the endpoints were unrelated, so clusters drifted:
+#
+#   "the impossibility of having [done X] in the timeline"      08-01  <- chain starts
+#   "multiple rail options exist for Heathrow"                  08-04
+#   "their Heathrow departure was today, August 5th"            08-05
+#   "the calendar event for the Horatiu Stefan meeting"         08-06
+#   "scheduled calendar events imply completion"                08-12  <- headline
+#
+# All sixteen were reported to Mike as one signature. A ×N is therefore a CHAIN LENGTH,
+# not a repeat count — and the ×3 machine-promotion bar is read off exactly these counts.
+#
+# Two changes together, and both are needed: this threshold, and the correction-boilerplate
+# stopwords above. Raising the threshold alone would not have split that chain, because the
+# shared words WERE the correction vocabulary; stopping the boilerplate alone would not
+# either, because 0.15 is low enough for two topic words to clear it by accident.
+SIMILARITY_THRESHOLD = 0.45
 
 # Words carrying no topic signal. Kept short deliberately: a long stop list
 # starts deciding what a request is about.
 STOPWORDS = frozenset(
     "the a an is are was were be been being to of in on for and or but it its "
     "this that with as at by from user system must need needs should have has "
-    "had not no".split()
+    "had not no "
+    # [DB-0815-09] Correction *boilerplate*, added 2026-08-15 (Mike's call). Every
+    # USER_CORRECTION detail is phrased "the user corrected the system's assumption
+    # that ...", so these words are present in nearly all of them and carried most of
+    # the similarity score — meaning entries merged on the fact that both were
+    # corrections, not on what either was about. That is how a chain of Heathrow
+    # travel corrections ended up filed under "scheduled calendar events imply
+    # completion ×16". Dropping them leaves the score to run on topic words only.
+    "corrected correcting correction corrects clarified clarifying clarification "
+    "assumption assumed assuming previously prior previous stated stating restated "
+    "noting noted note requested requesting request confirming confirmed "
+    "instead rather actually turn message response".split()
 )
 
 # Trailing "  ×3" on an entry's first line. Two leading spaces are a markdown
@@ -192,6 +223,30 @@ COUNT_RE = re.compile(r"\s+×(\d+)\s*$")
 # went unread for two days and is why this exists) or the "*filed 2026-08-13 by
 # ...*" footer every item carries; neither has a colon after "due".
 DUE_RE = re.compile(r"\bdue:\s*(\d{4}-\d{2}-\d{2})\b")
+
+
+# [DB-0815-09] Deliberate second copy of tools/logger.py's is_null_ish(), which is the
+# canonical one. This script is STDLIB-ONLY by design — that constraint is what lets it run
+# from a SessionStart hook with no venv — and importing tools.logger would pull in
+# core.persona and core.background. The rule this bends is "One Home Per Rule Class"
+# (.claude/rules/agent-files.md), so the exception is named rather than silent: if the
+# forms change, change both. tests/test_null_ish_events.py asserts the two agree, so a
+# drift fails a test rather than going unnoticed.
+_NULL_ISH = {
+    "none", "n/a", "na", "null", "nil", "nothing", "no correction", "not applicable",
+    "no corrections", "-", "--", "—", "[none]", "[n/a]", "()", "[]",
+}
+
+
+def _is_null_ish(text: str) -> bool:
+    """True when `text` is a model's way of saying "this field does not apply"."""
+    stripped = (text or "").strip().strip("[](){}\"'").strip().rstrip(".!?").strip().lower()
+    if not stripped:
+        return True
+    if stripped in _NULL_ISH:
+        return True
+    return any(stripped.startswith(f"{tag} -") or stripped.startswith(f"{tag} —")
+               for tag in ("n/a", "na", "none"))
 
 # An item's own id, e.g. "[DB-0809-02]". Used to name what's due in the count
 # line rather than quoting the whole entry.
@@ -270,7 +325,18 @@ def fetch_events(server: str, persona: str) -> list[dict]:
         except json.JSONDecodeError:
             pass
 
-    return [e for e in events if isinstance(e, dict) and e.get("event_type") in WANTED]
+    # [DB-0815-09] Drop events whose detail carries no information ("None", "N/A",
+    # "[N/A - ...]"). core/orchestrator.py stops writing these as of 2026-08-15, but
+    # ~93 are already on the VM and this is a READ-time filter on purpose: the project
+    # rule is archive-on-merge, data is never deleted, so the events stay on disk and
+    # simply stop reaching the human-facing backlog. Without this the historical
+    # `None. ×90` entry would keep leading the session-start line forever.
+    return [
+        e for e in events
+        if isinstance(e, dict)
+        and e.get("event_type") in WANTED
+        and not _is_null_ish(str(e.get("detail", "")))
+    ]
 
 
 def vm_status() -> str:
@@ -324,6 +390,71 @@ def _items(block: str) -> int:
     """
     return sum(1 for line in block.splitlines()
                if line.startswith("- ") and not line.startswith("- ~~"))
+
+
+# [DB-0815-10] State and kind markers, added 2026-08-15 (Mike's request). Written inline in
+# an item's own text, exactly like `due:`, so they need no new section and no re-ranking —
+# an item keeps its position in `## Now` while declaring that it cannot be picked up today.
+#
+# WHY MARKERS AND NOT SECTIONS: `## Now` is Mike's ranked priority order. Moving a blocked
+# item to a "Waiting" section would destroy its rank and force a re-ranking when it unblocks,
+# which is the churn the `due:` convention was introduced to avoid on 2026-08-15.
+#
+# `waiting:` is for an EVENT or condition ("waiting: a real unreferenced calendar event");
+# `due:` stays for a CLOCK date. They overlap deliberately — an item may carry both, meaning
+# "blocked on this, re-check on that date".
+# ⚠ THE `@` SIGIL IS LOAD-BEARING, and it took two tries to get here. This is the trap DUE_RE
+# documents — prose reading as a marker — which DUE_RE escaped only because a date is a strict
+# value shape and these markers have none.
+#
+#   Attempt 1, bare `\bsession:` — matched "Fixed same session: `_imap_quote()` added" and
+#   "never given its own session:". Two false positives on the first live run.
+#   Attempt 2, the same anchored at line start — still matched, because [DB-0810-11]'s prose
+#   *wraps* onto a line beginning "session: **where should code replace LLM judgment**".
+#
+# A prose sentence can begin with any word, so no amount of anchoring separates a marker from
+# a wrapped line. The sigil does, because "@session:" does not occur in English. Line-anchoring
+# is kept as well, which makes the written convention "one marker, at the start of its own line".
+_MARKER = r"^[\s\-*`>]*@{}:\s*(.+?)\s*`?\s*$"
+
+WAITING_RE = re.compile(_MARKER.format("waiting"), re.MULTILINE)
+
+# `session:` marks work that needs a working session with Mike — a design decision, a
+# scoping conversation, a judgement only he can make — as opposed to work a session or a
+# worker can simply do. This is the distinction that made a `/backlog attack` fail on
+# 2026-08-15: three of six `## Now` items were unworkable and nothing in the file said so.
+SESSION_RE = re.compile(_MARKER.format("session"), re.MULTILINE)
+
+# `kind:` separates a defect from a request. Mike, 2026-08-15: "Filed requests through this
+# pipeline will be both bugs and requested features, and differentiating would help me tackle
+# the workload." The pipeline already knows which is which at filing time — LABELS maps
+# FEATURE_REQUEST to "needs building" and USER_CORRECTION to "user corrected a prior turn" —
+# so triage carries that forward rather than re-deriving it by reading.
+KIND_RE = re.compile(r"^[\s\-*`>]*@kind:\s*(bug|feature|chore)\b", re.IGNORECASE | re.MULTILINE)
+
+
+def _marked(block: str, pattern: re.Pattern) -> int:
+    """Count top-level entries in `block` carrying a marker. Entry-scoped, not line-scoped."""
+    return sum(1 for entry in _entries(block) if pattern.search(entry))
+
+
+def count_states(text: str) -> dict:
+    """
+    Cross-cutting counts over `## Now` + `## Later` — how much of the list is actually
+    pickable, and how it splits between defects and requests.
+
+    Deliberately NOT a fourth section count. These are *properties of items already
+    counted*, so they must never be added to inbox/now/later — double-counting the same
+    item is the bug `count_items` carries three paragraphs of history about.
+    """
+    live = _section(text, NOW_HEADING) + "\n" + _section(text, LATER_HEADING)
+    kinds = [m.group(1).lower() for m in KIND_RE.finditer(live)]
+    return {
+        "waiting": _marked(live, WAITING_RE),
+        "session": _marked(live, SESSION_RE),
+        "bug": kinds.count("bug"),
+        "feature": kinds.count("feature"),
+    }
 
 
 def count_items(text: str) -> tuple[int, int, int]:
@@ -714,9 +845,21 @@ def main() -> int:
     alert = f" · ⚠ machine: {', '.join(escalations)}" if escalations else ""
     due_ids = due_now(text, args.today or date.today().isoformat())
     due_clause = f" · ⚠ due: {', '.join(due_ids)}" if due_ids else ""
+
+    # [DB-0815-10] Blocked/kind counts ride in parentheses, never as extra bare numbers.
+    # inbox/now/later are a partition of the list; these are properties of the same items,
+    # and printing them as peers would read as a total of five sections.
+    st = count_states(text)
+    blocked = [f"{st['waiting']} waiting" if st["waiting"] else "",
+               f"{st['session']} session" if st["session"] else ""]
+    kinds = [f"{st['bug']} bug" if st["bug"] else "",
+             f"{st['feature']} feature" if st["feature"] else ""]
+    parts = [p for p in blocked + kinds if p]
+    state_clause = f" ({', '.join(parts)})" if parts else ""
+
     if new or not args.quiet or vm_warning:
         print(f"DEV_BACKLOG.md: {added} new · {inbox} inbox · {now} now · "
-              f"{later} later{alert}{due_clause}{vm_warning}")
+              f"{later} later{state_clause}{alert}{due_clause}{vm_warning}")
     return 0
 
 

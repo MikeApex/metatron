@@ -14,6 +14,40 @@ from pathlib import Path
 from core.persona import PersonaError, persona_data_dir, persona_scope, resolve_persona
 from core.background import run_background
 
+
+# [DB-0815-09] A model asked to fill a slot in a structured output template answers the slot
+# rather than deleting it, so "no correction happened" arrives as the word "None" instead of an
+# absent line. These are the forms actually observed in 93 of 174 live USER_CORRECTION events on
+# 2026-08-15 — not a speculative list. Bracketed variants are included because the Coordinator
+# wraps its non-answers: "[N/A - the user's message is a shift in intent, not a correction]".
+#
+# Deliberately NOT a substring match. "None of the medication was taken" is a real correction and
+# must survive; this compares the whole stripped value, and the long-bracketed form is caught by
+# the prefix rule below rather than by widening the set.
+_NULL_ISH = {
+    "none", "n/a", "na", "null", "nil", "nothing", "no correction", "not applicable",
+    "no corrections", "-", "--", "—", "[none]", "[n/a]", "()", "[]",
+}
+
+
+def is_null_ish(text: str) -> bool:
+    """
+    True when `text` is a model's way of saying "this field does not apply".
+
+    Whole-value comparison after stripping surrounding brackets, quotes and terminal
+    punctuation — never a substring test, so a genuine correction that merely begins with
+    the word "none" is unaffected. The one prefix rule covers the observed bracketed
+    explanation form ("[N/A - ...]"), which is a non-answer of arbitrary length.
+    """
+    stripped = (text or "").strip().strip("[](){}\"'").strip().rstrip(".!?").strip().lower()
+    if not stripped:
+        return True
+    if stripped in _NULL_ISH:
+        return True
+    # "[N/A - the user's message is a shift in intent, not a correction of a past error.]"
+    return any(stripped.startswith(f"{tag} -") or stripped.startswith(f"{tag} —")
+               for tag in ("n/a", "na", "none"))
+
 _WRITE_LOG_LOCK = threading.Lock()
 _WRITE_QUALITY_EVENT_LOCK = threading.Lock()
 
@@ -170,14 +204,32 @@ def write_quality_event(
         session_id: Any string identifying the current session (date/time or short ID)
 
     Raises:
-        ValueError: if `detail` is blank. A quality event with no detail cannot be
-            attributed to anything downstream — `scripts/sync_dev_backlog.py` reads
-            these into a human-facing backlog, and an empty entry there is worse
-            than a missing one. A sample of USER_CORRECTION events found ~70% with
-            `detail: None` before this guard existed (2026-08-10), all written by a
-            caller that skipped the parameter the schema never required. Every
-            current call site already supplies real detail; this only stops a new
-            one from silently regressing to the empty default.
+        ValueError: if `detail` is blank **or null-ish**. A quality event with no
+            detail cannot be attributed to anything downstream —
+            `scripts/sync_dev_backlog.py` reads these into a human-facing backlog,
+            and an empty entry there is worse than a missing one. A sample of
+            USER_CORRECTION events found ~70% with `detail: None` before this guard
+            existed (2026-08-10), all written by a caller that skipped the parameter
+            the schema never required.
+
+            **Widened 2026-08-15 from "blank" to "blank or null-ish", because the
+            2026-08-10 guard did not hold.** A live count that day: 93 of 174
+            USER_CORRECTION events still carried no information — but as the literal
+            strings "None", "None.", "N/A", "[N/A - the user's message is a shift in
+            intent, not a correction of a past error.]". Those are not blank, so they
+            passed the guard, reached the backlog, and collapsed into a single
+            `None. ×90` entry that became the loudest signature in Mike's
+            session-start line, crowding out the real ones.
+
+            **The cause is a template, not a careless caller.**
+            `config/agents/coordinator.md:88` carries `USER_CORRECTION:` as a slot in
+            a fixed output block, annotated "omit if not applicable" — and a model
+            filling a structured template answers the slot rather than deleting it.
+            That instruction is already correct and is already ignored, which is
+            precisely why the control belongs here in Python and not in the agent
+            file. Same class as the invented `eva@example.com` that `tools/crm.py`
+            now refuses: **a field that looks required gets filled with something
+            plausible rather than left out.**
 
     Returns:
         Confirmation string.
@@ -187,6 +239,12 @@ def write_quality_event(
         raise ValueError(
             f"write_quality_event({event_type!r}): detail is required and cannot be "
             "blank — pass a real description of what happened, not the empty default."
+        )
+    if is_null_ish(detail):
+        raise ValueError(
+            f"write_quality_event({event_type!r}): detail {detail!r} carries no "
+            "information — this is the 'no correction happened' case, so do not "
+            "write an event at all. See is_null_ish()."
         )
 
     logs_dir = _logs_dir()

@@ -56,12 +56,23 @@ logger = logging.getLogger(__name__)
 # which costs nothing at runtime.
 _SYSTEM_PROMPT = (
     "You are a translation engine. Translate the user's message into {language}. "
+    "Write it in the standard native script of {language} — never romanised, transliterated "
+    "or phonetic Latin spelling. For Bulgarian that means Cyrillic (Добро утро), never "
+    "'Dobro utro'. "
     "Preserve tone, register and meaning exactly — this is a personal assistant speaking to "
     "the person it works for, so keep warmth warm and brevity brief. "
     "Keep proper nouns, names, addresses, times, dates and numbers unchanged. "
     "Output ONLY the translation. Do not explain, comment, apologise, or add quotation marks. "
     "If the message is already in {language}, return it unchanged."
 )
+# The script sentence was added 2026-08-15 for [DB-0815-04]: Mike ran the feature live and the
+# app showed "Dobro utro" where it should have shown "Добро утро". "Translate into Bulgarian"
+# is satisfiable by romanisation, and the model took that reading — plausibly because the same
+# session's speech-to-text was mangling Cyrillic input, so Latin looked like the accommodating
+# choice. Two other candidates were checked and eliminated first: a stored transliteration
+# preference (Mike grepped config/personas/mike.md and mike/*.md on the VM — clean) and a
+# client-side font/encoding fault. The Bulgarian example is deliberately concrete; a general
+# instruction to "use the native script" was the wording that already failed.
 
 
 def _translate_vertex(text: str, language: str) -> str:

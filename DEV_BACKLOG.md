@@ -13,6 +13,31 @@ it is [docs/WORKFLOW.md](docs/WORKFLOW.md).
 is the priority order. Closed items move to `archive/backlog_closed_2026-08.md` with the commit
 or `file:line` that closed them — closed without evidence is not closed.
 
+## Markers — what an item declares about itself
+
+Four inline markers, parsed by `scripts/sync_dev_backlog.py` and counted on the sync line at every
+session start. **Each sits at the start of its own line, inside the item.** They are properties of
+items already counted in `## Now` / `## Later`, never a new section — an item keeps its rank while
+saying it cannot be picked up today.
+
+| Marker | Means | Counted as |
+|---|---|---|
+| `@waiting: <condition>` | blocked on an **event** that has not happened | `N waiting` |
+| `@session: <question>` | needs a **working session with Mike** — a decision, not a build | `N session` |
+| `@kind: bug\|feature\|chore` | a defect vs. something requested vs. upkeep | `N bug`, `N feature` |
+| `` `due: YYYY-MM-DD` `` | a **clock** review date — the older convention, unchanged | `⚠ due:` |
+
+`@waiting:` and `due:` are different questions and an item may carry both: *blocked on this,
+re-check on that date*.
+
+> **The `@` is not decoration.** A bare `session:` matched prose — *"Fixed same session:"*,
+> *"never given its own session:"* — and anchoring to line start did not fix it either, because
+> prose **wraps** onto a line beginning with the word. Same trap `DUE_RE`'s comment documents;
+> `due:` only escaped it because a date is a strict value shape. Do not drop the sigil.
+
+**Coverage is partial and the counts are a floor.** Only items touched on 2026-08-15 carry markers;
+back-tagging the rest is `[DB-0815-10]`.
+
 ---
 
 ## Inbox
@@ -88,8 +113,23 @@ standing rule distrusts.*
   script choices, and (a) becomes belt-and-braces. If no, fall back to (a) — call
   `translate("Good morning.", "bg", "Bulgarian")` on the VM and read the raw string; Cyrillic means
   the fault is client-side, Latin means it is the prompt and the fix is one line.
-  **Do not change more than one at a time.** *(The VM read was attempted by the 08-15 sweep and
-  blocked by the permission classifier — this needs Mike or a lifted rule, not another attempt.)*
+  **✅ (c) ELIMINATED 2026-08-15 — Mike grepped the VM.** `config/personas/mike.md` and
+  `config/personas/mike/*.md` carry no transliteration, Latin-script or Cyrillic line. *(Note the
+  path: `mike.md` is a **sibling** of the `mike/` directory — [core/persona.py:255](core/persona.py#L255)
+  — and a first attempt grepped `mike/mike.md` and found nothing because nothing is there.)*
+  **A residual worth its own attention, and it is not this item:** a `SELF_APPLIED` event was
+  recorded for a preference change that left no trace in any persona file. Either it wrote
+  somewhere unexamined or **it reported an action it did not take** — the class `[DB-0810-13]`
+  closed on 08-15. Honest caveat: Mike reverted his language test the same day, so "written then
+  reverted" cannot be distinguished from "never written" without a VM backup. Filed as
+  `[DB-0815-11]`.
+  **✅ (a) FIXED 2026-08-15, not yet verified live.** `_SYSTEM_PROMPT` in
+  [core/translate.py](core/translate.py) now requires the standard native script and names the
+  Bulgarian case concretely. **This item closes when Mike sets `output_language: bg` and sees
+  Cyrillic** — if he still sees Latin, the answer is (b), the client, and the diagnosis is now
+  down to one candidate.
+  @kind: bug
+  @waiting: one live exchange with `output_language: bg` after the next deploy
   *filed 2026-08-15 by Mike from live testing · the feature otherwise works — he confirmed
   Bulgarian in and out before switching back to English*
 
@@ -112,20 +152,43 @@ standing rule distrusts.*
   `write_contact` and `profile.py`'s `write_profile` are both reachable from the same turn, and
   the model chose wrong. A schema-level fix (profile refuses text naming a third party) is
   cheaper than an instruction.
-  *filed 2026-08-15 · data corrected the same day, cause open*
+  **✅ BUILT AND DEPLOYED** (`97b777c`, registered `704e79b`): `write_profile` refuses a `name` or
+  `other` value that reads as a third-party contact correction and points the caller at
+  `write_contact`. Narrow and conjunctive by design — subject word **and** correction verb **and**
+  a "from...to" span, or a `name` that is a long sentence; verified not to refuse "Robert Smith Jr."
+  or an ordinary fact containing "from"/"to". **Not closed**, because what is being tested is
+  whether the *model* now picks the right tool, and that is behaviour, not code.
+  @kind: bug
+  @waiting: one live turn where Mike corrects a contact name, then check `profile.yaml` is untouched
+  *filed 2026-08-15 · data corrected the same day · guard built and deployed 2026-08-15*
 
-- **3. [DB-0815-06] The system invented an email address and stored it as fact.** The `Eva`
-  contact carried **`eva@example.com`** — `example.com` is the IANA-reserved documentation
-  domain, so this is not a mistyped real address, it is a placeholder the model produced and
-  `write_contact` accepted and persisted. Mike, 2026-08-15: *"That shouldn't happen."*
-  **Same class as the `research_agent` source fabrication** closed 2026-08-10 (`a36d8c2`) — a
-  model filling a required-looking field with something plausible rather than leaving it empty.
-  That one was fixed by having Python author the value instead of the model. **Here the fix is
-  refusal, not authorship:** `write_contact` should reject reserved and obviously-placeholder
-  domains (`example.com/net/org`, `test`, `invalid`, `localhost`) outright, the way
-  `_OWN_IDENTITY_SIMILARITY_THRESHOLD` already refuses an exact match on the user's own address.
-  A stored fake address is worse than a blank field — it will eventually be *sent to*.
-  *filed 2026-08-15 by Mike, from the live CRM dump · value removed during the Eva/Iva merge*
+- **3. [DB-0815-06] The system invents contact details and stores them as fact — the email half is
+  fixed, the rest is not.** *(Widened 2026-08-15 by Mike: "Just invented email addresses, or any
+  invented contact information or data more generally?" The answer is more generally, with one
+  honest limit stated below.)*
+  **✅ Email done and deployed** (`97b777c`): `write_contact` refuses RFC 2606 reserved and
+  placeholder domains — `example.com/.net/.org`, `.test`, `.invalid`, `localhost`. The original
+  case was the `Eva` contact carrying **`eva@example.com`**, which is not a mistyped real address
+  but a placeholder the model produced and the tool persisted. Mike: *"That shouldn't happen."*
+  **What remains — the same refusal across every other field a model can fill:**
+  - **Phone** — the fictional ranges models reach for: NANP `555-0100`–`555-0199`, the UK Ofcom
+    drama range `+44 7700 900xxx`, `123-456-7890`, all-zeroes.
+  - **Address** — `123 Main St`, `Anytown`, `1234 Elm Street`.
+  - **Social handles** — `@username`, `@handle`, `@example`, `@yourname`.
+  - **Name** — `John Doe` / `Jane Doe` as a stored contact.
+  **The limit, stated so this item is not mistaken for something bigger: this refuses *known
+  placeholders*, not *invented data*.** A model that fabricates a real-looking phone number is not
+  caught by anything here and cannot be, without a source of truth to check against. What it does
+  catch is the specific failure observed — a model reaching for the canonical fake when a field
+  looks required — which is the same class as the `research_agent` source fabrication closed
+  2026-08-10 (`a36d8c2`), and the same class as `[DB-0815-09]`'s "None" corrections. **Three
+  instances of one root cause now: a field that looks required gets filled with something
+  plausible rather than left out.** Worth asking, when this is built, whether the registry belongs
+  somewhere shared rather than in `tools/crm.py` alone.
+  A stored fake detail is worse than a blank field — it will eventually be *acted on*.
+  @kind: bug
+  *filed 2026-08-15 by Mike, from the live CRM dump · email half closed and deployed 2026-08-15 ·
+  widened by Mike the same day*
 
 - **4. [DB-0815-07] CRM writes are never deduplicated against existing contacts, so the same
   person accumulates records.** Three live instances in eight records, found 2026-08-15:
@@ -150,10 +213,30 @@ standing rule distrusts.*
   the project's standing **archive-on-merge** rule (data is never deleted, it moves to archive
   with a pointer) is therefore unimplemented here. Detecting a duplicate is useless without a
   supported way to resolve one. **Build the merge path first.**
-  *filed 2026-08-15 by Mike · (a) resolved in data, cause open · this is the same dedup risk
-  flagged for the Google Contacts pull in `[DB-0810-17]` — a bulk import makes it acute*
+  **✅ BUILT AND DEPLOYED** (`97b777c`, registered `704e79b`). `merge_contacts` folds one record
+  into another, unions the list fields, keeps the more recent `last_contact`, and **archives rather
+  than deletes** with a `merged_into` pointer that `read_contact` and `search_contacts` follow — so
+  the old id *and* the old name keep resolving. `write_contact` now surfaces near-matches as
+  evidence before creating; Eva/Iva and Kathaleen/Kathleen both trip it. **The archive-on-merge rule
+  is implemented here for the first time.** **Not closed** for the same reason as item 2: whether an
+  agent actually calls `merge_contacts` when shown a near-match is behaviour.
+  @kind: bug
+  @waiting: one live near-duplicate surfaced, and an agent resolving it with `merge_contacts`
+  *filed 2026-08-15 by Mike · (a) resolved in data, tooling built and deployed 2026-08-15 · same
+  dedup risk flagged for the Google Contacts pull in `[DB-0810-17]` — a bulk import makes it acute*
 
-- **5. [DB-0809-02] Every scheduled job re-asks the same unanswered question, so one unfinished
+- **5. [DB-0813-02] Multi-model rounds have been coming back a voice short, silently.**
+  `OPENAI_API_KEY` in `.env` is invalid — a live `ask_gpt` call returns `401 invalid_api_key`.
+  Nothing announces it: a three-model round just returns two answers, and the missing one reads as
+  a choice rather than a failure. Mike's standing convention is that GPT, Gemini and Claude all
+  answer, so this quietly degrades something he uses constantly. **Fix is a key rotation, not
+  code** — minutes. Check the other keys in `.env` while there.
+  @kind: bug
+  *filed 2026-08-13 by a dev session, verified live · **promoted to `## Now` 2026-08-15 by Mike.**
+  It fails the "Mike raised it" entry bar and was promoted anyway on cost-to-fix against
+  cost-of-sitting — the cheapest item on the list, degrading a daily workflow*
+
+- **6. [DB-0809-02] Every scheduled job re-asks the same unanswered question, so one unfinished
   ritual arrives as three or four separate messages.** *(Retitled 2026-08-15 — the trace week is
   **answered three days early and all three prior hypotheses are wrong**. Read the finding below
   before the history; the history is kept because two earlier diagnoses were also confidently
@@ -189,71 +272,28 @@ standing rule distrusts.*
   Inbox 2026-08-14**, reported by Mike via the VM (2026-08-12T08:23Z); fix date verified against
   `git log` the same day*
 
-- **6. [DB-0810-15] A persona should be able to send in one language and receive in another —
-  independently.** *(Rescoped 2026-08-15 by Mike. The original entry was "voice transcription is
-  English-only"; that was the symptom he hit, not the need. The voice half is now `[DB-0815-02]` in
-  `## Later`, low priority — **text is the actionable path and it is not blocked by anything**,
-  because the model is already multilingual and typing Bulgarian works today.)*
-  **Two independent per-persona settings, not one:**
-  - **Input language** — what the user writes/speaks.
-  - **Output language** — what Metatron responds in.
-  They do not have to match, and that asymmetry is the requirement, not an edge case. Mike's two
-  worked examples: persona A sends and receives entirely in Bulgarian; persona B receives Bulgarian
-  but answers in English.
-  **The third piece, which is the real work:** content that did not originate in the output
-  language must arrive **already translated** — persona A reading an English email gets it in
-  Bulgarian, not in English with an offer to translate. So this is not a response-language flag; it
-  is a translation boundary on surfaced content, and the boundary has to sit somewhere deliberate
-  (Synthesizer output vs. each tool's return value). **Decide that placement before building** — put
-  it in the wrong layer and every specialist grows its own translation logic.
-  **✅ STORAGE HALF BUILT AND MERGED 2026-08-15** (`9a46608`): `input_language` / `output_language`
-  are independent per-persona fields in [tools/profile.py](tools/profile.py), stored as ISO 639-1
-  codes, rendered into the system prompt by `load_profile()`
-  ([core/orchestrator.py:102](core/orchestrator.py#L102)). 16/16 tests in
-  [tests/test_profile_language.py](tests/test_profile_language.py). **Unset renders nothing** — no
-  preference stays distinguishable from a preference for English. Not deployed.
-  **⚠ Found while building, and it invalidates a claim this entry relied on:** `load_profile()`
-  lives in `core/orchestrator.py`, **not** `tools/profile.py`, and is a hand-written per-field list
-  that does not derive from `WRITABLE` or `_PROMPT_EXCLUDED`. `_PROMPT_EXCLUDED` has exactly **one**
-  reference in the codebase — its own definition. Contact details stay out of the prompt only
-  because that list happens not to render them, while `profile.py`'s docstring says they are
-  *"deliberately excluded"*. **Nothing enforces it.** Documented in place 2026-08-15; the real fix
-  is to make `load_profile()` derive from the set. Same class as the unenforced tool allowlists.
-  **✅ Boundary decided 2026-08-15 by Mike: the Synthesizer's output, and only there. BUILT AND
-  DEPLOYED (`8a7d1d7`, `b3ff108`).** Translation runs **after** `filter_output()` as a Python
-  post-processing step against a cheap model — one place, no per-tool logic. **Two designs were
-  tried and rejected first (prose in `synthesizer.md`; a `translate` tool the model calls); both
-  refusals and their reasoning are permanent in `core/translate.py`'s module docstring**, which is
-  where a session that needs them will be standing. Do not re-propose either.
-  **Both known costs were accepted and are live in the code, not hidden:**
-  1. **It breaks streaming.** A translation pass needs the complete response, so a persona with an
-     output language set loses token-by-token streaming — the same constraint behind the
-     `[RETRACT]` design in `ROADMAP.md` § 5A. Voice makes this worse, not better.
-  2. **One extra model call per response**, on every turn for that persona, and it must stay on the
-     ZDR path — it is translating personal content, so it is sensitive-tier and cannot go to a
-     shared cloud model.
-  **What is left before this closes:**
-  1. **Never run end to end** — no persona has `output_language` set, so translation is a no-op
-     everywhere today and every test stubs the backend. Set it on a test persona and run one real
-     exchange before trusting it.
-  2. **The A4 clinical hard-fails have never run with a response language set.** They cannot
-     regress today (no-op), but once a persona is translated, flag *substance* must survive
-     translation — the pipeline suite's pass condition is that crisis framing and medication names
-     reach the user, and that has only ever been checked in English. **Run
-     `tests/run_a4_safety.py --suite pipeline` against a translated persona before any persona
-     with clinical history gets a response language.**
-  3. Speech-in is still English-only — `[DB-0815-02](a)`, unchanged.
-  4. **The known cost to watch, not to design around now:** content the Synthesizer treats as a
-     verbatim quote (an email body it is relaying) may pass through in its source language. If that
-     shows up in real use, the fix is to tag source language on tool returns and let the Synthesizer
-     act on the tag — *not* to move translation into the tools, which is the option this decision
-     rejected.
-  Privacy note: translation of personal content is sensitive-tier and stays on the ZDR path.
-  *original filed 2026-08-10 by Mike live during feature testing · rescoped 2026-08-15 by Mike ·
-  the `METATRON_WHISPER_LANGUAGE` knob shipped `1d858f2` and is **not** this item · the voice
-  blockers live in `[DB-0815-02]`, which owns them — a duplicate copy was cut from here 2026-08-15*
+- **7. [DB-0806-02] Reserving tickets on a website — the read-only half is unblocked.**
+  Covers Mike's *"reserve tickets on the R website"* ask. Splits cleanly: **`fetch_rendered`
+  (Playwright, read-only) is the recommended half and needs no new trust boundary** — it is the
+  same boundary `fetch_url` already sits behind, with `<untrusted_content>` wrapping. Check VM
+  memory before adopting Playwright. The **interactive** half (click/type/submit) stays gated on a
+  credential store that does not exist and is not promoted. Scope:
+  `archive/plans/level3_web_actions_scope_2026-08-06.md`.
+  @kind: feature
+  *filed by Mike · **promoted 2026-08-15**, read half only — the entry had been sitting in `##
+  Later` behind a blocker that applies to the other half*
 
-- **7. [DB-0810-17] An external CRM bridge — the count question itself is answered.** At seq 009
+- **8. [DB-0808-04] Finding a venue near a named address — no GPS required.**
+  *(b) of this item only.* Google Places venue discovery for `logistics` / `recreation_hobbies`
+  was filed as blocked on the real-time location signal in (a), but **"near a named address" needs
+  no GPS and can ship on its own** — the entry says so itself and it went unread. *(a)* real-time
+  GPS and proactive area-scanning still needs a design pass (privacy tier for continuous location,
+  which layer supplies it, how scanning bounds itself) and stays in `## Later`.
+  @kind: feature
+  @session: (a) only — the continuous-location privacy tier is Mike's decision
+  *filed 2026-08-08 by Mike · **(b) promoted 2026-08-15**, (a) stays parked*
+
+- **9. [DB-0810-17] An external CRM bridge — the count question itself is answered.** At seq 009
   Mike asked for a route *and* a CRM contact count; the system declined it as needing an external
   connection it doesn't have, when Metatron's own contact store (`list_contacts`, `search_contacts`
   in [tools/crm.py](tools/crm.py)) already held the answer. **(a) closed 2026-08-15** —
@@ -435,15 +475,6 @@ items unworkable, which is what made the ranked list misleading: `## Now` must m
   *filed 2026-08-14 by the §10b run-2 window B, which verified the sort order by running it
   rather than reading it · not raised by Mike, so `## Later` by the standing rule*
 
-- **[DB-0813-02] `OPENAI_API_KEY` is invalid — `ask_gpt` has been silently dead.** A live
-  `mcp__ask_gpt__ask_gpt` call returns `401 invalid_api_key` against the key in `.env`. Nothing
-  announces this: a multi-model round just comes back with two voices instead of three, and the
-  missing one looks like a choice rather than a failure. Found 2026-08-13 while running a Chorus
-  review of the commit-guard design — Gemini answered, GPT did not, and the round proceeded
-  one voice short. **Fix is a key rotation, not code.** Worth checking whether the other keys in
-  `.env` are still live at the same time. *filed 2026-08-13 by a dev session · verified live,
-  not inferred*
-
 Real, not prioritised. One or two lines each — detail lives in the code, the log, or
 `archive/backlog_closed_2026-08.md`.
 
@@ -455,7 +486,49 @@ count — the ×3 bar is a floor for things nobody asked for, not a hurdle for a
 `/backlog`'s "promoted the day he hits it"); and **`Now` is cleared before `Later` is started**,
 so this is not a parallel track to pick from when a `Now` item is time-gated.
 
+- **[DB-0815-11] The system recorded a preference change it appears never to have made.** A
+  `SELF_APPLIED` event at `2026-08-15T13:51:39Z` reads *"Switched output to Bulgarian
+  transliteration (Latin alphabet) to match user's STT workaround."* Mike then grepped
+  `config/personas/mike.md` and `mike/*.md` on the VM: **no transliteration, Latin-script or
+  Cyrillic line exists anywhere.** So either the write landed somewhere unexamined, or the system
+  reported an action it did not take — the class `[DB-0810-13]` closed on 2026-08-15 with action
+  provenance, which makes a fresh instance worth understanding rather than assuming closed.
+  **Honest caveat that must not be dropped:** Mike reverted his language test the same day, so
+  "written then reverted" cannot be distinguished from "never written" without a VM backup. Check
+  `profile.yaml.bak-2026-08-15` and any `mike.md` history before concluding.
+  **The second-order concern is the one that matters:** this is the second wrong self-applied
+  preference in four days (the 08-12 evening check-in consolidation was the first, and Mike
+  rejected it). Both were silent. Whether `write_persona` should self-apply an inferred preference
+  *at all* without confirmation is the real question, and it is his to answer.
+  @kind: bug
+  @session: whether a self-applied preference needs a confirmation gate
+  *filed 2026-08-15 by the `/backlog deep` sweep, from the machine log*
+
+- **[DB-0815-10] Backlog items now declare whether they can actually be picked up.** Mike,
+  2026-08-15: a way to mark items *waiting for an event* or *needing a development session*, and to
+  tell a **bug** from a **requested feature**, counted at session start. **BUILT** in
+  `scripts/sync_dev_backlog.py`: `@waiting:`, `@session:`, `@kind: bug|feature|chore`, written at
+  the start of a line inside the item, counted across `## Now` + `## Later`, and printed in
+  parentheses so they never read as a fourth section.
+  **The `@` sigil is load-bearing and cost two attempts.** A bare `session:` matched prose
+  (*"Fixed same session:"*, *"never given its own session:"*), and anchoring to line start did not
+  save it either, because prose **wraps** onto a line beginning "session:". Same trap `DUE_RE`
+  documents; `DUE_RE` escaped it only because a date is a strict value shape. **What remains:**
+  back-tag the rest of the file — only the items touched on 2026-08-15 carry markers, so the counts
+  are currently a floor, not a total.
+  @kind: feature
+  *filed and built 2026-08-15 at Mike's request · `tests/test_null_ish_events.py` 43/43*
+
 **Safety and test gaps**
+- **[DB-0810-14] The A4 clinical hard-fails have never run with a response language set.**
+  They cannot regress while no persona has `output_language` (translation is a no-op), but once one
+  is translated, flag *substance* must survive translation — the pipeline suite's pass condition is
+  that crisis framing and medication names reach the user, and that has only ever been checked in
+  English. **Run `tests/run_a4_safety.py --suite pipeline` against a translated persona before any
+  persona with clinical history gets a response language.** Bears on `ROADMAP.md` § 0 clause 8.
+  @kind: chore
+  *split out of `[DB-0810-15]` 2026-08-15 when that item was demoted — a safety gap should not be
+  parked inside a shipped feature's entry, which is how it would have been lost*
 - **[DB-0815-08] The Synthesizer quoted its own instruction file to Mike, and only the filter
   stopped it — nothing detects why it happened.** Tier 4 of `filter_output()` (`bbda875`) now
   suppresses a response reproducing 10+ verbatim words from the agent's instruction file or the
@@ -554,6 +627,9 @@ so this is not a parallel track to pick from when a `Now` item is time-gated.
   *filed 2026-08-10 · built and deployed, not exercised against live data*
 
 **Capability**
+- **[DB-0810-15] A persona can send in one language and receive in another.** **BUILT AND DEPLOYED 2026-08-15** (`8a7d1d7`, `b3ff108`) — demoted from `## Now` the same day: the feature works and what remained was two checks, not build work. The render defect is `[DB-0815-04]`; the A4 gap is `[DB-0810-14]`; speech-in is `[DB-0815-02]`. **Rejected designs are permanent in `core/translate.py`'s docstring** — do not re-propose prose in `synthesizer.md` or a model-called translate tool.
+  @kind: feature
+  *demoted 2026-08-15 by the `/backlog deep` sweep, Mike's call*
 - **[DB-0815-02] Voice in a language other than English. LOW priority (Mike, 2026-08-15).**
   *(Retitled 2026-08-15 — it was "both directions" and **half of it had already shipped**. Speech
   **out** is built; only speech **in** is blocked. See (b).)* Split out of `[DB-0810-15]` when that
@@ -634,17 +710,14 @@ so this is not a parallel track to pick from when a `Now` item is time-gated.
   `[DB-0814-01]`'s null-report silencing, which is arguably the same want expressed smaller. **Scope
   against obligations before designing anything new.** *filed 2026-08-14 by Mike via the VM
   (2026-08-11T08:36Z)*
-- **[DB-0806-02]** Level 3 web access. Split into rendered-read (`fetch_rendered`, Playwright,
-  read-only — recommended, same trust boundary as `fetch_url`; check VM memory first) and
-  interactive click/type/submit, which stays gated on a credential store that does not exist.
-  Covers Mike's *"reserve tickets on the R website"* ask. Scope:
-  `archive/plans/level3_web_actions_scope_2026-08-06.md`.
-- **[DB-0808-04]** **Location signal + the venue discovery gated on it.** *(a)* Real-time GPS
-  and proactive area-scanning (Mike's framing) needs a design pass: privacy tier for continuous
-  location, which layer supplies it, how scanning bounds itself. *(b)* Google Places venue
-  discovery for `logistics`/`recreation_hobbies` is blocked on exactly that signal — but
-  **"near a named address" needs no GPS and could ship first**.
-  *merged 2026-08-10 — absorbed `[DB-0807-02]`, the same blocker restated*
+- **[DB-0815-12] Real-time location as a signal.** GPS and proactive area-scanning (Mike's
+  framing) needs a design pass: privacy tier for continuous location, which layer supplies it, how
+  scanning bounds itself. **Split out of `[DB-0808-04]` 2026-08-15** when the venue-discovery half
+  was promoted to `## Now` — that half never needed this signal, and keeping them as one entry is
+  what hid a shippable feature behind an unmade design decision for a week. Given its own id
+  because two halves of one id break `qa_sweep.sh`'s backlog-ids check.
+  @session: the continuous-location privacy tier
+  *merged 2026-08-10 — absorbed `[DB-0807-02]`, the same blocker restated · split 2026-08-15*
 - **[DB-0809-13]** Sentence-chunked TTS. Kokoro is at 2.8s/call. **Do not build before using
   voice enough to say whether 2.8s actually feels slow.**
 - **[DB-0809-08]** "Unsurfaced opportunities" is the one troubleshooting category with no
@@ -775,43 +848,114 @@ before trusting any count in this section.)*
 
 - **[already applied by the tool]** Switched output to Bulgarian transliteration (Latin alphabet) to match user's STT workaround.  
   `2026-08-15T13:51:39.676925Z`
-  → **promoted 2026-08-15 into `[DB-0815-04]` candidate (c). Do not re-file.**
 
 - **[user corrected a prior turn]** User is confirming the necessity of a workaround for the Bulgarian language recognition bug.  
   `2026-08-15T13:50:27.705106Z`
 
-- **[user corrected a prior turn]** [N/A - the user's message is a shift in intent, not a correction of a past error.]  
-  `2026-08-15T13:48:33.030203Z`
-
-- **[user corrected a prior turn]** N/A  
-  `2026-08-14T20:02:29.913465Z`
-
-- **[user corrected a prior turn]** N/A  
-  `2026-08-14T14:01:52.439999Z`
-
-- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Date Day: The Mousetrap' (2026-08-18T00:00:00, uid=64dc9379-ce64-4c15-a96a-c6cb4df8e432@ai-life-manager) and 'The Mousetrap Matinee' (2026-08-18T15:00:00, uid=efdc94bb-07b2-49ef-be3a-a43431d8014d@ai-life-manager). title_similarity=0.59, shared_attendees=[], shared_words=['mousetrap']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
-  `2026-08-14T04:35:08.871922Z`
+- **[needs building]** Fix speech-to-text for Bulgarian. When user speaks Bulgarian, the transcription model defaults to English and produces phonetic garbage/small English words instead of correct Bulgarian text.  
+  `2026-08-15T13:49:35.728044Z`
 
 - **[user corrected a prior turn]** User corrected the previous exercise log, stating the run was only a test and requested its removal.  ×2  
   `2026-08-15T11:13:42.274343Z`
 
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Date Day: The Mousetrap' (2026-08-18T00:00:00, uid=64dc9379-ce64-4c15-a96a-c6cb4df8e432@ai-life-manager) and 'The Mousetrap Matinee' (2026-08-18T15:00:00, uid=efdc94bb-07b2-49ef-be3a-a43431d8014d@ai-life-manager). title_similarity=0.59, shared_attendees=[], shared_words=['mousetrap']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-08-14T04:35:08.871922Z`
+
+- **[user corrected a prior turn]** Noted that Giva is likely a reference to Iva Diamond, who was previously noted as the lunch partner.  
+  `2026-08-12T12:47:55.686306Z`
+
+- **[user corrected a prior turn]** The user refers to their companion as "Eve", which conflicts with established records of "Iva Diamond". The directive assumes the intent is for Iva Diamond.  
+  `2026-08-12T08:30:54.115961Z`
+
+- **[instruction change]** Silence 'nothing found' reports for scheduled inbox checks. The system should only notify the user when new actionable mail arrives that requires their triage. Specifically, stop surfacing that pending emails (like the Prudential follow-up) have not arrived.  
+  `2026-08-12T08:27:42.379965Z`
+
+- **[user corrected a prior turn]** The user corrected the communication flow regarding email monitoring, explicitly stating that they do not want to be notified when routine checks return no results.  
+  `2026-08-12T08:26:35.580796Z`
+
+- **[needs building]** Stop assuming passed calendar events are completed. Implement a reconciliation loop to check back on scheduled blocks and actively alert/push the user in the right direction based on calendar intent versus actual reality.  
+  `2026-08-12T08:25:16.368492Z`
+
+- **[user corrected a prior turn]** User corrected the assumption that scheduled calendar events imply completion, requesting active reconciliation and pushing alerts instead of passive tracking.  
+  `2026-08-12T08:25:12.628744Z`
+
+- **[user corrected a prior turn]** The user corrected the system's assumption that calendar events equate to completed actions.  
+  `2026-08-12T08:24:40.201122Z`
+
+- **[needs building]** Bug fix: Evening close scheduler fired 3 repetitive messages; restrict follow-up prompts to a single line. Feature request: Build a mechanism to automatically age out stale state/context (like 'post-travel recovery' lingering for two weeks) to keep live context relevant.  
+  `2026-08-12T08:23:28.940968Z`
+
+- **[user corrected a prior turn]** The user corrected the system's outdated belief that they are still in "post-travel recovery," confirming that period is over and requesting the system adjust its internal state accordingly.  
+  `2026-08-12T08:23:05.655993Z`
+
+- **[already applied by the tool]** Updated interaction preferences: evening check-ins (13 Franklin virtues + 1 food log) will now be delivered as a single consolidated message rather than item-by-item, allowing the user to highlight only the exceptions.  
+  `2026-08-12T08:21:14.706181Z`
+
 - **[user corrected a prior turn]** Dropping the Manny/protest thread and modifying the check-in format to a consolidated 14-point list.  
   `2026-08-12T08:20:17.031497Z`
 
-- ⚠ **[user corrected a prior turn]** Missed the user's previously stated Thursday deadline for the Prudential email and prompted action on it prematurely.  ×5  
+- ⚠ **[user corrected a prior turn]** Missed the user's previously stated Thursday deadline for the Prudential email and prompted action on it prematurely.  ×4  
   `2026-08-11T11:13:14.252775Z`
+
+- **[needs building]** User requested stopping the read-back of triaged emails (applied to persona) and requested implementing a ticket-based system for managing the mailbox more effectively (needs building).  
+  `2026-08-11T08:36:03.236643Z`
+
+- **[user corrected a prior turn]** The user corrected the expectation for email interaction, requesting that already-triaged emails no longer be read back.  
+  `2026-08-11T08:35:01.218376Z`
 
 - **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Draft & Send Prudential Follow-up to Mike' (2026-08-13T00:00:00, uid=a77d8ee0-d0a5-4376-8c33-1c82ed8b0624@ai-life-manager) and 'Check for Prudential scheduling email (Kathleen Jermyn)' (2026-08-13T00:00:00, uid=509f27f7-9d19-4d62-a3cf-ac01eac292fc@ai-life-manager). title_similarity=0.4, shared_attendees=[], shared_words=['prudential']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
   `2026-08-11T04:35:16.777905Z`
 
+- **[needs building]** Fix email dispatch silent failure: system confirms send to the user but the message does not reach the user's provider. Investigate why the tool is returning success without actual handoff.  
+  `2026-08-10T17:10:55.511151Z`
+
+- **[needs building]** Add multi-language support (English and Bulgarian) for voice transcription, or a UI setting to toggle between them. Current dictation forces English phonetic spelling on Bulgarian phrases.  
+  `2026-08-10T16:43:28.455756Z`
+
+- **[needs building]** Create a global default setting variable for mailbox check frequency to apply across all users.  ×2  
+  `2026-08-10T15:51:17.112387Z`
+
 - **[user corrected a prior turn]** The user corrected the grocery reminder logic (not every Friday, but 3 days after the date of an order).  ×2  
   `2026-08-10T15:46:40.890480Z`
 
-- ⚠ **[user corrected a prior turn]** User clarified they wanted to know the mechanism/tools for routing, not the route itself.  ×3  
+- **[agent wanted a tool it lacks]** `learning_growth` attempted `write_archive` (category, notes, status, title) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
+  `2026-08-10T15:00:13.188318Z`
+
+- **[agent wanted a tool it lacks]** `recreation_hobbies` attempted `write_agent_config` (agent_name, content) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
+  `2026-08-10T15:00:11.677489Z`
+
+- **[user corrected a prior turn]** User clarified they wanted to know the mechanism/tools for routing, not the route itself.  
   `2026-08-10T12:29:39.464756Z`
 
-- ⚠ **[user corrected a prior turn]** Noted that Giva is likely a reference to Iva Diamond, who was previously noted as the lunch partner.  ×3  
-  `2026-08-12T12:47:55.686306Z`
+- **[user corrected a prior turn]** The user is clarifying that their previous query was not about the travel itself, but about the *mechanism* used to generate the routing.  
+  `2026-08-10T12:29:21.953978Z`
+
+- **[needs building]** User asked to look in CRM and get a total contact count. Needs an integration with their external CRM system.  
+  `2026-08-10T11:19:18.354306Z`
+
+- **[needs building]** Fix Research Agent returning blank results for live TfL transport queries (Bakerloo, Elizabeth, DLR).  
+  `2026-08-10T11:10:27.325451Z`
+
+- **[user corrected a prior turn]** The user is correcting the previous interaction where the Research query was missed by the coordinator/system.  
+  `2026-08-10T11:09:53.973163Z`
+
+- **[needs building]** research_agent fails with 'NoneType object is not iterable' or returns empty strings when queried for live web data (TfL status, weather, pollen) during user feature test.  
+  `2026-08-10T10:04:30.084620Z`
+
+- **[agent wanted a tool it lacks]** `relationships` attempted `search_memory` (query) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
+  `2026-08-10T06:30:12.978385Z`
+
+- **[user corrected a prior turn]** User pasted the check-in preference for a third time. In previous turns, the Synthesizer failed to adhere strictly to 'Otherwise just ask what's on', adding filler ('Nothing urgently needs your attention...' and 'I already have that instruction...'). The system needs to recognize strict negative constraints.  
+  `2026-08-09T12:27:20.856785Z`
+
+- **[instruction change]** User reiterated existing check-in length instruction verbatim. Triggered repeated instruction protocol to flag that current check-ins are failing to adhere to the brevity rule.  
+  `2026-08-09T09:06:43.932199Z`
+
+- **[user corrected a prior turn]** Correction note: The user referred to the contact as "Eva" in the message, which conflicts with the pre-loaded profile update (Iva Diamond). The directive respects the user's current choice of "Eva" while maintaining the existing identity record.  
+  `2026-08-08T20:07:44.342945Z`
+
+- **[instruction change]** User has submitted the check-in rule multiple times in a row. The system must output strictly 'What  
+  `2026-08-08T18:34:27.078188Z`
 
 - **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Meeting with Jonas at Cross Keys\, Bank' (2026-08-05T17:40:00, uid=696faa2c-1194-4bfd-9ef4-ba9fb500918a@ai-life-manager) and 'Meeting with Jonas at The Cross Keys\, Bank' (2026-08-05T17:40:00, uid=e715ca00-1b55-48c1-953f-f5f10b44cbcf@ai-life-manager). title_similarity=0.95, shared_attendees=[], shared_words=['bank', 'cross', 'jonas', 'keys\\', 'meeting']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
   `2026-08-08T17:13:23.351554Z`
@@ -834,56 +978,185 @@ before trusting any count in this section.)*
 - **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Depart for Heathrow (LHR) Airport' (2026-08-05T11:00:00, uid=6a7cd62e-f48c-44ab-9caf-b3acd2075dbf@ai-life-manager) and 'Heathrow drop-off' (2026-08-05T11:00:00, uid=0e217f61-00f3-4213-9296-437c87c16adb@ai-life-manager). title_similarity=0.48, shared_attendees=[], shared_words=['heathrow']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
   `2026-08-08T17:13:23.350103Z`
 
-- **[user corrected a prior turn]** N/A  
-  `2026-08-07T06:11:35.754575Z`
+- **[instruction change]** Synthesizer is failing to adhere to the existing Interaction Preference for check-ins (max two sentences, name one urgent thing or ask what's on, no recaps). This preference needs to be enforced more strictly at the system/prompt level.  
+  `2026-08-08T16:31:45.535165Z`
 
-- ⚠ **[user corrected a prior turn]** User previously confirmed Rowan transfer was handled, but system asked for details again.  ×3  
+- **[instruction change]** User repeated the check-in brevity rule verbatim. It is already saved in Interaction Preferences but earlier responses failed to follow it. Need to ensure the system strictly enforces this preference over other dialogue generation.  
+  `2026-08-08T12:19:24.143357Z`
+
+- **[user corrected a prior turn]** User previously confirmed Rowan transfer was handled, but system asked for details again.  
   `2026-08-07T16:22:17.434741Z`
 
-- ⚠ **[user corrected a prior turn]** User pasted the check-in preference for a third time. In previous turns, the Synthesizer failed to adhere strictly to 'Otherwise just ask what's on', adding filler ('Nothing urgently needs your attention...' and 'I already have that instruction...'). The system needs to recognize strict negative constraints.  ×3  
-  `2026-08-09T12:27:20.856785Z`
+- **[user corrected a prior turn]** The system incorrectly flagged the Rowan payroll transfer as 'pending' despite the user having previously provided this information.  
+  `2026-08-07T16:21:48.444766Z`
 
-- **[user corrected a prior turn]** [N/A]  
-  `2026-08-04T13:59:16.811749Z`
+- **[instruction change]** User re-stated the strict check-in rule ('never list or recap pending items') because the previous response violated the existing persona config by listing two time-sensitive items. The persona constraint is present but failed to override the generic routing/integration behavior.  
+  `2026-08-07T09:13:05.841606Z`
 
-- **[user corrected a prior turn]** The user is correcting the system for failing to proactively manage the Apex meeting and payroll tasks, which they expect to be handled automatically.  ×2  
+- **[user corrected a prior turn]** User repeated their standing check-in rule word-for-word, indicating my previous response failed to respect it.  
+  `2026-08-07T06:12:15.702788Z`
+
+- **[needs building]** search_memory tool is throwing a JSON parse error: 'Extra data: line 557 column 2 (char 82852)'. The memory file parser needs debugging to restore CRM read access, which is currently blocking contact verification.  
+  `2026-08-06T16:49:21.836539Z`
+
+- **[needs building]** Develop a stronger protocol for onboarding new contacts to the CRM or Google Contacts. Current handling resulted in misattributing the user's email to the contact and silent failures during retrieval.  
+  `2026-08-06T16:47:08.029326Z`
+
+- **[user corrected a prior turn]** The user corrected my assumption that the calendar event for the Horatiu Stefan meeting was fully prepared, noting that the guest was not added.  
+  `2026-08-06T16:44:46.614240Z`
+
+- **[user corrected a prior turn]** Corrected Heathrow event to drop-off rather than personal flight.  
+  `2026-08-05T16:35:21.231662Z`
+
+- **[user corrected a prior turn]** Assumed user was traveling to Sofia based on flight tracking; user corrected that it was just a drop-off.  
+  `2026-08-05T16:16:27.045468Z`
+
+- **[user corrected a prior turn]** Corrected the system's assumption that the user was the one traveling to Heathrow today.  
+  `2026-08-05T16:15:41.116476Z`
+
+- **[agent wanted a tool it lacks]** `finance` attempted `search_memory` (query) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
+  `2026-08-05T15:21:45.223926Z`
+
+- **[user corrected a prior turn]** User corrected the status of their Heathrow departure, stating it was today, August 5th, not tomorrow.  
+  `2026-08-05T15:20:56.548406Z`
+
+- **[needs building]** System must proactively detect when a scheduled calendar event passes without occurring, and automatically prompt the user to reschedule it. Financial tasks (like payroll) must remain prominently surfaced in daily proactive checks until explicitly closed.  
+  `2026-08-05T15:19:45.254683Z`
+
+- **[user corrected a prior turn]** The user is correcting the system for failing to proactively manage the Apex meeting and payroll tasks, which they expect to be handled automatically.  
   `2026-08-05T15:19:21.740492Z`
 
-- **[user corrected a prior turn]** [N/A]  
-  `2026-08-04T13:57:17.397614Z`
+- **[user corrected a prior turn]** User is identifying a data discrepancy in the information provided (asserting Elizabeth Line status).  
+  `2026-08-05T08:40:07.713758Z`
 
-- ⚠ **[user corrected a prior turn]** Corrected contact name from "Eva" (previously appearing in logs) to "Iba".  ×5  
+- **[user corrected a prior turn]** The user corrected the decision from the previous interaction regarding flight tracking (they are now asking to continue it, contradicting the previous note that it was no longer needed).  
+  `2026-08-05T07:19:12.901025Z`
+
+- **[user corrected a prior turn]** The user corrected my prior assumption that they were flying; they are merely dropping someone off at the airport. They also corrected the assumption that the flight tracking was no longer needed.  
+  `2026-08-05T07:05:07.612613Z`
+
+- **[user corrected a prior turn]** System incorrectly assumed user was traveling on flight BA 892 rather than just dropping someone off.  ×2  
+  `2026-08-05T07:04:18.930017Z`
+
+- **[instruction change]** Enable proactive pre-departure travel checks: autonomously look up flight status and relevant transit lines (e.g., DLR, Elizabeth line) before the user asks on travel days.  
+  `2026-08-05T07:02:45.797954Z`
+
+- **[user corrected a prior turn]** User copy-pasted the existing brief check-in rule verbatim, indicating previous turns failed to adhere to it.  
+  `2026-08-05T06:10:40.922935Z`
+
+- **[user corrected a prior turn]** Corrected previous transit concern by noting multiple rail options exist for Heathrow.  
+  `2026-08-04T14:41:57.409553Z`
+
+- **[user corrected a prior turn]** User corrected system for failing to proactively research venue details (address, menu, hours) when a new pub meeting was scheduled.  
+  `2026-08-04T13:58:03.975204Z`
+
+- **[needs building]** User reported that the email permission prompt is not appearing (blocking testing) and requested the ability to read live Google Contacts. Both added to backlog.  
+  `2026-08-04T13:51:08.510189Z`
+
+- **[agent wanted a tool it lacks]** `logistics` attempted `read_archive` (category) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
+  `2026-08-04T13:50:50.369416Z`
+
+- **[needs building]** Implement email permission prompt bubble for user approval before sending outbound emails, and enable Google Contacts live sync/read capability.  
+  `2026-08-04T12:49:26.633029Z`
+
+- **[agent wanted a tool it lacks]** `logistics` attempted `write_archive` (category, content) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
+  `2026-08-04T12:48:56.486418Z`
+
+- **[needs building]** 1) The email approval permission prompt is failing to render in the user's app interface. 2) The system needs a tool to read live Google Contacts directly; currently it only checks internal profile records.  
+  `2026-08-04T12:42:35.495275Z`
+
+- ⚠ **[user corrected a prior turn]** Corrected contact name from "Eva" (previously appearing in logs) to "Iba".  ×3  
   `2026-08-04T12:42:13.046792Z`
 
-- ⚠ **[user corrected a prior turn]** User corrected the assumption that scheduled calendar events imply completion, requesting active reconciliation and pushing alerts instead of passive tracking.  ×16  
-  `2026-08-12T08:25:12.628744Z`
+- **[user corrected a prior turn]** User corrected contact name from Eva to Iva  ×2  
+  `2026-08-04T12:38:53.028444Z`
 
-- **[user corrected a prior turn]** User opted to close the CalDAV integration thread.  ×2  
+- **[user corrected a prior turn]** User opted to close the CalDAV integration thread.  
   `2026-08-04T12:37:18.994165Z`
 
-- **[user corrected a prior turn]** User corrected system for excessive repetition of pending tasks, over-indexing on sleep disruption, and intrusive scheduled check-ins during active dialogue.  ×2  
+- **[user corrected a prior turn]** User explicitly corrected system's read of 'low energy' trend, stating they have natural momentum. System over-extrapolated from isolated log entries about sleep and fatigue.  
+  `2026-08-04T12:20:02.780437Z`
+
+- ⚠ **[user corrected a prior turn]** User corrected the system's assumption of low energy, stating they have strong natural momentum and do not need to force motivation.  ×3  
+  `2026-08-04T12:22:27.850000Z`
+
+- **[agent wanted a tool it lacks]** `work_vocation` attempted `search_memory` (query) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
+  `2026-08-04T12:17:32.889116Z`
+
+- **[agent wanted a tool it lacks]** `logistics` attempted `search_memory` (query) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  ×2  
+  `2026-08-04T16:02:07.471199Z`
+
+- **[needs building]** Remove the voice activation toggle from the app interface, as the voice feature is causing interface friction and interrupting the user's ability to send messages.  ×2  
+  `2026-08-04T07:57:18.076761Z`
+
+- **[user corrected a prior turn]** User restated 'rucking and high intensity' to correct a prior dictation error ('rocking and hop and swing both balls') and reaffirm their fitness baseline.  
+  `2026-08-03T17:15:55.567859Z`
+
+- **[user corrected a prior turn]** User rejected the pivot to step-counting, clarifying they want to keep rucking and kettlebell/strength training active.  
+  `2026-08-03T17:14:49.251718Z`
+
+- **[user corrected a prior turn]** User clarified that they do not want to pivot to step-counting and prefers maintaining their established high-intensity and strength-based fitness goals.  ×2  
+  `2026-08-03T17:15:08.995366Z`
+
+- **[user corrected a prior turn]** Credit card thread is no longer a priority.  
+  `2026-08-03T17:12:56.166021Z`
+
+- **[needs building]** Fix interface bug causing text doubling/duplication and abruptly cutting off user input mid-sentence. Also prioritize fixing the live calendar connection so the system can read and write to the user's calendar.  
+  `2026-08-03T17:12:02.492018Z`
+
+- ⚠ **[agent wanted a tool it lacks]** `logistics` attempted `read_agent_config` (agent_name) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  ×3  
+  `2026-08-04T13:51:41.661503Z`
+
+- **[agent wanted a tool it lacks]** `finance` attempted `read_archive` (category) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
+  `2026-08-03T17:06:28.655802Z`
+
+- ⚠ **[agent wanted a tool it lacks]** `logistics` attempted `write_agent_config` (agent_name, value) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  ×3  
+  `2026-08-04T09:22:14.148392Z`
+
+- **[instruction change]** For all check-ins: maximum two sentences. If exactly one item genuinely needs attention, name it and stop; otherwise just ask what is on. Never list or recap pending items, and never manufacture a topic.  
+  `2026-08-03T15:12:14.933312Z`
+
+- **[agent wanted a tool it lacks]** `physical_health` attempted `write_agent_config` (agent_name, config) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
+  `2026-08-03T15:11:50.265168Z`
+
+- ⚠ **[agent wanted a tool it lacks]** `physical_health` attempted `read_agent_config` (agent_name) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  ×3  
+  `2026-08-04T07:56:50.829916Z`
+
+- ⚠ **[same rule in two places]** This preference may already be covered by a rule that applies to everyone. Preference: config/personas/mike.md:13 — For evening check-ins, deliver all 14 points (13 virtues + food log) in a single consolidated message. Mike will reply by highlighting only the exceptions or things out of the ordinary. Candidate rule(s) it may restate: (1.00) [wording only] config/personas/mike/scheduler.yaml:43 — Check in. (1.00) [wording only] config/templates/scheduler.yaml:40 — Check in. Candidates are ranked by wording overlap, which is weak at this scale — the flagged preference is the reliable part, the partner is a starting point. If the preference says nothing the shared rule does not, delete it. If it is a genuine personal refinement, keep it and reword it so the difference is all it states.  ×7  
+  `2026-08-14T04:30:08.340600Z`
+
+- **[instruction change]** Update check-in logic and Synthesizer instructions so that proactive check-ins are very brief and do not include long summaries of pending tasks, especially when the user has not been actively responding.  
+  `2026-08-03T09:11:56.763043Z`
+
+- **[user corrected a prior turn]** Correction of the RAF Museum schedule (user was there yesterday, not this evening).  
+  `2026-08-03T09:10:59.166436Z`
+
+- **[user corrected a prior turn]** User corrected system for excessive repetition of pending tasks, over-indexing on sleep disruption, and intrusive scheduled check-ins during active dialogue.  
   `2026-08-02T17:48:22.011991Z`
+
+- **[user corrected a prior turn]** Corrected previous system behavior regarding repetitive check-ins and calendar status reporting.  
+  `2026-08-02T17:47:36.290155Z`
 
 - **[user corrected a prior turn]** User explicitly requested to stop being told to "enjoy things" after Synthesizer used the phrase "Enjoy the museum" in the previous turn.  ×2  
   `2026-08-02T14:05:23.180476Z`
 
-- ⚠ **[user corrected a prior turn]** Correction of the RAF Museum schedule (user was there yesterday, not this evening).  ×4  
-  `2026-08-03T09:10:59.166436Z`
+- **[user corrected a prior turn]** User clarified the timing of the museum visit is this evening, not tomorrow.  ×2  
+  `2026-08-02T14:02:51.288826Z`
 
-- ⚠ **[user corrected a prior turn]** User restated 'rucking and high intensity' to correct a prior dictation error ('rocking and hop and swing both balls') and reaffirm their fitness baseline.  ×4  
-  `2026-08-03T17:15:55.567859Z`
+- **[user corrected a prior turn]** The user clarified that the task mentioned for "later" is intended for this evening, not the next day.  
+  `2026-08-02T13:58:21.364287Z`
 
-- ⚠ **[user corrected a prior turn]** The user corrected the system's outdated belief that they are still in "post-travel recovery," confirming that period is over and requesting the system adjust its internal state accordingly.  ×6  
-  `2026-08-12T08:23:05.655993Z`
+- ⚠ **[user corrected a prior turn]** User corrected dictation error of their email address from diamond.mic@gmail.com to diamond.mike@gmail.com  ×3  
+  `2026-08-02T12:16:08.379690Z`
 
-- ⚠ **[user corrected a prior turn]** The user is correcting the log entry for 2026-08-15 by stating the morning run was a test and should be removed.  ×3  
-  `2026-08-15T11:13:18.513588Z`
+- **[user corrected a prior turn]** User corrected the system's perception of the timeline, noting the impossibility of having had a full day's experience within a 10-minute interval.  ×2  
+  `2026-08-01T10:02:46.971124Z`
+
+- **[user corrected a prior turn]** User noted the system echoed the user-provided time '953' for the 'banana' test rather than checking the actual message receipt log (9:52 AM).  ×2  
+  `2026-08-01T08:53:41.172516Z`
 
 - **[user corrected a prior turn]** Mike is correcting the assumption that his 'fit it in' approach to work creates negative pressure; he finds it manageable and beneficial for his family balance.  
   `2026-06-26T21:35:02.264614Z`
-
-- ⚠ **[user corrected a prior turn]** None.  ×90  
-  `2026-08-15T19:29:01.706119Z`
 
 - **[user corrected a prior turn]** User is flagging that the previous exchange produced no response and that an expected write_config action was not executed — this is a pipeline/execution failure, not a content correction per se, but note that the prior turn's intended output did not reach the user and the write_config call was missed.  
   `2026-06-26T15:51:48.929810Z`
