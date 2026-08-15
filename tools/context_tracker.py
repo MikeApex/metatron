@@ -13,6 +13,7 @@ Sensitive-tier, local-only, 600 permissions. Persona-scoped.
 
 import json
 import os
+import re
 from datetime import date
 from pathlib import Path
 
@@ -59,8 +60,9 @@ _ROOT = Path(__file__).parent.parent
 # WHY THIS EXISTS: "post-travel recovery" stayed listed as live context for two weeks after it
 # stopped being true — `open_threads` carried no metadata at all, so nothing could even ask how
 # old an entry was, let alone decide it was stale. Timestamping (`added`, below) shipped first
-# and closed [DB-0814-02] as scoped; this comment now also records the follow-on decision
-# (Mike, 2026-08-15) on what counts as stale and what happens then.
+# and closed [DB-0814-02] as scoped. This comment records two follow-on decisions: an auto-drop
+# policy (Mike, 2026-08-15), and a same-day correction to it once the first version turned out
+# to be inert against the exact incident it was built for.
 #
 # DECISION: auto-drop at write time, nothing destroyed.
 #   - Cutoff: 7 days (`_OPEN_THREAD_EXPIRY_DAYS`). The originating incident ran for two weeks —
@@ -74,24 +76,65 @@ _ROOT = Path(__file__).parent.parent
 #     capped at `_EXPIRED_OPEN_THREADS_CAP` entries (oldest dropped first) so the file cannot grow
 #     unbounded, and it is loaded on disk but never returned by `read_context_tracker()` — the
 #     same "archived but never loaded" pattern already used for resolved clinical threads below.
-#   - Grace rule / interaction with carry-forward: `_merge_open_threads` (next section) carries
-#     forward a resent thread's *original* `added` date on purpose, so a thread that is simply
-#     still open does not look freshly opened every session — that must not change for threads
-#     inside the cutoff window. The tension is only at the moment a thread *crosses* the cutoff:
-#     if it is being actively resent that same turn, dropping it there would make it vanish mid-
-#     conversation on the same write that reasserted it. `_expire_open_threads()` runs BEFORE
-#     `_merge_open_threads()` and resolves this by splitting on cutoff first: threads still inside
-#     the window are untouched and go on to get the normal carry-forward treatment; a thread that
-#     has crossed the cutoff and is *not* in this turn's model output is archived; a thread that
-#     has crossed the cutoff but *is* being resent this turn is given exactly one fresh stamp
-#     (its prior `added` is cleared so the merge step treats it as new) rather than archived —
-#     "active re-assertion resets the clock" without touching the carry-forward rule itself.
 #   - The model is never asked to judge staleness, for the same reason `added` is server-stamped
 #     below: asked "is this still relevant," a model will get it wrong and reset the clock every
 #     turn, which is the original incident's exact failure mode.
 #   - Threads with no `added` date (legacy data written before timestamping existed, see
 #     `_normalize_open_threads`) are never auto-expired — there is no reliable age to test, and
 #     guessing would risk silently dropping live context that predates this feature.
+#
+# CORRECTION (Mike, 2026-08-15, same day): the first cut of the grace rule treated "the thread's
+# text is present in this write's `open_threads`" as proof of active re-assertion. It is not.
+# `open_threads` is replace-semantics and the Synthesizer re-emits the *entire* list on every
+# single turn via the inline [CONTEXT] block — not the Diarist, not once per session. So "resent
+# this turn" was true of every live thread, every write, which means the grace condition could
+# never be false for a thread that was still nominally open — exactly the shape of the original
+# incident: "post-travel recovery" would have been granted grace on every one of the dozens of
+# writes across those two weeks and never expired. The first version was correct against its own
+# tests and inert against the bug it was written to fix.
+#
+# This is the same class of mistake `_frame_proactive()` in core/orchestrator.py was built to
+# fix (commit 82d394b): the system's own repeated output was being read as evidence of the
+# user's intent, because nothing distinguished who actually produced the text. The fix there was
+# to stop trusting *origin* (scheduler prompt labelled as user speech); the fix here is to stop
+# trusting *mere presence* (Synthesizer re-listing labelled as active re-assertion). Same
+# principle: the system re-stating its own prior output is not evidence of anything.
+#
+# CORRECTED GRACE RULE: a thread past the cutoff is archived unless one of two things is true.
+# Mere presence in `open_threads` this turn is no longer sufficient on its own.
+#
+#   1. The USER's own turn engages the thread (`user_text`, an optional parameter on
+#      `write_context_tracker` — defaults to None so every existing caller is unaffected).
+#      Matched by content-word overlap (`_user_engages_thread`) rather than substring, because
+#      most input here is speech-to-text: wording, tense and filler vary turn to turn, so
+#      byte-identical matching would almost never fire. The threshold is a named constant
+#      (`_USER_ENGAGEMENT_OVERLAP`) for the same reason the cutoff is a named constant — so the
+#      next session tuning it does not have to go hunting for a magic number.
+#   2. The thread's TEXT MATERIALLY CHANGED. This needs no new matching code, and the reason is
+#      the existing carry-forward logic in `_merge_open_threads` below: it keys entirely on exact
+#      text. A thread the Synthesizer has genuinely reworded arrives this turn as text that does
+#      not match the stored entry, so `_merge_open_threads` already treats it as a brand-new
+#      thread and stamps it with today's date — that *is* "the clock resets," achieved by the
+#      pre-existing mechanism, not by this rework. The only piece this rework's expiry step
+#      (`_expire_open_threads`) needs to get right is the OLD wording: since it does not appear
+#      in `incoming` this turn either, it is evaluated purely on age and user engagement like any
+#      other omitted thread — if it was already past the cutoff, it is archived (correctly: it
+#      has been superseded by the reworded entry, not merely dropped); if not, it is silently
+#      dropped by ordinary replace semantics, exactly as reword-without-expiry has always
+#      behaved. No special-casing was added for "changed text" because none was needed — it
+#      would have duplicated behaviour the merge step already provides.
+#
+# EXTENSION beyond the literal brief, needed to make the correction actually hold: the same
+# "mere presence is not evidence" principle has to apply AFTER a thread is archived too, not
+# only at the instant it crosses the cutoff. Without this, a thread archived on this write would
+# immediately re-enter `open_threads` on the SAME write — `_merge_open_threads` sees text with no
+# match in `still_eligible` (it was just moved out) and treats it as a brand-new thread, stamped
+# today. On a caller that keeps resending identical text turn after turn (per the CORRECTION
+# above, this project's actual caller), that reproduces the original incident one write later,
+# forever, oscillating archived/revived every other write. `write_context_tracker` therefore
+# filters `open_threads` against the full archive (prior + newly expired) before merging, and a
+# match is dropped unless `_user_engages_thread` grants grace for it too. See the comment at that
+# filter for the mechanics.
 #
 # The date is server-stamped, never taken from the model, for the same reason `raised` is
 # server-stamped on clinical threads above: a model asked to invent "when did this start" will
@@ -104,6 +147,51 @@ _ROOT = Path(__file__).parent.parent
 
 _OPEN_THREAD_EXPIRY_DAYS = 7
 _EXPIRED_OPEN_THREADS_CAP = 50
+
+# Overlap coefficient (shared-words / smaller-set-size, not Jaccard) between a thread's content
+# words and the user's own turn. Dividing by the smaller set means a short thread description
+# is not penalised against a long, rambling turn — same technique as core/rule_classes.py's
+# similarity(), reimplemented locally rather than imported so this module's only cross-domain
+# dependency stays the persona layer; the two callers (rule-conflict sweep vs. thread relevance)
+# have different enough tuning needs that sharing the function would couple them for no benefit.
+# 0.34 (~1/3 of the smaller side) was picked, not measured against real transcripts: it is loose
+# enough that a short user turn ("still sorting the bookstore numbers") clears it against a
+# thread text sharing two or three content words, tight enough that an unrelated turn sharing one
+# stray word does not. Revisit against real speech-to-text transcripts once they exist — flagged
+# in the handoff as the part most likely to need retuning.
+_USER_ENGAGEMENT_OVERLAP = 0.34
+
+_STOPWORDS = {
+    "a", "about", "after", "again", "all", "also", "an", "and", "any", "are", "as", "at", "be",
+    "been", "being", "but", "by", "can", "could", "did", "do", "does", "for", "from", "had",
+    "has", "have", "how", "i", "if", "in", "into", "is", "it", "its", "just", "like", "me", "my",
+    "no", "not", "of", "on", "or", "our", "should", "so", "some", "still", "that", "the", "their",
+    "then", "there", "these", "this", "those", "to", "too", "very", "was", "we", "were", "what",
+    "when", "where", "which", "who", "will", "with", "would", "you", "your",
+}
+
+
+def _content_words(text: str) -> set[str]:
+    """Lowercase alpha tokens, 3+ letters, minus `_STOPWORDS`. See `_USER_ENGAGEMENT_OVERLAP`."""
+    return {w for w in re.findall(r"[a-z']{3,}", (text or "").lower()) if w not in _STOPWORDS}
+
+
+def _user_engages_thread(thread_text: str, user_text: str | None) -> bool:
+    """
+    Grace signal 1: does the USER's own turn plausibly reference this thread?
+
+    `user_text` must come from the user's message, never from anything the system generated —
+    that distinction is the entire point of this rework (see CORRECTION above). This function
+    only does the matching; the caller is responsible for the origin guarantee.
+    """
+    if not user_text:
+        return False
+    thread_words = _content_words(thread_text)
+    turn_words = _content_words(user_text)
+    if not thread_words or not turn_words:
+        return False
+    overlap = len(thread_words & turn_words) / min(len(thread_words), len(turn_words))
+    return overlap >= _USER_ENGAGEMENT_OVERLAP
 
 
 def _merge_open_threads(incoming: list | None, existing: list[dict]) -> list[dict]:
@@ -138,7 +226,7 @@ def _merge_open_threads(incoming: list | None, existing: list[dict]) -> list[dic
 
 
 def _expire_open_threads(
-    existing: list[dict], incoming_texts: set[str], today: str
+    existing: list[dict], user_text: str | None, today: str
 ) -> tuple[list[dict], list[dict]]:
     """
     Split the on-disk open threads (already normalized) into (still_eligible, newly_expired)
@@ -148,13 +236,18 @@ def _expire_open_threads(
     cutoff window is untouched here and gets the normal carry-forward-the-original-date
     treatment exactly as before this feature existed.
 
-    A thread that has crossed the cutoff is handled here instead of there:
-      - text is in `incoming_texts` (the model resent it this turn) -> grace. It goes into
-        `still_eligible` with `added` cleared, so `_merge_open_threads` treats it as a brand new
-        thread and stamps it with today's date — one fresh stamp, not a silent override of the
-        carry-forward rule (which only ever applies to threads that have not crossed the cutoff).
-      - text is not in `incoming_texts` -> `newly_expired`. Archived with its original `added`
-        date plus an `expired_on` stamp; never deleted.
+    A thread that has crossed the cutoff is handled here instead of there. There is
+    deliberately no "is this text present in `open_threads` this turn" check — see the
+    CORRECTION note above `_OPEN_THREAD_EXPIRY_DAYS`; the Synthesizer re-emits the whole list on
+    every turn, so presence proves nothing about relevance:
+      - `_user_engages_thread(text, user_text)` is true (grace signal 1, the user's own turn
+        references it) -> stays in `still_eligible` with `added` cleared, so `_merge_open_threads`
+        treats it as a brand new thread and stamps it with today's date — one fresh stamp.
+      - otherwise -> `newly_expired`. Archived with its original `added` date plus an
+        `expired_on` stamp; never deleted. This also covers a thread that was reworded (grace
+        signal 2): the old wording is not in `incoming` either way, and if it has crossed the
+        cutoff by the time it is superseded, archiving it here is correct — see the comment
+        above for why no separate handling is needed for that case.
 
     A thread with `added is None` (legacy pre-timestamp data, or unparseable) is always kept in
     `still_eligible` — there is no reliable age to test, so it is never auto-expired.
@@ -174,7 +267,7 @@ def _expire_open_threads(
             continue
         if age_days <= _OPEN_THREAD_EXPIRY_DAYS:
             still.append(t)
-        elif text in incoming_texts:
+        elif _user_engages_thread(text, user_text):
             still.append({"text": text, "added": None})
         else:
             expired.append({**t, "expired_on": today})
@@ -355,6 +448,7 @@ def write_context_tracker(
     follow_ups: list[str],
     held_items: list[str] | None = None,
     clinical_threads: list[dict] | None = None,
+    user_text: str | None = None,
 ) -> str:
     """
     Update the session context at close of each exchange.
@@ -367,7 +461,10 @@ def write_context_tracker(
                       E.g. ["bookstore P&L review scheduled for Thursday"].
                       Stamped with an `added` date on write (server-side, not model-supplied);
                       a thread re-sent with the same text keeps its original `added` date rather
-                      than looking freshly opened every session.
+                      than looking freshly opened every session. A thread older than
+                      `_OPEN_THREAD_EXPIRY_DAYS` is auto-dropped and archived unless `user_text`
+                      shows the user engaging it, or its wording has materially changed — see the
+                      module comment above `_OPEN_THREAD_EXPIRY_DAYS`.
         patterns:     Recurring observations worth noting.
                       E.g. ["writing stalls when sleep under 6 hours"].
         follow_ups:   Specific questions to ask next exchange or session.
@@ -385,6 +482,12 @@ def write_context_tracker(
                       ("active" | "watch" | "resolved") and a short 'note'.
                       Unlike the other fields this is merge, not replace:
                       omitting a thread carries it forward unchanged.
+        user_text:    The USER's own turn this exchange — never system-generated text (see the
+                      CORRECTION note above `_OPEN_THREAD_EXPIRY_DAYS`: the Synthesizer's own
+                      re-listing of a thread is not evidence the thread is still relevant).
+                      Optional; defaults to None so existing callers are unaffected. Used only
+                      to grant a past-cutoff open thread grace when the user's words plausibly
+                      reference it — see `_user_engages_thread`.
 
     Returns:
         Confirmation string, plus any status changes or refusals.
@@ -404,19 +507,39 @@ def write_context_tracker(
     )
 
     today = date.today().isoformat()
-    incoming_texts = {
-        str((item.get("text") if isinstance(item, dict) else item) or "").strip()
-        for item in (open_threads or [])
-    }
-    incoming_texts.discard("")
     still_eligible, newly_expired = _expire_open_threads(
-        _normalize_open_threads(existing.get("open_threads")), incoming_texts, today
+        _normalize_open_threads(existing.get("open_threads")), user_text, today
     )
-    stamped_open_threads = _merge_open_threads(open_threads, still_eligible)
 
-    expired_open_threads = existing.get("expired_open_threads") or []
-    if not isinstance(expired_open_threads, list):
-        expired_open_threads = []
+    prior_expired_open_threads = existing.get("expired_open_threads") or []
+    if not isinstance(prior_expired_open_threads, list):
+        prior_expired_open_threads = []
+
+    # An archived thread does not silently walk back into `open_threads` just because its exact
+    # text is still present in `incoming` — that is the same "mere presence is not evidence"
+    # principle this rework exists to enforce, and it has to apply AFTER archiving too, not only
+    # at the moment a thread crosses the cutoff. Without this, a thread archived this very call
+    # would immediately re-enter through `_merge_open_threads` treating its now-unmatched text as
+    # a brand-new thread (stamped today) — undoing the drop in the same write that made it, and
+    # on a caller that keeps resending identical text, reproducing the original incident exactly
+    # one write later every time. Only the same two signals that grant grace before archiving can
+    # bring a thread back afterwards: the user engaging it, or the caller sending different
+    # wording (which is not "the same thread" under this module's exact-text identity anyway, and
+    # is handled for free by `_merge_open_threads`'s normal new-thread path).
+    archived_texts = {t.get("text") for t in prior_expired_open_threads if t.get("text")}
+    archived_texts |= {t.get("text") for t in newly_expired if t.get("text")}
+
+    def _text_of(item) -> str:
+        return str((item.get("text") if isinstance(item, dict) else item) or "").strip()
+
+    filtered_incoming = [
+        item for item in (open_threads or [])
+        if _text_of(item) not in archived_texts or _user_engages_thread(_text_of(item), user_text)
+    ]
+
+    stamped_open_threads = _merge_open_threads(filtered_incoming, still_eligible)
+
+    expired_open_threads = prior_expired_open_threads
     if newly_expired:
         expired_open_threads = expired_open_threads + newly_expired
     if len(expired_open_threads) > _EXPIRED_OPEN_THREADS_CAP:

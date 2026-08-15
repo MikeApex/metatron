@@ -3,10 +3,20 @@ tests/test_open_thread_expiry.py — open-thread expiry in tools/context_tracker
 
 Covers the follow-on decision to [DB-0814-02] (Mike, 2026-08-15): open threads carried an
 `added` timestamp but nothing ever acted on it, so "post-travel recovery" could still stay
-listed as live context indefinitely as long as it kept being resent. This adds auto-drop at
-the 7-day cutoff (`_OPEN_THREAD_EXPIRY_DAYS`), archived (never deleted) to
-`expired_open_threads`, with a grace rule so a thread actively resent past the cutoff gets one
-fresh stamp instead of vanishing mid-conversation.
+listed as live context indefinitely as long as it kept being resent.
+
+This also covers the SAME-DAY CORRECTION to the first version of this feature: the original
+grace rule granted grace whenever a thread's text was present in `open_threads` that turn, which
+sounds like "the model actively resent it" but is not — the Synthesizer re-emits the entire
+`open_threads` list on every single turn via the inline [CONTEXT] block, so that condition was
+true of every live thread on every write and nothing could ever actually expire. The critical
+test below (`test: byte-identical resend with no user engagement expires`) is the one the first
+version of this suite could not have caught, because it never modelled "resent, but the user
+never engaged it."
+
+The corrected rule: a thread past the cutoff is archived unless (1) the user's own turn engages
+it (content-word overlap, `_user_engages_thread`), or (2) its wording materially changed (which
+needs no special code — see the module comment in tools/context_tracker.py).
 
 Run:  python3 tests/test_open_thread_expiry.py
 Exit: 0 all pass, 1 on any failure.
@@ -50,6 +60,7 @@ def main() -> int:
     from tools.context_tracker import (
         _EXPIRED_OPEN_THREADS_CAP,
         _OPEN_THREAD_EXPIRY_DAYS,
+        _user_engages_thread,
         read_context_tracker,
         write_context_tracker,
     )
@@ -67,59 +78,142 @@ def main() -> int:
             "fresh thread has today's added date",
             state["open_threads"][0] == {"text": "new topic", "added": today},
         )
-        check(
-            "fresh thread is not archived",
-            "expired_open_threads" not in state,
-        )
+        check("fresh thread is not archived", "expired_open_threads" not in state)
 
         # --- Regression guard on d40e73c: normal carry-forward of `added` -----------------
         write_context_tracker(["new topic"], [], [])
         state = read_context_tracker()
         check(
-            "unchanged resend keeps its original added date (carry-forward, not reset)",
+            "unchanged resend within the window keeps its original added date",
             state["open_threads"][0]["added"] == today,
         )
 
-        # --- A thread older than the cutoff, NOT resent -> dropped and archived -----------
-        write_context_tracker(["stale topic"], [], [])
-        _age_thread(tracker_path, "stale topic", _OPEN_THREAD_EXPIRY_DAYS + 1)
-        # Next write omits "stale topic" entirely — model has moved on.
-        write_context_tracker(["new topic"], [], [])
-        state = read_context_tracker()
-        open_texts = [t["text"] for t in state["open_threads"]]
-        check("expired thread is dropped from open_threads", "stale topic" not in open_texts)
-
-        raw = json.loads(tracker_path.read_text())
-        archived = {t["text"]: t for t in raw["expired_open_threads"]}
-        check("expired thread appears in expired_open_threads", "stale topic" in archived)
-        check(
-            "archived entry preserves its original added date",
-            archived.get("stale topic", {}).get("added")
-            == (date.today() - timedelta(days=_OPEN_THREAD_EXPIRY_DAYS + 1)).isoformat(),
-            str(archived.get("stale topic")),
-        )
-        check(
-            "archived entry carries an expired_on stamp",
-            archived.get("stale topic", {}).get("expired_on") == today,
-        )
-        check(
-            "expired_open_threads is never returned by read_context_tracker",
-            "expired_open_threads" not in state,
-        )
-
-        # --- Grace rule: resent past the cutoff survives, is NOT archived -----------------
+        # --- THE critical test: byte-identical resend, no user engagement -> expires ------
+        # This is the exact "post-travel recovery" shape: the Synthesizer keeps re-listing the
+        # same text every turn (open_threads is fully re-emitted each time) but the user never
+        # actually brings it up again. The first (corrected-away) version of this feature
+        # treated "text present in open_threads" as proof of active re-assertion, so this case
+        # would have passed grace forever and never expired.
         shutil.rmtree(persona_data_dir(), ignore_errors=True)
-        write_context_tracker(["still going"], [], [])
-        _age_thread(tracker_path, "still going", _OPEN_THREAD_EXPIRY_DAYS + 3)
-        write_context_tracker(["still going"], [], [])  # model actively resends it
+        write_context_tracker(["post-travel recovery"], [], [])
+        for _ in range(20):
+            # Simulate the Synthesizer re-emitting the identical list turn after turn, with
+            # unrelated user messages that never reference the thread.
+            _age_thread(tracker_path, "post-travel recovery", _OPEN_THREAD_EXPIRY_DAYS + 1)
+            write_context_tracker(
+                ["post-travel recovery"], [], [],
+                user_text="what's on my calendar today",
+            )
         state = read_context_tracker()
         open_texts = [t["text"] for t in state["open_threads"]]
-        check("actively resent past-cutoff thread survives (grace)", "still going" in open_texts)
-        graced = next(t for t in state["open_threads"] if t["text"] == "still going")
+        check(
+            "byte-identical resend with no user engagement expires (the incident case)",
+            "post-travel recovery" not in open_texts,
+            str(open_texts),
+        )
+        raw = json.loads(tracker_path.read_text())
+        archived_texts = [t["text"] for t in raw["expired_open_threads"]]
+        check(
+            "the expired thread is archived, not deleted",
+            "post-travel recovery" in archived_texts,
+        )
+
+        # --- Grace signal 1: user's own turn engages the thread ---------------------------
+        shutil.rmtree(persona_data_dir(), ignore_errors=True)
+        write_context_tracker(["bookstore P&L review scheduled for Thursday"], [], [])
+        _age_thread(
+            tracker_path, "bookstore P&L review scheduled for Thursday",
+            _OPEN_THREAD_EXPIRY_DAYS + 2,
+        )
+        write_context_tracker(
+            ["bookstore P&L review scheduled for Thursday"], [], [],
+            user_text="still sorting the bookstore P&L numbers before the review",
+        )
+        state = read_context_tracker()
+        open_texts = [t["text"] for t in state["open_threads"]]
+        check(
+            "user turn referencing the thread grants grace",
+            "bookstore P&L review scheduled for Thursday" in open_texts,
+            str(open_texts),
+        )
+        graced = next(
+            t for t in state["open_threads"]
+            if t["text"] == "bookstore P&L review scheduled for Thursday"
+        )
         check("grace gives it a fresh stamp (today)", graced["added"] == today, str(graced))
         raw = json.loads(tracker_path.read_text())
         archived_texts = [t["text"] for t in raw.get("expired_open_threads", [])]
-        check("grace does not archive the thread", "still going" not in archived_texts)
+        check(
+            "graced-by-engagement thread is not archived",
+            "bookstore P&L review scheduled for Thursday" not in archived_texts,
+        )
+
+        # --- Grace signal 1, negative: unrelated user turn does not grant grace -----------
+        shutil.rmtree(persona_data_dir(), ignore_errors=True)
+        write_context_tracker(["Cato chapter structure still unresolved"], [], [])
+        _age_thread(
+            tracker_path, "Cato chapter structure still unresolved", _OPEN_THREAD_EXPIRY_DAYS + 2
+        )
+        write_context_tracker(
+            ["Cato chapter structure still unresolved"], [], [],
+            user_text="can you check the weather for this weekend",
+        )
+        state = read_context_tracker()
+        open_texts = [t["text"] for t in state["open_threads"]]
+        check(
+            "unrelated user turn does not grant grace",
+            "Cato chapter structure still unresolved" not in open_texts,
+            str(open_texts),
+        )
+
+        # --- Direct unit check on the matcher itself ---------------------------------------
+        check(
+            "_user_engages_thread: overlapping content words match",
+            _user_engages_thread(
+                "bookstore P&L review scheduled for Thursday",
+                "just finished the bookstore review numbers",
+            ),
+        )
+        check(
+            "_user_engages_thread: no overlap does not match",
+            not _user_engages_thread(
+                "bookstore P&L review scheduled for Thursday",
+                "what's the weather like tomorrow",
+            ),
+        )
+        check(
+            "_user_engages_thread: no user_text does not match",
+            not _user_engages_thread("bookstore P&L review scheduled for Thursday", None),
+        )
+
+        # --- Grace signal 2: materially changed wording resets the clock ------------------
+        # No special-case code implements this — it falls out of _merge_open_threads' existing
+        # exact-text carry-forward: reworded text does not match the stored entry, so it is
+        # treated as brand new and stamped today. See the module comment for the reasoning.
+        shutil.rmtree(persona_data_dir(), ignore_errors=True)
+        write_context_tracker(["bookstore P&L review scheduled for Thursday"], [], [])
+        _age_thread(
+            tracker_path, "bookstore P&L review scheduled for Thursday",
+            _OPEN_THREAD_EXPIRY_DAYS + 2,
+        )
+        write_context_tracker(
+            ["bookstore P&L review scheduled for next Tuesday instead"], [], [],
+        )
+        state = read_context_tracker()
+        open_texts = {t["text"]: t for t in state["open_threads"]}
+        check(
+            "reworded thread appears fresh, stamped today",
+            "bookstore P&L review scheduled for next Tuesday instead" in open_texts
+            and open_texts["bookstore P&L review scheduled for next Tuesday instead"]["added"]
+            == today,
+            str(open_texts),
+        )
+        raw = json.loads(tracker_path.read_text())
+        archived_texts = [t["text"] for t in raw["expired_open_threads"]]
+        check(
+            "the old (now-superseded) wording is archived, since it had crossed the cutoff",
+            "bookstore P&L review scheduled for Thursday" in archived_texts,
+        )
 
         # --- Bare-string legacy data reads without error -----------------------------------
         shutil.rmtree(persona_data_dir(), ignore_errors=True)
@@ -135,13 +229,18 @@ def main() -> int:
             "legacy bare-string thread reads without crashing",
             state["open_threads"] == [{"text": "legacy bare string", "added": None}],
         )
-        check("no expired_open_threads key doesn't crash the read", "expired_open_threads" not in state)
-        # A write against this data must not auto-expire the undated legacy thread.
-        write_context_tracker(["legacy bare string"], [], [])
-        state = read_context_tracker()
+        check(
+            "no expired_open_threads key doesn't crash the read",
+            "expired_open_threads" not in state,
+        )
+        # A write against this data must not auto-expire the undated legacy thread, even with
+        # no user engagement and no resend of matching text.
+        write_context_tracker(["something else entirely"], [], [])
+        raw = json.loads(tracker_path.read_text())
         check(
             "undated legacy thread is never auto-expired",
-            state["open_threads"][0]["text"] == "legacy bare string",
+            not any(t["text"] == "legacy bare string" for t in raw["expired_open_threads"]),
+            str(raw["expired_open_threads"]),
         )
 
         # --- The archived list respects its cap ---------------------------------------------
@@ -151,7 +250,7 @@ def main() -> int:
             text = f"topic {i}"
             write_context_tracker([text], [], [])
             _age_thread(tracker_path, text, _OPEN_THREAD_EXPIRY_DAYS + 1)
-            write_context_tracker(["seed"], [], [])  # omit `text` -> it expires this write
+            write_context_tracker(["seed"], [], [])  # omit `text`, no engagement -> expires
         raw = json.loads(tracker_path.read_text())
         check(
             "expired_open_threads is capped",
@@ -161,7 +260,8 @@ def main() -> int:
         archived_texts = [t["text"] for t in raw["expired_open_threads"]]
         check(
             "the cap keeps the most recently expired entries",
-            "topic 4" not in archived_texts and f"topic {_EXPIRED_OPEN_THREADS_CAP + 4}" in archived_texts,
+            "topic 4" not in archived_texts
+            and f"topic {_EXPIRED_OPEN_THREADS_CAP + 4}" in archived_texts,
             str(archived_texts[:3]) + " ... " + str(archived_texts[-3:]),
         )
 
