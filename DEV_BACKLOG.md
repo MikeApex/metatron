@@ -160,17 +160,28 @@ standing rule distrusts.*
   grounds, both correct:** (1) it is durable token bloat in a file loaded on every head-layer call,
   for a setting that changes almost never; (2) **the Synthesizer runs on the most expensive model,
   and translation is cheap work** — paying premium rates to restate text is the wrong place to
-  spend. **Revised design, not yet built:** the boundary stays where Mike put it — the Synthesizer's
+  spend. **✅ BUILT AND COMMITTED `8a7d1d7`, not deployed. Design as shipped:** the boundary stays where Mike put it — the Synthesizer's
   *output*, one place, no per-tool logic — but the translation runs **after** it as a Python
   post-processing step against a cheap model, the same shape as `filter_output()`, which already
   post-processes the response. `synthesizer.md` gains at most one short line.
-  **Two costs to decide against before building, neither yet accepted:**
+  **Both known costs were accepted and are live in the code, not hidden:**
   1. **It breaks streaming.** A translation pass needs the complete response, so a persona with an
      output language set loses token-by-token streaming — the same constraint behind the
      `[RETRACT]` design in `ROADMAP.md` § 5A. Voice makes this worse, not better.
   2. **One extra model call per response**, on every turn for that persona, and it must stay on the
      ZDR path — it is translating personal content, so it is sensitive-tier and cannot go to a
      shared cloud model.
+  **What is left before this closes:**
+  1. **Never run end to end** — no persona has `output_language` set, so translation is a no-op
+     everywhere today and every test stubs the backend. Set it on a test persona and run one real
+     exchange before trusting it.
+  2. **The A4 clinical hard-fails have never run with a response language set.** They cannot
+     regress today (no-op), but once a persona is translated, flag *substance* must survive
+     translation — the pipeline suite's pass condition is that crisis framing and medication names
+     reach the user, and that has only ever been checked in English. **Run
+     `tests/run_a4_safety.py --suite pipeline` against a translated persona before any persona
+     with clinical history gets a response language.**
+  3. Speech-in is still English-only — `[DB-0815-02](a)`, unchanged.
   *Do not implement the prose-in-`synthesizer.md` version; it was tried and rejected 2026-08-15.* One place,
   one instruction, no per-tool translation logic and no extra model round-trip per tool call — and
   it keeps the "config is the product" line, since the whole feature becomes a setting plus a
