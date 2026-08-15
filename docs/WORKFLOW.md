@@ -163,7 +163,12 @@ backlog item closed. **Nothing filed** — the fix exists.
 
 ### Close-out
 
-`/archive`, every session, without exception. The one rule worth carrying in your head:
+`/archive`, every session, without exception — but **not always all five steps.** A session that
+changed no tracked file and made no commit stops after the transcript: there is nothing true to
+write in a log fragment, and `SESSION.md` is still correct. The transcript is never the part
+skipped, because it is the only one that cannot be recovered later.
+
+The one rule worth carrying in your head:
 
 > **The project log is appended to. `SESSION.md` is replaced.**
 

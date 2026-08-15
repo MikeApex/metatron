@@ -1,7 +1,7 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-15, third session. **Deployed — the queue is clear.** `## Now` is **9**, unchanged
-in count. **`[DB-0810-13]` (Now #1) is now DIAGNOSED, not built** — read
+*Updated: 2026-08-15, fourth session — **docs/scripts only, nothing to deploy; the deploy queue is
+clear.** `## Now` is **9**, unchanged in count. **`[DB-0810-13]` (Now #1) is now DIAGNOSED, not built** — read
 `archive/plans/db081013_action_provenance_design_2026-08-15.md` before touching it. It is a
 **missing-information** failure: specialists' tool calls never reach the Synthesizer, so nothing
 could contradict "That's sent." **An agent-file-only fix will test clean and fail in production** —
@@ -28,10 +28,13 @@ stays deferred.** ⚠ **One divergence still open:** `docs/CONVENTIONS.md:143` p
 Model IDs, but § Model IDs below still reads *updated 2026-07-27*. **A7 unchanged by decision** —
 features first, Phase closed before Alpha. **Worktree-based parallel dispatch now works end to end**
 (score → cluster → verify → dispatch → re-verify → merge → clean up); `hook_commit_guard.py` no
-longer blocks it, and its remaining half is in `[DB-0815-01]`. Standing: **`PROJECT_LOG.md` is GENERATED** from
-`archive/log/` fragments — write a fragment, never edit it, and a fragment is the collision-safe
-half of `/archive` when two windows are live; backlog items go to `.claude/backlog_inbox/`;
-`qa_sweep.sh` is free (9 checks, ~3s).*
+longer blocks it, and its remaining half is in `[DB-0815-01]`. **`/archive` was audited against the other four commands and rescoped** (`859ec3a`): step 0 now has
+a **lean path** — a session that changed no tracked file and made no commit runs step 1 (transcript)
+and stops; and **step 4 files to `.claude/backlog_inbox/` rather than minting an id and editing a
+ranked section**, which it had been doing since after the fragment route existed. Ranking is
+`/backlog`'s call. Its ceiling is **150** (Mike, 08-15). Standing: **`PROJECT_LOG.md` is GENERATED**
+from `archive/log/` fragments — write a fragment, never edit it, and a fragment is the
+collision-safe half of `/archive` when two windows are live; `qa_sweep.sh` is free (9 checks, ~3s).*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -125,9 +128,9 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-15 | **`/archive` audited against the other four commands.** Steps 1–3 and the push are uncontested — `/fix` commits but never pushes, so `/archive` is the only offsite path. Two faults fixed: step 4 was still minting ids into ranked sections after `.claude/backlog_inbox/` existed, and the command was mandated for read-only sessions where three of five steps are no-ops. A separate `/close` command was rejected — second standing skill to keep in sync | `859ec3a` — docs/scripts, nothing to deploy |
 | 08-15 | **`/backlog attack` round 2, two clusters** — most of `## Now` is blocked on Mike or a clock, and Now #1 is Red-tier, so it was worked here. [DB-0810-13] diagnosed as missing-information + design; [DB-0810-12] instrumented; [DB-0810-15] rescoped and its voice half split to [DB-0815-02]. **The commit guard was failing OPEN** on any `;` without a leading space — found only by chasing a worker's false block | `6ad3dec`, `ff8f4cc`, `c8d0c69`, `7da7d50`, `c0e2cd8`, `2dfd494` — **deployed** |
 | 08-15 | **`/backlog attack`, three clusters.** Two worker worktrees ([DB-0810-09] quality-event registry, [DB-0814-02] `open_threads` timestamp) plus one direct Red-tier fix ([DB-0810-17]a, [DB-0814-01]). Both workers hit `hook_commit_guard.py` failing closed on worktree commits — filed as [DB-0815-01] | `b11e775`, `048e937`, `d40e73c` — deployed |
-| 08-15 | **Mike's Franklin ritual leaves `synthesizer.md`** for a new per-persona `evening_ritual.md`, loaded like `self_development.md`. Token-neutral for Mike, a saving for every other persona. First attempt filed it as *design* and was rejected | `6913ad7` — **DEPLOY OWED** |
 ---
 
 ## Useful context to pull as needed
