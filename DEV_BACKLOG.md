@@ -117,6 +117,96 @@ it. `tools/obligations.py` stores due dates and `[DB-0814-04]` already shows a v
 *filed 2026-08-15 by the `/backlog deep` machine-log sweep. **Mike-originated** — every one of the
 four is him correcting the system — so it clears the entry bar on its own, and at ×4 it clears the
 machine bar too.*
+- **Knowledge layering steps 4–12 — the retrieval half, none of which is built.** Phase 1 shipped
+2026-08-15 (`13134bc`, `a35acfa`, deployed, migration applied): the wisdom store now has a subject
+axis and Mike's 59 entries are on it. **Nothing is wired at runtime** — no agent reads by domain,
+the Synthesizer still has no grant, and no manifest is rendered. Until these land the migration is
+inert: the store is correct and unreachable, which is where it started.
+
+**Authoritative plan: `~/.claude/plans/to-be-clear-we-modular-knuth.md`** (outside the repo —
+approved, Fable-5-reviewed, and it carries the decisions with their reasoning). Steps:
+
+4. `config/modules/knowledge_domains.yaml` — the domain→agent map, many-to-many. This is what
+   keeps a roster change an edit to a map rather than a user-data migration.
+5. Derived manifest in `load_profile()` — ~20 tokens naming which domains exist. Reaches
+   Synthesizer and Coordinator in one edit; specialists get `load_goals()` only and need the tool,
+   not the manifest.
+6. `KNOWLEDGE_TO_LOAD` in the Coordinator package, parsed and injected in
+   `_dispatch_from_coordinator()`. **Two pipeline paths build a Synthesizer input** —
+   `run_pipeline_session` and `run_pipeline_session_stream`. Editing one is the obvious defect.
+7. `WISDOM_PROPOSAL:` parsed in Python, not relayed as prose by the Synthesizer.
+8. Grants — `routing.yaml` and `routing_cloud.yaml` in parity. Six agent files already instruct
+   `read_wisdom` without holding it; `physical_health` holds `write_wisdom` uninstructed.
+9. Agent-file audit **and the Coordinator routing amendment**, which the review called the
+   highest-judgment text in the plan. See the blocker below.
+10.–12. `health_notes` → a `food`/`stated` entry (VM-side), reserved safety domain names, Pattern
+   Miner `other` sweep, trace instrumentation on wisdom reads.
+
+**⚠ Blocking for step 9, and it invalidates the obvious test.** `coordinator.md:145` lists `ate,
+skipped meals, diet, weight` as Physical Health signal words and `:48` mandates specialist dispatch
+for any advice or suggestion request. So a **correctly behaving** Coordinator dispatches Physical
+Health for "thinking about changing up breakfast" — the retrieval test fails by design. Rule 48
+exists because the Synthesizer was substituting general knowledge for specialist data, and this
+feature deliberately reopens that door for a defined class. **Both directions must be gated:** the
+retrieval case (`KNOWLEDGE_TO_LOAD: ["food"]`, oatmeal in the response, no PH dispatch) *and* a
+counter-test that PH **is** still dispatched for "log what I ate". Fixing over-dispatch by creating
+under-dispatch is the real risk and only the counter-test catches it.
+
+**Deferred with a named trigger, not open-ended:** auto-pushing a domain into a specialist's
+prompt. Promote a (domain, agent) pair only when traces show that agent reads that domain on >70%
+of its dispatches, reviewed after two weeks of real use. Phase-2 semantic retrieval within a domain
+is `[DB-0815-13]`, gated on a domain read hitting the 15-entry cap.
+
+*raised by Claude at the close of the 2026-08-15 knowledge-layering session · Mike approved the
+plan; this exists so the remaining build is visible in the backlog count rather than only in a
+plan file outside the repo*
+- **24 of Mike's 59 wisdom entries are not facts about him, and three classes of them actively
+mislead the system.** Found by reading every entry during the 2026-08-15 schema migration
+(`a35acfa`) — the migration reports them and deliberately moves nothing, because relocating user
+data is a separate act.
+
+**Why a user would notice, which is what clears the bar:**
+
+1. **Eight are interaction preferences sitting where behaviour rules cannot reach them** —
+   `communication_style_preference`, `conversational_preferences`,
+   `user_preference_interaction_fluidity`, `reduced_prompting_preference`,
+   `system_framing_preference`, `admin_comms_reduction`, `14_point_checkin_consolidation`,
+   `service_style_anticipation`, plus `avoid_travel_assumptions` which is a direct instruction to
+   the tool. These belong in `config/personas/mike.md` via `write_persona`. **A preference stored
+   as a fact is retrieved only if something thinks to look it up; a preference in the persona file
+   is in every prompt.** Plausibly connected to the standing `⚠ machine:` correction signatures
+   (`user corrected the assumption that sched ×16`, `user restated 'rucking and high intensit' ×4`)
+   — worth checking, not asserted.
+2. **`language_preference` duplicates `profile.yaml output_language`**, the real field
+   `[DB-0810-15]` shipped the same day. Two homes for one setting, and the wisdom copy can drift
+   from the one the code actually reads.
+3. **`oatmeal_formula` is an unfilled placeholder** — its value is literally *"[User needs to
+   specify their formula details here, I will log the request to record it.]"*. This is the worked
+   example the whole knowledge-layering track was designed around; the real composition was in
+   `profile.yaml health_notes`.
+
+**The rest:** three tool defects filed against the user (`voice_transcription_issues`,
+`bulgarian_speech_to_text_issues`, `crm_update_friction`); two recurring obligations that belong
+in `open_obligation` per `logistics.md:189` (`monthly_financial_reminder`,
+`rowan_payroll_schedule`, plus `manny_swim_schedule` which is a calendar constraint); two
+near-duplicate pairs (`manny_swim_schedule`/`manny_swim_class`,
+`post_travel_recovery`/`post_travel_energy_recovery`); one dated June observation
+(`sleep_debt_pattern_june_2026`); one content-free entry recording only *that* a correction
+happened (`grocery_check_in_cycle`).
+
+**Do not bulk-move.** Persona data is VM-owned and each class needs a different destination.
+`merge_wisdom_entries` handles the duplicates (archive-on-merge, never deletes); the preferences
+need `write_persona`; the tool defects are already tracked and should just be deleted from the
+store.
+
+**The upstream question worth answering first:** what wrote these? Eight interaction preferences
+landing in a fact store suggests an agent instruction pointing at `write_wisdom` for material that
+should go to `write_persona`. Fixing the writers matters more than cleaning the store, or it
+refills.
+
+*raised by Claude during the 2026-08-15 knowledge-layering session, from reading all 59 live
+entries · full per-entry assignment and reasoning in `scripts/migrate_wisdom_schema.py` KEY_MAP*
+
 ---
 
 ## Now
@@ -794,8 +884,10 @@ so this is not a parallel track to pick from when a `Now` item is time-gated.
   (a) deterministic lookups feeding agents evidence rather than asking them to recall
   (`tools/scheduling.py` is the worked example; unbuilt: CRM contact dedup, where `_find_by_name`
   is naive substring matching so "Jon"/"Jonathan"/"Jonathan Whitfield" become three records;
-  `write_archive` dedup; `tools/wisdom.py` reloading `SentenceTransformer` per call where
-  `core/memory.py` caches a singleton); (b) code that removes agent calls entirely — cuts against
+  `write_archive` dedup; ~~`tools/wisdom.py` reloading `SentenceTransformer` per call where
+  `core/memory.py` caches a singleton~~ **— that one strand closed 2026-08-15 (`13134bc`),
+  `find_duplicate_wisdom` now uses the cached singleton; the rest of (a) is untouched**); (b) code
+  that removes agent calls entirely — cuts against
   the head-layer/specialist split and PoLP, so not free; (c) a standing code/agent review protocol.
   The argument for (c): `daily_calendar_dedup_audit` was correct, tested and deployed yet did
   nothing for 3 days (template never propagated, `8d798a8`), then had its output discarded for 5

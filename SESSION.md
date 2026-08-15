@@ -1,27 +1,31 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-15, tenth session — **Bulgarian speech-in benchmarked on the VM and held
-indefinitely, Mike's call.** He reported "Latin characters in my speaking transliteration" —
-initially looked like a repeat of the same-day `[DB-0815-04]` render fix (already deployed,
-`8a7d1d7`), but he clarified live: it's the **transcript of his own spoken Bulgarian**, not the
-reply — `[DB-0815-02](a)`, a different pipeline half. Root cause: `WHISPER_MODEL_SIZE` is
-`base.en`, English-only, cannot emit Cyrillic regardless of the `language=` param. Benchmarked
-both multilingual candidates on the VM (never the Mac): `base` — RTF 0.305, WER 46.4% on `bg`
-(right script, half the words wrong); `small` — RTF 0.967, WER 27.6% (better accuracy, but
-near-real-time RTF leaves almost no queueing headroom on the single-worker pool, and would
-regress English RTF 0.247→0.767 if adopted unconditionally). `small`'s multilingual config didn't
-exist in `tests/bench_whisper_stt.py`; added two `_CONFIGS` rows so the sweep is repeatable.
-**Held in `## Later` indefinitely** — neither clears an acceptable bar; no per-language
-model-selection design was attempted, the ~28% WER floor itself wasn't worth engineering around.
-Revisit only on a materially better local multilingual STT model or hardware change.
+*Updated: 2026-08-15, eleventh session — **the wisdom store IS the knowledge layer, and phase 1 of
+12 is live.** `tools/wisdom.py` already existed for standing facts and said so in its docstring;
+it was almost unreachable and its axis had collapsed. `category` → **`domain` + `provenance`**
+(`13134bc`, `a35acfa`, deployed; Mike's 59 entries migrated on the VM, backup alongside).
+**Subject axis, never the agent roster** — a roster change must not become a user-data migration,
+and `food` is read by three agents, so one agent's namespace asserts false ownership. `seasonal`
+is **not** a domain (temporal, orthogonal); **`provenance: stated|observed`**, not `kind`, because
+only that is decidable from a model's own context. **Steps 4–12 are unbuilt and nothing is wired
+at runtime** — no agent reads by domain yet, so the change is inert beyond the store being
+correct. Plan (authoritative, outside the repo):
+`~/.claude/plans/to-be-clear-we-modular-knuth.md`.*
 
-*Prior session (ninth) — **the correction signal Mike reads at every session start was
-measuring itself wrong, twice, and both faults are fixed and deployed.** 93 of 174
-`USER_CORRECTION` events carried no information (template slot filled with "None"/"N/A" rather
-than omitted — Python-side fix, agent file deliberately untouched); a `×N` was a chain length,
-not a repeat count (threshold 0.45 + stopwords fixes it). CRM gained `merge_contacts`
-(archive-on-merge, registered **and** granted this time). Machine log gained a removal step:
-109 → 87 entries, 8 ⚠ → 3. Full detail: `archive/PROJECT_LOG.md`.*
+*Three findings from that session outrank its feature. **`write_wisdom` had no lock on a
+read-modify-write** — 40 concurrent writes kept **2**; fixed, and the probe verified
+discriminating against the pre-fix code. **`vertex-key.json` was neither tracked nor
+gitignored**, one `git add -A` from a public remote — the Denied row governs what a session may
+edit and does nothing to stop git. **24 of Mike's 59 wisdom entries do not belong in the fact
+store**: eight are interaction preferences for the persona file, three are tool defects, two pairs
+duplicate, and `oatmeal_formula` — this track's own worked example — is an unfilled placeholder.
+All reported in place, none moved; moving them is a separate act.*
+
+*⚠ **Blocking for step 9, found by the Fable 5 plan review:** the oatmeal test is unachievable as
+first written. `coordinator.md:145` lists `ate, diet, weight` as Physical Health signal words and
+`:48` mandates dispatch for advice requests, so a **correct** Coordinator fails it. The feature
+needs a knowledge-only routing criterion **plus a counter-test** that PH is still dispatched for
+"log what I ate" — fixing over-dispatch by creating under-dispatch is the real risk.*
 
 *Dev-workflow track — **Phase 5 is CLOSED; Phase 4 (ROADMAP split) stays deferred; A7 unchanged by
 decision** (features first). ⚠ **The one live divergence:** `docs/CONVENTIONS.md:143` points
@@ -127,6 +131,7 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-15 | **Knowledge layering phase 1 — the wisdom store gains a subject axis.** The store already existed and was almost unreachable: six agent files instruct `read_wisdom` and are not granted it, and `write_wisdom` silently coerced unknown categories, so every Big Five entry MW ever wrote was misfiled. `category` → `domain` + `provenance`; alias map with a *measured* fuzzy cutoff; refusal never terminal, because the Diarist writes from a discarded-output thread. Found while building: **no lock on a read-modify-write** (40 concurrent writes kept 2), and **`vertex-key.json` neither tracked nor gitignored**. Migration heuristics failed on live data ("eat" inside "weather"), so all 59 entries were assigned by hand — which found 24 that do not belong in the store, including the placeholder `oatmeal_formula` | `13134bc`, `a35acfa` — **deployed + migration applied** |
 | 08-15 | **Bulgarian speech-in benchmarked, held indefinitely.** `WHISPER_MODEL_SIZE=base.en` is English-only, cannot emit Cyrillic; `base` (multilingual) gets right script at 46.4% WER, `small` gets 27.6% WER but near-real-time RTF (0.967) on the single-worker pool. Neither clears the bar — Mike's call to hold `[DB-0815-02](a)` in `## Later` indefinitely | none — benchmark + backlog note only, **not deployed** |
 | 08-15 | **`/backlog deep` — the correction signal was measuring itself wrong twice over.** 93 of 174 `USER_CORRECTION` events said only "None" (a template slot a model fills rather than omits — the agent file was left alone on purpose), and a `×N` was a *chain length*, not a repeat count: a chain of Heathrow corrections was reported as "calendar events imply completion ×16". Both fixed; historical events filtered at read, never deleted. CRM gained `merge_contacts` (archive-on-merge, first here) — **and being registered was not enough, it was granted to no agent.** Machine log had no *removal* step at all: 22 cleared, 8 ⚠ → 3. `fold_fragments()` was miscounting prose fragments as `0 inbox` | `6e57c73`, `2fa8cd6`, `704e79b`, `214a547`, `19cfd12` — **deployed** |
 | 08-15 | **Answer the user in their own language, and stop broadcasting profile detail.** `[DB-0810-15]` shipped as Python post-processing after `filter_output()` — prose-in-`synthesizer.md` and a model-called tool were both rejected, the second because a tool call is an extra turn *through* the expensive model. Bulgarian verified live. Found by verifying the render: Mike's `name` field held a contact correction and rode every prompt; `_PROMPT_EXCLUDED` enforced nothing; `Eva`/`Iva Diamond` were one person and the CRM has no merge tooling. Backlog gained `due:`-marked time-gating | `8a7d1d7`, `f9ffd2a`, `b3ff108` — **deployed** |
