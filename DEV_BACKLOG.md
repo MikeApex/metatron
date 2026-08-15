@@ -39,6 +39,23 @@ this file is Metatron work. Full record: `archive/PROJECT_LOG.md` § 2026-08-14;
 became `[DB-0814-04]` in `## Later`; window A's was a `sync_dev_backlog.py` observation that
 deliberately fails the filing bar and is recorded in `archive/backlog_closed_2026-08.md`
 § Closed 2026-08-14 instead.)*
+**A safety flag's own instruction file can be quoted to the user, and only the filter stops it.**
+
+Tier 4 of `filter_output()` (`bbda875`) now suppresses a response reproducing 10+ verbatim words
+from the agent's instruction file or the constitution — built after the Synthesizer printed its own
+deliberation to Mike on 2026-08-12. **The filter is the backstop; the instruction layer is the
+control, and the instruction layer is what failed.** Nothing currently detects *why* the model
+emitted deliberation as its visible answer, and the leak was truncated mid-sentence, which suggests
+the response was cut off rather than completed — so the shape may recur without tripping tier 4 at
+all if the quoted span happens to be shorter or paraphrased.
+
+Worth one look at whether Gemini reasoning content can reach `text_parts` on the streaming path,
+which would make this a plumbing fault rather than a model-behaviour one. If it can, that is the
+real fix and tier 4 is belt-and-braces.
+
+*Filed 2026-08-15 by a dev session (not raised by Mike — he never saw the fix, only the original
+leak, which is closed). Evidence: `/monitor/conversations` persona=mike ts=2026-08-12T00:14:57,
+711 chars, all deliberation, no `[CONTEXT]` block.*
 
 ---
 
@@ -55,76 +72,29 @@ Reasoning lives in `archive/PROJECT_LOG.md` § 2026-08-10, last. Every entry car
 checked and when; a verdict without that line is a description, and descriptions are what the
 standing rule distrusts.*
 
-- **1. [DB-0810-12] Vertex rejects a tool-call turn for a missing `thought_signature` and the
-  exchange is lost — five times 08-04→08-09, plus uncounted web-app hits.** *(Title corrected
-  2026-08-10: only **one** of the five was `run_subagent`; three were `write_quality_event`, one
-  `write_persona` — positions 12, 12, 12, 12, 14. Reading it as a `run_subagent` fault narrows the
-  search wrongly.)* Mike sees a raw SDK 400 and the message is never recorded, on both apps.
-  **Observability shipped (`8ae1ff9`); the fix did not. Verified 2026-08-10: no occurrence since —
-  so the `loop=`/`msgs=` fields it was built to produce have not fired, and the hold stands.**
-  *Do not act until a post-`8ae1ff9` occurrence is in hand*; the first diagnosis without them was
-  wrong. Two candidates, both held deliberately. **(a) The compat round-trip** — `_openai_compat_loop`
-  has the tc0-only workaround, yet *"position 12"* matches `system(0) + 10 history + user(11) +
-  assistant(12)` exactly, so the signature is likely lost re-serialising the returned
-  `ChatCompletionMessage` into `messages` rather than never issued. Unproven, and at ~5 firings a
-  fortnight a guess would pass every test you could run. **(b) `_run_gemini_native_loop` has no
-  workaround at all** — real but masked, since `run_session_gemini_cached`'s `except Exception`
-  falls back to compat. **Porting the compat version verbatim would be a regression**: it runs only
-  `tc0` and re-requests the rest, turning that loop's parallel `ThreadPoolExecutor` dispatch into N
-  sequential turns on a path already logging `cumulative_input=60744`. Guard it to fire only when
-  parts are genuinely unsigned. **Re-derive from the log line, not from this description.**
-  **UNBLOCKED 2026-08-13 — four post-`8ae1ff9` occurrences are in hand, and they answer the
-  question the observability commit was built to answer.** All four: `write_quality_event`,
-  **position 12**, agent `synthesizer` on `gemini-3.1-pro-preview`. Attribution is
-  **`loop=openai_compat_stream`** — so it is **(a), the compat family, not (b) the native loop**,
-  which can now be de-prioritised. Two refinements the item did not have:
-  **(i) It is the *streaming* variant `_openai_compat_stream`, not `_openai_compat_loop`.** The
-  cause is upstream of re-serialisation: **stream deltas do not carry `thought_signature` at all**
-  (the function's own comment says so), so a message reconstructed from deltas is unsigned by
-  construction. There is already a mitigation — replay the turn blocking to obtain a real signed
-  Vertex message — so the bug is in when that mitigation does *not* apply.
-  **(ii) The label is bare `loop=openai_compat_stream`, never `openai_compat_stream:replay[...]`.**
-  That distinction was built in deliberately, and it rules the replay out: the 400 hits the *main
-  stream call*, meaning an unsigned assistant message from an **earlier** turn is already sitting
-  in `messages`. **Leading hypothesis, not proven:** the `else` branch where the blocking replay
-  returns no tool calls falls back to the delta-reconstructed message with no signature — the one
-  path that writes an unsigned message — and the next stream request 400s. Its own comment calls
-  that divergence "rare", which matches ~4/fortnight. **Verify by instrumenting that branch before
-  fixing it**; do not assume, the first two diagnoses here were both wrong.
-  **INSTRUMENTATION LANDED `c8d0c69`, deployed 2026-08-15 — awaiting one live occurrence. Do not
-  close, and do not fix yet.** Observation-only, no behavioural change (verified by reading the
-  diff: the one moved `messages.append` was rebound to a variable and appended identically).
-  `_thought_signature_state()` classifies each assistant message; `_note_unsigned()` ledgers every
-  unsigned one as `pos=/turn=/src=/tools=` and replays it into both failure sites as
-  `msgs=N unsigned=[...]`. **Decisive on a single occurrence:** Vertex's 400 quotes a position (12,
-  all four captures) — match it against the ledger and the branch is named; `unsigned=[none]` on a
-  signature 400 falsifies the whole hypothesis and sends the next look at `history` instead.
-  **A candidate the item did not have:** `src=blocking_replay[...]` — the replay mitigation is
-  *assumed* to return signed calls and nothing ever checked, so it may be a silent no-op and the
-  `else` branch may not be the only unsigned path. Also corrected: the docstring claimed the
-  Synthesizer never calls tools, yet all four captures are exactly that.
-  **THE AWAITED OCCURRENCE ARRIVED 2026-08-15, hours after the instrumentation deployed, and it
-  is captured** — `pos=12:turn=1:src=stream_delta_fallback:tools=run_subagent`, agent
-  `synthesizer` on `gemini-3.1-pro-preview`, verbatim in this session's transcript. **`src` names
-  the branch: the delta-reconstruction fallback, which is the leading hypothesis above, now
-  evidenced rather than assumed.** Position 12 again, and `tools=run_subagent` — so the corrected
-  title's point stands, the tool identity varies and is not the signal. **This unblocks the fix;
-  the item stays open because nothing has been fixed.** Note the ledger's other half
-  (`msgs=N unsigned=[...]`, replayed at the failure site) was **not** captured before Mike
-  vacuumed the journal the same day — if the branch needs confirming beyond `src=`, it costs one
-  more occurrence, not a re-read.
-  **Its instrumentation leaked the system prompt, and that is fixed (`cbe7d94`, deployed
-  2026-08-15).** `_note_unsigned()` interpolated the `AgentRecord` itself, whose repr carries
-  `context_sections` — so its first live firing wrote the whole assembled system prompt,
-  constitution and persona config to `journalctl` in plain text. It logs the agent's *name* now.
-  Journal captured to the MacBook and vacuumed; **`journalctl` deletes only from the oldest end**,
-  so removing the newest entries meant removing all of them.
-  **How it closes:** no test Mike can run — grep the VM journal for `[signature_probe]` about a week
-  after 2026-08-15, or immediately if he reports a vanished message with a date.
-  *filed 2026-08-10 · **unblocked 2026-08-13**, occurrences and loop attribution read live off the
-  VM · full reasoning in `archive/PROJECT_LOG.md` § 2026-08-10, later still*
-- **2. [DB-0809-02] Do proactive sessions actually stay focused? — mechanism fixed and deployed;
-  the guidance half is unproven.** The original premise was wrong: the openings were already
+- **1. [DB-0809-02] Every scheduled job re-asks the same unanswered question, so one unfinished
+  ritual arrives as three or four separate messages.** *(Retitled 2026-08-15 — the trace week is
+  **answered three days early and all three prior hypotheses are wrong**. Read the finding below
+  before the history; the history is kept because two earlier diagnoses were also confidently
+  wrong.)*
+  **The finding, read live off the VM 2026-08-15.** Mike's *"three separate, repetitive messages for
+  the evening close out"* (reported 08-12, about the night of **08-11**) was **four different
+  scheduled jobs**, each identifiable by its own prompt text: `companion_checkin` 16:46 opened the
+  evening close and the virtue review; an inbox-check job 18:13 re-asked the same two questions;
+  `companion_checkin` 19:48 re-asked them; `evening_close` 20:00 re-asked them a third time. He
+  counted three because the first was the one he called *"fine"*.
+  **So `evening_close` is a victim, not the culprit, and `_frame_proactive()` is working** — none of
+  those responses read the scheduler prompt as Mike's voice. **The mechanism is that "raise a thing
+  once" has no memory that a question was asked and left unanswered**, so every unrelated job that
+  fires inherits the unfinished ritual from context and raises it again. Any fix belongs there —
+  either that rule gains cross-session state, or jobs other than the ritual's own are forbidden from
+  continuing it. **Do not re-apply the ≤2-sentence cap**; it was rejected deliberately, focus being
+  the target and length only its symptom. Same family as `[DB-0814-02]` (stale context that nothing
+  ages out), and worth scoping against it.
+  *`due: 2026-08-17` is spent — the recurrence with a known date was worth more than seven ordinary
+  days, exactly as the item predicted. History follows.*
+
+  **Prior state — mechanism fixed and deployed; the guidance half was unproven.** The original premise was wrong: the openings were already
   1–2 sentences, and the "restatements" were the Synthesizer reading its *own* scheduler prompt as
   Mike's voice. Fixed in `82d394b` (deployed) — `_frame_proactive()` labels scheduler input as a
   directive in both pipeline copies, and the repeated-instruction protocol now requires the *user*
@@ -154,7 +124,7 @@ standing rule distrusts.*
   Inbox 2026-08-14**, reported by Mike via the VM (2026-08-12T08:23Z); fix date verified against
   `git log` the same day*
 
-- **3. [DB-0809-21] Three of four verification steps done and passed; one is genuinely time-gated.**
+- **2. [DB-0809-21] Three of four verification steps done and passed; one is genuinely time-gated.**
   Ran at ~$0.08, under the $1.00 approval line (`docs/CONVENTIONS.md` § Testing Cost Convention).
   **Done:** (1) A4 `clinical` suite vs `sarah_chen`, 3/3 — confirms the regression gate held.
   (2) Three targeted Physical Health calls vs `danny_park`, which do assert `6330029`/`88b7614` —
@@ -168,7 +138,7 @@ standing rule distrusts.*
   Needs a real unreferenced calendar event, not a forced one.
   *filed 2026-08-09 · **Mike deferred it explicitly** · 3 of 4 done 2026-08-10*
 
-- **4. [DB-0810-05] The tone-profile pipeline has never touched a real mailbox.** Built and
+- **3. [DB-0810-05] The tone-profile pipeline has never touched a real mailbox.** Built and
   committed `88957e6`; **every test used stubs.** The distillation half is well covered — a hostile
   fixture confirmed unknown keys dropped, values truncated, lists capped, injection caught and the
   write refused, plus five `_extract` paths (single-direction refusal, thin-sample skip, injection
@@ -211,7 +181,7 @@ standing rule distrusts.*
   IMAP quoting bug found and fixed, original pass/fail criteria still unmet — no long-history
   contact exists yet to test against*
 
-- **5. [DB-0810-15] A persona should be able to send in one language and receive in another —
+- **4. [DB-0810-15] A persona should be able to send in one language and receive in another —
   independently.** *(Rescoped 2026-08-15 by Mike. The original entry was "voice transcription is
   English-only"; that was the symptom he hit, not the need. The voice half is now `[DB-0815-02]` in
   `## Later`, low priority — **text is the actionable path and it is not blocked by anything**,
@@ -247,7 +217,7 @@ standing rule distrusts.*
   short utterances, which is most of what voice sends.
   *filed 2026-08-10 by Mike, live during feature testing · both blockers verified in code same day*
 
-- **6. [DB-0810-17] An external CRM bridge — the count question itself is answered.** At seq 009
+- **5. [DB-0810-17] An external CRM bridge — the count question itself is answered.** At seq 009
   Mike asked for a route *and* a CRM contact count; the system declined it as needing an external
   connection it doesn't have, when Metatron's own contact store (`list_contacts`, `search_contacts`
   in [tools/crm.py](tools/crm.py)) already held the answer. **(a) closed 2026-08-15** —
@@ -257,7 +227,36 @@ standing rule distrusts.*
   him: *which* CRM, and whether contacts sync in, out, or both. Sensitive-tier either way.
   *filed 2026-08-10 by Mike · (a) closed 2026-08-15, see `archive/backlog_closed_2026-08.md`*
 
-- **7. [DB-0814-02] The timestamp shipped; the expiry policy is still the open question.**
+- **6. [DB-0814-02] Stale threads now expire — but neither signal that keeps one alive has been
+  measured against real output.** *(Retitled 2026-08-15. The expiry policy is **built and
+  deployed**; what is open is narrower and specific.)*
+  **Shipped `37b0b03`, merged `eb01025`, plumbing `5cf0a5e`, deployed.** Open threads auto-drop 7
+  days after their `added` date, archived to `expired_open_threads` (capped 50, never loaded into
+  context) rather than deleted. **Grace — what keeps a thread alive — keys on the *user* engaging
+  it**, not on the Synthesizer resending it: the Synthesizer rewrites the entire thread list on
+  every response, so its resending something says nothing at all. That is the same correction
+  `82d394b` made to the repeated-instruction protocol. The pipeline passes the user's turn only on
+  real sessions (`None if is_proactive`), because a scheduler prompt is not the user speaking.
+  **The first version of this was wrong and is worth remembering:** grace keyed on the thread being
+  present in the model's output that turn — true of every live thread on every write, which would
+  have granted "post-travel recovery" grace on all two weeks of writes. Its tests passed because
+  they modelled *resent* but never *resent by a caller that resends everything*.
+  **What is actually open, both flagged by the worker that built it:**
+  1. **Word-overlap grace can false-positive on short, generic threads.** "call the dentist" against
+     an unrelated "call mom later" shares one of two content words — overlap 0.5, clears the 0.34
+     threshold. `_USER_ENGAGEMENT_OVERLAP` was reasoned, **not measured against real transcripts**.
+  2. **Material-change grace is triggerable by a one-character diff**, since it rides on exact-text
+     non-match. Nothing distinguishes genuine rework from cosmetic phrasing drift — close to a
+     second copy of the bug this closes, needing one changed character per turn instead of zero.
+     **If real Synthesizer output varies wording turn to turn, this is live**, and the fix is a
+     similarity check over the exact-text merge (`core/rule_classes.py`'s `similarity()` is the
+     model).
+  **How it closes:** read a week of real `context.json` writes and check whether either signal is
+  firing on threads Mike never touched. Not a test — it needs live data.
+  *filed 2026-08-14 by Mike via the VM · timestamp half closed 2026-08-15 · expiry half built and
+  deployed 2026-08-15, thresholds unvalidated*
+
+  **Prior state — the timestamp half, closed.**
   `open_threads` was a bare `list[str]` with no metadata — "post-travel recovery" stayed live for
   two weeks because nothing could even ask how old it was. **Closed 2026-08-15 as scoped**
   (`d40e73c`): entries are now `{"text": str, "added": <ISO date, server-stamped>}`, matching the

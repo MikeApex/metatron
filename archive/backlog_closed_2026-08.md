@@ -19,6 +19,40 @@ sitting inside the Open sections. Reasoning: `archive/PROJECT_LOG.md` § 2026-08
 
 ---
 
+## Closed 2026-08-15 — `/backlog attack`: the lost exchange, and two faults found in the traces
+
+- ~~**[DB-0810-12]** Vertex rejects a tool-call turn for a missing `thought_signature` and the
+  exchange is lost — five times 08-04→08-09, plus uncounted web-app hits. Mike sees a raw SDK 400
+  and the message is never recorded, on both apps.~~
+  — **closed: `7214070`, merged `5cf0a5e`, deployed.** Where a signature is demanded (Google
+  endpoints only) a turn whose assistant message carries unsigned function calls is recorded
+  **signature-free** — assistant text plus a user `[tool results]` message naming the tools that
+  ran. Nothing left for Vertex to validate, tools still dispatch once, **the exchange survives**,
+  which was the reported harm. **Both unsigned routes closed, not only the evidenced one:** the
+  `stream_delta_fallback` branch named by the 08-15 capture, *and* `blocking_replay[...]` — flagged
+  in the item as never checked, and real, because the code appended `_signed` and classified it
+  afterwards. Third route ruled out by inspection. `_run_gemini_native_loop` untouched, as the item
+  de-prioritised it. **Rejected:** porting `_openai_compat_loop`'s tc0-only workaround (serialises
+  parallel dispatch — the documented regression); dropping the turn from history (side effects
+  repeat); retrying the blocking call (speculative). `tests/test_thought_signature.py` 12/12,
+  **verified discriminating** — reverting only `core/orchestrator.py` reproduces the live
+  `400 … at position 2`.
+  **Closed on Mike's argument (2026-08-15), not on a fortnight's silence:** a *user-visible*
+  recurrence would raise its own ticket, and this archive is consulted before re-filing, so holding
+  the item open duplicates machinery that already works. **The residual, and why this entry carries
+  a command instead:** the fix converts a loud failure into a silent one — the exchange now
+  survives, so a recurrence leaves only a journal line nothing sweeps. The one check left, Mike's
+  because it needs the VM, around 2026-08-29:
+  `sudo journalctl -u metatron-server --since "2026-08-15" | grep signature_probe`
+  Empty output is the closing evidence. A `:neutralized` line means the branch fired and the fix
+  held. A bare 400 with **no** ledger line falsifies the diagnosis and sends the next look at
+  `history` rather than at either branch.
+  *Two live hypotheses remain unverifiable without an occurrence: that Vertex accepts the
+  signature-free assistant+user pair as a valid continuation, and that the model does not re-issue
+  tools it is told already ran. Both are standard OpenAI-compat shapes.*
+
+---
+
 ## Closed 2026-08-15 — action provenance
 
 - ~~**[DB-0810-13]** Specialists report actions they never took, and the Synthesizer relays it to

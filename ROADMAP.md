@@ -146,6 +146,14 @@ Full item in the static plan.*
 > serves most of this traffic). Measurements and full reasoning: `archive/PROJECT_LOG.md`
 > § 2026-08-09.
 
+> **⚠ Check 5 (Discretion) has a live failure on record — 2026-08-15.** On 2026-08-12T00:14 the
+> Synthesizer's entire response to the user was its own deliberation, quoting `synthesizer.md`
+> verbatim. That is a check-5 Fail by any reading, and it was found by reading conversation
+> records, not by any test. **Fixed** by `filter_output()` tier 4 (`bbda875`) — verbatim
+> reproduction of the agent's own instruction file or the constitution, validated against 237 real
+> responses with one suppression, the leak itself. **Whoever runs check 5 should treat the filter as
+> the backstop it is, not as the check**: the instruction layer is what must hold, and it did not.
+
 > **✅ Check 10's known Fail is fixed** — `research_agent` source fabrication, 2026-08-10
 > (`a36d8c2`/`e3904fd`), deployed and verified live. **This does not close check 10** — the
 > 12-specialist behavioural audit still has not been run; only the one Fail known in advance is
