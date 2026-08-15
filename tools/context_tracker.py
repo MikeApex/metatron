@@ -54,13 +54,44 @@ _ROOT = Path(__file__).parent.parent
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-# Open-thread timestamps
+# Open-thread timestamps and expiry
 #
 # WHY THIS EXISTS: "post-travel recovery" stayed listed as live context for two weeks after it
 # stopped being true — `open_threads` carried no metadata at all, so nothing could even ask how
-# old an entry was, let alone decide it was stale. This adds the timestamp only. Deciding what
-# counts as stale and what happens then (auto-drop, flag for review, ...) is a separate,
-# deliberately deferred decision — see DEV_BACKLOG.md.
+# old an entry was, let alone decide it was stale. Timestamping (`added`, below) shipped first
+# and closed [DB-0814-02] as scoped; this comment now also records the follow-on decision
+# (Mike, 2026-08-15) on what counts as stale and what happens then.
+#
+# DECISION: auto-drop at write time, nothing destroyed.
+#   - Cutoff: 7 days (`_OPEN_THREAD_EXPIRY_DAYS`). The originating incident ran for two weeks —
+#     clearly too long — and this project's rhythm is daily-ish sessions, so a thread that has
+#     survived a full week of sessions without being dropped by the model itself is the one worth
+#     querying, not silently trusting. Half the incident's duration was chosen deliberately: long
+#     enough that a thread spanning a busy week (the ordinary case) never gets cut mid-relevance,
+#     short enough that it cannot re-create a two-week stale belief.
+#   - A thread that crosses the cutoff is *moved*, not deleted, to `expired_open_threads` in the
+#     same tracker file — same archive-on-merge spirit as the rest of the project. That list is
+#     capped at `_EXPIRED_OPEN_THREADS_CAP` entries (oldest dropped first) so the file cannot grow
+#     unbounded, and it is loaded on disk but never returned by `read_context_tracker()` — the
+#     same "archived but never loaded" pattern already used for resolved clinical threads below.
+#   - Grace rule / interaction with carry-forward: `_merge_open_threads` (next section) carries
+#     forward a resent thread's *original* `added` date on purpose, so a thread that is simply
+#     still open does not look freshly opened every session — that must not change for threads
+#     inside the cutoff window. The tension is only at the moment a thread *crosses* the cutoff:
+#     if it is being actively resent that same turn, dropping it there would make it vanish mid-
+#     conversation on the same write that reasserted it. `_expire_open_threads()` runs BEFORE
+#     `_merge_open_threads()` and resolves this by splitting on cutoff first: threads still inside
+#     the window are untouched and go on to get the normal carry-forward treatment; a thread that
+#     has crossed the cutoff and is *not* in this turn's model output is archived; a thread that
+#     has crossed the cutoff but *is* being resent this turn is given exactly one fresh stamp
+#     (its prior `added` is cleared so the merge step treats it as new) rather than archived —
+#     "active re-assertion resets the clock" without touching the carry-forward rule itself.
+#   - The model is never asked to judge staleness, for the same reason `added` is server-stamped
+#     below: asked "is this still relevant," a model will get it wrong and reset the clock every
+#     turn, which is the original incident's exact failure mode.
+#   - Threads with no `added` date (legacy data written before timestamping existed, see
+#     `_normalize_open_threads`) are never auto-expired — there is no reliable age to test, and
+#     guessing would risk silently dropping live context that predates this feature.
 #
 # The date is server-stamped, never taken from the model, for the same reason `raised` is
 # server-stamped on clinical threads above: a model asked to invent "when did this start" will
@@ -70,6 +101,9 @@ _ROOT = Path(__file__).parent.parent
 # record, matching an existing entry by exact text so a thread that is simply carried forward
 # keeps its original `added` date instead of looking freshly opened every session.
 # ---------------------------------------------------------------------------
+
+_OPEN_THREAD_EXPIRY_DAYS = 7
+_EXPIRED_OPEN_THREADS_CAP = 50
 
 
 def _merge_open_threads(incoming: list | None, existing: list[dict]) -> list[dict]:
@@ -101,6 +135,50 @@ def _merge_open_threads(incoming: list | None, existing: list[dict]) -> list[dic
             continue
         out.append({"text": text, "added": added or existing_by_text.get(text) or today})
     return out
+
+
+def _expire_open_threads(
+    existing: list[dict], incoming_texts: set[str], today: str
+) -> tuple[list[dict], list[dict]]:
+    """
+    Split the on-disk open threads (already normalized) into (still_eligible, newly_expired)
+    based on `_OPEN_THREAD_EXPIRY_DAYS`, BEFORE `_merge_open_threads` runs.
+
+    `still_eligible` feeds straight into `_merge_open_threads` unchanged — a thread inside the
+    cutoff window is untouched here and gets the normal carry-forward-the-original-date
+    treatment exactly as before this feature existed.
+
+    A thread that has crossed the cutoff is handled here instead of there:
+      - text is in `incoming_texts` (the model resent it this turn) -> grace. It goes into
+        `still_eligible` with `added` cleared, so `_merge_open_threads` treats it as a brand new
+        thread and stamps it with today's date — one fresh stamp, not a silent override of the
+        carry-forward rule (which only ever applies to threads that have not crossed the cutoff).
+      - text is not in `incoming_texts` -> `newly_expired`. Archived with its original `added`
+        date plus an `expired_on` stamp; never deleted.
+
+    A thread with `added is None` (legacy pre-timestamp data, or unparseable) is always kept in
+    `still_eligible` — there is no reliable age to test, so it is never auto-expired.
+    """
+    still: list[dict] = []
+    expired: list[dict] = []
+    for t in existing:
+        text = t.get("text")
+        added = t.get("added")
+        if not text or not added:
+            still.append(t)
+            continue
+        try:
+            age_days = (date.today() - date.fromisoformat(added)).days
+        except ValueError:
+            still.append(t)
+            continue
+        if age_days <= _OPEN_THREAD_EXPIRY_DAYS:
+            still.append(t)
+        elif text in incoming_texts:
+            still.append({"text": text, "added": None})
+        else:
+            expired.append({**t, "expired_on": today})
+    return still, expired
 
 
 def _normalize_open_threads(raw: list | None) -> list[dict]:
@@ -165,7 +243,10 @@ def read_context_tracker() -> dict:
 
         `open_threads` entries are dicts: `{"text": str, "added": <ISO date or None>}`.
         `added` is None for threads written before timestamping existed — see
-        `_normalize_open_threads`.
+        `_normalize_open_threads`. A thread older than `_OPEN_THREAD_EXPIRY_DAYS` is dropped
+        from this list at write time and moved to `expired_open_threads` on disk — see
+        `_expire_open_threads`. That field is never included in this return value, the same
+        "archived but never loaded" pattern used for resolved clinical threads just below.
 
         When a clinical thread is open, a `_clinical_protocol` key is added carrying the
         lifecycle rules. It is attached here rather than written into synthesizer.md so the
@@ -187,6 +268,9 @@ def read_context_tracker() -> dict:
     data.setdefault("clinical_threads", [])
     # Migrate pre-timestamp open_threads (bare strings) rather than crashing on old data.
     data["open_threads"] = _normalize_open_threads(data.get("open_threads"))
+    # Archived, never loaded into session context — see the module-level comment above
+    # _OPEN_THREAD_EXPIRY_DAYS. Mirrors the resolved-clinical-thread filter just below.
+    data.pop("expired_open_threads", None)
 
     # Resolved threads are archived on disk but never loaded — a closed concern should not keep
     # colouring the read of new messages, which is the whole failure this field addresses.
@@ -318,17 +402,34 @@ def write_context_tracker(
     threads, notices = _merge_clinical_threads(
         clinical_threads, existing.get("clinical_threads", [])
     )
-    stamped_open_threads = _merge_open_threads(
-        open_threads, _normalize_open_threads(existing.get("open_threads"))
+
+    today = date.today().isoformat()
+    incoming_texts = {
+        str((item.get("text") if isinstance(item, dict) else item) or "").strip()
+        for item in (open_threads or [])
+    }
+    incoming_texts.discard("")
+    still_eligible, newly_expired = _expire_open_threads(
+        _normalize_open_threads(existing.get("open_threads")), incoming_texts, today
     )
+    stamped_open_threads = _merge_open_threads(open_threads, still_eligible)
+
+    expired_open_threads = existing.get("expired_open_threads") or []
+    if not isinstance(expired_open_threads, list):
+        expired_open_threads = []
+    if newly_expired:
+        expired_open_threads = expired_open_threads + newly_expired
+    if len(expired_open_threads) > _EXPIRED_OPEN_THREADS_CAP:
+        expired_open_threads = expired_open_threads[-_EXPIRED_OPEN_THREADS_CAP:]
 
     tracker = {
-        "last_session": date.today().isoformat(),
+        "last_session": today,
         "open_threads": stamped_open_threads,
         "patterns": patterns,
         "follow_ups": follow_ups,
         "held_items": held_items or [],
         "clinical_threads": threads,
+        "expired_open_threads": expired_open_threads,
     }
 
     with open(path, "w") as f:
