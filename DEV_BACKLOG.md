@@ -657,6 +657,29 @@ so this is not a parallel track to pick from when a `Now` item is time-gated.
   *filed 2026-08-10 · built and deployed, not exercised against live data*
 
 **Capability**
+- **[DB-0815-13] Semantic retrieval *within* a knowledge domain — phase 2 of the wisdom layer.**
+  Phase 1 (approved plan, `~/.claude/plans/to-be-clear-we-modular-knuth.md`) makes `read_wisdom`
+  return a **whole domain, capped at 15 entries**. That is correct while domains are small. **The
+  cap being hit is the trigger for this item** — at that point the choice is subdivide the domain
+  or retrieve within it, and retrieval is the better answer because it matches on meaning rather
+  than on the filer's guess about which sub-domain a fact belonged to.
+  **Two constraints, both load-bearing, and neither is obvious from the code:**
+  *(a)* Wisdom gets its **own FAISS namespace** — `data/personas/{p}/memory/knowledge.faiss` —
+  **never the log index**. Standing facts must not compete with dated log entries for the same `k`
+  slots, and [core/memory.py](core/memory.py)'s public API is `index_entry`/`search_memory` with
+  **no delete or update path**, so a revised standing fact would leave both versions retrievable
+  and ranked against each other. Revision semantics are the whole reason wisdom is not in the log
+  index already.
+  *(b)* Route through `core/memory.py`'s **cached `_get_model()` singleton**. `find_duplicate_wisdom`
+  ([tools/wisdom.py](tools/wisdom.py)) instantiates `SentenceTransformer` inline on every call —
+  an ~80MB reload per invocation. Fixing that is phase-1 step 12; this item must not reintroduce it.
+  **Filed because it existed only in a plan narrative.** `[DB-0810-11]` records strand (b) — the
+  per-call reload — as one clause inside a broad standing question, and records nothing at all about
+  indexing wisdom for retrieval. An item recorded only in a session narrative is lost.
+  @kind: feature
+  @waiting: a domain read hits the 15-entry cap in real use
+  *filed 2026-08-15 during the knowledge-layering design track, at Mike's explicit request to
+  confirm the FAISS step was in the backlog — it was not*
 - **[DB-0810-15] A persona can send in one language and receive in another.** **BUILT AND DEPLOYED 2026-08-15** (`8a7d1d7`, `b3ff108`) — demoted from `## Now` the same day: the feature works and what remained was two checks, not build work. The render defect is `[DB-0815-04]`; the A4 gap is `[DB-0810-14]`; speech-in is `[DB-0815-02]`. **Rejected designs are permanent in `core/translate.py`'s docstring** — do not re-propose prose in `synthesizer.md` or a model-called translate tool.
   @kind: feature
   *demoted 2026-08-15 by the `/backlog deep` sweep, Mike's call*
@@ -669,6 +692,17 @@ so this is not a parallel track to pick from when a `Now` item is time-gated.
   **Benchmark on the VM, never the Mac** — `python3 tests/bench_whisper_stt.py --models base
   --languages en,bg`; an M-series laptop makes an unaffordable model look fine, and `small.en` was
   already measured at RTF 2.23 and rejected on a 2-vCPU single-worker pool.
+  **✅ Benchmarked 2026-08-15 on the VM — both candidates rejected, held indefinitely.** `base`
+  (multilingual): RTF 0.305, WER 46.4% on `bg` (vs. 5.0% `en`) — right script, roughly half the
+  words wrong. `small` (multilingual, config added to `_CONFIGS` in the same pass): RTF 0.967,
+  WER 27.6% on `bg` — better accuracy but real-time RTF leaves almost no queueing headroom on the
+  single-worker pool, and English RTF also regresses 0.247 → 0.767 if adopted unconditionally.
+  Neither clears the bar Mike's willing to accept; **no per-language model-selection work was
+  attempted** (`small` for `bg` only, `base.en` kept for `en`) because the WER floor itself —
+  ~28% best case — was judged not worth the added complexity. **Decision: hold in `## Later`
+  indefinitely; not scheduled to be revisited absent a materially better local multilingual model
+  or hardware change.** Full numbers: `tests/stt_bench_2026-08-15.json` (VM-side, latest run
+  overwrites prior).
   *(b)* **Speech out — ✅ BUILT, and this entry described it as open for a day after it shipped.**
   `_EDGE_VOICE_BY_LANG` at [core/server.py:866](core/server.py#L866) maps `bg` →
   `bg-BG-KalinaNeural` and is selected by language code at [:951](core/server.py#L951); Kokoro has
@@ -889,6 +923,9 @@ item's evidence is current and nothing new is waiting. **(3) The empty-detail fi
 "`×N` is a similarity cluster, not a repeat count" finding were fixed the same day (`[DB-0815-09]`,
 closed — `archive/backlog_closed_2026-08.md`). **A `×N` before 2026-08-15 was a chain length, not
 a repeat count; entries above that date should be read with that in mind.**)*
+
+- **[user corrected a prior turn]** The user is correcting the language setting; they want to communicate in Bulgarian, not English.  
+  `2026-08-15T21:06:57.317908Z`
 
 - **[user corrected a prior turn]** User is confirming the necessity of a workaround for the Bulgarian language recognition bug.  
   `2026-08-15T13:50:27.705106Z`

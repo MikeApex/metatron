@@ -1,38 +1,30 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-15, ninth session — **the correction signal Mike reads at every session start was
-measuring itself wrong, twice, and both faults are fixed and deployed.** (1) **93 of 174
-`USER_CORRECTION` events carried no information** — the strings "None"/"N/A", which passed the
-blank-detail guard because they are not blank. Cause is a *template*: `coordinator.md:88` is a slot
-annotated "omit if not applicable", and a model filling a template answers the slot. **The agent
-file was deliberately not touched** — the instruction is already correct and already ignored, which
-is why the control is Python. (2) **A `×N` was a chain length, not a repeat count**: at threshold
-0.15 a chain of Heathrow corrections was reported as "calendar events imply completion ×16".
-Threshold 0.45 **plus** correction-boilerplate stopwords — neither alone splits it. **These two,
-plus the invented `eva@example.com`, are one root cause: a field that looks required gets filled
-with something plausible rather than left out.** `## Now` is 9. Tailnet reachable; SSH IAP-only.*
+*Updated: 2026-08-15, tenth session — **Bulgarian speech-in benchmarked on the VM and held
+indefinitely, Mike's call.** He reported "Latin characters in my speaking transliteration" —
+initially looked like a repeat of the same-day `[DB-0815-04]` render fix (already deployed,
+`8a7d1d7`), but he clarified live: it's the **transcript of his own spoken Bulgarian**, not the
+reply — `[DB-0815-02](a)`, a different pipeline half. Root cause: `WHISPER_MODEL_SIZE` is
+`base.en`, English-only, cannot emit Cyrillic regardless of the `language=` param. Benchmarked
+both multilingual candidates on the VM (never the Mac): `base` — RTF 0.305, WER 46.4% on `bg`
+(right script, half the words wrong); `small` — RTF 0.967, WER 27.6% (better accuracy, but
+near-real-time RTF leaves almost no queueing headroom on the single-worker pool, and would
+regress English RTF 0.247→0.767 if adopted unconditionally). `small`'s multilingual config didn't
+exist in `tests/bench_whisper_stt.py`; added two `_CONFIGS` rows so the sweep is repeatable.
+**Held in `## Later` indefinitely** — neither clears an acceptable bar; no per-language
+model-selection design was attempted, the ~28% WER floor itself wasn't worth engineering around.
+Revisit only on a materially better local multilingual STT model or hardware change.
 
-*CRM got real tooling (worker, merged): **`merge_contacts` with archive-on-merge and a
-`merged_into` pointer that reads follow** — the first implementation of that standing rule here —
-write-path dedup surfacing near-matches as *evidence*, placeholder-email refusal, and a narrow
-third-party guard on `write_profile`. **Registration was not enough**: the tool was in no agent's
-`allowed_tools`, so the schema filter hid it — **registered-but-ungranted, the same shape as
-`[DB-0810-17](1)`'s built-but-unregistered `read_google_contacts`, twice in one day.** Now granted
-and documented.*
-
-*Two process gaps, both found because Mike asked why something was still on screen. **The machine
-log had no removal step** — sweep and promote were defined, delete was not, so addressed
-signatures kept their ⚠ forever. Rule written; 22 cleared, **109 → 87 entries, 8 ⚠ → 3**, the three
-survivors filed. **The fragment filing route miscounted silently** — prose fragments folded in
-uncounted and reported `0 inbox` with three items present; `fold_fragments()` now coerces. New
-markers `@waiting:`/`@session:`/`@kind:` and a derived **`workable`** count; the `@` sigil is
-load-bearing (prose wraps onto a line beginning "session:").*
+*Prior session (ninth) — **the correction signal Mike reads at every session start was
+measuring itself wrong, twice, and both faults are fixed and deployed.** 93 of 174
+`USER_CORRECTION` events carried no information (template slot filled with "None"/"N/A" rather
+than omitted — Python-side fix, agent file deliberately untouched); a `×N` was a chain length,
+not a repeat count (threshold 0.45 + stopwords fixes it). CRM gained `merge_contacts`
+(archive-on-merge, registered **and** granted this time). Machine log gained a removal step:
+109 → 87 entries, 8 ⚠ → 3. Full detail: `archive/PROJECT_LOG.md`.*
 
 *Dev-workflow track — **Phase 5 is CLOSED; Phase 4 (ROADMAP split) stays deferred; A7 unchanged by
-decision** (features first). The completed detail — the `.claude/rules/` split, Read-only rule
-delivery, end-to-end worktree dispatch, the commit-guard fixes, `/archive`'s rescope — moved to
-`archive/PROJECT_LOG.md` on 2026-08-15 rather than being trimmed sentence by sentence; it is
-settled and nothing re-decides it. ⚠ **The one live divergence:** `docs/CONVENTIONS.md:143` points
+decision** (features first). ⚠ **The one live divergence:** `docs/CONVENTIONS.md:143` points
 here for current Model IDs, but § Model IDs below still reads *updated 2026-07-27*.*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
@@ -135,9 +127,9 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-15 | **Bulgarian speech-in benchmarked, held indefinitely.** `WHISPER_MODEL_SIZE=base.en` is English-only, cannot emit Cyrillic; `base` (multilingual) gets right script at 46.4% WER, `small` gets 27.6% WER but near-real-time RTF (0.967) on the single-worker pool. Neither clears the bar — Mike's call to hold `[DB-0815-02](a)` in `## Later` indefinitely | none — benchmark + backlog note only, **not deployed** |
 | 08-15 | **`/backlog deep` — the correction signal was measuring itself wrong twice over.** 93 of 174 `USER_CORRECTION` events said only "None" (a template slot a model fills rather than omits — the agent file was left alone on purpose), and a `×N` was a *chain length*, not a repeat count: a chain of Heathrow corrections was reported as "calendar events imply completion ×16". Both fixed; historical events filtered at read, never deleted. CRM gained `merge_contacts` (archive-on-merge, first here) — **and being registered was not enough, it was granted to no agent.** Machine log had no *removal* step at all: 22 cleared, 8 ⚠ → 3. `fold_fragments()` was miscounting prose fragments as `0 inbox` | `6e57c73`, `2fa8cd6`, `704e79b`, `214a547`, `19cfd12` — **deployed** |
 | 08-15 | **Answer the user in their own language, and stop broadcasting profile detail.** `[DB-0810-15]` shipped as Python post-processing after `filter_output()` — prose-in-`synthesizer.md` and a model-called tool were both rejected, the second because a tool call is an extra turn *through* the expensive model. Bulgarian verified live. Found by verifying the render: Mike's `name` field held a contact correction and rode every prompt; `_PROMPT_EXCLUDED` enforced nothing; `Eva`/`Iva Diamond` were one person and the CRM has no merge tooling. Backlog gained `due:`-marked time-gating | `8a7d1d7`, `f9ffd2a`, `b3ff108` — **deployed** |
-| 08-15 | **`/backlog attack` — two clusters merged, and the traces found two live user-facing faults.** `[DB-0810-12]` closed: an unsigned tool-call turn is recorded signature-free, so a Vertex 400 no longer destroys the exchange; the never-checked `blocking_replay` route was real. **New:** the Synthesizer quoted `synthesizer.md` verbatim to Mike (filter tier 4 — exactness, not vocabulary; 237 real responses, one suppression), and a session fired at 00:11 (quiet hours now opt-out, with automatic disturb permission for a user-asked one-off). That exposed `fire_session` reading job settings from `scheduler.yaml` only, so every agent-written job carried no settings at all. `[DB-0814-02]` reworked — grace keys on the user, not the Synthesizer's resend | `5cf0a5e`, `bbda875`, `451f622`, `eb01025` — **deployed** |
 ---
 
 ## Useful context to pull as needed

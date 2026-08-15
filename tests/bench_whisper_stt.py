@@ -121,6 +121,8 @@ _CONFIGS = [
     {"model": "small.en", "beam": 1, "vad": True, "lang": "en"},
     {"model": "base", "beam": 5, "vad": True, "lang": "en"},
     {"model": "base", "beam": 5, "vad": True, "lang": "bg"},
+    {"model": "small", "beam": 5, "vad": True, "lang": "en"},
+    {"model": "small", "beam": 5, "vad": True, "lang": "bg"},
 ]
 
 
