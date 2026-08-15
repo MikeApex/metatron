@@ -71,7 +71,24 @@ standing rule distrusts.*
   aborted on the lookup and returned; nothing checked that the action happened. **Do not scope
   this to `send_email`** — Mike's call was to treat the class. Two halves: the specialists must
   not report success for an unexecuted action, and the Synthesizer must not assert completion it
-  cannot evidence. Note seq 033 refers to an earlier Prudential email with the same symptom, so
+  cannot evidence.
+  **DIAGNOSED 2026-08-15, design committed `c0e2cd8` — read it before touching this:
+  [archive/plans/db081013_action_provenance_design_2026-08-15.md](archive/plans/db081013_action_provenance_design_2026-08-15.md).**
+  This is a **missing-information** failure, not a prompt-adherence one. The Synthesizer's input is
+  the Coordinator's *directives* plus the specialists' *prose*; tool calls never travel
+  (`outputs[a] = future.result()`, [core/orchestrator.py:3080](core/orchestrator.py#L3080)). Nothing
+  in its context could contradict "That's sent." **An agent-file-only fix will test clean and fail
+  in production identically** — do not attempt one. The fix generalises the retrieval provenance
+  line already built for the fabricated-sources incident (orchestrator.py:2294/2296 +
+  [synthesizer.md:109-112](config/agents/synthesizer.md#L109-L112), *"evidence rather than a
+  claim"*) into an **action** provenance line generated from the trace. Mike confirmed the Python
+  track 2026-08-15 and that **the verification is not an LLM task**. Real work is classifying tools
+  as actions vs reads, so the line means "changed the world" not "looked something up"; it then
+  covers email, calendar create/move/delete, contact and log writes with no per-tool work.
+  **Ordering is binding: the Python half deploys before the `synthesizer.md` half is written**, or
+  the Synthesizer declines to confirm things that did happen. Attribution caveat: `[DB-0810-02]`
+  makes per-agent attribution unreliable — scope to request level until that is fixed.
+  Note seq 033 refers to an earlier Prudential email with the same symptom, so
   this has fired at least twice. Also note `logistics` calls `send_email` without holding the
   grant (only `relationships` has it) and the dispatcher runs it anyway — enforcing allowlists
   would break email outright; see `[DB-0810-03]`.
@@ -114,6 +131,20 @@ standing rule distrusts.*
   path that writes an unsigned message — and the next stream request 400s. Its own comment calls
   that divergence "rare", which matches ~4/fortnight. **Verify by instrumenting that branch before
   fixing it**; do not assume, the first two diagnoses here were both wrong.
+  **INSTRUMENTATION LANDED `c8d0c69`, deployed 2026-08-15 — awaiting one live occurrence. Do not
+  close, and do not fix yet.** Observation-only, no behavioural change (verified by reading the
+  diff: the one moved `messages.append` was rebound to a variable and appended identically).
+  `_thought_signature_state()` classifies each assistant message; `_note_unsigned()` ledgers every
+  unsigned one as `pos=/turn=/src=/tools=` and replays it into both failure sites as
+  `msgs=N unsigned=[...]`. **Decisive on a single occurrence:** Vertex's 400 quotes a position (12,
+  all four captures) — match it against the ledger and the branch is named; `unsigned=[none]` on a
+  signature 400 falsifies the whole hypothesis and sends the next look at `history` instead.
+  **A candidate the item did not have:** `src=blocking_replay[...]` — the replay mitigation is
+  *assumed* to return signed calls and nothing ever checked, so it may be a silent no-op and the
+  `else` branch may not be the only unsigned path. Also corrected: the docstring claimed the
+  Synthesizer never calls tools, yet all four captures are exactly that.
+  **How it closes:** no test Mike can run — grep the VM journal for `[signature_probe]` about a week
+  after 2026-08-15, or immediately if he reports a vanished message with a date.
   *filed 2026-08-10 · **unblocked 2026-08-13**, occurrences and loop attribution read live off the
   VM · full reasoning in `archive/PROJECT_LOG.md` § 2026-08-10, later still*
 - **3. [DB-0809-02] Do proactive sessions actually stay focused? — mechanism fixed and deployed;
@@ -204,7 +235,29 @@ standing rule distrusts.*
   IMAP quoting bug found and fixed, original pass/fail criteria still unmet — no long-history
   contact exists yet to test against*
 
-- **6. [DB-0810-15] Voice transcription is English-only in two places, so Bulgarian cannot work.**
+- **6. [DB-0810-15] A persona should be able to send in one language and receive in another —
+  independently.** *(Rescoped 2026-08-15 by Mike. The original entry was "voice transcription is
+  English-only"; that was the symptom he hit, not the need. The voice half is now `[DB-0815-02]` in
+  `## Later`, low priority — **text is the actionable path and it is not blocked by anything**,
+  because the model is already multilingual and typing Bulgarian works today.)*
+  **Two independent per-persona settings, not one:**
+  - **Input language** — what the user writes/speaks.
+  - **Output language** — what Metatron responds in.
+  They do not have to match, and that asymmetry is the requirement, not an edge case. Mike's two
+  worked examples: persona A sends and receives entirely in Bulgarian; persona B receives Bulgarian
+  but answers in English.
+  **The third piece, which is the real work:** content that did not originate in the output
+  language must arrive **already translated** — persona A reading an English email gets it in
+  Bulgarian, not in English with an offer to translate. So this is not a response-language flag; it
+  is a translation boundary on surfaced content, and the boundary has to sit somewhere deliberate
+  (Synthesizer output vs. each tool's return value). **Decide that placement before building** — put
+  it in the wrong layer and every specialist grows its own translation logic.
+  Settable by chat via `write_config` rather than a settings screen — `config` is the product, and
+  the confirm gate already exists. Applies from the next turn: Python reads the value before the
+  model runs, so it cannot retro-apply to the utterance that requested it.
+  Privacy note: translation of personal content is sensitive-tier and stays on the ZDR path.
+  *original filed 2026-08-10 by Mike live during feature testing · rescoped 2026-08-15 by Mike ·
+  the `METATRON_WHISPER_LANGUAGE` knob shipped `1d858f2` and is **not** this item*
   Mike tested it live (seq 031, *"I'm wondering if you can understand me if I speak in Bulgaria"*)
   and asked for multi-language support or a toggle. **Not a config flip — it is blocked twice:**
   (1) [core/voice_pipeline.py:177](core/voice_pipeline.py#L177) passes `language="en"` hardcoded;
@@ -270,6 +323,25 @@ standing rule distrusts.*
   Bash-mediated edits within the same session. Fix for this one likely needs the guard to check
   session identity rather than tool-call provenance, or to trust a session's own recent Bash
   writes the way it trusts its own Edit calls.
+  **WORKTREE HALF CLOSED 2026-08-15 (`6ad3dec` + `ff8f4cc`); this item is now ONLY the Bash-write
+  half.** Root resolves from `git -C`, else a `cd` in the same command, else the session cwd.
+  **The first fix was called verified and was not** — it handled `-C` and cwd only, and a subagent
+  cannot persistently `cd`, so it reaches its worktree with `cd <wt> && git add` and stayed blocked;
+  a second worker lost its commit before this was caught. Proven by committing that worker's
+  stranded work with the previously-blocked command.
+  **Found while chasing it, and worse than the block: the guard was failing OPEN.** `shlex.split`
+  only sees a whitespace-delimited separator, so `echo hi; git add x` parsed as one segment whose
+  first token is not `git` — no git write found, hook passed silently on a real staging command.
+  Every `;` without a leading space disabled the guard. Fixed with `shlex(punctuation_chars=True)`;
+  quoting still holds. 11/11 probe cases.
+  **The item's own proposed fix is REJECTED** — trusting a session's own Bash writes would re-hash
+  manifest entries after any Bash call, absorbing a *parallel* session's lines into this session's
+  baseline and reopening 2026-08-09, to remove a one-token override. **Mike 2026-08-15: "No manual
+  maintenance here"** — so the script→output mapping is out too.
+  **Recommended remaining fix, unbuilt:** attribute from the session manifests already on disk in
+  `.claude/.session_edits/` — if no *other* session's manifest claims the file at its current hash,
+  it is not a collision. Automatic, no list to maintain, ~20 lines. Worth doing because a guard that
+  blocks routine work trains the override that disables it for the real case.
   *filed 2026-08-15 by the coordinating session, from a live instance (not inferred) · Mike:
   "file the bug as now"*
 
@@ -381,6 +453,23 @@ so this is not a parallel track to pick from when a `Now` item is time-gated.
   *filed 2026-08-10 · built and deployed, not exercised against live data*
 
 **Capability**
+- **[DB-0815-02] Voice in a language other than English — both directions. LOW priority (Mike,
+  2026-08-15).** Split out of `[DB-0810-15]` when that item was rescoped to the text path, which is
+  unblocked and carries the actual need. Voice is blocked twice, and the second half is not filed
+  anywhere else:
+  *(a)* **Speech in** — `WHISPER_MODEL_SIZE` is `base.en`, English-only; multilingual needs `base`,
+  which reopens the sizing constraint at [core/voice_pipeline.py:31](core/voice_pipeline.py#L31).
+  **Benchmark on the VM, never the Mac** — `python3 tests/bench_whisper_stt.py --models base
+  --languages en,bg`; an M-series laptop makes an unaffordable model look fine, and `small.en` was
+  already measured at RTF 2.23 and rejected on a 2-vCPU single-worker pool.
+  *(b)* **Speech out** — both TTS voices are hardcoded English (`KOKORO_VOICE = "af_heart"`,
+  `EDGE_VOICE = "en-US-JennyNeural"`). edge-tts has `bg-BG-*` neural voices; Kokoro's language
+  coverage is unverified. **No auto-detect solves this half** — synthesising speech needs a stored
+  language value, which is why `[DB-0810-15]`'s preference is the prerequisite, not a parallel path.
+  The `METATRON_WHISPER_LANGUAGE` knob (`1d858f2`) is plumbing only and changes nothing until a
+  multilingual model is adopted. One client (`static/index.html`) serves both web and APK, so
+  neither half needs per-platform work.
+  *filed 2026-08-15 by Mike as an explicit `## Later`, low priority*
 - **[DB-0810-03]** **Tool allowlists are never audited against the instruction files, so an
   agent can be told to use a tool it does not hold.** *(Two of three grants shipped `a96a3b3`,
   deployed 2026-08-10 — `relationships` and `finance`. What remains is `recreation_hobbies` and
@@ -657,8 +746,8 @@ enforcement. Same class as `[DB-0810-03]`; the gap did not change, the ability t
 - **[user corrected a prior turn]** Mike is correcting the assumption that his 'fit it in' approach to work creates negative pressure; he finds it manageable and beneficial for his family balance.  
   `2026-06-26T21:35:02.264614Z`
 
-- ⚠ **[user corrected a prior turn]** None.  ×84  
-  `2026-08-15T06:11:28.792612Z`
+- ⚠ **[user corrected a prior turn]** None.  ×85  
+  `2026-08-15T09:12:16.632243Z`
 
 - **[user corrected a prior turn]** User is flagging that the previous exchange produced no response and that an expected write_config action was not executed — this is a pipeline/execution failure, not a content correction per se, but note that the prior turn's intended output did not reach the user and the write_config call was missed.  
   `2026-06-26T15:51:48.929810Z`
