@@ -79,6 +79,17 @@ WHISPER_VAD = os.getenv("METATRON_WHISPER_VAD", "1") != "0"
 # failure, keep the mechanism whose failure mode this corpus can't measure.
 WHISPER_VAD_THRESHOLD = float(os.getenv("METATRON_WHISPER_VAD_THRESHOLD", "0.30"))
 WHISPER_VAD_SPEECH_PAD_MS = int(os.getenv("METATRON_WHISPER_VAD_SPEECH_PAD_MS", "1500"))
+# [DB-0810-15] Mike speaks Bulgarian; the transcribe language was previously hardcoded to
+# "en" below, which made non-English input a code change rather than a config edit. This
+# knob fixes that half of the problem. The other half — WHISPER_MODEL_SIZE above is
+# "base.en", an English-only model that cannot transcribe Bulgarian at any language setting
+# — is NOT fixed here: swapping to the multilingual "base" model needs a VM benchmark
+# (tests/bench_whisper_stt.py) before it can be adopted, per the SIZING CONSTRAINT above.
+# Default stays "en" — setting this alone does nothing until WHISPER_MODEL_SIZE is also
+# changed to a multilingual model. Auto-detection is deliberately not implemented here:
+# it costs accuracy on short utterances, which is most of what voice sends, and the
+# auto-detect-vs-toggle choice is Mike's, not a default to bake in silently.
+WHISPER_LANGUAGE = os.getenv("METATRON_WHISPER_LANGUAGE", "en")
 SAMPLE_RATE = 16000              # Whisper expects 16kHz
 
 # Kokoro TTS settings.
@@ -174,7 +185,7 @@ def transcribe(audio: np.ndarray) -> str:
     segments, _ = model.transcribe(
         audio,
         beam_size=WHISPER_BEAM_SIZE,
-        language="en",
+        language=WHISPER_LANGUAGE,
         vad_filter=WHISPER_VAD,
         vad_parameters={
             "threshold": WHISPER_VAD_THRESHOLD,
