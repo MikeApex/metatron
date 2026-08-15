@@ -91,7 +91,7 @@ standing rule distrusts.*
   continuing it. **Do not re-apply the ≤2-sentence cap**; it was rejected deliberately, focus being
   the target and length only its symptom. Same family as `[DB-0814-02]` (stale context that nothing
   ages out), and worth scoping against it.
-  *`due: 2026-08-17` is spent — the recurrence with a known date was worth more than seven ordinary
+  *The 2026-08-17 due marker is spent (de-tagged 2026-08-15 so it cannot false-wake the sync) — the recurrence with a known date was worth more than seven ordinary
   days, exactly as the item predicted. History follows.*
 
   **Prior state — mechanism fixed and deployed; the guidance half was unproven.** The original premise was wrong: the openings were already
@@ -106,7 +106,7 @@ standing rule distrusts.*
   against `ts` returns nothing and looks like a clean day — this sweep made the same misread before
   catching it. The narrow conclusion survives: **no `INSTRUCTION_CHANGE_REQUEST` fired**, which is
   what the old bug produced every time, and both 07:20/07:30 firings recorded `is_proactive: true`.
-  **What remains: read a week of traces** — `due: 2026-08-17`, the end of the week filed 08-09.
+  **What remains: read a week of traces** — dated 2026-08-17, the end of the week filed 08-09.
   Still day 1 of 7. Do not re-word anything before then.
   **⚠ THE FIX DID NOT HOLD — a post-fix recurrence is in hand, and it changes what this item is.**
   Mike reported on **2026-08-12** that evening close *"fired 3 repetitive messages"* and asked that
@@ -124,7 +124,135 @@ standing rule distrusts.*
   Inbox 2026-08-14**, reported by Mike via the VM (2026-08-12T08:23Z); fix date verified against
   `git log` the same day*
 
-- **2. [DB-0809-21] Three of four verification steps done and passed; one is genuinely time-gated.**
+- **2. [DB-0810-15] A persona should be able to send in one language and receive in another —
+  independently.** *(Rescoped 2026-08-15 by Mike. The original entry was "voice transcription is
+  English-only"; that was the symptom he hit, not the need. The voice half is now `[DB-0815-02]` in
+  `## Later`, low priority — **text is the actionable path and it is not blocked by anything**,
+  because the model is already multilingual and typing Bulgarian works today.)*
+  **Two independent per-persona settings, not one:**
+  - **Input language** — what the user writes/speaks.
+  - **Output language** — what Metatron responds in.
+  They do not have to match, and that asymmetry is the requirement, not an edge case. Mike's two
+  worked examples: persona A sends and receives entirely in Bulgarian; persona B receives Bulgarian
+  but answers in English.
+  **The third piece, which is the real work:** content that did not originate in the output
+  language must arrive **already translated** — persona A reading an English email gets it in
+  Bulgarian, not in English with an offer to translate. So this is not a response-language flag; it
+  is a translation boundary on surfaced content, and the boundary has to sit somewhere deliberate
+  (Synthesizer output vs. each tool's return value). **Decide that placement before building** — put
+  it in the wrong layer and every specialist grows its own translation logic.
+  **✅ STORAGE HALF BUILT AND MERGED 2026-08-15** (`9a46608`): `input_language` / `output_language`
+  are independent per-persona fields in [tools/profile.py](tools/profile.py), stored as ISO 639-1
+  codes, rendered into the system prompt by `load_profile()`
+  ([core/orchestrator.py:102](core/orchestrator.py#L102)). 16/16 tests in
+  [tests/test_profile_language.py](tests/test_profile_language.py). **Unset renders nothing** — no
+  preference stays distinguishable from a preference for English. Not deployed.
+  **⚠ Found while building, and it invalidates a claim this entry relied on:** `load_profile()`
+  lives in `core/orchestrator.py`, **not** `tools/profile.py`, and is a hand-written per-field list
+  that does not derive from `WRITABLE` or `_PROMPT_EXCLUDED`. `_PROMPT_EXCLUDED` has exactly **one**
+  reference in the codebase — its own definition. Contact details stay out of the prompt only
+  because that list happens not to render them, while `profile.py`'s docstring says they are
+  *"deliberately excluded"*. **Nothing enforces it.** Documented in place 2026-08-15; the real fix
+  is to make `load_profile()` derive from the set. Same class as the unenforced tool allowlists.
+  **✅ Boundary decided 2026-08-15 by Mike: the Synthesizer's output, and only there.**
+  **⚠ AMENDED the same day, by Mike, on cost — and the amendment is the live design.** A first cut
+  wrote the translation rule into `config/agents/synthesizer.md` as prose. **Rejected on two
+  grounds, both correct:** (1) it is durable token bloat in a file loaded on every head-layer call,
+  for a setting that changes almost never; (2) **the Synthesizer runs on the most expensive model,
+  and translation is cheap work** — paying premium rates to restate text is the wrong place to
+  spend. **Revised design, not yet built:** the boundary stays where Mike put it — the Synthesizer's
+  *output*, one place, no per-tool logic — but the translation runs **after** it as a Python
+  post-processing step against a cheap model, the same shape as `filter_output()`, which already
+  post-processes the response. `synthesizer.md` gains at most one short line.
+  **Two costs to decide against before building, neither yet accepted:**
+  1. **It breaks streaming.** A translation pass needs the complete response, so a persona with an
+     output language set loses token-by-token streaming — the same constraint behind the
+     `[RETRACT]` design in `ROADMAP.md` § 5A. Voice makes this worse, not better.
+  2. **One extra model call per response**, on every turn for that persona, and it must stay on the
+     ZDR path — it is translating personal content, so it is sensitive-tier and cannot go to a
+     shared cloud model.
+  *Do not implement the prose-in-`synthesizer.md` version; it was tried and rejected 2026-08-15.* One place,
+  one instruction, no per-tool translation logic and no extra model round-trip per tool call — and
+  it keeps the "config is the product" line, since the whole feature becomes a setting plus a
+  prompt rule. **The known cost of this choice, to be watched rather than designed around now:**
+  content the Synthesizer treats as a verbatim quote (an email body it is relaying) may pass
+  through in its source language. If that shows up in real use, the fix is to tag source language
+  on tool returns and let the Synthesizer act on the tag — *not* to move translation into the
+  tools, which is the option this decision rejected.
+  **⚠ The stated write mechanism below is wrong — verified 2026-08-15.** `write_config`'s
+  `ALLOWED_FILES` is `{prime_directive.md, mission.md}` only
+  ([tools/config_writer.py:17](tools/config_writer.py#L17)); it writes narrative files, and this is
+  a structured setting. A home must be chosen before building: `tools/profile.py`
+  (per-persona `profile.yaml`, already has a `WRITABLE` schema boundary and a location/timezone
+  group these two fields sit naturally beside) is the closest fit; `write_agent_config` is
+  per-agent state and wrong for a persona-wide setting. Still settable by chat either way.
+  Applies from the next turn: Python reads the value before the
+  model runs, so it cannot retro-apply to the utterance that requested it.
+  Privacy note: translation of personal content is sensitive-tier and stays on the ZDR path.
+  *original filed 2026-08-10 by Mike live during feature testing · rescoped 2026-08-15 by Mike ·
+  the `METATRON_WHISPER_LANGUAGE` knob shipped `1d858f2` and is **not** this item*
+  Mike tested it live (seq 031, *"I'm wondering if you can understand me if I speak in Bulgaria"*)
+  and asked for multi-language support or a toggle. **Not a config flip — it is blocked twice:**
+  (1) [core/voice_pipeline.py:177](core/voice_pipeline.py#L177) passes `language="en"` hardcoded;
+  (2) [core/voice_pipeline.py:49](core/voice_pipeline.py#L49) loads `base.en`, an **English-only
+  model** that cannot transcribe Bulgarian at any setting. Multilingual requires `base`, which
+  reopens the sizing constraint documented at [core/voice_pipeline.py:31](core/voice_pipeline.py#L31):
+  STT runs on a **single-worker pool on 2 vCPU**, and `small.en` was already measured and rejected
+  at RTF 2.23 (transcribes slower than audio arrives, so a second concurrent request queues).
+  **Benchmark `base` on the VM before choosing** — `python3 tests/bench_whisper_stt.py`, run there,
+  not on the Mac. Then decide auto-detect vs. an explicit UI toggle; auto-detect costs accuracy on
+  short utterances, which is most of what voice sends.
+  *filed 2026-08-10 by Mike, live during feature testing · both blockers verified in code same day*
+
+- **3. [DB-0810-17] An external CRM bridge — the count question itself is answered.** At seq 009
+  Mike asked for a route *and* a CRM contact count; the system declined it as needing an external
+  connection it doesn't have, when Metatron's own contact store (`list_contacts`, `search_contacts`
+  in [tools/crm.py](tools/crm.py)) already held the answer. **(a) closed 2026-08-15** —
+  `coordinator.md`'s Relationships routing block now calls out contact-store questions explicitly
+  and says not to decline them (`b11e775`). **(b) remains: an external CRM bridge.**
+  **✅ UNBLOCKED 2026-08-15 — the vendor decision this entry was waiting on turned out not to
+  exist.** Mike's actual requirement: for Mike-persona testing the internal CRM **pulls from Google
+  Contacts**, and any other CRM arrives by **import in conventional file types**. So there is no
+  *which CRM* to choose and no per-vendor API bridge to build — the previous framing of this item
+  was the blocker, not the work. Three concrete pieces, verified against current code the same day:
+  1. **`read_google_contacts` is built but unreachable.** [tools/google_contacts.py](tools/google_contacts.py)
+     is complete — read-only People API, per-persona OAuth, one-time consent via
+     [scripts/google_contacts_authorize.py](scripts/google_contacts_authorize.py) — but it is
+     **never imported into `register_tools()` and never granted in either routing file**. Compare
+     the CRM tools, wired at [core/orchestrator.py:479](core/orchestrator.py#L479) and
+     [:595](core/orchestrator.py#L595). It appears only in `tools/metatron_monitor.py:141`'s API-name
+     map, which is why nothing flagged it. **Inverse of `[DB-0810-03]`'s class**: not a tool named
+     without a grant, but a tool built without a registration — and `scripts/check_agent_tools.py`
+     cannot see this direction either, since it sweeps agent files against allowlists and neither
+     mentions this tool. Worth asking whether that guard should also flag a `tools/` module that
+     nothing registers.
+  2. **Reading is not pulling.** `read_google_contacts` returns data; nothing writes it into
+     `contacts.json`. The onboarding/sync path does not exist, so "the internal CRM pulls from
+     Google Contacts" is not true even once (1) lands. Decide dedup on the way in —
+     `_find_by_name` is naive substring matching (the `[DB-0810-11]` "Jon"/"Jonathan" case), so a
+     pull is exactly where duplicate records get created at volume.
+  3. **No import path of any kind exists** — no vCard, no CSV, in `tools/crm.py` or anywhere else.
+     This is the "any CRM should be importable" half.
+  Sensitive-tier throughout. Google Contacts write-back stays out of scope — deliberately excluded
+  when the module was built, and nothing here needs it.
+  *filed 2026-08-10 by Mike · (a) closed 2026-08-15, see `archive/backlog_closed_2026-08.md` ·
+  (b) reframed and unblocked 2026-08-15 by Mike; the three pieces above were verified against
+  current code, not inferred from the entry*
+
+
+## Later
+
+**Time-gated — parked here deliberately, not deprioritised.** Each carries a `due:` marker, which
+`due_now()` in `scripts/sync_dev_backlog.py` scans across **both** `## Now` and `## Later` and
+surfaces as a `⚠ due:` clause on the sync line **at every session start** — so these wake
+themselves without anyone running `/backlog deep`. The date is a **review date, not a deadline**:
+for the two gated on a condition rather than a clock it means "re-check whether the condition has
+arrived", and if it has not, push the date rather than closing the item.
+**Promote back into `## Now` when the condition is met — that is Mike's call, not automatic.**
+*(Convention introduced 2026-08-15 by Mike, after a `/backlog attack` found three of six `## Now`
+items unworkable, which is what made the ranked list misleading: `## Now` must mean workable.)*
+
+- **[DB-0809-21] Three of four verification steps done and passed; one is genuinely time-gated.**
   Ran at ~$0.08, under the $1.00 approval line (`docs/CONVENTIONS.md` § Testing Cost Convention).
   **Done:** (1) A4 `clinical` suite vs `sarah_chen`, 3/3 — confirms the regression gate held.
   (2) Three targeted Physical Health calls vs `danny_park`, which do assert `6330029`/`88b7614` —
@@ -137,8 +265,10 @@ standing rule distrusts.*
   mechanism works, but **no live candidate has yet existed** to observe being raised as a question.
   Needs a real unreferenced calendar event, not a forced one.
   *filed 2026-08-09 · **Mike deferred it explicitly** · 3 of 4 done 2026-08-10*
+  `due: 2026-09-01`
 
-- **3. [DB-0810-05] The tone-profile pipeline has never touched a real mailbox.** Built and
+
+- **[DB-0810-05] The tone-profile pipeline has never touched a real mailbox.** Built and
   committed `88957e6`; **every test used stubs.** The distillation half is well covered — a hostile
   fixture confirmed unknown keys dropped, values truncated, lists capped, injection caught and the
   write refused, plus five `_extract` paths (single-direction refusal, thin-sample skip, injection
@@ -180,54 +310,10 @@ standing rule distrusts.*
   *filed 2026-08-10 by Mike at the close of the build session · re-investigated 2026-08-10:
   IMAP quoting bug found and fixed, original pass/fail criteria still unmet — no long-history
   contact exists yet to test against*
+  `due: 2026-09-01`
 
-- **4. [DB-0810-15] A persona should be able to send in one language and receive in another —
-  independently.** *(Rescoped 2026-08-15 by Mike. The original entry was "voice transcription is
-  English-only"; that was the symptom he hit, not the need. The voice half is now `[DB-0815-02]` in
-  `## Later`, low priority — **text is the actionable path and it is not blocked by anything**,
-  because the model is already multilingual and typing Bulgarian works today.)*
-  **Two independent per-persona settings, not one:**
-  - **Input language** — what the user writes/speaks.
-  - **Output language** — what Metatron responds in.
-  They do not have to match, and that asymmetry is the requirement, not an edge case. Mike's two
-  worked examples: persona A sends and receives entirely in Bulgarian; persona B receives Bulgarian
-  but answers in English.
-  **The third piece, which is the real work:** content that did not originate in the output
-  language must arrive **already translated** — persona A reading an English email gets it in
-  Bulgarian, not in English with an offer to translate. So this is not a response-language flag; it
-  is a translation boundary on surfaced content, and the boundary has to sit somewhere deliberate
-  (Synthesizer output vs. each tool's return value). **Decide that placement before building** — put
-  it in the wrong layer and every specialist grows its own translation logic.
-  Settable by chat via `write_config` rather than a settings screen — `config` is the product, and
-  the confirm gate already exists. Applies from the next turn: Python reads the value before the
-  model runs, so it cannot retro-apply to the utterance that requested it.
-  Privacy note: translation of personal content is sensitive-tier and stays on the ZDR path.
-  *original filed 2026-08-10 by Mike live during feature testing · rescoped 2026-08-15 by Mike ·
-  the `METATRON_WHISPER_LANGUAGE` knob shipped `1d858f2` and is **not** this item*
-  Mike tested it live (seq 031, *"I'm wondering if you can understand me if I speak in Bulgaria"*)
-  and asked for multi-language support or a toggle. **Not a config flip — it is blocked twice:**
-  (1) [core/voice_pipeline.py:177](core/voice_pipeline.py#L177) passes `language="en"` hardcoded;
-  (2) [core/voice_pipeline.py:49](core/voice_pipeline.py#L49) loads `base.en`, an **English-only
-  model** that cannot transcribe Bulgarian at any setting. Multilingual requires `base`, which
-  reopens the sizing constraint documented at [core/voice_pipeline.py:31](core/voice_pipeline.py#L31):
-  STT runs on a **single-worker pool on 2 vCPU**, and `small.en` was already measured and rejected
-  at RTF 2.23 (transcribes slower than audio arrives, so a second concurrent request queues).
-  **Benchmark `base` on the VM before choosing** — `python3 tests/bench_whisper_stt.py`, run there,
-  not on the Mac. Then decide auto-detect vs. an explicit UI toggle; auto-detect costs accuracy on
-  short utterances, which is most of what voice sends.
-  *filed 2026-08-10 by Mike, live during feature testing · both blockers verified in code same day*
 
-- **5. [DB-0810-17] An external CRM bridge — the count question itself is answered.** At seq 009
-  Mike asked for a route *and* a CRM contact count; the system declined it as needing an external
-  connection it doesn't have, when Metatron's own contact store (`list_contacts`, `search_contacts`
-  in [tools/crm.py](tools/crm.py)) already held the answer. **(a) closed 2026-08-15** —
-  `coordinator.md`'s Relationships routing block now calls out contact-store questions explicitly
-  and says not to decline them (`b11e775`). **(b) remains: an external CRM bridge**, the genuine
-  integration Mike means by "should be built" — blocked on a decision this entry cannot make for
-  him: *which* CRM, and whether contacts sync in, out, or both. Sensitive-tier either way.
-  *filed 2026-08-10 by Mike · (a) closed 2026-08-15, see `archive/backlog_closed_2026-08.md`*
-
-- **6. [DB-0814-02] Stale threads now expire — but neither signal that keeps one alive has been
+- **[DB-0814-02] Stale threads now expire — but neither signal that keeps one alive has been
   measured against real output.** *(Retitled 2026-08-15. The expiry policy is **built and
   deployed**; what is open is narrower and specific.)*
   **Shipped `37b0b03`, merged `eb01025`, plumbing `5cf0a5e`, deployed.** Open threads auto-drop 7
@@ -251,8 +337,31 @@ standing rule distrusts.*
      **If real Synthesizer output varies wording turn to turn, this is live**, and the fix is a
      similarity check over the exact-text merge (`core/rule_classes.py`'s `similarity()` is the
      model).
-  **How it closes:** read a week of real `context.json` writes and check whether either signal is
-  firing on threads Mike never touched. Not a test — it needs live data.
+  **⚠ How it closes was checked against the VM on 2026-08-15 and the stated method does not work —
+  the data it assumes does not exist.** "Read a week of real `context.json` writes" cannot be done:
+  1. **`context.json` is overwritten in place.** It is one mutable file per persona, not a dated
+     series like `data/logs/`, so there is no write history to read. The live file for `mike` was
+     476 bytes — one open thread, `follow_ups: []`.
+  2. **`expired_open_threads` is not in the live file at all.** Expiry deployed 2026-08-15 with a
+     7-day cutoff, so nothing can have crossed it before **~2026-08-22**. Until then the archive
+     that would evidence the expiry path is empty by construction.
+  3. **Traces do not record the write.** `write_context_tracker` does not appear in
+     `/monitor/traces` records at all (checked against `persona=mike`); a trace carries
+     `user_input`/`synth_response`/`pipeline`, not tool arguments. The string `open_threads` does
+     appear — inside prompt/response text — which is a false lead worth naming so the next session
+     does not mistake it for the write being logged.
+  **So this item is time-gated, in the same class as `[DB-0810-05]` and `[DB-0809-21]`, and that
+  was not visible from the entry.** Before it can close, someone must give it a data source that
+  will exist: the cheapest is to have `write_context_tracker` append a line per write to a dated
+  audit file (cheap, and it is the same "instrument the absence" argument as `[DB-0809-08]`);
+  otherwise it waits until after ~2026-08-22 and closes off `expired_open_threads` alone, which
+  evidences expiry but **not** the two grace signals — those fire on threads that never expire, so
+  the archive is silent about exactly the thing being measured.
+  **Do not dispatch a worker on the measurement half until one of those exists** — a worker was
+  scoped for it on 2026-08-15 at an estimated 150–190k and would have spent it discovering the
+  above.
+  *close condition invalidated 2026-08-15 by the coordinating window, checked live against the VM
+  rather than inferred*
   *filed 2026-08-14 by Mike via the VM · timestamp half closed 2026-08-15 · expiry half built and
   deployed 2026-08-15, thresholds unvalidated*
 
@@ -267,8 +376,8 @@ standing rule distrusts.*
   for review) is a fresh design question, not a continuation of this build.
   *filed 2026-08-14 by Mike via the VM (2026-08-12T08:23Z) · timestamp shipped 2026-08-15, see
   `archive/backlog_closed_2026-08.md`*
+  `due: 2026-08-22`
 
-## Later
 
 - **[DB-0814-04] An obligation with a *vague* due date is the first thing dropped from session
   context — the exact opposite of the intended priority.** `context_block()` in

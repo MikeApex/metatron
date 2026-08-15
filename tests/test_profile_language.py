@@ -10,17 +10,16 @@ Usage:
 
 Exits 0 if every test passes, 1 otherwise.
 
-One test below (`fields land in core.orchestrator.load_profile()'s prompt`) is
-expected to FAIL as shipped. tools/profile.py stores the two fields correctly
-and read_profile() renders them on demand, but the system-prompt summary that
-actually reaches the model is built by a *separate*, hand-written function —
-core/orchestrator.py's load_profile() — which lists each renderable field by
-name (`if profile.get("name"): ...`, `if profile.get("occupation"): ...`, etc.)
+The system-prompt summary that actually reaches the model is built by a
+*separate*, hand-written function — core/orchestrator.py's load_profile() —
+which lists each renderable field by name (`if profile.get("name"): ...`)
 rather than deriving from tools/profile.py's WRITABLE or _PROMPT_EXCLUDED.
-core/orchestrator.py is outside this change's file manifest, so the two new
-`if profile.get("input_language")` / `if profile.get("output_language")` lines
-that would make this pass are not added here. Left failing on purpose rather
-than deleted, so the gap is visible instead of silently unverified.
+That gap was found by this suite: the render tests below were shipped failing
+on 2026-08-15 because the storage half landed first, and were closed the same
+day once load_profile() gained its two lines. Keep testing through
+`ORC.load_profile()` rather than `tools.profile`'s own summary — storing a
+language the Synthesizer never sees is the failure mode that matters, and only
+the orchestrator path can catch it.
 """
 
 import sys
@@ -216,8 +215,36 @@ def _():
         PR.write_profile("input_language", "Bulgarian")
         PR.write_profile("output_language", "English")
         prompt = ORC.load_profile()
-        assert "bg" in prompt, prompt
-        assert "en" in prompt, prompt
+        # Asserted on display names, not the stored codes: load_profile() renders through
+        # tools.profile.language_name() so the model is told "Bulgarian" rather than "bg".
+        # Asserting the raw code here would pass on a prompt that says nothing a model can
+        # act on, which is the opposite of what this test is for.
+        assert "Bulgarian" in prompt, prompt
+        assert "English" in prompt, prompt
+        # The asymmetry is the requirement — the two must not collapse into one statement,
+        # or the "receives Bulgarian, answers in English" case silently becomes "both".
+        in_line = next(ln for ln in prompt.splitlines() if "Bulgarian" in ln)
+        out_line = next(ln for ln in prompt.splitlines() if "English" in ln)
+        assert in_line != out_line, prompt
+        assert "Respond" in out_line, out_line
+
+
+@check("unset languages render nothing — no preference is not a preference for English")
+def _():
+    with _temp_persona_dir():
+        PR.write_profile("name", "Mike")
+        prompt = ORC.load_profile()
+        assert "Respond to the user in" not in prompt, prompt
+        assert "writes and speaks to you in" not in prompt, prompt
+
+
+@check("one language set alone renders only that one")
+def _():
+    with _temp_persona_dir():
+        PR.write_profile("output_language", "Bulgarian")
+        prompt = ORC.load_profile()
+        assert "Respond to the user in: Bulgarian" in prompt, prompt
+        assert "writes and speaks to you in" not in prompt, prompt
 
 
 # ---------------------------------------------------------------------------

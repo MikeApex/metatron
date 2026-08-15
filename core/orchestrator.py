@@ -141,6 +141,18 @@ def load_profile(persona: str | None = None) -> str:
         computed_age = _date.today().year - int(birth_year)
         lines.append(f"Age: ~{computed_age} (born {birth_year})")
 
+    # [DB-0810-15]: rendered separately, and only when set, because the two are independent —
+    # a persona may be written to in one language and answered in another, so collapsing them
+    # into one "Language:" line would state something false for exactly the asymmetric case
+    # this feature exists to serve. Unset renders nothing at all rather than defaulting to
+    # English: no preference must stay distinguishable from a preference for English.
+    from tools.profile import language_name
+
+    if profile.get("input_language"):
+        lines.append(f"The user writes and speaks to you in: {language_name(profile['input_language'])}")
+    if profile.get("output_language"):
+        lines.append(f"Respond to the user in: {language_name(profile['output_language'])}")
+
     if profile.get("occupation"):
         lines.append(f"Occupation: {profile['occupation']}")
     if profile.get("household"):

@@ -86,7 +86,30 @@ _LANGUAGE_NAMES = {
 
 WRITABLE = _SCALAR_FIELDS | _CONTACT_FIELDS | _LOCATION_FIELDS | _LANGUAGE_FIELDS | {"other"}
 
+# Code -> display name, for the one consumer that has to show a language to a model rather
+# than key off it (`load_profile()` in core/orchestrator.py). Built by inverting the map above
+# so the two can never disagree; a code with no name maps to itself, which is the correct
+# degradation for a code given directly that _LANGUAGE_NAMES does not spell out.
+def language_name(code: str) -> str:
+    """Display name for a stored ISO 639-1 code, or the code itself if unmapped."""
+    return _CODE_TO_NAME.get((code or "").lower(), code)
+
+
+_CODE_TO_NAME = {v: k.title() for k, v in _LANGUAGE_NAMES.items()}
+
 # Never rendered into the system prompt by load_profile(). Retrieved on demand.
+#
+# ⚠ THIS NAME PROMISES ENFORCEMENT IT DOES NOT PROVIDE — found 2026-08-15.
+# It has exactly one reference in the codebase: this definition. `load_profile()` lives in
+# core/orchestrator.py and is a hand-written per-field list that does not consult this set, or
+# WRITABLE, at all. Contact details stay out of the system prompt only because that list happens
+# not to render them — not because anything stops it. Adding an `email` line there would leak a
+# contact detail into every head-layer prompt with nothing to catch it, and this module's own
+# docstring ("contact details are deliberately excluded") would still read as though it were
+# guarded. Same "being told is not being prevented" class as the tool allowlists in
+# `.claude/rules/agent-files.md`. Left in place rather than deleted because the *intent* is
+# right and is the correct spec for a real check; the fix is to make `load_profile()` derive
+# from it. Do not treat a clean read of this constant as evidence of anything.
 _PROMPT_EXCLUDED = _CONTACT_FIELDS
 
 
