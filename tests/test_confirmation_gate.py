@@ -9,8 +9,12 @@ These test the properties that make the gate worth having, not that it runs:
   * an approval cannot be spent on different arguments than the ones shown
   * approvals expire
   * recipients outside the known set are refused in code, whatever the model was told
+  * an approval that is granted is actually *spent* — the whole point, and the half that
+    was missing until 2026-08-15 (`[DB-0815-03]`): every test here stopped at the gate,
+    so nothing covered what happened after the tap, and the answer was "nothing".
 
-Nothing here sends mail: SMTP is never reached, because every test stops at the gate.
+Nothing here sends mail: SMTP is never reached. The execution tests stub the send at
+`tools.mail`'s SMTP boundary and assert on what reached it.
 
 Run:  python tests/test_confirmation_gate.py
 """
@@ -133,6 +137,107 @@ def test_empty_message_refused():
     import tools.mail as mail
     mail._known_recipients = lambda: {"me@example.com": "you"}
     assert "error" in mail.send_email("me@example.com", "", "")
+
+
+# --- the approval is spent, not just recorded ------------------------------
+#
+# Until 2026-08-15 nothing consumed an approved record: POST /confirm marked it approved
+# and the design's next step — the agent calling the tool again with the token — had
+# nothing that could reach it. The user tapped Approve and was told the action was still
+# waiting for their approval. These cover the half that was missing.
+
+class _FakeSMTP:
+    """Stands in for smtplib.SMTP so a real send is never attempted."""
+    sent: list = []
+
+    def __init__(self, host, port, timeout=None):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def starttls(self):
+        pass
+
+    def login(self, user, password):
+        pass
+
+    def send_message(self, msg):
+        _FakeSMTP.sent.append(msg)
+
+
+def _mail_ready():
+    """A mail module that can 'send' — known recipient, credentials, stubbed SMTP."""
+    import smtplib
+
+    import tools.mail as mail
+    mail._known_recipients = lambda: {"me@example.com": "You"}
+    mail._load_config = lambda *a, **k: {
+        "auth": {"username": "me@example.com", "password": "x"},
+    }
+    smtplib.SMTP = _FakeSMTP
+    _FakeSMTP.sent = []
+    return mail
+
+
+def test_execute_performs_the_approved_action():
+    _clean()
+    mail = _mail_ready()
+    r = mail.send_email("me@example.com", "Subject", "Body")
+    assert r["status"] == "PENDING_CONFIRMATION"
+    assert not _FakeSMTP.sent, "the first call sent something"
+
+    confirm.approve(r["confirm_token"])
+    outcome = confirm.execute(r["confirm_token"])
+    assert outcome["status"] == "executed", outcome
+    assert len(_FakeSMTP.sent) == 1, "approval was recorded but nothing was sent"
+    assert _FakeSMTP.sent[0]["To"] == "me@example.com"
+    assert _FakeSMTP.sent[0]["Subject"] == "Subject"
+
+
+def test_execute_refuses_without_approval():
+    """Execution is gated on the tap, not on being asked to execute."""
+    _clean()
+    mail = _mail_ready()
+    r = mail.send_email("me@example.com", "Subject", "Body")
+    outcome = confirm.execute(r["confirm_token"])
+    assert outcome["status"] == "not_approved", outcome
+    assert not _FakeSMTP.sent, "an unapproved action was carried out"
+
+
+def test_execute_spends_the_approval_once():
+    _clean()
+    mail = _mail_ready()
+    r = mail.send_email("me@example.com", "Subject", "Body")
+    confirm.approve(r["confirm_token"])
+    assert confirm.execute(r["confirm_token"])["status"] == "executed"
+    again = confirm.execute(r["confirm_token"])
+    assert again["status"] == "expired", again
+    assert len(_FakeSMTP.sent) == 1, "one approval sent two messages"
+
+
+def test_execute_refuses_an_action_it_does_not_know():
+    """The action name comes off disk; it must not resolve to arbitrary code."""
+    _clean()
+    r = confirm.request("rm_rf", {"path": "/"}, "Delete everything")
+    confirm.approve(r["confirm_token"])
+    outcome = confirm.execute(r["confirm_token"])
+    assert outcome["status"] == "unexecutable", outcome
+
+
+def test_execute_reports_failure_rather_than_raising():
+    """A failed send has to reach the user as words, not as a 500."""
+    _clean()
+    mail = _mail_ready()
+    r = mail.send_email("me@example.com", "Subject", "Body")
+    confirm.approve(r["confirm_token"])
+    mail._known_recipients = lambda: {}          # contact removed after approval
+    outcome = confirm.execute(r["confirm_token"])
+    assert outcome["status"] == "failed", outcome
+    assert not _FakeSMTP.sent
 
 
 if __name__ == "__main__":

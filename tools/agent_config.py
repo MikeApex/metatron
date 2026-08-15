@@ -147,8 +147,8 @@ WRITE_AGENT_CONFIG_SCHEMA = {
         "For structured values (objects, lists), pass a JSON-encoded string. "
         "Sensitive-tier: local only. A small set of keys (e.g. physical_health's "
         "medication_profile) are guarded: the first call returns PENDING_CONFIRMATION "
-        "instead of writing, and needs a second call with confirm_token after the user "
-        "approves it in the app. Ordinary keys write immediately, as always."
+        "instead of writing, and the user approving it in the app is what writes it — do "
+        "not call this tool a second time. Ordinary keys write immediately, as always."
     ),
     "input_schema": {
         "type": "object",
@@ -179,9 +179,9 @@ WRITE_AGENT_CONFIG_SCHEMA = {
             "confirm_token": {
                 "type": "string",
                 "description": (
-                    "Only needed for guarded keys (e.g. medication_profile): the token "
-                    "from the PENDING_CONFIRMATION response, after the user has approved "
-                    "it. Omit for ordinary keys and on the first call for a guarded one."
+                    "Not for you to set. The app supplies this when it carries out a "
+                    "guarded-key write the user has approved; leave it out of every call "
+                    "you make."
                 ),
             },
         },

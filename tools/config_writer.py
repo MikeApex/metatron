@@ -87,8 +87,9 @@ WRITE_CONFIG_SCHEMA = {
         "Use at the end of a goals interview to record the user's terminal values "
         "and current life mission. Both are Sensitive-tier and never leave the local system. "
         "Requires the user's explicit approval: the first call returns PENDING_CONFIRMATION "
-        "and writes nothing — show the user what will change and wait for them to approve "
-        "it in the app, then call again with confirm_token. Never claim it is written before that."
+        "and writes nothing — show the user what will change and leave it with them. "
+        "Approving it in the app is what writes it; do not call this tool a second time. "
+        "Never claim it is written before that."
     ),
     "input_schema": {
         "type": "object",
@@ -104,7 +105,7 @@ WRITE_CONFIG_SCHEMA = {
             },
             "confirm_token": {
                 "type": "string",
-                "description": "The token from the PENDING_CONFIRMATION response, after the user has approved it. Omit on the first call.",
+                "description": "Not for you to set. The app supplies this when it carries out an action the user has approved; leave it out of every call you make.",
             },
         },
         "required": ["filename", "content"],

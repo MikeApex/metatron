@@ -718,10 +718,26 @@ async def pending_confirmations(persona: str | None = None) -> dict:
         return {"pending": pending()}
 
 
+def _approve_and_execute(token: str, persona: str) -> dict | None:
+    """Record the approval and carry the action out. Returns None if the token is unknown.
+
+    Runs on a worker thread — it does real network and disk I/O (an SMTP send, a config
+    write) and must not sit on the event loop. Identity resolution is thread-local and
+    fail-closed, so `persona_scope` is entered *inside* the thread that does the work;
+    wrapping the `to_thread` call instead would leave this thread unscoped.
+    """
+    from core.persona import persona_scope
+    from tools.confirm import approve, execute
+    with persona_scope(persona):
+        if not approve(token):
+            return None
+        return execute(token)
+
+
 @app.post("/confirm")
 async def confirm_action(req: ConfirmRequest) -> dict:
     """
-    Record the user's approval of a pending action.
+    Record the user's approval of a pending action — and carry it out.
 
     **This endpoint is the whole point of the design.** Approval is recorded here, from a
     deliberate tap in the app, and never by the model saying the user agreed. A model that
@@ -729,16 +745,51 @@ async def confirm_action(req: ConfirmRequest) -> dict:
     cannot be trusted — so it is not in this path at all. It may propose; only the user,
     through this endpoint, may approve.
 
+    **It also executes, since 2026-08-15 (`[DB-0815-03]`).** Recording the approval and
+    stopping was the bug: the second tool call the design assumed would follow could never
+    happen, because the token lives in a tool result the model no longer has by the next
+    turn. Mike approved a real email and was told it was still waiting for him. The consent
+    property is unchanged — the model still cannot approve, and `execute()` spends the
+    approval through the same fingerprint-checked `consume()` a model call would have hit.
+
+    The outcome is written to the conversation as an ordinary exchange and broadcast, so
+    every connected client shows what actually happened rather than inferring it.
+
     Authenticated like every other endpoint, so the tap has to come from a signed-in
     client rather than anything that can reach the port.
     """
-    from core.persona import persona_scope
-    from tools.confirm import approve
-    with persona_scope(req.persona or DEFAULT_PERSONA):
-        if not approve(req.token):
-            raise HTTPException(status_code=404,
-                                detail="No such pending action, or it has expired.")
-    return {"status": "approved"}
+    persona_key = req.persona or DEFAULT_PERSONA
+    outcome = await asyncio.to_thread(_approve_and_execute, req.token, persona_key)
+    if outcome is None:
+        raise HTTPException(status_code=404,
+                            detail="No such pending action, or it has expired.")
+
+    # The description's first line names the action in the user's own terms — it is what
+    # they read on the approval card, so echoing it is what makes the outcome legible.
+    headline = (outcome.get("description") or "").strip().splitlines()
+    headline = headline[0] if headline else "the action you approved"
+    if outcome.get("status") == "executed":
+        line = f"✅ Done — {headline}"
+    else:
+        line = f"⚠️ Not done — {headline}\n\n{outcome.get('message', 'It did not go through.')}"
+
+    # Not derived from the token: the exchange id is broadcast to every client, and the
+    # token has no business travelling anywhere it was not already going. A repeat tap
+    # cannot duplicate this row anyway — the record is gone, so the second call 404s.
+    exchange_id = f"confirm-{uuid.uuid4().hex[:12]}"
+    user_side = "(approved in the app)"
+    new_id = await _save_exchange(persona_key, exchange_id, user_side, line, proactive=True)
+    _log_conversation(user_side, line, "confirm", persona_key, proactive=True)
+    await manager.broadcast(persona_key, {
+        "type": "message",
+        "id": new_id,
+        "exchange_id": exchange_id,
+        "user": user_side,
+        "assistant": line,
+        "ts": datetime.utcnow().isoformat() + "Z",
+    })
+
+    return {"status": outcome.get("status", "approved"), "message": line}
 
 
 @app.get("/health")

@@ -29,12 +29,29 @@ only the user can approve. `POST /confirm` in `core/server.py` is the only write
                                                           performs nothing
     2. Synthesizer surfaces the description to the user
     3. User taps Approve in the app                    → POST /confirm {token}
-                                                          server marks it approved
-    4. Agent calls send_email(..., confirm_token=...)  → gate finds the approval, executes
+                                                          server marks it approved and
+                                                          calls execute(), which spends it
 
-Step 4 is a second, explicit call. The pending record stores the *exact* arguments from
-step 1, and `consume()` refuses if they have changed — so an approval for "email Sarah
-the itinerary" cannot be spent on "email everyone the medical file".
+The approval is spent by the **server**, not by a second model call. The pending record
+stores the *exact* arguments from step 1, and `consume()` refuses if they have changed —
+so an approval for "email Sarah the itinerary" cannot be spent on "email everyone the
+medical file".
+
+**Why the server finishes the job (2026-08-15, `[DB-0815-03]`).** Until this change the
+flow had a fourth step — *the agent calls the tool again with `confirm_token`* — and that
+step had nothing that could reach it. The token is returned inside a tool result, which
+lives only in the pipeline session that produced it; by the user's next turn it is gone
+from the model's context by construction, so the retry the design depended on could not
+happen even when the app nudged the pipeline after the tap. Observed live: Mike approved
+a real email, and the reply told him it was "waiting for your approval in the app". The
+approval then expired silently at the TTL.
+
+That is the failure `synthesizer.md` calls the worst available outcome — the user has
+performed the deliberate act the whole mechanism rests on and has every reason to believe
+it landed. Executing here takes the model out of the *execution* path as well as the
+*consent* path, which was always this file's stated intent. It does not weaken the
+mechanism: `execute()` still goes through `consume()`, so single-use, expiry and the
+argument fingerprint all apply exactly as before.
 
 Pending requests expire (default 10 minutes). An approval the user granted an hour ago,
 for something they have forgotten, is not consent.
@@ -106,6 +123,7 @@ def request(action: str, args: dict, description: str,
         data = _prune(_load(persona))
         data[token] = {
             "action": action,
+            "args": args,
             "fingerprint": _fingerprint(action, args),
             "description": description,
             "created_at": time.time(),
@@ -121,9 +139,9 @@ def request(action: str, args: dict, description: str,
         "expires_in_seconds": TTL_SECONDS,
         "instruction": (
             "This action has NOT been performed. Show the user the description above and "
-            "ask them to approve it in the app. Do not claim it is done, do not retry, and "
-            "do not call this tool again until they have approved it — a second call "
-            "without approval will be refused in the same way."
+            "ask them to approve it in the app. Approving it there is what carries it out — "
+            "so do not claim it is done, do not retry, and do not call this tool again at "
+            "all. You will not be the one to complete it, and a second call is refused."
         ),
     }
 
@@ -184,3 +202,85 @@ def consume(token: str | None, action: str, args: dict,
         del data[token]          # single use
         _save(data, persona)
     return True, "approved"
+
+
+# The actions the server may finish on the user's behalf, mapped to the tool that
+# performs them. Hard-coded rather than resolved from the record: the action name comes
+# out of a JSON file on disk, and turning a string in that file into an importable
+# callable would make the store a code path. Only `write_profile_contact` differs from
+# its tool's name — it gates one branch of `write_profile`, not the whole tool.
+_EXECUTORS: dict[str, tuple[str, str]] = {
+    "send_email":            ("tools.mail",          "send_email"),
+    "write_config":          ("tools.config_writer", "write_config"),
+    "write_profile_contact": ("tools.profile",       "write_profile"),
+    "write_agent_config":    ("tools.agent_config",  "write_agent_config"),
+}
+
+
+def execute(token: str, persona: str | None = None) -> dict:
+    """
+    Perform the action behind an approved token, and report what happened.
+
+    Called by `POST /confirm` immediately after `approve()`, and by nothing else. The
+    model is not in this path — it proposed the action and is not consulted again, which
+    is the point (see the module docstring for what went wrong when it was).
+
+    The approval is spent through the tool's own `consume()` call, by passing the token
+    back in: that keeps single-use, expiry and the argument fingerprint on exactly one
+    code path rather than duplicating the check here. `args` is replayed verbatim from
+    the record, so a tool that re-derives its fingerprint from them gets an identical
+    one — anything else would be refused, correctly.
+
+    Returns a dict carrying `status`, and never raises: a failure here has to reach the
+    user as words on the screen, not as a 500 the app renders as "could not approve"
+    when the approval was in fact recorded.
+    """
+    import importlib
+
+    with _LOCK:
+        entry = _prune(_load(persona)).get(token)
+
+    if not entry:
+        return {"status": "expired",
+                "message": "That approval expired before it could be carried out."}
+    if not entry.get("approved"):
+        return {"status": "not_approved",
+                "message": "That action has not been approved."}
+
+    action = entry.get("action", "")
+    description = entry.get("description", "")
+    args = entry.get("args")
+    if args is None:
+        # A record written before args were stored (2026-08-15). Nothing can replay it,
+        # and guessing the arguments from the fingerprint string is not a thing to do
+        # with a send. Records live 10 minutes, so this is self-clearing after a deploy.
+        return {"status": "unexecutable", "action": action, "description": description,
+                "message": "That request was raised before an update and has to be asked for again."}
+
+    target = _EXECUTORS.get(action)
+    if not target:
+        return {"status": "unexecutable", "action": action, "description": description,
+                "message": f"Nothing here knows how to carry out '{action}'."}
+
+    module_name, fn_name = target
+    try:
+        fn = getattr(importlib.import_module(module_name), fn_name)
+        result = fn(**args, confirm_token=token)
+    except Exception as e:                                   # noqa: BLE001 — see docstring
+        return {"status": "failed", "action": action, "description": description,
+                "message": f"It could not be completed: {e}"}
+
+    # The four gated tools report failure two ways: a dict with an "error" key, or a
+    # string opening "Error:". Neither raises, so a result has to be read, not assumed.
+    failure = None
+    if isinstance(result, dict) and result.get("error"):
+        failure = str(result["error"])
+    elif isinstance(result, str) and result.startswith("Error"):
+        failure = result
+
+    if failure:
+        return {"status": "failed", "action": action, "description": description,
+                "message": failure, "result": result}
+
+    return {"status": "executed", "action": action, "description": description,
+            "result": result}

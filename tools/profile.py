@@ -215,8 +215,8 @@ WRITE_PROFILE_SCHEMA = {
         "true this week belongs in the context tracker. First-time capture of email/"
         "phone/address writes immediately — say back what you captured in your reply. "
         "*Changing* an already-set email, phone, or address returns PENDING_CONFIRMATION "
-        "instead of writing — show the user the change and call again with confirm_token "
-        "after they approve it in the app, same as send_email."
+        "instead of writing — show the user the change and leave it with them. Approving it "
+        "in the app is what applies it; do not call this tool a second time, same as send_email."
     ),
     "input_schema": {
         "type": "object",
@@ -237,9 +237,9 @@ WRITE_PROFILE_SCHEMA = {
             "confirm_token": {
                 "type": "string",
                 "description": (
-                    "Only needed when changing an already-set email/phone/address: the "
-                    "token from a PENDING_CONFIRMATION response, after the user has "
-                    "approved it. Omit for first-time capture and for every other field."
+                    "Not for you to set. The app supplies this when it carries out a "
+                    "contact change the user has approved; leave it out of every call "
+                    "you make."
                 ),
             },
         },

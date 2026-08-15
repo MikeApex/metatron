@@ -1463,9 +1463,13 @@
       if (!res.ok) { setStatus('Could not record approval', '#a44'); btn.disabled = false; return; }
       document.getElementById('confirm-bar').classList.remove('shown');
       pendingToken = null;
-      // Nudge the pipeline so it retries with the token it already holds. The token was
-      // never the secret — the recorded approval is.
-      sendToServer('Approved — go ahead.');
+      // The server carries the action out and broadcasts the outcome as an ordinary
+      // exchange, so it arrives over the socket like any other message — nothing to
+      // render here. This used to nudge the pipeline instead ("Approved — go ahead."),
+      // hoping the model would retry with the token it held. It never could: the token
+      // came back inside a tool result and is gone from its context by the next turn,
+      // so the approval expired unspent and the reply said it was still waiting.
+      // [DB-0815-03].
     } catch (e) {
       setStatus('Could not record approval', '#a44');
       btn.disabled = false;
