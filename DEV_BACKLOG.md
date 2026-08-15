@@ -95,7 +95,35 @@ standing rule distrusts.*
   *filed 2026-08-10 by Mike, via a bug report the system wrote incorrectly against itself ·
   verified against traces, journal and conversations the same night · Mike ranked it Now #1*
 
-- **2. [DB-0810-12] Vertex rejects a tool-call turn for a missing `thought_signature` and the
+- **2. [DB-0815-03] An action Mike approves in the app is never executed — the approval is
+  recorded and nothing spends it.** Found live 2026-08-15 while closing `[DB-0810-13]`. He asked
+  for a test email to Kathaleen, the app raised the approval card, he tapped Approve, and the
+  reply told him it was *"waiting for your approval in the app"*. The new action-provenance line
+  is what proved the outcome rather than the prose: `[actions] write_log — completed` on that
+  request, **no `send_email`**. **Cause, verified against current code the same hour:**
+  [tools/confirm.py](tools/confirm.py) documents a four-step flow, and step 4 — *"Agent calls
+  send_email(..., confirm_token=...)"* — **has no trigger**. [`POST /confirm`](core/server.py#L721)
+  only marks the record approved. Grepping every consumer of the store outside `confirm.py`
+  itself returns the two server endpoints and the four tools that *create* pending records
+  (`mail`, `config_writer`, `profile`, `agent_config`) — **nothing reads an approved record
+  back**: no scheduler sweep, no context injection. The approval then expires silently at the
+  600s TTL. Any tool behind the gate is affected, not just email: a `write_config`, a profile
+  correction to a phone number, a guarded `write_agent_config`. **The failure is worse than not
+  sending** — the user has performed the deliberate act the whole design rests on and has every
+  reason to believe it landed, which is precisely the state `synthesizer.md` calls "the worst
+  available outcome". **Claude's proposed fix, for Mike's decision:** have `/confirm` consume the
+  record and execute the tool server-side. The pending record already stores the exact arguments
+  and `consume()` already refuses if they differ, so this takes the model out of the *execution*
+  path as well as the *consent* path — which is the file's own stated intent. Needs a journal
+  line and a push so the user sees "sent" rather than inferring it. **Rejected alternative:**
+  injecting approved-pending actions into the next session's context for the Synthesizer to
+  finish — it keeps the current shape but still depends on the model choosing to re-call, and on
+  the user sending another message at all, which is the fragility that caused this.
+  *filed 2026-08-15 by Claude, from a live occurrence Mike hit in the app · cause read directly
+  from `tools/confirm.py`, `core/server.py` and a grep of every consumer, not from the item
+  description · Claude proposes Now #2; ranking is Mike's*
+
+- **3. [DB-0810-12] Vertex rejects a tool-call turn for a missing `thought_signature` and the
   exchange is lost — five times 08-04→08-09, plus uncounted web-app hits.** *(Title corrected
   2026-08-10: only **one** of the five was `run_subagent`; three were `write_quality_event`, one
   `write_persona` — positions 12, 12, 12, 12, 14. Reading it as a `run_subagent` fault narrows the
@@ -147,7 +175,7 @@ standing rule distrusts.*
   after 2026-08-15, or immediately if he reports a vanished message with a date.
   *filed 2026-08-10 · **unblocked 2026-08-13**, occurrences and loop attribution read live off the
   VM · full reasoning in `archive/PROJECT_LOG.md` § 2026-08-10, later still*
-- **3. [DB-0809-02] Do proactive sessions actually stay focused? — mechanism fixed and deployed;
+- **4. [DB-0809-02] Do proactive sessions actually stay focused? — mechanism fixed and deployed;
   the guidance half is unproven.** The original premise was wrong: the openings were already
   1–2 sentences, and the "restatements" were the Synthesizer reading its *own* scheduler prompt as
   Mike's voice. Fixed in `82d394b` (deployed) — `_frame_proactive()` labels scheduler input as a
@@ -178,7 +206,7 @@ standing rule distrusts.*
   Inbox 2026-08-14**, reported by Mike via the VM (2026-08-12T08:23Z); fix date verified against
   `git log` the same day*
 
-- **4. [DB-0809-21] Three of four verification steps done and passed; one is genuinely time-gated.**
+- **5. [DB-0809-21] Three of four verification steps done and passed; one is genuinely time-gated.**
   Ran at ~$0.08, under the $1.00 approval line (`docs/CONVENTIONS.md` § Testing Cost Convention).
   **Done:** (1) A4 `clinical` suite vs `sarah_chen`, 3/3 — confirms the regression gate held.
   (2) Three targeted Physical Health calls vs `danny_park`, which do assert `6330029`/`88b7614` —
@@ -192,7 +220,7 @@ standing rule distrusts.*
   Needs a real unreferenced calendar event, not a forced one.
   *filed 2026-08-09 · **Mike deferred it explicitly** · 3 of 4 done 2026-08-10*
 
-- **5. [DB-0810-05] The tone-profile pipeline has never touched a real mailbox.** Built and
+- **6. [DB-0810-05] The tone-profile pipeline has never touched a real mailbox.** Built and
   committed `88957e6`; **every test used stubs.** The distillation half is well covered — a hostile
   fixture confirmed unknown keys dropped, values truncated, lists capped, injection caught and the
   write refused, plus five `_extract` paths (single-direction refusal, thin-sample skip, injection
@@ -235,7 +263,7 @@ standing rule distrusts.*
   IMAP quoting bug found and fixed, original pass/fail criteria still unmet — no long-history
   contact exists yet to test against*
 
-- **6. [DB-0810-15] A persona should be able to send in one language and receive in another —
+- **7. [DB-0810-15] A persona should be able to send in one language and receive in another —
   independently.** *(Rescoped 2026-08-15 by Mike. The original entry was "voice transcription is
   English-only"; that was the symptom he hit, not the need. The voice half is now `[DB-0815-02]` in
   `## Later`, low priority — **text is the actionable path and it is not blocked by anything**,
@@ -271,7 +299,7 @@ standing rule distrusts.*
   short utterances, which is most of what voice sends.
   *filed 2026-08-10 by Mike, live during feature testing · both blockers verified in code same day*
 
-- **7. [DB-0810-17] An external CRM bridge — the count question itself is answered.** At seq 009
+- **8. [DB-0810-17] An external CRM bridge — the count question itself is answered.** At seq 009
   Mike asked for a route *and* a CRM contact count; the system declined it as needing an external
   connection it doesn't have, when Metatron's own contact store (`list_contacts`, `search_contacts`
   in [tools/crm.py](tools/crm.py)) already held the answer. **(a) closed 2026-08-15** —
@@ -281,7 +309,7 @@ standing rule distrusts.*
   him: *which* CRM, and whether contacts sync in, out, or both. Sensitive-tier either way.
   *filed 2026-08-10 by Mike · (a) closed 2026-08-15, see `archive/backlog_closed_2026-08.md`*
 
-- **8. [DB-0814-02] The timestamp shipped; the expiry policy is still the open question.**
+- **9. [DB-0814-02] The timestamp shipped; the expiry policy is still the open question.**
   `open_threads` was a bare `list[str]` with no metadata — "post-travel recovery" stayed live for
   two weeks because nothing could even ask how old it was. **Closed 2026-08-15 as scoped**
   (`d40e73c`): entries are now `{"text": str, "added": <ISO date, server-stamped>}`, matching the
@@ -293,7 +321,7 @@ standing rule distrusts.*
   *filed 2026-08-14 by Mike via the VM (2026-08-12T08:23Z) · timestamp shipped 2026-08-15, see
   `archive/backlog_closed_2026-08.md`*
 
-- **9. [DB-0815-01] `hook_commit_guard.py` fails closed on every solo commit made from inside a
+- **10. [DB-0815-01] `hook_commit_guard.py` fails closed on every solo commit made from inside a
   worktree — not a real collision, a path-resolution bug.** Found 2026-08-15 running the
   `/backlog attack` cluster: two background workers ([DB-0810-09], [DB-0814-02]) each finished
   clean, verified work in their own worktree and were refused at `git add`/`git commit` with
