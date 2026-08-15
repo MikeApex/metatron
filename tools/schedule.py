@@ -164,6 +164,31 @@ def write_schedule(
         entry["interval_minutes"] = interval
         entry["one_off"] = False
 
+    # Overnight permission (2026-08-15, Mike's rule). Quiet hours are opt-out in
+    # `fire_session`, so without this a one-off the user explicitly asked for at
+    # 06:00 would be held until 07:00 — the system deciding it knows better than
+    # the person who set the alarm. The permission is granted automatically, and
+    # only on the signal that actually distinguishes the two cases: who asked.
+    #
+    # A user-requested one-off firing inside quiet hours carries the permission.
+    # An agent-invented job never does — an agent that decides overnight is the
+    # right moment for its own idea is the failure this whole gate exists to
+    # prevent. Recurring jobs are excluded regardless of who asked: an interval
+    # job has no single fire time to consent to, it crosses every night by
+    # construction, and a blanket exemption is not a permission.
+    disturb_note = ""
+    if entry.get("one_off") and created_by == "user":
+        try:
+            from core.scheduler import _load_config, time_in_quiet_hours
+            if time_in_quiet_hours(_load_config(), when.time()):
+                entry["respect_quiet_hours"] = False
+                disturb_note = (" It falls inside quiet hours and is set to "
+                                "wake you, because you asked for that time.")
+        except Exception:
+            # Never let a permission *widening* fail the write. Without the flag
+            # the job is held until morning, which is the safe direction.
+            pass
+
     data = _load()
     replacing = key in data
 
@@ -198,7 +223,8 @@ def write_schedule(
     when_str = (f"once at {entry['at']}" if entry["one_off"]
                 else f"every {entry['interval_minutes']} minutes")
     verb = "Replaced" if replacing else "Scheduled"
-    return f"{verb} '{key}' — {when_str}, runs {agent}, notification {notification}."
+    return (f"{verb} '{key}' — {when_str}, runs {agent}, "
+            f"notification {notification}.{disturb_note}")
 
 
 def list_schedules() -> str:

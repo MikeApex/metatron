@@ -62,11 +62,18 @@ def _load_config(persona: str | None = None) -> dict:
     return {}
 
 
-def _in_quiet_hours(cfg: dict) -> bool:
+def time_in_quiet_hours(cfg: dict, when: dtime) -> bool:
+    """
+    Is `when` inside this persona's quiet hours?
+
+    Split out of `_in_quiet_hours` so `tools/schedule.py` can ask the question
+    about a *future* fire time when deciding whether a user-requested reminder
+    needs overnight permission. One implementation, because a second copy of an
+    overnight-range comparison is a second thing to get wrong at the boundary.
+    """
     qh = cfg.get("quiet_hours", {})
     if not qh:
         return False
-    now = datetime.now().time()
     try:
         start = dtime.fromisoformat(qh["start"])
         end = dtime.fromisoformat(qh["end"])
@@ -74,8 +81,13 @@ def _in_quiet_hours(cfg: dict) -> bool:
         return False
     # Handles overnight ranges (e.g. 22:00 – 07:00)
     if start > end:
-        return now >= start or now <= end
-    return start <= now <= end
+        return when >= start or when <= end
+    return start <= when <= end
+
+
+def _in_quiet_hours(cfg: dict) -> bool:
+    """Is it quiet hours *now*? The scheduler's own gate."""
+    return time_in_quiet_hours(cfg, datetime.now().time())
 
 
 def _last_fired_path(persona: str | None = None):
@@ -248,16 +260,39 @@ def _dispatch(channel: str, title: str, body: str) -> None:
 # ---------------------------------------------------------------------------
 
 def fire_session(job_name: str, agent: str, prompt: str,
-                 notification: str, persona: str) -> None:
-    """Run one orchestrator session and dispatch the response."""
+                 notification: str, persona: str,
+                 job_cfg: dict | None = None) -> None:
+    """
+    Run one orchestrator session and dispatch the response.
+
+    `job_cfg` carries the job's own settings — the gates below read it. Passing it
+    is not an optimisation: `_load_config()` returns **`scheduler.yaml` only**, so
+    an agent-written job from `data/personas/{p}/schedules.yaml` looked up by name
+    here resolves to `{}` and every one of its own settings is invisible. That was
+    harmless while all four gates defaulted to permissive; it stopped being
+    harmless when quiet hours became opt-out on 2026-08-15, because a user's own
+    "remind me at 06:00" reminder would have been silently held until 07:00 with
+    no setting able to reach the gate. Callers that hold the job dict pass it;
+    the scheduler.yaml lookup remains the fallback.
+    """
     cfg = _load_config(persona)
-    job_cfg = cfg.get("schedules", {}).get(job_name, {})
+    if job_cfg is None:
+        job_cfg = cfg.get("schedules", {}).get(job_name, {})
 
     if not _is_active_day(job_cfg.get("days", "daily")):
         return
     if not job_cfg.get("enabled", True):
         return
-    if job_cfg.get("respect_quiet_hours") and _in_quiet_hours(cfg):
+    # Quiet hours are opt-OUT, not opt-in (2026-08-15). They were opt-in until a
+    # session fired at 00:11 on 2026-08-12 and opened with a four-item briefing —
+    # the gate ran and passed, because that job simply never set the flag. Any job
+    # that has to be *remembered* into silence will eventually be forgotten into
+    # waking someone at midnight, and the cost of the two failure directions is not
+    # symmetric: a job wrongly held until morning is a delay, a job wrongly fired at
+    # 00:11 is the product waking the user. A job that genuinely must run overnight
+    # sets `respect_quiet_hours: false` and says so where it is read.
+    if job_cfg.get("respect_quiet_hours", True) and _in_quiet_hours(cfg):
+        print(f"[scheduler] [{persona}] skipping {job_name} — quiet hours", flush=True)
         return
 
     blocked = _activity_gate_blocks(job_name, job_cfg, persona)
@@ -505,7 +540,7 @@ def _fire_due_one_offs(persona: str) -> None:
         try:
             fire_session(name, job.get("agent", "coordinator"),
                          job.get("prompt", ""), job.get("notification", "push"),
-                         persona)
+                         persona, job_cfg=job)
         except Exception as e:
             _log_error(name, f"one-off failed: {e}", persona)
 
@@ -569,8 +604,9 @@ def _register_schedules(persona: str) -> None:
         else:
             agent = job["agent"]
             prompt = job.get("prompt", "What's going on?")
-            def make_job(jn=job_name, ag=agent, pr=prompt, no=notification, pe=persona):
-                return lambda: fire_session(jn, ag, pr, no, pe)
+            def make_job(jn=job_name, ag=agent, pr=prompt, no=notification,
+                         pe=persona, jc=job):
+                return lambda: fire_session(jn, ag, pr, no, pe, job_cfg=jc)
             job_fn = make_job()
 
         if "interval_minutes" in job:
