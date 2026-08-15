@@ -2133,6 +2133,43 @@ def _log_api_failure(loop: str, model: str, exc: Exception,
         pass
 
 
+def _thought_signature_state(msg: object) -> str:
+    """Classify an assistant tool-call message by whether Vertex signed its calls.
+
+    Instrumentation only (DB-0810-12) — purely observational, never raises and
+    never mutates the message. Vertex attaches the signature to each tool call
+    as `extra_content["google"]["thought_signature"]`; the OpenAI SDK carries it
+    as model_extra on the tool-call object, so it survives `model_copy()` and is
+    absent *by construction* from any message rebuilt out of stream deltas.
+
+    Returns "signed", "unsigned", "signed=i/n" (the known Vertex parallel-call
+    bug: only tc0 gets one), "n/a" (no tool calls) or "unknown" (inspection
+    failed — treated as no evidence either way, not as a signature).
+    """
+    try:
+        tcs = msg.get("tool_calls") if isinstance(msg, dict) else getattr(msg, "tool_calls", None)
+        if not tcs:
+            return "n/a"
+        signed = 0
+        for tc in tcs:
+            if isinstance(tc, dict):
+                extra = tc.get("extra_content")
+            else:
+                extra = getattr(tc, "extra_content", None)
+                if extra is None:
+                    extra = (getattr(tc, "model_extra", None) or {}).get("extra_content")
+            google = extra.get("google") if isinstance(extra, dict) else None
+            if isinstance(google, dict) and google.get("thought_signature"):
+                signed += 1
+        if signed == 0:
+            return "unsigned"
+        if signed == len(tcs):
+            return "signed"
+        return f"signed={signed}/{len(tcs)}"
+    except Exception:
+        return "unknown"
+
+
 def run_session_gemini_grounded(system_prompt: str, user_input: str,
                                 tool_schemas: list[dict] | None = None,
                                 tool_handlers: dict | None = None,
@@ -2637,8 +2674,11 @@ def _openai_compat_stream(
     Yields text chunks from the final (non-tool-call) response turn in real-time.
     Tool-call intermediate turns run blocking (stream=False) before the streaming turn.
 
-    NOTE: Only the Synthesizer uses this function at runtime — it never calls tools,
-    so only the final-turn streaming path is exercised in practice.
+    NOTE: Only the Synthesizer uses this function at runtime. It *does* call tools —
+    the claim here that it never does, and that only the final-turn streaming path is
+    exercised, is contradicted by all four captured [DB-0810-12] occurrences (agent
+    `synthesizer`, tool `write_quality_event`). The tool-call path below is live on a
+    user's conversation path; do not treat it as dead code.
     """
 
     # The schemas handed to this runner are already filtered to what this
@@ -2651,6 +2691,24 @@ def _openai_compat_stream(
     if history:
         messages.extend(history)
     messages.append({"role": "user", "content": user_input})
+
+    # DB-0810-12 instrumentation. Every assistant tool-call message this loop puts
+    # into `messages` without a Vertex thought_signature is recorded here as
+    # "pos=<index>:turn=<n>:src=<branch>:tools=<names>". Vertex's 400 names the
+    # *position* of the offending message (position 12 in all four captured
+    # occurrences), so position is the correlating key — the ledger is replayed
+    # into the failure log below, which lets one future occurrence say whether the
+    # message Vertex rejected is one this loop wrote unsigned, and from which branch.
+    _unsigned_appends: list[str] = []
+
+    def _note_unsigned(src: str, pos: int, turn: int, names) -> None:
+        entry = (f"pos={pos}:turn={turn}:src={src}"
+                 f":tools={','.join(sorted(n for n in names if n)) or 'none'}")
+        _unsigned_appends.append(entry)
+        # WARNING, not INFO: this is the branch under investigation and it is rare
+        # by construction, so it cannot flood a live conversation's logs.
+        logger.warning(f"[signature_probe] unsigned_assistant_appended {entry} "
+                       f"agent={_tr.get_current_agent()} model={model}")
 
     for turn_num in range(1, max_iterations + 1):
         _trace(f"[API] {base_url or 'openai'}/{model}  turn={turn_num}  streaming...")
@@ -2670,7 +2728,16 @@ def _openai_compat_stream(
                 **({"extra_body": extra_body} if extra_body else {}),
             )
         except Exception as _api_exc:
-            _log_api_failure("openai_compat_stream", model, _api_exc, turn=turn_num)
+            # msgs= is the index base for the "position N" Vertex quotes in a
+            # thought_signature 400, matching _openai_compat_loop. unsigned= is the
+            # DB-0810-12 ledger: if Vertex's position matches one of these entries,
+            # the unsigned message is this loop's own and the entry names the branch
+            # that wrote it. An empty ledger on a signature 400 falsifies that whole
+            # hypothesis and points the next investigation at `history` or the
+            # blocking replay instead.
+            _log_api_failure("openai_compat_stream", model, _api_exc, turn=turn_num,
+                             extra=(f"msgs={len(messages)} "
+                                    f"unsigned=[{';'.join(_unsigned_appends) or 'none'}]"))
             raise
 
         text_parts: list[str] = []
@@ -2763,14 +2830,22 @@ def _openai_compat_stream(
             # means the *replay* was rejected, which distinguishes a signature that
             # was never issued from one lost on the way back into `messages`.
             _wanted = ",".join(sorted({t["name"] for t in tool_calls_raw.values() if t.get("name")})) or "none"
-            _log_api_failure(f"openai_compat_stream:replay[{_wanted}]", model, _api_exc, turn=turn_num)
+            _log_api_failure(f"openai_compat_stream:replay[{_wanted}]", model, _api_exc, turn=turn_num,
+                             extra=(f"msgs={len(messages_snapshot)} "
+                                    f"unsigned=[{';'.join(_unsigned_appends) or 'none'}]"))
             raise
         blocking_msg = blocking_resp.choices[0].message
 
         # Apply the same thought_signature workaround as _openai_compat_loop using the
         # blocking message object (which carries Vertex's signed extra_content).
+        #
+        # DB-0810-12: "carries" is an assumption, so check it rather than trust it. The
+        # replay is the mitigation itself — if Vertex hands back tool calls with no
+        # signature, the mitigation is silently a no-op and the else branch below is
+        # not the only unsigned path. This states which it was, on every tool turn.
         if blocking_msg.tool_calls:
             if len(blocking_msg.tool_calls) == 1:
+                _signed = blocking_msg
                 messages.append(blocking_msg)
                 tc = blocking_msg.tool_calls[0]
                 inputs = json.loads(tc.function.arguments)
@@ -2780,8 +2855,17 @@ def _openai_compat_stream(
                 tc0 = blocking_msg.tool_calls[0]
                 inputs = json.loads(tc0.function.arguments)
                 dispatch_tool(tc0.function.name, inputs, tool_handlers, _turn_num=turn_num, _allowed=_allowed_names)
-                messages.append(blocking_msg.model_copy(update={"tool_calls": [tc0]}))
+                _signed = blocking_msg.model_copy(update={"tool_calls": [tc0]})
+                messages.append(_signed)
                 messages.append({"role": "tool", "tool_call_id": tc0.id, "content": ""})
+            # Judge the message that was *actually appended*, not the raw response: in
+            # the parallel case only tc0 is signed (the known Vertex bug) and the copy
+            # is reduced to tc0, so the raw response would read "signed=1/2" every time
+            # and bury the real signal in expected noise.
+            _sig_state = _thought_signature_state(_signed)
+            if _sig_state != "signed":
+                _note_unsigned(f"blocking_replay[{_sig_state}]", len(messages) - 2, turn_num,
+                               [tc.function.name for tc in _signed.tool_calls])
         else:
             # Blocking replay didn't produce tool calls — use the stream-based reconstruction
             # as fallback (rare; means the two calls diverged).
@@ -2790,6 +2874,12 @@ def _openai_compat_stream(
                  "function": {"name": tool_calls_raw[i]["name"], "arguments": tool_calls_raw[i]["arguments"]}}
                 for i in sorted(tool_calls_raw)
             ]
+            # DB-0810-12 leading hypothesis. This dict is unsigned by construction —
+            # stream deltas carry no thought_signature and the replay produced nothing
+            # to take one from. Record the position it is about to occupy so a later
+            # Vertex 400 quoting that position identifies this branch as the source.
+            _note_unsigned("stream_delta_fallback", len(messages), turn_num,
+                           [t.get("name") for t in tool_calls_raw.values()])
             messages.append({"role": "assistant", "content": "".join(text_parts) or None, "tool_calls": reconstructed})
             for tc in reconstructed:
                 inputs = json.loads(tc["function"]["arguments"])
