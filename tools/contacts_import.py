@@ -92,6 +92,64 @@ def _find_exact_contact(contacts: list[dict], name: str, emails: list[str], phon
     return None
 
 
+def _strip_placeholder_fields(contact_info: dict) -> tuple[dict, list[str]]:
+    """
+    Drop known-placeholder values from contact_info, returning the cleaned dict and
+    a reason line per dropped field.
+
+    write_contact refuses the WHOLE record when any single field is a placeholder
+    ([DB-0815-06]) — correct for a model inventing a contact one field at a time,
+    wrong for a bulk import, where it silently costs a real person their record over
+    one junk field they had saved in Google Contacts years ago. On an import path the
+    person is the thing worth keeping and the field is not: a missing phone is
+    recoverable from the user, a missing person is not, because nothing afterwards
+    knows they were dropped.
+
+    So the guard is not weakened — it still refuses these values — it is applied one
+    level finer, per field instead of per record, and every drop is reported rather
+    than swallowed. A placeholder NAME is deliberately not stripped here: it is the
+    record's only anchor, so that record really is skipped, by write_contact.
+    """
+    cleaned = dict(contact_info)
+    dropped: list[str] = []
+
+    given_email = str(cleaned.get("email", "")).strip().lower()
+    if given_email and "@" in given_email:
+        if crm._is_placeholder_email_domain(given_email.rsplit("@", 1)[-1]):
+            cleaned.pop("email", None)
+            dropped.append(f"dropped placeholder email '{given_email}'")
+
+    given_phone = str(cleaned.get("phone", "")).strip()
+    if given_phone:
+        reason = crm._is_placeholder_phone(given_phone)
+        if reason:
+            cleaned.pop("phone", None)
+            dropped.append(f"dropped placeholder phone '{given_phone}' ({reason})")
+
+    given_address = str(cleaned.get("address", "")).strip()
+    if given_address:
+        reason = crm._is_placeholder_address(given_address)
+        if reason:
+            cleaned.pop("address", None)
+            dropped.append(f"dropped placeholder address '{given_address}' ({reason})")
+
+    social = cleaned.get("social")
+    if isinstance(social, dict):
+        kept_social = {}
+        for platform, handle in social.items():
+            reason = crm._is_placeholder_social_handle(str(handle))
+            if reason:
+                dropped.append(f"dropped placeholder {platform} handle '{handle}'")
+            else:
+                kept_social[platform] = handle
+        if kept_social:
+            cleaned["social"] = kept_social
+        else:
+            cleaned.pop("social", None)
+
+    return cleaned, dropped
+
+
 def _import_batch(raw_contacts: list[dict], source_label: str) -> str:
     """
     Write a list of normalized contact dicts (name, first_name, last_name,
@@ -99,7 +157,8 @@ def _import_batch(raw_contacts: list[dict], source_label: str) -> str:
     via tools/crm.py's public write_contact, deduping on the way in.
 
     Returns a human-readable report: created/updated/skipped counts, plus any
-    near-match evidence write_contact surfaced (not auto-merged).
+    near-match evidence write_contact surfaced (not auto-merged) and any
+    placeholder field dropped to keep an otherwise-real contact.
     """
     created, updated, skipped = 0, 0, 0
     warnings: list[str] = []
@@ -117,6 +176,20 @@ def _import_batch(raw_contacts: list[dict], source_label: str) -> str:
             contact_info["email"] = emails[0]
         if phones:
             contact_info["phone"] = phones[0]
+
+        contact_info, dropped_fields = _strip_placeholder_fields(contact_info)
+        if dropped_fields:
+            warnings.append(f"{name}: " + "; ".join(dropped_fields))
+
+        # Placeholder values must also leave the identity-matching lists, not just
+        # contact_info. Two unrelated people who both had "555-0100" saved would
+        # otherwise match each other on it and silently collapse into one record —
+        # a bulk import is precisely where that happens at volume.
+        emails = [
+            e for e in emails
+            if not ("@" in e and crm._is_placeholder_email_domain(e.strip().lower().rsplit("@", 1)[-1]))
+        ]
+        phones = [p for p in phones if not crm._is_placeholder_phone(p)]
 
         write_kwargs = dict(
             name=name,

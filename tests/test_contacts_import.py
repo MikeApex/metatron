@@ -339,6 +339,63 @@ def _():
     assert match is None
 
 
+# --- placeholder fields cost the field, not the person ([DB-0815-06] x import) ---
+
+@check("a placeholder phone costs the phone, not the whole contact")
+def _():
+    with _temp_persona_dir():
+        with _stub_google([
+            {"name": "Priya Raman", "emails": ["priya.raman@fastmail.com"], "phones": ["415-555-0100"]},
+        ]):
+            report = CI.import_google_contacts()
+        assert "1 created" in report, report
+        contacts = json.loads(CRM.list_contacts())
+        assert len(contacts) == 1, contacts
+        # the person survived, with the good field intact
+        assert contacts[0]["name"] == "Priya Raman", contacts
+        assert "priya.raman@fastmail.com" in json.dumps(contacts[0]), contacts
+        # the junk field did not
+        assert "555-0100" not in json.dumps(contacts[0]), contacts
+        # and the drop was reported, not swallowed
+        assert "dropped placeholder phone" in report, report
+
+
+@check("a placeholder email costs the email, not the whole contact")
+def _():
+    with _temp_persona_dir():
+        with _stub_google([
+            {"name": "Tomas Vela", "emails": ["tomas@example.com"], "phones": ["212-774-3018"]},
+        ]):
+            report = CI.import_google_contacts()
+        assert "1 created" in report, report
+        contacts = json.loads(CRM.list_contacts())
+        assert len(contacts) == 1 and contacts[0]["name"] == "Tomas Vela", contacts
+        assert "example.com" not in json.dumps(contacts[0]), contacts
+        assert "dropped placeholder email" in report, report
+
+
+@check("two people sharing a placeholder phone do not collapse into one record")
+def _():
+    with _temp_persona_dir():
+        with _stub_google([
+            {"name": "Alice Fenwick", "emails": [], "phones": ["415-555-0100"]},
+            {"name": "Boris Katz", "emails": [], "phones": ["415-555-0100"]},
+        ]):
+            report = CI.import_google_contacts()
+        contacts = json.loads(CRM.list_contacts())
+        names = {c["name"] for c in contacts}
+        assert names == {"Alice Fenwick", "Boris Katz"}, (report, contacts)
+
+
+@check("a placeholder NAME is still refused outright — the record has no anchor")
+def _():
+    with _temp_persona_dir():
+        with _stub_google([{"name": "John Doe", "emails": ["jd@fastmail.com"], "phones": []}]):
+            report = CI.import_google_contacts()
+        assert "0 created" in report and "1 skipped" in report, report
+        assert json.loads(CRM.list_contacts()) == [], CRM.list_contacts()
+
+
 # ---------------------------------------------------------------------------
 
 def main() -> int:
