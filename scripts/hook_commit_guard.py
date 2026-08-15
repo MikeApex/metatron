@@ -37,6 +37,23 @@ Escape hatch, named in every message:  METATRON_COMMIT_GUARD=off git commit ...
 KNOWN RESIDUAL. If B writes, A writes, then B writes *again*, B's re-hash covers
 A's lines and they pass. Narrow, requires interleaving, and fully closed by running
 workers in separate worktrees. This guard is the backstop for the main tree.
+
+WHICH TREE (2026-08-15, [DB-0815-01]). The root is resolved from the git command's
+own cwd (or its `-C`), never from `CLAUDE_PROJECT_DIR` alone — that env var still
+names the MAIN tree inside a worktree session, so the guard used to check the wrong
+tree and refuse every solo worktree commit. See `_resolve_root`.
+
+THE SECOND BLIND SPOT IS STILL OPEN, DELIBERATELY. Staging a file this session
+edited *and* a Bash-invoked script then rewrote (the `sync_dev_backlog.py` ->
+`DEV_BACKLOG.md` case) still BLOCKS: the file is in the manifest, its hash moved,
+and nothing distinguishes "my own script did that" from "another session did that".
+[DB-0815-01] proposes trusting a session's own recent Bash writes. **Rejected on
+inspection 2026-08-15:** the manifest holds files this session wrote via Edit, so
+re-hashing them after any Bash call would absorb a *parallel* session's lines into
+this session's baseline — reopening 2026-08-09, the incident this guard exists for,
+in exchange for removing a one-token override. A narrower fix (script->output
+mapping) is a hand-maintained list, which is the [DB-0805-01] antipattern. Left for
+Mike to decide; the override is the interim answer and it works.
 """
 from __future__ import annotations
 
@@ -60,8 +77,68 @@ _SEPARATORS = {"&&", "||", ";", "|", "&"}
 _GLOB_CHARS = "*?["
 
 
-def _root() -> Path:
+def _env_root() -> Path:
     return Path(os.environ.get("CLAUDE_PROJECT_DIR", ".")).resolve()
+
+
+def _common_dir(where: Path):
+    """The shared `.git` directory for `where`'s repo, or None.
+
+    Every worktree of a repository reports the *main* tree's git dir here, which
+    is what makes it a reliable identity for "same repository, any tree".
+    """
+    out = _git(where, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    if not out:
+        return None
+    try:
+        return Path(out[0]).resolve()
+    except OSError:
+        return None
+
+
+def _resolve_root(anchor: Path):
+    """The git root containing `anchor`, if it belongs to *this* repository.
+
+    WHY THIS EXISTS (2026-08-15, [DB-0815-01]). `CLAUDE_PROJECT_DIR` still points
+    at the MAIN tree inside a worktree session, so the guard ran `git status`
+    against the wrong tree: the worktree's own modified files are not dirty there,
+    `_match` could account for none of them, and every solo commit from a worktree
+    was refused as "path expressions this guard could not account for" — a block
+    with no second writer anywhere near it. Two `/backlog attack` workers each lost
+    a full run to this on 2026-08-15. `hook_context_gate.py` had the identical gap
+    and was fixed on 2026-08-14; this hook did not get the equivalent fix.
+
+    Membership is checked via `--git-common-dir`, so an unrelated repo on the same
+    machine is correctly not our business. Two anchors are accepted — where this
+    script lives, and `CLAUDE_PROJECT_DIR` — because either alone is a single point
+    of failure, and identity only needs one of them to hold.
+    """
+    start = anchor if anchor.is_dir() else anchor.parent
+    while not start.exists() and start != start.parent:
+        start = start.parent
+    if not start.exists():
+        return None
+
+    top = _git(start, "rev-parse", "--show-toplevel")
+    if not top:
+        return None
+    root_path = Path(top[0]).resolve()
+
+    theirs = _common_dir(root_path)
+    if theirs is None:
+        return None
+
+    anchors = [Path(__file__).resolve().parent.parent]
+    env_dir = os.environ.get("CLAUDE_PROJECT_DIR")
+    if env_dir:
+        anchors.append(Path(env_dir))
+    for known in anchors:
+        try:
+            if known.exists() and _common_dir(known) == theirs:
+                return root_path
+        except OSError:
+            continue
+    return None
 
 
 def _git(root: Path, *args: str):
@@ -109,7 +186,9 @@ def record(payload: dict) -> int:
     target = (payload.get("tool_input") or {}).get("file_path", "")
     if not target:
         return 0
-    root = _root()
+    # Anchor on the file being written, so an edit inside a worktree records
+    # against that worktree's manifest and not the main tree's.
+    root = _resolve_root(Path(target)) or _env_root()
     try:
         rel = str(Path(target).resolve().relative_to(root))
     except ValueError:
@@ -220,6 +299,48 @@ def _git_writes(command: str):
             paths = paths[1:]
         found.append((sub, flags, paths))
     return found
+
+
+def _git_c_dir(command: str):
+    """The first `git -C <dir>` value in the command, if any.
+
+    An explicit -C overrides the session's cwd for that git call, so it is the
+    most authoritative statement of which tree is about to be staged.
+    """
+    segments = _segments(command)
+    if segments is None:
+        return None
+    for seg in segments:
+        i = 0
+        while i < len(seg) and "=" in seg[i] and not seg[i].startswith("-"):
+            i += 1
+        if i >= len(seg) or os.path.basename(seg[i]) != "git":
+            continue
+        rest = seg[i + 1:]
+        for j, tok in enumerate(rest):
+            if tok == "-C" and j + 1 < len(rest):
+                return rest[j + 1]
+            if not tok.startswith("-"):
+                break
+    return None
+
+
+def _root_for_command(payload: dict) -> Path:
+    """Which tree is this git command about to stage from?
+
+    Precedence: an explicit `git -C <dir>`, then the session's cwd, then
+    `CLAUDE_PROJECT_DIR`. The cwd step is the one that matters for worktrees —
+    see `_resolve_root`. Falls back to the old env-only behaviour so a payload
+    without cwd is never worse off than before.
+    """
+    command = (payload.get("tool_input") or {}).get("command", "")
+    for anchor in (_git_c_dir(command), payload.get("cwd")):
+        if not anchor:
+            continue
+        root = _resolve_root(Path(anchor))
+        if root is not None:
+            return root
+    return _resolve_root(_env_root()) or _env_root()
 
 
 def _wants_all(flags) -> bool:
@@ -338,7 +459,7 @@ def check(payload: dict) -> int:
     if not writes:
         return 0
 
-    root = _root()
+    root = _root_for_command(payload)
     status = _status(root)
     if status is None:
         print(
