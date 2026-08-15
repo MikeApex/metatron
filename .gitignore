@@ -45,6 +45,30 @@ venv/
 .claude/rules/*
 !.claude/rules/*.md
 
+# ---------------------------------------------------------------------------
+# CREDENTIALS — never committed.
+#
+# `vertex-key.json` is a GCP service account key with live Vertex AI access. It sat
+# UNIGNORED and untracked on the VM until 2026-08-15, showing as `??` in git status —
+# one `git add -A` from being committed and pushed to a GitHub remote. CLAUDE.md has
+# always listed it in the Denied row, but that governs what a Claude Code session may
+# edit; it does nothing to stop git. Being told is not being prevented — the same class
+# as the unenforced tool allowlists and the `_PROMPT_EXCLUDED` set that enforced nothing.
+#
+# The gap was structural, not an oversight about one file: this file's data rules are
+# thorough (every persona tree, every per-persona setting) while its credential rules
+# were incidental — .env and caldav.yaml were each added when someone happened to think
+# of them. So these are patterns, not filenames. Nothing tracked matched them when they
+# were added, checked with `git ls-files`.
+#
+# Precedent for the cost: the 2026-07-29 history rewrite.
+vertex-key.json
+*-key.json
+*credentials*.json
+*.pem
+*.p12
+service-account*.json
+
 # TLS certs — never committed (IP-specific; regenerate with mkcert on each machine)
 # No trailing slash — see the .venv note at the top of this file.
 certs

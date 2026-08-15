@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import sys
 from collections import Counter
@@ -90,6 +91,110 @@ KEY_MAP: dict[str, tuple[str, str, str]] = {
         "identity", "stated",
         "an interaction preference — belongs in the persona file, not the fact store",
     ),
+    # --- entries written 2026-08-03 .. 08-15, each read and assigned individually ---
+    # Keyword heuristics were tried first and produced roughly 50% errors on this set
+    # (see _WORD_START), so every one of these is a judgement, not a rule.
+    "rowan_payroll_schedule": (
+        "work", "observed",
+        "a recurring obligation (monthly, 1st–5th) — belongs in open_obligation, per logistics.md:189",
+    ),
+    "plant_care_hot_weather": ("home", "observed", ""),
+    "plant_watering_threshold": ("home", "stated", ""),
+    "fitness_preference_intensity": ("fitness", "stated", ""),
+    "exercise_preference": ("fitness", "stated", ""),
+    "fitness_intensity_avoidance": ("fitness", "observed", ""),
+    "fitness_strategy": ("fitness", "observed", ""),
+    "fitness_baseline_restoration": ("fitness", "observed", ""),
+    "step_counting_physical_activity": ("fitness", "observed", ""),
+    "natural_momentum_vs_energy_dips": ("identity", "stated", ""),
+    "social_vs_quiet_energy": ("identity", "observed", ""),
+    "restorative_time_preference": ("recreation", "stated", ""),
+    "service_style_anticipation": (
+        "identity", "stated",
+        "an interaction preference — belongs in the persona file, not the fact store",
+    ),
+    "avoid_travel_assumptions": (
+        "identity", "stated",
+        "an instruction to the tool, not a fact about the user — belongs in the persona file",
+    ),
+    "travel_tension_management": ("identity", "stated", ""),
+    "manny_swim_schedule": (
+        "relationships", "observed",
+        "a recurring calendar constraint — belongs in the calendar/obligations, not the fact store; "
+        "also near-duplicate of manny_swim_class",
+    ),
+    "manny_swim_class": (
+        "relationships", "observed",
+        "near-duplicate of manny_swim_schedule — consolidate with merge_wisdom_entries",
+    ),
+    "crm_update_friction": (
+        "relationships", "observed",
+        "the friction described is a tool defect (CRM failing silently) — belongs in DEV_BACKLOG.md",
+    ),
+    "horatiu_stefan_status": ("relationships", "stated", ""),
+    "post_travel_energy_recovery": ("health", "observed", ""),
+    "post_travel_recovery": (
+        "health", "observed",
+        "near-duplicate of post_travel_energy_recovery — consolidate",
+    ),
+    "post_travel_routine_stabilization": ("recreation", "stated", ""),
+    "rest_prioritization_pivot": ("health", "observed", ""),
+    "flow_masking_depletion": ("health", "observed", ""),
+    "reduced_prompting_preference": (
+        "identity", "stated",
+        "an interaction preference — belongs in the persona file, not the fact store",
+    ),
+    "communication_preferences": (
+        "identity", "stated",
+        "an interaction preference — belongs in the persona file; also overlaps "
+        "communication_style_preference and admin_comms_reduction",
+    ),
+    "14_point_checkin_consolidation": (
+        "identity", "stated",
+        "an interaction preference — belongs in the persona file, not the fact store",
+    ),
+    "system_framing_preference": (
+        "identity", "stated",
+        "an interaction preference — belongs in the persona file, not the fact store",
+    ),
+    "calendar_accountability_reconciliation": (
+        "identity", "stated",
+        "an interaction preference — belongs in the persona file, not the fact store",
+    ),
+    "admin_comms_reduction": (
+        "identity", "stated",
+        "an interaction preference — belongs in the persona file, not the fact store",
+    ),
+    "grocery_check_in_cycle": (
+        "home", "observed",
+        "content-free — the value records only that a correction happened, not what it is. "
+        "Candidate for deletion rather than migration",
+    ),
+    "conscientiousness_profile": ("identity", "observed", ""),
+    "work_life_justice_tension": ("identity", "observed", ""),
+    "virtue_reflection_process": ("identity", "observed", ""),
+    "preference_for_momentum": ("identity", "observed", ""),
+    "momentum_over_recovery": ("identity", "stated", ""),
+    "momentum_vs_recovery_tension": ("identity", "stated", ""),
+    "high_cognitive_momentum_tradeoff": ("identity", "observed", ""),
+    "weekend_pivot_strategy": ("recreation", "observed", ""),
+    "crystal_palace_park_halo_effect": ("recreation", "observed", ""),
+    "family_grounding_technical_work_sustainability": ("work", "observed", ""),
+    "oatmeal_formula": (
+        "food", "observed",
+        "PLACEHOLDER, never filled — the value is literally '[User needs to specify their formula "
+        "details here]'. The real composition was in profile.yaml health_notes all along, which is "
+        "what this whole track set out to relocate",
+    ),
+    "bulgarian_speech_to_text_issues": (
+        "other", "stated",
+        "a tool defect, not knowledge about the user — already tracked as [DB-0815-02]/[DB-0815-04]",
+    ),
+    "language_preference": (
+        "identity", "stated",
+        "duplicates profile.yaml output_language, which [DB-0810-15] built as a real field on "
+        "2026-08-15 — the profile is authoritative and this copy can drift from it",
+    ),
 }
 
 # Fallback for entries written after 2026-08-03. Ordered: first domain with a hit wins, so the
@@ -121,6 +226,20 @@ KEYWORD_RULES: list[tuple[str, tuple[str, ...]]] = [
 ]
 
 
+# Needles match at a WORD BOUNDARY, never as a bare substring, and this is not a detail.
+# The first run of this script against Mike's live store assigned `plant_care_hot_weather`,
+# `fitness_strategy`, `crm_update_friction` and `communication_preferences` all to `food` —
+# because "eat" is inside "w-eat-her" and "ate" is inside "str-ate-gy", "upd-ate" and
+# "w-ate-r". Roughly half of thirty keyword assignments were wrong, and the review pass is
+# the only reason that was caught before it was written. Leading \b only, so a needle still
+# matches its own suffixes ("exercis" -> "exercising", "eat" -> "eating").
+_WORD_START = {
+    needle: re.compile(r"\b" + re.escape(needle))
+    for _domain, needles in KEYWORD_RULES
+    for needle in needles
+}
+
+
 def classify(entry: dict) -> tuple[str, str, str, str]:
     """Return (domain, provenance, note, how) for one legacy entry."""
     key = entry.get("key", "")
@@ -130,7 +249,7 @@ def classify(entry: dict) -> tuple[str, str, str, str]:
 
     haystack = f"{key} {entry.get('value', '')}".lower()
     for domain, needles in KEYWORD_RULES:
-        if any(n in haystack for n in needles):
+        if any(_WORD_START[n].search(haystack) for n in needles):
             return domain, "observed", "", "keyword"
 
     return OVERFLOW_DOMAIN, "observed", "", "overflow"
