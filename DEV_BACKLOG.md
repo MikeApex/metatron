@@ -260,6 +260,16 @@ standing rule distrusts.*
   attack` or `/fix` dispatch hits this the same way until fixed. Fix should mirror whatever
   `hook_context_gate.py`'s 2026-08-14 fix did — resolve the root from the target path being
   committed, not from `$CLAUDE_PROJECT_DIR`.
+  **Second blind spot found same day, same session, not worktree-related:** staging
+  `DEV_BACKLOG.md` after `sync_dev_backlog.py` ran via Bash (not the Edit tool) tripped the guard's
+  *other* failure mode — "changed by another writer" — because the guard attributes writes by tool
+  path, and a Bash-invoked script's edits aren't attributed to the session that ran it. Verified as
+  a false positive (no other dirty files, no lock file, content matched the already-reviewed sync
+  output) and cleared with the override. So the guard now has at least two distinct blind spots,
+  not one: (1) wrong root resolution inside a worktree, (2) writer attribution blind to
+  Bash-mediated edits within the same session. Fix for this one likely needs the guard to check
+  session identity rather than tool-call provenance, or to trust a session's own recent Bash
+  writes the way it trusts its own Edit calls.
   *filed 2026-08-15 by the coordinating session, from a live instance (not inferred) · Mike:
   "file the bug as now"*
 
@@ -647,8 +657,8 @@ enforcement. Same class as `[DB-0810-03]`; the gap did not change, the ability t
 - **[user corrected a prior turn]** Mike is correcting the assumption that his 'fit it in' approach to work creates negative pressure; he finds it manageable and beneficial for his family balance.  
   `2026-06-26T21:35:02.264614Z`
 
-- ⚠ **[user corrected a prior turn]** None.  ×83  
-  `2026-08-14T19:00:30.242958Z`
+- ⚠ **[user corrected a prior turn]** None.  ×84  
+  `2026-08-15T06:11:28.792612Z`
 
 - **[user corrected a prior turn]** User is flagging that the previous exchange produced no response and that an expected write_config action was not executed — this is a pipeline/execution failure, not a content correction per se, but note that the prior turn's intended output did not reach the user and the write_config call was missed.  
   `2026-06-26T15:51:48.929810Z`

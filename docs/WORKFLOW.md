@@ -22,7 +22,7 @@ experiences is not work.
 ## 1 — Command glossary
 
 Five slash commands, three of them with modes. Everything else in here is a script you run
-directly or a guard that runs itself.
+directly, a guard that runs itself, or — since 2026-08-14 — a rule file that delivers itself.
 
 ### The commands
 
@@ -75,7 +75,7 @@ deploys.*
 
 | Script | What it does | Cost |
 |---|---|---|
-| `./scripts/qa_sweep.sh` | Seven checks in ~6 seconds: agent tool references, persona consistency, duplicate rules, the project log rebuild, a Python syntax sweep, duplicate backlog IDs, stray debug markers | **zero tokens — run it freely** |
+| `./scripts/qa_sweep.sh` | Nine checks in ~3 seconds: agent tool references, persona consistency, duplicate rules, the project log rebuild, a Python syntax sweep, duplicate backlog IDs, stray debug markers, `CLAUDE.md`/rule-file claims that name a real path, and the deploy-lock invariant | **zero tokens — run it freely** |
 | `./scripts/new_worktree.sh <slug>` | Makes a separate, isolated copy of the project for parallel work. `--with-personas` if it needs to run the safety or security suites | free |
 | `./scripts/rm_worktree.sh <slug>` | Removes one when its work has landed | free |
 | `python3 scripts/sync_dev_backlog.py` | Pulls runtime signals off the VM into the backlog. `/metatron-code` and `/archive` both run it for you | free |
@@ -86,6 +86,28 @@ deploys.*
 > Whatever changed, run the thing that changed.
 
 *There is no `/qa` slash command — the sweep is the script above, and `/fix` calls it for you.*
+
+### The thing that isn't a command at all — area rules
+
+Since 2026-08-14 most of the project's rules are **not loaded at the start of a session**. They sit
+in five files under `.claude/rules/`, each declaring which part of the project it governs, and
+Claude Code delivers the matching one automatically **the moment a file in that area is read** —
+during exploration, not at the edit. You never fire anything; there is no command for it.
+
+| Rule file | Delivered on reading |
+|---|---|
+| `agent-files.md` | agent instruction files, routing config |
+| `personas.md` | persona config, `core/persona.py` |
+| `orchestrator.md` | `core/`, `tools/` |
+| `deploy.md` | `scripts/`, `deploy.sh`, `.claude/settings.json` |
+| `docs-and-logs.md` | `SESSION.md`, `DEV_BACKLOG.md`, `archive/`, `docs/`, the command files |
+
+**Why this is in a doc about commands:** it changes what a session already knows before you ask for
+anything, and it has one measured limit worth knowing. **Delivery fires on `Read` and only on
+`Read`** — a `grep` survey does not trigger it, and neither does writing a file blind. So a session
+that never opens a file in an area gets the *pointer* to the rule (from `CLAUDE.md`'s rules index,
+and again from the write-time briefing) rather than the rule itself. In practice that means
+high-level or survey-shaped work may need one deliberate read that low-level work gets for free.
 
 ---
 
@@ -194,24 +216,39 @@ should make on its own. It is always a separate, deliberate decision, made by yo
 
 ### Kind two — the guards interrupting
 
-Four automatic checks run in the background. Three of them can stop something.
+Four automatic checks run in the background. Two of them can stop something.
 
 | Guard | Fires when | What it does |
 |---|---|---|
-| Context gate | an edit starts before `SESSION.md` and `ROADMAP.md` have been read | **warns once, never blocks** |
+| **File briefing** | any file is about to be written or edited | **warns, never blocks** — hands over that file's history before the change lands |
 | Agent-tool check | an agent file or routing config is edited | reports tools named but not built, or granted but never mentioned |
-| Commit guard | a commit is attempted | blocks if a file changed underneath this session since it was read |
+| Ceiling check | `CLAUDE.md` or a `.claude/rules/` file is edited | reports the new line count against its ceiling, and asks where the rule belongs |
+| Commit guard | a file is staged or committed | blocks if a file changed underneath this session since it was read |
 | QA gate | a worker finishes | runs the sweep before the worker is allowed to report back |
 
-The context gate warns rather than blocks on purpose: refusing an edit to enforce a reading habit
-would throw away work you asked for, which is the worse failure.
+**The file briefing is new as of 2026-08-14 and replaced a one-line nag.** It used to say the same
+sentence for every file — *"you didn't do your reading."* It now answers *what do we already know
+about this exact file*: its permission tier, which rule file governs it, any open backlog items
+naming it, its last five commits, and excerpts from the decision history in `archive/log/` anchored
+on the session that wrote each one. Once per file, so a session editing five files gets five
+briefings. New files in a governed area get a briefing too — no history, but the governing rule
+named, which is where the rules matter most. The old `SESSION.md`/`ROADMAP.md` warning survives
+inside it.
+
+It warns rather than blocks on purpose: refusing an edit to enforce a reading habit would throw
+away work you asked for, which is the worse failure. **It also now covers worktrees** — it silently
+did not until 2026-08-14, which meant `/backlog attack` workers, the thinnest-context sessions by
+construction, got no gate at all.
 
 **The commit guard is the one you'll notice.** It fails closed — when it cannot make sense of a
 command, it stops. That is correct by design, but every instance so far has been a routine case
 rather than a risky one, including any file written by a script rather than edited directly.
-The override is `METATRON_COMMIT_GUARD=off` in front of the command. *(Worth knowing: that
-override was itself broken until 2026-08-13 — it blocked, printed the remedy, and blocked the
-remedy. Any earlier session that hit a false positive had no way past it.)*
+The override is `METATRON_COMMIT_GUARD=off` in front of the command. Two things about *when* it
+fires, both observed 2026-08-14: it fires at **stage time**, so `git add` trips it and not only
+`git commit`; and it blocks the **first** writer of a contested file, not the second — the later
+session re-read the file after both sets of lines had landed, so it stages clean while the earlier
+one is stopped. *(Worth knowing: the override was itself broken until 2026-08-13 — it blocked,
+printed the remedy, and blocked the remedy.)*
 
 > **Both fixed 2026-08-13 — noted because the earlier text here said they were open.** The
 > permission mode meant to cut routine prompts had never actually been in effect (`defaultMode:
@@ -242,6 +279,11 @@ structurally impossible rather than merely discouraged.
 ./scripts/new_worktree.sh app-client        # creates ../metatron-wt-app-client
 ./scripts/rm_worktree.sh app-client         # removes it when the work has landed
 ```
+
+Claude Code also has its own built-in way of making one, which does not use these scripts. Either
+is fine and they produce the same thing structurally; the scripts are the one to reach for when the
+work needs test fixtures, because `--with-personas` is theirs alone. **Rules and briefings both
+reach worktree sessions** — confirmed 2026-08-14, and neither did before that day.
 
 Add `--with-personas` if the work runs the safety or security test suites. Without it the test
 fixtures in the new copy are **hollow rather than absent** — the folders exist but most of the
@@ -310,6 +352,15 @@ not write.
 - **Command files carry procedure, not history.** When an incident teaches something, the lesson
   goes to the project log and the command gets at most a line. `/archive` reached 196 lines that
   way, most of it scar tissue nobody needed at close-out time.
+- **A new lesson no longer defaults to `CLAUDE.md`.** The question is now *what is the smallest set
+  of files this governs?* — a single file's past goes to an `archive/log/` fragment and surfaces in
+  that file's briefing; one area goes to its `.claude/rules/` file; a repeatable procedure goes to a
+  command; and only something dangerous everywhere earns a line in `CLAUDE.md` against its ceiling.
+  Nothing was deleted when this split happened on 2026-08-14 — it moved, with its reasoning intact,
+  and now arrives later instead of always.
+- **No new standing script or hook without naming what it retires**, or the build that will retire
+  it. Roughly a third of the scripts here manage the process rather than the product, which is why
+  this rule exists.
 - **Closed without evidence is not closed** — a commit, a `file:line`, or a named test.
 - **Never reserve a backlog ID.** Search for the next free `DB-MMDD-NN` at the moment of writing;
   two windows have minted the same one more than once.
