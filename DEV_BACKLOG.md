@@ -81,8 +81,44 @@ second item. The dev-session deliberation-leak note went to `## Later` under Saf
 by the standing reporter rule. **The duplicate is worth one line of attention:** nothing checks a
 machine-filed Inbox entry against items Mike filed himself that day, so the machine can restate a
 report he has already made.)*
+- **Mike's own email address keeps being transcribed wrong, and he keeps correcting it.**
+Machine log ×3: *"corrected dictation error of their email address from diamond.mic@gmail.com"* —
+the exact near-miss `tools/crm.py`'s `_OWN_IDENTITY_SIMILARITY_THRESHOLD` was built to warn about.
 
+**Partly mitigated already, which is why this is a check rather than a build:** `relationships.md`
+carries a standing read-back instruction for every captured contact detail (2026-08-08), and the
+CRM warns on a near-match to the user's own address. It is still recurring, so one of those is not
+firing on this path — plausibly because the value is being captured somewhere that is not
+`write_contact`. Establish which path writes it before changing anything.
+
+*filed 2026-08-15 by the `/backlog deep` machine-log sweep. **Mike-originated**, ×3.*
+- **The system assumes Mike's energy is low and he has corrected it three times.**
+Machine log ×3. Signature: *"User corrected the system's assumption of low energy, stating they
+have strong natural energy."* A standing fact about him being re-derived wrongly each time rather
+than read from a stored baseline.
+
+Check first whether `profile.yaml` / the aspirational baseline has somewhere for this and it is
+simply unset, versus the assumption being generated despite a stored value — those need different
+fixes and the item should not guess. Note the 2026-08-15 finding that `load_profile()` renders a
+hand-written field list: a stored value that nothing renders would look exactly like this.
+
+*filed 2026-08-15 by the `/backlog deep` machine-log sweep. **Mike-originated**, ×3.*
+- **A deadline Mike has already stated gets ignored, and he is prompted to act early anyway.**
+Machine log ×4 — the highest genuine repeat count in the file after the 2026-08-15 clustering fix,
+and the only one that survived the sweep unaddressed. Signature: *"Missed the user's previously
+stated Thursday deadline for the Prudential email and prompted action on it prematurely."*
+
+The system holds the deadline (he said it), then raises the task before it. Same family as
+`[DB-0809-02]` (an unanswered question re-raised by every job) and `[DB-0814-02]` (context nothing
+ages out), but distinct: here the context is **present and correct**, and the timing logic ignores
+it. `tools/obligations.py` stores due dates and `[DB-0814-04]` already shows a vague due date sorts
+*below* an undated one — worth checking whether that same sort is what drops the date here.
+
+*filed 2026-08-15 by the `/backlog deep` machine-log sweep. **Mike-originated** — every one of the
+four is him correcting the system — so it clears the entry bar on its own, and at ×4 it clears the
+machine bar too.*
 ---
+
 ## Now
 
 **Ranked — position is priority.** Capped at ~10, so something enters by displacing something.
@@ -552,22 +588,6 @@ so this is not a parallel track to pick from when a `Now` item is time-gated.
   Fail. *filed 2026-08-15 by a dev session — **not raised by Mike**, who saw only the original leak,
   which is closed. Evidence: `/monitor/conversations` persona=mike ts=2026-08-12T00:14:57, 711
   chars, all deliberation, no `[CONTEXT]` block*
-- **[DB-0815-09] Half the system's self-reported corrections say nothing, and the noise now leads
-  Mike's session-start line.** Measured 2026-08-15 against the live VM: **93 of 174
-  `USER_CORRECTION` events carry a `detail` of `None` / `None.` / `N/A` / `[None]` — 53%**, 78 of
-  them in August alone. That is why `None. ×90` is the loudest signature in the `⚠ machine:` clause,
-  crowding out the real ones (`×16`, `×6`, `×5`). Two candidate causes, and one look separates them:
-  the classifier over-fires `USER_CORRECTION` on turns that are not corrections and the summariser
-  honestly reports none, **or** the summary is simply not being populated. The first is the more
-  useful finding, because it would mean the correction *count* is inflated too — and that count is
-  the ×3 promotion bar in this file.
-  **Second finding, same measurement, and it changes how a `×N` should be read: the counts are
-  similarity clusters, not repeats.** The `×16` "scheduled calendar events imply completion"
-  signature resolves to exactly **one** event fuzzy-matched with fifteen differently-worded others.
-  Nobody should treat a `×N` as "Mike said this N times" — `merge()` in
-  `scripts/sync_dev_backlog.py` collapses on `similar()`. Worth a line in the `## Machine log`
-  preamble whichever way the first half resolves.
-  *filed 2026-08-15 by the `/backlog deep` machine-log sweep — **not raised by Mike***
 - **[DB-0810-10]** The calendar conflict build (`a20febe`, deployed 08-05) has **never had a
   live scheduling exchange run against it** — all 24 tests in
   `tests/run_calendar_conflict_tests.py` are mocked against CalDAV, so the refuse-on-exact-
@@ -821,6 +841,19 @@ sync output line — repetition is the signal that a process event has become a 
 anything user-impacting into `## Now` or `## Later` like any other item; this is a holding pen,
 not a blackhole. Swept during `/backlog deep`.*
 
+> **An entry is DELETED once its signal is promoted or its cause is fixed — leave a pointer, not
+> the entry.** This rule was missing until 2026-08-15 and its absence was the whole problem: the
+> sweep step said *promote*, never *remove*, so an addressed signature kept its ⚠ and kept leading
+> the session-start line. Mike had to ask why "Eva" was still there after the merge shipped. **The
+> ⚠ is a prompt to look; an entry that has been looked at and acted on has no further job.**
+>
+> Two cautions bought the same day. **(1) `.dev_backlog_seen` is what makes deletion safe** — the
+> sync will not re-add a deleted entry, because it keys on timestamps already pulled, not on what
+> is in the file. **(2) Regenerating this section from the VM source bypasses that ledger and
+> resurrects everything**, including entries a previous sweep pruned. That was done once, on
+> 2026-08-15, to clear clusters built by the pre-fix similarity threshold; it was correct then and
+> is not a routine operation. If it is ever needed again, expect to re-prune afterwards.
+
 *(swept 2026-08-10 twice — the `search_memory` denials promoted to `[DB-0810-03]`, then both
 `2026-08-10T15:00` denials verified and promoted into `[DB-0810-03](c)`, which is the decision
 queue for this exact class. Nothing outstanding.)*
@@ -853,11 +886,9 @@ the likeliest cause of `## Now` #1**, and has been promoted into `[DB-0815-04]` 
 it sat here for hours looking like housekeeping. **(2) No new `TOOL_DENIED` since
 2026-08-10T15:00** — all 20 on record are the ones already promoted into `[DB-0810-03](c)`, so that
 item's evidence is current and nothing new is waiting. **(3) The empty-detail finding and the
-"`×N` is a similarity cluster, not a repeat count" finding are filed as `[DB-0815-09]`** — read that
-before trusting any count in this section.)*
-
-- **[already applied by the tool]** Switched output to Bulgarian transliteration (Latin alphabet) to match user's STT workaround.  
-  `2026-08-15T13:51:39.676925Z`
+"`×N` is a similarity cluster, not a repeat count" finding were fixed the same day (`[DB-0815-09]`,
+closed — `archive/backlog_closed_2026-08.md`). **A `×N` before 2026-08-15 was a chain length, not
+a repeat count; entries above that date should be read with that in mind.**)*
 
 - **[user corrected a prior turn]** User is confirming the necessity of a workaround for the Bulgarian language recognition bug.  
   `2026-08-15T13:50:27.705106Z`
@@ -867,12 +898,6 @@ before trusting any count in this section.)*
 
 - **[user corrected a prior turn]** User corrected the previous exercise log, stating the run was only a test and requested its removal.  ×2  
   `2026-08-15T11:13:42.274343Z`
-
-- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Date Day: The Mousetrap' (2026-08-18T00:00:00, uid=64dc9379-ce64-4c15-a96a-c6cb4df8e432@ai-life-manager) and 'The Mousetrap Matinee' (2026-08-18T15:00:00, uid=efdc94bb-07b2-49ef-be3a-a43431d8014d@ai-life-manager). title_similarity=0.59, shared_attendees=[], shared_words=['mousetrap']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
-  `2026-08-14T04:35:08.871922Z`
-
-- **[user corrected a prior turn]** Noted that Giva is likely a reference to Iva Diamond, who was previously noted as the lunch partner.  
-  `2026-08-12T12:47:55.686306Z`
 
 - **[user corrected a prior turn]** The user refers to their companion as "Eve", which conflicts with established records of "Iva Diamond". The directive assumes the intent is for Iva Diamond.  
   `2026-08-12T08:30:54.115961Z`
@@ -913,9 +938,6 @@ before trusting any count in this section.)*
 - **[user corrected a prior turn]** The user corrected the expectation for email interaction, requesting that already-triaged emails no longer be read back.  
   `2026-08-11T08:35:01.218376Z`
 
-- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Draft & Send Prudential Follow-up to Mike' (2026-08-13T00:00:00, uid=a77d8ee0-d0a5-4376-8c33-1c82ed8b0624@ai-life-manager) and 'Check for Prudential scheduling email (Kathleen Jermyn)' (2026-08-13T00:00:00, uid=509f27f7-9d19-4d62-a3cf-ac01eac292fc@ai-life-manager). title_similarity=0.4, shared_attendees=[], shared_words=['prudential']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
-  `2026-08-11T04:35:16.777905Z`
-
 - **[needs building]** Fix email dispatch silent failure: system confirms send to the user but the message does not reach the user's provider. Investigate why the tool is returning success without actual handoff.  
   `2026-08-10T17:10:55.511151Z`
 
@@ -927,12 +949,6 @@ before trusting any count in this section.)*
 
 - **[user corrected a prior turn]** The user corrected the grocery reminder logic (not every Friday, but 3 days after the date of an order).  ×2  
   `2026-08-10T15:46:40.890480Z`
-
-- **[agent wanted a tool it lacks]** `learning_growth` attempted `write_archive` (category, notes, status, title) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
-  `2026-08-10T15:00:13.188318Z`
-
-- **[agent wanted a tool it lacks]** `recreation_hobbies` attempted `write_agent_config` (agent_name, content) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
-  `2026-08-10T15:00:11.677489Z`
 
 - **[user corrected a prior turn]** User clarified they wanted to know the mechanism/tools for routing, not the route itself.  
   `2026-08-10T12:29:39.464756Z`
@@ -952,9 +968,6 @@ before trusting any count in this section.)*
 - **[needs building]** research_agent fails with 'NoneType object is not iterable' or returns empty strings when queried for live web data (TfL status, weather, pollen) during user feature test.  
   `2026-08-10T10:04:30.084620Z`
 
-- **[agent wanted a tool it lacks]** `relationships` attempted `search_memory` (query) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
-  `2026-08-10T06:30:12.978385Z`
-
 - **[user corrected a prior turn]** User pasted the check-in preference for a third time. In previous turns, the Synthesizer failed to adhere strictly to 'Otherwise just ask what's on', adding filler ('Nothing urgently needs your attention...' and 'I already have that instruction...'). The system needs to recognize strict negative constraints.  
   `2026-08-09T12:27:20.856785Z`
 
@@ -966,27 +979,6 @@ before trusting any count in this section.)*
 
 - **[instruction change]** User has submitted the check-in rule multiple times in a row. The system must output strictly 'What  
   `2026-08-08T18:34:27.078188Z`
-
-- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Meeting with Jonas at Cross Keys\, Bank' (2026-08-05T17:40:00, uid=696faa2c-1194-4bfd-9ef4-ba9fb500918a@ai-life-manager) and 'Meeting with Jonas at The Cross Keys\, Bank' (2026-08-05T17:40:00, uid=e715ca00-1b55-48c1-953f-f5f10b44cbcf@ai-life-manager). title_similarity=0.95, shared_attendees=[], shared_words=['bank', 'cross', 'jonas', 'keys\\', 'meeting']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
-  `2026-08-08T17:13:23.351554Z`
-
-- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Meeting with Jonas' (2026-08-05T17:40:00, uid=8d0414f4-5be3-4f5b-96e8-1cd78041dd04@ai-life-manager) and 'Meeting with Jonas at The Cross Keys\, Bank' (2026-08-05T17:40:00, uid=e715ca00-1b55-48c1-953f-f5f10b44cbcf@ai-life-manager). title_similarity=0.59, shared_attendees=[], shared_words=['jonas', 'meeting']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
-  `2026-08-08T17:13:23.351323Z`
-
-- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Meeting with Jonas' (2026-08-05T17:40:00, uid=8d0414f4-5be3-4f5b-96e8-1cd78041dd04@ai-life-manager) and 'Meeting with Jonas at Cross Keys\, Bank' (2026-08-05T17:40:00, uid=696faa2c-1194-4bfd-9ef4-ba9fb500918a@ai-life-manager). title_similarity=0.63, shared_attendees=[], shared_words=['jonas', 'meeting']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
-  `2026-08-08T17:13:23.351136Z`
-
-- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Meeting with Jonas at The Cross Keys\, Bank' (2026-08-05T17:40:00, uid=ece109dd-12ed-4212-b633-88329d40e772@ai-life-manager) and 'Meeting with Jonas at The Cross Keys\, Bank' (2026-08-05T17:40:00, uid=e715ca00-1b55-48c1-953f-f5f10b44cbcf@ai-life-manager). title_similarity=1.0, shared_attendees=[], shared_words=['bank', 'cross', 'jonas', 'keys\\', 'meeting']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
-  `2026-08-08T17:13:23.350926Z`
-
-- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Meeting with Jonas at The Cross Keys\, Bank' (2026-08-05T17:40:00, uid=ece109dd-12ed-4212-b633-88329d40e772@ai-life-manager) and 'Meeting with Jonas at Cross Keys\, Bank' (2026-08-05T17:40:00, uid=696faa2c-1194-4bfd-9ef4-ba9fb500918a@ai-life-manager). title_similarity=0.95, shared_attendees=[], shared_words=['bank', 'cross', 'jonas', 'keys\\', 'meeting']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
-  `2026-08-08T17:13:23.350722Z`
-
-- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Meeting with Jonas at The Cross Keys\, Bank' (2026-08-05T17:40:00, uid=ece109dd-12ed-4212-b633-88329d40e772@ai-life-manager) and 'Meeting with Jonas' (2026-08-05T17:40:00, uid=8d0414f4-5be3-4f5b-96e8-1cd78041dd04@ai-life-manager). title_similarity=0.59, shared_attendees=[], shared_words=['jonas', 'meeting']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
-  `2026-08-08T17:13:23.350509Z`
-
-- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Depart for Heathrow (LHR) Airport' (2026-08-05T11:00:00, uid=6a7cd62e-f48c-44ab-9caf-b3acd2075dbf@ai-life-manager) and 'Heathrow drop-off' (2026-08-05T11:00:00, uid=0e217f61-00f3-4213-9296-437c87c16adb@ai-life-manager). title_similarity=0.48, shared_attendees=[], shared_words=['heathrow']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
-  `2026-08-08T17:13:23.350103Z`
 
 - **[instruction change]** Synthesizer is failing to adhere to the existing Interaction Preference for check-ins (max two sentences, name one urgent thing or ask what's on, no recaps). This preference needs to be enforced more strictly at the system/prompt level.  
   `2026-08-08T16:31:45.535165Z`
@@ -1023,9 +1015,6 @@ before trusting any count in this section.)*
 
 - **[user corrected a prior turn]** Corrected the system's assumption that the user was the one traveling to Heathrow today.  
   `2026-08-05T16:15:41.116476Z`
-
-- **[agent wanted a tool it lacks]** `finance` attempted `search_memory` (query) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
-  `2026-08-05T15:21:45.223926Z`
 
 - **[user corrected a prior turn]** User corrected the status of their Heathrow departure, stating it was today, August 5th, not tomorrow.  
   `2026-08-05T15:20:56.548406Z`
@@ -1075,9 +1064,6 @@ before trusting any count in this section.)*
 - **[needs building]** 1) The email approval permission prompt is failing to render in the user's app interface. 2) The system needs a tool to read live Google Contacts directly; currently it only checks internal profile records.  
   `2026-08-04T12:42:35.495275Z`
 
-- ⚠ **[user corrected a prior turn]** Corrected contact name from "Eva" (previously appearing in logs) to "Iba".  ×3  
-  `2026-08-04T12:42:13.046792Z`
-
 - **[user corrected a prior turn]** User corrected contact name from Eva to Iva  ×2  
   `2026-08-04T12:38:53.028444Z`
 
@@ -1089,12 +1075,6 @@ before trusting any count in this section.)*
 
 - ⚠ **[user corrected a prior turn]** User corrected the system's assumption of low energy, stating they have strong natural momentum and do not need to force motivation.  ×3  
   `2026-08-04T12:22:27.850000Z`
-
-- **[agent wanted a tool it lacks]** `work_vocation` attempted `search_memory` (query) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
-  `2026-08-04T12:17:32.889116Z`
-
-- **[agent wanted a tool it lacks]** `logistics` attempted `search_memory` (query) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  ×2  
-  `2026-08-04T16:02:07.471199Z`
 
 - **[needs building]** Remove the voice activation toggle from the app interface, as the voice feature is causing interface friction and interrupting the user's ability to send messages.  ×2  
   `2026-08-04T07:57:18.076761Z`
@@ -1114,26 +1094,14 @@ before trusting any count in this section.)*
 - **[needs building]** Fix interface bug causing text doubling/duplication and abruptly cutting off user input mid-sentence. Also prioritize fixing the live calendar connection so the system can read and write to the user's calendar.  
   `2026-08-03T17:12:02.492018Z`
 
-- ⚠ **[agent wanted a tool it lacks]** `logistics` attempted `read_agent_config` (agent_name) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  ×3  
-  `2026-08-04T13:51:41.661503Z`
-
 - **[agent wanted a tool it lacks]** `finance` attempted `read_archive` (category) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
   `2026-08-03T17:06:28.655802Z`
-
-- ⚠ **[agent wanted a tool it lacks]** `logistics` attempted `write_agent_config` (agent_name, value) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  ×3  
-  `2026-08-04T09:22:14.148392Z`
 
 - **[instruction change]** For all check-ins: maximum two sentences. If exactly one item genuinely needs attention, name it and stop; otherwise just ask what is on. Never list or recap pending items, and never manufacture a topic.  
   `2026-08-03T15:12:14.933312Z`
 
 - **[agent wanted a tool it lacks]** `physical_health` attempted `write_agent_config` (agent_name, config) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
   `2026-08-03T15:11:50.265168Z`
-
-- ⚠ **[agent wanted a tool it lacks]** `physical_health` attempted `read_agent_config` (agent_name) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  ×3  
-  `2026-08-04T07:56:50.829916Z`
-
-- ⚠ **[same rule in two places]** This preference may already be covered by a rule that applies to everyone. Preference: config/personas/mike.md:13 — For evening check-ins, deliver all 14 points (13 virtues + food log) in a single consolidated message. Mike will reply by highlighting only the exceptions or things out of the ordinary. Candidate rule(s) it may restate: (1.00) [wording only] config/personas/mike/scheduler.yaml:43 — Check in. (1.00) [wording only] config/templates/scheduler.yaml:40 — Check in. Candidates are ranked by wording overlap, which is weak at this scale — the flagged preference is the reliable part, the partner is a starting point. If the preference says nothing the shared rule does not, delete it. If it is a genuine personal refinement, keep it and reword it so the difference is all it states.  ×7  
-  `2026-08-14T04:30:08.340600Z`
 
 - **[instruction change]** Update check-in logic and Synthesizer instructions so that proactive check-ins are very brief and do not include long summaries of pending tasks, especially when the user has not been actively responding.  
   `2026-08-03T09:11:56.763043Z`

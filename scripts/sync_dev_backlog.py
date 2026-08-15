@@ -759,6 +759,15 @@ def fold_fragments(text: str) -> tuple[str, list]:
         # An empty fragment is still folded (and so deleted) — it carries nothing,
         # and leaving it would make it reappear in every future run's count.
         if body:
+            # Coerce to a top-level bullet. The docstring asks for "the same bullet
+            # form '## Inbox' already uses" and three fragments written on 2026-08-15
+            # did not — they folded in as prose, so `_items()` (which counts lines
+            # starting "- ") reported **0 inbox** while three real items sat there.
+            # A filing route whose correctness depends on the writer remembering a
+            # format is the kind of rule this project keeps proving does not hold, and
+            # the failure is silent in the one number that would reveal it.
+            if not body.lstrip().startswith(("- ", "-\t")):
+                body = "- " + body
             additions.append(body)
         folded.append(p)
 

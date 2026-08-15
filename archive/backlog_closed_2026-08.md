@@ -2484,3 +2484,25 @@ session that needs them will actually be standing:
    depends on a model remembering to invoke something fails intermittently and silently.
 
 Also cut: the voice-blocker paragraph duplicated from `[DB-0815-02]`, which owns it.
+
+- **[DB-0815-09] Half the correction log said nothing, and the counts welded unrelated corrections
+  together. CLOSED 2026-08-15** — `214a547`, deployed. Filed and closed the same day by the
+  `/backlog deep` sweep that found it.
+  **Fault A:** 93 of 174 `USER_CORRECTION` events carried `"None"`/`"N/A"`, passing the 2026-08-10
+  blank-detail guard because they are not blank. Cause was a *template* — `coordinator.md:88` is a
+  slot annotated "omit if not applicable", and a model filling a structured template answers the
+  slot rather than deleting it. **The agent file was deliberately not edited**: its instruction is
+  already correct and already ignored, which is the project's own argument for enforcing in Python.
+  `is_null_ish()` in `tools/logger.py` (canonical) refuses at write; `core/orchestrator.py`'s
+  `_handle_user_correction` drops before writing; `sync_dev_backlog.py` filters historical ones at
+  **read** time — archive-on-merge, the events stay on the VM.
+  **Fault B:** a `×N` was a chain length, not a repeat count. `SIMILARITY_THRESHOLD` 0.15 with
+  `merge()` replacing the displayed line each time meant matching ran against the last link:
+  a chain beginning in Heathrow travel corrections was reported as *"scheduled calendar events
+  imply completion ×16"*. Fixed at 0.45 **plus** correction-boilerplate stopwords — verified by
+  replay that **neither alone** splits the chain, because the shared words were the correction
+  vocabulary. Top real signature is now a genuine ×4.
+  **Mike's check is what surfaced Fault A's scale:** *"I don't think I've corrected the tool 90
+  times."* He had not. `tests/test_null_ish_events.py` 43/43, including that the two `is_null_ish`
+  copies agree — the stdlib-only constraint forces a duplicate, so drift must fail a test.
+  *closed 2026-08-15*
