@@ -2707,8 +2707,16 @@ def _openai_compat_stream(
         _unsigned_appends.append(entry)
         # WARNING, not INFO: this is the branch under investigation and it is rare
         # by construction, so it cannot flood a live conversation's logs.
+        #
+        # The agent's NAME, never the record. Interpolating the AgentRecord itself
+        # prints its dataclass repr, and `context_sections` inside it holds the
+        # fully assembled system prompt — the agent file, the constitution and the
+        # persona config. One occurrence on 2026-08-15 wrote all of it to
+        # journalctl in plain text, where it is retained by systemd and readable by
+        # anyone with journal access. Sensitive-tier content does not go to logs.
+        _probe_rec = _tr.get_current_agent()
         logger.warning(f"[signature_probe] unsigned_assistant_appended {entry} "
-                       f"agent={_tr.get_current_agent()} model={model}")
+                       f"agent={getattr(_probe_rec, 'agent', 'unknown')} model={model}")
 
     for turn_num in range(1, max_iterations + 1):
         _trace(f"[API] {base_url or 'openai'}/{model}  turn={turn_num}  streaming...")
