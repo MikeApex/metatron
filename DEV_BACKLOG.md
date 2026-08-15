@@ -554,19 +554,28 @@ so this is not a parallel track to pick from when a `Now` item is time-gated.
   *filed 2026-08-10 · built and deployed, not exercised against live data*
 
 **Capability**
-- **[DB-0815-02] Voice in a language other than English — both directions. LOW priority (Mike,
-  2026-08-15).** Split out of `[DB-0810-15]` when that item was rescoped to the text path, which is
-  unblocked and carries the actual need. Voice is blocked twice, and the second half is not filed
-  anywhere else:
+- **[DB-0815-02] Voice in a language other than English. LOW priority (Mike, 2026-08-15).**
+  *(Retitled 2026-08-15 — it was "both directions" and **half of it had already shipped**. Speech
+  **out** is built; only speech **in** is blocked. See (b).)* Split out of `[DB-0810-15]` when that
+  item was rescoped to the text path.
   *(a)* **Speech in** — `WHISPER_MODEL_SIZE` is `base.en`, English-only; multilingual needs `base`,
   which reopens the sizing constraint at [core/voice_pipeline.py:31](core/voice_pipeline.py#L31).
   **Benchmark on the VM, never the Mac** — `python3 tests/bench_whisper_stt.py --models base
   --languages en,bg`; an M-series laptop makes an unaffordable model look fine, and `small.en` was
   already measured at RTF 2.23 and rejected on a 2-vCPU single-worker pool.
-  *(b)* **Speech out** — both TTS voices are hardcoded English (`KOKORO_VOICE = "af_heart"`,
-  `EDGE_VOICE = "en-US-JennyNeural"`). edge-tts has `bg-BG-*` neural voices; Kokoro's language
-  coverage is unverified. **No auto-detect solves this half** — synthesising speech needs a stored
-  language value, which is why `[DB-0810-15]`'s preference is the prerequisite, not a parallel path.
+  *(b)* **Speech out — ✅ BUILT, and this entry described it as open for a day after it shipped.**
+  `_EDGE_VOICE_BY_LANG` at [core/server.py:866](core/server.py#L866) maps `bg` →
+  `bg-BG-KalinaNeural` and is selected by language code at [:951](core/server.py#L951); Kokoro has
+  no Bulgarian model, so edge-tts carries it. Shipped by the 2026-08-15 language session, which
+  recorded the closure in its `archive/log/` fragment — **but that fragment was never folded into
+  `archive/PROJECT_LOG.md`, so the closure was invisible to every reader of the generated log.**
+  Found 2026-08-15 by the `/backlog deep` sweep only because `qa_sweep.sh`'s `project-log` check
+  was failing and the unfolded fragment had to be opened to see why. *(Log rebuilt the same day;
+  the sweep passes 9/9. **The reusable lesson: `/archive` writing a fragment without running
+  `scripts/build_project_log.py` makes a shipped closure unreadable** — the fragment is the source
+  of truth and nothing reads it directly.)*
+  **The prerequisite framing below still holds for what remains** — synthesising speech needs a
+  stored language value, which is why `[DB-0810-15]`'s preference was the prerequisite. It landed.
   The `METATRON_WHISPER_LANGUAGE` knob (`1d858f2`) is plumbing only and changes nothing until a
   multilingual model is adopted. One client (`static/index.html`) serves both web and APK, so
   neither half needs per-platform work.
