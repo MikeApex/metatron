@@ -7,8 +7,14 @@ Metatron — Archive This Session
 Five steps, in order — minutes, not a work block. Verbatim capture first (the only
 irreplaceable one), `SESSION.md` after the log entry it depends on, commit last.
 
-## 0. Two checks before you start
+## 0. Three checks before you start
 
+- **Did this session change anything?** If `git status --porcelain` is clean of tracked files
+  *and* this session made no commits, run **step 1 only**, report the transcript, and stop.
+  Steps 2–5 have nothing true to say about a session that only read: a fragment recording
+  "nothing changed" is a permanent entry in a generated file, and step 3 pays to re-decide a
+  handoff paragraph that is still correct. Step 1 is never skipped with it — the transcript is
+  the only step that cannot be recovered afterwards.
 - **`git status --short SESSION.md ROADMAP.md archive/PROJECT_LOG.md`** — if any is dirty from
   another window, stop and ask. `SESSION.md` is *replaced*, so rewriting over a concurrent
   edit discards real work silently.
@@ -89,14 +95,15 @@ but undeployed is open). Untouched → leave it alone; do not re-word an item be
 
 **Then file — but only what clears the bar: a user would notice, or the roadmap is blocked.**
 An incidental code nit is fixed on the spot or dropped, not filed. This is the whole reason the
-list used to grow every session and shrink in none. New items get `DB-MMDD-NN` (derive the next
-free number by grepping at write time, never reserve one) and a one-line provenance naming who
-raised it.
+list used to grow every session and shrink in none.
 
-Anything **Mike** asked for that was not done goes in `## Now`; everything else goes in
-`## Later`, including a real bug this session found and could not fix. `## Now` is ranked, so
-an item entering it is **put to Mike with a recommended position and the reasoning** — he makes
-the call before the file is written, rather than it being appended and re-sorted later.
+**File as a fragment: `.claude/backlog_inbox/<slug>.md`**, with a one-line provenance naming who
+raised it. The sync folds it into `## Inbox`, so no id is minted here and no ranked section is
+edited — two windows closing out cannot collide, the same reason step 2 writes a fragment.
+*(This step minted `DB-MMDD-NN` ids and wrote straight into `## Now`/`## Later` until 2026-08-15,
+after the fragment route existed.)* Whether **Mike** raised it is the note that decides `## Now`
+versus `## Later` — but **`/backlog` makes that call, with the list open.** Ranking an entry into
+`## Now` at close-out asks him to weigh it against nine items nobody is currently looking at.
 
 Then close with the count, and only the count:
 
@@ -137,4 +144,6 @@ your own edits from a parallel window's (`[DB-0805-05]`, open), so raising it is
 
 ---
 
-*Procedure only — incident history lives in `archive/PROJECT_LOG.md`. Ceiling ~100 lines (`CLAUDE.md`).*
+*Procedure only — incident history lives in `archive/PROJECT_LOG.md`. Ceiling: `CEILINGS` in
+`scripts/check_claude_md_claims.py` (150 as of 2026-08-15), which is the authority — do not
+restate the number anywhere else.*

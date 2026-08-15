@@ -237,7 +237,13 @@ CEILINGS = {
     "CLAUDE.md": 300,
     "SESSION.md": 200,
     "DEV_BACKLOG.md": 450,
-    ".claude/commands/archive.md": 100,
+    # 100 -> 150 on 2026-08-15 (Mike's decision). The file had been over the
+    # ceiling continuously since 08-13 (124, then 140, then 147) -- a standing
+    # WARN nobody could clear, which is the same "teaches the reader to skip
+    # the output" failure the CLAUDE.md note above describes. The five steps
+    # plus the collision protocol do not fit in 100 lines; 150 is a limit the
+    # file is actually under, so a future WARN means real regrowth.
+    ".claude/commands/archive.md": 150,
     ".claude/commands/backlog.md": 200,
     # Path-scoped rule files (added 2026-08-14 with the directory itself).
     #
