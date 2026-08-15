@@ -873,6 +873,54 @@ def _normalise_for_filter(text: str) -> str:
     return _INVISIBLE_RE.sub("", text).lower()
 
 
+# Tier 4 — verbatim reproduction of the agent's own instructions.
+#
+# WHY THIS EXISTS. On 2026-08-12 at 00:14 the Synthesizer's entire stored response
+# to Mike was its own deliberation, quoting `synthesizer.md` back at him verbatim
+# ("An open item that you have already surfaced, and the user has heard, is not
+# raised again in later exchanges...") and cut off mid-sentence. All three tiers
+# above passed it, correctly by their own logic: they hunt architecture
+# *vocabulary* — tool names, agent names, narration frames — and instruction prose
+# contains none. It is the system prompt read aloud, which is the most complete
+# disclosure this system can make, and it was the one shape nothing looked for.
+#
+# The signal used here is exactness, not vocabulary: a contiguous run of
+# _INSTRUCTION_NGRAM words reproduced verbatim from the agent's own instruction
+# file or the constitution is not something a response arrives at by coincidence.
+# That makes this tier precise without needing any guess about what leaked prose
+# looks like — the failure mode of tier 2, stated in its own docstring.
+#
+# Scope is deliberately the agent file plus the constitution, and NOT the persona
+# files: those carry the user's own words, and quoting the user back to himself is
+# ordinary, legitimate behaviour. Including them would fire on correct responses.
+_INSTRUCTION_NGRAM = 10
+
+
+@lru_cache(maxsize=32)
+def _instruction_ngrams(agent_name: str) -> frozenset:
+    """
+    Word n-grams of everything this agent is instructed with, for tier 4.
+
+    Cached per agent: the shingling is O(file) and the files are static for the
+    life of the process, so it runs once rather than per response. A missing
+    source is skipped rather than raised — an unreadable instruction file must
+    narrow this tier's coverage, never break a response on its way to the user.
+    The constitution is read for every agent, so a missing agent file still
+    leaves that half of the coverage in place.
+    """
+    grams: set[tuple[str, ...]] = set()
+    sources = [ROOT / "config" / "agents" / f"{agent_name}.md",
+               ROOT / "config" / "constitution.md"]
+    for path in sources:
+        try:
+            words = _re.findall(r'[0-9a-z]+', _normalise_for_filter(path.read_text()))
+        except OSError:
+            continue
+        for i in range(len(words) - _INSTRUCTION_NGRAM + 1):
+            grams.add(tuple(words[i:i + _INSTRUCTION_NGRAM]))
+    return frozenset(grams)
+
+
 def filter_output(text: str, agent_name: str) -> str:
     """
     Scan final user-facing output for leaked architecture terms.
@@ -880,8 +928,9 @@ def filter_output(text: str, agent_name: str) -> str:
     Only applied to the Synthesizer (user-facing); Coordinator output is
     internal (context package) and does not need filtering.
 
-    Four-tier check (tiers 1 and 3 rebuilt 2026-08-08, roadmap B2 "Output
-    filter upgrade — move from keyword matching to regex+semantic"):
+    Five-tier check (tiers 1 and 3 rebuilt 2026-08-08, roadmap B2 "Output
+    filter upgrade — move from keyword matching to regex+semantic"; tier 4
+    added 2026-08-15 after a live leak the first three could not see):
 
     1. _ALWAYS_CONFIDENTIAL, tight form — the code identifier however it is
        punctuated or squashed: `write_config`, `write-config`, `write.config`,
@@ -899,6 +948,11 @@ def filter_output(text: str, agent_name: str) -> str:
        architecture vocabulary appears in the same sentence. "Your mental
        wellbeing has improved" stays legal; "the mental wellbeing agent said"
        does not.
+    4. Verbatim instruction reproduction — a contiguous run of
+       _INSTRUCTION_NGRAM words lifted straight from this agent's own
+       instruction file or the constitution. Catches the system prompt being
+       read aloud, which carries no architecture vocabulary at all and so was
+       invisible to tiers 1–3. Always suppressed.
 
     Detection runs on a normalised copy; the original text is what is returned
     when it passes.
@@ -955,6 +1009,18 @@ def filter_output(text: str, agent_name: str) -> str:
             if _ARCH_VOCAB_RE.search(norm[start:end]):
                 return _suppress(
                     f"'{term}' (matched as {m.group(0)!r}) in architecture context found"
+                )
+
+    # Tier 4 — verbatim instruction reproduction. See _instruction_ngrams above
+    # for the 2026-08-12 leak this was built against.
+    grams = _instruction_ngrams(agent_name)
+    if grams:
+        words = _re.findall(r'[0-9a-z]+', norm)
+        for i in range(len(words) - _INSTRUCTION_NGRAM + 1):
+            span = tuple(words[i:i + _INSTRUCTION_NGRAM])
+            if span in grams:
+                return _suppress(
+                    f"verbatim instruction text {' '.join(span)!r} reproduced"
                 )
 
     return text
