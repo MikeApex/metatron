@@ -53,6 +53,71 @@ _ROOT = Path(__file__).parent.parent
 # tools/agent_config.py — being told is not being prevented.
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Open-thread timestamps
+#
+# WHY THIS EXISTS: "post-travel recovery" stayed listed as live context for two weeks after it
+# stopped being true — `open_threads` carried no metadata at all, so nothing could even ask how
+# old an entry was, let alone decide it was stale. This adds the timestamp only. Deciding what
+# counts as stale and what happens then (auto-drop, flag for review, ...) is a separate,
+# deliberately deferred decision — see DEV_BACKLOG.md.
+#
+# The date is server-stamped, never taken from the model, for the same reason `raised` is
+# server-stamped on clinical threads above: a model asked to invent "when did this start" will
+# get it wrong or reset it, and the resend-the-same-sentence-every-turn behaviour that caused the
+# original incident would just reset the clock each time. So the model-facing shape is unchanged
+# (a plain string per thread); `_merge_open_threads` below is what turns that into a timestamped
+# record, matching an existing entry by exact text so a thread that is simply carried forward
+# keeps its original `added` date instead of looking freshly opened every session.
+# ---------------------------------------------------------------------------
+
+
+def _merge_open_threads(incoming: list | None, existing: list[dict]) -> list[dict]:
+    """
+    Stamp incoming open threads with an `added` date, carrying it forward when a thread is
+    simply being re-sent unchanged.
+
+    `open_threads` is replace-semantics like `patterns`/`follow_ups` (unlike `clinical_threads`,
+    which merges) — a thread the model omits this turn is dropped. What this function preserves
+    is only the *age* of a thread that survives: if the same text was open last session, its
+    original `added` date carries over; new text gets stamped today.
+
+    Accepts plain strings (the normal, model-facing shape) or already-timestamped dicts
+    (round-tripping data this module itself produced), so a caller passing either shape back
+    through does not need special-casing.
+    """
+    today = date.today().isoformat()
+    existing_by_text = {t.get("text"): t.get("added") for t in existing if t.get("text")}
+
+    out: list[dict] = []
+    for item in incoming or []:
+        if isinstance(item, dict):
+            text = str(item.get("text") or "").strip()
+            added = item.get("added")
+        else:
+            text = str(item or "").strip()
+            added = None
+        if not text:
+            continue
+        out.append({"text": text, "added": added or existing_by_text.get(text) or today})
+    return out
+
+
+def _normalize_open_threads(raw: list | None) -> list[dict]:
+    """
+    Read-time migration: wrap old bare-string entries as `{"text": ..., "added": None}` rather
+    than crashing on data written before this change. `added: None` (not today) so a thread that
+    predates timestamping is not misreported as freshly opened.
+    """
+    out: list[dict] = []
+    for item in raw or []:
+        if isinstance(item, dict):
+            out.append({"text": str(item.get("text") or ""), "added": item.get("added")})
+        else:
+            out.append({"text": str(item or ""), "added": None})
+    return out
+
+
 _THREAD_STATUSES = ("active", "watch", "resolved")
 
 _CLINICAL_PROTOCOL = """\
@@ -98,6 +163,10 @@ def read_context_tracker() -> dict:
         Dict with keys: last_session, open_threads, patterns, follow_ups, held_items,
         clinical_threads. Returns empty structure if no tracker file exists yet.
 
+        `open_threads` entries are dicts: `{"text": str, "added": <ISO date or None>}`.
+        `added` is None for threads written before timestamping existed — see
+        `_normalize_open_threads`.
+
         When a clinical thread is open, a `_clinical_protocol` key is added carrying the
         lifecycle rules. It is attached here rather than written into synthesizer.md so the
         Synthesizer pays for it only in the sessions that have one — which is nearly none.
@@ -116,6 +185,8 @@ def read_context_tracker() -> dict:
     # Backfill fields for trackers written before they existed.
     data.setdefault("held_items", [])
     data.setdefault("clinical_threads", [])
+    # Migrate pre-timestamp open_threads (bare strings) rather than crashing on old data.
+    data["open_threads"] = _normalize_open_threads(data.get("open_threads"))
 
     # Resolved threads are archived on disk but never loaded — a closed concern should not keep
     # colouring the read of new messages, which is the whole failure this field addresses.
@@ -195,7 +266,7 @@ def _merge_clinical_threads(
 
 
 def write_context_tracker(
-    open_threads: list[str],
+    open_threads: list,
     patterns: list[str],
     follow_ups: list[str],
     held_items: list[str] | None = None,
@@ -208,8 +279,11 @@ def write_context_tracker(
     meaningful exchange. Keep entries concise — one sentence each.
 
     Args:
-        open_threads: Unresolved topics to carry forward.
+        open_threads: Unresolved topics to carry forward, as plain strings.
                       E.g. ["bookstore P&L review scheduled for Thursday"].
+                      Stamped with an `added` date on write (server-side, not model-supplied);
+                      a thread re-sent with the same text keeps its original `added` date rather
+                      than looking freshly opened every session.
         patterns:     Recurring observations worth noting.
                       E.g. ["writing stalls when sleep under 6 hours"].
         follow_ups:   Specific questions to ask next exchange or session.
@@ -244,10 +318,13 @@ def write_context_tracker(
     threads, notices = _merge_clinical_threads(
         clinical_threads, existing.get("clinical_threads", [])
     )
+    stamped_open_threads = _merge_open_threads(
+        open_threads, _normalize_open_threads(existing.get("open_threads"))
+    )
 
     tracker = {
         "last_session": date.today().isoformat(),
-        "open_threads": open_threads,
+        "open_threads": stamped_open_threads,
         "patterns": patterns,
         "follow_ups": follow_ups,
         "held_items": held_items or [],
@@ -300,7 +377,9 @@ WRITE_CONTEXT_TRACKER_SCHEMA = {
                 "type": "array",
                 "items": {"type": "string"},
                 "description": (
-                    "Things mentioned that weren't resolved or need follow-up. "
+                    "Things mentioned that weren't resolved or need follow-up, as plain "
+                    "sentences — the tracker stamps each with an open date itself, so do not "
+                    "include a date here. "
                     "E.g. 'bookstore P&L review coming Thursday', "
                     "'Cato chapter structure still unresolved'."
                 ),
