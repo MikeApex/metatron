@@ -2692,6 +2692,14 @@ def _openai_compat_stream(
         messages.extend(history)
     messages.append({"role": "user", "content": user_input})
 
+    # Vertex (and AI Studio) validate a thought_signature on the function-call
+    # parts of their *own* prior assistant turns and 400 the whole request when one
+    # is missing. OpenAI and Ollama do not, and an unsigned tool-call message has
+    # always been valid there. The guard below therefore fires on the Google
+    # endpoints only, so the two paths that never had the bug keep byte-identical
+    # behaviour. Same predicate as _openai_compat_loop's _provider_label.
+    _signature_required = bool(base_url and "googleapis" in base_url)
+
     # DB-0810-12 instrumentation. Every assistant tool-call message this loop puts
     # into `messages` without a Vertex thought_signature is recorded here as
     # "pos=<index>:turn=<n>:src=<branch>:tools=<names>". Vertex's 400 names the
@@ -2699,6 +2707,14 @@ def _openai_compat_stream(
     # occurrences), so position is the correlating key — the ledger is replayed
     # into the failure log below, which lets one future occurrence say whether the
     # message Vertex rejected is one this loop wrote unsigned, and from which branch.
+    #
+    # A `:neutralized` suffix on a src means the branch was reached but the turn was
+    # written signature-free instead (see _record_unsignable_turn) — so no
+    # function-call part exists at that position and a Vertex 400 quoting it is
+    # *not* this loop's doing. The ledger entry is kept precisely so that stays
+    # observable rather than assumed: the branch is rare, and deleting its only
+    # record the moment it stopped being fatal would make the next occurrence
+    # unattributable all over again.
     _unsigned_appends: list[str] = []
 
     def _note_unsigned(src: str, pos: int, turn: int, names) -> None:
@@ -2717,6 +2733,46 @@ def _openai_compat_stream(
         _probe_rec = _tr.get_current_agent()
         logger.warning(f"[signature_probe] unsigned_assistant_appended {entry} "
                        f"agent={getattr(_probe_rec, 'agent', 'unknown')} model={model}")
+
+    def _record_unsignable_turn(text: str, ran: list[str]) -> None:
+        """Write a tool-call turn into `messages` with no function-call parts.
+
+        DB-0810-12's remedy. Two branches below can end up holding tool calls that
+        Vertex has not signed — a message rebuilt from stream deltas (which carry no
+        signature at all) and, in principle, a blocking replay that hands back
+        unsigned calls. Sending either back produces the 400 that loses the user's
+        whole exchange, which is the reported harm.
+
+        The signature is only ever demanded of *function-call content blocks*. So
+        the turn is recorded as ordinary text instead: an assistant message with no
+        `tool_calls`, then a user message naming the tools that already ran. There is
+        nothing left for Vertex to validate, the conversation continues to its final
+        turn, and the user gets an answer.
+
+        Three alternatives were weighed and rejected:
+          * porting `_openai_compat_loop`'s tc0-only workaround — it re-requests the
+            remaining calls one per turn, which serialises this loop's parallel
+            dispatch and is a documented regression;
+          * dropping the turn from `messages` — the model re-issues the same calls
+            and the side effects run again, up to max_iterations times;
+          * retrying the blocking call — speculative, costs a full round trip, and
+            the divergence that caused it is not known to be transient.
+
+        No fidelity is lost relative to what this loop already did: every tool
+        result it appends is `content: ""`, so the model has never seen tool output
+        on this path — only the fact that the calls happened, which is preserved.
+        """
+        messages.append({
+            "role": "assistant",
+            "content": text or "(Requested the listed tools; awaiting their results.)",
+        })
+        messages.append({
+            "role": "user",
+            "content": ("[tool results]\n"
+                        + "\n".join(f"- {n}: done" for n in ran or ["(none)"])
+                        + "\n\nThese have already run. Do not request them again — "
+                          "continue and give your answer."),
+        })
 
     for turn_num in range(1, max_iterations + 1):
         _trace(f"[API] {base_url or 'openai'}/{model}  turn={turn_num}  streaming...")
@@ -2854,45 +2910,69 @@ def _openai_compat_stream(
         if blocking_msg.tool_calls:
             if len(blocking_msg.tool_calls) == 1:
                 _signed = blocking_msg
-                messages.append(blocking_msg)
-                tc = blocking_msg.tool_calls[0]
-                inputs = json.loads(tc.function.arguments)
-                dispatch_tool(tc.function.name, inputs, tool_handlers, _turn_num=turn_num, _allowed=_allowed_names)
-                messages.append({"role": "tool", "tool_call_id": tc.id, "content": ""})
             else:
-                tc0 = blocking_msg.tool_calls[0]
-                inputs = json.loads(tc0.function.arguments)
-                dispatch_tool(tc0.function.name, inputs, tool_handlers, _turn_num=turn_num, _allowed=_allowed_names)
-                _signed = blocking_msg.model_copy(update={"tool_calls": [tc0]})
-                messages.append(_signed)
-                messages.append({"role": "tool", "tool_call_id": tc0.id, "content": ""})
-            # Judge the message that was *actually appended*, not the raw response: in
+                # model_copy preserves Vertex's signed extra_content while reducing
+                # tool_calls to tc0 — the only one the parallel-call bug signs.
+                _signed = blocking_msg.model_copy(update={"tool_calls": [blocking_msg.tool_calls[0]]})
+            # Judge the message that will *actually be appended*, not the raw response: in
             # the parallel case only tc0 is signed (the known Vertex bug) and the copy
             # is reduced to tc0, so the raw response would read "signed=1/2" every time
             # and bury the real signal in expected noise.
+            #
+            # The check now runs *before* the append rather than after it. The replay
+            # is the mitigation itself, and nothing had ever verified that it returns
+            # signed calls — so on the endpoints that demand a signature, an unsigned
+            # replay takes the same signature-free route as the delta fallback instead
+            # of being appended and merely noted. (Ordering only: `dispatch_tool` never
+            # reads `messages`, so moving the append past it changes nothing observable.)
             _sig_state = _thought_signature_state(_signed)
+            _unsignable = _signature_required and _sig_state != "signed"
             if _sig_state != "signed":
-                _note_unsigned(f"blocking_replay[{_sig_state}]", len(messages) - 2, turn_num,
+                _note_unsigned(f"blocking_replay[{_sig_state}]"
+                               + (":neutralized" if _unsignable else ""),
+                               len(messages), turn_num,
                                [tc.function.name for tc in _signed.tool_calls])
+            _ran: list[str] = []
+            for tc in _signed.tool_calls:
+                inputs = json.loads(tc.function.arguments)
+                dispatch_tool(tc.function.name, inputs, tool_handlers, _turn_num=turn_num, _allowed=_allowed_names)
+                _ran.append(tc.function.name)
+            if _unsignable:
+                _record_unsignable_turn(blocking_msg.content or "".join(text_parts), _ran)
+            else:
+                messages.append(_signed)
+                messages.append({"role": "tool", "tool_call_id": _signed.tool_calls[0].id, "content": ""})
         else:
-            # Blocking replay didn't produce tool calls — use the stream-based reconstruction
-            # as fallback (rare; means the two calls diverged).
+            # Blocking replay didn't produce tool calls — fall back to the stream-based
+            # reconstruction (rare; means the two calls diverged).
             reconstructed = [
                 {"id": tool_calls_raw[i]["id"], "type": "function",
                  "function": {"name": tool_calls_raw[i]["name"], "arguments": tool_calls_raw[i]["arguments"]}}
                 for i in sorted(tool_calls_raw)
             ]
-            # DB-0810-12 leading hypothesis. This dict is unsigned by construction —
-            # stream deltas carry no thought_signature and the replay produced nothing
-            # to take one from. Record the position it is about to occupy so a later
-            # Vertex 400 quoting that position identifies this branch as the source.
-            _note_unsigned("stream_delta_fallback", len(messages), turn_num,
+            # DB-0810-12, evidenced 2026-08-15 (`src=stream_delta_fallback`, pos=12):
+            # this is the branch that lost the exchange. The dict is unsigned by
+            # construction — stream deltas carry no thought_signature and the replay
+            # produced nothing to take one from — so where a signature is demanded the
+            # turn is recorded signature-free instead of being sent back as a
+            # function-call part. Elsewhere (OpenAI, Ollama) the original reconstruction
+            # is still valid and still used.
+            _unsignable = _signature_required
+            _note_unsigned("stream_delta_fallback" + (":neutralized" if _unsignable else ""),
+                           len(messages), turn_num,
                            [t.get("name") for t in tool_calls_raw.values()])
-            messages.append({"role": "assistant", "content": "".join(text_parts) or None, "tool_calls": reconstructed})
+            if not _unsignable:
+                messages.append({"role": "assistant", "content": "".join(text_parts) or None,
+                                 "tool_calls": reconstructed})
+            _ran = []
             for tc in reconstructed:
                 inputs = json.loads(tc["function"]["arguments"])
                 dispatch_tool(tc["function"]["name"], inputs, tool_handlers, _turn_num=turn_num, _allowed=_allowed_names)
-                messages.append({"role": "tool", "tool_call_id": tc["id"], "content": ""})
+                _ran.append(tc["function"]["name"])
+                if not _unsignable:
+                    messages.append({"role": "tool", "tool_call_id": tc["id"], "content": ""})
+            if _unsignable:
+                _record_unsignable_turn("".join(text_parts), _ran)
 
     # Fallback: max iterations reached
     if history is not None:
