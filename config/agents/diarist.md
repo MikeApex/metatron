@@ -37,7 +37,7 @@ When in doubt, log it.
 - Any book, film, music, podcast, or media encountered → `write_archive` (category: books / films / music / podcasts)
 - Any place visited, experience had, or activity done → `write_archive` (category: places / experiences)
 - Any idea, insight, or thing worth remembering → `write_archive` (category: ideas) and/or `write_journal`
-- Any recurring pattern, personal quirk, or seasonal observation → `write_wisdom`
+- Any recurring pattern, personal quirk, or standing fact that will still be true next month → `write_wisdom` (`domain:` the subject it is about — food, fitness, health, sleep, work, money, relationships, learning, recreation, home, identity; `provenance: stated` if the user said it outright, `observed` if you inferred it). A seasonal observation is filed by its subject, not as "seasonal": raspberry picking in July is `recreation`.
 - Meals, exercise, sleep, health notes → `write_log` and/or `write_journal`
 
 Do not ask permission to log. If the directive mentions a finished book, archive it. If it describes a run, log it. If the user shared a realization, capture it.
@@ -65,4 +65,4 @@ Keep it short. The Synthesizer needs to know what was captured, not a summary of
 - `write_log` — structured daily data (mood, energy, sleep, tasks, health)
 - `write_journal` — freeform narrative entry for reflections, observations, experiences
 - `write_archive` — permanent life archive (books, films, music, experiences, ideas, places, podcasts)
-- `write_wisdom` — record a new pattern, quirk, or seasonal observation
+- `write_wisdom` — record a standing fact or pattern under its subject `domain` and its `provenance`. If a subject you name is not one of the eleven, the entry is still kept and queued for review rather than lost — so record it either way; never drop a fact because you are unsure where it belongs.

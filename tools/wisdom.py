@@ -121,6 +121,25 @@ _DOMAIN_ALIASES = {
 _LEGACY_CATEGORIES = {"patterns", "seasonal", "annual", "preferences", "quirks"}
 
 
+# Substrings that must not become a wisdom key. THIS IS THE ONE PLACE A REFUSAL IS TERMINAL,
+# and the asymmetry with the domain overflow queue below is the whole design.
+#
+# The binding rule is that wisdom is never the SOLE home of a fact a safety flag classifies
+# from. `MEDICATION_MISSED_CRITICAL` is required to classify from the stored
+# `medication_profile` and "never from the agent's judgment" (physical_health.md) — that
+# profile lives in agent_config.json behind `_GUARDED_KEYS`, where a write is
+# confirmation-gated. A medication fact that landed here instead would sit in a store read at
+# a model's discretion, and the flag would go on consulting a profile that never learned it:
+# the flag stays green while the fact is on file, which is worse than not recording it.
+#
+# So this refuses rather than absorbing, and the return string names where the fact belongs.
+# The cost is real and accepted: on the Diarist's fire-and-forget path nobody reads the
+# refusal, so the wisdom write is lost. It is not the only record — the same session writes
+# the content to the journal and the log — and the alternative is a safety-bearing fact whose
+# only home is a discretionary read.
+_RESERVED_KEY_TERMS = ("medication", "clinical", "crisis")
+
+
 def resolve_domain(raw: str) -> tuple[str, str]:
     """
     Resolve a caller-supplied domain to a stored one.
@@ -185,6 +204,55 @@ def _wisdom_lock() -> FileLock:
 
 
 READ_CAP = 15
+
+
+# ---------------------------------------------------------------------------
+# The domain -> agent map
+# ---------------------------------------------------------------------------
+
+_DOMAIN_MAP_PATH = _ROOT / "config" / "modules" / "knowledge_domains.yaml"
+_domain_map_cache: tuple[float, dict[str, list[str]]] | None = None
+
+
+def domain_agent_map() -> dict[str, list[str]]:
+    """
+    Load config/modules/knowledge_domains.yaml — which agents read which subject domain.
+
+    This is the ONLY coupling between subjects and the agent roster, which is the point:
+    folding `time_director` into the Synthesizer edits this file, not 59 user-data entries.
+    A domain absent from the file maps to no agent rather than raising — a missing line
+    should degrade to "this domain reaches the Synthesizer only", never break a session.
+
+    Cached on mtime, so an edit is picked up without a restart. The file is ~40 lines and
+    this is called once per pipeline turn; the cache is politeness, not necessity.
+    """
+    global _domain_map_cache
+
+    try:
+        mtime = _DOMAIN_MAP_PATH.stat().st_mtime
+    except OSError:
+        return {}
+    if _domain_map_cache and _domain_map_cache[0] == mtime:
+        return _domain_map_cache[1]
+
+    import yaml as _yaml
+
+    try:
+        raw = _yaml.safe_load(_DOMAIN_MAP_PATH.read_text()) or {}
+    except Exception:
+        return {}
+
+    loaded = {
+        str(domain): [str(a) for a in (agents or [])]
+        for domain, agents in (raw.get("domains") or {}).items()
+    }
+    _domain_map_cache = (mtime, loaded)
+    return loaded
+
+
+def agents_for_domain(domain: str) -> list[str]:
+    """Agents that read this subject domain. Empty for an unmapped or overflow domain."""
+    return domain_agent_map().get(domain, [])
 
 
 def _all_entries() -> list:
@@ -300,6 +368,16 @@ def write_wisdom(key: str, value: str, domain: str = "", provenance: str = "") -
         Confirmation string, naming the domain actually used whenever it differs from
         what was asked for.
     """
+    reserved = next((t for t in _RESERVED_KEY_TERMS if t in (key or "").lower()), "")
+    if reserved:
+        return (
+            f"Not recorded: '{key}' names {reserved}, which does not belong in standing "
+            f"knowledge. This store is read at an agent's discretion, and a safety flag must "
+            f"never depend on a fact that may or may not be looked up. Use "
+            f"`write_agent_config` — a {reserved} fact belongs in the agent's own profile, "
+            f"where the flag reads it every time."
+        )
+
     resolved_domain, proposed = resolve_domain(domain)
     resolved_provenance = resolve_provenance(provenance)
 
@@ -348,6 +426,11 @@ def write_wisdom(key: str, value: str, domain: str = "", provenance: str = "") -
                 # overflow queue never drains and the ~15% health metric reads high forever.
                 if not proposed:
                     entry.pop("proposed_domain", None)
+                # Drop the dead axis. Rewriting a pre-2026-08-15 entry sets `domain` but left
+                # `category` sitting beside it, so the store would carry both axes at once —
+                # and the whole reason `category` was cut is that a fact filed on two axes is
+                # a fact nobody can file consistently. Nothing reads it; nothing should see it.
+                entry.pop("category", None)
                 action = "updated"
                 break
         else:
@@ -594,9 +677,16 @@ WRITE_WISDOM_SCHEMA = {
         "habit, a preference, a constraint, or a pattern you have noticed. Use it so they "
         "never have to tell you the same thing twice. Examples: 'usual breakfast is 60g oats "
         "with 100g milk', 'more creative in the mornings', 'abandons non-fiction after about "
-        "100 pages'. Anything true only this week belongs in the context tracker instead, and "
-        "an event that happened belongs in a log. Writing an existing key again updates it, "
-        "so this is also how you correct something that has changed."
+        "100 pages'. Writing an existing key again updates it, so this is also how you correct "
+        "something that has changed.\n\n"
+        "Do NOT record what the user is thinking about, considering, planning, interested in, "
+        "or intending to change. An intention is not a habit — it is true this week and it is "
+        "the thing most likely to be abandoned, so storing it as standing knowledge means "
+        "being reminded of it as fact months after it stopped being true. 'Usually has eggs "
+        "for breakfast' belongs here; 'wants to change up breakfast' belongs in the context "
+        "tracker, and the change itself belongs here only once it is what they actually do. "
+        "An event that happened belongs in a log. When unsure, do not write: a fact stated "
+        "again next month is cheap, and a wrong one put back to the user as established is not."
     ),
     "input_schema": {
         "type": "object",
@@ -606,7 +696,9 @@ WRITE_WISDOM_SCHEMA = {
                 "description": (
                     "Short identifier slug for this entry. Underscores, no spaces. Examples: "
                     "'standard_oatmeal', 'morning_creativity', 'winter_light_sensitivity'. "
-                    "Reuse the existing key to update rather than duplicate."
+                    "Reuse the existing key to update rather than duplicate. Medication, "
+                    "clinical and crisis facts do not belong here — they go to "
+                    "`write_agent_config`, where a safety check reads them every time."
                 ),
             },
             "value": {

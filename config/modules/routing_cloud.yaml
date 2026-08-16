@@ -32,7 +32,12 @@ agents:
   synthesizer:
     provider: gemini
     model: "models/gemini-3.1-pro-preview"  # user-facing voice; safety flag integration; keep on Pro
-    allowed_tools: [run_subagent, run_model_conference, write_persona, write_profile, read_profile, write_config, write_wishes, read_wishes, generate_emergency_card, write_quality_event, write_schedule, list_schedules, delete_schedule, update_goal, open_obligation, close_obligation, reopen_obligation, list_obligations]
+    # read_wisdom + write_wisdom granted 2026-08-15 with the knowledge layer. The Synthesizer
+    # is the main conversational writer — the agent actually present when the user states a
+    # standing fact — and it is the fallback for turns the Coordinator's KNOWLEDGE_TO_LOAD did
+    # not predict. Without the read grant the pre-fetch is the ONLY path to the store and a
+    # mid-conversation turn toward a subject has no way to reach it.
+    allowed_tools: [run_subagent, run_model_conference, write_persona, write_profile, read_profile, write_config, write_wishes, read_wishes, generate_emergency_card, write_quality_event, write_schedule, list_schedules, delete_schedule, update_goal, open_obligation, close_obligation, reopen_obligation, list_obligations, read_wisdom, write_wisdom]
 
   # ── Data and analysis ────────────────────────────────────────────────────────
 
@@ -55,7 +60,13 @@ agents:
   pattern_miner:
     provider: gemini
     model: "models/gemini-3.1-pro-preview"  # analytical depth; scheduler task, not on real-time path
-    allowed_tools: [get_log_window, write_insight_report, read_recent_insights, write_baseline_period, read_baseline_periods, write_retrospective, get_baseline_context, create_semantic_anchor, shuffled_null_score, score_against_anchors]
+    # All four wisdom tools granted 2026-08-15. pattern_miner.md:106 has instructed
+    # `find_duplicate_wisdom` since Phase 3 and this agent was granted NO wisdom tool at all —
+    # the instructed-but-ungranted class that the knowledge-layer work exists to close,
+    # recurring inside it. It is the store's consolidator: off the real-time path, running as a
+    # scheduler job, and the only caller of the uncapped read (see READ_CAP in tools/wisdom.py —
+    # a capped consolidation sweep is a silently partial one).
+    allowed_tools: [get_log_window, write_insight_report, read_recent_insights, write_baseline_period, read_baseline_periods, write_retrospective, get_baseline_context, create_semantic_anchor, shuffled_null_score, score_against_anchors, read_wisdom, write_wisdom, find_duplicate_wisdom, merge_wisdom_entries]
 
   goals_interviewer:
     provider: gemini
@@ -63,6 +74,16 @@ agents:
     allowed_tools: [read_goals, write_goals, write_config, write_retrospective, create_semantic_anchor, write_aspirational_baseline, update_goal]
 
   # ── Personal specialists ─────────────────────────────────────────────────────
+  #
+  # read_wisdom granted 2026-08-15 to work_vocation, relationships, finance, learning_growth
+  # and recreation_hobbies. All five had INSTRUCTED it in their agent files and held no grant
+  # — so five agents were told to consult a store they had no tool to reach, and the store
+  # they were built around went unread for months. Third recurrence of this class after
+  # relationships/search_memory (08-10) and logistics/write_agent_config (08-05); the
+  # PostToolUse check_agent_tools hook exists because of it.
+  #
+  # None of them gets write_wisdom. They propose instead — a WISDOM_PROPOSAL block filed by
+  # Python after dispatch — so that the writers stay few and every write is attributable.
 
   mental_wellbeing:
     provider: gemini
@@ -82,14 +103,21 @@ agents:
     # tools/agent_config.py. Rationale: the agent needs its own config store like every other
     # specialist, but MEDICATION_MISSED_CRITICAL must classify from a profile the agent did not
     # author, or the flag grades its own homework. A blanket denial cost more than it bought.
-    allowed_tools: [read_log, write_log, search_memory, read_wisdom, write_wisdom, read_profile, write_profile, read_agent_config, write_agent_config]
+    # write_wisdom REMOVED 2026-08-15. It was held from Phase 3 and physical_health.md has never
+    # instructed it — the "granted but never named" class, where the agent holds a tool it cannot
+    # know about. It now proposes instead: a WISDOM_PROPOSAL block that Python files after
+    # dispatch (core/orchestrator.py `_file_wisdom_proposals`). This is not a downgrade of intent
+    # — diet tracking is the founding use case for the store — it is where the write happens.
+    # Note the store is a *subject* axis: a breakfast composition is `food` no matter which agent
+    # observed it, so PH writing directly would not have given PH ownership of it either.
+    allowed_tools: [read_log, write_log, search_memory, read_wisdom, read_profile, write_profile, read_agent_config, write_agent_config]
 
   work_vocation:
     provider: gemini
     model: "models/gemini-3.1-flash-lite"   # no clinical stakes
     # search_memory granted 2026-08-05: denied 2026-08-04 while trying to recall that morning's
     # Apex consolidation brief in order to connect "put that on your active items" to it.
-    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, search_memory]
+    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, search_memory, read_wisdom]
 
   relationships:
     provider: gemini
@@ -98,7 +126,7 @@ agents:
     # relationships.md:196 makes it a numbered procedure step ("Search for relevant history…
     # prior mentions of the person") and :297 lists it as a held tool — the agent was
     # instructed to use a capability it did not have, and silently lost recall.
-    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, merge_contacts, read_profile, write_profile, send_email, search_memory, get_tone_shape]
+    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, merge_contacts, read_profile, write_profile, send_email, search_memory, get_tone_shape, read_wisdom]
 
   finance:
     provider: gemini
@@ -108,17 +136,17 @@ agents:
     # search_memory granted 2026-08-10: denied 2026-08-05T15:21, the same class of recall
     # question read_archive only half-answered. finance.md:89 makes it a procedure step
     # ("spending patterns, income history, budget trends") and :204 lists it as held.
-    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, read_archive, open_obligation, close_obligation, reopen_obligation, list_obligations, search_memory]
+    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, read_archive, open_obligation, close_obligation, reopen_obligation, list_obligations, search_memory, read_wisdom]
 
   learning_growth:
     provider: gemini
     model: "models/gemini-3.1-flash-lite"
-    allowed_tools: [read_log, write_log, search_memory, read_agent_config, write_agent_config]
+    allowed_tools: [read_log, write_log, search_memory, read_agent_config, write_agent_config, read_wisdom]
 
   recreation_hobbies:
     provider: gemini
     model: "models/gemini-3.1-flash-lite"
-    allowed_tools: [read_log, write_log]
+    allowed_tools: [read_log, write_log, read_wisdom]
 
   logistics:
     provider: gemini

@@ -183,7 +183,10 @@ Write to `write_log` under the `health` field:
 - `write_log` — record today's health fields
 - `write_archive` — maintain persistent health lists: supplements (`category: supplements`), workout plans (`category: plans`), medical history notes (`category: medical`)
 - `read_archive` — read back any managed list
-- `read_wisdom` — check known patterns (e.g. "always tired after travel")
+- `read_wisdom` — check known patterns (e.g. "always tired after travel"). Read several subjects at once — subject boundaries are approximate, because whoever recorded a fact had to pick one. Nothing on file means ask the user; it never means invent.
+- **Proposing a standing fact.** You read the knowledge store; you do not write to it. When a turn reveals something about the user that will still be true next month, end your output with one line and it is filed for you:
+  `WISDOM_PROPOSAL: [{"key": "short_slug", "value": "the fact in a sentence or two", "domain": "food|fitness|health|sleep|work|money|relationships|learning|recreation|home|identity", "provenance": "stated|observed"}]`
+  Pick `domain` by subject, not by your own remit — a breakfast composition is `food` whoever noticed it. Use `provenance: "stated"` only when the user said it outright; `"observed"` when you inferred it. Reuse an existing key to correct something that has changed. **Omit the line entirely when there is nothing to propose, which is most turns** — do not emit it empty, and do not write "none". Anything true only this week, or an event that happened, is a log, not a standing fact.
 - `write_agent_config` — store and update structured plans: active workout plan, medication profile, nutritional targets, cessation program state, dietary approach. Use `agent_name: "physical_health"`.
 - `read_agent_config` — read back the stored medication profile, active workout plan, or any structured physical health plan at session start. Use `agent_name: "physical_health"`.
 

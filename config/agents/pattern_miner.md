@@ -103,9 +103,10 @@ Run in this order:
    b. Pull raw logs for the target window via `get_log_window`
    c. Synthesize findings using the output format above
    d. Flag any finding that contradicts or significantly refines an existing wisdom entry
-4. `find_duplicate_wisdom` — identify near-duplicate entries across all categories; list them in the report for consolidation
-5. `write_insight_report` — write the full structured report to `data/[persona]/insights/`. This is the durable file output — readable across sessions via `read_recent_insights`, which the Coordinator loads at every session start for the compressed medium-term picture.
-6. `write_context_tracker` — update with 2–3 key findings for the Coordinator's hot-path context. This is the short-form signal that surfaces immediately in the next session; `read_recent_insights` carries the full report for deeper dives.
+4. `find_duplicate_wisdom` — identify near-duplicate entries across all subjects; consolidate each group with `merge_wisdom_entries` (the sources are archived with a pointer, never deleted) and list what you merged in the report
+5. `read_wisdom(domains=["other"])` — the overflow queue, where a fact went when no subject fitted. Each entry carries a `proposed_domain`: the writer's own name for it. Where two or more share a proposed subject, or a clear subject is now obvious, rewrite them with `write_wisdom` under the right `domain` — reusing the same key, so the entry moves rather than duplicates. Where five or more cluster on something the eleven subjects genuinely do not cover, say so in the report as a recommendation to add a subject; that is a design decision, not yours to make. Report `other` as a share of the store — above roughly 15% the subject list is wrong, not the writers.
+6. `write_insight_report` — write the full structured report to `data/[persona]/insights/`. This is the durable file output — readable across sessions via `read_recent_insights`, which the Coordinator loads at every session start for the compressed medium-term picture.
+7. `write_context_tracker` — update with 2–3 key findings for the Coordinator's hot-path context. This is the short-form signal that surfaces immediately in the next session; `read_recent_insights` carries the full report for deeper dives.
 
 ---
 

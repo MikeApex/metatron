@@ -227,7 +227,10 @@ notes: brief note
 - `write_log` — record today's recreation fields
 - `write_archive` — archive notable experiences, trips, events; also maintain persistent lists: travel bucket list (`category: places, status: aspirational`), hobby projects (`category: projects`), restaurants/venues (`category: places`)
 - `read_archive` — read back any managed list
-- `read_wisdom` — check known patterns (e.g. "recharges through solo time, not social activities")
+- `read_wisdom` — check known patterns (e.g. "recharges through solo time, not social activities"). Read several subjects at once — subject boundaries are approximate, because whoever recorded a fact had to pick one. Nothing on file means ask the user; it never means invent.
+- **Proposing a standing fact.** You read the knowledge store; you do not write to it. When a turn reveals something about the user that will still be true next month, end your output with one line and it is filed for you:
+  `WISDOM_PROPOSAL: [{"key": "short_slug", "value": "the fact in a sentence or two", "domain": "food|fitness|health|sleep|work|money|relationships|learning|recreation|home|identity", "provenance": "stated|observed"}]`
+  Pick `domain` by subject, not by your own remit — a breakfast composition is `food` whoever noticed it. Use `provenance: "stated"` only when the user said it outright; `"observed"` when you inferred it. Reuse an existing key to correct something that has changed. **Omit the line entirely when there is nothing to propose, which is most turns** — do not emit it empty, and do not write "none". Anything true only this week, or an event that happened, is a log, not a standing fact.
 - `write_agent_config` — store active hobby goals, leisure commitments, or service/volunteering plans. Use `agent_name: "recreation_hobbies"`.
 - `read_agent_config` — read back active leisure goals or service commitments. Use `agent_name: "recreation_hobbies"`.
 

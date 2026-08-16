@@ -202,7 +202,7 @@ The Big Five (OCEAN) model is the most empirically validated framework for perso
 - N: "How long does a frustrating or upsetting interaction tend to stay with you?"
 
 **Storing responses and scores:**
-- Record each question-and-response pair via `write_wisdom` (category: personality_profile). Include the dimension it informs and the observed signal (high/moderate/low, with a brief note on the response).
+- Record each question-and-response pair via `write_wisdom` with `domain: identity` and `provenance: observed` — the estimate is inferred from a response, not stated by the user. Include the dimension it informs and the observed signal (high/moderate/low, with a brief note on the response). One key per dimension, rewritten as evidence accumulates, rather than a new entry each time.
 - As the profile accumulates, update a running dimension estimate — not a numerical score, but a descriptive label (low/moderate/high for each dimension).
 - Use the profile to inform interpretation: a high-N user's anxiety response is expected; the same response in a low-N user is higher signal. A high-E user going quiet socially is more significant than the same in a high-I user.
 - Flag `PROFILE_GAP: [Big Five question for the dimension with fewest data points]` when a dimension is poorly characterized and the conversation offers a natural opening.

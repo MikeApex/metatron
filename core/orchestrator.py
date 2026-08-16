@@ -99,13 +99,70 @@ GEMINI_PRO_MODEL = "models/gemini-3.1-pro-preview"
 # Config loading
 # ---------------------------------------------------------------------------
 
+def _knowledge_manifest(persona: str | None = None) -> str:
+    """
+    Name the wisdom-store subjects that hold at least one entry — and nothing more.
+
+    ~20 tokens standing in for a store that would cost thousands to broadcast. The whole
+    design of the knowledge layer rests on this: an agent that knows a subject EXISTS will
+    fetch it when the conversation turns that way, and will not invent it or ask the user to
+    repeat something they already said. Contents never appear here.
+
+    DERIVED BY ENUMERATION, NEVER HAND-WRITTEN. A second hand-maintained list of domains
+    would drift from the store the first time one was added — which is precisely how
+    `_PROMPT_EXCLUDED` came to document an exclusion it did not enforce (fixed 2026-08-15,
+    `f9ffd2a`). There is no list to drift: `domains_present()` reads the file.
+
+    HOW TO REACH IT IS DELIBERATELY ABSENT. The Coordinator selects domains via
+    KNOWLEDGE_TO_LOAD and the Synthesizer calls `read_wisdom`; those are two mechanisms for
+    two agents, and stating either here would put procedure in a string both of them load
+    (.claude/rules/agent-files.md § One Home Per Rule Class). The manifest states a fact; the
+    agent files state what to do about it.
+
+    CACHE NOTE: this lands in the head-layer *system* prompt, so the first write into a
+    previously-empty domain changes the cached prefix and invalidates both head-layer Vertex
+    caches. Bounded at 11 occurrences ever per persona — acceptable, but not surprising when
+    it shows up as a one-off cache miss.
+
+    Never raises: a knowledge layer that can break a session is worse than no manifest.
+    """
+    try:
+        from tools.wisdom import domains_present
+
+        with persona_scope(resolve_persona(persona)):
+            present = domains_present()
+    except Exception as exc:
+        logger.warning(f"[knowledge] manifest unavailable: {exc}")
+        return ""
+
+    if not present:
+        return ""
+
+    return (
+        "## What you have on file about the user\n\n"
+        f"Standing knowledge — facts and habits that stay true past today — is recorded "
+        f"under these subjects: {', '.join(present)}.\n"
+        "You are not shown the contents. Do not guess at what they contain, and do not "
+        "assume a subject is empty because you cannot see it here."
+    )
+
+
 def load_profile(persona: str | None = None) -> str:
     """
-    Load config/profile.yaml (or persona override) and format as a system prompt section.
+    Load config/profile.yaml (or persona override) and format as a system prompt section,
+    followed by the knowledge-store manifest.
+
     Sensitive-tier: injected only into agents that run on local/sensitive-routed models.
-    Returns empty string if file is missing or all fields are null.
+    In practice that is the head layer (via load_config) and the Coordinator — exactly the
+    two that need the manifest. Specialists get load_goals() only: they receive the knowledge
+    payload in their directive, so a manifest would tell them about a store they are not the
+    ones selecting from.
+
+    Returns the manifest alone when there is no profile, and "" when there is neither.
     """
     import yaml as _yaml
+
+    manifest = _knowledge_manifest(persona)
 
     # No root fallback. A persona without a profile gets no profile — inheriting
     # another persona's name, city and timezone is worse than having none, and
@@ -113,12 +170,12 @@ def load_profile(persona: str | None = None) -> str:
     profile_path = persona_config_dir(persona) / "profile.yaml"
 
     if not profile_path.exists():
-        return ""
+        return manifest
 
     try:
         profile = _yaml.safe_load(profile_path.read_text()) or {}
     except Exception:
-        return ""
+        return manifest
 
     # Fields tools/profile.py marks as retrieved-on-demand are skipped here rather than being
     # excluded by this function happening not to mention them. Until 2026-08-15 _PROMPT_EXCLUDED
@@ -175,9 +232,10 @@ def load_profile(persona: str | None = None) -> str:
             lines.append(str(item))
 
     if not lines:
-        return ""
+        return manifest
 
-    return "## User Profile\n\n" + "\n".join(lines)
+    profile_section = "## User Profile\n\n" + "\n".join(lines)
+    return f"{profile_section}\n\n{manifest}" if manifest else profile_section
 
 
 def _spend_gate() -> str | None:
@@ -3293,15 +3351,200 @@ _actions_log = logging.getLogger("metatron.actions")
 _actions_log.setLevel(logging.INFO)
 
 
+def _resolve_knowledge(coord_output: str, persona: str | None = None) -> list[dict]:
+    """
+    Parse KNOWLEDGE_TO_LOAD from Coordinator output and fetch those wisdom entries.
+
+    The Coordinator sees only the manifest — subject names, never contents — and names the
+    subjects this turn needs. Selection therefore costs nothing: it happens inside a
+    Flash-Lite turn that already runs, so a casual food question reaches the user's standing
+    breakfast composition without dispatching Physical Health at all. That case is the whole
+    reason this layer exists.
+
+    THREE WAYS THE BLOCK CAN BE WRONG, AND ALL THREE ARE TOLERATED. Absent (the common case —
+    most turns need no standing knowledge), malformed, and — the one easily missed —
+    **hallucinated**: a domain name that does not exist. `_AGENT_NAME_MAP` below is the
+    standing proof that Flash-Lite emits variant strings for enumerated values, so names go
+    through the alias map first and are then intersected against domains that actually hold
+    entries. Anything left over is dropped and traced, never queried.
+
+    A name that falls through the alias map to the overflow queue is NOT accepted as `other`:
+    resolve_domain() returns "other" for anything it does not recognise, so treating that as a
+    hit would turn every hallucinated subject into a read of the unclassified bucket.
+
+    Returns entries newest-first, capped per domain by read_wisdom. Never raises.
+    """
+    import re as _re
+
+    match = _re.search(r'KNOWLEDGE_TO_LOAD:\s*```json\s*(.*?)```', coord_output, _re.DOTALL)
+    if not match:
+        match = _re.search(r'KNOWLEDGE_TO_LOAD:\s*(\[.*?\])', coord_output, _re.DOTALL)
+    if not match:
+        return []
+
+    try:
+        requested = json.loads(match.group(1).strip())
+    except json.JSONDecodeError as exc:
+        logger.warning(f"[knowledge] KNOWLEDGE_TO_LOAD JSON parse error: {exc}")
+        return []
+    if not isinstance(requested, list):
+        return []
+
+    try:
+        from tools.wisdom import domains_present, read_wisdom, resolve_domain
+
+        with persona_scope(resolve_persona(persona)):
+            present = set(domains_present())
+
+            wanted: list[str] = []
+            dropped: list[str] = []
+            for raw in requested:
+                resolved, proposed = resolve_domain(str(raw))
+                if proposed or resolved not in present:
+                    dropped.append(str(raw))
+                elif resolved not in wanted:
+                    wanted.append(resolved)
+
+            if dropped:
+                _trace(f"[KNOWLEDGE] dropped unknown/empty domains: {dropped}")
+            if not wanted:
+                return []
+
+            # One read per domain, not one read across all of them. The cap is per domain by
+            # design: the Coordinator is told to select adjacent body domains together
+            # ("sleep" with "fitness" and "health"), and a single shared cap would let one
+            # crowded domain return 15 entries and starve the other two entirely.
+            entries: list[dict] = []
+            for domain in wanted:
+                for entry in read_wisdom(domains=[domain]):
+                    if entry.get("key") == "_truncated":
+                        continue
+                    entries.append({**entry, "domain": entry.get("domain") or domain})
+    except Exception as exc:
+        logger.warning(f"[knowledge] fetch failed: {exc}")
+        return []
+
+    _trace(f"[KNOWLEDGE] loaded {len(entries)} entries from {wanted}")
+    return entries
+
+
+def _knowledge_block(entries: list[dict], domains: list[str] | None = None) -> str:
+    """
+    Render fetched wisdom entries for a model's input.
+
+    `provenance` is rendered because it governs how the fact is put back to the user — the
+    constitution's hypotheses-not-verdicts rule. An observed pattern stated to the user as
+    established fact is the failure this field exists to prevent, and a model cannot apply
+    that distinction to a value it was never shown.
+
+    `domains` optionally narrows to the subset one specialist should see.
+    """
+    if domains is not None:
+        entries = [e for e in entries if e.get("domain") in domains]
+    if not entries:
+        return ""
+
+    lines = [
+        f"- [{e.get('domain', 'other')}] {e.get('key', '')} "
+        f"({e.get('provenance', 'observed')}): {e.get('value', '')}"
+        for e in entries
+    ]
+    return (
+        "KNOWLEDGE ON FILE (standing facts about the user, already recorded — treat as known, "
+        "do not ask the user to repeat them; 'observed' items were inferred rather than "
+        "stated, so put those back tentatively):\n" + "\n".join(lines)
+    )
+
+
+_WISDOM_PROPOSAL_RE = _re.compile(
+    # Bare form has no trailing anchor on purpose: agent files specify a one-line block, and
+    # requiring a blank line after it would silently miss every proposal a model emitted
+    # mid-output. Non-greedy stops at the first closing bracket — the schema is flat, so there
+    # is nothing to nest.
+    r'WISDOM_PROPOSAL:\s*(?:```(?:json)?\s*(?P<fenced>.*?)```|(?P<bare>\[.*?\]|\{.*?\}))',
+    _re.DOTALL,
+)
+
+
+def _file_wisdom_proposals(outputs: dict, persona: str | None = None) -> dict:
+    """
+    File WISDOM_PROPOSAL blocks emitted by specialists, and strip them from what the
+    Synthesizer sees. Returns the cleaned outputs.
+
+    WHY PYTHON PARSES THIS AND NO MODEL RELAYS IT. Specialist output reaches the Synthesizer
+    as one opaque prose blob. A "propose a fact" field carried inside that blob would need
+    Flash-Lite to emit it, Pro to notice it amid everything else, and Pro to re-key it
+    faithfully into a tool call — three lossy hops for a fact whose entire purpose is that the
+    user never has to say it twice. `SPECIALISTS_TO_CALL` is the standing proof of the
+    alternative: structured relay in this pipeline means Python parses it.
+
+    This is also what makes "propose only" mean something for the seven specialists that read
+    the store and must not write to it. Until B2 closes the allowlist gap (`dispatch_tool()`
+    checks nothing), a withheld grant is not enforcement — so the real control is that those
+    agents are given a channel that lands here, where every write is attributable and capped
+    by the schema rather than by an instruction they might not follow.
+
+    Stripped before synthesis on the discretion principle: a proposal is the system's own
+    bookkeeping, and a Synthesizer that can see it can narrate it.
+    """
+    if not outputs:
+        return outputs
+
+    from tools.wisdom import write_wisdom
+
+    cleaned: dict = {}
+    for agent, text in outputs.items():
+        if not isinstance(text, str) or "WISDOM_PROPOSAL:" not in text:
+            cleaned[agent] = text
+            continue
+
+        proposals: list = []
+        for match in _WISDOM_PROPOSAL_RE.finditer(text):
+            raw = (match.group("fenced") or match.group("bare") or "").strip()
+            try:
+                parsed = json.loads(raw)
+            except json.JSONDecodeError as exc:
+                logger.warning(f"[knowledge] {agent} WISDOM_PROPOSAL parse error: {exc}")
+                continue
+            proposals.extend(parsed if isinstance(parsed, list) else [parsed])
+
+        with persona_scope(resolve_persona(persona)):
+            for prop in proposals:
+                if not isinstance(prop, dict):
+                    continue
+                key, value = prop.get("key", ""), prop.get("value", "")
+                if not key or not value:
+                    continue
+                try:
+                    result = write_wisdom(
+                        key=key,
+                        value=value,
+                        domain=prop.get("domain", ""),
+                        provenance=prop.get("provenance", ""),
+                    )
+                    _trace(f"[KNOWLEDGE] proposal from {agent}: {result}")
+                except Exception as exc:
+                    logger.warning(f"[knowledge] {agent} proposal '{key}' failed: {exc}")
+
+        cleaned[agent] = _WISDOM_PROPOSAL_RE.sub("", text).strip()
+
+    return cleaned
+
+
 def _dispatch_from_coordinator(
     coord_output: str,
     persona: str | None = None,
     provider: str | None = None,
+    knowledge: list[dict] | None = None,
 ) -> dict:
     """
     Parse SPECIALISTS_TO_CALL from Coordinator output and dispatch agents.
     Returns {agent_name: output} for blocking agents.
     Fire-and-forget agents (Diarist) run in background daemon threads.
+
+    `knowledge`: entries from _resolve_knowledge(). Each dispatched specialist receives the
+    subset of them whose domain names that agent in config/modules/knowledge_domains.yaml —
+    so Physical Health gets the food entries on a diet turn and Finance does not.
     """
     import re as _re
     import threading
@@ -3321,6 +3564,16 @@ def _dispatch_from_coordinator(
 
     outputs: dict = {}
     blocking: list = []
+
+    # Invert the domain->agents map once, into agent->domains. Built even when no knowledge
+    # was fetched so the lookup below is unconditional and cheap; the file is tiny and cached.
+    _agent_domains: dict[str, list[str]] = {}
+    if knowledge:
+        from tools.wisdom import domain_agent_map
+
+        for _domain, _agents in domain_agent_map().items():
+            for _agent in _agents:
+                _agent_domains.setdefault(_agent, []).append(_domain)
 
     _AGENT_NAME_MAP = {
         # Full names
@@ -3365,6 +3618,15 @@ def _dispatch_from_coordinator(
 
         if not agent or not directive:
             continue
+
+        # Append the standing facts this specialist reads, if any were fetched. The
+        # Diarist is included deliberately: it is the highest-volume writer and the one
+        # agent with no relay back, so knowing what is already on file is what stops it
+        # writing a fourth near-duplicate of a fact recorded three times already.
+        if knowledge:
+            block = _knowledge_block(knowledge, domains=_agent_domains.get(agent, []))
+            if block:
+                directive = f"{directive}\n\n{block}"
 
         if is_ff:
             def _bg(a: str = agent, d: str = directive, c: str | None = complexity) -> None:
@@ -3503,11 +3765,16 @@ def run_pipeline_session(user_input: str,
         # Handle any USER_CORRECTION flag in Coordinator output
         _handle_user_correction(coord_output)
 
+        # Fetch the standing knowledge the Coordinator selected, before dispatch — the
+        # specialists that read those subjects get them appended to their directives.
+        knowledge = _resolve_knowledge(coord_output, persona=persona)
+
         # Dispatch specialists from Python based on Coordinator's SPECIALISTS_TO_CALL
         _trace("[PIPELINE] dispatching specialists")
         specialist_outputs = _dispatch_from_coordinator(
-            coord_output, persona=persona, provider=provider
+            coord_output, persona=persona, provider=provider, knowledge=knowledge
         )
+        specialist_outputs = _file_wisdom_proposals(specialist_outputs, persona=persona)
 
         # Bundle specialist outputs for Synthesizer (exclude async fire-and-forget)
         spec_text = "\n\n".join(
@@ -3519,9 +3786,11 @@ def run_pipeline_session(user_input: str,
         # Pass 2: Synthesizer — integration and user-facing response.
         # The ACTIONS block goes last, closest to the response, and is always
         # present: see _action_block().
+        know_text = _knowledge_block(knowledge)
         synthesizer_input = (
             f"{proactive_prefix}{receipt_line}{synth_label}:\n{user_input}\n\n"
             f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"
+            + (f"\n\n{know_text}" if know_text else "")
             + (f"\n\nSPECIALIST OUTPUTS:\n{spec_text}" if spec_text else "")
             + f"\n\n{_action_block()}"
         )
@@ -3644,7 +3913,14 @@ def _run_pipeline_session_stream_inner(
     coord_output = _run_single_agent("coordinator", coord_input, persona=persona, provider=provider)
     _trace(f"[PIPELINE] coordinator  done  ({len(coord_output)} chars) → dispatching specialists")
     _handle_user_correction(coord_output)
-    specialist_outputs = _dispatch_from_coordinator(coord_output, persona=persona, provider=provider)
+    # Knowledge fetch mirrors run_pipeline_session() exactly. THIS IS THE PATH THAT MATTERS:
+    # the server streams, so a feature wired only into the non-streaming function is live in
+    # tests and dead in production. Any change to the knowledge wiring changes both.
+    knowledge = _resolve_knowledge(coord_output, persona=persona)
+    specialist_outputs = _dispatch_from_coordinator(
+        coord_output, persona=persona, provider=provider, knowledge=knowledge
+    )
+    specialist_outputs = _file_wisdom_proposals(specialist_outputs, persona=persona)
     spec_text = "\n\n".join(
         f"--- {agent} ---\n{output}"
         for agent, output in specialist_outputs.items()
@@ -3653,9 +3929,11 @@ def _run_pipeline_session_stream_inner(
     _trace("[PIPELINE] synthesizer  streaming")
 
     # Build Synthesizer input — ACTIONS block last and unconditional, as above.
+    know_text = _knowledge_block(knowledge)
     synthesizer_input = (
         f"{proactive_prefix}{receipt_line}{synth_label}:\n{user_input}\n\n"
         f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"
+        + (f"\n\n{know_text}" if know_text else "")
         + (f"\n\nSPECIALIST OUTPUTS:\n{spec_text}" if spec_text else "")
         + f"\n\n{_action_block()}"
     )

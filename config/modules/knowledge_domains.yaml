@@ -1,0 +1,45 @@
+# Knowledge domains → the agents that read them.
+#
+# The wisdom store (tools/wisdom.py) files standing facts by SUBJECT, never by agent. This
+# file is the one place the two are coupled, and it exists so that a roster change is a map
+# edit rather than a user-data migration. Nothing here appears in any prompt: it decides
+# which dispatched specialist receives which fetched entries, and nothing else.
+#
+# WHY NOT FILE THE FACTS UNDER AGENT NAMES IN THE FIRST PLACE. `food` below names three
+# agents — physical_health tracks diet, relationships cooks for someone, logistics shops.
+# Storing a breakfast composition under `physical_health/diet` would assert an ownership
+# that is not true, and the founding case for this whole layer is the Synthesizer reaching
+# that fact in a casual food conversation *without* dispatching Physical Health.
+#
+# MANY-TO-MANY, AND DELIBERATELY TIGHT. A domain lists an agent only where that agent
+# demonstrably reads it. Widen on evidence — a trace showing an agent reasoning about a
+# domain it was not given — the same practice the routing-file tool grants follow. An
+# over-wide map costs tokens on every dispatch and dilutes each directive.
+#
+# Every key must be a domain in tools/wisdom.py DOMAINS (plus `other`); every value must be
+# an agent in config/modules/routing*.yaml. scripts/check_knowledge_domains.py checks both.
+#
+# NOT the auto-push mechanism. Entries reach a specialist here only when the Coordinator
+# already selected that domain for this turn. Auto-pushing a domain into an agent's prompt
+# unconditionally is deferred behind a named trigger: traces showing the agent reads that
+# domain on >70% of its dispatches, reviewed after two weeks of real use.
+
+domains:
+
+  food:          [physical_health, relationships, logistics]
+  fitness:       [physical_health]
+  health:        [physical_health, mental_wellbeing]
+  sleep:         [physical_health, mental_wellbeing]
+  work:          [work_vocation]
+  money:         [finance]
+  relationships: [relationships]
+  learning:      [learning_growth]
+  recreation:    [recreation_hobbies]
+  home:          [logistics]
+  identity:      [mental_wellbeing]
+
+  # The overflow queue names no agent on purpose. An entry lands in `other` precisely
+  # because nothing yet knows what it is about, so there is no agent it reliably belongs
+  # to; guessing one would push an unclassified fact into a specialist's directive. It is
+  # drained by the Pattern Miner sweep, which is where an unfiled fact should be looked at.
+  other:         []
