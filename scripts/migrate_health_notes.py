@@ -49,7 +49,18 @@ def main() -> int:
     persona = resolve_persona(args.persona)
     profile_path = persona_config_dir(persona) / "profile.yaml"
     if not profile_path.exists():
-        print(f"no profile at {profile_path}")
+        # Almost always one thing: this is the Mac. `mike`'s config and data tree exist only
+        # on the VM (.gitignore: data/personas/*/), so a Mac-side run finds nothing — which is
+        # the correct outcome, but "no profile at ..." reads like a missing file rather than a
+        # wrong machine, and that is a message someone acts on by creating the file.
+        print(f"No profile at {profile_path}")
+        if not (persona_config_dir(persona) / "goals.yaml").exists():
+            print(
+                f"\nThere is no '{persona}' config on this machine at all.\n"
+                f"If this is the Mac and '{persona}' is the real user: that is expected and "
+                f"nothing is wrong — persona data is VM-owned. SSH to the VM and run it there.\n"
+                f"Do NOT create the file here: a Mac-side copy forks the user's history."
+            )
         return 1
 
     profile = yaml.safe_load(profile_path.read_text()) or {}
