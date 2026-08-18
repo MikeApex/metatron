@@ -22,7 +22,7 @@ import logging
 import os
 import sys
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from functools import lru_cache
@@ -1226,6 +1226,99 @@ def filter_output(text: str, agent_name: str, user_text: str | None = None) -> s
 
 _CONTEXT_OPEN = "[CONTEXT]"
 _CONTEXT_CLOSE = "[/CONTEXT]"
+
+# ---------------------------------------------------------------------------
+# Sentence-chunked speech
+#
+# ############################################################################
+# ##  SECURITY GAP — SPOKEN OUTPUT CANNOT BE RETRACTED.  REVIEW AT ALPHA.   ##
+# ############################################################################
+#
+# `filter_output()` is the control for LLM06 (Sensitive Information Disclosure)
+# on the user-facing path. Its guarantee has always rested on one property:
+# **anything it suppresses can be taken back**, because text on a screen can be
+# overwritten and the client does exactly that on `[RETRACT]`.
+#
+# **That property does not hold for audio.** Once a sentence has been spoken it
+# is in the room, and no protocol message unsays it. Sentence-chunked speech
+# therefore trades a strictly weaker disclosure guarantee for lower perceived
+# latency, and it is the ONLY place in this system where the output filter can
+# be beaten by something other than a filter bug.
+#
+# What is done about it here, and it is mitigation, NOT closure:
+#   1. **The server decides what may be spoken, never the client.** A sentence is
+#      released only after `filter_output()` has passed on the whole visible
+#      prefix up to and including it. A client-side delay would merely postpone
+#      an unfiltered leak.
+#   2. **A lead buffer** (`_SPEECH_LEAD_CHARS`) holds a sentence back until more
+#      text exists behind it. This specifically covers `filter_output` tier 5,
+#      which is anchored to the START of a response — the opening sentence is
+#      exactly the one a naive implementation would speak with the least context
+#      available to judge it.
+#   3. **One strike halts speech for the rest of the turn.** If any prefix ever
+#      fails the filter, nothing further is released, even if later prefixes pass.
+#
+# **The residual gap, stated plainly so a reviewer does not have to derive it:**
+# a response whose leak only becomes detectable AFTER a clean sentence has been
+# released will have spoken that clean sentence. The filter is shape-sensitive
+# (tiers 3-5 judge whole responses), so a prefix passing is not proof the
+# response passes. Speech is halted at that point and the screen is retracted —
+# but the already-spoken audio stands.
+#
+# **Review owner: Track B (B1 red team / B3 baseline) and the ROADMAP § 5A
+# pre-Alpha checkpoint.** B3's deliverable is "known remaining gaps with
+# accepted-risk justification" — this is one, it is not yet accepted, and it must
+# not ship to multiple users unreviewed. A red-team case belongs in B1: drive a
+# known tier-1/tier-5 leak and assert on what reached the TTS endpoint, not just
+# on what reached the screen.
+# ---------------------------------------------------------------------------
+
+_SPEAK_PREFIX = "[SPEAK]"
+
+# Chars of trailing text required behind a sentence before it may be spoken. Not
+# a token count: the filter reads characters, and a token estimate would be a
+# second thing to keep true. Deliberately larger than one short sentence.
+_SPEECH_LEAD_CHARS = 120
+
+# A sentence end: terminal punctuation, optional closing quote/bracket, then
+# whitespace or end-of-text. Kept conservative — over-splitting costs an extra
+# TTS round trip, under-splitting only delays speech to the next boundary.
+_SENTENCE_END_RE = _re.compile(r'[.!?…][\"\'\)\]]*(?=\s|$)')
+
+
+def _speech_release(visible: str, spoken_upto: int, final: bool,
+                    is_clean) -> tuple[list[str], int, bool]:
+    """Which sentences of `visible` may be spoken now.
+
+    Module-level and pure so the release rule can be tested without a model call —
+    this is the security-relevant half of sentence-chunked speech, and a nested
+    closure would have made it unreachable from a test. `is_clean(prefix) -> bool`
+    is the filter check, injected for the same reason.
+
+    Returns (sentences, new_spoken_upto, halted). `halted` is sticky by contract:
+    the caller must stop asking once it comes back True, because a later prefix
+    passing does not make an earlier failure safe.
+
+    Sentences keep their trailing space when the caller re-joins them; each is
+    returned stripped, so a consumer that concatenates without a separator will
+    run words together. TTS receives them one at a time, so this does not arise
+    in production — but a test that reassembles must join on a space.
+    """
+    out: list[str] = []
+    while True:
+        m = _SENTENCE_END_RE.search(visible, spoken_upto)
+        if not m:
+            break
+        end = m.end()
+        # Lead buffer: hold a sentence until enough text sits behind it for the
+        # start-anchored filter tiers to have something to judge.
+        if not final and (len(visible) - end) < _SPEECH_LEAD_CHARS:
+            break
+        if not is_clean(visible[:end]):
+            return out, spoken_upto, True
+        out.append(visible[spoken_upto:end].strip())
+        spoken_upto = end
+    return out, spoken_upto, False
 
 
 # Keys the salvage path knows how to rescue individually. **Add to this whenever a
@@ -4217,6 +4310,7 @@ def run_pipeline_session_stream(
     history: list[dict] | None = None,
     is_proactive: bool = False,
     received_at: datetime | None = None,
+    on_speak: Callable[[str], None] | None = None,
 ) -> Iterator[str]:
     """
     Streaming variant of run_pipeline_session().
@@ -4230,6 +4324,7 @@ def run_pipeline_session_stream(
         yield from _run_pipeline_session_stream_inner(
             user_input, persona=bound, provider=provider, history=history,
             is_proactive=is_proactive, received_at=received_at,
+            on_speak=on_speak,
         )
 
 
@@ -4240,14 +4335,28 @@ def _run_pipeline_session_stream_inner(
     history: list[dict] | None = None,
     is_proactive: bool = False,
     received_at: datetime | None = None,
+    on_speak: Callable[[str], None] | None = None,
 ) -> Iterator[str]:
     """
     Pass 1 (Coordinator): runs blocking, identical to run_pipeline_session().
     Pass 2 (Synthesizer): streams output as text chunks, yielding each in real-time.
 
-    Yields text chunks during generation, then exactly one control token:
+    Yields text chunks during generation, then exactly one terminal control token:
       "[DONE]"    — generation complete, filter passed
       "[RETRACT]" — filter caught a confidential term; client should discard received text
+
+    **Every yielded chunk that is not one of those two tokens is display text.**
+    That contract is load-bearing: consumers reassemble the reply with
+    `"".join(c for c in stream if c not in ("[DONE]", "[RETRACT]"))`, so anything
+    else pushed through here silently corrupts the reply. Sentence-chunked speech
+    was briefly implemented as an in-band "[SPEAK]" marker and did exactly that.
+
+    on_speak: optional callback receiving each sentence the server has cleared for
+    text-to-speech, OUT OF BAND for the reason above. Callers that do not speak omit
+    it and are unaffected. Sentences repeat text already yielded as chunks — they are
+    a speech cue, never additional content. **Read § SECURITY GAP beside
+    `_SPEAK_PREFIX` before changing this** — a spoken sentence cannot be withdrawn
+    by "[RETRACT]".
 
     Persona is already bound by the caller — do not set it here.
 
@@ -4424,6 +4533,31 @@ def _run_pipeline_session_stream_inner(
     pending: str = ""          # buffered but not yet yielded (delimiter lookahead window)
     context_started: bool = False
 
+    # Sentence-chunked speech. See § SECURITY GAP beside _SPEAK_PREFIX — the server
+    # decides what may be spoken, and a released sentence cannot be taken back.
+    # Disabled for a translated persona (nothing is streamed at all, so there is
+    # nothing to chunk) and for proactive turns (no listener is waiting on them).
+    _speech_on = on_speak is not None and _stream_to_client and not is_proactive
+    _spoken_upto = 0
+    _speech_halted = False
+    visible_so_far = ""
+
+    def _release_speech(final: bool):
+        """Sentences cleared for TTS. One strike halts speech for the whole turn."""
+        nonlocal _spoken_upto, _speech_halted
+        if not _speech_on or _speech_halted:
+            return []
+        def _is_clean(prefix: str) -> bool:
+            return filter_output(prefix, "synthesizer",
+                                 user_text=None if is_proactive else user_input) == prefix
+        out, _spoken_upto, halted = _speech_release(
+            visible_so_far, _spoken_upto, final, _is_clean)
+        if halted:
+            _speech_halted = True
+            logger.warning("[speech] filter hit on a partial response — speech halted for this turn")
+            _trace("[SPEECH] halted — filter hit on partial response")
+        return out
+
     for chunk in gen:
         buffer.append(chunk)
         if not context_started:
@@ -4431,17 +4565,24 @@ def _run_pipeline_session_stream_inner(
             if _CONTEXT_OPEN in pending:
                 idx = pending.index(_CONTEXT_OPEN)
                 if idx > 0 and _stream_to_client:
-                    yield pending[:idx]   # flush everything before the delimiter
+                    _emit = pending[:idx]   # flush everything before the delimiter
+                    visible_so_far += _emit
+                    yield _emit
                 context_started = True
                 pending = ""
             elif len(pending) > _LOOKAHEAD:
                 safe = len(pending) - _LOOKAHEAD
                 if _stream_to_client:
-                    yield pending[:safe]
+                    _emit = pending[:safe]
+                    visible_so_far += _emit
+                    yield _emit
                 pending = pending[safe:]
+            for _s in _release_speech(False):
+                on_speak(_s)
 
     # Flush any remaining visible text if the delimiter was never seen
     if not context_started and pending and _stream_to_client:
+        visible_so_far += pending
         yield pending
 
     complete = "".join(buffer)
@@ -4478,6 +4619,15 @@ def _run_pipeline_session_stream_inner(
             code, name = _out_lang
             from core.translate import translate
             yield translate(filtered, code, name)
+        # Speech tail. filter_output has now passed on the WHOLE response, so the
+        # remainder is released — including a final fragment carrying no terminal
+        # punctuation, which the boundary scan alone would leave permanently unspoken.
+        for _s in _release_speech(True):
+            on_speak(_s)
+        if _speech_on and not _speech_halted and _spoken_upto < len(visible_so_far):
+            _tail = visible_so_far[_spoken_upto:].strip()
+            if _tail:
+                on_speak(_tail)
         yield "[DONE]"
 
     _trace(f"[PIPELINE] synthesizer  done  ({len(visible)} chars visible)")

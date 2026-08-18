@@ -142,18 +142,23 @@ whole remaining scope, and it makes nothing faster. **The informative version is
 naming the stage ("checking your calendar") is process narration, which `CLAUDE.md` § Discretion
 forbids. So (c) is effectively spent, and the real levers are (a) and (b).
 
-**⚠ HALF OF THIS IS NOW FIXED, AND IT IS NOT THE HALF THE TITLE NAMES — 2026-08-18.** The Gemini
-branch calls `run_session_gemini_cached_stream()` (Option A), which streams real deltas while keeping
-the prompt cache. **Text now arrives progressively — verified, 9 chunks on the wire through
-`run_pipeline_session_stream`.** The line references earlier in this entry describe the OpenAI/Ollama
-path and no longer apply to Gemini.
-**What is still broken is the part this item is actually about: when SPEECH starts.** The client
-calls `speakResponse(ownAccumulated)` only in the `done` handler
-([static/index.html:997](static/index.html#L997)), so **voice still waits for the entire message no
-matter how the text arrives.** Streaming was the *prerequisite* for fixing that, not the fix.
-**Two things remain, and neither is streaming:** (i) **sentence-chunked TTS in the client** — speak
-the first complete sentence rather than waiting for `done`; this is now unblocked and is option (a)
-below; (ii) the **thinking budget**, which is the silence *before* anything arrives at all.
+**⚠ BOTH DELIVERY HALVES ARE BUILT — 2026-08-18, awaiting deploy. Remaining scope is the silence,
+not the delivery.** (a) The Gemini branch calls `run_session_gemini_cached_stream()` (Option A),
+streaming real deltas while keeping the prompt cache — **verified, 9 chunks on the wire**. (b)
+**Sentence-chunked TTS**: the server clears each sentence through `filter_output()` and hands it to
+the client via the `on_speak` callback; the client plays them in an ordered queue —
+**verified, 6 sentences spoken, first at 28.9s of a 29.8s turn.** The `static/index.html:997`
+reference earlier in this entry is superseded: `done` now speaks only when nothing was spoken
+sentence-by-sentence.
+**This stays open because it is not deployed, and because the part Mike actually reported is the
+silence, which neither half touches.** Time-to-first-word is upstream — Coordinator, specialists,
+then **86% of Synthesizer generation being thinking**. That is the **thinking budget**, which Mike
+said on 2026-08-18 is being handled elsewhere; if it lands there, the remaining scope of this item
+is zero and it closes on one ordinary use.
+**🚨 It also opened a security gap that must not be lost with it:** spoken audio cannot be
+retracted, so the output filter is weaker on the voice path than on the screen. Stated in full,
+with what the Alpha review must decide, in `ROADMAP.md` § 5A **🚨 SECURITY GAP** — **that item
+survives this one closing.**
 
 **⚠ Option A does NOT close this item, and an earlier line in this entry saying so was wrong
 (corrected 2026-08-18, same day).** Measured across **18 real interactive Synthesizer turns**:

@@ -41,7 +41,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from core import auth
-from core.orchestrator import run_pipeline_session_stream, run_session
+from core.orchestrator import _SPEAK_PREFIX, run_pipeline_session_stream, run_session
 from core.persona import persona_data_dir
 
 KOKORO_VOICE = "af_heart"
@@ -591,12 +591,19 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                 retracted = False
                 errored = False
 
+                def _on_speak(sentence: str) -> None:
+                    # Server-cleared speech cue. Routed through the SAME queue as the
+                    # text chunks so a sentence cannot overtake the text it repeats,
+                    # and so this thread never touches the event loop directly.
+                    asyncio.run_coroutine_threadsafe(
+                        queue.put(_SPEAK_PREFIX + sentence), loop).result()
+
                 def _produce() -> None:
                     try:
                         for chunk in run_pipeline_session_stream(
                             user_input, persona=persona_orch, provider=provider,
                             history=history, is_proactive=proactive,
-                            received_at=received_at,
+                            received_at=received_at, on_speak=_on_speak,
                         ):
                             asyncio.run_coroutine_threadsafe(queue.put(chunk), loop).result()
                     except NotImplementedError:
@@ -638,6 +645,16 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                         elif item == "[RETRACT]":
                             retracted = True
                             break
+                        elif item.startswith(_SPEAK_PREFIX):
+                            # A sentence the server has cleared for speech. Sent ONLY to
+                            # the device that asked — never broadcast, because a second
+                            # device would speak the same words out of step with the first.
+                            # Not appended to `accumulated`: it repeats text already sent
+                            # as a chunk, and would otherwise be saved into the exchange.
+                            await _send_to_sender({
+                                "type": "speak", "exchange_id": exchange_id,
+                                "text": item[len(_SPEAK_PREFIX):],
+                            })
                         elif item.startswith("[ERROR] "):
                             errored = True
                             await _send_to_sender({
