@@ -115,6 +115,55 @@ and restores the thing B trades away. C is a separate audit with its own argumen
 `core/orchestrator.py` only, plus tests. **Green/Amber tier — no persona files, no `routing*.yaml`,
 no agent files.** Deploy is Denied: hand the commit back to Mike, do not attempt `./deploy.sh`.
 
+## Soundness review addendum — 2026-08-18, verified against the live code
+
+A review session traced all three paths above against `core/orchestrator.py` and confirmed the
+brief's claims: the two-path split is real, the prompt composition is byte-identical on both paths
+(agent file + config in the system prompt, recent context in the user message — lines ~4090–4097
+mirror the head-layer branch at ~3337–3343), so **B reuses the same daily cache rather than
+creating a second one**. Five findings, binding on the implementation:
+
+1. **B must feed the existing chunk loop, never bypass it.** Everything downstream of `gen` is
+   load-bearing on the returned string: the `[CONTEXT]` block interception that writes the context
+   tracker, `filter_output` with `[RETRACT]`, translated-persona delivery, history append, trace
+   finish. The whole of B is `gen = iter([run_session_gemini_cached(system_prompt,
+   augmented_input, ...)])` in the gemini branch — one line, all machinery untouched. An
+   implementation that returns the result directly kills the context tracker and the
+   confidentiality filter silently. This is the invariant, not a style choice.
+2. **B moves live turns onto the native loop's known failure mode — the thought_signature bug —
+   and its fallback replays tool side effects.** The Synthesizer *does* call tools at runtime
+   (four captured `write_quality_event` occurrences, per `_openai_compat_stream`'s docstring).
+   When the native loop hits the bug, `run_session_gemini_cached` falls back to the uncached
+   compat loop, which re-runs the whole turn — tools run twice. Pre-existing on the scheduled
+   path; rare (parallel-tool escalations only); worst case is one turn at today's normal price.
+   Accepted, but it goes in the code comment beside the "streaming is currently illusory" rationale.
+3. **The same bug is the real design constraint on A, and it is worse there** — a mid-stream
+   failure cannot fall back cleanly once chunks are on the wire. `_openai_compat_stream` already
+   solves the shape: **tool-call turns run blocking; only the final text turn streams.** A's
+   native streaming sibling copies that structure exactly, so any fallback decision happens
+   before the first byte reaches the client. This outranks the `cached_content`+`tools`
+   rejection already noted above.
+4. **A8 relocates whatever A builds** (`run_session_*` loops and cache utilities →
+   `core/providers.py`, per `ROADMAP.md` § A8). B is unaffected. Write A's loop as a clean
+   sibling of `_run_gemini_native_loop` so the move is mechanical, and note it for A8's inventory.
+5. **B makes `ROADMAP.md` § 5A's provider table stale for the Gemini row** ("all four providers
+   stream"; routing changes "follow automatically"). Land a matching temporary-state note in
+   § 5A pointing at B's code comment — Mike's decision 2026-08-18: Gemini is current reality per
+   the Vertex VM election, so a note for the eventual migration (likely post-A8) is sufficient.
+
+Also confirmed, so nobody re-derives them: per-turn context and chat history are untouched by B —
+recent context rides the user message and the last 10 turns ride `contents`, fresh every call;
+the cache key is a content hash, so a mid-day config or agent-file edit creates a new cache
+immediately (no stale window); caches are per-persona. The native loop mutates the history list
+it is given, but the streaming path hands it a copy (`list(history[-10:])`) — no double-append.
+Post-B verification addition: repeat "Verify before you build" step 2 **after** landing —
+`cache_read` appearing in the token log on an *interactive* turn is the single line that proves
+the fix. Expect order-of-magnitude-plus savings, not a literal 46× — first turn per day pays
+cache creation, and cached tokens bill at a reduced rate, not zero.
+
+**Model assignment (Mike, 2026-08-18): Opus 5 for both B and A**, on the strength of this
+addendum being in the brief. Without it, A stays with a Fable session.
+
 ## Related, do not fold in
 
 - The zero-source refusal for `research_agent` (authorised by Mike 2026-08-18) — different file.

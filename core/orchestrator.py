@@ -4136,12 +4136,36 @@ def _run_pipeline_session_stream_inner(
     # STREAMING NOTE: All four providers stream here. If you add a new provider,
     # add a streaming branch below before routing the Synthesizer to it.
     if synth_provider == "gemini":
-        api_key, base_url, model_name = _resolve_gemini_credentials(synth_model)
-        gen = _openai_compat_stream(
+        # TEMPORARY (Option B, 2026-08-18) — cached and non-streaming, on purpose.
+        # End state is Option A: a generate_content_stream sibling of
+        # _run_gemini_native_loop that keeps cached_content, restoring token-by-token
+        # delivery *with* the cache. See archive/handoffs/2026-08-18-caching-fix-prompt.md.
+        #
+        # Why this costs the user nothing TODAY — and the conditional is the whole
+        # argument, so do not read this as "streaming does not matter": the reply
+        # already arrives as a single flush. A thinking model emits its reasoning as a
+        # token class carrying no delta.content, so the wire stays silent for the whole
+        # think and the 130-260 output tokens then land in one burst. Both
+        # _openai_compat_stream and the client were read line by line and are correct.
+        # The day the model stops thinking that long, this becomes a visible regression.
+        #
+        # What it buys: this branch never reached _get_or_create_vertex_cache at all, so
+        # the Synthesizer's system prompt was re-billed in full on every message Mike
+        # sent. Measured on the VM 2026-08-18 — 334 uncached turns, median 26,464 input
+        # tokens, while the Coordinator has been cache-served (cache_read=6000) throughout.
+        #
+        # Accepted cost: this puts live turns on the native SDK loop, whose
+        # thought_signature failure falls back to the compat loop by REPLAYING the turn,
+        # so tool side effects can run twice. Rare (parallel-tool escalations) and already
+        # true of the scheduler's path.
+        #
+        # The single chunk MUST be yielded through the loop below, never returned direct:
+        # the [CONTEXT] interception, filter_output/[RETRACT], translation and the history
+        # append all hang off it.
+        gen = iter([run_session_gemini_cached(
             system_prompt, augmented_input, tool_schemas, tool_handlers,
-            api_key=api_key, base_url=base_url, model=model_name,
-            history=recent_history,
-        )
+            model=synth_model, history=recent_history,
+        )])
     elif synth_provider == "openai":
         api_key = os.environ.get("OPENAI_API_KEY", "")
         gen = _openai_compat_stream(

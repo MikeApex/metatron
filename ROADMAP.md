@@ -704,6 +704,24 @@ As of 2026-06-19, Synthesizer streaming is implemented for all four providers:
 
 The "Gemini only" framing used during development referred to the current Synthesizer routing, not a code limitation. If the Synthesizer's assigned model in `routing.yaml` changes, the streaming path follows automatically. **If a 5th provider is added, a streaming variant must be implemented before routing the Synthesizer to it** — see the `# STREAMING NOTE` guard in `run_pipeline_session_stream()`.
 
+> **⚠ The Gemini row is TEMPORARILY untrue, by decision — 2026-08-18.** That branch now calls
+> `run_session_gemini_cached()` and yields one chunk, because it was the only Synthesizer path that
+> never reached the Vertex prompt cache: measured on the VM, **334 uncached turns at a median 26,464
+> input tokens**, while the Coordinator was cache-served throughout. **No user-visible regression was
+> traded away, because Gemini was not really streaming either** — a thinking model emits reasoning as
+> a token class carrying no `delta.content`, so the reply already arrived as a single flush (measured,
+> one chunk on the wire). The other three providers are unchanged and genuinely stream.
+>
+> **Consequence for a routing change, which is why this note exists:** a migration *away* from Gemini
+> silently restores real streaming, and a migration *back* silently removes it. Gemini is current
+> reality under the Vertex VM election (Mike, 2026-08-18), so a note is the agreed remedy rather than
+> a rebuild — but read the comment on that branch in `core/orchestrator.py` before changing routing or
+> starting the refactor. **The fix that retires this note is Option A** — a
+> `generate_content_stream` sibling of `_run_gemini_native_loop` that keeps `cached_content`, giving
+> caching *and* real token-by-token delivery. Brief:
+> [`archive/handoffs/2026-08-18-caching-fix-prompt.md`](archive/handoffs/2026-08-18-caching-fix-prompt.md).
+> `[DB-0818-10]` (the reply lands in one lump, so speech cannot start early) is closed by A, not by this.
+
 ### Pre-Alpha: revisit live-stream + retract design
 
 The current filter_output() + streaming approach streams chunks to the client in real-time and buffers simultaneously. After the final chunk, `filter_output()` runs on the complete text. If a confidential term is detected, a `[RETRACT]` SSE event is sent and the client discards received text.
