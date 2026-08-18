@@ -108,7 +108,25 @@ later leaves the least-recoverable weeks unmeasured. Collection largely exists a
 `[DB-0818-03]`, opening with a decision rather than a build, and carrying an explicit prohibition on
 third-party analytics SDKs, which would ship behavioural data off-box against § Section 0.
 
-**Deployed:** yes — `b62bb18`, after clearing the untracked-file abort.
+**Deployed: NO — and this fragment said "yes" when first written, which is the error worth
+recording.** `./deploy.sh` pushed to GitHub and then **aborted on the VM**: the `git pull` refused
+to overwrite `scripts/vm_add_swap.sh` and `scripts/vm_memory_watch.py`, which existed there only as
+untracked files because this session had `scp`'d them. I cleared the untracked copies, said "re-run
+and it will go through", and then **recorded the session as deployed without checking that it had
+been re-run.** The VM sat at `2a51f46` — carrying the merged cluster code but *not* the tool
+registration, the routing grants, or the `fetch_rendered` memory guards.
+
+**And clearing the blocker broke the thing this session built.** Removing the untracked scripts left
+`metatron-memory-watch.timer` pointing at a file that no longer existed, so from 11:53 it failed
+every five minutes with `status=2/INVALIDARGUMENT` — the alerting built to make an invisible outage
+visible was itself silently down. The swapfile was unaffected, being an `/etc/fstab` entry rather
+than a script.
+
+**Two generalisable points.** *"I ran the push"* and *"the commits are offsite"* already have a
+loud assertion in `/archive` step 5; **"deploy ran" and "the VM has the code" had no equivalent
+check**, and this is the failure mode that gap produces. Second: `scp`-ing a file that is *also
+tracked in the repo* creates a guaranteed collision on the next pull — if a script must reach the
+VM ahead of a deploy, it belongs in `/tmp`, not at its repo path.
 
 ## A backlog item re-proposed a decision Mike had already reversed, and nobody saw it
 
