@@ -1,13 +1,20 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-18, latest — **the clearing sweep ran and the backlog halved.** `DEV_BACKLOG.md`
-**41 open → 28**, `## Inbox` **6 → 0**, `## Machine log` **91 → 49**, file **1,294 → 682 lines**. No
-item ended the pass unchanged; every closure's evidence is in `archive/backlog_closed_2026-08.md`.
-Two items were **fixed** rather than filed: the A4 hard-fails can now be run with a response
-language set without raising a false alarm, and **the backlog is bounded by items (45), not lines** —
-Mike's metric, applied. One closed **by running it**: Bulgarian renders Cyrillic at the source,
-verified live, all three candidates resolved. **Nothing deployed** — `core/orchestrator.py` and
-`tools/crm.py` still owe one, as does `f4cc812`.*
+*Updated: 2026-08-18, latest — **the clearing sweep, then Phase 1 live testing with Mike at the
+app.** Backlog **41 open → 31**, `## Inbox` **6 → 0**, `## Machine log` **91 → 52**, file
+**1,294 → ~700 lines**, now bounded by **items (45), not lines** — Mike's metric, applied. Four items
+closed with evidence. **Three defects found live, none by the test plan**, all from Mike noticing
+things in passing: **nothing streams** (one chunk on the wire, measured); **the app's own turns never
+hit the prompt cache — 46×**, 22,967 input tokens per interactive turn against 495 scheduled; and a
+**research answer with zero sources delivered as fact** (*"good service on Southeastern"* — fixed,
+withheld in Python rather than labelled). **Deploy owed:** `f4cc812` and today's research guard.*
+
+*⚠ **The method finding, which outranks any single item: everything this session RAN held up, and
+everything it INFERRED was wrong.** Four confident causal explanations for the doubled-reply bug,
+all four killed — one by a reproduction, one by reading the client line by line, two by Mike. Two
+more wrong claims came from inferring a cause from timing (*"it called no tool"*, *"the knowledge
+layer is causing the bloat"* — the prompt is 65% one instruction file). And **two test designs never
+reached the code they tested**, so `[DB-0815-07]` and `[DB-0810-07]` are **untested, not passing**.*
 
 *⚠ **Three backlog items rested on a count the file itself calls invalid.** A `×N` in
 `## Machine log` written before 2026-08-15 is a similarity **chain length**, not a repeat count. All
@@ -22,11 +29,13 @@ by probing. **"Starts private" is not "stays on the machine"** and no tool here 
 artifact. Shareable documents are **files** in `archive/plans/`. Full entry:
 `archive/log/2026-08-18-04-*`.*
 
-***What is owed next, and it needs Mike at the app.** Ten items are finished, deployed code waiting
-on one ordinary use each — that is the whole remaining growth mechanism and it cannot be cleared
-from a development session. The list is in his hands, not re-parked in the backlog. Alongside it,
-**seven decisions** are queued (`@session:` in `## Later`), of which the 39 tool grants block A7
-check 10.*
+***Next: two handoffs, and the order matters.**
+`archive/handoffs/2026-08-18-caching-fix-prompt.md` **first** — self-contained, depends on no
+decision, and is the largest measured win in the product. Then
+`…-decisions-and-diagnosis-prompt.md`, with Mike present: three decisions in the format he asked for
+(background, plain speech, a defended recommendation), the doubled reply with **all four dead
+theories named so nobody re-runs them**, and the two untested items with tests that actually reach
+the code.*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -120,6 +129,7 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-18 | **Phase 1 live testing, Mike at the app — four items closed, three defects found, four causal theories killed.** Nothing streams (**1 chunk** on the wire, measured on a second persona); **interactive turns never hit the prompt cache — 22,967 input tokens vs 495 scheduled**, because the streaming path opted out of caching to buy streaming *and did not get streaming either*; an unsourced research answer reached Mike as fact (*"good service on Southeastern"* from two searches, zero sources) — now **withheld in Python**, since the `[RETRIEVAL: NONE]` marker added 08-10 was already attached and the Synthesizer **softened it instead of refusing**. `[DB-0810-01]` **reopened** — closed this morning on two clean turns against its own "do not close on it works now". Two test designs never reached their code. Filed at Mike's instigation: `[DB-0818-08]` provenance tiers, `[DB-0818-09]` implausible-vs-impossible input, `[DB-0818-10]` streaming | **nothing — `f4cc812` + the research guard both owe one** |
 | 08-18 | **The clearing sweep — the backlog halved, and three items rested on a count the file itself calls invalid.** 41 open → 28, Inbox 6 → 0, machine log 91 → 49, **1,294 → 682 lines**. A `×N` written before 08-15 is a similarity **chain length**, not a repeat count: all three machine entries promoted on 08-15 were single events, and each was **older than the code that fixed it**. Two items fixed rather than filed — the A4 pipeline suite now checks flag substance against the **pre-translation English** (it matched English words, so a correct translated response reported FAIL), and **`DEV_BACKLOG.md` is bounded by items (45), not lines**, which is Mike's metric. `[DB-0815-04]` closed by running `translate()` live and getting Cyrillic. Two items removed as **development-process, not Metatron work** | **nothing — needs a deploy** |
 | 08-18 | **`/backlog deep` + attack round — six Green fixes, and `/archive` now closes what it fixed by accident.** Doubled reply on reconnect; soft deadline dropped first; complaint naming a tool suppressed; nested-call attribution; A4 `--complexity`; persona-file blind spot in the grant guard. **`scripts/backlog_close_scan.py`** replaces step 4's filename grep — it matches the diff's *added lines*, because an incidental closure is one the commit message never mentions (`[DB-0808-16]`, open ten days after being fixed). **Three of my own premises were wrong**: two relayed to a worker from my own verification (deleting them would have dropped every parallel specialist from the trace), and the TfL item's bug does not exist in the code | `0a9e311`, `3a43f62`, `10fc9f6`, `87aad78` — **deployed**; `f4cc812` **not yet** |
 | 08-18 | **`/backlog attack` — three clusters, a VM that had been OOM-killing itself, and A9 analytics.** CRM placeholder guard; `contacts_import`; `fetch_rendered` with three memory guards. **Mike's "let Playwright die first" plan was half right** — the kernel kills the *largest* process (the server, proven 08-15 15:02) and SIGKILL returns no message, so the refusal moved *before* launch. VM gained swap, a watchdog and Playwright. **A9 built: absorbed work, not engagement** — 26-day backfill shows 94 absorbed, 10 autonomous, zero before 08-02. **`[DB-0813-02]` was misdiagnosed** (key valid, MCP `env: {}` empty) | `8c7121b`, `6097c44`, `5c3bb3b`, `4d10cbd`, `35499af`, `865c9b6` — **deployed** |

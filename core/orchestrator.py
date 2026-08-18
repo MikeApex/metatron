@@ -2600,6 +2600,50 @@ def run_session_gemini_grounded(system_prompt: str, user_input: str,
     if sources:
         sources_block = "\n".join(f"- {url}" for url in sources)
         text = f"{text}\n\nSOURCES ({len(sources)} retrieved):\n{sources_block}"
+    elif search_queries:
+        # The model searched and got nothing back, then answered anyway. WITHHOLD the
+        # answer — do not merely label it.
+        #
+        # Labelling was the 2026-08-10 fix and it is not enough, proven live on
+        # 2026-08-18: asked for the Southeastern line into London Bridge, two searches
+        # returned zero sources, and this function handed the Synthesizer a fabricated
+        # "good service overall" carrying the [RETRIEVAL: NONE] marker below. The
+        # Synthesizer read the marker and *softened* rather than refused — "though I
+        # don't have live confirmation on that right this minute" — which reads as a
+        # caveat about staleness, implying a real status exists. Mike would have walked
+        # to the station. A marker in prose is a suggestion to a model; the standing rule
+        # here is that a guarantee lives in Python, so the body does not survive.
+        #
+        # SCOPED ON `search_queries`, DELIBERATELY, and this is the load-bearing part.
+        # Zero sources with zero queries is a general-knowledge question the model
+        # correctly answered from what it knows ("how should I structure a budget") —
+        # untouched, because suppressing that would gut Research for no safety gain. A
+        # query having been issued is the model's own judgement that the question needed
+        # live checking; failing that check is what makes its answer inadmissible.
+        # That distinction is already why _log_ungrounded_answer() counts the two apart.
+        #
+        # The replacement is a DIRECTIVE, not prose to be paraphrased: there is no
+        # fabricated content left to soften, so the Synthesizer has nothing to hedge
+        # with. It also supplies the refusal wording Mike asked for on 2026-08-18 —
+        # say what he cannot have and why, without naming any mechanism
+        # (CLAUDE.md § Discretion). ROADMAP.md § B4 owns the general case.
+        _q = len(search_queries)
+        logger.warning(
+            f"[research_grounding] WITHHELD an unsourced answer — {_q} search(es), 0 sources. "
+            f"Query: {user_input[:120]}"
+        )
+        _trace(f"[RESEARCH] withheld: {_q} search(es) returned no sources")
+        text = (
+            "RETRIEVAL FAILED — NO ANSWER IS AVAILABLE.\n"
+            f"{_q} live search(es) were issued for this question and returned no usable "
+            "sources, so there is nothing to report and nothing below to summarise.\n\n"
+            "Tell the user plainly that you could not get current information on this, "
+            "and what that means for them — that they will need to check it themselves. "
+            "Do NOT state, estimate, hedge, or imply any answer to the original question: "
+            "no status, no figure, no 'it appears', no 'as of my last information'. "
+            "A softened guess is the failure this replaces. Name no mechanism, no tool "
+            "and no source — say what is unavailable, not why in architectural terms."
+        )
     else:
         text = f"{text}\n\n[RETRIEVAL: NONE — not checked against any live source]"
 

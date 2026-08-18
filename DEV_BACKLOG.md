@@ -73,7 +73,6 @@ back-tagging the rest is `[DB-0815-10]`.
 > counts, and all three were single events; every one of them was also **older than the code that
 > fixed it**. They were removed on 2026-08-18. Confirm the count *and* compare the evidence date
 > against `git log` before promoting anything from here.
-
 ---
 
 ## Now
@@ -96,6 +95,47 @@ standing rule distrusts.*
   @kind: feature
   *filed 2026-08-08 by Mike · promoted 2026-08-15*
 
+- **2. [DB-0818-10] The reply lands in one lump after a long silence, so speech cannot start early.**
+  @kind: feature
+Mike, live at the app 2026-08-18: *"the entire bubble publishes at once, not word by word or phrase
+by phrase."* Observed on two separate turns.
+
+**Measured, not inferred.** The turn he watched: total **22.7s** — coordinator 2.2s, two specialists
+7.1s, **synthesizer 11.4s on `gemini-3.1-pro-preview` for a 285-character reply**
+(`/monitor/traces`, `persona=mike`, `2026-08-18T16:40:35`). A Pro-tier model emits 285 characters in
+well under a second, so ~10s of that turn produced **no content deltas at all** — it is the thinking
+phase — and the answer then arrives in a burst.
+
+**The streaming code is correct and has nothing to stream, which is why no test caught this.**
+`_openai_compat_stream` yields `delta.content` the moment it arrives
+([core/orchestrator.py:3125](core/orchestrator.py#L3125)); the client appends each chunk and
+repaints ([static/index.html:972](static/index.html#L972)). Both halves work. The gap is upstream:
+a thinking model emits its reasoning as a separate token class that carries no `delta.content`, so
+the stream is silent for the whole thinking phase. **Do not go looking for a bug in the streaming
+path or the client — they were both read and both are right.**
+
+**Why it matters more than it looks.** This is a voice-first product. TTS cannot begin until the
+whole message lands (`speakResponse(ownAccumulated)` fires on `done`), so perceived latency is
+generation **plus** synthesis, serially — and streaming, which exists precisely to hide that, buys
+nothing today.
+
+**This is the evidence `[DB-0809-13]` was waiting for, and it inverts that item's premise.** Kokoro's
+2.8s per phrase was ruled *"do not build until voice has been used enough to say whether 2.8s
+actually feels slow"* (closed 2026-08-18, `archive/backlog_closed_2026-08.md`). The measurement says
+**2.8s was never the problem** — 11.4s of upstream silence is. Sentence-chunked TTS is now the
+strongest of the three candidate fixes, because it is the only one that starts speech before
+generation finishes.
+
+**Three options, and they are not exclusive:** (a) sentence-chunk the Synthesizer's output so TTS
+starts on the first complete sentence; (b) route the Synthesizer to a faster tier or reduce its
+thinking budget — cheap, but it trades response quality on the user-facing voice, which
+`ROADMAP.md` § 0 names as the dominant Alpha UX factor; (c) surface a "thinking" affordance so the
+silence is legible rather than dead. **Do not pick one from this entry** — (b) is a quality trade
+that is Mike's call.
+
+*found 2026-08-18 during Phase 1 interactive testing — Mike reported the symptom unprompted while
+confirming a different fix; the timings were pulled live off the VM the same minute*
+
 
 ## Later
 
@@ -114,6 +154,46 @@ sections and surfaces them on the sync line at session start, so a time-gated it
 the condition has not arrived, push the date rather than closing the item.
 
 ### Decisions — each needs one answer from Mike, not effort
+
+- **[DB-0818-08] Nothing records where a fact came from, so a checked value is overwritten by a
+  guessed one — and an answer with no source is delivered as fact.** Mike, 2026-08-18: *"the CRM needs
+  some sort of verification tag for data that will allow it to stick to its guns when an edit or
+  contradictory information is incoming"*, scoped at his instruction to **a universal, not a CRM
+  feature**.
+  **Two live failures the same afternoon, and they look unrelated until the missing field is named.**
+  *(1)* `Kathaleen Jermyn` was in the CRM off her own email signature; a dictated correction to
+  `Kathleen` renamed the record in place — no near-match surfaced, no confirmation asked, and **the
+  correct spelling is the one now gone.** *(2)* Asked for the Southeastern line, `research_agent` ran
+  two web searches, retrieved **zero sources** (`grounded: False`, trace `2026-08-18T16:48`), and
+  answered *"Southeastern services are reported as having a good service overall"* with an invented
+  incident. One overwrote a sourced value with an unsourced one; the other presented an unsourced
+  claim as sourced. **Same missing field.**
+  **The shape: three tiers, the smallest set that separates those two.** `verified` — checked against
+  an external artefact (email header, calendar invite, retrieved source) → **surface the conflict and
+  ask**. `stated` — the user said it → overwrite freely; he is the authority on his own life.
+  `inferred` — the model concluded it → overwrite freely, and **never present as fact without saying
+  so**.
+  **The constraint that must survive into the build, Mike's own words: "user instruction should
+  generally be the winner."** The tag produces a **confirmation, never a refusal** — one question,
+  once, not a veto and not a question every time. A tool that argues about how his family's names are
+  spelled is worse than one that occasionally takes a wrong spelling.
+  **Why it plausibly suppresses hallucination — his claim, recorded as a hypothesis, not a promise.**
+  `inferred` is not a state anything can currently be in, so an answer assembled from nothing is
+  shaped identically to one assembled from sources. Give it a tier and the refusal becomes mechanical
+  rather than a matter of model judgment: **an answer with no `verified` or `stated` input cannot be
+  phrased as fact.** Same control as the zero-source guard, applied to the store instead of the wire —
+  **scope them together rather than building it twice.**
+  **The hard part is not the schema, it is the capture.** Provenance has to be recorded by code that
+  knows the source, and most write paths are model-called with no source argument at all: `read_email`
+  and the CalDAV reader hold an artefact and know it, `write_contact` mid-conversation does not.
+  **Scope the capture before the schema** — a tag defaulting to `verified` because nothing filled it
+  in would claim a check the system never did, which is worse than no tag.
+  @kind: feature
+  @session: the three tiers, and whether `inferred` gates phrasing as well as overwriting
+  *raised by Mike 2026-08-18 during Phase 1 testing, from two failures he produced himself in
+  consecutive turns · scope against `[DB-0815-07]` (near-match on create — built, did not fire on this
+  rename, a different path) and `[DB-0818-06]` (24 stored "facts", several inferred preferences
+  recorded as observations — what an `inferred` tier catches at write time)*
 
 - **[DB-0810-03] 39 tool-permission decisions, and they block the agent audit Phase 5 sign-off
   needs.** 35 named-but-not-granted, 4 refused in production
@@ -299,6 +379,33 @@ with a date.** Nothing new joins this group open-ended.*
   `due: 2026-08-22`
 
 ### Unbuilt — real capability that does not exist
+
+- **[DB-0818-09] An implausible instruction is acted on without a murmur; only an impossible one
+  is caught, and today that was luck.** Mike, 2026-08-18, after watching *"the 32nd of September"*
+  be refused: *"Would it catch something more subtle — 4am vs 4pm, 'are you sure you meant 4am?'"*
+  **No. Nothing checks plausibility anywhere.**
+  **Two different classes, and only one is handled.** *Impossible* — the 32nd of September — has
+  exactly one right answer and anything can catch it; the model happened to catch this one itself
+  **before any tool ran**, so it was never validated in code either. *Implausible* — 4am for the
+  park — is perfectly valid input. The calendar write path runs a mandatory conflict check for
+  double-bookings and exact duplicates in Python before every write
+  ([tools/caldav.py:385](tools/caldav.py#L385)) **and nothing else**. A 4am park visit is written
+  silently.
+  **Why it cannot be a rule, which is the whole difficulty.** 4am is wrong for the park and right
+  for a Heathrow drop-off — Mike has done exactly that, and the machine log carries the correction
+  where the system mis-read one. The signal is the *mismatch* between time, activity and his
+  patterns, not the hour. So this is judgement, and today nothing is asked to exercise it: the
+  impossible case belongs in code, the implausible case can only be the model, and neither is
+  deliberate.
+  **Where it must be scoped, not built blind.** A confirmation on every unusual-looking entry is
+  worse than none — he flies at odd hours and rucks before dawn, so a system that queries every
+  early time teaches him to dismiss it. **The bar is a single question, once, on a genuine
+  mismatch.** Same constraint as `[DB-0818-08]`, and the two should be designed together: a
+  confidence tier on a captured value is what makes "are you sure?" answerable rather than
+  reflexive. Also a live instance of `[DB-0810-11]` — where code replaces model judgement.
+  @kind: feature
+  *raised by Mike 2026-08-18 from a passing test — he asked what the test would have missed, which
+  is the finding*
 
 - **[DB-0818-04] Ask about a Southeastern or Greenwich-line train and there is nothing to answer
   with.** No National Rail source was ever built. TfL works — tube, DLR, Elizabeth, Overground —
@@ -506,6 +613,15 @@ it** — the email-transcription guard shipped 08-08 against 08-02 evidence, and
 that plausibly dropped the Thursday deadline was fixed `fd273bf` on 08-18 against 08-11 evidence.
 That is the third time an item's own description has argued persuasively for the wrong decision.
 **Check the count's date and the evidence's date before promoting anything from here.**)*
+
+- **[user corrected a prior turn]** CLARIFICATION_NEEDED:  
+  `2026-08-18T18:26:12.726184Z`
+
+- **[user corrected a prior turn]** User corrected spelling of contact name from 'Kathaleen' to 'Kathleen'.  ×2  
+  `2026-08-18T16:18:04.822974Z`
+
+- **[answered without retrieving anything]** Answered with nothing retrieved — 2 search(es) ran but returned no sources. Query: Check live status of the Southeastern Line into London Bridge. Are there any current delays or disruptions?  
+  `2026-08-18T15:48:28.097541Z`
 
 - **[already applied by the tool]** Updated Interaction Preferences to formalize the rule: Open sessions with the most time-sensitive commitment, overdue follow-up, or unresolved thread, naming it specifically. If genuinely nothing is outstanding, keep it to one line and ask what is on.  
   `2026-08-18T09:17:27.961459Z`
