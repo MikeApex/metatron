@@ -1,21 +1,26 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-18, later — **`/backlog attack`: three clusters shipped, and the VM turned out
-to have been dying and restarting unnoticed.** Placeholder contact details refused across every
-field (`8c7121b`); `tools/contacts_import.py` for CSV/vCard (`5c3bb3b`); `fetch_rendered`, a
-read-only headless-browser fetch behind the same boundary as `fetch_url` (`6097c44`). All
-registered and granted, **deployed `cad98cc` and verified on the VM** — `fetch_rendered` rendered a live page there, 70 tools registered, watchdog green. Sizing the browser found three `Out of memory:
-Killed process` entries — one killed the server itself at 3.6 GB RSS, masked by `Restart=always`.
-The VM now has 2 GB swap, a 5-minute watchdog (which caught the existing kill on its first run),
-and Playwright proven at **~189 MB** per page against a 700 MB pre-flight refusal. Disk went 76% →
-**75% having gained both**. `## Now` is **2 items**.*
+*Updated: 2026-08-18, late — **`/backlog attack` shipped three clusters, the VM turned out to have
+been OOM-killing itself unnoticed, and A9 product analytics is built.** Clusters: placeholder contact
+details refused across every field, `contacts_import` (CSV/vCard), `fetch_rendered`. All registered,
+granted and **deployed `865c9b6`**. Sizing the browser found three OOM kills — one killed the server
+at 3.6 GB RSS, masked by `Restart=always`. VM now has 2 GB swap, a 5-minute watchdog (which caught
+the existing kill on its first run), and Playwright proven at ~189 MB/page against a 700 MB
+pre-flight refusal. `## Now` is **2 items**.*
 
-*⚠ **Two lessons the next `attack` should carry.** Disjoint file manifests prevent *file*
-collisions and nothing else — clusters A and B passed alone and failed 7/17 merged, because one
-wrote fixtures the other had just learned to refuse. And **`[DB-0810-17]` re-proposed the Google
-Contacts OAuth path Mike reversed on 2026-08-08**: verifying the code claim was not enough, because
-a thing removed on purpose and a thing never built look identical in the current tree. Full
-narrative: `archive/log/2026-08-18-01-backlog-item-hid-a-reversal.md`.*
+*⚠ **A9's core metric is ABSORBED WORK, and it inverts the usual reading.** Mike: *"the more items
+that Metatron handled where the user didn't have to."* Sessions are the **denominator**, not value —
+a rollup treating rising engagement as success measures the opposite of the thesis.
+`tools/analytics.py` + a 05:40 job; rows are content-free and per-user with a pinned cohort anchor.
+**Backfill of 26 real days: 94 absorbed, only 10 autonomous, 0.23/user session, zero before
+2026-08-02** — it was capture-and-recall for 41 cohort days. **Review deferred to `ROADMAP.md` § A9a**
+until `mike` has goals and real data loaded; tuning against dev traffic would bake in the wrong shape.*
+
+*⚠ **Two lessons for the next `attack`.** Disjoint file manifests prevent *file* collisions only —
+clusters A and B passed alone and failed 7/17 merged, one having written fixtures the other had just
+learned to refuse. And **`[DB-0810-17]` re-proposed the OAuth path Mike reversed on 08-08**: the code
+claim was true, but a thing removed on purpose and a thing never built look identical in the tree.
+Both fragments: `archive/log/2026-08-18-01-…` and `-02-…`.*
 
 *Prior session (parallel window) — **the knowledge layer is wired, deployed, and its plan is
 closed**: derived manifest, `KNOWLEDGE_TO_LOAD` pre-fetch in both pipeline paths, `WISDOM_PROPOSAL`
@@ -77,13 +82,13 @@ Three checks still open:
 - **Check 12** — constitution alignment review
 - **A5b/A5c** — re-run `write_aspirational_baseline` with A5 mission-level data (A3 baseline is still a placeholder); A5c preference activation recorded "unknown, confirm if needed."
 
-**A9 — Product analytics instrumentation — NEW 2026-08-18, and it is now an Alpha gate
-requirement.** Mike: *"measure and quantify usage FROM THE START."* That is sequencing, not a
-feature — Section 3 defines Alpha as when accumulation begins, so anything added later leaves the
-least-recoverable weeks unmeasured. **Collection largely exists** (`core/trace.py` already records
-agent path, per-turn tokens, tool calls, `is_proactive`); what is missing is a question set and a
-durable daily rollup. **Spec: [ROADMAP.md](ROADMAP.md) § A9**; tracked as `[DB-0818-03]`, which
-opens with a decision, not a build. Independent of A7/A8 — buildable now.
+**A9 — Product analytics — FIRST DRAFT BUILT AND DEPLOYED 2026-08-18; review deferred.** Alpha
+gate requirement. **The core metric is absorbed work, not engagement** — sessions are the
+denominator, so rising engagement is not success. `tools/analytics.py`, 05:40 job, content-free
+per-user rows, cohort anchor pinned. **Refinement is `ROADMAP.md` § A9a**, `@waiting` on `mike`
+holding goals and real data in ongoing use; the five provisional parts (the world-affecting list,
+the un-split T1/T2, COGS, the self-report substitute, per-user collection) are enumerated there.
+Tracked as `[DB-0818-03]`.
 
 **A8 — Pre-Alpha code refactor** — gated on A7. Module extraction from
 `core/orchestrator.py` and `core/server.py`. **Full spec, including the regression gate, is in
@@ -121,7 +126,7 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
-| 08-18 | **`/backlog attack` — three clusters, and a VM that had been OOM-killing itself.** CRM placeholder guard widened to phone/address/social/name; `contacts_import` (CSV + vCard); `fetch_rendered` with three memory guards. **Mike's "let Playwright die first" plan was half right** — the kernel kills the *largest* process (the server, proven 08-15 15:02) and SIGKILL returns no message, so the polite refusal had to move *before* launch. VM gained swap, a watchdog and Playwright. **`[DB-0813-02]` was misdiagnosed**: the GPT key was valid, the MCP `env: {}` was empty — a rotation would have closed it and left GPT silent | `8c7121b`, `6097c44`, `5c3bb3b`, `4d10cbd`, `fa4d200`, `35499af`, `b62bb18` — **deployed `cad98cc`** (first attempt aborted; see log) |
+| 08-18 | **`/backlog attack` — three clusters, a VM that had been OOM-killing itself, and A9 analytics.** CRM placeholder guard; `contacts_import`; `fetch_rendered` with three memory guards. **Mike's "let Playwright die first" plan was half right** — the kernel kills the *largest* process (the server, proven 08-15 15:02) and SIGKILL returns no message, so the refusal moved *before* launch. VM gained swap, a watchdog and Playwright. **A9 built: absorbed work, not engagement** — 26-day backfill shows 94 absorbed, 10 autonomous, zero before 08-02. **`[DB-0813-02]` was misdiagnosed** (key valid, MCP `env: {}` empty) | `8c7121b`, `6097c44`, `5c3bb3b`, `4d10cbd`, `35499af`, `865c9b6` — **deployed** |
 | 08-18 | **Knowledge layering wired, deployed, plan closed.** Steps 4–12: derived manifest, `KNOWLEDGE_TO_LOAD` pre-fetch in both pipeline paths, `WISDOM_PROPOSAL` parsed in Python, grants in parity, seven agents that were instructed to read the store and granted nothing. Step 10 run on the VM; `health_notes` retired. **The zero-specialist path was abandoned rather than tuned for** — the counter-test exists to stop exactly that trade. Found by running it: two turns wrote an *intention* as standing fact; a key-based duplicate check missed a placeholder holding the same fact; Mac and VM `sarah_chen` stores had diverged 38 vs 1 | `360b843`, `d128130`, `7cb9ebd`, `2a51f46` — **deployed, A4 3/3** |
 | 08-15 | **Knowledge layering phase 1 — the wisdom store gains a subject axis.** The store already existed and was almost unreachable: six agent files instruct `read_wisdom` and are not granted it, and `write_wisdom` silently coerced unknown categories, so every Big Five entry MW ever wrote was misfiled. `category` → `domain` + `provenance`; alias map with a *measured* fuzzy cutoff; refusal never terminal, because the Diarist writes from a discarded-output thread. Found while building: **no lock on a read-modify-write** (40 concurrent writes kept 2), and **`vertex-key.json` neither tracked nor gitignored**. Migration heuristics failed on live data ("eat" inside "weather"), so all 59 entries were assigned by hand — which found 24 that do not belong in the store, including the placeholder `oatmeal_formula` | `13134bc`, `a35acfa` — **deployed + migration applied** |
 | 08-15 | **Bulgarian speech-in benchmarked, held indefinitely.** `WHISPER_MODEL_SIZE=base.en` is English-only, cannot emit Cyrillic; `base` (multilingual) gets right script at 46.4% WER, `small` gets 27.6% WER but near-real-time RTF (0.967) on the single-worker pool. Neither clears the bar — Mike's call to hold `[DB-0815-02](a)` in `## Later` indefinitely | none — benchmark + backlog note only, **not deployed** |

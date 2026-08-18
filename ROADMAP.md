@@ -410,6 +410,13 @@ obligation tools landed. 27.9M input tokens against 436K output over those days.
    check-in question is the honest version; nothing infers it.
 5. **Whether absorbed-per-user-session is the right headline ratio**, or whether per-user-minute
    is, once sessions are less dominated by development testing than the backfill is.
+6. **Collection is per scheduler process, not per user — the schema is per-user, the trigger is
+   not.** Rows carry `user_id` and a per-persona pinned `first_use`, and land in that persona's own
+   `analytics/daily.jsonl`, so cohorts are genuinely per-user. But `rollup_yesterday()` resolves the
+   persona from scope and the scheduler runs `--persona mike` (`CLAUDE.md` § Infrastructure traps,
+   5). **Multi-user therefore needs either one scheduler unit per persona or a job that iterates
+   them** — decide which at the same time as the multi-user transition, since that is also what
+   triggers the § Section 0 ruling the consented-telemetry path depends on.
 
 **Do not review this before there is real data.** The 2026-08-18 baseline is mostly development
 traffic, and tuning a metric against test sessions would bake in exactly the wrong shape.

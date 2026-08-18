@@ -134,6 +134,50 @@ the watchdog timer recovered to `Result=success` the moment the pull restored it
 correction above stands as written — the failure was recording a deploy that had aborted, and that
 happened regardless of the deploy later succeeding.
 
+**Later the same session: A9 product analytics, first draft built and deployed (`865c9b6`).**
+Mike asked for usage measurement "FROM THE START", which is a sequencing constraint rather than a
+feature — Alpha is defined as when accumulation begins, so instrumentation added later loses the
+weeks that matter most. Added as `ROADMAP.md` § A9 and made a named requirement of the Alpha gate.
+
+**Asked to pick one core action from three candidates, Mike rejected the framing, and the rejection
+is the design.** *"Success isn't a single instance measure. The more items that Metatron handled
+where the user didn't have to is the core metric... A user should go through life seamlessly and
+NOT need to open their phone nearly as often."* **This inverts two of the seven proposed questions:**
+sessions/day and days-used-per-week are *attention costs*, the denominator — not value. A rollup
+treating rising engagement as success would have measured the opposite of the product thesis, and
+that is now written into the module docstring rather than only the spec.
+
+**Built:** `tools/analytics.py` — absorbed-work counts by autonomy tier, attention as denominator,
+content-free rows, cohort anchor pinned, `--report` table; wired as `daily_analytics_rollup` at
+05:40 in `_DEFAULT_JOBS`; 9 tests, the load-bearing two being *no content leaks into a row* and
+*the cohort anchor survives losing older traces*.
+
+**The backfill over 26 days of real traces produced the finding of the session.** 94 absorbed
+actions, **only 10 fully autonomous**, 409 user sessions, **0.23 absorbed per user session — and
+zero before 2026-08-02.** The tool was a capture-and-recall system for its first 41 cohort days and
+only became an absorber when calendar, email and obligation tools landed. The metric exposed that on
+its first run, which is the argument for the metric.
+
+**Three limits left honest rather than faked:** T2 (user approved) cannot be separated from T1 (user
+directed) because `ToolCallRecord` has no confirm marker, so they are pooled and labelled as pooled;
+cost-per-active-user is not derived, because prices have a short half-life and § *Infrastructure
+traps* forbids recording them; and "obsolescence of other apps" is not proxied at all, since it is
+unobservable without device surveillance.
+
+**An Opus consult was folded in — three of four points closed real gaps** (a cohort anchor, which is
+the one field unreconstructable later and is now pinned in a state file; keep-rows-forever; the
+core-action gap; and reframing tokens-per-agent as COGS rather than telemetry). **Its fourth premise
+was wrong and was corrected**: "local-only analytics means no data at fundraise" does not hold in a
+single-user phase, where the data is Mike's and on his own VM. What it did make actionable is
+narrow and now test-enforced — every row is content-free, so a future *opt-in* aggregate upload is a
+small gated build rather than a migration against data that cannot be re-derived.
+
+**Deliberately deferred at Mike's direction:** `ROADMAP.md` § **A9a**, review and refine, gated on
+the `mike` persona holding goals and real data in ongoing use — tuning a metric against development
+traffic would bake in the wrong shape. **Deferring is low-risk and the fragment should say why:**
+rows derive from retained traces, so a changed definition re-derives over history. Only the cohort
+anchor could not, which is precisely why it was pinned now instead of left to the review.
+
 
 ## A backlog item re-proposed a decision Mike had already reversed, and nobody saw it
 
