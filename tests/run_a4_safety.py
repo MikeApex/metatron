@@ -28,10 +28,36 @@ USAGE
     python tests/run_a4_safety.py --persona sarah_chen --provider gemini
     python tests/run_a4_safety.py --persona sarah_chen --provider ollama --suite clinical
     python tests/run_a4_safety.py --persona sarah_chen --provider gemini --suite pipeline
+    python tests/run_a4_safety.py --persona sarah_chen --provider gemini \
+        --suite clinical --complexity quick
 
-Writes a dated report to tests/a4_safety_rerun_{DATE}_{provider}_{suite}.md
+Writes a dated report to
+tests/a4_safety_rerun_{DATE}_{provider}[_{suite}][_{complexity}].md
 (the `all` suite omits the suite suffix; `clinical`/`finance`/`pipeline` each get
-their own, so a same-day run of one suite never overwrites another).
+their own, and a `--complexity` run gets a further suffix — so a same-day run of
+one suite, or of the same suite on a different model tier, never overwrites another).
+
+`--complexity` — WHY IT EXISTS ([DB-0808-17])
+---------------------------------------------
+Until 2026-08-18 this runner had no way to choose the model tier, so every A4
+clinical hard-fail ever recorded ran on the deep model. Live traffic does not:
+the Coordinator emits `mode: quick` per specialist, `core/orchestrator.py`
+converts it to `complexity="quick"`, and `core/router.py → resolve_model()`
+sends that to `quick_override` — Flash-Lite on the cloud routing config. Over
+Aug 1-8 that path carried the large majority of the two domains this suite
+tests (Mental Wellbeing 43 quick vs 5 deep; Physical Health 58 vs 6). A safety
+flag verified only on the tier that serves the minority of its traffic is not
+known to work.
+
+`--complexity quick` reproduces that routing decision for the `clinical` and
+`finance` suites, which call `_run_single_agent()` directly and can therefore be
+told which tier to use. It is **rejected for `--suite pipeline`**, because there
+the Coordinator picks the mode per specialist and `run_pipeline_session()` takes
+no complexity argument — accepting the flag there would silently report a deep
+run under a quick label, which is the same class of blind spot this flag was
+added to close. Sensitivity still beats speed: `resolve_model()` ignores
+complexity entirely for `local: true` agents, so under local routing this flag
+changes nothing and the report says so.
 
 THE `pipeline` SUITE — A7's residual gap
 -----------------------------------------
@@ -261,8 +287,15 @@ def seed_medication_fixture(persona: str) -> Path:
 # Runner
 # --------------------------------------------------------------------------
 
-def run_one(scenario: dict, persona: str, provider: str | None) -> dict:
-    """Run a single scenario and evaluate it. Never raises — a crash is a result."""
+def run_one(scenario: dict, persona: str, provider: str | None,
+            complexity: str | None = None) -> dict:
+    """Run a single scenario and evaluate it. Never raises — a crash is a result.
+
+    `complexity` is passed straight through to `_run_single_agent()`, which hands it
+    to `resolve_model()`. "quick" selects the `quick_override` model (Flash-Lite on
+    the cloud routing config) for non-sensitive agents; sensitive `local: true`
+    agents ignore it and stay on Ollama.
+    """
     from core.orchestrator import _run_single_agent
     from core.persona import persona_scope
 
@@ -274,6 +307,7 @@ def run_one(scenario: dict, persona: str, provider: str | None) -> dict:
                 scenario["prompt"],
                 persona=persona,
                 provider=provider,
+                complexity=complexity,
             )
         error = None
     except Exception as exc:  # noqa: BLE001 — a crash is a FAIL, not an abort
@@ -335,8 +369,20 @@ def run_one(scenario: dict, persona: str, provider: str | None) -> dict:
     return result
 
 
-def run_one_pipeline(scenario: dict, persona: str, provider: str | None) -> dict:
-    """Run a single pipeline scenario end-to-end and evaluate it. Never raises."""
+def run_one_pipeline(scenario: dict, persona: str, provider: str | None,
+                     complexity: str | None = None) -> dict:
+    """Run a single pipeline scenario end-to-end and evaluate it. Never raises.
+
+    `complexity` is accepted only so both runners share one call signature, and must
+    be None. `run_pipeline_session()` takes no complexity argument — the Coordinator
+    chooses `mode` per specialist at runtime — so honouring it here is impossible and
+    ignoring it would label a deep run as quick. main() rejects the combination before
+    we get here; this assertion is the backstop for any other caller.
+    """
+    assert complexity is None, (
+        "run_one_pipeline() cannot force a model tier — the Coordinator chooses "
+        "mode per specialist. Use --suite clinical/finance with --complexity."
+    )
     from core.orchestrator import run_pipeline_session
     from core.persona import persona_scope
 
@@ -389,7 +435,8 @@ def run_one_pipeline(scenario: dict, persona: str, provider: str | None) -> dict
 
 
 def write_report(results: list[dict], provider: str, persona: str,
-                 fixture_path: Path | None, out_path: Path, suite: str = "all") -> None:
+                 fixture_path: Path | None, out_path: Path, suite: str = "all",
+                 complexity: str | None = None) -> None:
     passed = sum(1 for r in results if r["verdict"] == "PASS")
     failed = sum(1 for r in results if r["verdict"] == "FAIL")
     errored = sum(1 for r in results if r["verdict"] == "ERROR")
@@ -423,8 +470,19 @@ def write_report(results: list[dict], provider: str, persona: str,
     L.append(f"| Persona | `{persona}` |")
     L.append(f"| Provider | `{provider}` |")
     L.append(f"| DEPLOYMENT_MODE | `{os.getenv('DEPLOYMENT_MODE', '(unset)')}` |")
+    L.append(f"| Complexity | `{complexity or 'routing default (deep)'}` |")
     L.append(f"| Medication fixture | `{fixture_path}` |" if fixture_path else "| Medication fixture | not seeded |")
     L.append("")
+    if complexity == "quick":
+        L.append("> **Model tier: quick.** Every scenario was resolved through "
+                 "`quick_override` rather than the agent's direct model assignment — "
+                 "Flash-Lite under the cloud routing config. This is the tier that "
+                 "carries most live Mental Wellbeing and Physical Health traffic, and "
+                 "which the A4 hard-fails had never been run against before "
+                 "2026-08-18 (`[DB-0808-17]`). Note that `resolve_model()` ignores "
+                 "complexity for `local: true` agents, so under local routing this "
+                 "run is identical to a default-tier one.")
+        L.append("")
     L.append("> **Baseline caveat.** The original A4 run was recorded against Ollama/qwen3:14b. "
              "A run on a different provider is therefore *not* a like-for-like comparison with "
              "that baseline — it verifies the pass conditions hold on the path tested, not that "
@@ -496,8 +554,25 @@ def main() -> int:
                     help="Force a provider. Default: whatever routing resolves.")
     ap.add_argument("--suite", default="all",
                     choices=["all", "clinical", "finance", "pipeline"])
+    ap.add_argument("--complexity", default=None, choices=["quick", "deep"],
+                    help="Force the model tier the specialist resolves to. 'quick' "
+                         "selects quick_override (Flash-Lite on the cloud routing "
+                         "config) — the tier that carries most real Mental Wellbeing "
+                         "and Physical Health traffic, and which the A4 hard-fails "
+                         "had never been run on ([DB-0808-17]). Not valid with "
+                         "--suite pipeline. Ignored by routing for local: true agents.")
     ap.add_argument("--out", default=None, help="Report path override.")
     args = ap.parse_args()
+
+    if args.complexity and args.suite == "pipeline":
+        print("REFUSED: --complexity cannot be combined with --suite pipeline. "
+              "run_pipeline_session() takes no complexity argument — the Coordinator "
+              "emits `mode` per specialist and the orchestrator converts that to "
+              "complexity, so the tier is chosen at runtime, not by this flag. "
+              "Accepting it here would label a deep run as quick, which is the blind "
+              "spot the flag exists to close. Use --suite clinical or --suite finance.",
+              file=sys.stderr)
+        return 2
 
     if args.persona == "mike":
         print("REFUSED: 'mike' is a real user's persona. These scenarios write fabricated "
@@ -523,23 +598,29 @@ def main() -> int:
         print(f"[setup] medication fixture seeded → {fixture_path}")
 
     print(f"[run] persona={args.persona} provider={args.provider or 'routing default'} "
-          f"suite={args.suite}  ({len(scenarios)} scenarios)\n")
+          f"suite={args.suite} complexity={args.complexity or 'routing default'}  "
+          f"({len(scenarios)} scenarios)\n")
 
     runner = run_one_pipeline if args.suite == "pipeline" else run_one
     results = []
     for s in scenarios:
         print(f"  {s['id']:12s} {s['name']:44s} ... ", end="", flush=True)
-        r = runner(s, args.persona, args.provider)
+        r = runner(s, args.persona, args.provider, args.complexity)
         results.append(r)
         print(f"{r['verdict']}  ({r['elapsed_s']}s)")
 
     provider_label = args.provider or os.getenv("DEPLOYMENT_MODE", "routed")
     suite_suffix = "" if args.suite == "all" else f"_{args.suite}"
+    # A quick-tier run and a deep-tier run of the same suite on the same day are
+    # different results, so they must not share a filename.
+    complexity_suffix = f"_{args.complexity}" if args.complexity else ""
     out = Path(args.out) if args.out else (
         Path(__file__).resolve().parent /
-        f"a4_safety_rerun_{date.today().isoformat()}_{provider_label}{suite_suffix}.md"
+        f"a4_safety_rerun_{date.today().isoformat()}_{provider_label}"
+        f"{suite_suffix}{complexity_suffix}.md"
     )
-    write_report(results, provider_label, args.persona, fixture_path, out, suite=args.suite)
+    write_report(results, provider_label, args.persona, fixture_path, out,
+                 suite=args.suite, complexity=args.complexity)
 
     failed = [r for r in results if r["verdict"] != "PASS"]
     print(f"\n[report] {out}")

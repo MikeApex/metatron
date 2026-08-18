@@ -48,6 +48,45 @@ Four classes:
      reported last. A large undocumented grant is worth a least-privilege look,
      not an alarm.
 
+PERSONA FILES ARE SCANNED TOO (added 2026-08-18, `[DB-0810-03]`)
+----------------------------------------------------------------
+Until 2026-08-18 this script globbed `config/agents/*.md` and nothing else, so a
+tool named in a *persona* file was invisible to it. That is not hypothetical:
+commit `6913ad7` moved Mike's evening ritual — which instructs a `write_log`
+call — out of `config/agents/synthesizer.md` into
+`config/personas/mike/evening_ritual.md`. The `write_log` class-2 finding
+disappeared from this report between two edits in one session, and **not because
+it was fixed**: `synthesizer` still lacks the grant in `routing.yaml` and
+`routing_cloud.yaml`, and the call only succeeds because `dispatch_tool()` runs
+in warn mode rather than enforce. A guard that goes quiet when instruction text
+moves house is worse than no guard, because the silence reads as a fix.
+
+Reverting the move was the wrong fix — per-persona subject files are a pattern
+ROADMAP.md § D2 actively encourages, so the blind spot widens with every new one.
+The scan was extended instead: `config/personas/*.md` (identity) and
+`config/personas/*/*.md` (prime_directive, mission, self_development,
+evening_ritual, and whatever is added next) are read with the same evidence rules
+as agent files, and globbed rather than enumerated so a new subject file is
+covered on the day it is created.
+
+**Attribution.** A persona file has no owning agent in the way an agent file
+does, so findings are attributed to every agent that actually receives persona
+*instruction* text in its system prompt. That set is read at runtime from
+`core.orchestrator._HEAD_LAYER_AGENTS` — the agents routed through
+`load_config()`, which is the only loader of persona markdown — rather than
+hardcoded here, so adding an agent to the head layer extends this scan with it.
+Specialists get `load_goals()` only (YAML data, not instruction text) and are
+deliberately not attributed: reporting one persona-file defect against all 14
+agents is the 34-false-positives-to-1-real-finding ratio this file's
+`_tools_named_in` docstring exists to avoid.
+
+**A zero-file scan is announced, never silent.** `config/personas/mike.md` and
+`config/personas/mike/` are gitignored and VM-only (`.gitignore:134-135`), so a
+Mac checkout or a worktree cannot see the real files. A clean report there proves
+nothing about `mike`, and reporting "None." over an empty scan would reproduce
+exactly the failure above. The header states how many persona files were read,
+and says so loudly when the answer is zero.
+
 Truth comes from `register_tools()` itself, called rather than parsed — a source
 scan would drift from the registry the moment either changed shape.
 
@@ -60,6 +99,8 @@ Usage
     python3 scripts/check_agent_tools.py --routing cloud # cloud only
     python3 scripts/check_agent_tools.py --agent research_agent
     python3 scripts/check_agent_tools.py --quiet         # findings only
+    python3 scripts/check_agent_tools.py --no-personas   # agent files only
+    python3 scripts/check_agent_tools.py --personas-root /tmp/fixture   # test hook
 
 Exit status
 -----------
@@ -82,6 +123,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 AGENTS_DIR = ROOT / "config" / "agents"
+PERSONAS_DIR = ROOT / "config" / "personas"
 
 # A tool reference: a backticked lower_snake_case identifier, with or WITHOUT a
 # call paren.
@@ -239,12 +281,58 @@ def _ref(tool: str, called: bool) -> str:
     return f"`{tool}(...)`" if called else f"`{tool}`"
 
 
+def _persona_files(personas_root: Path) -> list[Path]:
+    """Every persona markdown file that reaches an agent's system prompt.
+
+    Two shapes, both globbed rather than enumerated so a subject file type added
+    tomorrow is covered without editing this script:
+      config/personas/{name}.md      identity, loaded as "## User"
+      config/personas/{name}/*.md    prime_directive, mission, self_development,
+                                     evening_ritual, and whatever comes next
+
+    goals.yaml is intentionally excluded — it is structured data reaching every
+    agent, not instruction prose, and a tool name inside it would be a value, not
+    an instruction.
+    """
+    if not personas_root.is_dir():
+        return []
+    return sorted(set(personas_root.glob("*.md")) | set(personas_root.glob("*/*.md")))
+
+
+def _persona_reading_agents() -> tuple[set[str], str | None]:
+    """Agents whose system prompt includes persona instruction text.
+
+    Read from the orchestrator rather than hardcoded, so that adding an agent to
+    the head layer extends this scan at the same time. Returns (agents, warning).
+    """
+    try:
+        sys.path.insert(0, str(ROOT))
+        from core.orchestrator import _HEAD_LAYER_AGENTS
+        agents = set(_HEAD_LAYER_AGENTS)
+        if not agents:
+            return {"synthesizer"}, ("core.orchestrator._HEAD_LAYER_AGENTS is empty — "
+                                     "falling back to {synthesizer}")
+        return agents, None
+    except Exception as exc:  # noqa: BLE001
+        return {"synthesizer"}, (
+            f"could not read core.orchestrator._HEAD_LAYER_AGENTS ({type(exc).__name__}: "
+            f"{exc}) — falling back to {{synthesizer}}. If the head layer has changed, "
+            f"persona findings below are attributed to the wrong agent."
+        )
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--routing", choices=["cloud", "local", "both"], default="both")
     ap.add_argument("--agent", help="check one agent only")
     ap.add_argument("--quiet", action="store_true", help="findings only, no clean lines")
+    ap.add_argument("--no-personas", action="store_true",
+                    help="skip config/personas/**.md (agent files only, pre-2026-08-18 behaviour)")
+    ap.add_argument("--personas-root", default=None,
+                    help="override the persona config root. Exists so the acceptance test "
+                         "can point at a fixture: the real mike persona files are gitignored "
+                         "and VM-only, so a Mac run cannot exercise this path otherwise.")
     args = ap.parse_args()
 
     registered = _load_registered_tools()
@@ -258,41 +346,90 @@ def main() -> int:
             print(f"No agent file for '{args.agent}'.")
             return 2
 
+    # Persona files: one file, attributed to every agent that receives persona
+    # instruction text. See the module docstring for why the attribution set is
+    # read from the orchestrator rather than listed here.
+    personas_root = Path(args.personas_root) if args.personas_root else PERSONAS_DIR
+    persona_files: list[Path] = [] if args.no_personas else _persona_files(personas_root)
+    persona_agents, attribution_warning = _persona_reading_agents()
+    if args.agent:
+        persona_agents = {a for a in persona_agents if a == args.agent}
+
+    # (path, agent, display_label) — one entry per (file, owning agent) pair.
+    scan: list[tuple[Path, str, str]] = [(f, f.stem, f"{f.stem}.md") for f in agent_files]
+    for f in persona_files:
+        label = str(f.relative_to(personas_root.parent)) if personas_root.parent in f.parents \
+            else f.name
+        for a in sorted(persona_agents):
+            scan.append((f, a, f"{label} [{a}]"))
+
     nonexistent: list[tuple[str, str, int, bool]] = []
     not_granted: list[tuple[str, str, int, bool, str]] = []
     never_named: list[tuple[str, str, str]] = []
     planned: list[tuple[str, str, int]] = []
+    named_by_agent: dict[str, set[str]] = {}
 
     print("=" * 72)
-    print(f"Tool references in {len(agent_files)} agent file(s) vs "
-          f"{len(registered)} registered tools")
+    print(f"Tool references in {len(agent_files)} agent file(s) and "
+          f"{len(persona_files)} persona file(s) vs {len(registered)} registered tools")
+    if args.no_personas:
+        print("  persona scan: DISABLED by --no-personas")
+    elif not persona_files:
+        print("  ⚠ PERSONA SCAN READ ZERO FILES — this report says nothing about persona")
+        print(f"    files. Looked in: {personas_root}")
+        print("    config/personas/mike.md and config/personas/mike/ are gitignored and")
+        print("    VM-only (.gitignore:134-135), so a Mac checkout or worktree cannot see")
+        print("    them. Closing [DB-0810-03] needs one run on the VM. A clean result here")
+        print("    is an empty scan, not a pass.")
+    else:
+        # Name the personas scanned, not just the count. On a Mac checkout the list
+        # will not contain `mike` — his config is gitignored and VM-only — and a
+        # reader who cannot see that omission will read this report as covering him.
+        scanned = sorted({(f.parent.name if f.parent != personas_root else f.stem)
+                          for f in persona_files})
+        print(f"  persona scan: {len(persona_files)} file(s) under {personas_root}, "
+              f"attributed to {', '.join(sorted(persona_agents)) or '(no agent)'}")
+        print(f"    personas seen: {', '.join(scanned)}")
+        if "mike" not in scanned:
+            print("    ⚠ `mike` NOT among them — config/personas/mike{,.md} is gitignored")
+            print("      and VM-only (.gitignore:134-135). This run does not cover the real")
+            print("      user's persona files; only a VM run does.")
+        if not persona_agents:
+            print("  ⚠ no agent receives persona instruction text — findings will be dropped")
+    if attribution_warning:
+        print(f"  ⚠ {attribution_warning}")
     print("=" * 72 + "\n")
 
-    for path in agent_files:
-        agent = path.stem
+    for path, agent, label in scan:
         live, deferred = _tools_named_in(path)
+        named_by_agent.setdefault(agent, set()).update(live)
+        named_by_agent[agent].update(deferred)
 
         for tool, ref in sorted(live.items()):
             if tool not in registered:
                 # Evidence gate: without it this class is 97% field names.
                 if ref.is_tool_ref:
-                    nonexistent.append((agent, tool, ref.line, ref.called))
+                    nonexistent.append((label, tool, ref.line, ref.called))
                 continue
             for r in routings:
                 allowed = allowed_by_routing[r].get(agent)
                 if allowed is not None and tool not in allowed:
-                    not_granted.append((agent, tool, ref.line, ref.called, r))
+                    not_granted.append((label, tool, ref.line, ref.called, r))
 
         for tool, ref in sorted(deferred.items()):
             if tool not in registered:
-                planned.append((agent, tool, ref.line))
+                planned.append((label, tool, ref.line))
 
+    # Class 3 is per-agent, not per-file: a grant documented in a persona file is
+    # documented. Computing it inside the loop would report every head-layer grant
+    # once per persona file scanned.
+    for agent in sorted({a for _, a, _ in scan}):
         for r in routings:
             allowed = allowed_by_routing[r].get(agent)
             if not allowed:
                 continue
             for tool in allowed:
-                if tool not in live and tool not in deferred:
+                if tool not in named_by_agent.get(agent, set()):
                     never_named.append((agent, tool, r))
 
     print("-" * 72)
@@ -300,8 +437,8 @@ def main() -> int:
     print("   the build queue, shown so it stays visible rather than filtered away.")
     print("-" * 72)
     if planned:
-        for agent, tool, line in planned:
-            print(f"  ○ {agent}.md:{line}  `{tool}`  — specified, not built yet")
+        for label, tool, line in planned:
+            print(f"  ○ {label}:{line}  `{tool}`  — specified, not built yet")
     elif not args.quiet:
         print("  None.")
 
@@ -311,8 +448,8 @@ def main() -> int:
     print("   gap from nothing. Build it, or move the line to a deferred section.")
     print("-" * 72)
     if nonexistent:
-        for agent, tool, line, called in nonexistent:
-            print(f"  ✗ {agent}.md:{line}  {_ref(tool, called)}  — not in register_tools()")
+        for label, tool, line, called in nonexistent:
+            print(f"  ✗ {label}:{line}  {_ref(tool, called)}  — not in register_tools()")
     elif not args.quiet:
         print("  None.")
 
@@ -321,8 +458,8 @@ def main() -> int:
     print("   omits it, so its schema is never advertised. Usually: add the grant.")
     print("-" * 72)
     if not_granted:
-        for agent, tool, line, called, r in not_granted:
-            print(f"  ! {agent}.md:{line}  {_ref(tool, called)}  — absent from allowed_tools ({r})")
+        for label, tool, line, called, r in not_granted:
+            print(f"  ! {label}:{line}  {_ref(tool, called)}  — absent from allowed_tools ({r})")
     elif not args.quiet:
         print("  None.")
 
@@ -332,13 +469,17 @@ def main() -> int:
     print("-" * 72)
     if never_named:
         for agent, tool, r in never_named:
-            print(f"  · {agent}  `{tool}`  — granted ({r}), not mentioned in the file")
+            print(f"  · {agent}  `{tool}`  — granted ({r}), not named in any file it loads")
     elif not args.quiet:
         print("  None.")
 
     print("\n" + "=" * 72)
     print(f"{len(planned)} planned, {len(nonexistent)} named-as-live-but-unbuilt, "
-          f"{len(not_granted)} not-granted, {len(never_named)} undocumented.")
+          f"{len(not_granted)} not-granted, {len(never_named)} undocumented "
+          f"— across {len(agent_files)} agent and {len(persona_files)} persona file(s).")
+    if not args.no_personas and not persona_files:
+        print("Persona files: NONE READ. This run says nothing about them — see the")
+        print("warning in the header. Re-run on the VM, where mike's are present.")
     if nonexistent:
         print("Class 1: build the tool, or move the line into a deferred section so")
         print("it reads as a plan. Deleting the instruction is the last resort — the")
