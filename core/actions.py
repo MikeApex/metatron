@@ -50,6 +50,12 @@ ACTION_TOOLS: frozenset[str] = frozenset({
     "write_calendar_event", "update_calendar_event", "delete_calendar_event",
     # Contacts / CRM
     "write_contact", "log_interaction",
+    # merge_contacts archives one record into another; import_contacts_file creates many.
+    # Both change stored contact state, so both are actions the user would otherwise do
+    # by hand. Added 2026-08-18 — they shipped 08-18 unclassified, and an unclassified
+    # state-changing tool runs without appearing on the ACTIONS line, which is exactly
+    # the [DB-0810-13] failure this module exists to prevent.
+    "merge_contacts", "import_contacts_file",
     # Commitments and scheduled jobs
     "open_obligation", "close_obligation", "reopen_obligation",
     "write_schedule", "delete_schedule",
@@ -91,6 +97,9 @@ READ_TOOLS: frozenset[str] = frozenset({
     "get_regional_transit_info",
     "list_schedules", "list_obligations",
     "fetch_url", "read_email",
+    # fetch_rendered is fetch_url with a headless browser for JS-heavy pages — it reads
+    # the outside world and changes nothing. Added 2026-08-18 alongside the two above.
+    "fetch_rendered",
 })
 
 # Fallback for a tool registered after this file was last updated. The test
