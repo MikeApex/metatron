@@ -2506,3 +2506,16 @@ Also cut: the voice-blocker paragraph duplicated from `[DB-0815-02]`, which owns
   times."* He had not. `tests/test_null_ish_events.py` 43/43, including that the two `is_null_ish`
   copies agree — the stdlib-only constraint forces a duplicate, so drift must fail a test.
   *closed 2026-08-15*
+
+- **Knowledge layering steps 4–12 — the retrieval half.** **BUILT, DEPLOYED, AND STEP 10 RUN**
+  (`360b843`, `d128130`, `7cb9ebd`, `2a51f46`; 2026-08-18). Domain→agent map, derived manifest in
+  `load_profile()`, `KNOWLEDGE_TO_LOAD` pre-fetch in **both** pipeline paths, `WISDOM_PROPOSAL`
+  parsed in Python and stripped before synthesis, grants in parity across both routing files,
+  reserved names, Pattern Miner `other` sweep. `health_notes` migrated on the VM to
+  `standard_breakfast`/`food` and retired from `tools/profile.py`. A4 pipeline **3/3** after.
+  **The one deliverable deliberately NOT met:** the zero-specialist path. "Thinking about changing
+  up breakfast" reaches the stored fact but still dispatches Physical Health — twice, the second
+  after a worked example that changed nothing and was reverted. `coordinator.md:48` is left
+  dominant on purpose: over-dispatch costs tokens, under-dispatch loses a user's record. Pass A
+  gates retrieval instead; the reopen condition is in `tests/run_knowledge_routing.py`'s docstring.
+  *closed 2026-08-18*

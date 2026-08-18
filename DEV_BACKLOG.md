@@ -81,6 +81,9 @@ second item. The dev-session deliberation-leak note went to `## Later` under Saf
 by the standing reporter rule. **The duplicate is worth one line of attention:** nothing checks a
 machine-filed Inbox entry against items Mike filed himself that day, so the machine can restate a
 report he has already made.)*
+- **[needs building]** TfL/National Rail API integration bug: Status checks are passing station names (e.g., 'Charing Cross') instead of valid line IDs to the transport feed, causing 404 errors and masking live engineering works. Needs robust station-to-line-ID mapping.  
+  `2026-08-16T08:13:28.789371Z`
+
 - **Mike's own email address keeps being transcribed wrong, and he keeps correcting it.**
 Machine log ×3: *"corrected dictation error of their email address from diamond.mic@gmail.com"* —
 the exact near-miss `tools/crm.py`'s `_OWN_IDENTITY_SIMILARITY_THRESHOLD` was built to warn about.
@@ -117,51 +120,17 @@ it. `tools/obligations.py` stores due dates and `[DB-0814-04]` already shows a v
 *filed 2026-08-15 by the `/backlog deep` machine-log sweep. **Mike-originated** — every one of the
 four is him correcting the system — so it clears the entry bar on its own, and at ×4 it clears the
 machine bar too.*
-- **Knowledge layering steps 4–12 — the retrieval half, none of which is built.** Phase 1 shipped
-2026-08-15 (`13134bc`, `a35acfa`, deployed, migration applied): the wisdom store now has a subject
-axis and Mike's 59 entries are on it. **Nothing is wired at runtime** — no agent reads by domain,
-the Synthesizer still has no grant, and no manifest is rendered. Until these land the migration is
-inert: the store is correct and unreachable, which is where it started.
-
-**Authoritative plan: `~/.claude/plans/to-be-clear-we-modular-knuth.md`** (outside the repo —
-approved, Fable-5-reviewed, and it carries the decisions with their reasoning). Steps:
-
-4. `config/modules/knowledge_domains.yaml` — the domain→agent map, many-to-many. This is what
-   keeps a roster change an edit to a map rather than a user-data migration.
-5. Derived manifest in `load_profile()` — ~20 tokens naming which domains exist. Reaches
-   Synthesizer and Coordinator in one edit; specialists get `load_goals()` only and need the tool,
-   not the manifest.
-6. `KNOWLEDGE_TO_LOAD` in the Coordinator package, parsed and injected in
-   `_dispatch_from_coordinator()`. **Two pipeline paths build a Synthesizer input** —
-   `run_pipeline_session` and `run_pipeline_session_stream`. Editing one is the obvious defect.
-7. `WISDOM_PROPOSAL:` parsed in Python, not relayed as prose by the Synthesizer.
-8. Grants — `routing.yaml` and `routing_cloud.yaml` in parity. Six agent files already instruct
-   `read_wisdom` without holding it; `physical_health` holds `write_wisdom` uninstructed.
-9. Agent-file audit **and the Coordinator routing amendment**, which the review called the
-   highest-judgment text in the plan. See the blocker below.
-10.–12. `health_notes` → a `food`/`stated` entry (VM-side), reserved safety domain names, Pattern
-   Miner `other` sweep, trace instrumentation on wisdom reads.
-
-**⚠ Blocking for step 9, and it invalidates the obvious test.** `coordinator.md:145` lists `ate,
-skipped meals, diet, weight` as Physical Health signal words and `:48` mandates specialist dispatch
-for any advice or suggestion request. So a **correctly behaving** Coordinator dispatches Physical
-Health for "thinking about changing up breakfast" — the retrieval test fails by design. Rule 48
-exists because the Synthesizer was substituting general knowledge for specialist data, and this
-feature deliberately reopens that door for a defined class. **Both directions must be gated:** the
-retrieval case (`KNOWLEDGE_TO_LOAD: ["food"]`, oatmeal in the response, no PH dispatch) *and* a
-counter-test that PH **is** still dispatched for "log what I ate". Fixing over-dispatch by creating
-under-dispatch is the real risk and only the counter-test catches it.
-
-**Deferred with a named trigger, not open-ended:** auto-pushing a domain into a specialist's
-prompt. Promote a (domain, agent) pair only when traces show that agent reads that domain on >70%
-of its dispatches, reviewed after two weeks of real use. Phase-2 semantic retrieval within a domain
-is `[DB-0815-13]`, gated on a domain read hitting the 15-entry cap.
-
-*raised by Claude at the close of the 2026-08-15 knowledge-layering session · Mike approved the
-plan; this exists so the remaining build is visible in the backlog count rather than only in a
-plan file outside the repo*
-- **24 of Mike's 59 wisdom entries are not facts about him, and three classes of them actively
-mislead the system.** Found by reading every entry during the 2026-08-15 schema migration
+- **24 of Mike's 59 wisdom entries are not facts about him — the WRITERS are half-fixed, the
+store is not.** ⚠ **Updated 2026-08-18:** this item's own "upstream question worth answering
+first" is partly answered. Live runs caught the Synthesizer writing *intentions* ("wants to
+change breakfast") as standing facts, twice in two turns; `write_wisdom`'s schema and
+`synthesizer.md` now separate an intention from a habit, and the next run kept a real observed
+pattern while dropping the intention. `oatmeal_formula` is resolved — merged into
+`standard_breakfast` with an archive pointer when step 10 ran. **Still open:** the eight
+interaction preferences needing `write_persona`, the three tool defects, the remaining
+duplicate pairs — and Mike's store still holds intention-shaped entries written before the fix
+(`dietary_analysis_interest`, `lunch_options`).
+ Found by reading every entry during the 2026-08-15 schema migration
 (`a35acfa`) — the migration reports them and deliberately moves nothing, because relocating user
 data is a separate act.
 
@@ -206,6 +175,27 @@ refills.
 
 *raised by Claude during the 2026-08-15 knowledge-layering session, from reading all 59 live
 entries · full per-entry assignment and reasoning in `scripts/migrate_wisdom_schema.py` KEY_MAP*
+- **The A4 safety regression passes without ever touching the knowledge layer.** `run_a4_safety.py
+--suite pipeline` runs against `sarah_chen`, and her VM wisdom store holds **one** entry — a work
+boundary pattern no clinical scenario touches. So the manifest renders one subject, no
+`KNOWLEDGE_TO_LOAD` fires, and 3/3 PASS says nothing about whether standing knowledge interacts
+safely with clinical flags. This matters because the knowledge layer now injects fetched entries
+into specialist directives, including `mental_wellbeing`'s: an entry that contradicts a clinical
+read is exactly the case nothing currently exercises.
+
+Giving it coverage means health-domain entries on the **VM's** `sarah_chen` — either seeded
+deliberately or accumulated through use. **Not done on purpose:** seeding a clinical-adjacent
+fixture changes safety-test conditions, and that is a decision rather than a chore. A4's own
+`seed_medication_fixture` is the precedent for how to do it if the answer is yes.
+
+Related trap, found the same day: **the Mac and VM copies of a persona store diverge silently.**
+`sarah_chen` held 38 entries on the Mac and 1 on the VM, and `data/personas/*/` is gitignored so
+nothing reconciles them. That divergence produced a confidently wrong recommendation — "migrating
+her makes A4 exercise the knowledge path" — which was true of the Mac copy and false of the one
+A4 runs against. Anything reasoning about a persona's data has to name which machine it read.
+
+*raised by Claude at the close of the 2026-08-18 knowledge-layering session, after A4 passed 3/3
+twice against an empty manifest · both stores are now migrated; only the coverage gap remains*
 
 ---
 
@@ -1015,6 +1005,15 @@ item's evidence is current and nothing new is waiting. **(3) The empty-detail fi
 "`×N` is a similarity cluster, not a repeat count" finding were fixed the same day (`[DB-0815-09]`,
 closed — `archive/backlog_closed_2026-08.md`). **A `×N` before 2026-08-15 was a chain length, not
 a repeat count; entries above that date should be read with that in mind.**)*
+
+- **[already applied by the tool]** Updated Interaction Preferences to formalize the rule: Open sessions with the most time-sensitive commitment, overdue follow-up, or unresolved thread, naming it specifically. If genuinely nothing is outstanding, keep it to one line and ask what is on.  
+  `2026-08-18T09:17:27.961459Z`
+
+- **[answered without retrieving anything]** Answered with nothing retrieved — 2 search(es) ran but returned no sources. Query: Check Southeastern railway status for Sunday August 16, 2026. Are there any engineering works affecting the Greenwich line to London Bridge or Charing Cross?  ×2  
+  `2026-08-16T08:08:23.783712Z`
+
+- **[user corrected a prior turn]** User corrected transit route to Transport Museum, explicitly excluding Jubilee and Piccadilly lines which were previously suggested.  ×2  
+  `2026-08-16T08:06:21.241217Z`
 
 - **[user corrected a prior turn]** The user is correcting the language setting; they want to communicate in Bulgarian, not English.  
   `2026-08-15T21:06:57.317908Z`

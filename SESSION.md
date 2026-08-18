@@ -1,35 +1,27 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-15, eleventh session — **the wisdom store IS the knowledge layer, and phase 1 of
-12 is live.** `tools/wisdom.py` already existed for standing facts and said so in its docstring;
-it was almost unreachable and its axis had collapsed. `category` → **`domain` + `provenance`**
-(`13134bc`, `a35acfa`, deployed; Mike's 59 entries migrated on the VM, backup alongside).
-**Subject axis, never the agent roster** — a roster change must not become a user-data migration,
-and `food` is read by three agents, so one agent's namespace asserts false ownership. `seasonal`
-is **not** a domain (temporal, orthogonal); **`provenance: stated|observed`**, not `kind`, because
-only that is decidable from a model's own context. **Steps 4–12 are unbuilt and nothing is wired
-at runtime** — no agent reads by domain yet, so the change is inert beyond the store being
-correct. Plan (authoritative, outside the repo):
-`~/.claude/plans/to-be-clear-we-modular-knuth.md`.*
+*Updated: 2026-08-18 — **the knowledge layer is wired, deployed, and its plan is closed.** Steps
+4–12 of `~/.claude/plans/to-be-clear-we-modular-knuth.md` shipped (`360b843`, `d128130`,
+`7cb9ebd`, `2a51f46`): a derived manifest naming which subjects are on file, `KNOWLEDGE_TO_LOAD`
+pre-fetch in **both** pipeline paths, `WISDOM_PROPOSAL` parsed in Python, grants in parity, and
+`config/modules/knowledge_domains.yaml` as the only coupling between subjects and the roster.
+Step 10 ran on the VM: Mike's `health_notes` is now `standard_breakfast`/`food`, out of every
+head-layer prompt, and `health_notes` is retired from `tools/profile.py`. **A4 pipeline 3/3
+after.** Gate: `tests/run_knowledge_routing.py` (self-seeding, refuses `mike`).*
 
-*Three findings from that session outrank its feature. **`write_wisdom` had no lock on a
-read-modify-write** — 40 concurrent writes kept **2**; fixed, and the probe verified
-discriminating against the pre-fix code. **`vertex-key.json` was neither tracked nor
-gitignored**, one `git add -A` from a public remote — the Denied row governs what a session may
-edit and does nothing to stop git. **24 of Mike's 59 wisdom entries do not belong in the fact
-store**: eight are interaction preferences for the persona file, three are tool defects, two pairs
-duplicate, and `oatmeal_formula` — this track's own worked example — is an unfilled placeholder.
-All reported in place, none moved; moving them is a separate act.*
+*⚠ **The zero-specialist path does not fire, by decision.** "Thinking about changing up
+breakfast" reaches the stored fact but still dispatches Physical Health — twice, the second time
+after a worked example that changed nothing and was reverted. `coordinator.md:48` mandates
+dispatch for advice and is **deliberately left dominant**: over-dispatch costs tokens,
+under-dispatch loses a user's record. Pass A now gates retrieval, not the skip. Reopen only with
+a way to prove Pass B survives the change — reasoning is in the test docstring.*
 
-*⚠ **Blocking for step 9, found by the Fable 5 plan review:** the oatmeal test is unachievable as
-first written. `coordinator.md:145` lists `ate, diet, weight` as Physical Health signal words and
-`:48` mandates dispatch for advice requests, so a **correct** Coordinator fails it. The feature
-needs a knowledge-only routing criterion **plus a counter-test** that PH is still dispatched for
-"log what I ate" — fixing over-dispatch by creating under-dispatch is the real risk.*
-
-*Dev-workflow track — **Phase 5 is CLOSED; Phase 4 (ROADMAP split) stays deferred; A7 unchanged by
-decision** (features first). ⚠ **The one live divergence:** `docs/CONVENTIONS.md:143` points
-here for current Model IDs, but § Model IDs below still reads *updated 2026-07-27*.*
+*Two things the next session should not re-derive. **A key-based duplicate check is not
+evidence** — step 10's dry run reported no collision while the same fact sat under
+`oatmeal_formula`; `find_related_wisdom()` exists because of it, and **semantic similarity was
+measured and rejected** (0.484 duplicate vs 0.479 nuance — indistinguishable). **The Mac and VM
+persona stores diverge silently**: `sarah_chen` held 38 entries on the Mac and 1 on the VM. Both
+migrated; the Mac's 38 → 19 after consolidating a 20-entry deflection cluster.*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -121,6 +113,13 @@ each picking up the unfinished evening ritual and re-asking the same two questio
 "raise a thing once" has no memory that a question was asked and never answered.** Rewrite the item
 around that rather than running its trace week to `due: 2026-08-17`.
 
+**Knowledge layer — what is NOT covered.** A4 passes with `sarah_chen`'s manifest holding one
+`work` entry, so the regression **never touches the knowledge path**. Giving it coverage means
+health-domain entries on the *VM's* `sarah_chen`, which changes safety-test conditions and is a
+decision, not a chore. Filed, not done. Mike's own store still holds intention-shaped entries
+(`dietary_analysis_interest`, `lunch_options`) — the class the new write guidance now prevents,
+and part of the 24 flagged on 08-15 as not belonging in the fact store.
+
 ---
 
 ## Recent sessions
@@ -131,10 +130,10 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-18 | **Knowledge layering wired, deployed, plan closed.** Steps 4–12: derived manifest, `KNOWLEDGE_TO_LOAD` pre-fetch in both pipeline paths, `WISDOM_PROPOSAL` parsed in Python, grants in parity, seven agents that were instructed to read the store and granted nothing. Step 10 run on the VM; `health_notes` retired. **The zero-specialist path was abandoned rather than tuned for** — the counter-test exists to stop exactly that trade. Found by running it: two turns wrote an *intention* as standing fact; a key-based duplicate check missed a placeholder holding the same fact; Mac and VM `sarah_chen` stores had diverged 38 vs 1 | `360b843`, `d128130`, `7cb9ebd`, `2a51f46` — **deployed, A4 3/3** |
 | 08-15 | **Knowledge layering phase 1 — the wisdom store gains a subject axis.** The store already existed and was almost unreachable: six agent files instruct `read_wisdom` and are not granted it, and `write_wisdom` silently coerced unknown categories, so every Big Five entry MW ever wrote was misfiled. `category` → `domain` + `provenance`; alias map with a *measured* fuzzy cutoff; refusal never terminal, because the Diarist writes from a discarded-output thread. Found while building: **no lock on a read-modify-write** (40 concurrent writes kept 2), and **`vertex-key.json` neither tracked nor gitignored**. Migration heuristics failed on live data ("eat" inside "weather"), so all 59 entries were assigned by hand — which found 24 that do not belong in the store, including the placeholder `oatmeal_formula` | `13134bc`, `a35acfa` — **deployed + migration applied** |
 | 08-15 | **Bulgarian speech-in benchmarked, held indefinitely.** `WHISPER_MODEL_SIZE=base.en` is English-only, cannot emit Cyrillic; `base` (multilingual) gets right script at 46.4% WER, `small` gets 27.6% WER but near-real-time RTF (0.967) on the single-worker pool. Neither clears the bar — Mike's call to hold `[DB-0815-02](a)` in `## Later` indefinitely | none — benchmark + backlog note only, **not deployed** |
 | 08-15 | **`/backlog deep` — the correction signal was measuring itself wrong twice over.** 93 of 174 `USER_CORRECTION` events said only "None" (a template slot a model fills rather than omits — the agent file was left alone on purpose), and a `×N` was a *chain length*, not a repeat count: a chain of Heathrow corrections was reported as "calendar events imply completion ×16". Both fixed; historical events filtered at read, never deleted. CRM gained `merge_contacts` (archive-on-merge, first here) — **and being registered was not enough, it was granted to no agent.** Machine log had no *removal* step at all: 22 cleared, 8 ⚠ → 3. `fold_fragments()` was miscounting prose fragments as `0 inbox` | `6e57c73`, `2fa8cd6`, `704e79b`, `214a547`, `19cfd12` — **deployed** |
-| 08-15 | **Answer the user in their own language, and stop broadcasting profile detail.** `[DB-0810-15]` shipped as Python post-processing after `filter_output()` — prose-in-`synthesizer.md` and a model-called tool were both rejected, the second because a tool call is an extra turn *through* the expensive model. Bulgarian verified live. Found by verifying the render: Mike's `name` field held a contact correction and rode every prompt; `_PROMPT_EXCLUDED` enforced nothing; `Eva`/`Iva Diamond` were one person and the CRM has no merge tooling. Backlog gained `due:`-marked time-gating | `8a7d1d7`, `f9ffd2a`, `b3ff108` — **deployed** |
 ---
 
 ## Useful context to pull as needed

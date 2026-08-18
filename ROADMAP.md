@@ -212,6 +212,16 @@ Phase 5 was built iteratively across many sessions, each solving a local problem
 - **`core/tools.py`** — `register_tools()` and `dispatch_tool()`. Zero session logic. This is the file B2 (PoLP) will work in when implementing per-agent tool injection.
 - **`core/orchestrator.py`** — shrinks to: `filter_output`, `_run_single_agent`, `_dispatch_from_coordinator`, `run_pipeline_session`, `run_pipeline_session_stream`, `run_session`, `run_interactive`, and the `_HEAD_LAYER_AGENTS` / `_ROUTING_LAYER_AGENTS` constants. Owns the pipeline and nothing else. Imports from `core/config`, `core/providers`, `core/tools`.
 
+> **⚠ The knowledge layer added four residents here on 2026-08-18 — A8 must place them, not
+> discover them.** `_knowledge_manifest()` belongs with `load_profile()` in **`core/config.py`**;
+> `_resolve_knowledge()`, `_knowledge_block()` and `_file_wisdom_proposals()` are pipeline
+> concerns and **stay in `core/orchestrator.py`** beside `_dispatch_from_coordinator()`. The
+> knowledge-layer plan ran before A8 deliberately, on the standing rule that a pending refactor
+> is checked before adding to this file (`.claude/rules/orchestrator.md`). **Regression gate
+> addition:** `python tests/run_knowledge_routing.py --persona danny_park` must still pass after
+> the split — it is the only check that the pre-fetch survives, and it exercises
+> `run_pipeline_session_stream`, the path a module move is most likely to break.
+
 **Server split — `core/server.py` → 2 files:**
 
 - **`core/monitor_api.py`** — all `/monitor/*` endpoints (`monitor_personas`, `monitor_conversations`, `monitor_traces`, `monitor_stream`, `monitor_history`, `monitor_file`) and their helpers (`_all_personas`, `_conversation_files`, `_trace_files`, `_read_jsonl`). Mounted as a FastAPI router.
