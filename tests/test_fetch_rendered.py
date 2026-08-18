@@ -29,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from tools.untrusted import TAG  # noqa: E402
 from tools.web import fetch_rendered  # noqa: E402
+import tools.web as web  # noqa: E402  (memory-guard tests patch module attrs)
 
 LIVE = os.environ.get("METATRON_NETWORK_TESTS") == "1"
 PLAYWRIGHT_AVAILABLE = importlib.util.find_spec("playwright") is not None
@@ -138,6 +139,62 @@ def test_live_render_returns_wrapped_content():
     assert "Example Domain" in r["content"]
     assert r["content"].startswith(f"<{TAG}")
     assert r["security_note"]
+
+
+
+
+# --- memory guards: the friendly refusal must come BEFORE the browser launches ---
+
+def test_low_memory_refuses_politely_without_launching():
+    """Pre-flight refusal, and it must not touch Playwright at all."""
+    import unittest.mock as mock
+    launched = {"did": False}
+
+    def _boom(*a, **k):
+        launched["did"] = True
+        raise AssertionError("browser must NOT launch when memory is low")
+
+    with mock.patch.object(web, "_available_memory_mb", return_value=100), \
+         mock.patch.object(web, "_deprioritize_browser_processes", _boom):
+        out = web.fetch_rendered("https://example.org/page")
+    assert "error" in out, out
+    assert out["error"] == web.RENDER_BUSY_MESSAGE, out
+    assert launched["did"] is False
+
+
+def test_unknown_memory_does_not_block_local_dev():
+    """None from /proc means 'cannot tell' — must not become a refusal."""
+    import unittest.mock as mock
+    with mock.patch.object(web, "_available_memory_mb", return_value=None):
+        out = web.fetch_rendered("http://127.0.0.1/x")
+    # blocked by SSRF, not by the memory guard — proves it fell through
+    assert "error" in out and out["error"] != web.RENDER_BUSY_MESSAGE, out
+
+
+def test_second_concurrent_render_is_refused_not_queued():
+    """The lock returns the friendly message rather than waiting."""
+    acquired = web._RENDER_LOCK.acquire(blocking=False)
+    assert acquired, "lock should have been free"
+    try:
+        out = web.fetch_rendered("https://example.org/page")
+        assert out.get("error") == web.RENDER_BUSY_MESSAGE, out
+    finally:
+        web._RENDER_LOCK.release()
+
+
+def test_lock_is_released_after_a_failed_fetch():
+    """A refusal must not leave the lock held — that would wedge every later call."""
+    import unittest.mock as mock
+    with mock.patch.object(web, "_available_memory_mb", return_value=10):
+        web.fetch_rendered("https://example.org/page")
+    got = web._RENDER_LOCK.acquire(blocking=False)
+    assert got, "lock was still held after a refusal"
+    web._RENDER_LOCK.release()
+
+
+def test_available_memory_reads_proc_or_returns_none():
+    val = web._available_memory_mb()
+    assert val is None or (isinstance(val, int) and val >= 0), val
 
 
 if __name__ == "__main__":

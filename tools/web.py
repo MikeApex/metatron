@@ -34,8 +34,10 @@ which is why this is granted narrowly rather than handed to every specialist.
 from __future__ import annotations
 
 import ipaddress
+import os
 import re
 import socket
+import threading
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
 
@@ -283,6 +285,79 @@ FETCH_URL_SCHEMA = {
 RENDER_TIMEOUT_MS = 15_000       # hard cap on page load; matches fetch_url's TIMEOUT_SECONDS order of magnitude
 RENDER_NETWORK_IDLE_MS = 5_000   # how long to additionally wait for network-idle, capped — never indefinite
 
+# --- Memory safety for the headless browser -------------------------------------
+#
+# The VM this runs on is a 4 GB e2-medium with NO swap, and the kernel has already
+# OOM-killed the server once (2026-08-15 15:02, metatron-server.service, 3.6 GB RSS).
+# That is the whole reason these three guards exist, and the order matters:
+#
+#   1. A pre-flight MemAvailable check, because an OOM kill is SIGKILL — the process
+#      cannot catch it, log it, or return a message. A polite "try again later" is
+#      only possible BEFORE the browser is launched, never after.
+#   2. A single-render lock, because the failure mode is concurrent renders, not one.
+#   3. oom_score_adj on the browser processes, so that IF the machine still runs out,
+#      the kernel picks Chromium instead of the server. Raising a process's own score
+#      is unprivileged; lowering one is not, which is why we push the browser up
+#      rather than protecting the server down.
+#
+# Guard 3 is the backstop, not the mechanism. Without guard 1 the user gets a dead
+# service and no message, because by default the kernel kills the biggest process,
+# and that is the server.
+RENDER_MIN_AVAILABLE_MB = 700    # Chromium needs ~200-400 MB/page; this leaves margin
+RENDER_BUSY_MESSAGE = (
+    "Request can't be completed due to system limitations. Try again later."
+)
+
+_RENDER_LOCK = threading.Lock()
+
+
+def _available_memory_mb() -> int | None:
+    """
+    Free-and-reclaimable memory in MB from /proc/meminfo, or None where /proc does
+    not exist (macOS dev machines). None means "cannot tell" and is deliberately
+    treated as "allow" — the check is a safety valve on the VM, not a gate that
+    should break local development.
+    """
+    try:
+        with open("/proc/meminfo", "r") as fh:
+            for line in fh:
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1]) // 1024
+    except (OSError, ValueError, IndexError):
+        return None
+    return None
+
+
+def _deprioritize_browser_processes() -> None:
+    """
+    Mark our Chromium child processes as the kernel's preferred OOM victim.
+
+    Best-effort and silent: it walks /proc for processes owned by this user whose
+    cmdline looks like the headless browser and raises oom_score_adj to the maximum.
+    Safe to call while holding _RENDER_LOCK, which guarantees these are ours. Any
+    failure here is ignored — it degrades the backstop, it does not break the fetch.
+    """
+    try:
+        our_uid = os.getuid()
+    except AttributeError:
+        return  # not POSIX
+    try:
+        pids = [d for d in os.listdir("/proc") if d.isdigit()]
+    except OSError:
+        return
+    for pid in pids:
+        try:
+            if os.stat(f"/proc/{pid}").st_uid != our_uid:
+                continue
+            with open(f"/proc/{pid}/cmdline", "rb") as fh:
+                cmd = fh.read().replace(b"\x00", b" ").decode("utf-8", "replace")
+            if "chrome" not in cmd and "headless_shell" not in cmd:
+                continue
+            with open(f"/proc/{pid}/oom_score_adj", "w") as fh:
+                fh.write("1000")
+        except (OSError, ValueError, PermissionError):
+            continue
+
 
 def _extract_visible_text(html: str) -> tuple[str, str]:
     """Reuse the same HTML-to-text extractor fetch_url uses, so both tools read alike."""
@@ -318,6 +393,25 @@ def fetch_rendered(url: str) -> dict:
     if err:
         return {"error": err}
 
+    # Only one render at a time. Concurrent Chromium instances are the actual way
+    # this machine runs out of memory — one is affordable, two is not.
+    if not _RENDER_LOCK.acquire(blocking=False):
+        return {"error": RENDER_BUSY_MESSAGE}
+    try:
+        return _fetch_rendered_locked(url)
+    finally:
+        _RENDER_LOCK.release()
+
+
+def _fetch_rendered_locked(url: str) -> dict:
+    """The body of fetch_rendered, run while holding _RENDER_LOCK."""
+    # Pre-flight, and the reason it is here rather than in an exception handler:
+    # an OOM kill is SIGKILL. Nothing downstream of it can return a message, so
+    # the only place a graceful refusal can be produced is before the launch.
+    available = _available_memory_mb()
+    if available is not None and available < RENDER_MIN_AVAILABLE_MB:
+        return {"error": RENDER_BUSY_MESSAGE}
+
     try:
         from playwright.sync_api import Error as PlaywrightError
         from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
@@ -344,6 +438,7 @@ def fetch_rendered(url: str) -> dict:
                         f"installed (`playwright install chromium`) — use fetch_url instead."
                     )
                 }
+            _deprioritize_browser_processes()
             try:
                 page = browser.new_page(user_agent=USER_AGENT)
                 page.set_default_timeout(RENDER_TIMEOUT_MS)
