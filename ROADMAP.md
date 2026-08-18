@@ -287,6 +287,70 @@ to be cut and added rather than accepted wholesale:
 - **Cost and latency:** tokens and wall-clock per session, by agent, so D2's cost work has a real
   baseline rather than an estimate.
 
+**Step 1b — four amendments from an Opus consult, 2026-08-18. Three closed real gaps in the seven
+questions above; the fourth needed its premise corrected.**
+
+1. **A cohort anchor, and it is the one field that cannot be added later.** Every daily row carries
+   a stable user id **and that user's first-use date**, even while there is exactly one user and it
+   is Mike. Retention is a function of cohort age; cohort age is not reconstructable after the fact.
+   Written from day one, retention curves are free in nine months. Omitted, they are unavailable
+   permanently — this is the single highest-regret omission available here.
+2. **Raw daily rows are kept forever — never windowed, never overwritten, never compacted.** They
+   are a few hundred bytes each and they are the entire asset. (§ A9 already said "durable"; this
+   states it as a prohibition, because "durable" is what a windowing job believes it is preserving.)
+3. **The core metric is ABSORBED WORK, not engagement — Mike's definition, 2026-08-18, and it
+   inverts part of the list above.** Asked to pick one "core action", he rejected the framing:
+   *"Success isn't a single instance measure. The more items that Metatron handled where the user
+   didn't have to is the core metric... A user should go through life seamlessly and NOT need to
+   open their phone nearly as often."*
+
+   **Consequence that must not be lost: questions 1 and 3 are no longer "up is good."** Sessions per
+   day and days-used-per-week are *attention costs*, not value. A rollup that treats rising
+   engagement as success measures the opposite of the product thesis. They stay in the set as the
+   **denominator**.
+
+   **Made measurable, entirely from signals that already exist:**
+   - **An absorbed action** = a tool call with a real-world effect the user would otherwise have
+     performed themselves: `send_email`, `write_calendar_event`/`update`/`delete`, `write_schedule`,
+     `open_obligation`/`close_obligation`. **Explicitly excluded:** internal bookkeeping
+     (`write_log`, `write_journal`, `write_wisdom`, context-tracker writes) — that is the system
+     talking to itself and counting it would inflate the headline with housekeeping — and all reads.
+   - **Three autonomy tiers**, separable today because `is_proactive` and the `consume()` confirm
+     fingerprint both already exist: **T3 autonomous** (proactive/scheduled origin, no confirm —
+     cost the user nothing), **T2 approved** (passed the confirm gate — cost one approval),
+     **T1 directed** (user asked in that turn — cost the user the thought).
+   - **Headline: absorbed actions (T3 + T2) per unit of user attention** — per user turn, and per
+     minute of user-initiated session. **Rising means more absorbed for less of the user**, which is
+     the thesis stated as a number.
+
+   **What cannot be measured, stated so nobody builds a fake version of it.** Mike's ultimate signal
+   — obsolescence of his *other* apps — is not observable from inside Metatron without screen-time
+   APIs or device surveillance, which contradicts everything else in this document. **Do not proxy
+   it with anything inferred.** Two honest substitutes: the attention ratio above, which carries the
+   same signal from the inside, and a **periodic self-report** on a slow cadence through the
+   existing check-in mechanism, which is stated data rather than inferred.
+4. **Question 7 is a business metric, not engineering telemetry — reframe it as such.** Tokens and
+   wall-clock per agent are the raw inputs to **COGS per active user per month**, which for an
+   agentic life manager sets the pricing floor and decides whether a subscription exists at all.
+   Derive and track cost-per-active-user-per-month as a headline figure in its own right, not as a
+   performance stat that happens to contain the numbers.
+
+**On the local-only decision and what it costs.** The consult argued that local-only analytics means
+no data at fundraise. **That premise does not hold in the current phase** — there is one user, the
+data is his, on his VM, and he can read and show it. The gap opens when an alpha cohort of *other
+people* exists, which is the exact trigger § Section 0 already names: the ZDR clarification "lapses
+the moment the deployment stops being single-user." So this is not a new trade-off to settle, it is
+work § Section 0 implies.
+
+**What that makes actionable now is narrow and cheap: every rollup row is counts-only and
+content-free from the first line of code.** No question text, no response text, no contact or place
+names, no free-text fields of any kind — only counts, durations, ids and dates. Question 6
+(repeat-question rate) is the one that will tempt content in; it must be computed to a count and the
+text discarded. Get this right and a future **explicit opt-in** upload of aggregate rows for an alpha
+cohort is a small gated build. Get it wrong and it is a schema migration against data you cannot
+re-derive. **The transport itself is not built now and is not authorised here** — it requires the
+fresh ruling § Section 0 already demands at the multi-user transition.
+
 **Step 2 — a durable daily rollup.** One append-only record per day, written by a scheduler
 maintenance job (`_DEFAULT_JOBS` in `core/scheduler.py`, not a per-persona `scheduler.yaml` entry —
 this is maintenance, not a prompt). It must be **derived, small, and permanent**: derived so raw
@@ -308,6 +372,49 @@ the point is answering the questions, and a table read once a week does that.
 3. **Never surfaced to the user.** Per `CLAUDE.md` § Discretion — the tool does not tell the user it
    is measuring him, and no agent references these metrics in a response. This is developer
    instrumentation, not a feature.
+
+**A9a — Review and refine the analytics, after real use. NOT NOW, and that is deliberate.**
+*Gate: the `mike` persona has goals and real data loaded, and has been in ongoing daily use — Mike's
+call, 2026-08-18: build a first draft, then reevaluate, because the current store is too thin for
+the action counts to mean anything.*
+
+**What shipped as the first draft (2026-08-18):** `tools/analytics.py` — a content-free daily
+rollup with the cohort anchor pinned, absorbed-work counts by autonomy tier, attention as the
+denominator, and a `--report` table. Wired as `daily_analytics_rollup` at 05:40 in
+`_DEFAULT_JOBS`. Backfilled 26 days of existing traces.
+
+**Why shipping a provisional definition is safe here, stated so the review is not feared:** rows are
+**derived from traces, which are retained**, so a changed definition can be re-derived over history.
+The only field that cannot be reconstructed is `cohort_day`/`first_use` — which is exactly why it
+is pinned now, in a state file, rather than recomputed. **Collection had to start; the derivation
+did not have to be final.**
+
+**Baseline from the backfill, which the review should test its changes against:** 26 active days,
+**94 absorbed actions of which only 10 were fully autonomous**, 409 user sessions, **0.23 absorbed
+per user session**. Absorbed work was **zero until 2026-08-02** — the tool was a capture-and-recall
+system for its first 41 cohort days and only became an absorber when the calendar, email and
+obligation tools landed. 27.9M input tokens against 436K output over those days.
+
+**What the review must settle — the known-provisional parts:**
+
+1. **`_WORLD_AFFECTING` is a judgement call and it sets the headline.** Every addition raises the
+   number, so it is a decision, not a tidy-up. Re-derive history after any change and say so.
+2. **T2 cannot yet be separated from T1** — `ToolCallRecord` carries no confirm-gate marker, so
+   "user approved" and "user directed" are pooled in `absorbed_user_present`. Adding the marker is a
+   `core/trace.py` change; **the split is not faked in the meantime**, which is the right trade but
+   should not become permanent.
+3. **Cost per active user per month is not derived yet** — tokens are recorded, the Vertex price is
+   not applied. Deliberate: prices have a short half-life and § *Infrastructure traps* forbids
+   recording values that go stale. Read the price from config at report time, never from memory.
+4. **The self-report substitute for "obsolescence of other tools" is not built.** A slow-cadence
+   check-in question is the honest version; nothing infers it.
+5. **Whether absorbed-per-user-session is the right headline ratio**, or whether per-user-minute
+   is, once sessions are less dominated by development testing than the backfill is.
+
+**Do not review this before there is real data.** The 2026-08-18 baseline is mostly development
+traffic, and tuning a metric against test sessions would bake in exactly the wrong shape.
+
+---
 
 **Test:** run for one week of real use; produce answers to at least the engagement, breadth and
 tool questions from the rollup alone, without reading raw traces. Pass: each answer traces to a

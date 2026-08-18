@@ -448,6 +448,17 @@ _DEFAULT_JOBS: dict[str, dict] = {
         "function": "tools.calendar_audit.audit_calendar_duplicates",
         "notification": False,
     },
+    # A9 product analytics. 05:40 so it follows the other two audits, and it rolls up
+    # YESTERDAY, which is a closed day. Collection has to start before Alpha even while
+    # the metric definitions are still provisional: rows derive from traces, so a changed
+    # definition can be re-derived, but cohort_day cannot be reconstructed after the fact.
+    "daily_analytics_rollup": {
+        "enabled": True,
+        "time": "05:40",
+        "days": "daily",
+        "function": "tools.analytics.rollup_yesterday",
+        "notification": False,
+    },
     # Notes passed events that nothing in the record mentions, for the morning brief to
     # decide about. `notification: False` is not a preference — reconcile_check returns a
     # plain string and never a notify dict, because the check is crude text matching and

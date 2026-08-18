@@ -224,28 +224,29 @@ standing rule distrusts.*
   was waiting on is not this item's. Carrying it here excluded a buildable item from the workable
   count — a marker scoped to half an item cannot be seen by the counter, which reads per item.*
 
-- **2. [DB-0818-03] We cannot say how much the tool is used, and after Alpha ships it is too late
-  to start.** Mike, 2026-08-18: *"We want to be able to measure and quantify usage FROM THE START."*
-  **Full specification is `ROADMAP.md` § A9**, which is now a named requirement of the Alpha gate —
-  not restated here, because a duplicate copy is the thing that goes stale.
-  **The one-line reason it is `## Now` and not `## Later`:** Section 3 defines Alpha as the moment
-  data accumulation begins. Instrumentation added afterwards leaves the first weeks unmeasured, and
-  those are both the least representative weeks and the only ones that cannot be recovered.
-  **The work is smaller than it sounds — collection mostly exists.** `core/trace.py` already records
-  the agent path, per-turn tokens, every tool call, and an `is_proactive` flag; `tools/logger.py`
-  writes quality events; `/monitor/*` exposes the streams. What is missing is a **defined question
-  set** and a **durable daily rollup**, because traces are per-request and prunable, so today
-  nothing is actually answerable from them.
-  **Start with step 1 only — the questions document — and put it to Mike before building anything.**
-  The metric set decides what gets stored, and storing the wrong things is the failure that looks
-  like success for a month.
-  **Do not reach for a third-party analytics SDK.** PostHog/Amplitude/Mixpanel and peers ship
-  behavioural data off-box; usage data about the user is personal data, and § Section 0 forbids it.
-  Local files, local aggregation.
+- **2. [DB-0818-03] We could not say how much the tool is used — first draft shipped, review
+  deferred until there is real data.**
+  **✅ BUILT 2026-08-18.** [tools/analytics.py](tools/analytics.py): content-free daily rollup, cohort
+  anchor pinned, absorbed-work counts by autonomy tier, attention as the denominator, `--report`
+  table. Wired as `daily_analytics_rollup` (05:40) in `_DEFAULT_JOBS`. 9 tests. 26 days backfilled.
+  **The core metric is Mike's, and it inverts the usual reading:** *"The more items that Metatron
+  handled where the user didn't have to is the core metric."* So sessions are the **denominator**,
+  not the value — a rollup treating rising engagement as success would measure the opposite of the
+  thesis.
+  **Baseline: 94 absorbed actions over 26 days, only 10 fully autonomous, 0.23 per user session —
+  and zero before 2026-08-02.** The tool was capture-and-recall for its first 41 cohort days.
+  **@waiting, not open work:** review and refinement is **`ROADMAP.md` § A9a**, gated on the `mike`
+  persona having goals and real data loaded and being in ongoing use. Mike's call — tuning a metric
+  against development traffic would bake in the wrong shape. Known-provisional parts (the
+  `_WORLD_AFFECTING` list, the un-split T1/T2, cost-per-active-user, the self-report substitute) are
+  enumerated there.
+  **Safe to defer because rows derive from retained traces** — a changed definition can be
+  re-derived over history. Only `cohort_day` could not be, which is why it is pinned now.
   @kind: feature
-  @session: which questions matter — the metric set is Mike's call and it determines what is stored
-  *filed 2026-08-18 by Mike · **Mike-originated**, so it clears the entry bar outright · ranked 2
-  behind the venue item only because that one is a short build and this one opens with a decision*
+  @waiting: `mike` persona loaded with goals and real data, in ongoing daily use → then `ROADMAP.md` § A9a
+  *filed 2026-08-18 by Mike · built same day · Opus consult folded in: cohort anchor, keep-rows-forever,
+  core-action reframe, COGS framing — the consult's "no data at fundraise" premise was corrected, since
+  in a single-user phase the data is Mike's and on his VM*
 
 
 ## Later
