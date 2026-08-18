@@ -2674,3 +2674,73 @@ were verified by running it, not by reading it.
   *filed 2026-08-10 by Mike · (a) closed 2026-08-15, see `archive/backlog_closed_2026-08.md` ·
   (b) reframed and unblocked 2026-08-15 by Mike; the three pieces above were verified against
   current code, not inferred from the entry*
+
+
+### Closed 2026-08-18, later the same session — the VM work, done rather than filed
+
+Both items were filed at ~11:30 and closed at ~11:50. Filing them at all was the right call — they
+were real, and had the session ended there they would have been the loose ends — but neither
+survived contact with an hour of attention.
+
+- **[DB-0818-01] The VM has no swap and has already been OOM-killed three times — CLOSED, applied
+  to the VM.** `scripts/vm_add_swap.sh` run: 2 GB swapfile live, `/etc/fstab` entry written so it
+  survives a reboot, `vm.swappiness=10`. `scripts/vm_memory_watch.py --install-units` run:
+  `metatron-memory-watch.timer` enabled and firing every 5 minutes, running as the repo owner
+  rather than root so it leaves no root-owned files under `data/`.
+  **The watchdog justified itself on its first run**, recording the pre-existing kill as a critical
+  alert rather than being told about it:
+  `{"level": "critical", "message": "OOM kill on the VM: 1 new ...", "available_mb": 1887,
+  "swap_mb": 2047, "oom_kills": 1}`. That is the mechanism working on real data, not a fixture.
+  **Disk was the constraint nobody had looked at:** 4.5 GB free at 76%. Reclaimed 403 MB of apt
+  cache and **2.8 GB of pip cache** (the 1.6 GB huggingface cache is live Whisper/Kokoro model data
+  and was deliberately left). Ended at 4.8 GB free / 75% — *better than before the swapfile and the
+  browser were added*.
+
+- **[DB-0818-02] Playwright granted but not installed — CLOSED, installed and proven.**
+  `playwright==1.62.0` plus `install-deps chromium` and `install chromium` on the VM, and pinned in
+  `requirements.txt` with the note that **pip installs the driver, not the browser** — a rebuild
+  that skips `playwright install chromium` gets the clean "binary not installed" error, which is
+  correct behaviour and easy to misread as a code fault.
+  **Verified by running it, not by reading it:** headless Chromium launched on the VM, loaded a
+  page, returned its title and text. **Measured cost: ~189 MB** (MemAvailable 1871 → 1682 → 1796),
+  against the 700 MB pre-flight threshold in `fetch_rendered`. The guards are calibrated
+  conservatively and correctly.
+  **Still required before the tool exists on the VM at all: `./deploy.sh`.** The code half is
+  committed locally only. The scripts were `scp`'d rather than pulled, deliberately — a `git pull`
+  would have put the new `routing*.yaml` grants on the VM ahead of the code that registers the
+  tool, which is the "config key before the code that gates it" trap.
+
+**Full original text of both, as filed:**
+
+- **2. [DB-0818-01] The VM has no swap and has already been OOM-killed three times, silently.**
+  Found 2026-08-18 while sizing the Playwright decision. `metatron-vm` is a 4 GB `e2-medium` with
+  **zero swap**, and the kernel log carries three `Out of memory: Killed process` entries — one of
+  them, `2026-08-15 15:02`, killed **`metatron-server.service` itself** at 3.6 GB RSS. `Restart=always`
+  brought it back in five seconds, which is exactly why nobody noticed: from the outside the app
+  blipped and recovered. With no swap the kernel has no soft failure mode available — it SIGKILLs
+  the largest process, and the largest process is the server.
+  **Both halves are built and committed, neither is applied to the VM yet:**
+  [scripts/vm_add_swap.sh](scripts/vm_add_swap.sh) (2 GB swapfile, fstab entry, `swappiness=10`) and
+  [scripts/vm_memory_watch.py](scripts/vm_memory_watch.py) (systemd timer, 5-minute cadence; alerts on
+  a new OOM kill, on available memory under 500 MB, and once per boot while swap is absent). Both
+  verified to work unprivileged on the VM — `/proc/meminfo` and `journalctl -k` are readable without
+  root, so the timer does not run privileged.
+  **This is the gate on `fetch_rendered` actually being used in anger** — the tool ships with its own
+  pre-flight refusal, but that is a valve, not headroom.
+  @kind: chore
+  @waiting: `sudo bash scripts/vm_add_swap.sh` and `--install-units` run on the VM
+  *filed 2026-08-18 by a dev session · **not Mike-reported**, entering on the standing data-loss/
+  reliability exception — an unlogged repeat outage is the failure it protects against*
+
+- **3. [DB-0818-02] Playwright is granted but not installed on the VM, so rendered fetch answers
+  with its own refusal message.** `fetch_rendered` is registered and granted to `logistics` and
+  `research_agent` (`35499af`), but Playwright and its Chromium binary are not on the VM. Until they
+  are, the tool returns the clean "not installed" error — correct behaviour, not a bug, and the
+  reason the grant was safe to make ahead of the install.
+  **Footprint measured on the Mac 2026-08-18:** ~134 MB for the Python package plus ~563 MB of
+  browser binaries, **~700 MB total**, against 4.5 GB free on a 20 GB disk already at 76%.
+  **Do the swap first (`[DB-0818-01]`)** — installing a browser on a machine with no swap and a
+  history of OOM kills is the wrong order.
+  @kind: chore
+  @waiting: `[DB-0818-01]` applied to the VM
+  *filed 2026-08-18 · the code half of `[DB-0806-02]`'s read scope is done and closed*

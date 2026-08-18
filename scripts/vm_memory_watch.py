@@ -176,6 +176,12 @@ Description=Metatron VM memory watchdog
 [Service]
 Type=oneshot
 WorkingDirectory={root}
+# Runs as the repo owner, not root: the only privileged thing here is installing
+# the units. /proc/meminfo and `journalctl -k` are both readable unprivileged
+# (verified on the VM 2026-08-18), and running as root would leave root-owned
+# files in data/system/ that the server (uid 1000) could not later write.
+User={user}
+Group={user}
 ExecStart={python} {script}
 """
 
@@ -198,7 +204,11 @@ def install_units() -> int:
     if os.geteuid() != 0:
         print("--install-units must run as root (sudo)", file=sys.stderr)
         return 1
-    svc.write_text(UNIT_SERVICE.format(root=ROOT, python=sys.executable, script=Path(__file__).resolve()))
+    # SUDO_USER is the human who ran `sudo`, which is the repo owner; falling back
+    # to the directory's owner keeps this correct if it is ever run some other way.
+    owner = os.environ.get("SUDO_USER") or ROOT.owner()
+    svc.write_text(UNIT_SERVICE.format(root=ROOT, python=sys.executable,
+                                       script=Path(__file__).resolve(), user=owner))
     tmr.write_text(UNIT_TIMER)
     subprocess.run(["systemctl", "daemon-reload"], check=False)
     subprocess.run(["systemctl", "enable", "--now", "metatron-memory-watch.timer"], check=False)

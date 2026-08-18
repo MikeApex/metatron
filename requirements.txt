@@ -101,3 +101,11 @@ vobject==0.9.9
 watchfiles==1.1.1
 websockets==16.0
 yarl==1.23.0
+
+# Headless browser for tools/web.py fetch_rendered (JS-rendered pages).
+# NOTE: pip installs the driver, NOT the browser. After any rebuild or fresh
+# deploy the binary must be fetched separately, or fetch_rendered returns its
+# "browser binary not installed" error (cleanly — it will not crash):
+#   .venv/bin/playwright install chromium
+#   sudo .venv/bin/playwright install-deps chromium   # system libs, once per host
+playwright==1.62.0

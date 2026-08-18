@@ -219,41 +219,10 @@ standing rule distrusts.*
   GPS and proactive area-scanning still needs a design pass (privacy tier for continuous location,
   which layer supplies it, how scanning bounds itself) and stays in `## Later`.
   @kind: feature
-  @session: (a) only — the continuous-location privacy tier is Mike's decision
   *filed 2026-08-08 by Mike · **(b) promoted 2026-08-15**, (a) stays parked*
-
-- **2. [DB-0818-01] The VM has no swap and has already been OOM-killed three times, silently.**
-  Found 2026-08-18 while sizing the Playwright decision. `metatron-vm` is a 4 GB `e2-medium` with
-  **zero swap**, and the kernel log carries three `Out of memory: Killed process` entries — one of
-  them, `2026-08-15 15:02`, killed **`metatron-server.service` itself** at 3.6 GB RSS. `Restart=always`
-  brought it back in five seconds, which is exactly why nobody noticed: from the outside the app
-  blipped and recovered. With no swap the kernel has no soft failure mode available — it SIGKILLs
-  the largest process, and the largest process is the server.
-  **Both halves are built and committed, neither is applied to the VM yet:**
-  [scripts/vm_add_swap.sh](scripts/vm_add_swap.sh) (2 GB swapfile, fstab entry, `swappiness=10`) and
-  [scripts/vm_memory_watch.py](scripts/vm_memory_watch.py) (systemd timer, 5-minute cadence; alerts on
-  a new OOM kill, on available memory under 500 MB, and once per boot while swap is absent). Both
-  verified to work unprivileged on the VM — `/proc/meminfo` and `journalctl -k` are readable without
-  root, so the timer does not run privileged.
-  **This is the gate on `fetch_rendered` actually being used in anger** — the tool ships with its own
-  pre-flight refusal, but that is a valve, not headroom.
-  @kind: chore
-  @waiting: `sudo bash scripts/vm_add_swap.sh` and `--install-units` run on the VM
-  *filed 2026-08-18 by a dev session · **not Mike-reported**, entering on the standing data-loss/
-  reliability exception — an unlogged repeat outage is the failure it protects against*
-
-- **3. [DB-0818-02] Playwright is granted but not installed on the VM, so rendered fetch answers
-  with its own refusal message.** `fetch_rendered` is registered and granted to `logistics` and
-  `research_agent` (`35499af`), but Playwright and its Chromium binary are not on the VM. Until they
-  are, the tool returns the clean "not installed" error — correct behaviour, not a bug, and the
-  reason the grant was safe to make ahead of the install.
-  **Footprint measured on the Mac 2026-08-18:** ~134 MB for the Python package plus ~563 MB of
-  browser binaries, **~700 MB total**, against 4.5 GB free on a 20 GB disk already at 76%.
-  **Do the swap first (`[DB-0818-01]`)** — installing a browser on a machine with no swap and a
-  history of OOM kills is the wrong order.
-  @kind: chore
-  @waiting: `[DB-0818-01]` applied to the VM
-  *filed 2026-08-18 · the code half of `[DB-0806-02]`'s read scope is done and closed*
+  *No `@session:` marker: (a) became its own `## Later` entry on 2026-08-15, so the decision it
+  was waiting on is not this item's. Carrying it here excluded a buildable item from the workable
+  count — a marker scoped to half an item cannot be seen by the counter, which reads per item.*
 
 
 ## Later
@@ -416,6 +385,10 @@ change — not on a schedule.
   `archive/backlog_closed_2026-08.md` § Closed 2026-08-15, and it is worth reading before proposing
   a third.** The reusable trap: the quality-events file keys on **`timestamp`, not `ts`**, so a read
   against `ts` returns nothing and looks like a clean day.
+  @kind: bug
+  @session: which fix shape — give "raise a thing once" cross-session memory of an unanswered
+  question, or forbid a job from continuing a ritual that is not its own. Two prior diagnoses were
+  confidently wrong; the third should not be picked without Mike.
   *filed 2026-08-09 · rewritten 2026-08-09 after measurement inverted it · **evidence corrected
   2026-08-10** — see `archive/PROJECT_LOG.md` § 2026-08-10, last · **recurrence merged in from the
   Inbox 2026-08-14**, reported by Mike via the VM (2026-08-12T08:23Z); fix date verified against
