@@ -96,3 +96,10 @@ check**, and this is the failure mode that gap produces. Second: `scp`-ing a fil
 tracked in the repo* creates a guaranteed collision on the next pull — if a script must reach the
 VM ahead of a deploy, it belongs in `/tmp`, not at its repo path.
 
+**Resolved same day: deployed as `cad98cc`, and verified by running it rather than reading the
+deploy output.** `fetch_rendered` is registered on the VM (70 tools) and rendered a live page there;
+the watchdog timer recovered to `Result=success` the moment the pull restored its script. The
+correction above stands as written — the failure was recording a deploy that had aborted, and that
+happened regardless of the deploy later succeeding.
+
+
