@@ -2519,3 +2519,158 @@ Also cut: the voice-blocker paragraph duplicated from `[DB-0815-02]`, which owns
   dominant on purpose: over-dispatch costs tokens, under-dispatch loses a user's record. Pass A
   gates retrieval instead; the reopen condition is in `tests/run_knowledge_routing.py`'s docstring.
   *closed 2026-08-18*
+
+
+## Closed 2026-08-18 — `/backlog attack`, three clusters plus consolidation
+
+Four items closed. Evidence is a commit or a `file:line` in every case; the two that shipped code
+were verified by running it, not by reading it.
+
+- **[DB-0815-06] The system invents contact details and stores them as fact — CLOSED.**
+  `write_contact` now refuses known placeholders across **phone** (NANP `555-01xx`, UK Ofcom
+  `07700 900xxx`, sequential, all-zero), **address** (`123 Main St`, `Anytown`), **social handle**
+  (`@username`, `@handle`, …) and **name** (`John Doe`/`Jane Doe`), normalising before matching so
+  `+44 (0)7700 900123` is caught. Commit `8c7121b`, merged `b23c477`. 17 new tests in
+  `tests/test_crm_placeholders.py`, all passing, including an explicit set of **real-looking values
+  that must pass** — a real surname "Doe", a real `123 Main Street` with a real city.
+  **Scope limit, restated because it will be misread otherwise:** this refuses *known placeholders*,
+  not *invented data*. A fabricated but plausible phone number is not caught and cannot be without a
+  source of truth. **Design question answered and deliberately not built:** the registry stays in
+  `tools/crm.py` rather than moving to a shared module — one caller today, and an abstraction with
+  one caller is a guess about the second.
+  **Follow-on found by the merge and fixed the same day (`0d9310e`):** the guard refused the *whole
+  record* over one bad field, which is right when a model is inventing a contact and wrong on a bulk
+  import, where it silently costs a real person their record. `tools/contacts_import.py` now strips
+  the offending field, keeps the person, and reports the drop; a placeholder **name** is still
+  refused outright, being the record's only anchor.
+
+- **[DB-0813-02] Multi-model rounds have been coming back a voice short — CLOSED, and the item's
+  own diagnosis was wrong.** The entry said the `OPENAI_API_KEY` in `.env` was invalid and returned
+  `401 invalid_api_key`, fix being a key rotation. A live call returned
+  **`OPENAI_API_KEY environment variable is not set`**. `~/.claude/mcp_servers/ask_gpt.py` reads
+  `os.environ` only — it loads no `.env`, ever — and its registration in `~/.claude.json` carried an
+  empty `env: {}`, while `ask_gemini` sitting beside it had `GEMINI_API_KEY` inline. **The key in
+  `.env` was valid all along** (verified `HTTP 200` against `/v1/models`); only the wiring was
+  missing. Mike wired it the same day. **Had the item been worked as written, the key would have
+  been rotated, the item marked fixed, and GPT would still have been silent.**
+
+- **[DB-0806-02] Reserving tickets on a website — the READ half CLOSED**, the interactive half
+  unchanged and still parked. `fetch_rendered` added to [tools/web.py](tools/web.py) (`6097c44`,
+  merged `4683703`): headless Chromium, load-only, through the *same* `_check_url`/
+  `_is_blocked_address` SSRF guards and the same `wrap_untrusted` boundary as `fetch_url`, bounded
+  by a 15s page timeout and a 5s capped network-idle wait. Playwright imports lazily, so a host
+  without it gets a clean error rather than an import-time crash — asserted three ways in
+  `tests/test_fetch_rendered.py`. Registered and granted to `logistics` and `research_agent` in both
+  routing files (`35499af`).
+  **Three memory guards shipped with it (`4d10cbd`), and the reason is the interesting part:** an
+  OOM kill is SIGKILL, so a killed process cannot return a polite message — the graceful refusal has
+  to happen *before* the browser launches. Hence a `MemAvailable` pre-flight check, a single-render
+  lock, and `oom_score_adj=1000` on the browser processes so the kernel picks Chromium rather than
+  the server. That last one matters because **by default it would pick the server**: on
+  `2026-08-15 15:02` it already did. VM install tracked separately as `[DB-0818-02]`.
+
+- **[DB-0810-17](b) An external CRM bridge — CLOSED as split, one half shipped and one half
+  deliberately left dormant.**
+  **Shipped:** [tools/contacts_import.py](tools/contacts_import.py) `import_contacts_file` — vCard
+  and CSV, tolerant header mapping for Google and Outlook export shapes, unmapped columns preserved
+  rather than dropped, idempotent on re-run, dedup on the way in reusing `write_contact`'s existing
+  near-match surfacing rather than reimplementing matching. Granted to `relationships` (`35499af`).
+  21 tests.
+  **Not shipped, on purpose:** `import_google_contacts` and `read_google_contacts` are **not
+  registered**. The Google Contacts OAuth path was built 2026-08-07 and **reversed 2026-08-08 at
+  Mike's own direction**; `people.googleapis.com` is still disabled on the project, so it could not
+  run regardless. The 08-15 reframe that appeared to re-authorise it asked *where contacts come
+  from*, not *whether to re-adopt OAuth* — Mike confirmed 2026-08-18 he had not realised he was
+  reversing himself. Full narrative:
+  `archive/log/2026-08-18-01-backlog-item-hid-a-reversal.md`.
+  **Known duplication left standing, flagged not fixed:** the shipped module hand-rolls a vCard
+  parser while `vobject==0.9.9` has been in `requirements.txt` since 08-08 and
+  `scripts/import_vcard_contacts.py` already uses it. The two surfaces differ — one is a CLI script,
+  one is an agent-callable tool — so this is duplication of *parsing logic*, not of function.
+
+**Full original text of all four, as they stood when closed:**
+
+- **[DB-0815-06] The system invents contact details and stores them as fact — the email half is
+  fixed, the rest is not.** *(Widened 2026-08-15 by Mike: "Just invented email addresses, or any
+  invented contact information or data more generally?" The answer is more generally, with one
+  honest limit stated below.)*
+  **✅ Email done and deployed** (`97b777c`): `write_contact` refuses RFC 2606 reserved and
+  placeholder domains — `example.com/.net/.org`, `.test`, `.invalid`, `localhost`. The original
+  case was the `Eva` contact carrying **`eva@example.com`**, which is not a mistyped real address
+  but a placeholder the model produced and the tool persisted. Mike: *"That shouldn't happen."*
+  **What remains — the same refusal across every other field a model can fill:**
+  - **Phone** — the fictional ranges models reach for: NANP `555-0100`–`555-0199`, the UK Ofcom
+    drama range `+44 7700 900xxx`, `123-456-7890`, all-zeroes.
+  - **Address** — `123 Main St`, `Anytown`, `1234 Elm Street`.
+  - **Social handles** — `@username`, `@handle`, `@example`, `@yourname`.
+  - **Name** — `John Doe` / `Jane Doe` as a stored contact.
+  **The limit, stated so this item is not mistaken for something bigger: this refuses *known
+  placeholders*, not *invented data*.** A model that fabricates a real-looking phone number is not
+  caught by anything here and cannot be, without a source of truth to check against. What it does
+  catch is the specific failure observed — a model reaching for the canonical fake when a field
+  looks required — which is the same class as the `research_agent` source fabrication closed
+  2026-08-10 (`a36d8c2`), and the same class as `[DB-0815-09]`'s "None" corrections. **Three
+  instances of one root cause now: a field that looks required gets filled with something
+  plausible rather than left out.** Worth asking, when this is built, whether the registry belongs
+  somewhere shared rather than in `tools/crm.py` alone.
+  A stored fake detail is worse than a blank field — it will eventually be *acted on*.
+  @kind: bug
+  *filed 2026-08-15 by Mike, from the live CRM dump · email half closed and deployed 2026-08-15 ·
+  widened by Mike the same day*
+
+- **[DB-0813-02] Multi-model rounds have been coming back a voice short, silently.**
+  `OPENAI_API_KEY` in `.env` is invalid — a live `ask_gpt` call returns `401 invalid_api_key`.
+  Nothing announces it: a three-model round just returns two answers, and the missing one reads as
+  a choice rather than a failure. Mike's standing convention is that GPT, Gemini and Claude all
+  answer, so this quietly degrades something he uses constantly. **Fix is a key rotation, not
+  code** — minutes. Check the other keys in `.env` while there.
+  @kind: bug
+  *filed 2026-08-13 by a dev session, verified live · **promoted to `## Now` 2026-08-15 by Mike.**
+  It fails the "Mike raised it" entry bar and was promoted anyway on cost-to-fix against
+  cost-of-sitting — the cheapest item on the list, degrading a daily workflow*
+
+- **[DB-0806-02] Reserving tickets on a website — the read-only half is unblocked.**
+  Covers Mike's *"reserve tickets on the R website"* ask. Splits cleanly: **`fetch_rendered`
+  (Playwright, read-only) is the recommended half and needs no new trust boundary** — it is the
+  same boundary `fetch_url` already sits behind, with `<untrusted_content>` wrapping. Check VM
+  memory before adopting Playwright. The **interactive** half (click/type/submit) stays gated on a
+  credential store that does not exist and is not promoted. Scope:
+  `archive/plans/level3_web_actions_scope_2026-08-06.md`.
+  @kind: feature
+  *filed by Mike · **promoted 2026-08-15**, read half only — the entry had been sitting in `##
+  Later` behind a blocker that applies to the other half*
+
+- **[DB-0810-17] An external CRM bridge — the count question itself is answered.** At seq 009
+  Mike asked for a route *and* a CRM contact count; the system declined it as needing an external
+  connection it doesn't have, when Metatron's own contact store (`list_contacts`, `search_contacts`
+  in [tools/crm.py](tools/crm.py)) already held the answer. **(a) closed 2026-08-15** —
+  `coordinator.md`'s Relationships routing block now calls out contact-store questions explicitly
+  and says not to decline them (`b11e775`). **(b) remains: an external CRM bridge.**
+  **✅ UNBLOCKED 2026-08-15 — the vendor decision this entry was waiting on turned out not to
+  exist.** Mike's actual requirement: for Mike-persona testing the internal CRM **pulls from Google
+  Contacts**, and any other CRM arrives by **import in conventional file types**. So there is no
+  *which CRM* to choose and no per-vendor API bridge to build — the previous framing of this item
+  was the blocker, not the work. Three concrete pieces, verified against current code the same day:
+  1. **`read_google_contacts` is built but unreachable.** [tools/google_contacts.py](tools/google_contacts.py)
+     is complete — read-only People API, per-persona OAuth, one-time consent via
+     [scripts/google_contacts_authorize.py](scripts/google_contacts_authorize.py) — but it is
+     **never imported into `register_tools()` and never granted in either routing file**. Compare
+     the CRM tools, wired at [core/orchestrator.py:479](core/orchestrator.py#L479) and
+     [:595](core/orchestrator.py#L595). It appears only in `tools/metatron_monitor.py:141`'s API-name
+     map, which is why nothing flagged it. **Inverse of `[DB-0810-03]`'s class**: not a tool named
+     without a grant, but a tool built without a registration — and `scripts/check_agent_tools.py`
+     cannot see this direction either, since it sweeps agent files against allowlists and neither
+     mentions this tool. Worth asking whether that guard should also flag a `tools/` module that
+     nothing registers.
+  2. **Reading is not pulling.** `read_google_contacts` returns data; nothing writes it into
+     `contacts.json`. The onboarding/sync path does not exist, so "the internal CRM pulls from
+     Google Contacts" is not true even once (1) lands. Decide dedup on the way in —
+     `_find_by_name` is naive substring matching (the `[DB-0810-11]` "Jon"/"Jonathan" case), so a
+     pull is exactly where duplicate records get created at volume.
+  3. **No import path of any kind exists** — no vCard, no CSV, in `tools/crm.py` or anywhere else.
+     This is the "any CRM should be importable" half.
+  Sensitive-tier throughout. Google Contacts write-back stays out of scope — deliberately excluded
+  when the module was built, and nothing here needs it.
+  *filed 2026-08-10 by Mike · (a) closed 2026-08-15, see `archive/backlog_closed_2026-08.md` ·
+  (b) reframed and unblocked 2026-08-15 by Mike; the three pieces above were verified against
+  current code, not inferred from the entry*

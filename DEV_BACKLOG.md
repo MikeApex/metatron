@@ -212,7 +212,69 @@ Reasoning lives in `archive/PROJECT_LOG.md` § 2026-08-10, last. Every entry car
 checked and when; a verdict without that line is a description, and descriptions are what the
 standing rule distrusts.*
 
-- **1. [DB-0815-04] In Bulgarian mode the app shows Latin letters where it should show
+- **1. [DB-0808-04] Finding a venue near a named address — no GPS required.**
+  *(b) of this item only.* Google Places venue discovery for `logistics` / `recreation_hobbies`
+  was filed as blocked on the real-time location signal in (a), but **"near a named address" needs
+  no GPS and can ship on its own** — the entry says so itself and it went unread. *(a)* real-time
+  GPS and proactive area-scanning still needs a design pass (privacy tier for continuous location,
+  which layer supplies it, how scanning bounds itself) and stays in `## Later`.
+  @kind: feature
+  @session: (a) only — the continuous-location privacy tier is Mike's decision
+  *filed 2026-08-08 by Mike · **(b) promoted 2026-08-15**, (a) stays parked*
+
+- **2. [DB-0818-01] The VM has no swap and has already been OOM-killed three times, silently.**
+  Found 2026-08-18 while sizing the Playwright decision. `metatron-vm` is a 4 GB `e2-medium` with
+  **zero swap**, and the kernel log carries three `Out of memory: Killed process` entries — one of
+  them, `2026-08-15 15:02`, killed **`metatron-server.service` itself** at 3.6 GB RSS. `Restart=always`
+  brought it back in five seconds, which is exactly why nobody noticed: from the outside the app
+  blipped and recovered. With no swap the kernel has no soft failure mode available — it SIGKILLs
+  the largest process, and the largest process is the server.
+  **Both halves are built and committed, neither is applied to the VM yet:**
+  [scripts/vm_add_swap.sh](scripts/vm_add_swap.sh) (2 GB swapfile, fstab entry, `swappiness=10`) and
+  [scripts/vm_memory_watch.py](scripts/vm_memory_watch.py) (systemd timer, 5-minute cadence; alerts on
+  a new OOM kill, on available memory under 500 MB, and once per boot while swap is absent). Both
+  verified to work unprivileged on the VM — `/proc/meminfo` and `journalctl -k` are readable without
+  root, so the timer does not run privileged.
+  **This is the gate on `fetch_rendered` actually being used in anger** — the tool ships with its own
+  pre-flight refusal, but that is a valve, not headroom.
+  @kind: chore
+  @waiting: `sudo bash scripts/vm_add_swap.sh` and `--install-units` run on the VM
+  *filed 2026-08-18 by a dev session · **not Mike-reported**, entering on the standing data-loss/
+  reliability exception — an unlogged repeat outage is the failure it protects against*
+
+- **3. [DB-0818-02] Playwright is granted but not installed on the VM, so rendered fetch answers
+  with its own refusal message.** `fetch_rendered` is registered and granted to `logistics` and
+  `research_agent` (`35499af`), but Playwright and its Chromium binary are not on the VM. Until they
+  are, the tool returns the clean "not installed" error — correct behaviour, not a bug, and the
+  reason the grant was safe to make ahead of the install.
+  **Footprint measured on the Mac 2026-08-18:** ~134 MB for the Python package plus ~563 MB of
+  browser binaries, **~700 MB total**, against 4.5 GB free on a 20 GB disk already at 76%.
+  **Do the swap first (`[DB-0818-01]`)** — installing a browser on a machine with no swap and a
+  history of OOM kills is the wrong order.
+  @kind: chore
+  @waiting: `[DB-0818-01]` applied to the VM
+  *filed 2026-08-18 · the code half of `[DB-0806-02]`'s read scope is done and closed*
+
+
+## Later
+
+### Moved out of `## Now` 2026-08-18 — not buildable, so not sitting in the list
+
+**Mike's rule, stated 2026-08-18: anything not buildable moves to `## Later` and does not sit in
+`## Now`.** `## Now` is what can be picked up; an item waiting on a live exchange, on a decision, or
+on nothing-that-can-be-done is not that, however high it would rank if it were actionable. All four
+below keep their full text and their `@waiting:`/`@session:` markers — they are parked, not
+downgraded, and each says what would bring it back.
+
+**On `[DB-0815-04]` specifically:** the transliteration-vs-Cyrillic *render* has a deployed fix
+awaiting one live turn, but the item it is entangled with — Bulgarian speech-in, `[DB-0815-02](a)` —
+**has no viable solution right now** and is held indefinitely by Mike's decision: `base.en` cannot
+emit Cyrillic at all, multilingual `base` gets the right script at 46.4% WER, and `small` gets
+27.6% WER at an RTF of 0.967 that leaves no queueing headroom on a single-worker pool. Neither
+clears a usable bar. Revisit only on a materially better local multilingual STT model or a hardware
+change — not on a schedule.
+
+- **[DB-0815-04] In Bulgarian mode the app shows Latin letters where it should show
   Cyrillic.** Mike verified live 2026-08-15 with `output_language: bg` set on his own persona:
   **the agent receives Cyrillic and understands it correctly**, so input and comprehension are
   fine — what is wrong is what the app puts on screen. The response renders transliterated
@@ -259,7 +321,7 @@ standing rule distrusts.*
   *filed 2026-08-15 by Mike from live testing · the feature otherwise works — he confirmed
   Bulgarian in and out before switching back to English*
 
-- **2. [DB-0815-05] Contact corrections were being written into Mike's own identity, and rode in
+- **[DB-0815-05] Contact corrections were being written into Mike's own identity, and rode in
   every system prompt.** Found 2026-08-15 while verifying the language render on the VM. His
   `profile.yaml` `name` field contained **"Contact name updated from Eva to Iva."**, and the
   `other` list held six facts about *other people* (Iva Diamond, Horatiu Stefan, Eva's office
@@ -288,35 +350,7 @@ standing rule distrusts.*
   @waiting: one live turn where Mike corrects a contact name, then check `profile.yaml` is untouched
   *filed 2026-08-15 · data corrected the same day · guard built and deployed 2026-08-15*
 
-- **3. [DB-0815-06] The system invents contact details and stores them as fact — the email half is
-  fixed, the rest is not.** *(Widened 2026-08-15 by Mike: "Just invented email addresses, or any
-  invented contact information or data more generally?" The answer is more generally, with one
-  honest limit stated below.)*
-  **✅ Email done and deployed** (`97b777c`): `write_contact` refuses RFC 2606 reserved and
-  placeholder domains — `example.com/.net/.org`, `.test`, `.invalid`, `localhost`. The original
-  case was the `Eva` contact carrying **`eva@example.com`**, which is not a mistyped real address
-  but a placeholder the model produced and the tool persisted. Mike: *"That shouldn't happen."*
-  **What remains — the same refusal across every other field a model can fill:**
-  - **Phone** — the fictional ranges models reach for: NANP `555-0100`–`555-0199`, the UK Ofcom
-    drama range `+44 7700 900xxx`, `123-456-7890`, all-zeroes.
-  - **Address** — `123 Main St`, `Anytown`, `1234 Elm Street`.
-  - **Social handles** — `@username`, `@handle`, `@example`, `@yourname`.
-  - **Name** — `John Doe` / `Jane Doe` as a stored contact.
-  **The limit, stated so this item is not mistaken for something bigger: this refuses *known
-  placeholders*, not *invented data*.** A model that fabricates a real-looking phone number is not
-  caught by anything here and cannot be, without a source of truth to check against. What it does
-  catch is the specific failure observed — a model reaching for the canonical fake when a field
-  looks required — which is the same class as the `research_agent` source fabrication closed
-  2026-08-10 (`a36d8c2`), and the same class as `[DB-0815-09]`'s "None" corrections. **Three
-  instances of one root cause now: a field that looks required gets filled with something
-  plausible rather than left out.** Worth asking, when this is built, whether the registry belongs
-  somewhere shared rather than in `tools/crm.py` alone.
-  A stored fake detail is worse than a blank field — it will eventually be *acted on*.
-  @kind: bug
-  *filed 2026-08-15 by Mike, from the live CRM dump · email half closed and deployed 2026-08-15 ·
-  widened by Mike the same day*
-
-- **4. [DB-0815-07] CRM writes are never deduplicated against existing contacts, so the same
+- **[DB-0815-07] CRM writes are never deduplicated against existing contacts, so the same
   person accumulates records.** Three live instances in eight records, found 2026-08-15:
   *(a)* **`Eva` and `Iva Diamond` were one person** — Mike's family member, surname Diamond,
   first name spoken as "Eva". He corrected the name **five times** (machine log, ×5) and the
@@ -351,18 +385,7 @@ standing rule distrusts.*
   *filed 2026-08-15 by Mike · (a) resolved in data, tooling built and deployed 2026-08-15 · same
   dedup risk flagged for the Google Contacts pull in `[DB-0810-17]` — a bulk import makes it acute*
 
-- **5. [DB-0813-02] Multi-model rounds have been coming back a voice short, silently.**
-  `OPENAI_API_KEY` in `.env` is invalid — a live `ask_gpt` call returns `401 invalid_api_key`.
-  Nothing announces it: a three-model round just returns two answers, and the missing one reads as
-  a choice rather than a failure. Mike's standing convention is that GPT, Gemini and Claude all
-  answer, so this quietly degrades something he uses constantly. **Fix is a key rotation, not
-  code** — minutes. Check the other keys in `.env` while there.
-  @kind: bug
-  *filed 2026-08-13 by a dev session, verified live · **promoted to `## Now` 2026-08-15 by Mike.**
-  It fails the "Mike raised it" entry bar and was promoted anyway on cost-to-fix against
-  cost-of-sitting — the cheapest item on the list, degrading a daily workflow*
-
-- **6. [DB-0809-02] Every scheduled job re-asks the same unanswered question, so one unfinished
+- **[DB-0809-02] Every scheduled job re-asks the same unanswered question, so one unfinished
   ritual arrives as three or four separate messages.** *(Retitled 2026-08-15 — the trace week is
   **answered three days early and all three prior hypotheses are wrong**. Read the finding below
   before the history; the history is kept because two earlier diagnoses were also confidently
@@ -398,64 +421,6 @@ standing rule distrusts.*
   Inbox 2026-08-14**, reported by Mike via the VM (2026-08-12T08:23Z); fix date verified against
   `git log` the same day*
 
-- **7. [DB-0806-02] Reserving tickets on a website — the read-only half is unblocked.**
-  Covers Mike's *"reserve tickets on the R website"* ask. Splits cleanly: **`fetch_rendered`
-  (Playwright, read-only) is the recommended half and needs no new trust boundary** — it is the
-  same boundary `fetch_url` already sits behind, with `<untrusted_content>` wrapping. Check VM
-  memory before adopting Playwright. The **interactive** half (click/type/submit) stays gated on a
-  credential store that does not exist and is not promoted. Scope:
-  `archive/plans/level3_web_actions_scope_2026-08-06.md`.
-  @kind: feature
-  *filed by Mike · **promoted 2026-08-15**, read half only — the entry had been sitting in `##
-  Later` behind a blocker that applies to the other half*
-
-- **8. [DB-0808-04] Finding a venue near a named address — no GPS required.**
-  *(b) of this item only.* Google Places venue discovery for `logistics` / `recreation_hobbies`
-  was filed as blocked on the real-time location signal in (a), but **"near a named address" needs
-  no GPS and can ship on its own** — the entry says so itself and it went unread. *(a)* real-time
-  GPS and proactive area-scanning still needs a design pass (privacy tier for continuous location,
-  which layer supplies it, how scanning bounds itself) and stays in `## Later`.
-  @kind: feature
-  @session: (a) only — the continuous-location privacy tier is Mike's decision
-  *filed 2026-08-08 by Mike · **(b) promoted 2026-08-15**, (a) stays parked*
-
-- **9. [DB-0810-17] An external CRM bridge — the count question itself is answered.** At seq 009
-  Mike asked for a route *and* a CRM contact count; the system declined it as needing an external
-  connection it doesn't have, when Metatron's own contact store (`list_contacts`, `search_contacts`
-  in [tools/crm.py](tools/crm.py)) already held the answer. **(a) closed 2026-08-15** —
-  `coordinator.md`'s Relationships routing block now calls out contact-store questions explicitly
-  and says not to decline them (`b11e775`). **(b) remains: an external CRM bridge.**
-  **✅ UNBLOCKED 2026-08-15 — the vendor decision this entry was waiting on turned out not to
-  exist.** Mike's actual requirement: for Mike-persona testing the internal CRM **pulls from Google
-  Contacts**, and any other CRM arrives by **import in conventional file types**. So there is no
-  *which CRM* to choose and no per-vendor API bridge to build — the previous framing of this item
-  was the blocker, not the work. Three concrete pieces, verified against current code the same day:
-  1. **`read_google_contacts` is built but unreachable.** [tools/google_contacts.py](tools/google_contacts.py)
-     is complete — read-only People API, per-persona OAuth, one-time consent via
-     [scripts/google_contacts_authorize.py](scripts/google_contacts_authorize.py) — but it is
-     **never imported into `register_tools()` and never granted in either routing file**. Compare
-     the CRM tools, wired at [core/orchestrator.py:479](core/orchestrator.py#L479) and
-     [:595](core/orchestrator.py#L595). It appears only in `tools/metatron_monitor.py:141`'s API-name
-     map, which is why nothing flagged it. **Inverse of `[DB-0810-03]`'s class**: not a tool named
-     without a grant, but a tool built without a registration — and `scripts/check_agent_tools.py`
-     cannot see this direction either, since it sweeps agent files against allowlists and neither
-     mentions this tool. Worth asking whether that guard should also flag a `tools/` module that
-     nothing registers.
-  2. **Reading is not pulling.** `read_google_contacts` returns data; nothing writes it into
-     `contacts.json`. The onboarding/sync path does not exist, so "the internal CRM pulls from
-     Google Contacts" is not true even once (1) lands. Decide dedup on the way in —
-     `_find_by_name` is naive substring matching (the `[DB-0810-11]` "Jon"/"Jonathan" case), so a
-     pull is exactly where duplicate records get created at volume.
-  3. **No import path of any kind exists** — no vCard, no CSV, in `tools/crm.py` or anywhere else.
-     This is the "any CRM should be importable" half.
-  Sensitive-tier throughout. Google Contacts write-back stays out of scope — deliberately excluded
-  when the module was built, and nothing here needs it.
-  *filed 2026-08-10 by Mike · (a) closed 2026-08-15, see `archive/backlog_closed_2026-08.md` ·
-  (b) reframed and unblocked 2026-08-15 by Mike; the three pieces above were verified against
-  current code, not inferred from the entry*
-
-
-## Later
 
 **Time-gated — parked here deliberately, not deprioritised.** Each carries a `due:` marker, which
 `due_now()` in `scripts/sync_dev_backlog.py` scans across **both** `## Now` and `## Later` and
