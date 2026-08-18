@@ -133,6 +133,18 @@ thinking budget — cheap, but it trades response quality on the user-facing voi
 silence is legible rather than dead. **Do not pick one from this entry** — (b) is a quality trade
 that is Mike's call.
 
+**⚠ The code under this item moved on 2026-08-18 (`81be0f7`) — read it before acting.** The Gemini
+branch no longer calls `_openai_compat_stream` at all: it calls `run_session_gemini_cached()` and
+yields the reply as **one chunk, deliberately** (Option B of the caching fix — the prompt cache was
+worth more than a stream that was not streaming). **The symptom is unchanged and this item is not
+closed**; the line references above still describe the OpenAI/Ollama path, not Gemini. **What closes
+this is Option A** — a `generate_content_stream` sibling of `_run_gemini_native_loop` that keeps
+`cached_content`, briefed in `archive/handoffs/2026-08-18-caching-fix-prompt.md`, whose design
+constraint is that tool turns run blocking and only the final turn streams.
+**Option (b) gained evidence and is now a cost lever, not only a latency one:** once the prompt is
+cache-served, **output + thinking is 69% of the turn's cost** ($0.0274 of $0.0397 at $2/$12), so the
+thinking budget — not prompt size — is the dominant remaining spend. Still Mike's call.
+
 *found 2026-08-18 during Phase 1 interactive testing — Mike reported the symptom unprompted while
 confirming a different fix; the timings were pulled live off the VM the same minute*
 

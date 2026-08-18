@@ -1,13 +1,12 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-18, latest — **the clearing sweep, then Phase 1 live testing with Mike at the
-app.** Backlog **41 open → 31**, `## Inbox` **6 → 0**, `## Machine log` **91 → 52**, file
-**1,294 → ~700 lines**, now bounded by **items (45), not lines** — Mike's metric, applied. Four items
-closed with evidence. **Three defects found live, none by the test plan**, all from Mike noticing
-things in passing: **nothing streams** (one chunk on the wire, measured); **the app's own turns never
-hit the prompt cache — 46×**, 22,967 input tokens per interactive turn against 495 scheduled; and a
-**research answer with zero sources delivered as fact** (*"good service on Southeastern"* — fixed,
-withheld in Python rather than labelled). **Deploy owed:** `f4cc812` and today's research guard.*
+*Updated: 2026-08-18, latest — **the app's own turns now reach the prompt cache.** The streaming
+Synthesizer branch never called `_get_or_create_vertex_cache`; it now serves **19,157 of a 20,534
+token turn from cache (93%)**, taking a turn from **$0.0685 → $0.0397** at $2/$12. No user-visible
+change, because the reply already arrived as one flush. **The brief's "46×" was wrong, and the
+correction is the session:** scheduled turns are bimodal — 19 near-empty, 4 full-sized — so that path
+was never cheap *because it was cached*. **Option A (real streaming with the cache) is unbuilt and is
+what closes `[DB-0818-10]`.** **Deploy owed:** `f4cc812`, the research guard, and `81be0f7`.*
 
 *⚠ **The method finding, which outranks any single item: everything this session RAN held up, and
 everything it INFERRED was wrong.** Four confident causal explanations for the doubled-reply bug,
@@ -23,19 +22,21 @@ three entries triaged into `## Inbox` on 08-15 as *"Mike-originated, ×3/×4, cl
 argument were false and neither was checked. **Check the count's date and the evidence's date
 against `git log` before promoting anything from the machine log.***
 
-*⚠ **Content was published off this machine without being asked for, and the guard is now
-mechanical.** `Artifact`/`WebFetch`/`WebSearch` are **denied** in `.claude/settings.json`, verified
-by probing. **"Starts private" is not "stays on the machine"** and no tool here can delete an
-artifact. Shareable documents are **files** in `archive/plans/`. Full entry:
-`archive/log/2026-08-18-04-*`.*
+*⚠ **Nothing leaves this machine unasked** — now a mechanical deny in `.claude/settings.json` and a
+standing rule in `CLAUDE.md`; shareable documents are **files** in `archive/plans/`.*
 
-***Next: two handoffs, and the order matters.**
-`archive/handoffs/2026-08-18-caching-fix-prompt.md` **first** — self-contained, depends on no
-decision, and is the largest measured win in the product. Then
-`…-decisions-and-diagnosis-prompt.md`, with Mike present: three decisions in the format he asked for
-(background, plain speech, a defended recommendation), the doubled reply with **all four dead
-theories named so nobody re-runs them**, and the two untested items with tests that actually reach
-the code.*
+***Next: `archive/handoffs/2026-08-18-decisions-and-diagnosis-prompt.md`, with Mike present** — three
+decisions in the format he asked for (background, plain speech, a defended recommendation), the
+doubled reply with **all four dead theories named so nobody re-runs them**, and the two untested
+items with tests that actually reach the code. **The caching handoff stays: its Option A is still
+owed**, and it now carries the design constraint (tool turns blocking, only the final turn streamed,
+so a fallback lands before the first byte). A Synthesizer audit runs in a parallel window — **tell it
+that caching cut the money case for trimming `synthesizer.md` by 4×**; the case is now adherence and
+instruction quality, not cost.*
+
+***Model split, Mike's call 2026-08-18: plan and review in Fable, build in Opus.*** Reviewing this
+session's brief in Fable turned the build into a one-line branch and caught five constraints the
+brief did not carry. Red-tier work is still not delegated at all.
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -129,12 +130,12 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-18 | **The app's own turns reach the prompt cache — and the brief's headline number was wrong.** The streaming Synthesizer branch never called `_get_or_create_vertex_cache`; it now serves **19,157 of a 20,534-token turn from cache (93%)**, **$0.0685 → $0.0397** per turn at $2/$12, with no user-visible change because the reply already arrived as one flush. **The "46×" compared an interactive median against a scheduled median dominated by 19 near-empty turns** — real scheduled turns cost what interactive ones do, so that path was never cheap *because it was cached*. Two facts that had been distorting every reading, both settled by running things: `prompt_token_count` **includes** cached tokens, and **INFO never reaches `journalctl`** (units log WARNING+), so any turn under 8k leaves no log record at all. A4 `PH-MED-PIPE` failed once with a **degenerate reply (`think=0`, 36 tokens of gibberish)** — HEAD 3/3, re-run 3/3, no reproduction, and two inferences about it were wrong before measurement killed them. **Filed as a backlog item then unfiled on Mike's challenge:** a guard built from one unreproducible sample is likelier to suppress a good reply than catch a recurrence. **Option A (streaming + cache) unbuilt — it is what closes `[DB-0818-10]`** | `81be0f7` — **pushed, needs deploy** |
 | 08-18 | **Phase 1 live testing, Mike at the app — four items closed, three defects found, four causal theories killed.** Nothing streams (**1 chunk** on the wire, measured on a second persona); **interactive turns never hit the prompt cache — 22,967 input tokens vs 495 scheduled**, because the streaming path opted out of caching to buy streaming *and did not get streaming either*; an unsourced research answer reached Mike as fact (*"good service on Southeastern"* from two searches, zero sources) — now **withheld in Python**, since the `[RETRIEVAL: NONE]` marker added 08-10 was already attached and the Synthesizer **softened it instead of refusing**. `[DB-0810-01]` **reopened** — closed this morning on two clean turns against its own "do not close on it works now". Two test designs never reached their code. Filed at Mike's instigation: `[DB-0818-08]` provenance tiers, `[DB-0818-09]` implausible-vs-impossible input, `[DB-0818-10]` streaming | **nothing — `f4cc812` + the research guard both owe one** |
 | 08-18 | **The clearing sweep — the backlog halved, and three items rested on a count the file itself calls invalid.** 41 open → 28, Inbox 6 → 0, machine log 91 → 49, **1,294 → 682 lines**. A `×N` written before 08-15 is a similarity **chain length**, not a repeat count: all three machine entries promoted on 08-15 were single events, and each was **older than the code that fixed it**. Two items fixed rather than filed — the A4 pipeline suite now checks flag substance against the **pre-translation English** (it matched English words, so a correct translated response reported FAIL), and **`DEV_BACKLOG.md` is bounded by items (45), not lines**, which is Mike's metric. `[DB-0815-04]` closed by running `translate()` live and getting Cyrillic. Two items removed as **development-process, not Metatron work** | **nothing — needs a deploy** |
 | 08-18 | **`/backlog deep` + attack round — six Green fixes, and `/archive` now closes what it fixed by accident.** Doubled reply on reconnect; soft deadline dropped first; complaint naming a tool suppressed; nested-call attribution; A4 `--complexity`; persona-file blind spot in the grant guard. **`scripts/backlog_close_scan.py`** replaces step 4's filename grep — it matches the diff's *added lines*, because an incidental closure is one the commit message never mentions (`[DB-0808-16]`, open ten days after being fixed). **Three of my own premises were wrong**: two relayed to a worker from my own verification (deleting them would have dropped every parallel specialist from the trace), and the TfL item's bug does not exist in the code | `0a9e311`, `3a43f62`, `10fc9f6`, `87aad78` — **deployed**; `f4cc812` **not yet** |
 | 08-18 | **`/backlog attack` — three clusters, a VM that had been OOM-killing itself, and A9 analytics.** CRM placeholder guard; `contacts_import`; `fetch_rendered` with three memory guards. **Mike's "let Playwright die first" plan was half right** — the kernel kills the *largest* process (the server, proven 08-15 15:02) and SIGKILL returns no message, so the refusal moved *before* launch. VM gained swap, a watchdog and Playwright. **A9 built: absorbed work, not engagement** — 26-day backfill shows 94 absorbed, 10 autonomous, zero before 08-02. **`[DB-0813-02]` was misdiagnosed** (key valid, MCP `env: {}` empty) | `8c7121b`, `6097c44`, `5c3bb3b`, `4d10cbd`, `35499af`, `865c9b6` — **deployed** |
 | 08-18 | **Knowledge layering wired, deployed, plan closed.** Steps 4–12: derived manifest, `KNOWLEDGE_TO_LOAD` pre-fetch in both pipeline paths, `WISDOM_PROPOSAL` parsed in Python, grants in parity, seven agents that were instructed to read the store and granted nothing. Step 10 run on the VM; `health_notes` retired. **The zero-specialist path was abandoned rather than tuned for** — the counter-test exists to stop exactly that trade. Found by running it: two turns wrote an *intention* as standing fact; a key-based duplicate check missed a placeholder holding the same fact; Mac and VM `sarah_chen` stores had diverged 38 vs 1 | `360b843`, `d128130`, `7cb9ebd`, `2a51f46` — **deployed, A4 3/3** |
-| 08-18 | **A verification sweep where everything that closed, closed by running it.** Clinical hard-fails PASS on the tier that serves them; **double-booking protection's first live run since it shipped** (9/9, real calendar, cleanup proved by re-query); the drop-off bug closed in an hour by testing it — its evidence predated the code it blamed by three days; tier 5 stops the Synthesizer reading its own thinking aloud, **and the plumbing hypothesis was wrong** — reasoning arrives inside `content`, so the filter is the only control. Contact disambiguation solved in-session: the tool no longer picks one of four Bills and writes to him. **⚠ An artifact was published off-machine unasked** — `Artifact`/`WebFetch`/`WebSearch` now denied. `## Later` 41 → 39, file **1,290 lines, down on the session** | **nothing — needs a deploy** |
 ---
 
 ## Useful context to pull as needed
