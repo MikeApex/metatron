@@ -41,7 +41,6 @@ _SCALAR_FIELDS = {
     "name",
     "occupation",
     "household",
-    "health_notes",
     "birth_year",
     "age",
 }
@@ -108,16 +107,21 @@ _CODE_TO_NAME = {v: k.title() for k, v in _LANGUAGE_NAMES.items()}
 # module's docstring went on claiming they were "deliberately excluded". `load_profile()` now
 # skips any field named here, so the constant is the control it always read as.
 #
-# `health_notes` was added 2026-08-15 (Mike). It is a real fact worth keeping — his was
-# "Standard oatmeal: 60g oats, 100g 2% milk..." — but a standing breakfast composition does not
-# belong in the system prompt of every scheduled job and every unrelated conversation. The rule
-# he stated generalises past this one field: **detail the tool learns about a user belongs at
-# the level that needs it, retrieved when relevant, not broadcast on every call.** Physical
-# Health's diet tracking wants this; the morning brief does not. Agents that need it call
-# `read_profile('health_notes')` at the point of use — the same pattern already used for
-# contact details, and the same argument as ROADMAP § D2's move of domain data out of
-# instruction files into on-demand config.
-_PROMPT_EXCLUDED = _CONTACT_FIELDS | {"health_notes"}
+# `health_notes` LIVED HERE FROM 2026-08-15 TO 2026-08-18 AND IS GONE ON PURPOSE — do not
+# re-add it. Mike's value was "Standard oatmeal: 60g oats, 100g 2% milk, 100g almond milk, 20g
+# nuts", and the rule he stated when it was first hidden from the prompt generalises past this
+# one field: **detail the tool learns about a user belongs at the level that needs it,
+# retrieved when relevant, not broadcast on every call.** Excluding it from the prompt treated
+# the symptom; the fact still had no home but a profile slot named for a domain rather than for
+# what it was about. It now lives in the wisdom store as `standard_breakfast`, domain `food`,
+# where the Coordinator fetches it on a food turn and nothing else pays for it. Migrated on the
+# VM 2026-08-18 by scripts/migrate_health_notes.py; the empty `oatmeal_formula` placeholder
+# that had been sitting beside it is archived with a merged_into pointer.
+#
+# A health fact a SAFETY FLAG classifies from was never this field's job and still is not:
+# medication lives in agent_config.json behind _GUARDED_KEYS, where physical_health.md requires
+# it to be read every time rather than at a model's discretion.
+_PROMPT_EXCLUDED = _CONTACT_FIELDS
 
 
 # [DB-0815-05] profile.yaml's `name` field was found holding the literal sentence
@@ -221,7 +225,9 @@ def write_profile(field: str, value: str, confirm_token: str = "") -> str | dict
             f"Permitted: {', '.join(sorted(WRITABLE))}. "
             "Use 'other' for a stable fact that fits none of these. "
             "Interaction preferences — how the user wants to be spoken to — "
-            "belong in the persona file instead."
+            "belong in the persona file instead. Anything about the user's health, diet, "
+            "sleep, training or habits belongs in the knowledge store: call write_wisdom "
+            "with the subject domain, not this tool."
         )
 
     text = str(value).strip()

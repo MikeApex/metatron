@@ -367,7 +367,12 @@ Follow this order. Each step depends on the ones before it.
 **4. GCP VM**
 - Create `e2-medium` Debian 12 VM in `us-central1-a`, named `metatron-vm`
 - Do not open any firewall ports (Tailscale is the only access path)
-- SSH in: `gcloud compute ssh metatron-vm --zone=us-central1-a --project=<project>`
+- SSH in: `gcloud compute ssh metatron-vm --zone=us-central1-a --project=<project> --tunnel-through-iap`
+  — **`--tunnel-through-iap` is not optional.** There is no public ingress on port 22 since the
+  2026-07-31 VPC rebuild, and it is also what makes SSH work from a network that blocks outbound
+  22 (hotel, café, most public wifi): IAP carries it over 443. Omitting it gives a bare
+  `Operation timed out`, which reads as a dead VM — it cost a session on 2026-08-18. `deploy.sh`
+  has always passed it; these rebuild notes predated the rebuild and did not.
 - Install system packages: `sudo apt install python3.11 python3.11-venv ffmpeg -y`
 
 **5. Tailscale on VM**
@@ -383,9 +388,9 @@ Follow this order. Each step depends on the ones before it.
 
 **7. Repo on VM**
 - Option A (from GitHub after step 6): `git clone git@github.com:<account>/metatron.git ~/multi-model-mcp`
-- Option B (initial transfer before GitHub exists): `git archive HEAD | gcloud compute scp - metatron-vm:~/repo.tar --zone=us-central1-a` then extract
+- Option B (initial transfer before GitHub exists): `git archive HEAD | gcloud compute scp - metatron-vm:~/repo.tar --zone=us-central1-a --tunnel-through-iap` then extract
 - Create `.venv` and install: `python3.11 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt`
-- Copy `.env` to VM: `gcloud compute scp .env metatron-vm:~/multi-model-mcp/.env --zone=us-central1-a`
+- Copy `.env` to VM: `gcloud compute scp .env metatron-vm:~/multi-model-mcp/.env --zone=us-central1-a --tunnel-through-iap`
 - Copy `vertex-key.json` to VM: same command pattern
 
 **8. systemd services**

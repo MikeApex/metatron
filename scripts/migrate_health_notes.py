@@ -28,7 +28,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from core.persona import persona_config_dir, persona_scope, resolve_persona  # noqa: E402
-from tools.wisdom import DOMAINS, _RESERVED_KEY_TERMS, read_wisdom, write_wisdom  # noqa: E402
+from tools.wisdom import (  # noqa: E402
+    DOMAINS, _RESERVED_KEY_TERMS, find_related_wisdom, read_wisdom, write_wisdom,
+)
 
 # Mike's value is "Standard oatmeal: 60g oats, 100g 2% milk..." — a breakfast composition,
 # which is `food` on the subject axis regardless of the field it was stored under being
@@ -88,6 +90,20 @@ def main() -> int:
         existing = read_wisdom(key=args.key)
         if existing:
             print(f"\nNOTE: '{args.key}' already exists and will be OVERWRITTEN:\n  {existing.get('value')}")
+
+        # A key match is not enough, and this is the case that proved it: mike's store already
+        # held this exact fact under `oatmeal_formula`, so the key check reported "no collision"
+        # and the migration would have written a second breakfast entry beside an empty
+        # placeholder. Warn only — a near-duplicate and a genuine refinement are not
+        # distinguishable automatically, and overwriting the refinement is the costly direction.
+        related = find_related_wisdom(value, args.domain)
+        if related:
+            print(f"\nALREADY IN '{args.domain}' — REVIEW BEFORE APPLYING ({len(related)}):")
+            for hit in related:
+                print(f"  · {hit['key']}  [{hit['reason']}]\n      {hit['value'][:100]}")
+            print("\n  Nothing here is merged automatically. If one of these IS this fact:")
+            print(f"    - overwrite it:  --key {related[0]['key']}")
+            print("    - or apply as-is, then archive the old one with merge_wisdom_entries().")
 
         if not args.apply:
             print("\ndry run — nothing written. Re-run with --apply.")

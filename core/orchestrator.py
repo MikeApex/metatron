@@ -224,8 +224,6 @@ def load_profile(persona: str | None = None) -> str:
         lines.append(f"Occupation: {profile['occupation']}")
     if _show("household"):
         lines.append(f"Household: {profile['household']}")
-    if _show("health_notes"):
-        lines.append(f"Health notes: {profile['health_notes']}")
 
     for item in (profile.get("other") or []):
         if item:

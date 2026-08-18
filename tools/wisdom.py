@@ -281,6 +281,64 @@ def domains_present() -> list[str]:
     return ordered
 
 
+# Words too common to distinguish one standing fact from another. Deliberately short: this is
+# not a stoplist for search, only for "does this key already name the same thing".
+_COMMON_TOKENS = {
+    "user", "users", "their", "them", "they", "when", "with", "from", "that", "this",
+    "have", "has", "does", "daily", "usually", "tends", "prefers", "standard", "every",
+    "most", "some", "about", "into", "over", "after", "before", "during", "notes", "note",
+}
+
+# A value a model wrote to itself instead of a fact. `oatmeal_formula` sat in mike's store for
+# weeks reading "Oatmeal formula: [User needs to specify their formula details here]" — an
+# empty entry, retrievable and surfaceable as though it were knowledge.
+_PLACEHOLDER_MARKERS = ("needs to specify", "to be filled", "tbd", "todo", "placeholder",
+                        "specify their", "details here")
+
+
+def _tokens(text: str) -> set[str]:
+    import re
+    return {w for w in re.findall(r"[a-z]{4,}", (text or "").lower()) if w not in _COMMON_TOKENS}
+
+
+def find_related_wisdom(value: str, domain: str) -> list[dict]:
+    """
+    Warn, before a write, that this domain may already hold this fact. NEVER decides anything.
+
+    Returns [{key, value, reason}] for the caller to show a human. It does not merge, overwrite
+    or rank — a near-duplicate and a genuine refinement look identical to any automatic test,
+    and overwriting the refinement is the expensive direction.
+
+    TWO SIGNALS, AND SEMANTIC SIMILARITY IS DELIBERATELY NOT ONE OF THEM. Measured 2026-08-18
+    on the real case: the incoming "Standard oatmeal: 60g oats, 100g 2% milk..." scores 0.484
+    against the placeholder it actually duplicated, and 0.479 against "adds 20g walnuts to
+    porridge only on training days" — a distinct fact that must not be touched. The duplicate
+    and the nuance are indistinguishable by embedding, so any threshold that catches one
+    catches the other. `find_duplicate_wisdom`'s 0.85 default would have missed this entirely.
+
+      1. A distinctive word in the incoming value also appears in an existing KEY. Exact token
+         match, not substring — "nuts" must not match "walnuts", which is how a threshold-free
+         check still avoids the nuance case above.
+      2. The existing entry is a placeholder. Always worth seeing, whatever it is about.
+    """
+    incoming = _tokens(value)
+    hits = []
+    for entry in _all_entries():
+        if entry.get("domain") != domain:
+            continue
+        key = entry.get("key", "")
+        existing_value = str(entry.get("value", ""))
+        reasons = []
+        shared = incoming & _tokens(key.replace("_", " "))
+        if shared:
+            reasons.append(f"key shares '{', '.join(sorted(shared))}'")
+        if any(m in existing_value.lower() for m in _PLACEHOLDER_MARKERS):
+            reasons.append("existing entry looks like an unfilled placeholder")
+        if reasons:
+            hits.append({"key": key, "value": existing_value, "reason": "; ".join(reasons)})
+    return hits
+
+
 def read_wisdom(
     key: str = "",
     domains: list[str] | str = "",
