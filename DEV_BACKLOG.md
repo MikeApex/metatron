@@ -133,6 +133,15 @@ thinking budget — cheap, but it trades response quality on the user-facing voi
 silence is legible rather than dead. **Do not pick one from this entry** — (b) is a quality trade
 that is Mike's call.
 
+**⚠ (c) IS ALREADY BUILT — checked against the client 2026-08-18, do not build it again.** While a
+response is pending the mic button reads `Thinking...` and the status line `Waiting for response...`,
+for the whole wait, on both the text and voice paths
+([static/index.html:1153](static/index.html#L1153)). What is missing is only that the label is
+**static**, so a long wait cannot be told from a hung one — an elapsed counter or animation is the
+whole remaining scope, and it makes nothing faster. **The informative version is barred by design:**
+naming the stage ("checking your calendar") is process narration, which `CLAUDE.md` § Discretion
+forbids. So (c) is effectively spent, and the real levers are (a) and (b).
+
 **⚠ The code under this item moved on 2026-08-18 (`81be0f7`) — read it before acting.** The Gemini
 branch no longer calls `_openai_compat_stream` at all: it calls `run_session_gemini_cached()` and
 yields the reply as **one chunk, deliberately** (Option B of the caching fix — the prompt cache was
