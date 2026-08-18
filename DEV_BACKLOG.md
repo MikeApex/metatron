@@ -137,13 +137,25 @@ that is Mike's call.
 branch no longer calls `_openai_compat_stream` at all: it calls `run_session_gemini_cached()` and
 yields the reply as **one chunk, deliberately** (Option B of the caching fix — the prompt cache was
 worth more than a stream that was not streaming). **The symptom is unchanged and this item is not
-closed**; the line references above still describe the OpenAI/Ollama path, not Gemini. **What closes
-this is Option A** — a `generate_content_stream` sibling of `_run_gemini_native_loop` that keeps
-`cached_content`, briefed in `archive/handoffs/2026-08-18-caching-fix-prompt.md`, whose design
-constraint is that tool turns run blocking and only the final turn streams.
-**Option (b) gained evidence and is now a cost lever, not only a latency one:** once the prompt is
-cache-served, **output + thinking is 69% of the turn's cost** ($0.0274 of $0.0397 at $2/$12), so the
-thinking budget — not prompt size — is the dominant remaining spend. Still Mike's call.
+closed**; the line references above still describe the OpenAI/Ollama path, not Gemini.
+
+**⚠ Option A does NOT close this item, and an earlier line in this entry saying so was wrong
+(corrected 2026-08-18, same day).** Measured across **18 real interactive Synthesizer turns**:
+median **882 thinking tokens against 133 visible** — **86% of everything generated is thinking**.
+The silence this item is about is therefore *the thinking phase*, which streaming cannot shorten;
+Option A only lets the remaining ~14% arrive progressively. It is still the right end state and it
+is the prerequisite for option (a), but on its own it recovers a small share of the dead air.
+Option A is briefed in `archive/handoffs/2026-08-18-caching-fix-prompt.md`; its design constraint is
+that tool turns run blocking and only the final turn streams.
+
+**Option (b) is now the dominant lever on both axes, and it is cheap to try.** `thinking_budget`
+exists in the installed SDK (`google-genai` 2.8.0, `types.ThinkingConfig`) and is **configured
+nowhere in this project** — so the Synthesizer currently thinks unbounded. It is also the cost
+lever: thinking is **86% of output spend** at $12/1M. Note `thinking_budget: 0` was tried and
+rejected for a *different* purpose ([core/orchestrator.py:1202](core/orchestrator.py#L1202)) —
+**disabling thinking is not the same as capping it**, and that rejection does not settle a cap.
+Any cap must re-run the A4 clinical gate, since reasoning depth is what those flags rest on.
+**Still Mike's call — it trades quality on the user-facing voice.**
 
 *found 2026-08-18 during Phase 1 interactive testing — Mike reported the symptom unprompted while
 confirming a different fix; the timings were pulled live off the VM the same minute*

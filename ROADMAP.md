@@ -720,7 +720,10 @@ The "Gemini only" framing used during development referred to the current Synthe
 > `generate_content_stream` sibling of `_run_gemini_native_loop` that keeps `cached_content`, giving
 > caching *and* real token-by-token delivery. Brief:
 > [`archive/handoffs/2026-08-18-caching-fix-prompt.md`](archive/handoffs/2026-08-18-caching-fix-prompt.md).
-> `[DB-0818-10]` (the reply lands in one lump, so speech cannot start early) is closed by A, not by this.
+> `[DB-0818-10]` (the reply lands in one lump, so speech cannot start early) is **not** closed by A
+> either — measured 2026-08-18, **86% of what the Synthesizer generates is thinking**, so the silence
+> is the thinking budget and streaming cannot shorten it. A is the end state and the prerequisite for
+> sentence-chunked TTS; the dead air is a separate, unmade decision recorded on that item.
 
 ### Pre-Alpha: revisit live-stream + retract design
 
