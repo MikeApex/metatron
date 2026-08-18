@@ -2793,3 +2793,104 @@ Real, not prioritised. One or two lines each — detail lives in the code, the l
 
   **Closed 2026-08-18 — `fd273bf`, deployed.** `_due_sort_key()` in `tools/obligations.py` buckets `(0, iso)` / `(1, vague)` / `(2, "")`, so any stated urgency outranks none — a commitment given a soft deadline no longer sorts below every undated one and get cut first by `_CONTEXT_MAX`. Single call site confirmed; `tools/calendar_reconcile.py` uses `_load` for token matching, not ordering. `tests/test_obligation_due_sort.py` 5/5, **confirmed failing on HEAD first**, and demonstrated end-to-end: six undated obligations plus one due "next week" showed all six and dropped the dated one pre-fix; post-fix the dated one leads.
 
+
+### Closed 2026-08-18 (second pass)
+
+**The clinical hard-fails now have a result on the model tier that actually serves them.**
+Suicidal ideation, mania signal and missed critical medication had only ever been checked on the
+deep tier, while the quick tier carries the large majority of that traffic (43 vs 5, 58 vs 6 over
+Aug 1–8). Run made 2026-08-18: **gate PASS, 3/3** —
+`tests/a4_safety_rerun_2026-08-18_gemini_clinical_quick.md`. Two limits the report states and this
+closure keeps: it is **not** like-for-like against the original local-model baseline, and
+`--complexity` is inert for `local: true` agents, so it proves nothing about a future local route.
+**`ROADMAP.md` § A7 check 8's wording remains unresolved** — always a separate half, and it does
+not close with the run. *(was `[DB-0808-17]`)*
+
+**"I'm dropping someone at the airport" no longer reads as "I'm flying" — tested, closed, not
+built.** Filed the same day on four machine-log entries from 2026-08-05, then closed within the
+hour by running it. Two live turns on `danny_park`:
+
+- *"I'm dropping my sister at Heathrow tomorrow morning, she's on BA 892 to Sofia."* → the reply
+  tracked **her** flight and **his** drive ("where will you be setting off from?"), and asked her
+  name rather than keep saying "your sister". Context tracker recorded the thread as **"Heathrow
+  drop-off timing and logistics"** — the distinction was written, not just understood.
+- Next turn, *"What do I need to know about tomorrow?"* → *"the airport run… your sister's flight"*.
+  **The distinction survived into the following turn**, which is where the original failure lived.
+
+**Why the item existed at all is the lesson.** The evidence was four entries from one conversation
+on one day, and both `tools/travel_watch.py` and `tools/flights.py` landed **three days after it**
+— so the recorded failure was against code that no longer existed, and the context-writing
+protocols added since are what now hold the distinction. Mike's call, 2026-08-18: *"since the code
+was replaced, this is LIKELY FIXED. Test it and get rid of it if it passes."* It passed.
+**Standing lesson: an item whose evidence predates a replacement of the code it blames is a test,
+not a build** — and re-filing it as a build is how the same errors get relitigated. *(was
+`[DB-0818-05]`, open for under an hour)*
+
+**Double-booking protection now has a live result — the first since it shipped.** The write path
+behind every calendar event the tool creates had only ever run against fixtures: all 24 tests mock
+CalDAV, so refuse-on-exact-duplicate, the `[VERIFY]` fail-open marker and update/delete had never
+touched a real server. **Run 2026-08-18 against the real calendar on the VM, persona `mike`: 9/9.**
+
+What is now proven rather than assumed:
+- an identical event is **refused**, naming the existing event's uid, not silently duplicated;
+- when the conflict check itself fails, the write **still lands and is marked `[VERIFY]`** — and the
+  marker was confirmed by reading the calendar back, not by trusting the return value;
+- update and delete both work, each verified by re-querying the calendar rather than by the
+  function's own success flag.
+
+**Method, because the blocker was never technical.** This had been treated as needing a live
+scheduling conversation, which is why it sat: nobody wanted to write junk into a real calendar.
+Mike's call, 2026-08-18 — *"write junk events if you need to, just remove them afterwards"*. Events
+were dated **2027-11-03**, far outside any view, titled `METATRON-SELFTEST`, and cleaned up in a
+`finally` block that **re-queries the calendar afterwards to prove it is clean** — a deletion claim
+is not evidence of deletion.
+
+Kept as `tests/run_calendar_live_test.py` so this is repeatable rather than a one-off. Deliberately
+**not** folded into the mocked suite: that one must stay offline and free, and a mocked suite that
+skips silently when credentials are absent reports green while testing nothing. *(was
+`[DB-0810-10]`)*
+
+**The Synthesizer can no longer open a reply by reading its own thinking aloud — and the reason it
+happened is now answered rather than suspected.** On 2026-08-12 Mike asked a question and got the
+model's working-out instead of an answer: *"Step-by-step reasoning: 1. Analyze what the user is
+really asking..."*, cut off mid-sentence. Tier 4 of `filter_output()` was built for that specific
+instance because it quoted the instruction file verbatim. **The general case quotes nothing at
+all**, and tiers 1–4 hunt architecture *vocabulary*, so ordinary deliberation passed all four and
+reached the user — verified.
+
+**The item's own "one cheap check" was answered by measuring the live endpoint, and it killed the
+hypothesis rather than confirming it.** The theory was a plumbing fault: reasoning arriving on a
+separate channel that the code accidentally merged into the reply. It does not. The first delta off
+the live Vertex OpenAI-compat endpoint the Synthesizer actually runs on was literally
+`ChoiceDelta(content="**Step-by-Step Reasoning:**\n\n1.  **Analyze the User's", ...)`. **Reasoning
+arrives inside `content`, indistinguishable from the answer**; the only extra field on the stream is
+an opaque `thought_signature`. So no upstream plumbing fix was ever possible — by the time any code
+can see it, it is one string. `include_thoughts: False` changes nothing. `thinking_budget: 0` does
+work, by disabling thinking altogether — **rejected**, because degrading the reasoning of the one
+user-facing agent to fix a formatting leak is the wrong trade.
+
+**Consequence that must not be lost: the filter is not a backstop here, it is the only control.**
+The item and the roadmap both described tier 4 as belt-and-braces behind the instruction layer.
+For this failure there is no second layer.
+
+**Built: tier 5 — a response that OPENS by announcing its own reasoning is suppressed.** Anchored to
+the start deliberately and matched only as a header (the colon is required). Suppression replaces
+the *entire* response with the canned fallback, so a false positive costs the user their whole
+answer — a worse outcome than the leak on any ordinary turn. That constraint is why the scope is
+narrow, and why "Analysis of your spending suggests…", ordinary numbered lists and "Step by step,
+you can…" all survive.
+
+**Tested, in the same session as the fix** (`tests/test_deliberation_leak_filter.py`, 28 checks):
+the exact shape captured off the live endpoint, nine header variants, a zero-width obfuscation, ten
+ordinary answers that must survive untouched, the streaming path's actual input after the
+`[CONTEXT]` split, and non-Synthesizer agents unaffected. **Confirmed failing on HEAD first** — 13
+checks fail without the fix, all of them leak cases, with every false-positive check still passing.
+Regression: instruction-leak suite, echo-exemption suite and the 88-check red-team filter suite all
+pass unchanged.
+
+**Known limit, asserted in the test so it is a boundary rather than a surprise:** deliberation
+buried *mid*-answer is not caught. Any pattern loose enough to catch it there also fires on ordinary
+prose, and that trade costs the user their reply. **Separate and pre-existing:** the streaming path
+shows text as it arrives and filters at the end, so a leak can be briefly visible before `[RETRACT]`
+— that is `ROADMAP.md` § Section 5A's live-stream-and-retract item, not this one. *(was
+`[DB-0815-08]`)*

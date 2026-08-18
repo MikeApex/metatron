@@ -22,7 +22,6 @@
       "Edit",
       "Write"
     ],
-
     "_comment_deny": [
       "Edit(path) rules cover ALL file-editing tools, including Write. The paired",
       "Write(path) entries that used to sit here were silently ignored -- 'claude config",
@@ -38,13 +37,10 @@
       "Read(./vertex-key.json)",
       "Edit(./.env)",
       "Edit(./vertex-key.json)",
-
       "Edit(./config/constitution.md)",
-
       "Edit(./config/personas/mike.md)",
       "Edit(./config/personas/mike/**)",
       "Edit(./data/personas/**)",
-
       "Bash(rm -rf *)",
       "Bash(rm -fr *)",
       "Bash(sudo rm *)",
@@ -59,15 +55,16 @@
       "Bash(gcloud compute instances delete *)",
       "Bash(gcloud projects delete *)",
       "Bash(gcloud compute networks delete *)",
-
       "Bash(./deploy.sh)",
       "Bash(./deploy.sh *)",
       "Bash(bash ./deploy.sh)",
       "Bash(bash ./deploy.sh *)",
       "Bash(sh ./deploy.sh)",
-      "Bash(sh ./deploy.sh *)"
+      "Bash(sh ./deploy.sh *)",
+      "Artifact",
+      "WebFetch",
+      "WebSearch"
     ],
-
     "_comment_ask": [
       "The Red tier. Write(./config/agents/*.md) was one of the five silently-ignored Write",
       "rules -- the Edit entry already covers the Write tool.",
@@ -103,18 +100,31 @@
     "ask": [
       "Bash(git push *)",
       "Bash(git push)",
-
       "Edit(./config/agents/*.md)",
       "Edit(./config/modules/routing.yaml)",
       "Edit(./config/modules/routing_cloud.yaml)",
-
       "Edit(./core/router.py)",
       "Edit(./core/persona.py)",
       "Edit(./core/scheduler.py)",
       "Edit(./core/spend_guard.py)"
+    ],
+    "_comment_deny_artifact": [
+      "Artifact is DENIED (Mike, 2026-08-18), after a session published a full backlog",
+      "inventory -- including a real family member's first name -- to a claude.ai-hosted",
+      "page without asking. Artifacts are access-controlled, NOT local: publishing moves",
+      "project content off this machine onto third-party infrastructure. That is the exact",
+      "distinction Section 0's binding privacy ruling turns on, and 'starts private' is not",
+      "'stays on the machine'. The page's contents were overwritten immediately; the URL",
+      "itself cannot be deleted by any tool available here, only from claude.ai.",
+      "",
+      "WebFetch/WebSearch are denied alongside it for one reason only: both are outbound,",
+      "and a query is content. Nothing in this project's build loop needs either.",
+      "",
+      "To produce a shareable document, write a FILE -- archive/plans/ is the convention.",
+      "Lift this deliberately and per-occasion if Mike ever wants a page published; do not",
+      "lift it to make a task more convenient."
     ]
   },
-
   "hooks": {
     "PreToolUse": [
       {

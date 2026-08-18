@@ -41,6 +41,20 @@ _OWN_IDENTITY_SIMILARITY_THRESHOLD = 0.80
 # speech-to-text near-misses without it being tuned to that pair specifically.
 _NAME_SIMILARITY_THRESHOLD = 0.6
 
+# A short form is a PREFIX, not a typo, and edit distance cannot see the difference.
+# "Jon"/"Jonathan" scores 0.545 and "Jon"/"Jonathan Whitfield" 0.545 — both under the
+# 0.6 bar above, so the very case that motivated this check slipped through it, while
+# "Jonathan"/"Jonathan Whitfield" (1.00) was already caught. Raising the threshold is
+# the wrong lever: it would start matching genuinely different people, which is the
+# opposite and worse failure. So a prefix is scored as its own signal instead.
+#
+# 0.75 deliberately: clears the candidate bar, stays below an exact match, so a prefix
+# hit can never be mistaken for a certain one. Minimum length 3 because two characters
+# prefix far too many names ("Jo" reaches Joanna, John, Josh, Jordan) to be evidence
+# of anything.
+_PREFIX_SIMILARITY = 0.75
+_MIN_PREFIX_LEN = 3
+
 # RFC 2606 reserves these for documentation/testing — a real person's email is never
 # on one of them. "example.com" turning up in a contact record (the recorded case:
 # tools/crm.py accepted and persisted "eva@example.com") is not a mistyped real
@@ -311,7 +325,66 @@ def _name_similarity(a: str, b: str) -> float:
     whole = difflib.SequenceMatcher(None, a, b).ratio()
     a_first, b_first = a.split()[0], b.split()[0]
     first = difflib.SequenceMatcher(None, a_first, b_first).ratio()
-    return max(whole, first)
+    # Prefix signal — see _PREFIX_SIMILARITY. Compared on first tokens so that
+    # "Jon" reaches "Jonathan Whitfield" as well as bare "Jonathan"; edit distance
+    # scores both at 0.545 and would surface neither.
+    short, long = sorted((a_first, b_first), key=len)
+    prefix = (_PREFIX_SIMILARITY
+              if len(short) >= _MIN_PREFIX_LEN and long.startswith(short)
+              else 0.0)
+    return max(whole, first, prefix)
+
+
+def _disambiguation_entry(contact: dict) -> dict:
+    """
+    The smallest set of fields that tells two same-named people apart, for asking the
+    user which one they meant.
+
+    Deliberately not the whole record. The point is to let the agent ask a natural
+    question — "Bill Thompson from work, or Bill the plumber?" — and a full record
+    invites it to answer from the data instead of asking. Only populated fields are
+    returned, so a sparse contact yields a short entry rather than a wall of empty keys.
+    """
+    handle = {"id": contact.get("id", ""), "name": contact.get("name", "")}
+    for field in ("last_name", "relationship_type", "occupation", "employer",
+                  "how_met", "nickname"):
+        value = contact.get(field)
+        if value:
+            handle[field] = value
+    tags = contact.get("tags") or []
+    if tags:
+        handle["tags"] = tags
+    return handle
+
+
+def _ambiguous_match(name: str, matches: list[dict], action: str) -> str:
+    """
+    The response when a name reaches more than one person.
+
+    **No record is returned and nothing is written.** The previous behaviour picked
+    `matches[0]` and appended a note saying so — which reads to a model as an answer
+    with a caveat, not as a question it must ask. The observed shapes that motivates
+    this: four people can share the spoken name "Bill" (a colleague, a tradesman, a
+    friend named William, and that friend's father), and the tool cannot rank them.
+    Returning one of them means a note lands on the wrong person's record or a message
+    is drafted about the wrong person — both silent, both things the user only finds
+    out later.
+
+    Asking is the correct answer here and the agents do it well when they know there is
+    something to ask about. This makes sure they know.
+    """
+    return json.dumps({
+        "ambiguous": True,
+        "query": name,
+        "matches": [_disambiguation_entry(m) for m in matches],
+        "_instruction": (
+            f"{len(matches)} contacts match '{name}', so no record was returned and "
+            f"nothing was {action}. Do not guess and do not pick the first. Ask the user "
+            "which one they mean, using whatever distinguishes them in the matches above "
+            "(surname, how you know them, what they do). Then repeat this call with that "
+            "contact_id."
+        ),
+    }, indent=2)
 
 
 def _dedup_candidates(contacts: list[dict], name: str) -> list[dict]:
@@ -640,14 +713,9 @@ def read_contact(contact_id: str = "", name: str = "") -> str:
         matches = _find_by_name(contacts, name)
         if not matches:
             return f"Error: no contact found matching name '{name}'"
-        result = matches[0].copy()
         if len(matches) > 1:
-            result["_ambiguity_note"] = (
-                f"Multiple contacts matched '{name}': "
-                + ", ".join(m["name"] for m in matches)
-                + ". Returned the first match."
-            )
-        return json.dumps(result, indent=2)
+            return _ambiguous_match(name, matches, "returned")
+        return json.dumps(matches[0], indent=2)
 
     return "Error: provide either contact_id or name"
 
@@ -736,15 +804,14 @@ def log_interaction(
             matches = _find_by_name(contacts, name)
             if not matches:
                 return f"Error: no contact found matching name '{name}'"
-            target = matches[0]
+            # Refuse rather than log. This is a *write*: an interaction filed against
+            # the wrong person is worse than one not filed at all, because the record
+            # then asserts a conversation that never happened and nothing later
+            # contradicts it.
             if len(matches) > 1:
-                ambiguity = (
-                    f"Multiple contacts matched '{name}': "
-                    + ", ".join(m["name"] for m in matches)
-                    + ". Logged against the first match."
-                )
-            else:
-                ambiguity = ""
+                return _ambiguous_match(name, matches, "logged")
+            target = matches[0]
+            ambiguity = ""
         else:
             return "Error: provide either contact_id or name"
 

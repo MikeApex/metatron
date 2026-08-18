@@ -53,36 +53,18 @@ back-tagging the rest is `[DB-0815-10]`.
 ## Inbox
 
 *Machine-written from what Mike said on the VM. Do not hand-edit — triage entries out into
-`## Now` or `## Later`, rewritten properly, and delete them from here.*
+`## Now` or `## Later`, rewritten properly, and **delete them from here, leaving nothing behind**.*
 
-*(empty — triaged 2026-08-10 by `/backlog deep`. All five entries verified against VM traces,
-journal and conversations before filing; one was a false report the system wrote about itself.)*
-
-*(empty — triaged 2026-08-14. All four entries were opened against current code before filing,
-and **two were not what their description said**: the calendar reconciliation loop already exists,
-and the evening-close repetition is a post-fix recurrence rather than a new bug.)*
-*(Two `[dev-workflow]` items — the commit guard blocking routine shell, and `defaultMode: auto`
-not being in effect — were moved out to a `HARNESS_BACKLOG.md` on 2026-08-13, because they are
-defects in the tooling we build with and carry no Metatron content. **That file was retired and
-deleted on 2026-08-14** when the build that opened it closed: eleven items opened, eleven
-resolved. `defaultMode` was fixed; **the commit-guard false positives are deferred, not fixed** —
-the `METATRON_COMMIT_GUARD=off` override now works, so each is a one-token annoyance rather than a
-block. Revisit only when a case appears the override does not clear. **Do not re-file it here** —
-this file is Metatron work. Full record: `archive/PROJECT_LOG.md` § 2026-08-14; see also
-`.claude/rules/docs-and-logs.md`.)*
-*(empty — triaged 2026-08-14 at close-out. Two notes filed by the §10b run-2 windows: window B's
-became `[DB-0814-04]` in `## Later`; window A's was a `sync_dev_backlog.py` observation that
-deliberately fails the filing bar and is recorded in `archive/backlog_closed_2026-08.md`
-§ Closed 2026-08-14 instead.)*
-*(empty — triaged 2026-08-15 by the second `/backlog deep` sweep. Two entries, both filed out:
-the machine-written Bulgarian STT report was a **duplicate of `[DB-0815-02](a)`**, which Mike had
-filed by hand the same day — closed to `archive/backlog_closed_2026-08.md` rather than opened as a
-second item. The dev-session deliberation-leak note went to `## Later` under Safety and test gaps,
-by the standing reporter rule. **The duplicate is worth one line of attention:** nothing checks a
-machine-filed Inbox entry against items Mike filed himself that day, so the machine can restate a
-report he has already made.)*
-- **[needs building]** TfL/National Rail API integration bug: Status checks are passing station names (e.g., 'Charing Cross') instead of valid line IDs to the transport feed, causing 404 errors and masking live engineering works. Needs robust station-to-line-ID mapping.  
-  `2026-08-16T08:13:28.789371Z`
+> **Triaging an entry out leaves no trace in this section — the evidence goes to
+> `archive/backlog_closed_YYYY-MM.md`.** Six "(empty — triaged on date X)" notes had accumulated
+> here by 2026-08-18, 30 lines recording that work had been *removed*. That is the mechanism by
+> which this file grows while nothing is outstanding, and it is the one Mike named.
+>
+> **Two standing cautions, kept because they change what a triager does, not because they happened:**
+> harness/tooling defects are **not** Metatron work and do not belong in this file at all; and a
+> machine-filed entry can restate a report Mike already filed by hand the same day, because nothing
+> checks for that. **Read a machine entry as a symptom, never as a diagnosis** — three have now
+> named a real problem and guessed its cause wrongly.
 
 - **Mike's own email address keeps being transcribed wrong, and he keeps correcting it.**
 Machine log ×3: *"corrected dictation error of their email address from diamond.mic@gmail.com"* —
@@ -617,42 +599,15 @@ so this is not a parallel track to pick from when a `Now` item is time-gated.
   that crisis framing and medication names reach the user, and that has only ever been checked in
   English. **Run `tests/run_a4_safety.py --suite pipeline` against a translated persona before any
   persona with clinical history gets a response language.** Bears on `ROADMAP.md` § 0 clause 8.
+  > **⚠ Do not run it as written — the instruction above would raise a false safety alarm.** The
+  > pipeline suite proves a flag reached the user by matching English words — `"crisis"`,
+  > `"hotline"`, `"medication"` ([tests/run_a4_safety.py:414-429](tests/run_a4_safety.py#L414-L429)).
+  > Translation renders exactly those, so a **correct** response reports FAIL. Fix the runner first
+  > — assert substance against the untranslated text in the trace — then run it. No persona has a
+  > response language set today, so there is no urgency, only a wrong instruction to correct.
   @kind: chore
   *split out of `[DB-0810-15]` 2026-08-15 when that item was demoted — a safety gap should not be
   parked inside a shipped feature's entry, which is how it would have been lost*
-- **[DB-0815-08] The Synthesizer quoted its own instruction file to Mike, and only the filter
-  stopped it — nothing detects why it happened.** Tier 4 of `filter_output()` (`bbda875`) now
-  suppresses a response reproducing 10+ verbatim words from the agent's instruction file or the
-  constitution, built after the Synthesizer printed its own deliberation to Mike on 2026-08-12.
-  **The filter is the backstop; the instruction layer is the control, and the instruction layer is
-  what failed.** The leak was truncated mid-sentence, which suggests the response was cut off rather
-  than completed — so the same shape can recur without tripping tier 4 at all if the quoted span is
-  shorter or paraphrased. **One cheap check first:** whether Gemini reasoning content can reach
-  `text_parts` on the streaming path. If it can, this is a plumbing fault, that is the real fix, and
-  tier 4 is belt-and-braces. Bears on `ROADMAP.md` § A7 check 5, which has this on record as a live
-  Fail. *filed 2026-08-15 by a dev session — **not raised by Mike**, who saw only the original leak,
-  which is closed. Evidence: `/monitor/conversations` persona=mike ts=2026-08-12T00:14:57, 711
-  chars, all deliberation, no `[CONTEXT]` block*
-- **[DB-0810-10]** The calendar conflict build (`a20febe`, deployed 08-05) has **never had a
-  live scheduling exchange run against it** — all 24 tests in
-  `tests/run_calendar_conflict_tests.py` are mocked against CalDAV, so the refuse-on-exact-
-  duplicate path, the `[VERIFY]` fail-open marker and `update`/`delete` have only ever run
-  against fixtures. It is the write path for every calendar event Logistics creates.
-  *filed 2026-08-10 · shipped and deployed but unexercised in production*
-- **[DB-0808-17] The safety suite can now be pointed at Flash-Lite — THE RUN IS STILL OWED.**
-  `--complexity {quick,deep}` added to `tests/run_a4_safety.py` 2026-08-18 (`4425b2d`), threaded to
-  `resolve_model()`; report filename and header carry the tier so a quick run cannot be mistaken for
-  or overwrite a deep one. **Refused with `--suite pipeline` (exit 2)** rather than silently
-  ignored — `run_pipeline_session()` takes no complexity argument, and dropping it would relabel a
-  deep run as quick. Wiring proven at **zero spend**: `tests/test_a4_complexity_threading.py` shows
-  `resolve_model('mental_wellbeing', complexity='quick')` returns Flash-Lite.
-  **What closes it — approx $0.02, under the $1.00 line:**
-  `python tests/run_a4_safety.py --persona sarah_chen --provider gemini --suite clinical --complexity quick`
-  @kind: chore
-  *original entry follows*
-  A4 clinical hard-fails have never run on Flash-Lite, which serves most MW/PH
-  turns (43 vs 5, 58 vs 6, Aug 1–8). Routing stays as-is by Mike's decision; the *test* gap is
-  the item. Add `--complexity quick` to the A4 suite. Bears on ROADMAP § A7 check 8's wording.
 - **[DB-0808-06]** No administrative close for tier-2 clinical threads — `resolved` exists and
   nothing can legitimately set it, so every tier-2 thread is permanent. Correct failure
   direction; needs a real path eventually, tied to escalation that doesn't exist. **Do not fix
@@ -707,9 +662,42 @@ so this is not a parallel track to pick from when a `Now` item is time-gated.
   exchange. Verify with one successful and one deliberately failing tool/model call. Known and
   accepted at build time: the SSE path (`_prepend_col1`) reuses the `model_errors` list from the
   last full Load, so a live API failure shows no red tag until refresh — **not a bug to fix blind.**
+  **Still real — 19 commits have crossed these files without exercising the fields.** Closes on
+  three steps on the VM: one exchange with a tool call that succeeds (text populated, no fail tag);
+  one with a deliberately bad tool argument (`ok:false` renders red); one forced API failure, then
+  a further live exchange **without refreshing** to confirm the tag only appears after a reload —
+  documenting the known staleness rather than treating it as the defect.
   *filed 2026-08-10 · built and deployed, not exercised against live data*
 
 **Capability**
+- **Ask about a Southeastern or Greenwich-line train and there is nothing to answer with.**
+  No National Rail source was ever built. TfL works — tube, DLR, Elizabeth, Overground — which is
+  why transit reads as operational. The one `"national rail"` alias in
+  [tools/tfl_status.py](tools/tfl_status.py) maps to TfL's roll-up *mode* status, so operators and
+  stations resolve to nothing and the question falls through to web search: on 2026-08-16 that ran
+  two searches, returned zero sources, and the user got a confident answer resting on nothing.
+  **Not a fix to `get_tfl_status`** — that file only ever covers Greater London by design. This is
+  a second backend (National Rail Darwin / Rail Data Marketplace), and the first transit source
+  here needing an API key, so quota and key storage are part of the build.
+  `[DB-0818-04]` @kind: feature
+- **Say "Bill" and the tool has to work out which Bill — and right now nothing helps it.**
+  Family and close friends resolve fine on frequency alone. The hard case is the sparse one:
+  *"Bill Thompson from work"*, *"Bill the plumber"*, *"my friend William"*, *"William's dad,
+  William Senior"* — four people, one spoken name, and a shared surname inside the set. **What the
+  user notices when this goes wrong is worse than a wrong lookup**: a note lands on the wrong
+  person's record, or an outbound message is drafted about the wrong Bill.
+  **Asking is a legitimate answer and should stay one** — the tool already does this well
+  unprompted (a live drop-off turn on 2026-08-18 volunteered *"what is your sister's name so I
+  don't just keep calling her your sister?"*). The work is not to stop it asking; it is to stop it
+  asking **again** about someone already disambiguated, and to give it a distinguishing handle —
+  relationship, role, employer, household — to ask *with*.
+  **Where this bites first:** contact records are keyed on name, and matching is a similarity score
+  tuned for transcription near-misses. Two Bills who genuinely differ and one Bill written two ways
+  are the same shape to it. **Related but not the same item** — the dedup strand under
+  *Performance and cost* is about one person becoming several records; this is about several people
+  collapsing into one, and a fix aimed at one can worsen the other.
+  @kind: feature
+  *raised by Mike 2026-08-18*
 - **[DB-0815-13] Semantic retrieval *within* a knowledge domain — phase 2 of the wisdom layer.**
   Phase 1 (approved plan, `~/.claude/plans/to-be-clear-we-modular-knuth.md`) makes `read_wisdom`
   return a **whole domain, capped at 15 entries**. That is correct while domains are small. **The
@@ -815,7 +803,11 @@ so this is not a parallel track to pick from when a `Now` item is time-gated.
   exists to prevent. The guard now prints which personas it scanned and **warns loudly when `mike`
   is absent or zero files matched**, so a clean Mac report cannot be mistaken for coverage.
   Re-confirmed live: `synthesizer` still lacks the `write_log` grant in both routing files.
-  **Closes on one VM run of `python3 scripts/check_agent_tools.py`.** Heads-up: `qa_sweep.sh` treats
+  **✅ The VM run happened 2026-08-18 — this half is closed.** 17 agent files and 17 persona
+  files scanned on the VM, `personas seen` includes `mike`, which is the coverage a Mac run
+  cannot prove. Result: 4 planned, **0 named-as-live-but-unbuilt**, 52 not-granted,
+  72 undocumented. **What remains is strand (c) alone — the grant decisions**, which is
+  judgement per grant and needs its own session. Heads-up: `qa_sweep.sh` treats
   this script's exit code as load-bearing, and a persona file naming an unbuilt tool can now trip
   it — correct, but new.
   *original finding follows*
@@ -861,7 +853,8 @@ so this is not a parallel track to pick from when a `Now` item is time-gated.
   (a) deterministic lookups feeding agents evidence rather than asking them to recall
   (`tools/scheduling.py` is the worked example; unbuilt: CRM contact dedup, where `_find_by_name`
   is naive substring matching so "Jon"/"Jonathan"/"Jonathan Whitfield" become three records;
-  `write_archive` dedup; ~~`tools/wisdom.py` reloading `SentenceTransformer` per call where
+  `write_archive` dedup — **both strands re-verified 2026-08-18, and (a) is now half-wrong as
+  written; see the box below**; ~~`tools/wisdom.py` reloading `SentenceTransformer` per call where
   `core/memory.py` caches a singleton~~ **— that one strand closed 2026-08-15 (`13134bc`),
   `find_duplicate_wisdom` now uses the cached singleton; the rest of (a) is untouched**); (b) code
   that removes agent calls entirely — cuts against
@@ -871,6 +864,13 @@ so this is not a parallel track to pick from when a `Now` item is time-gated.
   more by `[DB-0810-09]` — **neither failure was a code bug or catchable by unit tests.** Also
   parked here: embeddings for semantic similarity, and `temperature`, **not plumbed through any of
   the four provider paths**, most valuable for clinical flags and Finance arithmetic.
+  > **⚠ The CRM half is half-fixed and this item's own example is the case the fix misses.**
+  > `write_contact` now scores name similarity and appends a non-blocking "possible match" note.
+  > Measured against the shipped function: `Jon`/`Jonathan` = **0.545** against a **0.6** bar, so it
+  > slips; `Jonathan`/`Jonathan Whitfield` = 1.000 and already merges. **A nickname is a prefix, not
+  > a typo** — raising the threshold would start merging different people, so this needs a separate
+  > prefix signal. `_find_by_name` mis-resolves reads but does not create records. **`write_archive`
+  > has no dedup of any kind** ([tools/diarist.py:110](tools/diarist.py#L110)) — that half untouched.
   *filed 2026-08-10 · a full session prompt exists in that day's transcript*
 - **[DB-0808-09]** Per-specialist internal turn reduction. Coordinator is 1 turn (measured
   twice); `logistics` is 8; the other specialists are unmeasured. **Measure first, then diagnose

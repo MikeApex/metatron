@@ -114,6 +114,18 @@ The Denied row turns two standing prose rules into mechanism: the constitution i
 Red is also the line for *who builds*: Red-tier work is not delegated to a subagent, because
 there the judgement is the work.
 
+> **Nothing about this project leaves this machine without Mike saying so first (2026-08-18).**
+> `Artifact`, `WebFetch` and `WebSearch` are **Denied**. A session published a full backlog
+> inventory — carrying a real family member's first name — to a claude.ai-hosted page, proactively
+> and unasked. **"Starts private" is not "stays on the machine":** an artifact is
+> access-controlled on third-party infrastructure, which is the precise distinction § Section 0's
+> privacy ruling turns on. Worse, **no tool available here can delete one** — the contents can be
+> overwritten, the URL cannot be withdrawn except by Mike from claude.ai. An irreversible outbound
+> action taken on a default is why this is a deny and not an ask.
+>
+> **To produce a shareable document, write a file** — `archive/plans/` is the convention. Lift
+> this per-occasion if Mike asks for a published page; never to make a task more convenient.
+
 ---
 
 ## Terminology

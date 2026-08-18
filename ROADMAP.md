@@ -144,8 +144,10 @@ Full item in the static plan.*
 > matching §0 clause 8 — neither is written. **This is a flag for whoever runs check 8, not a
 > resolution.** Paired with `[DB-0808-17]`. **✅ The tooling half landed 2026-08-18
 > (`4425b2d`):** `tests/run_a4_safety.py` takes `--complexity {quick,deep}`, so the hard-fails can
-> now be run on the Flash-Lite path that serves most of this traffic. **The run is still owed**
-> (~$0.02); check 8's wording is unchanged by it. Measurements and full reasoning: `archive/PROJECT_LOG.md`
+> now be run on the Flash-Lite path that serves most of this traffic. **✅ The run happened 2026-08-18 — gate PASS 3/3**
+> (`tests/a4_safety_rerun_2026-08-18_gemini_clinical_quick.md`), so the clinical hard-fails now
+> have a result on the tier that carries most of their traffic. **Check 8's wording is still
+> unresolved** — always a separate half, and it does not close with the run. Measurements and full reasoning: `archive/PROJECT_LOG.md`
 > § 2026-08-09.
 
 > **⚠ Check 5 (Discretion) has a live failure on record — 2026-08-15.** On 2026-08-12T00:14 the
@@ -155,6 +157,15 @@ Full item in the static plan.*
 > reproduction of the agent's own instruction file or the constitution, validated against 237 real
 > responses with one suppression, the leak itself. **Whoever runs check 5 should treat the filter as
 > the backstop it is, not as the check**: the instruction layer is what must hold, and it did not.
+>
+> **⚠ Updated 2026-08-18 — for this failure the filter is NOT a backstop, it is the only
+> control.** Measured against the live Vertex endpoint: the model's deliberation arrives inside
+> `content`, indistinguishable from its answer, with no separate reasoning channel — so nothing
+> upstream can separate them and `include_thoughts: False` changes nothing. Tier 5 now
+> suppresses a reply that *opens* by announcing its own reasoning
+> (`tests/test_deliberation_leak_filter.py`, 28 checks, confirmed failing on HEAD first).
+> Known limit: deliberation *mid*-answer is not caught, deliberately — any pattern loose enough
+> also fires on ordinary prose, and suppression costs the user the whole reply.
 
 > **✅ Check 10's known Fail is fixed** — `research_agent` source fabrication, 2026-08-10
 > (`a36d8c2`/`e3904fd`), deployed and verified live. **This does not close check 10** — the

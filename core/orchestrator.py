@@ -998,6 +998,22 @@ def _normalise_for_filter(text: str) -> str:
 # ordinary, legitimate behaviour. Including them would fire on correct responses.
 _INSTRUCTION_NGRAM = 10
 
+# Tier 5. A response that opens by announcing its own reasoning, e.g.
+# "**Step-by-Step Reasoning:**", "My thought process:", "Reasoning:", "Analysis:".
+# Optional leading markdown emphasis/heading marks, then the phrase, then a colon —
+# the colon is required, because it is what makes this a *header* rather than a
+# sentence that happens to begin with the word ("Analysis of your spending suggests…"
+# must survive). Anchored at the start of the response by the caller.
+_DELIBERATION_OPENER_RE = _re.compile(
+    r'^[#*_\s]{0,6}'
+    r'(?:step[-\s]?by[-\s]?step\s+)?'
+    r'(?:reasoning|analysis|thought\s+process|my\s+thought\s+process|'
+    r'internal\s+(?:reasoning|monologue|deliberation)|deliberation|'
+    r'thinking\s+(?:it\s+)?through|chain\s+of\s+thought)'
+    r'[*_\s]{0,4}:',
+    _re.IGNORECASE,
+)
+
 
 @lru_cache(maxsize=32)
 def _instruction_ngrams(agent_name: str) -> frozenset:
@@ -1173,6 +1189,33 @@ def filter_output(text: str, agent_name: str, user_text: str | None = None) -> s
                 return _suppress(
                     f"verbatim instruction text {' '.join(span)!r} reproduced"
                 )
+
+    # Tier 5 — the response OPENS with a deliberation header.
+    #
+    # Measured against the live Vertex endpoint 2026-08-18, and it retires the
+    # "plumbing fault" hypothesis rather than confirming it. When the model
+    # deliberates in prose, that prose arrives in `delta.content` like any other
+    # text — the only extra field on the stream is an opaque `thought_signature`.
+    # There is no separate reasoning channel being dropped, so **no amount of
+    # plumbing upstream can separate deliberation from the answer**; by the time
+    # anything can see it, it is the same string. `include_thoughts: False` was
+    # tried and does not change it. `thinking_budget: 0` does, by disabling
+    # thinking altogether — rejected, because degrading the reasoning of the one
+    # user-facing agent to fix a formatting leak is the wrong trade.
+    #
+    # Tiers 1–4 catch this only by luck: they fire on architecture *vocabulary*,
+    # and generic deliberation names nothing. Verified — "**Step-by-Step
+    # Reasoning:** 1. Analyze the request... " passes all four untouched and
+    # reaches the user. What makes it recognisable is its shape, not its words.
+    #
+    # Anchored to the *start* deliberately, and matched only as a heading. A
+    # numbered list mid-answer is ordinary and legitimate ("here are three
+    # options"); a reply that opens by announcing its own reasoning is not
+    # something a companion ever has cause to say. That anchoring is what keeps
+    # this from suppressing real answers, which is the expensive failure — the
+    # user loses their reply entirely.
+    if _DELIBERATION_OPENER_RE.match(norm.lstrip()):
+        return _suppress("response opens with a deliberation header")
 
     return text
 

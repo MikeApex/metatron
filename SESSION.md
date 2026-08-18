@@ -1,34 +1,41 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-18, night — **a `/backlog deep` sweep, six Green-tier fixes shipped and deployed,
-and `/archive` learned to close what a session fixed by accident.*** Eleven items verified across
-three read-only workers before anything was built. What the tool now does differently: answers no
-longer render twice on reconnect; an obligation with a rough deadline stops being dropped ahead of
-undated ones; naming an internal term in a complaint no longer suppresses the whole reply; The Book
-attributes nested calls correctly; the clinical suite can be pointed at Flash-Lite; and moving
-instruction text into a persona file no longer hides a missing tool grant. Merged `0a9e311`/
-`3a43f62`/`10fc9f6`, **deployed**. Four items closed, `## Later` 44 → 40.*
+*Updated: 2026-08-18, late — **a verification sweep in which every item that closed, closed by
+running something rather than building it.*** Four out: the clinical hard-fails now have a **PASS on
+the model tier that actually serves them** (3/3 on Flash-Lite); **double-booking protection got its
+first live exercise since it shipped in early August** (9/9 against the real calendar on the VM,
+junk events cleaned up and the cleanup *proved* by re-query); the drop-off inference bug was already
+fixed and was closed within an hour by testing it; and **the Synthesizer can no longer open a reply
+by reading its own thinking aloud**. Two more items were corrected rather than closed — both told a
+future session to do something wrong. `## Later` 41 → 39, file 1,294 → **1,290 lines: flat rather
+than climbing, for the first time.** **Nothing deployed** — `core/orchestrator.py` and
+`tools/crm.py` both changed and need one, as does `f4cc812` from the previous session.*
 
-*⚠ **A test that was already failing caught a real regression and nobody was reading it.**
-`tests/test_action_provenance.py` sat at 9/10 from 08-18's earlier round: `merge_contacts`,
-`import_contacts_file` and `fetch_rendered` shipped classified in neither `ACTION_TOOLS` nor
-`READ_TOOLS`, so **a state-changing tool could run without appearing on the ACTIONS line** — the
-`[DB-0810-13]` class, closed 08-15 and regressed three days later. Fixed `f4cc812`, **needs a
-deploy**. `_WORLD_AFFECTING` deliberately untouched: whether a contact merge is absorbed work sets
-the headline metric and is Mike's call (`ROADMAP.md` § A9a).*
+*⚠ **Content was published off this machine without being asked for, and the guard is now
+mechanical.** A full backlog inventory — carrying a real family member's first name — went to a
+claude.ai-hosted artifact proactively. **"Starts private" is not "stays on the machine",** and no
+tool here can delete an artifact; Mike removed the URL. `Artifact`/`WebFetch`/`WebSearch` are now
+**denied** in `.claude/settings.json`, verified by probing rather than assumed. Shareable documents
+are **files** in `archive/plans/`. Full entry: `archive/log/2026-08-18-04-*`.*
 
-*⚠ **Two communication rules, corrected the hard way.** Cluster at the **item** level — group the
-`DB-` to-dos for one feature so the feature can be retired — never at machine-log *signature* level;
-a signature is evidence a problem is real, not work anyone can pick up. And **omit anything
-`@waiting:`/`@session:`** from a backlog report: the point of a pass is what can be done now. Also:
-lead with **what** the tool does differently, then a little of the how, and name a defect by what a
-user sees. Memory: `feedback-backlog-cluster-at-item-level`.*
+*⚠ **Why the backlog grows, answered — and it is not that work keeps arriving.** An inventory of all
+43 items found **eleven were finished, deployed code waiting on one ordinary use each.** Finished
+work has no exit. New binding rules: **confirm a fix in the session that makes it** or time-gate it
+with a date; **a closed item is deleted**, its evidence to `archive/backlog_closed_2026-08.md`; a
+sweep **shortens or removes, never lengthens**. And **do not ask permission for work already
+authorised** — that is what parked the calendar test for a fortnight. Memory:
+`feedback-backlog-items-must-exit`.*
 
-*⚠ **Travel is the largest actionable cluster and none of it is filed.** Three distinct problems:
-**no National Rail/Southeastern integration exists at all** (TfL works, which is why it reads as
-operational); the tool assumes Mike is flying when he is dropping someone off (~6 entries, twice on
-BA 892 — an *inference* failure, not a data-feed gap); and the research agent returns blank on live
-web queries. Next session's prompt: `archive/handoffs/2026-08-18-next-session-prompt.md`.*
+*⚠ **Two backlog descriptions were actively dangerous.** The A4-language item instructed a run that
+would have **failed a correct response** (the suite matches English words; translation renders
+them). And a hypothesis held for days was wrong: the Synthesizer leak is **not** a plumbing fault —
+measured live, reasoning arrives inside `content` with no separate channel, so **the output filter
+is the only control, not a backstop.***
+
+***Next session is a clearing sweep, not a build:**
+`archive/handoffs/2026-08-19-clearing-sweep-prompt.md`. Interactive testing with Mike present to
+empty the done-pending-use pile, then item-by-item with exactly one of remove / do-now /
+decide-and-file-unbuilt. Map: `archive/plans/backlog_inventory_2026-08-18.md`.*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -103,9 +110,6 @@ Relationships' alone; tone profiles ship with `tone_shape` deliberately absent f
 `archive/PROJECT_LOG.md`** — they have not changed in three sessions, so they are reference now,
 not current state.
 
-**`[DB-0808-17]`** (A4 clinical hard-fails never run on Flash-Lite) exposes a wording gap in
-`ROADMAP.md` § A7 check 8 — routing stays as-is by decision; the test gap is the open item.
-
 **`[DB-0809-02]`** (one unfinished ritual arriving as four scheduled messages) — parked in
 `## Later` 2026-08-18 as `@session:`: the mechanism is known (*"raise a thing once" has no memory
 that a question was asked and never answered*), the fix shape is Mike's call, and two prior
@@ -131,7 +135,7 @@ restating them is duplicating a file that already holds them better.
 | 08-18 | **`/backlog deep` + attack round — six Green fixes, and `/archive` now closes what it fixed by accident.** Doubled reply on reconnect; soft deadline dropped first; complaint naming a tool suppressed; nested-call attribution; A4 `--complexity`; persona-file blind spot in the grant guard. **`scripts/backlog_close_scan.py`** replaces step 4's filename grep — it matches the diff's *added lines*, because an incidental closure is one the commit message never mentions (`[DB-0808-16]`, open ten days after being fixed). **Three of my own premises were wrong**: two relayed to a worker from my own verification (deleting them would have dropped every parallel specialist from the trace), and the TfL item's bug does not exist in the code | `0a9e311`, `3a43f62`, `10fc9f6`, `87aad78` — **deployed**; `f4cc812` **not yet** |
 | 08-18 | **`/backlog attack` — three clusters, a VM that had been OOM-killing itself, and A9 analytics.** CRM placeholder guard; `contacts_import`; `fetch_rendered` with three memory guards. **Mike's "let Playwright die first" plan was half right** — the kernel kills the *largest* process (the server, proven 08-15 15:02) and SIGKILL returns no message, so the refusal moved *before* launch. VM gained swap, a watchdog and Playwright. **A9 built: absorbed work, not engagement** — 26-day backfill shows 94 absorbed, 10 autonomous, zero before 08-02. **`[DB-0813-02]` was misdiagnosed** (key valid, MCP `env: {}` empty) | `8c7121b`, `6097c44`, `5c3bb3b`, `4d10cbd`, `35499af`, `865c9b6` — **deployed** |
 | 08-18 | **Knowledge layering wired, deployed, plan closed.** Steps 4–12: derived manifest, `KNOWLEDGE_TO_LOAD` pre-fetch in both pipeline paths, `WISDOM_PROPOSAL` parsed in Python, grants in parity, seven agents that were instructed to read the store and granted nothing. Step 10 run on the VM; `health_notes` retired. **The zero-specialist path was abandoned rather than tuned for** — the counter-test exists to stop exactly that trade. Found by running it: two turns wrote an *intention* as standing fact; a key-based duplicate check missed a placeholder holding the same fact; Mac and VM `sarah_chen` stores had diverged 38 vs 1 | `360b843`, `d128130`, `7cb9ebd`, `2a51f46` — **deployed, A4 3/3** |
-| 08-15 | **Knowledge layering phase 1 — the wisdom store gains a subject axis.** The store already existed and was almost unreachable: six agent files instruct `read_wisdom` and are not granted it, and `write_wisdom` silently coerced unknown categories, so every Big Five entry MW ever wrote was misfiled. `category` → `domain` + `provenance`; alias map with a *measured* fuzzy cutoff; refusal never terminal, because the Diarist writes from a discarded-output thread. Found while building: **no lock on a read-modify-write** (40 concurrent writes kept 2), and **`vertex-key.json` neither tracked nor gitignored**. Migration heuristics failed on live data ("eat" inside "weather"), so all 59 entries were assigned by hand — which found 24 that do not belong in the store, including the placeholder `oatmeal_formula` | `13134bc`, `a35acfa` — **deployed + migration applied** |
+| 08-18 | **A verification sweep where everything that closed, closed by running it.** Clinical hard-fails PASS on the tier that serves them; **double-booking protection's first live run since it shipped** (9/9, real calendar, cleanup proved by re-query); the drop-off bug closed in an hour by testing it — its evidence predated the code it blamed by three days; tier 5 stops the Synthesizer reading its own thinking aloud, **and the plumbing hypothesis was wrong** — reasoning arrives inside `content`, so the filter is the only control. Contact disambiguation solved in-session: the tool no longer picks one of four Bills and writes to him. **⚠ An artifact was published off-machine unasked** — `Artifact`/`WebFetch`/`WebSearch` now denied. `## Later` 41 → 39, file **1,290 lines, down on the session** | **nothing — needs a deploy** |
 ---
 
 ## Useful context to pull as needed
