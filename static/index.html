@@ -773,6 +773,19 @@
   let reconnectTimer = null;
   const STALE_AFTER_MS = 45000;
 
+  // Set while we are waiting for a doomed socket's `close` before opening its
+  // replacement. Every entry point into ensureConnected (focus, online,
+  // visibilitychange, the 20s interval) must respect it or the wait is pointless.
+  let closePending = false;
+
+  // How long we wait for that `close` before giving up and connecting anyway.
+  // A close handshake is tens of milliseconds, and close() on an already-dead
+  // socket transitions locally without the peer, so this only fires on a socket
+  // that has stopped emitting events at all. It sits below the 3000ms passive
+  // reconnect delay (so a deliberate reconnect is never the slower path) and well
+  // below the 20000ms ensureConnected interval (so waits cannot stack).
+  const CLOSE_WAIT_MS = 1500;
+
   function socketUsable() {
     return ws && ws.readyState === WebSocket.OPEN &&
            (Date.now() - lastMessageAt) < STALE_AFTER_MS;
@@ -786,40 +799,85 @@
     }, delay);
   }
 
+  // Replace the current socket, waiting for the old one to ACTUALLY close first.
+  //
+  // WebSocket.close() is asynchronous. The previous version called close() and
+  // connectWebSocket() on consecutive lines, so between them both sockets were live
+  // — and the server's ConnectionManager keeps a *set* of sockets per persona and
+  // broadcasts to all of them, so a streaming chunk arrived twice on one device and
+  // rendered twice in one bubble. Observed live twice on 2026-08-10.
+  //
+  // Not fixed server-side by refusing a second connection per persona: two live
+  // sockets is the supported multi-device case (phone + browser), deliberate and
+  // commented as such in core/server.py. The race is a client-side sequencing bug,
+  // so the fix stays client-side.
   function ensureConnected() {
     if (!currentPersona) return;
+    if (closePending) return;
     if (ws && ws.readyState === WebSocket.CONNECTING) return;
     if (socketUsable()) return;
-    // Drop the corpse first: closing a half-open socket is what finally makes
-    // onclose fire, and without it we would stack duplicate connections.
-    if (ws) { try { ws.close(); } catch (e) {} }
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-    connectWebSocket(currentPersona);
+
+    const dying = ws;
+    // Detached before close() resolves, so anything still arriving on it is
+    // recognisable as superseded (see the `sock !== ws` guards below) and so
+    // socketUsable() cannot report the corpse as live.
+    ws = null;
+
+    if (!dying || dying.readyState === WebSocket.CLOSED) {
+      connectWebSocket(currentPersona);
+      return;
+    }
+
+    closePending = true;
+    let proceeded = false;
+    const proceed = () => {
+      if (proceeded) return;
+      proceeded = true;
+      clearTimeout(waitTimer);
+      closePending = false;
+      if (currentPersona) connectWebSocket(currentPersona);
+    };
+    // The regression this guards: a close event that never fires (Android WebViews
+    // do exactly this on a half-open socket) must not strand the client offline
+    // forever. Waiting is the fix; waiting unboundedly would be a worse bug.
+    const waitTimer = setTimeout(proceed, CLOSE_WAIT_MS);
+    dying.addEventListener('close', proceed);
+    // Closing a half-open socket is what finally makes onclose fire.
+    try { dying.close(); } catch (e) { proceed(); }
   }
 
   function connectWebSocket(persona) {
     const base = SERVER || window.location.origin;
     const wsUrl = base.replace(/^http/, 'ws') + '/ws?persona=' + encodeURIComponent(persona);
-    ws = new WebSocket(wsUrl);
+    // Every handler below closes over `sock`, never the module-level `ws`, and
+    // no-ops unless it is still the active socket. Without this a superseded
+    // socket's late frames would render into the live conversation — the second
+    // half of the duplicate-text bug — and its onerror/onclose would act on
+    // whichever socket happened to be current by then.
+    const sock = new WebSocket(wsUrl);
+    ws = sock;
     lastMessageAt = Date.now();
 
-    ws.onopen = () => {
+    sock.onopen = () => {
+      if (sock !== ws) { try { sock.close(); } catch (e) {} return; }
       lastMessageAt = Date.now();
       setStatus('Connecting...', '#888');
       // The server requires the first frame to be an auth frame — a WebSocket cannot
       // carry an Authorization header, and a ?token= in the URL would land in the
       // access log. Nothing else is sent until the server answers auth_ok.
-      ws.send(JSON.stringify({ type: 'auth', token: authToken }));
+      sock.send(JSON.stringify({ type: 'auth', token: authToken }));
     };
 
-    ws.onmessage = (event) => {
+    sock.onmessage = (event) => {
+      if (sock !== ws) return;   // superseded socket: render nothing
       lastMessageAt = Date.now();
       const msg = JSON.parse(event.data);
 
       if (msg.type === 'auth_ok') {
         setStatus('Ready', '#555');
         if (lastSeenId > 0) {
-          ws.send(JSON.stringify({ type: 'catchup', since_id: lastSeenId }));
+          sock.send(JSON.stringify({ type: 'catchup', since_id: lastSeenId }));
         }
         return;
       }
@@ -835,19 +893,25 @@
       handleWsMessage(msg);
     };
 
-    ws.onerror = () => {
+    sock.onerror = () => {
       // An error does not reliably produce a close on mobile WebViews. Force it
       // so the reconnect path runs instead of the socket sitting there dead.
-      try { ws.close(); } catch (e) {}
+      try { sock.close(); } catch (e) {}
     };
 
-    ws.onclose = () => {
-      // If a response was in-flight on this device, finalize what we have
-      if (ownBubble) {
+    sock.onclose = () => {
+      const current = (sock === ws);
+      // Finalize an in-flight response only if this socket was the one carrying it:
+      // either it is still active, or nothing has replaced it yet (the window in
+      // which ensureConnected has detached it and is waiting for this very event).
+      if ((current || ws === null) && ownBubble) {
         ownBubble.textContent = ownAccumulated || '[Connection lost]';
         ownBubble = null; ownAccumulated = '';
         setLoading(false);
       }
+      // A socket already replaced must not touch the status line or start a
+      // reconnect — the live socket is the one that owns both.
+      if (!current) return;
       // A socket the server closed for bad credentials must not be retried — the
       // token will still be bad, and the reconnect loop would hammer the server
       // while showing the user nothing but "Reconnecting...".

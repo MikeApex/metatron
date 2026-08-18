@@ -255,6 +255,34 @@ def list_obligations(include_closed: bool = False) -> str:
     return "\n".join(lines)
 
 
+def _due_sort_key(it: dict) -> tuple[int, str]:
+    """
+    Order by *whether a deadline was stated at all*, then by its value.
+
+    The previous key was `str(due or "9999")` — a sentinel meant to sink undated
+    obligations to the bottom. It did the opposite for the vague case: letters sort
+    lexically after digits, so "next week" landed below the `"9999"` of an obligation
+    with no due date at all, and `_CONTEXT_MAX` truncation dropped the *dated* one
+    first. `OPEN_OBLIGATION_SCHEMA` explicitly invites "short phrase if genuinely
+    vague", so this was the schema's own documented input hitting a lexical sort.
+
+    Buckets: 0 = parseable ISO date (soonest first), 1 = a due value that is present
+    but not a date (the vague phrase), 2 = nothing stated. Any stated urgency outranks
+    none, which is the intent the sentinel was reaching for.
+    """
+    # Falsy `due` is "nothing stated", matching the `due or ...` semantics this key
+    # replaces — the bug was the ordering of the buckets, not that test.
+    raw = it.get("due")
+    due = str(raw).strip() if raw else ""
+    if not due:
+        return (2, "")
+    try:
+        datetime.fromisoformat(due)
+    except (ValueError, TypeError):
+        return (1, due.lower())
+    return (0, due)
+
+
 def context_block(persona: str | None = None) -> str:
     """
     Open obligations as a section for load_recent_context — no model call, no tool call.
@@ -271,7 +299,7 @@ def context_block(persona: str | None = None) -> str:
     if not items:
         return ""
 
-    items.sort(key=lambda it: str(it.get("due") or "9999"))
+    items.sort(key=_due_sort_key)
     shown = items[:_CONTEXT_MAX]
     lines = ["## Open obligations",
              "Commitments recorded as outstanding. Material you may draw on — not an agenda, "
