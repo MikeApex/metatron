@@ -250,6 +250,74 @@ Unlocks: Phase 6 begins on a legible, modular codebase. B2 (PoLP) works in `core
 
 ---
 
+**A9 — Product analytics instrumentation (pre-Alpha, and it must land before ship)**
+*Gate: none — it is independent of A7/A8 and should be built alongside them. Alpha does not ship
+without it.*
+
+**Mike's requirement, 2026-08-18: "We want to be able to measure and quantify usage FROM THE
+START."** That is a sequencing constraint, not a feature request. Section 3 defines Alpha as the
+point where data accumulation begins and E3a's four-week clock starts. Instrumentation added *after*
+that leaves the first weeks unmeasured — and the first weeks of a companion tool are the least
+like every week that follows, so they are the ones worth having and the only ones that cannot be
+recovered later. **You cannot retro-fit a question onto data you did not keep.**
+
+**Most of the collection already exists — this is mainly definition and rollup, not new plumbing.**
+`core/trace.py` already records, per request: the agent path, per-turn token counts
+(`record_turn_tokens`), every `ToolCallRecord`, and an `is_proactive` flag distinguishing a
+scheduler-initiated turn from a user-initiated one. `tools/logger.py` writes quality events.
+`/monitor/{conversations,traces,model_errors,history}` already expose the streams. What does not
+exist is a **defined metric set and a durable daily rollup** — traces are per-request and prunable,
+so today the raw material is there and no question is actually answerable from it.
+
+**Step 1 — write down the questions before writing any code.** The deliverable is a short document,
+`archive/plans/product_analytics_questions_YYYY-MM-DD.md`, agreed with Mike. Candidate questions,
+to be cut and added rather than accepted wholesale:
+
+- **Engagement:** sessions per day; turns per session; the proactive/reactive split and whether
+  proactive turns get answered or ignored — the latter is the closest thing to a "was this welcome"
+  signal the system can honestly collect.
+- **Retention/habit:** days used per week; longest gap; time-of-day distribution.
+- **Breadth:** which specialists are actually dispatched, and which are never reached — a specialist
+  that never fires is either mis-routed or unnecessary, and both are worth knowing before more are
+  built.
+- **Tools:** call counts per tool, failure rate per tool, and **tools registered but never called**
+  (the `[DB-0810-03]`/`[DB-0810-17]` class, visible as data rather than by audit).
+- **Quality proxies:** correction rate (already partly in `USER_CORRECTION` events), repeat-question
+  rate, and abandoned interactions.
+- **Cost and latency:** tokens and wall-clock per session, by agent, so D2's cost work has a real
+  baseline rather than an estimate.
+
+**Step 2 — a durable daily rollup.** One append-only record per day, written by a scheduler
+maintenance job (`_DEFAULT_JOBS` in `core/scheduler.py`, not a per-persona `scheduler.yaml` entry —
+this is maintenance, not a prompt). It must be **derived, small, and permanent**: derived so raw
+traces stay prunable, small so a year of it is trivially readable, permanent so the Alpha period is
+still measurable in six months.
+
+**Step 3 — a way to read it.** A CLI or a `/monitor` view. Deliberately not a dashboard build —
+the point is answering the questions, and a table read once a week does that.
+
+**Hard constraints, all three binding:**
+
+1. **No third-party analytics SDK. Ever.** PostHog, Amplitude, Mixpanel, GA and every peer ship
+   behavioural data to a vendor. Usage data about the user *is* personal data — arguably the most
+   revealing kind, since it records what he asked for and when. Sending it off-box contradicts
+   § Section 0 directly. Analytics is local files and local aggregation.
+2. **Sensitive tier throughout**, same as logs and journals. It never routes to a cloud model for
+   analysis except through the statistical pre-aggregation path already deferred in
+   `research/pm_future.md`.
+3. **Never surfaced to the user.** Per `CLAUDE.md` § Discretion — the tool does not tell the user it
+   is measuring him, and no agent references these metrics in a response. This is developer
+   instrumentation, not a feature.
+
+**Test:** run for one week of real use; produce answers to at least the engagement, breadth and
+tool questions from the rollup alone, without reading raw traces. Pass: each answer traces to a
+stored field, and deleting the raw traces for that week does not lose any of them.
+
+Unlocks: an Alpha whose data is worth reading; a real baseline for D2 cost analysis; evidence for
+the Observer-agent concept instead of intuition.
+
+---
+
 ### Track B — Security Hardening (Phase 6A)
 *Start now. Independent of Tracks C–F. B1 runs against the current Phase 5 system.*
 
@@ -460,7 +528,7 @@ Unlocks: E2 Wishes full build (encryption required); D1 local model upgrade deci
 
 | Gate | Requires | Unlocks |
 |---|---|---|
-| **Alpha** | A1 + A2 + A3 + A4 + A5 (incl. A5b, A5c) + A6 + A7 + A8 | Tracks D, E start; alpha data accumulation begins |
+| **Alpha** | A1 + A2 + A3 + A4 + A5 (incl. A5b, A5c) + A6 + A7 + A8 + **A9** | Tracks D, E start; alpha data accumulation begins |
 | **Phase 6 close** | D1 + D2 + E1 + E2 + E4 (conversations resolved or explicitly deferred with a date) + E5 + `tests/phase6_testing_plan.md` (amended 2026-06-10) passes. **E3 is explicitly not required.** | Phase 7 gate (one of three) |
 | **Phase 6A close** | B1–B4 + `tests/security_testing_plan.md` (amended 2026-06-10) fully passes. Earliest possible close is post-E1 (indirect injection checks). | Phase 7 gate |
 | **Phase 6B close** | Legal brief produced and decisions documented | Phase 7 gate |

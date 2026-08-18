@@ -224,6 +224,29 @@ standing rule distrusts.*
   was waiting on is not this item's. Carrying it here excluded a buildable item from the workable
   count — a marker scoped to half an item cannot be seen by the counter, which reads per item.*
 
+- **2. [DB-0818-03] We cannot say how much the tool is used, and after Alpha ships it is too late
+  to start.** Mike, 2026-08-18: *"We want to be able to measure and quantify usage FROM THE START."*
+  **Full specification is `ROADMAP.md` § A9**, which is now a named requirement of the Alpha gate —
+  not restated here, because a duplicate copy is the thing that goes stale.
+  **The one-line reason it is `## Now` and not `## Later`:** Section 3 defines Alpha as the moment
+  data accumulation begins. Instrumentation added afterwards leaves the first weeks unmeasured, and
+  those are both the least representative weeks and the only ones that cannot be recovered.
+  **The work is smaller than it sounds — collection mostly exists.** `core/trace.py` already records
+  the agent path, per-turn tokens, every tool call, and an `is_proactive` flag; `tools/logger.py`
+  writes quality events; `/monitor/*` exposes the streams. What is missing is a **defined question
+  set** and a **durable daily rollup**, because traces are per-request and prunable, so today
+  nothing is actually answerable from them.
+  **Start with step 1 only — the questions document — and put it to Mike before building anything.**
+  The metric set decides what gets stored, and storing the wrong things is the failure that looks
+  like success for a month.
+  **Do not reach for a third-party analytics SDK.** PostHog/Amplitude/Mixpanel and peers ship
+  behavioural data off-box; usage data about the user is personal data, and § Section 0 forbids it.
+  Local files, local aggregation.
+  @kind: feature
+  @session: which questions matter — the metric set is Mike's call and it determines what is stored
+  *filed 2026-08-18 by Mike · **Mike-originated**, so it clears the entry bar outright · ranked 2
+  behind the venue item only because that one is a short build and this one opens with a decision*
+
 
 ## Later
 
@@ -378,7 +401,7 @@ change — not on a schedule.
   predicted.*
   **The fix that is already in and must not be undone:** `82d394b` (deployed) —
   `_frame_proactive()` labels scheduler input as a directive in both pipeline copies
-  ([core/orchestrator.py:3089](core/orchestrator.py#L3089), called at `:3134` and `:3264`), and the
+  ([core/orchestrator.py:3706](core/orchestrator.py#L3706), called at `:3751` and `:3916` — repointed 2026-08-18, the old citation had drifted ~600 lines), and the
   repeated-instruction protocol requires the *user* to have repeated it. It works; it just does not
   address this.
   **Two prior diagnoses were confidently wrong before this one — the narrative is in

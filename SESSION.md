@@ -1,27 +1,27 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-18 — **the knowledge layer is wired, deployed, and its plan is closed.** Steps
-4–12 of `~/.claude/plans/to-be-clear-we-modular-knuth.md` shipped (`360b843`, `d128130`,
-`7cb9ebd`, `2a51f46`): a derived manifest naming which subjects are on file, `KNOWLEDGE_TO_LOAD`
-pre-fetch in **both** pipeline paths, `WISDOM_PROPOSAL` parsed in Python, grants in parity, and
-`config/modules/knowledge_domains.yaml` as the only coupling between subjects and the roster.
-Step 10 ran on the VM: Mike's `health_notes` is now `standard_breakfast`/`food`, out of every
-head-layer prompt, and `health_notes` is retired from `tools/profile.py`. **A4 pipeline 3/3
-after.** Gate: `tests/run_knowledge_routing.py` (self-seeding, refuses `mike`).*
+*Updated: 2026-08-18, later — **`/backlog attack`: three clusters shipped, and the VM turned out
+to have been dying and restarting unnoticed.** Placeholder contact details refused across every
+field (`8c7121b`); `tools/contacts_import.py` for CSV/vCard (`5c3bb3b`); `fetch_rendered`, a
+read-only headless-browser fetch behind the same boundary as `fetch_url` (`6097c44`). All
+registered and granted, **deployed `b62bb18`**. Sizing the browser found three `Out of memory:
+Killed process` entries — one killed the server itself at 3.6 GB RSS, masked by `Restart=always`.
+The VM now has 2 GB swap, a 5-minute watchdog (which caught the existing kill on its first run),
+and Playwright proven at **~189 MB** per page against a 700 MB pre-flight refusal. Disk went 76% →
+**75% having gained both**. `## Now` is **2 items**.*
 
-*⚠ **The zero-specialist path does not fire, by decision.** "Thinking about changing up
-breakfast" reaches the stored fact but still dispatches Physical Health — twice, the second time
-after a worked example that changed nothing and was reverted. `coordinator.md:48` mandates
-dispatch for advice and is **deliberately left dominant**: over-dispatch costs tokens,
-under-dispatch loses a user's record. Pass A now gates retrieval, not the skip. Reopen only with
-a way to prove Pass B survives the change — reasoning is in the test docstring.*
+*⚠ **Two lessons the next `attack` should carry.** Disjoint file manifests prevent *file*
+collisions and nothing else — clusters A and B passed alone and failed 7/17 merged, because one
+wrote fixtures the other had just learned to refuse. And **`[DB-0810-17]` re-proposed the Google
+Contacts OAuth path Mike reversed on 2026-08-08**: verifying the code claim was not enough, because
+a thing removed on purpose and a thing never built look identical in the current tree. Full
+narrative: `archive/log/2026-08-18-01-backlog-item-hid-a-reversal.md`.*
 
-*Two things the next session should not re-derive. **A key-based duplicate check is not
-evidence** — step 10's dry run reported no collision while the same fact sat under
-`oatmeal_formula`; `find_related_wisdom()` exists because of it, and **semantic similarity was
-measured and rejected** (0.484 duplicate vs 0.479 nuance — indistinguishable). **The Mac and VM
-persona stores diverge silently**: `sarah_chen` held 38 entries on the Mac and 1 on the VM. Both
-migrated; the Mac's 38 → 19 after consolidating a 20-entry deflection cluster.*
+*Prior session (parallel window) — **the knowledge layer is wired, deployed, and its plan is
+closed**: derived manifest, `KNOWLEDGE_TO_LOAD` pre-fetch in both pipeline paths, `WISDOM_PROPOSAL`
+parsed in Python, `health_notes` retired. **The zero-specialist path does not fire, by decision** —
+`coordinator.md:48` stays dominant because over-dispatch costs tokens and under-dispatch loses a
+user's record. Detail: `archive/PROJECT_LOG.md` § 2026-08-18.*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -77,41 +77,32 @@ Three checks still open:
 - **Check 12** — constitution alignment review
 - **A5b/A5c** — re-run `write_aspirational_baseline` with A5 mission-level data (A3 baseline is still a placeholder); A5c preference activation recorded "unknown, confirm if needed."
 
+**A9 — Product analytics instrumentation — NEW 2026-08-18, and it is now an Alpha gate
+requirement.** Mike: *"measure and quantify usage FROM THE START."* That is sequencing, not a
+feature — Section 3 defines Alpha as when accumulation begins, so anything added later leaves the
+least-recoverable weeks unmeasured. **Collection largely exists** (`core/trace.py` already records
+agent path, per-turn tokens, tool calls, `is_proactive`); what is missing is a question set and a
+durable daily rollup. **Spec: [ROADMAP.md](ROADMAP.md) § A9**; tracked as `[DB-0818-03]`, which
+opens with a decision, not a build. Independent of A7/A8 — buildable now.
+
 **A8 — Pre-Alpha code refactor** — gated on A7. Module extraction from
 `core/orchestrator.py` and `core/server.py`. **Full spec, including the regression gate, is in
 [ROADMAP.md](ROADMAP.md) § A8** — not restated here, it was a duplicate copy.
 
-**Built, with the constraint that must not be undone** — reasoning for all four:
-`archive/PROJECT_LOG.md`.
-
-- **Outbound messaging is Relationships' alone** (`9eb5ac4`); Logistics keeps `read_email`, and
-  **Coordinator routes any message-to-a-person to Relationships**, which holds three-level
-  disclosure discretion and the communication-style baseline. `send_email`'s `disclosure_note` is
-  **outside the confirm fingerprint** — do not move it into `args`. **The ZDR clarification is
-  project-wide** (`ROADMAP.md` § Section 0).
-- **Tone profiles** deployed, untestable for lack of data (`88957e6`, `3a2bb29`). `tone_shape` is
-  accepted by `write_contact` but **deliberately absent from its schema** — only `tone.py` writes
-  it, because the source is attacker-writable mail read back as trusted prompt text.
-- **Obligations are data, not jobs.** `close_obligation` **requires** evidence; the reconcile
-  sweep **never notifies** — it writes candidates, a model session judges.
-- **Scheduler jobs split two ways** (08-08): maintenance jobs from `_DEFAULT_JOBS` in
-  `core/scheduler.py`; prompt/notification jobs in per-persona `scheduler.yaml`. **Do not re-add a
-  maintenance job to a persona file.**
-
-**The backlog is the bin for everything outside this roadmap**; live counts come from the sync
-line, not here. Work it with **`/backlog`** (`deep` = clustering, `attack` = parallel prompts) —
-which command and when: [docs/WORKFLOW.md](docs/WORKFLOW.md); its three rules: `CLAUDE.md`.
+**Four built-and-standing constraints must not be undone** — outbound messaging is
+Relationships' alone; tone profiles ship with `tone_shape` deliberately absent from
+`write_contact`'s schema; obligations are data, not jobs; scheduler maintenance jobs live in
+`core/scheduler.py`, never a persona file. **Full statements and the reasoning for all four:
+`archive/PROJECT_LOG.md`** — they have not changed in three sessions, so they are reference now,
+not current state.
 
 **`[DB-0808-17]`** (A4 clinical hard-fails never run on Flash-Lite) exposes a wording gap in
 `ROADMAP.md` § A7 check 8 — routing stays as-is by decision; the test gap is the open item.
 
-**`[DB-0809-02]` is answered early, and all three of its hypotheses are wrong.** Mike's "three
-repetitive messages" (reported 08-12, about **08-11**) were **four different scheduled jobs** —
-`companion_checkin` 16:46, an inbox job 18:13, `companion_checkin` 19:48, `evening_close` 20:00 —
-each picking up the unfinished evening ritual and re-asking the same two questions.
-`_frame_proactive()` works; `evening_close` is a victim, not the culprit. **The real mechanism:
-"raise a thing once" has no memory that a question was asked and never answered.** Rewrite the item
-around that rather than running its trace week to `due: 2026-08-17`.
+**`[DB-0809-02]`** (one unfinished ritual arriving as four scheduled messages) — parked in
+`## Later` 2026-08-18 as `@session:`: the mechanism is known (*"raise a thing once" has no memory
+that a question was asked and never answered*), the fix shape is Mike's call, and two prior
+diagnoses were confidently wrong. Evidence in `DEV_BACKLOG.md`, not here.
 
 **Knowledge layer — what is NOT covered.** A4 passes with `sarah_chen`'s manifest holding one
 `work` entry, so the regression **never touches the knowledge path**. Giving it coverage means
@@ -130,10 +121,10 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-18 | **`/backlog attack` — three clusters, and a VM that had been OOM-killing itself.** CRM placeholder guard widened to phone/address/social/name; `contacts_import` (CSV + vCard); `fetch_rendered` with three memory guards. **Mike's "let Playwright die first" plan was half right** — the kernel kills the *largest* process (the server, proven 08-15 15:02) and SIGKILL returns no message, so the polite refusal had to move *before* launch. VM gained swap, a watchdog and Playwright. **`[DB-0813-02]` was misdiagnosed**: the GPT key was valid, the MCP `env: {}` was empty — a rotation would have closed it and left GPT silent | `8c7121b`, `6097c44`, `5c3bb3b`, `4d10cbd`, `fa4d200`, `35499af`, `b62bb18` — **deployed** |
 | 08-18 | **Knowledge layering wired, deployed, plan closed.** Steps 4–12: derived manifest, `KNOWLEDGE_TO_LOAD` pre-fetch in both pipeline paths, `WISDOM_PROPOSAL` parsed in Python, grants in parity, seven agents that were instructed to read the store and granted nothing. Step 10 run on the VM; `health_notes` retired. **The zero-specialist path was abandoned rather than tuned for** — the counter-test exists to stop exactly that trade. Found by running it: two turns wrote an *intention* as standing fact; a key-based duplicate check missed a placeholder holding the same fact; Mac and VM `sarah_chen` stores had diverged 38 vs 1 | `360b843`, `d128130`, `7cb9ebd`, `2a51f46` — **deployed, A4 3/3** |
 | 08-15 | **Knowledge layering phase 1 — the wisdom store gains a subject axis.** The store already existed and was almost unreachable: six agent files instruct `read_wisdom` and are not granted it, and `write_wisdom` silently coerced unknown categories, so every Big Five entry MW ever wrote was misfiled. `category` → `domain` + `provenance`; alias map with a *measured* fuzzy cutoff; refusal never terminal, because the Diarist writes from a discarded-output thread. Found while building: **no lock on a read-modify-write** (40 concurrent writes kept 2), and **`vertex-key.json` neither tracked nor gitignored**. Migration heuristics failed on live data ("eat" inside "weather"), so all 59 entries were assigned by hand — which found 24 that do not belong in the store, including the placeholder `oatmeal_formula` | `13134bc`, `a35acfa` — **deployed + migration applied** |
 | 08-15 | **Bulgarian speech-in benchmarked, held indefinitely.** `WHISPER_MODEL_SIZE=base.en` is English-only, cannot emit Cyrillic; `base` (multilingual) gets right script at 46.4% WER, `small` gets 27.6% WER but near-real-time RTF (0.967) on the single-worker pool. Neither clears the bar — Mike's call to hold `[DB-0815-02](a)` in `## Later` indefinitely | none — benchmark + backlog note only, **not deployed** |
-| 08-15 | **`/backlog deep` — the correction signal was measuring itself wrong twice over.** 93 of 174 `USER_CORRECTION` events said only "None" (a template slot a model fills rather than omits — the agent file was left alone on purpose), and a `×N` was a *chain length*, not a repeat count: a chain of Heathrow corrections was reported as "calendar events imply completion ×16". Both fixed; historical events filtered at read, never deleted. CRM gained `merge_contacts` (archive-on-merge, first here) — **and being registered was not enough, it was granted to no agent.** Machine log had no *removal* step at all: 22 cleared, 8 ⚠ → 3. `fold_fragments()` was miscounting prose fragments as `0 inbox` | `6e57c73`, `2fa8cd6`, `704e79b`, `214a547`, `19cfd12` — **deployed** |
 ---
 
 ## Useful context to pull as needed
