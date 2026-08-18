@@ -1024,7 +1024,34 @@ def _instruction_ngrams(agent_name: str) -> frozenset:
     return frozenset(grams)
 
 
-def filter_output(text: str, agent_name: str) -> str:
+def _user_typed_terms(user_text: str | None) -> frozenset:
+    """Confidential identifiers the user themselves typed on *this* turn.
+
+    Scope is deliberately three ways narrow, because each widening would hand a
+    prober a way to switch off the backstop by asking about it:
+
+    1. **`_ALWAYS_CONFIDENTIAL` only.** `_CONTEXT_SENSITIVE` entries are ordinary
+       English words ("relationships", "finance"), so a user mentioning their
+       relationships would exempt the term for the whole reply — and tier 3 is
+       the only thing standing between "your relationships are improving" and
+       "the relationships agent said". Never exempted.
+    2. **Tight form only** (`_TIGHT_JOINER`) — the user must have typed the
+       identifier, `write_config` or `write-config` or `writeconfig`, not the two
+       ordinary words "write config". Spaced prose cannot buy an exemption.
+    3. **This turn's user text only.** Nothing is remembered; passing the next
+       turn's input recomputes the set from scratch, so an exemption cannot
+       outlive the message that earned it.
+    """
+    if not user_text:
+        return frozenset()
+    norm = _normalise_for_filter(user_text)
+    return frozenset(
+        term for term in _ALWAYS_CONFIDENTIAL
+        if _term_regex(term, _TIGHT_JOINER).search(norm)
+    )
+
+
+def filter_output(text: str, agent_name: str, user_text: str | None = None) -> str:
     """
     Scan final user-facing output for leaked architecture terms.
     Logs a warning and returns a safe fallback if any are found.
@@ -1067,18 +1094,35 @@ def filter_output(text: str, agent_name: str) -> str:
     on ordinary spaced prose. This filter is the last backstop, not the
     control: the agent confidentiality instructions are.
 
-    Deliberately does NOT exempt terms the user already typed themselves —
-    that would let a direct probing question ("what does write_config do?")
-    disable its own backstop. See B1 red-team category "Direct tool inquiry"
-    in the roadmap. The resulting false positive (Exchange 027, 2026-06-26 —
-    user mentioned "write_config" in a complaint, got the canned fallback
-    instead of a real reply) is unchanged by this upgrade and remains an
-    accepted risk: fixing it needs the user's own turn passed in for
-    comparison, which is a call-signature change across three call sites, not
-    a matching change. Filed rather than folded in here.
+    **`user_text` — the echo exemption (2026-08-18, `[DB-0808-05]`).** Passing
+    the user's own turn lets tier 1 repeat back an identifier *the user typed
+    first*. Without it, Exchange 027 (2026-06-26) happened: Mike wrote "I'm
+    frustrated that write_config didn't save my preferences" and got the canned
+    deflection — the worst possible reply, since a complaint about the system is
+    exactly when a real answer is owed, and the identifier was already his.
+
+    The earlier docstring here declined to fix this because "a direct probing
+    question would disable its own backstop." That risk is real and is why the
+    exemption is scoped as tightly as it is, rather than as a "user asked about
+    the system" flag:
+
+    - **Tier 1 only.** Tiers 2, 3 and 4 are untouched. So the reply may name the
+      term back; the moment it explains what the term *does* — architecture
+      narration, the identifier alongside architecture vocabulary in one
+      sentence, or instruction prose quoted verbatim — it is suppressed as
+      before. "What does write_config do?" therefore still gets nothing, because
+      any answer to it trips tier 2 or tier 3.
+    - **Per term**, never a blanket pass: typing one identifier exempts that
+      identifier and nothing else.
+    - **Single turn.** `user_text` is this turn's input; nothing is stored.
+
+    Omitting `user_text` (the default) reproduces the pre-2026-08-18 behaviour
+    exactly, so every existing caller and test is unaffected.
     """
     if agent_name != "synthesizer":
         return text
+
+    exempt = _user_typed_terms(user_text)
 
     import warnings
 
@@ -1093,7 +1137,11 @@ def filter_output(text: str, agent_name: str) -> str:
     norm = _normalise_for_filter(text)
 
     # Tier 1 — identifiers, punctuation-obfuscation tolerant.
+    # `exempt` holds only identifiers the user typed on this turn; echoing one
+    # back is not a disclosure. Tiers 2-4 below still see the whole text.
     for term in _ALWAYS_CONFIDENTIAL:
+        if term in exempt:
+            continue
         m = _term_regex(term, _TIGHT_JOINER).search(norm)
         if m:
             return _suppress(f"'{term}' (matched as {m.group(0)!r}) found")
@@ -3331,10 +3379,12 @@ def _action_block() -> str:
     Two things follow from reading the trace here rather than inside the dispatch
     loop, and both are deliberate:
 
-    - It is **request-scoped**, per Mike's 2026-08-15 decision. Per-agent
-      attribution is unreliable until [DB-0810-02] is fixed (`pop_agent()` does
-      not restore the previous `current_agent`), and a provenance line built on a
-      known-broken attribution path would be worse than none.
+    - It is **request-scoped**, per Mike's 2026-08-15 decision. That decision was
+      taken while per-agent attribution was also broken — [DB-0810-02],
+      `pop_agent()` not restoring the previous `current_agent`. **That bug was
+      fixed 2026-08-18**, so the technical blocker is gone; request scope now
+      stands on Mike's decision alone. Widening it to per-agent is a product
+      choice to put to him, not a repair.
     - The fire-and-forget Diarist is excluded automatically: it runs on its own
       thread with a fresh trace (see trace.push_agent), so its journal write is
       not on this one. Good — it is still running when this is read, and a line
@@ -3819,7 +3869,11 @@ def run_pipeline_session(user_input: str,
         # let the system grant its own threads a reprieve — the same mistake
         # `82d394b` fixed in the repeated-instruction protocol.
         persist_context_block(_ctx, user_text=None if is_proactive else user_input)
-        filtered = filter_output(visible, "synthesizer")
+        # Same `is_proactive` gate, and for the same reason: only a real user turn
+        # can exempt a term it named. A scheduler prompt is the system's own text,
+        # so letting it grant exemptions would let the system unlock its own filter.
+        filtered = filter_output(visible, "synthesizer",
+                                 user_text=None if is_proactive else user_input)
         if history is not None:
             history.append({"role": "user", "content": user_input})
             history.append({"role": "assistant", "content": filtered})
@@ -4088,7 +4142,10 @@ def _run_pipeline_session_stream_inner(
     persist_context_block(_ctx, user_text=None if is_proactive else user_input)
 
     _tr.pop_agent(_synth_rec)
-    filtered = filter_output(visible, "synthesizer")
+    # See the non-streaming call site: a scheduler prompt is not the user speaking,
+    # so it grants no echo exemption either.
+    filtered = filter_output(visible, "synthesizer",
+                             user_text=None if is_proactive else user_input)
     if history is not None:
         history.append({"role": "user", "content": user_input})
         history.append({"role": "assistant", "content": filtered if filtered == visible else ""})
@@ -4169,7 +4226,10 @@ def run_session(agent_name: str, user_input: str,
                 model_override=model_override, complexity=complexity,
                 history=history, bare=bare,
             )
-            _out = filter_output(result, agent_name)
+            # `user_input` is this entry point's own argument — the message being
+            # answered. The filter only acts on the Synthesizer at all, and the
+            # pipeline's proactive gate is applied at its own two call sites.
+            _out = filter_output(result, agent_name, user_text=user_input)
             return _out
         finally:
             if _owns_trace:
