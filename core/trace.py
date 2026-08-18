@@ -80,6 +80,12 @@ class AgentRecord:
     retrieval_recorded: bool = False
     start_mono: float = field(default_factory=time.monotonic)
     duration_ms: int = 0
+    # The agent that was current when this one was pushed, so pop_agent() can put
+    # it back. Held on the record rather than returned to the caller because the
+    # two cannot then desynchronise: whatever record you pop restores whatever was
+    # current when that same record was pushed. Never serialised (see
+    # _agent_to_dict) and kept out of repr/compare so a parent chain cannot recurse.
+    parent: AgentRecord | None = field(default=None, repr=False, compare=False)
 
     def ensure_turn(self, turn_num: int) -> TurnRecord:
         while len(self.turns) < turn_num:
@@ -193,9 +199,18 @@ def push_agent(agent: str, provider: str, model: str, context_sections: dict | N
     """
     Register the start of an agent execution. Returns the AgentRecord —
     callers should pass it to pop_agent() when the agent finishes.
+
+    Push/pop are a stack, not a set-and-forget. The record remembers whoever was
+    current at push time so pop_agent() can restore it. Before 2026-08-18 it did
+    not: `pop_agent()` only stamped the duration, leaving the thread-local
+    pointing at the *child* that had just returned, so every tool call after a
+    nested `run_subagent` was attributed to the wrong agent in the Book
+    (`[DB-0810-02]`). Callers must not restore the parent by hand — that
+    workaround is what this replaces.
     """
     rec = AgentRecord(agent=agent, provider=provider, model=model,
-                      context_sections=context_sections or {})
+                      context_sections=context_sections or {},
+                      parent=get_current_agent())
     t = get_trace()
     if t is not None:
         depth = int(os.environ.get("_SUBAGENT_DEPTH", "0"))
@@ -214,7 +229,15 @@ def push_agent(agent: str, provider: str, model: str, context_sections: dict | N
 
 
 def pop_agent(rec: AgentRecord) -> None:
+    """Close out an agent execution and hand the thread-local back to its parent.
+
+    Restoring is unconditional rather than guarded on `get_current_agent() is rec`:
+    a nested agent that raised before its own pop would otherwise pin the
+    thread-local on a dead child forever, which is the failure this is here to
+    end. Popping a top-level agent restores None, which is what it was.
+    """
     rec.duration_ms = int((time.monotonic() - rec.start_mono) * 1000)
+    _set_current_agent(rec.parent)
 
 
 # ---------------------------------------------------------------------------

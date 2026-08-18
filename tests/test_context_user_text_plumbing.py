@@ -62,9 +62,18 @@ def main() -> int:
     # The two call sites both compute `None if is_proactive else user_input`.
     # Assert that expression is present at both, so a later edit that passes
     # `user_input` unconditionally fails here rather than in production.
+    #
+    # Anchored on `persist_context_block(` rather than counting the bare
+    # expression: since 2026-08-18 `filter_output()`'s echo exemption
+    # (`[DB-0808-05]`) uses the identical guard for the identical reason, so an
+    # unanchored count reads 4 and this check failed on a change that was
+    # correct. Anchoring keeps it measuring the two call sites it names.
     src = (Path(__file__).parent.parent / "core" / "orchestrator.py").read_text()
-    guarded = src.count("user_text=None if is_proactive else user_input")
+    guarded = src.count(
+        "persist_context_block(_ctx, user_text=None if is_proactive else user_input)")
     check("both pipeline call sites guard on is_proactive", guarded == 2)
+    check("the filter's echo exemption is guarded the same way",
+          src.count("user_text=None if is_proactive else user_input") >= 4)
     check("no call site passes user_input unguarded",
           "persist_context_block(_ctx, user_text=user_input)" not in src)
 
