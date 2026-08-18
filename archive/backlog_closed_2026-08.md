@@ -2894,3 +2894,147 @@ prose, and that trade costs the user their reply. **Separate and pre-existing:**
 shows text as it arrives and filters at the end, so a leak can be briefly visible before `[RETRACT]`
 — that is `ROADMAP.md` § Section 5A's live-stream-and-retract item, not this one. *(was
 `[DB-0815-08]`)*
+
+---
+
+## Closed 2026-08-18 — the clearing sweep
+
+**The session was measured in items removed, not code written: 41 open → 28, `## Inbox` 6 → 0,
+`## Machine log` 91 → 49, file 1,294 → 664 lines.** Mike's four standing rules for it, all stated
+2026-08-18: a closed item is *deleted* and its evidence comes here; a sweep that verifies an item
+must **shorten or remove** it, never lengthen it; confirmation happens in the session that makes
+the fix, or the item is time-gated with a date; and **do not ask permission for work already
+authorised** — that is what parked the calendar test for a fortnight.
+
+**One finding worth more than any single closure, because it invalidated three items at once.**
+A `×N` in `## Machine log` written before 2026-08-15 is a **similarity chain length, not a repeat
+count** — `SIMILARITY_THRESHOLD`'s comment in `scripts/sync_dev_backlog.py` documents sixteen
+unrelated corrections reported as one signature. All three entries triaged into `## Inbox` on
+2026-08-15 as *"Mike-originated, ×3/×4, clears the bar"* were **single events**, and every one of
+them was also **older than the code that fixed it**. The bar was never cleared and the work was
+already done. This is the third time an item's own description has argued persuasively for the
+wrong decision, which is what the standing rule at the top of `DEV_BACKLOG.md` exists to catch.
+
+### Fixed in this session
+
+- **`[DB-0810-14]` The A4 clinical hard-fails could not be run with a response language set — the
+  instruction on the item would have raised a false safety alarm.** The pipeline suite proves a
+  flag reached the user by matching the English words `"crisis"`, `"hotline"`, `"medication"`.
+  Translation renders exactly those, so running it as written made a **correct** response report
+  FAIL — the worst failure direction this suite has. Fixed in `tests/run_a4_safety.py`: the two
+  checks now run on different text. `token_forbid` stays on the **delivered** string (a leaked
+  all-caps token is a leak in any language and translation does not reliably mangle it);
+  `surface_expect_any` runs on the **pre-translation English**, captured by wrapping
+  `_translate_for_user()`, which is the single call site. `tests/test_a4_translated_substance.py`,
+  10 checks, all passing, including the equivalence that makes this safe to leave switched on
+  permanently: for an untranslated persona — every persona today — the two texts are identical and
+  nothing changes. The old code failed by construction (`"CRISIS" in <Cyrillic>` is False).
+
+- **`[DB-0810-06]` The backlog's ceiling was measured in lines, and lines had stopped tracking the
+  cost.** Mike named the replacement metric on 2026-08-15 while deciding a trim on a 922/450 file:
+  *"a backlog's ceiling should probably be tied to the number of items in it, not its line count."*
+  Applied — `DEV_BACKLOG.md` leaves `CEILINGS` in `scripts/check_claude_md_claims.py` for a new
+  `ITEM_CEILINGS` at **45 open items**, counted by importing `sync_dev_backlog.count_items` rather
+  than reimplementing it (that function carries four paragraphs of history about the ways this
+  count has been got wrong). Warning branch verified by injection: `DEV_BACKLOG.md: 41 open items,
+  ceiling 5`. `.claude/rules/docs-and-logs.md` § Ceilings updated. The reasoning, which is the
+  durable half: item count bounds the **workload**; line count pressures a session to cut
+  *evidence* out of well-documented entries, and the evidence is what the file's own standing rule
+  depends on. `SESSION.md`'s line ceiling and volatile budget are untouched — the argument is
+  specific to a backlog.
+
+### Closed by running something
+
+- **`[DB-0815-04]` Bulgarian replies came back in Latin letters instead of Cyrillic.** All three
+  candidates are now resolved. *(c)* the Synthesizer self-applying a script preference — eliminated
+  2026-08-15 by Mike grepping the VM. *(a)* the translation prompt — fixed 2026-08-15, and
+  **verified live today**: `translate("Good morning. Your meeting is at three.", "bg", "Bulgarian")`
+  against the real backend returns `'Добро утро. Срещата ви е в три.'` *(b)* the client —
+  `static/index.html` declares `charset=UTF-8` and neither it nor `core/server.py` contains any
+  transliteration, romanisation or normalisation call. The mechanism is fixed at the source and no
+  candidate remains. Closed on that evidence rather than parked for a live turn; the on-screen
+  check is on Mike's spot-check list, and this file is what a re-file would be checked against.
+
+- **`[DB-0810-15]` A persona can send in one language and receive in another.** Built and deployed
+  2026-08-15 (`8a7d1d7`, `b3ff108`). The feature works; every residual it named is separately
+  tracked (`[DB-0815-02]` speech-in, and `[DB-0810-14]`/`[DB-0815-04]` both closed above). An item
+  whose whole content is pointers to other items is not open work. **Rejected designs stay
+  permanent in `core/translate.py`'s docstring** — do not re-propose prose in `synthesizer.md` or a
+  model-called translate tool.
+
+### Removed — not work
+
+- **`[DB-0809-09]` The scheduler can skip a time-anchored job but never postpone it.** The entry
+  said in its own text that the current state is **correct** (`morning_brief`/`evening_close` carry
+  no activity gate deliberately) and that it should only be picked up if a fixed-time check-in
+  should ever wait for a lull. That is a hypothetical, not a defect.
+- **`[DB-0809-13]` Sentence-chunked TTS.** Kokoro is 2.8s/call and the entry's own instruction was
+  **"do not build before using voice enough to say whether 2.8s actually feels slow."** The ruling
+  is the useful part and it is preserved here; the item was a placeholder for it.
+- **`[DB-0809-10]` `CLASSES` in `core/rule_classes.py` is incomplete by construction.** Three blind
+  spots were found over a fortnight and each was fixed as an instance; what remained was the
+  *mechanism*, with no open instance and nothing a user would ever notice. The maintenance loop it
+  prescribes — widen a class in the same pass as any duplicate found by hand — is a habit, not a
+  task. The sharpest of the three findings is worth keeping: the audit reads prose files and never
+  settings files, so for a rule whose real counterpart is a **config key** it cannot name the
+  partner at any score, and reporting is not preventing — `write_persona` writes to `mike.md` at
+  runtime, so a layer decision enforced only in a config file is re-violated by the next such write.
+- **`[DB-0805-01]` `_GUARDED_KEYS` is hand-maintained.** `ROADMAP.md` § B2 already owns the
+  decision (hand-maintained guarded keys vs. the confirm gate as default). The wiring half was
+  never open — both writers already gate. A backlog copy of a roadmap decision is a second bin.
+- **`[DB-0809-07]` The VM lost all networking for ~4 hours on 2026-08-04** while GCE reported
+  `RUNNING`. Same signature as the 2026-07-31 `nic0 is frozen` incident **but with billing never
+  disabled**, so either that root cause was misattributed or there are two paths in. Unresolved,
+  unactionable, and **no recurrence in fourteen days**. Re-file with fresh evidence if it happens
+  again — that is what this file is for.
+- **`[DB-0806-03]` No BigQuery billing export** and **`[DB-0806-04]` moving the VM to
+  europe-west1** (~250ms off every voice reply for ~£2.60/mo, priced live not estimated). Both are
+  one-word decisions for Mike, not engineering work, and both are in this session's decision batch.
+  Re-file whichever he says yes to, as a build item.
+- **`[DB-0805-05]` A session cannot tell its own edits from a parallel window's** and
+  **`[DB-0809-14]` `ROADMAP.md` Track D is 22 KB of a 71 KB file loaded every session.** Both are
+  **harness and development-process defects, not Metatron work**, and `## Inbox`'s own standing
+  caution says they do not belong in this file at all. `[DB-0805-05]` is additionally mitigated:
+  `scripts/hook_commit_guard.py` hashes each file a session writes and blocks at stage time.
+- **`[DB-0815-10]` Backlog items declare whether they can be picked up.** Built 2026-08-15; the
+  only remainder was back-tagging the rest of the file, which this sweep did as it rewrote every
+  item. Counts are no longer a floor.
+- **`[DB-0818-03]` We could not say how much the tool is used.** Built and deployed 2026-08-18
+  (`tools/analytics.py`, absorbed-work metric, cohort anchor pinned, 26 days backfilled). Review is
+  deliberately deferred until there is real data — tuning against development traffic would bake in
+  the wrong shape — and that review lives in `ROADMAP.md` § A9a, which is now **time-gated
+  `due: 2026-10-01`** rather than left open-ended. A backlog entry that only points at a roadmap
+  section is a duplicate of it.
+
+### Triaged out of `## Inbox` — removed rather than filed
+
+All three were machine-written, and all three were opened against the current code before any
+verdict, per the guidance for this session. See the finding at the top of this entry.
+
+- **Mike's own email address keeps being transcribed wrong** (`diamond.mic@` for `diamond.mike@`).
+  Evidence `2026-08-02T12:16:08Z`. The guard built for **exactly this near-miss** —
+  `_OWN_IDENTITY_SIMILARITY_THRESHOLD` in `tools/crm.py`, which cites the case verbatim in its
+  comment — plus `relationships.md`'s standing read-back instruction, both shipped 2026-08-08. The
+  evidence is six days older than the fix and has not recurred in the sixteen days since.
+- **The system assumes Mike's energy is low and he keeps correcting it.** Evidence
+  `2026-08-04T12:22:27Z`, a single event. The class it names — a standing fact re-derived wrongly
+  instead of read from a store — is carried by `[DB-0818-06]`, which holds the eight interaction
+  preferences sitting in the fact store where behaviour rules cannot reach them.
+- **A stated deadline gets ignored and he is chased early.** Evidence `2026-08-11T11:13:14Z`.
+  The item itself named the likely cause: `_due_sort_key` in `tools/obligations.py` ranked a vague
+  due date **below** an undated one, so a dated obligation was truncated out of context by
+  `_CONTEXT_MAX`. That was fixed a week after the evidence, by `fd273bf` on 2026-08-18.
+- **"When something fails, tell me what I can't have and why."** Mike, 2026-08-18. Not removed —
+  **merged into `[DB-0804-02]`**, where it is now the named half that B4 under-specifies, with
+  `research_agent`'s `NoneType object is not iterable` as the worked live instance. It was filed
+  separately because B4 sits inside Track B reading as security hardening, where nobody would look
+  for it; the merge fixes that by naming it in the item title's own terms.
+
+### `## Machine log` — 91 → 49, and the three `⚠` are gone
+
+The section's standing rule — *an entry is DELETED once its signal is promoted or its cause is
+fixed; leave a pointer, not the entry* — had been written but never executed, so addressed
+signatures kept their `⚠` and kept leading the session-start line. Forty-two entries deleted, each
+with a pointer recorded in the sweep note in `DEV_BACKLOG.md`. `.dev_backlog_seen` is what makes
+this safe: the sync keys on timestamps already pulled, so nothing is re-added. **Do not regenerate
+the section from the VM source** — that bypasses the ledger and resurrects everything.

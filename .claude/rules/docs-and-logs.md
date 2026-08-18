@@ -101,8 +101,15 @@ to `archive/log/` and the command gets at most a line. Crossing a ceiling is the
 something out, not a licence to trim something useful.
 
 The authority is `CEILINGS` in `scripts/check_claude_md_claims.py` — read the numbers there, not
-from prose. `DEV_BACKLOG.md`'s real cap is its **10-item `## Now` limit**, which is what bounds the
-workload; the line ceiling governs `## Later` accumulation, which is what actually explodes.
+from prose.
+
+**`DEV_BACKLOG.md` is the exception: it is bounded by ITEMS, not lines** (`ITEM_CEILINGS` in the
+same file; Mike's call 2026-08-15, applied 2026-08-18). Item count bounds the **workload** — which
+is why `## Now`'s real cap was always its 10-item limit. A line count instead pressures a session to
+cut *evidence* out of well-documented entries, and the evidence is the expensive half: no item is
+acted on from its own description, which only works if the description says what was checked and
+when. The 2026-08-18 inventory measured the real cause of growth — **finished work with no exit**,
+11 of 43 items awaiting one ordinary use — which a line ceiling cannot distinguish from verbosity.
 
 → Which command to fire and when: `docs/WORKFLOW.md`.
 

@@ -391,6 +391,13 @@ the point is answering the questions, and a table read once a week does that.
 call, 2026-08-18: build a first draft, then reevaluate, because the current store is too thin for
 the action counts to mean anything.*
 
+> **Review date: 2026-10-01.** A condition with no clock is how eleven finished items accumulated
+> in `DEV_BACKLOG.md` waiting on a use that nothing scheduled (2026-08-18 clearing sweep). This is
+> a **review date, not a deadline**: on that date, check whether the gate condition above has
+> arrived. If it has not, push the date — do not review against thin data, and do not silently
+> drop the date. `[DB-0818-03]` was removed from the backlog on 2026-08-18 because this section is
+> the single home for the review; the date is what makes that safe.
+
 **What shipped as the first draft (2026-08-18):** `tools/analytics.py` — a content-free daily
 rollup with the cohort anchor pinned, absorbed-work counts by autonomy tier, attention as the
 denominator, and a `--report` table. Wired as `daily_analytics_rollup` at 05:40 in

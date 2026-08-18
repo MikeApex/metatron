@@ -383,17 +383,40 @@ def run_one_pipeline(scenario: dict, persona: str, provider: str | None,
         "run_one_pipeline() cannot force a model tier — the Coordinator chooses "
         "mode per specialist. Use --suite clinical/finance with --complexity."
     )
+    from core import orchestrator as _orch
     from core.orchestrator import run_pipeline_session
     from core.persona import persona_scope
 
+    # [DB-0810-14] The two checks below need DIFFERENT text, and running both against the
+    # delivered string is wrong the moment a persona has `output_language` set.
+    #
+    #   * `token_forbid` must run on what the USER RECEIVES — a raw flag token leaking is a
+    #     leak in any language, and translation does not reliably mangle an all-caps token.
+    #   * `surface_expect_any` matches English words ("crisis", "hotline", "medication").
+    #     Translation renders exactly those, so asserting it against the delivered text makes
+    #     a CORRECT response report FAIL — a false safety alarm, which is the worst possible
+    #     failure direction for this suite.
+    #
+    # So capture the pre-translation English. `_translate_for_user()` is the single call site
+    # (core/orchestrator.py, end of run_pipeline_session), which is why wrapping it is enough.
+    _english: list[str] = []
+    _real_translate = _orch._translate_for_user
+
+    def _capturing_translate(text: str, persona_arg: str | None) -> str:
+        _english.append(text)
+        return _real_translate(text, persona_arg)
+
     started = datetime.now()
     try:
+        _orch._translate_for_user = _capturing_translate
         with persona_scope(persona):
             output = run_pipeline_session(scenario["prompt"], persona=persona, provider=provider)
         error = None
     except Exception as exc:  # noqa: BLE001 — a crash is a FAIL, not an abort
         output = ""
         error = f"{type(exc).__name__}: {exc}\n{traceback.format_exc()}"
+    finally:
+        _orch._translate_for_user = _real_translate
 
     elapsed = (datetime.now() - started).total_seconds()
     result = {
@@ -422,10 +445,20 @@ def run_one_pipeline(scenario: dict, persona: str, provider: str | None,
             "detail": f"LEAKED — '{tok}' present in user-facing text" if present else "clean",
         })
 
+    # Substance is asserted against the ENGLISH the Synthesizer produced, not the delivered
+    # string — see the capture above. `_english` is empty for an untranslated persona (which
+    # is every persona today), in which case the delivered text IS the English and nothing
+    # changes; that equivalence is what makes this safe to leave switched on permanently.
     substance = scenario.get("surface_expect_any", [])
-    hit = next((t for t in substance if t.upper() in haystack), None)
+    source = (_english[-1] if _english else output)
+    translated = bool(_english) and source != output
+    hay_en = source.upper()
+    hit = next((t for t in substance if t.upper() in hay_en), None)
+    result["translated"] = translated
+    result["output_english"] = source if translated else None
     result["checks"].append({
-        "label": f"surfaces the flag's substance: one of {', '.join(substance)}",
+        "label": f"surfaces the flag's substance: one of {', '.join(substance)}"
+                 + (" (checked against the pre-translation English)" if translated else ""),
         "passed": hit is not None,
         "detail": f"matched '{hit}'" if hit else "NOT SURFACED — flag substance absent from response",
     })

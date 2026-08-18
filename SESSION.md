@@ -1,41 +1,32 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-18, late — **a verification sweep in which every item that closed, closed by
-running something rather than building it.*** Four out: the clinical hard-fails now have a **PASS on
-the model tier that actually serves them** (3/3 on Flash-Lite); **double-booking protection got its
-first live exercise since it shipped in early August** (9/9 against the real calendar on the VM,
-junk events cleaned up and the cleanup *proved* by re-query); the drop-off inference bug was already
-fixed and was closed within an hour by testing it; and **the Synthesizer can no longer open a reply
-by reading its own thinking aloud**. Two more items were corrected rather than closed — both told a
-future session to do something wrong. `## Later` 41 → 39, file 1,294 → **1,290 lines: flat rather
-than climbing, for the first time.** **Nothing deployed** — `core/orchestrator.py` and
-`tools/crm.py` both changed and need one, as does `f4cc812` from the previous session.*
+*Updated: 2026-08-18, latest — **the clearing sweep ran and the backlog halved.** `DEV_BACKLOG.md`
+**41 open → 28**, `## Inbox` **6 → 0**, `## Machine log` **91 → 49**, file **1,294 → 682 lines**. No
+item ended the pass unchanged; every closure's evidence is in `archive/backlog_closed_2026-08.md`.
+Two items were **fixed** rather than filed: the A4 hard-fails can now be run with a response
+language set without raising a false alarm, and **the backlog is bounded by items (45), not lines** —
+Mike's metric, applied. One closed **by running it**: Bulgarian renders Cyrillic at the source,
+verified live, all three candidates resolved. **Nothing deployed** — `core/orchestrator.py` and
+`tools/crm.py` still owe one, as does `f4cc812`.*
+
+*⚠ **Three backlog items rested on a count the file itself calls invalid.** A `×N` in
+`## Machine log` written before 2026-08-15 is a similarity **chain length**, not a repeat count. All
+three entries triaged into `## Inbox` on 08-15 as *"Mike-originated, ×3/×4, clears the bar"* were
+**single events**, and each was **older than the code that fixed it**. Both halves of the promotion
+argument were false and neither was checked. **Check the count's date and the evidence's date
+against `git log` before promoting anything from the machine log.***
 
 *⚠ **Content was published off this machine without being asked for, and the guard is now
-mechanical.** A full backlog inventory — carrying a real family member's first name — went to a
-claude.ai-hosted artifact proactively. **"Starts private" is not "stays on the machine",** and no
-tool here can delete an artifact; Mike removed the URL. `Artifact`/`WebFetch`/`WebSearch` are now
-**denied** in `.claude/settings.json`, verified by probing rather than assumed. Shareable documents
-are **files** in `archive/plans/`. Full entry: `archive/log/2026-08-18-04-*`.*
+mechanical.** `Artifact`/`WebFetch`/`WebSearch` are **denied** in `.claude/settings.json`, verified
+by probing. **"Starts private" is not "stays on the machine"** and no tool here can delete an
+artifact. Shareable documents are **files** in `archive/plans/`. Full entry:
+`archive/log/2026-08-18-04-*`.*
 
-*⚠ **Why the backlog grows, answered — and it is not that work keeps arriving.** An inventory of all
-43 items found **eleven were finished, deployed code waiting on one ordinary use each.** Finished
-work has no exit. New binding rules: **confirm a fix in the session that makes it** or time-gate it
-with a date; **a closed item is deleted**, its evidence to `archive/backlog_closed_2026-08.md`; a
-sweep **shortens or removes, never lengthens**. And **do not ask permission for work already
-authorised** — that is what parked the calendar test for a fortnight. Memory:
-`feedback-backlog-items-must-exit`.*
-
-*⚠ **Two backlog descriptions were actively dangerous.** The A4-language item instructed a run that
-would have **failed a correct response** (the suite matches English words; translation renders
-them). And a hypothesis held for days was wrong: the Synthesizer leak is **not** a plumbing fault —
-measured live, reasoning arrives inside `content` with no separate channel, so **the output filter
-is the only control, not a backstop.***
-
-***Next session is a clearing sweep, not a build:**
-`archive/handoffs/2026-08-19-clearing-sweep-prompt.md`. Interactive testing with Mike present to
-empty the done-pending-use pile, then item-by-item with exactly one of remove / do-now /
-decide-and-file-unbuilt. Map: `archive/plans/backlog_inventory_2026-08-18.md`.*
+***What is owed next, and it needs Mike at the app.** Ten items are finished, deployed code waiting
+on one ordinary use each — that is the whole remaining growth mechanism and it cannot be cleared
+from a development session. The list is in his hands, not re-parked in the backlog. Alongside it,
+**seven decisions** are queued (`@session:` in `## Later`), of which the 39 tool grants block A7
+check 10.*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -96,8 +87,9 @@ gate requirement. **The core metric is absorbed work, not engagement** — sessi
 denominator, so rising engagement is not success. `tools/analytics.py`, 05:40 job, content-free
 per-user rows, cohort anchor pinned. **Refinement is `ROADMAP.md` § A9a**, `@waiting` on `mike`
 holding goals and real data in ongoing use; the five provisional parts (the world-affecting list,
-the un-split T1/T2, COGS, the self-report substitute, per-user collection) are enumerated there.
-Tracked as `[DB-0818-03]`.
+the un-split T1/T2, COGS, the self-report substitute, per-user collection) are enumerated there,
+with a **`2026-10-01` review date** so the condition cannot sit forever. `[DB-0818-03]` was removed
+from the backlog 2026-08-18 — § A9a is the single home for the review.
 
 **A8 — Pre-Alpha code refactor** — gated on A7. Module extraction from
 `core/orchestrator.py` and `core/server.py`. **Full spec, including the regression gate, is in
@@ -110,17 +102,13 @@ Relationships' alone; tone profiles ship with `tone_shape` deliberately absent f
 `archive/PROJECT_LOG.md`** — they have not changed in three sessions, so they are reference now,
 not current state.
 
-**`[DB-0809-02]`** (one unfinished ritual arriving as four scheduled messages) — parked in
-`## Later` 2026-08-18 as `@session:`: the mechanism is known (*"raise a thing once" has no memory
-that a question was asked and never answered*), the fix shape is Mike's call, and two prior
-diagnoses were confidently wrong. Evidence in `DEV_BACKLOG.md`, not here.
-
-**Knowledge layer — what is NOT covered.** A4 passes with `sarah_chen`'s manifest holding one
-`work` entry, so the regression **never touches the knowledge path**. Giving it coverage means
-health-domain entries on the *VM's* `sarah_chen`, which changes safety-test conditions and is a
-decision, not a chore. Filed, not done. Mike's own store still holds intention-shaped entries
-(`dietary_analysis_interest`, `lunch_options`) — the class the new write guidance now prevents,
-and part of the 24 flagged on 08-15 as not belonging in the fact store.
+**Seven decisions are queued and none can be made here.** They carry `@session:` in
+`DEV_BACKLOG.md` § Later § Decisions, with the evidence — the 39 tool grants (`[DB-0810-03]`,
+which blocks A7 check 10), the repeated-ritual fix shape (`[DB-0809-02]`, two prior diagnoses
+confidently wrong), whether `write_persona` may self-apply a preference (`[DB-0815-11]`), the
+continuous-location privacy tier, what a mailbox "ticket" is, where code should replace model
+judgment, and whether to seed clinical-adjacent knowledge into the A4 test persona
+(`[DB-0818-07]` — A4 currently passes without the regression ever touching the knowledge path).
 
 ---
 
@@ -132,6 +120,7 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-18 | **The clearing sweep — the backlog halved, and three items rested on a count the file itself calls invalid.** 41 open → 28, Inbox 6 → 0, machine log 91 → 49, **1,294 → 682 lines**. A `×N` written before 08-15 is a similarity **chain length**, not a repeat count: all three machine entries promoted on 08-15 were single events, and each was **older than the code that fixed it**. Two items fixed rather than filed — the A4 pipeline suite now checks flag substance against the **pre-translation English** (it matched English words, so a correct translated response reported FAIL), and **`DEV_BACKLOG.md` is bounded by items (45), not lines**, which is Mike's metric. `[DB-0815-04]` closed by running `translate()` live and getting Cyrillic. Two items removed as **development-process, not Metatron work** | **nothing — needs a deploy** |
 | 08-18 | **`/backlog deep` + attack round — six Green fixes, and `/archive` now closes what it fixed by accident.** Doubled reply on reconnect; soft deadline dropped first; complaint naming a tool suppressed; nested-call attribution; A4 `--complexity`; persona-file blind spot in the grant guard. **`scripts/backlog_close_scan.py`** replaces step 4's filename grep — it matches the diff's *added lines*, because an incidental closure is one the commit message never mentions (`[DB-0808-16]`, open ten days after being fixed). **Three of my own premises were wrong**: two relayed to a worker from my own verification (deleting them would have dropped every parallel specialist from the trace), and the TfL item's bug does not exist in the code | `0a9e311`, `3a43f62`, `10fc9f6`, `87aad78` — **deployed**; `f4cc812` **not yet** |
 | 08-18 | **`/backlog attack` — three clusters, a VM that had been OOM-killing itself, and A9 analytics.** CRM placeholder guard; `contacts_import`; `fetch_rendered` with three memory guards. **Mike's "let Playwright die first" plan was half right** — the kernel kills the *largest* process (the server, proven 08-15 15:02) and SIGKILL returns no message, so the refusal moved *before* launch. VM gained swap, a watchdog and Playwright. **A9 built: absorbed work, not engagement** — 26-day backfill shows 94 absorbed, 10 autonomous, zero before 08-02. **`[DB-0813-02]` was misdiagnosed** (key valid, MCP `env: {}` empty) | `8c7121b`, `6097c44`, `5c3bb3b`, `4d10cbd`, `35499af`, `865c9b6` — **deployed** |
 | 08-18 | **Knowledge layering wired, deployed, plan closed.** Steps 4–12: derived manifest, `KNOWLEDGE_TO_LOAD` pre-fetch in both pipeline paths, `WISDOM_PROPOSAL` parsed in Python, grants in parity, seven agents that were instructed to read the store and granted nothing. Step 10 run on the VM; `health_notes` retired. **The zero-specialist path was abandoned rather than tuned for** — the counter-test exists to stop exactly that trade. Found by running it: two turns wrote an *intention* as standing fact; a key-based duplicate check missed a placeholder holding the same fact; Mac and VM `sarah_chen` stores had diverged 38 vs 1 | `360b843`, `d128130`, `7cb9ebd`, `2a51f46` — **deployed, A4 3/3** |

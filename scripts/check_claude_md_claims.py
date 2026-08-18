@@ -236,7 +236,7 @@ CEILINGS = {
     # output, and then it catches nothing. 300 warns only on real regrowth.
     "CLAUDE.md": 300,
     "SESSION.md": 200,
-    "DEV_BACKLOG.md": 450,
+    # DEV_BACKLOG.md is NOT here -- see ITEM_CEILINGS below. [DB-0810-06]
     # 100 -> 150 on 2026-08-15 (Mike's decision). The file had been over the
     # ceiling continuously since 08-13 (124, then 140, then 147) -- a standing
     # WARN nobody could clear, which is the same "teaches the reader to skip
@@ -267,6 +267,50 @@ CEILINGS = {
     ".claude/rules/docs-and-logs.md": 150,
 }
 
+# --- 4a. The backlog is bounded by ITEMS, not lines --------------------------
+# Mike, 2026-08-15 ([DB-0810-06]), raised while deciding a trim on a 922/450
+# file: "a backlog's ceiling should probably be tied to the number of items in
+# it, not its line count." Applied 2026-08-18.
+#
+# The two numbers answer different questions and only one of them is the one
+# being asked. Item count is what bounds the WORKLOAD. Line count is what
+# pressures a session to cut evidence out of well-documented entries -- and the
+# evidence is the expensive half: the standing rule at the top of the file is
+# that no item is acted on from its own description, which only works if the
+# description carries what was checked and when.
+#
+# That pressure was measured, not theorised. A 2026-08-18 inventory found the
+# growth was not new work arriving but finished work with no exit -- 11 of 43
+# items built, deployed and waiting on one ordinary use each -- while every
+# verifying sweep wrote MORE prose onto the items it checked. A line ceiling
+# reads both of those as the same failure and prescribes trimming for both,
+# which fixes neither.
+#
+# DEV_BACKLOG.md already half-agreed: `## Now`'s real cap has always been its
+# 10-item limit, never a line count.
+#
+# 45 is set above the 2026-08-18 post-sweep count for the same reason every
+# other ceiling here is set above its measurement -- a ceiling the file
+# permanently violates teaches the reader to skip the output, and then it
+# catches nothing.
+ITEM_CEILINGS = {
+    "DEV_BACKLOG.md": 45,
+}
+
+
+def _backlog_item_count(text: str) -> int:
+    """`## Now` + `## Later` entries, counted the way sync_dev_backlog.py counts them.
+
+    Imported rather than reimplemented: that function carries four paragraphs of
+    history about the ways this count has been got wrong, and a second copy here
+    would drift from it silently.
+    """
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from sync_dev_backlog import count_items
+
+    _inbox, now, later = count_items(text)
+    return now + later
+
 
 def check_ceilings() -> list[str]:
     warnings = []
@@ -277,6 +321,13 @@ def check_ceilings() -> list[str]:
         lines = len(path.read_text().splitlines())
         if lines > ceiling:
             warnings.append(f"{rel}: {lines} lines, ceiling {ceiling}")
+    for rel, ceiling in ITEM_CEILINGS.items():
+        path = ROOT / rel
+        if not path.exists():
+            continue
+        items = _backlog_item_count(path.read_text())
+        if items > ceiling:
+            warnings.append(f"{rel}: {items} open items, ceiling {ceiling}")
     warnings.extend(check_session_volatile())
     return warnings
 
