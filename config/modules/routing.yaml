@@ -95,7 +95,7 @@ agents:
   relationships:
     local: true
     # search_memory granted 2026-08-10 — see routing_cloud.yaml. Kept in parity.
-    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, merge_contacts, read_profile, write_profile, send_email, search_memory, get_tone_shape, read_wisdom]
+    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, merge_contacts, import_contacts_file, read_profile, write_profile, send_email, search_memory, get_tone_shape, read_wisdom]
 
   finance:
     local: true
@@ -113,7 +113,7 @@ agents:
 
   logistics:
     local: true
-    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, update_calendar_event, delete_calendar_event, check_calendar_conflicts, get_weather, get_environmental_snapshot, get_tfl_status, get_flight_status, get_travel_time, get_regional_transit_info, read_profile, write_profile, write_schedule, list_schedules, delete_schedule, fetch_url, read_email, read_agent_config, write_agent_config, search_memory, read_archive, write_archive, open_obligation, close_obligation, reopen_obligation, list_obligations]
+    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, update_calendar_event, delete_calendar_event, check_calendar_conflicts, get_weather, get_environmental_snapshot, get_tfl_status, get_flight_status, get_travel_time, get_regional_transit_info, read_profile, write_profile, write_schedule, list_schedules, delete_schedule, fetch_url, fetch_rendered, read_email, read_agent_config, write_agent_config, search_memory, read_archive, write_archive, open_obligation, close_obligation, reopen_obligation, list_obligations]
     # read/write_agent_config, search_memory, read/write_archive granted 2026-08-05 — see
     # routing_cloud.yaml for the full rationale. Kept in parity.
     # update_calendar_event, delete_calendar_event, check_calendar_conflicts added
@@ -130,7 +130,7 @@ agents:
   research_agent:
     provider: gemini
     model: "models/gemini-3.1-pro-preview"   # grounded search; decontextualized only
-    allowed_tools: [fetch_url, get_pollen_forecast]
+    allowed_tools: [fetch_url, fetch_rendered, get_pollen_forecast]
     # get_pollen_forecast added 2026-08-08. It is the data source for the pollen leg of
     # the routing coordinator.md already carried ("sore throat" → Physical Health →
     # Research (pollen?) → Logistics). Decontextualized by construction: a city name goes

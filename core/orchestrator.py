@@ -610,7 +610,14 @@ def register_tools() -> tuple[list[dict], dict]:
     )
     # External-content tools. Both return their payload wrapped by tools/untrusted.py —
     # a web page and an email body are written by strangers.
-    from tools.web import fetch_url, FETCH_URL_SCHEMA
+    from tools.web import fetch_url, FETCH_URL_SCHEMA, fetch_rendered, FETCH_RENDERED_SCHEMA
+    # File-based contact import only. import_google_contacts is deliberately NOT
+    # registered: the Google Contacts OAuth path was reversed on 2026-08-08 at Mike's
+    # direction (7-day refresh-token expiry under Testing publishing status, and the
+    # real bug was local validation, not a missing integration). people.googleapis.com
+    # is still disabled on the project, so the pull cannot run regardless. The module
+    # keeps the function so the path is revivable, not so it is reachable.
+    from tools.contacts_import import import_contacts_file, IMPORT_CONTACTS_FILE_SCHEMA
     from tools.mail import read_email, send_email, READ_EMAIL_SCHEMA, SEND_EMAIL_SCHEMA
 
     schemas = [
@@ -651,7 +658,8 @@ def register_tools() -> tuple[list[dict], dict]:
         GET_REGIONAL_TRANSIT_INFO_SCHEMA,
         WRITE_SCHEDULE_SCHEMA, LIST_SCHEDULES_SCHEMA, DELETE_SCHEDULE_SCHEMA,
         WRITE_QUALITY_EVENT_SCHEMA,
-        FETCH_URL_SCHEMA, READ_EMAIL_SCHEMA, SEND_EMAIL_SCHEMA,
+        FETCH_URL_SCHEMA, FETCH_RENDERED_SCHEMA, READ_EMAIL_SCHEMA, SEND_EMAIL_SCHEMA,
+        IMPORT_CONTACTS_FILE_SCHEMA,
     ]
     handlers = {
         "write_log": write_log,
@@ -694,6 +702,8 @@ def register_tools() -> tuple[list[dict], dict]:
         "write_agent_config": write_agent_config,
         "read_agent_config": read_agent_config,
         "fetch_url": fetch_url,
+        "fetch_rendered": fetch_rendered,
+        "import_contacts_file": import_contacts_file,
         "read_email": read_email,
         "send_email": send_email,
         "write_wishes": write_wishes,
