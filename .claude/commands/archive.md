@@ -86,12 +86,23 @@ Updating `SESSION.md` is not enough; that has been missed before.
 
 ## 4. `DEV_BACKLOG.md` — close, then file
 
-**Close first.** List what this session touched (`git status --porcelain`, `git diff
---name-only` over its commits), grep the backlog for those filenames and for the symptom in
-Mike's words, and read the surrounding item — an entry naming a file is often about a different
-fault in it. Fully done → move it to `archive/backlog_closed_2026-08.md` with the commit or
-`file:line` that closed it. Partly done → **stays open**, retitled to state what is left (built
-but undeployed is open). Untouched → leave it alone; do not re-word an item because you read it.
+**Close first, and run the scan — do not do this by grep:**
+
+```bash
+python3 scripts/backlog_close_scan.py
+```
+
+It ranks `## Now` / `## Later` items against this session's diff and prints the evidence for
+each. Then read every candidate against the diff. Fully done → move it to
+`archive/backlog_closed_2026-08.md` with the commit or `file:line` that closed it. Partly done →
+**stays open**, retitled to state what is left (built but undeployed is open). Untouched → leave
+it alone; do not re-word an item because you read it. An entry naming a file is often about a
+different fault in it, so the reading is still the work — the scan only decides what to read.
+
+> **Replaced a filename grep on 2026-08-18** — the grep only found items that *name a file*, and
+> most are written in symptom language, so it missed **incidental closures** entirely. Why that
+> is the class that matters, and the `[DB-0808-16]` worked example: the script's own docstring.
+> `/backlog deep` stays the deeper net for duplicates and drift.
 
 **Then file — but only what clears the bar: a user would notice, or the roadmap is blocked.**
 An incidental code nit is fixed on the spot or dropped, not filed. This is the whole reason the
