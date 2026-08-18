@@ -1,32 +1,34 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-18, late — **`/backlog attack` shipped three clusters, the VM turned out to have
-been OOM-killing itself unnoticed, and A9 product analytics is built.** Clusters: placeholder contact
-details refused across every field, `contacts_import` (CSV/vCard), `fetch_rendered`. All registered,
-granted and **deployed `865c9b6`**. Sizing the browser found three OOM kills — one killed the server
-at 3.6 GB RSS, masked by `Restart=always`. VM now has 2 GB swap, a 5-minute watchdog (which caught
-the existing kill on its first run), and Playwright proven at ~189 MB/page against a 700 MB
-pre-flight refusal. `## Now` is **2 items**.*
+*Updated: 2026-08-18, night — **a `/backlog deep` sweep, six Green-tier fixes shipped and deployed,
+and `/archive` learned to close what a session fixed by accident.*** Eleven items verified across
+three read-only workers before anything was built. What the tool now does differently: answers no
+longer render twice on reconnect; an obligation with a rough deadline stops being dropped ahead of
+undated ones; naming an internal term in a complaint no longer suppresses the whole reply; The Book
+attributes nested calls correctly; the clinical suite can be pointed at Flash-Lite; and moving
+instruction text into a persona file no longer hides a missing tool grant. Merged `0a9e311`/
+`3a43f62`/`10fc9f6`, **deployed**. Four items closed, `## Later` 44 → 40.*
 
-*⚠ **A9's core metric is ABSORBED WORK, and it inverts the usual reading.** Mike: *"the more items
-that Metatron handled where the user didn't have to."* Sessions are the **denominator**, not value —
-a rollup treating rising engagement as success measures the opposite of the thesis.
-`tools/analytics.py` + a 05:40 job; rows are content-free and per-user with a pinned cohort anchor.
-**Backfill of 26 real days: 94 absorbed, only 10 autonomous, 0.23/user session, zero before
-2026-08-02** — it was capture-and-recall for 41 cohort days. **Review deferred to `ROADMAP.md` § A9a**
-until `mike` has goals and real data loaded; tuning against dev traffic would bake in the wrong shape.*
+*⚠ **A test that was already failing caught a real regression and nobody was reading it.**
+`tests/test_action_provenance.py` sat at 9/10 from 08-18's earlier round: `merge_contacts`,
+`import_contacts_file` and `fetch_rendered` shipped classified in neither `ACTION_TOOLS` nor
+`READ_TOOLS`, so **a state-changing tool could run without appearing on the ACTIONS line** — the
+`[DB-0810-13]` class, closed 08-15 and regressed three days later. Fixed `f4cc812`, **needs a
+deploy**. `_WORLD_AFFECTING` deliberately untouched: whether a contact merge is absorbed work sets
+the headline metric and is Mike's call (`ROADMAP.md` § A9a).*
 
-*⚠ **Two lessons for the next `attack`.** Disjoint file manifests prevent *file* collisions only —
-clusters A and B passed alone and failed 7/17 merged, one having written fixtures the other had just
-learned to refuse. And **`[DB-0810-17]` re-proposed the OAuth path Mike reversed on 08-08**: the code
-claim was true, but a thing removed on purpose and a thing never built look identical in the tree.
-Both fragments: `archive/log/2026-08-18-01-…` and `-02-…`.*
+*⚠ **Two communication rules, corrected the hard way.** Cluster at the **item** level — group the
+`DB-` to-dos for one feature so the feature can be retired — never at machine-log *signature* level;
+a signature is evidence a problem is real, not work anyone can pick up. And **omit anything
+`@waiting:`/`@session:`** from a backlog report: the point of a pass is what can be done now. Also:
+lead with **what** the tool does differently, then a little of the how, and name a defect by what a
+user sees. Memory: `feedback-backlog-cluster-at-item-level`.*
 
-*Prior session (parallel window) — **the knowledge layer is wired, deployed, and its plan is
-closed**: derived manifest, `KNOWLEDGE_TO_LOAD` pre-fetch in both pipeline paths, `WISDOM_PROPOSAL`
-parsed in Python, `health_notes` retired. **The zero-specialist path does not fire, by decision** —
-`coordinator.md:48` stays dominant because over-dispatch costs tokens and under-dispatch loses a
-user's record. Detail: `archive/PROJECT_LOG.md` § 2026-08-18.*
+*⚠ **Travel is the largest actionable cluster and none of it is filed.** Three distinct problems:
+**no National Rail/Southeastern integration exists at all** (TfL works, which is why it reads as
+operational); the tool assumes Mike is flying when he is dropping someone off (~6 entries, twice on
+BA 892 — an *inference* failure, not a data-feed gap); and the research agent returns blank on live
+web queries. Next session's prompt: `archive/handoffs/2026-08-18-next-session-prompt.md`.*
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -126,10 +128,10 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-18 | **`/backlog deep` + attack round — six Green fixes, and `/archive` now closes what it fixed by accident.** Doubled reply on reconnect; soft deadline dropped first; complaint naming a tool suppressed; nested-call attribution; A4 `--complexity`; persona-file blind spot in the grant guard. **`scripts/backlog_close_scan.py`** replaces step 4's filename grep — it matches the diff's *added lines*, because an incidental closure is one the commit message never mentions (`[DB-0808-16]`, open ten days after being fixed). **Three of my own premises were wrong**: two relayed to a worker from my own verification (deleting them would have dropped every parallel specialist from the trace), and the TfL item's bug does not exist in the code | `0a9e311`, `3a43f62`, `10fc9f6`, `87aad78` — **deployed**; `f4cc812` **not yet** |
 | 08-18 | **`/backlog attack` — three clusters, a VM that had been OOM-killing itself, and A9 analytics.** CRM placeholder guard; `contacts_import`; `fetch_rendered` with three memory guards. **Mike's "let Playwright die first" plan was half right** — the kernel kills the *largest* process (the server, proven 08-15 15:02) and SIGKILL returns no message, so the refusal moved *before* launch. VM gained swap, a watchdog and Playwright. **A9 built: absorbed work, not engagement** — 26-day backfill shows 94 absorbed, 10 autonomous, zero before 08-02. **`[DB-0813-02]` was misdiagnosed** (key valid, MCP `env: {}` empty) | `8c7121b`, `6097c44`, `5c3bb3b`, `4d10cbd`, `35499af`, `865c9b6` — **deployed** |
 | 08-18 | **Knowledge layering wired, deployed, plan closed.** Steps 4–12: derived manifest, `KNOWLEDGE_TO_LOAD` pre-fetch in both pipeline paths, `WISDOM_PROPOSAL` parsed in Python, grants in parity, seven agents that were instructed to read the store and granted nothing. Step 10 run on the VM; `health_notes` retired. **The zero-specialist path was abandoned rather than tuned for** — the counter-test exists to stop exactly that trade. Found by running it: two turns wrote an *intention* as standing fact; a key-based duplicate check missed a placeholder holding the same fact; Mac and VM `sarah_chen` stores had diverged 38 vs 1 | `360b843`, `d128130`, `7cb9ebd`, `2a51f46` — **deployed, A4 3/3** |
 | 08-15 | **Knowledge layering phase 1 — the wisdom store gains a subject axis.** The store already existed and was almost unreachable: six agent files instruct `read_wisdom` and are not granted it, and `write_wisdom` silently coerced unknown categories, so every Big Five entry MW ever wrote was misfiled. `category` → `domain` + `provenance`; alias map with a *measured* fuzzy cutoff; refusal never terminal, because the Diarist writes from a discarded-output thread. Found while building: **no lock on a read-modify-write** (40 concurrent writes kept 2), and **`vertex-key.json` neither tracked nor gitignored**. Migration heuristics failed on live data ("eat" inside "weather"), so all 59 entries were assigned by hand — which found 24 that do not belong in the store, including the placeholder `oatmeal_formula` | `13134bc`, `a35acfa` — **deployed + migration applied** |
-| 08-15 | **Bulgarian speech-in benchmarked, held indefinitely.** `WHISPER_MODEL_SIZE=base.en` is English-only, cannot emit Cyrillic; `base` (multilingual) gets right script at 46.4% WER, `small` gets 27.6% WER but near-real-time RTF (0.967) on the single-worker pool. Neither clears the bar — Mike's call to hold `[DB-0815-02](a)` in `## Later` indefinitely | none — benchmark + backlog note only, **not deployed** |
 ---
 
 ## Useful context to pull as needed

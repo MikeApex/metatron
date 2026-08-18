@@ -196,6 +196,28 @@ A4 runs against. Anything reasoning about a persona's data has to name which mac
 
 *raised by Claude at the close of the 2026-08-18 knowledge-layering session, after A4 passed 3/3
 twice against an empty manifest · both stores are now migrated; only the coverage gap remains*
+- **When something fails, the user should be told what he can't have and why — not shown an error.**
+Mike, 2026-08-18: replies "akin to *'I can't do that now because xyz'*" instead of an error message.
+
+This is **already scoped as `ROADMAP.md` § B4 (Error handling and graceful degradation)** and
+tracked in aggregate as `[DB-0804-02]`, but it sits inside Track B reading as security hardening,
+so nobody would find it looking for this. B4 lists five paths — specialist crash mid-pipeline,
+Ollama unavailable, corrupt context tracker, transient API failures, max chain depth, partial
+fan-out — and only the Ollama one currently says "define the user-facing message."
+
+**What Mike is asking for is the half B4 under-specifies: the wording.** Every failure path needs a
+refusal the user can act on, and the constraint that makes it hard is `CLAUDE.md` § Discretion —
+the message must explain the *consequence* without revealing that a specialist was called, which
+model was routing, or that an agent exists at all. "I can't reach your calendar right now" is
+allowed; anything naming the mechanism is not.
+
+Worth checking against real failures before writing copy: `/monitor/model_errors` and the machine
+log both carry what actually breaks, and the runtime already logged *"research_agent fails with
+'NoneType object is not iterable' or returns empty strings when queried for live web data"* — a
+live instance of exactly this, where the user got nothing rather than a reason.
+
+*filed 2026-08-18 by Mike, during the `/backlog deep` close-out — his first report, so it promotes
+on his say-so rather than needing the ×3 machine bar*
 
 ---
 
@@ -547,25 +569,6 @@ items unworkable, which is what made the ranked list misleading: `## Now` must m
   `due: 2026-08-22`
 
 
-- **[DB-0814-04] An obligation with a *vague* due date is the first thing dropped from session
-  context — the exact opposite of the intended priority.** `context_block()` in
-  [tools/obligations.py](tools/obligations.py) sorts by `str(it.get("due") or "9999")`. The
-  `"9999"` sentinel is meant to sink undated obligations to the bottom, and it does — but a
-  vague phrase sorts **lexically after it**: `["2026-08-20", "2026-09-01", None, "next week"]`
-  is the real order, verified by running it 2026-08-14. With `_CONTEXT_MAX = 6`, an obligation
-  the user gave a soft deadline to therefore ranks below every undated one and is dropped first.
-  **`OPEN_OBLIGATION_SCHEMA` explicitly invites the vague phrase** (*"or short phrase if
-  genuinely vague"*), so this is the schema's own documented input hitting a lexical sort, not
-  misuse. User-noticeable: the store silently stops surfacing a commitment that carries a
-  deadline — which is the failure the obligation store was built for in the first place
-  (see the module docstring's 2026-08-07 incident). Not fixed on the spot: the file was under a
-  two-window collision at the time and that session was comment-only.
-  *filed 2026-08-14 by the §10b run-2 window B, which verified the sort order by running it
-  rather than reading it · not raised by Mike, so `## Later` by the standing rule*
-
-Real, not prioritised. One or two lines each — detail lives in the code, the log, or
-`archive/backlog_closed_2026-08.md`.
-
 **Two standing rules, both Mike's (2026-08-10):** a **machine-originated** item promotes to
 `## Now` once its error has been **recorded three times** (the ×3 threshold the machine log
 uses — count before promoting), while **anything Mike raises promotes on first report**, no
@@ -636,12 +639,20 @@ so this is not a parallel track to pick from when a `Now` item is time-gated.
   duplicate path, the `[VERIFY]` fail-open marker and `update`/`delete` have only ever run
   against fixtures. It is the write path for every calendar event Logistics creates.
   *filed 2026-08-10 · shipped and deployed but unexercised in production*
-- **[DB-0808-17]** A4 clinical hard-fails have never run on Flash-Lite, which serves most MW/PH
+- **[DB-0808-17] The safety suite can now be pointed at Flash-Lite — THE RUN IS STILL OWED.**
+  `--complexity {quick,deep}` added to `tests/run_a4_safety.py` 2026-08-18 (`4425b2d`), threaded to
+  `resolve_model()`; report filename and header carry the tier so a quick run cannot be mistaken for
+  or overwrite a deep one. **Refused with `--suite pipeline` (exit 2)** rather than silently
+  ignored — `run_pipeline_session()` takes no complexity argument, and dropping it would relabel a
+  deep run as quick. Wiring proven at **zero spend**: `tests/test_a4_complexity_threading.py` shows
+  `resolve_model('mental_wellbeing', complexity='quick')` returns Flash-Lite.
+  **What closes it — approx $0.02, under the $1.00 line:**
+  `python tests/run_a4_safety.py --persona sarah_chen --provider gemini --suite clinical --complexity quick`
+  @kind: chore
+  *original entry follows*
+  A4 clinical hard-fails have never run on Flash-Lite, which serves most MW/PH
   turns (43 vs 5, 58 vs 6, Aug 1–8). Routing stays as-is by Mike's decision; the *test* gap is
   the item. Add `--complexity quick` to the A4 suite. Bears on ROADMAP § A7 check 8's wording.
-- **[DB-0808-16]** The `injection` suite needs an ordinary-life persona — a clinically-loaded
-  one silently scores 3/3 on a pipeline that never read the payload. Docstring line + a guard
-  that fails loudly when `read_email` was never called. Matters for the open B1b rows.
 - **[DB-0808-06]** No administrative close for tier-2 clinical threads — `resolved` exists and
   nothing can legitimately set it, so every tier-2 thread is permanent. Correct failure
   direction; needs a real path eventually, tied to escalation that doesn't exist. **Do not fix
@@ -659,13 +670,20 @@ so this is not a parallel track to pick from when a `Now` item is time-gated.
   test, and Wave 2 (B1b, B3) gated on Track E. Detail in the archive file.
 
 **Reliability**
-- **[DB-0810-02]** `core/trace.py`'s `pop_agent()` doesn't restore the prior thread-local
-  `current_agent`, so a synchronous nested `run_subagent` misattributes its tool-call record to the
-  child it just finished. Compounded by depth>0 agents always nesting under `t.pipeline[0]`.
-  Diagnostic only, but makes The Book **actively misleading** for nested calls — which is how it
-  cost a wrong diagnosis once. Fix: `push_agent()` returns the previous value for `pop_agent()` to
-  restore. *filed 2026-08-10 · full mechanism in `archive/PROJECT_LOG.md` § 2026-08-10*
-- **[DB-0810-01]** A reconnect can leave two live WebSockets briefly open, doubling a streaming
+- **[DB-0810-01] Answers appeared twice on reconnect — FIXED AND DEPLOYED 2026-08-18 (`fd273bf`),
+  awaiting one live reconnect to close.** The client now detaches the dying socket and waits for its
+  real `close` before connecting, with a 1500 ms fallback for a socket emitting no events at all
+  (below the existing 3000 ms passive delay, so a deliberate reconnect is never the slower path).
+  **Option (ii) from the original entry was wrong and must not be revisited:** refusing a second
+  connection per persona would break the multi-device broadcast set `core/server.py:748` documents
+  as deliberate. `tests/test_ws_reconnect_race.js` 5/5, **confirmed failing on HEAD first** — the
+  reported symptom reproduced directly as "chunk rendered 2 times, expected 1".
+  @kind: bug
+  @waiting: one live reconnect from Mike — background the app past 45s, return, confirm a streaming
+  reply renders once. Browser and Android WebView. **Do not close on "it works now"**: a restart
+  previously looked like a fix and only showed the stored record was clean.
+  *original entry follows*
+  A reconnect can leave two live WebSockets briefly open, doubling a streaming
   response into one bubble (`ws.close()` isn't synchronous). Live twice on 2026-08-10, the second
   mid-session — which ruled out the install-transition reading. **Data is never at risk. Do not
   close on "restart fixed it"** — that only showed the stored record was clean. Fix is a design
@@ -684,13 +702,6 @@ so this is not a parallel track to pick from when a `Now` item is time-gated.
   activity gate deliberately). Only pick up if a fixed-time session should ever wait for a lull.
 - **[DB-0803-05]** `sw.js` registers no `fetch` handler and `/` is served `no-store` — no
   offline shell, so an unreachable server shows a browser error page instead of the app.
-- **[DB-0808-05]** The output filter suppresses the whole reply when Mike names a tool himself
-  (*"`write_config` didn't save my preferences"*) — the canned fallback lands exactly when a
-  complaint about the system deserves an answer. Live once (Exchange 027), pinned `FILTER-EXCH027`.
-  Fix: pass the user's turn into `filter_output()` and exempt **only the term he typed, only in the
-  next turn** — not a blanket flag, or a probing question disables its own backstop. Grep
-  `filter_output(` for the three call sites; line numbers have moved twice.
-  **Dev-session find; promote if it recurs.**
 - **[DB-0810-07]** The Book's thinking/output-text, tool-call ok flag and `/monitor/model_errors`
   fields (`ffaf7a7`, deployed) have only had `py_compile` and a health check — never a real
   exchange. Verify with one successful and one deliberately failing tool/model call. Known and
@@ -794,7 +805,21 @@ so this is not a parallel track to pick from when a `Now` item is time-gated.
   `logistics` calls `send_email` without the grant (only `relationships` holds it) and the
   dispatcher executes it, so switching to enforce mode today would kill outbound email. See
   `.claude/rules/agent-files.md` — correct the lists, verify, *then* enforce.
-  **Fourth blind spot, found 2026-08-15 and created by that day's own change: the guard scans
+  **✅ Fourth blind spot FIXED 2026-08-18 (`4425b2d`), one VM run from closed.**
+  `scripts/check_agent_tools.py` now scans `config/personas/*.md` and `config/personas/*/*.md`
+  (`goals.yaml` excluded — data, not instruction prose). **Attribution is narrower than either
+  option scoped:** findings attach to agents in `core.orchestrator._HEAD_LAYER_AGENTS`, read at
+  runtime, because `load_config()` is the sole loader of persona markdown and only the head layer
+  reaches it — literal "every agent that loads persona files" means all 14, since every specialist
+  loads `goals.yaml`, and one defect reported 14 times is the false-positive ratio that script
+  exists to prevent. The guard now prints which personas it scanned and **warns loudly when `mike`
+  is absent or zero files matched**, so a clean Mac report cannot be mistaken for coverage.
+  Re-confirmed live: `synthesizer` still lacks the `write_log` grant in both routing files.
+  **Closes on one VM run of `python3 scripts/check_agent_tools.py`.** Heads-up: `qa_sweep.sh` treats
+  this script's exit code as load-bearing, and a persona file naming an unbuilt tool can now trip
+  it — correct, but new.
+  *original finding follows*
+  **the guard scans
   `config/agents/*.md` and never `config/personas/**`, so a tool named in a persona file is
   invisible to it.** `6913ad7` moved Mike's evening ritual — which instructs a `write_log` call —
   out of `synthesizer.md` into `config/personas/mike/evening_ritual.md`. The `write_log` finding

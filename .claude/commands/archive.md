@@ -11,10 +11,8 @@ irreplaceable one), `SESSION.md` after the log entry it depends on, commit last.
 
 - **Did this session change anything?** If `git status --porcelain` is clean of tracked files
   *and* this session made no commits, run **step 1 only**, report the transcript, and stop.
-  Steps 2–5 have nothing true to say about a session that only read: a fragment recording
-  "nothing changed" is a permanent entry in a generated file, and step 3 pays to re-decide a
-  handoff paragraph that is still correct. Step 1 is never skipped with it — the transcript is
-  the only step that cannot be recovered afterwards.
+  Steps 2–5 have nothing true to say about a read-only session, and step 1 is never skipped
+  with them — the transcript is the only step that cannot be recovered afterwards.
 - **`git status --short SESSION.md ROADMAP.md archive/PROJECT_LOG.md`** — if any is dirty from
   another window, stop and ask. `SESSION.md` is *replaced*, so rewriting over a concurrent
   edit discards real work silently.
@@ -92,17 +90,13 @@ Updating `SESSION.md` is not enough; that has been missed before.
 python3 scripts/backlog_close_scan.py
 ```
 
-It ranks `## Now` / `## Later` items against this session's diff and prints the evidence for
-each. Then read every candidate against the diff. Fully done → move it to
-`archive/backlog_closed_2026-08.md` with the commit or `file:line` that closed it. Partly done →
-**stays open**, retitled to state what is left (built but undeployed is open). Untouched → leave
-it alone; do not re-word an item because you read it. An entry naming a file is often about a
-different fault in it, so the reading is still the work — the scan only decides what to read.
-
-> **Replaced a filename grep on 2026-08-18** — the grep only found items that *name a file*, and
-> most are written in symptom language, so it missed **incidental closures** entirely. Why that
-> is the class that matters, and the `[DB-0808-16]` worked example: the script's own docstring.
-> `/backlog deep` stays the deeper net for duplicates and drift.
+It ranks `## Now`/`## Later` against this session's diff and prints the evidence. **Read every
+candidate against the diff** — the scan only decides what to read; an entry naming a file is often
+about a different fault in it. Fully done → move to `archive/backlog_closed_2026-08.md` with the
+commit or `file:line`. Partly done → **stays open**, retitled to what is left (built but undeployed
+is open). Untouched → leave it; do not re-word an item because you read it. *(Replaced a filename
+grep 2026-08-18 — it only found items that *name a file*, missing incidental closures entirely.
+Worked example: the script's docstring.)*
 
 **Then file — but only what clears the bar: a user would notice, or the roadmap is blocked.**
 An incidental code nit is fixed on the spot or dropped, not filed. This is the whole reason the
@@ -111,10 +105,9 @@ list used to grow every session and shrink in none.
 **File as a fragment: `.claude/backlog_inbox/<slug>.md`**, with a one-line provenance naming who
 raised it. The sync folds it into `## Inbox`, so no id is minted here and no ranked section is
 edited — two windows closing out cannot collide, the same reason step 2 writes a fragment.
-*(This step minted `DB-MMDD-NN` ids and wrote straight into `## Now`/`## Later` until 2026-08-15,
-after the fragment route existed.)* Whether **Mike** raised it is the note that decides `## Now`
-versus `## Later` — but **`/backlog` makes that call, with the list open.** Ranking an entry into
-`## Now` at close-out asks him to weigh it against nine items nobody is currently looking at.
+Whether **Mike** raised it is the note that decides `## Now` versus `## Later` — but **`/backlog`
+makes that call, with the list open.** Ranking here asks him to weigh an entry against nine items
+nobody is currently looking at.
 
 Then close with the count, and only the count:
 
@@ -143,12 +136,9 @@ reported; pulling or merging to clear it entangles two sessions' work.
 ```
 
 *"I ran the push"* and *"the commits are offsite"* are not the same claim, and only the loud
-failure was ever handled. On 2026-08-13 `origin/main` sat **11 commits and six hours** behind
-local `main` — and one of those commits was itself an `Archive:` commit, so this step had run
-and silently lost its push more than once. Two costs, one invisible: the backup was stale on the
-day the repo gained five components, and worker freshness keyed off `origin/main` at the time, so
-an unpushed archive quietly staled every worker. `deploy.sh` has captured `EXPECTED_SHA` after
-its push for exactly this reason; this is the same assertion.
+failure was ever handled — `origin/main` once sat 11 commits behind local, one of them an
+`Archive:` commit, so this step had silently lost its push more than once. Full cost:
+`archive/PROJECT_LOG.md` § 2026-08-13.
 
 **Lines this session did not write stop the commit.** Name them, stage nothing: you cannot tell
 your own edits from a parallel window's (`[DB-0805-05]`, open), so raising it is the step.

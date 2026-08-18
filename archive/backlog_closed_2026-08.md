@@ -2744,3 +2744,52 @@ survived contact with an hour of attention.
   @kind: chore
   @waiting: `[DB-0818-01]` applied to the VM
   *filed 2026-08-18 · the code half of `[DB-0806-02]`'s read scope is done and closed*
+
+## Closed 2026-08-18 — `/backlog deep` + one attack round
+
+- **[DB-0808-16]** The `injection` suite needs an ordinary-life persona — a clinically-loaded
+  one silently scores 3/3 on a pipeline that never read the payload. Docstring line + a guard
+  that fails loudly when `read_email` was never called. Matters for the open B1b rows.
+
+  **Closed 2026-08-18 — already fixed, found by `/backlog deep`.** Both halves shipped in `7c70cd9` (2026-08-08), the same commit as the incident: `tests/run_b1_redteam.py:76-86` instructs an ordinary-life persona by name, and `run_injection_suite()` check 0 asserts `read_email` was called, folding it into the scenario verdict so a pipeline that never read the payload FAILs instead of scoring a silent 3/3. **Open for ten days after being fixed** — the incidental closure that motivated `scripts/backlog_close_scan.py` the same day. Residual (cosmetic, not filed): the module USAGE block still shows `--persona sarah_chen` for this suite, contradicting its own advice.
+
+- **[DB-0808-05]** The output filter suppresses the whole reply when Mike names a tool himself
+  (*"`write_config` didn't save my preferences"*) — the canned fallback lands exactly when a
+  complaint about the system deserves an answer. Live once (Exchange 027), pinned `FILTER-EXCH027`.
+  Fix: pass the user's turn into `filter_output()` and exempt **only the term he typed, only in the
+  next turn** — not a blanket flag, or a probing question disables its own backstop. Grep
+  `filter_output(` for the three call sites; line numbers have moved twice.
+  **Dev-session find; promote if it recurs.**
+
+  **Closed 2026-08-18 — `bcb647c`, deployed.** `filter_output()` takes the user's own turn and exempts, **in tier 1 only, per term, for that turn alone**, an identifier the user typed first — so a complaint naming an internal term gets a real answer instead of the canned deflection. Tiers 2–4 untouched: a probing question still trips narration or the sentence gate, which is the constraint that made a blanket flag unacceptable. `user_text` defaults to `None`, so anything not passing it is bit-identical; **proactive sessions pass `None` deliberately** — a scheduler prompt must not be able to unlock the filter. `tests/test_filter_user_echo.py` 20/20 (six confirm the prober path still fails); filter gate 88 checks PASS. **Still owed:** `FILTER-EXCH027` in `tests/run_b1_redteam.py:423` should be promoted from informational to gated.
+
+- **[DB-0810-02]** `core/trace.py`'s `pop_agent()` doesn't restore the prior thread-local
+  `current_agent`, so a synchronous nested `run_subagent` misattributes its tool-call record to the
+  child it just finished. Compounded by depth>0 agents always nesting under `t.pipeline[0]`.
+  Diagnostic only, but makes The Book **actively misleading** for nested calls — which is how it
+  cost a wrong diagnosis once. Fix: `push_agent()` returns the previous value for `pop_agent()` to
+  restore. *filed 2026-08-10 · full mechanism in `archive/PROJECT_LOG.md` § 2026-08-10*
+
+  **Closed 2026-08-18 — `bcb647c`, deployed.** `push_agent()` records the agent current at push time; `pop_agent()` restores it, so a tool call after a nested `run_subagent` returns is attributed to the caller. `tests/test_trace_agent_stack.py` 11/11. **Two premises in the fix brief were wrong and the worker rejected both:** the four `_set_current_agent(_parent_agent)` calls are not redundant — they seed a *new thread's* empty thread-local inside worker closures, and `pop_agent()` cannot cross a thread boundary, so deleting them would have dropped every parallel specialist from the trace; and both callers *do* use `push_agent()`'s return value, so the parent is stored on the `AgentRecord` instead. **Unblocks `core/actions.py:28-30`**, which cites this item as the reason it avoids per-agent attribution — widening it is now a product question, not a repair.
+
+- **[DB-0814-04] An obligation with a *vague* due date is the first thing dropped from session
+  context — the exact opposite of the intended priority.** `context_block()` in
+  [tools/obligations.py](tools/obligations.py) sorts by `str(it.get("due") or "9999")`. The
+  `"9999"` sentinel is meant to sink undated obligations to the bottom, and it does — but a
+  vague phrase sorts **lexically after it**: `["2026-08-20", "2026-09-01", None, "next week"]`
+  is the real order, verified by running it 2026-08-14. With `_CONTEXT_MAX = 6`, an obligation
+  the user gave a soft deadline to therefore ranks below every undated one and is dropped first.
+  **`OPEN_OBLIGATION_SCHEMA` explicitly invites the vague phrase** (*"or short phrase if
+  genuinely vague"*), so this is the schema's own documented input hitting a lexical sort, not
+  misuse. User-noticeable: the store silently stops surfacing a commitment that carries a
+  deadline — which is the failure the obligation store was built for in the first place
+  (see the module docstring's 2026-08-07 incident). Not fixed on the spot: the file was under a
+  two-window collision at the time and that session was comment-only.
+  *filed 2026-08-14 by the §10b run-2 window B, which verified the sort order by running it
+  rather than reading it · not raised by Mike, so `## Later` by the standing rule*
+
+Real, not prioritised. One or two lines each — detail lives in the code, the log, or
+`archive/backlog_closed_2026-08.md`.
+
+  **Closed 2026-08-18 — `fd273bf`, deployed.** `_due_sort_key()` in `tools/obligations.py` buckets `(0, iso)` / `(1, vague)` / `(2, "")`, so any stated urgency outranks none — a commitment given a soft deadline no longer sorts below every undated one and get cut first by `_CONTEXT_MAX`. Single call site confirmed; `tools/calendar_reconcile.py` uses `_load` for token matching, not ordering. `tests/test_obligation_due_sort.py` 5/5, **confirmed failing on HEAD first**, and demonstrated end-to-end: six undated obligations plus one due "next week" showed all six and dropped the dated one pre-fix; post-fix the dated one leads.
+

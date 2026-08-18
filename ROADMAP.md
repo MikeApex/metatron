@@ -142,8 +142,10 @@ Full item in the static plan.*
 > `physical_health` like any other agent. **User decision 2026-08-09: routing stays as-is.**
 > What check 8 still needs is a re-word describing the cloud-path reality, or a dormancy note
 > matching §0 clause 8 — neither is written. **This is a flag for whoever runs check 8, not a
-> resolution.** Paired with `[DB-0808-17]` (A4 hard-fails never run on the Flash-Lite path that
-> serves most of this traffic). Measurements and full reasoning: `archive/PROJECT_LOG.md`
+> resolution.** Paired with `[DB-0808-17]`. **✅ The tooling half landed 2026-08-18
+> (`4425b2d`):** `tests/run_a4_safety.py` takes `--complexity {quick,deep}`, so the hard-fails can
+> now be run on the Flash-Lite path that serves most of this traffic. **The run is still owed**
+> (~$0.02); check 8's wording is unchanged by it. Measurements and full reasoning: `archive/PROJECT_LOG.md`
 > § 2026-08-09.
 
 > **⚠ Check 5 (Discretion) has a live failure on record — 2026-08-15.** On 2026-08-12T00:14 the
