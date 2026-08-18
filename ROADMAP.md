@@ -704,26 +704,24 @@ As of 2026-06-19, Synthesizer streaming is implemented for all four providers:
 
 The "Gemini only" framing used during development referred to the current Synthesizer routing, not a code limitation. If the Synthesizer's assigned model in `routing.yaml` changes, the streaming path follows automatically. **If a 5th provider is added, a streaming variant must be implemented before routing the Synthesizer to it** — see the `# STREAMING NOTE` guard in `run_pipeline_session_stream()`.
 
-> **⚠ The Gemini row is TEMPORARILY untrue, by decision — 2026-08-18.** That branch now calls
-> `run_session_gemini_cached()` and yields one chunk, because it was the only Synthesizer path that
-> never reached the Vertex prompt cache: measured on the VM, **334 uncached turns at a median 26,464
-> input tokens**, while the Coordinator was cache-served throughout. **No user-visible regression was
-> traded away, because Gemini was not really streaming either** — a thinking model emits reasoning as
-> a token class carrying no `delta.content`, so the reply already arrived as a single flush (measured,
-> one chunk on the wire). The other three providers are unchanged and genuinely stream.
+> **The Gemini row now means cached AND streaming — Option A, 2026-08-18.** That branch calls
+> `run_session_gemini_cached_stream()` → `_run_gemini_native_stream()`, which keeps `cached_content`
+> while yielding real deltas. Until this landed the branch had to pick one: it streamed by never
+> reaching the prompt cache (**334 uncached turns at a median 26,464 input tokens**), and the interim
+> fix bought the cache back by giving up the stream. Verified end-to-end: **9 chunks on the wire**
+> through `run_pipeline_session_stream`, with `cache_read=19,157`.
 >
-> **Consequence for a routing change, which is why this note exists:** a migration *away* from Gemini
-> silently restores real streaming, and a migration *back* silently removes it. Gemini is current
-> reality under the Vertex VM election (Mike, 2026-08-18), so a note is the agreed remedy rather than
-> a rebuild — but read the comment on that branch in `core/orchestrator.py` before changing routing or
-> starting the refactor. **The fix that retires this note is Option A** — a
-> `generate_content_stream` sibling of `_run_gemini_native_loop` that keeps `cached_content`, giving
-> caching *and* real token-by-token delivery. Brief:
-> [`archive/handoffs/2026-08-18-caching-fix-prompt.md`](archive/handoffs/2026-08-18-caching-fix-prompt.md).
-> `[DB-0818-10]` (the reply lands in one lump, so speech cannot start early) is **not** closed by A
-> either — measured 2026-08-18, **86% of what the Synthesizer generates is thinking**, so the silence
-> is the thinking budget and streaming cannot shorten it. A is the end state and the prerequisite for
-> sentence-chunked TTS; the dead air is a separate, unmade decision recorded on that item.
+> **The native SDK needs no blocking replay, which is where it differs from `_openai_compat_stream`.**
+> Streamed `function_call` parts arrive carrying `thought_signature` (probed live, 6,330 bytes), so
+> the accumulated turn is appended directly. A `thought_signature` 400 on this path would mean that
+> premise broke — check the appended parts first.
+>
+> **What this does NOT do, stated because it is the obvious wrong inference:** it does not move when
+> speech starts. `[DB-0818-10]` stays open. Time-to-first-token is dominated by thinking (**86% of
+> generated tokens**; 14.89s of a 19.78s probe elapsed before the first delta), and the client still
+> calls `speakResponse()` only on `done` ([static/index.html:997](static/index.html#L997)) — so voice
+> waits for the whole message regardless of how the text arrives. **A unblocks sentence-chunked TTS;
+> it does not deliver it.**
 
 ### Pre-Alpha: revisit live-stream + retract design
 

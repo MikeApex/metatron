@@ -2865,6 +2865,223 @@ def _run_gemini_native_loop(client, model_name: str,
     return result
 
 
+def _run_gemini_native_stream(client, model_name: str,
+                              system_prompt: str, user_input: str,
+                              tool_schemas: list[dict], tool_handlers: dict,
+                              history: list[dict] | None = None,
+                              max_iterations: int = 8,
+                              cached_content: str | None = None) -> Iterator[str]:
+    """
+    Streaming sibling of _run_gemini_native_loop — Option A of the 2026-08-18 caching fix.
+
+    Yields text as it arrives while keeping `cached_content`, which is the combination
+    the interactive path could not previously have: it streamed by opting out of the
+    cache, or cached by giving up the stream.
+
+    **No blocking replay, unlike _openai_compat_stream — measured, not assumed.**
+    That function re-issues each tool turn non-streaming purely to obtain a Vertex
+    `thought_signature`, because OpenAI-compat stream deltas carry none. The native
+    SDK does: a streamed `function_call` part arrives with its signature attached
+    (probed 2026-08-18, 6,330 bytes on a live call), so the accumulated turn is
+    appended directly and the extra round trip does not exist here. **If a
+    thought_signature 400 ever appears on this path, that premise is what broke** —
+    check the parts being appended before looking anywhere else.
+
+    Two behaviours deliberately match _openai_compat_stream rather than
+    _run_gemini_native_loop, because this replaces the former on the user's path:
+    text from a tool-call turn is yielded as it arrives (the blocking loop discards
+    all but the final turn's text, which a stream cannot do — nothing can be
+    un-yielded), and the caller sees one concatenated stream.
+
+    Time-to-first-token is dominated by thinking, not by this function: 14.89s of a
+    19.78s generation elapsed before the first delta on a live probe. Streaming
+    shortens no silence; it lets the answer arrive progressively once it starts.
+    """
+    _allowed_names = {s['name'] for s in tool_schemas} if tool_schemas else set()
+    from google.genai import types
+
+    gemini_tools = _to_gemini_tools(tool_schemas)
+    if cached_content:
+        # Tools and system_instruction are baked into the cache — must not repeat them.
+        config = types.GenerateContentConfig(
+            cached_content=cached_content,
+            max_output_tokens=4096,
+        )
+    else:
+        config = types.GenerateContentConfig(
+            system_instruction=system_prompt,
+            max_output_tokens=4096,
+            **({"tools": gemini_tools} if gemini_tools else {}),
+        )
+
+    contents: list = []
+    if history:
+        for msg in history:
+            role = "user" if msg["role"] == "user" else "model"
+            contents.append(types.Content(role=role, parts=[types.Part(text=msg["content"])]))
+    contents.append(types.Content(role="user", parts=[types.Part(text=user_input)]))
+
+    cumulative_input_tokens = 0
+    result = ""
+
+    for turn_num in range(1, max_iterations + 1):
+        _trace(f"[API] gemini-native-stream/{model_name}  turn={turn_num}  streaming...")
+
+        function_calls = []
+        fc_parts: list = []
+        text_parts: list[str] = []
+        usage = None
+
+        for chunk in client.models.generate_content_stream(
+            model=model_name, contents=contents, config=config,
+        ):
+            if getattr(chunk, "usage_metadata", None):
+                usage = chunk.usage_metadata
+            if not chunk.candidates:
+                continue
+            cand_content = chunk.candidates[0].content
+            if cand_content is None or not cand_content.parts:
+                continue
+            for part in cand_content.parts:
+                if getattr(part, "function_call", None):
+                    function_calls.append(part.function_call)
+                    fc_parts.append(part)   # keep the ORIGINAL part — it carries the signature
+                elif getattr(part, "text", None):
+                    text_parts.append(part.text)
+                    yield part.text
+
+        if usage is not None:
+            input_tokens = getattr(usage, "prompt_token_count", 0) or 0
+            output_tokens = getattr(usage, "candidates_token_count", 0) or 0
+            thinking_tokens = _thinking_tokens_gemini(usage)
+            cache_read = getattr(usage, "cached_content_token_count", 0) or 0
+            cumulative_input_tokens += input_tokens
+            _cache_suffix = f" cache_read={cache_read}" if cache_read else ""
+            if cumulative_input_tokens > 8000:
+                logger.warning(f"[token_budget] OVER_8K turn={turn_num} cumulative_input={cumulative_input_tokens}{_cache_suffix}")
+                _trace(f"[TOKEN] turn={turn_num} input={input_tokens} cumulative={cumulative_input_tokens}{_cache_suffix} ⚠ OVER_8K")
+            else:
+                logger.info(f"[token_budget] turn={turn_num} cumulative_input={cumulative_input_tokens}{_cache_suffix}")
+                _trace(f"[TOKEN] turn={turn_num} input={input_tokens} cumulative={cumulative_input_tokens}{_cache_suffix}")
+            _tr.record_turn_tokens(_tr.get_current_agent(), turn_num, input_tokens, output_tokens,
+                                   thinking_tokens, output_text="".join(text_parts))
+
+        if text_parts:
+            result = "".join(text_parts)
+
+        if not function_calls:
+            if history is not None:
+                history.append({"role": "user", "content": user_input})
+                history.append({"role": "assistant", "content": result})
+            return
+
+        # Rebuild the assistant turn: original function-call parts (signatures intact),
+        # plus the streamed text collapsed into one part.
+        model_parts = ([types.Part(text="".join(text_parts))] if text_parts else []) + fc_parts
+        contents.append(types.Content(role="model", parts=model_parts))
+
+        result_parts = []
+        parallel_calls = []
+        for fc in function_calls:
+            if fc.name in _PARALLEL_TOOLS:
+                parallel_calls.append(fc)
+            else:
+                res = dispatch_tool(fc.name, fc.args, tool_handlers, _turn_num=turn_num, _allowed=_allowed_names)
+                result_parts.append(
+                    types.Part.from_function_response(name=fc.name, response={"result": res})
+                )
+
+        if parallel_calls:
+            _parent_trace = _tr.get_trace()
+            _parent_agent = _tr.get_current_agent()
+            _parent_persona = current_persona()
+            def _make_gemini_dispatch(fc_name, fc_args, handlers, turn):
+                def _worker():
+                    _tr.set_trace(_parent_trace)
+                    _tr._set_current_agent(_parent_agent)
+                    with (persona_scope(_parent_persona) if _parent_persona else nullcontext()):
+                        return dispatch_tool(fc_name, fc_args, handlers,
+                                            _agent_rec=_parent_agent, _turn_num=turn, _allowed=_allowed_names)
+                return _worker
+            with ThreadPoolExecutor() as executor:
+                future_to_fc = {
+                    executor.submit(_make_gemini_dispatch(fc.name, fc.args, tool_handlers, turn_num)): fc
+                    for fc in parallel_calls
+                }
+                for future in as_completed(future_to_fc):
+                    fc = future_to_fc[future]
+                    try:
+                        res = future.result()
+                    except Exception as e:
+                        res = f"Error: {e}"
+                    result_parts.append(
+                        types.Part.from_function_response(name=fc.name, response={"result": res})
+                    )
+
+        contents.append(types.Content(role="user", parts=result_parts))
+
+    if history is not None:
+        history.append({"role": "user", "content": user_input})
+        history.append({"role": "assistant", "content": result})
+
+
+def run_session_gemini_cached_stream(system_prompt: str, user_input: str,
+                                     tool_schemas: list[dict], tool_handlers: dict,
+                                     model: str | None = None,
+                                     history: list[dict] | None = None) -> Iterator[str]:
+    """
+    Streaming entry point for the cached Vertex path — mirrors run_session_gemini_cached.
+
+    Falls back to the uncached OpenAI-compat stream when not on Vertex, when the native
+    client is unavailable, or when the native stream fails **before yielding anything**.
+
+    **The fallback is deliberately not attempted once a chunk has been emitted.** A
+    replay after partial delivery would repeat text the user has already seen and re-run
+    any tool whose side effect had landed — the failure mode the non-streaming path
+    accepts (it replays a whole turn) but which a stream cannot, because the first half
+    is already gone. Past that point the exception propagates and the caller's normal
+    error handling takes it.
+    """
+    project = os.environ.get("GOOGLE_CLOUD_PROJECT")
+    client = _get_vertex_native_client() if project else None
+    if client is None:
+        api_key, base_url, model_name = _resolve_gemini_credentials(model)
+        yield from _openai_compat_stream(
+            system_prompt, user_input, tool_schemas, tool_handlers,
+            api_key=api_key, base_url=base_url, model=model_name, history=history,
+        )
+        return
+
+    model_name = (model or GEMINI_PRO_MODEL)
+    if model_name.startswith("models/"):
+        model_name = model_name[len("models/"):]
+
+    cached_content_name = _get_or_create_vertex_cache(client, system_prompt, model_name, tool_schemas)
+
+    emitted = False
+    try:
+        for chunk in _run_gemini_native_stream(
+            client, model_name, system_prompt, user_input,
+            tool_schemas, tool_handlers,
+            history=history, cached_content=cached_content_name,
+        ):
+            emitted = True
+            yield chunk
+    except Exception as e:
+        if emitted:
+            raise
+        from core.router import log_model_error
+        _agent = _tr.get_current_agent() or "unknown"
+        logger.warning(f"[vertex_cache] native stream failed before first chunk ({e}) — falling back to compat")
+        log_model_error(_agent, "gemini-cached-stream", model_name,
+                        f"native stream failed pre-emission, fell back to compat: {e}")
+        api_key, base_url, compat_model = _resolve_gemini_credentials(model)
+        yield from _openai_compat_stream(
+            system_prompt, user_input, tool_schemas, tool_handlers,
+            api_key=api_key, base_url=base_url, model=compat_model, history=history,
+        )
+
+
 def _openai_compat_loop(system_prompt: str, user_input: str,
                          tool_schemas: list[dict], tool_handlers: dict,
                          api_key: str, base_url: str | None, model: str,
@@ -4136,36 +4353,22 @@ def _run_pipeline_session_stream_inner(
     # STREAMING NOTE: All four providers stream here. If you add a new provider,
     # add a streaming branch below before routing the Synthesizer to it.
     if synth_provider == "gemini":
-        # TEMPORARY (Option B, 2026-08-18) — cached and non-streaming, on purpose.
-        # End state is Option A: a generate_content_stream sibling of
-        # _run_gemini_native_loop that keeps cached_content, restoring token-by-token
-        # delivery *with* the cache. See archive/handoffs/2026-08-18-caching-fix-prompt.md.
+        # Cached AND streaming (Option A, 2026-08-18). This branch previously had to
+        # choose: it streamed by never reaching _get_or_create_vertex_cache, which
+        # re-billed the ~19k-token system prompt on every message Mike sent, and the
+        # brief Option B fix bought the cache back by giving up the stream. The native
+        # SDK does both, so neither trade is live any more.
         #
-        # Why this costs the user nothing TODAY — and the conditional is the whole
-        # argument, so do not read this as "streaming does not matter": the reply
-        # already arrives as a single flush. A thinking model emits its reasoning as a
-        # token class carrying no delta.content, so the wire stays silent for the whole
-        # think and the 130-260 output tokens then land in one burst. Both
-        # _openai_compat_stream and the client were read line by line and are correct.
-        # The day the model stops thinking that long, this becomes a visible regression.
-        #
-        # What it buys: this branch never reached _get_or_create_vertex_cache at all, so
-        # the Synthesizer's system prompt was re-billed in full on every message Mike
-        # sent. Measured on the VM 2026-08-18 — 334 uncached turns, median 26,464 input
-        # tokens, while the Coordinator has been cache-served (cache_read=6000) throughout.
-        #
-        # Accepted cost: this puts live turns on the native SDK loop, whose
-        # thought_signature failure falls back to the compat loop by REPLAYING the turn,
-        # so tool side effects can run twice. Rare (parallel-tool escalations) and already
-        # true of the scheduler's path.
-        #
-        # The single chunk MUST be yielded through the loop below, never returned direct:
-        # the [CONTEXT] interception, filter_output/[RETRACT], translation and the history
-        # append all hang off it.
-        gen = iter([run_session_gemini_cached(
+        # What streaming does NOT fix, so nobody re-measures it hoping otherwise:
+        # time-to-first-token is dominated by thinking, not delivery. Probed live —
+        # 14.89s of a 19.78s generation elapsed before the first delta, and 86% of what
+        # the Synthesizer generates is thinking (18 real turns). The dead air Mike
+        # reported is the thinking budget; this only lets the answer arrive progressively
+        # once it starts, which is what makes sentence-chunked TTS possible.
+        gen = run_session_gemini_cached_stream(
             system_prompt, augmented_input, tool_schemas, tool_handlers,
             model=synth_model, history=recent_history,
-        )])
+        )
     elif synth_provider == "openai":
         api_key = os.environ.get("OPENAI_API_KEY", "")
         gen = _openai_compat_stream(

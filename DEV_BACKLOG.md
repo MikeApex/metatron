@@ -142,11 +142,18 @@ whole remaining scope, and it makes nothing faster. **The informative version is
 naming the stage ("checking your calendar") is process narration, which `CLAUDE.md` § Discretion
 forbids. So (c) is effectively spent, and the real levers are (a) and (b).
 
-**⚠ The code under this item moved on 2026-08-18 (`81be0f7`) — read it before acting.** The Gemini
-branch no longer calls `_openai_compat_stream` at all: it calls `run_session_gemini_cached()` and
-yields the reply as **one chunk, deliberately** (Option B of the caching fix — the prompt cache was
-worth more than a stream that was not streaming). **The symptom is unchanged and this item is not
-closed**; the line references above still describe the OpenAI/Ollama path, not Gemini.
+**⚠ HALF OF THIS IS NOW FIXED, AND IT IS NOT THE HALF THE TITLE NAMES — 2026-08-18.** The Gemini
+branch calls `run_session_gemini_cached_stream()` (Option A), which streams real deltas while keeping
+the prompt cache. **Text now arrives progressively — verified, 9 chunks on the wire through
+`run_pipeline_session_stream`.** The line references earlier in this entry describe the OpenAI/Ollama
+path and no longer apply to Gemini.
+**What is still broken is the part this item is actually about: when SPEECH starts.** The client
+calls `speakResponse(ownAccumulated)` only in the `done` handler
+([static/index.html:997](static/index.html#L997)), so **voice still waits for the entire message no
+matter how the text arrives.** Streaming was the *prerequisite* for fixing that, not the fix.
+**Two things remain, and neither is streaming:** (i) **sentence-chunked TTS in the client** — speak
+the first complete sentence rather than waiting for `done`; this is now unblocked and is option (a)
+below; (ii) the **thinking budget**, which is the silence *before* anything arrives at all.
 
 **⚠ Option A does NOT close this item, and an earlier line in this entry saying so was wrong
 (corrected 2026-08-18, same day).** Measured across **18 real interactive Synthesizer turns**:
