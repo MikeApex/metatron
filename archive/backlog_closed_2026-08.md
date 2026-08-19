@@ -19,6 +19,58 @@ sitting inside the Open sections. Reasoning: `archive/PROJECT_LOG.md` § 2026-08
 
 ---
 
+## Closed 2026-08-19 — the one-lump reply: text streaming kept, spoken chunking built and reverted
+
+- ~~**[DB-0818-10]** The reply lands in one lump after a long silence, so speech cannot start
+  early.~~ **Closed by Mike's decision, 2026-08-19.** Two of the three candidate fixes were built
+  and one was then deliberately removed. Commits: `81be0f7` (cache), `46f31b5` (Option A — text
+  streaming, **kept**), `d8e8ef2` + `6c59411` (sentence-chunked TTS, **reverted**).
+
+  **What shipped and stayed — the text streams.** The Gemini branch reached
+  `_get_or_create_vertex_cache` for the first time *and* streams: `run_session_gemini_cached_stream()`
+  → `_run_gemini_native_stream()`. Verified 9 chunks on the wire through
+  `run_pipeline_session_stream`, with `cache_read=19,157` on the same turn. So the literal
+  "one lump" complaint is fixed for the on-screen reply.
+
+  **What was built and reverted — spoken sentence chunking.** Mike, 2026-08-19, after using it on
+  the app: *"30 second delay after the language populated. Too many resources for an incremental
+  gain."*
+
+  **The measurement that settles it, and which any future proposal must beat:**
+  - **The whole reply arrives in ~0.6s** (33.76s → 34.35s, live turn). Everything before it is
+    Coordinator, specialists and thinking. **86% of Synthesizer-generated tokens are thinking**
+    (18 real interactive turns: median 882 thinking vs 133 visible).
+  - **Sentence release was never the bottleneck** — first sentence out **0.15s** after the first
+    text chunk.
+  - The lag Mike heard was client-side: synthesis had been chained behind *playback*, so each gap
+    cost a full ~2.8s Kokoro round trip. Fixed in `6c59411` (parallel synthesis, ordered playback)
+    — **and the gain was still only seconds against a ~30s wait.**
+
+  **The generalisable conclusion:** chunked speech pays only when *generation* is slow relative to
+  synthesis. Here generation is a sub-second burst and the wait is thinking. **Fix the thinking
+  budget first.** Doing it in the other order buys a second and costs a security property.
+
+  **Why the revert also closed a security gap.** Sentence-chunked TTS weakened `filter_output()`,
+  the **OWASP LLM06** control on the user-facing path: its guarantee rests on suppressed text being
+  recallable, which is true of a screen (`[RETRACT]` overwrites it) and false of a room. Mitigations
+  narrowed it — server-side release, a lead buffer, a one-strike halt — but the residual gap was
+  real and was **never accepted**: `filter_output` is shape-sensitive, so a passing prefix is not
+  proof the response passes, and a sentence cleared before a response turned dirty had already been
+  spoken. **Removing the feature closed the gap; the gap was not solved.** Full record, kept
+  deliberately so nobody re-opens it unknowingly: `ROADMAP.md` § 5A **✅ CLOSED — spoken output
+  could not be retracted**.
+
+  **What remains, and it is not this item.** The silence Mike originally reported is the **thinking
+  budget** — being handled separately, and now recorded in the Alpha check. Option (c), a "thinking"
+  affordance, was found **already built** (the mic button reads `Thinking...` for the whole wait,
+  `static/index.html`); its informative version is barred by `CLAUDE.md` § Discretion.
+
+  **Three of this session's own claims were wrong and were caught by measurement, not review:** that
+  the interactive/scheduled gap was ~46× (it compared against a median dominated by 19 near-empty
+  scheduled turns); that Option A would close this item (86% thinking says otherwise); and that the
+  speech change could not affect Coordinator dispatch (it could — in-band `[SPEAK]` markers
+  corrupted the reply text, caught by `run_knowledge_routing.py`).
+
 ## Closed 2026-08-15 — `/backlog attack`: the lost exchange, and two faults found in the traces
 
 - ~~**[DB-0810-12]** Vertex rejects a tool-call turn for a missing `thought_signature` and the

@@ -989,21 +989,12 @@
         break;
       }
 
-      case 'speak': {
-        // Server-cleared sentence. Only ever sent to the originating device.
-        if (shownIds.has(msg.exchange_id)) enqueueSpeech(msg.text);
-        break;
-      }
-
       case 'done': {
         if (shownIds.has(msg.exchange_id)) {
           // Own exchange complete — finalize and speak
           if (ownBubble) {
             ownBubble.textContent = ownAccumulated;
-            // Only speak the whole reply when nothing was spoken sentence-by-sentence
-            // (a non-Gemini provider, a translated persona, or a reply with no
-            // sentence boundary). Otherwise this would repeat what was just said.
-            if (!ttsUsed) speakResponse(ownAccumulated);
+            speakResponse(ownAccumulated);
             ownBubble = null; ownAccumulated = '';
           }
           setLoading(false);
@@ -1021,9 +1012,6 @@
 
       case 'retract': {
         if (shownIds.has(msg.exchange_id)) {
-          // Stop anything queued or mid-flight. Sentences ALREADY SPOKEN cannot be
-          // recalled — that is the accepted residual gap, not a bug here.
-          resetSpeechQueue();
           if (ownBubble) {
             ownBubble.textContent = "I can't help with that right now.";
             ownBubble = null; ownAccumulated = '';
@@ -1127,9 +1115,6 @@
     addMessage('user', input);
     ownBubble = addMessage('assistant', '▍');
     ownAccumulated = '';
-    // Invalidate any speech still queued or playing from the previous reply — a new
-    // question must not be answered over the tail of the last one.
-    resetSpeechQueue();
     setLoading(true);
 
     ws.send(JSON.stringify({
@@ -1364,103 +1349,6 @@
     // The catch-path fallback in speakResponse uses the Web Speech API, which has its
     // own queue that stopping the buffer source does not touch.
     try { window.speechSynthesis?.cancel(); } catch {}
-  }
-
-  // --- Sentence-chunked speech ---
-  //
-  // The server sends {type:'speak'} sentences while the reply is still generating,
-  // so speech starts before the whole message exists. Two rules make that safe here:
-  //
-  //  1. Sentences must play IN ORDER and never overlap, so they are chained rather
-  //     than fired as they arrive. speakResponse() cannot be reused directly — it
-  //     calls stopSpeaking() on entry, which would cut off the sentence before it.
-  //  2. `ttsGeneration` invalidates everything queued. A retract, a new message or
-  //     the mic opening bumps it, and every await re-checks it — a fetch or decode
-  //     already in flight resolves into a no-op instead of speaking late.
-  //
-  // WHAT THIS CANNOT DO, and it is a security property, not a limitation of this
-  // code: a sentence already spoken cannot be recalled. The server decides what is
-  // safe to speak (it filters each prefix first); the client never makes that call.
-  // See § SECURITY GAP in core/orchestrator.py beside _SPEAK_PREFIX.
-  let ttsChain = Promise.resolve();
-  let ttsGeneration = 0;
-  let ttsUsed = false;        // did this exchange already speak sentence-by-sentence?
-
-  function resetSpeechQueue() {
-    ttsGeneration++;
-    ttsChain = Promise.resolve();
-    ttsUsed = false;
-    stopSpeaking();
-  }
-
-  // Synthesis is started IMMEDIATELY on arrival; only PLAYBACK is serialised.
-  //
-  // Chaining both was measured wrong on 2026-08-18: a sentence's /tts request did
-  // not begin until the previous sentence had finished playing, so every gap cost a
-  // full synthesis round trip (~2.8s on Kokoro) and speech fell steadily further
-  // behind the text. The whole reply arrives in ~0.6s, so there is no generation
-  // window to hide that behind — the requests must overlap or the lag is unbounded.
-  //
-  // Kicking off the fetch here and awaiting it inside the play chain means N
-  // sentences cost one synthesis, not N.
-  function enqueueSpeech(text) {
-    if (speechBlocked() || !text) return;
-    ttsUsed = true;
-    const gen = ttsGeneration;
-    const pending = synthesizeSpeech(text, gen);   // starts now, in parallel
-    ttsChain = ttsChain.then(() => playSynthesized(pending, text, gen)).catch(() => {});
-  }
-
-  // Returns a decoded AudioBuffer, or null if this sentence should fall back to the
-  // Web Speech API. Never throws — a rejected promise here would break the chain.
-  async function synthesizeSpeech(text, gen) {
-    try {
-      const res = await authFetch('/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
-      });
-      if (!res.ok) throw new Error('TTS failed');
-      const arrayBuffer = await res.arrayBuffer();
-      if (gen !== ttsGeneration) return null;
-      if (!audioCtxShared) unlockAudio();
-      await audioCtxShared.resume();
-      return await audioCtxShared.decodeAudioData(arrayBuffer);
-    } catch {
-      return null;
-    }
-  }
-
-  async function playSynthesized(pending, text, gen) {
-    if (gen !== ttsGeneration || speechBlocked()) return;
-    const audioBuffer = await pending;
-    // Re-check after the await: the mic may have opened, or a new reply started,
-    // while this sentence was being synthesised.
-    if (gen !== ttsGeneration || speechBlocked()) return;
-    if (audioBuffer) {
-      await new Promise((resolve) => {
-        const source = audioCtxShared.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(audioCtxShared.destination);
-        currentSource = source;
-        source.onended = () => {
-          if (currentSource === source) currentSource = null;
-          resolve();
-        };
-        source.start(0);
-      });
-      return;
-    }
-    // Web Speech fallback. Resolve on end OR error, and bail outright when the API
-    // is absent — an unresolved promise here would stall every later sentence.
-    if (!window.speechSynthesis) return;
-    await new Promise((resolve) => {
-      const utt = new SpeechSynthesisUtterance(text);
-      utt.rate = 0.95;
-      utt.onend = resolve;
-      utt.onerror = resolve;
-      window.speechSynthesis.speak(utt);
-    });
   }
 
   function renderVoiceToggle() {

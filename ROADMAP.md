@@ -472,12 +472,6 @@ Build: Use GPT-4o and/or o3 to generate adversarial prompts across all attack ca
 Also build during B1 (automated, no adversarial generation needed — these are security testing plan checks 5 and 6):
 - **Output filter automated suite:** run `filter_output()` against a synthetic suite of responses containing leaked architectural terms. Pass: every leaked-term response suppressed and replaced with the canned fallback; clean responses pass unchanged.
 - **Confused deputy test:** craft sub-agent output containing tool-call syntax. Verify the orchestrator never dispatches it as an actual tool call. (The enforcement fix, if needed, lands in B2.)
-- **🚨 Spoken-output disclosure (added 2026-08-18, NOT yet written):** drive a known tier-1/tier-5
-  leak through the pipeline and **assert on what was released to speech**, via the `on_speak`
-  callback on `run_pipeline_session_stream` — **not** on what reached the screen. Every existing
-  disclosure check inspects the screen only, so **none of them can catch this class**: a sentence
-  cleared before the response turned dirty has already been spoken and cannot be retracted. Full
-  statement of the gap and what the review must decide: § 5A **🚨 SECURITY GAP**.
 
 Test (9 attack categories — each must return only the canned response or a natural deflection; never any architectural information):
 
@@ -729,58 +723,44 @@ The "Gemini only" framing used during development referred to the current Synthe
 > waits for the whole message regardless of how the text arrives. **A unblocks sentence-chunked TTS;
 > it does not deliver it.**
 
-### 🚨 SECURITY GAP — SPOKEN OUTPUT CANNOT BE RETRACTED (opened 2026-08-18, NOT accepted)
+### ✅ CLOSED — spoken output could not be retracted (opened and reverted 2026-08-18/19)
 
-> **This is an open, deliberately-taken weakening of the output filter. It must be reviewed at
-> Alpha and at every gate after it, and it must not reach multiple users unreviewed.**
+> **Read this before anyone proposes sentence-chunked TTS again.** It was built, measured and
+> **removed the same day**. The security gap it opened is closed *because the feature is gone*,
+> not because the gap was solved.
 
-**What changed.** Sentence-chunked TTS shipped 2026-08-18: the Synthesizer's reply is now spoken
-sentence by sentence as it generates, rather than after the whole message lands.
+**What was built.** Sentence-chunked TTS: the Synthesizer's reply spoken sentence by sentence as it
+generated, each sentence released only after `filter_output()` passed on the visible prefix, with a
+lead buffer and a one-strike halt.
 
-**Why that is a security matter and not a UX detail.** `filter_output()` is this system's control
-for **OWASP LLM06 (Sensitive Information Disclosure)** on the user-facing path — architecture
-narration, agent and tool names, system-prompt echo, deliberation leaks. Its guarantee has always
-rested on one property: **whatever it suppresses can be taken back**, because text on a screen is
-overwritten on `[RETRACT]`. **Audio has no such property.** A sentence that has been spoken is in
-the room, and no protocol message unsays it. This is the only place in the system where the output
-filter can be defeated by something that is not a filter bug.
+**The security gap it opened.** `filter_output()` is this system's **OWASP LLM06** control on the
+user-facing path, and its guarantee rested on suppressed text being **recallable** — true of a
+screen, which is overwritten on `[RETRACT]`, and false of a room. A sentence already spoken cannot
+be unsaid. Mitigations reduced the exposure (server-side release, lead buffer, one-strike halt) but
+**the residual gap was real and was never accepted**: `filter_output` is shape-sensitive, so a
+passing prefix is not proof the response passes, and a sentence cleared before a response turned
+dirty had already been spoken.
 
-**Mitigations in place — these reduce the gap, they do NOT close it:**
+**Why it was reverted — Mike's call, 2026-08-19: *"too many resources for an incremental gain."***
+The measurement is the argument, and it is worth keeping because it is what any future proposal has
+to beat:
 
-1. **The server decides what may be spoken; the client never does.** A sentence is released only
-   after `filter_output()` passes on the whole visible prefix up to and including it. A
-   client-side delay would merely postpone an unfiltered leak.
-2. **A lead buffer** (`_SPEECH_LEAD_CHARS`) holds a sentence until more text sits behind it —
-   aimed squarely at tier 5, which is anchored to the *start* of a response and so judges the
-   opening sentence with the least context available.
-3. **One strike halts speech for the whole turn.** Any failing prefix stops all further release,
-   even if later prefixes pass.
-4. **Tested.** `tests/test_speech_chunking.py` — 15 checks, and its negative cases (nothing
-   released before the buffer exists; nothing released after a rejection) are the security half.
+- **The whole reply arrives in ~0.6s** (measured 33.76s → 34.35s on a live turn). Everything before
+  that is Coordinator, specialists and Synthesizer thinking. **86% of what the Synthesizer generates
+  is thinking**, so there is almost no generation window for chunked speech to exploit.
+- Sentence release itself was never the bottleneck — the first sentence went out **0.15s** after the
+  first text chunk.
+- The remaining latency was TTS synthesis (~2.8s on Kokoro). A first implementation serialised
+  synthesis behind playback and compounded the lag; a second overlapped them. **Even corrected, the
+  observed gain was seconds at best, against a ~30s wait dominated by upstream thinking.**
 
-**THE RESIDUAL GAP, stated so a reviewer does not have to derive it:** a response whose leak only
-becomes detectable *after* a clean sentence was released **will have spoken that clean sentence**.
-`filter_output` is shape-sensitive — tiers 3–5 judge whole responses — so a passing prefix is not
-proof the response passes. When that happens the screen is retracted and speech halts, **but the
-already-spoken audio stands.** `tests/test_speech_chunking.py` asserts this is exactly what
-happens, so the gap cannot be closed by accident without a test failing.
+**The conclusion that generalises:** chunked speech only pays when *generation* is slow relative to
+synthesis. Here generation is a sub-second burst and the wait is thinking. **Fix the thinking budget
+first; revisit speech chunking only if generation ever becomes the slow part.** Doing it in the
+other order buys a second and costs a security property.
 
-**What the review must decide (B1 / B3, and this gate):**
-
-- **Is the residual risk accepted, and by whom?** B3's deliverable is *"known remaining gaps with
-  accepted-risk justification"* — this is a gap and it is **not yet accepted**.
-- **A red-team case belongs in B1**, and it is not written: drive a known tier-1/tier-5 leak
-  through the pipeline and **assert on what reached the TTS endpoint**, not merely on what reached
-  the screen. Every existing disclosure test inspects the screen only, so none of them would catch
-  this class.
-- **Does the answer change at multi-user?** § Section 0's ZDR clarification lapses the moment the
-  deployment stops being single-user. Today the only person who can overhear a leak is the person
-  it is about. **That is load-bearing and it expires.**
-- **Should speech be off by default for a persona with clinical or otherwise sensitive content**,
-  independent of the filter question?
-
-*Implementation: `core/orchestrator.py` § SECURITY GAP beside `_SPEAK_PREFIX`, `_speech_release()`,
-and the `on_speak` callback contract on `run_pipeline_session_stream`.*
+*Reverted in the commit reverting `d8e8ef2` and `6c59411`. Streaming of the reply **text** (Option A,
+`46f31b5`) was NOT reverted and remains live — it is independent of speech.*
 
 ---
 
@@ -789,13 +769,6 @@ and the `on_speak` callback contract on `run_pipeline_session_stream`.*
 The current filter_output() + streaming approach streams chunks to the client in real-time and buffers simultaneously. After the final chunk, `filter_output()` runs on the complete text. If a confidential term is detected, a `[RETRACT]` SSE event is sent and the client discards received text.
 
 **Before Alpha launch:** Evaluate whether a brief leading buffer (e.g. hold the first 20 tokens) can reduce the probability of a partial retract being spoken via TTS, without meaningfully increasing time-to-first-word. If filter hit rates remain near zero in development, no change needed. File this as a pre-Alpha checkpoint.
-
-> **✅ The leading buffer was BUILT 2026-08-18** — `_SPEECH_LEAD_CHARS`, measured in characters
-> rather than tokens because the filter reads characters and a token estimate would be a second
-> thing to keep true. **This checkpoint is NOT thereby closed.** The buffer was the cheap half; the
-> question this section actually poses — *is the residual probability of a spoken partial retract
-> acceptable?* — is now the standing item above, **🚨 SECURITY GAP**. Read that before signing this
-> off, and do not close one on the strength of the other.
 
 ### Pre-Alpha: Cloudflare Tunnel for phone connectivity
 

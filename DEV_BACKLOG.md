@@ -95,92 +95,6 @@ standing rule distrusts.*
   @kind: feature
   *filed 2026-08-08 by Mike · promoted 2026-08-15*
 
-- **2. [DB-0818-10] The reply lands in one lump after a long silence, so speech cannot start early.**
-  @kind: feature
-Mike, live at the app 2026-08-18: *"the entire bubble publishes at once, not word by word or phrase
-by phrase."* Observed on two separate turns.
-
-**Measured, not inferred.** The turn he watched: total **22.7s** — coordinator 2.2s, two specialists
-7.1s, **synthesizer 11.4s on `gemini-3.1-pro-preview` for a 285-character reply**
-(`/monitor/traces`, `persona=mike`, `2026-08-18T16:40:35`). A Pro-tier model emits 285 characters in
-well under a second, so ~10s of that turn produced **no content deltas at all** — it is the thinking
-phase — and the answer then arrives in a burst.
-
-**The streaming code is correct and has nothing to stream, which is why no test caught this.**
-`_openai_compat_stream` yields `delta.content` the moment it arrives
-([core/orchestrator.py:3125](core/orchestrator.py#L3125)); the client appends each chunk and
-repaints ([static/index.html:972](static/index.html#L972)). Both halves work. The gap is upstream:
-a thinking model emits its reasoning as a separate token class that carries no `delta.content`, so
-the stream is silent for the whole thinking phase. **Do not go looking for a bug in the streaming
-path or the client — they were both read and both are right.**
-
-**Why it matters more than it looks.** This is a voice-first product. TTS cannot begin until the
-whole message lands (`speakResponse(ownAccumulated)` fires on `done`), so perceived latency is
-generation **plus** synthesis, serially — and streaming, which exists precisely to hide that, buys
-nothing today.
-
-**This is the evidence `[DB-0809-13]` was waiting for, and it inverts that item's premise.** Kokoro's
-2.8s per phrase was ruled *"do not build until voice has been used enough to say whether 2.8s
-actually feels slow"* (closed 2026-08-18, `archive/backlog_closed_2026-08.md`). The measurement says
-**2.8s was never the problem** — 11.4s of upstream silence is. Sentence-chunked TTS is now the
-strongest of the three candidate fixes, because it is the only one that starts speech before
-generation finishes.
-
-**Three options, and they are not exclusive:** (a) sentence-chunk the Synthesizer's output so TTS
-starts on the first complete sentence; (b) route the Synthesizer to a faster tier or reduce its
-thinking budget — cheap, but it trades response quality on the user-facing voice, which
-`ROADMAP.md` § 0 names as the dominant Alpha UX factor; (c) surface a "thinking" affordance so the
-silence is legible rather than dead. **Do not pick one from this entry** — (b) is a quality trade
-that is Mike's call.
-
-**⚠ (c) IS ALREADY BUILT — checked against the client 2026-08-18, do not build it again.** While a
-response is pending the mic button reads `Thinking...` and the status line `Waiting for response...`,
-for the whole wait, on both the text and voice paths
-([static/index.html:1153](static/index.html#L1153)). What is missing is only that the label is
-**static**, so a long wait cannot be told from a hung one — an elapsed counter or animation is the
-whole remaining scope, and it makes nothing faster. **The informative version is barred by design:**
-naming the stage ("checking your calendar") is process narration, which `CLAUDE.md` § Discretion
-forbids. So (c) is effectively spent, and the real levers are (a) and (b).
-
-**⚠ BOTH DELIVERY HALVES ARE BUILT — 2026-08-18, awaiting deploy. Remaining scope is the silence,
-not the delivery.** (a) The Gemini branch calls `run_session_gemini_cached_stream()` (Option A),
-streaming real deltas while keeping the prompt cache — **verified, 9 chunks on the wire**. (b)
-**Sentence-chunked TTS**: the server clears each sentence through `filter_output()` and hands it to
-the client via the `on_speak` callback; the client plays them in an ordered queue —
-**verified, 6 sentences spoken, first at 28.9s of a 29.8s turn.** The `static/index.html:997`
-reference earlier in this entry is superseded: `done` now speaks only when nothing was spoken
-sentence-by-sentence.
-**This stays open because it is not deployed, and because the part Mike actually reported is the
-silence, which neither half touches.** Time-to-first-word is upstream — Coordinator, specialists,
-then **86% of Synthesizer generation being thinking**. That is the **thinking budget**, which Mike
-said on 2026-08-18 is being handled elsewhere; if it lands there, the remaining scope of this item
-is zero and it closes on one ordinary use.
-**🚨 It also opened a security gap that must not be lost with it:** spoken audio cannot be
-retracted, so the output filter is weaker on the voice path than on the screen. Stated in full,
-with what the Alpha review must decide, in `ROADMAP.md` § 5A **🚨 SECURITY GAP** — **that item
-survives this one closing.**
-
-**⚠ Option A does NOT close this item, and an earlier line in this entry saying so was wrong
-(corrected 2026-08-18, same day).** Measured across **18 real interactive Synthesizer turns**:
-median **882 thinking tokens against 133 visible** — **86% of everything generated is thinking**.
-The silence this item is about is therefore *the thinking phase*, which streaming cannot shorten;
-Option A only lets the remaining ~14% arrive progressively. It is still the right end state and it
-is the prerequisite for option (a), but on its own it recovers a small share of the dead air.
-Option A is briefed in `archive/handoffs/2026-08-18-caching-fix-prompt.md`; its design constraint is
-that tool turns run blocking and only the final turn streams.
-
-**Option (b) is now the dominant lever on both axes, and it is cheap to try.** `thinking_budget`
-exists in the installed SDK (`google-genai` 2.8.0, `types.ThinkingConfig`) and is **configured
-nowhere in this project** — so the Synthesizer currently thinks unbounded. It is also the cost
-lever: thinking is **86% of output spend** at $12/1M. Note `thinking_budget: 0` was tried and
-rejected for a *different* purpose ([core/orchestrator.py:1202](core/orchestrator.py#L1202)) —
-**disabling thinking is not the same as capping it**, and that rejection does not settle a cap.
-Any cap must re-run the A4 clinical gate, since reasoning depth is what those flags rest on.
-**Still Mike's call — it trades quality on the user-facing voice.**
-
-*found 2026-08-18 during Phase 1 interactive testing — Mike reported the symptom unprompted while
-confirming a different fix; the timings were pulled live off the VM the same minute*
-
 
 ## Later
 
@@ -659,8 +573,11 @@ that plausibly dropped the Thursday deadline was fixed `fd273bf` on 08-18 agains
 That is the third time an item's own description has argued persuasively for the wrong decision.
 **Check the count's date and the evidence's date before promoting anything from here.**)*
 
-- **[user corrected a prior turn]** CLARIFICATION_NEEDED:  
-  `2026-08-18T18:26:12.726184Z`
+- **[same rule in two places]** This preference may already be covered by a rule that applies to everyone. Class: brevity — how long a proactive session's opening should be. A universal rule of this class belongs in the scheduler layer. Preference: config/personas/mike.md:16 — Open sessions with the most time-sensitive commitment, overdue follow-up, or unresolved thread, naming it specifically. If genuinely nothing is outstanding, keep it to one line and ask what is on. Candidate rule(s) it may restate: (0.88) [brevity] config/personas/mike/scheduler.yaml:21 — Good morning. Open with whatever is most time-sensitive today — a commitment, an overdue follow-up, or an unresolved thread from recent context. Name it specifically rather than as (0.88) [brevity] config/templates/scheduler.yaml:21 — Good morning. Open with whatever is most time-sensitive today — a commitment, an overdue follow-up, or an unresolved thread from recent context. Name it specifically rather than as (0.41) [wording only] config/agents/synthesizer.md:179 — **A proactive session opens on one thing, and its shape follows from that.** Almost always there is something to open on — a commitment today, something upcoming, a thread left ope Candidates are ranked by wording overlap, which is weak at this scale — the flagged preference is the reliable part, the partner is a starting point. If the preference says nothing the shared rule does not, delete it. If it is a genuine personal refinement, keep it and reword it so the difference is all it states.  
+  `2026-08-19T04:30:18.897139Z`
+
+- **[user corrected a prior turn]** CLARIFICATION_NEEDED:  ×2  
+  `2026-08-19T06:30:02.779299Z`
 
 - **[user corrected a prior turn]** User corrected spelling of contact name from 'Kathaleen' to 'Kathleen'.  ×2  
   `2026-08-18T16:18:04.822974Z`
