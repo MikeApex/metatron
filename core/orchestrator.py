@@ -1014,6 +1014,12 @@ _DELIBERATION_OPENER_RE = _re.compile(
     _re.IGNORECASE,
 )
 
+# A tool signalling failure in its RETURNED STRING rather than by raising. Anchored to
+# the start and requiring the colon, so it matches the convention eight tool files
+# already use ("Error: no contact found with id …") and not prose that merely mentions
+# an error. See the note beside its use in dispatch_tool().
+_TOOL_ERROR_PREFIX_RE = _re.compile(r'^\s*error\s*:', _re.IGNORECASE)
+
 
 @lru_cache(maxsize=32)
 def _instruction_ngrams(agent_name: str) -> frozenset:
@@ -1683,6 +1689,26 @@ def dispatch_tool(name: str, inputs: dict, handlers: dict,
                 result = str(result)
     except Exception as e:
         result = f"Error running tool '{name}': {e}"
+        ok = False
+    # A tool that FAILS GRACEFULLY is still a failure, and until 2026-08-19 the trace
+    # recorded it as a success. `ok` was set False in exactly one place — the except
+    # above — so it saw crashes and nothing else. Measured on the VM that day: 786
+    # tool calls, ONE ok:false, and that one was a missing required argument. Every
+    # ordinary failure a user actually hits ("Error: no contact found with id …",
+    # "error: no obligation with id …") returned a string and rendered green in the
+    # monitoring view. The flag was reporting programming faults while the failures
+    # worth watching went unmarked.
+    #
+    # Found while trying to TEST the flag ([DB-0810-07]): no phrasing turns it red,
+    # because every tool checked handles invalid input gracefully by design. That is
+    # the tools being well written; it was the flag that was reading the wrong signal.
+    #
+    # Keyed on the leading token only, and only with the colon attached, because eight
+    # tool files already share that convention (grep 'return f?"[Ee]rror' tools/). A
+    # looser match — "error" anywhere — would fire on a Research answer that merely
+    # discusses one, and a false red is worse than a missed one: it sends someone
+    # debugging a call that worked.
+    if ok and isinstance(result, str) and _TOOL_ERROR_PREFIX_RE.match(result):
         ok = False
     duration_ms = round((time.monotonic() - t0) * 1000, 1)
     rec = _agent_rec or _tr.get_current_agent()
