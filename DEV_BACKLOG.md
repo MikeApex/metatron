@@ -313,10 +313,27 @@ with a date.** Nothing new joins this group open-ended.*
   **Scope with `[DB-0818-08]`** — a `verified` tier turning the surfaced candidate into a
   *confirmation* rather than a suggestion is the same control, and this is the live evidence that
   agent judgment alone does not hold it.
+  **✅ GATE BUILT 2026-08-19 (Mike's decision), needs deploy.** A near-match on **create** now saves
+  nothing and raises a confirmation through the existing out-of-band mechanism — the model is not in
+  the consent path, so a duplicate cannot come into existence unasked. **Updates by `contact_id` are
+  ungated** (a deliberate act on an identified record), and **bulk import is exempt via `_bulk`,
+  which is deliberately absent from the tool schema** so no model can set it — 200 contacts would
+  otherwise raise 200 blocking confirmations and train the user to approve a queue unread, which is
+  worse than no gate. `tests/test_contact_dedup_gate.py` (14) + `test_crm_dedup_guards.py` (18,
+  two rewritten: they pinned "still creates the record", now false by decision).
+  **Frequency, so the friction is a known quantity:** 5 `write_contact` calls in 786 production tool
+  calls, against 3 for `send_email`, which is already behind this same gate.
+  **⚠ PRODUCTION NOTE — the gate is expected to become unnecessary, and that is the design intent,
+  not a hedge.** It exists because today's model on today's tier does not reliably ask. When one
+  does, **remove it and return to evidence-not-verdict**, which is the lighter design. The call gets
+  made by the judgement-consistency test now recorded in `ROADMAP.md` § D2 — measuring how often a
+  model *asks* rather than which answer reads better, because turn 1 proved Flash-Lite **can** ask
+  and turn 2 proved it does not reliably. Same note sits beside the gate in `tools/crm.py`.
   @kind: bug
-  @waiting: a decision on whether a surfaced near-match may be overridden silently, then an agent
-  resolving one with `merge_contacts` — the merge path is still unexercised live
-  *filed 2026-08-15 by Mike · same dedup risk applies to a bulk Google Contacts import*
+  @waiting: an agent resolving a real near-match with `merge_contacts` — **the merge path has still
+  never run live** (0 calls in 786), and the gate's decline branch is what should now produce one
+  *filed 2026-08-15 by Mike · gate built 2026-08-19 · same dedup risk applies to a bulk Google
+  Contacts import, handled by the `_bulk` exemption above*
 
 - **[DB-0810-07] The monitoring view's newest fields have never seen live data.** The Book's
   thinking/output-text, tool-call ok flag and `/monitor/model_errors` (`ffaf7a7`, deployed) have had

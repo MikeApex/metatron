@@ -6,9 +6,11 @@ tests/test_crm_dedup_guards.py — unit tests for the [DB-0815-07]/[DB-0815-06]/
     with a merged_into pointer, never deletes it.
   - read_contact / search_contacts: follow that merged_into pointer, so an old
     id or an old (corrected-away) name still resolves.
-  - write_contact: surfaces near-duplicate names (voice-transcription near-misses
-    like "Eva"/"Iva" and "Kathaleen"/"Kathleen") as evidence, not a verdict, and
-    refuses a reserved/placeholder email domain (example.com and friends) outright.
+  - write_contact: on a near-duplicate name (voice-transcription near-misses like
+    "Eva"/"Iva" and "Kathaleen"/"Kathleen") saves NOTHING and asks the user to
+    approve a separate record — changed 2026-08-19 from evidence-not-verdict, after
+    the agent overrode the evidence live; and refuses a reserved/placeholder email
+    domain (example.com and friends) outright.
   - write_profile: refuses a value that reads as a correction to someone else's
     contact record rather than a fact about the user, without over-refusing
     ordinary name/other writes.
@@ -29,6 +31,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import tools.confirm as CF  # noqa: E402
 import tools.crm as CRM  # noqa: E402
 import tools.profile as PR  # noqa: E402
 
@@ -59,20 +62,50 @@ class _temp_persona_dir:
     inside the function body, which resolves through tools.profile's own
     patched persona_config_dir, so the own-identity checks in crm tests keep
     working under this same patch.
+
+    tools.confirm is patched for the same reason, added 2026-08-19 with the
+    near-match confirmation gate: it binds its OWN persona_data_dir at import,
+    and write_contact now reaches it whenever a near-match is found. Without
+    this patch those tests raised PersonaError from the real resolver — a
+    harness gap that reads exactly like a product failure.
     """
     def __enter__(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.path = Path(self._tmp.name)
         self._orig_crm_data = CRM.persona_data_dir
         self._orig_pr_config = PR.persona_config_dir
+        self._orig_cf_data = CF.persona_data_dir
         CRM.persona_data_dir = lambda persona=None: self.path / "data"
         PR.persona_config_dir = lambda persona=None: self.path / "config"
+        CF.persona_data_dir = lambda persona=None: self.path / "data"
         return self.path
 
     def __exit__(self, *exc):
         CRM.persona_data_dir = self._orig_crm_data
         PR.persona_config_dir = self._orig_pr_config
+        CF.persona_data_dir = self._orig_cf_data
         self._tmp.cleanup()
+
+
+def _create(name: str, **kw) -> str:
+    """
+    Create a contact and return its id, approving the near-match gate if it fires.
+
+    Fixtures below deliberately use Eva/Iva and Kathaleen/Kathleen — the real
+    transcription near-misses this file exists for — so from 2026-08-19 the second
+    create of each pair raises a confirmation instead of saving. That is the gate
+    working, not a fixture problem. This walks the same two steps a user does: the
+    server approves out of band, then executes. Tests that are ABOUT the gate assert
+    on write_contact directly and do not use this.
+    """
+    result = CRM.write_contact(name=name, **kw)
+    if "PENDING_CONFIRMATION" not in result:
+        return result.splitlines()[0]
+    token = json.loads(result)["confirm_token"]
+    CF.approve(token)
+    outcome = CF.execute(token)
+    assert outcome.get("status") == "executed", outcome
+    return CRM._load_contacts()[-1]["id"]
 
 
 # ---------------------------------------------------------------------------
@@ -82,10 +115,8 @@ class _temp_persona_dir:
 @check("merge_contacts folds fields, unions lists, and archives the loser")
 def _():
     with _temp_persona_dir():
-        keep_id = CRM.write_contact(name="Iva Diamond", relationship_type="family",
-                                     tags=["family"]).splitlines()[0]
-        merge_id = CRM.write_contact(name="Eva", occupation="Retired teacher",
-                                      tags=["needs_follow_up"]).splitlines()[0]
+        keep_id = _create("Iva Diamond", relationship_type="family", tags=["family"])
+        merge_id = _create("Eva", occupation="Retired teacher", tags=["needs_follow_up"])
 
         result = CRM.merge_contacts(keep_id=keep_id, merge_id=merge_id)
         assert "Merged" in result, result
@@ -115,8 +146,8 @@ def _():
 @check("read_contact(contact_id=old_id) resolves through merged_into to the survivor")
 def _():
     with _temp_persona_dir():
-        keep_id = CRM.write_contact(name="Iva Diamond").splitlines()[0]
-        merge_id = CRM.write_contact(name="Eva").splitlines()[0]
+        keep_id = _create("Iva Diamond")
+        merge_id = _create("Eva")
         CRM.merge_contacts(keep_id=keep_id, merge_id=merge_id)
 
         result = json.loads(CRM.read_contact(contact_id=merge_id))
@@ -128,8 +159,8 @@ def _():
 @check("read_contact(name=old_name) resolves the corrected-away name to the survivor")
 def _():
     with _temp_persona_dir():
-        keep_id = CRM.write_contact(name="Iva Diamond").splitlines()[0]
-        merge_id = CRM.write_contact(name="Eva").splitlines()[0]
+        keep_id = _create("Iva Diamond")
+        merge_id = _create("Eva")
         CRM.merge_contacts(keep_id=keep_id, merge_id=merge_id)
 
         result = json.loads(CRM.read_contact(name="Eva"))
@@ -140,8 +171,8 @@ def _():
 @check("search_contacts(old_name) finds the survivor, not a stub or nothing")
 def _():
     with _temp_persona_dir():
-        keep_id = CRM.write_contact(name="Iva Diamond").splitlines()[0]
-        merge_id = CRM.write_contact(name="Eva").splitlines()[0]
+        keep_id = _create("Iva Diamond")
+        merge_id = _create("Eva")
         CRM.merge_contacts(keep_id=keep_id, merge_id=merge_id)
 
         results = json.loads(CRM.search_contacts("Eva"))
@@ -152,7 +183,7 @@ def _():
 @check("merge_contacts refuses when either id doesn't resolve")
 def _():
     with _temp_persona_dir():
-        keep_id = CRM.write_contact(name="Iva Diamond").splitlines()[0]
+        keep_id = _create("Iva Diamond")
         result = CRM.merge_contacts(keep_id=keep_id, merge_id="not-a-real-id")
         assert result.startswith("Error:"), result
 
@@ -160,7 +191,7 @@ def _():
 @check("merge_contacts refuses merging a record into itself")
 def _():
     with _temp_persona_dir():
-        keep_id = CRM.write_contact(name="Iva Diamond").splitlines()[0]
+        keep_id = _create("Iva Diamond")
         result = CRM.merge_contacts(keep_id=keep_id, merge_id=keep_id)
         assert result.startswith("Error:"), result
 
@@ -169,26 +200,31 @@ def _():
 # write_contact: dedup evidence on the write path (Item B)
 # ---------------------------------------------------------------------------
 
-@check("write_contact surfaces the Eva/Iva near-miss as evidence, still creates the record")
+@check("write_contact GATES the Eva/Iva near-miss and saves nothing")
 def _():
     with _temp_persona_dir():
         CRM.write_contact(name="Iva Diamond")
+        before = len(CRM._load_contacts())
         result = CRM.write_contact(name="Eva")
-        lines = result.splitlines()
-        new_id = lines[0]
-        # Still created — evidence, not a refusal.
-        assert CRM._load_contacts()[-1]["id"] == new_id, result
-        assert "Possible existing match" in result, result
-        assert "Iva Diamond" in result, result
+        # CHANGED 2026-08-19. This asserted the opposite until then — "still created,
+        # evidence not a refusal" — and that was the design until the agent overrode
+        # the evidence live and created the duplicate the item exists to prevent.
+        # Now nothing is written and the user is asked. Full reasoning at the gate in
+        # tools/crm.py, including why neither the score nor the agent can decide it.
+        assert "PENDING_CONFIRMATION" in result, result
+        assert len(CRM._load_contacts()) == before, "a near-match must save nothing"
+        assert "Iva Diamond" in json.loads(result)["description"], result
 
 
-@check("write_contact surfaces the Kathaleen/Kathleen transcription near-miss")
+@check("write_contact GATES the Kathaleen/Kathleen transcription near-miss")
 def _():
     with _temp_persona_dir():
         CRM.write_contact(name="Kathleen Ortiz")
+        before = len(CRM._load_contacts())
         result = CRM.write_contact(name="Kathaleen Ortiz")
-        assert "Possible existing match" in result, result
-        assert "Kathleen Ortiz" in result, result
+        assert "PENDING_CONFIRMATION" in result, result
+        assert len(CRM._load_contacts()) == before, "a near-match must save nothing"
+        assert "Kathleen Ortiz" in json.loads(result)["description"], result
 
 
 @check("write_contact does not flag unrelated names as duplicates")
@@ -202,7 +238,7 @@ def _():
 @check("updating an existing contact via contact_id is unaffected by dedup evidence")
 def _():
     with _temp_persona_dir():
-        cid = CRM.write_contact(name="Iva Diamond").splitlines()[0]
+        cid = _create("Iva Diamond")
         result = CRM.write_contact(name="Iva Diamond", occupation="Retired", contact_id=cid)
         assert result == cid, result
 

@@ -214,6 +214,9 @@ _EXECUTORS: dict[str, tuple[str, str]] = {
     "write_config":          ("tools.config_writer", "write_config"),
     "write_profile_contact": ("tools.profile",       "write_profile"),
     "write_agent_config":    ("tools.agent_config",  "write_agent_config"),
+    # Gates ONE branch of write_contact — creating a record that resembles an existing
+    # one — not the whole tool. An update by contact_id is ungated. [DB-0815-07].
+    "write_contact":         ("tools.crm",           "write_contact"),
 }
 
 

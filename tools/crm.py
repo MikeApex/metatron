@@ -435,6 +435,8 @@ def write_contact(
     notes: str = "",
     tone_shape: str = "",
     contact_id: str = "",
+    confirm_token: str = "",
+    _bulk: bool = False,
 ) -> str:
     """
     Create or update a contact record.
@@ -471,7 +473,38 @@ def write_contact(
     `_dedup_candidates`. [DB-0815-07]: three duplicate-person records were found
     with no dedup on the write path.
     """
+    from tools.confirm import consume, request
+
     today = date.today().isoformat()
+
+    # Arguments as the confirmation will fingerprint them. Built from the supplied
+    # values only, deterministically, so the replay through confirm.execute() rebuilds
+    # an identical dict — anything else is refused by consume(), correctly.
+    # confirm_token and contact_id are excluded: the first is not part of the action,
+    # and the second cannot be set on the path this gates (creation).
+    _gate_args = {k: v for k, v in (
+        ("name", name), ("first_name", first_name), ("last_name", last_name),
+        ("nickname", nickname), ("referred_to_as", referred_to_as),
+        ("primary_contact_type", primary_contact_type),
+        ("relationship_type", relationship_type),
+        ("relationship_quality", relationship_quality),
+        ("last_contact", last_contact),
+        ("contact_frequency_preference", contact_frequency_preference),
+        ("spouse_name", spouse_name), ("kids_names", kids_names),
+        ("education", education), ("occupation", occupation),
+        ("employer", employer), ("how_met", how_met), ("timezone", timezone),
+        ("contact_info", contact_info), ("important_dates", important_dates),
+        ("tags", tags), ("notes", notes), ("tone_shape", tone_shape),
+    ) if v}
+
+    _approved = False
+    if confirm_token:
+        _ok, _reason = consume(confirm_token, "write_contact", _gate_args)
+        if not _ok:
+            # Say so rather than silently reopening a fresh request, which would read
+            # to the model as a retry loop. Same shape as send_email's rejection.
+            return f"Error: not saved. {_reason}"
+        _approved = True
 
     # [DB-0815-06] Same refusal shape as the email domain check below, applied to
     # name: a canonical stand-in ("John Doe"/"Jane Doe") reached for when a name
@@ -656,31 +689,108 @@ def write_contact(
             "created": today,
             "updated": today,
         }
-        # Evidence, not a verdict: computed against the pre-append contact list, so
-        # the new record never matches itself. Still creates the record either way —
-        # the calling agent decides whether to merge_contacts, treat both as
-        # legitimate, or fix the name and retry.
+        # Computed against the pre-append contact list, so the new record never
+        # matches itself.
         dedup_candidates = _dedup_candidates(contacts, name)
 
-        contacts.append(new_contact)
-        _save_contacts(contacts)
-        cid = new_contact["id"]
-
-        notes_out = []
-        if _warning:
-            notes_out.append(f"Warning: {_warning}")
-        if dedup_candidates:
-            listing = "; ".join(
-                f"'{c['name']}' (id: {c['id']}, similarity {c['similarity']})"
-                for c in dedup_candidates
+        # THE GATE. Until 2026-08-19 this was evidence the calling agent could weigh,
+        # and the record was created either way. Live on 2026-08-19 the agent weighed
+        # identical evidence two ways four minutes apart — turn 1 it surfaced the
+        # existing Steven and offered to merge, turn 2 it announced "Stephen with a
+        # 'ph' is added as a separate contact" and made the duplicate this whole item
+        # exists to prevent.
+        #
+        # Neither of the other two actors can decide it, and both were measured rather
+        # than assumed:
+        #
+        #   The SCORE cannot. Stephen/Steven is 0.77 and is the same person;
+        #   Dave Bennett/Dan Bennett is 0.87 and is two people; Anna/Hannah is 0.80
+        #   and is two people. No threshold separates them, so "raise the bar",
+        #   "auto-merge above X" and "only ask when confident" are all dead ends.
+        #
+        #   The AGENT cannot, per the two turns above. relationships runs on
+        #   Flash-Lite, so a stronger model is a fair question — but turn 1 shows the
+        #   model is capable of asking and simply did not do so reliably. That is
+        #   variance, not a ceiling, and a stronger model lowers the rate without
+        #   reaching zero. See ROADMAP.md § D2 for the Pro/Flash comparison this owes.
+        #
+        # So the user is asked, and the ask is not optional — the model is not in the
+        # consent path at all (tools/confirm.py's whole design). A duplicate cannot
+        # come into existence unasked.
+        #
+        # The frequency objection does not survive the numbers: in 786 production tool
+        # calls write_contact ran 5 times, against 3 for send_email, which is already
+        # behind this exact gate. This fires on the subset of those 5 with a near-match.
+        #
+        # ── PRODUCTION NOTE — this gate is expected to become unnecessary. ──────────
+        # It exists because today's model, on today's tier, cannot be relied on to ask.
+        # That is a statement about 2026 models, not about the design. The models of
+        # tomorrow are not the models of today, and when a model asks reliably, the
+        # right move is to REMOVE this and go back to evidence-not-verdict — which is
+        # the lighter, better design and remains the intent everywhere else in this
+        # file. Do not treat the gate as the settled architecture. Re-test it against
+        # whatever is current before assuming it is still earning its friction; the
+        # test is in the tests/ suite named below and takes minutes.
+        # ───────────────────────────────────────────────────────────────────────────
+        #
+        # Only creation is gated. An update by contact_id is a deliberate act on a
+        # record the caller already identified, and gating it would put a tap in front
+        # of every routine field write.
+        # _bulk exempts an import, and it is DELIBERATELY ABSENT FROM THE TOOL SCHEMA
+        # — same discipline as tone_shape above, so no model can set it; only
+        # tools/contacts_import.py passes it, in-process. Without the exemption a
+        # 200-contact import raises one blocking confirmation per soft name
+        # resemblance, each expiring in 10 minutes: unusable, and it would push the
+        # user to approve a long queue unread, which is worse than no gate at all.
+        # An import already handles this correctly at batch level — it collects the
+        # near-match evidence and reports it for review afterwards, which is the right
+        # shape for a bulk operation and is the pre-existing behaviour.
+        if dedup_candidates and not _approved and not _bulk:
+            _pending = (
+                f"Add '{name}' as a NEW contact?\n\n"
+                + "Similar existing contact(s):\n"
+                + "\n".join(f"  • {c['name']} (similarity {c['similarity']})"
+                            for c in dedup_candidates)
+                + "\n\nApprove to create a separate record. Decline if this is the same "
+                  "person — nothing will be saved and they can be merged instead."
             )
+        else:
+            _pending = None
+            contacts.append(new_contact)
+            _save_contacts(contacts)
+
+    # Raised outside the CRM lock: request() takes its own lock and writes a different
+    # file, so nesting them would be safe but pointless. Nothing has been saved.
+    if _pending:
+        return json.dumps(request("write_contact", _gate_args, description=_pending))
+
+    cid = new_contact["id"]
+    notes_out = []
+    if _warning:
+        notes_out.append(f"Warning: {_warning}")
+    if dedup_candidates:
+        listing = "; ".join(
+            f"'{c['name']}' (id: {c['id']}, similarity {c['similarity']})"
+            for c in dedup_candidates
+        )
+        if _approved:
+            # The user was shown these and said it is a different person. Stated as
+            # settled, so the agent does not re-ask something already answered.
+            notes_out.append(
+                f"Created as a separate record with the user's explicit approval, despite "
+                f"resembling: {listing}. Do not re-raise this — they were asked and answered. "
+                f"If they later say it is the same person, merge_contacts(keep_id, merge_id)."
+            )
+        else:
+            # _bulk: nobody has been asked. Evidence for batch-level review, which is
+            # what the import collects and reports at the end of the run.
             notes_out.append(
                 f"Possible existing match(es) for '{name}': {listing}. If this is the "
                 f"same person, use merge_contacts(keep_id, merge_id) to fold this new "
                 f"record into (or out of) the existing one rather than leaving both — "
                 f"confirm with the user first if it's not obvious from context."
             )
-        return f"{cid}\n\n" + "\n".join(notes_out) if notes_out else cid
+    return f"{cid}\n\n" + "\n".join(notes_out) if notes_out else cid
 
 
 def read_contact(contact_id: str = "", name: str = "") -> str:
@@ -1053,10 +1163,12 @@ WRITE_CONTACT_SCHEMA = {
         "Create or update a contact record in the CRM. "
         "If contact_id is provided, updates that record with the supplied fields. "
         "If contact_id is empty, creates a new contact and returns its ID. "
-        "On creation, if the name closely matches an existing contact, the response "
-        "includes that match as evidence (not a refusal) — the record is still created; "
-        "if it turns out to be the same person, call merge_contacts to fold the two "
-        "together instead of leaving both. Refuses known-placeholder values — an "
+        "On creation, if the name closely matches an existing contact, NOTHING IS "
+        "SAVED and the user is asked to approve creating a separate record. Show them "
+        "the description you get back and stop — approving it in the app is what "
+        "creates the contact. Do not say you have added them, do not retry, and do not "
+        "call this tool again for that person. If they say it is the same person, use "
+        "merge_contacts instead. Refuses known-placeholder values — an "
         "email on a reserved/placeholder domain (example.com and similar), a phone "
         "in a known fictional range, a textbook placeholder address, a generic "
         "social handle, or the name 'John Doe'/'Jane Doe' — rather than storing an "
@@ -1181,6 +1293,13 @@ WRITE_CONTACT_SCHEMA = {
                 "description": (
                     "ID of an existing contact to update. "
                     "Leave empty to create a new contact."
+                ),
+            },
+            "confirm_token": {
+                "type": "string",
+                "description": (
+                    "Not for you to set. The app supplies this when it carries out an "
+                    "action the user has approved; leave it out of every call you make."
                 ),
             },
         },

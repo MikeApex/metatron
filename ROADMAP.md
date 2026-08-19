@@ -595,6 +595,29 @@ Test (from `tests/phase6_testing_plan.md`):
 Model validation (instrument: `tests/model_ceiling_plan_2026-06-03.md`, reframed by the privacy ruling):
 - **Local adequacy ladder (sensitive agents):** compare qwen3:14b against at least one larger local candidate across the ceiling scenarios for Synthesizer, Mental Wellbeing, Pattern Miner, Finance, Physical Health, Diarist. Hard-fail conditions carry over: clinical flags must fire identically; Finance arithmetic must be 100% accurate. The question is no longer "which cloud tier" but "which local model is the floor of acceptability, and what does the hardware support."
 - **Cloud ceiling tests (decontextualized paths only):** Research Agent quick/deep, `quick_override`, model conference. Ceiling finding: lowest tier where ≥80% of prompts produce equivalent output to the tier above = confirmed default assignment.
+
+> **⚠ Add a JUDGEMENT-CONSISTENCY row to this pass — Mike's instruction, 2026-08-19. The
+> ceiling tests above measure output quality on a single run, and that is not what failed.**
+> Live that day `relationships` (on **Flash-Lite**, commented *"no clinical stakes"*) was handed
+> near-match evidence twice on the same class of case four minutes apart: turn 1 it surfaced the
+> existing `Steven` and offered to merge, turn 2 it announced *"Stephen with a 'ph' is added as a
+> separate contact"* and created the duplicate. **Same model, same evidence, opposite answers —
+> so this is variance, not a ceiling, and a one-shot quality comparison cannot see it.**
+>
+> **What to run:** the same disambiguation prompt N times against Flash-Lite and against Pro, and
+> compare the **rate at which the model asks rather than asserts** — not which answer reads
+> better. Do it for every specialist whose tier is being set, because *"which agents are
+> under-tiered for the judgement they are asked to make"* is a twelve-agent question that this
+> one incident merely surfaced. It also feeds A7 check 10, whose behavioural audit has the same
+> blind spot: a single clean run proves a model **can**, never that it **reliably will**.
+>
+> **What the answer does and does not change.** A stronger tier lowers the failure rate; it does
+> not make a silent duplicate impossible, which is why the confirmation gate shipped first
+> (`tools/crm.py`, `[DB-0815-07]`) rather than waiting on this. **But the gate carries a standing
+> production note that it is expected to become unnecessary** — when a model asks reliably, the
+> right move is to delete it and return to evidence-not-verdict, which is the lighter design.
+> **This test is how that call gets made, and it is the reason the note is not idle.** Re-run it
+> whenever the tier changes or a materially newer model lands.
 - Update `config/modules/routing.yaml` with confirmed assignments; each entry includes a comment citing which test scenario confirmed the model choice. Verify Gemini model IDs against current availability before this pass (known-stale: `gemini-3.1-flash-lite-preview`, `gemini-3.1-pro-preview`).
 
 Cost analysis (instrument: `archive/plans/model_cost_analysis_2026-05-19.md`):

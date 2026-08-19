@@ -206,7 +206,9 @@ def _import_batch(raw_contacts: list[dict], source_label: str) -> str:
         if match:
             outcome = crm.write_contact(contact_id=match["id"], **write_kwargs)
         else:
-            outcome = crm.write_contact(**write_kwargs)
+            # _bulk: an import reports near-match evidence at batch level rather than
+            # raising one blocking confirmation per record. See the gate in tools/crm.py.
+            outcome = crm.write_contact(_bulk=True, **write_kwargs)
 
         if outcome.startswith("Error:"):
             skipped += 1
