@@ -298,10 +298,24 @@ with a date.** Nothing new joins this group open-ended.*
   ordinary instruction gets as far as `write_contact`. **`write_contact` and `write_journal` are both
   granted to `relationships` and to no one else** (`routing_cloud.yaml:129`) — so this is a tool
   choice inside one agent, not a routing miss, and no grant change can fix it.
+  **⚠ RUN LIVE 2026-08-19 (Mike, `mike` persona) — the guard fires; the agent overrides it.
+  Half pass, and the failing half is the one that matters.** Turn 1, *"add Steven from the gym to my
+  contacts"*: created, **and the existing Steven was surfaced with an offer to merge** — the
+  near-match path proven live for the first time. Turn 2, four minutes later, *"add Stephen from the
+  gym to my contacts"*: **"Stephen with a 'ph' is added as a separate contact."** The candidate
+  clearly *was* surfaced — the reply names the spelling difference — and the agent **asserted a
+  verdict instead of asking**, on stronger evidence than turn 1, where it did ask.
+  **This is the designed weakness, not a bug in the guard.** `_dedup_candidates` returns evidence
+  and `write_contact` creates the record regardless — *"evidence for the calling agent to weigh, not
+  a verdict"*, by construction. The unit suite passes 18/18 and always did. **What is unresolved is
+  that an agent weighing identical evidence answered two ways four minutes apart**, and the
+  duplicate it created is exactly the failure the item was filed for.
+  **Scope with `[DB-0818-08]`** — a `verified` tier turning the surfaced candidate into a
+  *confirmation* rather than a suggestion is the same control, and this is the live evidence that
+  agent judgment alone does not hold it.
   @kind: bug
-  @waiting: **a live run that forces a contact write** — *"add Stephen from the gym to my contacts"*
-  against a persona already holding a `Steven`, then an agent resolving it with `merge_contacts`.
-  The phrasing matters: anything that can be read as "note this down" lands in the journal.
+  @waiting: a decision on whether a surfaced near-match may be overridden silently, then an agent
+  resolving one with `merge_contacts` — the merge path is still unexercised live
   *filed 2026-08-15 by Mike · same dedup risk applies to a bulk Google Contacts import*
 
 - **[DB-0810-07] The monitoring view's newest fields have never seen live data.** The Book's
@@ -312,22 +326,28 @@ with a date.** Nothing new joins this group open-ended.*
   **⚠ 2026-08-18's test did not reach this code and must not be read as a pass.** *"Add a calendar
   event for the 32nd of September"* was refused by the **model**, before any tool ran — nothing
   failed, so the red flag was never exercised.
-  **Why the obvious retry would also have failed, measured 2026-08-19.** `ok` is set to `False` in
-  **exactly one place** — the `except Exception` around dispatch
-  ([core/orchestrator.py:1685](core/orchestrator.py#L1685)). **A tool that returns an error *string*
-  is recorded `ok: True` and renders green.** Probed against the live tool functions:
-  `merge_contacts` with two unknown ids returns `"Error: no contact found with id 'nope1'"` →
-  **green**; `write_contact(kids_names="Tom")` and `important_dates=["1990-01-01"]` (wrong types)
-  are both absorbed silently → **green**. Only a genuine exception turns it red —
-  `write_contact(contact_info="bob@example.org")` raises `AttributeError`, and a missing required
-  argument raises `TypeError`. **The graceful-error majority is the trap here**: most "deliberately
-  bad argument" ideas prove nothing.
+  **⚠ Trying to test it found a defect in the thing being tested, and that outranks the test —
+  fixed 2026-08-19 (`b980b93`, needs deploy).** `ok` was set `False` in **exactly one place**, the
+  `except` around dispatch, so it saw **crashes and nothing else**. Every tool here reports invalid
+  input by *returning* an error string, and all of it was filed as success. **On the VM: 786 tool
+  calls, ONE `ok:false`** — a missing required argument on `score_against_anchors`, a scheduled
+  agent — while `"Error: no contact found with id …"` and `"error: no obligation with id …"`
+  rendered **green**. The flag was reporting programming faults; the failures a user experiences
+  were unmarked.
+  **Why no phrasing could ever have turned it red.** Ten tools were checked against realistic
+  invalid input and **every one handled it gracefully**: unknown ids, off-menu wish sections,
+  wrong-typed contact fields. That is the tools being well written — the flag was reading the wrong
+  signal. Any "deliberately bad argument" test would have proved nothing a second time.
+  **Now keyed on a leading `Error:`/`error:` token** (the convention eight tool files share),
+  deliberately not a looser match — a false red sends someone debugging a call that worked.
+  `tests/test_tool_error_flag.py`, 17 checks, integration-checked through `dispatch_tool`.
   @kind: chore
-  @waiting: three steps on the VM — one exchange with a tool call that succeeds; one with a tool
-  call that **raises**, not one that returns an error string (see above — a string renders green,
-  which is the mistake waiting to be made twice); one forced API failure followed by a further
-  exchange **without refreshing**
-  *filed 2026-08-10 · exception-vs-string distinction measured 2026-08-19*
+  @waiting: three steps on the VM, **after `b980b93` deploys** — one exchange with a tool call that
+  succeeds (**already done 2026-08-19**, `write_contact` during the `[DB-0815-07]` run); one that
+  fails, which is now an ordinary sentence — *"close the obligation about the dentist"* against an
+  id that does not exist; one forced API failure followed by a further exchange **without
+  refreshing**, which is the known SSE staleness and the only step still needing a contrivance
+  *filed 2026-08-10 · flag defect found and fixed 2026-08-19*
 
 - **[DB-0809-16] The dictation readout has never been spoken to.** Code-verified against every pass
   condition 2026-08-05; never run by a human with a microphone.
