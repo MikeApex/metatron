@@ -653,29 +653,6 @@
     statusEl.style.color = color || '#555';
   }
 
-  // TEMPORARY DIAGNOSTIC — press and hold the status line for a second to dump the
-  // WebSocket frame log into the conversation, for the doubled reply ([DB-0810-01]).
-  // A long-press rather than a tap or a visible control: the status line is on every
-  // screen and nothing else uses the gesture, so it cannot be hit by accident and
-  // adds no UI. Remove with the frame log above.
-  (function attachFrameLogGesture() {
-    let holdTimer = null;
-    const start = () => {
-      clearTimeout(holdTimer);
-      holdTimer = setTimeout(() => {
-        addMessage('assistant', frameLogText());
-        scrollToBottom(true);
-      }, 1000);
-    };
-    const cancel = () => { clearTimeout(holdTimer); holdTimer = null; };
-    statusEl.addEventListener('touchstart', start, { passive: true });
-    statusEl.addEventListener('touchend', cancel);
-    statusEl.addEventListener('touchcancel', cancel);
-    statusEl.addEventListener('mousedown', start);
-    statusEl.addEventListener('mouseup', cancel);
-    statusEl.addEventListener('mouseleave', cancel);
-  })();
-
   // --- Transcription readout ---
 
   const TRANSCRIPT_TIMEOUT_MS = 12000;
@@ -787,68 +764,6 @@
     while (set.size > max) set.delete(set.values().next().value);
   }
 
-  // --- TEMPORARY DIAGNOSTIC — the doubled reply, [DB-0810-01], reopened 2026-08-18.
-  //
-  // Mike sees one bubble with the text repeated, copies identical, intermittently,
-  // and it clears on an app restart. FOUR causal explanations have been proposed and
-  // all four are dead — two sockets rendering (he sees one bubble, the foreign path
-  // makes a second), a superseded socket rendering (every handler carries
-  // `sock !== ws`), the server's exclude=websocket identity check (measured: two
-  // sockets, one message, exactly one chunk each), and leftover accumulated text
-  // (that produces two DIFFERENT texts, his are identical). Do not add a fifth
-  // theory. This records the frames so the next occurrence is an answer.
-  //
-  // Recorded BEFORE the `sock !== ws` guard on purpose: a frame arriving on a
-  // superseded socket is discarded for rendering and is still evidence, and it is
-  // invisible to any log placed after the guard.
-  //
-  // Persisted, because the symptom disappears on restart and the buffer must not.
-  // Read it in the app: press and hold the status line for a second.
-  //
-  // REMOVE once the bug is diagnosed. Diagnostic only — it renders nothing and
-  // changes no message handling.
-  let socketSeq = 0;
-  const FRAME_LOG_MAX = 300;
-  let frameLog = [];
-  try {
-    frameLog = JSON.parse(localStorage.getItem('mt_frame_log') || '[]');
-  } catch (e) { frameLog = []; }
-
-  let frameLogSaveTimer = null;
-  function recordFrame(sockId, live, raw) {
-    let type = '?', xid = '', len = null;
-    try {
-      const m = JSON.parse(raw);
-      type = m.type || '?';
-      xid = m.exchange_id || '';
-      if (typeof m.text === 'string') len = m.text.length;
-    } catch (e) { type = 'unparseable'; len = (raw || '').length; }
-    frameLog.push({
-      t: new Date().toISOString().slice(11, 23),
-      s: sockId,
-      live: live ? 1 : 0,   // 0 == arrived on a superseded socket
-      type, xid, len,
-    });
-    if (frameLog.length > FRAME_LOG_MAX) frameLog.splice(0, frameLog.length - FRAME_LOG_MAX);
-    // Coalesced: a burst of chunks must not write to localStorage per frame.
-    if (!frameLogSaveTimer) {
-      frameLogSaveTimer = setTimeout(() => {
-        frameLogSaveTimer = null;
-        try { localStorage.setItem('mt_frame_log', JSON.stringify(frameLog)); } catch (e) {}
-      }, 1000);
-    }
-  }
-
-  function frameLogText() {
-    if (!frameLog.length) return 'frame log empty';
-    const lines = frameLog.map(f =>
-      `${f.t} s${f.s}${f.live ? '' : '*'} ${f.type}` +
-      (f.xid ? ` ${String(f.xid).slice(-8)}` : '') +
-      (f.len === null ? '' : ` len=${f.len}`)
-    );
-    return `frame log (${frameLog.length}, newest last; * = superseded socket)\n` + lines.join('\n');
-  }
-
   // The server pings every 30s. If we have heard nothing for appreciably longer
   // than that, the socket is dead even if the browser still says OPEN — which is
   // exactly what happens when Android freezes the WebView: the connection dies
@@ -941,7 +856,6 @@
     // half of the duplicate-text bug — and its onerror/onclose would act on
     // whichever socket happened to be current by then.
     const sock = new WebSocket(wsUrl);
-    const sockId = ++socketSeq;   // TEMPORARY — see the frame log above
     ws = sock;
     lastMessageAt = Date.now();
 
@@ -956,7 +870,6 @@
     };
 
     sock.onmessage = (event) => {
-      recordFrame(sockId, sock === ws, event.data);   // TEMPORARY — before the guard, on purpose
       if (sock !== ws) return;   // superseded socket: render nothing
       lastMessageAt = Date.now();
       const msg = JSON.parse(event.data);

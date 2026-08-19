@@ -25,6 +25,7 @@ import sys
 import tempfile
 import threading
 import uuid
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -186,6 +187,63 @@ _STT_SEMAPHORE = asyncio.Semaphore(1)
 _INDEX_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="index")
 
 
+# --------------------------------------------------------------------------
+# TEMPORARY DIAGNOSTIC — the doubled reply, [DB-0810-01], reopened 2026-08-18.
+#
+# Mike sees one bubble with the text repeated, copies identical, intermittently,
+# clearing on an app restart. FOUR causal explanations have been proposed and all
+# four are dead — two devices rendering, a superseded socket rendering (every
+# client handler carries `sock !== ws`), the `exclude=websocket` identity check
+# (measured synthetically: two sockets, one message, exactly one chunk each), and
+# leftover accumulated text (that yields two DIFFERENT texts; his are identical).
+# Do not add a fifth theory.
+#
+# This answers one question and it is the decisive one: DID THE SERVER SEND IT
+# TWICE? Every outbound frame is logged with the socket it went to and which of
+# the two emit paths sent it — `_send_to_sender` (the socket that asked) or
+# `broadcast` (every other socket for that persona). If a real turn shows one
+# chunk run, the fault is client-side and half the search space is gone. If it
+# shows two, it is found.
+#
+# Deliberately server-side rather than in static/index.html: a client-side buffer
+# would ship an architecture-disclosure surface to every user in the product
+# itself, which is what filter_output and the B1 disclosure suite exist to
+# prevent. Mike's call, 2026-08-19. The one thing this cannot see is a fault
+# inside the Android WebView; if the server provably sent one copy and the bug
+# persists, that is when client visibility becomes worth its cost — as a debug
+# build, not the shipped page.
+#
+# Content-free by construction: socket id, frame type, exchange id, and for a
+# chunk its LENGTH. No message text. Same discipline as tools/analytics.py.
+#
+# REMOVE once the bug is diagnosed. Read it at /monitor/ws_frames.
+_WS_FRAME_LOG: deque = deque(maxlen=2000)
+_ws_socket_ids: dict[int, int] = {}
+_ws_socket_seq = 0
+
+
+def _ws_sock_id(ws: WebSocket) -> int:
+    """Stable small integer per socket, so a frame can be attributed to one."""
+    global _ws_socket_seq
+    key = id(ws)
+    if key not in _ws_socket_ids:
+        _ws_socket_seq += 1
+        _ws_socket_ids[key] = _ws_socket_seq
+    return _ws_socket_ids[key]
+
+
+def _log_ws_frame(ws: WebSocket, path: str, payload: dict) -> None:
+    text = payload.get("text")
+    _WS_FRAME_LOG.append({
+        "t": datetime.now().isoformat(timespec="milliseconds"),
+        "sock": _ws_sock_id(ws),
+        "path": path,                       # "sender" | "broadcast"
+        "type": payload.get("type", "?"),
+        "exchange_id": payload.get("exchange_id", ""),
+        "len": len(text) if isinstance(text, str) else None,
+    })
+
+
 class ConnectionManager:
     def __init__(self) -> None:
         self.active: dict[str, set[WebSocket]] = {}
@@ -209,6 +267,7 @@ class ConnectionManager:
             if ws is exclude:
                 continue
             try:
+                _log_ws_frame(ws, "broadcast", payload)   # TEMPORARY — [DB-0810-01]
                 await ws.send_json(payload)
             except Exception:
                 self.active.get(persona, set()).discard(ws)
@@ -618,6 +677,7 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                     if not sender_alive:
                         return
                     try:
+                        _log_ws_frame(websocket, "sender", payload)   # TEMPORARY — [DB-0810-01]
                         await websocket.send_json(payload)
                     except Exception:
                         sender_alive = False
@@ -1261,6 +1321,36 @@ async def monitor_model_errors(since: str | None = None, limit: int | None = Non
     if limit is not None:
         entries = entries[:limit]
     return {"entries": entries}
+
+
+@app.get("/monitor/ws_frames")
+async def monitor_ws_frames(exchange_id: str | None = None, limit: int = 300) -> dict:
+    """
+    TEMPORARY DIAGNOSTIC — every outbound WebSocket frame, for [DB-0810-01].
+
+    Answers the one question four dead theories could not: did the server send
+    the reply twice? Each entry names the socket and which emit path sent it —
+    "sender" (the socket that asked) or "broadcast" (every other socket on that
+    persona). Two chunk runs for one exchange_id is the server duplicating; one
+    run means the fault is client-side.
+
+    Content-free: no message text, only its length. Remove with _WS_FRAME_LOG.
+    """
+    entries = list(_WS_FRAME_LOG)
+    if exchange_id:
+        entries = [e for e in entries if e.get("exchange_id") == exchange_id]
+    entries = entries[-limit:]
+    # Per-exchange chunk counts by socket — the shape the answer is read from,
+    # so nobody has to tally 300 rows by eye to see a doubled run.
+    summary: dict = {}
+    for e in entries:
+        if e.get("type") != "chunk":
+            continue
+        key = f"{e.get('exchange_id', '')[-8:]}/sock{e['sock']}/{e['path']}"
+        s = summary.setdefault(key, {"chunks": 0, "chars": 0})
+        s["chunks"] += 1
+        s["chars"] += e.get("len") or 0
+    return {"count": len(entries), "chunk_runs": summary, "entries": entries}
 
 
 @app.get("/monitor/stream")
