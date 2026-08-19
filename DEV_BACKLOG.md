@@ -147,8 +147,24 @@ the condition has not arrived, push the date rather than closing the item.
   and the CalDAV reader hold an artefact and know it, `write_contact` mid-conversation does not.
   **Scope the capture before the schema** — a tag defaulting to `verified` because nothing filled it
   in would claim a check the system never did, which is worse than no tag.
+  **✅ DECIDED 2026-08-19 (Mike) — build both halves, and hold the second to a test.** The two
+  failures need two different mechanisms and only one of them can be enforced. **Job 1, certain:**
+  record the tier, and gate overwriting of a `verified` value behind one confirmation — a Python
+  `if` at the write path, closing the `Kathaleen` case outright. **Job 2, influence only:** nothing
+  can mechanically detect that a sentence sounds too confident, so *every* option here is odds, not
+  enforcement. **Build it by rewriting the fact, not by tagging it** — the store renders an
+  `inferred` value into the prompt as *"you inferred, but have not confirmed, that…"* rather than
+  `value [inferred]` plus a rule, because **a marker beside a fact is an instruction the model can
+  negotiate with, and this exact pattern has already failed**: `[RETRIEVAL: NONE]` was attached to
+  the Southeastern turn on 08-18 and the Synthesizer softened it instead of refusing. With the
+  hedge inside the claim there is no separate rule to weigh against being helpful.
+  **The test is part of the build, not a follow-up:** seed an `inferred` fact, ask a question that
+  depends on it, and check the reply hedges. **If it does not, job 2 is recorded as still open** —
+  the point of testing it is to avoid believing it closed. **Scope known and not claimed as
+  covered:** the tiers only reach facts that travel *through the store*. A fact invented mid-turn
+  and spoken without ever being written is untouched by any of them; the wire is covered by the
+  zero-source guard, and the gap between the two remains.
   @kind: feature
-  @session: the three tiers, and whether `inferred` gates phrasing as well as overwriting
   *raised by Mike 2026-08-18 during Phase 1 testing, from two failures he produced himself in
   consecutive turns · scope against `[DB-0815-07]` (near-match on create — built, did not fire on this
   rename, a different path) and `[DB-0818-06]` (24 stored "facts", several inferred preferences
@@ -271,8 +287,21 @@ with a date.** Nothing new joins this group open-ended.*
   rather than deletes** with a `merged_into` pointer that `read_contact`/`search_contacts` follow —
   the first implementation of the project's archive-on-merge rule here. `write_contact` surfaces
   near-matches as evidence before creating; Eva/Iva and Kathaleen/Kathleen both trip it.
+  **⚠ 2026-08-18's test did not reach this code and must not be read as a pass.** *"Make a note that
+  Stephen from the gym recommended Jimmy"* was answered with **`write_journal`** — no contact write
+  was attempted at all, so the near-match guard was never entered. It produced a separate finding
+  worth keeping: the reply said *"I've made a note of that"*, true of the journal and materially
+  misleading about where it lives.
+  **The guard half is proven, the routing half is not — 2026-08-19.** `python
+  tests/test_crm_dedup_guards.py` passes **18/18** on current code, including Kathaleen/Kathleen and
+  Eva/Iva, so `_dedup_candidates` does fire and does surface evidence. What is unverified is that an
+  ordinary instruction gets as far as `write_contact`. **`write_contact` and `write_journal` are both
+  granted to `relationships` and to no one else** (`routing_cloud.yaml:129`) — so this is a tool
+  choice inside one agent, not a routing miss, and no grant change can fix it.
   @kind: bug
-  @waiting: one live near-duplicate surfaced, and an agent resolving it with `merge_contacts`
+  @waiting: **a live run that forces a contact write** — *"add Stephen from the gym to my contacts"*
+  against a persona already holding a `Steven`, then an agent resolving it with `merge_contacts`.
+  The phrasing matters: anything that can be read as "note this down" lands in the journal.
   *filed 2026-08-15 by Mike · same dedup risk applies to a bulk Google Contacts import*
 
 - **[DB-0810-07] The monitoring view's newest fields have never seen live data.** The Book's
@@ -280,11 +309,25 @@ with a date.** Nothing new joins this group open-ended.*
   `py_compile` and a health check only; 19 commits have crossed these files without exercising them.
   Known and accepted at build time: the SSE path reuses the `model_errors` list from the last full
   load, so a live failure shows no red tag until refresh — **document that, do not fix it blind.**
+  **⚠ 2026-08-18's test did not reach this code and must not be read as a pass.** *"Add a calendar
+  event for the 32nd of September"* was refused by the **model**, before any tool ran — nothing
+  failed, so the red flag was never exercised.
+  **Why the obvious retry would also have failed, measured 2026-08-19.** `ok` is set to `False` in
+  **exactly one place** — the `except Exception` around dispatch
+  ([core/orchestrator.py:1685](core/orchestrator.py#L1685)). **A tool that returns an error *string*
+  is recorded `ok: True` and renders green.** Probed against the live tool functions:
+  `merge_contacts` with two unknown ids returns `"Error: no contact found with id 'nope1'"` →
+  **green**; `write_contact(kids_names="Tom")` and `important_dates=["1990-01-01"]` (wrong types)
+  are both absorbed silently → **green**. Only a genuine exception turns it red —
+  `write_contact(contact_info="bob@example.org")` raises `AttributeError`, and a missing required
+  argument raises `TypeError`. **The graceful-error majority is the trap here**: most "deliberately
+  bad argument" ideas prove nothing.
   @kind: chore
-  @waiting: three steps on the VM — one exchange with a tool call that succeeds; one with a
-  deliberately bad tool argument (`ok:false` renders red); one forced API failure followed by a
-  further exchange **without refreshing**
-  *filed 2026-08-10*
+  @waiting: three steps on the VM — one exchange with a tool call that succeeds; one with a tool
+  call that **raises**, not one that returns an error string (see above — a string renders green,
+  which is the mistake waiting to be made twice); one forced API failure followed by a further
+  exchange **without refreshing**
+  *filed 2026-08-10 · exception-vs-string distinction measured 2026-08-19*
 
 - **[DB-0809-16] The dictation readout has never been spoken to.** Code-verified against every pass
   condition 2026-08-05; never run by a human with a microphone.
