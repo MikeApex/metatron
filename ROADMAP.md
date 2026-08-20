@@ -107,6 +107,14 @@ What is unchanged, and is not weakened by this note:
 > on 2026-08-20 is the two things this note reflects: correct the record, and make getting ZDR real
 > into active work — plan in `archive/handoffs/2026-08-20-zdr-verification-prompt.md`.
 >
+> **Update 2026-08-21 — the handoff ran; the exception is obtainable on this account shape.**
+> Google's published terms (verified against primary sources): the opt-out form is scoped to
+> exactly self-serve GCP-ToS customers, no organization or support tier required; the default
+> meanwhile is prompt logging **only on classifier-flagged traffic**, ≤90 days, never for
+> training. Evidence with verbatim quotes, the form link, and a **proposed amendment awaiting
+> Mike's ruling**: `archive/security/zdr_terms_evidence_2026-08-20.md`. Whether the exception is
+> in force is recorded in one place only: `docs/INFRASTRUCTURE.md` § Vertex AI credentials.
+>
 > **Do not write "verified ZDR" in this repo again until something records the verification.**
 >
 > Related, and weaker: the Vertex endpoint is `global`, which routes to whichever region has

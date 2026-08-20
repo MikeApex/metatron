@@ -235,6 +235,7 @@ Separately, GCP re-sends budget notifications carrying the *old* budget for 10+ 
 | IAM role | `roles/aiplatform.user` |
 | Key file on VM | `~/multi-model-mcp/vertex-key.json` (gitignored) |
 | `.env` var | `GOOGLE_APPLICATION_CREDENTIALS=/home/md-homefolder/multi-model-mcp/vertex-key.json` |
+| Abuse-monitoring exception (ZDR) | **NOT in force** (verified against Google's published terms 2026-08-20). Obtainable on this self-serve account shape via Google's opt-out form; request not yet submitted. Default meanwhile: prompts logged only on classifier-flagged traffic, ≤90 days, never for training. Evidence, quotes, form link and re-check procedure: `archive/security/zdr_terms_evidence_2026-08-20.md`. **Update this row when the request is submitted and again when granted/refused — this row is the authority; if it says not in force, no other doc's claim counts.** |
 
 ---
 

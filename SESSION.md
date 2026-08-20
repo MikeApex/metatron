@@ -1,19 +1,17 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-20, third — **the binding privacy ruling rests on something nobody ever checked.**
-`ROADMAP.md` § Section 0 has authorised sensitive-tier personal data on the Vertex VM since
-2026-06-18 on the strength of *"verified Zero Data Retention"* — **it was never verified and is not
-in force** (no org parent, self-serve billing account, zero org policies, no exception on record).
-Only **"no training use"** of its three claims holds. **This does not breach the 2026-06-10 ruling as
-written**, but the premise was half wrong and `tone_profiler` — real correspondence written by
-**other people** — was pre-cleared on it. Recorded as a **dated correction beneath the original
-text, not a rewrite** (`01495ec`). **"Verified ZDR" is banned here until something records one.***
+*Updated: 2026-08-21 (ZDR verification) — **the ZDR handoff ran; the exception is obtainable on
+this exact account shape.** Google's terms, read under a per-occasion, since-reverted WebFetch
+lift: the opt-out form serves precisely self-serve GCP-ToS customers, and the default is
+**flagged-only prompt logging ≤90 days, never training** — narrower than the correction assumed,
+so `tone_profiler`'s exposure is a classifier misfire, not routine logging. Evidence, form link
+and a proposed § Section 0 amendment (**not applied**):
+`archive/security/zdr_terms_evidence_2026-08-20.md`. **In-force status authority: the row in
+`docs/INFRASTRUCTURE.md` § Vertex AI credentials.***
 
-*⚠ **One decision is open and is Mike's: does the sensitive-tier default continue on the corrected,
-narrower basis while ZDR is pursued?** Left undecided deliberately. Plan:
-`archive/handoffs/2026-08-20-zdr-verification-prompt.md` (research + decision, no code, Fable). **Its
-first blocker is Mike's own call** — `WebFetch`/`WebSearch` are Denied, which is why no session could
-read Google's terms, and the direct reason this sat unchecked for two months.*
+*⚠ **Two acts are Mike's, in the backlog inbox: submit the opt-out form, and rule on the proposed
+amendment** (does the sensitive-tier default continue on the corrected basis until grant or
+refusal; backstop 2026-10-01).*
 
 *⚠ **A parallel window is mid-build on the cache fix**, none of it staged here. Plan:
 `archive/plans/vertex_cache_cost_control_2026-08-20_plan.md`, **rewritten by Fable — the 10-minute
@@ -29,7 +27,7 @@ model-tier switch-on gate, `[DB-0820-04]` owes the extractor its own injection r
 keep ~$100 between tiers (`CLAUDE.md` § Infrastructure traps 3). **`[DB-0815-07]` and `[DB-0810-07]`
 remain untested, not passing** — their 08-19 test designs never reached the code they tested.*
 
-***Next:** the ZDR handoff, Mike present for the web-fetch call. Then `[DB-0820-05]` — with storage
+***Next:** `[DB-0820-05]` — with storage
 fixed, all-Pro routing is **~$3.11/day against today's $6.12**, so the Flash-Lite tiers are worth
 revisiting once a clean day is measured; `coordinator` is the only candidate and its blocker is
 latency, not money. `175809e` **owes a deploy but changes nothing on the VM**.*
@@ -134,10 +132,10 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-21 | **ZDR: "verified" became verified — the abuse-monitoring exception is obtainable on this account shape, and the default is conditional logging, not blanket retention.** Google's published terms, read under a scoped, since-reverted WebFetch lift: the opt-out form serves exactly self-serve GCP-ToS customers; flagged-only prompt logging ≤90 days, never training; `cacheConfig` governs only the latency cache (handoff caution resolved); Search grounding keeps query logs 3 days with no opt-out. Evidence + proposed amendment: `archive/security/zdr_terms_evidence_2026-08-20.md`; status authority: `docs/INFRASTRUCTURE.md` § Vertex AI credentials. Form + § Section 0 ruling pending with Mike | **nothing — docs only** |
 | 08-20 | **The Vertex bill reconciled — the cost that stopped the VM is one no per-call meter could see.** Context-cache **storage bills per wall-clock hour** ($4.50/1M/hr on Pro), so `spend_guard` read **$2.63 against a $6.12 bill** and was working as designed. Three defects: caches **abandoned on every restart** (5 server + 5 scheduler = 10 Pro caches billing at once), **midnight-UTC expiry chosen for config-freshness with no cost figure beside it**, and the guard blind to storage. **Fable's review inverted the plan's priority** — the 10-minute TTL is the fix; the orphan sweep is a ~$0.14/day tidy-up, because Vertex reaps at `expire_time`. It also caught an unlocked registry, a streaming path that never evicts, and that Step 6 splits by model class (the compat path exists to dodge the `thought_signature` bug). **Three of my own claims were wrong and measurement killed each**: that caching never ran on the VM (the logs just don't capture it), that the residual was storage alone (**creation is metered too — proved by probe**), and that caching "costs more than it saves" before hit rate was measured (**15 hits against 65 Pro calls**). `[DB-0820-05]` filed: all-Pro routing is ~$3.11/day against today's $6.12. Global `CLAUDE.md` gained **§ Costs**. **Then the session's largest finding, and it is not about cost: `ROADMAP.md` § Section 0 has authorised sensitive-tier data on the VM since 2026-06-18 on "verified ZDR" — never verified, and not in force.** No org parent, self-serve billing account, zero org policies, no exception on record. Only "no training use" of its three claims holds. Recorded as a dated correction beneath the original text, **not a rewrite**; whether the permission continues is left explicitly undecided. Mike overrode filing-and-verifying-later — the check took four commands and overturned a two-month premise. Also fixed: all three Vertex call sites defaulted to a region that does not serve Gemini 3.x | **`6a96fc4`…`01495ec`; `175809e` owes a deploy but is inert on the VM** |
 | 08-20 | **Inbound intake: mail swept hourly, classified in Python, queued per domain, taught by correction.** An interest sieve, not a filing tool — Mike's rulings: disposition ⊥ domain, no dispatch on arrival, no mailbox writes, digest as training surface. Model tier wired but **double-gated OFF** (`[DB-0820-03]` holds the gate; `[DB-0820-04]` the injection row). Mike's `/code-review high` returned **10 findings, 3 severe** (digest swallowed by the Coordinator; weekly digest would have fired daily; thread siblings re-surfacing) — all fixed, suite 21/21. `tone_profiler` runs bare, `[DB-0819-02]` closed. **Dark until Mike's VM edits**; inbox primed 08-21 | `b417e98` — **deployed** |
 | 08-20 | **Photos and files can be sent, messages announce themselves, and the wait says what it is doing.** Three features Mike asked for, planned in Fable and built in Opus; **all four live tests passed on the device**. Attachments upload over HTTP with only ids on the socket, are kept per-persona, and are typed by **sniffing the bytes, never the client's Content-Type**. **The Synthesizer receives the files too** — the Coordinator is a router, so *"what breed is this dog"* would otherwise reach the agent writing the reply as prose about a dog nothing had seen; `cache_read=18413`/`5994` after, so the prompt cache was undisturbed. **A dead file chooser in the APK was found by the plan, not by testing** — `MainActivity` had replaced Capacitor's chrome client, discarding `onShowFileChooser`, so attachments would have worked everywhere except the phone. **B1b gains a fifth row — attached files — and it passed**: the reply named the injection, disclosed nothing, and cross-checked the pretext against Mike's records. **The soft cap fired mid-deploy**; cause was a cost *defect* (Vertex cache storage, another chat's finding), caps now **temporarily $150/$250**, revert filed as `[DB-0820-01]`. **Two chats' work in one file nearly deployed an `ImportError`** — staged only my own hunks, verified by two independent derivations and by importing `HEAD` in a clean export | `5684d27`, `5836561`, `7a611ea` — **all deployed** |
-| 08-19 | **Cache + streaming kept; spoken chunking built, measured and reverted the same day.** The interactive path now serves **93% of a Synthesizer turn from cache** and streams **9 chunks**, at **$0.0685 → $0.0397** per turn. Sentence-chunked TTS reverted on Mike's call — *"too many resources for an incremental gain"* — which **closed the security gap it opened** (spoken audio cannot be retracted, so `filter_output`/LLM06 was weaker on voice than on screen; the full record stays in `ROADMAP.md` § 5A so nobody re-opens it). **The measurement any re-proposal must beat:** the whole reply arrives in **~0.6s**, **86% of generated tokens are thinking**, and release was never the bottleneck (**0.15s**). **Four of this session's own claims were wrong and every one was caught by running something** — the brief's 46×, "Option A closes the item", "the speech change cannot reach the Coordinator" (it could — in-band markers doubled the reply, caught by `run_knowledge_routing.py`), and a hypothesis about a degenerate reply that died on measurement. `[DB-0818-10]` **closed and removed** | `81be0f7`…`46f31b5` **deployed**; `c6f6dc2` **owes one** |
 ---
 
 ## Useful context to pull as needed
