@@ -269,6 +269,45 @@ the condition has not arrived, push the date rather than closing the item.
   @session: seed clinical-adjacent knowledge into the test persona, or accept the gap
   *raised 2026-08-18 at the close of the knowledge-layering session · triaged out of `## Inbox` 2026-08-18*
 
+- **[DB-0820-05] Fixing the cache leak frees enough money to put better models behind more agents —
+  decide which, once the fix is deployed and re-measured.** Four agents sit on Flash-Lite for cost
+  reasons that the cache work partly dissolves: `coordinator`, `diarist`, `intake_extractor`,
+  `tone_profiler` (`config/modules/routing_cloud.yaml`).
+  **The modelling, done 2026-08-20 against the measured 19 August day** (163 calls, 27 sessions,
+  8 bursts, no development testing). Scenario A is anchored to the real $6.12 bill; the rest are
+  modelled from the same measured token volumes:
+  | | day total | per session | per month |
+  |---|---|---|---|
+  | **A** — today, mixed Pro/Flash, caching as built | **$6.12** | $0.227 | $184 |
+  | **A′** — same mix, caching fixed (10-min TTL) | **$1.82** | $0.067 | $55 |
+  | **B′** — **every agent on Pro**, caching fixed | **$3.11** | $0.115 | $93 |
+  **So all-Pro with caching fixed costs about half of today's mixed bill.** Fixing caching frees
+  ~$4.30/day; upgrading every Flash-Lite call to Pro spends ~$1.29/day of it.
+  **The recommendation this analysis reached, which is not "upgrade everything".** Three of the four
+  gain nothing from Pro: `diarist` is write-only and fire-and-forget (never seen by the user);
+  `intake_extractor` and `tone_profiler` are closed-enum extraction over attacker-writable text with
+  deliberately empty tool grants — Pro only adds thinking tokens to tasks with one correct answer.
+  **`coordinator` is the only real candidate** (~$0.41/day, ~$12/month above today's baseline),
+  because routing errors propagate through the whole turn. **Its blocker is latency, not money:** it
+  sits on the critical path ahead of every reply, and Pro's thinking budget is already flagged in
+  `ROADMAP.md` as the remaining lever on turn cost.
+  **Three assumptions that must be re-checked before acting, in order of how much they move the
+  answer.** *(1)* **Output inflation** — Flash-Lite emits 112 output tokens/call, Pro 815, and 86% of
+  Synthesizer output is thinking (`SESSION.md`); modelled at 3×, but at 7× scenario B′ becomes
+  $3.64/day and the margin narrows. *(2)* **Prefix fraction 65%**, measured from the two live caches
+  (Synthesizer 18,127/24,099 = 75%; Coordinator 5,993/9,373 = 64%). *(3)* **Cache creation rate is
+  unresolved** — creation *is* metered (proved by controlled probe, 12,001 tokens with zero generate
+  calls) but bills at either $2.00/M or $0.20/M; at the lower rate A′ drops to $1.41 and B′ to $2.53.
+  Resolving it needs the BigQuery billing export enabled (Console — Step 5 of the plan).
+  **Do not act on the table above as it stands.** Every figure assumes the cache fix is live; today's
+  numbers are contaminated by the leak. Re-measure a clean day first.
+  Full reasoning and the measured rates: `archive/plans/vertex_cache_cost_control_2026-08-20_plan.md`.
+  @kind: feature
+  @waiting: Steps 1–2 of the cache plan deployed, plus one clean day re-measured against the bill
+  @session: which agents move to Pro — cost is settled, latency on `coordinator` is the open trade
+  `due: 2026-09-15`
+  *raised 2026-08-20 by Mike at the close of the Vertex billing reconciliation session*
+
 ### Done and deployed — each closes on one ordinary use
 
 *This group was a quarter of the backlog on 2026-08-18 and the single biggest reason the file grew:

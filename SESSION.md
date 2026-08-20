@@ -1,35 +1,33 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-20, later — **inbound mail is now triaged without the user: swept hourly,
-classified in Python, queued per domain, taught by correction** (`b417e98`, **deployed by Mike**).
-An interest sieve, not a filing tool: disposition and domain are independent axes, so a silenced
-promotion still reaches Recreation to judge; nothing dispatches an agent on arrival — specialists
-drain queues on their own next run; the mailbox is never written. The model tier
-(`intake_extractor`, Flash-Lite, bare, no tools) is **wired but double-gated OFF** — `[DB-0820-03]`
-holds the switch-on gate (labelled corpus → zero `action_required` false negatives → scoped
-review → flip); `[DB-0820-04]` owes the extractor its own injection row (advances B1b). 21/21
-pipeline suite; all ten findings from Mike's `/code-review high` fixed — the three severe ones
-are in the `## Recent sessions` row. `tone_profiler` now also runs bare (`[DB-0819-02]` closed). **Intake is
-dark until Mike's VM edits**: `enabled: true` in mike's `intake.yaml`, and delete `mike.md`'s
-"check inbox every six hours" line if still present. He primes the inbox 08-21; the first digest
-(training wheels on) is the acceptance read.*
+*Updated: 2026-08-20, third — **the Vertex bill is reconciled, and this morning's outage has a
+named cause: context-cache storage, billed per wall-clock hour, which nothing in the codebase can
+see.** $4.50 per 1M tokens/hour on Pro, accruing whether or not a cache is read. `spend_guard` read
+**$2.63 against a $6.12 bill** on 08-19 and was working exactly as designed — it meters per call.
+Three defects: caches **abandoned on every restart** (5 server + 5 scheduler restarts left 10 Pro
+caches billing in parallel), **midnight-UTC expiry chosen for config-freshness with no cost figure
+beside it**, and the guard blind to storage. Plan at
+`archive/plans/vertex_cache_cost_control_2026-08-20_plan.md` (baseline `6a96fc4`), **rewritten by
+Fable, whose review inverted its priority: the 10-minute TTL is the fix; the orphan sweep is a
+tidy-up worth ~$0.14/day, because Vertex reaps at `expire_time` anyway.** Nothing in `core/`
+touched, nothing deployed.*
 
-*⚠ **The live problem is cost, and it is not usage.** The **$100 soft cap fired mid-deploy** and
-stopped the VM. Cause is a defect a parallel chat costed the same morning: **Vertex context-cache
-storage, ~$100/month** (abandoned caches on restart, midnight-UTC expiry, `spend_guard` blind to
-storage) — `archive/plans/vertex_cache_cost_control_2026-08-20_plan.md`. Caps are **temporarily
-$150/$250** and **must come back down in September** — `[DB-0820-01]`, `due: 2026-09-01`. **Keep
-~$100 between the tiers whatever the numbers**: the hard cap is an outage, not a cost event.*
+*⚠ **Intake is still dark until Mike's VM edits** — `enabled: true` in mike's `intake.yaml`, and
+delete `mike.md`'s "check inbox every six hours" line if still present. He primes the inbox 08-21;
+the first digest (training wheels on) is the acceptance read. `[DB-0820-03]` holds the model-tier
+switch-on gate, `[DB-0820-04]` owes the extractor its own injection row (advances B1b).*
+
+*⚠ **Caps are temporarily $150/$250 and must come back down in September** — `[DB-0820-01]`,
+`due: 2026-09-01`; keep ~$100 between the tiers (`CLAUDE.md` § Infrastructure traps 3).*
 
 *⚠ **Still untested, not passing: `[DB-0815-07]` and `[DB-0810-07]`** — their 08-19 test designs
 never reached the code they tested.*
 
-***Next:** `archive/handoffs/2026-08-18-decisions-and-diagnosis-prompt.md`, with Mike present —
-three decisions in the format he asked for, and the two untested items with tests that actually
-reach the code. **The cache-storage fix is the first thing worth money**; a parallel chat holds the
-plan. A Synthesizer audit runs in another window — tell it **caching cut the money case for
-trimming `synthesizer.md` by 4×** ($11.49 → $2.87 per 1,000 turns); the case is adherence now, not
-cost, and **the thinking budget is the remaining lever, which is Mike's call**.*
+***Next:** build the cache fix in Opus from Fable's rewritten plan — **TTL first, sweep second**.
+Then `[DB-0820-05]`: with storage fixed, **all-Pro routing costs ~$3.11/day against today's
+$6.12**, so the Flash-Lite tiers are worth revisiting once a clean day is measured — `coordinator`
+is the only real candidate and its blocker is latency, not money. Global `~/.claude/CLAUDE.md`
+gained **§ Costs**, which fires when a lifetime, size or cadence is set.*
 
 ***Model split, Mike's call 2026-08-18: plan and review in Fable, build in Opus.*** Held again
 today — the Fable plan caught a dead file-chooser in the APK that would have made attachments
@@ -131,6 +129,7 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-20 | **The Vertex bill reconciled — the cost that stopped the VM is one no per-call meter could see.** Context-cache **storage bills per wall-clock hour** ($4.50/1M/hr on Pro), so `spend_guard` read **$2.63 against a $6.12 bill** and was working as designed. Three defects: caches **abandoned on every restart** (5 server + 5 scheduler = 10 Pro caches billing at once), **midnight-UTC expiry chosen for config-freshness with no cost figure beside it**, and the guard blind to storage. **Fable's review inverted the plan's priority** — the 10-minute TTL is the fix; the orphan sweep is a ~$0.14/day tidy-up, because Vertex reaps at `expire_time`. It also caught an unlocked registry, a streaming path that never evicts, and that Step 6 splits by model class (the compat path exists to dodge the `thought_signature` bug). **Three of my own claims were wrong and measurement killed each**: that caching never ran on the VM (the logs just don't capture it), that the residual was storage alone (**creation is metered too — proved by probe**), and that caching "costs more than it saves" before hit rate was measured (**15 hits against 65 Pro calls**). `[DB-0820-05]` filed: all-Pro routing is ~$3.11/day against today's $6.12. Global `CLAUDE.md` gained **§ Costs** | **nothing — plan only; `6a96fc4` is the baseline** |
 | 08-20 | **Inbound intake: mail swept hourly, classified in Python, queued per domain, taught by correction.** An interest sieve, not a filing tool — Mike's rulings: disposition ⊥ domain, no dispatch on arrival, no mailbox writes, digest as training surface. Model tier wired but **double-gated OFF** (`[DB-0820-03]` holds the gate; `[DB-0820-04]` the injection row). Mike's `/code-review high` returned **10 findings, 3 severe** (digest swallowed by the Coordinator; weekly digest would have fired daily; thread siblings re-surfacing) — all fixed, suite 21/21. `tone_profiler` runs bare, `[DB-0819-02]` closed. **Dark until Mike's VM edits**; inbox primed 08-21 | `b417e98` — **deployed** |
 | 08-20 | **Photos and files can be sent, messages announce themselves, and the wait says what it is doing.** Three features Mike asked for, planned in Fable and built in Opus; **all four live tests passed on the device**. Attachments upload over HTTP with only ids on the socket, are kept per-persona, and are typed by **sniffing the bytes, never the client's Content-Type**. **The Synthesizer receives the files too** — the Coordinator is a router, so *"what breed is this dog"* would otherwise reach the agent writing the reply as prose about a dog nothing had seen; `cache_read=18413`/`5994` after, so the prompt cache was undisturbed. **A dead file chooser in the APK was found by the plan, not by testing** — `MainActivity` had replaced Capacitor's chrome client, discarding `onShowFileChooser`, so attachments would have worked everywhere except the phone. **B1b gains a fifth row — attached files — and it passed**: the reply named the injection, disclosed nothing, and cross-checked the pretext against Mike's records. **The soft cap fired mid-deploy**; cause was a cost *defect* (Vertex cache storage, another chat's finding), caps now **temporarily $150/$250**, revert filed as `[DB-0820-01]`. **Two chats' work in one file nearly deployed an `ImportError`** — staged only my own hunks, verified by two independent derivations and by importing `HEAD` in a clean export | `5684d27`, `5836561`, `7a611ea` — **all deployed** |
 | 08-19 | **Cache + streaming kept; spoken chunking built, measured and reverted the same day.** The interactive path now serves **93% of a Synthesizer turn from cache** and streams **9 chunks**, at **$0.0685 → $0.0397** per turn. Sentence-chunked TTS reverted on Mike's call — *"too many resources for an incremental gain"* — which **closed the security gap it opened** (spoken audio cannot be retracted, so `filter_output`/LLM06 was weaker on voice than on screen; the full record stays in `ROADMAP.md` § 5A so nobody re-opens it). **The measurement any re-proposal must beat:** the whole reply arrives in **~0.6s**, **86% of generated tokens are thinking**, and release was never the bottleneck (**0.15s**). **Four of this session's own claims were wrong and every one was caught by running something** — the brief's 46×, "Option A closes the item", "the speech change cannot reach the Coordinator" (it could — in-band markers doubled the reply, caught by `run_knowledge_routing.py`), and a hypothesis about a degenerate reply that died on measurement. `[DB-0818-10]` **closed and removed** | `81be0f7`…`46f31b5` **deployed**; `c6f6dc2` **owes one** |
@@ -178,7 +177,6 @@ project, and the sleep/launchd steps that must precede any switch to local Ollam
 | OpenAI | o3 | `o3` | |
 | Gemini | Flash-Lite | `gemini-3.1-flash-lite` | ✓ confirmed on Vertex (no `models/` prefix on Vertex) |
 | Gemini | Pro | `gemini-3.1-pro-preview` | ✓ confirmed on Vertex |
-| Ollama | Local 14B | `qwen3:14b` | local only |
 
 **Vertex note:** AI Studio uses `models/gemini-*` prefix; Vertex drops the prefix. The orchestrator strips it automatically when `GOOGLE_CLOUD_PROJECT` is set.
 
