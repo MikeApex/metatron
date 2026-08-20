@@ -3090,3 +3090,13 @@ signatures kept their `⚠` and kept leading the session-start line. Forty-two e
 with a pointer recorded in the sweep note in `DEV_BACKLOG.md`. `.dev_backlog_seen` is what makes
 this safe: the sync keys on timestamps already pulled, so nothing is re-added. **Do not regenerate
 the section from the VM source** — that bypasses the ledger and resurrects everything.
+
+## Closed 2026-08-20 — intake rollout close-out
+
+- **[DB-0819-02] The tone profiler read other people's emails with the user's goals file loaded
+  beside them.** Closed by `b417e98`: [tools/tone.py](../tools/tone.py) now dispatches
+  `run_session(..., bare=True)` — agent file only, no goals, no profile — the same posture as the
+  intake extractor. The item's own precondition was met first: `tone_profiler.md` grep'd clean of
+  any goals/profile/mission reference (2026-08-20) before the argument changed. Raised low-priority
+  as a dormant path; closed early because the intake deploy is the moment the email path becomes
+  operational, which is exactly when the other session flagged it as worth knowing about.
