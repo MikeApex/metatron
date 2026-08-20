@@ -73,31 +73,6 @@ back-tagging the rest is `[DB-0815-10]`.
 > counts, and all three were single events; every one of them was also **older than the code that
 > fixed it**. They were removed on 2026-08-18. Confirm the count *and* compare the evidence date
 > against `git log` before promoting anything from here.
-- **Does the sensitive-tier default continue while ZDR is not in force?** `ROADMAP.md` § Section 0
-has authorised sensitive-tier personal data on the Vertex VM since 2026-06-18 on the strength of
-"verified Zero Data Retention". Verified 2026-08-20 for the first time: **it is not in force** — no
-organization parent, a self-serve billing account with no contract parent, zero org policies, and no
-record of an abuse-monitoring exception. Of its three claims only **"no training use"** holds by
-default; *"prompts/responses cleared before logging"* is exactly what the exception buys.
-
-This does **not** breach the 2026-06-10 ruling as written (that targets shared infrastructure where
-data mingles with other users' traffic). It does mean the amendment authorising the sensitive
-default rested on a half-false premise. Most exposed: **`tone_profiler`**, which reads real
-correspondence written by other people, pre-cleared by the 2026-08-09 clarification on this basis.
-
-**The decision is whether work continues on the corrected, narrower basis while ZDR is pursued** —
-deliberately left undecided in Section 0, because correcting the record and pursuing ZDR are not a
-ruling on whether the permission stands meanwhile. Options with trade-offs are in the handoff.
-
-Evidence and the correction: `ROADMAP.md` § Section 0 `CORRECTION 2026-08-20`. Plan for getting ZDR
-in place (research + decision, no code, Fable): `archive/handoffs/2026-08-20-zdr-verification-prompt.md`
-— note its first blocker is Mike's own call on the `WebFetch`/`WebSearch` deny, which is why this
-went unchecked for two months.
-
-@kind: chore
-@session: does sensitive-tier work continue on the corrected basis while ZDR is pursued
-*raised 2026-08-20 by Mike, who directed the verification that found it*
-
 ---
 
 ## Now
