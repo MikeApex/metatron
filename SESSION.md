@@ -1,44 +1,39 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-19 — **the app's own turns now reach the prompt cache AND stream.**
-`run_session_gemini_cached_stream()` serves **19,157 of a 20,534-token turn from cache (93%)** and
-puts **9 chunks on the wire**; a turn costs **$0.0685 → $0.0397** at $2/$12. **Sentence-chunked TTS
-was built, measured and reverted the same day** (Mike: *"too many resources for an incremental
-gain"*) — which also **closed the security gap it opened**, since spoken audio cannot be retracted.
-`[DB-0818-10]` **closed and removed.** The measurement that settles any re-proposal: the whole reply
-arrives in **~0.6s**, **86% of Synthesizer tokens are thinking**, and sentence release was never the
-bottleneck (0.15s). **Chunked speech pays only when generation is slow relative to synthesis — fix
-the thinking budget first.** **Deploy owed: `c6f6dc2` (the revert).***
+*Updated: 2026-08-20 — **the app takes photos and files, announces a new message, and says what it
+is doing while you wait.** All three shipped, deployed and **confirmed live on the device**:
+attachments (photo/PDF, kept per-persona, sniffed by bytes not Content-Type), ping/vibrate alerts
+with a three-way scope setting, and a rotating word replacing the `▍` that read as a stuck cursor.
+Follow-up `7a611ea`: tap a photo for full size, tap a document to save it — **browser only**, the
+APK has no download manager (`[DB-0820-02]`). **Nothing owed on deploy; `c6f6dc2` cleared.**
+**The Synthesizer gets the file, not just the Coordinator's prose about it** — verified after, with
+`cache_read=18413`/`5994`, so files did not disturb the prompt cache.*
 
-*⚠ **The method finding, which outranks any single item: everything this session RAN held up, and
-everything it INFERRED was wrong.** Four confident causal explanations for the doubled-reply bug,
-all four killed — one by a reproduction, one by reading the client line by line, two by Mike. Two
-more wrong claims came from inferring a cause from timing (*"it called no tool"*, *"the knowledge
-layer is causing the bloat"* — the prompt is 65% one instruction file). And **two test designs never
-reached the code they tested**, so `[DB-0815-07]` and `[DB-0810-07]` are **untested, not passing**.*
+*⚠ **The live problem is cost, and it is not usage.** The **$100 soft cap fired mid-deploy** and
+stopped the VM. Cause is a defect a parallel chat costed the same morning: **Vertex context-cache
+storage, ~$100/month** (abandoned caches on restart, midnight-UTC expiry, `spend_guard` blind to
+storage) — `archive/plans/vertex_cache_cost_control_2026-08-20_plan.md`. Caps are **temporarily
+$150/$250** and **must come back down in September** — `[DB-0820-01]`, `due: 2026-09-01`. **Keep
+~$100 between the tiers whatever the numbers**: the hard cap is an outage, not a cost event.*
 
-*⚠ **Three backlog items rested on a count the file itself calls invalid.** A `×N` in
-`## Machine log` written before 2026-08-15 is a similarity **chain length**, not a repeat count. All
-three entries triaged into `## Inbox` on 08-15 as *"Mike-originated, ×3/×4, clears the bar"* were
-**single events**, and each was **older than the code that fixed it**. Both halves of the promotion
-argument were false and neither was checked. **Check the count's date and the evidence's date
-against `git log` before promoting anything from the machine log.***
+*⚠ **Two sessions' uncommitted work in one file nearly deployed an outage.** `core/orchestrator.py`
+held this work and a parallel chat's intake work, and **each half imported a module the other had
+not committed**. **Untracked files are the landmines; modified tracked files are not.** Now a rule
+in `.claude/rules/deploy.md`; method in the log.*
 
-*⚠ **Nothing leaves this machine unasked** — now a mechanical deny in `.claude/settings.json` and a
-standing rule in `CLAUDE.md`; shareable documents are **files** in `archive/plans/`.*
+*⚠ **Still untested, not passing: `[DB-0815-07]` and `[DB-0810-07]`** — their 08-19 test designs
+never reached the code they tested.*
 
-***Next: `archive/handoffs/2026-08-18-decisions-and-diagnosis-prompt.md`, with Mike present** — three
-decisions in the format he asked for (background, plain speech, a defended recommendation), the
-doubled reply with **all four dead theories named so nobody re-runs them**, and the two untested
-items with tests that actually reach the code. **The caching handoff is spent — both options built;
-delete it once `c6f6dc2` is deployed.** A Synthesizer audit runs in a parallel window — **tell it
-that caching cut the money case for trimming `synthesizer.md` by 4×** ($11.49 → $2.87 per 1,000
-turns); the case is now adherence and instruction quality, not cost. **After caching, output +
-thinking is 69% of turn cost — the thinking budget is the remaining lever, and Mike has it.***
+***Next:** `archive/handoffs/2026-08-18-decisions-and-diagnosis-prompt.md`, with Mike present —
+three decisions in the format he asked for, and the two untested items with tests that actually
+reach the code. **The cache-storage fix is the first thing worth money**; a parallel chat holds the
+plan. A Synthesizer audit runs in another window — tell it **caching cut the money case for
+trimming `synthesizer.md` by 4×** ($11.49 → $2.87 per 1,000 turns); the case is adherence now, not
+cost, and **the thinking budget is the remaining lever, which is Mike's call**.*
 
-***Model split, Mike's call 2026-08-18: plan and review in Fable, build in Opus.*** Reviewing this
-session's brief in Fable turned the build into a one-line branch and caught five constraints the
-brief did not carry. Red-tier work is still not delegated at all.
+***Model split, Mike's call 2026-08-18: plan and review in Fable, build in Opus.*** Held again
+today — the Fable plan caught a dead file-chooser in the APK that would have made attachments
+work everywhere except the phone. Red-tier work is still not delegated at all.
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -78,7 +73,8 @@ For **why** something was built the way it is — reasoning, rejected options, c
 Coordinator–Synthesizer pipeline; all 14 agent files (deep passes + flag audit complete);
 grounded Research search; CRM, Wishes, CalDAV, scheduler-write and profile tools; parallel
 subagent dispatch; threat model and security backlog (`archive/security/`); **server auth,
-`fetch_url`, `read_email`, and the `<untrusted_content>` boundary (2026-08-04)**.
+`fetch_url`, `read_email`, and the `<untrusted_content>` boundary (2026-08-04)**;
+**user-attached photos and documents, new-message alerts, and a waiting indicator (2026-08-20)**.
 *Dates and reasoning for all of it: [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).*
 
 ### In progress / next
@@ -89,7 +85,10 @@ Three checks still open:
 
 - **B1** — red team. **B1a passed** (re-run 2026-08-08 post-filter-upgrade: 102 pass, 0 error,
   `tests/security_redteam_2026-08-08.md`). **B1b not closed** — email row covered (`injection`,
-  3/3 vs `danny_park`); calendar, web and CardDAV rows untouched, gated on Track E.
+  3/3 vs `danny_park`); calendar, web and CardDAV rows untouched, gated on Track E. **A fifth row,
+  attached files, opened and passed its first probe 2026-08-20** — live now, not gated on Track E;
+  **one manual case, not a suite**, with its limits stated in
+  `archive/security/b1b_attachment_injection_2026-08-20.md`.
 - **Check 10** — agent behavioural audits (12 specialists; Coordinator/Synthesizer via pipeline probes)
 - **Check 12** — constitution alignment review
 - **A5b/A5c** — re-run `write_aspirational_baseline` with A5 mission-level data (A3 baseline is still a placeholder); A5c preference activation recorded "unknown, confirm if needed."
@@ -132,6 +131,7 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-20 | **Photos and files can be sent, messages announce themselves, and the wait says what it is doing.** Three features Mike asked for, planned in Fable and built in Opus; **all four live tests passed on the device**. Attachments upload over HTTP with only ids on the socket, are kept per-persona, and are typed by **sniffing the bytes, never the client's Content-Type**. **The Synthesizer receives the files too** — the Coordinator is a router, so *"what breed is this dog"* would otherwise reach the agent writing the reply as prose about a dog nothing had seen; `cache_read=18413`/`5994` after, so the prompt cache was undisturbed. **A dead file chooser in the APK was found by the plan, not by testing** — `MainActivity` had replaced Capacitor's chrome client, discarding `onShowFileChooser`, so attachments would have worked everywhere except the phone. **B1b gains a fifth row — attached files — and it passed**: the reply named the injection, disclosed nothing, and cross-checked the pretext against Mike's records. **The soft cap fired mid-deploy**; cause was a cost *defect* (Vertex cache storage, another chat's finding), caps now **temporarily $150/$250**, revert filed as `[DB-0820-01]`. **Two chats' work in one file nearly deployed an `ImportError`** — staged only my own hunks, verified by two independent derivations and by importing `HEAD` in a clean export | `5684d27`, `5836561`, `7a611ea` — **all deployed** |
 | 08-19 | **Cache + streaming kept; spoken chunking built, measured and reverted the same day.** The interactive path now serves **93% of a Synthesizer turn from cache** and streams **9 chunks**, at **$0.0685 → $0.0397** per turn. Sentence-chunked TTS reverted on Mike's call — *"too many resources for an incremental gain"* — which **closed the security gap it opened** (spoken audio cannot be retracted, so `filter_output`/LLM06 was weaker on voice than on screen; the full record stays in `ROADMAP.md` § 5A so nobody re-opens it). **The measurement any re-proposal must beat:** the whole reply arrives in **~0.6s**, **86% of generated tokens are thinking**, and release was never the bottleneck (**0.15s**). **Four of this session's own claims were wrong and every one was caught by running something** — the brief's 46×, "Option A closes the item", "the speech change cannot reach the Coordinator" (it could — in-band markers doubled the reply, caught by `run_knowledge_routing.py`), and a hypothesis about a degenerate reply that died on measurement. `[DB-0818-10]` **closed and removed** | `81be0f7`…`46f31b5` **deployed**; `c6f6dc2` **owes one** |
 | 08-18 | **The app's own turns reach the prompt cache — and the brief's headline number was wrong.** The streaming Synthesizer branch never called `_get_or_create_vertex_cache`; it now serves **19,157 of a 20,534-token turn from cache (93%)**, **$0.0685 → $0.0397** per turn at $2/$12, with no user-visible change because the reply already arrived as one flush. **The "46×" compared an interactive median against a scheduled median dominated by 19 near-empty turns** — real scheduled turns cost what interactive ones do, so that path was never cheap *because it was cached*. Two facts that had been distorting every reading, both settled by running things: `prompt_token_count` **includes** cached tokens, and **INFO never reaches `journalctl`** (units log WARNING+), so any turn under 8k leaves no log record at all. A4 `PH-MED-PIPE` failed once with a **degenerate reply (`think=0`, 36 tokens of gibberish)** — HEAD 3/3, re-run 3/3, no reproduction, and two inferences about it were wrong before measurement killed them. **Filed as a backlog item then unfiled on Mike's challenge:** a guard built from one unreproducible sample is likelier to suppress a good reply than catch a recurrence. Option A (streaming + cache) unbuilt, **and measurement since says it does not close `[DB-0818-10]` alone — 86% of generated tokens are thinking** | `81be0f7` — **pushed, needs deploy** |
 | 08-18 | **Phase 1 live testing, Mike at the app — four items closed, three defects found, four causal theories killed.** Nothing streams (**1 chunk** on the wire, measured on a second persona); **interactive turns never hit the prompt cache — 22,967 input tokens vs 495 scheduled**, because the streaming path opted out of caching to buy streaming *and did not get streaming either*; an unsourced research answer reached Mike as fact (*"good service on Southeastern"* from two searches, zero sources) — now **withheld in Python**, since the `[RETRIEVAL: NONE]` marker added 08-10 was already attached and the Synthesizer **softened it instead of refusing**. `[DB-0810-01]` **reopened** — closed this morning on two clean turns against its own "do not close on it works now". Two test designs never reached their code. Filed at Mike's instigation: `[DB-0818-08]` provenance tiers, `[DB-0818-09]` implausible-vs-impossible input, `[DB-0818-10]` streaming | **nothing — `f4cc812` + the research guard both owe one** |

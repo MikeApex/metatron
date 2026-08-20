@@ -39,6 +39,17 @@ and stays there; this file is what you need once you are actually editing the sc
    `git add -p`. When two sessions are live, also: one owns the deploy, and one runs `/archive` —
    see `.claude/commands/backlog.md` § attack.
 
+> **Rule 4's sharpest form: untracked files are the landmines; modified tracked files are not.**
+> A tracked file already exists on the VM, so a `git pull` merely updates it. An **untracked** one
+> does not exist there at all — so committing a tracked file that *imports* an untracked one
+> deploys an `ImportError`. On 2026-08-20 `core/orchestrator.py` held two sessions' uncommitted
+> work and **each half imported a module the other had not committed** (`core/attachments.py` at
+> module level, `tools/intake.py` inside `register_tools()`); whichever committed the file wholesale
+> first would have taken the app down. Fix when the regions are disjoint: stage *only your own
+> hunks*, then **export `HEAD` to a clean directory and import it there** — the only check that
+> proves what the VM will actually pull. Pushing first is the kinder order; it leaves the other
+> session able to stage wholesale. Method: `archive/PROJECT_LOG.md` § 2026-08-20.
+
 > **Rule 4 is now also enforced mechanically** by `scripts/hook_commit_guard.py`, which hashes each
 > file this session writes and blocks when one changed underneath it. Two things the old wording
 > *"blocks a commit"* got loose, both observed 2026-08-14: it fires at **stage time** — `git add`
