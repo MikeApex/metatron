@@ -66,6 +66,7 @@ CONFIG_DIR = ROOT / "config"
 AGENTS_DIR = CONFIG_DIR / "agents"
 
 from contextlib import nullcontext
+from core import attachments as attachments_mod
 from core.persona import (
     PersonaError,
     current_persona,
@@ -2687,7 +2688,8 @@ def run_session_gemini_grounded(system_prompt: str, user_input: str,
 def run_session_gemini_cached(system_prompt: str, user_input: str,
                                tool_schemas: list[dict], tool_handlers: dict,
                                model: str | None = None,
-                               history: list[dict] | None = None) -> str:
+                               history: list[dict] | None = None,
+                               attachments: list[dict] | None = None) -> str:
     """
     Gemini session with Vertex context caching via the native SDK.
 
@@ -2721,6 +2723,7 @@ def run_session_gemini_cached(system_prompt: str, user_input: str,
             tool_schemas, tool_handlers,
             history=history,
             cached_content=cached_content_name,
+            attachments=attachments,
         )
     except Exception as e:
         from core.router import log_model_error
@@ -2739,6 +2742,7 @@ def run_session_gemini_cached(system_prompt: str, user_input: str,
                     tool_schemas, tool_handlers,
                     history=history,
                     cached_content=fresh,
+                    attachments=attachments,
                 )
             except Exception as retry_exc:
                 e = retry_exc
@@ -2748,12 +2752,40 @@ def run_session_gemini_cached(system_prompt: str, user_input: str,
         return run_session_gemini(system_prompt, user_input, tool_schemas, tool_handlers, model, history)
 
 
+def _history_attachment_note(attachments: list[dict] | None) -> str:
+    """The trace of an attachment that survives into later turns — its name, not its bytes."""
+    if not attachments:
+        return ""
+    return " [attached: " + ", ".join(a["name"] for a in attachments) + "]"
+
+
+def _gemini_user_parts(types, user_input: str, attachments: list[dict] | None) -> list:
+    """
+    Build the parts of the user's turn: attached file bytes first, then the text.
+
+    Files lead deliberately. The instruction that accompanies them is nearly always
+    *about* them ("what is this?", "read this and tell me the date"), and a question
+    placed after the thing it refers to needs no antecedent resolving.
+
+    Attachments ride in the per-turn content, never in the cached content — the
+    Vertex cache is keyed on the system prompt and tool schemas, so a file here
+    cannot disturb it (see _get_or_create_vertex_cache).
+    """
+    parts = [
+        types.Part.from_bytes(data=data, mime_type=mime)
+        for data, mime in attachments_mod.load_parts(attachments or [])
+    ]
+    parts.append(types.Part(text=user_input))
+    return parts
+
+
 def _run_gemini_native_loop(client, model_name: str,
                              system_prompt: str, user_input: str,
                              tool_schemas: list[dict], tool_handlers: dict,
                              history: list[dict] | None = None,
                              max_iterations: int = 8,
-                             cached_content: str | None = None) -> str:
+                             cached_content: str | None = None,
+                             attachments: list[dict] | None = None) -> str:
     """
     Agentic loop using the google-genai native SDK.
 
@@ -2791,7 +2823,7 @@ def _run_gemini_native_loop(client, model_name: str,
         for msg in history:
             role = "user" if msg["role"] == "user" else "model"
             contents.append(types.Content(role=role, parts=[types.Part(text=msg["content"])]))
-    contents.append(types.Content(role="user", parts=[types.Part(text=user_input)]))
+    contents.append(types.Content(role="user", parts=_gemini_user_parts(types, user_input, attachments)))
 
     cumulative_input_tokens = 0
     result = ""
@@ -2896,7 +2928,8 @@ def _run_gemini_native_stream(client, model_name: str,
                               tool_schemas: list[dict], tool_handlers: dict,
                               history: list[dict] | None = None,
                               max_iterations: int = 8,
-                              cached_content: str | None = None) -> Iterator[str]:
+                              cached_content: str | None = None,
+                              attachments: list[dict] | None = None) -> Iterator[str]:
     """
     Streaming sibling of _run_gemini_native_loop — Option A of the 2026-08-18 caching fix.
 
@@ -2945,7 +2978,7 @@ def _run_gemini_native_stream(client, model_name: str,
         for msg in history:
             role = "user" if msg["role"] == "user" else "model"
             contents.append(types.Content(role=role, parts=[types.Part(text=msg["content"])]))
-    contents.append(types.Content(role="user", parts=[types.Part(text=user_input)]))
+    contents.append(types.Content(role="user", parts=_gemini_user_parts(types, user_input, attachments)))
 
     cumulative_input_tokens = 0
     result = ""
@@ -3054,12 +3087,19 @@ def _run_gemini_native_stream(client, model_name: str,
 def run_session_gemini_cached_stream(system_prompt: str, user_input: str,
                                      tool_schemas: list[dict], tool_handlers: dict,
                                      model: str | None = None,
-                                     history: list[dict] | None = None) -> Iterator[str]:
+                                     history: list[dict] | None = None,
+                                     attachments: list[dict] | None = None) -> Iterator[str]:
     """
     Streaming entry point for the cached Vertex path — mirrors run_session_gemini_cached.
 
     Falls back to the uncached OpenAI-compat stream when not on Vertex, when the native
     client is unavailable, or when the native stream fails **before yielding anything**.
+
+    **A fallback loses the attached files, and that is the intended degradation.** The
+    compat path takes text only, but the description of the attachments is part of the
+    text (core/attachments.describe_for_prompt), so the model knows files were sent and
+    can say it could not open them — which beats both a crash and a confident answer
+    about a picture nothing looked at.
 
     **The fallback is deliberately not attempted once a chunk has been emitted.** A
     replay after partial delivery would repeat text the user has already seen and re-run
@@ -3090,6 +3130,7 @@ def run_session_gemini_cached_stream(system_prompt: str, user_input: str,
             client, model_name, system_prompt, user_input,
             tool_schemas, tool_handlers,
             history=history, cached_content=cached_content_name,
+            attachments=attachments,
         ):
             emitted = True
             yield chunk
@@ -3549,13 +3590,19 @@ def _run_single_agent(agent_name: str, user_input: str,
                       model_override: str | None = None,
                       complexity: str | None = None,
                       history: list[dict] | None = None,
-                      bare: bool = False) -> str:
+                      bare: bool = False,
+                      attachments: list[dict] | None = None) -> str:
     """
     Run one agent pass and return its raw output (no filter applied).
     Used internally by run_session and run_pipeline_session.
 
     bare=True: load only the agent instruction file — no constitution, no personal
     config, no recent logs. Used for token-pressure diagnostics and research_agent.
+
+    attachments: files the user sent with this message, passed to the model as
+    inline parts. Only the cached Vertex path carries them — every other provider
+    here is text-only, and the accompanying description in the input text is what
+    tells those models a file existed.
     """
     from core.router import get_allowed_tools
     base_url_override = None
@@ -3642,7 +3689,8 @@ def _run_single_agent(agent_name: str, user_input: str,
                                                      model=model_override)
             elif agent_name in (_HEAD_LAYER_AGENTS | _ROUTING_LAYER_AGENTS):
                 result = run_session_gemini_cached(system_prompt, augmented_input, tool_schemas,
-                                                   tool_handlers, model=model_override, history=history)
+                                                   tool_handlers, model=model_override, history=history,
+                                                   attachments=attachments)
             else:
                 result = run_session_gemini(system_prompt, augmented_input, tool_schemas, tool_handlers,
                                             model=model_override, history=history)
@@ -4100,7 +4148,8 @@ def run_pipeline_session(user_input: str,
                          provider: str | None = None,
                          history: list[dict] | None = None,
                          received_at: datetime | None = None,
-                         is_proactive: bool = False) -> str:
+                         is_proactive: bool = False,
+                         attachments: list[dict] | None = None) -> str:
     """
     Run the two-pass Coordinator → Synthesizer pipeline.
 
@@ -4132,15 +4181,19 @@ def run_pipeline_session(user_input: str,
 
         # Pre-load Pattern Miner insights (the one context source not in the system prompt).
         coord_context = _load_coordinator_context(persona)
+        # Kept identical to the streaming twin below — a feature wired into only one
+        # of the two is live in tests and dead in production, or the reverse.
+        attach_note = attachments_mod.describe_for_prompt(attachments or [])
         coord_input = (
-            f"{proactive_prefix}{receipt_line}{user_input}\n\n---\n\n[Pre-loaded context]\n{coord_context}"
-            if coord_context else f"{proactive_prefix}{receipt_line}{user_input}"
+            f"{proactive_prefix}{receipt_line}{user_input}{attach_note}\n\n---\n\n[Pre-loaded context]\n{coord_context}"
+            if coord_context else f"{proactive_prefix}{receipt_line}{user_input}{attach_note}"
         )
 
         # Pass 1: Coordinator — single-pass routing directive assembly
         _trace("[PIPELINE] coordinator  starting")
         coord_output = _run_single_agent(
-            "coordinator", coord_input, persona=persona, provider=provider
+            "coordinator", coord_input, persona=persona, provider=provider,
+            attachments=attachments,
         )
         _trace(f"[PIPELINE] coordinator  done  ({len(coord_output)} chars)")
         # Gated behind AI_TRACE (the existing debug flag) rather than always-on:
@@ -4176,7 +4229,7 @@ def run_pipeline_session(user_input: str,
         # present: see _action_block().
         know_text = _knowledge_block(knowledge)
         synthesizer_input = (
-            f"{proactive_prefix}{receipt_line}{synth_label}:\n{user_input}\n\n"
+            f"{proactive_prefix}{receipt_line}{synth_label}:\n{user_input}{attach_note}\n\n"
             f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"
             + (f"\n\n{know_text}" if know_text else "")
             + (f"\n\nSPECIALIST OUTPUTS:\n{spec_text}" if spec_text else "")
@@ -4184,9 +4237,11 @@ def run_pipeline_session(user_input: str,
         )
         _trace("[PIPELINE] synthesizer  starting")
         recent_history = list(history[-10:]) if history else None
+        # Files go to the Synthesizer as well as the Coordinator — see the streaming
+        # twin for why a routing package is not a substitute for the picture.
         synth_result = _run_single_agent(
             "synthesizer", synthesizer_input, persona=persona, provider=provider,
-            history=recent_history,
+            history=recent_history, attachments=attachments,
         )
         _trace(f"[PIPELINE] synthesizer  done  ({len(synth_result)} chars)")
         # Strip the internal [CONTEXT] block before the response leaves the
@@ -4205,7 +4260,8 @@ def run_pipeline_session(user_input: str,
         filtered = filter_output(visible, "synthesizer",
                                  user_text=None if is_proactive else user_input)
         if history is not None:
-            history.append({"role": "user", "content": user_input})
+            history.append({"role": "user",
+                            "content": user_input + _history_attachment_note(attachments)})
             history.append({"role": "assistant", "content": filtered})
             del history[:-10]
     except Exception:
@@ -4243,6 +4299,7 @@ def run_pipeline_session_stream(
     history: list[dict] | None = None,
     is_proactive: bool = False,
     received_at: datetime | None = None,
+    attachments: list[dict] | None = None,
 ) -> Iterator[str]:
     """
     Streaming variant of run_pipeline_session().
@@ -4256,6 +4313,7 @@ def run_pipeline_session_stream(
         yield from _run_pipeline_session_stream_inner(
             user_input, persona=bound, provider=provider, history=history,
             is_proactive=is_proactive, received_at=received_at,
+            attachments=attachments,
         )
 
 
@@ -4266,6 +4324,7 @@ def _run_pipeline_session_stream_inner(
     history: list[dict] | None = None,
     is_proactive: bool = False,
     received_at: datetime | None = None,
+    attachments: list[dict] | None = None,
 ) -> Iterator[str]:
     """
     Pass 1 (Coordinator): runs blocking, identical to run_pipeline_session().
@@ -4298,11 +4357,15 @@ def _run_pipeline_session_stream_inner(
     _trace("[PIPELINE] coordinator  starting")
     coord_context = _load_coordinator_context(persona)
     proactive_prefix, synth_label = _frame_proactive(user_input, is_proactive)
+    # Names the files and states that their contents are data, never instructions —
+    # the <untrusted_content> boundary applied to bytes, which cannot carry tags.
+    attach_note = attachments_mod.describe_for_prompt(attachments or [])
     coord_input = (
-        f"{proactive_prefix}{receipt_line}{user_input}\n\n---\n\n[Pre-loaded context]\n{coord_context}"
-        if coord_context else f"{proactive_prefix}{receipt_line}{user_input}"
+        f"{proactive_prefix}{receipt_line}{user_input}{attach_note}\n\n---\n\n[Pre-loaded context]\n{coord_context}"
+        if coord_context else f"{proactive_prefix}{receipt_line}{user_input}{attach_note}"
     )
-    coord_output = _run_single_agent("coordinator", coord_input, persona=persona, provider=provider)
+    coord_output = _run_single_agent("coordinator", coord_input, persona=persona, provider=provider,
+                                     attachments=attachments)
     _trace(f"[PIPELINE] coordinator  done  ({len(coord_output)} chars) → dispatching specialists")
     _handle_user_correction(coord_output)
     # Knowledge fetch mirrors run_pipeline_session() exactly. THIS IS THE PATH THAT MATTERS:
@@ -4323,7 +4386,7 @@ def _run_pipeline_session_stream_inner(
     # Build Synthesizer input — ACTIONS block last and unconditional, as above.
     know_text = _knowledge_block(knowledge)
     synthesizer_input = (
-        f"{proactive_prefix}{receipt_line}{synth_label}:\n{user_input}\n\n"
+        f"{proactive_prefix}{receipt_line}{synth_label}:\n{user_input}{attach_note}\n\n"
         f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"
         + (f"\n\n{know_text}" if know_text else "")
         + (f"\n\nSPECIALIST OUTPUTS:\n{spec_text}" if spec_text else "")
@@ -4391,9 +4454,16 @@ def _run_pipeline_session_stream_inner(
         # the Synthesizer generates is thinking (18 real turns). The dead air Mike
         # reported is the thinking budget; this only lets the answer arrive progressively
         # once it starts, which is what makes sentence-chunked TTS possible.
+        #
+        # The Synthesizer gets the files too, not only the Coordinator's package.
+        # The Coordinator is a router: its output is a routing decision, not a
+        # transcription, so "what breed is this dog" would reach the writer of the
+        # reply as prose about a dog it never saw. A second pass over an image costs
+        # a few hundred tokens against a turn that costs cents, and every visual
+        # follow-up ("the one on the left") depends on it.
         gen = run_session_gemini_cached_stream(
             system_prompt, augmented_input, tool_schemas, tool_handlers,
-            model=synth_model, history=recent_history,
+            model=synth_model, history=recent_history, attachments=attachments,
         )
     elif synth_provider == "openai":
         api_key = os.environ.get("OPENAI_API_KEY", "")
@@ -4487,7 +4557,11 @@ def _run_pipeline_session_stream_inner(
     filtered = filter_output(visible, "synthesizer",
                              user_text=None if is_proactive else user_input)
     if history is not None:
-        history.append({"role": "user", "content": user_input})
+        # History is text, so the file itself does not survive into later turns —
+        # only the note that one was sent. A follow-up question about the picture
+        # therefore needs the picture attached again; recording the names at least
+        # stops the model contradicting a conversation that plainly had files in it.
+        history.append({"role": "user", "content": user_input + _history_attachment_note(attachments)})
         history.append({"role": "assistant", "content": filtered if filtered == visible else ""})
         del history[:-10]
     if filtered != visible:

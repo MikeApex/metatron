@@ -19,6 +19,7 @@ Note Android Chrome blocks the mic on plain HTTP — see the cert hint printed a
 
 import argparse
 import asyncio
+import json
 import logging
 import os
 import sys
@@ -41,6 +42,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from core import attachments as attachments_mod
 from core import auth
 from core.orchestrator import run_pipeline_session_stream, run_session
 from core.persona import persona_data_dir
@@ -331,6 +333,28 @@ async def _init_db() -> None:
             await db.execute("ALTER TABLE exchanges ADD COLUMN proactive INTEGER DEFAULT 0")
         except Exception:
             pass  # column already present
+        # JSON metadata for files the user attached to this turn, so history and
+        # catch-up can redraw their chips without opening the files.
+        try:
+            await db.execute("ALTER TABLE exchanges ADD COLUMN attachments TEXT")
+        except Exception:
+            pass  # column already present
+
+        # The index of stored files. The JSON sidecar written beside each file is the
+        # human-readable record; this is what makes an id lookup O(1) at send time and
+        # on download, instead of a walk over every dated directory.
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS attachments (
+                id          TEXT PRIMARY KEY,
+                persona     TEXT NOT NULL,
+                path        TEXT NOT NULL,
+                mime        TEXT NOT NULL,
+                name        TEXT NOT NULL,
+                size        INTEGER NOT NULL,
+                ts          TEXT NOT NULL,
+                exchange_id TEXT
+            )
+        """)
         await db.commit()
 
 
@@ -350,18 +374,29 @@ async def _load_history_from_db(persona: str) -> list[dict]:
     return pairs
 
 
+def _row_with_attachments(row) -> dict:
+    """Decode an exchange row's attachment JSON into the list the client expects."""
+    out = dict(row)
+    raw = out.pop("attachments", None)
+    try:
+        out["attachments"] = json.loads(raw) if raw else []
+    except (TypeError, ValueError):
+        out["attachments"] = []
+    return out
+
+
 async def _get_recent_exchanges(persona: str, limit: int = 20) -> list[dict]:
     """Return last `limit` exchanges as dicts for WS history message."""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
-            "SELECT id, exchange_id, user, assistant, ts, "
+            "SELECT id, exchange_id, user, assistant, ts, attachments, "
             "COALESCE(proactive,0) AS proactive FROM exchanges "
             "WHERE persona=? ORDER BY id DESC LIMIT ?",
             (persona, limit),
         ) as cursor:
             rows = await cursor.fetchall()
-    return [dict(r) for r in reversed(rows)]
+    return [_row_with_attachments(r) for r in reversed(rows)]
 
 
 async def _catchup_since(persona: str, since_id: int) -> list[dict]:
@@ -369,28 +404,108 @@ async def _catchup_since(persona: str, since_id: int) -> list[dict]:
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
-            "SELECT id, exchange_id, user, assistant, ts, "
+            "SELECT id, exchange_id, user, assistant, ts, attachments, "
             "COALESCE(proactive,0) AS proactive FROM exchanges "
             "WHERE persona=? AND id > ? ORDER BY id ASC",
             (persona, since_id),
         ) as cursor:
             rows = await cursor.fetchall()
-    return [dict(r) for r in rows]
+    return [_row_with_attachments(r) for r in rows]
 
 
 async def _save_exchange(persona: str, exchange_id: str, user: str, assistant: str,
-                         proactive: bool = False) -> int:
+                         proactive: bool = False,
+                         attachments: list[dict] | None = None) -> int:
     """Persist a completed exchange. Returns the new row id."""
     ts = datetime.utcnow().isoformat() + "Z"
+    meta = json.dumps(_public_attachments(attachments)) if attachments else None
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute(
             "INSERT OR IGNORE INTO exchanges "
-            "(exchange_id, persona, user, assistant, ts, proactive) "
-            "VALUES (?,?,?,?,?,?)",
-            (exchange_id, persona, user, assistant, ts, 1 if proactive else 0),
+            "(exchange_id, persona, user, assistant, ts, proactive, attachments) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (exchange_id, persona, user, assistant, ts, 1 if proactive else 0, meta),
         )
         await db.commit()
         return cursor.lastrowid or 0
+
+
+# ---------------------------------------------------------------------------
+# Attachments — user-supplied photos and documents
+# ---------------------------------------------------------------------------
+
+def _public_attachments(records: list[dict] | None) -> list[dict]:
+    """
+    Strip a stored record down to what a client may see.
+
+    The on-disk path never crosses the wire. Downloads resolve the id against the
+    database instead, so the filesystem layout is not something a client can name.
+    """
+    return [
+        {"id": r["id"], "mime": r["mime"], "name": r["name"], "size": r["size"]}
+        for r in (records or [])
+    ]
+
+
+async def _insert_attachment(record: dict) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO attachments "
+            "(id, persona, path, mime, name, size, ts, exchange_id) "
+            "VALUES (?,?,?,?,?,?,?,NULL)",
+            (record["id"], record["persona"], record["path"], record["mime"],
+             record["name"], record["size"], record["ts"]),
+        )
+        await db.commit()
+
+
+async def _get_attachment(attachment_id: str, persona: str) -> dict | None:
+    """
+    Look up one stored file, scoped to the persona that uploaded it.
+
+    Scoping is the access check: personas are separate users' universes, so an id
+    from one is simply not found in another rather than being refused informatively.
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM attachments WHERE id=? AND persona=?",
+            (attachment_id, persona),
+        ) as cursor:
+            row = await cursor.fetchone()
+    return dict(row) if row else None
+
+
+async def _resolve_attachments(ids: list, persona: str) -> list[dict]:
+    """
+    Turn the ids in a `send` frame into stored records, dropping anything unknown.
+
+    Silently dropping rather than erroring: an id that does not resolve is either a
+    stale client or someone guessing, and in both cases the useful behaviour is to
+    answer the text of the message rather than fail the whole turn.
+    """
+    resolved: list[dict] = []
+    for raw in list(ids)[:attachments_mod.MAX_FILES_PER_MESSAGE]:
+        if not isinstance(raw, str):
+            continue
+        record = await _get_attachment(raw, persona)
+        if record:
+            resolved.append(record)
+    # Count is not the binding limit — total bytes is, against the model's inline
+    # request ceiling. See core/attachments.cap_for_message().
+    return attachments_mod.cap_for_message(resolved)
+
+
+async def _bind_attachments(ids: list[str], exchange_id: str) -> None:
+    """Record which exchange each file was sent with, once that exchange exists."""
+    if not ids:
+        return
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.executemany(
+            "UPDATE attachments SET exchange_id=? WHERE id=?",
+            [(exchange_id, i) for i in ids],
+        )
+        await db.commit()
 
 
 @app.on_event("startup")
@@ -554,17 +669,19 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
     Query param: ?persona=X  (same values as the HTTP endpoints)
 
     Client → server message types:
-      {type: "send", exchange_id, input, provider}  — submit a prompt
+      {type: "send", exchange_id, input, provider, attachments}  — submit a prompt.
+          `attachments` is a list of ids returned by POST /upload; files themselves
+          never travel over this socket. Unknown ids are dropped, not rejected.
       {type: "catchup", since_id}                   — fetch missed exchanges on reconnect
 
     Server → client message types:
       {type: "history", messages, last_id}           — initial full history on connect (wipes and rebuilds)
       {type: "catchup", messages, last_id}           — delta since_id response (appends only — DB-0809-06)
-      {type: "stream_start", exchange_id, user}      — foreign exchange starting (not this device)
+      {type: "stream_start", exchange_id, user, attachments}  — foreign exchange starting (not this device)
       {type: "chunk", exchange_id, text}             — token from the LLM (own or foreign)
       {type: "done", exchange_id}                    — exchange complete; commit text
       {type: "retract", exchange_id}                 — output filtered; discard buffered text
-      {type: "message", id, exchange_id, user, assistant, ts}  — completed record for catch-up
+      {type: "message", id, exchange_id, user, assistant, ts, attachments}  — completed record for catch-up
       {type: "error", exchange_id, text?}            — error (text only on sender)
       {type: "ping"}                                 — 30-second heartbeat
     """
@@ -626,7 +743,12 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
             if msg_type == "send":
                 exchange_id = data.get("exchange_id") or str(uuid.uuid4())
                 user_input = data.get("input", "").strip()
-                if not user_input:
+                attached = await _resolve_attachments(
+                    data.get("attachments") or [], persona_key
+                )
+                # A message carrying files needs no words: "here, look at this" is a
+                # complete instruction when a photograph is attached to it.
+                if not user_input and not attached:
                     continue
                 provider = data.get("provider") or None
                 # Scheduler-initiated exchanges are flagged so traces record that
@@ -642,6 +764,7 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                     # Clients must not render the prompt of a proactive exchange as
                     # something the user said — Metatron opened this one.
                     "proactive": proactive,
+                    "attachments": _public_attachments(attached),
                 }, exclude=websocket)
 
                 loop = asyncio.get_running_loop()
@@ -655,7 +778,7 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                         for chunk in run_pipeline_session_stream(
                             user_input, persona=persona_orch, provider=provider,
                             history=history, is_proactive=proactive,
-                            received_at=received_at,
+                            received_at=received_at, attachments=attached,
                         ):
                             asyncio.run_coroutine_threadsafe(queue.put(chunk), loop).result()
                     except NotImplementedError:
@@ -725,7 +848,9 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                         await _send_to_sender(done_payload)
                         await manager.broadcast(persona_key, done_payload, exclude=websocket)
                         new_id = await _save_exchange(persona_key, exchange_id, user_input,
-                                                      full_response, proactive=proactive)
+                                                      full_response, proactive=proactive,
+                                                      attachments=attached)
+                        await _bind_attachments([a["id"] for a in attached], exchange_id)
                         _log_conversation(user_input, full_response, "coordinator", persona_orch,
                                           proactive=proactive)
                         await manager.broadcast(persona_key, {
@@ -735,6 +860,7 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                             "user": user_input,
                             "assistant": full_response,
                             "ts": datetime.utcnow().isoformat() + "Z",
+                            "attachments": _public_attachments(attached),
                         }, exclude=websocket)
                 finally:
                     with _active_lock:
@@ -1137,6 +1263,61 @@ async def transcribe_audio(audio: UploadFile = File(...), persona: str | None = 
         return await loop.run_in_executor(
             _STT_EXECUTOR, _transcribe_blocking, audio_bytes, persona
         )
+
+
+@app.post("/upload")
+async def upload_attachment(file: UploadFile = File(...), persona: str | None = None) -> dict:
+    """
+    Store one photo or document for the persona, ready to be sent with a message.
+
+    Upload and send are separate steps because the WebSocket carries JSON frames: a
+    10 MB file base64'd into a socket frame would block every other frame on that
+    connection, including the heartbeat the client uses to decide the socket is
+    alive. The file goes over HTTP; the send frame carries only its id.
+
+    The type is decided by sniffing the bytes, not by the Content-Type the browser
+    asserts — see core/attachments.validate().
+    """
+    persona_key = persona or DEFAULT_PERSONA or "__default__"
+    data = await file.read()
+
+    try:
+        mime = attachments_mod.validate(data)
+    except attachments_mod.AttachmentRejected as e:
+        raise HTTPException(status_code=415, detail=str(e))
+
+    loop = asyncio.get_running_loop()
+    record = await loop.run_in_executor(
+        None, attachments_mod.save, persona_key, data, file.filename or "", mime
+    )
+    await _insert_attachment(record)
+
+    return _public_attachments([record])[0]
+
+
+@app.get("/attachments/{attachment_id}")
+async def get_attachment(attachment_id: str, persona: str | None = None):
+    """
+    Serve a stored file back to the client that owns it.
+
+    The path comes from the database row, never from the URL, so there is no
+    traversal surface — an id either resolves to a row for this persona or 404s.
+    """
+    persona_key = persona or DEFAULT_PERSONA or "__default__"
+    record = await _get_attachment(attachment_id, persona_key)
+    if not record:
+        raise HTTPException(status_code=404, detail="No such attachment")
+
+    path = Path(record["path"])
+    if not path.exists():
+        raise HTTPException(status_code=410, detail="That file is no longer stored")
+
+    return FileResponse(
+        path,
+        media_type=record["mime"],
+        filename=record["name"],
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.get("/")

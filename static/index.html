@@ -92,6 +92,51 @@
       text-align: center;
     }
 
+    /* The waiting state, shown in the assistant bubble until the first chunk of a
+       reply arrives. It replaces a bare '▍' glyph, which rendered as a thin empty
+       box with what looked like a stuck cursor — indistinguishable from a hung app
+       across the tens of seconds a reply can take to start. Lives inside the normal
+       bubble at the normal font size, so nothing reflows when text replaces it. */
+    .working {
+      background: linear-gradient(90deg, #5f5f5f 0%, #5f5f5f 40%, #cfcfcf 50%, #5f5f5f 60%, #5f5f5f 100%);
+      background-size: 200% 100%;
+      animation: working-shimmer 2.2s linear infinite;
+      color: #8a8a8a;
+    }
+
+    /* The transparent fill is what makes the gradient visible as text, so it is only
+       applied where the clip is actually supported — without the guard, a browser
+       lacking background-clip:text would render invisible text, which is a worse
+       version of the bug being fixed. */
+    @supports ((-webkit-background-clip: text) or (background-clip: text)) {
+      .working {
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        color: transparent;
+      }
+    }
+
+    /* Animating a fixed-width reveal over '...' rather than animating `content`,
+       which is not reliably supported. */
+    .working::after {
+      content: '...';
+      display: inline-block;
+      width: 0;
+      overflow: hidden;
+      vertical-align: bottom;
+      animation: working-dots 1.4s steps(4, end) infinite;
+    }
+
+    @keyframes working-shimmer {
+      from { background-position: 100% 0; }
+      to   { background-position: -100% 0; }
+    }
+
+    @keyframes working-dots {
+      to { width: 1.1em; }
+    }
+
     .msg-meta {
       display: flex;
       align-items: center;
@@ -225,9 +270,9 @@
     #confirm-yes { background: #7a5c12; color: #fff; border-color: #7a5c12; }
     #confirm-yes:disabled { opacity: 0.5; cursor: not-allowed; }
 
-    /* Spoken-reply toggle. Sits next to the mic rather than in the hidden settings
-       row, because it is meant to be flipped mid-conversation. */
-    #voice-toggle {
+    /* Spoken-reply and alert toggles. They sit next to the mic rather than in the
+       hidden settings row, because both are meant to be flipped mid-conversation. */
+    #voice-toggle, #alert-toggle {
       width: 56px;
       height: 56px;
       flex: 0 0 auto;
@@ -239,11 +284,43 @@
       cursor: pointer;
       transition: background 0.15s, color 0.15s, border-color 0.15s;
     }
-    #voice-toggle.on {
+    #voice-toggle.on, #alert-toggle.on {
       background: #1e3a5f;
       border-color: #1e3a5f;
       color: #e8e8e8;
     }
+
+    /* Alert settings. Collapsed by default — the toggle button carries the state,
+       and this is opened only to change how alerts behave. */
+    #alert-settings {
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+      background: #141414;
+      border: 1px solid #262626;
+      border-radius: 12px;
+      padding: 12px 14px;
+    }
+    #alert-settings.shown { display: flex; }
+    .alert-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 13px;
+      color: #999;
+    }
+    .alert-row select { flex: 1; max-width: 62%; }
+    .alert-check {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .alert-check input { width: 16px; height: 16px; accent-color: #1e3a5f; }
+    #alert-note { font-size: 11px; color: #444; line-height: 1.4; }
 
     @keyframes pulse {
       0%, 100% { opacity: 1; }
@@ -254,6 +331,82 @@
       display: flex;
       flex-direction: column;
       gap: 8px;
+    }
+
+    #compose-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    #attach-btn {
+      flex: 0 0 auto;
+      width: 42px;
+      height: 42px;
+      border: 1px solid #333;
+      border-radius: 21px;
+      background: #1a1a1a;
+      color: #888;
+      font-size: 18px;
+      cursor: pointer;
+    }
+    #attach-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* Files chosen but not yet sent. Hidden entirely when empty so the composer
+       keeps its usual height. */
+    #attach-strip {
+      display: none;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    #attach-strip.shown { display: flex; }
+
+    .attach-chip {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 10px;
+      padding: 4px 8px;
+      font-size: 12px;
+      color: #aaa;
+      max-width: 100%;
+    }
+    .attach-chip.failed { border-color: #7f1d1d; color: #b98; }
+    .attach-chip img {
+      width: 26px;
+      height: 26px;
+      object-fit: cover;
+      border-radius: 5px;
+    }
+    .attach-chip .chip-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 140px;
+    }
+    .attach-chip .chip-x {
+      cursor: pointer;
+      color: #666;
+      font-size: 14px;
+      line-height: 1;
+      padding: 0 2px;
+    }
+    .attach-chip .chip-x:active { color: #aaa; }
+
+    /* Files already sent, shown inside the message bubble they went with. */
+    .msg-attachments {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .msg-attachments img {
+      max-width: 190px;
+      max-height: 190px;
+      border-radius: 10px;
+      display: block;
     }
 
     #text-field {
@@ -501,6 +654,24 @@
   <div id="controls">
     <button id="mic-btn">Tap to Speak</button>
     <button id="voice-toggle" title="Spoken replies on/off">🔇</button>
+    <button id="alert-toggle" title="Alerts when a message arrives">🔔</button>
+  </div>
+
+  <div id="alert-settings">
+    <div class="alert-row">
+      <label for="alert-scope">Alert me</label>
+      <select id="alert-scope">
+        <option value="always">On every reply</option>
+        <option value="hidden">Only when I'm away</option>
+        <option value="proactive">Only when Metatron starts</option>
+        <option value="off">Never</option>
+      </select>
+    </div>
+    <div class="alert-row">
+      <label class="alert-check"><input type="checkbox" id="alert-sound"> Sound</label>
+      <label class="alert-check"><input type="checkbox" id="alert-vibrate"> Vibrate</label>
+    </div>
+    <div id="alert-note"></div>
   </div>
   <div id="grant-wrap" style="text-align:center;display:none">
     <button id="grant-btn" style="background:#333;border:1px solid #555;border-radius:20px;color:#aaa;font-size:13px;padding:8px 20px;cursor:pointer">Grant mic permission</button>
@@ -510,8 +681,16 @@
   </div>
 
   <div id="text-input">
-    <input id="text-field" type="text" placeholder="Or type here..." autocomplete="off">
+    <div id="attach-strip"></div>
+    <div id="compose-row">
+      <button id="attach-btn" title="Attach a photo or document">📎</button>
+      <input id="text-field" type="text" placeholder="Or type here..." autocomplete="off">
+    </div>
     <button id="send-btn">Send</button>
+    <!-- No `capture` attribute: with it, Android opens the camera and nothing else.
+         The plain chooser offers the camera alongside the gallery and Files. -->
+    <input id="attach-input" type="file" multiple style="display:none"
+           accept="image/png,image/jpeg,image/webp,image/heic,image/heif,application/pdf">
   </div>
 
   <div id="voice-unsupported">Voice not supported in this browser. Use the text input.</div>
@@ -522,6 +701,19 @@
   // In the browser PWA the host is the Tailscale hostname, not localhost.
   // SERVER points to the real backend when running in the Capacitor app.
   const SERVER = window.location.hostname === 'localhost' ? 'https://metatron-vm.tail0acc5d.ts.net:8001' : '';
+
+  // Shown in the assistant bubble while a reply is being worked on, rotating every
+  // few seconds. Edit freely — but keep them whimsical and empty of meaning: a word
+  // here must never name a model, a stage, a tool or a sub-agent. The user sees
+  // output, not process.
+  const WORKING_VERBS = [
+    'Pontificating', 'Ruminating', 'Finagling', 'Percolating', 'Noodling',
+    'Cogitating', 'Deliberating', 'Mulling', 'Rummaging', 'Untangling',
+    'Marinating', 'Wrangling', 'Conjuring', 'Perusing', 'Tinkering',
+    'Puzzling', 'Divining', 'Woolgathering', 'Confabulating', 'Pondering',
+    'Scheming', 'Gesticulating', 'Bamboozling', 'Harrumphing', 'Dithering',
+  ];
+  const WORKING_ROTATE_MS = 2500;
 
   // --- Persona / login ---
 
@@ -685,7 +877,7 @@
   // ts is optional and only known for messages replayed from the server
   // (history/catchup/message). Freshly typed or streaming bubbles have none
   // yet, so they stamp with the client's current time instead.
-  function addMessage(role, text, ts) {
+  function addMessage(role, text, ts, attachments) {
     if (role === 'system') {
       const div = document.createElement('div');
       div.className = 'message system';
@@ -701,6 +893,9 @@
     const bubble = document.createElement('div');
     bubble.className = `message ${role}`;
     bubble.textContent = text;
+    // Only ever on a user bubble, which is never streamed — an assistant bubble has
+    // its textContent overwritten on every chunk, which would strip child nodes.
+    if (attachments && attachments.length) renderMessageAttachments(bubble, attachments);
     row.appendChild(bubble);
 
     const meta = document.createElement('div');
@@ -727,6 +922,219 @@
 
     scrollToBottom();
     return bubble;
+  }
+
+  // --- Attachments ---
+  //
+  // Upload and send are separate steps: the file goes over HTTP to /upload, which
+  // returns an id, and only the id travels in the WebSocket `send` frame. Putting
+  // megabytes of base64 into a socket frame would stall every other frame on that
+  // connection, including the heartbeat the reconnect logic reads as liveness.
+  //
+  // The limits here are a courtesy copy of the server's — they exist to fail fast
+  // and say why, not to be trusted. core/attachments.py is what actually decides,
+  // and it sniffs the bytes rather than believing the browser's Content-Type.
+
+  const ATTACH_MAX_BYTES = 10 * 1024 * 1024;
+  const ATTACH_MAX_FILES = 4;
+
+  // {key, name, size, status: 'uploading' | 'ready' | 'failed', record, thumb}
+  let attachSlots = [];
+
+  function readyAttachments() {
+    return attachSlots.filter(s => s.status === 'ready').map(s => s.record);
+  }
+
+  function uploadsPending() {
+    return attachSlots.some(s => s.status === 'uploading');
+  }
+
+  function clearAttachments() {
+    for (const slot of attachSlots) {
+      if (slot.thumb) URL.revokeObjectURL(slot.thumb);
+    }
+    attachSlots = [];
+    renderAttachStrip();
+  }
+
+  function renderAttachStrip() {
+    const strip = document.getElementById('attach-strip');
+    strip.innerHTML = '';
+    strip.classList.toggle('shown', attachSlots.length > 0);
+
+    for (const slot of attachSlots) {
+      const chip = document.createElement('div');
+      chip.className = 'attach-chip' + (slot.status === 'failed' ? ' failed' : '');
+
+      if (slot.thumb) {
+        const img = document.createElement('img');
+        img.src = slot.thumb;      // the local File, so no round trip to see it
+        img.alt = '';
+        chip.appendChild(img);
+      }
+
+      const name = document.createElement('span');
+      name.className = 'chip-name';
+      name.textContent =
+        slot.status === 'uploading' ? `${slot.name} …`
+        : slot.status === 'failed' ? `${slot.name} — ${slot.error || 'failed'}`
+        : slot.name;
+      chip.appendChild(name);
+
+      const x = document.createElement('span');
+      x.className = 'chip-x';
+      x.textContent = '✕';
+      x.title = 'Remove';
+      x.addEventListener('click', () => {
+        if (slot.thumb) URL.revokeObjectURL(slot.thumb);
+        attachSlots = attachSlots.filter(s => s !== slot);
+        renderAttachStrip();
+      });
+      chip.appendChild(x);
+
+      strip.appendChild(chip);
+    }
+    document.getElementById('attach-btn').disabled = attachSlots.length >= ATTACH_MAX_FILES;
+  }
+
+  async function uploadOne(slot, file) {
+    const fd = new FormData();
+    fd.append('file', file, file.name || 'upload');
+    const url = '/upload' + (currentPersona ? '?persona=' + encodeURIComponent(currentPersona) : '');
+    try {
+      const res = await authFetch(url, { method: 'POST', body: fd });
+      if (!res.ok) {
+        let detail = 'could not be sent';
+        try { detail = (await res.json()).detail || detail; } catch {}
+        throw new Error(detail);
+      }
+      slot.record = await res.json();
+      slot.status = 'ready';
+    } catch (e) {
+      slot.status = 'failed';
+      slot.error = e.message || 'could not be sent';
+    }
+    renderAttachStrip();
+  }
+
+  function addFiles(fileList) {
+    for (const file of fileList) {
+      if (attachSlots.length >= ATTACH_MAX_FILES) {
+        setStatus(`Up to ${ATTACH_MAX_FILES} files at a time`, '#a44');
+        break;
+      }
+      if (file.size > ATTACH_MAX_BYTES) {
+        setStatus(`${file.name} is larger than 10 MB`, '#a44');
+        continue;
+      }
+      const slot = {
+        key: `${Date.now()}-${Math.random()}`,
+        name: file.name || 'file',
+        size: file.size,
+        status: 'uploading',
+        thumb: file.type && file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
+      };
+      attachSlots.push(slot);
+      uploadOne(slot, file);
+    }
+    renderAttachStrip();
+  }
+
+  document.getElementById('attach-btn').addEventListener('click', () => {
+    document.getElementById('attach-input').click();
+  });
+
+  document.getElementById('attach-input').addEventListener('change', (e) => {
+    addFiles(e.target.files);
+    // Cleared so that choosing the same file twice in a row still fires `change`.
+    e.target.value = '';
+  });
+
+  // A stored file cannot be shown with a bare <img src>: an image request carries no
+  // Authorization header, and the Android app is cross-origin so it has no cookie
+  // either — the same constraint that makes the WebSocket authenticate in-band.
+  // Fetch it as a blob instead and hand the tag an object URL.
+  const attachmentUrls = new Map();   // attachment id → object URL
+
+  async function attachmentUrl(id) {
+    if (attachmentUrls.has(id)) return attachmentUrls.get(id);
+    const url = '/attachments/' + encodeURIComponent(id)
+              + (currentPersona ? '?persona=' + encodeURIComponent(currentPersona) : '');
+    const res = await authFetch(url);
+    if (!res.ok) throw new Error('unavailable');
+    const objectUrl = URL.createObjectURL(await res.blob());
+    attachmentUrls.set(id, objectUrl);
+    return objectUrl;
+  }
+
+  function fileChip(a) {
+    const chip = document.createElement('span');
+    chip.className = 'attach-chip';
+    chip.textContent = (a.mime === 'application/pdf' ? '📄 ' : '📎 ') + (a.name || 'file');
+    return chip;
+  }
+
+  function renderMessageAttachments(bubble, attachments) {
+    const wrap = document.createElement('div');
+    wrap.className = 'msg-attachments';
+    for (const a of attachments) {
+      if (a.mime && a.mime.startsWith('image/')) {
+        const img = document.createElement('img');
+        img.alt = a.name || '';
+        wrap.appendChild(img);
+        attachmentUrl(a.id)
+          .then(u => { img.src = u; scrollToBottom(); })
+          // A file that has been deleted underneath the conversation degrades to its
+          // name rather than a broken-image icon.
+          .catch(() => img.replaceWith(fileChip(a)));
+      } else {
+        wrap.appendChild(fileChip(a));
+      }
+    }
+    bubble.appendChild(wrap);
+  }
+
+  // --- Waiting indicator ---
+  //
+  // A reply can take tens of seconds to begin — the wait is dominated by thinking,
+  // not by delivery, so streaming does not shorten it (ROADMAP § 5A). Until this,
+  // the bubble held a single '▍' with no animation, which read as a stuck cursor
+  // in an empty box rather than as work in progress.
+  //
+  // The rotation timer is stored on the element rather than in a module-level map,
+  // so a bubble that is discarded (renderHistory wiping the conversation, a
+  // superseded socket's foreign bubble) cannot leave a timer writing to a node
+  // that is no longer in the document.
+
+  function startWorking(bubble) {
+    if (!bubble) return;
+    stopWorking(bubble);
+
+    const span = document.createElement('span');
+    span.className = 'working';
+
+    let last = -1;
+    const pick = () => {
+      // Never draw the same word twice running: a "rotation" that changes nothing
+      // is indistinguishable from a frozen one, which is the bug being fixed.
+      let i = Math.floor(Math.random() * WORKING_VERBS.length);
+      if (i === last) i = (i + 1) % WORKING_VERBS.length;
+      last = i;
+      span.textContent = WORKING_VERBS[i];
+    };
+
+    pick();
+    bubble.textContent = '';
+    bubble.appendChild(span);
+    bubble._workingTimer = setInterval(pick, WORKING_ROTATE_MS);
+  }
+
+  // Must be called before any code that overwrites the bubble's text: assigning
+  // textContent destroys the span but leaves the interval running against it.
+  function stopWorking(bubble) {
+    if (!bubble || !bubble._workingTimer) return;
+    clearInterval(bubble._workingTimer);
+    bubble._workingTimer = null;
   }
 
   // Auto-scroll unless the user has deliberately scrolled up to read. Yanking
@@ -905,6 +1313,7 @@
       // either it is still active, or nothing has replaced it yet (the window in
       // which ensureConnected has detached it and is waiting for this very event).
       if ((current || ws === null) && ownBubble) {
+        stopWorking(ownBubble);
         ownBubble.textContent = ownAccumulated || '[Connection lost]';
         ownBubble = null; ownAccumulated = '';
         setLoading(false);
@@ -962,9 +1371,12 @@
         // Another device started sending — render their user bubble + empty assistant bubble.
         // A proactive exchange has no user turn: Metatron opened it.
         if (!shownIds.has(msg.exchange_id)) {
-          if (!msg.proactive) addMessage('user', msg.user);
-          const bubble = addMessage('assistant', '▍');
-          foreignBubbles.set(msg.exchange_id, { bubble, accumulated: '' });
+          if (!msg.proactive) addMessage('user', msg.user, null, msg.attachments);
+          const bubble = addMessage('assistant', '');
+          startWorking(bubble);
+          // proactive is carried so the alert at 'done' knows whether Metatron
+          // opened this exchange — 'done' itself does not say.
+          foreignBubbles.set(msg.exchange_id, { bubble, accumulated: '', proactive: !!msg.proactive });
         }
         break;
       }
@@ -973,6 +1385,7 @@
         if (shownIds.has(msg.exchange_id)) {
           // Own exchange: update streaming bubble
           if (ownBubble) {
+            stopWorking(ownBubble);
             ownAccumulated += msg.text;
             ownBubble.textContent = ownAccumulated + '▍';
             scrollToBottom();
@@ -981,6 +1394,7 @@
           // Foreign exchange: update their bubble
           const fb = foreignBubbles.get(msg.exchange_id);
           if (fb) {
+            stopWorking(fb.bubble);
             fb.accumulated += msg.text;
             fb.bubble.textContent = fb.accumulated + '▍';
             scrollToBottom();
@@ -993,17 +1407,21 @@
         if (shownIds.has(msg.exchange_id)) {
           // Own exchange complete — finalize and speak
           if (ownBubble) {
+            stopWorking(ownBubble);
             ownBubble.textContent = ownAccumulated;
             speakResponse(ownAccumulated);
             ownBubble = null; ownAccumulated = '';
           }
           setLoading(false);
+          maybeAlert(false);
         } else {
           // Foreign exchange complete — finalize (no TTS)
           const fb = foreignBubbles.get(msg.exchange_id);
           if (fb) {
+            stopWorking(fb.bubble);
             fb.bubble.textContent = fb.accumulated;
             foreignBubbles.delete(msg.exchange_id);
+            maybeAlert(fb.proactive);
           }
           shownIds.add(msg.exchange_id);
         }
@@ -1013,21 +1431,24 @@
       case 'retract': {
         if (shownIds.has(msg.exchange_id)) {
           if (ownBubble) {
+            stopWorking(ownBubble);
             ownBubble.textContent = "I can't help with that right now.";
             ownBubble = null; ownAccumulated = '';
           }
           setLoading(false);
         } else {
           const fb = foreignBubbles.get(msg.exchange_id);
-          if (fb) { fb.bubble.textContent = '...'; foreignBubbles.delete(msg.exchange_id); }
+          if (fb) { stopWorking(fb.bubble); fb.bubble.textContent = '...'; foreignBubbles.delete(msg.exchange_id); }
           shownIds.add(msg.exchange_id);
         }
         break;
       }
 
       case 'message': {
-        // A completed exchange broadcast live from another device.
-        applyCatchupRow(msg);
+        // A completed exchange broadcast live from another device. Live, so it may
+        // alert — unlike the catchup rows below, which are old messages replayed
+        // after a reconnect and would fire a burst of pings for things already read.
+        applyCatchupRow(msg, true);
         break;
       }
 
@@ -1042,13 +1463,14 @@
       case 'error': {
         if (shownIds.has(msg.exchange_id)) {
           if (ownBubble) {
+            stopWorking(ownBubble);
             ownBubble.textContent = 'Error: ' + (msg.text || 'unknown error');
             ownBubble = null; ownAccumulated = '';
           }
           setLoading(false);
         } else {
           const fb = foreignBubbles.get(msg.exchange_id);
-          if (fb) { fb.bubble.textContent = '[Error]'; foreignBubbles.delete(msg.exchange_id); }
+          if (fb) { stopWorking(fb.bubble); fb.bubble.textContent = '[Error]'; foreignBubbles.delete(msg.exchange_id); }
           shownIds.add(msg.exchange_id);
         }
         break;
@@ -1060,11 +1482,15 @@
   // exchange if not already shown, and advance lastSeenId. Never clears the
   // conversation; that is renderHistory's job alone, for the one case (a fresh
   // connection's initial load) where wiping and rebuilding is actually correct.
-  function applyCatchupRow(row) {
+  function applyCatchupRow(row, live = false) {
     if (!shownIds.has(row.exchange_id)) {
-      if (!row.proactive) addMessage('user', row.user, row.ts);
+      if (!row.proactive) addMessage('user', row.user, row.ts, row.attachments);
       addMessage('assistant', row.assistant, row.ts);
       shownIds.add(row.exchange_id);
+      // Only when something was actually rendered: an exchange already finalized
+      // by its own 'done' frame has alerted once already, and the 'message'
+      // broadcast that follows it must not alert a second time.
+      if (live) maybeAlert(!!row.proactive);
     }
     if (row.id > lastSeenId) lastSeenId = row.id;
   }
@@ -1072,12 +1498,17 @@
   function renderHistory(messages) {
     // Don't wipe the conversation if an exchange is actively streaming on this device
     if (ownBubble) return;
+    // Any foreign bubble is about to be detached by the wipe below. Stop its
+    // rotation first, or the timer keeps running against an orphaned node for the
+    // life of the page.
+    for (const fb of foreignBubbles.values()) stopWorking(fb.bubble);
+    foreignBubbles.clear();
     conversation.innerHTML = '<div class="message system">Session started. Tap the mic or type to begin.</div>';
     for (const msg of messages) {
       // Proactive exchanges were opened by Metatron, not the user. Their prompt
       // is an internal instruction to the pipeline and must never be shown as
       // something the user said.
-      if (!msg.proactive) addMessage('user', msg.user, msg.ts);
+      if (!msg.proactive) addMessage('user', msg.user, msg.ts, msg.attachments);
       addMessage('assistant', msg.assistant, msg.ts);
       shownIds.add(msg.exchange_id);
       if (msg.id > lastSeenId) lastSeenId = msg.id;
@@ -1097,6 +1528,13 @@
     if (agent === 'coordinator') {
       sendViaWebSocket(input, provider);
     } else {
+      // The single-agent debug path posts to /session, which takes no files. Say so
+      // rather than dropping them silently — this branch is only reachable from the
+      // hidden developer settings, but a silently discarded attachment would look
+      // like an upload failure.
+      if (readyAttachments().length) {
+        addMessage('system', 'Files are only sent on the normal path — clear the agent override to attach them.');
+      }
       addMessage('user', input);
       setLoading(true);
       sendBlocking(input, agent, provider);
@@ -1112,8 +1550,14 @@
     evictOldest(shownIds, 100);
     shownIds.add(exchangeId);
 
-    addMessage('user', input);
-    ownBubble = addMessage('assistant', '▍');
+    // Taken before the strip is cleared, and drawn into this device's own bubble
+    // from the same list the server is told about.
+    const sent = readyAttachments();
+
+    addMessage('user', input, null, sent);
+    clearAttachments();
+    ownBubble = addMessage('assistant', '');
+    startWorking(ownBubble);
     ownAccumulated = '';
     setLoading(true);
 
@@ -1123,6 +1567,7 @@
       input,
       agent: 'coordinator',
       provider: provider || null,
+      attachments: sent.map(a => a.id),
     }));
   }
 
@@ -1367,6 +1812,111 @@
 
   renderVoiceToggle();
 
+  // --- New-message alerts ---
+  //
+  // A reply lands tens of seconds after it is asked for — the wait is dominated by
+  // thinking, not delivery — so the phone is usually back in a pocket by the time
+  // it arrives. Three settings rather than one: when to alert, and whether each of
+  // sound and vibration is used, because "tell me about everything" and "tell me
+  // only when I'm away" are different needs, and on a phone in a meeting the right
+  // answer is vibration without sound.
+
+  const ALERT_SCOPES = ['always', 'hidden', 'proactive', 'off'];
+
+  let alertScope   = localStorage.getItem('metatron_alert_scope') || 'always';
+  let alertSound   = localStorage.getItem('metatron_alert_sound')   !== 'off';   // default on
+  let alertVibrate = localStorage.getItem('metatron_alert_vibrate') !== 'off';   // default on
+  if (!ALERT_SCOPES.includes(alertScope)) alertScope = 'always';
+
+  // Built from an oscillator rather than a bundled sound file: no asset to ship in
+  // the APK, no fetch, no decode, and it plays through the same AudioContext the
+  // spoken-reply path already unlocks on the first tap. It cannot play before that
+  // first tap — which is the reason vibration is a separate toggle rather than a
+  // detail of this one.
+  function playPing() {
+    if (!audioCtxShared) return;
+    try {
+      const ctx = audioCtxShared;
+      ctx.resume();
+      const now = ctx.currentTime;
+
+      const gain = ctx.createGain();
+      gain.connect(ctx.destination);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.16, now + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.32);
+
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, now);            // A5
+      osc.frequency.setValueAtTime(1174.66, now + 0.09); // D6
+      osc.connect(gain);
+      osc.start(now);
+      osc.stop(now + 0.34);
+    } catch {}
+  }
+
+  function vibrateAlert() {
+    // Absent on desktop and in some WebViews, where it is a silent no-op — which is
+    // the other half of why sound and vibration are toggled independently.
+    try { if (navigator.vibrate) navigator.vibrate([40, 60, 40]); } catch {}
+  }
+
+  // isProactive: true when Metatron opened the exchange rather than answering the user.
+  function maybeAlert(isProactive) {
+    if (alertScope === 'off') return;
+    if (alertScope === 'hidden' && document.visibilityState === 'visible') return;
+    if (alertScope === 'proactive' && !isProactive) return;
+    // A beep into an open mic is the same failure spoken replies already guard
+    // against — it would be recorded as if the user had said it.
+    if (alertSound && !isRecording && !micIntent) playPing();
+    if (alertVibrate) vibrateAlert();
+  }
+
+  function renderAlertControls() {
+    const btn = document.getElementById('alert-toggle');
+    const live = alertScope !== 'off' && (alertSound || alertVibrate);
+    btn.classList.toggle('on', live);
+    btn.textContent = live ? '🔔' : '🔕';
+    document.getElementById('alert-scope').value = alertScope;
+    document.getElementById('alert-sound').checked = alertSound;
+    document.getElementById('alert-vibrate').checked = alertVibrate;
+    document.getElementById('alert-note').textContent =
+      alertScope === 'hidden' ? 'Silent while this screen is in front of you.'
+      : alertScope === 'proactive' ? 'Silent for replies to your own messages.'
+      : alertScope === 'off' ? 'No alerts.'
+      : 'Alerts on every message that arrives.';
+  }
+
+  document.getElementById('alert-toggle').addEventListener('click', () => {
+    document.getElementById('alert-settings').classList.toggle('shown');
+  });
+
+  document.getElementById('alert-scope').addEventListener('change', (e) => {
+    alertScope = e.target.value;
+    localStorage.setItem('metatron_alert_scope', alertScope);
+    renderAlertControls();
+  });
+
+  // Changing a switch previews what it does. Otherwise the only way to find out
+  // whether the ping is audible on this device is to send a message and wait out
+  // the reply — and a setting that cannot be tested is one that gets left alone.
+  document.getElementById('alert-sound').addEventListener('change', (e) => {
+    alertSound = e.target.checked;
+    localStorage.setItem('metatron_alert_sound', alertSound ? 'on' : 'off');
+    if (alertSound) playPing();
+    renderAlertControls();
+  });
+
+  document.getElementById('alert-vibrate').addEventListener('change', (e) => {
+    alertVibrate = e.target.checked;
+    localStorage.setItem('metatron_alert_vibrate', alertVibrate ? 'on' : 'off');
+    if (alertVibrate) vibrateAlert();
+    renderAlertControls();
+  });
+
+  renderAlertControls();
+
   // Silence is checked at every point where playback could begin, not only on entry.
   //
   // The reported failure was a *delayed* reply talking over a recording, and the delay
@@ -1551,7 +2101,10 @@
 
   function submitText() {
     const text = textField.value.trim();
-    if (!text) return;
+    // A photograph with no words is a complete message — "look at this" is implied
+    // by the act of attaching it.
+    if (!text && !readyAttachments().length) return;
+    if (uploadsPending()) { setStatus('Still attaching…', '#888'); return; }
     textField.value = '';
     sendToServer(text);
   }
