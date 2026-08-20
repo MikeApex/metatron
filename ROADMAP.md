@@ -74,6 +74,47 @@ What is unchanged, and is not weakened by this note:
   deployment stops being single-user, since that condition is load-bearing here.
 - **Decontextualization requirements** for genuinely open-tier cloud work are untouched.
 
+> **CORRECTION 2026-08-20 — "verified ZDR" was never verified, and is not in force.**
+>
+> The amendment above and its clarification both rest on **verified** Vertex AI ZDR terms. That was
+> an assumption, carried unchecked from 2026-06-18 through every sensitive path cleared under it.
+> Checked directly on 2026-08-20: the project has **no organization parent**; the billing account is
+> a self-serve **"My Billing Account"** with no reseller or contract parent; there are **zero org
+> policies**; and there is **no record anywhere in this repo** of a ZDR or abuse-monitoring
+> exception being requested or granted. Vertex ZDR is not a default state — it requires an approved
+> abuse-monitoring exception — so on the evidence **it is not in force**.
+>
+> Of the three claims the amendment rests on, one holds cleanly:
+>
+> - **"No training use" — holds.** A standard contractual commitment for Vertex AI generative AI,
+>   applying by default without an exception.
+> - **"Prompts/responses cleared before logging" — does not hold.** This is precisely what the
+>   exception buys; the default is retention for abuse monitoring for a limited window. *(The exact
+>   window is not recorded here deliberately — no session has been able to check Google's current
+>   terms from this machine, and a number quoted from memory is how the original assumption got in.)*
+> - **"Contractual sequestration" — holds only weakly.** A dedicated project with no cross-customer
+>   model mingling, which is not what the phrase implies.
+>
+> **What this does and does not change.** It does **not** breach the 2026-06-10 ruling as written:
+> that ruling targets shared infrastructure *where data mingles with other users' inference
+> traffic*, which is not happening. It **does** mean the amendment's factual premise was half wrong,
+> and the amendment is what authorises the sensitive-tier default. The most exposed path is the one
+> the 2026-08-09 clarification named explicitly — **`tone_profiler`, which reads real correspondence
+> written by other people**, pre-cleared on the strength of this assumption.
+>
+> **What has not been decided.** Whether the sensitive-tier default continues on this corrected,
+> narrower basis while ZDR is pursued is **Mike's call, and is not recorded here.** What he directed
+> on 2026-08-20 is the two things this note reflects: correct the record, and make getting ZDR real
+> into active work — plan in `archive/handoffs/2026-08-20-zdr-verification-prompt.md`.
+>
+> **Do not write "verified ZDR" in this repo again until something records the verification.**
+>
+> Related, and weaker: the Vertex endpoint is `global`, which routes to whichever region has
+> capacity, so there is no data-residency guarantee either. Residency is the lesser control — Google
+> is US-incorporated, so US legal process reaches data it controls regardless of region — which is
+> why ZDR, not region-pinning, is the lever worth pulling. Gemini 3.x is not served from regional
+> endpoints anyway (`docs/INFRASTRUCTURE.md` § Vertex AI credentials).
+
 **The 2026-06-11 development-testing carve-out is SUPERSEDED (2026-07-28).** It had permitted
 persona data on any cloud model as "test data." After persona unification **nothing at runtime
 distinguishes a synthetic persona from a real one**, so a rule depending on that distinction
