@@ -2158,6 +2158,41 @@ def _thinking_tokens_gemini(usage_metadata) -> int:
     return int(getattr(usage_metadata, "thoughts_token_count", 0) or 0)
 
 
+_vertex_location_warned = False
+
+
+def _vertex_location() -> str:
+    """
+    Return the Vertex AI location, defaulting to "global".
+
+    The default is deliberately NOT `us-central1`, which is what all three call
+    sites defaulted to until 2026-08-20. Gemini 3.x is served only from the global
+    endpoint — `docs/INFRASTRUCTURE.md` § Vertex AI credentials records this as
+    "us-central1 does not work" — so the old default pointed an unset
+    GOOGLE_CLOUD_LOCATION at an endpoint that does not serve the models this project
+    runs, and would have failed at call time rather than at startup.
+
+    It never fired, because both hosts set the variable; it was a trap waiting for a
+    fresh checkout. Note the value is unrelated to the VM's own `us-central1-a` zone
+    and to the two Cloud Functions, which really are regional — the confusion between
+    those two layers is why this is a named helper and not an inline default.
+
+    Warns once when unset, because defaulting silently is how a wrong region would go
+    unnoticed a second time.
+    """
+    global _vertex_location_warned
+    location = os.environ.get("GOOGLE_CLOUD_LOCATION")
+    if location:
+        return location
+    if not _vertex_location_warned:
+        _vertex_location_warned = True
+        logger.warning(
+            "[vertex] GOOGLE_CLOUD_LOCATION unset — defaulting to 'global'. Set it in "
+            ".env: Gemini 3.x is not served from regional endpoints."
+        )
+    return "global"
+
+
 def _vertex_openai_base_url(project: str, location: str) -> str:
     """Return the Vertex AI OpenAI-compatible base URL."""
     if location == "global":
@@ -2181,7 +2216,7 @@ def _resolve_gemini_credentials(model: str | None = None) -> tuple[str, str, str
     OpenAI-compat when GOOGLE_CLOUD_PROJECT is set, else AI Studio's OpenAI-compat URL.
     """
     project = os.environ.get("GOOGLE_CLOUD_PROJECT")
-    location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+    location = _vertex_location()
     if project:
         api_key = _get_vertex_bearer_token()
         base_url = _vertex_openai_base_url(project, location)
@@ -2204,7 +2239,7 @@ def _get_vertex_native_client():
         project = os.environ.get("GOOGLE_CLOUD_PROJECT")
         if not project:
             return None
-        location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+        location = _vertex_location()
         _vertex_native_client = genai.Client(vertexai=True, project=project, location=location)
     return _vertex_native_client
 
@@ -2509,7 +2544,7 @@ def run_session_gemini_grounded(system_prompt: str, user_input: str,
     from google.genai import types
 
     project = os.environ.get("GOOGLE_CLOUD_PROJECT")
-    location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+    location = _vertex_location()
     if project:
         client = genai.Client(vertexai=True, project=project, location=location)
     else:
