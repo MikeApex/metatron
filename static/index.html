@@ -407,6 +407,49 @@
       max-height: 190px;
       border-radius: 10px;
       display: block;
+      cursor: zoom-in;
+    }
+    .attach-chip.saveable { cursor: pointer; }
+    .attach-chip.saveable:active { border-color: #1e3a5f; }
+
+    /* Full-size view of a sent image. Above the login screen (z-index 100) so it
+       cannot be left stranded underneath a session expiry. */
+    #lightbox {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      padding: 20px;
+      background: rgba(0, 0, 0, 0.94);
+    }
+    #lightbox.shown { display: flex; }
+    #lightbox img {
+      max-width: 100%;
+      max-height: 76vh;
+      object-fit: contain;
+      border-radius: 8px;
+    }
+    #lightbox-bar { display: flex; gap: 10px; }
+    #lightbox-bar button {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 20px;
+      color: #ccc;
+      font-size: 14px;
+      padding: 9px 20px;
+      cursor: pointer;
+    }
+    #lightbox-name {
+      font-size: 12px;
+      color: #666;
+      max-width: 90vw;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     #text-field {
@@ -695,6 +738,15 @@
 
   <div id="voice-unsupported">Voice not supported in this browser. Use the text input.</div>
 </footer>
+
+<div id="lightbox">
+  <img id="lightbox-img" alt="">
+  <div id="lightbox-name"></div>
+  <div id="lightbox-bar">
+    <button id="lightbox-save">Save</button>
+    <button id="lightbox-close">Close</button>
+  </div>
+</div>
 
 <script>
   // Capacitor 5+ serves bundled assets from https://localhost.
@@ -1067,10 +1119,63 @@
     return objectUrl;
   }
 
+  // Saving a file back out of the conversation.
+  //
+  // The blob is already in hand from attachmentUrl(), so this is just handing the
+  // browser an anchor to act on. **Known limit: this does nothing in the Android
+  // app.** A WebView has no download manager, so a `blob:` URL with a `download`
+  // attribute fails silently there — open the PWA in Chrome to save a file from the
+  // phone. Fixing that properly needs @capacitor/filesystem + @capacitor/share, which
+  // would be the first plugins in this app; filed as [DB-0820-02] rather than
+  // smuggled in behind a convenience feature.
+  async function saveAttachment(a) {
+    try {
+      const url = await attachmentUrl(a.id);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = a.name || 'file';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch {
+      setStatus('That file could not be opened', '#a44');
+    }
+  }
+
+  let lightboxItem = null;
+
+  function openLightbox(a, src) {
+    lightboxItem = a;
+    document.getElementById('lightbox-img').src = src;
+    document.getElementById('lightbox-name').textContent = a.name || '';
+    document.getElementById('lightbox').classList.add('shown');
+  }
+
+  function closeLightbox() {
+    document.getElementById('lightbox').classList.remove('shown');
+    // The src is left in place: it is an object URL already cached by
+    // attachmentUrl, so clearing it would only cause a re-decode on the next open.
+    lightboxItem = null;
+  }
+
+  document.getElementById('lightbox-close').addEventListener('click', closeLightbox);
+  document.getElementById('lightbox-save').addEventListener('click', () => {
+    if (lightboxItem) saveAttachment(lightboxItem);
+  });
+  // Tapping the backdrop closes; tapping the image itself must not.
+  document.getElementById('lightbox').addEventListener('click', (e) => {
+    if (e.target.id === 'lightbox') closeLightbox();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeLightbox();
+  });
+
   function fileChip(a) {
     const chip = document.createElement('span');
-    chip.className = 'attach-chip';
+    chip.className = 'attach-chip saveable';
     chip.textContent = (a.mime === 'application/pdf' ? '📄 ' : '📎 ') + (a.name || 'file');
+    chip.title = 'Save this file';
+    chip.addEventListener('click', () => saveAttachment(a));
     return chip;
   }
 
@@ -1081,9 +1186,16 @@
       if (a.mime && a.mime.startsWith('image/')) {
         const img = document.createElement('img');
         img.alt = a.name || '';
+        img.title = a.name || '';
         wrap.appendChild(img);
         attachmentUrl(a.id)
-          .then(u => { img.src = u; scrollToBottom(); })
+          .then(u => {
+            img.src = u;
+            // A 190px thumbnail is enough to recognise a photo and not enough to
+            // read anything in it, so the tap target is the whole point.
+            img.addEventListener('click', () => openLightbox(a, u));
+            scrollToBottom();
+          })
           // A file that has been deleted underneath the conversation degrades to its
           // name rather than a broken-image icon.
           .catch(() => img.replaceWith(fileChip(a)));
