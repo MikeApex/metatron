@@ -13,6 +13,13 @@ Two independent guards, because they fail differently:
   Spend limit  Token counts x configured rates. Maps to real money so thresholds
                are meaningful, but depends on the table being roughly current.
 
+A per-call meter cannot see a cost billed by the clock, and on 2026-08-19 that
+gap read $2.63 against a $6.12 bill: Vertex context-cache STORAGE bills per
+wall-clock hour whether or not anything reads the cache. record_cache_storage()
+closes it. The lesson generalises past caching — anything this system creates
+that outlives the call that created it has to report itself here, or the guard's
+silence will be read as safety.
+
 Either can trip. Both warn before they stop, so the system does not go silent
 without notice.
 
@@ -80,7 +87,8 @@ def _state_path(day: date | None = None) -> Path:
 
 def _blank_state() -> dict:
     return {"date": date.today().isoformat(), "host": _HOST,
-            "usd": 0.0, "calls": 0, "tokens_in": 0, "tokens_out": 0}
+            "usd": 0.0, "calls": 0, "tokens_in": 0, "tokens_out": 0,
+            "tokens_cached": 0, "usd_cache_storage": 0.0, "cache_grants": 0}
 
 
 def _read_state() -> dict:
@@ -134,17 +142,84 @@ def _rate_for(model: str) -> tuple[float, float]:
     return float(entry.get("input", 0.0)), float(entry.get("output", 0.0))
 
 
-def estimate_usd(model: str, tokens_in: int, tokens_out: int) -> float:
+def _entry_for(model: str) -> dict:
+    pricing = _load_config().get("pricing", {}) or {}
+    name = _normalise_model(model)
+    entry = pricing.get(name)
+    if entry is None:
+        for key, val in pricing.items():
+            if key != "default" and name.startswith(key):
+                entry = val
+                break
+    return entry or pricing.get("default") or {}
+
+
+def estimate_usd(model: str, tokens_in: int, tokens_out: int,
+                 tokens_cached: int = 0) -> float:
+    """
+    Cost of one call. `tokens_cached` is the part of `tokens_in` served from a
+    Vertex context cache — INCLUDED in the provider's input count, never added to
+    it, so it is subtracted out and re-priced at the cached rate rather than
+    double-counted.
+    """
     in_rate, out_rate = _rate_for(model)
-    return (tokens_in / 1_000_000.0) * in_rate + (tokens_out / 1_000_000.0) * out_rate
+    cached_rate = float(_entry_for(model).get("cached_input", in_rate))
+    tokens_cached = max(0, min(tokens_cached or 0, tokens_in or 0))
+    uncached = (tokens_in or 0) - tokens_cached
+    return (uncached / 1_000_000.0) * in_rate \
+        + (tokens_cached / 1_000_000.0) * cached_rate \
+        + ((tokens_out or 0) / 1_000_000.0) * out_rate
 
 
-def record_tokens(model: str, tokens_in: int, tokens_out: int) -> None:
+def record_cache_storage(model: str, tokens: int, minutes: float) -> None:
+    """
+    Charge a context cache's storage for the window it has just been granted.
+
+    CHARGED AT GRANT TIME, NOT AT DELETE, and the whole window at once. This
+    module has no clock — it only runs when a call happens — so a delete-time
+    charge would be skipped by exactly the event that makes storage expensive: a
+    crash that orphans the cache. Charging the full window up front is a slight
+    overestimate on a cache deleted early, never an underestimate, and it needs
+    no timer to be correct.
+
+    Call once when a cache is created and again on every expiry refresh, with
+    the length of the window granted.
+    """
+    cfg = _load_config()
+    if not cfg.get("enabled", True):
+        return
+    if not tokens or minutes <= 0:
+        return
+    try:
+        rate = float(_entry_for(model).get("cache_storage_per_hour", 0.0) or 0.0)
+        if not rate:
+            logger.warning(f"[spend_guard] no cache storage rate for {model!r} — storage not counted")
+            return
+        cost = (tokens / 1_000_000.0) * rate * (minutes / 60.0)
+        with _lock:
+            state = _read_state()
+            if state.get("date") != date.today().isoformat():
+                state = _blank_state()
+                globals()["_alerted_spend"] = False
+            state["usd"] = round(state.get("usd", 0.0) + cost, 6)
+            state["usd_cache_storage"] = round(state.get("usd_cache_storage", 0.0) + cost, 6)
+            state["cache_grants"] = state.get("cache_grants", 0) + 1
+            _write_state(state)
+            _maybe_alert_spend(state, cfg)
+    except Exception as exc:
+        logger.warning(f"[spend_guard] cache storage record failed: {exc}")
+
+
+def record_tokens(model: str, tokens_in: int, tokens_out: int,
+                  tokens_cached: int = 0) -> None:
     """
     Add one API call to today's running total. Never raises.
 
     Called from the single place every provider path already reports token
     counts, so no provider needs to know this module exists.
+
+    tokens_cached is the cache-served share of tokens_in; providers that do not
+    report one pass 0 and are priced exactly as before.
     """
     cfg = _load_config()
     if not cfg.get("enabled", True):
@@ -153,7 +228,7 @@ def record_tokens(model: str, tokens_in: int, tokens_out: int) -> None:
         return
 
     try:
-        cost = estimate_usd(model or "default", tokens_in or 0, tokens_out or 0)
+        cost = estimate_usd(model or "default", tokens_in or 0, tokens_out or 0, tokens_cached or 0)
         with _lock:
             state = _read_state()
             if state.get("date") != date.today().isoformat():
@@ -163,6 +238,7 @@ def record_tokens(model: str, tokens_in: int, tokens_out: int) -> None:
             state["calls"] = state.get("calls", 0) + 1
             state["tokens_in"] = state.get("tokens_in", 0) + (tokens_in or 0)
             state["tokens_out"] = state.get("tokens_out", 0) + (tokens_out or 0)
+            state["tokens_cached"] = state.get("tokens_cached", 0) + (tokens_cached or 0)
             _write_state(state)
             _maybe_alert_spend(state, cfg)
     except Exception as exc:

@@ -51,19 +51,39 @@ stop_sessions_per_hour: 60
 # Verified 2026-08-05 against cloud.google.com/vertex-ai/generative-ai/pricing
 # (standard tier, <=200K token context, text). Previous values underestimated
 # both models — flash-lite output was off by ~3.75x. Still order-of-magnitude
-# guard figures, not billing-accurate (ignores cached-input discounts, priority/
-# flex tiers, and the >200K token-context rate step). Unknown models fall back
-# to "default". Re-verify at the next pricing page change.
+# guard figures, not billing-accurate (priority/flex tiers and the >200K
+# token-context rate step are still ignored). Unknown models fall back to
+# "default". Re-verify at the next pricing page change.
+#
+# cached_input   — the discounted rate for the share of an input that Vertex
+#                  serves from a context cache. Added 2026-08-20 with the
+#                  plumbing that reports the count (trace.record_turn_tokens);
+#                  before that the guard had no way to tell a hit from a miss.
+# cache_storage_per_hour
+#                — USD per 1M cached tokens per WALL-CLOCK HOUR, billed for as
+#                  long as the cache exists whether or not anything reads it.
+#                  Rates from the Cloud Billing SKU catalogue, 2026-08-20. This
+#                  is the line the guard was blind to: on 08-19 it estimated
+#                  $2.63 against a $6.12 bill, and the missing $3.49 was ten
+#                  abandoned caches sitting on a midnight expiry. Storage is now
+#                  charged when the window is granted — see
+#                  spend_guard.record_cache_storage.
 pricing:
   gemini-3.1-pro-preview:
     input: 2.00
     output: 12.00
+    cached_input: 0.20
+    cache_storage_per_hour: 4.50
   gemini-3.1-flash-lite:
     input: 0.25
     output: 1.50
+    cached_input: 0.025
+    cache_storage_per_hour: 1.00
   default:
     input: 2.00
     output: 12.00
+    cached_input: 0.20
+    cache_storage_per_hour: 4.50
 
 # The VM costs roughly $29/month in fixed infrastructure (~$1/day) regardless of
 # usage. That floor is NOT counted here — these thresholds measure AI spend only,

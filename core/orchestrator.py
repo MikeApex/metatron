@@ -16,11 +16,13 @@ Usage:
 """
 
 import argparse
+import atexit
 import inspect
 import json
 import logging
 import os
 import sys
+import threading
 import time
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -82,12 +84,25 @@ _PARALLEL_TOOLS = {"run_subagent", "run_model_conference"}
 
 # Vertex context cache registry — in-process singleton, keyed by content hash.
 # Populated on first request; survives for the process lifetime.
-# Caches expire at midnight UTC; rebuild happens automatically on the next miss.
+#
+# Caches carry a SLIDING _VERTEX_CACHE_TTL_MINUTES expiry, pushed back lazily
+# while a burst of calls is in flight and left to lapse once it stops. Cache
+# STORAGE is billed per wall-clock hour ($4.50/1M tokens/hour on Pro) whether or
+# not anything reads it, so a long expiry buys idle time nobody uses: the
+# previous midnight-UTC scheme billed a 06:19 cache for 17.7 hours to serve a
+# median 2-minute burst. Vertex deleting the cache at expire_time is what
+# reaps orphans — a process that dies takes its registry with it, and nothing
+# else on this machine knows the cache exists.
 _vertex_native_client: object | None = None
 # sha256[:16] of (model+prompt+tools) → (CachedContent.name, expire_time).
 # The expiry is stored because Vertex deletes the cache at that moment; without
 # it the registry keeps handing out a dead name and every call 404s.
 _vertex_cache_registry: dict[str, tuple[str, "datetime.datetime"]] = {}
+# Guards get-or-create, refresh and evict. Mutated from FastAPI request threads
+# and from the parallel-tool ThreadPoolExecutor: without it two concurrent first
+# turns both create a cache, and the loser's registry write is clobbered while
+# its cache object keeps billing with no handle left to delete it.
+_vertex_cache_lock = threading.RLock()
 OPENAI_MODEL = "o3"
 OLLAMA_BASE_URL = "http://localhost:11434/v1"
 OLLAMA_MODEL = "qwen3:14b"
@@ -2231,16 +2246,24 @@ def _resolve_gemini_credentials(model: str | None = None) -> tuple[str, str, str
 
 
 def _get_vertex_native_client():
-    """Return (or create) the singleton native genai.Client for Vertex AI."""
+    """
+    Return (or create) the singleton native genai.Client for Vertex AI.
+
+    Creating it also kicks off the one-shot orphan sweep, on a background thread.
+    Hanging the sweep here rather than on each service's startup keeps every
+    cache concern inside the _vertex_* helpers, which move to core/providers.py
+    together under the A8 split — and covers the dev CLI, which has no startup
+    hook at all.
+    """
     global _vertex_native_client
     if _vertex_native_client is None:
-        import datetime
         from google import genai
         project = os.environ.get("GOOGLE_CLOUD_PROJECT")
         if not project:
             return None
         location = _vertex_location()
         _vertex_native_client = genai.Client(vertexai=True, project=project, location=location)
+        _start_vertex_cache_sweep(_vertex_native_client)
     return _vertex_native_client
 
 
@@ -2280,6 +2303,45 @@ def _pad_for_vertex_cache(system_prompt: str) -> str:
     return f"{system_prompt}\n\n{padding}"
 
 
+# How long a freshly created or refreshed cache lives. Break-even for holding a
+# Pro cache is (storage $/M/min) / (read saving $/M) = 0.0417 extra hits per
+# minute held; 15 days of call data show bursts of ~16 calls over a median 2
+# minutes, p90 10 minutes, separated by 30+ minute gaps. Ten minutes therefore
+# covers the p90 burst exactly and pays for itself at under half a hit.
+_VERTEX_CACHE_TTL_MINUTES = 10
+# Refresh only when this much or less is left — so a median burst needs zero
+# refresh calls, and a sustained one needs at most one per five minutes.
+_VERTEX_CACHE_REFRESH_MARGIN_MINUTES = 5
+
+
+@lru_cache(maxsize=1)
+def _vertex_cache_owner() -> str:
+    """
+    Identity stamped into every cache's display_name: (host, service role).
+
+    Several processes share one Vertex project — metatron-server and
+    metatron-scheduler are separate systemd units with separate registries, and
+    a dev machine points at the same project — so a cache has to say who owns it
+    before anything is allowed to delete it.
+
+    Deliberately carries NO PID: a PID-keyed identity means a restarted process
+    matches nothing it created, which is precisely the orphan the ownership tag
+    exists to let a later process reap.
+    """
+    import socket
+    host = socket.gethostname().split(".")[0]
+    stem = Path(sys.argv[0]).stem if sys.argv and sys.argv[0] else ""
+    role = stem if stem in ("server", "scheduler") else "dev"
+    return f"metatron:{host}:{role}"
+
+
+def _vertex_cache_expiry(now=None):
+    """Expiry for a cache created or refreshed at `now` — one full TTL ahead."""
+    import datetime
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    return now + datetime.timedelta(minutes=_VERTEX_CACHE_TTL_MINUTES)
+
+
 def _is_cache_not_found(exc: Exception) -> bool:
     """True when an exception is Vertex reporting a missing cached_content."""
     text = str(exc).lower()
@@ -2288,9 +2350,199 @@ def _is_cache_not_found(exc: Exception) -> bool:
 
 def _evict_vertex_cache(cache_name: str) -> None:
     """Remove a cache name from the registry so the next call rebuilds it."""
-    for key, (name, _exp) in list(_vertex_cache_registry.items()):
-        if name == cache_name:
+    with _vertex_cache_lock:
+        for key, (name, _exp) in list(_vertex_cache_registry.items()):
+            if name == cache_name:
+                _vertex_cache_registry.pop(key, None)
+
+
+def _refresh_vertex_cache(client, cache_name: str | None, model_name: str = "") -> None:
+    """
+    Slide a live cache's expiry forward by a full TTL — lazily, after the response.
+
+    Called AFTER a generate call returns and only when the remaining TTL is under
+    _VERTEX_CACHE_REFRESH_MARGIN_MINUTES. Refreshing before the call would add a
+    synchronous round-trip to every turn of a voice-first system, for a cache
+    that in the median burst never needs one.
+
+    The registry tuple is rewritten with the new expiry. Pushing the server-side
+    expiry without updating it would leave the validity check in
+    _get_or_create_vertex_cache judging a live cache expired and creating a
+    second one — a metered creation on every burst, which is the cost this whole
+    change exists to remove.
+
+    Any failure evicts instead of raising: a cache that cannot be extended is
+    treated exactly like one that vanished, and the next call creates a fresh one.
+    """
+    if client is None or not cache_name:
+        return
+    import datetime
+    from google.genai import types
+
+    with _vertex_cache_lock:
+        entry = next(
+            ((k, v[1]) for k, v in _vertex_cache_registry.items() if v[0] == cache_name),
+            None,
+        )
+        if entry is None:
+            return
+        key, expires_at = entry
+        now = datetime.datetime.now(datetime.timezone.utc)
+        margin = datetime.timedelta(minutes=_VERTEX_CACHE_REFRESH_MARGIN_MINUTES)
+        if now < expires_at - margin:
+            return
+
+        new_expiry = _vertex_cache_expiry(now)
+        try:
+            refreshed = client.caches.update(
+                name=cache_name,
+                config=types.UpdateCachedContentConfig(expire_time=new_expiry),
+            )
+        except Exception as e:
             _vertex_cache_registry.pop(key, None)
+            logger.info(f"[vertex_cache] refresh failed for {cache_name} ({e}) — evicted, rebuilding on next call")
+            return
+
+        _vertex_cache_registry[key] = (cache_name, new_expiry)
+        _record_cache_storage(model_name, refreshed, _VERTEX_CACHE_TTL_MINUTES)
+        logger.info(f"[vertex_cache] refreshed hash={key} expires={new_expiry.isoformat()}")
+
+
+def _delete_owned_vertex_caches() -> None:
+    """
+    Best-effort delete, at interpreter exit, of every cache this process created.
+
+    A TRIM, NOT THE REAPER. systemd stops units with SIGTERM and nothing runs an
+    atexit handler on an OOM-kill, a SIGKILL or a hard crash — the exact events
+    that orphaned ten Pro caches on 2026-08-19. Correctness rests on the TTL:
+    Vertex deletes at expire_time regardless, so the worst an unrun handler costs
+    is the tail of one _VERTEX_CACHE_TTL_MINUTES window.
+    """
+    with _vertex_cache_lock:
+        names = [name for name, _exp in _vertex_cache_registry.values()]
+        _vertex_cache_registry.clear()
+    if not names:
+        return
+    try:
+        client = _get_vertex_native_client()
+    except Exception:
+        return
+    if client is None:
+        return
+    for name in names:
+        try:
+            client.caches.delete(name=name)
+            logger.info(f"[vertex_cache] deleted {name} at exit")
+        except Exception as e:
+            logger.info(f"[vertex_cache] exit delete failed for {name} ({e}) — expires within TTL anyway")
+
+
+def _record_cache_storage(model_name: str, cache, minutes: int) -> None:
+    """
+    Report a granted storage window to the spend guard. Never raises.
+
+    The token count comes from the cache object Vertex returns rather than from
+    a local estimate — the padding added by _pad_for_vertex_cache is part of what
+    is stored and therefore part of what is billed.
+    """
+    try:
+        tokens = getattr(getattr(cache, "usage_metadata", None), "total_token_count", 0) or 0
+        if not tokens:
+            return
+        from core.spend_guard import record_cache_storage
+        record_cache_storage(model_name, tokens, minutes)
+    except Exception as e:
+        logger.info(f"[vertex_cache] storage not recorded ({e})")
+
+
+atexit.register(_delete_owned_vertex_caches)
+
+_vertex_sweep_started = False
+
+
+def _sweep_orphaned_vertex_caches(client) -> int:
+    """
+    Delete caches this identity created and then lost the handle to. Returns the count.
+
+    A TIDY-UP, NOT THE FIX. Vertex reaps every cache at expire_time, so the most
+    this recovers is the tail of one TTL window on an orphan — worth about
+    $0.14/day. The fix is the sliding TTL itself.
+
+    Two rules make it safe, and both matter:
+
+    1. **Own identity only.** metatron-server, metatron-scheduler and any dev
+       machine share one Vertex project. A sweep that deleted everything matching
+       "our models" would have each process destroying the others' live caches on
+       every restart — turning a cost tidy-up into a permanent source of metered
+       re-creations.
+    2. **Only caches with less than the refresh margin left.** Under the sliding
+       scheme a cache whose owner is alive is refreshed back to a full TTL before
+       it drops below that margin; one whose owner died stops being refreshed and
+       decays. Age since creation cannot make this distinction — a long-lived
+       refreshed cache looks old and is in use — which is why the expiry is what
+       is read. The cost of being wrong is one metered re-creation, never a
+       user-visible failure.
+
+    Listing happens in whatever location the client was configured for, which
+    this deployment sets to `global` via GOOGLE_CLOUD_LOCATION — never a
+    hardcoded region. Caches created before this change carry no display_name,
+    so no owner matches them and they are left alone; the one-time cleanup for
+    those is `scripts/vertex_cache_admin.py --delete-all`, run once at rollout.
+    """
+    import datetime
+
+    owner = _vertex_cache_owner()
+    now = datetime.datetime.now(datetime.timezone.utc)
+    cutoff = now + datetime.timedelta(minutes=_VERTEX_CACHE_REFRESH_MARGIN_MINUTES)
+    with _vertex_cache_lock:
+        live = {name for name, _exp in _vertex_cache_registry.values()}
+
+    deleted = 0
+    try:
+        entries = list(client.caches.list())
+    except Exception as e:
+        logger.info(f"[vertex_cache] sweep could not list caches ({e}) — skipped")
+        return 0
+
+    for entry in entries:
+        name = getattr(entry, "name", None)
+        if not name or name in live:
+            continue
+        if getattr(entry, "display_name", None) != owner:
+            continue
+        expire_time = getattr(entry, "expire_time", None)
+        if expire_time is not None and expire_time > cutoff:
+            continue
+        try:
+            client.caches.delete(name=name)
+            deleted += 1
+            logger.info(f"[vertex_cache] swept orphan {name} (owner={owner})")
+        except Exception as e:
+            logger.info(f"[vertex_cache] sweep could not delete {name} ({e})")
+    return deleted
+
+
+def _start_vertex_cache_sweep(client) -> None:
+    """
+    Run the orphan sweep once per process, off the request path.
+
+    On a background thread because it is a list plus N deletes against Vertex,
+    and the caller is a session about to talk to the user — a tidy-up worth
+    cents may not add a round-trip to a voice turn.
+    """
+    global _vertex_sweep_started
+    with _vertex_cache_lock:
+        if _vertex_sweep_started:
+            return
+        _vertex_sweep_started = True
+
+    def _run() -> None:
+        try:
+            _sweep_orphaned_vertex_caches(client)
+        except Exception as e:
+            logger.info(f"[vertex_cache] sweep failed ({e}) — caches still expire on their own")
+
+    threading.Thread(target=_run, name="vertex-cache-sweep", daemon=True).start()
 
 
 def _get_or_create_vertex_cache(
@@ -2304,45 +2556,61 @@ def _get_or_create_vertex_cache(
     rejects requests that include both cached_content and tools/system_instruction.
     The cache key includes tool names so different tool sets get separate caches.
 
-    Expire time: midnight UTC tonight — matches the "once per day" config change cadence.
+    Expire time: a sliding _VERTEX_CACHE_TTL_MINUTES window, extended by
+    _refresh_vertex_cache after a response when little of it is left. Storage is
+    billed per wall-clock hour, so the window is sized to a burst of calls, not
+    to the config-change cadence it used to match.
+
     Returns None on any failure (model doesn't support caching, content too short, etc.).
     The caller falls back to uncached generation.
+
+    Held under _vertex_cache_lock end to end: the creation call takes seconds, and
+    a second thread arriving inside that window must wait for the name rather than
+    create a duplicate that nothing will ever delete.
     """
     import datetime
     import hashlib
     from google.genai import types
 
+    # Kill switch for development. A dev machine restarts constantly and gets
+    # roughly one hit per run, so it pays creation and a storage window for a
+    # cache that is read once — the worst shape caching has. Gated here rather
+    # than at the call sites because both of them already treat None as "run
+    # uncached", so one gate covers the blocking and the streaming paths.
+    if os.environ.get("VERTEX_CACHE_DISABLED", "").strip().lower() in ("1", "true", "yes"):
+        return None
+
     tool_key = ":".join(s["name"] for s in (tool_schemas or []))
     content_hash = hashlib.sha256(f"{model_name}:{system_prompt}:{tool_key}".encode()).hexdigest()[:16]
 
-    entry = _vertex_cache_registry.get(content_hash)
-    if entry is not None:
-        cached_name, expires_at = entry
-        # 60s margin so a cache cannot expire between this check and the request.
-        if datetime.datetime.now(datetime.timezone.utc) < expires_at - datetime.timedelta(seconds=60):
-            return cached_name
-        _vertex_cache_registry.pop(content_hash, None)
-        logger.info(f"[vertex_cache] expired hash={content_hash} — recreating")
+    with _vertex_cache_lock:
+        entry = _vertex_cache_registry.get(content_hash)
+        if entry is not None:
+            cached_name, expires_at = entry
+            # 60s margin so a cache cannot expire between this check and the request.
+            if datetime.datetime.now(datetime.timezone.utc) < expires_at - datetime.timedelta(seconds=60):
+                return cached_name
+            _vertex_cache_registry.pop(content_hash, None)
+            logger.info(f"[vertex_cache] expired hash={content_hash} — recreating")
 
-    try:
-        now = datetime.datetime.now(datetime.timezone.utc)
-        midnight = (now + datetime.timedelta(days=1)).replace(
-            hour=0, minute=0, second=0, microsecond=0
-        )
-        gemini_tools = _to_gemini_tools(tool_schemas or [])
-        cache_config = types.CreateCachedContentConfig(
-            system_instruction=_pad_for_vertex_cache(system_prompt),
-            expire_time=midnight,
-            **({"tools": gemini_tools} if gemini_tools else {}),
-        )
-        cache = client.caches.create(model=model_name, config=cache_config)
-        _vertex_cache_registry[content_hash] = (cache.name, midnight)
-        _trace(f"[VERTEX_CACHE] created {cache.name} expires={midnight.isoformat()}")
-        logger.info(f"[vertex_cache] created model={model_name} hash={content_hash} expires={midnight.isoformat()}")
-        return cache.name
-    except Exception as e:
-        logger.warning(f"[vertex_cache] creation failed ({e}) — running uncached")
-        return None
+        try:
+            expires_at = _vertex_cache_expiry()
+            gemini_tools = _to_gemini_tools(tool_schemas or [])
+            cache_config = types.CreateCachedContentConfig(
+                system_instruction=_pad_for_vertex_cache(system_prompt),
+                expire_time=expires_at,
+                display_name=_vertex_cache_owner(),
+                **({"tools": gemini_tools} if gemini_tools else {}),
+            )
+            cache = client.caches.create(model=model_name, config=cache_config)
+            _vertex_cache_registry[content_hash] = (cache.name, expires_at)
+            _record_cache_storage(model_name, cache, _VERTEX_CACHE_TTL_MINUTES)
+            _trace(f"[VERTEX_CACHE] created {cache.name} expires={expires_at.isoformat()}")
+            logger.info(f"[vertex_cache] created model={model_name} hash={content_hash} expires={expires_at.isoformat()}")
+            return cache.name
+        except Exception as e:
+            logger.warning(f"[vertex_cache] creation failed ({e}) — running uncached")
+            return None
 
 
 def run_session_gemini(system_prompt: str, user_input: str,
@@ -2740,9 +3008,10 @@ def run_session_gemini_cached(system_prompt: str, user_input: str,
     Gemini session with Vertex context caching via the native SDK.
 
     On the first call for a given system prompt, creates a Vertex CachedContent object
-    (expires midnight UTC) and stores the name in _vertex_cache_registry. Subsequent
-    calls for the same prompt hit the cache — the system prompt tokens are not re-billed
-    or re-processed at full cost.
+    on a sliding _VERTEX_CACHE_TTL_MINUTES expiry and stores the name in
+    _vertex_cache_registry. Subsequent calls for the same prompt hit the cache — the
+    system prompt tokens are not re-billed or re-processed at full cost — and the expiry
+    is slid forward after the response, never before it (_refresh_vertex_cache).
 
     Falls back to run_session_gemini (OpenAI-compat, uncached) when:
     - GOOGLE_CLOUD_PROJECT is not set (not on Vertex)
@@ -2764,13 +3033,15 @@ def run_session_gemini_cached(system_prompt: str, user_input: str,
     cached_content_name = _get_or_create_vertex_cache(client, system_prompt, model_name, tool_schemas)
 
     try:
-        return _run_gemini_native_loop(
+        result = _run_gemini_native_loop(
             client, model_name, system_prompt, user_input,
             tool_schemas, tool_handlers,
             history=history,
             cached_content=cached_content_name,
             attachments=attachments,
         )
+        _refresh_vertex_cache(client, cached_content_name, model_name)
+        return result
     except Exception as e:
         from core.router import log_model_error
         _agent = _tr.get_current_agent() or "unknown"
@@ -2783,13 +3054,15 @@ def run_session_gemini_cached(system_prompt: str, user_input: str,
             logger.info(f"[vertex_cache] {cached_content_name} not found — evicted, rebuilding once")
             try:
                 fresh = _get_or_create_vertex_cache(client, system_prompt, model_name, tool_schemas)
-                return _run_gemini_native_loop(
+                result = _run_gemini_native_loop(
                     client, model_name, system_prompt, user_input,
                     tool_schemas, tool_handlers,
                     history=history,
                     cached_content=fresh,
                     attachments=attachments,
                 )
+                _refresh_vertex_cache(client, fresh, model_name)
+                return result
             except Exception as retry_exc:
                 e = retry_exc
 
@@ -2909,7 +3182,7 @@ def _run_gemini_native_loop(client, model_name: str,
 
         if hasattr(response, "usage_metadata") and response.usage_metadata:
             _tr.record_turn_tokens(_tr.get_current_agent(), turn_num, input_tokens, output_tokens, thinking_tokens,
-                                   output_text="\n".join(text_parts))
+                                   output_text="\n".join(text_parts), cached_tokens=cache_read)
 
         # Capture text even when tool calls are also present — Gemini can emit text
         # and function_call in the same response. Without this, the user-facing text
@@ -3069,7 +3342,8 @@ def _run_gemini_native_stream(client, model_name: str,
                 logger.info(f"[token_budget] turn={turn_num} cumulative_input={cumulative_input_tokens}{_cache_suffix}")
                 _trace(f"[TOKEN] turn={turn_num} input={input_tokens} cumulative={cumulative_input_tokens}{_cache_suffix}")
             _tr.record_turn_tokens(_tr.get_current_agent(), turn_num, input_tokens, output_tokens,
-                                   thinking_tokens, output_text="".join(text_parts))
+                                   thinking_tokens, output_text="".join(text_parts),
+                                   cached_tokens=cache_read)
 
         if text_parts:
             result = "".join(text_parts)
@@ -3180,7 +3454,16 @@ def run_session_gemini_cached_stream(system_prompt: str, user_input: str,
         ):
             emitted = True
             yield chunk
+        _refresh_vertex_cache(client, cached_content_name, model_name)
     except Exception as e:
+        # A cache can vanish before its recorded expiry, and under a sliding
+        # ten-minute TTL that race is ~150x more likely than it was under the
+        # midnight scheme. The blocking path has always evicted here; this one
+        # did not, so a dead name stayed in the registry and every later call
+        # fell through to the uncached compat path for the process lifetime.
+        if cached_content_name and _is_cache_not_found(e):
+            _evict_vertex_cache(cached_content_name)
+            logger.info(f"[vertex_cache] {cached_content_name} not found on stream — evicted, rebuilding next call")
         if emitted:
             raise
         from core.router import log_model_error

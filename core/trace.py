@@ -247,7 +247,8 @@ def pop_agent(rec: AgentRecord) -> None:
 def record_turn_tokens(rec: AgentRecord | None, turn_num: int,
                        input_tokens: int, output_tokens: int,
                        thinking_tokens: int = 0,
-                       output_text: str = "", thinking_text: str = "") -> None:
+                       output_text: str = "", thinking_text: str = "",
+                       cached_tokens: int = 0) -> None:
     if rec is None:
         return
     tr = rec.ensure_turn(turn_num)
@@ -263,7 +264,13 @@ def record_turn_tokens(rec: AgentRecord | None, turn_num: int,
         from core.spend_guard import record_tokens
         # Thinking tokens are billed as output tokens by every provider that
         # reports them separately — spend_guard needs the combined figure.
-        record_tokens(rec.model or "", input_tokens, output_tokens + thinking_tokens)
+        #
+        # cached_tokens is the part of input_tokens served from a Vertex context
+        # cache — it is INCLUDED in the provider's prompt_token_count, not added
+        # to it, and it bills at roughly a tenth of the standard input rate.
+        # Passing it is what lets the guard stop pricing a cache hit as a miss.
+        record_tokens(rec.model or "", input_tokens, output_tokens + thinking_tokens,
+                      tokens_cached=cached_tokens)
     except Exception:
         pass
 
