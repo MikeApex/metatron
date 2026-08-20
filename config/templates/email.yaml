@@ -49,16 +49,22 @@ default_folder: "INBOX"
 # tools/mail.py falls back to the value below.
 #
 # WHAT IT DOES NOT DO: it does not schedule anything. No job fires `read_email` on a
-# timer and nothing polls the mailbox in the background. `read_email` returns this number
-# to the agent that called it, and config/agents/logistics.md treats it as the interval
-# below which re-reading is not worth another call. It is guidance shaping a tool call
-# the user already asked for, not automation.
+# timer. `read_email` returns this number to the agent that called it, and
+# config/agents/logistics.md treats it as the interval below which re-reading is not
+# worth another call. It is guidance shaping a tool call the user already asked for,
+# not automation.
 #
-# That distinction is deliberate and should survive any future edit here. An interval
-# that actually *fired* would be unrequested mail polling on a live user, and
-# `fire_function` in core/scheduler.py runs no gate stack at all — no quiet hours, no
-# activity gate (`[DB-0808-11]`) — so a scheduled version would push mail at 3am with
-# nothing to stop it. Config and its guard ship together, guard first: CLAUDE.md
+# AMENDED 2026-08-19 — the intake sweep DOES read the mailbox on a timer, and that is
+# not the thing this rule forbids. The rule's substance was always about NOTIFICATION:
+# `fire_function` in core/scheduler.py runs no gate stack — no quiet hours, no activity
+# gate (`[DB-0808-11]`) — so a scheduled job that could *push* would push mail at 3am
+# with nothing to stop it. The `intake_sweep` job (tools/intake.py, opt-in via
+# intake.yaml `enabled`) reads via BODY.PEEK, classifies, queues, and returns a plain
+# string — fire_function's notify path is structurally unreachable from it, and the
+# sweep additionally no-ops during quiet hours in its own code. What reaches the user
+# rides the morning brief. `read_email` itself remains unscheduled, and any FUTURE
+# scheduled mail job must keep both properties: never the notify-dict return, and its
+# own quiet-hours check. Config and its guard ship together, guard first: CLAUDE.md
 # § Deploy safety rule 2.
 #
 # 240 = four hours, so roughly four checks across a waking day. Raise it for a quiet

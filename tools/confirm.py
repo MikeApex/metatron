@@ -217,6 +217,9 @@ _EXECUTORS: dict[str, tuple[str, str]] = {
     # Gates ONE branch of write_contact — creating a record that resembles an existing
     # one — not the whole tool. An update by contact_id is ungated. [DB-0815-07].
     "write_contact":         ("tools.crm",           "write_contact"),
+    # A taught intake rule silences mail permanently — the quiet, compounding kind
+    # of change that must complete server-side from the user's own approval.
+    "teach_intake":          ("tools.intake",        "teach_intake"),
 }
 
 

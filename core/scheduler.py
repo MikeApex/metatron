@@ -471,6 +471,37 @@ _DEFAULT_JOBS: dict[str, dict] = {
         "function": "tools.calendar_reconcile.reconcile_check",
         "notification": False,
     },
+    # Inbound intake (tools/intake.py): read new messages, classify, queue per domain.
+    # Notifies nothing, ever — sweep() returns a plain string, so fire_function's notify
+    # path is never taken; what reaches the user rides the morning brief via
+    # context_block(). An interval job is safe here despite the absent gate stack
+    # (`[DB-0808-11]`) because sweep() checks quiet hours itself and no-ops — the
+    # in-code check exists precisely so this entry does not depend on a gate the
+    # mechanism does not run. No-op when the persona has intake disabled (the default).
+    "intake_sweep": {
+        "enabled": True,
+        "interval_minutes": 60,
+        "days": "daily",
+        "function": "tools.intake.sweep",
+        "notification": False,
+    },
+    # Builds the weekly review digest and PARKS it — context_block() hands it to the
+    # next session that loads coordinator context (in practice the morning brief) and
+    # clears it. Deliberately no notification channel of its own: a dedicated push here
+    # would rebuild the six-messages-in-one-day problem (tools/obligations.py header).
+    # 06:30 Sunday, ahead of any weekend-morning session that could carry it.
+    # NOTE the singular "day" — that is what selects the weekly registration branch
+    # below; "days" would silently fall through to schedule.every().day and fire every
+    # morning (caught by the 2026-08-19 code review before it shipped). This entry IS
+    # the digest's cadence — intake.yaml deliberately carries none; a persona changes
+    # it by redefining "intake_digest" in its own scheduler.yaml, which wins on name.
+    "intake_digest": {
+        "enabled": True,
+        "time": "06:30",
+        "day": "sunday",
+        "function": "tools.intake.digest_job",
+        "notification": False,
+    },
 }
 
 

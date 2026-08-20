@@ -37,7 +37,7 @@ agents:
     # standing fact — and it is the fallback for turns the Coordinator's KNOWLEDGE_TO_LOAD did
     # not predict. Without the read grant the pre-fetch is the ONLY path to the store and a
     # mid-conversation turn toward a subject has no way to reach it.
-    allowed_tools: [run_subagent, run_model_conference, write_persona, write_profile, read_profile, write_config, write_wishes, read_wishes, generate_emergency_card, write_quality_event, write_schedule, list_schedules, delete_schedule, update_goal, open_obligation, close_obligation, reopen_obligation, list_obligations, read_wisdom, write_wisdom]
+    allowed_tools: [run_subagent, run_model_conference, write_persona, write_profile, read_profile, write_config, write_wishes, read_wishes, generate_emergency_card, write_quality_event, write_schedule, list_schedules, delete_schedule, update_goal, open_obligation, close_obligation, reopen_obligation, list_obligations, read_wisdom, write_wisdom, teach_intake]
 
   # ── Data and analysis ────────────────────────────────────────────────────────
 
@@ -45,6 +45,18 @@ agents:
     provider: gemini
     model: "models/gemini-3.1-flash-lite"   # write-only; fire-and-forget target
     allowed_tools: [write_journal, write_archive, write_log, write_wisdom]
+
+  intake_extractor:
+    provider: gemini
+    model: "models/gemini-3.1-flash-lite"   # one message, closed enum — the tone_profiler shape
+    # Empty grant AND bare dispatch, both deliberate. This agent's entire input is
+    # attacker-writable text (inbound mail). tools/intake_extract.py dispatches it
+    # with bare=True — agent file only, no constitution/goals/profile — so there is
+    # nothing personal in its window; and with no schemas advertised the Gemini path
+    # omits the tools param entirely (_to_gemini_tools -> []), so it cannot emit a
+    # tool call. Gated off in intake.yaml until tests/run_intake_eval.py shows zero
+    # action_required false negatives on this model.
+    allowed_tools: []
 
   tone_profiler:
     provider: gemini
@@ -126,7 +138,7 @@ agents:
     # relationships.md:196 makes it a numbered procedure step ("Search for relevant history…
     # prior mentions of the person") and :297 lists it as a held tool — the agent was
     # instructed to use a capability it did not have, and silently lost recall.
-    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, merge_contacts, import_contacts_file, read_profile, write_profile, send_email, search_memory, get_tone_shape, read_wisdom]
+    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, merge_contacts, import_contacts_file, read_profile, write_profile, send_email, search_memory, get_tone_shape, read_wisdom, read_intake_queue]
 
   finance:
     provider: gemini
@@ -136,7 +148,7 @@ agents:
     # search_memory granted 2026-08-10: denied 2026-08-05T15:21, the same class of recall
     # question read_archive only half-answered. finance.md:89 makes it a procedure step
     # ("spending patterns, income history, budget trends") and :204 lists it as held.
-    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, read_archive, open_obligation, close_obligation, reopen_obligation, list_obligations, search_memory, read_wisdom]
+    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, read_archive, open_obligation, close_obligation, reopen_obligation, list_obligations, search_memory, read_wisdom, read_intake_queue]
 
   learning_growth:
     provider: gemini
@@ -146,12 +158,12 @@ agents:
   recreation_hobbies:
     provider: gemini
     model: "models/gemini-3.1-flash-lite"
-    allowed_tools: [read_log, write_log, read_wisdom]
+    allowed_tools: [read_log, write_log, read_wisdom, read_intake_queue]
 
   logistics:
     provider: gemini
     model: "models/gemini-3.1-flash-lite"
-    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, update_calendar_event, delete_calendar_event, check_calendar_conflicts, get_weather, get_environmental_snapshot, get_tfl_status, get_flight_status, get_travel_time, get_regional_transit_info, read_profile, write_profile, write_schedule, list_schedules, delete_schedule, fetch_url, fetch_rendered, read_email, read_agent_config, write_agent_config, search_memory, read_archive, write_archive, open_obligation, close_obligation, reopen_obligation, list_obligations]
+    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, update_calendar_event, delete_calendar_event, check_calendar_conflicts, get_weather, get_environmental_snapshot, get_tfl_status, get_flight_status, get_travel_time, get_regional_transit_info, read_profile, write_profile, write_schedule, list_schedules, delete_schedule, fetch_url, fetch_rendered, read_email, read_agent_config, write_agent_config, search_memory, read_archive, write_archive, open_obligation, close_obligation, reopen_obligation, list_obligations, read_intake_queue]
     # update_calendar_event, delete_calendar_event, check_calendar_conflicts added
     # 2026-08-05 — required to act on what the calendar-conflict build detects:
     # Logistics could previously only create events, never move, correct, or

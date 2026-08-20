@@ -1,0 +1,232 @@
+# Inbound intake — classification and disposition for every incoming channel.
+#
+# scripts/new_persona.sh copies this to config/personas/{persona}/intake.yaml. Unlike
+# email.yaml it holds no credentials, so this copy is not gitignored — but the live one
+# accumulates rules naming real senders, which is personal data. Treat it as sensitive.
+#
+# It is also the DEFAULT SOURCE at runtime: tools/intake.py reads any key absent from the
+# persona's own file from here. Same reasoning as email.yaml — a template is copied once,
+# at creation, and nothing propagates a later change to an existing persona, so a default
+# that lives only in the template still reaches personas provisioned before it existed.
+#
+# WHAT THIS FILE IS FOR
+# ---------------------
+# The intake sweep reads new messages, decides what each one is, files the substance into
+# whichever domain owns it, and stays silent. This file is where the user teaches it what
+# to stop showing them. Everything below is editable by hand and every key is also
+# reachable through `teach_intake` in conversation — "stop showing me anything from
+# Ticketmaster" writes a `rules:` entry here.
+#
+# The design test this file exists to pass: **near-silence must be reachable by the user
+# without a code change.** If tuning the digest ever requires editing tools/intake.py,
+# that is a design failure (CLAUDE.md § Config files are the product).
+
+enabled: false
+
+# Channels the sweep pulls from. Each name maps to an adapter registered in
+# tools/intake.py. Email is the only one built; the others are named here because the
+# adapter contract is what makes them cheap, and a named-but-unbuilt channel is the
+# design record for what this is for (.claude/rules/agent-files.md § a named tool is a
+# specification). An unregistered name is skipped with a warning, never an error.
+channels:
+  email: true
+  # telegram: false
+  # sms: false
+
+# How often the sweep runs is NOT set here — it is core/scheduler.py's `intake_sweep`
+# job, because cadence is mechanism and this file is content (One Home Per Rule Class).
+
+
+# ── Categories ────────────────────────────────────────────────────────────────
+#
+# A CLOSED ENUM, and it must stay closed. The extractor agent is a small model choosing
+# from this list; the reliability of that choice comes from the list being short, fixed,
+# and mutually exclusive. Adding a category is a real decision — it changes the eval
+# corpus in tests/intake_fixtures/ and every stored record's meaning.
+#
+# `unclear` is not a failure state. It is the correct answer whenever the message does
+# not clearly belong elsewhere, and it routes to the user. A small model forced to always
+# pick a real category will pick one confidently and wrongly, which is the false-negative
+# failure this whole design is built to avoid.
+#
+# TWO AXES, INDEPENDENT BY DESIGN (Mike's correction, 2026-08-19):
+#
+#   disposition — does the user hear about this, and when?
+#     surface  — reaches the user in the normal flow, now
+#     digest   — appears in the periodic digest, and nowhere else
+#     silent   — filed and recorded, never volunteered
+#
+#   domain — where does the substance go? A specialist's queue, or null (nothing filed;
+#     the row in records.jsonl is the whole outcome).
+#
+# They answer different questions and must not be collapsed. A gig announcement from a
+# venue the user follows is `silent` AND `recreation`: it never interrupts anyone, and
+# Recreation knows about the gig — interest is judged by the domain on its next run, not
+# by this file. The first draft sent `promotion` to a null domain, which would have
+# discarded exactly that case. Bulk headers establish that a message is BULK, never that
+# it is UNWANTED — the user subscribed on purpose. A header may set disposition; it must
+# never zero the domain.
+
+categories:
+  action_required:
+    disposition: surface
+    domain: logistics
+    # The one category where a miss actually costs something. Never default it to
+    # digest or silent, and never let a `rules:` entry below demote it wholesale --
+    # tools/intake.py refuses that specific demotion rather than trusting this comment.
+
+  correspondence:
+    disposition: surface
+    domain: relationships
+
+  booking_confirmation:
+    disposition: digest
+    domain: logistics
+
+  bill_statement:
+    disposition: digest
+    domain: finance
+
+  invitation:
+    disposition: surface
+    domain: logistics
+
+  announcement:
+    disposition: digest
+    domain: recreation
+
+  promotion:
+    disposition: silent
+    # Recreation, not null — most consumer promotion is an offer of something to do or
+    # enjoy, and the interest sieve only works if the domain gets to judge it. The
+    # forty Ticketmaster blasts that match nothing cost Recreation one queue read;
+    # the one matching a band the user likes becomes a surfaced offer. A sender whose
+    # promotions genuinely interest nobody is a taught rule, not a category default.
+    domain: recreation
+
+  notification:
+    disposition: silent
+    # Machine-generated notices — delivery updates, service alerts, receipts of the
+    # non-financial kind. Logistics owns running-of-life state, and it is the domain
+    # that can cross-check a delivery notice against the orders intake filed earlier
+    # (which is also the phish check: a courier notice matching no known order).
+    domain: logistics
+
+  unclear:
+    disposition: surface
+    domain: null
+
+
+# ── Extractor ─────────────────────────────────────────────────────────────────
+#
+# The model stage: whatever rules, ledger and headers leave `unclear` goes to the
+# intake_extractor agent (Flash-Lite, no tools, no personal context — dispatched
+# bare). OFF by default, and the gate for turning it on is not preference but
+# evidence: `python3 tests/run_intake_eval.py --extractor` must show ZERO
+# action_required false negatives on that persona's hand-labelled corpus first.
+# Until then, unclear messages surface to the user — the honest default.
+
+extractor:
+  enabled: false
+
+
+# ── Digest ────────────────────────────────────────────────────────────────────
+#
+# The digest is a TRAINING SURFACE, not a report. Its purpose is to be read once, taught
+# from, and thereby shortened. A digest that stays the same length week after week means
+# the teaching loop is not working, and that is a bug rather than a preference.
+#
+# It has no notification channel of its own, deliberately. The digest job returns a
+# string that the morning brief consumes, so quiet hours and the activity gate apply to
+# it the same as everything else the user hears. A dedicated push channel here would
+# rebuild the six-messages-in-one-day problem (tools/obligations.py § WHY NOTHING HERE
+# BLOCKS, and the same reasoning in tools/schedule.py).
+
+digest:
+  # WHEN it fires is deliberately not set here — that would be a second home for the
+  # cadence (One Home Per Rule Class). The schedule is the `intake_digest` job in
+  # core/scheduler.py `_DEFAULT_JOBS` (Sundays 06:30); a persona changes or disables
+  # it by redefining `intake_digest` in its own scheduler.yaml, which wins on name
+  # collision. This section owns only what the digest CONTAINS.
+  #
+  # Cap on lines. Over the cap, the lowest-value categories are collapsed to a count
+  # ("42 promotions"). Truncation is never silent — the count is the honest form.
+  max_items: 25
+  # Include the reason each item was classified as it was. Verbose, but it is what makes
+  # a wrong classification teachable rather than merely annoying.
+  show_reasons: true
+  # TRAINING WHEELS (Mike, 2026-08-19). While true, silently autofiled items appear in
+  # the digest individually, each with its reason — the review surface for honing rules
+  # and catching false negatives while the ledger is still learning. Corrections made in
+  # this period are the cheapest available: each retires a ledger entry or writes a rule
+  # before a bad pattern hardens. Turn off when the digest has earned trust; can also be
+  # a list of category names to keep only some under review (promotion will bore first).
+  include_silent: true
+
+
+# ── User-taught rules ─────────────────────────────────────────────────────────
+#
+# Highest precedence — checked before the learned sender ledger and before headers.
+# Written by hand or by `teach_intake`. First match wins, so order matters.
+#
+# match: one of
+#   sender:      exact address, or *@domain
+#   subject:     case-insensitive substring
+#   list_id:     the List-ID header value, which is the most stable handle a bulk
+#                sender has -- more stable than the From address, which rotates
+#
+# Each rule may set `category`, `disposition`, or both.
+#
+#   - match: {sender: "*@ticketmaster.com"}
+#     category: promotion
+#     disposition: silent
+#     note: "taught 2026-08-18 -- 'stop showing me these'"
+#
+#   - match: {subject: "your statement is ready"}
+#     category: bill_statement
+#
+# `note` is free text and is never parsed. It exists so a rule six months old can still
+# be argued with -- the same standard close_obligation applies to its evidence.
+
+rules: []
+
+
+# ── Sender ledger ─────────────────────────────────────────────────────────────
+#
+# The ledger itself is learned data and lives in data/personas/{p}/intake/ledger.json,
+# not here -- this section only tunes how much it is trusted. It is the part of the
+# system that compounds: once a sender has been classified the same way enough times,
+# the model call is skipped for it permanently, and the running cost falls toward zero.
+
+ledger:
+  enabled: true
+  # Consecutive same-category observations before the ledger classifies on its own.
+  # Low enough to pay off within a few weeks on a normal mailbox; high enough that one
+  # atypical message from a known sender does not set the rule.
+  min_observations: 5
+  # A ledger entry that has been contradicted by a user correction is retired, not
+  # decremented. The correction is the stronger signal and a rule the user has already
+  # argued with once should not be able to re-accumulate its way back.
+  retire_on_correction: true
+
+
+# ── Safety rails ──────────────────────────────────────────────────────────────
+
+limits:
+  # Messages pulled per sweep, per channel. A backlog drains across several sweeps
+  # rather than in one very large run.
+  max_per_sweep: 50
+  # Body characters handed to the extractor. tools/mail.py already truncates at 4000
+  # for its own reads; this is the intake path's own cap and is deliberately smaller,
+  # since classification does not need the whole message.
+  max_body_chars: 2000
+  # Days a message id stays in the seen-set before it is pruned. Well past any window
+  # in which the same message could legitimately reappear.
+  seen_retention_days: 90
+  # THE RARELY-RUN-AGENT RAIL (Mike, 2026-08-19). A queue is read on its domain's next
+  # run — which assumes a next run. A user who never engages Physical Health still gets
+  # an annual check-up email, and without this, PH's queue would rot unread. Anything
+  # older than this many days escalates into the next digest automatically, whatever its
+  # disposition — enforced in sweep(), in Python. A message may be below the user's
+  # attention, but not indefinitely just because its domain is unpopular.
+  max_queue_age_days: 7

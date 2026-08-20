@@ -481,7 +481,11 @@ def load_recent_context(persona: str | None = None, days: int = 5) -> str:
     # it costs input tokens but does not disturb the Vertex prefix cache.
     #
     # Both blocks return "" when empty, so a persona with nothing outstanding pays nothing.
-    for _block_source in ("tools.obligations", "tools.calendar_reconcile"):
+    # tools.intake added 2026-08-19: queue counts/ages, surface items, and the parked
+    # weekly digest. Same contract as the other two — returns "" when quiet, and the
+    # digest is delivered exactly once (the block clears it on read). A8 places all
+    # three together.
+    for _block_source in ("tools.obligations", "tools.calendar_reconcile", "tools.intake"):
         try:
             import importlib
             block = importlib.import_module(_block_source).context_block(persona)
@@ -620,6 +624,10 @@ def register_tools() -> tuple[list[dict], dict]:
     # keeps the function so the path is revivable, not so it is reachable.
     from tools.contacts_import import import_contacts_file, IMPORT_CONTACTS_FILE_SCHEMA
     from tools.mail import read_email, send_email, READ_EMAIL_SCHEMA, SEND_EMAIL_SCHEMA
+    # Inbound triage. read_intake_queue is a specialist's view of what intake filed to
+    # its domain; teach_intake is the user's correction path, confirmation-gated.
+    from tools.intake import (read_intake_queue, teach_intake,
+                              READ_INTAKE_QUEUE_SCHEMA, TEACH_INTAKE_SCHEMA)
 
     schemas = [
         WRITE_LOG_SCHEMA, READ_LOG_SCHEMA,
@@ -648,6 +656,7 @@ def register_tools() -> tuple[list[dict], dict]:
         WRITE_WISHES_SCHEMA, READ_WISHES_SCHEMA, GENERATE_EMERGENCY_CARD_SCHEMA,
         OPEN_OBLIGATION_SCHEMA, CLOSE_OBLIGATION_SCHEMA,
         REOPEN_OBLIGATION_SCHEMA, LIST_OBLIGATIONS_SCHEMA,
+        READ_INTAKE_QUEUE_SCHEMA, TEACH_INTAKE_SCHEMA,
         READ_CALENDAR_SCHEMA, WRITE_CALENDAR_EVENT_SCHEMA,
         UPDATE_CALENDAR_EVENT_SCHEMA, DELETE_CALENDAR_EVENT_SCHEMA,
         CHECK_CALENDAR_CONFLICTS_SCHEMA,
@@ -729,6 +738,8 @@ def register_tools() -> tuple[list[dict], dict]:
         "close_obligation": close_obligation,
         "reopen_obligation": reopen_obligation,
         "list_obligations": list_obligations,
+        "read_intake_queue": read_intake_queue,
+        "teach_intake": teach_intake,
         "write_quality_event": write_quality_event,
         "write_persona": write_persona,
         "write_profile": write_profile,

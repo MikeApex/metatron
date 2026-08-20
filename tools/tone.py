@@ -156,6 +156,12 @@ def _extract(address: str, contact_id: str, persona: str | None = None) -> dict:
             ),
             persona=persona,
             complexity="quick",       # bounded, mechanical, strict-schema — the cheap tier
+            # bare: agent file only — no goals, no profile, no recent context. This
+            # agent's entire input is other people's correspondence; personal context
+            # beside attacker-writable text was [DB-0819-02], and tone_profiler.md
+            # references none of it (verified 2026-08-20 before this change, per the
+            # standing rule). Same posture as the intake extractor.
+            bare=True,
         )
 
         profile = _parse_profile(raw)

@@ -165,6 +165,11 @@ backups/
 dummy
 .dev_backlog_seen
 
+# Intake eval fixtures — real messages from the user's own inbox, hand-labelled.
+# Personal data by definition; the eval harness (tests/run_intake_eval.py) is
+# tracked, its corpus never is.
+tests/intake_fixtures/
+
 # STT benchmark fixtures — 1.6MB of synthesized audio, regenerable with
 # `python3 tests/bench_whisper_stt.py --generate`. Not worth carrying in git.
 tests/fixtures/stt/

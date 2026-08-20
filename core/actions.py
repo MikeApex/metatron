@@ -59,6 +59,9 @@ ACTION_TOOLS: frozenset[str] = frozenset({
     # Commitments and scheduled jobs
     "open_obligation", "close_obligation", "reopen_obligation",
     "write_schedule", "delete_schedule",
+    # A taught intake rule permanently changes what mail the user sees — a standing
+    # config write behind the confirm gate, and unambiguously an action.
+    "teach_intake",
     # Logs, journal, wisdom — the user asks for these directly ("log that")
     "write_log", "write_quality_event",
     "write_journal", "write_archive",
@@ -100,6 +103,10 @@ READ_TOOLS: frozenset[str] = frozenset({
     # fetch_rendered is fetch_url with a headless browser for JS-heavy pages — it reads
     # the outside world and changes nothing. Added 2026-08-18 alongside the two above.
     "fetch_rendered",
+    # read_intake_queue advances that domain's cursor — bookkeeping about what has been
+    # shown, same class as read_email's BODY.PEEK avoidance of \Seen: presentation
+    # state, not world state. Nothing a user would call "something the tool did".
+    "read_intake_queue",
 })
 
 # Fallback for a tool registered after this file was last updated. The test

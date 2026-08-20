@@ -95,6 +95,23 @@ standing rule distrusts.*
   @kind: feature
   *filed 2026-08-08 by Mike · promoted 2026-08-15*
 
+- **2. [DB-0820-01] The spend caps are temporarily too high — bring them back down in
+  September.** Raised 2026-08-20 from **$100/$175 to $150/$250** (soft stops the VM, hard
+  disables billing). Mike's decision, and **explicitly temporary**: the real budget did not
+  change, the caps were lifted to clear a cost *defect* — Vertex context-cache storage, ~$100/mo
+  (`archive/plans/vertex_cache_cost_control_2026-08-20_plan.md`). **When the September cycle
+  resets, put them back**, to $100/$175 unless a reconciliation says otherwise.
+  **Do not lower the soft cap alone.** It was nearly set to $150 against a $175 hard cap, leaving
+  $25 — and the hard cap is an outage (26h VPC freeze, 2026-07-30), has fired *below* its own
+  threshold once, and sits behind spend figures that lag by hours. **Keep ~$100 between the tiers,
+  whatever the absolute numbers.** Values and full reasoning:
+  [docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md) § Billing protection — read them there, never
+  from a script comment (`metatron-vm-override.sh` was stale for months).
+  *Checked 2026-08-20: both budgets confirmed live at 150/250 via `gcloud billing budgets list`.*
+  `due: 2026-09-01`
+  @kind: chore
+  *filed 2026-08-20 by Mike*
+
 
 ## Later
 
@@ -419,6 +436,53 @@ with a date.** Nothing new joins this group open-ended.*
 
 ### Unbuilt — real capability that does not exist
 
+- **[DB-0820-02] A file sent from the phone app cannot be saved back out of it.** Tapping a photo
+  opens it full-size and tapping a document saves it — **in the browser PWA only** (built and
+  verified 2026-08-20, `saveAttachment()` in [static/index.html](static/index.html)). In the
+  installed APK the same tap does nothing: an Android WebView has no download manager, so a
+  `blob:` URL with a `download` attribute fails **silently**. Interim answer, and the reason this
+  is not urgent: open the PWA in Chrome on the phone and saving works there.
+  **The fix is `@capacitor/filesystem` + `@capacitor/share`** — write to Downloads, or hand the
+  file to the share sheet. Cost is not the code, it is that these would be the **first plugins in
+  a deliberately zero-plugin app** (`capacitor.plugins.json` is `[]`): every later change then
+  needs `npm i` + `npx cap sync` + a Gradle rebuild, and the native bridge surface grows.
+  **A third option was considered and rejected here, not deferred:** a short-lived signed download
+  URL opened in the system browser needs no plugins and works everywhere — but it puts a
+  capability token in a URL, which this project deliberately refused for the WebSocket handshake
+  because it lands in access logs (`core/server.py` § websocket_endpoint). Do not re-propose it
+  without addressing that.
+  *Raised by Mike 2026-08-20 while testing attachments: "if the app serves as a cloud drive, it
+  might be helpful to be able to pull something down." Explicitly "not strictly necessary."*
+  @kind: feature
+
+- **[DB-0819-01] Agents cannot subscribe to anything — every input the tool reads, the user had
+  to sign up for personally.** Mike, 2026-08-19, during the intake-pipeline design: *"other
+  agents might even proactively subscribe to lists to enhance their own output"* — and RSS the
+  same way, with subscription requests routed through the agent that has web access. The intake
+  envelope already makes an RSS/list item just another bulk message with a known `list_id`, so
+  the pipeline half is free; what does not exist is the **election mechanism**: which agents may
+  request a subscription, who approves it, where the roster of standing subscriptions is
+  recorded, and how one is cancelled. E4-shaped design conversation before any build. One
+  constraint already binding on the intake build: nothing in the classifier may assume a message
+  was solicited by the user personally.
+  @kind: design
+  *raised by Mike 2026-08-19 in the intake plan review; plan holds the context
+  (`~/.claude/plans/this-session-is-for-tranquil-mango.md` § subscriptions as agent-elected inputs)*
+
+- **[DB-0819-02] When the tone profiler runs, it reads other people's emails with the user's
+  goals file loaded beside them.** [tools/tone.py:148](tools/tone.py#L148) calls `run_session`
+  without `bare=True`, so the correspondence extractor falls to the specialist default branch and
+  carries `goals.yaml` in its system prompt — attacker-writable input beside personal context,
+  the exact posture the intake extractor avoids by passing `bare=True`
+  ([core/orchestrator.py:3548](core/orchestrator.py#L3548)). **Low priority — the path is
+  dormant** (Mike, 2026-08-19: the profiler has not fired meaningfully while prompt-initiated
+  email sending remains non-operational). Fix looks like one argument; **verify against
+  `tone_profiler.md`'s actual instructions first** — if the instruction file references goals or
+  profile, bare would silently break it.
+  @kind: fix
+  *found 2026-08-19 by the Fable 5 plan review, while confirming the intake extractor's bare
+  posture against the code*
+
 - **[DB-0818-09] An implausible instruction is acted on without a murmur; only an impossible one
   is caught, and today that was luck.** Mike, 2026-08-18, after watching *"the 32nd of September"*
   be refused: *"Would it catch something more subtle — 4am vs 4pm, 'are you sure you meant 4am?'"*
@@ -653,11 +717,14 @@ that plausibly dropped the Thursday deadline was fixed `fd273bf` on 08-18 agains
 That is the third time an item's own description has argued persuasively for the wrong decision.
 **Check the count's date and the evidence's date before promoting anything from here.**)*
 
+- **[user corrected a prior turn]** Specifies that the previously established language preference (Bulgarian) is global, covering both incoming and outgoing communications.  
+  `2026-08-20T21:44:01.478382Z`
+
 - **[same rule in two places]** This preference may already be covered by a rule that applies to everyone. Class: brevity — how long a proactive session's opening should be. A universal rule of this class belongs in the scheduler layer. Preference: config/personas/mike.md:16 — Open sessions with the most time-sensitive commitment, overdue follow-up, or unresolved thread, naming it specifically. If genuinely nothing is outstanding, keep it to one line and ask what is on. Candidate rule(s) it may restate: (0.88) [brevity] config/personas/mike/scheduler.yaml:21 — Good morning. Open with whatever is most time-sensitive today — a commitment, an overdue follow-up, or an unresolved thread from recent context. Name it specifically rather than as (0.88) [brevity] config/templates/scheduler.yaml:21 — Good morning. Open with whatever is most time-sensitive today — a commitment, an overdue follow-up, or an unresolved thread from recent context. Name it specifically rather than as (0.41) [wording only] config/agents/synthesizer.md:179 — **A proactive session opens on one thing, and its shape follows from that.** Almost always there is something to open on — a commitment today, something upcoming, a thread left ope Candidates are ranked by wording overlap, which is weak at this scale — the flagged preference is the reliable part, the partner is a starting point. If the preference says nothing the shared rule does not, delete it. If it is a genuine personal refinement, keep it and reword it so the difference is all it states.  
   `2026-08-19T04:30:18.897139Z`
 
-- **[user corrected a prior turn]** CLARIFICATION_NEEDED:  ×2  
-  `2026-08-19T06:30:02.779299Z`
+- ⚠ **[user corrected a prior turn]** CLARIFICATION_NEEDED:  ×7  
+  `2026-08-20T21:45:09.834651Z`
 
 - **[user corrected a prior turn]** User corrected spelling of contact name from 'Kathaleen' to 'Kathleen'.  ×2  
   `2026-08-18T16:18:04.822974Z`
