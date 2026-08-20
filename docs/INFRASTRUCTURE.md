@@ -114,8 +114,28 @@ memory or from another file.** They have been raised four times.
 
 | Tier | Amount | Fires | Action | Recovery |
 |---|---|---|---|---|
-| **Soft** | $100 | `budget-soft-cap` → `stop-vm` | stops `metatron-vm` | `gcloud compute instances start`, ~60s |
-| **Hard** | $175 | `billing-cap` → `stop-billing` | disables project billing | **days** — runbook below |
+| **Soft** | $150 | `budget-soft-cap` → `stop-vm` | stops `metatron-vm` | `gcloud compute instances start`, ~60s |
+| **Hard** | $250 | `billing-cap` → `stop-billing` | disables project billing | **days** — runbook below |
+
+> **⏳ TEMPORARY — revert both in September (Mike, 2026-08-20).** These are elevated
+> to clear a known cost defect, not because the true budget changed. **When the
+> September cycle resets, bring them back down** — to $100/$175 unless the
+> reconciliation says otherwise. Backlog: `[DB-0820-01]`.
+>
+> **Raised 2026-08-20 from $100/$175** after the soft cap fired at 10:36 and stopped
+> the VM mid-deploy. The trip was real, but the cause was a defect rather than usage:
+> Vertex **context-cache storage** — abandoned caches, midnight-UTC expiry instead of
+> a TTL, and `spend_guard` blind to storage — costing roughly $100/month
+> (`archive/plans/vertex_cache_cost_control_2026-08-20_plan.md`). **Raising the caps
+> buys time; that fix removes the cause.**
+>
+> **The gap between the tiers is the thing to protect, not the absolute numbers.**
+> Soft was raised to $150 first, which would have left only **$25** before the hard
+> cap — and the hard cap is an *outage*, has already fired **below** its own threshold
+> once (2026-07-30, ~$31 against a $40 budget, stale notification), and sits behind
+> spend figures that lag by hours. The hard cap was raised in the same pass to keep
+> ~$100 of runway. Little real protection is lost: per the note below, **neither cap
+> catches a runaway** — `core/spend_guard.py` is the fast path.
 
 Raised from $70/$150 on 2026-08-09 after the Aug 1–8 reconciliation found ~$35 by
 day 8 (~$4.38/day) tracking to trip the old soft cap around Aug 16, with roughly
