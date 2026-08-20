@@ -1,4 +1,4 @@
-### 2026-08-20, third (the Vertex bill reconciled — a per-hour cost that no per-call meter could see) — `DEV_BACKLOG.md`, `archive/plans/`, global `~/.claude/CLAUDE.md`, `6a96fc4`, **not deployed**
+### 2026-08-20, third (the Vertex bill reconciled, and "verified ZDR" was never verified) — `ROADMAP.md` § Section 0, `core/orchestrator.py`, `DEV_BACKLOG.md`, `archive/plans/`, `archive/handoffs/`, global `~/.claude/CLAUDE.md` — `6a96fc4`…`01495ec`, **not deployed**
 
 **Mike asked why 18 August cost $17.31 and 19 August $6.12 against $1.93 on the 17th.** The answer
 was not the development testing, though that explains the 18th's call volume. It is a cost class
@@ -66,3 +66,61 @@ Pro calls** — the cache is read on a session's first turn only.
 `billing_export` dataset created 2026-08-09 is **still empty** — the Console step was never done, which
 is why this had to be reconstructed from Monitoring at all. Two caches were left live deliberately.
 Nothing deployed. `6a96fc4` commits the plan as the baseline Fable is rewriting against.
+
+**Then the session turned, on Mike's challenge to a detail.** Asked whether the Vertex endpoint was
+really `global` — he recalled choosing `us-central1` — and both memories turned out right about
+different layers. **The VM zone, the subnet and both Cloud Functions are `us-central1`; the model
+endpoint is `global`**, documented in `docs/INFRASTRUCTURE.md` § Vertex AI credentials as *"required
+for Gemini 3.x models — us-central1 does not work"*. So the cache location finding stood.
+
+**The check found a live trap anyway.** All three call sites defaulted `GOOGLE_CLOUD_LOCATION` to
+`us-central1` — an endpoint that does not serve the models this project runs. It had never fired
+because both hosts set the variable; it was waiting for a fresh checkout, and would have failed at
+call time rather than startup. Fixed as one named `_vertex_location()` helper defaulting to
+`global`, warning once when unset, replacing the triplicated inline default (`175809e`). Verified
+against all three branches: set-to-global, set-to-a-region (env respected, not overridden), and
+unset (one warning, not two).
+
+**The largest finding of the session came last, and it is not about cost.** Asked to look into how
+ZDR interacts with jurisdictions, and the jurisdiction question turned out to be the lesser one.
+**`ROADMAP.md` § Section 0 has authorised sensitive-tier personal data on the Vertex VM since
+2026-06-18 on the strength of "verified Zero Data Retention." Nobody had ever verified it, and it is
+not in force.** Checked directly: no organization parent, a self-serve *"My Billing Account"* with no
+reseller or contract parent, zero org policies, and no record anywhere in the repo of an
+abuse-monitoring exception being requested or granted. ZDR is not a default state on Vertex.
+
+**Of the amendment's three claims, one survives.** *"No training use"* holds by default. *"Prompts/
+responses cleared before logging"* does not — that is exactly what the exception buys. *"Contractual
+sequestration"* holds only weakly. This does **not** breach the 2026-06-10 ruling as written, which
+targets shared infrastructure where data mingles with other users' traffic — but the amendment's
+premise was half wrong, and the amendment is what authorises the sensitive default. **The most
+exposed path is the one the 2026-08-09 clarification named explicitly: `tone_profiler`, which reads
+real correspondence written by other people.**
+
+**Recorded as a dated correction beneath the original amendment, not a rewrite** (`01495ec`) —
+rewriting it would destroy the evidence of what was believed when those paths were cleared, which is
+what made this hard to spot. **Whether the permission continues on the corrected basis is left
+explicitly undecided**: Mike directed the correction and the ZDR work, neither of which is a ruling
+on whether work proceeds meanwhile. *"Verified ZDR"* is now banned in the repo until something
+records a verification.
+
+**Rejected: filing this as a backlog item and stopping.** Mike overrode the suggestion to file and
+verify later — *"No, let's verify ZDR right now"* — which was right: the check took four commands
+and overturned a two-month-old premise that a backlog entry would have carried unexamined for
+longer.
+
+**Why it went unchecked for two months, which is the transferable part.** `WebFetch`/`WebSearch` are
+Denied on this project, so no session could read Google's terms; the assumption was therefore
+uncheckable *from inside a session* and nobody said so out loud. That constraint is now the first
+item in the handoff, framed as Mike's call with the trade-off stated rather than as a request.
+
+**Handoff, not a backlog item:** `archive/handoffs/2026-08-20-zdr-verification-prompt.md` — research
+and a decision, no code expected, Fable. It carries the five checks already done so they are not
+redone, a caution against over-reading the `cacheConfig` probe (**it is not established that it
+governs abuse-monitoring retention at all**), and plans for the likely branch — that ZDR is *not*
+obtainable on a self-serve account with no organisation.
+
+**State at close.** A parallel window is mid-build on the cache plan (295 insertions in
+`core/orchestrator.py`, plus `scripts/vertex_cache_admin.py` and `tests/test_vertex_cache_ttl.py`) —
+none of it staged here. `175809e` owes a deploy but changes nothing on the VM, which already sets the
+variable. The two live caches were left running on Mike's instruction.
