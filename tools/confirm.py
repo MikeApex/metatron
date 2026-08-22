@@ -217,6 +217,11 @@ _EXECUTORS: dict[str, tuple[str, str]] = {
     # Gates ONE branch of write_contact — creating a record that resembles an existing
     # one — not the whole tool. An update by contact_id is ungated. [DB-0815-07].
     "write_contact":         ("tools.crm",           "write_contact"),
+    # Every merge, no exceptions — a merge folds one real person's history into
+    # another's and pre-08-22 merges cannot be reversed. tools/crm.py also
+    # setdefault-registers this at import as a fallback; this line is the durable
+    # copy and wins. [DB-0822-03].
+    "merge_contacts":        ("tools.crm",           "merge_contacts"),
     # A taught intake rule silences mail permanently — the quiet, compounding kind
     # of change that must complete server-side from the user's own approval.
     "teach_intake":          ("tools.intake",        "teach_intake"),

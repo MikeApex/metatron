@@ -55,7 +55,9 @@ ACTION_TOOLS: frozenset[str] = frozenset({
     # by hand. Added 2026-08-18 — they shipped 08-18 unclassified, and an unclassified
     # state-changing tool runs without appearing on the ACTIONS line, which is exactly
     # the [DB-0810-13] failure this module exists to prevent.
-    "merge_contacts", "import_contacts_file",
+    # unmerge_contacts reverses a merge from the pre-merge snapshot — state-changing
+    # in both directions, so it is an action like the merge it undoes. [DB-0822-03].
+    "merge_contacts", "unmerge_contacts", "import_contacts_file",
     # Commitments and scheduled jobs
     "open_obligation", "close_obligation", "reopen_obligation",
     "write_schedule", "delete_schedule",
@@ -97,7 +99,7 @@ READ_TOOLS: frozenset[str] = frozenset({
     "read_calendar", "check_calendar_conflicts",
     "get_weather", "get_environmental_snapshot", "get_pollen_forecast",
     "get_tfl_status", "get_flight_status", "get_travel_time",
-    "get_regional_transit_info",
+    "get_regional_transit_info", "find_places",
     "list_schedules", "list_obligations",
     "fetch_url", "read_email",
     # fetch_rendered is fetch_url with a headless browser for JS-heavy pages — it reads

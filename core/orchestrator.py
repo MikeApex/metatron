@@ -588,9 +588,10 @@ def register_tools() -> tuple[list[dict], dict]:
     )
     from tools.crm import (
         write_contact, read_contact, list_contacts, log_interaction, search_contacts,
-        merge_contacts,
+        merge_contacts, unmerge_contacts,
         WRITE_CONTACT_SCHEMA, READ_CONTACT_SCHEMA, LIST_CONTACTS_SCHEMA,
         LOG_INTERACTION_SCHEMA, SEARCH_CONTACTS_SCHEMA, MERGE_CONTACTS_SCHEMA,
+        UNMERGE_CONTACTS_SCHEMA,
     )
     from tools.tone import get_tone_shape, GET_TONE_SHAPE_SCHEMA
     from tools.agent_config import (
@@ -667,6 +668,7 @@ def register_tools() -> tuple[list[dict], dict]:
         RUN_MODEL_CONFERENCE_SCHEMA,
         WRITE_CONTACT_SCHEMA, READ_CONTACT_SCHEMA, LIST_CONTACTS_SCHEMA,
         LOG_INTERACTION_SCHEMA, SEARCH_CONTACTS_SCHEMA, MERGE_CONTACTS_SCHEMA,
+        UNMERGE_CONTACTS_SCHEMA,
         GET_TONE_SHAPE_SCHEMA,
         WRITE_AGENT_CONFIG_SCHEMA, READ_AGENT_CONFIG_SCHEMA,
         WRITE_WISHES_SCHEMA, READ_WISHES_SCHEMA, GENERATE_EMERGENCY_CARD_SCHEMA,
@@ -725,6 +727,7 @@ def register_tools() -> tuple[list[dict], dict]:
         "log_interaction": log_interaction,
         "search_contacts": search_contacts,
         "merge_contacts": merge_contacts,
+        "unmerge_contacts": unmerge_contacts,
         "get_tone_shape": get_tone_shape,
         "write_agent_config": write_agent_config,
         "read_agent_config": read_agent_config,
