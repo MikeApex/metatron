@@ -1,6 +1,6 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-21 (ZDR verification) — **the ZDR handoff ran; the exception is obtainable on
+*Updated: 2026-08-22 (ZDR opt-out submitted) — **the ZDR handoff ran; the exception is obtainable on
 this exact account shape.** Google's terms, read under a per-occasion, since-reverted WebFetch
 lift: the opt-out form serves precisely self-serve GCP-ToS customers, and the default is
 **flagged-only prompt logging ≤90 days, never training** — narrower than the correction assumed,
@@ -9,9 +9,14 @@ and a proposed § Section 0 amendment (**not applied**):
 `archive/security/zdr_terms_evidence_2026-08-20.md`. **In-force status authority: the row in
 `docs/INFRASTRUCTURE.md` § Vertex AI credentials.***
 
-*⚠ **Two acts are Mike's, in the backlog inbox: submit the opt-out form, and rule on the proposed
-amendment** (does the sensitive-tier default continue on the corrected basis until grant or
-refusal; backstop 2026-10-01).*
+*⚠ **The ZDR opt-out was submitted 2026-08-22 — decision expected by ~2026-09-05** (Google: ~2
+weeks, plus 5–7 business days to allowlist). It is **not in force until granted**; the email to
+`diamond.mike@gmail.com` is the only evidence, recorded either way in `docs/INFRASTRUCTURE.md`
+§ Vertex AI credentials, which stays the authority. Answers as filed:
+`archive/security/zdr_optout_form_answers_2026-08-21.md`. **One act still Mike's and it does not
+wait on Google:** rule on the proposed § Section 0 amendment — does the sensitive-tier default
+continue on the corrected basis (flagged-only logging, ≤90 days, no training) until grant or
+refusal, backstop 2026-10-01.*
 
 *⚠ **A parallel window is mid-build on the cache fix**, none of it staged here. Plan:
 `archive/plans/vertex_cache_cost_control_2026-08-20_plan.md`, **rewritten by Fable — the 10-minute
