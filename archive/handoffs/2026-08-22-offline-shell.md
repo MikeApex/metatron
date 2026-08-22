@@ -46,3 +46,41 @@ asked for.
 for `-Users-md-homefolder-Desktop-metatron-wt-offline-shell`, and exits; this session's log lives
 under the main tree's project directory, which this worker was told not to write to. The
 coordinator should run it from the main tree.
+
+---
+
+## Update — registration gap closed (coordinator follow-up, same session)
+
+The gap named above is fixed; manifest was extended by `static/index.html`. Stated precisely:
+`index.html` **did** register `/sw.js`, but only inside `initPush()`, gated on `PushManager`
+support and `Notification.permission` (~lines 2104–2145). Users who declined notifications, and
+WebViews with no `PushManager`, never registered a worker — so the offline shell never installed
+for them.
+
+**Change (minimal, no push/permission UI logic or wording touched).** One unconditional
+`navigator.serviceWorker.register('/sw.js')` at script bootstrap, guarded only by
+`'serviceWorker' in navigator`, running before and independently of login — both `/sw.js` and
+`/static/offline.html` are in `auth.OPEN_PREFIXES`/`OPEN_PATHS`, so it works pre-login. The
+registration promise is held in `swRegistration`, and `initPush()`'s two former `register()` call
+sites now `await swRegistration` then `await navigator.serviceWorker.ready`.
+
+**Why the promise rather than bare `.ready`:** `navigator.serviceWorker.ready` never settles when
+nothing is registered, so awaiting it alone would have left the push UI stuck on "Notifications on
+— setting up…" whenever registration failed, where the old code surfaced an error. Awaiting
+`swRegistration` first preserves the original failure behaviour through the existing `catch`. The
+logging `.catch` is attached to a derived promise so the original still rejects.
+
+**Tests: 15/15** (`node tests/test_sw_offline_shell.js`). The added check is a **static assertion**
+— it brace-matches `initPush()`'s body and asserts at least one `/sw.js` registration lies outside
+it, none inside, and that the startup call is not gated on `PushManager` or
+`Notification.permission` (comments stripped first, since the comment there names PushManager
+deliberately). It was **mutation-tested**: deleting the startup registration turns it red (14/15),
+so it is not vacuous. The other 14 checks still execute the real `sw.js`. `qa_sweep.sh` 9/9 in this
+worktree.
+
+**Manual check is unchanged, but now covers more devices** — including a phone with notifications
+declined, which previously could not show the shell at all. Note the first load after deploy still
+needs one online visit to install the worker; the shell appears from the *next* failed navigation.
+
+Commits: `2d7f955` "Serve an offline shell when the server is unreachable", then "Register the service worker unconditionally at startup" (this commit — see `git log --oneline -2`; not quoted by hash here, since amending the commit that contains this file would change it). Still needs
+`./deploy.sh`, `static/` only.

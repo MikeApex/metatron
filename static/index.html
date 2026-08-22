@@ -2099,6 +2099,9 @@
     return sub;
   }
 
+  // Set at startup by the unconditional registration at the bottom of this script.
+  let swRegistration = null;
+
   async function initPush() {
     const wrap = document.getElementById('notif-wrap');
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
@@ -2120,8 +2123,8 @@
           const result = await Notification.requestPermission();
           if (result === 'granted') {
             wrap.innerHTML = '<span style="color:#444;font-size:12px">Notifications on — setting up...</span>';
-            const reg = await navigator.serviceWorker.register('/sw.js');
-            await navigator.serviceWorker.ready;
+            await swRegistration;   // rejects if startup registration failed
+            const reg = await navigator.serviceWorker.ready;
             await subscribePush(reg);
             wrap.innerHTML = '<span style="color:#444;font-size:12px">Notifications on</span>';
           } else {
@@ -2135,10 +2138,10 @@
       return;
     }
 
-    // Already granted — register SW and subscribe silently
+    // Already granted — subscribe silently against the startup registration
     try {
-      const reg = await navigator.serviceWorker.register('/sw.js');
-      await navigator.serviceWorker.ready;
+      await swRegistration;   // rejects if startup registration failed
+      const reg = await navigator.serviceWorker.ready;
       await subscribePush(reg);
       wrap.innerHTML = '<span style="color:#444;font-size:12px">Notifications on</span>';
     } catch(e) { console.warn('Push subscribe failed:', e); }
@@ -2226,6 +2229,23 @@
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitText(); }
   });
 
+
+  // Register the service worker unconditionally, before and independently of login.
+  // This is what installs the offline shell: without a registered worker there is no
+  // fetch handler, so a phone that cannot reach the server falls back to the browser's
+  // own error page. Registration used to happen only inside initPush(), gated on
+  // PushManager support and notification permission — so a user who declined
+  // notifications, or a WebView with no PushManager, never got a shell.
+  //
+  // initPush() no longer registers; it awaits navigator.serviceWorker.ready and uses
+  // that registration. Registering the same URL twice is a no-op per spec, but having
+  // one owner of the registration keeps the push UI and the offline shell independent.
+  if ('serviceWorker' in navigator) {
+    swRegistration = navigator.serviceWorker.register('/sw.js');
+    // Logged on a derived promise so the original still rejects for initPush to
+    // catch — awaiting .ready alone would hang forever if registration failed.
+    swRegistration.catch((e) => console.warn('Service worker registration failed:', e));
+  }
 
   // Auto-login if persona saved — must run after all variables and handlers are initialized
   const savedPersona = localStorage.getItem('metatron_persona');

@@ -230,6 +230,47 @@ async function main() {
     assert(/location\.reload\(\)/.test(html), 'offline.html has no retry that reloads');
   });
 
+  // Static assertion, deliberately: the registration lives in static/index.html and
+  // depends on `navigator`, page lifecycle and login state, none of which this
+  // jsdom-free harness has. What it CAN prove is the property that was actually
+  // broken — that registration is not fenced inside the permission-gated path.
+  await check('index.html registers /sw.js outside the push-permission path', () => {
+    const html = fs.readFileSync(path.join(__dirname, '..', 'static', 'index.html'), 'utf8');
+    const REG = /navigator\.serviceWorker\.register\(\s*['"]\/sw\.js['"]\s*\)/g;
+
+    const sites = [...html.matchAll(REG)].map(m => m.index);
+    assert(sites.length > 0, 'nothing registers /sw.js at all');
+
+    // Bound initPush() by brace-matching from its declaration.
+    const start = html.indexOf('async function initPush()');
+    assert(start > 0, 'could not locate initPush() — this test needs rewriting');
+    let i = html.indexOf('{', start), depth = 0, end = -1;
+    for (; i < html.length; i++) {
+      if (html[i] === '{') depth++;
+      else if (html[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
+    }
+    assert(end > start, 'could not find the end of initPush()');
+
+    const outside = sites.filter(ix => ix < start || ix > end);
+    const inside = sites.filter(ix => ix >= start && ix <= end);
+    assert(outside.length >= 1,
+      'every /sw.js registration is inside initPush() — a user who declines ' +
+      'notifications, or a WebView with no PushManager, never gets the offline shell');
+    assert(inside.length === 0,
+      'initPush() still registers /sw.js itself; it should reuse the startup registration');
+
+    // The startup call must not be gated on push support. Comments are stripped
+    // first — the explanatory comment above that call names PushManager precisely
+    // because that is the gate being removed, and matching it would be a false fail.
+    const before = html.slice(Math.max(0, outside[0] - 400), outside[0])
+      .replace(/\/\/[^\n]*/g, '')
+      .replace(/\/\*[\s\S]*?\*\//g, '');
+    assert(!/PushManager/.test(before), 'the startup registration is gated on PushManager');
+    assert(!/Notification\.permission/.test(before), 'the startup registration is gated on permission');
+    assert(/'serviceWorker'\s+in\s+navigator/.test(before),
+      'the startup registration is not guarded by a serviceWorker support check');
+  });
+
   // --- report ---
   let failed = 0;
   for (const [name, ok, err] of results) {
