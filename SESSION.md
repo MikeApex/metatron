@@ -40,23 +40,27 @@ cause. The virtue dump is context-injection code (`core/orchestrator.py:352-356`
 *⚠ **Caps are temporarily $150/$250, back down in September** — `[DB-0820-01]`, `due: 2026-09-01`;
 keep ~$100 between tiers (`CLAUDE.md` § Infrastructure traps 3).*
 
-*✅ **A near-match contact is no longer created silently** (`6d6d46c`, deployed) — `write_contact`
-saves nothing and asks; the model is not in the consent path. Updates by id ungated, bulk import
-exempt. **`[DB-0815-07]` closed.** Neither cheaper answer survived measurement: the score cannot
-separate same-person from different (Stephen/Steven 0.77 is one, Dave/Dan Bennett 0.87 is two).
-**Mike's standing instruction — the gate should become UNNECESSARY as models improve**; § D2 now
-owes a judgement-consistency test measuring how often a model *asks*, per specialist tier. Also
-`b980b93`: the monitoring flag saw crashes only (786 calls, one `ok:false`); `[DB-0810-07]` open.*
+*✅ **A near-match contact is no longer created silently** (`6d6d46c`, deployed; `[DB-0815-07]`
+closed). The gate should become unnecessary as models improve — the judgement-consistency test
+that decides that is `ROADMAP.md` § D2's row. `b980b93` fixed the crashes-only monitoring flag;
+`[DB-0810-07]` open.*
 
-*⚠ **`merge_contacts`' first production run corrupted a real contact** — *"keeping Steven"* was
-ambiguous across three Stevens, it silently took Mike's friend (spouse Yana) and folded both gym
-records in; **no unmerge** (`[DB-0822-03]`, repair `[DB-0822-04]`). The ambiguous instruction was
-Claude's. An app-side frame log printing internals **as the assistant** was stopped by Mike before
-deploy; rebuilt server-side (`a192821`). **A handoff's wording is not approval.***
+*✅ **A merge now asks first, shows both people, and is reversible — built, NOT deployed**
+(`fd0aed1`+`158cebe`, closes `[DB-0822-03]` on deploy). First call returns PENDING_CONFIRMATION
+naming both records (spouse/last-contact added to disambiguation — the fields that told the three
+Stevens apart); `unmerge_contacts` restores both sides from a new pre-merge snapshot. **Pre-08-22
+merges refuse honestly — Steven's repair stays manual (`[DB-0822-04]`)**; `"ph"`-class phone stubs
+now refused. Same batch, same deploy: **offline shell** (`[DB-0803-05]` — dead server shows the
+app's page; SW registration was push-gated, now unconditional) and **`find_places` venue
+discovery** (`[DB-0808-04]` — granted to logistics + recreation; **needs a new Places-restricted
+`GOOGLE_PLACES_API_KEY` on the VM, ~<$2/mo** — the Maps key is routes-locked by design and will
+not serve it).*
 
 ***Next:** `[DB-0820-05]` — with storage fixed, all-Pro routing is **~$3.11/day against today's
 $6.12**, so the Flash-Lite tiers are worth revisiting once a clean day is measured; `coordinator`
-is the only candidate and its blocker is latency, not money. Deploys current through `6d6d46c`.*
+is the only candidate and its blocker is latency, not money. **Deploys current through `6d6d46c`;
+one `./deploy.sh` now owed** covering the spend_guard uplift (`b4dcb0e`) and the three-cluster
+batch (`0b9c82e`+`158cebe`); post-deploy, load the app once online before testing the shell.*
 
 *⚠ **A v1/alpha architecture question is live: invert to code-dominant, with models as discrete
 judgment gates.** Preliminary discussion 2026-08-22, **no decision** — Claude recommended the
@@ -162,10 +166,10 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-22 | **`/backlog attack`: three clusters shipped by parallel Opus workers, reviewed in Fable.** A dead server now shows the app's own page (SW registration was push-gated — a user who declined notifications never had the shell); a merge asks first, shows both people, and is reversible via pre-merge snapshots (pre-08-22 merges refuse honestly); "find a café near X" is answerable (`find_places`, needs its own Places-restricted key — the Maps key is routes-locked). Coordinator caught the "same key" premise error and the push-gated registration; worker B nearly doubled the ~64k median (118k) | `2d7f955` `e2a7f87` `fd0aed1` `8754222` `158cebe` — **not deployed** |
 | 08-22 | **The 21st reconciled: the bill is right, caching earns for the first time, and the scheduler — not Mike — ate the day.** Storage $3.46/day → **$0.14994**; caching net **+$0.10 to +$0.31/day**, sitting on break-even. Expected bill **$2.51–$2.71** vs 08-19's $6.12 for *more* usage; method validated by reproducing 08-19's gap to the dollar. **89% of the day was automated** (9 scheduled + 10 trailing Diarist runs = 116 of 130 calls; 4 interactive), and the Synthesizer's 11 calls cost more than the other 119 combined. **`spend_guard` read 23% low** — cache creation and retries are invisible to the turn path; closed with a measured `unmetered_uplift: 1.25`, raw `usd` kept auditable. **Two of my own claims were wrong and corrected before build:** the billing export is backfilling forward, not dead, and the virtue dump is injection code, not a clock trigger in a Denied-tier file. **The reframe: six of six complaints are already rules in `synthesizer.md` and all six were ignored** — adherence, not absence. Six items filed `[DB-0822-05]`–`[DB-0822-10]`, Amber before Red | `spend_guard` **not deployed** |
 | 08-22 | **The contact dedup gate ships; its first live merge takes the wrong Steven.** `write_contact` now saves nothing on a near-match and asks — neither cheaper answer survived measurement (score **cannot** separate same-person from different: Stephen/Steven 0.77 is one, Dave/Dan Bennett 0.87 is two; the agent asked once then asserted 4 min later). **Gate carries a standing note that it should become unnecessary**; § D2 owes a judgement-consistency test. The monitoring flag saw **crashes only** — 786 calls, one `ok:false`, graceful failures all green. **Then `merge_contacts`' first production run corrupted a real contact** on an ambiguous *"keeping Steven"* across three Stevens — no unmerge. An app-side frame log was **stopped by Mike before deploy**: it printed internals as the assistant | `a192821`, `b980b93`, `6d6d46c`, `4c05b8b` — **deployed** |
 | 08-22 | **The cache fix shipped: 10-minute sliding TTL, owned sweep, storage on the meter — and the export's backfill proves caching was net-negative its whole life** ($19.59 storage vs $1.53 cached reads since June 30). Built in Opus, reviewed in Fable post-switch (three minor findings, none blocking), deployed by Mike 08-21; 9 pre-TTL caches reaped by hand after the "they'll self-expire at midnight" prediction proved wrong. **Step 6's first analysis was inverted by Mike's challenge** — creation amortises across bursts (74 invocations = 10 creations), so MW+PH caching is worth ~+$0.17/day and the creation-SKU question stopped mattering; the findings doc retracts its own claim against the Fable plan, which was right all along. Remainder filed as `[DB-0822-01]`, `due: 2026-08-25` | `9de2836`, `e5d5037` — **deployed** |
-| 08-22 | **Was Metatron built backwards? A code-dominant inversion — procedural spine in code, models as discrete judgment gates — was argued for and left with Mike.** Prompted by an Opus barbecue-RSVP exhibit showing model inertia toward the reactive; the "compass layer" (allocation policy, portfolio view) needs standing *computed* state no prompt can supply, and the incident log has been moving judgment into code all year. Recommendation: decide before A8; pilot the RSVP flow; Synthesizer stays an agent. Full record: `archive/plans/code_vs_agent_architecture_2026-08-22_discussion.md` | **nothing — discussion only** |
 ---
 
 ## Useful context to pull as needed

@@ -107,12 +107,18 @@ Reasoning lives in `archive/PROJECT_LOG.md` § 2026-08-10, last. Every entry car
 checked and when; a verdict without that line is a description, and descriptions are what the
 standing rule distrusts.*
 
-- **1. [DB-0808-04] Suggest a café near a named address.** Google Places venue discovery for
-  `logistics` / `recreation_hobbies`. **Needs no GPS** — it was parked for months behind the
-  real-time location question, which is a different item (`[DB-0815-12]`) and always was.
-  Ready to build; ranked first.
+- **1. [DB-0808-04] "Find a café near X" is built and tested; it answers nothing until the key
+  exists and the deploy runs.** `find_places` shipped 2026-08-22 (`8754222`+`158cebe`, 28/28
+  tests): venue discovery near any named address, granted to `logistics` and
+  `recreation_hobbies`, no GPS involved. **Two exits, both outside the code:** *(1)* Mike creates
+  a **new** API key on `metatron-ai-499810` restricted to the Places API and puts it in the VM's
+  `.env` as `GOOGLE_PLACES_API_KEY` — the Maps key is routes-locked at creation by design and
+  will not serve Places (~$0.017–0.032/call, <$2/mo at expected use, inside the $200 credit);
+  *(2)* the owed `./deploy.sh`. Until both, the tool returns an honest not-configured error.
+  Close on one live "suggest a café near <address>" returning real venues.
   @kind: feature
-  *filed 2026-08-08 by Mike · promoted 2026-08-15*
+  @waiting: Places-restricted key in the VM's `.env`, then the owed deploy
+  *filed 2026-08-08 by Mike · promoted 2026-08-15 · built 2026-08-22*
 
 - **2. [DB-0820-01] The spend caps are temporarily too high — bring them back down in
   September.** Raised 2026-08-20 from **$100/$175 to $150/$250** (soft stops the VM, hard
@@ -536,28 +542,21 @@ with a date.** Nothing new joins this group open-ended.*
   *filed 2026-08-15*
 
 
-- **[DB-0822-03] Asked to merge two contacts, it silently picked the wrong person and folded them
-  into a real friend's record.** Mike, live 2026-08-19: *"Steven from the gym and Stephen from the
-  gym are the same person. Merge them, keeping Steven."* **There were three Stevens.** The agent
-  chose `keep_id = 5069065f` — Mike's actual friend, spouse Yana, dinner logged 21 June — and folded
-  **both** gym records into him, in two `merge_contacts` calls, without asking which Steven.
-  **Confirmed in the record afterwards:** his contact now says he was met *at the gym* (inherited
-  from the gym record) and carries a phone of `"ph"`.
-  **The instruction was genuinely ambiguous and the agent resolved it silently — same ask-vs-assert
-  failure as the near-match case, now on a DESTRUCTIVE operation.** `_ambiguous_match` exists in
-  `tools/crm.py` and guards name lookups; `merge_contacts` takes ids directly, so nothing checks
-  that the *choice* of id was unambiguous.
-  **There is no unmerge.** Both originals are archived with `merged_into` pointers, so recovery is a
-  JSON edit on the VM — not something the app can do.
-  **Two smaller findings from the same trace, kept because each is a separate gap:** the placeholder
-  guard does not catch `"ph"` as a phone value (`_is_placeholder_phone` covers fictional *ranges*,
-  not two-letter junk — the model turned *"Stephen with a 'ph'"* into a phone number); and the reply
-  **offered to delete a contact**, a capability that does not exist in any tool — the
-  instructed-but-unbuilt class `scripts/check_agent_tools.py` guards, appearing in agent prose
-  rather than a grant.
+- **[DB-0822-03] A merge now asks first, shows both people, and is reversible — built and tested
+  2026-08-22, NOT deployed.** The 2026-08-19 failure (three Stevens; the agent silently folded both
+  gym records into Mike's actual friend): `merge_contacts` now returns PENDING_CONFIRMATION naming
+  **both** records with what tells them apart — `spouse_name` and `last_contact` added to
+  `_disambiguation_entry`, the two fields that distinguished the Stevens — and merges only on the
+  user's in-app approval; the model never holds the token (`fd0aed1`, wired `158cebe`; 25/25 +
+  18/18 tests). `"ph"`-class digitless/under-5-digit phone stubs refused. `unmerge_contacts`
+  restores both sides from a new pre-merge snapshot of the kept record — **forward only: pre-08-22
+  merges have no snapshot and refuse honestly**, so `[DB-0822-04]`'s repair stays manual.
+  **One unfixed remainder from the trace:** the reply had **offered to delete a contact**, a
+  capability no tool has — agent-prose instructed-but-unbuilt class, not touched by this build.
   @kind: bug
-  *filed 2026-08-22 from the 2026-08-19 live run · the `[DB-0815-07]` gate is unrelated and shipped;
-  this is the merge path, which had never run in production before that day (0 calls in 786)*
+  @waiting: the owed deploy, then one live merge showing the confirmation card and completing on
+  approval
+  *filed 2026-08-22 from the 2026-08-19 live run · gate + unmerge built 2026-08-22*
 
 - **[DB-0822-04] Repair Steven's contact record.** Consequence of `[DB-0822-03]`, kept separate
   because it is data repair on a real person, not a code fix. Phone is the literal string `"ph"`;
@@ -799,12 +798,16 @@ with a date.** Nothing new joins this group open-ended.*
   @kind: bug
   *filed 2026-08-08*
 
-- **[DB-0803-05] A dead server shows the browser's error page instead of the app.** `sw.js`
-  registers no `fetch` handler and `/` is served `no-store`, so there is no offline shell. Small, but
-  a service-worker cache is sticky and hard to recover from if it is wrong — build it with a
-  dedicated `offline.html` and a navigation-failure fallback, not by caching `/`.
+- **[DB-0803-05] A dead server now shows the app's own page — built and tested 2026-08-22, NOT
+  deployed.** Fallback-only SW exactly as specified: dedicated `offline.html`, navigation requests
+  only, served solely when the network fetch fails; `/` never cached; `offline-v1` cache version is
+  the recovery lever (`2d7f955`; 15/15 in a real `vm`-sandbox execution test). **Also fixed while
+  verifying: SW registration was gated on push permission** — a user who declined notifications
+  never had a service worker at all; now registered unconditionally at startup (`e2a7f87`).
   @kind: bug
-  *filed 2026-08-03*
+  @waiting: the owed deploy, then ONE ONLINE LOAD to install the worker, then background/kill the
+  server and reload — the app's own page, not Chrome's error page
+  *filed 2026-08-03 · built 2026-08-22*
 
 - **[DB-0808-06] A flagged clinical thread can never be marked resolved.** `resolved` exists and
   nothing can legitimately set it, so every tier-2 thread is permanent. **The failure direction is
