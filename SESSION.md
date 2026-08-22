@@ -23,13 +23,25 @@ delete `mike.md`'s "check inbox every six hours" line if still present. `[DB-082
 model-tier switch-on gate, `[DB-0820-04]` owes the extractor its own injection row (advances B1b).*
 
 *⚠ **Caps are temporarily $150/$250, back down in September** — `[DB-0820-01]`, `due: 2026-09-01`;
-keep ~$100 between tiers (`CLAUDE.md` § Infrastructure traps 3). **`[DB-0815-07]` and `[DB-0810-07]`
-remain untested, not passing** — their 08-19 test designs never reached the code they tested.*
+keep ~$100 between tiers (`CLAUDE.md` § Infrastructure traps 3).*
 
-***Next:** `[DB-0820-05]` — with storage
-fixed, all-Pro routing is **~$3.11/day against today's $6.12**, so the Flash-Lite tiers are worth
-revisiting once a clean day is measured; `coordinator` is the only candidate and its blocker is
-latency, not money. Deploys are current through `e5d5037` (08-21).*
+*✅ **A near-match contact is no longer created silently** (`6d6d46c`, deployed) — `write_contact`
+saves nothing and asks; the model is not in the consent path. Updates by id ungated, bulk import
+exempt. **`[DB-0815-07]` closed.** Neither cheaper answer survived measurement: the score cannot
+separate same-person from different (Stephen/Steven 0.77 is one, Dave/Dan Bennett 0.87 is two).
+**Mike's standing instruction — the gate should become UNNECESSARY as models improve**; § D2 now
+owes a judgement-consistency test measuring how often a model *asks*, per specialist tier. Also
+`b980b93`: the monitoring flag saw crashes only (786 calls, one `ok:false`); `[DB-0810-07]` open.*
+
+*⚠ **`merge_contacts`' first production run corrupted a real contact** — *"keeping Steven"* was
+ambiguous across three Stevens, it silently took Mike's friend (spouse Yana) and folded both gym
+records in; **no unmerge** (`[DB-0822-03]`, repair `[DB-0822-04]`). The ambiguous instruction was
+Claude's. An app-side frame log printing internals **as the assistant** was stopped by Mike before
+deploy; rebuilt server-side (`a192821`). **A handoff's wording is not approval.***
+
+***Next:** `[DB-0820-05]` — with storage fixed, all-Pro routing is **~$3.11/day against today's
+$6.12**, so the Flash-Lite tiers are worth revisiting once a clean day is measured; `coordinator`
+is the only candidate and its blocker is latency, not money. Deploys current through `6d6d46c`.*
 
 *⚠ **A v1/alpha architecture question is live: invert to code-dominant, with models as discrete
 judgment gates.** Preliminary discussion 2026-08-22, **no decision** — Claude recommended the
@@ -135,10 +147,10 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-22 | **The contact dedup gate ships; its first live merge takes the wrong Steven.** `write_contact` now saves nothing on a near-match and asks — neither cheaper answer survived measurement (score **cannot** separate same-person from different: Stephen/Steven 0.77 is one, Dave/Dan Bennett 0.87 is two; the agent asked once then asserted 4 min later). **Gate carries a standing note that it should become unnecessary**; § D2 owes a judgement-consistency test. The monitoring flag saw **crashes only** — 786 calls, one `ok:false`, graceful failures all green. **Then `merge_contacts`' first production run corrupted a real contact** on an ambiguous *"keeping Steven"* across three Stevens — no unmerge. An app-side frame log was **stopped by Mike before deploy**: it printed internals as the assistant | `a192821`, `b980b93`, `6d6d46c`, `4c05b8b` — **deployed** |
 | 08-22 | **The cache fix shipped: 10-minute sliding TTL, owned sweep, storage on the meter — and the export's backfill proves caching was net-negative its whole life** ($19.59 storage vs $1.53 cached reads since June 30). Built in Opus, reviewed in Fable post-switch (three minor findings, none blocking), deployed by Mike 08-21; 9 pre-TTL caches reaped by hand after the "they'll self-expire at midnight" prediction proved wrong. **Step 6's first analysis was inverted by Mike's challenge** — creation amortises across bursts (74 invocations = 10 creations), so MW+PH caching is worth ~+$0.17/day and the creation-SKU question stopped mattering; the findings doc retracts its own claim against the Fable plan, which was right all along. Remainder filed as `[DB-0822-01]`, `due: 2026-08-25` | `9de2836`, `e5d5037` — **deployed** |
 | 08-22 | **Was Metatron built backwards? A code-dominant inversion — procedural spine in code, models as discrete judgment gates — was argued for and left with Mike.** Prompted by an Opus barbecue-RSVP exhibit showing model inertia toward the reactive; the "compass layer" (allocation policy, portfolio view) needs standing *computed* state no prompt can supply, and the incident log has been moving judgment into code all year. Recommendation: decide before A8; pilot the RSVP flow; Synthesizer stays an agent. Full record: `archive/plans/code_vs_agent_architecture_2026-08-22_discussion.md` | **nothing — discussion only** |
 | 08-21 | **ZDR: "verified" became verified — the abuse-monitoring exception is obtainable on this account shape, and the default is conditional logging, not blanket retention.** Google's published terms, read under a scoped, since-reverted WebFetch lift: the opt-out form serves exactly self-serve GCP-ToS customers; flagged-only prompt logging ≤90 days, never training; `cacheConfig` governs only the latency cache (handoff caution resolved); Search grounding keeps query logs 3 days with no opt-out. Evidence + proposed amendment: `archive/security/zdr_terms_evidence_2026-08-20.md`; status authority: `docs/INFRASTRUCTURE.md` § Vertex AI credentials. Form + § Section 0 ruling pending with Mike | **nothing — docs only** |
-| 08-20 | **The Vertex bill reconciled — the cost that stopped the VM is one no per-call meter could see.** Context-cache **storage bills per wall-clock hour** ($4.50/1M/hr on Pro), so `spend_guard` read **$2.63 against a $6.12 bill** and was working as designed. Three defects: caches **abandoned on every restart** (5 server + 5 scheduler = 10 Pro caches billing at once), **midnight-UTC expiry chosen for config-freshness with no cost figure beside it**, and the guard blind to storage. **Fable's review inverted the plan's priority** — the 10-minute TTL is the fix; the orphan sweep is a ~$0.14/day tidy-up, because Vertex reaps at `expire_time`. It also caught an unlocked registry, a streaming path that never evicts, and that Step 6 splits by model class (the compat path exists to dodge the `thought_signature` bug). **Three of my own claims were wrong and measurement killed each**: that caching never ran on the VM (the logs just don't capture it), that the residual was storage alone (**creation is metered too — proved by probe**), and that caching "costs more than it saves" before hit rate was measured (**15 hits against 65 Pro calls**). `[DB-0820-05]` filed: all-Pro routing is ~$3.11/day against today's $6.12. Global `CLAUDE.md` gained **§ Costs**. **Then the session's largest finding, and it is not about cost: `ROADMAP.md` § Section 0 has authorised sensitive-tier data on the VM since 2026-06-18 on "verified ZDR" — never verified, and not in force.** No org parent, self-serve billing account, zero org policies, no exception on record. Only "no training use" of its three claims holds. Recorded as a dated correction beneath the original text, **not a rewrite**; whether the permission continues is left explicitly undecided. Mike overrode filing-and-verifying-later — the check took four commands and overturned a two-month premise. Also fixed: all three Vertex call sites defaulted to a region that does not serve Gemini 3.x | **`6a96fc4`…`01495ec`; `175809e` owes a deploy but is inert on the VM** |
 ---
 
 ## Useful context to pull as needed

@@ -391,59 +391,39 @@ with a date.** Nothing new joins this group open-ended.*
   — what is being tested is whether the *model* now picks the right tool, which is behaviour
   *filed 2026-08-15*
 
-- **[DB-0815-07] The same person kept accumulating separate contact records.** `Eva` and
-  `Iva Diamond` were one person and survived five corrections. **Built and deployed** (`97b777c`,
-  `704e79b`): `merge_contacts` folds one record into another, unions list fields, and **archives
-  rather than deletes** with a `merged_into` pointer that `read_contact`/`search_contacts` follow —
-  the first implementation of the project's archive-on-merge rule here. `write_contact` surfaces
-  near-matches as evidence before creating; Eva/Iva and Kathaleen/Kathleen both trip it.
-  **⚠ 2026-08-18's test did not reach this code and must not be read as a pass.** *"Make a note that
-  Stephen from the gym recommended Jimmy"* was answered with **`write_journal`** — no contact write
-  was attempted at all, so the near-match guard was never entered. It produced a separate finding
-  worth keeping: the reply said *"I've made a note of that"*, true of the journal and materially
-  misleading about where it lives.
-  **The guard half is proven, the routing half is not — 2026-08-19.** `python
-  tests/test_crm_dedup_guards.py` passes **18/18** on current code, including Kathaleen/Kathleen and
-  Eva/Iva, so `_dedup_candidates` does fire and does surface evidence. What is unverified is that an
-  ordinary instruction gets as far as `write_contact`. **`write_contact` and `write_journal` are both
-  granted to `relationships` and to no one else** (`routing_cloud.yaml:129`) — so this is a tool
-  choice inside one agent, not a routing miss, and no grant change can fix it.
-  **⚠ RUN LIVE 2026-08-19 (Mike, `mike` persona) — the guard fires; the agent overrides it.
-  Half pass, and the failing half is the one that matters.** Turn 1, *"add Steven from the gym to my
-  contacts"*: created, **and the existing Steven was surfaced with an offer to merge** — the
-  near-match path proven live for the first time. Turn 2, four minutes later, *"add Stephen from the
-  gym to my contacts"*: **"Stephen with a 'ph' is added as a separate contact."** The candidate
-  clearly *was* surfaced — the reply names the spelling difference — and the agent **asserted a
-  verdict instead of asking**, on stronger evidence than turn 1, where it did ask.
-  **This is the designed weakness, not a bug in the guard.** `_dedup_candidates` returns evidence
-  and `write_contact` creates the record regardless — *"evidence for the calling agent to weigh, not
-  a verdict"*, by construction. The unit suite passes 18/18 and always did. **What is unresolved is
-  that an agent weighing identical evidence answered two ways four minutes apart**, and the
-  duplicate it created is exactly the failure the item was filed for.
-  **Scope with `[DB-0818-08]`** — a `verified` tier turning the surfaced candidate into a
-  *confirmation* rather than a suggestion is the same control, and this is the live evidence that
-  agent judgment alone does not hold it.
-  **✅ GATE BUILT 2026-08-19 (Mike's decision), needs deploy.** A near-match on **create** now saves
-  nothing and raises a confirmation through the existing out-of-band mechanism — the model is not in
-  the consent path, so a duplicate cannot come into existence unasked. **Updates by `contact_id` are
-  ungated** (a deliberate act on an identified record), and **bulk import is exempt via `_bulk`,
-  which is deliberately absent from the tool schema** so no model can set it — 200 contacts would
-  otherwise raise 200 blocking confirmations and train the user to approve a queue unread, which is
-  worse than no gate. `tests/test_contact_dedup_gate.py` (14) + `test_crm_dedup_guards.py` (18,
-  two rewritten: they pinned "still creates the record", now false by decision).
-  **Frequency, so the friction is a known quantity:** 5 `write_contact` calls in 786 production tool
-  calls, against 3 for `send_email`, which is already behind this same gate.
-  **⚠ PRODUCTION NOTE — the gate is expected to become unnecessary, and that is the design intent,
-  not a hedge.** It exists because today's model on today's tier does not reliably ask. When one
-  does, **remove it and return to evidence-not-verdict**, which is the lighter design. The call gets
-  made by the judgement-consistency test now recorded in `ROADMAP.md` § D2 — measuring how often a
-  model *asks* rather than which answer reads better, because turn 1 proved Flash-Lite **can** ask
-  and turn 2 proved it does not reliably. Same note sits beside the gate in `tools/crm.py`.
+
+- **[DB-0822-03] Asked to merge two contacts, it silently picked the wrong person and folded them
+  into a real friend's record.** Mike, live 2026-08-19: *"Steven from the gym and Stephen from the
+  gym are the same person. Merge them, keeping Steven."* **There were three Stevens.** The agent
+  chose `keep_id = 5069065f` — Mike's actual friend, spouse Yana, dinner logged 21 June — and folded
+  **both** gym records into him, in two `merge_contacts` calls, without asking which Steven.
+  **Confirmed in the record afterwards:** his contact now says he was met *at the gym* (inherited
+  from the gym record) and carries a phone of `"ph"`.
+  **The instruction was genuinely ambiguous and the agent resolved it silently — same ask-vs-assert
+  failure as the near-match case, now on a DESTRUCTIVE operation.** `_ambiguous_match` exists in
+  `tools/crm.py` and guards name lookups; `merge_contacts` takes ids directly, so nothing checks
+  that the *choice* of id was unambiguous.
+  **There is no unmerge.** Both originals are archived with `merged_into` pointers, so recovery is a
+  JSON edit on the VM — not something the app can do.
+  **Two smaller findings from the same trace, kept because each is a separate gap:** the placeholder
+  guard does not catch `"ph"` as a phone value (`_is_placeholder_phone` covers fictional *ranges*,
+  not two-letter junk — the model turned *"Stephen with a 'ph'"* into a phone number); and the reply
+  **offered to delete a contact**, a capability that does not exist in any tool — the
+  instructed-but-unbuilt class `scripts/check_agent_tools.py` guards, appearing in agent prose
+  rather than a grant.
   @kind: bug
-  @waiting: an agent resolving a real near-match with `merge_contacts` — **the merge path has still
-  never run live** (0 calls in 786), and the gate's decline branch is what should now produce one
-  *filed 2026-08-15 by Mike · gate built 2026-08-19 · same dedup risk applies to a bulk Google
-  Contacts import, handled by the `_bulk` exemption above*
+  *filed 2026-08-22 from the 2026-08-19 live run · the `[DB-0815-07]` gate is unrelated and shipped;
+  this is the merge path, which had never run in production before that day (0 calls in 786)*
+
+- **[DB-0822-04] Repair Steven's contact record.** Consequence of `[DB-0822-03]`, kept separate
+  because it is data repair on a real person, not a code fix. Phone is the literal string `"ph"`;
+  `how_met`/notes now assert the gym, inherited from a merged record rather than from anything Mike
+  said. **Mike has not confirmed where he actually met Steven** — do not "correct" it to a guess.
+  The clearable half is conversational (*"Steven's phone on file is just the letters 'ph' — remove
+  it"*); restoring the gym contact as a separate person needs the archived record on the VM.
+  @kind: chore
+  @waiting: Mike to say where he actually met Steven, and whether the gym contact is worth restoring
+  *filed 2026-08-22*
 
 - **[DB-0810-07] The monitoring view's newest fields have never seen live data.** The Book's
   thinking/output-text, tool-call ok flag and `/monitor/model_errors` (`ffaf7a7`, deployed) have had
@@ -453,21 +433,13 @@ with a date.** Nothing new joins this group open-ended.*
   **⚠ 2026-08-18's test did not reach this code and must not be read as a pass.** *"Add a calendar
   event for the 32nd of September"* was refused by the **model**, before any tool ran — nothing
   failed, so the red flag was never exercised.
-  **⚠ Trying to test it found a defect in the thing being tested, and that outranks the test —
-  fixed 2026-08-19 (`b980b93`, needs deploy).** `ok` was set `False` in **exactly one place**, the
-  `except` around dispatch, so it saw **crashes and nothing else**. Every tool here reports invalid
-  input by *returning* an error string, and all of it was filed as success. **On the VM: 786 tool
-  calls, ONE `ok:false`** — a missing required argument on `score_against_anchors`, a scheduled
-  agent — while `"Error: no contact found with id …"` and `"error: no obligation with id …"`
-  rendered **green**. The flag was reporting programming faults; the failures a user experiences
-  were unmarked.
-  **Why no phrasing could ever have turned it red.** Ten tools were checked against realistic
-  invalid input and **every one handled it gracefully**: unknown ids, off-menu wish sections,
-  wrong-typed contact fields. That is the tools being well written — the flag was reading the wrong
-  signal. Any "deliberately bad argument" test would have proved nothing a second time.
-  **Now keyed on a leading `Error:`/`error:` token** (the convention eight tool files share),
-  deliberately not a looser match — a false red sends someone debugging a call that worked.
-  `tests/test_tool_error_flag.py`, 17 checks, integration-checked through `dispatch_tool`.
+  **⚠ The defect was in the flag itself, found while trying to test it — fixed `b980b93`,
+  deployed.** `ok` was set `False` only by the `except` around dispatch, so the trace saw crashes
+  and nothing else; every graceful failure a user hits rendered **green** (VM 2026-08-19: 786 tool
+  calls, one `ok:false`). No phrasing could have turned it red — every tool checked handles invalid
+  input gracefully by design. Now keyed on a leading `Error:` token.
+  `tests/test_tool_error_flag.py`, 17 checks. Full evidence: `archive/backlog_closed_2026-08.md`
+  § Closed 2026-08-22.
   @kind: chore
   @waiting: three steps on the VM, **after `b980b93` deploys** — one exchange with a tool call that
   succeeds (**already done 2026-08-19**, `write_contact` during the `[DB-0815-07]` run); one that

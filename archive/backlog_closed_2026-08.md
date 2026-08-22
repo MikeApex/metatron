@@ -3100,3 +3100,58 @@ the section from the VM source** — that bypasses the ledger and resurrects eve
   any goals/profile/mission reference (2026-08-20) before the argument changed. Raised low-priority
   as a dormant path; closed early because the intake deploy is the moment the email path becomes
   operational, which is exactly when the other session flagged it as worth knowing about.
+
+## Closed 2026-08-22 — the contact dedup gate, and what its first live run exposed
+
+### `[DB-0815-07]` The same person kept accumulating separate contact records — CLOSED
+
+**Filed 2026-08-15 by Mike.** `Eva` and `Iva Diamond` were one person and survived five
+corrections.
+
+**What closed it — `6d6d46c`, built and deployed 2026-08-19.** A near-match on **create** now
+saves nothing and raises a confirmation out of band; the model is not in the consent path, so a
+duplicate cannot come into existence unasked. Updates by `contact_id` stay ungated (a deliberate
+act on a record the caller already identified). Bulk import is exempt via `_bulk`, **deliberately
+absent from the tool schema** so no model can set it — 200 contacts would otherwise raise 200
+blocking confirmations and train the user to approve a queue unread, which is worse than no gate.
+That regression was introduced during the build and caught by `tests/test_contacts_import.py`
+before it shipped.
+
+**Why a gate rather than better evidence, both halves measured rather than assumed.** The
+*similarity score* cannot decide it: Stephen/Steven is 0.77 and is one person, Dave Bennett/Dan
+Bennett is 0.87 and is two, Anna/Hannah is 0.80 and is two — no threshold separates them, so
+raise-the-bar and auto-merge-above-X are dead ends, pinned as assertions in the test file so nobody
+re-proposes one. The *agent* cannot decide it: handed identical evidence four minutes apart on
+2026-08-19 it asked the first time and asserted *"Stephen with a 'ph' is added as a separate
+contact"* the second, creating the duplicate the item was filed for.
+
+**Frequency, so the friction is a known quantity:** 5 `write_contact` calls in 786 production tool
+calls, against 3 for `send_email`, already behind this same gate.
+
+**Tests:** `tests/test_contact_dedup_gate.py` 14 new; `test_crm_dedup_guards.py` 18 with two
+rewritten — they asserted *"still creates the record"*, false by decision — and its temp-persona
+harness needed `tools.confirm` patched too, since that module binds its own `persona_data_dir` and
+without it the failures read exactly like a product bug.
+
+**⚠ The production note travels with the closure, because it is the design intent and not a
+hedge.** The gate exists because today's model on today's tier does not reliably ask. **When one
+does, remove it and return to evidence-not-verdict**, which is the lighter design. The call gets
+made by the judgement-consistency test recorded in `ROADMAP.md` § D2 — measuring how often a model
+*asks* rather than which answer reads better. The same note sits beside the gate in `tools/crm.py`,
+in its test file, and in § D2.
+
+**Closed on the `@waiting` condition actually happening.** It waited on *"an agent resolving a real
+near-match with `merge_contacts`"* — 0 calls in 786 at the time. On 2026-08-19 Mike ran it live and
+the merge path executed twice. **It executed wrongly**, which is a new defect and is filed as
+`[DB-0822-03]` rather than held here: the item's own fix shipped and is not what failed.
+
+### `[DB-0810-07]`'s flag defect — the half that closed
+
+Not the item, which stays open on its remaining live steps. **`b980b93`** closed the defect found
+while trying to test it: `ok` was set `False` in exactly one place, the `except` around dispatch,
+so the trace recorded crashes and nothing else. Measured on the VM 2026-08-19 — **786 tool calls,
+one `ok:false`**, and that one a missing required argument on a scheduled agent, while every
+graceful failure a user actually hits (`"Error: no contact found with id …"`) rendered green. No
+phrasing could ever have turned it red, because every tool checked handles invalid input
+gracefully by design. That is the tools being well written; the flag was reading the wrong signal.
+`tests/test_tool_error_flag.py`, 17 checks.
