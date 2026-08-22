@@ -616,6 +616,7 @@ def register_tools() -> tuple[list[dict], dict]:
     from tools.flights import get_flight_status, GET_FLIGHT_STATUS_SCHEMA
     from tools.routing import get_travel_time, GET_TRAVEL_TIME_SCHEMA
     from tools.regional_transit import get_regional_transit_info, GET_REGIONAL_TRANSIT_INFO_SCHEMA
+    from tools.places import find_places, FIND_PLACES_SCHEMA
     from tools.schedule import (
         write_schedule, list_schedules, delete_schedule,
         WRITE_SCHEDULE_SCHEMA, LIST_SCHEDULES_SCHEMA, DELETE_SCHEDULE_SCHEMA,
@@ -681,6 +682,7 @@ def register_tools() -> tuple[list[dict], dict]:
         GET_FLIGHT_STATUS_SCHEMA,
         GET_TRAVEL_TIME_SCHEMA,
         GET_REGIONAL_TRANSIT_INFO_SCHEMA,
+        FIND_PLACES_SCHEMA,
         WRITE_SCHEDULE_SCHEMA, LIST_SCHEDULES_SCHEMA, DELETE_SCHEDULE_SCHEMA,
         WRITE_QUALITY_EVENT_SCHEMA,
         FETCH_URL_SCHEMA, FETCH_RENDERED_SCHEMA, READ_EMAIL_SCHEMA, SEND_EMAIL_SCHEMA,
@@ -746,6 +748,7 @@ def register_tools() -> tuple[list[dict], dict]:
         "get_flight_status": get_flight_status,
         "get_travel_time": get_travel_time,
         "get_regional_transit_info": get_regional_transit_info,
+        "find_places": find_places,
         "write_schedule": write_schedule,
         "list_schedules": list_schedules,
         "delete_schedule": delete_schedule,
