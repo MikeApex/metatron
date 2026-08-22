@@ -44,7 +44,7 @@ def _bq(sql: str) -> str:
         capture_output=True, text=True,
     )
     if out.returncode != 0:
-        print(out.stderr.strip(), file=sys.stderr)
+        print(f"query failed:\n{sql}\n{out.stderr.strip()}", file=sys.stderr)
         sys.exit(1)
     return out.stdout
 
@@ -86,7 +86,7 @@ def main() -> int:
           ROUND(SUM(cost), 4)  AS usd,
           ROUND(SUM(usage.amount), 0) AS usage_amount,
           ANY_VALUE(usage.unit) AS unit,
-          COUNT(*) AS rows
+          COUNT(*) AS row_count
         FROM `{table}`
         WHERE service.description = 'Vertex AI'
           AND usage_start_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {args.days} DAY)
