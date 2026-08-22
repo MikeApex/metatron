@@ -108,6 +108,26 @@ def _create(name: str, **kw) -> str:
     return CRM._load_contacts()[-1]["id"]
 
 
+def _merge(keep_id: str, merge_id: str) -> str:
+    """
+    Merge two contacts, approving the confirmation gate the way a user does.
+
+    CHANGED 2026-08-22 ([DB-0822-03]), and for the same reason `_create` above was
+    changed on 08-19: merge_contacts is now a two-step confirmed action, so a bare
+    call performs nothing and returns a PENDING_CONFIRMATION payload. The four tests
+    below are about what a merge DOES to the data, not about the gate — so they walk
+    through it rather than around it. The gate itself is covered in
+    tests/test_crm_merge_guard.py.
+    """
+    pending = CRM.merge_contacts(keep_id=keep_id, merge_id=merge_id)
+    assert "PENDING_CONFIRMATION" in pending, pending
+    token = json.loads(pending)["confirm_token"]
+    CF.approve(token)
+    outcome = CF.execute(token)
+    assert outcome.get("status") == "executed", outcome
+    return outcome["result"]
+
+
 # ---------------------------------------------------------------------------
 # merge_contacts: preserves data, archives with merged_into, never deletes
 # ---------------------------------------------------------------------------
@@ -118,7 +138,7 @@ def _():
         keep_id = _create("Iva Diamond", relationship_type="family", tags=["family"])
         merge_id = _create("Eva", occupation="Retired teacher", tags=["needs_follow_up"])
 
-        result = CRM.merge_contacts(keep_id=keep_id, merge_id=merge_id)
+        result = _merge(keep_id, merge_id)
         assert "Merged" in result, result
 
         kept = json.loads(CRM.read_contact(contact_id=keep_id))
@@ -148,7 +168,7 @@ def _():
     with _temp_persona_dir():
         keep_id = _create("Iva Diamond")
         merge_id = _create("Eva")
-        CRM.merge_contacts(keep_id=keep_id, merge_id=merge_id)
+        _merge(keep_id, merge_id)
 
         result = json.loads(CRM.read_contact(contact_id=merge_id))
         assert result["id"] == keep_id, result
@@ -161,7 +181,7 @@ def _():
     with _temp_persona_dir():
         keep_id = _create("Iva Diamond")
         merge_id = _create("Eva")
-        CRM.merge_contacts(keep_id=keep_id, merge_id=merge_id)
+        _merge(keep_id, merge_id)
 
         result = json.loads(CRM.read_contact(name="Eva"))
         assert result["id"] == keep_id, result
@@ -173,7 +193,7 @@ def _():
     with _temp_persona_dir():
         keep_id = _create("Iva Diamond")
         merge_id = _create("Eva")
-        CRM.merge_contacts(keep_id=keep_id, merge_id=merge_id)
+        _merge(keep_id, merge_id)
 
         results = json.loads(CRM.search_contacts("Eva"))
         assert len(results) == 1, results

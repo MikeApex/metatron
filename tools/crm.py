@@ -13,7 +13,7 @@ import os
 import re
 import threading
 import uuid
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from core.persona import persona_data_dir
@@ -163,6 +163,136 @@ def _load_archived_record(contact_id: str) -> dict | None:
     return None
 
 
+def _archive_stamp() -> str:
+    """Second-resolution timestamp for archive filenames. Date alone is not enough
+    for the snapshot files below: two merges of the same pair on the same day would
+    land on one filename, and the second would overwrite the first — a deletion, in
+    a subsystem whose entire premise is that nothing is deleted."""
+    return datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+
+
+def _write_pre_merge_snapshot(keep_record: dict, keep_id: str, merge_id: str) -> Path:
+    """
+    [DB-0822-03] Store what `keep_id` looked like immediately before `merge_id` was
+    folded into it, so the merge can be reversed.
+
+    Filed under a `premerge_` prefix deliberately. `_load_archived_record()` finds an
+    archived record by globbing `{contact_id}_*.json`, and a snapshot named that way
+    would be returned in place of a genuine archived record — silently breaking the
+    chained-merge walk in `_resolve_merged()`, where an id can be both a survivor and
+    a later loser. The prefix keeps the two file families disjoint.
+
+    It also carries no `merged_into` key, which is what keeps it out of the archive
+    scans in `_find_by_name()` and `search_contacts()`: both skip any archived record
+    without one. A snapshot is a previous state of a *live* contact, not a redirect,
+    and must never be followed as one.
+    """
+    archive_dir = _crm_archive_dir()
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    snapshot = json.loads(json.dumps(keep_record))
+    snapshot["record_type"] = "pre_merge_snapshot"
+    snapshot["snapshot_of_merge"] = {"keep_id": keep_id, "merge_id": merge_id}
+    snapshot["archived"] = date.today().isoformat()
+    path = archive_dir / f"premerge_{merge_id}_{_archive_stamp()}.json"
+    with open(path, "w") as f:
+        json.dump(snapshot, f, indent=2)
+    os.chmod(path, 0o600)
+    return path
+
+
+def _load_pre_merge_snapshot(merge_id: str) -> dict | None:
+    """The most recent pre-merge snapshot for `merge_id`, or None if there is none —
+    which is the expected answer for every merge made before 2026-08-22. Most recent
+    rather than first: a pair can be merged, unmerged and merged again, and the undo
+    has to target the merge that is currently in effect."""
+    archive_dir = _crm_archive_dir()
+    if not archive_dir.exists():
+        return None
+    paths = sorted(archive_dir.glob(f"premerge_{merge_id}_*.json"))
+    for path in reversed(paths):
+        try:
+            return json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+    return None
+
+
+def _retire_merge_archives(merge_id: str, keep_id: str) -> None:
+    """Rename the archive files describing a now-reversed merge out of the way.
+
+    Renamed, never deleted — archive-on-merge applies to the undo as much as to the
+    merge. The rename does two jobs: it stops the loser's `merged_into` pointer
+    resolving (that id is a live contact again, so the pointer would be a lie), and
+    it stops a second `unmerge_contacts` call finding a snapshot for a merge that has
+    already been reversed."""
+    archive_dir = _crm_archive_dir()
+    if not archive_dir.exists():
+        return
+    stamp = _archive_stamp()
+    targets = list(archive_dir.glob(f"{merge_id}_*.json"))
+    targets += list(archive_dir.glob(f"premerge_{merge_id}_*.json"))
+    for path in targets:
+        try:
+            path.rename(archive_dir / f"reverted_{stamp}_{path.name}")
+        except OSError:
+            # A failed rename must not undo the restore that already succeeded. The
+            # cost is a stale pointer, which read_contact resolves live-record-first
+            # anyway, not lost data.
+            continue
+
+
+def _merge_confirmation_description(keep: dict, merge: dict) -> str:
+    """
+    [DB-0822-03] What the user reads before approving a merge.
+
+    Built from `_disambiguation_entry()` on both sides rather than from the ids the
+    caller supplied, because a wrong id and a right id look exactly alike. The
+    recorded failure is a merge into the wrong one of three same-named people; the
+    only thing that would have caught it is seeing, in the sentence being approved,
+    that the record being kept had a spouse and a dinner logged three weeks ago and
+    the one being folded in was met at the gym.
+
+    Stands alone deliberately — `tools/confirm.py`'s `request()` requires it, and the
+    user may see this without the conversation around it.
+    """
+    def _lines(entry: dict) -> str:
+        skip = {"id", "name"}
+        labels = {
+            "last_name": "surname", "relationship_type": "relationship",
+            "occupation": "occupation", "employer": "employer",
+            "how_met": "how you met", "nickname": "also called",
+            "spouse_name": "spouse", "last_contact": "last spoken to",
+            "tags": "tags",
+        }
+        out = []
+        for key, value in entry.items():
+            if key in skip:
+                continue
+            if isinstance(value, list):
+                value = ", ".join(str(v) for v in value)
+            out.append(f"    {labels.get(key, key)}: {value}")
+        return "\n".join(out) or "    (no other details on record)"
+
+    keep_entry = _disambiguation_entry(keep)
+    merge_entry = _disambiguation_entry(merge)
+    keep_log = len(keep.get("interaction_log") or [])
+    merge_log = len(merge.get("interaction_log") or [])
+
+    return (
+        f"Merge two contacts into one?\n\n"
+        f"KEEPING — '{keep_entry.get('name', '')}' ({keep_entry.get('id', '')}), "
+        f"{keep_log} logged interaction(s):\n"
+        f"{_lines(keep_entry)}\n\n"
+        f"FOLDING IN AND ARCHIVING — '{merge_entry.get('name', '')}' "
+        f"({merge_entry.get('id', '')}), {merge_log} logged interaction(s):\n"
+        f"{_lines(merge_entry)}\n\n"
+        f"Approve only if these are the SAME person. The kept record takes on the "
+        f"other's details where its own are blank, so approving the wrong pair writes "
+        f"one person's history onto another. Decline if they are different people, or "
+        f"if the wrong one is being kept — nothing will be changed."
+    )
+
+
 def _resolve_merged(contacts: list[dict], contact_id: str) -> dict | None:
     """Follow merged_into pointers from an archived id to the live record it
     survives as. Handles a chained merge (A merged into B, B later merged into C)
@@ -253,13 +383,44 @@ def _normalize_phone_digits(phone: str) -> str:
 
 
 def _is_placeholder_phone(phone: str) -> str | None:
-    """Reason string if `phone` falls in a known fictional/reserved number range,
-    else None. Deliberately narrow: a real UK mobile outside 07700 900xxx (e.g.
-    07700 800123) and a real NANP number outside the 555-0100/0199 block are never
-    flagged — only the specific ranges reserved for fiction/documentation are."""
+    """Reason string if `phone` is a known fictional/reserved number or is too
+    short to be a phone number at all, else None. Deliberately narrow: a real UK
+    mobile outside 07700 900xxx (e.g. 07700 800123) and a real NANP number
+    outside the 555-0100/0199 block are never flagged — only the specific ranges
+    reserved for fiction/documentation are.
+
+    [DB-0822-03] The stub case. A *supplied but meaningless* value — the recorded
+    one is the literal string "ph", which reached a real friend's record through a
+    merge — carried no digits at all and so returned None here, because the guard
+    only ever asked "is this a reserved range?" and never "is this a number?".
+    Two rules, both keyed on the normalized digit count:
+
+      * zero digits — pure letters/punctuation ("ph", "n/a", "tbc"). Nothing that
+        could be dialled is present.
+      * one to four digits — shorter than any real subscriber number, including
+        short codes (5 digits at minimum) and UK/NANP extensions written alone.
+
+    An **absent or empty** value is still None: leaving a field out is correct
+    behaviour and must never be flagged. The floor is 5 rather than something
+    higher because an internal extension ("2481") is a plausible thing a user
+    dictates, and a threshold that starts refusing real fragments would push the
+    agent to invent a fuller-looking number instead — the exact failure this
+    whole registry exists to stop.
+    """
+    raw = (phone or "").strip()
+    if not raw:
+        return None
     digits = _normalize_phone_digits(phone)
     if not digits:
-        return None
+        return (
+            "no digits at all — a stub or note left in the phone field rather "
+            "than a number"
+        )
+    if len(digits) < 5:
+        return (
+            f"only {len(digits)} digit{'s' if len(digits) != 1 else ''} — too "
+            f"short to be a phone number"
+        )
     if len(digits) >= 7 and _NANP_FICTIONAL_RE.search(digits):
         return "NANP fictional/directory-assistance range (555-0100 to 555-0199)"
     if _UK_DRAMA_RE.search(digits):
@@ -344,10 +505,17 @@ def _disambiguation_entry(contact: dict) -> dict:
     question — "Bill Thompson from work, or Bill the plumber?" — and a full record
     invites it to answer from the data instead of asking. Only populated fields are
     returned, so a sparse contact yields a short entry rather than a wall of empty keys.
+
+    [DB-0822-03] `spouse_name` and `last_contact` were added on 2026-08-22. Three
+    contacts named some spelling of "Steven" were told apart, in the record, by
+    exactly those two fields — one had a spouse and a dinner logged three weeks
+    earlier, the other two were gym acquaintances with neither. The entry the user
+    would have been shown carried neither field, so the one detail that made the
+    answer obvious was the one detail missing from the question.
     """
     handle = {"id": contact.get("id", ""), "name": contact.get("name", "")}
     for field in ("last_name", "relationship_type", "occupation", "employer",
-                  "how_met", "nickname"):
+                  "how_met", "nickname", "spouse_name", "last_contact"):
         value = contact.get(field)
         if value:
             handle[field] = value
@@ -1037,7 +1205,7 @@ def search_contacts(query: str) -> str:
     return json.dumps(results, indent=2)
 
 
-def merge_contacts(keep_id: str, merge_id: str) -> str:
+def merge_contacts(keep_id: str, merge_id: str, confirm_token: str = "") -> str:
     """
     [DB-0815-07] Fold `merge_id`'s contact record into `keep_id`, resolving a
     duplicate the way the standing archive-on-merge rule requires: nothing is
@@ -1045,6 +1213,32 @@ def merge_contacts(keep_id: str, merge_id: str) -> str:
     `merged_into` pointer at `keep_id`, and both `read_contact` and
     `search_contacts` follow that pointer — old id, old name, all still resolve.
     Same shape as tools/wisdom.py's merge_wisdom_entries.
+
+    **[DB-0822-03] Requires the user's approval, given in the app.** The first
+    call returns PENDING_CONFIRMATION and changes nothing; the merge happens when
+    the user approves it there, and the model is not in that path — the same
+    design as the near-match create gate on `write_contact` (`6d6d46c`) and for
+    the same reason, one step further along.
+
+    Live on 2026-08-19: "Steven from the gym and Stephen from the gym are the same
+    person. Merge them, keeping Steven." **There were three Stevens.** The keep_id
+    chosen was the user's actual friend — a different person, with a spouse and a
+    dinner logged three weeks earlier — and *both* gym records were folded into him
+    across two calls, with no question asked. His record now says he was met at the
+    gym.
+
+    The ambiguity was in the *instruction*, and `_ambiguous_match` could not see it:
+    that guard fires on name lookups, and this tool takes ids, so by the time the
+    ids arrive the choice has already been made and nothing downstream can tell a
+    considered choice from a coin flip. The description below is therefore built
+    from both records' `_disambiguation_entry()` — spouse, employer, how they were
+    met, when they were last spoken to — so what the user approves is two named
+    people, not two opaque ids. If the wrong Steven is in it, it is visible.
+
+    A merge is also **destructive in a way the archive does not fully undo**: the
+    keep record is edited in place, so fields it inherits cannot be told apart from
+    fields it always had. `unmerge_contacts` exists for that and works from the
+    pre-merge snapshot this function now writes.
 
     Field-by-field: any scalar field empty on `keep_id` is filled in from
     `merge_id`; a field already set on `keep_id` is left alone. List fields
@@ -1058,15 +1252,54 @@ def merge_contacts(keep_id: str, merge_id: str) -> str:
     Args:
         keep_id:  id of the record to keep as the surviving, canonical contact.
         merge_id: id of the duplicate record to archive into keep_id.
+        confirm_token: Not for the model to set. The app supplies this when
+            carrying out a merge the user has approved.
 
     Returns:
-        Confirmation string naming both records and the archive path, or an
-        Error string if either id doesn't resolve to a live contact.
+        Confirmation string naming both records and the archive path, a
+        PENDING_CONFIRMATION JSON payload on the first call, or an Error string
+        if either id doesn't resolve to a live contact.
     """
+    from tools.confirm import consume, request
+
     if not keep_id or not merge_id:
         return "Error: both keep_id and merge_id are required."
     if keep_id == merge_id:
         return "Error: keep_id and merge_id must name two different records."
+
+    # Fingerprinted exactly as the replay through confirm.execute() will rebuild
+    # them — the two ids and nothing else, so an approval for "fold Stephen into
+    # Steven-from-the-gym" cannot be spent on a different pair.
+    _gate_args = {"keep_id": keep_id, "merge_id": merge_id}
+
+    _approved = False
+    if confirm_token:
+        _ok, _reason = consume(confirm_token, "merge_contacts", _gate_args)
+        if not _ok:
+            return f"Error: not merged. {_reason}"
+        _approved = True
+
+    with _CRM_LOCK:
+        contacts = _load_contacts()
+        keep = next((c for c in contacts if c.get("id") == keep_id), None)
+        merge = next((c for c in contacts if c.get("id") == merge_id), None)
+        if keep is None:
+            return f"Error: no contact found with id '{keep_id}'"
+        if merge is None:
+            return f"Error: no contact found with id '{merge_id}'"
+
+        # THE GATE. Both records are resolved first so the description names real
+        # people rather than echoing back the ids it was handed — an id the caller
+        # got wrong reads identically to one it got right.
+        if not _approved:
+            _pending = _merge_confirmation_description(keep, merge)
+        else:
+            _pending = None
+
+    if _pending:
+        # Raised outside the CRM lock, as write_contact's gate is: request() takes
+        # its own lock and writes a different file. Nothing has been merged.
+        return json.dumps(request("merge_contacts", _gate_args, description=_pending))
 
     with _CRM_LOCK:
         contacts = _load_contacts()
@@ -1078,6 +1311,13 @@ def merge_contacts(keep_id: str, merge_id: str) -> str:
             return f"Error: no contact found with id '{merge_id}'"
 
         today = date.today().isoformat()
+
+        # The pre-merge state of the KEEP record, captured before a single field is
+        # touched. Without it there is no unmerge: the loser is archived whole, but
+        # the survivor is edited in place, and afterwards nothing distinguishes a
+        # field it inherited from one it always had. Written under the same lock as
+        # the merge so the snapshot and the mutation cannot disagree.
+        _keep_snapshot = json.loads(json.dumps(keep))
 
         scalar_fields = [
             "name", "first_name", "last_name", "nickname", "primary_contact_type",
@@ -1143,13 +1383,124 @@ def merge_contacts(keep_id: str, merge_id: str) -> str:
             json.dump(archived, f, indent=2)
         os.chmod(archive_path, 0o600)
 
+        snapshot_path = _write_pre_merge_snapshot(_keep_snapshot, keep_id, merge_id)
+
         contacts = [c for c in contacts if c.get("id") != merge_id]
         _save_contacts(contacts)
 
     return (
         f"Merged '{merge.get('name', '')}' ({merge_id}) into '{keep.get('name', '')}' "
         f"({keep_id}). Archived at {archive_path} with merged_into='{keep_id}'; "
-        f"'{merge_id}' still resolves via read_contact and search_contacts."
+        f"'{merge_id}' still resolves via read_contact and search_contacts. "
+        f"This merge can be reversed with unmerge_contacts('{merge_id}')."
+    )
+
+
+def unmerge_contacts(merge_id: str) -> str:
+    """
+    [DB-0822-03] Reverse a merge: bring `merge_id` back as its own live contact and
+    put the record it was folded into back the way it was.
+
+    **This only works for merges performed on or after 2026-08-22.** Reversing a
+    merge needs the pre-merge state of the *surviving* record, and nothing captured
+    that until `merge_contacts` started writing a snapshot. Every merge made before
+    then — including the 2026-08-19 Steven merges that motivated this — has no
+    snapshot and cannot be unmerged here; this refuses and says so rather than
+    half-reversing. Those have to be repaired by hand from the archived loser
+    record, which does still exist and is complete.
+
+    Nothing is deleted, in either direction. Before the survivor is rolled back,
+    its current post-merge state — the possibly-wrong one being discarded — is
+    itself archived, so a mistaken unmerge loses nothing either.
+
+    Args:
+        merge_id: id of the record that was folded away, i.e. the `merge_id` given
+            to the original `merge_contacts` call.
+
+    Returns:
+        Confirmation string naming both restored records, or an Error string.
+    """
+    if not merge_id:
+        return "Error: merge_id is required."
+
+    with _CRM_LOCK:
+        contacts = _load_contacts()
+        if any(c.get("id") == merge_id for c in contacts):
+            return (
+                f"Error: '{merge_id}' is already a live contact — it is not currently "
+                f"merged into anything, so there is nothing to reverse."
+            )
+
+        archived = _load_archived_record(merge_id)
+        if archived is None or not archived.get("merged_into"):
+            return (
+                f"Error: no merge found for '{merge_id}'. Nothing in the CRM archive "
+                f"records that id being folded into another contact."
+            )
+        keep_id = archived["merged_into"]
+
+        snapshot = _load_pre_merge_snapshot(merge_id)
+        if snapshot is None:
+            return (
+                f"Error: this merge cannot be reversed. '{merge_id}' was folded into "
+                f"'{keep_id}' before pre-merge snapshots existed (they start "
+                f"2026-08-22), so there is no record of what '{keep_id}' looked like "
+                f"beforehand and restoring it would be guesswork. The archived copy of "
+                f"'{merge_id}' is intact and complete — repair the two records by hand "
+                f"from it rather than reversing automatically. Nothing has been changed."
+            )
+
+        keep = next((c for c in contacts if c.get("id") == keep_id), None)
+        if keep is None:
+            return (
+                f"Error: '{merge_id}' was merged into '{keep_id}', but '{keep_id}' is "
+                f"no longer a live contact. Nothing has been changed."
+            )
+
+        today = date.today().isoformat()
+        archive_dir = _crm_archive_dir()
+        archive_dir.mkdir(parents=True, exist_ok=True)
+
+        # Archive-on-merge, applied to the undo. The post-merge survivor is the state
+        # being thrown away, and it may be the state the user actually wanted — so it
+        # is written out before it is overwritten. No `merged_into` key: the archive
+        # scans in _find_by_name and search_contacts skip records without one, which
+        # is right, because this id is about to be live again and must not also
+        # resolve as a pointer to itself.
+        discarded = json.loads(json.dumps(keep))
+        discarded["record_type"] = "post_merge_discarded"
+        discarded["unmerged_away_from"] = merge_id
+        discarded["archived"] = today
+        discarded_path = archive_dir / f"unmerged_{keep_id}_{_archive_stamp()}.json"
+        with open(discarded_path, "w") as f:
+            json.dump(discarded, f, indent=2)
+        os.chmod(discarded_path, 0o600)
+
+        restored_keep = json.loads(json.dumps(snapshot))
+        restored_keep.pop("record_type", None)
+        restored_keep.pop("snapshot_of_merge", None)
+        restored_keep.pop("archived", None)
+        restored_keep["updated"] = today
+
+        restored_merge = json.loads(json.dumps(archived))
+        restored_merge.pop("merged_into", None)
+        restored_merge.pop("archived", None)
+        restored_merge["updated"] = today
+
+        contacts = [restored_keep if c.get("id") == keep_id else c for c in contacts]
+        contacts.append(restored_merge)
+        _save_contacts(contacts)
+
+        # The two archive files that described the merge are retired rather than
+        # deleted — renamed out of the way so neither keeps resolving as a live
+        # pointer, and so a second unmerge of the same pair finds nothing to redo.
+        _retire_merge_archives(merge_id, keep_id)
+
+    return (
+        f"Unmerged: '{restored_merge.get('name', '')}' ({merge_id}) is a separate "
+        f"contact again, and '{restored_keep.get('name', '')}' ({keep_id}) is back to "
+        f"its pre-merge state. The discarded merged version of '{keep_id}' is archived "
+        f"at {discarded_path} — nothing was deleted."
     )
 
 
@@ -1442,9 +1793,14 @@ MERGE_CONTACTS_SCHEMA = {
         "and keeps the more recent last_contact date. The merged-away record is never "
         "deleted — it is archived with a merged_into pointer, so its id and its old "
         "name both keep resolving via read_contact and search_contacts. "
-        "Call this after write_contact or search_contacts surfaces a likely duplicate; "
-        "confirm with the user first if it isn't obvious the two records are the same "
-        "person."
+        "Call this after write_contact or search_contacts surfaces a likely duplicate. "
+        "Requires the user's explicit approval: the first call returns "
+        "PENDING_CONFIRMATION and merges nothing — it shows the user both records side "
+        "by side so they can see exactly who is being kept and who is being folded in. "
+        "Approving it in the app is what carries out the merge; do not call this tool a "
+        "second time, and never say it is done before that. If you are unsure WHICH of "
+        "several similarly-named contacts is meant, read them first and ask — do not "
+        "pick one and let the approval screen be the question."
     ),
     "input_schema": {
         "type": "object",
@@ -1457,7 +1813,69 @@ MERGE_CONTACTS_SCHEMA = {
                 "type": "string",
                 "description": "id of the duplicate contact to fold into keep_id and archive.",
             },
+            "confirm_token": {
+                "type": "string",
+                "description": "Not for you to set. The app supplies this when it carries out an action the user has approved; leave it out of every call you make.",
+            },
         },
         "required": ["keep_id", "merge_id"],
     },
 }
+
+UNMERGE_CONTACTS_SCHEMA = {
+    "name": "unmerge_contacts",
+    "description": (
+        "Reverse a merge: bring a contact that was folded into another one back as a "
+        "separate record, and restore the record it was folded into to its pre-merge "
+        "state. Use when the user says two contacts were merged in error, or that the "
+        "wrong person was kept. Nothing is deleted in either direction — the discarded "
+        "merged version is archived too. IMPORTANT: only merges made on or after "
+        "2026-08-22 can be reversed; earlier ones have no record of the surviving "
+        "contact's previous state, and this will say so plainly rather than guessing. "
+        "If it refuses for that reason, tell the user the merge has to be repaired by "
+        "hand and do not attempt to reconstruct it yourself."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "merge_id": {
+                "type": "string",
+                "description": (
+                    "id of the contact that was folded away — the merge_id from the "
+                    "original merge_contacts call. Its old id still resolves via "
+                    "read_contact, which reports the record it was merged into."
+                ),
+            },
+        },
+        "required": ["merge_id"],
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# Confirm-gate executor registration
+# ---------------------------------------------------------------------------
+# `POST /confirm` finishes an approved action by looking the action name up in
+# tools/confirm.py's _EXECUTORS and calling the tool itself — the user's tap, not a
+# second model call, is what carries it out. merge_contacts registers itself here
+# rather than being listed there because this worktree owns tools/crm.py only.
+#
+# THIS IS A DEVIATION worth folding back: _EXECUTORS is hard-coded on purpose (see
+# its comment) so that the mapping cannot be influenced by anything outside that
+# file, and a registration performed as an import side effect is weaker in one real
+# way — if the server process restarts between the user seeing the prompt and
+# tapping Approve, and nothing has imported tools.crm yet, execute() reports that
+# nothing knows how to carry out 'merge_contacts'. That fails safe (no merge
+# happens, the user is told) and self-clears at the 10-minute TTL, but the durable
+# form is the one line in tools/confirm.py. setdefault, so adding it there wins.
+def _register_confirm_executor() -> None:
+    try:
+        from tools.confirm import _EXECUTORS
+        _EXECUTORS.setdefault("merge_contacts", ("tools.crm", "merge_contacts"))
+    except Exception:  # noqa: BLE001
+        # An import failure here must not take the CRM down; the gate still refuses
+        # to merge without an approval, which is the half that matters.
+        pass
+
+
+_register_confirm_executor()
