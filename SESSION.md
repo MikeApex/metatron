@@ -1,22 +1,14 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-22 (ZDR opt-out submitted) — **the ZDR handoff ran; the exception is obtainable on
-this exact account shape.** Google's terms, read under a per-occasion, since-reverted WebFetch
-lift: the opt-out form serves precisely self-serve GCP-ToS customers, and the default is
-**flagged-only prompt logging ≤90 days, never training** — narrower than the correction assumed,
-so `tone_profiler`'s exposure is a classifier misfire, not routine logging. Evidence, form link
-and a proposed § Section 0 amendment (**not applied**):
-`archive/security/zdr_terms_evidence_2026-08-20.md`. **In-force status authority: the row in
-`docs/INFRASTRUCTURE.md` § Vertex AI credentials.***
-
-*⚠ **The ZDR opt-out was submitted 2026-08-22 — decision expected by ~2026-09-05** (Google: ~2
-weeks, plus 5–7 business days to allowlist). It is **not in force until granted**; the email to
-`diamond.mike@gmail.com` is the only evidence, recorded either way in `docs/INFRASTRUCTURE.md`
-§ Vertex AI credentials, which stays the authority. Answers as filed:
-`archive/security/zdr_optout_form_answers_2026-08-21.md`. **One act still Mike's and it does not
-wait on Google:** rule on the proposed § Section 0 amendment — does the sensitive-tier default
-continue on the corrected basis (flagged-only logging, ≤90 days, no training) until grant or
-refusal, backstop 2026-10-01.*
+*Updated: 2026-08-22 (architecture discussion; ZDR opt-out submitted) — **the ZDR opt-out was
+submitted 2026-08-22; decision expected by ~2026-09-05** (Google: ~2 weeks + 5–7 business days to
+allowlist). **Not in force until granted**; the email to `diamond.mike@gmail.com` is the only
+evidence, recorded either way in `docs/INFRASTRUCTURE.md` § Vertex AI credentials, which stays
+the authority. Terms and answers as filed: `archive/security/zdr_terms_evidence_2026-08-20.md`,
+`…/zdr_optout_form_answers_2026-08-21.md`. **One act still Mike's and it does not wait on
+Google:** rule on the proposed § Section 0 amendment — does the sensitive-tier default continue
+on the corrected basis (flagged-only logging, ≤90 days, no training) until grant or refusal,
+backstop 2026-10-01.*
 
 *⚠ **A parallel window is mid-build on the cache fix**, none of it staged here. Plan:
 `archive/plans/vertex_cache_cost_control_2026-08-20_plan.md`, **rewritten by Fable — the 10-minute
@@ -37,9 +29,16 @@ fixed, all-Pro routing is **~$3.11/day against today's $6.12**, so the Flash-Lit
 revisiting once a clean day is measured; `coordinator` is the only candidate and its blocker is
 latency, not money. `175809e` **owes a deploy but changes nothing on the VM**.*
 
-***Model split, Mike's call 2026-08-18: plan and review in Fable, build in Opus.*** Held again
-today — the Fable plan caught a dead file-chooser in the APK that would have made attachments
-work everywhere except the phone. Red-tier work is still not delegated at all.
+*⚠ **A v1/alpha architecture question is live: invert to code-dominant, with models as discrete
+judgment gates.** Preliminary discussion 2026-08-22, **no decision** — Claude recommended the
+inversion (Coordinator first candidate; Synthesizer stays a real agent; pilot the
+invitation/RSVP flow) and that it be **decided before A8 executes**, or A8 is paid for twice.
+This is the vehicle for the queued `@session` decision "where code should replace model
+judgment". Consultable record:
+`archive/plans/code_vs_agent_architecture_2026-08-22_discussion.md`.*
+
+***Model split, Mike's call 2026-08-18: plan and review in Fable, build in Opus.*** Red-tier
+work is still not delegated at all.
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -112,12 +111,9 @@ from the backlog 2026-08-18 — § A9a is the single home for the review.
 `core/orchestrator.py` and `core/server.py`. **Full spec, including the regression gate, is in
 [ROADMAP.md](ROADMAP.md) § A8** — not restated here, it was a duplicate copy.
 
-**Four built-and-standing constraints must not be undone** — outbound messaging is
-Relationships' alone; tone profiles ship with `tone_shape` deliberately absent from
-`write_contact`'s schema; obligations are data, not jobs; scheduler maintenance jobs live in
-`core/scheduler.py`, never a persona file. **Full statements and the reasoning for all four:
-`archive/PROJECT_LOG.md`** — they have not changed in three sessions, so they are reference now,
-not current state.
+**Four built-and-standing constraints must not be undone** (outbound messaging, `tone_shape`,
+obligations-as-data, scheduler maintenance jobs) — **full statements and reasoning:
+`archive/PROJECT_LOG.md`**; reference now, not current state.
 
 **Seven decisions are queued and none can be made here.** They carry `@session:` in
 `DEV_BACKLOG.md` § Later § Decisions, with the evidence — the 39 tool grants (`[DB-0810-03]`,
@@ -137,10 +133,10 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-22 | **Was Metatron built backwards? A code-dominant inversion — procedural spine in code, models as discrete judgment gates — was argued for and left with Mike.** Prompted by an Opus barbecue-RSVP exhibit showing model inertia toward the reactive; the "compass layer" (allocation policy, portfolio view) needs standing *computed* state no prompt can supply, and the incident log has been moving judgment into code all year. Recommendation: decide before A8; pilot the RSVP flow; Synthesizer stays an agent. Full record: `archive/plans/code_vs_agent_architecture_2026-08-22_discussion.md` | **nothing — discussion only** |
 | 08-21 | **ZDR: "verified" became verified — the abuse-monitoring exception is obtainable on this account shape, and the default is conditional logging, not blanket retention.** Google's published terms, read under a scoped, since-reverted WebFetch lift: the opt-out form serves exactly self-serve GCP-ToS customers; flagged-only prompt logging ≤90 days, never training; `cacheConfig` governs only the latency cache (handoff caution resolved); Search grounding keeps query logs 3 days with no opt-out. Evidence + proposed amendment: `archive/security/zdr_terms_evidence_2026-08-20.md`; status authority: `docs/INFRASTRUCTURE.md` § Vertex AI credentials. Form + § Section 0 ruling pending with Mike | **nothing — docs only** |
 | 08-20 | **The Vertex bill reconciled — the cost that stopped the VM is one no per-call meter could see.** Context-cache **storage bills per wall-clock hour** ($4.50/1M/hr on Pro), so `spend_guard` read **$2.63 against a $6.12 bill** and was working as designed. Three defects: caches **abandoned on every restart** (5 server + 5 scheduler = 10 Pro caches billing at once), **midnight-UTC expiry chosen for config-freshness with no cost figure beside it**, and the guard blind to storage. **Fable's review inverted the plan's priority** — the 10-minute TTL is the fix; the orphan sweep is a ~$0.14/day tidy-up, because Vertex reaps at `expire_time`. It also caught an unlocked registry, a streaming path that never evicts, and that Step 6 splits by model class (the compat path exists to dodge the `thought_signature` bug). **Three of my own claims were wrong and measurement killed each**: that caching never ran on the VM (the logs just don't capture it), that the residual was storage alone (**creation is metered too — proved by probe**), and that caching "costs more than it saves" before hit rate was measured (**15 hits against 65 Pro calls**). `[DB-0820-05]` filed: all-Pro routing is ~$3.11/day against today's $6.12. Global `CLAUDE.md` gained **§ Costs**. **Then the session's largest finding, and it is not about cost: `ROADMAP.md` § Section 0 has authorised sensitive-tier data on the VM since 2026-06-18 on "verified ZDR" — never verified, and not in force.** No org parent, self-serve billing account, zero org policies, no exception on record. Only "no training use" of its three claims holds. Recorded as a dated correction beneath the original text, **not a rewrite**; whether the permission continues is left explicitly undecided. Mike overrode filing-and-verifying-later — the check took four commands and overturned a two-month premise. Also fixed: all three Vertex call sites defaulted to a region that does not serve Gemini 3.x | **`6a96fc4`…`01495ec`; `175809e` owes a deploy but is inert on the VM** |
 | 08-20 | **Inbound intake: mail swept hourly, classified in Python, queued per domain, taught by correction.** An interest sieve, not a filing tool — Mike's rulings: disposition ⊥ domain, no dispatch on arrival, no mailbox writes, digest as training surface. Model tier wired but **double-gated OFF** (`[DB-0820-03]` holds the gate; `[DB-0820-04]` the injection row). Mike's `/code-review high` returned **10 findings, 3 severe** (digest swallowed by the Coordinator; weekly digest would have fired daily; thread siblings re-surfacing) — all fixed, suite 21/21. `tone_profiler` runs bare, `[DB-0819-02]` closed. **Dark until Mike's VM edits**; inbox primed 08-21 | `b417e98` — **deployed** |
-| 08-20 | **Photos and files can be sent, messages announce themselves, and the wait says what it is doing.** Three features Mike asked for, planned in Fable and built in Opus; **all four live tests passed on the device**. Attachments upload over HTTP with only ids on the socket, are kept per-persona, and are typed by **sniffing the bytes, never the client's Content-Type**. **The Synthesizer receives the files too** — the Coordinator is a router, so *"what breed is this dog"* would otherwise reach the agent writing the reply as prose about a dog nothing had seen; `cache_read=18413`/`5994` after, so the prompt cache was undisturbed. **A dead file chooser in the APK was found by the plan, not by testing** — `MainActivity` had replaced Capacitor's chrome client, discarding `onShowFileChooser`, so attachments would have worked everywhere except the phone. **B1b gains a fifth row — attached files — and it passed**: the reply named the injection, disclosed nothing, and cross-checked the pretext against Mike's records. **The soft cap fired mid-deploy**; cause was a cost *defect* (Vertex cache storage, another chat's finding), caps now **temporarily $150/$250**, revert filed as `[DB-0820-01]`. **Two chats' work in one file nearly deployed an `ImportError`** — staged only my own hunks, verified by two independent derivations and by importing `HEAD` in a clean export | `5684d27`, `5836561`, `7a611ea` — **all deployed** |
 ---
 
 ## Useful context to pull as needed

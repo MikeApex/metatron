@@ -73,6 +73,35 @@ back-tagging the rest is `[DB-0815-10]`.
 > counts, and all three were single events; every one of them was also **older than the code that
 > fixed it**. They were removed on 2026-08-18. Confirm the count *and* compare the evidence date
 > against `git log` before promoting anything from here.
+- **[instruction change]** User requested that sessions open with the most time-sensitive commitment, overdue follow-up, or unresolved thread, naming it specifically rather than asking a general question. If nothing is outstanding, keep it to one line and ask what is on.  
+  `2026-08-21T09:25:38.617423Z`
+
+- **The ZDR form is submitted — one act left, and it is a ruling, not a task. @waiting**
+Mike submitted Google's abuse-monitoring opt-out on 2026-08-22 (answers as filed:
+`archive/security/zdr_optout_form_answers_2026-08-21.md`). **Decision expected by ~2026-09-05**
+(~2 weeks review, plus 5–7 business days to allowlist if approved); the email to
+`diamond.mike@gmail.com` is the only evidence there will be, and `docs/INFRASTRUCTURE.md`
+§ Vertex AI credentials is where it gets recorded either way.
+
+**Still open:** rule on the proposed § Section 0 amendment at the bottom of
+`archive/security/zdr_terms_evidence_2026-08-20.md` — whether the sensitive-tier default continues
+on the corrected basis (flagged-only logging, ≤90 days, no training) until the exception is granted
+or refused; backstop 2026-10-01. Drafted, not applied. **This does not wait on Google** — the
+amendment states what the permission rests on *now*, which is the gap the 2026-08-20 correction
+opened. If the request is refused, the `tone_profiler` question returns with it.
+
+Provenance: raised by Mike 2026-08-20 (`archive/handoffs/2026-08-20-zdr-verification-prompt.md`);
+verified obtainable 2026-08-21; form submitted 2026-08-22.
+- **The code-dominant architecture question now gates A8 sequencing.** Raised by Mike 2026-08-22
+(preliminary discussion, no decision). The queued `@session` decision "where code should replace
+model judgment" (§ Later § Decisions) now has a consultable analysis and a recommendation:
+`archive/plans/code_vs_agent_architecture_2026-08-22_discussion.md` — invert to code-dominant
+with model judgment gates; Coordinator first candidate; Synthesizer stays an agent; pilot the
+invitation/RSVP flow; **decide before A8 executes or A8 is paid for twice.** The `/backlog` pass
+should link that doc from the existing decision item and consider whether A8 in `ROADMAP.md`
+needs a "blocked on this decision" note. Provenance: Mike, session 2026-08-22 (architecture
+discussion, Opus 5).
+
 ---
 
 ## Now
@@ -111,7 +140,6 @@ standing rule distrusts.*
   `due: 2026-09-01`
   @kind: chore
   *filed 2026-08-20 by Mike*
-
 
 ## Later
 
@@ -220,9 +248,28 @@ the condition has not arrived, push the date rather than closing the item.
   distinguished from "never written" without a backup.
   **The second-order concern is the real one:** this was the second wrong self-applied preference in
   four days (the 08-12 check-in consolidation was the first, and he rejected it). Both were silent.
+  **A third arrived 2026-08-18 and it is the one that settles the question, because unlike the other
+  two it can be checked end to end.** `SELF_APPLIED` at `09:17:27Z` wrote an Interaction Preference
+  into `config/personas/mike.md:16` — *"Open sessions with the most time-sensitive commitment,
+  overdue follow-up, or unresolved thread, naming it specifically…"*. **It landed, and it was
+  redundant on arrival.** The next morning's rule audit (`RULE_CONFLICT`, `2026-08-19T04:30Z`) scored
+  it **0.88 against `config/templates/scheduler.yaml:21`** — the *template*, so every persona already
+  had the rule. So the store now has two homes for one instruction, and the personal copy states
+  nothing the shared one does not.
+  **What this changes about the decision.** The first two instances could each be argued away — one
+  was rejected on taste, one could not be distinguished from "written then reverted". This one wrote
+  a real line to a real file, unasked, that duplicates a rule already in force, and **it is the same
+  class as `[DB-0818-06]`'s eight interaction preferences sitting where behaviour rules cannot reach
+  them.** The rule audit's own caveat applies to the *partner*, not the flagged preference — and here
+  the partner is a template, not a wording coincidence.
+  **Two separable calls, and they are not the same question:** whether `write_persona` may self-apply
+  at all without confirmation, and whether a self-applied preference should be checked against the
+  template rules *before* it is written rather than flagged the morning after by an audit nobody
+  reads. The second is buildable today and does not need the first answered.
   @kind: bug
   @session: whether `write_persona` may self-apply an inferred preference at all without confirmation
-  *filed 2026-08-15 from the machine log*
+  *filed 2026-08-15 from the machine log · third instance folded in 2026-08-21 from the `/backlog
+  deep` machine-log sweep, with the `RULE_CONFLICT` that confirms it*
 
 - **[DB-0810-11] Where should code replace model judgment?** Raised by Mike 2026-08-05, never given
   its own session. Three strands: (a) deterministic lookups feeding agents evidence instead of asking
@@ -772,35 +819,50 @@ that plausibly dropped the Thursday deadline was fixed `fd273bf` on 08-18 agains
 That is the third time an item's own description has argued persuasively for the wrong decision.
 **Check the count's date and the evidence's date before promoting anything from here.**)*
 
+*(swept 2026-08-21 by `/backlog deep` — **54 → 42 entries**, every deletion verified against
+current code rather than against the entry's own description. **Nine were already built or
+fixed and nobody had gone back to look**, which is the failure mode this section's deletion rule
+exists for. Pointers, so nothing is lost:*
+
+  - *email dispatch confirmed a send that never happened (08-10) → `[DB-0810-13]`, **closed
+  2026-08-14**; the fix is `core/actions.py`, whose header opens on this exact Kathaleen event*
+  - *`search_memory` JSON `Extra data` parse error (08-06) → **fixed**: `core/memory.py` now takes a
+  per-persona `FileLock` and writes atomically ([core/memory.py:80](core/memory.py#L80) documents
+  this signature as the symptom). The **CRM contact-count request three hours earlier the same day**
+  (08-10T11:19) was filed as *"needs an integration with their external CRM"* and was almost
+  certainly this outage — `list_contacts` existed the whole time. **A machine entry's diagnosis was
+  wrong for the fourth time**; its symptom was right.*
+  - *email approval prompt not rendering + read live Google Contacts (08-04, **three entries**) →
+  **both built**: `send_email` is in the out-of-band confirmation class
+  ([core/actions.py:48](core/actions.py#L48)) and `read_google_contacts` ships in
+  [tools/google_contacts.py](tools/google_contacts.py)*
+  - *global default for mailbox check frequency (08-10 ×2) → **built** by the intake pipeline:
+  `intake_sweep` carries a 60-minute interval in `core/scheduler.py`'s `_DEFAULT_JOBS`, overridable
+  per persona*
+  - *proactive pre-departure travel checks (08-05) → **built**: `daily_travel_check`,
+  `config/templates/scheduler.yaml:97`*
+  - *Kathaleen → Kathleen (08-18 ×2) → `[DB-0818-08]`, where it is worked failure #1; the Southeastern
+  zero-source answer (08-18) → `[DB-0818-04]` and the same item's worked failure #2. Both were named
+  in the 08-18 sweep's pointer list and left in place anyway.*
+  - *the self-applied "open sessions with the most time-sensitive commitment" preference (08-18) and
+  the `[same rule in two places]` conflict it produced the next morning (08-19) → **promoted into
+  `[DB-0815-11]` as a third instance**, and the only one that can be verified end to end.*
+
+*Not deleted and deliberately: the 08-05 Heathrow drop-off cluster and the 08-02/08-03 correction
+runs. They are behavioural, nothing has shipped against them, and collapsing them would destroy the
+only record of how often the tool misreads who is travelling.)*
+
 - **[user corrected a prior turn]** Specifies that the previously established language preference (Bulgarian) is global, covering both incoming and outgoing communications.  
   `2026-08-20T21:44:01.478382Z`
 
-- **[same rule in two places]** This preference may already be covered by a rule that applies to everyone. Class: brevity — how long a proactive session's opening should be. A universal rule of this class belongs in the scheduler layer. Preference: config/personas/mike.md:16 — Open sessions with the most time-sensitive commitment, overdue follow-up, or unresolved thread, naming it specifically. If genuinely nothing is outstanding, keep it to one line and ask what is on. Candidate rule(s) it may restate: (0.88) [brevity] config/personas/mike/scheduler.yaml:21 — Good morning. Open with whatever is most time-sensitive today — a commitment, an overdue follow-up, or an unresolved thread from recent context. Name it specifically rather than as (0.88) [brevity] config/templates/scheduler.yaml:21 — Good morning. Open with whatever is most time-sensitive today — a commitment, an overdue follow-up, or an unresolved thread from recent context. Name it specifically rather than as (0.41) [wording only] config/agents/synthesizer.md:179 — **A proactive session opens on one thing, and its shape follows from that.** Almost always there is something to open on — a commitment today, something upcoming, a thread left ope Candidates are ranked by wording overlap, which is weak at this scale — the flagged preference is the reliable part, the partner is a starting point. If the preference says nothing the shared rule does not, delete it. If it is a genuine personal refinement, keep it and reword it so the difference is all it states.  
-  `2026-08-19T04:30:18.897139Z`
-
-- ⚠ **[user corrected a prior turn]** CLARIFICATION_NEEDED:  ×7  
-  `2026-08-20T21:45:09.834651Z`
-
-- **[user corrected a prior turn]** User corrected spelling of contact name from 'Kathaleen' to 'Kathleen'.  ×2  
-  `2026-08-18T16:18:04.822974Z`
-
-- **[answered without retrieving anything]** Answered with nothing retrieved — 2 search(es) ran but returned no sources. Query: Check live status of the Southeastern Line into London Bridge. Are there any current delays or disruptions?  
-  `2026-08-18T15:48:28.097541Z`
-
-- **[already applied by the tool]** Updated Interaction Preferences to formalize the rule: Open sessions with the most time-sensitive commitment, overdue follow-up, or unresolved thread, naming it specifically. If genuinely nothing is outstanding, keep it to one line and ask what is on.  
-  `2026-08-18T09:17:27.961459Z`
+- ⚠ **[user corrected a prior turn]** CLARIFICATION_NEEDED:  ×14  
+  `2026-08-22T09:01:10.264047Z`
 
 - **[user corrected a prior turn]** User corrected transit route to Transport Museum, explicitly excluding Jubilee and Piccadilly lines which were previously suggested.  ×2  
   `2026-08-16T08:06:21.241217Z`
 
 - **[user corrected a prior turn]** User corrected the previous exercise log, stating the run was only a test and requested its removal.  ×2  
   `2026-08-15T11:13:42.274343Z`
-
-- **[needs building]** Fix email dispatch silent failure: system confirms send to the user but the message does not reach the user's provider. Investigate why the tool is returning success without actual handoff.  
-  `2026-08-10T17:10:55.511151Z`
-
-- **[needs building]** Create a global default setting variable for mailbox check frequency to apply across all users.  ×2  
-  `2026-08-10T15:51:17.112387Z`
 
 - **[user corrected a prior turn]** The user corrected the grocery reminder logic (not every Friday, but 3 days after the date of an order).  ×2  
   `2026-08-10T15:46:40.890480Z`
@@ -811,17 +873,11 @@ That is the third time an item's own description has argued persuasively for the
 - **[user corrected a prior turn]** The user is clarifying that their previous query was not about the travel itself, but about the *mechanism* used to generate the routing.  
   `2026-08-10T12:29:21.953978Z`
 
-- **[needs building]** User asked to look in CRM and get a total contact count. Needs an integration with their external CRM system.  
-  `2026-08-10T11:19:18.354306Z`
-
 - **[user corrected a prior turn]** User previously confirmed Rowan transfer was handled, but system asked for details again.  
   `2026-08-07T16:22:17.434741Z`
 
 - **[user corrected a prior turn]** The system incorrectly flagged the Rowan payroll transfer as 'pending' despite the user having previously provided this information.  
   `2026-08-07T16:21:48.444766Z`
-
-- **[needs building]** search_memory tool is throwing a JSON parse error: 'Extra data: line 557 column 2 (char 82852)'. The memory file parser needs debugging to restore CRM read access, which is currently blocking contact verification.  
-  `2026-08-06T16:49:21.836539Z`
 
 - **[needs building]** Develop a stronger protocol for onboarding new contacts to the CRM or Google Contacts. Current handling resulted in misattributing the user's email to the contact and silent failures during retrieval.  
   `2026-08-06T16:47:08.029326Z`
@@ -853,23 +909,11 @@ That is the third time an item's own description has argued persuasively for the
 - **[user corrected a prior turn]** System incorrectly assumed user was traveling on flight BA 892 rather than just dropping someone off.  ×2  
   `2026-08-05T07:04:18.930017Z`
 
-- **[instruction change]** Enable proactive pre-departure travel checks: autonomously look up flight status and relevant transit lines (e.g., DLR, Elizabeth line) before the user asks on travel days.  
-  `2026-08-05T07:02:45.797954Z`
-
 - **[user corrected a prior turn]** Corrected previous transit concern by noting multiple rail options exist for Heathrow.  
   `2026-08-04T14:41:57.409553Z`
 
 - **[user corrected a prior turn]** User corrected system for failing to proactively research venue details (address, menu, hours) when a new pub meeting was scheduled.  
   `2026-08-04T13:58:03.975204Z`
-
-- **[needs building]** User reported that the email permission prompt is not appearing (blocking testing) and requested the ability to read live Google Contacts. Both added to backlog.  
-  `2026-08-04T13:51:08.510189Z`
-
-- **[needs building]** Implement email permission prompt bubble for user approval before sending outbound emails, and enable Google Contacts live sync/read capability.  
-  `2026-08-04T12:49:26.633029Z`
-
-- **[needs building]** 1) The email approval permission prompt is failing to render in the user's app interface. 2) The system needs a tool to read live Google Contacts directly; currently it only checks internal profile records.  
-  `2026-08-04T12:42:35.495275Z`
 
 - **[user corrected a prior turn]** User opted to close the CalDAV integration thread.  
   `2026-08-04T12:37:18.994165Z`
