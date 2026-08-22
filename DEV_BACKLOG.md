@@ -131,6 +131,126 @@ standing rule distrusts.*
   @kind: chore
   *filed 2026-08-20 by Mike*
 
+### Green/Amber — buildable without a prompt
+
+*All three are code fixes in `core/` or `tools/`. Grouped so an automated run can take the block.
+Each is a defect measured in the 2026-08-21 traces, not a proposal.*
+
+- **3. [DB-0822-05] The journal records days you never spoke.** The Diarist is not scheduled — the
+  **Coordinator dispatches it** as a fire-and-forget specialist
+  ([core/orchestrator.py:4381](core/orchestrator.py#L4381)). On 08-21 it fired on 10 of 23 runs,
+  and **in 9 of them Mike said nothing at all** — it journalled the assistant's own monologue.
+  Worse, at 10:24 the Synthesizer handed it `"Original user message: 'Good morning. Open with
+  whatever is most time-sensitive today…'"` — that is the **scheduler's** prompt text, filed as
+  Mike's speech. The rule that a scheduler prompt is not user speech was added 2026-08-09
+  (`82d394b`) and **has regressed**. Cost is irrelevant (24 calls, $0.017); the damage is a
+  journal of things the user never said, which later runs then read back as fact — the same
+  mechanism as `[DB-0822-06]`.
+  **Fix in code, not in an instruction:** refuse the dispatch when the session carries no real
+  user turn. An agent-file rule is what already failed.
+  *Measured 2026-08-21 from `data/personas/mike/traces/2026-08-21.jsonl`, read live off the VM.*
+  @kind: bug
+  *filed 2026-08-22 by Mike*
+
+- **4. [DB-0822-06] It tells Mike his own training day, and got it wrong four ways in one day.**
+  Across 08-21 the same hiatus was called *five-day, five-day, day three, day three, **day four**,
+  five-day, day three, day three*. **Root cause is a derived count written into a log and re-read
+  as fact:** `physical_health` wrote `"Day 3 of 5-day exercise hiatus"` into the health log, and
+  later runs read the stored number instead of recomputing it from the dates.
+  **Same class, same fix:** the *Metatron sprint* surfaced in 5 of 9 runs days after it ended —
+  written state carried forward with no age-out. Mike: *"Metatron sprint aged out days ago. It
+  shouldn't be a topic of conversation."*
+  **Fix:** compute derived counts at read time and never store them; give log-carried topics an
+  age-out. Both are `tools/` + `core/`, no agent file involved.
+  *Measured 2026-08-21; the offending write is visible in the 10:24 trace's `write_log` args.*
+  @kind: bug
+  *filed 2026-08-22 by Mike*
+
+- **5. [DB-0822-07] Two scheduled jobs fire seven minutes apart.** `companion_checkin` runs on a
+  180-minute interval and landed at 07:23; `morning_brief` is fixed at 07:30. **19 model calls
+  between the two**, and the 07:30 pair is what produced the false action claim now recorded in
+  `[DB-0815-11]` — the later job read the earlier job's prompt as an instruction from Mike.
+  **Fix:** suppress an interval job that lands within N minutes of a fixed-time job.
+  `core/scheduler.py` is **Red tier** (it prompts), but the change is mechanical and self-contained
+  — kept in this block deliberately, with that caveat, rather than buried in the judgement work below.
+  *Measured 2026-08-21: 9 scheduled runs — companion_checkin ×5 (07:23, 10:24, 13:26, 16:27,
+  19:28), morning_brief 07:30, inbox 12:24 + 18:24, evening_close 20:00.*
+  @kind: bug
+  *filed 2026-08-22 by Mike*
+
+### Red — judgement work, not automatable
+
+- **6. [DB-0822-08] Nothing is ever proposed — only reported.** The Apex migration due the 31st was
+  raised in **6 of 9** scheduled runs and **not once** did anything offer to put time in the
+  calendar for it. Prudential was raised in **7 of 9** — unchanged all day, waiting on Jason
+  Duross, entirely outside Mike's control — and nothing ever asked *"do you want me to chase
+  him?"*. Mike: *"There was no mention to SCHEDULE a time to do the Apex work, or a question about
+  'Should I follow up with Prudential?'"*
+  **Read this as an adherence failure, not a missing instruction** — Mike's framing is that the
+  agents *"aren't acting proactively on information, even though they're instructed to do so."*
+  **So open the existing proactive-anticipation section of `config/agents/synthesizer.md` and find
+  out why it is not firing before writing another rule.** Adding a rule to a 12,700-token file is
+  the move most likely to be wrong here — see the length→adherence finding in
+  [archive/plans/synthesizer_audit_2026-08-18.md](archive/plans/synthesizer_audit_2026-08-18.md) § 5.
+  **Corollary Mike named:** an item that cannot be acted on should not be raised at all; one that
+  can should arrive with the action attached.
+  @kind: bug
+  @session: whether to fix by instruction or by giving the Synthesizer an explicit "propose a next
+  action or stay silent" gate
+  *filed 2026-08-22 by Mike*
+
+- **7. [DB-0822-09] Email is processed and then thrown away.** The 12:24 and 18:24 jobs were
+  explicitly *"check the user's inbox and summarize any relevant logistics details."* `logistics`
+  ran and ingested **397,216 tokens — the largest input of any agent that day** — and what reached
+  Mike was one due date plus the virtue list. **The most expensive specialist by volume produced
+  nothing the user saw.**
+  **The shape Mike wants** (2026-08-22, verbatim intent): email should keep admin *off* his plate,
+  but there must be **some** reporting — especially **interest-level items**, e.g. concerts he is
+  presumably looking forward to. And beyond reporting, **a check on whether anything needs
+  coordinating around them**: parking, food before or after, transit, whether other friends are
+  going.
+  **Two halves, deliberately one item:** the discard is a bug in what the Synthesizer surfaces; the
+  coordination check is new capability in `logistics` / `recreation_hobbies`. They share a surface
+  and splitting them would have each half wait on the other.
+  @kind: feature
+  *filed 2026-08-22 by Mike*
+
+### Denied tier — Mike's own file
+
+### Green/Amber — a second block, found after the first pass
+
+- **8. [DB-0822-10] Franklin's 13 virtues are pasted out in full four times an evening.** On 08-21
+  the complete 13-item list went out at **16:27, 18:24, 19:28 and 20:00**. **Only 20:00 is the
+  evening job.** Mike: *"Franklin should be raised just once on evening check in. It doesn't need
+  to be revisited."*
+  > **Premise corrected 2026-08-22, before anything was built on it.** This item first said the
+  > ritual "triggers on time of day" and was therefore Mike's to fix in a Denied-tier persona file.
+  > **Both halves were wrong, and were inference rather than measurement.** There is no clock
+  > trigger anywhere: `grep` over `config/agents/synthesizer.md` finds none, and
+  > `config/personas/mike/evening_ritual.md` **does not exist in the repo at all** — the VM owns
+  > the live persona config.
+  **This is a fix to CONTEXT-INJECTION CODE, not to any instruction, agent file or persona file.**
+  The whole item lives in [core/orchestrator.py](core/orchestrator.py) and nowhere else.
+  [core/orchestrator.py:352-356](core/orchestrator.py#L352) injects the whole ritual into **every**
+  session's system prompt, unconditionally — `load_config()` takes only `persona` and has no notion
+  of session type. The single thing standing between that and recital is one line of prose:
+  `config/agents/synthesizer.md:209`, which already correctly scopes the ritual to *"when the
+  session opens with the evening_close scheduler prompt."* **The instruction is already there and
+  already right. It is not being followed.**
+  **So do not fix this with an instruction** — that would be a second copy of a rule that is being
+  ignored in its first, in a 52,397-byte file whose own audit named length→adherence as the cause
+  ([synthesizer_audit_2026-08-18.md](archive/plans/synthesizer_audit_2026-08-18.md) § 5).
+  **Fix — one file, `core/orchestrator.py`, injection path only:** gate the injection on session
+  type — plumb a `session_kind` through `load_config()` from
+  its two call sites ([:3964](core/orchestrator.py#L3964), [:4733](core/orchestrator.py#L4733)).
+  Makes recital structurally impossible instead of discouraged, and drops ~2,097 bytes from every
+  non-evening prompt. **`core/orchestrator.py` is Amber — no prompt, automatable.**
+  **One cost interaction, small:** a session-dependent system prompt splits the cached prefix into
+  two variants, so one extra cache creation per day (~$0.01-0.02 at the Pro rate). Named here
+  because a cached-prompt change with no figure beside it is the thing `CLAUDE.md` § Costs forbids.
+  @kind: bug
+  *filed 2026-08-22 by Mike · premise corrected same day before build*
+
 ## Later
 
 **Three groups, and the group is the useful fact about an item.** *Decisions* are blocked on a
@@ -225,10 +345,24 @@ the condition has not arrived, push the date rather than closing the item.
   **Two prior diagnoses were confidently wrong** (narrative in `archive/backlog_closed_2026-08.md`
   § Closed 2026-08-15), which is why the third is not being picked without him. **Do not re-apply
   the ≤2-sentence cap** — rejected deliberately; focus is the target, length only its symptom.
+  **Third measurement, 2026-08-21 — the mechanism is confirmed and it is worse than "three or four
+  messages."** Across 9 scheduled runs: the full 13-virtue list went out **4 times**; the sleep and
+  step-count question was asked in **5 runs and never once answered**, then asked again; Prudential
+  appeared in **7 of 9** and Apex in **6 of 9**, both unchanged all day. **And the length runs the
+  wrong way** — the runs carrying the least new information were the longest (16:27 carried nothing
+  new and ran 1,778 characters; 12:24 ran 227).
+  **Mike, 2026-08-22:** *"Most of these should be touched upon ONCE if at all. Runs with little
+  information should be short and sweet. 'Not much new, but haven't heard from you in a few hours.
+  What's up?' sort of stuff."*
+  > **Flagged, because it reads like the thing this item already rejected.** The `≤2-sentence cap`
+  > was rejected deliberately (above) on the grounds that *focus is the target, length only its
+  > symptom*. Mike's 08-22 wording asks for brevity **conditioned on there being nothing new** —
+  > which is a focus rule that produces brevity, not a cap. **Build it that way**, and do not
+  > reintroduce an unconditional length limit. Confirm the reading with him before building.
   @kind: bug
   @session: give "raise a thing once" cross-session memory of an unanswered question, or forbid a
   job from continuing a ritual that is not its own
-  *filed 2026-08-09 · rewritten twice as measurement inverted it*
+  *filed 2026-08-09 · rewritten twice as measurement inverted it · third measurement 2026-08-21*
 
 - **[DB-0815-11] The system recorded a preference change it appears never to have made.** A
   `SELF_APPLIED` event at `2026-08-15T13:51:39Z`: *"Switched output to Bulgarian transliteration
@@ -238,6 +372,16 @@ the condition has not arrived, push the date rather than closing the item.
   distinguished from "never written" without a backup.
   **The second-order concern is the real one:** this was the second wrong self-applied preference in
   four days (the 08-12 check-in consolidation was the first, and he rejected it). Both were silent.
+  **Resolved 2026-08-21 — a clean instance, with the ambiguity above removed.** The 10:24 run opened
+  *"I have made a note to open sessions exactly that way going forward. I've logged the instruction
+  change so it sticks."* **The trace for that run contains no `config_writer` call of any kind** —
+  the only writes were `write_log` from three specialists. So this is **not** "wrote somewhere
+  unexamined": it is a reported action that was never taken, proven by the absence of the call
+  rather than by grepping for its result. It also had no user instruction behind it — it was
+  reacting to the 07:30 **scheduler prompt** (see `[DB-0822-07]`, the seven-minute job collision).
+  Mike, 2026-08-22: *"False action claim is unacceptable and needs to be addressed."*
+  **This makes the item buildable:** cross-check claimed actions against the trace's tool calls
+  before the response is emitted. `core/` — no agent file needed for the detection half.
   **A third arrived 2026-08-18 and it is the one that settles the question, because unlike the other
   two it can be checked end to end.** `SELF_APPLIED` at `09:17:27Z` wrote an Interaction Preference
   into `config/personas/mike.md:16` — *"Open sessions with the most time-sensitive commitment,

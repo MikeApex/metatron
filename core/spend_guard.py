@@ -20,6 +20,12 @@ closes it. The lesson generalises past caching — anything this system creates
 that outlives the call that created it has to report itself here, or the guard's
 silence will be read as safety.
 
+Both thresholds judge usd_billed_est, not usd. The guard sees pipeline turns and
+nothing else, while Vertex also bills cache creation and retried attempts — 23% of
+invocations on 2026-08-21. `usd` stays the raw observed sum so it can be checked
+against the pricing table; the uplift that closes the gap is applied at the point
+of judgement. See config/modules/spend_guard.yaml, unmetered_uplift.
+
 Either can trip. Both warn before they stop, so the system does not go silent
 without notice.
 
@@ -88,7 +94,8 @@ def _state_path(day: date | None = None) -> Path:
 def _blank_state() -> dict:
     return {"date": date.today().isoformat(), "host": _HOST,
             "usd": 0.0, "calls": 0, "tokens_in": 0, "tokens_out": 0,
-            "tokens_cached": 0, "usd_cache_storage": 0.0, "cache_grants": 0}
+            "tokens_cached": 0, "usd_cache_storage": 0.0, "cache_grants": 0,
+            "usd_billed_est": 0.0}
 
 
 def _read_state() -> dict:
@@ -246,17 +253,44 @@ def record_tokens(model: str, tokens_in: int, tokens_out: int,
         logger.warning(f"[spend_guard] record failed: {exc}")
 
 
+def _billed_estimate(state: dict, cfg: dict) -> float:
+    """
+    What the day is likely to actually BILL, as opposed to what was observed.
+
+    `state["usd"]` is the honest sum of pipeline turns — the only thing this
+    module is called for. Vertex bills more: context-cache creation ingests a
+    whole prompt with no generate call attached, and retried or fallback attempts
+    are billed but leave no trace record to count. Measured 2026-08-21, both are
+    invisible here and together ran 23% of invocations.
+
+    The raw figure stays raw so the arithmetic remains auditable against the
+    pricing table; the uplift is applied only where a judgement is made — the
+    alert, the stop, and the reported summary. Derivation and how to re-measure:
+    config/modules/spend_guard.yaml, unmetered_uplift.
+    """
+    try:
+        factor = float(cfg.get("unmetered_uplift", 1.0) or 1.0)
+    except (TypeError, ValueError):
+        factor = 1.0
+    # Never scale DOWN: a factor below 1 would make the guard read under what it
+    # actually observed, which no measurement could justify.
+    return round(state.get("usd", 0.0) * max(1.0, factor), 6)
+
+
 def _maybe_alert_spend(state: dict, cfg: dict) -> None:
     global _alerted_spend
     alert_at = float(cfg.get("alert_usd_per_day", 0) or 0)
-    if alert_at and state["usd"] >= alert_at and not _alerted_spend:
+    billed = _billed_estimate(state, cfg)
+    state["usd_billed_est"] = billed
+    if alert_at and billed >= alert_at and not _alerted_spend:
         _alerted_spend = True
         logger.warning(
-            f"[spend_guard] ALERT estimated spend today ${state['usd']:.2f} on {_HOST} "
+            f"[spend_guard] ALERT estimated spend today ${billed:.2f} on {_HOST} "
+            f"(${state['usd']:.2f} observed + unmetered uplift) "
             f"crossed ${alert_at:.2f} over {state['calls']} calls "
             f"(this host only — other hosts count separately)"
         )
-        print(f"[spend_guard] ALERT ${state['usd']:.2f} today on {_HOST} "
+        print(f"[spend_guard] ALERT ${billed:.2f} today on {_HOST} "
               f"({state['calls']} calls)", flush=True)
 
 
@@ -303,7 +337,7 @@ def check_before_session() -> None:
                 f"config/modules/spend_guard.yaml or restart the server to clear."
             )
 
-        spend = _read_state().get("usd", 0.0)
+        spend = _billed_estimate(_read_state(), cfg)
         if stop_usd and spend >= stop_usd:
             raise SpendLimitExceeded(
                 f"Estimated AI spend today on {_HOST} is ${spend:.2f}, at or above the "
@@ -320,5 +354,6 @@ def check_before_session() -> None:
 def today_summary() -> dict:
     """Current totals, for diagnostics and the monitor."""
     state = _read_state()
+    state["usd_billed_est"] = _billed_estimate(state, _load_config())
     state["sessions_last_hour"] = _sessions_last_hour()
     return state

@@ -10,17 +10,32 @@ Google:** rule on the proposed § Section 0 amendment — does the sensitive-tie
 on the corrected basis (flagged-only logging, ≤90 days, no training) until grant or refusal,
 backstop 2026-10-01.*
 
-*✅ **The cache fix is deployed** (`9de2836` + `e5d5037`, 08-21): sliding 10-min TTL, owned
-sweep, storage on the spend meter, `VERTEX_CACHE_DISABLED=1` in the Mac's `.env`. Project at 0
-caches next morning — the TTL visibly working. **What remains is one time-gated item,
-`[DB-0822-01]`** (`due: 2026-08-25`): the export reconcile once rows pass 08-21, then Step 6's
-Pro half gated on an A4 run; its clean day is what `[DB-0820-01]`'s cap revert needs. The
-export backfill already proves caching was net-negative all along ($19.59 storage vs $1.53
-reads since June 30).*
+*✅ **The cache fix is deployed and now measured against a real day.** 08-21 reconciled from Cloud
+Monitoring + the VM's `spend_guard`: **storage fell $3.46/day → $0.14994**, and caching is
+**net-positive for the first time** (+$0.10 to +$0.31/day — ~1–1.5 reads per window, sitting on
+break-even). Expected bill **$2.51–$2.71** against 08-19's $6.12 for *more* usage. Method validated
+by reproducing 08-19's known gap to the dollar. **The export is backfilling forward, not broken** —
+it advanced 08-12 → 08-14 during the session; `[DB-0822-01]` (`due: 2026-08-25`) still waits on
+rows passing 08-21, which is also what `[DB-0820-01]`'s cap revert needs.*
+
+*⚠ **`spend_guard` read ~23% low; an uplift now closes it — NOT DEPLOYED.** Monitoring saw 160
+invocations to the guard's 130 (08-22: 32 vs 26). The pipeline is perfectly metered (traces =
+guard); the gap is cache *creation* plus retried attempts, neither reachable from the turn path.
+`unmetered_uplift: 1.25`; `usd` stays raw, new `usd_billed_est` is what the alert and stop judge,
+so **the $6 alert now trips at $4.80 observed** — restoring the 08-08 baselining's intent. Its
+config comment wrongly calls the export "dark since 08-12"; fix on deploy.*
 
 *⚠ **Intake is still dark until Mike's VM edits** — `enabled: true` in mike's `intake.yaml`, and
 delete `mike.md`'s "check inbox every six hours" line if still present. `[DB-0820-03]` holds the
 model-tier switch-on gate, `[DB-0820-04]` owes the extractor its own injection row (advances B1b).*
+
+*⚠ **The 08-21 traces say the Synthesizer's failures are ADHERENCE, not missing rules.** 89% of the
+day was automated (116 of 130 calls; 4 interactive runs). **Six of Mike's six complaints are already
+written in `config/agents/synthesizer.md`** — raise-once and obligations-never-listed (:187), open on
+one thing and nothing-new→one line (:181), length-follows-focus (:183), ritual scoped to
+`evening_close` (:209) — and all six were ignored. **Do not fix `[DB-0822-05]`–`[DB-0822-10]` by
+adding another rule;** the file is 52,397 bytes and its own audit named length→adherence as the
+cause. The virtue dump is context-injection code (`core/orchestrator.py:352-356`), not prose.*
 
 *⚠ **Caps are temporarily $150/$250, back down in September** — `[DB-0820-01]`, `due: 2026-09-01`;
 keep ~$100 between tiers (`CLAUDE.md` § Infrastructure traps 3).*
@@ -147,10 +162,10 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-22 | **The 21st reconciled: the bill is right, caching earns for the first time, and the scheduler — not Mike — ate the day.** Storage $3.46/day → **$0.14994**; caching net **+$0.10 to +$0.31/day**, sitting on break-even. Expected bill **$2.51–$2.71** vs 08-19's $6.12 for *more* usage; method validated by reproducing 08-19's gap to the dollar. **89% of the day was automated** (9 scheduled + 10 trailing Diarist runs = 116 of 130 calls; 4 interactive), and the Synthesizer's 11 calls cost more than the other 119 combined. **`spend_guard` read 23% low** — cache creation and retries are invisible to the turn path; closed with a measured `unmetered_uplift: 1.25`, raw `usd` kept auditable. **Two of my own claims were wrong and corrected before build:** the billing export is backfilling forward, not dead, and the virtue dump is injection code, not a clock trigger in a Denied-tier file. **The reframe: six of six complaints are already rules in `synthesizer.md` and all six were ignored** — adherence, not absence. Six items filed `[DB-0822-05]`–`[DB-0822-10]`, Amber before Red | `spend_guard` **not deployed** |
 | 08-22 | **The contact dedup gate ships; its first live merge takes the wrong Steven.** `write_contact` now saves nothing on a near-match and asks — neither cheaper answer survived measurement (score **cannot** separate same-person from different: Stephen/Steven 0.77 is one, Dave/Dan Bennett 0.87 is two; the agent asked once then asserted 4 min later). **Gate carries a standing note that it should become unnecessary**; § D2 owes a judgement-consistency test. The monitoring flag saw **crashes only** — 786 calls, one `ok:false`, graceful failures all green. **Then `merge_contacts`' first production run corrupted a real contact** on an ambiguous *"keeping Steven"* across three Stevens — no unmerge. An app-side frame log was **stopped by Mike before deploy**: it printed internals as the assistant | `a192821`, `b980b93`, `6d6d46c`, `4c05b8b` — **deployed** |
 | 08-22 | **The cache fix shipped: 10-minute sliding TTL, owned sweep, storage on the meter — and the export's backfill proves caching was net-negative its whole life** ($19.59 storage vs $1.53 cached reads since June 30). Built in Opus, reviewed in Fable post-switch (three minor findings, none blocking), deployed by Mike 08-21; 9 pre-TTL caches reaped by hand after the "they'll self-expire at midnight" prediction proved wrong. **Step 6's first analysis was inverted by Mike's challenge** — creation amortises across bursts (74 invocations = 10 creations), so MW+PH caching is worth ~+$0.17/day and the creation-SKU question stopped mattering; the findings doc retracts its own claim against the Fable plan, which was right all along. Remainder filed as `[DB-0822-01]`, `due: 2026-08-25` | `9de2836`, `e5d5037` — **deployed** |
 | 08-22 | **Was Metatron built backwards? A code-dominant inversion — procedural spine in code, models as discrete judgment gates — was argued for and left with Mike.** Prompted by an Opus barbecue-RSVP exhibit showing model inertia toward the reactive; the "compass layer" (allocation policy, portfolio view) needs standing *computed* state no prompt can supply, and the incident log has been moving judgment into code all year. Recommendation: decide before A8; pilot the RSVP flow; Synthesizer stays an agent. Full record: `archive/plans/code_vs_agent_architecture_2026-08-22_discussion.md` | **nothing — discussion only** |
-| 08-21 | **ZDR: "verified" became verified — the abuse-monitoring exception is obtainable on this account shape, and the default is conditional logging, not blanket retention.** Google's published terms, read under a scoped, since-reverted WebFetch lift: the opt-out form serves exactly self-serve GCP-ToS customers; flagged-only prompt logging ≤90 days, never training; `cacheConfig` governs only the latency cache (handoff caution resolved); Search grounding keeps query logs 3 days with no opt-out. Evidence + proposed amendment: `archive/security/zdr_terms_evidence_2026-08-20.md`; status authority: `docs/INFRASTRUCTURE.md` § Vertex AI credentials. Form + § Section 0 ruling pending with Mike | **nothing — docs only** |
 ---
 
 ## Useful context to pull as needed

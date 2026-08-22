@@ -41,6 +41,36 @@ enabled: true
 alert_usd_per_day: 6.0
 stop_usd_per_day: 15.0
 
+# --- Uplift for traffic this guard cannot see (measured 2026-08-21) ---
+# The guard counts one thing: pipeline turns, via trace.record_turn_tokens. Vertex
+# meters more than that. On 08-21 Cloud Monitoring recorded 160 model invocations
+# and 1,440,294 input tokens against the guard's 130 and 1,327,517 — a 23% gap in
+# calls, reproduced the next day (32 vs 26, also 23%).
+#
+# Two known sources, neither reachable from the turn-recording path:
+#   - Context-cache CREATION ingests the whole cached prompt as billed input with
+#     no generate call attached. Confirmed by controlled probe 08-20: the Mac's
+#     state file read calls=0, cache_grants=1 while Monitoring showed 1 invocation
+#     and 12,001 input tokens.
+#   - Retried and fallback calls. Vertex bills the attempt; the trace keeps only
+#     the result, and carries no retry field to count them from.
+#
+# Metering creation exactly is easy; the residual is not attributable without the
+# BigQuery billing export, which has been dark since 2026-08-12. So the whole gap
+# is carried as one honest factor rather than half-fixed with an unmeasurable
+# remainder. `usd` below stays the raw sum of what was actually observed; the
+# uplifted figure is what the thresholds judge and what usd_billed_est reports.
+#
+# Round UP deliberately: this is a runaway detector, and reading high fails safe.
+# Measured cost ratios were 1.16-1.24 and call ratios 1.23 on both days.
+#
+# RE-DERIVE, don't trust: compare a full day's data/diagnostics/spend_<date>.json
+# against the Cloud Monitoring metric
+# aiplatform.googleapis.com/publisher/online_serving/model_invocation_count.
+# Set to 1.0 to disable. Retire this in favour of real attribution once the
+# billing export is live again.
+unmetered_uplift: 1.25
+
 # --- Rate limit (pipeline sessions started, rolling 60 minutes) ---
 # Normal load is ~7 scheduled sessions/day plus interactive use. These are set
 # well above that so ordinary bursts do not trip them.
