@@ -92,16 +92,6 @@ opened. If the request is refused, the `tone_profiler` question returns with it.
 
 Provenance: raised by Mike 2026-08-20 (`archive/handoffs/2026-08-20-zdr-verification-prompt.md`);
 verified obtainable 2026-08-21; form submitted 2026-08-22.
-- **The code-dominant architecture question now gates A8 sequencing.** Raised by Mike 2026-08-22
-(preliminary discussion, no decision). The queued `@session` decision "where code should replace
-model judgment" (§ Later § Decisions) now has a consultable analysis and a recommendation:
-`archive/plans/code_vs_agent_architecture_2026-08-22_discussion.md` — invert to code-dominant
-with model judgment gates; Coordinator first candidate; Synthesizer stays an agent; pilot the
-invitation/RSVP flow; **decide before A8 executes or A8 is paid for twice.** The `/backlog` pass
-should link that doc from the existing decision item and consider whether A8 in `ROADMAP.md`
-needs a "blocked on this decision" note. Provenance: Mike, session 2026-08-22 (architecture
-discussion, Opus 5).
-
 ---
 
 ## Now
