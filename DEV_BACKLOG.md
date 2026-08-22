@@ -529,6 +529,33 @@ with a date.** Nothing new joins this group open-ended.*
 
 ### Unbuilt — real capability that does not exist
 
+- **[DB-0822-01] The cache fix is deployed but not yet proven against a bill, and its follow-on
+  build waits on that proof.** Steps 1–4 of the cache plan shipped 2026-08-21 (`9de2836`, sliding
+  10-min TTL, owned sweep, storage on the spend meter, dev kill switch); the billing export is on
+  and backfilled to June 30 — **confirming storage billed $19.59 against $1.53 of cached reads
+  since June 30** — but export rows currently end at 08-14, so the closing test has no clean day
+  to read yet. One item, two sequential halves, both mechanical once the data lands:
+  **(a) Close the plan:** run `python3 scripts/vertex_cost_reconcile.py --days 10` on the Mac once
+  the export shows ≥ 08-21. It answers the two open rates (creation SKU — the 08-20 probe day,
+  12,001 tokens with zero generate calls, will sit on either `Text Input - Predictions` or
+  `Text Input Caching` for Gemini 3.5 Flash — and whether the TTL-refresh patch meters anything),
+  and prints the closing comparison: **pass = billed ÷ estimated under 1.2×** for a post-deploy day
+  (VM's `data/diagnostics/spend_YYYY-MM-DD.json`; the Mac's is ~0 with `VERTEX_CACHE_DISABLED=1`).
+  **That clean day is the evidence `[DB-0820-01]` needs before the caps revert** — close this half
+  before that item's 09-01 review.
+  **(b) Step 6, Pro half:** add `mental_wellbeing` and `physical_health` to the cached-path set at
+  `core/orchestrator.py:4019` — **gated on a full A4 run** (`tests/run_a4_safety.py`, clinical +
+  pipeline, both complexity tiers), because it moves the two clinical-flag agents onto the native
+  loop, a larger change than the prompt reorder that already forced an A4 re-run. Worth ~+$0.17/day
+  (more than the head-layer caching earns); the Flash-Lite six are +$0.008/day — include or skip
+  without deliberation. Arithmetic and the corrected burst-amortisation model:
+  `archive/plans/vertex_cache_step6_specialist_caching_2026-08-21.md`. Decide alongside
+  `[DB-0820-05]` if that session happens first — all-Pro routing quadruples what specialist
+  caching is worth.
+  `due: 2026-08-25`
+  @kind: chore
+  *filed 2026-08-22 at the close of the cache-fix build · Steps 1–5 status verified against the live export same day*
+
 - **[DB-0820-04] No hostile test email has ever been aimed at the intake extractor.** The B1
   `injection` suite (`tests/run_b1_redteam.py`) proved the email row against **Logistics**
   (2026-08-08, 3/3) — but the intake pipeline is a new reader of attacker-written text, and its
@@ -845,8 +872,8 @@ only record of how often the tool misreads who is travelling.)*
 - **[user corrected a prior turn]** Specifies that the previously established language preference (Bulgarian) is global, covering both incoming and outgoing communications.  
   `2026-08-20T21:44:01.478382Z`
 
-- ⚠ **[user corrected a prior turn]** CLARIFICATION_NEEDED:  ×14  
-  `2026-08-22T09:01:10.264047Z`
+- ⚠ **[user corrected a prior turn]** CLARIFICATION_NEEDED:  ×15  
+  `2026-08-22T11:26:16.921621Z`
 
 - **[user corrected a prior turn]** User corrected transit route to Transport Museum, explicitly excluding Jubilee and Piccadilly lines which were previously suggested.  ×2  
   `2026-08-16T08:06:21.241217Z`

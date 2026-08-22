@@ -10,11 +10,13 @@ Google:** rule on the proposed § Section 0 amendment — does the sensitive-tie
 on the corrected basis (flagged-only logging, ≤90 days, no training) until grant or refusal,
 backstop 2026-10-01.*
 
-*⚠ **A parallel window is mid-build on the cache fix**, none of it staged here. Plan:
-`archive/plans/vertex_cache_cost_control_2026-08-20_plan.md`, **rewritten by Fable — the 10-minute
-TTL is the fix; the orphan sweep is a ~$0.14/day tidy-up, because Vertex reaps at `expire_time`.**
-Storage ran ~$3.4–3.9/day against $0.51 of savings, and `spend_guard` read $2.63 against a $6.12
-bill while working exactly as designed.*
+*✅ **The cache fix is deployed** (`9de2836` + `e5d5037`, 08-21): sliding 10-min TTL, owned
+sweep, storage on the spend meter, `VERTEX_CACHE_DISABLED=1` in the Mac's `.env`. Project at 0
+caches next morning — the TTL visibly working. **What remains is one time-gated item,
+`[DB-0822-01]`** (`due: 2026-08-25`): the export reconcile once rows pass 08-21, then Step 6's
+Pro half gated on an A4 run; its clean day is what `[DB-0820-01]`'s cap revert needs. The
+export backfill already proves caching was net-negative all along ($19.59 storage vs $1.53
+reads since June 30).*
 
 *⚠ **Intake is still dark until Mike's VM edits** — `enabled: true` in mike's `intake.yaml`, and
 delete `mike.md`'s "check inbox every six hours" line if still present. `[DB-0820-03]` holds the
@@ -27,7 +29,7 @@ remain untested, not passing** — their 08-19 test designs never reached the co
 ***Next:** `[DB-0820-05]` — with storage
 fixed, all-Pro routing is **~$3.11/day against today's $6.12**, so the Flash-Lite tiers are worth
 revisiting once a clean day is measured; `coordinator` is the only candidate and its blocker is
-latency, not money. `175809e` **owes a deploy but changes nothing on the VM**.*
+latency, not money. Deploys are current through `e5d5037` (08-21).*
 
 *⚠ **A v1/alpha architecture question is live: invert to code-dominant, with models as discrete
 judgment gates.** Preliminary discussion 2026-08-22, **no decision** — Claude recommended the
@@ -133,10 +135,10 @@ restating them is duplicating a file that already holds them better.
 
 | Date | What | Deployed |
 |---|---|---|
+| 08-22 | **The cache fix shipped: 10-minute sliding TTL, owned sweep, storage on the meter — and the export's backfill proves caching was net-negative its whole life** ($19.59 storage vs $1.53 cached reads since June 30). Built in Opus, reviewed in Fable post-switch (three minor findings, none blocking), deployed by Mike 08-21; 9 pre-TTL caches reaped by hand after the "they'll self-expire at midnight" prediction proved wrong. **Step 6's first analysis was inverted by Mike's challenge** — creation amortises across bursts (74 invocations = 10 creations), so MW+PH caching is worth ~+$0.17/day and the creation-SKU question stopped mattering; the findings doc retracts its own claim against the Fable plan, which was right all along. Remainder filed as `[DB-0822-01]`, `due: 2026-08-25` | `9de2836`, `e5d5037` — **deployed** |
 | 08-22 | **Was Metatron built backwards? A code-dominant inversion — procedural spine in code, models as discrete judgment gates — was argued for and left with Mike.** Prompted by an Opus barbecue-RSVP exhibit showing model inertia toward the reactive; the "compass layer" (allocation policy, portfolio view) needs standing *computed* state no prompt can supply, and the incident log has been moving judgment into code all year. Recommendation: decide before A8; pilot the RSVP flow; Synthesizer stays an agent. Full record: `archive/plans/code_vs_agent_architecture_2026-08-22_discussion.md` | **nothing — discussion only** |
 | 08-21 | **ZDR: "verified" became verified — the abuse-monitoring exception is obtainable on this account shape, and the default is conditional logging, not blanket retention.** Google's published terms, read under a scoped, since-reverted WebFetch lift: the opt-out form serves exactly self-serve GCP-ToS customers; flagged-only prompt logging ≤90 days, never training; `cacheConfig` governs only the latency cache (handoff caution resolved); Search grounding keeps query logs 3 days with no opt-out. Evidence + proposed amendment: `archive/security/zdr_terms_evidence_2026-08-20.md`; status authority: `docs/INFRASTRUCTURE.md` § Vertex AI credentials. Form + § Section 0 ruling pending with Mike | **nothing — docs only** |
 | 08-20 | **The Vertex bill reconciled — the cost that stopped the VM is one no per-call meter could see.** Context-cache **storage bills per wall-clock hour** ($4.50/1M/hr on Pro), so `spend_guard` read **$2.63 against a $6.12 bill** and was working as designed. Three defects: caches **abandoned on every restart** (5 server + 5 scheduler = 10 Pro caches billing at once), **midnight-UTC expiry chosen for config-freshness with no cost figure beside it**, and the guard blind to storage. **Fable's review inverted the plan's priority** — the 10-minute TTL is the fix; the orphan sweep is a ~$0.14/day tidy-up, because Vertex reaps at `expire_time`. It also caught an unlocked registry, a streaming path that never evicts, and that Step 6 splits by model class (the compat path exists to dodge the `thought_signature` bug). **Three of my own claims were wrong and measurement killed each**: that caching never ran on the VM (the logs just don't capture it), that the residual was storage alone (**creation is metered too — proved by probe**), and that caching "costs more than it saves" before hit rate was measured (**15 hits against 65 Pro calls**). `[DB-0820-05]` filed: all-Pro routing is ~$3.11/day against today's $6.12. Global `CLAUDE.md` gained **§ Costs**. **Then the session's largest finding, and it is not about cost: `ROADMAP.md` § Section 0 has authorised sensitive-tier data on the VM since 2026-06-18 on "verified ZDR" — never verified, and not in force.** No org parent, self-serve billing account, zero org policies, no exception on record. Only "no training use" of its three claims holds. Recorded as a dated correction beneath the original text, **not a rewrite**; whether the permission continues is left explicitly undecided. Mike overrode filing-and-verifying-later — the check took four commands and overturned a two-month premise. Also fixed: all three Vertex call sites defaulted to a region that does not serve Gemini 3.x | **`6a96fc4`…`01495ec`; `175809e` owes a deploy but is inert on the VM** |
-| 08-20 | **Inbound intake: mail swept hourly, classified in Python, queued per domain, taught by correction.** An interest sieve, not a filing tool — Mike's rulings: disposition ⊥ domain, no dispatch on arrival, no mailbox writes, digest as training surface. Model tier wired but **double-gated OFF** (`[DB-0820-03]` holds the gate; `[DB-0820-04]` the injection row). Mike's `/code-review high` returned **10 findings, 3 severe** (digest swallowed by the Coordinator; weekly digest would have fired daily; thread siblings re-surfacing) — all fixed, suite 21/21. `tone_profiler` runs bare, `[DB-0819-02]` closed. **Dark until Mike's VM edits**; inbox primed 08-21 | `b417e98` — **deployed** |
 ---
 
 ## Useful context to pull as needed
