@@ -107,6 +107,19 @@ applies if it ever becomes a rollup field) and probably a Pattern Miner or analy
 an agent behaviour. Distinct from system-created calendar obligations by construction — the
 intention key only captures what the user voiced.
 *Provenance: Mike, 2026-08-26, mid-session directive during the find_places routing fix.*
+- **The daily anticipation pass has never fired — observe its first run and read the trace.**
+Built 2026-08-26 (`bec3952`+`1d77bd0`, deployed): `location_anticipation` fires daily at 10:00
+(template + mike's live VM `scheduler.yaml`, scheduler restarted with the job registered) —
+Coordinator prompt directing Logistics' new horizon-scan item 5: where the user will be today
+and tomorrow, and what those locations make possible (unarranged mealtimes via `find_places`,
+errands satisfiable nearby, contact-area flags routed via Synth, downtime gaps). First firing
+expected 2026-08-27 10:00. What to check in the trace: Logistics dispatched; the scan actually
+read the calendar; `find_places` called only where a real gap existed; the user-facing message
+either genuinely useful or near-silent (the prompt demands one line when nothing is worth
+raising). Known-class risk to watch: `[DB-0809-02]` — a new scheduled job inheriting an
+unfinished ritual from context. Standing cost of the job: ~$0.07–0.23/day (~$2–7/mo).
+*Provenance: Mike, 2026-08-26 — the observation half of the anticipation feature he directed
+the same day; filed at his instruction at chat close.*
 
 ---
 
