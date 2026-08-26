@@ -52,7 +52,7 @@ schedules:
 
   location_anticipation:
     enabled: true
-    time: "16:00"
+    time: "10:00"
     days: daily
     agent: coordinator
     # Anticipatory, not reactive: Logistics' horizon-scan item 5 (where the user
