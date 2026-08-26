@@ -3155,3 +3155,20 @@ graceful failure a user actually hits (`"Error: no contact found with id …"`) 
 phrasing could ever have turned it red, because every tool checked handles invalid input
 gracefully by design. That is the tools being well written; the flag was reading the wrong signal.
 `tests/test_tool_error_flag.py`, 17 checks.
+
+## Closed 2026-08-26 — venue discovery live end to end
+
+- **[DB-0808-04] Suggest a café near a named address.** Filed 2026-08-08 by Mike; built
+  2026-08-22 (`8754222` `tools/places.py` + `158cebe` grants/wiring, 28/28 unit tests).
+  Key path completed 2026-08-26: Places API (New) enabled on `metatron-ai-499810` (the console
+  had steered to legacy "Places API" twice — both the enablement and the key restriction had to
+  be repointed to `places.googleapis.com`), `places-api` key restricted to it, installed as
+  `GOOGLE_PLACES_API_KEY` in the VM `.env`. **Closing evidence, the item's stated exit:** live
+  trace `bac9d794` (2026-08-26T15:53) — "suggest a good place to eat near Charing Cross this
+  evening" → Coordinator dispatched Logistics (the `bec3952` routing line), Logistics called
+  `find_places` (`ok=True`, "quiet restaurant for restorative dinner" near Charing Cross) and
+  walked three returned venues through `get_travel_time`; the reply's venues (Rules, 35 Maiden
+  Ln; 45 St Martin's Ln) match the API results by address. Reliability probe same day: 3/3
+  direct Logistics runs called the tool. **A first trace read wrongly reported zero tool calls**
+  — the walk missed per-turn nesting; corrected same session, and the correction is why this
+  entry names the turn structure. Standing cost: ~$0.017–0.032/call, <$2/mo at expected use.

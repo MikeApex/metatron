@@ -92,6 +92,22 @@ opened. If the request is refused, the `tone_profiler` question returns with it.
 
 Provenance: raised by Mike 2026-08-20 (`archive/handoffs/2026-08-20-zdr-verification-prompt.md`);
 verified obtainable 2026-08-21; form submitted 2026-08-22.
+- **Accountability Index — measure which intentions, goals and planned events actually happened
+in a period, to read both the user's follow-through and Metatron's intended effect.** Raised by
+Mike 2026-08-26 while fixing the Diarist's plan-vs-event confusion. The collection half now
+exists: the Diarist logs user-voiced intentions in a fixed shape (`write_log` with an
+`intention` key + optional `stated_for` — `config/agents/diarist.md`, added same day), so
+intentions are machine-findable from the log without prose parsing. What does not exist is the
+index itself: a periodic join of stated intentions against subsequent occurred-event entries
+(and calendar/obligation outcomes), producing a fulfilment rate over a window. Scope questions
+for the design pass: what counts as fulfilment evidence (an ordinary log entry naming the act;
+a closed obligation; a calendar event that survived reconcile); the window; and where it
+surfaces — this is A9-adjacent (absorbed work / analytics, § A9's content-free constraint
+applies if it ever becomes a rollup field) and probably a Pattern Miner or analytics job, not
+an agent behaviour. Distinct from system-created calendar obligations by construction — the
+intention key only captures what the user voiced.
+*Provenance: Mike, 2026-08-26, mid-session directive during the find_places routing fix.*
+
 ---
 
 ## Now
@@ -106,19 +122,6 @@ each item as it arrives, and the reporter asymmetry — are in [docs/WORKFLOW.md
 Reasoning lives in `archive/PROJECT_LOG.md` § 2026-08-10, last. Every entry carries what was
 checked and when; a verdict without that line is a description, and descriptions are what the
 standing rule distrusts.*
-
-- **1. [DB-0808-04] "Find a café near X" is built and tested; it answers nothing until the key
-  exists and the deploy runs.** `find_places` shipped 2026-08-22 (`8754222`+`158cebe`, 28/28
-  tests): venue discovery near any named address, granted to `logistics` and
-  `recreation_hobbies`, no GPS involved. **Two exits, both outside the code:** *(1)* Mike creates
-  a **new** API key on `metatron-ai-499810` restricted to the Places API and puts it in the VM's
-  `.env` as `GOOGLE_PLACES_API_KEY` — the Maps key is routes-locked at creation by design and
-  will not serve Places (~$0.017–0.032/call, <$2/mo at expected use, inside the $200 credit);
-  *(2)* the owed `./deploy.sh`. Until both, the tool returns an honest not-configured error.
-  Close on one live "suggest a café near <address>" returning real venues.
-  @kind: feature
-  @waiting: Places-restricted key in the VM's `.env`, then the owed deploy
-  *filed 2026-08-08 by Mike · promoted 2026-08-15 · built 2026-08-22*
 
 - **2. [DB-0820-01] The spend caps are temporarily too high — bring them back down in
   September.** Raised 2026-08-20 from **$100/$175 to $150/$250** (soft stops the VM, hard
@@ -988,11 +991,20 @@ exists for. Pointers, so nothing is lost:*
 runs. They are behavioural, nothing has shipped against them, and collapsing them would destroy the
 only record of how often the tool misreads who is travelling.)*
 
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'The Mousetrap Matinee' (2026-08-25T15:00:00, uid=efdc94bb-07b2-49ef-be3a-a43431d8014d@ai-life-manager) and 'Mousetrap matinee' (2026-08-25T15:00:00, uid=895603fb-276a-4cdf-b113-212e390083e8@ai-life-manager). title_similarity=0.89, shared_attendees=[], shared_words=['matinee', 'mousetrap']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-08-25T04:35:17.234124Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Date Day: The Mousetrap' (2026-08-25T00:00:00, uid=64dc9379-ce64-4c15-a96a-c6cb4df8e432@ai-life-manager) and 'Mousetrap matinee' (2026-08-25T15:00:00, uid=895603fb-276a-4cdf-b113-212e390083e8@ai-life-manager). title_similarity=0.45, shared_attendees=[], shared_words=['mousetrap']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-08-25T04:35:17.233902Z`
+
+- **[user corrected a prior turn]** Omit  
+  `2026-08-23T19:01:50.705655Z`
+
 - **[user corrected a prior turn]** Specifies that the previously established language preference (Bulgarian) is global, covering both incoming and outgoing communications.  
   `2026-08-20T21:44:01.478382Z`
 
-- ⚠ **[user corrected a prior turn]** CLARIFICATION_NEEDED:  ×15  
-  `2026-08-22T11:26:16.921621Z`
+- ⚠ **[user corrected a prior turn]** CLARIFICATION_NEEDED:  ×27  
+  `2026-08-26T14:54:07.267657Z`
 
 - **[user corrected a prior turn]** User corrected transit route to Transport Museum, explicitly excluding Jubilee and Piccadilly lines which were previously suggested.  ×2  
   `2026-08-16T08:06:21.241217Z`
