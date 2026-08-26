@@ -119,11 +119,63 @@ def _run() -> None:
     check("an approval cannot be spent on different arguments",
           "details changed" in r6.lower(), r6[:110])
 
-    # --- an update is not gated ------------------------------------------------------
+    # --- enriching an existing record is not gated -----------------------------------
     first = contacts_on_disk()[0]
     r7 = CRM.write_contact(name=first["name"], contact_id=first["id"], occupation="architect")
     check("an UPDATE by contact_id is never gated, even on a near-matching name",
           "PENDING" not in r7, r7[:80])
+
+    r7b = CRM.write_contact(name=first["name"], contact_id=first["id"],
+                            employer="Foster + Partners",
+                            contact_info={"phone": "07911 123456"})
+    check("adding facts to a correctly identified person stays ungated",
+          "PENDING" not in r7b, r7b[:80])
+
+    # --- THE UPDATE GATE (2026-08-26) ------------------------------------------------
+    # Live on 2026-08-22, asked to "add Stephen Ashworth", the model decided Stephen was
+    # the existing Steven, called write_contact with HIS id, and renamed a real friend's
+    # record — twice, with no prompt, because only creation was gated. What is checked
+    # here is that changing WHO a record is now asks, while enriching it does not.
+    target = contacts_on_disk()[0]
+    before_name = target["name"]
+    r8 = CRM.write_contact(name="Stephen Ashworth", contact_id=target["id"],
+                           last_name="Ashworth")
+    check("renaming an existing contact returns PENDING_CONFIRMATION",
+          "PENDING" in r8, r8[:110])
+    # Read from the decoded description, not the JSON envelope: json.dumps escapes the
+    # arrow to \u2192, so a substring check against the raw payload silently fails.
+    _desc8 = json.loads(r8)["description"]
+    check("the description names the person and shows current → proposed",
+          before_name in _desc8 and "Stephen Ashworth" in _desc8 and "→" in _desc8,
+          _desc8[:160])
+    check("nothing is written to the record while the rename is pending",
+          contacts_on_disk()[0]["name"] == before_name,
+          contacts_on_disk()[0]["name"])
+
+    # The fingerprint binds the id, so consent for one person's rename is not consent
+    # for another's — the whole failure was the model choosing the wrong record.
+    tok3 = json.loads(r8)["confirm_token"]
+    CF.approve(tok3)
+    other = contacts_on_disk()[1]
+    r9 = CRM.write_contact(name="Stephen Ashworth", contact_id=other["id"],
+                           last_name="Ashworth", confirm_token=tok3)
+    check("an approved rename cannot be spent on a different contact",
+          "details changed" in r9.lower(), r9[:110])
+
+    r10 = CRM.write_contact(name="Stephen Ashworth", contact_id=target["id"],
+                            last_name="Ashworth", confirm_token=tok3)
+    check("the approved rename completes on the record it was granted for",
+          "PENDING" not in r10 and contacts_on_disk()[0]["name"] == "Stephen Ashworth",
+          r10[:110])
+
+    # A bulk import phone-matches a record whose stored name differs; that is an
+    # ordinary import outcome, not a model renaming someone, and 200 of them would be
+    # 200 blocking ten-minute confirmations. tools/contacts_import.py passes _bulk on
+    # both branches for exactly this reason.
+    r11 = CRM.write_contact(name="Stephen J Ashworth", contact_id=target["id"],
+                            _bulk=True)
+    check("_bulk exempts the update gate, as it does the creation gate",
+          "PENDING" not in r11, r11[:80])
 
     PERSONA.persona_data_dir = real_dir
 

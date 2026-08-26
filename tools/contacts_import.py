@@ -203,11 +203,15 @@ def _import_batch(raw_contacts: list[dict], source_label: str) -> str:
         contacts = json.loads(crm.list_contacts())
         match = _find_exact_contact(contacts, name, emails, phones)
 
+        # _bulk on BOTH branches: an import reports near-match evidence at batch level
+        # rather than raising one blocking confirmation per record. See the gates in
+        # tools/crm.py. The update branch needs it too as of 2026-08-26, when a rename
+        # of an existing record became a gated act — a phone-matched contact whose name
+        # differs from the CRM's is an ordinary import outcome, not a silent rename by
+        # a model, and 200 of them would be 200 ten-minute confirmations.
         if match:
-            outcome = crm.write_contact(contact_id=match["id"], **write_kwargs)
+            outcome = crm.write_contact(contact_id=match["id"], _bulk=True, **write_kwargs)
         else:
-            # _bulk: an import reports near-match evidence at batch level rather than
-            # raising one blocking confirmation per record. See the gate in tools/crm.py.
             outcome = crm.write_contact(_bulk=True, **write_kwargs)
 
         if outcome.startswith("Error:"):

@@ -273,6 +273,34 @@ Each is a defect measured in the 2026-08-21 traces, not a proposal.*
   @kind: bug
   *filed 2026-08-22 by Mike · premise corrected same day before build*
 
+- **9. [DB-0826-01] "Undo that merge" was read as a work project, so the undo never happened.**
+  Live 2026-08-26, trace `b92ce0c3`, one minute after the contact merge that turn was plainly
+  about. The Coordinator routed it to **work_vocation**, which searched memory for *"Prudential
+  Apex project merge"* and *"Prudential Apex merge branch commit file"* — it resolved "merge" to
+  the work project and "that" to nothing at all.
+  **The tool was never the problem.** `unmerge_contacts` is granted to `relationships` in both
+  routing files and documented at
+  [config/agents/relationships.md:308](config/agents/relationships.md#L308). It was not called.
+  Instead the Synthesizer dispatched three subagents by hand and finished by instructing
+  `relationships` to *"Call `write_contact` to create a new contact for Marcus Delgado, in order
+  to undo the previous merge"* — **reconstructing a record by hand, which
+  `relationships.md:308` explicitly forbids** ("never reconstruct them yourself"), and which
+  would have produced a new id, an empty interaction log and a silent divergence from the
+  archived original.
+  **The Synthesizer diagnosed this correctly and proceeded anyway.** In the same turn it wrote a
+  `write_quality_event` recording that the Coordinator *"completely missed the conversational
+  context"* — so the signal exists in `quality_events.json` already.
+  **What this is, stated so it is not fixed as a CRM bug:** a Coordinator referent-resolution
+  failure. "That merge" is a pronoun pointing at the previous turn, and the routing layer
+  resolved it against work context instead. Same family as the adherence cluster
+  `[DB-0822-05]`–`[DB-0822-10]`, not the contact-gate cluster.
+  **Do not fix it blind** — the routing layer carries no reproduction yet, and one trace is one
+  trace. A second data point is cheap: any short referring turn ("undo that", "cancel it",
+  "do the other one") after a contact operation.
+  @kind: bug
+  @waiting: a second instance, or a deliberate probe of referring turns after a tool action
+  *filed 2026-08-26 at Mike's instruction, from the live trace*
+
 ## Later
 
 **Three groups, and the group is the useful fact about an item.** *Decisions* are blocked on a

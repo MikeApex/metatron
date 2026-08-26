@@ -294,7 +294,50 @@ def _titled(label: str, content: str) -> str:
     return f"## {label}\n\n{content}"
 
 
-def load_config(persona: str | None = None) -> str:
+def session_kind(user_input: str, persona: str | None = None) -> str | None:
+    """
+    Which scheduled ritual, if any, opened this session — `"evening_close"` or None.
+
+    [DB-0822-10]. The evening ritual was injected into every session's system prompt
+    unconditionally, and on 2026-08-21 the full 13-item virtue list went out at 16:27,
+    18:24, 19:28 and 20:00; only 20:00 was the evening job. The single thing standing
+    between the injected text and recital was one line of prose in
+    config/agents/synthesizer.md, which already scopes the ritual correctly and was
+    simply not followed. A second copy of an ignored instruction is not a fix, so the
+    injection is gated here instead — recital becomes structurally impossible rather
+    than discouraged.
+
+    Matched against the persona's OWN configured `evening_close` prompt rather than
+    against hard-coded prose: the wording lives in scheduler.yaml, the VM owns the live
+    copy, and a literal here would go stale the first time Mike reworded it — silently,
+    by un-gating the ritual again. Whitespace- and case-insensitive, because the prompt
+    makes a round trip through the scheduler and the app before it arrives.
+
+    Returns None for every user-typed turn, which is the common case and the one the
+    2026-08-21 recitals were polluting.
+    """
+    if not user_input:
+        return None
+    try:
+        import yaml
+        path = persona_config_dir(persona) / "scheduler.yaml"
+        if not path.exists():
+            return None
+        with open(path) as f:
+            cfg = yaml.safe_load(f) or {}
+    except (OSError, ValueError, yaml.YAMLError):
+        # A missing or malformed schedule must not take the session down. Returning
+        # None fails toward the quieter prompt — the ritual is omitted, not recited.
+        return None
+
+    prompt = (((cfg.get("schedules") or {}).get("evening_close") or {}).get("prompt") or "")
+    if not prompt:
+        return None
+    norm = lambda s: " ".join(str(s).split()).casefold()
+    return "evening_close" if norm(prompt) and norm(prompt) in norm(user_input) else None
+
+
+def load_config(persona: str | None = None, kind: str | None = None) -> str:
     """
     Build the system prompt from the four-tier config hierarchy for one persona.
     Loads: constitution -> identity -> prime_directive -> mission -> goals -> profile.
@@ -302,6 +345,11 @@ def load_config(persona: str | None = None) -> str:
     Tier 0 (the Constitution) is shared by every persona. Tiers 1-3 and the
     profile are per-persona, under config/personas/{persona}/. There is no
     root-level fallback: a session always belongs to exactly one persona.
+
+    `kind` is the session kind from session_kind() above. The evening ritual is
+    injected only when it is "evening_close"; every other session gets a prompt
+    ~2KB shorter and no virtue list to recite. Defaults to None — a caller that
+    does not know the session kind gets the quieter prompt, not the ritual.
     """
     resolved = resolve_persona(persona)
     sections = []
@@ -349,8 +397,14 @@ def load_config(persona: str | None = None) -> str:
     # persona loads (.claude/rules/agent-files.md § One Home Per Rule Class).
     # Moving it here in 2026-08 was token-neutral for the persona that has one
     # and a saving for every persona that does not.
+    #
+    # [DB-0822-10] Injected ONLY into the evening_close session. Until 2026-08-26 this
+    # was unconditional, and the full virtue list was recited at 16:27, 18:24, 19:28
+    # and 20:00 on 08-21 — three of the four being ordinary turns that had no business
+    # carrying it. See session_kind() for why this is gated in code rather than by
+    # another line of instruction.
     evening_ritual_path = config_dir / "evening_ritual.md"
-    if evening_ritual_path.exists():
+    if kind == "evening_close" and evening_ritual_path.exists():
         evening_ritual = evening_ritual_path.read_text().strip()
         if evening_ritual:
             sections.append(_titled("Evening ritual", evening_ritual))
@@ -1104,6 +1158,98 @@ def _user_typed_terms(user_text: str | None) -> frozenset:
         term for term in _ALWAYS_CONFIDENTIAL
         if _term_regex(term, _TIGHT_JOINER).search(norm)
     )
+
+
+# A reply claiming an action is already done. Deliberately narrow: each pattern needs
+# a first-person subject and a completed-action verb, so "I can merge them" and "shall
+# I send it?" do not match while "I've merged the records" and "that's done" do. A
+# looser pattern would fire on ordinary prose and cost the user a whole reply.
+_COMPLETION_CLAIM_RES = [
+    _re.compile(p, _re.IGNORECASE) for p in (
+        r"\b(?:i(?:'ve| have)|we(?:'ve| have))\s+(?:now\s+)?"
+        r"(?:merged|added|created|sent|deleted|removed|updated|saved|renamed|"
+        r"unmerged|closed|booked|scheduled)\b",
+        r"\bthat(?:'s| is)\s+(?:all\s+)?(?:done|sorted|taken care of)\b",
+        r"\b(?:it(?:'s| is)|they(?:'re| are))\s+(?:now\s+)?"
+        r"(?:merged|added|created|sent|deleted|removed|updated|saved|renamed)\b",
+        r"\b(?:done|all set)\b[.!]",
+    )
+]
+
+
+def _pending_tokens(persona: str | None = None) -> set:
+    """Tokens currently awaiting the user's decision. Never raises: a confirmation
+    store that cannot be read must not take the session down, and an empty set means
+    'nothing new was raised', which leaves the reply exactly as the model wrote it."""
+    try:
+        from tools.confirm import pending
+        return {p["token"] for p in pending(persona)}
+    except Exception:  # noqa: BLE001
+        return set()
+
+
+def _pending_raised_since(before: set, persona: str | None = None) -> list[dict]:
+    """Confirmations that appeared during this turn — server state, not the model's
+    account of what it did."""
+    try:
+        from tools.confirm import pending
+        return [p for p in pending(persona) if p["token"] not in (before or set())]
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def enforce_pending_receipt(text: str, new_pending: list[dict]) -> str:
+    """
+    Stop a reply from reporting a gated action as finished when it is not.
+
+    [DB-0822-03, live 2026-08-26]. `merge_contacts` returned PENDING_CONFIRMATION and
+    merged nothing — the gate worked exactly as designed — and the Synthesizer told
+    Mike *"That's done. I've merged the records and kept Marcus Whitfield."* five
+    seconds later. He believed the merge had happened before he had approved anything.
+
+    That is the mirror of the failure tools/confirm.py calls the worst available
+    outcome: a user told an action landed has no reason to approve it, so the approval
+    expires unspent at the ten-minute TTL and the action never happens at all. It is
+    also the same ask-vs-assert shape as every other item in this cluster, one layer
+    up — the model is out of the CONSENT path and was still narrating the RESULT.
+
+    So the report is taken away from it too. `new_pending` is computed by comparing the
+    confirmation store before and after the turn, which is server state rather than
+    anything the model said, and:
+
+      * a reply that claims completion is REPLACED, on the filter_output precedent —
+        a false completion claim is not a cosmetic flaw, it is the user's decision
+        being made for them;
+      * every other reply keeps its text and gains one deterministic line, so the
+        pending action is always visible even when the model forgot to mention it.
+
+    Deliberately NOT an instruction in synthesizer.md: that file is 52KB, its own audit
+    named length→adherence as the cause, and six existing rules were ignored on 08-21.
+    """
+    if not new_pending:
+        return text
+
+    actions = ", ".join(sorted({p.get("action", "an action") for p in new_pending}))
+    waiting = (f"Waiting for your approval in the app before this happens "
+               f"({actions}). Nothing has been changed yet.")
+
+    if any(r.search(text or "") for r in _COMPLETION_CLAIM_RES):
+        logger.warning(
+            "[pending_receipt] response claimed completion while %s awaited approval "
+            "— replaced", actions)
+        try:
+            from tools.logger import write_quality_event
+            write_quality_event(
+                event_type="FALSE_COMPLETION_CLAIM",
+                detail=f"Synthesizer reported {actions} as done while it was still "
+                       f"awaiting user approval; response replaced.",
+            )
+        except Exception:  # noqa: BLE001
+            # Instrumentation must never cost the user the corrected reply.
+            pass
+        return waiting
+
+    return f"{text.rstrip()}\n\n{waiting}" if text and text.strip() else waiting
 
 
 def filter_output(text: str, agent_name: str, user_text: str | None = None) -> str:
@@ -3961,7 +4107,7 @@ def _run_single_agent(agent_name: str, user_input: str,
         context_sections = {"agent_file": agent}
     elif agent_name in _HEAD_LAYER_AGENTS:
         # Full config (constitution → prime_directive → mission → goals) + recent context.
-        config = load_config(persona=persona)
+        config = load_config(persona=persona, kind=session_kind(user_input, persona))
         recent = load_recent_context(persona=persona)
         system_prompt = f"## Your Role for This Session\n\n{agent}\n\n---\n\n{config}"
         augmented_input = f"[Recent context]\n{recent}\n\n---\n\n{user_input}" if recent else user_input
@@ -4507,6 +4653,12 @@ def run_pipeline_session(user_input: str,
 
     _tr.start_request_trace(user_input, persona)
     try:
+        # Tokens outstanding BEFORE this turn. Anything new by the end of it was raised
+        # by this turn's tool calls, which is how enforce_pending_receipt() knows what
+        # the reply must not claim to have finished. Compared by token rather than by
+        # timestamp so a pending request left over from an earlier turn is not
+        # re-announced on every subsequent reply.
+        _pending_before = _pending_tokens(persona)
         receipt_line = ""
         if received_at is not None:
             from tools.ambient import format_receipt_time
@@ -4594,6 +4746,10 @@ def run_pipeline_session(user_input: str,
         # so letting it grant exemptions would let the system unlock its own filter.
         filtered = filter_output(visible, "synthesizer",
                                  user_text=None if is_proactive else user_input)
+        # After the confidentiality filter, not before: a suppressed reply has already
+        # lost its text, and the pending line still needs to reach the user.
+        filtered = enforce_pending_receipt(
+            filtered, _pending_raised_since(_pending_before, persona))
         if history is not None:
             history.append({"role": "user",
                             "content": user_input + _history_attachment_note(attachments)})
@@ -4683,6 +4839,9 @@ def _run_pipeline_session_stream_inner(
 
     _tr.start_request_trace(user_input, persona, is_proactive=is_proactive)
 
+    # See the non-streaming path: the token set before the turn is what makes a
+    # confirmation raised BY this turn distinguishable from one already outstanding.
+    _pending_before = _pending_tokens(persona)
     receipt_line = ""
     if received_at is not None:
         from tools.ambient import format_receipt_time
@@ -4730,7 +4889,10 @@ def _run_pipeline_session_stream_inner(
 
     # Load Synthesizer prompt — mirrors _run_single_agent internals
     agent_instructions = load_agent("synthesizer")
-    config = load_config(persona=persona)
+    # Keyed on the user's own turn, not on synthesizer_input: the latter carries the
+    # Coordinator package and specialist output, so the evening prompt's words can
+    # appear in it on any turn that merely discusses the evening.
+    config = load_config(persona=persona, kind=session_kind(user_input, persona))
     recent = load_recent_context(persona=persona)
     system_prompt = f"## Your Role for This Session\n\n{agent_instructions}\n\n---\n\n{config}"
     augmented_input = (
@@ -4891,19 +5053,37 @@ def _run_pipeline_session_stream_inner(
     # so it grants no echo exemption either.
     filtered = filter_output(visible, "synthesizer",
                              user_text=None if is_proactive else user_input)
+    # Suppression by the confidentiality filter and amendment by the pending-receipt
+    # check are different outcomes with different delivery rules, so they are tracked
+    # separately rather than both inferred from `filtered != visible`.
+    _suppressed = filtered != visible
+    _final = filtered if _suppressed else enforce_pending_receipt(
+        filtered, _pending_raised_since(_pending_before, persona))
     if history is not None:
         # History is text, so the file itself does not survive into later turns —
         # only the note that one was sent. A follow-up question about the picture
         # therefore needs the picture attached again; recording the names at least
         # stops the model contradicting a conversation that plainly had files in it.
         history.append({"role": "user", "content": user_input + _history_attachment_note(attachments)})
-        history.append({"role": "assistant", "content": filtered if filtered == visible else ""})
+        history.append({"role": "assistant", "content": _final if _suppressed is False else ""})
         del history[:-10]
-    if filtered != visible:
+    if _suppressed:
         # Suppressed. Nothing is delivered in either mode, so there is nothing to translate —
         # and the canned fallback must not be translated by a model call that could itself
         # leak, which is why this branch returns before the translation step below.
         yield "[RETRACT]"
+    elif _final != filtered:
+        # A confirmation was raised during this turn and the reply had to be amended —
+        # see enforce_pending_receipt(). On the streaming path the original text is
+        # already on the user's screen, so the amendment cannot simply be appended:
+        # retract what was shown and deliver the corrected message whole. Rare by
+        # construction (it needs a gated tool call in the same turn), so the extra
+        # round trip costs nothing on ordinary replies.
+        yield "[RETRACT]"
+        code, name = _out_lang
+        from core.translate import translate
+        yield translate(_final, code, name)
+        yield "[DONE]"
     else:
         if not _stream_to_client:
             # Withheld above; deliver the whole translated message as one chunk. Translation
@@ -4912,11 +5092,11 @@ def _run_pipeline_session_stream_inner(
             # their answer.
             code, name = _out_lang
             from core.translate import translate
-            yield translate(filtered, code, name)
+            yield translate(_final, code, name)
         yield "[DONE]"
 
     _trace(f"[PIPELINE] synthesizer  done  ({len(visible)} chars visible)")
-    _tr.finish_request_trace(filtered if filtered == visible else "")
+    _tr.finish_request_trace("" if _suppressed else _final)
 
 
 def run_session(agent_name: str, user_input: str,

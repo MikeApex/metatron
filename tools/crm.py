@@ -648,9 +648,12 @@ def write_contact(
     # Arguments as the confirmation will fingerprint them. Built from the supplied
     # values only, deterministically, so the replay through confirm.execute() rebuilds
     # an identical dict — anything else is refused by consume(), correctly.
-    # confirm_token and contact_id are excluded: the first is not part of the action,
-    # and the second cannot be set on the path this gates (creation).
+    # confirm_token is excluded: it is not part of the action. contact_id IS included
+    # (2026-08-26) — the update path is gated too now, and an approval to rename one
+    # record must not be spendable on another. It is empty on the creation path, so
+    # `if v` drops it there and every pre-existing creation fingerprint is unchanged.
     _gate_args = {k: v for k, v in (
+        ("contact_id", contact_id),
         ("name", name), ("first_name", first_name), ("last_name", last_name),
         ("nickname", nickname), ("referred_to_as", referred_to_as),
         ("primary_contact_type", primary_contact_type),
@@ -818,6 +821,62 @@ def write_contact(
         if contact_id:
             for contact in contacts:
                 if contact.get("id") == contact_id:
+                    # THE UPDATE GATE (2026-08-26). The creation gate below rested on
+                    # "an update by contact_id is a deliberate act on a record the
+                    # caller already identified". Live on 2026-08-22 that premise
+                    # failed exactly as the creation case had: asked to "add Stephen
+                    # Ashworth", the model decided Stephen WAS the existing Steven,
+                    # called this function with his id, and renamed a real friend's
+                    # record. Twice, in consecutive turns, with no prompt shown —
+                    # because the id was never the user's, it was the model's own
+                    # near-match resolved silently. Third instance of ask-vs-assert.
+                    #
+                    # What is gated is narrow on purpose: only a change to an IDENTITY
+                    # field — who this record is — and only when the incoming value
+                    # actually differs from what is stored. Enriching a correctly
+                    # identified person (a phone, an employer, a note, a logged
+                    # interaction) is the common case and stays ungated, so this does
+                    # not put a tap in front of routine field writes. Renaming someone
+                    # is rare, and it is the operation that silently destroys the
+                    # link between a record and the person it describes.
+                    #
+                    # The gate cannot ask "did the user choose this id?" — the tool is
+                    # not told. It asks the answerable question instead: is this write
+                    # about to change who the record is? That catches the 08-22 shape
+                    # precisely, because asserting a rename is how a mis-resolved id
+                    # becomes visible damage.
+                    # Compared case- and whitespace-insensitively: `name` is a required
+                    # argument, so EVERY update carries one and most of them are just
+                    # the stored name echoed back. A re-capitalisation is not a change
+                    # of identity, and gating one would put a tap in front of the
+                    # routine writes this is careful not to touch.
+                    _identity_changes = [
+                        (f, str(contact.get(f) or ""), v)
+                        for f, v in (("name", name), ("first_name", first_name),
+                                     ("last_name", last_name), ("nickname", nickname))
+                        if v and v.strip().casefold()
+                        != str(contact.get(f) or "").strip().casefold()
+                    ]
+                    if _identity_changes and not _approved and not _bulk:
+                        _who = str(contact.get("name") or "").strip() or contact_id
+                        _pending_update = (
+                            f"Rename an EXISTING contact?\n\n"
+                            f"  {_who}\n"
+                            + "\n".join(
+                                f"    {f}: {(cur or '(empty)')} → {new}"
+                                for f, cur, new in _identity_changes
+                            )
+                            + "\n\nApprove only if this is the same person under a "
+                              "corrected name. Decline if they are a different person "
+                              "— nothing will be changed, and they can be added as a "
+                              "separate contact instead."
+                        )
+                        # request() takes its own lock and writes a different file, and
+                        # nothing acquires _CRM_LOCK while holding it, so there is no
+                        # lock-order cycle. Nothing has been written to the record.
+                        return json.dumps(request(
+                            "write_contact", _gate_args, description=_pending_update))
+
                     for field, value in _str_fields:
                         if value:
                             contact[field] = value
@@ -901,9 +960,11 @@ def write_contact(
         # test is in the tests/ suite named below and takes minutes.
         # ───────────────────────────────────────────────────────────────────────────
         #
-        # Only creation is gated. An update by contact_id is a deliberate act on a
-        # record the caller already identified, and gating it would put a tap in front
-        # of every routine field write.
+        # This gate covers creation. Updates are gated separately and much more
+        # narrowly, at the top of the contact_id branch above — only a change to an
+        # identity field, because "an update by contact_id is a deliberate act on a
+        # record the caller already identified" is what 2026-08-22 disproved. Routine
+        # field writes on an update still pass without a tap.
         # _bulk exempts an import, and it is DELIBERATELY ABSENT FROM THE TOOL SCHEMA
         # — same discipline as tone_shape above, so no model can set it; only
         # tools/contacts_import.py passes it, in-process. Without the exemption a
