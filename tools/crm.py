@@ -1266,6 +1266,51 @@ def search_contacts(query: str) -> str:
     return json.dumps(results, indent=2)
 
 
+def _merge_auto_accept(persona: str | None = None) -> bool:
+    """
+    Has the user turned the merge confirmation off? Default False.
+
+    Mike's ruling, 2026-08-26: confirm every merge, "but make it toggleable — if merges
+    begin happening all the time the user should be able to auto-accept once trust is
+    built." So the gate is the default, and switching it off is the user's deliberate
+    act and never a model's: this reads a config file, and no tool writes that file.
+
+    It is only defensible because unmerge_contacts() exists. An auto-accepted merge is
+    still recoverable from the pre-merge snapshot, so the toggle trades a confirmation
+    for a possible undo, not for an irreversible write. **If the snapshot ever stops
+    being written, this toggle has to go with it.**
+
+    Per-persona file first, then the shared one: the VM owns live persona config, so a
+    persona can carry its own answer without this needing to know about it. Any failure
+    to read leaves the gate ON — the one place where a missing file must not mean
+    "allow".
+    """
+    import yaml
+    from core.persona import persona_config_dir
+    candidates = []
+    try:
+        candidates.append(persona_config_dir(persona) / "preferences.yaml")
+    except Exception:  # noqa: BLE001
+        # Identity resolution is fail-closed and raises when no persona is in scope
+        # (core/persona.py). That is correct there and must not propagate here — a
+        # preference lookup is not a reason to take a session down, and the shared
+        # file below still answers.
+        pass
+    candidates.append(Path(__file__).parent.parent / "config" / "preferences.yaml")
+    for path in candidates:
+        try:
+            if not path.exists():
+                continue
+            with open(path) as f:
+                cfg = yaml.safe_load(f) or {}
+        except (OSError, ValueError, yaml.YAMLError):
+            continue
+        crm_cfg = ((cfg.get("proactive") or {}).get("crm") or {})
+        if "merge_auto_accept" in crm_cfg:
+            return bool(crm_cfg["merge_auto_accept"])
+    return False
+
+
 def merge_contacts(keep_id: str, merge_id: str, confirm_token: str = "") -> str:
     """
     [DB-0815-07] Fold `merge_id`'s contact record into `keep_id`, resolving a
@@ -1339,6 +1384,23 @@ def merge_contacts(keep_id: str, merge_id: str, confirm_token: str = "") -> str:
         if not _ok:
             return f"Error: not merged. {_reason}"
         _approved = True
+    elif _merge_auto_accept():
+        # The user has switched the confirmation off (see _merge_auto_accept). Logged
+        # rather than silent: the whole point of the toggle is that it can be forgotten,
+        # so a merge that skipped the gate has to be findable afterwards.
+        _approved = True
+        try:
+            from tools.logger import write_quality_event
+            write_quality_event(
+                event_type="MERGE_AUTO_ACCEPTED",
+                source_agent="crm",
+                detail=f"merge_contacts ran without confirmation "
+                       f"(keep={keep_id}, merge={merge_id}); "
+                       f"proactive.crm.merge_auto_accept is on. Reversible via "
+                       f"unmerge_contacts.",
+            )
+        except Exception:  # noqa: BLE001
+            pass
 
     with _CRM_LOCK:
         contacts = _load_contacts()

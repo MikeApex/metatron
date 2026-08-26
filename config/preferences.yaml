@@ -30,3 +30,21 @@ proactive:
   # Calendar and reservation bookings — opt-in for autonomous booking without confirmation
   bookings:
     opt_in: false
+
+  # Contact records.
+  #
+  # merge_auto_accept — when true, merge_contacts folds two records together without
+  # asking. Default false, and the default is the point: on 2026-08-19 the first
+  # production merge took the wrong Steven of three and corrupted a real friend's
+  # record, which is why the confirmation exists at all.
+  #
+  # Mike's ruling, 2026-08-26: the confirmation stays, but he can switch it off "once
+  # trust is built" if merges become routine. Turning it off is safe only while
+  # unmerge_contacts can reverse a merge from its pre-merge snapshot — an auto-accepted
+  # merge is then recoverable rather than final. If that snapshot ever stops being
+  # written, this setting must be removed with it.
+  #
+  # Read in Python by tools/crm.py; no tool writes this file, so no model can turn the
+  # gate off. A per-persona config/personas/{p}/preferences.yaml overrides this one.
+  crm:
+    merge_auto_accept: false

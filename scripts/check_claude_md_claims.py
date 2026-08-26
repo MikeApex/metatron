@@ -343,6 +343,9 @@ def check_ceilings() -> list[str]:
 # reference that should be read on demand. A heading that disappears is not an
 # error -- the budget is only ever advisory.
 
+# "## Recent sessions" was removed from SESSION.md on 2026-08-26 — it duplicated
+# archive/PROJECT_LOG.md. Left in this tuple deliberately: the check must keep measuring it so
+# that recreating the section is caught by the budget rather than passing unnoticed.
 SESSION_VOLATILE_HEADINGS = ("## Current state", "## Recent sessions")
 
 # Set to 120 on 2026-08-14, just above the 105 measured immediately after the

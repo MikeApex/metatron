@@ -157,20 +157,6 @@ judgment, and whether to seed clinical-adjacent knowledge into the A4 test perso
 
 ---
 
-## Recent sessions
-
-Newest first, **one line each** — this is an index, not a summary. Reasoning, rejected options
-and corrections live in [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md); a row that starts
-restating them is duplicating a file that already holds them better.
-
-| Date | What | Deployed |
-|---|---|---|
-| 08-26 | **Venue discovery goes live and `[DB-0808-04]` closes on trace evidence — after the Places key path hit the same trap twice** (legacy "Places API" vs Places API (New): both the enablement and the key restriction had to be repointed). Venue questions route to Logistics; a daily 10:00 anticipation pass scans where the user will be (meals, errands, nearby contacts by area, downtime); the Diarist stops logging plans as events and records voiced intentions in a fixed key — both probed passing on the VM. **A first trace read wrongly said "zero tool calls"** — per-turn nesting; corrected, and the reply was grounded all along | `bec3952` `1d77bd0` `449c0a7` — **deployed** |
-| 08-22 | **`/backlog attack`: three clusters shipped by parallel Opus workers, reviewed in Fable.** A dead server now shows the app's own page (SW registration was push-gated — a user who declined notifications never had the shell); a merge asks first, shows both people, and is reversible via pre-merge snapshots (pre-08-22 merges refuse honestly); "find a café near X" is answerable (`find_places`, needs its own Places-restricted key — the Maps key is routes-locked). Coordinator caught the "same key" premise error and the push-gated registration; worker B nearly doubled the ~64k median (118k) | `2d7f955` `e2a7f87` `fd0aed1` `8754222` `158cebe` — **not deployed** |
-| 08-22 | **The 21st reconciled: the bill is right, caching earns for the first time, and the scheduler — not Mike — ate the day.** Storage $3.46/day → **$0.14994**; caching net **+$0.10 to +$0.31/day**, sitting on break-even. Expected bill **$2.51–$2.71** vs 08-19's $6.12 for *more* usage; method validated by reproducing 08-19's gap to the dollar. **89% of the day was automated** (9 scheduled + 10 trailing Diarist runs = 116 of 130 calls; 4 interactive), and the Synthesizer's 11 calls cost more than the other 119 combined. **`spend_guard` read 23% low** — cache creation and retries are invisible to the turn path; closed with a measured `unmetered_uplift: 1.25`, raw `usd` kept auditable. **Two of my own claims were wrong and corrected before build:** the billing export is backfilling forward, not dead, and the virtue dump is injection code, not a clock trigger in a Denied-tier file. **The reframe: six of six complaints are already rules in `synthesizer.md` and all six were ignored** — adherence, not absence. Six items filed `[DB-0822-05]`–`[DB-0822-10]`, Amber before Red | `spend_guard` **not deployed** |
-| 08-22 | **The contact dedup gate ships; its first live merge takes the wrong Steven.** `write_contact` now saves nothing on a near-match and asks — neither cheaper answer survived measurement (score **cannot** separate same-person from different: Stephen/Steven 0.77 is one, Dave/Dan Bennett 0.87 is two; the agent asked once then asserted 4 min later). **Gate carries a standing note that it should become unnecessary**; § D2 owes a judgement-consistency test. The monitoring flag saw **crashes only** — 786 calls, one `ok:false`, graceful failures all green. **Then `merge_contacts`' first production run corrupted a real contact** on an ambiguous *"keeping Steven"* across three Stevens — no unmerge. An app-side frame log was **stopped by Mike before deploy**: it printed internals as the assistant | `a192821`, `b980b93`, `6d6d46c`, `4c05b8b` — **deployed** |
----
-
 ## Useful context to pull as needed
 
 **[CODEBASE_INDEX.md](CODEBASE_INDEX.md) answers "where is X".** It already indexes every agent

@@ -58,11 +58,15 @@ windows closing out at once produce two fragments rather than one merge conflict
 ## 3. **Replace** the changed parts of `SESSION.md`
 
 A snapshot, not a ledger. Rewrite the rolling handoff paragraph (~150 words — do not stack a
-new one above the old). Move finished items out rather than marking them done. Add one row to
-`## Recent sessions` and let the oldest drop. Delete what is now superseded.
+new one above the old). Move finished items out rather than marking them done. Delete what is
+now superseded.
 
-**Edit the volatile sections only** — the handoff paragraph, `## Current state`, and
-`## Recent sessions`. `## Read these`, `## Useful context`, `## Quick start` and `## Model IDs`
+> **`## Recent sessions` was removed 2026-08-26 — do not recreate it.** It duplicated
+> `archive/PROJECT_LOG.md`, so step 2's fragment already covers it. Outcome the next session
+> needs → handoff paragraph or `## Current state`; outcome only the record needs → the log.
+
+**Edit the volatile sections only** — the handoff paragraph and `## Current state`.
+`## Read these`, `## Useful context`, `## Quick start` and `## Model IDs`
 are reference: leave them closed unless this session made one of them *wrong*. Re-deciding
 static content every run is what made this step expensive.
 

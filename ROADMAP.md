@@ -117,6 +117,43 @@ What is unchanged, and is not weakened by this note:
 >
 > **Do not write "verified ZDR" in this repo again until something records the verification.**
 >
+> ### RESOLVED 2026-08-26 — Google REFUSED the opt-out, and Mike has ruled. Do not re-open this.
+>
+> **The abuse-monitoring exception was applied for on 2026-08-22 and refused.** ZDR is therefore
+> not obtainable on this account as it stands, and the 2026-06-18 amendment's "verified ZDR"
+> premise is now settled as **false** rather than merely unverified. What governs instead is the
+> 2026-08-21 finding, unchanged and still the best available description of the terms in force:
+> **prompt logging only on classifier-flagged traffic, ≤90 days, never used for training.**
+>
+> **Mike's ruling, 2026-08-26: the `mike` persona keeps running on Vertex under those terms.**
+> His reasoning, recorded because a future session will otherwise re-derive it wrongly:
+> *"I'm running it 'lite'. Google Calendar already has my plans, and Google has my email
+> correspondence. Nothing needs to change here. I'm gating it personally."* The marginal
+> disclosure to this vendor is small because the same vendor already holds the same material by
+> other routes, and **the control is the user's own judgement about what he puts in**, not a
+> contractual term. That is a deliberate acceptance of a named risk, not an oversight.
+>
+> **What this does NOT change, and must not be read as changing:**
+> - **Fail-closed routing.** Untouched. Where a local model is the designated route, it fails
+>   closed.
+> - **The north star.** Architectural security on private hardware, replacing the VM path when it
+>   is economically feasible.
+> - **The expiry condition.** This ruling lapses on exactly the trigger the 2026-08-09
+>   clarification already names — **the moment the deployment stops being single-user.** Mike can
+>   gate his own data personally; he cannot gate anyone else's, and the reasoning above collapses
+>   entirely for a second user whose calendar and mail Google may not hold.
+> - **Decontextualization requirements** for genuinely open-tier cloud work.
+>
+> **Consequence to state plainly, because it was true all day on 08-26 and nobody had said it:**
+> real user data — contacts, a spouse's name, logged dinners, obligations, tomorrow's meetings,
+> inbox contents — was already reaching Vertex on every session throughout the period the
+> amendment's premise was assumed. This ruling makes that a decision rather than an accident. It
+> does not make it retroactively compliant with the amendment as written.
+>
+> One item was pre-cleared against this ruling in the same conversation: `[DB-0826-02]`,
+> profile-photo contact enrichment, which sends a named private individual outbound. **Mike passed
+> it deliberately, and that clearance carries the same single-user expiry.**
+>
 > Related, and weaker: the Vertex endpoint is `global`, which routes to whichever region has
 > capacity, so there is no data-residency guarantee either. Residency is the lesser control — Google
 > is US-incorporated, so US legal process reaches data it controls regardless of region — which is

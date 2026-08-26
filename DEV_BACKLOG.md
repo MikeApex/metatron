@@ -688,6 +688,33 @@ with a date.** Nothing new joins this group open-ended.*
 
 ### Unbuilt — real capability that does not exist
 
+- **[DB-0826-02] Fill in a work contact from their public profile, with a photo to confirm it is
+  the right person.** Mike wants this and has already specified its shape; it is unbuilt, not
+  undecided. **Do not re-open the privacy question — it is settled below.**
+  **The design, as Mike specified it (2026-08-22, restated 2026-08-26):**
+  a **per-contact toggle, never a blanket sweep**; an identity **confirmation showing a profile
+  picture** — *"is this the guy"* — because **a face is verifiable at a glance and a name plus an
+  employer is not**, which is the whole reason the confirmation is a picture rather than a summary.
+  **Suggested scoping, not yet ruled on:** trigger on `primary_contact_type` in the `work_*` set
+  (already in the CRM schema); the confirmation is **required, not advisory**; a confirmed match
+  writes with a `verified` marker and an unconfirmed one **writes nothing at all**.
+  **The privacy ruling, and why this item does not wait on it — Mike, 2026-08-26.**
+  Sending a named private individual to a research path is **not** decontextualized dispatch, so
+  it sits against `ROADMAP.md` § Section 0 rather than comfortably inside it. It was blocked on
+  that question from 2026-08-22. **Mike has now given it a pass to build despite that**, in the
+  same breath as ruling that the `mike` persona keeps running on Vertex after Google refused the
+  abuse-monitoring opt-out: *"Google calendar already has my plans, and Google has my email
+  correspondence. Nothing needs to change here. I'm gating it personally."* The per-contact
+  toggle **is** that personal gate, expressed in code.
+  **This clearance is recorded so it is not re-litigated.** A future session finding the § Section 0
+  tension will find it already answered here, with its reasoning: the marginal disclosure is a name
+  already held by the same vendor, and the control is Mike's own per-contact decision.
+  **What would reopen it, and nothing less:** the deployment ceasing to be single-user, which is
+  the trigger § Section 0 already names for the whole ZDR clarification.
+  @kind: feature
+  *filed 2026-08-26 at Mike's instruction · design agreed 2026-08-22 · privacy pre-cleared
+  2026-08-26, deliberately, not by omission*
+
 - **[DB-0822-01] The cache fix is deployed but not yet proven against a bill, and its follow-on
   build waits on that proof.** Steps 1–4 of the cache plan shipped 2026-08-21 (`9de2836`, sliding
   10-min TTL, owned sweep, storage on the spend meter, dev kill switch); the billing export is on

@@ -492,7 +492,63 @@ def _():
 
 # ---------------------------------------------------------------------------
 
+
+def _run_toggle() -> None:
+    """
+    Mike's 2026-08-26 ruling: confirm every merge, but let the user switch it off once
+    trust is built. The gate is the default; the toggle is a config read and no tool
+    writes that file, so no model can turn its own confirmation off.
+
+    It is only safe while unmerge_contacts can reverse a merge from its pre-merge
+    snapshot — the toggle trades a confirmation for a possible undo, not for an
+    irreversible write. The checks above are what keep that true.
+    """
+    import tempfile
+    import yaml
+    from pathlib import Path as _P
+    import tools.crm as CRM
+    import core.persona as PERSONA
+
+    @check("the merge confirmation is ON by default")
+    def _default_on():
+        assert CRM._merge_auto_accept() is False, \
+            "a missing or silent config must never mean 'skip the gate'"
+
+    tmp = _P(tempfile.mkdtemp(prefix="merge_toggle_"))
+    prefs = tmp / "preferences.yaml"
+    real_cfg = PERSONA.persona_config_dir
+    PERSONA.persona_config_dir = lambda persona=None: tmp
+    try:
+        @check("a persona file can switch the confirmation off")
+        def _off():
+            prefs.write_text(yaml.safe_dump(
+                {"proactive": {"crm": {"merge_auto_accept": True}}}))
+            assert CRM._merge_auto_accept("mike") is True
+
+        @check("and can switch it back on")
+        def _on_again():
+            prefs.write_text(yaml.safe_dump(
+                {"proactive": {"crm": {"merge_auto_accept": False}}}))
+            assert CRM._merge_auto_accept("mike") is False
+
+        @check("an unreadable preferences file leaves the gate ON")
+        def _broken():
+            prefs.write_text("proactive: [this is not a mapping\n")
+            assert CRM._merge_auto_accept("mike") is False, \
+                "failing toward the confirmation is the only safe direction here"
+
+        @check("a persona with no preferences file falls back to the shared default")
+        def _absent():
+            prefs.unlink()
+            assert CRM._merge_auto_accept("mike") is False
+    finally:
+        PERSONA.persona_config_dir = real_cfg
+
+
 def main() -> int:
+    # The rest of this suite runs its checks at import time; the toggle checks patch
+    # core.persona, so they run here where the patch can be undone deterministically.
+    _run_toggle()
     passed = sum(1 for _, ok, _ in _results if ok)
     failed = len(_results) - passed
 
