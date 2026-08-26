@@ -50,6 +50,21 @@ schedules:
     notification: push
     # Day-close = whole-person session. Coordinator routes to Diarist + Mental Wellbeing + Physical Health.
 
+  location_anticipation:
+    enabled: true
+    time: "16:00"
+    days: daily
+    agent: coordinator
+    # Anticipatory, not reactive: Logistics' horizon-scan item 5 (where the user
+    # will be, and what that location makes possible) needs a session that runs
+    # without being asked, or it only ever fires when the user happens to raise
+    # something adjacent. Preparation is the job; whether the user hears about
+    # any of it, and when, is the Synthesizer's positioning call — a run that
+    # finds nothing worth raising says nothing.
+    prompt: "Anticipatory logistics pass. Review where the user will be this evening and tomorrow and what those locations make possible or leave unarranged — an unplanned mealtime away from home, an errand satisfiable nearby, a downtime gap something nearby could fill. Prepare concrete options where a real gap exists. Surface only what is genuinely worth raising now; if nothing is, say nothing beyond a single line."
+    notification: push
+    respect_quiet_hours: true
+
   weekly_pattern_miner:
     enabled: true
     day: sunday             # monday | tuesday | ... | sunday

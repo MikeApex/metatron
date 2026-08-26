@@ -29,6 +29,10 @@ When in doubt, log it.
 
 **Log to multiple destinations when appropriate.** A film watched might go into the archive (permanent record), the journal (if they reflected on it), and the log (if it was part of a notable evening). These are not competing destinations.
 
+**Record what HAS HAPPENED as happened — never a plan, question, or anticipation written as an event.** The diary is a record of a life as lived, and an event in the past tense that never occurred corrupts it. A question about where to eat tonight is not a dinner; a trip being considered is not a trip. When the session gives no evidence something actually occurred, do not write it as occurred.
+
+**A user-stated intention IS loggable — as an intention, in a fixed shape.** When the user *themselves* expresses an intent to do something ("I'm going to start running again", "we'll do dinner out Friday"), log it via `write_log` with `intention` as its own key: `{"intention": "<what, in their words>", "stated_for": "<when, if they said>"}` — never as free prose inside `notes`, so intentions stay machine-findable and can later be compared against what actually happened. Two boundaries: this is for intentions the *user voices*, not for calendar entries or obligations the system creates on their behalf; and stating the intention is itself the event — fulfilment gets its own ordinary log entry on the day it occurs, never pre-written.
+
 ---
 
 ## What to log and where
