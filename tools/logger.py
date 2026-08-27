@@ -116,6 +116,47 @@ def _deep_merge(base: dict, incoming: dict) -> dict:
     return out
 
 
+# [DB-0822-06] Per-field write times, kept in one flat map at the top of the log rather than
+# by wrapping each value as {"value": ..., "at": ...}.
+#
+# The wrapping shape was rejected: it changes what every existing reader sees — read_log,
+# get_log_window, tools/analytics.py, the memory index — and it invalidates every log file
+# already on the VM, all at once, for a benefit that is purely additive. A sidecar key is
+# ignored by anything that does not know about it, so a file written before this shipped
+# reads exactly as it did, and no migration runs anywhere.
+#
+# The map is DERIVED, never model-supplied. A specialist that can write its own timestamp can
+# claim a stale field is fresh, which is the failure this exists to catch, so an incoming
+# `_written_at` is discarded rather than merged (same discipline as _thread_tier in
+# tools/context_tracker.py).
+_WRITTEN_AT_KEY = "_written_at"
+
+
+def _leaf_paths(node: dict, prefix: str = "") -> list[str]:
+    """
+    Dotted path of every leaf value in `node` — "notes", "health.energy".
+
+    Nested dicts recurse so siblings are stamped independently: the whole reason
+    _deep_merge exists is that a morning write of `health.sleep_hours` and an evening write
+    of `health.energy` are two separate assertions, and a single stamp on `health` would
+    re-date the morning's field every evening. Lists are leaves — _deep_merge replaces them
+    wholesale, so the list is one assertion.
+
+    `date` and the map itself are skipped at the top level: neither is something a person
+    told us.
+    """
+    paths: list[str] = []
+    for key, value in node.items():
+        if not prefix and key in (_WRITTEN_AT_KEY, "date"):
+            continue
+        path = f"{prefix}{key}"
+        if isinstance(value, dict) and value:
+            paths.extend(_leaf_paths(value, f"{path}."))
+        else:
+            paths.append(path)
+    return paths
+
+
 def write_log(content: dict | None = None, log_date: str = "") -> str:
     """
     Write a daily log entry to data/logs/YYYY-MM-DD.json.
@@ -133,6 +174,12 @@ def write_log(content: dict | None = None, log_date: str = "") -> str:
         content = {"notes": content}
     elif not isinstance(content, dict):
         content = {}
+    else:
+        content = dict(content)
+
+    # A write time the model chose is not evidence of when anything was written. Discarded
+    # before the merge, so a forged map can never displace the real one — see _WRITTEN_AT_KEY.
+    content.pop(_WRITTEN_AT_KEY, None)
 
     if not log_date:
         log_date = date.today().isoformat()
@@ -167,8 +214,20 @@ def write_log(content: dict | None = None, log_date: str = "") -> str:
         if log_path.exists():
             with open(log_path) as f:
                 existing = json.load(f)
+        # Stamps carried from the file, then overwritten only for the paths THIS write
+        # touches. An untouched field keeps the time it was actually asserted, which is the
+        # whole point: on 2026-08-27 the 07:14 run resolved the Teams link and the 10:00 run
+        # still called it missing, because a merged day-file has one date and no way to say
+        # that one field in it was three hours old and another three minutes.
+        stamps = dict(existing.get(_WRITTEN_AT_KEY) or {})
+        now_iso = datetime.now().isoformat(timespec="seconds")
+        for path in _leaf_paths(content):
+            stamps[path] = now_iso
+
         existing = _deep_merge(existing, content)
         existing["date"] = log_date
+        if stamps:
+            existing[_WRITTEN_AT_KEY] = stamps
         with open(log_path, "w") as f:
             json.dump(existing, f, indent=2)
         os.chmod(log_path, 0o600)
@@ -179,7 +238,9 @@ def write_log(content: dict | None = None, log_date: str = "") -> str:
     # fail-closed behaviour is preserved) and re-bound inside the worker, which
     # has no thread-local identity of its own.
     _persona = resolve_persona()
-    _payload = json.dumps(existing)
+    # The stamp map is excluded from what gets embedded: it is bookkeeping, and a block of
+    # ISO timestamps in the indexed text is noise a semantic search has to see past.
+    _payload = json.dumps({k: v for k, v in existing.items() if k != _WRITTEN_AT_KEY})
 
     def _index() -> None:
         from core.memory import index_entry
