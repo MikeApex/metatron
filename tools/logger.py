@@ -7,6 +7,7 @@ All logs are stored locally in data/logs/YYYY-MM-DD.json — Sensitive-tier from
 
 import json
 import os
+import re
 import threading
 from datetime import date, datetime
 from pathlib import Path
@@ -30,15 +31,21 @@ _NULL_ISH = {
 }
 
 
-def is_null_ish(text: str) -> bool:
-    """
-    True when `text` is a model's way of saying "this field does not apply".
+# [DB-0827-07] The same template failure one slot along. Where [DB-0815-09] saw the slot
+# answered with the word "None", 33 live events since 2026-08-18 have a detail that is
+# exactly `CLARIFICATION_NEEDED:` — the model filled the USER_CORRECTION slot with the
+# label of the template line next to it and no content at all. A bare label is a fragment
+# of the output format, never something that happened, so it is a non-answer in the same
+# sense as "N/A".
+#
+# The match is deliberately narrow: ALL-CAPS word (underscores, hyphens or single spaces
+# between words) followed by a colon, and it is only null-ish if what FOLLOWS the colon is
+# empty or itself null-ish. "CLARIFICATION_NEEDED: which Bill?" is real signal and survives.
+_TEMPLATE_LABEL_RE = re.compile(r"^[A-Z][A-Z0-9]*(?:[ _-][A-Z0-9]+)*\s*:(.*)$", re.DOTALL)
 
-    Whole-value comparison after stripping surrounding brackets, quotes and terminal
-    punctuation — never a substring test, so a genuine correction that merely begins with
-    the word "none" is unaffected. The one prefix rule covers the observed bracketed
-    explanation form ("[N/A - ...]"), which is a non-answer of arbitrary length.
-    """
+
+def _null_value(text: str) -> bool:
+    """The scalar half of is_null_ish(): is this value itself a non-answer?"""
     stripped = (text or "").strip().strip("[](){}\"'").strip().rstrip(".!?").strip().lower()
     if not stripped:
         return True
@@ -47,6 +54,26 @@ def is_null_ish(text: str) -> bool:
     # "[N/A - the user's message is a shift in intent, not a correction of a past error.]"
     return any(stripped.startswith(f"{tag} -") or stripped.startswith(f"{tag} —")
                for tag in ("n/a", "na", "none"))
+
+
+def is_null_ish(text: str) -> bool:
+    """
+    True when `text` is a model's way of saying "this field does not apply".
+
+    Whole-value comparison after stripping surrounding brackets, quotes and terminal
+    punctuation — never a substring test, so a genuine correction that merely begins with
+    the word "none" is unaffected. The one prefix rule covers the observed bracketed
+    explanation form ("[N/A - ...]"), which is a non-answer of arbitrary length.
+
+    Also true for a bare template label with nothing behind it — `CLARIFICATION_NEEDED:` —
+    which is the same template-filling reflex leaving a piece of the output format in the
+    payload. A label WITH content after the colon is kept, label and all: the label is
+    part of what the model meant, and stripping it would rewrite the record.
+    """
+    if _null_value(text):
+        return True
+    match = _TEMPLATE_LABEL_RE.match((text or "").strip().strip("[](){}\"'").strip())
+    return bool(match) and _null_value(match.group(1))
 
 _WRITE_LOG_LOCK = threading.Lock()
 _WRITE_QUALITY_EVENT_LOCK = threading.Lock()
