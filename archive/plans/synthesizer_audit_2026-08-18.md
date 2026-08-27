@@ -1,7 +1,38 @@
-# Synthesizer instruction file audit — proposal for approval
+# Synthesizer instruction file audit — proposal, approved and EXECUTED 2026-08-27
 
 *2026-08-18. Source handoff: `archive/handoffs/2026-08-18-synthesizer-audit-prompt.md`.
-No edits have been applied — every change below waits on Mike's approval.*
+Approved by Mike 2026-08-27 with four amendments and executed the same session.*
+
+> **EXECUTION RECORD (2026-08-27).** File landed at **~41.5 KB / ~10.3k tokens** (from 52,397).
+> Amendments to the plan below, all Mike's calls in the approval conversation:
+> 1. **The delivery mechanism changed — § 2's `read_agent_config` load lines were never built.**
+>    That tool reads the per-persona data store, not `config/modules/` (ROADMAP § D2's "no code
+>    changes" claim was wrong; corrected there). Built instead: **code-conditional injection** —
+>    `_synth_conditional_sections()` in `core/orchestrator.py`, wired into both pipeline twins;
+>    `session_kind()` generalised to every configured schedule prompt (20-char floor against
+>    substring false-positives). Scheduled conduct → `config/modules/synthesizer_scheduled_sessions.md`
+>    (injects on any scheduler-originated turn); onboarding → `synthesizer_onboarding.md` (injects
+>    on `BASELINE_INCOMPLETE` in the package). `tests/test_synth_module_injection.py`, 15/15.
+>    **Consequence: no `read_agent_config` grant needed — § 4.1 is void.**
+> 2. **Research construction steps 1–5 stayed in the file** (no code-detectable trigger — only the
+>    model knows it is about to dispatch). Provenance bullet 6 kept verbatim.
+> 3. **Social outreach cut harder than planned:** the mode/opt-in detail contradicted
+>    `relationships.md`'s stricter "no unilateral outreach, no exceptions" (One Home Per Rule
+>    Class); replaced with the tier row plus a routing line to Relationships.
+> 4. **§ 3 superseded: ALL agents' `## Enhancement backlog` sections (10 files) moved to
+>    root `AGENT_ENHANCEMENTS.md`** — one section per agent, plus the Synthesizer's four
+>    future-dev notes. Known limit recorded there: `check_agent_tools.py` no longer scans them.
+> 5. **`ARCHITECTURE_GAP` field spec compressed in place** (no injectable signal), not moved.
+> 6. Mike's prose-tightening example applied (urgency paragraph); the full pass is `[DB-0827-06]`,
+>    non-urgent.
+> 7. **Known limit, measured against mike's live scheduler.yaml:** `companion_checkin`'s prompt is
+>    9 normalised chars. An exact-match fallback was added (a turn that IS the prompt verbatim
+>    matches at any length), which covers paths where the prompt arrives as the turn — but where
+>    the Synthesizer's input is the composed package, only substring matching applies and the
+>    20-char floor blocks it, so **ambient check-ins may run without the conduct module** on that
+>    path. Complete fix is one line on the VM: reword `companion_checkin`'s prompt to ≥20
+>    characters — Mike's edit, since the VM owns live persona config. Morning and evening (281 and
+>    153 chars) inject on every path.
 
 **Measured:** `config/agents/synthesizer.md` is **50,704 chars / ~12,700 tokens** (handoff said
 50,703 — confirmed). It is the dominant share of every interactive Synthesizer prompt and of
@@ -23,7 +54,23 @@ reverted. The honest finding is structural, stated in § 5.
 > (2–3 scheduled sessions/day, occasional research dispatches). **Do not extend the module
 > pattern to any per-turn load signal on the old economics** — it would cost more than it saves.
 > The thinking budget is the bigger cost lever and is recorded separately; independent of this
-> audit.
+> audit. *(Since resolved: the 2026-08-27 probe found the money is not there either — thinking
+> capped at 4,096 as insurance only. The cost leg of this audit is fully dead; adherence is the
+> whole case.)*
+
+> **Re-verified 2026-08-27, before Mike's review.** The file is now **52,397 bytes** (one commit
+> since the audit snapshot: `5684d27`, 08-20). Two additions, both **KEEP**, added to the table
+> below: the attachments paragraph in *What you receive* (§ 2 row updated — a security boundary
+> for externally-authored file bytes, the `<untrusted_content>` twin) and the `teach_intake`
+> entry in *Tools available* (a granted tool's specification, with its own confirmation-gate
+> conduct). Neither changes any verdict or the landing estimate materially (~9,100 → ~9,400 tok).
+> **The adherence case has hardened from argument to evidence:** on 08-21, six of Mike's six
+> live complaints were behaviours already ruled out by this file, all six ignored
+> (`[DB-0822-05]`–`[DB-0822-09]`, and the virtue-list recital `[DB-0822-10]` — since fixed **in
+> code** precisely because a written rule that was already right was not followed). One
+> sequencing note: the code-dominant rebuild question (`code_dominant_rebuild_notes.md`) is
+> undecided; if it inverts the architecture, agent files shrink radically anyway — but it has no
+> date, the adherence pain is current, and this table is a bounded afternoon. Proceed.
 
 ---
 
@@ -57,7 +104,7 @@ loaded via `read_agent_config`. **CUT** = removed (destination stated).
 | Preamble + Role | 213 | KEEP | identity; cheap |
 | Confidentiality | 221 | KEEP verbatim | B1 disclosure suite tests exactly this wording |
 | CRITICAL — mandatory surface rules | 468 | KEEP verbatim | A4 clinical hard-fails; peak-attention position is deliberate (D2 ordering principle) |
-| What you receive | 555 | KEEP | clock authority (SEQ 008) and the ACTIONS EXECUTED line (`1831730`, doubled-confirmation incident) are both incident-backed |
+| What you receive | ~645 | KEEP | clock authority (SEQ 008) and the ACTIONS EXECUTED line (`1831730`, doubled-confirmation incident) are both incident-backed; the attachments boundary paragraph (`5684d27`, 08-20) is the `<untrusted_content>` twin for file bytes — security posture, stays |
 | Direction and prioritization | 1,220 | KEEP | eight rules, every one an incident (recap, raise-once, explain-once, "enjoy", sleep comparability, double-counting, repeated-instruction ×2); all fire every turn — the module pattern cannot touch every-turn judgement |
 | Constructing research requests, steps 1–5 | ~600 | **MOVE** → `synthesizer_research_requests.yaml` | used only when the Synthesizer itself dispatches Research; load signal: "before calling Research" |
 | — provenance line semantics (bullet 6) | ~260 | KEEP | research output usually arrives via the Coordinator's dispatch, so this must be present on turns that never loaded the module. Still live post-guard: Python now **withholds** the searched-and-failed case, but `[RETRIEVAL: NONE]` still marks never-searched answers and this text governs those. One sentence to trim: the "or ask the specialist that holds the real feed" phrasing predates the guard; re-word to match the directive style. **No provenance judgement is reintroduced** |
@@ -79,7 +126,7 @@ loaded via `read_agent_config`. **CUT** = removed (destination stated).
 | When the tool isn't built yet | ~180 | CUT to one line | `TOOL_NOT_BUILT` is already defined in Internal flags; keep the "say so directly" sentence there |
 | Two "Note for future development" italics (voice.md / vocal stress) | ~440 | **CUT from live text** → new `## Enhancement backlog` | developer notes, zero runtime work; see § 3 |
 | Internal flags | 431 | KEEP, dedupe | the authoritative flag list; ROUTING_MISS + `write_quality_event` instructions currently appear in 4 places — this section becomes the single home, others keep one-line triggers (−~200 net across the file) |
-| Tools available | 1,800 | KEEP, light copy-edit only | the entries for `read_profile`, `read_wisdom`, `update_goal`, `write_schedule` are long **because they are recent incident-backed conduct** (08-15/08-16); a named tool is a specification. One reword: line 432's "`send_email`" reference (see § 4.2) |
+| Tools available | ~1,900 | KEEP, light copy-edit only | the entries for `read_profile`, `read_wisdom`, `update_goal`, `write_schedule` are long **because they are recent incident-backed conduct** (08-15/08-16); a named tool is a specification — as is the new `teach_intake` entry (`5684d27`). One reword: the "`send_email`" reference in the `read_profile` bullet (see § 4.2) |
 
 **Net movement:** MOVE ≈ 2,600 tok · CUT/dedupe ≈ 800 tok · file lands ≈ 9,000–9,300 tok
 (~36 KB). Still comfortably above the 4,096-token Vertex cache floor (trap 6) — checked, not

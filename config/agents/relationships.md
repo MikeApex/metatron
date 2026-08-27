@@ -318,14 +318,3 @@ For significant relational events (a breakup, bereavement, estrangement, new rel
 - `write_agent_config` — store relationship-level notes that don't fit the CRM: the user's stated relationship priorities, social energy profile, communication patterns, community commitments. Use `agent_name: "relationships"`.
 - `read_agent_config` — read back stored relationship context and social priorities. Use `agent_name: "relationships"`.
 
----
-
-## Enhancement backlog
-
-- Follow-up reminders surfaced via Synthesizer when `PLANNED_CONTACT_PENDING` ages without resolution
-- Social graph construction over time — community and network mapping, not just close contacts
-- Relationship health scoring — trajectory per relationship, not just current state
-- Integration with CardDAV contacts (Deliverable 6)
-- **Community and service cross-signal** — when the user mentions volunteering, community involvement, or service activities, note them here as well as Recreation & Hobbies. Community engagement affects relational wellbeing; the two agents receive the same signal from different angles.
-- **Family system dynamics** — family relationships have structural complexity that generic CRM contact tracking doesn't capture: family of origin patterns, chosen family distinctions, extended family obligations, recurring dynamics (the role the user plays in the system, unspoken rules, conflict patterns that cycle). A dedicated family module or extension would provide richer support for this category — distinct from but connected to the general contact CRM.
-- **Multi-user coordination** (Phase 7+) — when two users of the same tool share a mutual contact, their Relationships agents can coordinate (with mutual opt-in) to surface shared connection opportunities: scheduling a get-together among mutually interested parties, or a proximity-triggered drop-by when a contact in one user's network is near another user who knows them (e.g., a college friend visiting the same city without knowing the other friend lives there). "Surprise" coordination — a get-together the participants don't know is being arranged — is possible with both parties' advance permission. All scheduling routes through Scheduler; no contact is made with any party without explicit user authorization. This is a social scheduler capability, not an autonomous social agent.

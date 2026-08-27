@@ -1,44 +1,53 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-27, latest (the thinking cap lands as insurance, and "over and out" ends an
-exchange in code — `a620f10` **deployed and live-tested by Mike**).*
+*Updated: 2026-08-27, latest (**the synthesizer audit executed** — 52 KB → 41.9 KB, conduct
+injected only on the turns that need it, every agent file shed its enhancement backlog to root
+`AGENT_ENHANCEMENTS.md` — **deploy owed**; earlier same day the thinking cap landed as insurance,
+`a620f10` deployed and live-tested).*
 
-*✅ **Thinking capped at 4,096 (insurance — the probe found no tail, exposure ~$0.26/day) and
-"over and out" now ends an exchange in Python, safety flags vetoing the skip in code.** Both
-deployed, sign-off passed live. Watch: a `THINKING_CAP_HIT` quality event means the thinking
-distribution moved. The compliance-ceiling experiment is **deferred to the rebuilt agents**
-(Mike's call) — design, price and the sign-off as a worked example of the inversion are round
-four of `code_dominant_rebuild_notes.md`. Probe (also re-checked `[DB-0820-05]`'s
-output-inflation assumption, reassuringly): `synthesizer_thinking_probe_2026-08-27.md`.*
+*✅ **The synthesizer audit is executed and gated** (full record:
+`archive/plans/synthesizer_audit_2026-08-18.md` § Execution record; injection 16/16 · A4
+pipeline 3/3 · B1 disclosure 15/15 · qa_sweep 9/9). Conduct now arrives by code-conditional
+injection — **ROADMAP § D2's `read_agent_config` loader never existed** (corrected there).
+**Watch on first post-deploy use: one ambient check-in that opens on one thing, and one
+`evening_close` that still carries the ritual.***
+
+*✅ **Thinking capped at 4,096 (insurance — no tail, exposure ~$0.26/day); "over and out" ends
+an exchange in Python.** Deployed, sign-off passed live. Watch: a `THINKING_CAP_HIT` event means
+the distribution moved. Compliance-ceiling experiment deferred to the rebuild (round four of
+`code_dominant_rebuild_notes.md`); probe: `synthesizer_thinking_probe_2026-08-27.md`.*
 
 *✅ **The CRM sweep is designed and accepted — build gated on one more review with Mike**
 (`[DB-0827-03]`, `@waiting`; plan: `archive/plans/crm_sweep_plan_2026-08-27.md`). Field promotion
 from notes filed as `[DB-0827-04]`.*
 
-*⛔ **ZDR: refused by Google, ruled on by Mike — do not re-open.** The ruling and its
-single-user expiry are promoted to `ROADMAP.md` § Section 0 *RESOLVED 2026-08-26* (status
-authority: `docs/INFRASTRUCTURE.md` § Vertex AI credentials); `[DB-0826-02]` pre-cleared.*
+*⛔ **ZDR: refused, ruled on, do not re-open** — `ROADMAP.md` § Section 0 *RESOLVED 2026-08-26*;
+status authority `docs/INFRASTRUCTURE.md`.*
 
-*⚠ **Declining a confirmation does nothing — `[DB-0827-01]`, `## Now`.** `POST /confirm` is
-approve-only; no reject endpoint, no client handler. A declined prompt returns on every poll until
-the TTL, so its only exit is approving what you just refused. Present since 08-19, unnoticed
-because every prior test approved.*
+*⚠ **Declining a confirmation does nothing** — `[DB-0827-01]`, `## Now`; Mike handles it in the
+next `/backlog attack`.*
 
-*⚠ **Intake is still dark until Mike's VM edits** — `enabled: true` in mike's `intake.yaml`, and
-delete `mike.md`'s "check inbox every six hours" line if still present. `[DB-0820-03]` holds the
-model-tier switch-on gate, `[DB-0820-04]` owes the extractor its own injection row (advances B1b).*
+*⚠ **Intake is still dark until Mike's VM edits** (`enabled: true` in mike's `intake.yaml`;
+delete `mike.md`'s six-hour inbox line if present) — gates: `[DB-0820-03]`, `[DB-0820-04]`.*
 
-*⚠ **The Synthesizer's failures are ADHERENCE, not missing rules** — six of Mike's six complaints
-from 08-21 are already written in `config/agents/synthesizer.md` and all six were ignored. **Do not
-fix `[DB-0822-05]`–`[DB-0822-09]` by adding another rule;** the file is 52,397 bytes and its own
-audit named length→adherence as the cause.*
+*⚠ **The Synthesizer's failures are ADHERENCE, not missing rules** — six of Mike's six 08-21
+complaints were already written in `config/agents/synthesizer.md` and ignored. **Do not fix
+`[DB-0822-05]`–`[DB-0822-09]` by adding another rule.** The audit's 20% cut and per-turn conduct
+injection are the structural response; whether adherence actually improves is what the
+post-deploy live turns have to show.*
 
-*⚠ **Caps are temporarily $150/$250, back down in September** — `[DB-0820-01]`, `due: 2026-09-01`.
-**`[DB-0822-01]` came due 08-25** — the cache reconcile, gating that revert.*
+*⚠ **Caps revert to $100/$175 at the September reset — the evidence is now in.** The
+`[DB-0822-01]` reconcile passed on five consecutive post-deploy days (1.02×–1.17× billed ÷
+estimated, bar 1.2×); `[DB-0820-01]`, `due: 2026-09-01`, is unblocked. `[DB-0822-01]`'s open
+half is Step 6 Pro specialist caching, A4-gated. Mike is flipping the Mac's
+`VERTEX_CACHE_DISABLED` to `0` himself (`.env` is denied to sessions) — gate runs were billing
+4× uncached.*
 
-***Next:** nothing owes a deploy. Two turns close `[DB-0822-10]` (one afternoon turn with no
-virtue list, one 20:00 that still carries it). `[DB-0820-05]` — all-Pro routing is ~$3.11/day
-against $6.12; `coordinator` is the only candidate and its blocker is latency.*
+***Next:** **deploy owed** — `core/orchestrator.py`, eleven agent files, two new
+`config/modules/*.md`, tests; the VM prompt reword is already live but the injection code lands
+only with the deploy. Two turns close `[DB-0822-10]` (one afternoon turn with no virtue list,
+one 20:00 that still carries it). `[DB-0820-05]` — all-Pro routing is ~$3.11/day against $6.12;
+`coordinator` is the only candidate and its blocker is latency.*
 
 *⚠ **A v1/alpha architecture question is live: invert to code-dominant, with models as discrete
 judgment gates.** Still **no decision**, and it must be **decided before A8 executes** or A8 is
@@ -126,13 +135,9 @@ from the backlog 2026-08-18 — § A9a is the single home for the review.
 obligations-as-data, scheduler maintenance jobs) — **full statements and reasoning:
 `archive/PROJECT_LOG.md`**; reference now, not current state.
 
-**Seven decisions are queued and none can be made here.** They carry `@session:` in
-`DEV_BACKLOG.md` § Later § Decisions, with the evidence — the 39 tool grants (`[DB-0810-03]`,
-which blocks A7 check 10), the repeated-ritual fix shape (`[DB-0809-02]`, two prior diagnoses
-confidently wrong), whether `write_persona` may self-apply a preference (`[DB-0815-11]`), the
-continuous-location privacy tier, what a mailbox "ticket" is, where code should replace model
-judgment, and whether to seed clinical-adjacent knowledge into the A4 test persona
-(`[DB-0818-07]` — A4 currently passes without the regression ever touching the knowledge path).
+**Seven decisions are queued and none can be made here** — `@session:` items in
+`DEV_BACKLOG.md` § Later § Decisions, which holds the evidence. The one that blocks the roadmap:
+`[DB-0810-03]` (39 tool grants) gates A7 check 10.
 
 ---
 
@@ -147,7 +152,7 @@ One row survived, because no other file carries it:
 
 | Question | Where to look |
 |---|---|
-| Agent enhancement backlogs | `## Enhancement backlog` at the bottom of each `config/agents/*.md` — **the only copy**; the `DEV_BACKLOG.md` and roadmap mirrors were deleted 2026-08-03 |
+| Agent enhancement backlogs | **[AGENT_ENHANCEMENTS.md](AGENT_ENHANCEMENTS.md) at the project root — the only copy**, one section per agent. Moved out of the agent files 2026-08-27 (they were shipping to the model in every prompt); the `DEV_BACKLOG.md` and roadmap mirrors were deleted 2026-08-03. Do not re-add these sections to `config/agents/*.md` |
 
 ---
 

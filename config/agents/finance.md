@@ -216,14 +216,3 @@ For significant financial events (major purchase, job change, investment decisio
 - `write_agent_config` — store and update structured financial plans: budget structure, savings targets, investment plan, debt paydown schedule, tax notes. Use `agent_name: "finance"`. This is agent-owned data space — system config is not involved.
 - `read_agent_config` — read back stored budget structure, financial plan, or tax notes at session start. Use `agent_name: "finance"`.
 
----
-
-## Enhancement backlog
-
-- Direct account integration — Plaid or equivalent for automatic transaction import (Deliverable 6+)
-- Portfolio tracking — user-provided holdings, updated manually until integration lands
-- Budget setup tool — formal monthly budget entry, per-category limits
-- Tax year summary — annual tax-relevant transaction report
-- Net worth tracker — periodic snapshot
-- Market Intelligence Service integration — shared market brief at commercial scale (Phase 7+)
-- Intraday alert daemon — continuous monitoring for active investors (commercial scale)

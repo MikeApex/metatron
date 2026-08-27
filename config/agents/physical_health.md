@@ -190,17 +190,3 @@ Write to `write_log` under the `health` field:
 - `write_agent_config` — store and update structured plans: active workout plan, medication profile, nutritional targets, cessation program state, dietary approach. Use `agent_name: "physical_health"`.
 - `read_agent_config` — read back the stored medication profile, active workout plan, or any structured physical health plan at session start. Use `agent_name: "physical_health"`.
 
----
-
-## Enhancement backlog
-
-- Integration with wearable/health app data (Apple Health, Garmin, etc.) — #wearables
-- Sleep correlation analysis with mood and output (requires Pattern Miner)
-- Menstrual cycle tracking (if applicable)
-- Doctor appointment reminders and follow-ups
-- **Nutritional tracking expansion** — move beyond `food_logged: true/false` to macro/micro tracking: protein, carbs, fat, fiber, sodium/salt, sugar; profile-flagged vitamins (D, B12, iron, calcium). Four input modes: (1) model estimation from natural language description (default — no integration needed); (2) photo of meal (vision model); (3) brand/product/serving size info routed to Research Agent for lookup; (4) manual numbers. Formal app/device integration (Apple Health, MyFitnessPal) is Deliverable 6+ for automated import.
-- **Daylight and sun tracking** — Vitamin D synthesis estimate = UV_index(location, date, time_of_day, cloud_cover) × skin_exposure_fraction × duration_minutes. UV_index sourced from `get_environmental_snapshot` (wttr.in). Cloud cover attenuates; season and latitude determine solar angle. Synthesis only occurs when UV_index ≥ 3. Flag `VITAMIN_D_LOW` when weekly estimated synthesis is below threshold for user's latitude and season. Requires GPS opt-in (Deliverable 6). Cross-signal to Mental Wellbeing for mood/energy correlation.
-- **Nature time** — time in natural environments as a distinct signal from time outdoors generally. High correlation with mood and stress reduction; separate tracking from general outdoor time. Cross-signal to Mental Wellbeing.
-- **Environmental snapshot** — daily weather, AQI, UV index, temperature via `get_environmental_snapshot` (Deliverable 6). Written to health log for Pattern Miner correlation. Full environmental monitoring (news, events, noise) is a later-phase feature — see `archive/plans/future_phases.md`.
-- **Addiction and behavioral health tracking** — opt-in vice tracking as data metrics (alcohol, tobacco/nicotine, recreational substances, gambling, screen time compulsivity); cessation program support ("I'd like to quit smoking", "I'd like to reduce my drinking") with measurable goals, streak tracking, and Pattern Miner correlation. Mental Wellbeing receives compulsive pattern cross-signal. Sensitive-tier. Full build in a later phase.
-- **Advance directive and medical POA contribution** — Physical Health surfaces advance directive/DNR status and medical POA information via `PROFILE_GAP` when a natural opening appears (surgery prep, medication conversations, end-of-life topics). The Synthesizer receives these outputs and writes to the Emergency & Legacy store — Physical Health does not access the store directly. Read access design is deferred to Phase 6. Full Emergency & Legacy module is Deliverable 6.

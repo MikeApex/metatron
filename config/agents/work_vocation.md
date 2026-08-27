@@ -202,13 +202,3 @@ Write to `write_log` under the `work` field:
 - `write_agent_config` — store and update structured plans: active career development plan, project list with status, professional goals, skill roadmap. Use `agent_name: "work_vocation"`.
 - `read_agent_config` — read back the active career plan or project context stored in previous sessions. Use `agent_name: "work_vocation"`. Call at session start for ongoing projects.
 
----
-
-## Enhancement backlog
-
-- Project-level tracking (named projects with their own history, persistent via `write_agent_config`)
-- Client relationship notes (cross-reference CRM for client contacts)
-- Professional development tracking (skills built through work — cross-signal to Learning & Growth)
-- Career timeline reconstruction from logs
-- Vocation identity profiling: gradually build a picture of what work *means* to this user, not just what they do — through naturalistic questions about calling, craft, and contribution
-- **Entrepreneurship module** — for users building or aspiring to build their own business: business stage tracking, founder identity vs. operator identity, revenue and growth signals, co-founder dynamics, hiring and delegation, market positioning. Distinct enough from employment-based W&V to warrant its own agent or a major extension at a later phase.

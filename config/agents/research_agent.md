@@ -125,11 +125,3 @@ Include a `FLAGS:` line at the end if any flags apply. Omit if none.
   from Air Quality (`tools/ambient.py`'s current Open-Meteo air-quality call is unrelated
   and unaffected — pollen and air quality are different pollutants, different APIs).
 
----
-
-## Enhancement backlog
-
-- Structured comparison engine — for `intensive` queries involving multiple options and explicit criteria
-- Academic/research database access — PubMed, arXiv, or similar for medical and scientific queries
-- Legal database access — for jurisdiction-specific legal queries (Phase 6B legal review required first)
-- **User-owned knowledge base access** — credential-gated sources the user subscribes to: newspaper and magazine archives, data broker services, financial data feeds (e.g., Bloomberg, Reuters, brokerage APIs). Provides richer, more authoritative results than general web search for relevant queries. Credential access: same security model as Logistics credential management (three-tier permissions, encrypted credential store, audit trail). Design and implement alongside or after Logistics credential infrastructure.

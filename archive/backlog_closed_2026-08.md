@@ -3290,3 +3290,16 @@ be fixed blind, and now no open item implies otherwise.
   latency-motivated cap (1,024–1,536, touching 60–85% of replies) stays a separate quality
   experiment, deliberately not taken. `[DB-0820-05]`'s assumption 1 (output inflation) re-checked
   by the probe in the reassuring direction. **Needs a deploy** (`core/orchestrator.py` → VM).
+
+- **[DB-0822-01a] (half a of [DB-0822-01]) The cache reconcile — closed 2026-08-27 by running
+  it.** `python3 scripts/vertex_cost_reconcile.py --days 10` on the Mac, against the VM's
+  `data/diagnostics/spend_*.json` (read over IAP SSH; Mac side ~0, `VERTEX_CACHE_DISABLED=1`).
+  **Five consecutive post-deploy days pass, not just the one clean day the test required:**
+  08-21 1.13× · 08-22 1.17× · 08-23 1.02× · 08-24 1.08× · 08-25 1.08× (billed ÷ estimated; bar
+  1.2×, down from ~2.3× on 08-19). The two open rate questions both answered: cache creation
+  bills on the dedicated `Text Input Caching` SKU (4.8M tokens / $0.96 over the window — not
+  `Input - Predictions`), and the TTL-refresh patch meters correctly (storage estimated at
+  ~$0.13–0.15/day and the daily totals reconcile; 10-day storage total $17.36 across Pro +
+  Flash-Lite, dominated by pre-fix days). Bill now runs ~$1.8–2.0/day. This is the evidence
+  `[DB-0820-01]` cites for the September caps revert. Half (b) — Step 6 Pro specialist caching,
+  A4-gated — remains open under the original id.

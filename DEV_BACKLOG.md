@@ -149,6 +149,9 @@ standing rule distrusts.*
   [docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md) § Billing protection — read them there, never
   from a script comment (`metatron-vm-override.sh` was stale for months).
   *Checked 2026-08-20: both budgets confirmed live at 150/250 via `gcloud billing budgets list`.*
+  *Evidence in, 2026-08-27: the `[DB-0822-01]` reconcile passed on five consecutive post-deploy
+  days (billed ÷ estimated 1.02×–1.17×, bill running ~$1.8–2.0/day) — the reconciliation supports
+  reverting to $100/$175 at the September reset; nothing argues otherwise.*
   `due: 2026-09-01`
   @kind: chore
   *filed 2026-08-20 by Mike*
@@ -731,32 +734,41 @@ with a date.** Nothing new joins this group open-ended.*
   *filed 2026-08-26 at Mike's instruction · design agreed 2026-08-22 · privacy pre-cleared
   2026-08-26, deliberately, not by omission*
 
-- **[DB-0822-01] The cache fix is deployed but not yet proven against a bill, and its follow-on
-  build waits on that proof.** Steps 1–4 of the cache plan shipped 2026-08-21 (`9de2836`, sliding
-  10-min TTL, owned sweep, storage on the spend meter, dev kill switch); the billing export is on
-  and backfilled to June 30 — **confirming storage billed $19.59 against $1.53 of cached reads
-  since June 30** — but export rows currently end at 08-14, so the closing test has no clean day
-  to read yet. One item, two sequential halves, both mechanical once the data lands:
-  **(a) Close the plan:** run `python3 scripts/vertex_cost_reconcile.py --days 10` on the Mac once
-  the export shows ≥ 08-21. It answers the two open rates (creation SKU — the 08-20 probe day,
-  12,001 tokens with zero generate calls, will sit on either `Text Input - Predictions` or
-  `Text Input Caching` for Gemini 3.5 Flash — and whether the TTL-refresh patch meters anything),
-  and prints the closing comparison: **pass = billed ÷ estimated under 1.2×** for a post-deploy day
-  (VM's `data/diagnostics/spend_YYYY-MM-DD.json`; the Mac's is ~0 with `VERTEX_CACHE_DISABLED=1`).
-  **That clean day is the evidence `[DB-0820-01]` needs before the caps revert** — close this half
-  before that item's 09-01 review.
-  **(b) Step 6, Pro half:** add `mental_wellbeing` and `physical_health` to the cached-path set at
-  `core/orchestrator.py:4019` — **gated on a full A4 run** (`tests/run_a4_safety.py`, clinical +
-  pipeline, both complexity tiers), because it moves the two clinical-flag agents onto the native
-  loop, a larger change than the prompt reorder that already forced an A4 re-run. Worth ~+$0.17/day
-  (more than the head-layer caching earns); the Flash-Lite six are +$0.008/day — include or skip
-  without deliberation. Arithmetic and the corrected burst-amortisation model:
-  `archive/plans/vertex_cache_step6_specialist_caching_2026-08-21.md`. Decide alongside
-  `[DB-0820-05]` if that session happens first — all-Pro routing quadruples what specialist
-  caching is worth.
-  `due: 2026-08-25`
+- **[DB-0822-01] The cache fix is proven against the bill; what remains is the Step 6 Pro half,
+  gated on a full A4 run.** Half (a) — the reconcile — **closed 2026-08-27**: five consecutive
+  post-deploy days (08-21 → 08-25) all pass at billed ÷ estimated of **1.02×–1.17×**, under the
+  1.2× bar, down from ~2.3× on 08-19; cache creation bills on its own `Text Input Caching` SKU
+  (distinct from `Input - Predictions` and per-second `Caching Storage`), and the TTL-refresh
+  patch meters correctly (storage estimate ~$0.13–0.15/day reconciles inside the daily totals).
+  Evidence: `archive/backlog_closed_2026-08.md` § [DB-0822-01a]. **`[DB-0820-01]` now has the
+  evidence it needs for the caps revert.**
+  **(b) Step 6, Pro half — still open:** add `mental_wellbeing` and `physical_health` to the
+  cached-path set at `core/orchestrator.py:4019` — **gated on a full A4 run**
+  (`tests/run_a4_safety.py`, clinical + pipeline, both complexity tiers), because it moves the two
+  clinical-flag agents onto the native loop, a larger change than the prompt reorder that already
+  forced an A4 re-run. Worth ~+$0.17/day (more than the head-layer caching earns); the Flash-Lite
+  six are +$0.008/day — include or skip without deliberation. Arithmetic and the corrected
+  burst-amortisation model: `archive/plans/vertex_cache_step6_specialist_caching_2026-08-21.md`.
+  Decide alongside `[DB-0820-05]` if that session happens first — all-Pro routing quadruples what
+  specialist caching is worth.
   @kind: chore
-  *filed 2026-08-22 at the close of the cache-fix build · Steps 1–5 status verified against the live export same day*
+  *filed 2026-08-22 at the close of the cache-fix build · half (a) closed 2026-08-27 by running the
+  reconcile against the live export and the VM's spend files*
+
+- **[DB-0827-06] The Synthesizer's prose can be tightened considerably without losing substance —
+  a deliberate compression pass, section by section.** Mike, 2026-08-27, with a worked example
+  applied the same day (the "urgency in external text" paragraph: claim first, rule second,
+  rationale last, framing scaffold dropped — same substance at ~60% of the words). The structural
+  audit (`archive/plans/synthesizer_audit_2026-08-18.md`) moved and cut whole sections; this is the
+  orthogonal pass it deliberately did not fold in: rewording *inside* kept rules. Not just tokens —
+  the project's measured length→adherence effect means tighter imperative rules likely adhere
+  *better* (six of six 08-21 complaints were rules already in the file, ignored). Per-section
+  against the same gates (A4 pipeline, B1 disclosure, `[CONTEXT]` parse), two or three sections
+  first as a behaviour probe. Estimated yield on the post-audit file: ~10.3k → ~7k tokens.
+  **Non-urgent (Mike's call, 2026-08-27).** Check the code-dominant rebuild decision before
+  starting — a rebuild that rewrites the agent layer supersedes this.
+  @kind: chore
+  *filed 2026-08-27 during the audit execution session, at Mike's instruction*
 
 - **[DB-0820-04] No hostile test email has ever been aimed at the intake extractor.** The B1
   `injection` suite (`tests/run_b1_redteam.py`) proved the email row against **Logistics**

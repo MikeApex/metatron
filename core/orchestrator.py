@@ -296,7 +296,9 @@ def _titled(label: str, content: str) -> str:
 
 def session_kind(user_input: str, persona: str | None = None) -> str | None:
     """
-    Which scheduled ritual, if any, opened this session — `"evening_close"` or None.
+    Which scheduled session, if any, opened this turn — the matching key from the
+    persona's scheduler.yaml `schedules:` (e.g. "evening_close", "morning_brief"),
+    or None for a user-typed turn.
 
     [DB-0822-10]. The evening ritual was injected into every session's system prompt
     unconditionally, and on 2026-08-21 the full 13-item virtue list went out at 16:27,
@@ -305,13 +307,18 @@ def session_kind(user_input: str, persona: str | None = None) -> str | None:
     config/agents/synthesizer.md, which already scopes the ritual correctly and was
     simply not followed. A second copy of an ignored instruction is not a fix, so the
     injection is gated here instead — recital becomes structurally impossible rather
-    than discouraged.
+    than discouraged. Generalised 2026-08-27 from evening_close-only to every
+    configured schedule, so scheduled-session conduct can ride the same gate
+    (_synth_conditional_sections below) instead of every interactive turn's prompt.
 
-    Matched against the persona's OWN configured `evening_close` prompt rather than
-    against hard-coded prose: the wording lives in scheduler.yaml, the VM owns the live
+    Matched against the persona's OWN configured prompts rather than against
+    hard-coded prose: the wording lives in scheduler.yaml, the VM owns the live
     copy, and a literal here would go stale the first time Mike reworded it — silently,
     by un-gating the ritual again. Whitespace- and case-insensitive, because the prompt
-    makes a round trip through the scheduler and the app before it arrives.
+    makes a round trip through the scheduler and the app before it arrives. Where two
+    prompts both appear in the turn, the longest match wins. Prompts under 20
+    normalised characters never match: a short one ("Check in.") is a substring of
+    ordinary user speech, and a false positive here silently changes the prompt.
 
     Returns None for every user-typed turn, which is the common case and the one the
     2026-08-21 recitals were polluting.
@@ -330,11 +337,52 @@ def session_kind(user_input: str, persona: str | None = None) -> str | None:
         # None fails toward the quieter prompt — the ritual is omitted, not recited.
         return None
 
-    prompt = (((cfg.get("schedules") or {}).get("evening_close") or {}).get("prompt") or "")
-    if not prompt:
-        return None
     norm = lambda s: " ".join(str(s).split()).casefold()
-    return "evening_close" if norm(prompt) and norm(prompt) in norm(user_input) else None
+    turn = norm(user_input)
+    best: tuple[str, int] | None = None
+    for key, entry in ((cfg.get("schedules") or {}).items()):
+        prompt = norm((entry or {}).get("prompt") or "")
+        if not prompt:
+            continue
+        # Substring match needs the 20-char floor; a turn that IS the configured
+        # prompt, verbatim, is the scheduler at any length ("Check in." — mike's
+        # companion_checkin is 9 chars and would otherwise never match).
+        if prompt == turn or (len(prompt) >= 20 and prompt in turn):
+            if best is None or len(prompt) > best[1]:
+                best = (str(key), len(prompt))
+    return best[0] if best else None
+
+
+def _synth_conditional_sections(kind: str | None, package_text: str) -> str:
+    """
+    Prompt sections the Synthesizer gets only when their trigger is present this
+    turn, so ordinary turns do not carry them — the same structural gate as the
+    evening ritual above ([DB-0822-10]): text that is not injected cannot leak into
+    a session it does not belong to, whatever the model decides.
+
+    Delivered by code, not by a model-initiated tool call, deliberately: the model
+    cannot forget to load what it never has to ask for, and no extra model round is
+    spent (2026-08-27 audit — read_agent_config reads the per-persona data store
+    and has never read config/modules/; this injection is the mechanism ROADMAP
+    § D2's context-file pattern assumed existed).
+    """
+    parts = []
+    modules_dir = CONFIG_DIR / "modules"
+    triggers = [
+        # Scheduled-session conduct: any scheduler-originated turn.
+        (kind is not None, "synthesizer_scheduled_sessions.md"),
+        # Baseline-interview conduct: a specialist flagged an empty domain baseline.
+        ("BASELINE_INCOMPLETE" in (package_text or ""), "synthesizer_onboarding.md"),
+    ]
+    for fired, filename in triggers:
+        if not fired:
+            continue
+        path = modules_dir / filename
+        if path.exists():
+            content = path.read_text().strip()
+            if content:
+                parts.append(content)
+    return "\n\n---\n\n".join(parts)
 
 
 def load_config(persona: str | None = None, kind: str | None = None) -> str:
@@ -4177,9 +4225,16 @@ def _run_single_agent(agent_name: str, user_input: str,
         context_sections = {"agent_file": agent}
     elif agent_name in _HEAD_LAYER_AGENTS:
         # Full config (constitution → prime_directive → mission → goals) + recent context.
-        config = load_config(persona=persona, kind=session_kind(user_input, persona))
+        kind = session_kind(user_input, persona)
+        config = load_config(persona=persona, kind=kind)
         recent = load_recent_context(persona=persona)
         system_prompt = f"## Your Role for This Session\n\n{agent}\n\n---\n\n{config}"
+        # Conduct sections gated on this turn's triggers — scheduled-session conduct
+        # and baseline-interview conduct live in config/modules/, not in the agent
+        # file, so ordinary turns never carry them (2026-08-27 audit).
+        extras = _synth_conditional_sections(kind, user_input)
+        if extras:
+            system_prompt = f"{system_prompt}\n\n---\n\n{extras}"
         augmented_input = f"[Recent context]\n{recent}\n\n---\n\n{user_input}" if recent else user_input
         context_sections = {"agent_file": agent, "config": config, "recent_context": recent}
     elif agent_name in _ROUTING_LAYER_AGENTS:
@@ -5073,9 +5128,16 @@ def _run_pipeline_session_stream_inner(
     # Keyed on the user's own turn, not on synthesizer_input: the latter carries the
     # Coordinator package and specialist output, so the evening prompt's words can
     # appear in it on any turn that merely discusses the evening.
-    config = load_config(persona=persona, kind=session_kind(user_input, persona))
+    kind = session_kind(user_input, persona)
+    config = load_config(persona=persona, kind=kind)
     recent = load_recent_context(persona=persona)
     system_prompt = f"## Your Role for This Session\n\n{agent_instructions}\n\n---\n\n{config}"
+    # Conduct sections gated on this turn's triggers (mirrors _run_single_agent).
+    # kind keys on the user's turn per the note above; the BASELINE_INCOMPLETE
+    # trigger keys on the package, because that is where a specialist raises it.
+    extras = _synth_conditional_sections(kind, synthesizer_input)
+    if extras:
+        system_prompt = f"{system_prompt}\n\n---\n\n{extras}"
     augmented_input = (
         f"[Recent context]\n{recent}\n\n---\n\n{synthesizer_input}" if recent else synthesizer_input
     )

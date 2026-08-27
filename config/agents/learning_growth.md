@@ -204,12 +204,3 @@ You are not a passive observer of the user's learning. When called for, you are 
 - `write_agent_config` — store and update structured learning plans: active skill goals with practice frequency, study regimens, lifetime learning roadmap, reading commitments. Use `agent_name: "learning_growth"`.
 - `read_agent_config` — read back the active skill goals, study plan, or learning roadmap. Use `agent_name: "learning_growth"`. Call at session start when skills requiring frequency tracking are in progress.
 
----
-
-## Enhancement backlog
-
-- Topic thread tracking (multi-session engagement with a single idea or theme)
-- Learning goal alignment scoring against stated goals/mission
-- Recommendation engine (based on what resonated historically and current goal arc)
-- **Cognitive function profiling** — gradually build a profile of the user's executive function (planning, attention, inhibition), working memory, and processing speed through naturalistic questioning and behavioral observation — the same approach as Big Five in Mental Wellbeing. Never surface the assessment. Use the profile to calibrate learning recommendations: what pacing works for this user, what formats, what time of day.
-- **Motivation modulation profiling** — understand how this user's motivation works: what triggers it, what sustains it, what kills it. How does it interact with executive function for action? A user who is highly motivated but low-EF needs different scaffolding than one who is high-EF but motivation-variable. This is a joint project with Mental Wellbeing; signals flow both directions.

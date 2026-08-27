@@ -320,6 +320,11 @@ Phase 5 was built iteratively across many sessions, each solving a local problem
 > addition:** `python tests/run_knowledge_routing.py --persona danny_park` must still pass after
 > the split — it is the only check that the pre-fetch survives, and it exercises
 > `run_pipeline_session_stream`, the path a module move is most likely to break.
+>
+> **⚠ Two more residents 2026-08-27 (synthesizer audit):** the generalised `session_kind()`
+> belongs with `load_config()` in **`core/config.py`**; `_synth_conditional_sections()` is
+> wired into both pipeline twins and stays in **`core/orchestrator.py`**. **Regression gate
+> addition:** `python tests/test_synth_module_injection.py` must still pass after the split.
 
 **Server split — `core/server.py` → 2 files:**
 
@@ -738,7 +743,7 @@ Prompt structure optimization (informed by A4 safety hard-fail findings):
   - Cloud agents (Research, Logistics, Learning, Recreation): similar compression savings. *(Recreation JSON output format implemented pre-Alpha 2026-06-19 — compact JSON schema confirmed working; Synthesizer consumes correctly. Logistics and Work/Vocation are next priority.)*
   - Expected overall: ~1,050 tokens generated on a real-time session → ~285 tokens; deep session ~2,650 → ~680. At 50 tok/s on qwen3:14b: ~21s → ~5.7s real-time; ~53s → ~14s deep.
 
-- **Agent instruction file slimming — context-file pattern (Option 2):** For agents over the token target (synthesizer ~7,200, mental_wellbeing ~6,100, relationships ~5,730; targets: specialists 1,500–2,500, Synthesizer/Coordinator 3,500–5,000), audit content into two buckets: (a) behavioral rules that must be in the instruction file, and (b) domain data — signal-word lists, clinical protocols, scoring rubrics, playbooks, virtue lists — that can move to `config/modules/{agent}_*.yaml` and be loaded on demand via `read_agent_config`. The agent file adds a line: "When [signal], call `read_agent_config('[module]')` before responding." No code changes required; `read_agent_config` is already registered. Run the A4 clinical-flag hard-fail scenarios as a regression gate after each agent slim — safety flags must fire identically before and after. See Section 4 token budget table and 2026-06-18 session for context.
+- **Agent instruction file slimming — context-file pattern (Option 2):** For agents over the token target (synthesizer ~7,200, mental_wellbeing ~6,100, relationships ~5,730; targets: specialists 1,500–2,500, Synthesizer/Coordinator 3,500–5,000), audit content into two buckets: (a) behavioral rules that must be in the instruction file, and (b) domain data — signal-word lists, clinical protocols, scoring rubrics, playbooks, virtue lists — that can move to `config/modules/{agent}_*.yaml` and be loaded on demand via `read_agent_config`. The agent file adds a line: "When [signal], call `read_agent_config('[module]')` before responding." ~~No code changes required; `read_agent_config` is already registered.~~ **The loading mechanism as written never existed — corrected 2026-08-27.** `read_agent_config` reads the per-persona *data* store (`data/personas/{p}/config/{agent}.json`) and has never read `config/modules/`. The mechanism actually built for the Synthesizer audit is **code-conditional injection** (`_synth_conditional_sections()` in `core/orchestrator.py`, same structural gate as the evening ritual): deterministic, no extra model round, and the model cannot forget to load it. Future slims should use that pattern where the trigger is code-detectable, and keep model-judgement content in the file where it is not. Run the A4 clinical-flag hard-fail scenarios as a regression gate after each agent slim — safety flags must fire identically before and after. See Section 4 token budget table and 2026-06-18 session for context.
 
   Cross-specialist referrals use an **action tag system** instead of prose narration. The Coordinator's routing table maps tag types to dispatch paths — lightweight, additive, no agent rewrites required:
   ```

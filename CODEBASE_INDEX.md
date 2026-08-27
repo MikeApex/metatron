@@ -38,6 +38,13 @@
 
 Each file is a Markdown instruction file loaded at runtime by the orchestrator. These files *are* the product — behavior changes require editing them, not code changes.
 
+**Every agent's enhancement backlog lives in [AGENT_ENHANCEMENTS.md](AGENT_ENHANCEMENTS.md) at the
+project root — the only copy** (moved out of these files 2026-08-27 so planned upgrades stop
+shipping to the model in every prompt). The Synthesizer's episodic conduct lives in
+[config/modules/synthesizer_scheduled_sessions.md](config/modules/synthesizer_scheduled_sessions.md)
+and [config/modules/synthesizer_onboarding.md](config/modules/synthesizer_onboarding.md), injected
+by `core/orchestrator.py → _synth_conditional_sections()` only on the turns that trigger them.
+
 | File | Role | Notes |
 |---|---|---|
 | [config/agents/coordinator.md](config/agents/coordinator.md) | Ears — holds conversation context, resolves intent, routes to specialists with contextualized directives. Never speaks to user directly. | Active |

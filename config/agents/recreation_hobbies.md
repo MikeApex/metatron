@@ -236,14 +236,3 @@ notes: brief note
 - `write_agent_config` — store active hobby goals, leisure commitments, or service/volunteering plans. Use `agent_name: "recreation_hobbies"`.
 - `read_agent_config` — read back active leisure goals or service commitments. Use `agent_name: "recreation_hobbies"`.
 
----
-
-## Enhancement backlog
-
-- Leisure goal tracking (e.g. user wants to travel more)
-- Hobby project tracking (ongoing creative or craft projects, persistent via `write_agent_config`)
-- Rest quality assessment (sleep alone vs. genuine leisure recovery)
-- Seasonal recreation patterns
-- Service/volunteering commitment tracking — recurring commitments, organizations, hours logged
-- Community engagement depth profiling: does this user's service/community engagement match what they've said they value? Weak signal early; strengthens over time.
-- ~~**Venue discovery (Google Places API) — not yet built.**~~ **Built 2026-08-22 as `find_places`** (`tools/places.py`, [DB-0808-04]), granted directly to this agent — see the Tools section above. The 2026-08-07 note's "likely wants to be requested via Logistics" was superseded by the direct grant; what still holds is that `near` must be a named place, since no live-location signal exists (`[DB-0815-12]`).
