@@ -60,18 +60,28 @@ USER_TYPES = {"FEATURE_REQUEST", "INSTRUCTION_CHANGE_REQUEST"}
 # this type alone becomes the noise problem the item predicted.
 MACHINE_TYPES = {"TOOL_DENIED", "RULE_CONFLICT", "SELF_APPLIED", "UNGROUNDED_ANSWER",
                  "MODEL_CALL_FAILED", "USER_CORRECTION", "CALENDAR_DUPLICATE",
-                 "CONTEXT_BLOCK_UNPARSED"}
+                 "CONTEXT_BLOCK_UNPARSED",
+                 # Marked dead 2026-08-13 ([DB-0810-09]) on a grep of core/ and tools/
+                 # only — the emitter is not Python. The Synthesizer calls the
+                 # registered write_quality_event tool at runtime per instructions in
+                 # config/agents/synthesizer.md (8 call sites); 5 ROUTING_MISS events
+                 # landed on the live VM since 08-11 while this set called the type
+                 # dead. Restored to WANTED 2026-08-27 ([DB-0827-05]). Lesson: a type
+                 # is only dead when neither Python code nor an agent instruction file
+                 # under config/agents/*.md emits it — grep both before naming one here.
+                 "ROUTING_MISS",
+                 # Emitted by the false-action-claim detector, 2026-08-27.
+                 "FALSE_ACTION_CLAIM"}
 
 WANTED = USER_TYPES | MACHINE_TYPES
 
-# Emitted historically but confirmed dead 2026-08-13 ([DB-0810-09]): grepped the
-# whole codebase and nothing calls write_quality_event with this type anymore.
-# It survives only as docstring/schema prose in tools/logger.py. Named here so
-# a reconciliation check (tests/test_quality_event_reconciliation.py) can tell
-# "dropped on purpose" apart from "dropped because nobody noticed" — the exact
-# failure mode this item exists to close off. Do not add it to WANTED; do not
-# delete this line either, it is the record that the check was made.
-KNOWN_DEAD_TYPES = {"ROUTING_MISS"}
+# A type belongs here only when a grep of BOTH core/Python (write_quality_event call
+# sites) AND every config/agents/*.md instruction file turns up no emitter — the
+# 2026-08-13 pass checked only the former, declared ROUTING_MISS dead, and 5 events
+# were silently discarded on the live VM before the gap was caught ([DB-0827-05]).
+# Nothing lives here today. Do not add a type on the strength of a code-only grep;
+# do not delete this comment either, it is the record that the lesson was learned.
+KNOWN_DEAD_TYPES = set()
 
 # A machine signature seen this many times stops being noise and starts being
 # evidence the runtime is failing repeatedly — the point at which a process
@@ -121,6 +131,13 @@ LABELS = {
     # existing sync"; it did not until this line. Carries the raw block, so a
     # dropped context-tracker update is now recoverable instead of just logged.
     "CONTEXT_BLOCK_UNPARSED": "a [CONTEXT] block was dropped, unrecovered",
+    # From the Synthesizer's own context-tracker note: a signal in the original
+    # message that no specialist surfaced. Restored to WANTED 2026-08-27
+    # ([DB-0827-05]) after being wrongly classed dead — see MACHINE_TYPES above.
+    "ROUTING_MISS": "a specialist missed a signal it should have caught",
+    # From the false-action-claim detector, 2026-08-27: the runtime told the user
+    # an action happened (sent, scheduled, saved) that the logs show never did.
+    "FALSE_ACTION_CLAIM": "the runtime claimed an action it didn't take",
 }
 
 ROOT = Path(__file__).resolve().parent.parent

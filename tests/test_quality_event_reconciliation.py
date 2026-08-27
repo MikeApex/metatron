@@ -100,10 +100,14 @@ def _():
     assert "CALENDAR_DUPLICATE" in S.WANTED
 
 
-@check("ROUTING_MISS stays out of WANTED — confirmed dead, not forgotten")
+@check("ROUTING_MISS is collected, not marked dead ([DB-0827-05])")
 def _():
-    assert "ROUTING_MISS" not in S.WANTED
-    assert "ROUTING_MISS" in S.KNOWN_DEAD_TYPES
+    # Was classed dead 2026-08-13 on a code-only grep; the emitter is the
+    # Synthesizer's agent instructions (config/agents/synthesizer.md), not Python,
+    # so the grep missed it and 5 events were silently discarded on the live VM
+    # since 08-11 before this was caught.
+    assert "ROUTING_MISS" in S.MACHINE_TYPES
+    assert "ROUTING_MISS" not in S.KNOWN_DEAD_TYPES
 
 
 @check("the dynamic dev-request path (_DEV_REQUEST_TYPES) is fully covered")
