@@ -71,7 +71,12 @@ MACHINE_TYPES = {"TOOL_DENIED", "RULE_CONFLICT", "SELF_APPLIED", "UNGROUNDED_ANS
                  # under config/agents/*.md emits it — grep both before naming one here.
                  "ROUTING_MISS",
                  # Emitted by the false-action-claim detector, 2026-08-27.
-                 "FALSE_ACTION_CLAIM"}
+                 "FALSE_ACTION_CLAIM",
+                 # The three below were emitted by code (orchestrator ×2, tools/crm.py)
+                 # while registered nowhere — found 2026-08-27 when the reconciliation
+                 # test's own failure was read instead of skipped. Same silent-discard
+                 # class as ROUTING_MISS above, caught by the guard this time.
+                 "FALSE_COMPLETION_CLAIM", "MERGE_AUTO_ACCEPTED", "THINKING_CAP_HIT"}
 
 WANTED = USER_TYPES | MACHINE_TYPES
 
