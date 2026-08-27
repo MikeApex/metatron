@@ -67,6 +67,11 @@ def get_log_window(
             try:
                 entry = json.loads(log_path.read_text())
                 entry.setdefault("date", current.isoformat())
+                # [DB-0822-06] The per-field write times tools/logger.py keeps are for
+                # dating a value in the session context, not for pattern mining across
+                # weeks — a window of 30 days would carry 30 blocks of ISO timestamps into
+                # the Pattern Miner's prompt for nothing.
+                entry.pop("_written_at", None)
                 results.append(entry)
             except Exception:
                 pass

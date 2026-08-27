@@ -556,6 +556,61 @@ def _age_annotated(text: str, added: str | None) -> str:
     return f"{text} (logged {_relative_age(age)})"
 
 
+def _intraday_age(written_at: str | None) -> str:
+    """
+    "just now" / "N minutes ago" / "N hours ago" for a timestamp earlier today, else "".
+
+    [DB-0822-06] Day granularity cannot separate a three-hour-old fact from a three-minute-old
+    one, and on 2026-08-27 that was the whole failure: the 07:14 run resolved the Teams link
+    and the 10:00 run reported it "still missing". Both writes carry the same date. Only
+    today's log needs this — for any earlier day the day count is the honest resolution.
+    """
+    from datetime import datetime as _dt
+
+    if not written_at:
+        return ""
+    try:
+        when = _dt.fromisoformat(str(written_at))
+    except (TypeError, ValueError):
+        return ""
+    minutes = (_dt.now() - when).total_seconds() / 60
+    if minutes < 0:
+        return ""
+    if minutes < 2:
+        return "just now"
+    if minutes < 90:
+        return f"{int(minutes)} minutes ago"
+    return f"{int(minutes // 60)} hours ago"
+
+
+def _render_today_log(entry: dict) -> str:
+    """
+    Today's log field by field, each with the time it was actually asserted.
+
+    Older days stay a single JSON dump with their day count (shipped in `cbd5ca3`) — the
+    extra tokens buy nothing once a value is a day old, and the whole shape change is
+    confined here for that reason.
+
+    A field with no recorded write time renders bare, which is what every log file written
+    before tools/logger.py started stamping will do. No migration, no missing-data branch
+    at any other reader.
+    """
+    import json as _json
+
+    from tools.logger import _WRITTEN_AT_KEY, _leaf_paths
+
+    stamps = entry.get(_WRITTEN_AT_KEY) or {}
+    parts = []
+    for path in _leaf_paths(entry):
+        value = entry
+        for key in path.split("."):
+            value = value.get(key) if isinstance(value, dict) else None
+        age = _intraday_age(stamps.get(path))
+        rendered = _json.dumps(value, ensure_ascii=False)
+        parts.append(f"{path}={rendered}" + (f" (recorded {age})" if age else ""))
+    return " | ".join(parts)
+
+
 def load_recent_context(persona: str | None = None, days: int = 5) -> str:
     """
     Load the last N days of logs, context tracker, and ambient world context
@@ -621,9 +676,17 @@ def load_recent_context(persona: str | None = None, days: int = 5) -> str:
                 # [DB-0822-06] The date alone is not age. A log line reads as current state
                 # unless something says when it was written, which is how "Day 3 of a 5-day
                 # hiatus" written on the 18th was still being read as true on the 21st.
-                recent_entries.append(
-                    f"  {d} ({_relative_age(i)}): {_json.dumps(entry, ensure_ascii=False)}"
-                )
+                #
+                # Today's log is rendered field by field with the time each value was
+                # asserted; every earlier day keeps the single-line dump and its day count.
+                # A day-old value has nothing more to say than "yesterday", and the intraday
+                # detail on four extra days is tokens on every head-layer call for nothing.
+                if i == 0 and entry.get("_written_at"):
+                    body = _render_today_log(entry)
+                else:
+                    entry.pop("_written_at", None)
+                    body = _json.dumps(entry, ensure_ascii=False)
+                recent_entries.append(f"  {d} ({_relative_age(i)}): {body}")
             except Exception:
                 pass
 
