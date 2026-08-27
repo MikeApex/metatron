@@ -2,8 +2,8 @@
 
 *Updated: 2026-08-27, latest (**a second attack run closes the carried-context class** — the
 decline re-propose guard, per-field log timestamps, the Bill resolution store, the medication
-Red-line spec and the wisdom-store proposal, four workers, all merged — **deploy owed**: Mike
-deploys `core/` + `tools/` as this session closes).*
+Red-line spec and the wisdom-store proposal, four workers, all merged — **and deployed by Mike
+at close-out**, so the Cluster F confirmations are live now).*
 
 *✅ **The capstone plan is the read-first for any backlog work:**
 **`archive/plans/capstone_cluster_review_2026-08-27.md`** — every open item by functional

@@ -30,7 +30,7 @@ file is the only narrative record, alongside the verbatim transcripts.*
 
 ## Dated history
 
-### 2026-08-27 (second attack run — four workers close the carried-context class) — `core/orchestrator.py`, `tools/{logger,confirm,crm,pattern_miner}.py`, `tools/turn_context.py` (new), 4 new test files, `DEV_BACKLOG.md`, tracker + proposal + spec in `archive/plans/` — merges `bb9ebdb`, `c2798eb`, `6b0a6d5`, `4cc9e3e` — **deploy owed to Mike at close-out**
+### 2026-08-27 (second attack run — four workers close the carried-context class) — `core/orchestrator.py`, `tools/{logger,confirm,crm,pattern_miner}.py`, `tools/turn_context.py` (new), 4 new test files, `DEV_BACKLOG.md`, tracker + proposal + spec in `archive/plans/` — merges `bb9ebdb`, `c2798eb`, `6b0a6d5`, `4cc9e3e` — **deployed by Mike at close-out**
 
 **A concurrent Green/Amber attack ran while the capstone tracker was fresh: four workers in
 isolated worktrees (two Opus builds, two Sonnet scope/proposal tasks), Fable reviewing every
