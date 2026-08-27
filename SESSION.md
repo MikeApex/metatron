@@ -1,27 +1,23 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-27, later still (the CRM sweep plan is accepted and filed — deliberately not
-built).*
+*Updated: 2026-08-27, latest (the thinking cap lands as insurance, and "over and out" ends an
+exchange in code — `a620f10` **deployed and live-tested by Mike**).*
+
+*✅ **Thinking capped at 4,096 (insurance — the probe found no tail, exposure ~$0.26/day) and
+"over and out" now ends an exchange in Python, safety flags vetoing the skip in code.** Both
+deployed, sign-off passed live. Watch: a `THINKING_CAP_HIT` quality event means the thinking
+distribution moved. The compliance-ceiling experiment is **deferred to the rebuilt agents**
+(Mike's call) — design, price and the sign-off as a worked example of the inversion are round
+four of `code_dominant_rebuild_notes.md`. Probe (also re-checked `[DB-0820-05]`'s
+output-inflation assumption, reassuringly): `synthesizer_thinking_probe_2026-08-27.md`.*
 
 *✅ **The CRM sweep is designed and accepted — build gated on one more review with Mike**
 (`[DB-0827-03]`, `@waiting`; plan: `archive/plans/crm_sweep_plan_2026-08-27.md`). Field promotion
 from notes filed as `[DB-0827-04]`.*
 
-*⛔ **Google REFUSED the ZDR opt-out, and Mike has ruled — do not re-open this.** The 2026-06-18
-amendment's "verified ZDR" premise is settled **false**, not merely unverified. What governs is
-flagged-only prompt logging, ≤90 days, never training. **The `mike` persona keeps running on
-Vertex under those terms**, Mike gating what he shares personally: *"Google Calendar already has
-my plans, and Google has my email correspondence."* Full ruling, reasoning and its **single-user
-expiry**: `ROADMAP.md` § Section 0 *RESOLVED 2026-08-26*. Status authority stays
-`docs/INFRASTRUCTURE.md` § Vertex AI credentials. `[DB-0826-02]` is pre-cleared against it.*
-
-*✅ **Three gates now close the ask-vs-assert cluster — one fault in three costumes.**
-**(1)** Renaming a contact asks first; enriching one does not (`write_contact`'s update path was
-ungated, and on 08-22 the model renamed a real friend's record twice with no prompt).
-**(2)** The virtue list can only reach the `evening_close` session — injection code, not another
-rule. **(3)** A reply can no longer report a gated action as finished: `enforce_pending_receipt()`
-reads what is pending from the confirmation store and replaces a completion claim. All three
-proven or built with tests; `7069ea1` deployed, **`1b040bd` and `c6b21b0` owe a deploy.***
+*⛔ **ZDR: refused by Google, ruled on by Mike — do not re-open.** The ruling and its
+single-user expiry are promoted to `ROADMAP.md` § Section 0 *RESOLVED 2026-08-26* (status
+authority: `docs/INFRASTRUCTURE.md` § Vertex AI credentials); `[DB-0826-02]` pre-cleared.*
 
 *⚠ **Declining a confirmation does nothing — `[DB-0827-01]`, `## Now`.** `POST /confirm` is
 approve-only; no reject endpoint, no client handler. A declined prompt returns on every poll until
@@ -40,9 +36,9 @@ audit named length→adherence as the cause.*
 *⚠ **Caps are temporarily $150/$250, back down in September** — `[DB-0820-01]`, `due: 2026-09-01`.
 **`[DB-0822-01]` came due 08-25** — the cache reconcile, gating that revert.*
 
-***Next:** deploy the two outstanding commits, then two turns close `[DB-0822-10]` (one afternoon
-turn with no virtue list, one 20:00 that still carries it). `[DB-0820-05]` — all-Pro routing is
-~$3.11/day against $6.12; `coordinator` is the only candidate and its blocker is latency.*
+***Next:** nothing owes a deploy. Two turns close `[DB-0822-10]` (one afternoon turn with no
+virtue list, one 20:00 that still carries it). `[DB-0820-05]` — all-Pro routing is ~$3.11/day
+against $6.12; `coordinator` is the only candidate and its blocker is latency.*
 
 *⚠ **A v1/alpha architecture question is live: invert to code-dominant, with models as discrete
 judgment gates.** Still **no decision**, and it must be **decided before A8 executes** or A8 is
