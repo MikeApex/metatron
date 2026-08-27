@@ -1,53 +1,51 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-27, latest (**the synthesizer audit executed** — 52 KB → 41.9 KB, conduct
-injected only on the turns that need it, every agent file shed its enhancement backlog to root
-`AGENT_ENHANCEMENTS.md` — **deploy owed**; earlier same day the thinking cap landed as insurance,
-`a620f10` deployed and live-tested).*
+*Updated: 2026-08-27, latest (**the deep run reconciles the backlog and the attack lands six
+builds** — and Mike's evening deploy carried them live together with the morning's synthesizer
+audit, which had been waiting on it).*
 
-*✅ **The synthesizer audit is executed and gated** (full record:
-`archive/plans/synthesizer_audit_2026-08-18.md` § Execution record; injection 16/16 · A4
-pipeline 3/3 · B1 disclosure 15/15 · qa_sweep 9/9). Conduct now arrives by code-conditional
-injection — **ROADMAP § D2's `read_agent_config` loader never existed** (corrected there).
-**Watch on first post-deploy use: one ambient check-in that opens on one thing, and one
-`evening_close` that still carries the ritual.***
+*✅ **The capstone plan is the read-first for any backlog work:**
+**`archive/plans/capstone_cluster_review_2026-08-27.md`** — every open item by functional
+cluster with tier, estimate and status. Goal (Mike): finish this rendition's core features,
+begin full testing; rebuild-adjacent work parked in its Cluster H. **National Rail
+(`[DB-0818-04]`) and geolocation (`[DB-0815-12]`) are first-draft features** by his ruling —
+the Darwin API key is his to register; the location privacy tier is @session.*
 
-*✅ **Thinking capped at 4,096 (insurance — no tail, exposure ~$0.26/day); "over and out" ends
-an exchange in Python.** Deployed, sign-off passed live. Watch: a `THINKING_CAP_HIT` event means
-the distribution moved. Compliance-ceiling experiment deferred to the rebuild (round four of
-`code_dominant_rebuild_notes.md`); probe: `synthesizer_thinking_probe_2026-08-27.md`.*
+*✅ **Six builds merged and deployed 2026-08-27, each awaiting one live confirmation**
+(`@waiting` in the backlog): decline path `[DB-0827-01]` · Diarist user-turn gate
+`[DB-0822-05]` · empty-label filter `[DB-0827-07]` · false-action-claim detector
+`[DB-0815-11]` (policy half still @session) · context age annotation `[DB-0822-06]` (intraday
++ derived-count halves open) · context-audit line `[DB-0814-02]`. `[DB-0827-05]` closed
+outright — and re-registering `ROUTING_MISS` recovered 18 discarded events, three being prior
+instances of `[DB-0826-01]`'s referent-resolution class: **a four-instance pattern, workable
+now.***
 
-*✅ **The CRM sweep is designed and accepted — build gated on one more review with Mike**
-(`[DB-0827-03]`, `@waiting`; plan: `archive/plans/crm_sweep_plan_2026-08-27.md`). Field promotion
-from notes filed as `[DB-0827-04]`.*
+*✅ **The synthesizer audit is executed, gated, and now deployed** (record:
+`archive/plans/synthesizer_audit_2026-08-18.md` § Execution record). **Watch on first
+post-deploy use: one ambient check-in that opens on one thing, and one `evening_close` that
+still carries the ritual** (also closes `[DB-0822-10]`). Thinking cap live earlier same day; a
+`THINKING_CAP_HIT` event means the distribution moved.*
 
-*⛔ **ZDR: refused, ruled on, do not re-open** — `ROADMAP.md` § Section 0 *RESOLVED 2026-08-26*;
-status authority `docs/INFRASTRUCTURE.md`.*
-
-*⚠ **Declining a confirmation does nothing** — `[DB-0827-01]`, `## Now`; Mike handles it in the
-next `/backlog attack`.*
+*⚠ **The Synthesizer's failures are ADHERENCE, not missing rules — and the premise now needs
+re-measuring:** the audit cut the file 52.4k → 41.9k with the Proactive Anticipation section
+untouched. **Re-measure adherence on one post-deploy scheduled-run day before fixing
+`[DB-0822-08]`/`-09` by instruction.***
 
 *⚠ **Intake is still dark until Mike's VM edits** (`enabled: true` in mike's `intake.yaml`;
 delete `mike.md`'s six-hour inbox line if present) — gates: `[DB-0820-03]`, `[DB-0820-04]`.*
 
-*⚠ **The Synthesizer's failures are ADHERENCE, not missing rules** — six of Mike's six 08-21
-complaints were already written in `config/agents/synthesizer.md` and ignored. **Do not fix
-`[DB-0822-05]`–`[DB-0822-09]` by adding another rule.** The audit's 20% cut and per-turn conduct
-injection are the structural response; whether adherence actually improves is what the
-post-deploy live turns have to show.*
+*⚠ **Caps revert to $100/$175 at the September reset — evidence in** (`[DB-0820-01]`,
+`due: 2026-09-01`). The Pro-routing decision `[DB-0820-05]` **absorbed `[DB-0822-01]`'s Step 6
+half** (A4-gated), `due: 2026-09-15`. Mike flips the Mac's `VERTEX_CACHE_DISABLED` himself.*
 
-*⚠ **Caps revert to $100/$175 at the September reset — the evidence is now in.** The
-`[DB-0822-01]` reconcile passed on five consecutive post-deploy days (1.02×–1.17× billed ÷
-estimated, bar 1.2×); `[DB-0820-01]`, `due: 2026-09-01`, is unblocked. `[DB-0822-01]`'s open
-half is Step 6 Pro specialist caching, A4-gated. Mike is flipping the Mac's
-`VERTEX_CACHE_DISABLED` to `0` himself (`.env` is denied to sessions) — gate runs were billing
-4× uncached.*
+*⛔ **ZDR: refused, ruled on, do not re-open** — `ROADMAP.md` § Section 0 *RESOLVED 2026-08-26*.
+The narrower written-basis amendment ruling is now `[DB-0827-08]`, `due: 2026-09-05`. CRM sweep
+build still gated on Mike's plan re-review (`[DB-0827-03]`).*
 
-***Next:** **deploy owed** — `core/orchestrator.py`, eleven agent files, two new
-`config/modules/*.md`, tests; the VM prompt reword is already live but the injection code lands
-only with the deploy. Two turns close `[DB-0822-10]` (one afternoon turn with no virtue list,
-one 20:00 that still carries it). `[DB-0820-05]` — all-Pro routing is ~$3.11/day against $6.12;
-`coordinator` is the only candidate and its blocker is latency.*
+***Next, in the tracker's order:** ① decisions session with Mike (the batch in the tracker —
+includes the 39 tool grants blocking A7 check 10); ② supervised Red pair in `core/scheduler.py`
+(`[DB-0822-07]` + `[DB-0808-11]`); ③ email-surfacing session (`[DB-0822-09]` + the re-measure);
+④ CRM sweep build (Opus, post-review). Cluster F drains on Mike's ordinary use (~30 min).*
 
 *⚠ **A v1/alpha architecture question is live: invert to code-dominant, with models as discrete
 judgment gates.** Still **no decision**, and it must be **decided before A8 executes** or A8 is
