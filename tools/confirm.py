@@ -55,6 +55,20 @@ argument fingerprint all apply exactly as before.
 
 Pending requests expire (default 10 minutes). An approval the user granted an hour ago,
 for something they have forgotten, is not consent.
+
+## Declining (2026-08-27, `[DB-0827-01]`)
+
+Until this date "No" did nothing at all: the app dismissed the card client-side and the
+record stayed pending, so the five-second poll put the same prompt back on screen every
+five seconds for the remaining ten minutes. Mike, on the first decline ever performed:
+*"If I decline it keeps asking in a loop. In the end I approved to break the loop."*
+
+A gate whose cheapest escape is consent authorises by exhaustion, which is the exact
+inversion of everything above. `decline()` removes the pending record so the poll stops,
+and — because "the user said no to this" is a fact worth keeping, not a non-event —
+appends it to a ledger beside the pending store with its action fingerprint intact. The
+fingerprint is what lets a later proposal be recognised as the same action already
+refused; see `recent_declines()`.
 """
 
 from __future__ import annotations
@@ -74,6 +88,12 @@ _LOCK = threading.Lock()
 
 def _store_path(persona: str | None = None) -> Path:
     p = persona_data_dir(persona) / "pending_confirmations.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def _declined_path(persona: str | None = None) -> Path:
+    p = persona_data_dir(persona) / "declined_confirmations.json"
     p.parent.mkdir(parents=True, exist_ok=True)
     return p
 
@@ -160,6 +180,100 @@ def approve(token: str, persona: str | None = None) -> bool:
         entry["approved_at"] = time.time()
         _save(data, persona)
         return True
+
+
+def decline(token: str, persona: str | None = None) -> dict | None:
+    """
+    Record the user's refusal of a pending action. Returns the declined entry, or None
+    if the token is unknown or already expired.
+
+    Called **only** by the server's /decline endpoint, in response to a real user action —
+    the same out-of-band discipline as `approve()`. No agent-reachable tool calls this,
+    because a model that can decline on the user's behalf can also clear a card the user
+    never saw.
+
+    The pending record is removed, which is what stops the poll re-showing it. It is not
+    discarded: the entry is appended to the declined ledger with its fingerprint, so a
+    later proposal of the identical action can be recognised as one already refused.
+
+    The fingerprint is re-derived from the stored action and args and checked against the
+    stored value before anything is written, exactly as `consume()` does. A record whose
+    arguments no longer match the fingerprint it was issued with has been tampered with on
+    disk; refusing to file it as a clean "the user said no to X" is the safe direction,
+    since X is then not known. The pending record is still removed either way — leaving it
+    would restore the loop this exists to end.
+    """
+    with _LOCK:
+        data = _prune(_load(persona))
+        entry = data.pop(token, None)
+        if not entry:
+            return None
+        _save(data, persona)
+
+        args = entry.get("args")
+        intact = (args is not None
+                  and entry.get("fingerprint") == _fingerprint(entry.get("action", ""), args))
+
+        record = {
+            "status": "declined",
+            "action": entry.get("action", ""),
+            "args": args if intact else None,
+            "fingerprint": entry.get("fingerprint") if intact else None,
+            "description": entry.get("description", ""),
+            "created_at": entry.get("created_at"),
+            "declined_at": time.time(),
+        }
+        _append_declined(record, persona)
+
+    return record
+
+
+# The ledger is append-only and nothing prunes it on a schedule, so it is capped by count
+# rather than by age: it is read to answer "was this just refused?", which only the recent
+# end can answer, and an uncapped JSON file on the persona's data volume grows forever for
+# no benefit. 200 declines is far more history than that question needs.
+_DECLINED_LIMIT = 200
+
+
+def _append_declined(record: dict, persona: str | None = None) -> None:
+    """Append to the declined ledger. Caller holds _LOCK."""
+    path = _declined_path(persona)
+    try:
+        existing = json.loads(path.read_text()) if path.exists() else []
+        if not isinstance(existing, list):
+            existing = []
+    except (json.JSONDecodeError, OSError):
+        # A corrupt ledger loses history; it must never block the decline itself, which is
+        # the half that protects the user.
+        existing = []
+    existing.append(record)
+    try:
+        path.write_text(json.dumps(existing[-_DECLINED_LIMIT:], indent=2))
+        path.chmod(0o600)
+    except OSError:
+        pass
+
+
+def declined(within_seconds: float | None = None,
+             persona: str | None = None) -> list[dict]:
+    """
+    Declined actions, newest last. `within_seconds` limits to recent ones.
+
+    This is the readable half of "the user said no to X". Nothing surfaces it to the model
+    yet — see the handoff for `[DB-0827-01]`; that plug-in point is in the orchestrator's
+    context assembly, which is outside this change.
+    """
+    path = _declined_path(persona)
+    try:
+        records = json.loads(path.read_text()) if path.exists() else []
+    except (json.JSONDecodeError, OSError):
+        return []
+    if not isinstance(records, list):
+        return []
+    if within_seconds is None:
+        return records
+    cutoff = time.time() - within_seconds
+    return [r for r in records if (r.get("declined_at") or 0) >= cutoff]
 
 
 def pending(persona: str | None = None) -> list[dict]:
