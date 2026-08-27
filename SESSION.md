@@ -1,72 +1,48 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-22 (architecture discussion; ZDR opt-out submitted) — **the ZDR opt-out was
-submitted 2026-08-22; decision expected by ~2026-09-05** (Google: ~2 weeks + 5–7 business days to
-allowlist). **Not in force until granted**; the email to `diamond.mike@gmail.com` is the only
-evidence, recorded either way in `docs/INFRASTRUCTURE.md` § Vertex AI credentials, which stays
-the authority. Terms and answers as filed: `archive/security/zdr_terms_evidence_2026-08-20.md`,
-`…/zdr_optout_form_answers_2026-08-21.md`. **One act still Mike's and it does not wait on
-Google:** rule on the proposed § Section 0 amendment — does the sensitive-tier default continue
-on the corrected basis (flagged-only logging, ≤90 days, no training) until grant or refusal,
-backstop 2026-10-01.*
+*Updated: 2026-08-27 (the ask-vs-assert cluster closes; ZDR refused and ruled on).*
 
-*✅ **The cache fix is deployed and now measured against a real day.** 08-21 reconciled from Cloud
-Monitoring + the VM's `spend_guard`: **storage fell $3.46/day → $0.14994**, and caching is
-**net-positive for the first time** (+$0.10 to +$0.31/day — ~1–1.5 reads per window, sitting on
-break-even). Expected bill **$2.51–$2.71** against 08-19's $6.12 for *more* usage. Method validated
-by reproducing 08-19's known gap to the dollar. **The export is backfilling forward, not broken** —
-it advanced 08-12 → 08-14 during the session; `[DB-0822-01]` (`due: 2026-08-25`) still waits on
-rows passing 08-21, which is also what `[DB-0820-01]`'s cap revert needs.*
+*⛔ **Google REFUSED the ZDR opt-out, and Mike has ruled — do not re-open this.** The 2026-06-18
+amendment's "verified ZDR" premise is settled **false**, not merely unverified. What governs is
+flagged-only prompt logging, ≤90 days, never training. **The `mike` persona keeps running on
+Vertex under those terms**, Mike gating what he shares personally: *"Google Calendar already has
+my plans, and Google has my email correspondence."* Full ruling, reasoning and its **single-user
+expiry**: `ROADMAP.md` § Section 0 *RESOLVED 2026-08-26*. Status authority stays
+`docs/INFRASTRUCTURE.md` § Vertex AI credentials. `[DB-0826-02]` is pre-cleared against it.*
 
-*✅ **`spend_guard`'s ~23% undercount is closed and deployed** (`b4dcb0e`, live with the 08-26
-deploy): `unmetered_uplift: 1.25`, alert/stop judge `usd_billed_est`, so the $6 alert trips at
-$4.80 observed. One unverified remainder: its config comment ("export dark since 08-12") was to
-be corrected on deploy — check it was. Reasoning: `archive/PROJECT_LOG.md` § 2026-08-22.*
+*✅ **Three gates now close the ask-vs-assert cluster — one fault in three costumes.**
+**(1)** Renaming a contact asks first; enriching one does not (`write_contact`'s update path was
+ungated, and on 08-22 the model renamed a real friend's record twice with no prompt).
+**(2)** The virtue list can only reach the `evening_close` session — injection code, not another
+rule. **(3)** A reply can no longer report a gated action as finished: `enforce_pending_receipt()`
+reads what is pending from the confirmation store and replaces a completion claim. All three
+proven or built with tests; `7069ea1` deployed, **`1b040bd` and `c6b21b0` owe a deploy.***
+
+*⚠ **Declining a confirmation does nothing — `[DB-0827-01]`, `## Now`.** `POST /confirm` is
+approve-only; no reject endpoint, no client handler. A declined prompt returns on every poll until
+the TTL, so its only exit is approving what you just refused. Present since 08-19, unnoticed
+because every prior test approved.*
 
 *⚠ **Intake is still dark until Mike's VM edits** — `enabled: true` in mike's `intake.yaml`, and
 delete `mike.md`'s "check inbox every six hours" line if still present. `[DB-0820-03]` holds the
 model-tier switch-on gate, `[DB-0820-04]` owes the extractor its own injection row (advances B1b).*
 
-*⚠ **The 08-21 traces say the Synthesizer's failures are ADHERENCE, not missing rules.** 89% of the
-day was automated (116 of 130 calls; 4 interactive runs). **Six of Mike's six complaints are already
-written in `config/agents/synthesizer.md`** — raise-once and obligations-never-listed (:187), open on
-one thing and nothing-new→one line (:181), length-follows-focus (:183), ritual scoped to
-`evening_close` (:209) — and all six were ignored. **Do not fix `[DB-0822-05]`–`[DB-0822-10]` by
-adding another rule;** the file is 52,397 bytes and its own audit named length→adherence as the
-cause. The virtue dump is context-injection code (`core/orchestrator.py:352-356`), not prose.*
+*⚠ **The Synthesizer's failures are ADHERENCE, not missing rules** — six of Mike's six complaints
+from 08-21 are already written in `config/agents/synthesizer.md` and all six were ignored. **Do not
+fix `[DB-0822-05]`–`[DB-0822-09]` by adding another rule;** the file is 52,397 bytes and its own
+audit named length→adherence as the cause.*
 
-*⚠ **Caps are temporarily $150/$250, back down in September** — `[DB-0820-01]`, `due: 2026-09-01`;
-keep ~$100 between tiers (`CLAUDE.md` § Infrastructure traps 3).*
+*⚠ **Caps are temporarily $150/$250, back down in September** — `[DB-0820-01]`, `due: 2026-09-01`.
+**`[DB-0822-01]` came due 08-25** — the cache reconcile, gating that revert.*
 
-*✅ **A near-match contact is no longer created silently** (`6d6d46c`, deployed; `[DB-0815-07]`
-closed). The gate should become unnecessary as models improve — the judgement-consistency test
-that decides that is `ROADMAP.md` § D2's row. `b980b93` fixed the crashes-only monitoring flag;
-`[DB-0810-07]` open.*
-
-*✅ **Venue discovery is live and closed** (`[DB-0808-04]`, trace `bac9d794`): "suggest a place to
-eat near X" now routes to Logistics, calls `find_places`, travel-checks results. Key on the VM as
-`GOOGLE_PLACES_API_KEY` (Places API (New) — the console steers to the legacy product; both
-enablement and key restriction had to be repointed). **Two live checks remain from the 08-22
-batch, each carried by its item:** the merge confirmation card (`[DB-0822-03]`; unmerge is
-forward-only — Steven's repair stays manual, `[DB-0822-04]`) and the offline shell
-(`[DB-0803-05]`; one online load first). **New 2026-08-26 (`bec3952`, deployed): Logistics scans
-locations unasked** — horizon item 5 + daily 10:00 `location_anticipation` job (template AND
-mike's VM scheduler.yaml by hand; first firing 08-27, observation filed). **Diarist logs events,
-never plans; voiced intentions get a fixed `intention` key** — probed on the VM, both pass;
-Accountability Index filed.*
-
-***Next:** `[DB-0820-05]` — with storage fixed, all-Pro routing is **~$3.11/day against today's
-$6.12**, so the Flash-Lite tiers are worth revisiting once a clean day is measured; `coordinator`
-is the only candidate and its blocker is latency, not money. **Deploys current through `1d77bd0`**
-(the 08-22 batch, spend_guard uplift and today's config all live). **`[DB-0822-01]` came due
-08-25** — the cache-plan reconcile, gating `[DB-0820-01]`'s September cap revert.*
+***Next:** deploy the two outstanding commits, then two turns close `[DB-0822-10]` (one afternoon
+turn with no virtue list, one 20:00 that still carries it). `[DB-0820-05]` — all-Pro routing is
+~$3.11/day against $6.12; `coordinator` is the only candidate and its blocker is latency.*
 
 *⚠ **A v1/alpha architecture question is live: invert to code-dominant, with models as discrete
-judgment gates.** Preliminary discussion 2026-08-22, **no decision** — Claude recommended the
-inversion (Coordinator first candidate; Synthesizer stays a real agent; pilot the
-invitation/RSVP flow) and that it be **decided before A8 executes**, or A8 is paid for twice.
-This is the vehicle for the queued `@session` decision "where code should replace model
-judgment". Consultable record:
+judgment gates.** Preliminary discussion 2026-08-22, **no decision** — recommended the inversion
+(Coordinator first candidate; Synthesizer stays a real agent; pilot the invitation/RSVP flow) and
+that it be **decided before A8 executes**, or A8 is paid for twice. Record:
 `archive/plans/code_vs_agent_architecture_2026-08-22_discussion.md`.*
 
 ***Model split, Mike's call 2026-08-18: plan and review in Fable, build in Opus.*** Red-tier

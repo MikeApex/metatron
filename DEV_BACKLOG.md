@@ -136,7 +136,7 @@ Reasoning lives in `archive/PROJECT_LOG.md` § 2026-08-10, last. Every entry car
 checked and when; a verdict without that line is a description, and descriptions are what the
 standing rule distrusts.*
 
-- **2. [DB-0820-01] The spend caps are temporarily too high — bring them back down in
+- **1. [DB-0820-01] The spend caps are temporarily too high — bring them back down in
   September.** Raised 2026-08-20 from **$100/$175 to $150/$250** (soft stops the VM, hard
   disables billing). Mike's decision, and **explicitly temporary**: the real budget did not
   change, the caps were lifted to clear a cost *defect* — Vertex context-cache storage, ~$100/mo
@@ -158,7 +158,7 @@ standing rule distrusts.*
 *All three are code fixes in `core/` or `tools/`. Grouped so an automated run can take the block.
 Each is a defect measured in the 2026-08-21 traces, not a proposal.*
 
-- **3. [DB-0822-05] The journal records days you never spoke.** The Diarist is not scheduled — the
+- **2. [DB-0822-05] The journal records days you never spoke.** The Diarist is not scheduled — the
   **Coordinator dispatches it** as a fire-and-forget specialist
   ([core/orchestrator.py:4381](core/orchestrator.py#L4381)). On 08-21 it fired on 10 of 23 runs,
   and **in 9 of them Mike said nothing at all** — it journalled the assistant's own monologue.
@@ -174,7 +174,7 @@ Each is a defect measured in the 2026-08-21 traces, not a proposal.*
   @kind: bug
   *filed 2026-08-22 by Mike*
 
-- **4. [DB-0822-06] It tells Mike his own training day, and got it wrong four ways in one day.**
+- **3. [DB-0822-06] It tells Mike his own training day, and got it wrong four ways in one day.**
   Across 08-21 the same hiatus was called *five-day, five-day, day three, day three, **day four**,
   five-day, day three, day three*. **Root cause is a derived count written into a log and re-read
   as fact:** `physical_health` wrote `"Day 3 of 5-day exercise hiatus"` into the health log, and
@@ -188,7 +188,7 @@ Each is a defect measured in the 2026-08-21 traces, not a proposal.*
   @kind: bug
   *filed 2026-08-22 by Mike*
 
-- **5. [DB-0822-07] Two scheduled jobs fire seven minutes apart.** `companion_checkin` runs on a
+- **4. [DB-0822-07] Two scheduled jobs fire seven minutes apart.** `companion_checkin` runs on a
   180-minute interval and landed at 07:23; `morning_brief` is fixed at 07:30. **19 model calls
   between the two**, and the 07:30 pair is what produced the false action claim now recorded in
   `[DB-0815-11]` — the later job read the earlier job's prompt as an instruction from Mike.
@@ -202,7 +202,7 @@ Each is a defect measured in the 2026-08-21 traces, not a proposal.*
 
 ### Red — judgement work, not automatable
 
-- **6. [DB-0822-08] Nothing is ever proposed — only reported.** The Apex migration due the 31st was
+- **5. [DB-0822-08] Nothing is ever proposed — only reported.** The Apex migration due the 31st was
   raised in **6 of 9** scheduled runs and **not once** did anything offer to put time in the
   calendar for it. Prudential was raised in **7 of 9** — unchanged all day, waiting on Jason
   Duross, entirely outside Mike's control — and nothing ever asked *"do you want me to chase
@@ -221,7 +221,7 @@ Each is a defect measured in the 2026-08-21 traces, not a proposal.*
   action or stay silent" gate
   *filed 2026-08-22 by Mike*
 
-- **7. [DB-0822-09] Email is processed and then thrown away.** The 12:24 and 18:24 jobs were
+- **6. [DB-0822-09] Email is processed and then thrown away.** The 12:24 and 18:24 jobs were
   explicitly *"check the user's inbox and summarize any relevant logistics details."* `logistics`
   ran and ingested **397,216 tokens — the largest input of any agent that day** — and what reached
   Mike was one due date plus the virtue list. **The most expensive specialist by volume produced
@@ -241,39 +241,7 @@ Each is a defect measured in the 2026-08-21 traces, not a proposal.*
 
 ### Green/Amber — a second block, found after the first pass
 
-- **8. [DB-0822-10] Franklin's 13 virtues are pasted out in full four times an evening.** On 08-21
-  the complete 13-item list went out at **16:27, 18:24, 19:28 and 20:00**. **Only 20:00 is the
-  evening job.** Mike: *"Franklin should be raised just once on evening check in. It doesn't need
-  to be revisited."*
-  > **Premise corrected 2026-08-22, before anything was built on it.** This item first said the
-  > ritual "triggers on time of day" and was therefore Mike's to fix in a Denied-tier persona file.
-  > **Both halves were wrong, and were inference rather than measurement.** There is no clock
-  > trigger anywhere: `grep` over `config/agents/synthesizer.md` finds none, and
-  > `config/personas/mike/evening_ritual.md` **does not exist in the repo at all** — the VM owns
-  > the live persona config.
-  **This is a fix to CONTEXT-INJECTION CODE, not to any instruction, agent file or persona file.**
-  The whole item lives in [core/orchestrator.py](core/orchestrator.py) and nowhere else.
-  [core/orchestrator.py:352-356](core/orchestrator.py#L352) injects the whole ritual into **every**
-  session's system prompt, unconditionally — `load_config()` takes only `persona` and has no notion
-  of session type. The single thing standing between that and recital is one line of prose:
-  `config/agents/synthesizer.md:209`, which already correctly scopes the ritual to *"when the
-  session opens with the evening_close scheduler prompt."* **The instruction is already there and
-  already right. It is not being followed.**
-  **So do not fix this with an instruction** — that would be a second copy of a rule that is being
-  ignored in its first, in a 52,397-byte file whose own audit named length→adherence as the cause
-  ([synthesizer_audit_2026-08-18.md](archive/plans/synthesizer_audit_2026-08-18.md) § 5).
-  **Fix — one file, `core/orchestrator.py`, injection path only:** gate the injection on session
-  type — plumb a `session_kind` through `load_config()` from
-  its two call sites ([:3964](core/orchestrator.py#L3964), [:4733](core/orchestrator.py#L4733)).
-  Makes recital structurally impossible instead of discouraged, and drops ~2,097 bytes from every
-  non-evening prompt. **`core/orchestrator.py` is Amber — no prompt, automatable.**
-  **One cost interaction, small:** a session-dependent system prompt splits the cached prefix into
-  two variants, so one extra cache creation per day (~$0.01-0.02 at the Pro rate). Named here
-  because a cached-prompt change with no figure beside it is the thing `CLAUDE.md` § Costs forbids.
-  @kind: bug
-  *filed 2026-08-22 by Mike · premise corrected same day before build*
-
-- **9. [DB-0826-01] "Undo that merge" was read as a work project, so the undo never happened.**
+- **7. [DB-0826-01] "Undo that merge" was read as a work project, so the undo never happened.**
   Live 2026-08-26, trace `b92ce0c3`, one minute after the contact merge that turn was plainly
   about. The Coordinator routed it to **work_vocation**, which searched memory for *"Prudential
   Apex project merge"* and *"Prudential Apex merge branch commit file"* — it resolved "merge" to
@@ -301,7 +269,7 @@ Each is a defect measured in the 2026-08-21 traces, not a proposal.*
   @waiting: a second instance, or a deliberate probe of referring turns after a tool action
   *filed 2026-08-26 at Mike's instruction, from the live trace*
 
-- **10. [DB-0827-01] Declining a confirmation does nothing, so the prompt comes back until you
+- **8. [DB-0827-01] Declining a confirmation does nothing, so the prompt comes back until you
   give in and approve it.** Mike, live 2026-08-27, on the first decline anyone has ever performed:
   *"If I decline it keeps asking in a loop. In the end I approved to break the loop."*
   **There is no decline path anywhere in the system.** `POST /confirm` in `core/server.py` is
@@ -567,6 +535,27 @@ the condition has not arrived, push the date rather than closing the item.
 finished work with no exit. **A fix is confirmed in the session that makes it, or it is time-gated
 with a date.** Nothing new joins this group open-ended.*
 
+- **[DB-0822-10] The virtue list can no longer reach an ordinary session — fixed and deployed
+  2026-08-27, awaiting one evening turn to confirm.** Franklin's 13 virtues were injected into
+  **every** session's system prompt, so the full list went out at 16:27, 18:24, 19:28 and 20:00 on
+  08-21 with only one line of prose in `synthesizer.md` scoping it to the evening — an instruction
+  that was already right and was simply not followed.
+  **Fixed as injection code, per the item's own ruling that a second copy of an ignored rule is not
+  a fix.** `session_kind()` ([core/orchestrator.py:297](core/orchestrator.py#L297)) matches the turn
+  against the persona's **own configured** `evening_close` prompt read from `scheduler.yaml` — not
+  a literal, which would go stale silently the first time Mike reworded it on the VM — and
+  `load_config()` injects `evening_ritual.md` only on a match. Recital is now structurally
+  impossible rather than discouraged. `7069ea1`, deployed. `tests/test_evening_ritual_gate.py`,
+  11/11.
+  **Why this is not closed yet:** the only live check so far was a **10:56 morning** check-in, which
+  would not have carried the ritual under the old code either — it proves nothing. Two turns close
+  it, and the first is free.
+  @kind: bug
+  @waiting: one ordinary **afternoon or evening** turn with no virtue list, and one 20:00
+  `evening_close` that still carries it — the second half matters, because a gate that suppresses
+  the ritual everywhere is the same bug wearing the opposite sign
+  *filed 2026-08-22 by Mike · premise corrected same day · fixed and deployed 2026-08-27*
+
 - **[DB-0820-03] The intake extractor is deployed and switched off; it stays off until it passes a
   test built from Mike's own mail.** The exit is a specific run, not ordinary use, so it cannot rot
   here: **(a)** Mike labels ~50 real messages into `tests/intake_fixtures/` on the VM (personal
@@ -607,55 +596,6 @@ with a date.** Nothing new joins this group open-ended.*
   — what is being tested is whether the *model* now picks the right tool, which is behaviour
   *filed 2026-08-15*
 
-
-- **[DB-0822-03] A merge now asks first, shows both people, and is reversible — built and tested
-  2026-08-22, NOT deployed.** The 2026-08-19 failure (three Stevens; the agent silently folded both
-  gym records into Mike's actual friend): `merge_contacts` now returns PENDING_CONFIRMATION naming
-  **both** records with what tells them apart — `spouse_name` and `last_contact` added to
-  `_disambiguation_entry`, the two fields that distinguished the Stevens — and merges only on the
-  user's in-app approval; the model never holds the token (`fd0aed1`, wired `158cebe`; 25/25 +
-  18/18 tests). `"ph"`-class digitless/under-5-digit phone stubs refused. `unmerge_contacts`
-  restores both sides from a new pre-merge snapshot of the kept record — **forward only: pre-08-22
-  merges have no snapshot and refuse honestly**, so `[DB-0822-04]`'s repair stays manual.
-  **One unfixed remainder from the trace:** the reply had **offered to delete a contact**, a
-  capability no tool has — agent-prose instructed-but-unbuilt class, not touched by this build.
-  @kind: bug
-  @waiting: the owed deploy, then one live merge showing the confirmation card and completing on
-  approval
-  *filed 2026-08-22 from the 2026-08-19 live run · gate + unmerge built 2026-08-22*
-
-- **[DB-0822-04] Repair Steven's contact record.** Consequence of `[DB-0822-03]`, kept separate
-  because it is data repair on a real person, not a code fix. Phone is the literal string `"ph"`;
-  `how_met`/notes now assert the gym, inherited from a merged record rather than from anything Mike
-  said. **Mike has not confirmed where he actually met Steven** — do not "correct" it to a guess.
-  The clearable half is conversational (*"Steven's phone on file is just the letters 'ph' — remove
-  it"*); restoring the gym contact as a separate person needs the archived record on the VM.
-  @kind: chore
-  @waiting: Mike to say where he actually met Steven, and whether the gym contact is worth restoring
-  *filed 2026-08-22*
-
-- **[DB-0810-07] The monitoring view's newest fields have never seen live data.** The Book's
-  thinking/output-text, tool-call ok flag and `/monitor/model_errors` (`ffaf7a7`, deployed) have had
-  `py_compile` and a health check only; 19 commits have crossed these files without exercising them.
-  Known and accepted at build time: the SSE path reuses the `model_errors` list from the last full
-  load, so a live failure shows no red tag until refresh — **document that, do not fix it blind.**
-  **⚠ 2026-08-18's test did not reach this code and must not be read as a pass.** *"Add a calendar
-  event for the 32nd of September"* was refused by the **model**, before any tool ran — nothing
-  failed, so the red flag was never exercised.
-  **⚠ The defect was in the flag itself, found while trying to test it — fixed `b980b93`,
-  deployed.** `ok` was set `False` only by the `except` around dispatch, so the trace saw crashes
-  and nothing else; every graceful failure a user hits rendered **green** (VM 2026-08-19: 786 tool
-  calls, one `ok:false`). No phrasing could have turned it red — every tool checked handles invalid
-  input gracefully by design. Now keyed on a leading `Error:` token.
-  `tests/test_tool_error_flag.py`, 17 checks. Full evidence: `archive/backlog_closed_2026-08.md`
-  § Closed 2026-08-22.
-  @kind: chore
-  @waiting: three steps on the VM, **after `b980b93` deploys** — one exchange with a tool call that
-  succeeds (**already done 2026-08-19**, `write_contact` during the `[DB-0815-07]` run); one that
-  fails, which is now an ordinary sentence — *"close the obligation about the dentist"* against an
-  id that does not exist; one forced API failure followed by a further exchange **without
-  refreshing**, which is the known SSE staleness and the only step still needing a contrivance
-  *filed 2026-08-10 · flag defect found and fixed 2026-08-19*
 
 - **[DB-0809-16] The dictation readout has never been spoken to.** Code-verified against every pass
   condition 2026-08-05; never run by a human with a microphone.

@@ -59,16 +59,12 @@ windows closing out at once produce two fragments rather than one merge conflict
 
 A snapshot, not a ledger. Rewrite the rolling handoff paragraph (~150 words — do not stack a
 new one above the old). Move finished items out rather than marking them done. Delete what is
-now superseded.
+now superseded. **Do not recreate `## Recent sessions`** — removed 2026-08-26; step 2 covers it.
 
-> **`## Recent sessions` was removed 2026-08-26 — do not recreate it.** It duplicated
-> `archive/PROJECT_LOG.md`, so step 2's fragment already covers it. Outcome the next session
-> needs → handoff paragraph or `## Current state`; outcome only the record needs → the log.
-
-**Edit the volatile sections only** — the handoff paragraph and `## Current state`.
-`## Read these`, `## Useful context`, `## Quick start` and `## Model IDs`
-are reference: leave them closed unless this session made one of them *wrong*. Re-deciding
-static content every run is what made this step expensive.
+**Edit the volatile sections only** — the handoff paragraph and `## Current state`. `## Read
+these`, `## Useful context`, `## Quick start` and `## Model IDs` are reference: leave them
+closed unless this session made one of them *wrong*. Re-deciding static content every run is
+what made this step expensive.
 
 **A rule that has been promoted does not stay here** — once something is written into
 `CLAUDE.md`, `ROADMAP.md` or a `docs/` file, cut it and leave the pointer. Same rule `CLAUDE.md`

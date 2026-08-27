@@ -3172,3 +3172,99 @@ gracefully by design. That is the tools being well written; the flag was reading
   direct Logistics runs called the tool. **A first trace read wrongly reported zero tool calls**
   — the walk missed per-turn nesting; corrected same session, and the correction is why this
   entry names the turn structure. Standing cost: ~$0.017–0.032/call, <$2/mo at expected use.
+
+## Closed 2026-08-27 — the ask-vs-assert cluster, proven live
+
+*Session: `7069ea1`, `1b040bd`, `c6b21b0`. Reasoning, and the five beliefs corrected along the*
+*way: `archive/PROJECT_LOG.md` § 2026-08-27.*
+
+### [DB-0822-03] — CLOSED. The gate held, and it was proven by trace rather than by reply.
+
+Trace `c87a18b2` (2026-08-26): `merge_contacts` returned `PENDING_CONFIRMATION` naming **both**
+people with what distinguishes them, merged nothing, and completed only on Mike's tap. Trace
+`ec1e3026` (08-27): `unmerge_contacts` was called and **refused correctly** — *"already a live
+contact ... nothing to reverse"*. Deployed in the same window; the item's own text still read
+*"NOT deployed"* at close, four days stale.
+
+**Two things this closure does NOT claim, stated so they are not read into it:**
+
+1. **`unmerge_contacts`' RESTORE path is still unexercised.** Only the refusal path is proven —
+   the 08-26 attempt never reached the tool at all (`[DB-0826-01]`).
+2. **The reply lied about the gate holding.** It said *"That's done. I've merged the records"*
+   while nothing had been merged. Separate fault, fixed this session by
+   `enforce_pending_receipt()`; not closed by this item.
+
+- **[DB-0822-03] A merge now asks first, shows both people, and is reversible — built and tested
+  2026-08-22, NOT deployed.** The 2026-08-19 failure (three Stevens; the agent silently folded both
+  gym records into Mike's actual friend): `merge_contacts` now returns PENDING_CONFIRMATION naming
+  **both** records with what tells them apart — `spouse_name` and `last_contact` added to
+  `_disambiguation_entry`, the two fields that distinguished the Stevens — and merges only on the
+  user's in-app approval; the model never holds the token (`fd0aed1`, wired `158cebe`; 25/25 +
+  18/18 tests). `"ph"`-class digitless/under-5-digit phone stubs refused. `unmerge_contacts`
+  restores both sides from a new pre-merge snapshot of the kept record — **forward only: pre-08-22
+  merges have no snapshot and refuse honestly**, so `[DB-0822-04]`'s repair stays manual.
+  **One unfixed remainder from the trace:** the reply had **offered to delete a contact**, a
+  capability no tool has — agent-prose instructed-but-unbuilt class, not touched by this build.
+  @kind: bug
+  @waiting: the owed deploy, then one live merge showing the confirmation card and completing on
+  approval
+  *filed 2026-08-22 from the 2026-08-19 live run · gate + unmerge built 2026-08-22*
+
+### [DB-0822-04] — CLOSED. Steven's record repaired on the VM.
+
+Mike ran the repair 2026-08-27 against a dated backup: surname **Heyman** — his answer, not a
+guess — `"Stephen"` dropped from `referred_to_as`, the `"ph"` phone removed, and the inherited
+gym claim cleared from `notes`, where it actually lived (`how_met` was already empty).
+**Yana, the spouse link and the 21 June dinner were untouched.** That is why repairing beat the
+binning Mike had authorised: the record only looked disposable until it was read out of the VM.
+The two archived gym records stay behind their `merged_into` pointers — pre-08-22 merges have no
+snapshot, and `unmerge_contacts` refuses them honestly rather than half-reversing.
+
+- **[DB-0822-04] Repair Steven's contact record.** Consequence of `[DB-0822-03]`, kept separate
+  because it is data repair on a real person, not a code fix. Phone is the literal string `"ph"`;
+  `how_met`/notes now assert the gym, inherited from a merged record rather than from anything Mike
+  said. **Mike has not confirmed where he actually met Steven** — do not "correct" it to a guess.
+  The clearable half is conversational (*"Steven's phone on file is just the letters 'ph' — remove
+  it"*); restoring the gym contact as a separate person needs the archived record on the VM.
+  @kind: chore
+  @waiting: Mike to say where he actually met Steven, and whether the gym contact is worth restoring
+  *filed 2026-08-22*
+
+### [DB-0810-07] — CLOSED as unreachable, at Mike's agreement.
+
+**The flag itself is verified** (`b980b93`, `tests/test_tool_error_flag.py`, 17 checks), and the
+defect it was filed against — `ok` set only by the `except`, so every graceful failure rendered
+green — is fixed.
+**What could not be done is see it red in the app, and three attempts show why.** *"Close the
+obligation about the dentist"* produced six `list_obligations` calls and an answer from memory;
+*"Close obligation id 00000000-…"* was still reasoned about rather than passed. **Every tool the
+model can reach handles bad input gracefully by design**, so no phrasing makes one return an
+`Error:` token. The flag is unreachable from conversation — not untested.
+**No replacement item was opened.** It would inherit the same unrunnable exit condition, which is
+the failure the backlog rules exist to prevent. The SSE staleness the item documents (a live
+failure shows no red tag until refresh) remains true and remains documented here; it was never to
+be fixed blind, and now no open item implies otherwise.
+
+- **[DB-0810-07] The monitoring view's newest fields have never seen live data.** The Book's
+  thinking/output-text, tool-call ok flag and `/monitor/model_errors` (`ffaf7a7`, deployed) have had
+  `py_compile` and a health check only; 19 commits have crossed these files without exercising them.
+  Known and accepted at build time: the SSE path reuses the `model_errors` list from the last full
+  load, so a live failure shows no red tag until refresh — **document that, do not fix it blind.**
+  **⚠ 2026-08-18's test did not reach this code and must not be read as a pass.** *"Add a calendar
+  event for the 32nd of September"* was refused by the **model**, before any tool ran — nothing
+  failed, so the red flag was never exercised.
+  **⚠ The defect was in the flag itself, found while trying to test it — fixed `b980b93`,
+  deployed.** `ok` was set `False` only by the `except` around dispatch, so the trace saw crashes
+  and nothing else; every graceful failure a user hits rendered **green** (VM 2026-08-19: 786 tool
+  calls, one `ok:false`). No phrasing could have turned it red — every tool checked handles invalid
+  input gracefully by design. Now keyed on a leading `Error:` token.
+  `tests/test_tool_error_flag.py`, 17 checks. Full evidence: `archive/backlog_closed_2026-08.md`
+  § Closed 2026-08-22.
+  @kind: chore
+  @waiting: three steps on the VM, **after `b980b93` deploys** — one exchange with a tool call that
+  succeeds (**already done 2026-08-19**, `write_contact` during the `[DB-0815-07]` run); one that
+  fails, which is now an ordinary sentence — *"close the obligation about the dentist"* against an
+  id that does not exist; one forced API failure followed by a further exchange **without
+  refreshing**, which is the known SSE staleness and the only step still needing a contrivance
+  *filed 2026-08-10 · flag defect found and fixed 2026-08-19*
+
