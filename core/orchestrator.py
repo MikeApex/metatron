@@ -5075,14 +5075,20 @@ def _run_pipeline_session_stream_inner(
     elif _final != filtered:
         # A confirmation was raised during this turn and the reply had to be amended —
         # see enforce_pending_receipt(). On the streaming path the original text is
-        # already on the user's screen, so the amendment cannot simply be appended:
-        # retract what was shown and deliver the corrected message whole. Rare by
-        # construction (it needs a gated tool call in the same turn), so the extra
-        # round trip costs nothing on ordinary replies.
-        yield "[RETRACT]"
+        # already on the user's screen, so the amendment cannot be appended: what was
+        # shown has to be withdrawn and the corrected message delivered in its place.
+        #
+        # It is ONE marker carrying its own replacement, not `[RETRACT]` followed by
+        # text. Live 2026-08-27 that first shape delivered nothing: `[RETRACT]` is
+        # terminal on both server paths — core/server.py breaks its read loop on it —
+        # and the client nulls the bubble, so every chunk after it was discarded and
+        # the user saw the canned "I can't help with that right now" in place of a
+        # correct answer to a legitimate request. A refusal is the worst possible
+        # rendering of this particular message, which exists to tell the user their
+        # action is still waiting on them.
         code, name = _out_lang
         from core.translate import translate
-        yield translate(_final, code, name)
+        yield f"[RETRACT_WITH]{translate(_final, code, name)}"
         yield "[DONE]"
     else:
         if not _stream_to_client:

@@ -587,7 +587,13 @@ async def session_stream(req: SessionRequest):
       data: {text chunk}\\n\\n   — live text from Synthesizer
       data: [DONE]\\n\\n          — generation complete, filter passed; client commits text
       data: [RETRACT]\\n\\n       — filter hit; client should discard received text
+      data: [RETRACT_WITH]{text} — discard received text and show {text} instead
       data: [ERROR] ...\\n\\n     — server exception
+
+    [RETRACT_WITH] carries its replacement in the SAME event rather than following
+    [RETRACT] with chunks: [RETRACT] is terminal on both transports, so anything sent
+    after it is dropped. Used when a confirmation was raised mid-turn and the reply
+    has to be corrected rather than withdrawn — see orchestrator.enforce_pending_receipt.
 
     NOTE: The sync generator runs inline in this async handler — acceptable for
     single-user local deployment. For multi-user, wrap with run_in_executor().
@@ -644,6 +650,15 @@ async def session_stream(req: SessionRequest):
                     break
                 if item in ("[DONE]", "[RETRACT]"):
                     yield f"data: {item}\n\n"
+                elif item.startswith("[RETRACT_WITH]"):
+                    # The replacement travels inside the marker; see the docstring.
+                    # `accumulated` is reset so the conversation log records what the
+                    # user was actually shown, not the withdrawn text.
+                    replacement = item[len("[RETRACT_WITH]"):]
+                    accumulated.clear()
+                    accumulated.append(replacement)
+                    safe = replacement.replace('\r', '').replace('\n', r'\n')
+                    yield f"data: [RETRACT_WITH]{safe}\n\n"
                 elif item.startswith("[ERROR] "):
                     yield f"data: {item}\n\n"
                     return
@@ -771,6 +786,7 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                 queue: asyncio.Queue = asyncio.Queue()
                 accumulated: list[str] = []
                 retracted = False
+                retract_text = ""
                 errored = False
 
                 def _produce() -> None:
@@ -818,6 +834,16 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                             break
                         if item == "[DONE]":
                             break
+                        elif item.startswith("[RETRACT_WITH]"):
+                            # Withdraw what was streamed and show the replacement in
+                            # its place. Carried on the retract payload itself because
+                            # the client nulls the bubble on retract, so a following
+                            # chunk has nothing to append to — measured live 2026-08-27.
+                            retracted = True
+                            retract_text = item[len("[RETRACT_WITH]"):]
+                            accumulated.clear()
+                            accumulated.append(retract_text)
+                            break
                         elif item == "[RETRACT]":
                             retracted = True
                             break
@@ -839,7 +865,12 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                     await asyncio.wrap_future(producer)
 
                     if retracted:
+                        # `text` present only for [RETRACT_WITH]; the client falls back
+                        # to its canned line when it is absent, so a plain filter
+                        # suppression is unchanged.
                         retract_payload = {"type": "retract", "exchange_id": exchange_id}
+                        if retract_text:
+                            retract_payload["text"] = retract_text
                         await _send_to_sender(retract_payload)
                         await manager.broadcast(persona_key, retract_payload, exclude=websocket)
                     elif not errored:

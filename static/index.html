@@ -1541,16 +1541,24 @@
       }
 
       case 'retract': {
+        // msg.text is the server's replacement for what was streamed, sent only when
+        // the reply had to be CORRECTED rather than withdrawn — a confirmation was
+        // raised mid-turn and the text on screen claimed the action was already done.
+        // Absent for an ordinary filter suppression, which keeps the canned line.
+        // Live 2026-08-27 the correction was sent as chunks after the retract and was
+        // lost, because this handler nulls the bubble: the user saw a refusal in place
+        // of a correct answer.
+        const replacement = (typeof msg.text === 'string' && msg.text) ? msg.text : null;
         if (shownIds.has(msg.exchange_id)) {
           if (ownBubble) {
             stopWorking(ownBubble);
-            ownBubble.textContent = "I can't help with that right now.";
+            ownBubble.textContent = replacement || "I can't help with that right now.";
             ownBubble = null; ownAccumulated = '';
           }
           setLoading(false);
         } else {
           const fb = foreignBubbles.get(msg.exchange_id);
-          if (fb) { stopWorking(fb.bubble); fb.bubble.textContent = '...'; foreignBubbles.delete(msg.exchange_id); }
+          if (fb) { stopWorking(fb.bubble); fb.bubble.textContent = replacement || '...'; foreignBubbles.delete(msg.exchange_id); }
           shownIds.add(msg.exchange_id);
         }
         break;

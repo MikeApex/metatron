@@ -301,6 +301,28 @@ Each is a defect measured in the 2026-08-21 traces, not a proposal.*
   @waiting: a second instance, or a deliberate probe of referring turns after a tool action
   *filed 2026-08-26 at Mike's instruction, from the live trace*
 
+- **10. [DB-0827-01] Declining a confirmation does nothing, so the prompt comes back until you
+  give in and approve it.** Mike, live 2026-08-27, on the first decline anyone has ever performed:
+  *"If I decline it keeps asking in a loop. In the end I approved to break the loop."*
+  **There is no decline path anywhere in the system.** `POST /confirm` in `core/server.py` is
+  approve-only; there is no reject endpoint, and `static/index.html` has no decline handler.
+  Declining dismisses the prompt in the browser and changes nothing on the server, so the record
+  stays unapproved in `pending_confirmations.json` and the app's next poll of
+  `/pending-confirmations` raises it again — every cycle, until the 10-minute TTL expires it.
+  **Why this is worse than a cosmetic annoyance, and the reason it is filed rather than fixed
+  late in a session:** the loop's only exit is *approving the thing you just refused*. A gate whose
+  cheapest escape is consent is not a gate. It inverts `tools/confirm.py`'s entire premise — that
+  the user's deliberate act is what authorises an action — into a war of attrition that authorises
+  by exhaustion.
+  **Present since the gate shipped 2026-08-19** (`6d6d46c`), unnoticed for eight days because
+  nobody had declined one: every prior test approved.
+  **Shape of the fix, not a decision:** `POST /decline {token}` that removes the record through the
+  same fingerprinted path `consume()` uses, a client control that calls it, and a decision on
+  whether a decline should also tell the model *"the user said no"* — without that, the next turn
+  can simply re-propose the same action, which is a second, quieter version of the same loop.
+  @kind: bug
+  *filed 2026-08-27 at Mike's instruction, from his own live attempt to decline*
+
 ## Later
 
 **Three groups, and the group is the useful fact about an item.** *Decisions* are blocked on a
@@ -1059,20 +1081,23 @@ exists for. Pointers, so nothing is lost:*
 runs. They are behavioural, nothing has shipped against them, and collapsing them would destroy the
 only record of how often the tool misreads who is travelling.)*
 
+- **[user corrected a prior turn]** The user is overriding a previous action or state related to the Prudential/Apex project files or task status.  
+  `2026-08-26T16:35:18.630345Z`
+
 - **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'The Mousetrap Matinee' (2026-08-25T15:00:00, uid=efdc94bb-07b2-49ef-be3a-a43431d8014d@ai-life-manager) and 'Mousetrap matinee' (2026-08-25T15:00:00, uid=895603fb-276a-4cdf-b113-212e390083e8@ai-life-manager). title_similarity=0.89, shared_attendees=[], shared_words=['matinee', 'mousetrap']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
   `2026-08-25T04:35:17.234124Z`
 
 - **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Date Day: The Mousetrap' (2026-08-25T00:00:00, uid=64dc9379-ce64-4c15-a96a-c6cb4df8e432@ai-life-manager) and 'Mousetrap matinee' (2026-08-25T15:00:00, uid=895603fb-276a-4cdf-b113-212e390083e8@ai-life-manager). title_similarity=0.45, shared_attendees=[], shared_words=['mousetrap']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
   `2026-08-25T04:35:17.233902Z`
 
-- **[user corrected a prior turn]** Omit  
-  `2026-08-23T19:01:50.705655Z`
+- **[user corrected a prior turn]** Omit  ×2  
+  `2026-08-26T17:03:30.118469Z`
 
 - **[user corrected a prior turn]** Specifies that the previously established language preference (Bulgarian) is global, covering both incoming and outgoing communications.  
   `2026-08-20T21:44:01.478382Z`
 
-- ⚠ **[user corrected a prior turn]** CLARIFICATION_NEEDED:  ×27  
-  `2026-08-26T14:54:07.267657Z`
+- ⚠ **[user corrected a prior turn]** CLARIFICATION_NEEDED:  ×33  
+  `2026-08-27T09:53:58.499082Z`
 
 - **[user corrected a prior turn]** User corrected transit route to Transport Museum, explicitly excluding Jubilee and Piccadilly lines which were previously suggested.  ×2  
   `2026-08-16T08:06:21.241217Z`
