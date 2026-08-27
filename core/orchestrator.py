@@ -522,6 +522,40 @@ def load_agent(name: str) -> str:
     return agent_path.read_text().strip()
 
 
+def _relative_age(days_ago: int) -> str:
+    """"today" / "yesterday" / "N days ago" — the age phrase used throughout the context."""
+    if days_ago <= 0:
+        return "today"
+    if days_ago == 1:
+        return "yesterday"
+    return f"{days_ago} days ago"
+
+
+def _age_annotated(text: str, added: str | None) -> str:
+    """
+    `text` with the age of the record behind it, when that age is known.
+
+    [DB-0822-06] Stored state was being carried forward as fact indefinitely: on 2026-08-21
+    the same exercise hiatus was described five different ways in one day, and the finished
+    "Metatron sprint" surfaced in 5 of 9 runs days after it ended. Nothing in the assembled
+    context said how old any of it was, so there was nothing for the model to weigh.
+
+    This makes staleness *visible* rather than trying to make code decide what is still true
+    — which is the reason it is an annotation and not a filter. Expiry (7 days, in
+    tools/context_tracker.py) remains the thing that actually removes a thread; an entry
+    with no `added` date is legacy data with no age to state, and is left alone.
+    """
+    from datetime import date as _date
+
+    if not text or not added:
+        return text
+    try:
+        age = (_date.today() - _date.fromisoformat(str(added))).days
+    except ValueError:
+        return text
+    return f"{text} (logged {_relative_age(age)})"
+
+
 def load_recent_context(persona: str | None = None, days: int = 5) -> str:
     """
     Load the last N days of logs, context tracker, and ambient world context
@@ -560,7 +594,10 @@ def load_recent_context(persona: str | None = None, days: int = 5) -> str:
                 # open_threads timestamp change — tolerate old bare-string entries too,
                 # in case this reads a tracker file this session itself hasn't migrated yet.
                 thread_texts = [
-                    t.get("text", "") if isinstance(t, dict) else str(t)
+                    _age_annotated(
+                        t.get("text", "") if isinstance(t, dict) else str(t),
+                        t.get("added") if isinstance(t, dict) else None,
+                    )
                     for t in tracker["open_threads"]
                 ]
                 lines.append("**Open threads:** " + " | ".join(thread_texts))
@@ -581,12 +618,20 @@ def load_recent_context(persona: str | None = None, days: int = 5) -> str:
         if log_path.exists():
             try:
                 entry = _json.loads(log_path.read_text())
-                recent_entries.append(f"  {d}: {_json.dumps(entry, ensure_ascii=False)}")
+                # [DB-0822-06] The date alone is not age. A log line reads as current state
+                # unless something says when it was written, which is how "Day 3 of a 5-day
+                # hiatus" written on the 18th was still being read as true on the 21st.
+                recent_entries.append(
+                    f"  {d} ({_relative_age(i)}): {_json.dumps(entry, ensure_ascii=False)}"
+                )
             except Exception:
                 pass
 
     if recent_entries:
-        sections.append("## Recent Logs (last 5 days)\n" + "\n".join(recent_entries))
+        sections.append(
+            "## Recent Logs (last 5 days — each line is what was recorded on that date, "
+            "not necessarily what is true now)\n" + "\n".join(recent_entries)
+        )
 
     # Open obligations and passed-event candidates. In the context rather than behind a
     # tool because the whole point of the obligation store is that something outstanding
