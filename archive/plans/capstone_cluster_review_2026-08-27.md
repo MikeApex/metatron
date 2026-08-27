@@ -54,14 +54,14 @@ Status: ✅ closed · 🔶 built+deployed, awaiting one live confirmation · ⬜
 |---|---|---|---|---|
 | 🔶 | [DB-0822-05] | Journal recorded days never spoken — dispatch gate built (`e6bde3d`) | Green | done; confirm: one scheduler-only day journal stays empty AND one answered check-in still journals |
 | 🔶 | [DB-0827-07] | 33 empty CLARIFICATION_NEEDED events — null-label filter built (`24dabae`) | Green | done; confirm: one clean day in the VM quality log |
-| 🔶 | [DB-0822-06] | Stale state as fact — age annotation built (`cbd5ca3`); **derived-count + intraday halves still open** | Amber | open halves need a design pass (~2h) |
+| 🔶 | [DB-0822-06] | Stale state as fact — age annotation built (`cbd5ca3`); **intraday half built + derived-count half retired as stale-premised (second attack, `4cc9e3e`)** | Amber | done; confirm: one same-day case post-deploy |
 | ⬜ | [DB-0822-07] | Two jobs fire 7 min apart — suppress the collision | **Red** (`core/scheduler.py`) | 1–2h supervised |
 | ⬜ | [DB-0809-02] | Same unanswered question re-asked by every job | Red @session | decision + 2–4h |
 
 ### Cluster B — Action integrity
 | Status | Item | One line | Tier | Est |
 |---|---|---|---|---|
-| 🔶 | [DB-0827-01] | Decline built (`0f8f528`) — confirm: one live decline that stays declined | Amber | done; **re-propose half open** (~1–2h, orchestrator context) |
+| 🔶 | [DB-0827-01] | Decline built (`0f8f528`) — **re-propose guard built too (second attack, `4cc9e3e`)**; confirm: one live decline that stays declined through the next scheduled run | Amber | done |
 | 🔶 | [DB-0815-11] | False-action-claim detector built (`e673330`), events collected | Amber | done; **@session policy half open** (may `write_persona` self-apply?) |
 | ✅ | [DB-0827-05] | ROUTING_MISS collected again (`5b444be`) — closed, +3 more types registered on main | Green | — |
 | ⬜ | [DB-0826-01] | "Undo that merge" referent failure — **@waiting MET**: recovered ROUTING_MISS history holds 3 prior instances (08-10 "previous request", 08-15 "Approved", 08-18 "read that back") | Red (`coordinator.md`) | ~2–3h |
@@ -78,8 +78,8 @@ Status: ✅ closed · 🔶 built+deployed, awaiting one live confirmation · ⬜
 |---|---|---|---|---|
 | ⬜ | [DB-0827-03] | CRM sweep — gated on Mike's plan re-review **(M)**, then Opus build | Red | ~half day |
 | ⬜ | [DB-0818-08] | Provenance tiers (decided: build both halves + hedge test) | Amber/Red | ~half day |
-| ⬜ | [DB-0818-05] | Asks which Bill twice — store the resolution | Amber | 2–4h |
-| ⬜ | [DB-0818-06] | 24 non-facts in the wisdom store — per-entry cleanup, VM-owned data | Amber | 1–2h |
+| 🔶 | [DB-0818-05] | Asks which Bill twice — resolution store built (second attack, `6b0a6d5`); confirm: ask-answer-ask-again, no second question | Amber | done |
+| 🔶 | [DB-0818-06] | 24 non-facts in the wisdom store — per-entry proposal filed (`archive/plans/wisdom_store_cleanup_proposal_2026-08-27.md`); execution is Mike's review + a VM session **(M)** | Amber | proposal done |
 
 ### Cluster E — Cost & model routing
 | Status | Item | One line | Tier | Est |
@@ -99,7 +99,7 @@ mailbox). ~20–30 Mike-minutes total, spread over ordinary days.
 | Status | Item | One line | Tier | Est |
 |---|---|---|---|---|
 | ⬜ | [DB-0808-11] | Function jobs skip quiet hours — would push at 3am | **Red** (`core/scheduler.py`) | ~2h supervised |
-| ⬜ | [DB-0808-14] | Psychiatric meds rank same as statins — owes A4 re-run | Amber | 2–3h |
+| ⬜ | [DB-0808-14] | Psychiatric meds rank same as statins — scoped, confirmed live, **Red half remains** (spec: `archive/plans/medication_ranking_spec_2026-08-27.md`); owed A4 re-run DONE, PASS 3/3 | **Red** (`physical_health.md`) + Green follow-up | ~1h supervised + ~1h |
 | ⬜ | [DB-0804-02] | B4 graceful-failure wording + security remainder | Amber/Red | ~half day |
 | ⬜ | [DB-0808-06] | Clinical threads can never close — escalation design | postpone? | — |
 
@@ -127,19 +127,24 @@ Accountability Index scope `[DB-0827-09]` · location privacy tier `[DB-0815-12]
 
 ---
 
-## Remaining investment (post-attack)
+## Remaining investment (post-second-attack, 2026-08-27 late)
 
-The attack + deploy removed ~10–12h of the original ~18–25h Green/Amber estimate. Remaining:
-**~8–12h Green/Amber** (Clusters C/D/E code halves, the two supervised Red scheduler items,
-National Rail once keyed) · **2–3 Red agent-file sessions with Mike** (email surfacing, CRM
-sweep, provenance, referent fix) · **one decisions session** · **~30 Mike-minutes** draining
-Cluster F. Model split per Mike: plan/review in Fable, build in Opus, Red-tier never delegated.
+The second attack run closed the open halves of [DB-0822-06]/[DB-0827-01], built [DB-0818-05],
+filed the [DB-0818-06] proposal, and specced [DB-0808-14] to the Red line (A4 re-run PASS 3/3)
+— merged `bb9ebdb`…`4cc9e3e`, **deploy owed**. Remaining: **~4–6h Green/Amber** (Cluster C
+intake pair once Mike's VM edits land, [DB-0820-05]'s build half, National Rail once keyed,
+[DB-0808-14]'s Green follow-up) · **the Red work with Mike** (scheduler pair, email surfacing,
+CRM sweep, provenance, referent fix, medication schema — specs ready where noted) · **one
+decisions session** (Mike prefers a single chat for the whole batch) · **~30 Mike-minutes**
+draining Cluster F, now plus three more one-shot confirmations from this run.
 
 ## Suggested next sessions, in order
-1. **Decisions session** (Fable, with Mike) — the batch above; several cheap builds are gated
-   behind it.
+1. **One decisions session** (Fable, with Mike, single chat per his ruling) — the batch below;
+   several cheap builds are gated behind it. The wisdom-store proposal review can ride along
+   (it is a per-entry approve/amend pass, decision-shaped).
 2. **Red pair in `core/scheduler.py`** (supervised): [DB-0822-07] + [DB-0808-11] together — same
-   file, same gate-stack extraction shape.
+   file, same gate-stack extraction shape. The medication schema edit ([DB-0808-14], spec at
+   `archive/plans/medication_ranking_spec_2026-08-27.md`) fits the same supervised session.
 3. **Email surfacing session** (Red, with Mike): [DB-0822-09], plus the [DB-0822-08]
    re-measurement read from a scheduled-run day.
 4. **CRM sweep build** (Opus, after Mike's plan re-review) — [DB-0827-03], with [DB-0818-08]

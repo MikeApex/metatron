@@ -153,14 +153,21 @@ Each is a defect measured in the 2026-08-21 traces, not a proposal.*
   missing" three hours after the 07:14 run declared it resolved — same carried-state mechanism.*
   **Half built 2026-08-27** (`cbd5ca3`, merged): carried state now shows its age — open threads
   read "(logged 9 days ago)", log lines carry age beside date. Annotation, not filtering.
-  `tests/test_context_age_annotation.py`. **Two halves stay open, stated by the builder:** the
-  derived-count half has no clean code interception ("Day 3 of 5" is free text a specialist
-  writes), and **intraday staleness — the Teams-link case — is untouched by day-granular ages**
-  (the log is one merged file per day, no per-field timestamps).
+  `tests/test_context_age_annotation.py`. **Both remaining halves resolved 2026-08-27 (second
+  attack run, merged `4cc9e3e`):** the **intraday half is built** — `write_log` now stamps each
+  field's write time in a `_written_at` sidecar (additive; legacy files render unchanged, no
+  migration) and today's log renders per-field with hour-granular ages
+  (`tests/test_log_field_timestamps.py`, 32 checks). The **derived-count half was
+  STALE-PREMISED as filed:** no code-computed count reaches a model — `expired_open_threads` is
+  popped before the read (`tools/context_tracker.py:406`), and intake/obligation counts are
+  computed at assembly time; the only stale counts are model-authored free text, which the
+  per-field stamps now date. A code-computed "derived facts" line was considered and deliberately
+  not built — revisit only if a dated count still gets misread after deploy.
   @kind: bug
-  @waiting: the owed deploy, then one multi-day-old thread rendering with its age; the intraday
-  half needs its own design pass
-  *filed 2026-08-22 by Mike · age-out half built 2026-08-27 by the session-hygiene attack worker*
+  @waiting: the owed deploy, then one same-day case — a morning-resolved item not reported
+  "still missing" by a later run that day
+  *filed 2026-08-22 by Mike · age-out half built 2026-08-27 (session-hygiene worker) · intraday
+  half built + derived-count half retired 2026-08-27 (orchestrator-context worker)*
 
 - **4. [DB-0822-07] Two scheduled jobs fire seven minutes apart.** `companion_checkin` runs on a
   180-minute interval and landed at 07:23; `morning_brief` is fixed at 07:30. **19 model calls
@@ -278,13 +285,20 @@ Each is a defect measured in the 2026-08-21 traces, not a proposal.*
   **✅ Built 2026-08-27** (`0f8f528`, merged): `POST /decline` removes the record through the
   same fingerprint discipline as `consume()`; refusals retained in `declined_confirmations.json`
   (capped 200); the client leaves the card up if the server call fails rather than pretending the
-  "No" landed. `tests/test_decline_path.py`, 14 checks, all failing pre-fix. **Open half:** a
-  decline does not yet stop the model re-proposing — the ledger is readable via
-  `confirm.declined(within_seconds=…)`; the plug-in point is orchestrator context assembly.
+  "No" landed. `tests/test_decline_path.py`, 14 checks, all failing pre-fix. **✅ Re-propose
+  half built 2026-08-27** (merged `4cc9e3e`): `confirm.request()` raises no card for an action
+  refused within 24h unless a genuinely new trigger occurred — the user speaking in a turn that
+  began after the refusal, or an intake row arriving after it (`tools/turn_context.py`,
+  thread-local, fails closed on an unbound thread). A declined-actions context block tells the
+  model the answer stands; an allowed re-ask must say the user declined it before. Window
+  rationale documented at `_REPROPOSE_WINDOW_SECONDS`; ledger records persist past expiry
+  (count-capped, never age-capped). `tests/test_decline_reproposal_guard.py`, 21 checks.
   @kind: bug
-  @waiting: the owed deploy, then one live decline that stays declined
+  @waiting: the owed deploy, then one live decline that stays declined — including through the
+  next scheduled run
   *filed 2026-08-27 at Mike's instruction, from his own live attempt to decline · built same day
-  by the decline-path attack worker*
+  by the decline-path attack worker · re-propose half built 2026-08-27 by the
+  orchestrator-context worker*
 
 - **9. [DB-0827-07] The Coordinator writes empty "CLARIFICATION_NEEDED:" quality events — 33
   since 08-18, 3–5 a day, every one with no content.** Diagnosed 2026-08-27 during the deep run's
@@ -903,8 +917,19 @@ half (b) is now part of the Pro-routing decision. Evidence and trail:
   somewhere to store the resolution and a distinguishing handle (relationship, role, employer) to ask
   *with*. **Related but opposed to `[DB-0815-07]`:** that is one person becoming several records,
   this is several people collapsing into one, and a fix aimed at either can worsen the other.
+  **✅ Built 2026-08-27** (merged `6b0a6d5`): answering "which Bill?" is stored in a per-persona
+  `crm/name_resolutions.json` (0600, no migration of existing data) and reused; recorded only
+  when the name was genuinely ambiguous at that moment, so a lone Bill stored today never
+  swallows a second Bill added later; every stale path (deleted person, changed match set,
+  corrupt store) falls back to asking; corrections keep history (`superseded`), and resolutions
+  follow `merged_into`. `tests/test_contact_resolution_memory.py`, 16 checks. The opposed-item
+  tension is held: nothing widens `_find_by_name`, "William Hart nicknamed Bill" stays out of
+  scope by design. Handoff: `archive/handoffs` consumed → evidence in the 08-27 log fragment.
   @kind: feature
-  *raised by Mike 2026-08-18*
+  @waiting: the owed deploy, then one live pass — name an ambiguous contact, answer, name them
+  again later; pass is no second question (diagnosable on fail: empty
+  `data/personas/mike/crm/name_resolutions.json`)
+  *raised by Mike 2026-08-18 · built 2026-08-27 by the CRM attack worker*
 
 - **[DB-0818-06] 24 of Mike's 59 stored "facts" are not facts about him.** The **writers are
   half-fixed, the store is not.** `write_wisdom`'s schema and `synthesizer.md` now separate an
@@ -923,9 +948,19 @@ half (b) is now part of the Pro-routing decision. Evidence and trail:
   **Do not bulk-move.** Persona data is VM-owned and each class needs a different destination:
   `merge_wisdom_entries` for duplicates (archive-on-merge), `write_persona` for the preferences, plain
   deletion for the tool defects. Per-entry assignment: `scripts/migrate_wisdom_schema.py` KEY_MAP.
+  **✅ Per-entry proposal delivered 2026-08-27** (merged `c2798eb`):
+  `archive/plans/wisdom_store_cleanup_proposal_2026-08-27.md` — all 24 dispositioned with
+  destinations (11 preferences → persona file, 3 obligations, 2 duplicate merges, 3 tool
+  defects, 2 transients, 2 content-free, 1 duplicating `profile.yaml`). Built from the
+  hand-reviewed 08-15 KEY_MAP, not a live read (store is Denied-tier); it counts **eleven**
+  interaction preferences where this item says eight — the transplant should treat those eleven
+  as one review pass, since several likely collapse into one persona-file line.
   @kind: chore
+  @waiting: Mike reviews the proposal, then the execution session (VM-owned data; the
+  persona-file transplant is the judgement half)
   *found 2026-08-15 by reading all 59 live entries during the schema migration (`a35acfa`), which
-  reports them and deliberately moves nothing · triaged out of `## Inbox` 2026-08-18*
+  reports them and deliberately moves nothing · triaged out of `## Inbox` 2026-08-18 · proposal
+  2026-08-27 by the wisdom-store attack worker*
 
 - **[DB-0808-11] A scheduled job with notifications on would push at 3am.** `fire_function` runs no
   gate stack — `days`, `respect_quiet_hours` and the activity gate are ignored for every function
@@ -957,8 +992,17 @@ half (b) is now part of the Pro-routing decision. Evidence and trail:
   `psychiatric: true` on `medication_profile` entries, read by `_thread_tier()`. **Small but not
   cheap to confirm** — clinical tiering has named hard-fail criteria (`ROADMAP.md` § 0 clause 8), so
   the change owes an A4 re-run.
+  **Scoped 2026-08-27, confirmed live, stopped at the Red line** (merged `bb9ebdb`): the fix
+  needs a `discontinuation_risk` field + `MEDICATION_MISSED_CRITICAL: <name>` flag suffix in
+  `config/agents/physical_health.md` (Red — the module's own 08-08 design comment names this
+  exact distinction as the goal and never wired it in), then a Green `_thread_tier()` change
+  reusing the existing tier-2 watch lifecycle, failing toward tier 1 on any parse/read gap.
+  Full spec: `archive/plans/medication_ranking_spec_2026-08-27.md`; the owed A4 re-run ran
+  anyway — **PASS 3/3**,
+  `tests/a4_safety_rerun_2026-08-27_gemini_clinical_quick.md`.
   @kind: feature
-  *filed 2026-08-08*
+  @session: the `physical_health.md` half — supervised Red session, spec ready
+  *filed 2026-08-08 · scoped + A4 re-run 2026-08-27 by the medication attack worker*
 
 - **[DB-0815-02] Speaking a language other than English does not work.** Speech **out** is built and
   shipped (`bg` → `bg-BG-KalinaNeural` via edge-tts, Kokoro has no Bulgarian model). Speech **in** is

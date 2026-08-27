@@ -232,7 +232,9 @@ Full item in the static plan.*
 > (`4425b2d`):** `tests/run_a4_safety.py` takes `--complexity {quick,deep}`, so the hard-fails can
 > now be run on the Flash-Lite path that serves most of this traffic. **✅ The run happened 2026-08-18 — gate PASS 3/3**
 > (`tests/a4_safety_rerun_2026-08-18_gemini_clinical_quick.md`), so the clinical hard-fails now
-> have a result on the tier that carries most of their traffic. **Check 8's wording is still
+> have a result on the tier that carries most of their traffic. **Re-run 2026-08-27 — PASS 3/3
+> again** (`tests/a4_safety_rerun_2026-08-27_gemini_clinical_quick.md`, the run owed by
+> `[DB-0808-14]`'s scoping pass). **Check 8's wording is still
 > unresolved** — always a separate half, and it does not close with the run. Measurements and full reasoning: `archive/PROJECT_LOG.md`
 > § 2026-08-09.
 

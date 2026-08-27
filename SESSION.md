@@ -1,8 +1,9 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-27, latest (**the deep run reconciles the backlog and the attack lands six
-builds** — and Mike's evening deploy carried them live together with the morning's synthesizer
-audit, which had been waiting on it).*
+*Updated: 2026-08-27, latest (**a second attack run closes the carried-context class** — the
+decline re-propose guard, per-field log timestamps, the Bill resolution store, the medication
+Red-line spec and the wisdom-store proposal, four workers, all merged — **deploy owed**: Mike
+deploys `core/` + `tools/` as this session closes).*
 
 *✅ **The capstone plan is the read-first for any backlog work:**
 **`archive/plans/capstone_cluster_review_2026-08-27.md`** — every open item by functional
@@ -11,25 +12,20 @@ begin full testing; rebuild-adjacent work parked in its Cluster H. **National Ra
 (`[DB-0818-04]`) and geolocation (`[DB-0815-12]`) are first-draft features** by his ruling —
 the Darwin API key is his to register; the location privacy tier is @session.*
 
-*✅ **Six builds merged and deployed 2026-08-27, each awaiting one live confirmation**
-(`@waiting` in the backlog): decline path `[DB-0827-01]` · Diarist user-turn gate
-`[DB-0822-05]` · empty-label filter `[DB-0827-07]` · false-action-claim detector
-`[DB-0815-11]` (policy half still @session) · context age annotation `[DB-0822-06]` (intraday
-+ derived-count halves open) · context-audit line `[DB-0814-02]`. `[DB-0827-05]` closed
-outright — and re-registering `ROUTING_MISS` recovered 18 discarded events, three being prior
-instances of `[DB-0826-01]`'s referent-resolution class: **a four-instance pattern, workable
-now.***
+*✅ **Nine builds now merged, each awaiting one live confirmation post-deploy** (`@waiting`,
+evidence per item in the backlog): decline path with the re-propose guard `[DB-0827-01]` ·
+context age with the intraday per-field half `[DB-0822-06]` (derived-count half retired as
+stale-premised) · Bill resolution store `[DB-0818-05]` · Diarist user-turn gate `[DB-0822-05]` ·
+empty-label filter `[DB-0827-07]` · false-action-claim detector `[DB-0815-11]` (policy half
+@session) · context-audit line `[DB-0814-02]`. Also from the second attack: `[DB-0808-14]`
+scoped to a ready Red spec (A4 re-run PASS 3/3) and the `[DB-0818-06]` per-entry proposal
+awaiting Mike's review — both specs in `archive/plans/`. `[DB-0826-01]`'s referent class is a
+four-instance pattern, workable now.*
 
-*✅ **The synthesizer audit is executed, gated, and now deployed** (record:
-`archive/plans/synthesizer_audit_2026-08-18.md` § Execution record). **Watch on first
-post-deploy use: one ambient check-in that opens on one thing, and one `evening_close` that
-still carries the ritual** (also closes `[DB-0822-10]`). Thinking cap live earlier same day; a
-`THINKING_CAP_HIT` event means the distribution moved.*
-
-*⚠ **The Synthesizer's failures are ADHERENCE, not missing rules — and the premise now needs
-re-measuring:** the audit cut the file 52.4k → 41.9k with the Proactive Anticipation section
-untouched. **Re-measure adherence on one post-deploy scheduled-run day before fixing
-`[DB-0822-08]`/`-09` by instruction.***
+*✅ **The synthesizer audit is executed, gated, and deployed** (record + watch list:
+`archive/plans/synthesizer_audit_2026-08-18.md` § Execution record; `[DB-0822-10]` closes on
+the watch). **Its failures are ADHERENCE, not missing rules — re-measure on one post-deploy
+scheduled-run day before fixing `[DB-0822-08]`/`-09` by instruction.***
 
 *⚠ **Intake is still dark until Mike's VM edits** (`enabled: true` in mike's `intake.yaml`;
 delete `mike.md`'s six-hour inbox line if present) — gates: `[DB-0820-03]`, `[DB-0820-04]`.*
@@ -42,10 +38,13 @@ half** (A4-gated), `due: 2026-09-15`. Mike flips the Mac's `VERTEX_CACHE_DISABLE
 The narrower written-basis amendment ruling is now `[DB-0827-08]`, `due: 2026-09-05`. CRM sweep
 build still gated on Mike's plan re-review (`[DB-0827-03]`).*
 
-***Next, in the tracker's order:** ① decisions session with Mike (the batch in the tracker —
-includes the 39 tool grants blocking A7 check 10); ② supervised Red pair in `core/scheduler.py`
-(`[DB-0822-07]` + `[DB-0808-11]`); ③ email-surfacing session (`[DB-0822-09]` + the re-measure);
-④ CRM sweep build (Opus, post-review). Cluster F drains on Mike's ordinary use (~30 min).*
+***Next, in the tracker's order:** ① **one** decisions session with Mike — his ruling
+2026-08-27: the whole batch in a single chat, not spread across several (includes the 39 tool
+grants blocking A7 check 10; the wisdom-store proposal review rides along); ② supervised Red
+session in `core/scheduler.py` (`[DB-0822-07]` + `[DB-0808-11]`) — the medication schema edit
+(`[DB-0808-14]`, spec ready) fits the same sitting; ③ email-surfacing session (`[DB-0822-09]` +
+the re-measure); ④ CRM sweep build (Opus, post-review). Cluster F drains on Mike's ordinary use
+(~30 min, plus three new one-shot confirmations from the second attack).*
 
 *⚠ **A v1/alpha architecture question is live: invert to code-dominant, with models as discrete
 judgment gates.** Still **no decision**, and it must be **decided before A8 executes** or A8 is
