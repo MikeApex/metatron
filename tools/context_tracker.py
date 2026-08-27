@@ -12,9 +12,10 @@ Sensitive-tier, local-only, 600 permissions. Persona-scoped.
 """
 
 import json
+import logging
 import os
 import re
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from core.persona import persona_data_dir
@@ -321,8 +322,47 @@ def _thread_tier(flag: str) -> int:
     return 2 if "CLINICAL_CONCERN" in (flag or "").upper() else 1
 
 
+logger = logging.getLogger(__name__)
+
+
 def _tracker_path() -> Path:
     return persona_data_dir() / "context.json"
+
+
+def _audit_path() -> Path:
+    return persona_data_dir() / "context_audit.jsonl"
+
+
+def _append_audit(added: list[str], removed: list[str], expired: list[str],
+                  open_count: int) -> None:
+    """
+    Append one line describing what this write did to the open threads.
+
+    [DB-0814-02] `context.json` is overwritten in place, so it records a state and no
+    history. Twelve days after thread expiry shipped the live file read
+    `expired_open_threads: 0` with four threads open — which is equally consistent with
+    "grace legitimately keeps everything alive" and "expiry has silently never fired", and
+    nothing on disk could tell the two apart. One append-only line per write is what makes
+    that question answerable: an expiry now leaves a mark whether or not the archive is
+    later capped or the thread is later resent.
+
+    Never raises. An audit line that could break a context write would be worse than no
+    audit line — the tracker is on the response path.
+    """
+    try:
+        path = _audit_path()
+        entry = {
+            "ts": datetime.now().isoformat(timespec="seconds"),
+            "added": added,
+            "removed": removed,
+            "expired": expired,
+            "open_count": open_count,
+        }
+        with open(path, "a") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        os.chmod(path, 0o600)
+    except Exception as exc:
+        logger.warning(f"[context_tracker] audit line not written: {exc}")
 
 
 def read_context_tracker() -> dict:
@@ -559,6 +599,21 @@ def write_context_tracker(
         json.dump(tracker, f, indent=2)
 
     os.chmod(path, 0o600)
+
+    # [DB-0814-02] The audit line, beside the file it describes. `removed` is the third
+    # category and is not the same as `expired`: a thread the model simply stopped sending
+    # leaves under replace-semantics without ever reaching the cutoff, and reading those two
+    # as one number is what would make "expiry never fires" invisible all over again.
+    _before = {t.get("text") for t in _normalize_open_threads(existing.get("open_threads"))
+               if t.get("text")}
+    _after = {t.get("text") for t in stamped_open_threads if t.get("text")}
+    _expired_now = [t.get("text") for t in newly_expired if t.get("text")]
+    _append_audit(
+        added=sorted(_after - _before),
+        removed=sorted(_before - _after - set(_expired_now)),
+        expired=_expired_now,
+        open_count=len(stamped_open_threads),
+    )
 
     msg = f"Context tracker updated ({path})"
     if notices:
