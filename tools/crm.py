@@ -550,9 +550,219 @@ def _ambiguous_match(name: str, matches: list[dict], action: str) -> str:
             f"nothing was {action}. Do not guess and do not pick the first. Ask the user "
             "which one they mean, using whatever distinguishes them in the matches above "
             "(surname, how you know them, what they do). Then repeat this call with that "
-            "contact_id."
+            f"contact_id AND name='{name}' — passing the name back alongside the id is what "
+            "records the answer, so this question is not asked again next time."
         ),
     }, indent=2)
+
+
+# ---------------------------------------------------------------------------
+# Remembering a disambiguation once the user has made it  [DB-0818-05]
+# ---------------------------------------------------------------------------
+#
+# `_ambiguous_match` above stopped the tool writing to the wrong Bill. It did not
+# stop it asking about the same Bill a second time, a third time, and every time
+# after — the user answers the question, the answer is used for exactly one tool
+# call, and then it is gone. The four Bills are the hard case precisely because
+# they are sparse: nothing in the records will ever rank them, so the only thing
+# that can settle "Bill" is the user's own past answer.
+#
+# So the answer is stored. The store is a separate file from contacts.json:
+# a spoken-reference resolution is a fact about how *this user* talks, not a
+# field of any one person's record, and keeping it out of contacts.json means an
+# existing persona's data file needs no migration and no new key.
+#
+# Two rules keep this from becoming the failure it exists to prevent:
+#
+#   1. **Only a genuine answer is stored.** A resolution is recorded only when
+#      the name was ambiguous at the moment it was made — more than one live
+#      contact matched, and the id supplied was one of them. Recording every
+#      name→id pair would mean that "Bill", stored when there was only one Bill,
+#      would later silently swallow a second Bill added months afterwards. That
+#      is the exact wrong-person write `_ambiguous_match` exists to refuse.
+#   2. **Nothing is deleted.** A correction pushes the previous resolution into
+#      `history` with a `superseded` stamp, matching the archive-on-merge rule
+#      the CRM already follows for records.
+#
+# Resolutions are followed through merge_contacts at read time via
+# `_resolve_merged`, so folding one Bill into another does not strand the answer
+# and no rewrite of this file is needed when a merge happens.
+
+_RESOLUTION_LOCK = threading.Lock()
+
+# Lock ordering: this is only ever acquired on its own. Callers holding
+# _CRM_LOCK must release it before recording a resolution — see log_interaction.
+
+_RESOLUTIONS_VERSION = 1
+
+
+def _resolutions_path() -> Path:
+    """Where this persona's remembered name→contact resolutions live."""
+    return persona_data_dir() / "crm" / "name_resolutions.json"
+
+
+def _load_resolutions() -> dict:
+    """
+    Read the resolution store, tolerating every shape a file that has never
+    existed can take.
+
+    Returns `{}` for missing, empty, malformed or unexpectedly-shaped content
+    rather than raising: a corrupt memory of who "Bill" is must degrade to
+    asking the question again, never to a crashed contact lookup.
+    """
+    path = _resolutions_path()
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    resolutions = data.get("resolutions")
+    return resolutions if isinstance(resolutions, dict) else {}
+
+
+def _save_resolutions(resolutions: dict) -> None:
+    """Write the resolution store with the same 0600 permissions as contacts.json —
+    who the user means by a first name is personal data."""
+    path = _resolutions_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"version": _RESOLUTIONS_VERSION, "resolutions": resolutions}
+    with open(path, "w") as f:
+        json.dump(payload, f, indent=2)
+    os.chmod(path, 0o600)
+
+
+def _normalize_reference(name: str) -> str:
+    """
+    The key a spoken reference is stored under.
+
+    Lowercased, whitespace-collapsed, and stripped of trailing punctuation, so
+    "Bill", "bill" and "Bill?" are one key. Deliberately nothing cleverer: a
+    stored answer is applied only on an exact key match, so "Bill" never
+    resolves "Bill Thompson" (which has its own, usually unambiguous, lookup)
+    and a fuzzy key can never hand back a person the user did not name.
+    """
+    return re.sub(r"\s+", " ", name.strip().strip(".,!?;:")).lower()
+
+
+def _resolution_target(contacts: list[dict], entry: dict,
+                       candidate_ids: set[str]) -> str:
+    """The live contact id a stored resolution points at, or "" if it no longer
+    points at one of `candidate_ids`. Follows merge_contacts."""
+    contact_id = entry.get("contact_id", "") if isinstance(entry, dict) else ""
+    if not contact_id:
+        return ""
+    if contact_id in candidate_ids:
+        return contact_id
+    merged = _resolve_merged(contacts, contact_id)
+    if merged is not None and merged.get("id") in candidate_ids:
+        return merged["id"]
+    return ""
+
+
+def _apply_resolution(contacts: list[dict], name: str,
+                      matches: list[dict]) -> dict | None:
+    """
+    The contact a previous answer settled this reference on, or None.
+
+    Returns None — and so falls through to asking again — whenever the stored
+    answer no longer fits: the person was deleted, or the set of people the name
+    now reaches has changed such that the remembered one is not among them. The
+    fail-open direction is deliberate; a remembered answer must never be the
+    reason a note lands on the wrong person.
+    """
+    key = _normalize_reference(name)
+    if not key:
+        return None
+    entry = _load_resolutions().get(key)
+    if not isinstance(entry, dict):
+        return None
+    candidate_ids = {m.get("id", "") for m in matches}
+    target_id = _resolution_target(contacts, entry, candidate_ids)
+    if not target_id:
+        return None
+    for contact in matches:
+        if contact.get("id") == target_id:
+            return contact
+    return None
+
+
+def _record_resolution(name: str, contact_id: str, source: str) -> bool:
+    """
+    Remember that the user, asked which `name` they meant, said this one.
+
+    Recorded only when the reference was genuinely ambiguous and the id is one
+    of the people it reached — see the two rules above. Returns True if
+    something was written, so callers and tests can tell a stored answer from a
+    silently skipped one.
+
+    Never raises. A CRM read or write that succeeded must not fail afterwards
+    because a memory of it could not be saved.
+    """
+    key = _normalize_reference(name)
+    if not key or not contact_id:
+        return False
+    try:
+        contacts = _load_contacts()
+        matches = _find_by_name(contacts, name)
+        if len(matches) < 2:
+            return False
+        if contact_id not in {m.get("id", "") for m in matches}:
+            # An id that was merged away is still a valid answer — store the
+            # record it survives as, not the pointer.
+            merged = _resolve_merged(contacts, contact_id)
+            if merged is None or merged.get("id") not in {m.get("id", "") for m in matches}:
+                return False
+            contact_id = merged["id"]
+
+        stamp = datetime.now().isoformat(timespec="seconds")
+        with _RESOLUTION_LOCK:
+            resolutions = _load_resolutions()
+            previous = resolutions.get(key)
+            if isinstance(previous, dict) and previous.get("contact_id") == contact_id:
+                # Same answer again — refresh when it was last confirmed, but do
+                # not manufacture a history entry for a correction that did not
+                # happen.
+                previous["confirmed"] = stamp
+                resolutions[key] = previous
+                _save_resolutions(resolutions)
+                return True
+
+            history = []
+            if isinstance(previous, dict):
+                prior_history = previous.get("history")
+                if isinstance(prior_history, list):
+                    history = prior_history
+                superseded = {k: v for k, v in previous.items() if k != "history"}
+                superseded["superseded"] = stamp
+                history = history + [superseded]
+
+            entry = {
+                "contact_id": contact_id,
+                "recorded": stamp,
+                "confirmed": stamp,
+                "source": source,
+            }
+            if history:
+                entry["history"] = history
+            resolutions[key] = entry
+            _save_resolutions(resolutions)
+        return True
+    except Exception:
+        return False
+
+
+def _resolution_note(name: str, contact: dict) -> str:
+    """What a remembered answer tells the calling agent — including how the user
+    overrides it, which is the only route by which a wrong memory gets fixed."""
+    return (
+        f"'{name}' was resolved to this contact because the user previously "
+        f"answered that question. Do not re-ask and do not mention the lookup. "
+        f"If the user indicates a different person, repeat the call with the "
+        f"corrected contact_id and name='{name}' to replace the stored answer."
+    )
 
 
 def _dedup_candidates(contacts: list[dict], name: str) -> list[dict]:
@@ -1032,10 +1242,16 @@ def read_contact(contact_id: str = "", name: str = "") -> str:
     An id or name that belonged to a record later folded into another one via
     merge_contacts still resolves — it follows the merged_into pointer to the
     surviving record rather than returning a stub or nothing.
+
+    Passing `contact_id` and `name` together is how the user's answer to "which
+    Bill?" gets remembered — see the resolution store above. Passing `name`
+    alone will use that answer if one was given.
     """
     contacts = _load_contacts()
 
     if contact_id:
+        if name:
+            _record_resolution(name, contact_id, "read_contact")
         for contact in contacts:
             if contact.get("id") == contact_id:
                 return json.dumps(contact, indent=2)
@@ -1053,7 +1269,12 @@ def read_contact(contact_id: str = "", name: str = "") -> str:
         if not matches:
             return f"Error: no contact found matching name '{name}'"
         if len(matches) > 1:
-            return _ambiguous_match(name, matches, "returned")
+            remembered = _apply_resolution(contacts, name, matches)
+            if remembered is None:
+                return _ambiguous_match(name, matches, "returned")
+            result = remembered.copy()
+            result["_resolution_note"] = _resolution_note(name, remembered)
+            return json.dumps(result, indent=2)
         return json.dumps(matches[0], indent=2)
 
     return "Error: provide either contact_id or name"
@@ -1122,10 +1343,18 @@ def log_interaction(
     Append an interaction entry to a contact's interaction_log.
     Also updates the contact's last_contact date to the interaction date.
 
+    Passing `contact_id` and `name` together records the user's answer to "which
+    Bill?" so the question is not asked again; passing `name` alone reuses an
+    answer already given.
+
     Returns a confirmation string.
     """
     from datetime import date as _date
     interaction_date = date if date else _date.today().isoformat()
+
+    # Deferred until _CRM_LOCK is released — _record_resolution reads contacts.json
+    # itself, and the two locks are never held together.
+    resolution_to_record: tuple[str, str] | None = None
 
     with _CRM_LOCK:
         contacts = _load_contacts()
@@ -1133,6 +1362,8 @@ def log_interaction(
 
         target = None
         if contact_id:
+            if name:
+                resolution_to_record = (name, contact_id)
             for contact in contacts:
                 if contact.get("id") == contact_id:
                     target = contact
@@ -1147,8 +1378,14 @@ def log_interaction(
             # the wrong person is worse than one not filed at all, because the record
             # then asserts a conversation that never happened and nothing later
             # contradicts it.
+            #
+            # Unless the user has already answered this exact question — a
+            # remembered answer is the user's own instruction, not a guess.
             if len(matches) > 1:
-                return _ambiguous_match(name, matches, "logged")
+                remembered = _apply_resolution(contacts, name, matches)
+                if remembered is None:
+                    return _ambiguous_match(name, matches, "logged")
+                matches = [remembered]
             target = matches[0]
             ambiguity = ""
         else:
@@ -1169,6 +1406,9 @@ def log_interaction(
         target["updated"] = today
 
         _save_contacts(contacts)
+
+    if resolution_to_record is not None:
+        _record_resolution(*resolution_to_record, "log_interaction")
 
     msg = f"Interaction logged for {target['name']} (id: {target['id']})"
     if "ambiguity" in locals() and ambiguity:
@@ -1786,7 +2026,8 @@ READ_CONTACT_SCHEMA = {
     "description": (
         "Retrieve a single contact record by ID or name. "
         "Name matching is case-insensitive substring. "
-        "If multiple contacts match the name, returns the first and notes ambiguity. "
+        "If multiple contacts match the name, nothing is returned and you are asked "
+        "to put the question to the user. "
         "An id or name that was merged away via merge_contacts still resolves — "
         "you get the surviving record back, with a note naming the merge."
     ),
@@ -1799,7 +2040,12 @@ READ_CONTACT_SCHEMA = {
             },
             "name": {
                 "type": "string",
-                "description": "Name or partial name to search for.",
+                "description": (
+                    "Name or partial name to search for. When you already have the "
+                    "contact_id because the user has just told you which person they "
+                    "meant, pass the name they used here as well — that is what saves "
+                    "the answer, so the same question is not asked again later."
+                ),
             },
         },
         "required": [],
@@ -1861,7 +2107,12 @@ LOG_INTERACTION_SCHEMA = {
             },
             "name": {
                 "type": "string",
-                "description": "Contact name (fuzzy match) — used if contact_id is not provided.",
+                "description": (
+                    "Contact name (fuzzy match) — used if contact_id is not provided. "
+                    "If you have both because the user has just said which person they "
+                    "meant, send both: the name is what saves their answer, so the "
+                    "question is not asked again next time."
+                ),
             },
             "interaction_type": {
                 "type": "string",
