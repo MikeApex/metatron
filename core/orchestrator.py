@@ -78,6 +78,7 @@ from core.persona import (
     persona_scope,
     resolve_persona,
 )
+from tools import turn_context as _turn
 
 ANTHROPIC_MODEL = "claude-sonnet-5"
 _PARALLEL_TOOLS = {"run_subagent", "run_model_conference"}
@@ -710,7 +711,11 @@ def load_recent_context(persona: str | None = None, days: int = 5) -> str:
     # weekly digest. Same contract as the other two — returns "" when quiet, and the
     # digest is delivered exactly once (the block clears it on read). A8 places all
     # three together.
-    for _block_source in ("tools.obligations", "tools.calendar_reconcile", "tools.intake"):
+    # tools.confirm added 2026-08-27 [DB-0827-01]: what the user has refused, so the session
+    # does not spend a turn arriving at a proposal that tools/confirm.py will not raise, and
+    # does not read the absence of a card as licence to ask in prose instead.
+    for _block_source in ("tools.obligations", "tools.calendar_reconcile", "tools.intake",
+                          "tools.confirm"):
         try:
             import importlib
             block = importlib.import_module(_block_source).context_block(persona)
@@ -2146,12 +2151,17 @@ def run_session_anthropic(system_prompt: str, user_input: str,
 
         if parallel_calls:
             _parent_trace = _tr.get_trace()
+            # [DB-0827-01] Thread-local like the trace, and propagated for the same reason:
+            # the decline guard fails closed on a thread with no turn, so a worker without
+            # this would suppress a re-proposal the user themselves asked for.
+            _parent_turn = _turn.current()
             _parent_agent = _tr.get_current_agent()
             _parent_persona = current_persona()
             def _make_dispatch(name, inputs, handlers, turn):
                 def _worker():
                     _tr.set_trace(_parent_trace)
                     _tr._set_current_agent(_parent_agent)
+                    _turn.adopt(_parent_turn)
                     with (persona_scope(_parent_persona) if _parent_persona else nullcontext()):
                         return dispatch_tool(name, inputs, handlers, _agent_rec=_parent_agent, _turn_num=turn, _allowed=_allowed_names)
                 return _worker
@@ -2260,12 +2270,17 @@ def _anthropic_stream(
 
         if parallel_calls:
             _parent_trace = _tr.get_trace()
+            # [DB-0827-01] Thread-local like the trace, and propagated for the same reason:
+            # the decline guard fails closed on a thread with no turn, so a worker without
+            # this would suppress a re-proposal the user themselves asked for.
+            _parent_turn = _turn.current()
             _parent_agent = _tr.get_current_agent()
             _parent_persona = current_persona()
             def _make_dispatch(name, inputs, handlers, turn):
                 def _worker():
                     _tr.set_trace(_parent_trace)
                     _tr._set_current_agent(_parent_agent)
+                    _turn.adopt(_parent_turn)
                     with (persona_scope(_parent_persona) if _parent_persona else nullcontext()):
                         return dispatch_tool(name, inputs, handlers, _agent_rec=_parent_agent, _turn_num=turn, _allowed=_allowed_names)
                 return _worker
@@ -3576,12 +3591,17 @@ def _run_gemini_native_loop(client, model_name: str,
 
         if parallel_calls:
             _parent_trace = _tr.get_trace()
+            # [DB-0827-01] Thread-local like the trace, and propagated for the same reason:
+            # the decline guard fails closed on a thread with no turn, so a worker without
+            # this would suppress a re-proposal the user themselves asked for.
+            _parent_turn = _turn.current()
             _parent_agent = _tr.get_current_agent()
             _parent_persona = current_persona()
             def _make_gemini_dispatch(fc_name, fc_args, handlers, turn):
                 def _worker():
                     _tr.set_trace(_parent_trace)
                     _tr._set_current_agent(_parent_agent)
+                    _turn.adopt(_parent_turn)
                     with (persona_scope(_parent_persona) if _parent_persona else nullcontext()):
                         return dispatch_tool(fc_name, fc_args, handlers,
                                             _agent_rec=_parent_agent, _turn_num=turn, _allowed=_allowed_names)
@@ -3748,12 +3768,17 @@ def _run_gemini_native_stream(client, model_name: str,
 
         if parallel_calls:
             _parent_trace = _tr.get_trace()
+            # [DB-0827-01] Thread-local like the trace, and propagated for the same reason:
+            # the decline guard fails closed on a thread with no turn, so a worker without
+            # this would suppress a re-proposal the user themselves asked for.
+            _parent_turn = _turn.current()
             _parent_agent = _tr.get_current_agent()
             _parent_persona = current_persona()
             def _make_gemini_dispatch(fc_name, fc_args, handlers, turn):
                 def _worker():
                     _tr.set_trace(_parent_trace)
                     _tr._set_current_agent(_parent_agent)
+                    _turn.adopt(_parent_turn)
                     with (persona_scope(_parent_persona) if _parent_persona else nullcontext()):
                         return dispatch_tool(fc_name, fc_args, handlers,
                                             _agent_rec=_parent_agent, _turn_num=turn, _allowed=_allowed_names)
@@ -4841,11 +4866,13 @@ def _dispatch_from_coordinator(
             # tool-dispatch sites above.
             _fan_trace = _tr.get_trace()
             _fan_agent = _tr.get_current_agent()
+            _fan_turn = _turn.current()
 
             def _make_specialist(agent_name, directive, cx):
                 def _worker():
                     _tr.set_trace(_fan_trace)
                     _tr._set_current_agent(_fan_agent)
+                    _turn.adopt(_fan_turn)
                     with (persona_scope(_fan_persona) if _fan_persona else nullcontext()):
                         return _run_single_agent(
                             agent_name, directive, persona, provider, None, cx
@@ -5118,6 +5145,13 @@ def run_pipeline_session(user_input: str,
         return _guard_msg
 
     _tr.start_request_trace(user_input, persona)
+    # [DB-0827-01] What kind of turn this is, for the decline guard in tools/confirm.py:
+    # a refused action may come back on a new trigger and never from carried context, and
+    # inside the tool the two are indistinguishable without this. Cleared in the `finally`
+    # below — a session runs on a pooled thread, and a turn left bound would let the NEXT
+    # session inherit "the user spoke" from this one.
+    _turn.adopt({"user_turn": has_real_user_turn(user_input, is_proactive, attachments),
+                 "started_at": time.time()})
     try:
         # Tokens outstanding BEFORE this turn. Anything new by the end of it was raised
         # by this turn's tool calls, which is how enforce_pending_receipt() knows what
@@ -5238,6 +5272,8 @@ def run_pipeline_session(user_input: str,
     except Exception:
         _tr.set_trace(None)
         raise
+    finally:
+        _turn.adopt(None)
     _tr.finish_request_trace(filtered)
     # [DB-0810-15] Translation is the last thing that happens, after the trace and after
     # `history` above have both taken the English text. That is deliberate: the model's own
@@ -5279,8 +5315,15 @@ def run_pipeline_session_stream(
     thread-local and is entered on the thread that iterates the generator — which
     is the executor thread in core/server.py, not the event loop — so concurrent
     requests for different personas cannot observe each other's identity.
+
+    [DB-0827-01] The turn is bound here for the same reason and on the same thread: it is
+    what tells the decline guard in tools/confirm.py whether a proposal came from the user
+    or from the model re-reading carried context. A generator's `with` unbinds on exhaustion
+    or on close, so an abandoned stream does not leave the turn behind.
     """
-    with persona_scope(resolve_persona(persona)) as bound:
+    with persona_scope(resolve_persona(persona)) as bound, _turn.turn_scope(
+        user_turn=has_real_user_turn(user_input, is_proactive, attachments)
+    ):
         yield from _run_pipeline_session_stream_inner(
             user_input, persona=bound, provider=provider, history=history,
             is_proactive=is_proactive, received_at=received_at,

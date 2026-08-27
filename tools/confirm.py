@@ -129,6 +129,43 @@ def _fingerprint(action: str, args: dict) -> str:
     return json.dumps({"action": action, "args": args}, sort_keys=True, default=str)
 
 
+# How long a refusal stands against being re-proposed from carried context.
+#
+# [DB-0827-01] This is a lifetime, so it is chosen rather than defaulted. 24 hours is the
+# span over which the SAME context is carried: `load_recent_context` reads the tracker and
+# the last five days of logs, the scheduler runs its jobs on a daily cycle, and every one of
+# those runs re-reads the material the first proposal came from. A window shorter than a day
+# leaves the next morning's scheduled run free to raise the identical card off the identical
+# context, which is the loop; a window materially longer starts suppressing proposals whose
+# grounds have genuinely moved on, and does it silently.
+#
+# What it costs: nothing standing. No process, no timer, no stored state beyond the ledger
+# entry that tools/confirm.decline() already writes, and one read of a small local JSON file
+# per confirmation request. Nothing here is billed by wall-clock time and no meter needs to
+# watch it.
+#
+# What happens at expiry: the window closing does not delete or alter anything. The ledger
+# record persists — capped by count at _DECLINED_LIMIT, never by age — so "was this refused?"
+# stays answerable afterwards; only the automatic suppression lapses. Archive-on-merge: the
+# refusal is kept, it simply stops being enforced.
+_REPROPOSE_WINDOW_SECONDS = 24 * 60 * 60
+
+
+def _recently_declined(action: str, args: dict, persona: str | None = None) -> dict | None:
+    """
+    The most recent refusal of this exact action within the window, or None.
+
+    Matched on the fingerprint, so "email Sarah the itinerary" being refused does not
+    suppress "email Sarah the address". A record whose args did not survive the tamper check
+    in decline() carries no fingerprint and matches nothing — X is not known, so it cannot be
+    used to suppress a proposal of X.
+    """
+    fingerprint = _fingerprint(action, args)
+    matches = [r for r in declined(_REPROPOSE_WINDOW_SECONDS, persona)
+               if r.get("fingerprint") == fingerprint]
+    return matches[-1] if matches else None
+
+
 def request(action: str, args: dict, description: str,
             persona: str | None = None) -> dict:
     """
@@ -137,7 +174,40 @@ def request(action: str, args: dict, description: str,
     `description` is what the user will read and approve. Write it so it stands alone —
     they may see it without the surrounding conversation, and it is the only thing
     standing between a persuasive email and a real send.
+
+    **A refusal stands.** [DB-0827-01] The decline path stopped the five-second poll putting
+    the same card straight back; it did not stop the next turn proposing the identical action
+    again off the same carried context, which is the same loop one layer up and just as
+    slow to escape. So a request matching an action refused inside
+    `_REPROPOSE_WINDOW_SECONDS` raises no card at all unless something genuinely new has
+    happened since the refusal — the user speaking, or a new item arriving — which
+    tools/turn_context.py answers and this function does not attempt to judge.
+
+    When a re-proposal IS allowed, the pending record remembers that it follows a refusal, so
+    the user can be told they are being asked again. Being asked twice without being told is
+    the same discourtesy in a quieter register.
     """
+    prior = _recently_declined(action, args, persona)
+    if prior is not None:
+        from tools.turn_context import new_trigger_since
+        if not new_trigger_since(prior.get("declined_at") or 0, persona):
+            when = time.strftime("%H:%M", time.localtime(prior.get("declined_at") or 0))
+            # User-fact language only. This payload is read by the Synthesizer and can reach
+            # the user's reply, so it says what the user did and what did not happen —
+            # never how that was determined. Same discipline as PENDING_CONFIRMATION above.
+            return {
+                "status": "DECLINED_RECENTLY",
+                "description": prior.get("description", "") or description,
+                "declined_at": when,
+                "instruction": (
+                    f"The user declined this at {when} and it has not been raised again. "
+                    "Nothing has been performed and nothing is waiting for them. Do not "
+                    "ask them to reconsider and do not offer it again in this session — "
+                    "their answer was no. If they raise it themselves, or something "
+                    "genuinely new about it comes up, it can be proposed then."
+                ),
+            }
+
     token = secrets.token_urlsafe(16)
     with _LOCK:
         data = _prune(_load(persona))
@@ -149,10 +219,13 @@ def request(action: str, args: dict, description: str,
             "created_at": time.time(),
             "expires_at": time.time() + TTL_SECONDS,
             "approved": False,
+            # Set only when this action was refused earlier and something new brought it
+            # back. The card can then say so, rather than presenting itself as a first ask.
+            "after_decline": (prior or {}).get("declined_at"),
         }
         _save(data, persona)
 
-    return {
+    payload = {
         "status": "PENDING_CONFIRMATION",
         "confirm_token": token,
         "description": description,
@@ -164,6 +237,14 @@ def request(action: str, args: dict, description: str,
             "all. You will not be the one to complete it, and a second call is refused."
         ),
     }
+    if prior is not None:
+        payload["previously_declined_at"] = time.strftime(
+            "%H:%M", time.localtime(prior.get("declined_at") or 0))
+        payload["instruction"] += (
+            f" The user declined this at {payload['previously_declined_at']}; say so when "
+            "you raise it, so they know they are being asked again and why."
+        )
+    return payload
 
 
 def approve(token: str, persona: str | None = None) -> bool:
@@ -259,9 +340,9 @@ def declined(within_seconds: float | None = None,
     """
     Declined actions, newest last. `within_seconds` limits to recent ones.
 
-    This is the readable half of "the user said no to X". Nothing surfaces it to the model
-    yet — see the handoff for `[DB-0827-01]`; that plug-in point is in the orchestrator's
-    context assembly, which is outside this change.
+    This is the readable half of "the user said no to X". Two things read it: the guard in
+    request(), which is what actually stops a re-proposal, and context_block() below, which
+    tells the model so it does not spend the turn trying.
     """
     path = _declined_path(persona)
     try:
@@ -274,6 +355,42 @@ def declined(within_seconds: float | None = None,
         return records
     cutoff = time.time() - within_seconds
     return [r for r in records if (r.get("declined_at") or 0) >= cutoff]
+
+
+def context_block(persona: str | None = None) -> str:
+    """
+    What the user has recently refused, as a section for load_recent_context. Empty when
+    nothing was declined, so a user who has never said no pays nothing.
+
+    The guard in request() is what enforces this; the block exists so the model does not
+    spend a turn arriving at a proposal that will not be raised, and does not read the
+    absence of a card as permission to ask in prose instead. Both halves are needed: an
+    instruction alone has been ignored before, and a silent refusal invites the model to
+    route around it.
+
+    Descriptions are ours — they were written by the tool that proposed the action, not by
+    an attacker — so nothing here needs the untrusted wrapper. Tool and argument names are
+    never included: the user reads this layer's output, and the description already says
+    what the action was in their own terms.
+    """
+    records = declined(_REPROPOSE_WINDOW_SECONDS, persona)
+    if not records:
+        return ""
+    lines = ["## Declined by the user",
+             "Things the user was asked to approve and refused. Their answer stands — do "
+             "not propose these again, and do not work around them. Raise one only if the "
+             "user brings it up themselves or something genuinely new about it arrives."]
+    for r in records[-_CONTEXT_MAX_DECLINED:]:
+        when = time.strftime("%H:%M on %d %b", time.localtime(r.get("declined_at") or 0))
+        what = (r.get("description") or "").strip()
+        if what:
+            lines.append(f"- {what} — declined {when}")
+    return "\n".join(lines) if len(lines) > 2 else ""
+
+
+# Enough to cover a day of refusals without letting a bad afternoon crowd the context. The
+# ledger keeps everything (_DECLINED_LIMIT); this caps only what is shown.
+_CONTEXT_MAX_DECLINED = 10
 
 
 def pending(persona: str | None = None) -> list[dict]:
