@@ -73,53 +73,7 @@ back-tagging the rest is `[DB-0815-10]`.
 > counts, and all three were single events; every one of them was also **older than the code that
 > fixed it**. They were removed on 2026-08-18. Confirm the count *and* compare the evidence date
 > against `git log` before promoting anything from here.
-- **[instruction change]** User requested that sessions open with the most time-sensitive commitment, overdue follow-up, or unresolved thread, naming it specifically rather than asking a general question. If nothing is outstanding, keep it to one line and ask what is on.  
-  `2026-08-21T09:25:38.617423Z`
-
-- **The ZDR form is submitted — one act left, and it is a ruling, not a task. @waiting**
-Mike submitted Google's abuse-monitoring opt-out on 2026-08-22 (answers as filed:
-`archive/security/zdr_optout_form_answers_2026-08-21.md`). **Decision expected by ~2026-09-05**
-(~2 weeks review, plus 5–7 business days to allowlist if approved); the email to
-`diamond.mike@gmail.com` is the only evidence there will be, and `docs/INFRASTRUCTURE.md`
-§ Vertex AI credentials is where it gets recorded either way.
-
-**Still open:** rule on the proposed § Section 0 amendment at the bottom of
-`archive/security/zdr_terms_evidence_2026-08-20.md` — whether the sensitive-tier default continues
-on the corrected basis (flagged-only logging, ≤90 days, no training) until the exception is granted
-or refused; backstop 2026-10-01. Drafted, not applied. **This does not wait on Google** — the
-amendment states what the permission rests on *now*, which is the gap the 2026-08-20 correction
-opened. If the request is refused, the `tone_profiler` question returns with it.
-
-Provenance: raised by Mike 2026-08-20 (`archive/handoffs/2026-08-20-zdr-verification-prompt.md`);
-verified obtainable 2026-08-21; form submitted 2026-08-22.
-- **Accountability Index — measure which intentions, goals and planned events actually happened
-in a period, to read both the user's follow-through and Metatron's intended effect.** Raised by
-Mike 2026-08-26 while fixing the Diarist's plan-vs-event confusion. The collection half now
-exists: the Diarist logs user-voiced intentions in a fixed shape (`write_log` with an
-`intention` key + optional `stated_for` — `config/agents/diarist.md`, added same day), so
-intentions are machine-findable from the log without prose parsing. What does not exist is the
-index itself: a periodic join of stated intentions against subsequent occurred-event entries
-(and calendar/obligation outcomes), producing a fulfilment rate over a window. Scope questions
-for the design pass: what counts as fulfilment evidence (an ordinary log entry naming the act;
-a closed obligation; a calendar event that survived reconcile); the window; and where it
-surfaces — this is A9-adjacent (absorbed work / analytics, § A9's content-free constraint
-applies if it ever becomes a rollup field) and probably a Pattern Miner or analytics job, not
-an agent behaviour. Distinct from system-created calendar obligations by construction — the
-intention key only captures what the user voiced.
-*Provenance: Mike, 2026-08-26, mid-session directive during the find_places routing fix.*
-- **The daily anticipation pass has never fired — observe its first run and read the trace.**
-Built 2026-08-26 (`bec3952`+`1d77bd0`, deployed): `location_anticipation` fires daily at 10:00
-(template + mike's live VM `scheduler.yaml`, scheduler restarted with the job registered) —
-Coordinator prompt directing Logistics' new horizon-scan item 5: where the user will be today
-and tomorrow, and what those locations make possible (unarranged mealtimes via `find_places`,
-errands satisfiable nearby, contact-area flags routed via Synth, downtime gaps). First firing
-expected 2026-08-27 10:00. What to check in the trace: Logistics dispatched; the scan actually
-read the calendar; `find_places` called only where a real gap existed; the user-facing message
-either genuinely useful or near-silent (the prompt demands one line when nothing is worth
-raising). Known-class risk to watch: `[DB-0809-02]` — a new scheduled job inheriting an
-unfinished ritual from context. Standing cost of the job: ~$0.07–0.23/day (~$2–7/mo).
-*Provenance: Mike, 2026-08-26 — the observation half of the anticipation feature he directed
-the same day; filed at his instruction at chat close.*
+*(empty — triaged 2026-08-27 by `/backlog deep`; evidence in `archive/backlog_closed_2026-08.md` § Closed 2026-08-27)*
 
 ---
 
@@ -174,8 +128,15 @@ Each is a defect measured in the 2026-08-21 traces, not a proposal.*
   **Fix in code, not in an instruction:** refuse the dispatch when the session carries no real
   user turn. An agent-file rule is what already failed.
   *Measured 2026-08-21 from `data/personas/mike/traces/2026-08-21.jsonl`, read live off the VM.*
+  *Re-verified 2026-08-27: the cited dispatch line drifted — the fire-and-forget dispatch is now
+  [core/orchestrator.py:4660](core/orchestrator.py#L4660); still no guard.*
+  **✅ Built 2026-08-27** (`e6bde3d`, merged): `has_real_user_turn()` gates the Diarist dispatch —
+  a scheduler prompt is not speech; a user who answers a check-in still journals.
+  `tests/test_diarist_user_turn_gate.py`.
   @kind: bug
-  *filed 2026-08-22 by Mike*
+  @waiting: the owed deploy, then one scheduler-only day whose journal stays empty and one
+  answered check-in that still journals — both halves, or the gate is the same bug reversed
+  *filed 2026-08-22 by Mike · built 2026-08-27 by the session-hygiene attack worker*
 
 - **3. [DB-0822-06] It tells Mike his own training day, and got it wrong four ways in one day.**
   Across 08-21 the same hiatus was called *five-day, five-day, day three, day three, **day four**,
@@ -188,8 +149,18 @@ Each is a defect measured in the 2026-08-21 traces, not a proposal.*
   **Fix:** compute derived counts at read time and never store them; give log-carried topics an
   age-out. Both are `tools/` + `core/`, no agent file involved.
   *Measured 2026-08-21; the offending write is visible in the 10:24 trace's `write_log` args.*
+  *Fourth instance 2026-08-27: the 10:00 anticipation run told Mike the Teams link was "still
+  missing" three hours after the 07:14 run declared it resolved — same carried-state mechanism.*
+  **Half built 2026-08-27** (`cbd5ca3`, merged): carried state now shows its age — open threads
+  read "(logged 9 days ago)", log lines carry age beside date. Annotation, not filtering.
+  `tests/test_context_age_annotation.py`. **Two halves stay open, stated by the builder:** the
+  derived-count half has no clean code interception ("Day 3 of 5" is free text a specialist
+  writes), and **intraday staleness — the Teams-link case — is untouched by day-granular ages**
+  (the log is one merged file per day, no per-field timestamps).
   @kind: bug
-  *filed 2026-08-22 by Mike*
+  @waiting: the owed deploy, then one multi-day-old thread rendering with its age; the intraday
+  half needs its own design pass
+  *filed 2026-08-22 by Mike · age-out half built 2026-08-27 by the session-hygiene attack worker*
 
 - **4. [DB-0822-07] Two scheduled jobs fire seven minutes apart.** `companion_checkin` runs on a
   180-minute interval and landed at 07:23; `morning_brief` is fixed at 07:30. **19 model calls
@@ -219,6 +190,10 @@ Each is a defect measured in the 2026-08-21 traces, not a proposal.*
   [archive/plans/synthesizer_audit_2026-08-18.md](archive/plans/synthesizer_audit_2026-08-18.md) § 5.
   **Corollary Mike named:** an item that cannot be acted on should not be raised at all; one that
   can should arrive with the action attached.
+  *Re-verified 2026-08-27: the file shrank 52,397 → 41,939 bytes in the audit execution
+  (`ce94dd1`) but the Proactive Anticipation section (`synthesizer.md:249–277`, "mandatory pass…
+  cannot be skipped") was untouched. Since length→adherence is the named cause, **re-measure
+  adherence against the post-audit file** — one scheduled-run day of traces — before any fix.*
   @kind: bug
   @session: whether to fix by instruction or by giving the Synthesizer an explicit "propose a next
   action or stay silent" gate
@@ -237,6 +212,10 @@ Each is a defect measured in the 2026-08-21 traces, not a proposal.*
   **Two halves, deliberately one item:** the discard is a bug in what the Synthesizer surfaces; the
   coordination check is new capability in `logistics` / `recreation_hobbies`. They share a surface
   and splitting them would have each half wait on the other.
+  *Re-verified 2026-08-27, and the build is cheaper than when filed: the intake queue and
+  per-agent `read_intake_queue` grants already exist (disabled behind `[DB-0820-03]`'s eval gate).
+  What is missing is only the Synthesizer surfacing rule and the coordination-check instruction —
+  both agent-file (Red) work, unaffected by the gate.*
   @kind: feature
   *filed 2026-08-22 by Mike*
 
@@ -268,8 +247,13 @@ Each is a defect measured in the 2026-08-21 traces, not a proposal.*
   **Do not fix it blind** — the routing layer carries no reproduction yet, and one trace is one
   trace. A second data point is cheap: any short referring turn ("undo that", "cancel it",
   "do the other one") after a contact operation.
+  **@waiting condition MET 2026-08-27** — the `[DB-0827-05]` fix recovered the discarded
+  `ROUTING_MISS` history, and it holds at least three prior instances of this exact class:
+  *"Read that back to me again"* resolved to Prudential scheduling instead of the previous turn's
+  food data (08-18); *"previous request"* resolved to an older lunch instead of the immediately
+  prior turn (08-10); *"Approved"* resolved to the wrong pending action and wrongly closed an
+  obligation (08-15). Not one trace — a pattern with four data points. Workable now.
   @kind: bug
-  @waiting: a second instance, or a deliberate probe of referring turns after a tool action
   *filed 2026-08-26 at Mike's instruction, from the live trace*
 
 - **8. [DB-0827-01] Declining a confirmation does nothing, so the prompt comes back until you
@@ -291,27 +275,33 @@ Each is a defect measured in the 2026-08-21 traces, not a proposal.*
   same fingerprinted path `consume()` uses, a client control that calls it, and a decision on
   whether a decline should also tell the model *"the user said no"* — without that, the next turn
   can simply re-propose the same action, which is a second, quieter version of the same loop.
+  **✅ Built 2026-08-27** (`0f8f528`, merged): `POST /decline` removes the record through the
+  same fingerprint discipline as `consume()`; refusals retained in `declined_confirmations.json`
+  (capped 200); the client leaves the card up if the server call fails rather than pretending the
+  "No" landed. `tests/test_decline_path.py`, 14 checks, all failing pre-fix. **Open half:** a
+  decline does not yet stop the model re-proposing — the ledger is readable via
+  `confirm.declined(within_seconds=…)`; the plug-in point is orchestrator context assembly.
   @kind: bug
-  *filed 2026-08-27 at Mike's instruction, from his own live attempt to decline*
+  @waiting: the owed deploy, then one live decline that stays declined
+  *filed 2026-08-27 at Mike's instruction, from his own live attempt to decline · built same day
+  by the decline-path attack worker*
 
-- **9. [DB-0827-05] Routing-miss reports are being silently discarded again — the sync declared
-  the event type dead, but it fired five times since, most recently yesterday.** The 08-15 registry
-  fix (`048e937`) classed `ROUTING_MISS` into `KNOWN_DEAD_TYPES` in `scripts/sync_dev_backlog.py`
-  on the strength of a code grep: *"nothing calls write_quality_event with this type anymore."*
-  **The grep checked the wrong layer.** The emitter is not Python — it is the Synthesizer calling
-  the registered `write_quality_event` tool at runtime, instructed in 9 places in
-  `config/agents/synthesizer.md`. Verified against the live VM 2026-08-27: **5 `ROUTING_MISS`
-  events since 08-11** (08-14 logistics inbox request unrouted; 08-15 "Approved" misread; 08-26
-  *"Undo that merge" routed to work_vocation* — the same incident as `[DB-0826-01]`, reported by
-  the runtime and dropped). The reconciliation test (`tests/test_quality_event_reconciliation.py`)
-  blesses the drop because the type is marked dropped-on-purpose — the guard built to catch this
-  gap is what certifies it.
-  **Fix:** move `ROUTING_MISS` from `KNOWN_DEAD_TYPES` to `MACHINE_TYPES`, and reword the
-  `KNOWN_DEAD_TYPES` comment: a type is dead only when neither code **nor any agent instruction
-  file** emits it — a grep over `config/agents/` is the check the 08-13 pass missed.
+- **9. [DB-0827-07] The Coordinator writes empty "CLARIFICATION_NEEDED:" quality events — 33
+  since 08-18, 3–5 a day, every one with no content.** Diagnosed 2026-08-27 during the deep run's
+  machine-log sweep (the ⚠ ×33 signature): the Coordinator fills its `USER_CORRECTION:` template
+  slot with the adjacent `CLARIFICATION_NEEDED:` label and nothing after the colon;
+  `_handle_user_correction()` ([core/orchestrator.py:492](core/orchestrator.py#L492)) logs it
+  because `is_null_ish()` does not catch a bare template label. Same slot-noise class as the
+  "None ×90" case `[DB-0815-09]` fixed. Two costs: junk drowns the event log's session-start
+  count, and if the Coordinator genuinely needed clarification those 33 times, the payload is
+  lost. **Fix: extend the null-ish check to bare labels while keeping a label *with* content as
+  real signal.** Machine-originated, promoted at ×33 under the ×3 rule.
+  **✅ Built 2026-08-27** (`24dabae`, merged): `is_null_ish()` drops a bare ALL-CAPS label,
+  keeps `CLARIFICATION_NEEDED: which Bill?` intact. `tests/test_empty_template_label_events.py`.
   @kind: bug
-  *filed 2026-08-27 at Mike's instruction, from the resumed 08-10 sink-gap session's review
-  against current state; VM log pulled same day*
+  @waiting: the owed deploy, then one day with no new empty-label events in the VM quality log
+  *filed 2026-08-27 from the deep-run machine sweep, VM quality events read live · built same day
+  by the session-hygiene attack worker*
 
 ## Later
 
@@ -330,6 +320,22 @@ sections and surfaces them on the sync line at session start, so a time-gated it
 the condition has not arrived, push the date rather than closing the item.
 
 ### Decisions — each needs one answer from Mike, not effort
+
+- **[DB-0827-08] The ZDR opt-out is submitted; the § Section 0 amendment ruling is still owed,
+  and it does not wait on Google.** Form submitted 2026-08-22 (answers:
+  `archive/security/zdr_optout_form_answers_2026-08-21.md`); **Google's decision expected
+  ~2026-09-05**, recorded either way in `docs/INFRASTRUCTURE.md` § Vertex AI credentials.
+  **The open act is Mike's ruling on the proposed § Section 0 amendment** at the bottom of
+  `archive/security/zdr_terms_evidence_2026-08-20.md` — whether the sensitive-tier default
+  continues on the corrected basis (flagged-only logging, ≤90 days, no training) until the
+  exception is granted or refused; backstop 2026-10-01. Drafted, not applied. If the request is
+  refused, the `tone_profiler` question returns with it. *(Note: the 08-26 § Section 0 RESOLVED
+  ruling covers the mike-persona-keeps-running question; this amendment is the narrower
+  written-basis half.)*
+  @session: rule on the drafted § Section 0 amendment
+  @waiting: Google's decision email to diamond.mike@gmail.com, expected ~2026-09-05
+  `due: 2026-09-05`
+  *raised by Mike 2026-08-20 · form submitted 2026-08-22 · triaged out of Inbox 2026-08-27*
 
 - **[DB-0818-08] Nothing records where a fact came from, so a checked value is overwritten by a
   guessed one — and an answer with no source is delivered as fact.** Mike, 2026-08-18: *"the CRM needs
@@ -444,6 +450,12 @@ the condition has not arrived, push the date rather than closing the item.
   Mike, 2026-08-22: *"False action claim is unacceptable and needs to be addressed."*
   **This makes the item buildable:** cross-check claimed actions against the trace's tool calls
   before the response is emitted. `core/` — no agent file needed for the detection half.
+  **✅ Detection half built 2026-08-27** (`e673330`, merged): persistence claims in the
+  Synthesizer's text are cross-checked against write-family tool calls in the turn's trace; an
+  unbacked claim logs a `FALSE_ACTION_CLAIM` event carrying the sentence — log-only, response
+  untouched, both pipeline paths. Registered in the sync so it is collected, not discarded.
+  `tests/test_false_action_claim.py`. **The @session policy half is unchanged and still the
+  item's exit.**
   **A third arrived 2026-08-18 and it is the one that settles the question, because unlike the other
   two it can be checked end to end.** `SELF_APPLIED` at `09:17:27Z` wrote an Interaction Preference
   into `config/personas/mike.md:16` — *"Open sessions with the most time-sensitive commitment,
@@ -500,8 +512,10 @@ the condition has not arrived, push the date rather than closing the item.
   pass before anything is built on it: the privacy tier for **continuous** location, which layer
   supplies it, and how scanning bounds itself. Split out of `[DB-0808-04]` 2026-08-15 — keeping them
   as one entry hid a shippable feature behind an unmade decision for a week.
+  **First-draft feature — Mike, 2026-08-27: geolocation belongs in this rendition; moved up in the
+  capstone plan. The design pass (privacy tier) is the gating step and needs his session.**
   @session: the continuous-location privacy tier
-  *filed 2026-08-10 · split 2026-08-15*
+  *filed 2026-08-10 · split 2026-08-15 · promoted 2026-08-27*
 
 - **[DB-0818-07] The safety regression passes without ever touching stored knowledge.**
   `run_a4_safety.py --suite pipeline` runs against `sarah_chen`, whose VM store holds **one** entry —
@@ -550,11 +564,21 @@ the condition has not arrived, push the date rather than closing the item.
   **Do not act on the table above as it stands.** Every figure assumes the cache fix is live; today's
   numbers are contaminated by the leak. Re-measure a clean day first.
   Full reasoning and the measured rates: `archive/plans/vertex_cache_cost_control_2026-08-20_plan.md`.
+  **Merged in 2026-08-27 (was `[DB-0822-01]` half b): the Step 6 Pro specialist-caching half.**
+  Add `mental_wellbeing` and `physical_health` to the cached-path set at
+  `core/orchestrator.py:4019` — **gated on a full A4 run** (`tests/run_a4_safety.py`, clinical +
+  pipeline, both complexity tiers), because it moves the two clinical-flag agents onto the native
+  loop. Worth ~+$0.17/day; the Flash-Lite six are +$0.008/day — include or skip without
+  deliberation. Arithmetic: `archive/plans/vertex_cache_step6_specialist_caching_2026-08-21.md`.
+  All-Pro routing quadruples what specialist caching is worth — which is why these are one
+  decision now. **The @waiting condition is met** — half (a)'s reconcile passed on five
+  consecutive clean days (evidence: `archive/backlog_closed_2026-08.md` § [DB-0822-01a]) — so
+  what remains is the @session Pro decision plus one A4-gated code change.
   @kind: feature
-  @waiting: Steps 1–2 of the cache plan deployed, plus one clean day re-measured against the bill
   @session: which agents move to Pro — cost is settled, latency on `coordinator` is the open trade
   `due: 2026-09-15`
-  *raised 2026-08-20 by Mike at the close of the Vertex billing reconciliation session*
+  *raised 2026-08-20 by Mike at the close of the Vertex billing reconciliation session ·
+  absorbed `[DB-0822-01]`(b) 2026-08-27, both trails kept*
 
 ### Done and deployed — each closes on one ordinary use
 
@@ -630,12 +654,17 @@ with a date.** Nothing new joins this group open-ended.*
   @waiting: one dictated turn
   *filed 2026-08-05*
 
-- **[DB-0809-21] The calendar reconcile has never had a live candidate to raise.**
-  `daily_calendar_reconcile` re-ran clean with 0 candidates, so the mechanism works, but no real
-  unreferenced calendar event has yet existed to watch it raise as a question. A forced one proves
-  nothing. *(The other three verification steps passed 2026-08-10 and are closed.)*
+- **[DB-0809-21] The calendar reconcile has never had a live candidate to raise — until,
+  probably, the Mousetrap duplicates.** `daily_calendar_reconcile` re-ran clean with 0 candidates
+  through 08-10. **On 2026-08-25T04:35 the machine log carried two "possible duplicate calendar
+  entries" reports** (three overlapping Mousetrap matinee events for 08-25, similarity 0.89 and
+  0.45) — timestamped in the maintenance window, which is almost certainly this mechanism firing
+  on a live candidate at last. **Two exits, both cheap:** confirm the emitter is
+  `daily_calendar_reconcile` (one grep of its code path against the entry wording), then close;
+  and **Mike resolves the actual duplicates** — three Mousetrap events, keep one.
   @kind: chore
-  *filed 2026-08-09 · deferred by Mike*
+  *filed 2026-08-09 · deferred by Mike · live-candidate evidence found 2026-08-27 in the deep-run
+  machine sweep*
   `due: 2026-09-01`
 
 - **[DB-0810-05] Writing tone has never been learned from a real mailbox.** Built and committed
@@ -671,11 +700,32 @@ with a date.** Nothing new joins this group open-ended.*
   before dispatching anyone**: cheapest is an append-only audit line per write. **Do not dispatch a
   worker on the measurement half until one exists** — one was scoped at 150–190k and would have spent
   it discovering the above.
+  *Checked live 2026-08-27: `expired_open_threads` is **still 0** after 12 days with 4 threads
+  open — either grace legitimately keeps everything alive or expiry silently never fires, and
+  nothing can distinguish them yet.*
+  **✅ Data source built 2026-08-27** (`17142c0`, merged): every context-tracker write appends one
+  line to `context_audit.jsonl` beside `context.json` (600), with `added`/`removed`/`expired` as
+  separate fields — folding the last two together is what would hide a dead expiry again.
+  `tests/test_context_audit_line.py`. Measurement follows once it has run a few days deployed.
   @kind: bug
   *filed 2026-08-14 by Mike · timestamp half closed 2026-08-15*
-  `due: 2026-08-22`
+  `due: 2026-09-05`
 
 ### Unbuilt — real capability that does not exist
+
+- **[DB-0827-09] Accountability Index — measure which stated intentions, goals and planned
+  events actually happened in a period**, reading both the user's follow-through and Metatron's
+  intended effect. Raised by Mike 2026-08-26 while fixing the Diarist's plan-vs-event confusion.
+  The collection half exists: the Diarist logs user-voiced intentions in a fixed shape
+  (`write_log` with an `intention` key + optional `stated_for` — `config/agents/diarist.md`).
+  What does not exist is the index: a periodic join of stated intentions against subsequent
+  occurred-event entries (and calendar/obligation outcomes) producing a fulfilment rate over a
+  window. A9-adjacent (§ A9's content-free constraint applies if it ever becomes a rollup
+  field); probably a Pattern Miner or analytics job, not an agent behaviour. Captures only what
+  the user voiced, by construction.
+  @kind: feature
+  @session: design pass — what counts as fulfilment evidence, the window, where it surfaces
+  *raised by Mike 2026-08-26 mid-session · triaged out of Inbox 2026-08-27*
 
 - **[DB-0827-03] Build the CRM sweep — the design is accepted, and the plan MUST BE REVIEWED
   WITH MIKE AGAIN BEFORE ANY BUILD SESSION STARTS.** That review gate is Mike's explicit
@@ -734,26 +784,9 @@ with a date.** Nothing new joins this group open-ended.*
   *filed 2026-08-26 at Mike's instruction · design agreed 2026-08-22 · privacy pre-cleared
   2026-08-26, deliberately, not by omission*
 
-- **[DB-0822-01] The cache fix is proven against the bill; what remains is the Step 6 Pro half,
-  gated on a full A4 run.** Half (a) — the reconcile — **closed 2026-08-27**: five consecutive
-  post-deploy days (08-21 → 08-25) all pass at billed ÷ estimated of **1.02×–1.17×**, under the
-  1.2× bar, down from ~2.3× on 08-19; cache creation bills on its own `Text Input Caching` SKU
-  (distinct from `Input - Predictions` and per-second `Caching Storage`), and the TTL-refresh
-  patch meters correctly (storage estimate ~$0.13–0.15/day reconciles inside the daily totals).
-  Evidence: `archive/backlog_closed_2026-08.md` § [DB-0822-01a]. **`[DB-0820-01]` now has the
-  evidence it needs for the caps revert.**
-  **(b) Step 6, Pro half — still open:** add `mental_wellbeing` and `physical_health` to the
-  cached-path set at `core/orchestrator.py:4019` — **gated on a full A4 run**
-  (`tests/run_a4_safety.py`, clinical + pipeline, both complexity tiers), because it moves the two
-  clinical-flag agents onto the native loop, a larger change than the prompt reorder that already
-  forced an A4 re-run. Worth ~+$0.17/day (more than the head-layer caching earns); the Flash-Lite
-  six are +$0.008/day — include or skip without deliberation. Arithmetic and the corrected
-  burst-amortisation model: `archive/plans/vertex_cache_step6_specialist_caching_2026-08-21.md`.
-  Decide alongside `[DB-0820-05]` if that session happens first — all-Pro routing quadruples what
-  specialist caching is worth.
-  @kind: chore
-  *filed 2026-08-22 at the close of the cache-fix build · half (a) closed 2026-08-27 by running the
-  reconcile against the live export and the VM's spend files*
+*(`[DB-0822-01]` merged into `[DB-0820-05]` 2026-08-27 — half (a) was closed by the reconcile,
+half (b) is now part of the Pro-routing decision. Evidence and trail:
+`archive/backlog_closed_2026-08.md`.)*
 
 - **[DB-0827-06] The Synthesizer's prose can be tightened considerably without losing substance —
   a deliberate compression pass, section by section.** Mike, 2026-08-27, with a worked example
@@ -852,8 +885,12 @@ with a date.** Nothing new joins this group open-ended.*
   **Not a fix to `get_tfl_status`** — that file covers Greater London by design. This is a second
   backend (National Rail Darwin / Rail Data Marketplace) and the first transit source here needing an
   API key, so quota and key storage are part of the build.
+  **First-draft feature — Mike, 2026-08-27: geomapping/transit belongs in this rendition; moved up
+  in the capstone plan.** Blocking input: the Darwin / Rail Data Marketplace API registration is
+  Mike's to do (his account, his key).
   @kind: feature
-  *filed 2026-08-18*
+  @waiting: Darwin API key registered by Mike
+  *filed 2026-08-18 · promoted 2026-08-27*
 
 - **[DB-0818-05] The tool asks which Bill, then asks again about the same Bill.** Family and close
   friends resolve on frequency alone; the hard case is sparse — *"Bill Thompson from work"*, *"Bill
@@ -1115,23 +1152,73 @@ exists for. Pointers, so nothing is lost:*
 runs. They are behavioural, nothing has shipped against them, and collapsing them would destroy the
 only record of how often the tool misreads who is travelling.)*
 
-- **[user corrected a prior turn]** The user is overriding a previous action or state related to the Prudential/Apex project files or task status.  
-  `2026-08-26T16:35:18.630345Z`
+*(swept 2026-08-27 by `/backlog deep`. The ⚠ `CLARIFICATION_NEEDED: ×33` is **diagnosed and
+promoted → `[DB-0827-07]`** — all 33 events read live off the VM, every one an empty template
+label from the Coordinator, 3–5/day since 08-18. Other deletions with pointers: the two
+Mousetrap duplicate-calendar entries → `[DB-0809-21]`, where they are the live candidate that
+item was waiting for (the actual duplicates still need Mike to resolve — three events, keep
+one); the 08-26 Prudential/Apex merge correction → `[DB-0826-01]`, same incident; `Omit ×2` →
+second exhibit in `[DB-0827-07]`'s class; the Bulgarian-global preference → `[DB-0815-02]`,
+held; the 08-06 CRM onboarding protocol → superseded by `[DB-0827-03]` + `[DB-0818-08]`; the
+voice-toggle removal ×2 → resolved deliberately as a toggle, [static/index.html:1907](static/index.html#L1907);
+the five June 2026 corrections → older than every fix that followed (tone, timestamps, location
+bootstrapping all since reworked). Kept, deliberately again: the Heathrow cluster, the 08-02/03
+correction runs, and the unresolved single corrections — behavioural evidence nothing has
+shipped against.)*
 
-- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'The Mousetrap Matinee' (2026-08-25T15:00:00, uid=efdc94bb-07b2-49ef-be3a-a43431d8014d@ai-life-manager) and 'Mousetrap matinee' (2026-08-25T15:00:00, uid=895603fb-276a-4cdf-b113-212e390083e8@ai-life-manager). title_similarity=0.89, shared_attendees=[], shared_words=['matinee', 'mousetrap']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
-  `2026-08-25T04:35:17.234124Z`
+- **[FALSE_COMPLETION_CLAIM]** Synthesizer reported write_contact as done while it was still awaiting user approval; response replaced.  
+  `2026-08-27T09:55:11.565159Z`
 
-- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Date Day: The Mousetrap' (2026-08-25T00:00:00, uid=64dc9379-ce64-4c15-a96a-c6cb4df8e432@ai-life-manager) and 'Mousetrap matinee' (2026-08-25T15:00:00, uid=895603fb-276a-4cdf-b113-212e390083e8@ai-life-manager). title_similarity=0.45, shared_attendees=[], shared_words=['mousetrap']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
-  `2026-08-25T04:35:17.233902Z`
+- **[a specialist missed a signal it should have caught]** Coordinator routed "Undo that merge" to work_vocation thinking it referred to the Prudential/Apex project, completely missing the conversational context where the user had just asked to merge the contacts Marcus Whitfield and Marcus Delgado in the immediately preceding turn.  
+  `2026-08-26T16:36:07.024888Z`
 
-- **[user corrected a prior turn]** Omit  ×2  
-  `2026-08-26T17:03:30.118469Z`
+- **[a specialist missed a signal it should have caught]** Coordinator interpreted 'Read that back to me again' as a request about Prudential scheduling, but it was a direct request to repeat the food profile data provided in the immediately preceding turn.  
+  `2026-08-18T15:39:33.761495Z`
 
-- **[user corrected a prior turn]** Specifies that the previously established language preference (Bulgarian) is global, covering both incoming and outgoing communications.  
-  `2026-08-20T21:44:01.478382Z`
+- **[a specialist missed a signal it should have caught]** Coordinator misinterpreted phonetic Bulgarian speech-to-text bug report as a psychological pivot to rest. User is reporting an audio transcription bug where Bulgarian is parsed as English. 'Raspira' means 'understands' (Разбира), not 'breathe/rest'.  
+  `2026-08-15T13:49:28.614262Z`
 
-- ⚠ **[user corrected a prior turn]** CLARIFICATION_NEEDED:  ×33  
-  `2026-08-27T09:53:58.499082Z`
+- **[a specialist missed a signal it should have caught]** Coordinator interpreted 'Approved' as referring to the credit card payment and Prudential call, but the user was approving the test email to Kathleen from the previous turn. Logistics erroneously closed the credit card obligation as a result.  
+  `2026-08-15T11:16:06.210340Z`
+
+- **[a specialist missed a signal it should have caught]** The system failed to route the user's explicit request to check the inbox to the logistics agent in the previous turn.  
+  `2026-08-14T15:34:58.664405Z`
+
+- **[a specialist missed a signal it should have caught]** Coordinator misidentified the missing email as the old Prudential email, missing that the user was asking about the Kathaleen test email they approved moments prior.  
+  `2026-08-10T17:10:51.143190Z`
+
+- **[a specialist missed a signal it should have caught]** Relationships agent failed to send an email to the explicitly provided address (diamond.mike.mt@gmail.com) because it attempted a CRM lookup for the user's own name and failed, treating the user as an unknown third-party contact.  
+  `2026-08-10T16:30:58.571802Z`
+
+- **[a specialist missed a signal it should have caught]** Logistics received scheduling directives but only returned a log write confirmation instead of taking the calendar actions.  
+  `2026-08-10T15:11:45.521931Z`
+
+- **[a specialist missed a signal it should have caught]** Coordinator misunderstood 'previous request' as the Iva lunch instead of the immediate prior turn asking for Transport, Weather, and Pollen research.  
+  `2026-08-10T10:28:57.401389Z`
+
+- **[a specialist missed a signal it should have caught]** Coordinator missed that the user message was a system instruction about check-in formatting, instead resolving intent as a literal request for a check-in.  
+  `2026-08-09T09:06:40.509678Z`
+
+- **[a specialist missed a signal it should have caught]** Logistics missed the meeting time (4pm) and location (Google Meet) from the active thread context, prompting the user for details they already provided.  
+  `2026-08-06T16:42:52.051344Z`
+
+- **[a specialist missed a signal it should have caught]** Coordinator processed the user's previous message rather than their current one.  
+  `2026-08-05T20:47:32.529068Z`
+
+- **[a specialist missed a signal it should have caught]** Coordinator called 'research' instead of 'research_agent', causing subagent failure.  
+  `2026-06-26T16:41:59.522508Z`
+
+- **[a specialist missed a signal it should have caught]** Coordinator attempted to route to 'research' instead of 'research_agent', and 'research_agent' itself returned no data.  
+  `2026-06-26T16:30:36.488035Z`
+
+- **[a specialist missed a signal it should have caught]** Previous user message received no response and an expected write_config call was not executed — pipeline/execution failure in last exchange. Message content not present in current context window.  
+  `2026-06-26T15:51:55.656657Z`
+
+- **[a specialist missed a signal it should have caught]** Both Physical Health and Mental Wellbeing agents returned file-not-found errors. Coordinator routing package used space-separated agent names ("Physical Health", "Mental Wellbeing") rather than underscore-separated filenames (physical_health, mental_wellbeing). Agents not called successfully — Synthesizer responded from context alone.  
+  `2026-06-26T08:21:51.451822Z`
+
+- **[a specialist missed a signal it should have caught]** Mike's last message did not come through in the previous session — this is a recurring issue (two sessions now). Message content is unknown and cannot be replied to. Mike is frustrated. Need to surface this clearly and ask for a resend rather than routing to specialists with no content.  
+  `2026-06-22T05:31:14.313792Z`
 
 - **[user corrected a prior turn]** User corrected transit route to Transport Museum, explicitly excluding Jubilee and Piccadilly lines which were previously suggested.  ×2  
   `2026-08-16T08:06:21.241217Z`
@@ -1153,9 +1240,6 @@ only record of how often the tool misreads who is travelling.)*
 
 - **[user corrected a prior turn]** The system incorrectly flagged the Rowan payroll transfer as 'pending' despite the user having previously provided this information.  
   `2026-08-07T16:21:48.444766Z`
-
-- **[needs building]** Develop a stronger protocol for onboarding new contacts to the CRM or Google Contacts. Current handling resulted in misattributing the user's email to the contact and silent failures during retrieval.  
-  `2026-08-06T16:47:08.029326Z`
 
 - **[user corrected a prior turn]** The user corrected my assumption that the calendar event for the Horatiu Stefan meeting was fully prepared, noting that the guest was not added.  
   `2026-08-06T16:44:46.614240Z`
@@ -1196,9 +1280,6 @@ only record of how often the tool misreads who is travelling.)*
 - **[user corrected a prior turn]** User explicitly corrected system's read of 'low energy' trend, stating they have natural momentum. System over-extrapolated from isolated log entries about sleep and fatigue.  
   `2026-08-04T12:20:02.780437Z`
 
-- **[needs building]** Remove the voice activation toggle from the app interface, as the voice feature is causing interface friction and interrupting the user's ability to send messages.  ×2  
-  `2026-08-04T07:57:18.076761Z`
-
 - **[user corrected a prior turn]** User restated 'rucking and high intensity' to correct a prior dictation error ('rocking and hop and swing both balls') and reaffirm their fitness baseline.  
   `2026-08-03T17:15:55.567859Z`
 
@@ -1234,24 +1315,6 @@ only record of how often the tool misreads who is travelling.)*
 
 - **[user corrected a prior turn]** User noted the system echoed the user-provided time '953' for the 'banana' test rather than checking the actual message receipt log (9:52 AM).  ×2  
   `2026-08-01T08:53:41.172516Z`
-
-- **[user corrected a prior turn]** Mike is correcting the assumption that his 'fit it in' approach to work creates negative pressure; he finds it manageable and beneficial for his family balance.  
-  `2026-06-26T21:35:02.264614Z`
-
-- **[user corrected a prior turn]** User is flagging that the previous exchange produced no response and that an expected write_config action was not executed — this is a pipeline/execution failure, not a content correction per se, but note that the prior turn's intended output did not reach the user and the write_config call was missed.  
-  `2026-06-26T15:51:48.929810Z`
-
-- **[user corrected a prior turn]** Mike corrected tone — too cheerful, parroting back what he says, cheerleading. Also corrected assumption that last night's sleep was unknown — he states it's already in context.  ×2  
-  `2026-06-26T15:38:52.421775Z`
-
-- **[user corrected a prior turn]** User implies a date was previously returned by the system as if it had real-time access — Synthesizer should clarify honestly how prior dates were produced (likely from context/logs, not live tool access) while delivering whatever the Research Agent returns.  
-  `2026-06-26T14:32:21.391602Z`
-
-- **[user corrected a prior turn]** Two corrections: (1) Location recorded as Brisbane — user is actually in London, UK. BOM weather advice from prior session is invalid. (2) Synthesizer implied sleep records were missing; user pushed back. Logs actually contain data through June 25 confirmed, June 26 ambiguous, June 27 onward absent.  ×2  
-  `2026-06-26T14:30:23.078064Z`
-
-- **[user corrected a prior turn]** Log entries were recorded with datestamp only — user corrected to require timestamp included on all future entries.  ×2  
-  `2026-06-26T14:02:14.841386Z`
 
 ---
 ## Done

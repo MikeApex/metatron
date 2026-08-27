@@ -3303,3 +3303,52 @@ be fixed blind, and now no open item implies otherwise.
   Flash-Lite, dominated by pre-fix days). Bill now runs ~$1.8–2.0/day. This is the evidence
   `[DB-0820-01]` cites for the September caps revert. Half (b) — Step 6 Pro specialist caching,
   A4-gated — remains open under the original id.
+
+---
+
+## Closed 2026-08-27 — the deep-run reconciliation (inbox closes + one merge)
+
+- ~~**[Inbox] Session-opening instruction change (2026-08-21).**~~ **Closed as already in
+  force:** the requested behaviour ("open with the most time-sensitive commitment…") is the
+  scheduler template's own `morning_brief` prompt — the 2026-08-27 07:30 trace (`3195077f`)
+  carries the exact wording live. The machine entry restated a rule that was already running;
+  the parallel self-applied-preference history is `[DB-0815-11]`'s third instance.
+
+- ~~**[Inbox] Observe the anticipation pass's first run (2026-08-26).**~~ **Closed — observed
+  2026-08-27.** First firing 10:00 (trace `56ec3ec9`, `is_proactive: true`): Logistics
+  dispatched, the calendar genuinely read (`read_calendar` 08-27→08-27, 1 event), `find_places`
+  correctly *not* called (no real gap), message concrete rather than filler. One blemish, a
+  known class not a new one: it told Mike the Teams link was "still missing" three hours after
+  the 07:14 run declared it resolved — carried-state, folded into `[DB-0822-06]` as its fourth
+  instance. Mechanism verified; the job stays.
+
+- ~~**[DB-0822-01] Vertex cache: reconcile + Step 6 Pro half.**~~ **merged_into: `[DB-0820-05]`
+  2026-08-27.** Half (a) closed by the five-day reconcile (§ [DB-0822-01a] above); half (b) —
+  Step 6 Pro specialist caching, A4-gated — now lives inside the Pro-routing decision
+  `[DB-0820-05]`, which its own text already said to decide alongside. Both reasoning trails
+  kept in the absorbing item.
+
+*(ZDR ruling and Accountability Index were not closed — triaged out of Inbox into `## Later` as
+`[DB-0827-08]` and `[DB-0827-09]`. The machine-log deletions of the same sweep are recorded in
+the sweep note in `DEV_BACKLOG.md` § Machine log.)*
+
+## Closed 2026-08-27 — the attack run (one full close; five more await the deploy)
+
+- ~~**[DB-0827-05] Routing-miss reports silently discarded — the sync declared the event type
+  dead while the Synthesizer kept emitting it.**~~ **Closed 2026-08-27**, commit `5b444be`
+  (merged to main): `ROUTING_MISS` moved from `KNOWN_DEAD_TYPES` to `MACHINE_TYPES` in
+  `scripts/sync_dev_backlog.py`; the `KNOWN_DEAD_TYPES` comment now requires a grep of both
+  Python **and** `config/agents/*.md` before declaring a type dead;
+  `tests/test_quality_event_reconciliation.py` assertions inverted and verified failing against
+  the pre-fix script first. Scripts-only — no deploy owed; the 5 discarded VM events will be
+  collected on the next sync. **Found while closing it, same class, caught by the guard this
+  time:** `FALSE_COMPLETION_CLAIM`, `MERGE_AUTO_ACCEPTED` and `THINKING_CAP_HIT` were emitted by
+  code and registered nowhere — all three registered in the follow-up commit on main, and the
+  reconciliation test now passes 5/5.
+
+*(Built the same day but NOT closed — each carries `@waiting` on the owed deploy plus one live
+observation: `[DB-0822-05]` Diarist gate `e6bde3d` · `[DB-0827-07]` empty-label filter `24dabae`
+· `[DB-0815-11]` detection half `e673330` (policy half still `@session`) · `[DB-0822-06]`
+age-annotation half `cbd5ca3` (derived-count and intraday halves stay open) · `[DB-0814-02]`
+audit line `17142c0` · `[DB-0827-01]` decline path `0f8f528` (re-propose half open). Worker
+handoffs: `archive/handoffs/2026-08-27-{session-hygiene,decline-path,routing-miss}.md`.)*
