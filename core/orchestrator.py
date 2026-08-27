@@ -4866,6 +4866,110 @@ def _signoff_skip(spec_text: str, user_input: str, is_proactive: bool) -> bool:
     return True
 
 
+# [DB-0815-11] The system claims actions it never took. Third confirmed instance
+# 2026-08-21: "I have made a note to open sessions exactly that way going forward. I've
+# logged the instruction change so it sticks" — and the trace for that run contains no
+# config write of any kind. Mike: "False action claim is unacceptable."
+#
+# This is the DETECTION half only, and it is deliberately log-only: it never suppresses or
+# edits a response. A pattern set aimed at the user's screen would have to be right every
+# time; one aimed at a quality log only has to be right often enough to count, and a wrong
+# suppression is a worse failure than a wrong log line.
+#
+# Precision over recall throughout. Each pattern requires a first-person claim about
+# something being *persisted* — a promise ("I'll keep that in mind") is not a claim, and a
+# statement about the user's own action ("you logged it yesterday") is not one either.
+_PERSISTENCE_CLAIM_PATTERNS = [
+    r"\bI(?:'ve|’ve| have) (?:made|taken) (?:a )?note\b",
+    r"\bI(?:'ve|’ve| have) (?:logged|recorded|saved|stored|noted (?:it|that|this) down)\b",
+    r"\bI(?:'ve|’ve| have) (?:updated|amended) (?:your|the)\b",
+    r"\bI(?:'ve|’ve| have) (?:added|written|put) (?:it|that|this)\s+(?:in|into|to|down)\b",
+    r"\bI(?:'ll|’ll| will) (?:make a note|log|record|save|note) (?:of |that|it|this)\b",
+    r"\bso it sticks\b",
+    r"\bit(?:'s|’s| is| has been) (?:now )?(?:logged|recorded|saved|on file)\b",
+    r"\bthat(?:'s|’s| is| has been) (?:now )?(?:logged|recorded|saved|on file)\b",
+]
+
+# A tool call that actually persists something. Prefix-matched because the naming
+# convention is consistent and a new writer should be covered the day it is registered,
+# not the day someone remembers to extend a list.
+_WRITE_TOOL_PREFIXES = ("write_", "update_", "create_", "merge_", "unmerge_", "delete_",
+                        "import_", "log_", "teach_", "close_", "open_", "reopen_")
+_WRITE_TOOL_NAMES = {"send_email"}
+
+
+def find_persistence_claims(text: str) -> list[str]:
+    """
+    Return the sentences in `text` that claim something was written down or remembered.
+
+    Sentence-level so the quality event carries the claim in the user's own reading of it,
+    which is what makes the log readable months later. Empty list is the normal case.
+    """
+    import re as _re
+
+    claims: list[str] = []
+    for sentence in _re.split(r"(?<=[.!?])\s+|\n+", text or ""):
+        s = sentence.strip()
+        if not s:
+            continue
+        if any(_re.search(p, s, _re.IGNORECASE) for p in _PERSISTENCE_CLAIM_PATTERNS):
+            claims.append(s)
+    return claims
+
+
+def _is_write_tool(name: str) -> bool:
+    return name in _WRITE_TOOL_NAMES or name.startswith(_WRITE_TOOL_PREFIXES)
+
+
+def _trace_tool_names(trace: object | None = None) -> set[str]:
+    """Every tool called anywhere in this turn's trace, including inside subagents."""
+    tr = trace if trace is not None else _tr.get_trace()
+    names: set[str] = set()
+    if tr is None:
+        return names
+
+    def _walk(rec) -> None:
+        for turn in getattr(rec, "turns", []):
+            for call in getattr(turn, "tool_calls", []):
+                names.add(getattr(call, "name", ""))
+        for sub in getattr(rec, "subagents", []):
+            _walk(sub)
+
+    for rec in getattr(tr, "pipeline", []):
+        _walk(rec)
+    return names
+
+
+def check_false_action_claims(response: str,
+                              tool_names: set[str] | None = None) -> list[str]:
+    """
+    Log a FALSE_ACTION_CLAIM quality event for each persistence claim with no write behind it.
+
+    Returns the claims that were flagged, so callers and tests can see the decision. The
+    response itself is never touched — see the note above `_PERSISTENCE_CLAIM_PATTERNS`.
+
+    Known residual: the Diarist runs fire-and-forget on a daemon thread with no trace of its
+    own, so a claim that only the journal satisfies can still be flagged. That is a wrong
+    line in a quality log, not a wrong word to the user, which is the trade this half accepts.
+    """
+    claims = find_persistence_claims(response)
+    if not claims:
+        return []
+    names = _trace_tool_names() if tool_names is None else tool_names
+    if any(_is_write_tool(n) for n in names):
+        return []
+    for claim in claims:
+        try:
+            from tools.logger import write_quality_event
+            write_quality_event("FALSE_ACTION_CLAIM", "synthesizer", claim)
+        except Exception as e:
+            logger.warning(f"[PIPELINE] FALSE_ACTION_CLAIM log failed: {e}")
+    logger.warning(
+        f"[PIPELINE] {len(claims)} action claim(s) with no write in this turn: {claims[0][:120]}"
+    )
+    return claims
+
+
 def _frame_proactive(user_input: str, is_proactive: bool) -> tuple[str, str]:
     """
     Return (coordinator_prefix, synthesizer_label) for one pipeline run.
@@ -5001,6 +5105,9 @@ def run_pipeline_session(user_input: str,
         # terminal output and the non-streaming /session endpoint verbatim, and
         # the context tracker is never updated for proactive sessions.
         visible, _ctx = split_context_block(synth_result)
+        # [DB-0815-11] Detection only, before anything else touches the text and while the
+        # trace is still open — nothing here changes what the user sees.
+        check_false_action_claims(visible)
         # Only a real user turn keeps a thread alive. On a proactive session
         # `user_input` is the scheduler's own prompt, and passing that would
         # let the system grant its own threads a reprieve — the same mistake
@@ -5329,6 +5436,9 @@ def _run_pipeline_session_stream_inner(
     visible, _ctx = split_context_block(complete)
     if _ctx is None and _CONTEXT_OPEN not in complete:
         logger.warning("[context_block] no [CONTEXT] block in Synthesizer response")
+    # [DB-0815-11] Same detection as the non-streaming twin. The text has already reached
+    # the user by this point on this path, which is exactly why it only logs.
+    check_false_action_claims(visible)
     # See the note at the non-streaming call site: a scheduler prompt is not
     # the user speaking, so it must not grace an open thread.
     persist_context_block(_ctx, user_text=None if is_proactive else user_input)
