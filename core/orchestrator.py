@@ -4575,11 +4575,34 @@ def _file_wisdom_proposals(outputs: dict, persona: str | None = None) -> dict:
     return cleaned
 
 
+def has_real_user_turn(user_input: str,
+                       is_proactive: bool,
+                       attachments: list[dict] | None = None) -> bool:
+    """
+    Did the user actually say something this turn?
+
+    [DB-0822-05] A scheduled session's opening text is written by scheduler.yaml, so on a
+    proactive turn `user_input` is the system's own prompt sitting in the slot user speech
+    normally occupies. Anything that treats that text as the user's — the journal being the
+    worst case — is recording the system talking to itself. `is_proactive` is therefore
+    decisive on its own: a proactive turn has no user speech in it *by construction*, and a
+    user who then replies arrives as a separate, non-proactive turn through core/server.py,
+    which is why answering a check-in still gets journalled.
+
+    Attachments count: "here, look at this" with a photograph attached and no words is a
+    real user turn, and core/server.py already admits it as one.
+    """
+    if is_proactive:
+        return False
+    return bool((user_input or "").strip()) or bool(attachments)
+
+
 def _dispatch_from_coordinator(
     coord_output: str,
     persona: str | None = None,
     provider: str | None = None,
     knowledge: list[dict] | None = None,
+    user_turn: bool = True,
 ) -> dict:
     """
     Parse SPECIALISTS_TO_CALL from Coordinator output and dispatch agents.
@@ -4589,6 +4612,13 @@ def _dispatch_from_coordinator(
     `knowledge`: entries from _resolve_knowledge(). Each dispatched specialist receives the
     subset of them whose domain names that agent in config/modules/knowledge_domains.yaml —
     so Physical Health gets the food entries on a diet turn and Finance does not.
+
+    `user_turn`: False when this session carries no user speech — see has_real_user_turn().
+    The Diarist is refused in that case. It journals a day from the session it is dispatched
+    on, and on 2026-08-21 it fired on 10 of 23 runs with the user silent in 9 of them, once
+    filing the scheduler's own "Good morning..." prompt as something Mike said. The agent-file
+    rule against this (`82d394b`, 2026-08-09) was already in place and already ignored, which
+    is why the refusal is here in Python.
     """
     import re as _re
     import threading
@@ -4661,6 +4691,15 @@ def _dispatch_from_coordinator(
         complexity: str | None = mode if mode in ("quick", "deep") else None
 
         if not agent or not directive:
+            continue
+
+        # [DB-0822-05] No user speech this session, no journal entry. See the `user_turn`
+        # note in the docstring: the alternative is a diary of the assistant's own monologue.
+        if agent == "diarist" and not user_turn:
+            logger.debug(
+                "[PIPELINE] diarist dispatch suppressed — no real user turn in this session"
+            )
+            _trace("[PIPELINE] diarist suppressed (no user turn)")
             continue
 
         # Append the standing facts this specialist reads, if any were fetched. The
@@ -4915,7 +4954,8 @@ def run_pipeline_session(user_input: str,
         # Dispatch specialists from Python based on Coordinator's SPECIALISTS_TO_CALL
         _trace("[PIPELINE] dispatching specialists")
         specialist_outputs = _dispatch_from_coordinator(
-            coord_output, persona=persona, provider=provider, knowledge=knowledge
+            coord_output, persona=persona, provider=provider, knowledge=knowledge,
+            user_turn=has_real_user_turn(user_input, is_proactive, attachments),
         )
         specialist_outputs = _file_wisdom_proposals(specialist_outputs, persona=persona)
 
@@ -5092,7 +5132,8 @@ def _run_pipeline_session_stream_inner(
     # tests and dead in production. Any change to the knowledge wiring changes both.
     knowledge = _resolve_knowledge(coord_output, persona=persona)
     specialist_outputs = _dispatch_from_coordinator(
-        coord_output, persona=persona, provider=provider, knowledge=knowledge
+        coord_output, persona=persona, provider=provider, knowledge=knowledge,
+        user_turn=has_real_user_turn(user_input, is_proactive, attachments),
     )
     specialist_outputs = _file_wisdom_proposals(specialist_outputs, persona=persona)
     spec_text = "\n\n".join(
