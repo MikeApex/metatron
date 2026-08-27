@@ -2213,11 +2213,33 @@
     }
   });
 
-  document.getElementById('confirm-no').addEventListener('click', () => {
-    // No server call: an unapproved request simply expires. Declining is the default
-    // state, so there is nothing to record.
-    document.getElementById('confirm-bar').classList.remove('shown');
-    pendingToken = null;
+  document.getElementById('confirm-no').addEventListener('click', async () => {
+    if (!pendingToken) return;
+    const btn = document.getElementById('confirm-no');
+    // This used to make no server call at all — "an unapproved request simply expires".
+    // It does expire, in ten minutes, and the five-second poll re-showed the same card
+    // the whole way there, so the only way out of the loop was to approve. A gate whose
+    // cheapest escape is consent is not a gate. [DB-0827-01].
+    btn.disabled = true;
+    try {
+      const res = await authFetch('/decline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: pendingToken, persona: currentPersona }),
+      });
+      // Leaving the card up on failure is the honest outcome: the record is still pending
+      // server-side, and dismissing it here would put us back to exactly the bug — a "No"
+      // the user believes landed and that nothing acted on.
+      if (!res.ok) { setStatus('Could not record decline', '#a44'); btn.disabled = false; return; }
+      document.getElementById('confirm-bar').classList.remove('shown');
+      pendingToken = null;
+      btn.disabled = false;
+      // The server records the refusal and broadcasts it as an ordinary exchange, so it
+      // arrives over the socket like any other message — nothing to render here.
+    } catch (e) {
+      setStatus('Could not record decline', '#a44');
+      btn.disabled = false;
+    }
   });
 
   setInterval(refreshPending, 5000);

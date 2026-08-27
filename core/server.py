@@ -1009,6 +1009,60 @@ async def confirm_action(req: ConfirmRequest) -> dict:
     return {"status": outcome.get("status", "approved"), "message": line}
 
 
+def _decline(token: str, persona: str) -> dict | None:
+    """Record the refusal. Returns None if the token is unknown. See `_approve_and_execute`
+    for why the persona scope is entered inside the worker thread rather than around it."""
+    from core.persona import persona_scope
+    from tools.confirm import decline
+    with persona_scope(persona):
+        return decline(token)
+
+
+@app.post("/decline")
+async def decline_action(req: ConfirmRequest) -> dict:
+    """
+    Record the user's refusal of a pending action, and stop it being asked again.
+
+    **Declining used to be a no-op** (`[DB-0827-01]`). The app dismissed the card locally
+    and left the record pending, so `/pending-confirmations` handed the same prompt back on
+    the next five-second poll, and kept doing so until the TTL. Mike, first decline ever
+    performed: *"If I decline it keeps asking in a loop. In the end I approved to break the
+    loop."* A gate whose cheapest escape is approval authorises by exhaustion — the exact
+    property `tools/confirm.py` exists to prevent.
+
+    Symmetrical with /confirm and deliberately so: same auth, same out-of-band principle
+    (only a tap here decides; the model is in neither path), same fingerprint discipline,
+    and the same conversation row so the refusal is visible to every connected client
+    rather than inferred. That row is also what keeps a decline in front of the model on
+    the next turn — the conversation is context, so "declined" is at least present, even
+    though nothing yet reads the declined ledger itself.
+    """
+    persona_key = req.persona or DEFAULT_PERSONA
+    record = await asyncio.to_thread(_decline, req.token, persona_key)
+    if record is None:
+        raise HTTPException(status_code=404,
+                            detail="No such pending action, or it has expired.")
+
+    headline = (record.get("description") or "").strip().splitlines()
+    headline = headline[0] if headline else "that action"
+    line = f"🚫 Declined — {headline}\n\nNothing was done, and I won't ask about it again."
+
+    exchange_id = f"decline-{uuid.uuid4().hex[:12]}"
+    user_side = "(declined in the app)"
+    new_id = await _save_exchange(persona_key, exchange_id, user_side, line, proactive=True)
+    _log_conversation(user_side, line, "decline", persona_key, proactive=True)
+    await manager.broadcast(persona_key, {
+        "type": "message",
+        "id": new_id,
+        "exchange_id": exchange_id,
+        "user": user_side,
+        "assistant": line,
+        "ts": datetime.utcnow().isoformat() + "Z",
+    })
+
+    return {"status": "declined", "message": line}
+
+
 @app.get("/health")
 async def health() -> dict:
     return {"status": "ok"}
