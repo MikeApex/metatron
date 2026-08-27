@@ -30,6 +30,89 @@ file is the only narrative record, alongside the verbatim transcripts.*
 
 ## Dated history
 
+### 2026-08-27 (the CRM sweep plan is accepted and filed — deliberately not built) — `archive/plans/crm_sweep_plan_2026-08-27.md`, `DEV_BACKLOG.md`, **not deployed (dev-context only)**
+
+**The planning session the 2026-08-22 handoff asked for ran, and its deliverable is
+[`archive/plans/crm_sweep_plan_2026-08-27.md`](../plans/crm_sweep_plan_2026-08-27.md) — accepted
+by Mike with an explicit gate: the plan is reviewed with him again before any build session
+starts.** Filed as `[DB-0827-03]` (`@waiting` on that review); the build did not start, at his
+direction. Session began 08-22, paused, and closed 08-27 — the design was re-verified against
+five days of drift before acceptance.
+
+**The design in one line:** nightly bare Flash-Lite extractor (the `intake_extractor` pattern —
+empty grant, bare dispatch) over yesterday's conversations + journal → validated proposals into
+append-only `crm/proposals.jsonl` → one quiet line in the morning brief (Mike: the first message
+must not "jump down the user's throat") → conversational accept → Python applies from the ledger
+**by id**, behind a batch confirm tap that is toggleable via config.
+
+**Decisions Mike made in-session:** scope is "anything that can rightly belong in a CRM — facts
+from history, and inferences the user can correct — so long as they are reviewed" (both
+interaction entries and field fills, additive only, `notes` never a target); review channel is
+the morning brief; the apply gate exists but must be switch-off-able.
+
+**Options rejected, with reasons:** reusing WISDOM_PROPOSAL's pipeline — it writes straight into
+the live store with no review queue, the exact thing this sweep is forbidden to do (its
+Python-parses-relay principle is kept); waiting on `[DB-0818-08]` provenance tiers — the review
+step *is* the provenance here (an accepted inference is user-stated, and the ledger row holds
+evidence + acceptance for later backfill); proposing merges — even now that `merge_contacts` is
+gated and reversible, the sweep stays additive.
+
+**Believed earlier, corrected before acceptance:** the draft carried "merge_contacts ungated, no
+unmerge", a `[DB-0822-01]` id collision, and a pending ZDR ruling — all stale by 08-27
+(gate + `unmerge_contacts` shipped, ids renumbered and closed as `[DB-0822-03]`/`[DB-0822-04]`,
+ZDR refused and ruled). Mike's review instruction to re-check current state caught this drift;
+one genuinely new dependency surfaced: `[DB-0827-01]` (declining a confirmation does nothing)
+must land before or with the sweep's batch confirm tap.
+
+**Also filed:** `[DB-0827-04]` — field promotion from notes (Mike's 08-19 idea), previously
+recorded only inside the planning handoff; gated until notes are rich. Enrichment needed no
+filing — `[DB-0826-02]` already holds it. Verified live 08-27 and named in the build plan: two
+`tools/crm.py` guards the batch writer needs (`log_interaction` has no dedup; `last_contact`
+regresses on a backdated entry).
+
+**Outgoing handoff:** the build is one Opus session after Mike's pre-build review of the plan
+doc; `config/agents/crm_sweep.md` and `routing_cloud.yaml` are Red; `./deploy.sh` stays Denied —
+hand Mike the commit.
+### 2026-08-27 (the 08-10 sink-gap session closes — and finds its subject broken again) — `DEV_BACKLOG.md`, `archive/plans/code_dominant_rebuild_notes.md`, **not deployed**
+
+**A 17-day-old chat was reviewed against current state and closed as part of Mike's chat
+clear-out.** The session (2026-08-10) had diagnosed the quality-event sink gap — 158 events
+silently discarded by `sync_dev_backlog.py`'s allowlist — but shipped nothing: it stopped at a
+scope question Mike never answered. Nearly everything its Part 1 would have built landed since
+via other sessions (`048e937` registry + uid-pair signature, `214a547` null-correction filter),
+so the diagnosis was not re-filed.
+
+**One live finding survived the review: `ROUTING_MISS` is being silently discarded again, and
+the guard built to prevent that is what certifies it.** The 08-15 fix classed the type into
+`KNOWN_DEAD_TYPES` on the strength of a code grep — but the emitter is the Synthesizer calling
+`write_quality_event` at runtime, instructed in 9 places in `synthesizer.md`, invisible to any
+grep over Python. Verified against the live VM: 5 events since 08-11, latest 08-26, one of them
+the runtime's own report of the `[DB-0826-01]` merge-undo misroute. Filed as **`[DB-0827-05]`**
+in `## Now` (position 9) at Mike's instruction; fix is a two-line move plus rewording the
+deadness criterion to include agent instruction files.
+
+**The parked "Part 2" (code-vs-LLM-judgment) went to the rebuild notebook, not the backlog.**
+Mike's call: with the code-dominant rebuild conversation now open, Part 2's fix-Metatron items
+are stale but its reasoning feeds the inversion. Appended as round three of
+`archive/plans/code_dominant_rebuild_notes.md`, four points: prompt-resident judgment breeds
+artifact tensions (the Synthesizer fact-check round-trip vs PoLP joins round two's caching
+example as a class); prose call graphs defeat static analysis — evidenced three times on one
+pipeline, `[DB-0827-05]` being the third; the zero-token `function:` audit jobs are the
+inversion already running at the edges; identity resolution belongs in code but thresholds stay
+judgment gates (wisdom.py's own 3/5 wrong-partner finding).
+
+**Wrong earlier, corrected here:** the resumed session's own 08-10 plan said clearing
+`.calendar_dedup_seen` was required to surface the 7 calendar findings — verified false before
+any fix shipped (the sync's own ledger had never seen them; clearing would have double-reported).
+And the 08-13 deadness check was wrong in method, not diligence: "grepped the whole codebase"
+is the wrong layer when the caller is an instruction file.
+
+Options rejected: fixing `[DB-0827-05]` inline this session (Mike is mid clear-out, working the
+backlog through `/backlog`, so it enters the ranked list instead); filing Part 2's 2A bug fixes
+(wisdom.py SentenceTransformer reload, Diarist archive dedup) as backlog items — they correct
+the v1 runtime the rebuild conversation may replace, and nothing a user notices today.
+
+No commits before this close-out's own; nothing deployed.
 ### 2026-08-27 (token audit closed into the backlog; the rebuild conversation gets a home)
 
 A month-old parked chat (the Aug-9 token audit, itself grown from a hunt for the June

@@ -291,6 +291,25 @@ Each is a defect measured in the 2026-08-21 traces, not a proposal.*
   @kind: bug
   *filed 2026-08-27 at Mike's instruction, from his own live attempt to decline*
 
+- **9. [DB-0827-05] Routing-miss reports are being silently discarded again — the sync declared
+  the event type dead, but it fired five times since, most recently yesterday.** The 08-15 registry
+  fix (`048e937`) classed `ROUTING_MISS` into `KNOWN_DEAD_TYPES` in `scripts/sync_dev_backlog.py`
+  on the strength of a code grep: *"nothing calls write_quality_event with this type anymore."*
+  **The grep checked the wrong layer.** The emitter is not Python — it is the Synthesizer calling
+  the registered `write_quality_event` tool at runtime, instructed in 9 places in
+  `config/agents/synthesizer.md`. Verified against the live VM 2026-08-27: **5 `ROUTING_MISS`
+  events since 08-11** (08-14 logistics inbox request unrouted; 08-15 "Approved" misread; 08-26
+  *"Undo that merge" routed to work_vocation* — the same incident as `[DB-0826-01]`, reported by
+  the runtime and dropped). The reconciliation test (`tests/test_quality_event_reconciliation.py`)
+  blesses the drop because the type is marked dropped-on-purpose — the guard built to catch this
+  gap is what certifies it.
+  **Fix:** move `ROUTING_MISS` from `KNOWN_DEAD_TYPES` to `MACHINE_TYPES`, and reword the
+  `KNOWN_DEAD_TYPES` comment: a type is dead only when neither code **nor any agent instruction
+  file** emits it — a grep over `config/agents/` is the check the 08-13 pass missed.
+  @kind: bug
+  *filed 2026-08-27 at Mike's instruction, from the resumed 08-10 sink-gap session's review
+  against current state; VM log pulled same day*
+
 ## Later
 
 **Three groups, and the group is the useful fact about an item.** *Decisions* are blocked on a
@@ -674,6 +693,36 @@ with a date.** Nothing new joins this group open-ended.*
   `due: 2026-08-22`
 
 ### Unbuilt — real capability that does not exist
+
+- **[DB-0827-03] Build the CRM sweep — the design is accepted, and the plan MUST BE REVIEWED
+  WITH MIKE AGAIN BEFORE ANY BUILD SESSION STARTS.** That review gate is Mike's explicit
+  instruction (2026-08-27), given when he accepted the plan: file it, do not build. The full
+  design, budget and test plan: `archive/plans/crm_sweep_plan_2026-08-27.md`.
+  **Shape in one line:** nightly Flash-Lite extractor (bare, empty grant — `intake_extractor`
+  pattern) over yesterday's conversations + journal → validated proposals into an append-only
+  `crm/proposals.jsonl` → quiet morning-brief digest → Mike accepts conversationally → Python
+  applies from the ledger by id, behind a toggleable batch confirm tap.
+  **Binding constraints carried from the plan:** proposes, never writes; additive only, no
+  merges, `notes` never a target; sensitive tier under the § Section 0 ruling of 08-26.
+  **Build facts:** Opus session (Mike's 08-18 split); `config/agents/crm_sweep.md` and
+  `routing_cloud.yaml` are **Red**; two `tools/crm.py` guards ship with it (`log_interaction`
+  dedup, `last_contact` advance-only — both hazards verified live 08-27). **Dependency:**
+  `[DB-0827-01]` (decline-does-nothing) should land before or with the confirm tap.
+  **Step 0 of the build:** re-take the 2026-08-19 measurements (1 `log_interaction` per 200
+  traces) before relying on them.
+  @kind: feature
+  @waiting: Mike's pre-build review of the plan doc
+  *filed 2026-08-27 at Mike's instruction, plan accepted same day*
+
+- **[DB-0827-04] Review contact notes and promote recurring patterns into new CRM fields —
+  Mike's idea (2026-08-19), gated until notes are rich.** The mechanism is sound and its trigger
+  has not fired: it should run when `notes` fields carry real material, and today they are
+  empty. The CRM sweep (`[DB-0827-03]`) never writes `notes`, so richness will come from
+  conversational writes — check the store before designing anything. Recorded here so the gate
+  survives (it previously lived only in the 08-22 planning handoff, which is exactly how items
+  get lost).
+  @kind: feature
+  *filed 2026-08-27 at Mike's instruction (during CRM sweep plan review)*
 
 - **[DB-0826-02] Fill in a work contact from their public profile, with a photo to confirm it is
   the right person.** Mike wants this and has already specified its shape; it is unbuilt, not

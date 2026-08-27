@@ -73,3 +73,61 @@ on the inversion, not on incremental tuning:
 
 Related live threads, tracked in the backlog, not here: unbounded Synthesizer thinking
 `[DB-0827-02]`; specialist caching step 6 `[DB-0822-01]`; all-Pro routing `[DB-0820-05]`.
+
+---
+
+## 2026-08-27 — Round three: what the sink-gap session's "Part 2" adds, re-read for the rebuild
+
+Provenance: the 2026-08-10 sink-gap session carried an undiscussed "Part 2" — where should code
+replace LLM judgment — written **before** the inversion was on the table, so its fix-the-existing-
+Metatron items are dropped here. What survives is the reasoning, plus one piece of evidence the
+same session generated on resumption (2026-08-27). Four points:
+
+1. **Prompt-resident judgment creates architectural tensions that are artifacts, and there are
+   now two of them.** Part 2's strand B: the Synthesizer spends a full LLM round-trip calling a
+   subagent to *check a fact* — a database lookup's job — and the v1 fix (widen the Synthesizer's
+   tool allowlist) cuts against head-layer/specialist separation and PoLP in `routing.yaml`.
+   Round two's point 4 found the same shape in caching-vs-instruction-slimming. Both tensions
+   dissolve under the inversion for the same reason: when code fetches evidence and hands it to a
+   gate, "who may read what" becomes a property of a code path, not a prompt surface. **A
+   recurring class — v1 design dilemmas that are really symptoms of procedure living in prose —
+   is itself an argument the layering is wrong,** and each new instance found should be logged
+   against this pattern rather than adjudicated inside v1's terms.
+
+2. **In a model-dominant system, part of the call graph is prose, and static analysis cannot see
+   it — now evidenced three times on one pipeline.** Part 2's strand C: `daily_calendar_dedup_audit`
+   was correct, tested, committed and deployed, and did nothing for 3 days (per-persona template
+   never propagated; fixed structurally in `_DEFAULT_JOBS`), then had its output discarded for 5
+   more (the sink allowlist). Neither was a code bug; neither was catchable by unit tests. The
+   third instance arrived 17 days later in the same session's resumption: `ROUTING_MISS` was
+   declared dead on the strength of a *code grep*, while the emitter was `synthesizer.md`
+   instructing a runtime tool call — five events silently dropped, with the reconciliation test
+   certifying the drop (`[DB-0827-05]`). **The rebuild-salient reading: you cannot grep for who
+   emits an event, calls a tool, or exercises a capability when the caller is an instruction
+   file.** A code-dominant runtime makes the call graph greppable and its seams typed and
+   testable — this is a concrete, repeatedly-paid cost of the current layering, not an aesthetic
+   preference.
+
+3. **The zero-token `function:` scheduler jobs are the inversion already running at the edges.**
+   `daily_rule_audit`, `daily_calendar_dedup_audit`, `daily_travel_check`: standing code audits
+   that compute evidence deterministically, write it to the event stream, and leave judgment to
+   whoever reads it ("this is evidence, not a verdict" is in the audit's own output text). Part 2
+   suggested this pattern may *be* the code/agent review protocol rather than its subject. In
+   rebuild terms they are the existence proof of the target shape — procedure in code, judgment
+   at a gate — and notably their failures (point 2) were all at integration seams, never in the
+   computation. The corroboration finding from the same session strengthens it: the calendar
+   audit and a `USER_CORRECTION` cluster caught the **same** Heathrow incident independently —
+   a computed sensor and a model-reported signal cross-checking is what an evidence layer with
+   two sources looks like.
+
+4. **Identity resolution belongs in code, before any model sees the data — and the boundary of
+   the inversion is thresholds, not retrieval.** Part 2's strand A plus its parked
+   title-normalization item: `_find_by_name`'s substring matching lets "Jon"/"Jonathan"/"Jonathan
+   Whitfield" exist as three contacts, and calendar attendees are matched to people by string
+   guess. The runtime record shows this is where errors breed: the Eva/Iba correction cluster
+   (×4), the Jonas quadruplication, the merge/undo misroute (`[DB-0826-01]`). Rebuild principle:
+   entities (contacts, events, obligations) get resolved to stable ids by code, and models reason
+   over resolved entities. The counterweight Part 2 also carried: `tools/wisdom.py`'s own testing
+   found a fixed similarity threshold picks the wrong partner ~3/5 of the time — **a threshold is
+   a judgment smuggled into code.** The inversion moves procedure and resolution into code; a
+   borderline match is exactly what stays a judgment gate.

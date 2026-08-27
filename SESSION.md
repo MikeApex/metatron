@@ -1,6 +1,11 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-27 (ask-vs-assert closes; ZDR ruled; the rebuild conversation gets its notebook).*
+*Updated: 2026-08-27, later still (the CRM sweep plan is accepted and filed — deliberately not
+built).*
+
+*✅ **The CRM sweep is designed and accepted — build gated on one more review with Mike**
+(`[DB-0827-03]`, `@waiting`; plan: `archive/plans/crm_sweep_plan_2026-08-27.md`). Field promotion
+from notes filed as `[DB-0827-04]`.*
 
 *⛔ **Google REFUSED the ZDR opt-out, and Mike has ruled — do not re-open this.** The 2026-06-18
 amendment's "verified ZDR" premise is settled **false**, not merely unverified. What governs is
@@ -42,10 +47,10 @@ turn with no virtue list, one 20:00 that still carries it). `[DB-0820-05]` — a
 *⚠ **A v1/alpha architecture question is live: invert to code-dominant, with models as discrete
 judgment gates.** Still **no decision**, and it must be **decided before A8 executes** or A8 is
 paid for twice. The conversation now has a standing home — append dated rounds to
-**`archive/plans/code_dominant_rebuild_notes.md`** (no length limit; Mike, 08-27). Two rounds in:
-the 08-22 "built backwards?" discussion, and the 08-27 trace audit — specialists never batch tool
-calls (392 single-call turns measured), read architecturally in the notebook, filed as work in
-`[DB-0808-09]` (turn reduction) and `[DB-0827-02]` (unbounded Synth thinking, a Decisions item).*
+**`archive/plans/code_dominant_rebuild_notes.md`** (no length limit; Mike, 08-27). Three rounds in:
+the 08-22 "built backwards?" discussion; the 08-27 trace audit (392 single-call turns → `[DB-0808-09]`,
+`[DB-0827-02]`); and the 08-10 sink-gap chat's parked thinking (that review also refiled the
+discarded `ROUTING_MISS` as `[DB-0827-05]`).*
 
 ***Model split, Mike's call 2026-08-18: plan and review in Fable, build in Opus.*** Red-tier
 work is still not delegated at all.
