@@ -131,3 +131,57 @@ same session generated on resumption (2026-08-27). Four points:
    found a fixed similarity threshold picks the wrong partner ~3/5 of the time — **a threshold is
    a judgment smuggled into code.** The inversion moves procedure and resolution into code; a
    borderline match is exactly what stays a judgment gate.
+
+## 2026-08-27 — Round four: the compliance-ceiling experiment moves here, and the first judgment gate got deleted in code
+
+*From the thinking-cap / sign-off session (Fable). Two inputs and one worked example.*
+
+**1. The instruction-size compliance experiment is deferred INTO this conversation — Mike's
+call, 2026-08-27: run it against the rebuilt agents, not to fix compliance in v1.** The
+experiment was designed and priced for `synthesizer.md` (hold six probed rules constant, vary
+surrounding ballast across ~4 file sizes × ~10 trials ≈ 240 turns ≈ $15–20 post-caching), then
+deliberately not run: the v1 agents get refactored regardless — ROADMAP § D2's targets and this
+notebook's inversion both already prescribe it — so a curve measured against files being
+discarded answers nothing durable. What the rebuild should inherit:
+
+- **The deliverable is a design ceiling, not a verdict on one file** — a dose-response curve of
+  rule-compliance vs. instruction-file size, measured on our workload. It sets the token budget
+  the rebuilt agents are designed against, replacing ROADMAP § D2's targets (specialists
+  1,500–2,500; head 3,500–5,000), which are sensible but argued from vendor guidance, not data.
+- **The ceiling must be measured on the weakest model that will ever run the agent.** A number
+  from gemini-3.1-pro says nothing about qwen3:14b, and local is the north star. The probe
+  *suite* is the reusable artifact; the number is re-measured at D1 as part of local-model
+  adequacy. Published literature (to the session's knowledge cutoff): no crisp threshold exists;
+  degradation tracks the *number of simultaneous constraints* more than raw length, and position
+  (early/late beats middle) — both already encoded in D2's ordering principle.
+- **The evidence that motivates the whole inversion, restated as data:** six of Mike's six 08-21
+  complaints were rules already written in `synthesizer.md`, all ignored — while every rule
+  moved to Python this month held on first contact (contact-rename gate, pending-receipt guard,
+  research zero-source withholding). The experiment would put a curve under that anecdote;
+  the anecdote already points one way.
+
+**2. A worked example of the inversion, shipped 2026-08-27: the "over and out" sign-off.** The
+question "must the Synthesizer run when nothing needs saying" — first raised in the 2026-08-18
+Synth-economics chat, and the same question the turn audit's 392 single-call turns ask at system
+level — got its first concrete answer, and the shape is exactly this notebook's thesis:
+
+- **Detection in code, not model judgment.** The phrase is matched in Python
+  (`_is_signoff()`, Damerau distance ≤1/word on the final three tokens, never mid-message,
+  never on a question) — routing it through the Coordinator was considered and rejected because
+  a Flash-Lite judgment adds two failure modes to a decision a string match makes exactly.
+- **The model layer still does the work** (Coordinator + specialists run; the diary write
+  lands); only the judgment gate that has nothing to judge — the Pro Synthesizer pass — is
+  skipped.
+- **The safety boundary is code**: any `MUST_SURFACE` / `CLINICAL_CONCERN` /
+  `MEDICATION_MISSED_CRITICAL` in specialist output vetoes the skip in Python
+  (`_signoff_skip()`), per the standing rule that a mishandled clinical flag is a hard fail
+  regardless of how the turn was classified.
+- **Generalisation for the rebuild:** this is one turn-class reclassified from
+  "model decides everything" to "code decides the shape, models fill the judgment slots." The
+  392 single-call turns are the backlog of candidates. Each reclassification should look like
+  this one: deterministic trigger, work preserved, safety veto in code, one fixed-cost exit.
+
+**Also relevant, from the same session:** the Synthesizer thinking cap landed at 4096 as
+insurance (`[DB-0827-02]` closed; probe found no tail above 3,930, exposure ~$0.26/day) — which
+removes "runaway thinking cost" from the list of problems the rebuild needs to solve, and the
+`THINKING_CAP_HIT` quality event will say so if that changes.

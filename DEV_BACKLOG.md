@@ -328,26 +328,6 @@ the condition has not arrived, push the date rather than closing the item.
 
 ### Decisions — each needs one answer from Mike, not effort
 
-- **[DB-0827-02] The Synthesizer's thinking is unbounded — the one Pro agent, on every reply,
-  with no cap anywhere in the codebase.** Confirmed 2026-08-27: no `thinking_config` /
-  `thinking_budget` exists in `core/` or any routing file; the only limit on the native paths is
-  `max_output_tokens=4096`, which on Gemini does **not** bound thinking — thinking meters
-  separately and bills as output ($12/M on Pro). Scale of the exposure: ~86% of Synthesizer
-  output is thinking (the measured figure the all-Pro cost model `[DB-0820-05]` carries as its
-  assumption 1, where output inflation is also named the assumption that most moves that
-  analysis). **`thinking_budget: 0` was rejected 2026-08-18 — but as a fix for the deliberation-
-  header formatting leak, on the grounds that *disabling* reasoning degrades the user-facing
-  agent** (`core/orchestrator.py` Tier-5 filter comment). A non-zero *cap* was never evaluated,
-  and never on cost grounds — that is the open decision: cap or not, and at what budget.
-  **What answering needs:** a probe of thinking-token distribution per reply from clean post-fix
-  traces (what budget would clip which replies); then, if capped, the change lands on the
-  cached/stream native paths and needs the **A4 pipeline gate** — the Synthesizer is the voice
-  that must carry clinical flags, so a reasoning-budget change is safety-adjacent by definition.
-  Decide alongside `[DB-0820-05]` (all-Pro routing) — a thinking cap moves that item's worst-case
-  arithmetic directly.
-  @kind: chore
-  *filed 2026-08-27 at Mike's instruction, at the close of the token-audit review session*
-
 - **[DB-0818-08] Nothing records where a fact came from, so a checked value is overwritten by a
   guessed one — and an answer with no source is delivered as fact.** Mike, 2026-08-18: *"the CRM needs
   some sort of verification tag for data that will allow it to stick to its guns when an edit or

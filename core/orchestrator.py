@@ -3155,7 +3155,8 @@ def run_session_gemini_cached(system_prompt: str, user_input: str,
                                tool_schemas: list[dict], tool_handlers: dict,
                                model: str | None = None,
                                history: list[dict] | None = None,
-                               attachments: list[dict] | None = None) -> str:
+                               attachments: list[dict] | None = None,
+                               thinking_budget: int | None = None) -> str:
     """
     Gemini session with Vertex context caching via the native SDK.
 
@@ -3191,6 +3192,7 @@ def run_session_gemini_cached(system_prompt: str, user_input: str,
             history=history,
             cached_content=cached_content_name,
             attachments=attachments,
+            thinking_budget=thinking_budget,
         )
         _refresh_vertex_cache(client, cached_content_name, model_name)
         return result
@@ -3250,13 +3252,58 @@ def _gemini_user_parts(types, user_input: str, attachments: list[dict] | None) -
     return parts
 
 
+# Thinking cap for the Synthesizer — insurance, not economy ([DB-0827-02], decided
+# 2026-08-27). The probe (archive/plans/synthesizer_thinking_probe_2026-08-27.md)
+# measured 105 live replies: max observed thinking was 3,930 tokens with no tail
+# above it, so 4096 clips nothing today and costs quality nothing. What it buys is
+# a bound: before this, no thinking_config existed anywhere in the codebase and
+# max_output_tokens does NOT limit thinking on Gemini — a regression toward
+# runaway thinking would have billed silently at $12/M. Do not lower this for
+# cost; the probe measured the whole exposure at ~$0.26/day. A latency-motivated
+# cap (1,024–1,536) would touch 60–85% of replies and is a quality experiment,
+# not a config edit.
+_SYNTH_THINKING_BUDGET = 4096
+
+
+def _note_thinking_cap_hit(thinking_budget: int | None, thinking_tokens: int,
+                           turn_num: int) -> None:
+    """
+    Record a quality event when a reply's thinking lands at the cap.
+
+    The probe said the tail does not exist — so a cap hit is exactly the case
+    worth a record: either the distribution moved or a pathological reply was
+    clipped, and both deserve a human look. The 64-token margin exists because a
+    clipped run reports a count at or just under the budget, not exactly on it.
+    Never raises: a telemetry write must not take down a live reply.
+    """
+    if not thinking_budget or thinking_tokens < thinking_budget - 64:
+        return
+    try:
+        from tools.logger import write_quality_event
+        rec = _tr.get_current_agent()
+        agent = getattr(rec, "agent", "") or "unknown"
+        write_quality_event(
+            "THINKING_CAP_HIT",
+            source_agent=agent,
+            detail=(f"thinking hit the {thinking_budget}-token budget "
+                    f"(reported {thinking_tokens}, turn {turn_num}). The 2026-08-27 "
+                    f"probe found no replies above 3,930 — a cap hit means the "
+                    f"distribution moved or a reply was clipped; check its quality."),
+        )
+        logger.warning(f"[thinking_cap] {agent} hit budget={thinking_budget} "
+                       f"reported={thinking_tokens} turn={turn_num}")
+    except Exception:
+        logger.warning("[thinking_cap] failed to record cap-hit quality event", exc_info=True)
+
+
 def _run_gemini_native_loop(client, model_name: str,
                              system_prompt: str, user_input: str,
                              tool_schemas: list[dict], tool_handlers: dict,
                              history: list[dict] | None = None,
                              max_iterations: int = 8,
                              cached_content: str | None = None,
-                             attachments: list[dict] | None = None) -> str:
+                             attachments: list[dict] | None = None,
+                             thinking_budget: int | None = None) -> str:
     """
     Agentic loop using the google-genai native SDK.
 
@@ -3266,6 +3313,9 @@ def _run_gemini_native_loop(client, model_name: str,
 
     cached_content: Vertex CachedContent resource name. When provided, the system
     prompt is served from cache — system_instruction is omitted from GenerateContentConfig.
+
+    thinking_budget: per-request thinking-token cap (types.ThinkingConfig). Rides
+    the request, not the cache — it cannot split or invalidate a cache entry.
     """
 
     # The schemas handed to this runner are already filtered to what this
@@ -3276,17 +3326,25 @@ def _run_gemini_native_loop(client, model_name: str,
 
     gemini_tools = _to_gemini_tools(tool_schemas)
     _tools_kwarg = {"tools": gemini_tools} if gemini_tools else {}
+    # Per-request generation setting — unlike tools/system_instruction it is NOT
+    # baked into the cache, so it applies identically on both branches below.
+    _think_kwarg = (
+        {"thinking_config": types.ThinkingConfig(thinking_budget=thinking_budget)}
+        if thinking_budget is not None else {}
+    )
     if cached_content:
         # Tools and system_instruction are baked into the cache — must not repeat them here.
         config = types.GenerateContentConfig(
             cached_content=cached_content,
             max_output_tokens=4096,
+            **_think_kwarg,
         )
     else:
         config = types.GenerateContentConfig(
             system_instruction=system_prompt,
             max_output_tokens=4096,
             **_tools_kwarg,
+            **_think_kwarg,
         )
 
     contents: list = []
@@ -3311,6 +3369,7 @@ def _run_gemini_native_loop(client, model_name: str,
             input_tokens = getattr(response.usage_metadata, "prompt_token_count", 0) or 0
             output_tokens = getattr(response.usage_metadata, "candidates_token_count", 0) or 0
             thinking_tokens = _thinking_tokens_gemini(response.usage_metadata)
+            _note_thinking_cap_hit(thinking_budget, thinking_tokens, turn_num)
             cache_read = getattr(response.usage_metadata, "cached_content_token_count", 0) or 0
             cumulative_input_tokens += input_tokens
             _cache_suffix = f" cache_read={cache_read}" if cache_read else ""
@@ -3400,7 +3459,8 @@ def _run_gemini_native_stream(client, model_name: str,
                               history: list[dict] | None = None,
                               max_iterations: int = 8,
                               cached_content: str | None = None,
-                              attachments: list[dict] | None = None) -> Iterator[str]:
+                              attachments: list[dict] | None = None,
+                              thinking_budget: int | None = None) -> Iterator[str]:
     """
     Streaming sibling of _run_gemini_native_loop — Option A of the 2026-08-18 caching fix.
 
@@ -3431,17 +3491,24 @@ def _run_gemini_native_stream(client, model_name: str,
     from google.genai import types
 
     gemini_tools = _to_gemini_tools(tool_schemas)
+    # Per-request setting, not part of the cache — see _run_gemini_native_loop.
+    _think_kwarg = (
+        {"thinking_config": types.ThinkingConfig(thinking_budget=thinking_budget)}
+        if thinking_budget is not None else {}
+    )
     if cached_content:
         # Tools and system_instruction are baked into the cache — must not repeat them.
         config = types.GenerateContentConfig(
             cached_content=cached_content,
             max_output_tokens=4096,
+            **_think_kwarg,
         )
     else:
         config = types.GenerateContentConfig(
             system_instruction=system_prompt,
             max_output_tokens=4096,
             **({"tools": gemini_tools} if gemini_tools else {}),
+            **_think_kwarg,
         )
 
     contents: list = []
@@ -3484,6 +3551,7 @@ def _run_gemini_native_stream(client, model_name: str,
             input_tokens = getattr(usage, "prompt_token_count", 0) or 0
             output_tokens = getattr(usage, "candidates_token_count", 0) or 0
             thinking_tokens = _thinking_tokens_gemini(usage)
+            _note_thinking_cap_hit(thinking_budget, thinking_tokens, turn_num)
             cache_read = getattr(usage, "cached_content_token_count", 0) or 0
             cumulative_input_tokens += input_tokens
             _cache_suffix = f" cache_read={cache_read}" if cache_read else ""
@@ -3560,7 +3628,8 @@ def run_session_gemini_cached_stream(system_prompt: str, user_input: str,
                                      tool_schemas: list[dict], tool_handlers: dict,
                                      model: str | None = None,
                                      history: list[dict] | None = None,
-                                     attachments: list[dict] | None = None) -> Iterator[str]:
+                                     attachments: list[dict] | None = None,
+                                     thinking_budget: int | None = None) -> Iterator[str]:
     """
     Streaming entry point for the cached Vertex path — mirrors run_session_gemini_cached.
 
@@ -3603,6 +3672,7 @@ def run_session_gemini_cached_stream(system_prompt: str, user_input: str,
             tool_schemas, tool_handlers,
             history=history, cached_content=cached_content_name,
             attachments=attachments,
+            thinking_budget=thinking_budget,
         ):
             emitted = True
             yield chunk
@@ -4171,7 +4241,9 @@ def _run_single_agent(agent_name: str, user_input: str,
             elif agent_name in (_HEAD_LAYER_AGENTS | _ROUTING_LAYER_AGENTS):
                 result = run_session_gemini_cached(system_prompt, augmented_input, tool_schemas,
                                                    tool_handlers, model=model_override, history=history,
-                                                   attachments=attachments)
+                                                   attachments=attachments,
+                                                   thinking_budget=_SYNTH_THINKING_BUDGET
+                                                   if agent_name == "synthesizer" else None)
             else:
                 result = run_session_gemini(system_prompt, augmented_input, tool_schemas, tool_handlers,
                                             model=model_override, history=history)
@@ -4612,6 +4684,94 @@ _PROACTIVE_FRAME = (
 )
 
 
+# --- "Over and out" sign-off: skip the Synthesizer when the user has closed the
+# exchange (Mike's decision, 2026-08-27). The phrase is detected HERE, in Python,
+# and never by a model: it is an exact-matchable string, and routing it through
+# Coordinator judgment would add a Flash-Lite failure mode (silent when you did
+# not sign off, chatty when you did) to a decision that needs none. The
+# Coordinator and specialists still run — a sign-off ends the conversation, not
+# the work (the diary write, the calendar entry still land). Only the Pro-tier
+# Synthesizer pass is skipped, unless a specialist raised a safety flag, in which
+# case the veto below forces the normal path. The veto is code, not instruction,
+# per CLAUDE.md: a mishandled clinical flag is a hard fail regardless of how the
+# turn was classified.
+#
+# Known, accepted gap: a skipped turn writes no [CONTEXT] block, so the context
+# tracker does not see this exchange. A sign-off turn carries no new content by
+# definition — the substance was in the turns before it.
+_SIGNOFF_FLAG_TOKENS = ("MUST_SURFACE", "CLINICAL_CONCERN", "MEDICATION_MISSED_CRITICAL")
+# A natural phrase, not an emoji — Mike's call 2026-08-27, after the pre-deploy
+# Synthesizer coincidentally replied "Received. Talk to you later." to a sign-off
+# and it read exactly right. A fixed string: no model call, no translation pass
+# (this path returns before _translate_for_user by design), safe for TTS.
+_SIGNOFF_ACK = "Received — talk to you later."
+
+
+def _levenshtein(a: str, b: str) -> int:
+    """
+    Damerau edit distance (optimal string alignment) — transposition counts as
+    ONE edit, because "adn" for "and" is the most common real typo and plain
+    Levenshtein prices it at 2, which would reject exactly the misspelling this
+    exists to tolerate. Two short words; no need for a dependency.
+    """
+    rows = [[0] * (len(b) + 1) for _ in range(len(a) + 1)]
+    for i in range(len(a) + 1):
+        rows[i][0] = i
+    for j in range(len(b) + 1):
+        rows[0][j] = j
+    for i in range(1, len(a) + 1):
+        for j in range(1, len(b) + 1):
+            cost = a[i - 1] != b[j - 1]
+            rows[i][j] = min(rows[i - 1][j] + 1, rows[i][j - 1] + 1, rows[i - 1][j - 1] + cost)
+            if i > 1 and j > 1 and a[i - 1] == b[j - 2] and a[i - 2] == b[j - 1]:
+                rows[i][j] = min(rows[i][j], rows[i - 2][j - 2] + 1)
+    return rows[-1][-1]
+
+
+def _is_signoff(user_text: str) -> bool:
+    """
+    True when the message ENDS with "over and out", tolerating slight misspelling.
+
+    Tuned to never false-positive rather than to catch every variant:
+    - The three words must be the message's final tokens — nothing after them but
+      punctuation. "Over and out" mid-sentence is conversation, not a sign-off.
+    - Each word tolerates at most one edit, at most two across the phrase
+      ("over adn out", "ovr and out" pass; "down and out", "over and above",
+      "in and out" are all ≥2 edits on a single word and fail).
+    - "&" is accepted for "and".
+    - A message whose raw text ends with "?" is never a sign-off — someone asking
+      about the phrase is not using it.
+    """
+    raw = user_text.strip()
+    if not raw or raw.endswith("?"):
+        return False
+    words = _re.findall(r"[a-z&']+", raw.lower())
+    if len(words) < 3:
+        return False
+    last3 = list(words[-3:])
+    if last3[1] == "&":
+        last3[1] = "and"
+    total = 0
+    for word, target in zip(last3, ("over", "and", "out")):
+        d = _levenshtein(word, target)
+        if d > 1:
+            return False
+        total += d
+    return total <= 2
+
+
+def _signoff_skip(spec_text: str, user_input: str, is_proactive: bool) -> bool:
+    """The full skip decision: user sign-off, real turn, and no safety flag raised."""
+    if is_proactive or not _is_signoff(user_input):
+        return False
+    if any(tok in spec_text for tok in _SIGNOFF_FLAG_TOKENS):
+        logger.warning("[signoff] safety flag present in specialist output — "
+                       "sign-off overridden, Synthesizer runs")
+        return False
+    _trace("[PIPELINE] sign-off detected — synthesizer skipped")
+    return True
+
+
 def _frame_proactive(user_input: str, is_proactive: bool) -> tuple[str, str]:
     """
     Return (coordinator_prefix, synthesizer_label) for one pipeline run.
@@ -4710,6 +4870,16 @@ def run_pipeline_session(user_input: str,
             for agent, output in specialist_outputs.items()
             if "dispatched (async)" not in output
         )
+
+        # User signed off ("over and out") and nothing pressing came back from the
+        # specialists: the work is done, rest without the Pro-tier Synthesizer pass.
+        if _signoff_skip(spec_text, user_input, is_proactive):
+            if history is not None:
+                history.append({"role": "user", "content": user_input})
+                history.append({"role": "assistant", "content": _SIGNOFF_ACK})
+                del history[:-10]
+            _tr.finish_request_trace(_SIGNOFF_ACK)
+            return _SIGNOFF_ACK
 
         # Pass 2: Synthesizer — integration and user-facing response.
         # The ACTIONS block goes last, closest to the response, and is always
@@ -4875,6 +5045,17 @@ def _run_pipeline_session_stream_inner(
         for agent, output in specialist_outputs.items()
         if "dispatched (async)" not in output
     )
+    # Sign-off skip — mirrors the non-streaming branch above; same veto, same ack.
+    if _signoff_skip(spec_text, user_input, is_proactive):
+        if history is not None:
+            history.append({"role": "user", "content": user_input})
+            history.append({"role": "assistant", "content": _SIGNOFF_ACK})
+            del history[:-10]
+        yield _SIGNOFF_ACK
+        yield "[DONE]"
+        _tr.finish_request_trace(_SIGNOFF_ACK)
+        return
+
     _trace("[PIPELINE] synthesizer  streaming")
 
     # Build Synthesizer input — ACTIONS block last and unconditional, as above.
@@ -4961,6 +5142,7 @@ def _run_pipeline_session_stream_inner(
         gen = run_session_gemini_cached_stream(
             system_prompt, augmented_input, tool_schemas, tool_handlers,
             model=synth_model, history=recent_history, attachments=attachments,
+            thinking_budget=_SYNTH_THINKING_BUDGET,   # this path is the Synthesizer, always
         )
     elif synth_provider == "openai":
         api_key = os.environ.get("OPENAI_API_KEY", "")

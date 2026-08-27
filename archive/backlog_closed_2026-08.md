@@ -3268,3 +3268,25 @@ be fixed blind, and now no open item implies otherwise.
   refreshing**, which is the known SSE staleness and the only step still needing a contrivance
   *filed 2026-08-10 · flag defect found and fixed 2026-08-19*
 
+
+## Closed 2026-08-27 — the thinking cap, set as insurance after the probe found no tail
+
+- **[DB-0827-02] The Synthesizer's thinking is unbounded — the one Pro agent, on every reply,
+  with no cap anywhere in the codebase.** CLOSED 2026-08-27 by building it, on Mike's decision the
+  same day. The prerequisite probe ran first (105 live Synthesizer replies off the VM, 08-19 →
+  08-27, `archive/plans/synthesizer_thinking_probe_2026-08-27.md`): **max observed thinking was
+  3,930 tokens with no tail above it** — a generous cap clips nothing, and the whole cost exposure
+  measured ~$0.26/day, so the cap landed as **insurance, not economy**. Built:
+  `_SYNTH_THINKING_BUDGET = 4096` in `core/orchestrator.py`, threaded through
+  `run_session_gemini_cached`/`_stream` → both native loops as per-request
+  `types.ThinkingConfig` (rides the request, cannot split or invalidate a cache); applied to the
+  **Synthesizer only** at both call sites. **Tail detection as asked:** `_note_thinking_cap_hit()`
+  writes a `THINKING_CAP_HIT` quality event whenever reported thinking lands within 64 tokens of
+  the budget — the probe said the tail does not exist, so a hit means the distribution moved or a
+  reply was clipped, and either deserves a look. Never raises; unit-checked (fires at 4090/4096,
+  quiet at 4000 and below, exception swallowed). **A4 pipeline gate PASS 3/3** with the cap live
+  (`tests/a4_safety_rerun_2026-08-27_cloud_pipeline.md`), qa_sweep 9/9, zero false cap-hit events
+  during the gate runs. The item's decision-halves both resolved: cap **yes, at 4096**; a
+  latency-motivated cap (1,024–1,536, touching 60–85% of replies) stays a separate quality
+  experiment, deliberately not taken. `[DB-0820-05]`'s assumption 1 (output inflation) re-checked
+  by the probe in the reassuring direction. **Needs a deploy** (`core/orchestrator.py` → VM).
