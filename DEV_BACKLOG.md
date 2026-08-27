@@ -309,6 +309,26 @@ the condition has not arrived, push the date rather than closing the item.
 
 ### Decisions — each needs one answer from Mike, not effort
 
+- **[DB-0827-02] The Synthesizer's thinking is unbounded — the one Pro agent, on every reply,
+  with no cap anywhere in the codebase.** Confirmed 2026-08-27: no `thinking_config` /
+  `thinking_budget` exists in `core/` or any routing file; the only limit on the native paths is
+  `max_output_tokens=4096`, which on Gemini does **not** bound thinking — thinking meters
+  separately and bills as output ($12/M on Pro). Scale of the exposure: ~86% of Synthesizer
+  output is thinking (the measured figure the all-Pro cost model `[DB-0820-05]` carries as its
+  assumption 1, where output inflation is also named the assumption that most moves that
+  analysis). **`thinking_budget: 0` was rejected 2026-08-18 — but as a fix for the deliberation-
+  header formatting leak, on the grounds that *disabling* reasoning degrades the user-facing
+  agent** (`core/orchestrator.py` Tier-5 filter comment). A non-zero *cap* was never evaluated,
+  and never on cost grounds — that is the open decision: cap or not, and at what budget.
+  **What answering needs:** a probe of thinking-token distribution per reply from clean post-fix
+  traces (what budget would clip which replies); then, if capped, the change lands on the
+  cached/stream native paths and needs the **A4 pipeline gate** — the Synthesizer is the voice
+  that must carry clinical flags, so a reasoning-budget change is safety-adjacent by definition.
+  Decide alongside `[DB-0820-05]` (all-Pro routing) — a thinking cap moves that item's worst-case
+  arithmetic directly.
+  @kind: chore
+  *filed 2026-08-27 at Mike's instruction, at the close of the token-audit review session*
+
 - **[DB-0818-08] Nothing records where a fact came from, so a checked value is overwritten by a
   guessed one — and an answer with no source is delivered as fact.** Mike, 2026-08-18: *"the CRM needs
   some sort of verification tag for data that will allow it to stick to its guns when an edit or
@@ -456,8 +476,13 @@ the condition has not arrived, push the date rather than closing the item.
   scores 0.545 against a 0.6 bar and slips, and raising the bar starts merging different people, so
   that needs a separate prefix signal. **`write_archive` has no dedup of any kind**
   ([tools/diarist.py:110](tools/diarist.py#L110)) — untouched.
+  **This item is now the anchor for the code-dominant rebuild notebook** —
+  `archive/plans/code_dominant_rebuild_notes.md`, the running note base for the architecture
+  inversion (opened 2026-08-22, round two 2026-08-27). Thinking only, no build; read it before
+  giving this decision its session, because the inversion is strand (b) taken seriously.
   @session: is (c) — a standing review protocol — worth a session, or is this three items?
-  *filed 2026-08-10 · the wisdom-embedding strand closed 2026-08-15 (`13134bc`)*
+  *filed 2026-08-10 · the wisdom-embedding strand closed 2026-08-15 (`13134bc`) · notebook
+  anchored 2026-08-27*
 
 - **[DB-0814-03] Manage the mailbox as tickets rather than as a stream**, so a thread has a state
   instead of being re-read each pass. Real and unbuilt. **Blocked on what a ticket *is*** (a thread,
@@ -903,12 +928,40 @@ with a date.** Nothing new joins this group open-ended.*
   @waiting: a domain read hits the 15-entry cap in real use
   *filed 2026-08-15 at Mike's explicit request, because it existed only in a plan narrative*
 
-- **[DB-0808-09] Specialists take more internal turns than expected.** Coordinator is 1 (measured
-  twice); `logistics` is 8; the rest are unmeasured. **Measure first, then diagnose from traces, then
-  fix** — the previous version of this item rested on a measurement that was wrong. Slimming
-  `coordinator.md` is a separate argument and must watch the **4,096-token Vertex cache floor**.
+- **[DB-0808-09] Specialists spend a full model round-trip per tool call — never batching — so
+  every extra turn re-sends their whole accumulated context.** Step 1 (measure) is **done,
+  2026-08-27**, from live VM traces, two windows (Aug 1–8 and Aug 20–27; turn counts are
+  output-token-bug-immune, so both windows are trustworthy). Aug 20–27, turns/call:
+  `relationships` 4.2 · `work_vocation` 3.7 · `logistics` 3.6 · `mental_wellbeing` 3.1 ·
+  `physical_health` 2.9 · `diarist` 2.6 · `synthesizer` 1.1 · `coordinator` 1.0. The item's
+  original open question is settled: **`logistics` is not an outlier, multi-turn is the norm.**
+  **The mechanism, measured:** the parallel-calls-per-turn histogram is `{1: N}` for every
+  specialist — 392 tool turns in the window, not one carried two calls. The API and
+  `_openai_compat_loop` both support parallel calls (the Synthesizer once emitted two); the
+  specialists just never choose it. Common sequences are short read chains ending in one write:
+  `read_intake_queue → read_email → final`, `search_memory → write_log → final`.
+  **Step 2/3 candidate designs, unevidenced — diagnose from traces before building** (the
+  Coordinator mis-diagnosis is this item's own precedent):
+  *(1) Instruct batching of independent reads* — cheapest, saves ~1 turn on most agents; dependent
+  chains (`read_log → write_log`) can't batch, so this is a trim, not a collapse.
+  *(2) Coordinator prefetch (Mike's proposal, 2026-08-27):* run predictable reads as code before
+  the specialist's first call and append outputs to its first user message — no extra model turns,
+  and the cached system prefix stays stable since prefetched data rides in the user message. The
+  measured first-turns are exactly the predictable reads (`read_email`, `read_calendar`,
+  `read_log`, `read_intake_queue`). Catch: the Coordinator must *predict* the tool set (it
+  currently emits no tool plan; KNOWLEDGE_TO_LOAD is precedent for the pattern), a missed
+  prediction still costs the specialist a turn, and writes can never prefetch — their content *is*
+  the specialist's reasoning.
+  *(3) Read/write specialist split (Mike's proposal, 2026-08-27):* weakest on cost as stated — the
+  write half still needs the read outputs in its context (same tokens, now paid under two system
+  prompts) plus a second dispatch hop; only earns if the read half runs on a much cheaper model.
+  **Standing caution kept:** slimming `coordinator.md` is a separate token-size argument and must
+  watch the **4,096-token Vertex cache floor** — and the file has since grown to ~5,184 tokens,
+  near/past the padding threshold, so the earlier "slimming saves zero, padding re-inflates"
+  conclusion needs re-deriving before anyone relies on it.
   @kind: chore
-  *filed 2026-08-08*
+  *filed 2026-08-08 · Step 1 closed 2026-08-27 from live traces (session: coordinator-slim
+  rehydration → token audit); design options folded in from Mike's same-day review*
 
 ---
 

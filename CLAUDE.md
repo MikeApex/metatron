@@ -143,6 +143,12 @@ Use precise names. Avoid pronouns and generic terms.
 
 The `--provider` flag in the Orchestrator CLI is a code-level routing argument. In documentation and comments, name the specific API or model instead.
 
+**A backlog id is an index, not a description — never write one bare.** Lead with the problem in
+plain language, then the `[DB-XXXX-XX]` id: *"specialists claim an email was sent that never was
+`[DB-0810-13]`"*, not *"`[DB-0810-13]`, ease 2, Red tier"*. Applies everywhere the id appears —
+ordinary chat, triage tables, cluster plans, close-outs. A bare code makes Mike look the item up
+before he can judge it, and in a ten-item table that cost lands ten times.
+
 ---
 
 ## Four-Tier Goal Hierarchy

@@ -1,5 +1,8 @@
 # Code-dominant architecture — the "built backwards?" discussion (2026-08-22)
 
+> **Continued in [code_dominant_rebuild_notes.md](code_dominant_rebuild_notes.md)** — the running
+> notebook for this thread (opened 2026-08-27). This file stays as the dated record of round one.
+
 **Status: preliminary discussion, no decision by Mike.** This document is the consultable record
 of a design conversation between Mike and Claude Code (Opus 5), anticipating a version-1/alpha
 refactoring. It bears directly on the queued `@session` decision **"where code should replace

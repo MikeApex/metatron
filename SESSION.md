@@ -1,6 +1,6 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-27 (the ask-vs-assert cluster closes; ZDR refused and ruled on).*
+*Updated: 2026-08-27 (ask-vs-assert closes; ZDR ruled; the rebuild conversation gets its notebook).*
 
 *⛔ **Google REFUSED the ZDR opt-out, and Mike has ruled — do not re-open this.** The 2026-06-18
 amendment's "verified ZDR" premise is settled **false**, not merely unverified. What governs is
@@ -40,10 +40,12 @@ turn with no virtue list, one 20:00 that still carries it). `[DB-0820-05]` — a
 ~$3.11/day against $6.12; `coordinator` is the only candidate and its blocker is latency.*
 
 *⚠ **A v1/alpha architecture question is live: invert to code-dominant, with models as discrete
-judgment gates.** Preliminary discussion 2026-08-22, **no decision** — recommended the inversion
-(Coordinator first candidate; Synthesizer stays a real agent; pilot the invitation/RSVP flow) and
-that it be **decided before A8 executes**, or A8 is paid for twice. Record:
-`archive/plans/code_vs_agent_architecture_2026-08-22_discussion.md`.*
+judgment gates.** Still **no decision**, and it must be **decided before A8 executes** or A8 is
+paid for twice. The conversation now has a standing home — append dated rounds to
+**`archive/plans/code_dominant_rebuild_notes.md`** (no length limit; Mike, 08-27). Two rounds in:
+the 08-22 "built backwards?" discussion, and the 08-27 trace audit — specialists never batch tool
+calls (392 single-call turns measured), read architecturally in the notebook, filed as work in
+`[DB-0808-09]` (turn reduction) and `[DB-0827-02]` (unbounded Synth thinking, a Decisions item).*
 
 ***Model split, Mike's call 2026-08-18: plan and review in Fable, build in Opus.*** Red-tier
 work is still not delegated at all.
