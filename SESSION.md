@@ -1,24 +1,26 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-28 (**the decisions session ran — the capstone batch is 8/8 ruled**: ZDR
-closed with Amendment 2026-08-28 applied, six items converted to build work, grants all
-decided. Dispositions live in each `DEV_BACKLOG.md` entry; reasoning in the log fragment;
-revised session order in the tracker's § Status update 2026-08-28).*
+*Updated: 2026-08-28 (**the Green/Amber spinoff ran — all five decided builds are merged,
+none deployed**: coordinator probe evidence in, write_persona gate, ritual halves,
+Accountability Index, location first draft. Handoffs with the Red proposals:
+`archive/handoffs/2026-08-28-*.md`; log fragment has the detail. **The whole batch owes
+Mike's VM deploy; location also owes an APK rebuild + sideload.**)*
 
 *✅ **The capstone plan is the read-first for any backlog work:**
 **`archive/plans/capstone_cluster_review_2026-08-27.md`** — every open item by functional
 cluster with tier, estimate and status. Goal (Mike): finish this rendition's core features,
 begin full testing; rebuild-adjacent work parked in its Cluster H. **National Rail
-(`[DB-0818-04]`) and geolocation (`[DB-0815-12]`) are first-draft features** by his ruling —
-the Darwin API key is his to register; location's design is decided 2026-08-28 (extra-sensitive
-zone abstraction, app modes 1+2, ping default OFF) — build owed.*
+(`[DB-0818-04]`) is a first-draft feature** by his ruling — the Darwin API key is his to
+register. Geolocation (`[DB-0815-12]`) is **built to its decided design** (extra-sensitive
+zone abstraction, modes 1+2, ping off-default) — awaiting deploy + APK; Mike defines zones on
+the VM (`config/templates/zones.yaml` is the shape).*
 
 *✅ **Nine builds merged and deployed, each awaiting one live confirmation** (`@waiting`;
 evidence per item in the backlog): decline path `[DB-0827-01]` · context age `[DB-0822-06]` ·
 Bill store `[DB-0818-05]` · Diarist gate `[DB-0822-05]` · label filter `[DB-0827-07]` ·
-false-claim detector `[DB-0815-11]` (policy decided 08-28, gate build owed) · audit line
+false-claim detector `[DB-0815-11]` (gate build now merged, undeployed) · audit line
 `[DB-0814-02]`. Medication Red spec ready `[DB-0808-14]`; wisdom-store proposal `[DB-0818-06]`
-awaits Mike; referent class `[DB-0826-01]` workable (four instances).*
+awaits Mike; referent class `[DB-0826-01]` workable (four instances, now probe-measured).*
 
 *✅ **The synthesizer audit is executed, gated, and deployed** (record + watch list:
 `archive/plans/synthesizer_audit_2026-08-18.md` § Execution record; `[DB-0822-10]` closes on
@@ -29,26 +31,25 @@ scheduled-run day before fixing `[DB-0822-08]`/`-09` by instruction.***
 delete `mike.md`'s six-hour inbox line if present) — gates: `[DB-0820-03]`, `[DB-0820-04]`.*
 
 *⚠ **Caps revert to $100/$175 at the September reset — evidence in** (`[DB-0820-01]`,
-`due: 2026-09-01`). Pro routing `[DB-0820-05]` **decided 2026-08-28**: coordinator-only, offline
-probe before any flip; Step-6 caching approved behind one full A4 run (which also carries
-`[DB-0818-07]`'s knowledge seeding). (M): Mike enables the BigQuery billing export, and flips
-the Mac's `VERTEX_CACHE_DISABLED` himself.*
+`due: 2026-09-01`). Pro routing `[DB-0820-05]`: **probe run, evidence in** —
+`tests/coord_model_probe_2026-08-28_flashlite_vs_pro.md` carries the verdict and the
+recommended next step. Step-6 caching stays approved behind one full A4 run (which also
+carries `[DB-0818-07]`'s knowledge seeding). (M): Mike enables the BigQuery billing export,
+and flips the Mac's `VERTEX_CACHE_DISABLED` himself.*
 
-*⛔ **ZDR: refused, ruled on, do not re-open** — `ROADMAP.md` § Section 0 *RESOLVED 2026-08-26*
-+ **Amendment 2026-08-28** (written basis updated; `tone_profiler` cleared for anything Mike
-shares; `[DB-0827-08]` closed). CRM sweep build still gated on Mike's plan re-review
-(`[DB-0827-03]`). **The `[DB-0818-06]` wisdom-store proposal review did NOT ride along with the
-decisions batch — still awaiting Mike.***
+*⛔ **ZDR: refused, ruled on, do not re-open** — the whole basis, incl. Amendment 2026-08-28,
+is `ROADMAP.md` § Section 0. CRM sweep still gated on Mike's plan re-review (`[DB-0827-03]`);
+the `[DB-0818-06]` wisdom-store proposal review still awaits Mike.*
 
-***Next (revised 2026-08-28, Mike's call — grants batched, not their own run):** ② supervised
+***Next (revised 2026-08-28; the spinoff is DONE — its five builds await Mike's deploy):**
+**(M) VM deploy of the spinoff batch + APK rebuild/sideload for location**, then ② supervised
 Red session in `core/scheduler.py` (`[DB-0822-07]` + `[DB-0808-11]`) **+ the grants pass
 (`[DB-0810-03]`, all decided — unblocks A7 check 10) + Step-6 caching behind the full A4 run**;
 the medication schema edit (`[DB-0808-14]`, spec ready) fits the same sitting; ③
-email-surfacing session (`[DB-0822-09]` + the `[DB-0822-08]` re-measure, plus the ritual's one
-Red Synthesizer line and any spinoff agent-file handoffs); ④ CRM sweep build (Opus,
-post-review). A **Green/Amber spinoff chat runs concurrently**: coordinator model probe,
-write_persona gate, ritual code halves (`[DB-0809-02]`), Accountability Index (`[DB-0827-09]`,
-audit `[DB-0828-01]` follows), location first draft. Cluster F drains on Mike's ordinary use.*
+email-surfacing session (`[DB-0822-09]` + the `[DB-0822-08]` re-measure, **plus the Red
+proposals waiting verbatim in the 2026-08-28 handoffs**); ④ CRM sweep build (Opus,
+post-review). At the index's deploy, set `[DB-0828-01]` `due:` = deploy+10. Cluster F drains
+on Mike's ordinary use.*
 
 *⚠ **A v1/alpha architecture question is live: invert to code-dominant, with models as discrete
 judgment gates.** Still **no decision**, and it must be **decided before A8 executes** or A8 is

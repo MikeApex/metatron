@@ -75,6 +75,9 @@ back-tagging the rest is `[DB-0815-10]`.
 > against `git log` before promoting anything from here.
 *(empty — triaged 2026-08-27 by `/backlog deep`; evidence in `archive/backlog_closed_2026-08.md` § Closed 2026-08-27)*
 
+- **[needs building]** Fix email parser so it does not strip forwarding context. Forwarded emails currently lose the original recipient data, leading to incorrect assumptions about who the email was intended for.  
+  `2026-08-28T16:43:27.304606Z`
+
 - **[needs building]** Email intake/parser needs updating to preserve and pass forwarding metadata (e.g., forwarded from secondary accounts), as dropping it caused the system to misinterpret a family member's email as a misdirected message.  
   `2026-08-28T15:24:22.504583Z`
 
@@ -471,10 +474,16 @@ the condition has not arrived, push the date rather than closing the item.
   more open item on that list, not a broadcast obligation. *(Touches the anticipation pass and,
   later, `[DB-0815-12]` location — "user is home" is a circumstance signal.)*
   @kind: bug
-  *build owed: asked-state memory + nothing-new focus gate + ritual ownership — mostly
-  Green/Amber code; the one Synthesizer-side Red line rides with the email-surfacing Red session*
+  **✅ Code halves BUILT 2026-08-28** (`6451b51`, spinoff chat): asked-state in `context.json`
+  (question text withheld from the model; re-ask caps incl. max 1/day across all jobs);
+  nothing-new fingerprint stamped at run close → short-check-in directive (a condition — a
+  test asserts no length cap can creep back); ritual ownership generalised to
+  `*_ritual.md`-by-filename. 33/33 tests + evening gate 11/11.
+  *remaining: VM deploy (rides the spinoff batch); one scheduled-run day confirms (doubles as
+  `[DB-0822-08]`'s re-measure day); the Red Synthesizer line rides the email-surfacing session
+  — verbatim in `archive/handoffs/2026-08-28-ritual-halves.md`*
   *filed 2026-08-09 · rewritten twice as measurement inverted it · third measurement 2026-08-21 ·
-  decided 2026-08-28*
+  decided 2026-08-28 · built 2026-08-28*
 
 - **[DB-0815-11] The system recorded a preference change it appears never to have made.** A
   `SELF_APPLIED` event at `2026-08-15T13:51:39Z`: *"Switched output to Bulgarian transliteration
@@ -533,8 +542,14 @@ the condition has not arrived, push the date rather than closing the item.
   for communication preferences/tone. Not scoped here; recorded so it survives.
   @kind: bug
   @waiting: detection half (`e673330`) — one live `FALSE_ACTION_CLAIM` event or one clean week
-  *build owed: the approval gate (toggleable) + redundancy check in `tools/` — Green/Amber,
-  Opus build session*
+  **✅ Gate BUILT 2026-08-28** (`75a91d6`, spinoff chat): inferred writes propose-and-confirm
+  via `consume()`; toggle `proactive.persona.inferred_write_auto_accept` (default false, no
+  tool writes the file); redundancy refusal at `NEAR_DUPLICATE` names the existing home (the
+  08-18 line scores 0.857 vs the template and is refused). 19/19 tests. Two flags in
+  `archive/handoffs/2026-08-28-write-persona-gate.md`: refusal applies to stated preferences
+  too (deliberate reversal of warn-never-block), and `synthesizer.md` carries no `source` line
+  (schema does the work; Red session may add one).
+  *remaining: VM deploy (rides the spinoff batch), then the @waiting exit above*
   *filed 2026-08-15 from the machine log · third instance folded in 2026-08-21 from the `/backlog
   deep` machine-log sweep, with the `RULE_CONFLICT` that confirms it · policy decided 2026-08-28*
 
@@ -588,10 +603,18 @@ the condition has not arrived, push the date rather than closing the item.
   transitions or scheduled windows, never a poll loop; a location-keyed query to any NEW
   external vendor is its own decision, not covered here (Darwin's station pair is accepted).
   @kind: feature
-  *build owed: client capture (both modes + off-default test) · server zone tool + context line ·
-  zone config — Green/Amber, Opus build session; the age annotation reuses `[DB-0822-06]`'s
-  pattern*
-  *filed 2026-08-10 · split 2026-08-15 · promoted 2026-08-27 · design decided 2026-08-28*
+  **✅ First draft BUILT 2026-08-28** (`029905e`, spinoff chat): both capture modes in
+  `static/index.html` (ping strict-off-default, JS test 11/11; manual button);
+  `POST /location` resolves the coordinate in-handler — no coordinate on disk, in a response,
+  or in a prompt (asserted against bytes, 30/30 + 10/10); transitions-only log (0600, no raw
+  trail even behind a flag); `config/templates/zones.yaml` template — **live zones are Mike's
+  to define at `data/personas/mike/zones.yaml` on the VM**; "home since HH:MM" context line.
+  No model-callable location tool registered (tightest reading — a grant decision if wanted).
+  *remaining: VM deploy + **Mike's APK rebuild & sideload** (phone won't show the 📍 control
+  until then); then one ping near a defined zone confirms. Handoff:
+  `archive/handoffs/2026-08-28-location-first-draft.md`*
+  *filed 2026-08-10 · split 2026-08-15 · promoted 2026-08-27 · design decided 2026-08-28 ·
+  first draft built 2026-08-28*
 
 - **[DB-0818-07] The safety regression passes without ever touching stored knowledge.**
   `run_a4_safety.py --suite pipeline` runs against `sarah_chen`, whose VM store holds **one** entry —
@@ -673,7 +696,15 @@ the condition has not arrived, push the date rather than closing the item.
   cost) to settle the cache-creation rate — meters forward only, so sooner is better; standing
   cost is BigQuery storage at this volume: cents.
   @kind: feature
-  *build owed: probe script + report; A4-gated Step-6 commit; live flip pending probe*
+  **✅ Probe RUN 2026-08-28** (`ec774da`, spinoff chat): Pro fixes the referent class (B-hard
+  12/12 vs Flash-Lite 6/12) at ~+11s/reply, all thinking tokens — flip-as-measured is
+  contraindicated; report recommends a capped-thinking-budget re-probe (needs
+  `_run_single_agent` to pass `thinking_budget` beyond `synthesizer`). Cache helper already
+  honours `model_override` (probe Step 0); bonus: `core/trace.py` now records `cached_tokens`
+  (was priced then dropped — cache hits were invisible in traces).
+  Report: `tests/coord_model_probe_2026-08-28_flashlite_vs_pro.md`.
+  *remaining: the Pro decision on the probe evidence (Mike) + capped-budget re-probe if
+  chosen; A4-gated Step-6 commit; trace fix deploy rides the spinoff batch*
   `due: 2026-09-15`
   *raised 2026-08-20 by Mike at the close of the Vertex billing reconciliation session ·
   absorbed `[DB-0822-01]`(b) 2026-08-27, both trails kept · decided 2026-08-28*
@@ -833,8 +864,18 @@ with a date.** Nothing new joins this group open-ended.*
   Unfulfilled intentions also feed `[DB-0809-02]`'s what-to-do-NOW opportunistic surfacing,
   not nagging. Useful during testing. **Audit follow-up: `[DB-0828-01]`.**
   @kind: feature
+  **✅ Code half BUILT 2026-08-28** (`c082fb6`, spinoff chat): `tools/accountability.py`
+  structured joins + trailing-30d rate (indeterminate excluded from the denominator);
+  content-free counts in the A9 rollup; CLI `python3 -m tools.accountability --report`.
+  11/11 tests. Judgment-gate agent file + 05:45 scheduler line are Red — proposal verbatim in
+  `archive/handoffs/2026-08-28-accountability-index.md`, incl. a flagged privacy-tier check
+  (journal text is sensitive → the gate's routing must say ZDR-VM basis). Discovered there,
+  decision-shaped: a second same-day intention silently overwrites the first in the day log
+  (`_deep_merge` scalar replace) — Diarist write-shape call, Mike's.
+  *remaining: VM deploy (rides the spinoff batch) — at that deploy set `[DB-0828-01]` `due:`
+  = deploy+10; judgment gate rides the next Red/agent-file session*
   *raised by Mike 2026-08-26 mid-session · triaged out of Inbox 2026-08-27 · design decided
-  2026-08-28, build owed*
+  2026-08-28 · code half built 2026-08-28*
 
 - **[DB-0828-01] Audit the Accountability Index's judgments once it has ten days of data — are
   things characterized as they should be?** Mike's instruction 2026-08-28, filed with the
