@@ -147,6 +147,89 @@ def find_places(query: str, near: str, max_results: int = 5) -> dict:
     return {"places": [_summarize(p) for p in places[:max_results]]}
 
 
+# ---------------------------------------------------------------------------
+# Forward geocode by name — the zone-suggestion half ([DB-0815-12] option b)
+# ---------------------------------------------------------------------------
+#
+# THE RULING THIS ENFORCES (Mike, 2026-08-28, superseding the reverse-geocode note):
+# the vendor NEVER receives the user's position. When a place is expected — named in
+# an upcoming calendar event — code asks where that PLACE is, by name alone, and the
+# comparison against the user's ping happens locally in tools/location.py. The
+# rejected alternative (randomised nearby coordinates) sends a position signal
+# however fuzzed; this sends none. tests/test_zone_suggestion.py asserts the outbound
+# payload contains no coordinate of any kind.
+#
+# Cost: one Text Search (Essentials-tier mask) per NEW name; the per-name cache makes
+# repeats free for the process lifetime. No standing cost — the cache is in-memory,
+# dies with the process, and is capped. Not registered as a model tool: code calls
+# this, models never do.
+
+_GEOCODE_FIELD_MASK = "places.displayName,places.formattedAddress,places.location"
+_GEOCODE_CACHE: dict[str, dict] = {}
+_GEOCODE_CACHE_CAP = 128
+
+
+def geocode_place_name(name: str) -> dict:
+    """
+    Where is the place with this NAME? Returns
+    {"name", "address", "lat", "lon"} or {"error": ...}.
+
+    The request body carries the name string and nothing else — no location bias, no
+    coordinate, nothing about the asker. Fail-soft by design: no key configured means
+    an error dict, and callers treat any error as "no candidate", never as a fault.
+    """
+    name = (name or "").strip()
+    if not name:
+        return {"error": "A place name is required."}
+
+    cache_key = name.casefold()
+    hit = _GEOCODE_CACHE.get(cache_key)
+    if hit is not None:
+        return dict(hit)
+
+    key = _places_key()
+    if not key:
+        return {"error": "Place lookup requires GOOGLE_PLACES_API_KEY, which is not configured."}
+
+    body = {"textQuery": name, "maxResultCount": 1}
+    try:
+        resp = requests.post(
+            _PLACES_BASE,
+            headers={
+                "Content-Type": "application/json",
+                "X-Goog-Api-Key": key,
+                "X-Goog-FieldMask": _GEOCODE_FIELD_MASK,
+            },
+            json=body,
+            timeout=TIMEOUT_SECONDS,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.RequestException as e:
+        return {"error": f"Place lookup failed: {e}"}
+    except ValueError:
+        return {"error": "Place lookup returned an unparseable response."}
+
+    places = data.get("places") or []
+    if not places:
+        return {"error": f"No place found for '{name}'."}
+    place = places[0]
+    loc = place.get("location") or {}
+    if loc.get("latitude") is None or loc.get("longitude") is None:
+        return {"error": f"'{name}' resolved without a usable location."}
+
+    result = {
+        "name": (place.get("displayName") or {}).get("text") or name,
+        "address": place.get("formattedAddress"),
+        "lat": float(loc["latitude"]),
+        "lon": float(loc["longitude"]),
+    }
+    if len(_GEOCODE_CACHE) >= _GEOCODE_CACHE_CAP:
+        _GEOCODE_CACHE.pop(next(iter(_GEOCODE_CACHE)))
+    _GEOCODE_CACHE[cache_key] = dict(result)
+    return result
+
+
 FIND_PLACES_SCHEMA = {
     "name": "find_places",
     "description": (

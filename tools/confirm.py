@@ -459,6 +459,11 @@ _EXECUTORS: dict[str, tuple[str, str]] = {
     # Gates ONE branch of write_persona — a preference the tool INFERRED rather than
     # was told. A stated preference is ungated and never reaches here. [DB-0815-11].
     "write_persona":         ("tools.persona",       "write_persona"),
+    # The ONE write path to data/personas/{p}/zones.yaml ([DB-0815-12] option b,
+    # 2026-08-28). The card is raised by code in tools/location.py — never by a model,
+    # which holds no zone tool — and the args carry the PLACE's public geocoded
+    # coordinate, never the user's ping.
+    "add_zone":              ("tools.location",      "append_zone"),
 }
 
 
