@@ -456,6 +456,9 @@ _EXECUTORS: dict[str, tuple[str, str]] = {
     # A taught intake rule silences mail permanently — the quiet, compounding kind
     # of change that must complete server-side from the user's own approval.
     "teach_intake":          ("tools.intake",        "teach_intake"),
+    # Gates ONE branch of write_persona — a preference the tool INFERRED rather than
+    # was told. A stated preference is ungated and never reaches here. [DB-0815-11].
+    "write_persona":         ("tools.persona",       "write_persona"),
 }
 
 
