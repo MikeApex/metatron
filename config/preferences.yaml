@@ -48,3 +48,26 @@ proactive:
   # gate off. A per-persona config/personas/{p}/preferences.yaml overrides this one.
   crm:
     merge_auto_accept: false
+
+  # Durable interaction preferences — the ones write_persona records in
+  # config/personas/{p}.md and that ride in every prompt afterwards.
+  #
+  # inferred_write_auto_accept — when true, a preference the tool INFERRED (rather than
+  # being told) is written without asking. Default false, and the default is the point:
+  # three times a preference was self-applied silently, and on 2026-08-18 one of them
+  # landed a real line in mike.md that restated a rule every persona already had.
+  #
+  # A preference the user STATED is never gated by this — that is them speaking, not the
+  # tool guessing, and it writes straight through either way.
+  #
+  # Mike's ruling, 2026-08-28: the gate is "for the time being". Once the inference
+  # around these preferences earns trust, this flips to true and inference is permitted
+  # again — hence a switch rather than a hard rule. It is safe to flip because an
+  # inferred preference is plain text in a file the user can read and edit, and because
+  # the pre-write redundancy check in tools/persona.py runs on both paths regardless of
+  # this setting: nothing here lets a second copy of an existing rule through.
+  #
+  # Read in Python by tools/persona.py; no tool writes this file, so no model can turn
+  # its own gate off. A per-persona config/personas/{p}/preferences.yaml overrides this.
+  persona:
+    inferred_write_auto_accept: false
