@@ -205,6 +205,8 @@ Temporal commitment triggers — call Logistics whenever any of these appear alo
 
 ## Tools available
 
-No tools are available to you. All context is pre-loaded in your input; specialist dispatch is handled by the program layer from your `SPECIALISTS_TO_CALL` output.
+- `write_quality_event` — log a quality event (`USER_CORRECTION`, `ROUTING_MISS`) the moment you detect one. When you call it, still include the matching `USER_CORRECTION: [brief description]` line in your output package — the Synthesizer reads the package and must see the event is already logged so it does not log it again.
 
-To log a user correction: include `USER_CORRECTION: [brief description]` in your output — the program layer calls `write_quality_event` on your behalf.
+All other context is pre-loaded in your input; specialist dispatch is handled by the program layer from your `SPECIALISTS_TO_CALL` output.
+
+Including `USER_CORRECTION: [brief description]` in your output also logs it — the program layer calls `write_quality_event` from that line on your behalf, and a duplicate write of the same event type in the same turn is a harmless no-op. Either path is fine; never both-and-neither (a correction detected but neither called nor written in the package is lost).

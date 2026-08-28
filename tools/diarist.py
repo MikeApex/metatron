@@ -141,6 +141,33 @@ def write_archive(category: str, item: dict | str | None = None) -> str:
         with open(archive_path) as f:
             existing = json.load(f)
 
+    # Dedup ([DB-0810-03] grants ruling, 2026-08-28): five specialists gained write_archive
+    # in one pass, and an append-only store with six writers accumulates near-identical rows
+    # — the same book filed at mention and again at completion. Identity is the entry's
+    # natural key (title/name/text/description, case-insensitive). A match UPDATES the
+    # existing row: new non-empty fields win, everything else is kept, nothing is deleted
+    # (the archive-on-merge principle). An entry with no identity field appends as before.
+    def _identity(d: dict) -> str:
+        for k in ("title", "name", "text", "description"):
+            v = d.get(k)
+            if isinstance(v, str) and v.strip():
+                return f"{k}:{v.strip().casefold()}"
+        return ""
+
+    key = _identity(item)
+    if key:
+        for row in existing:
+            if isinstance(row, dict) and _identity(row) == key:
+                for k, v in item.items():
+                    if v not in (None, "", [], {}):
+                        row[k] = v
+                row["date_updated"] = date.today().isoformat()
+                with open(archive_path, "w") as f:
+                    json.dump(existing, f, indent=2)
+                os.chmod(archive_path, 0o600)
+                return (f"Updated the existing {key.split(':', 1)[0]}-matched entry in the "
+                        f"{category} archive — fields merged, no duplicate added.")
+
     item["date_added"] = item.get("date_added") or date.today().isoformat()
     existing.append(item)
 

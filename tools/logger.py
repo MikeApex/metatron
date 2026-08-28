@@ -348,6 +348,23 @@ def write_quality_event(
     }
 
     with _WRITE_QUALITY_EVENT_LOCK:
+        # Dedup backstop ([DB-0810-03] grants ruling, 2026-08-28). The Coordinator can now
+        # call this tool directly AND the program layer writes template-slot events from its
+        # output, so one detected correction has two legitimate writers in the same request
+        # — and the Synthesizer is a third for ROUTING_MISS. Same trace + same event type
+        # → no-op. State lives on the RequestTrace instance, so it dies with the request;
+        # a call outside any trace (tests, scripts, scheduler functions) is never deduped.
+        from core.trace import get_trace
+        trace = get_trace()
+        if trace is not None:
+            seen = getattr(trace, "_quality_event_types", None)
+            if seen is None:
+                seen = trace._quality_event_types = set()
+            if event_type in seen:
+                return (f"Quality event {event_type} already logged this turn — "
+                        "duplicate skipped.")
+            seen.add(event_type)
+
         with open(events_path, "a") as f:
             f.write(json.dumps(event) + "\n")
         os.chmod(events_path, 0o600)

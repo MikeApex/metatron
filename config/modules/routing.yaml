@@ -37,7 +37,8 @@ agents:
 
   coordinator:
     local: true
-    allowed_tools: []
+    # write_quality_event granted 2026-08-28 [DB-0810-03] — see routing_cloud.yaml. Parity.
+    allowed_tools: [write_quality_event]
 
   synthesizer:
     local: true
@@ -72,11 +73,14 @@ agents:
     local: true
     # All four wisdom tools granted 2026-08-15 — pattern_miner.md:106 instructed
     # find_duplicate_wisdom and no wisdom tool was held. See routing_cloud.yaml. Kept in parity.
-    allowed_tools: [get_log_window, write_insight_report, read_recent_insights, write_baseline_period, read_baseline_periods, write_retrospective, get_baseline_context, create_semantic_anchor, shuffled_null_score, score_against_anchors, read_wisdom, write_wisdom, find_duplicate_wisdom, merge_wisdom_entries]
+    # search_memory + write_context_tracker granted 2026-08-28 [DB-0810-03] — see
+    # routing_cloud.yaml. Kept in parity.
+    allowed_tools: [get_log_window, write_insight_report, read_recent_insights, write_baseline_period, read_baseline_periods, write_retrospective, get_baseline_context, create_semantic_anchor, shuffled_null_score, score_against_anchors, read_wisdom, write_wisdom, find_duplicate_wisdom, merge_wisdom_entries, search_memory, write_context_tracker]
 
   goals_interviewer:
     local: true
-    allowed_tools: [read_goals, write_goals, write_config, write_retrospective, create_semantic_anchor, write_aspirational_baseline, update_goal]
+    # write_baseline_period granted 2026-08-28 [DB-0810-03] — see routing_cloud.yaml. Parity.
+    allowed_tools: [read_goals, write_goals, write_config, write_retrospective, create_semantic_anchor, write_aspirational_baseline, update_goal, write_baseline_period]
 
   # ── Personal specialists (local: sensitive — named individuals, health, finance) ─
   #
@@ -95,34 +99,43 @@ agents:
     # Kept in parity so the flag behaves identically on local and cloud paths.
     # write_wisdom REMOVED 2026-08-15 — never instructed; physical_health proposes instead.
     # See routing_cloud.yaml for the full rationale. Kept in parity.
-    allowed_tools: [read_log, write_log, search_memory, read_wisdom, read_profile, write_profile, read_agent_config, write_agent_config]
+    # read/write_archive granted 2026-08-28 [DB-0810-03] — see routing_cloud.yaml. Parity.
+    allowed_tools: [read_log, write_log, search_memory, read_wisdom, read_profile, write_profile, read_agent_config, write_agent_config, read_archive, write_archive]
 
   work_vocation:
     local: true
     # search_memory granted 2026-08-05 — see routing_cloud.yaml. Kept in parity.
-    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, search_memory, read_wisdom]
+    # read/write_archive + read_goals granted 2026-08-28 [DB-0810-03] — see routing_cloud.yaml.
+    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, search_memory, read_wisdom, read_archive, write_archive, read_goals]
 
   relationships:
     local: true
     # search_memory granted 2026-08-10 — see routing_cloud.yaml. Kept in parity.
     # unmerge_contacts granted 2026-08-22 with the merge confirmation gate [DB-0822-03] —
     # see routing_cloud.yaml's matching comment.
-    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, merge_contacts, unmerge_contacts, import_contacts_file, read_profile, write_profile, send_email, search_memory, get_tone_shape, read_wisdom, read_intake_queue]
+    # read/write_agent_config granted 2026-08-28 [DB-0810-03] — see routing_cloud.yaml. Parity.
+    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, merge_contacts, unmerge_contacts, import_contacts_file, read_profile, write_profile, send_email, search_memory, get_tone_shape, read_wisdom, read_intake_queue, read_agent_config, write_agent_config]
 
   finance:
     local: true
     # read_archive granted 2026-08-05, search_memory 2026-08-10 — see routing_cloud.yaml.
     # Kept in parity.
-    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, read_archive, open_obligation, close_obligation, reopen_obligation, list_obligations, search_memory, read_wisdom, read_intake_queue]
+    # write_archive + read_goals granted 2026-08-28 [DB-0810-03]; write_journal deliberately
+    # NOT granted (Diarist routes journals) — see routing_cloud.yaml. Parity.
+    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, read_archive, write_archive, read_goals, open_obligation, close_obligation, reopen_obligation, list_obligations, search_memory, read_wisdom, read_intake_queue]
 
   learning_growth:
     local: true
-    allowed_tools: [read_log, write_log, search_memory, read_agent_config, write_agent_config, read_wisdom]
+    # read/write_archive granted 2026-08-28 [DB-0810-03]; write_config and write_journal
+    # deliberately NOT granted — see routing_cloud.yaml. Parity.
+    allowed_tools: [read_log, write_log, search_memory, read_agent_config, write_agent_config, read_wisdom, read_archive, write_archive]
 
   recreation_hobbies:
     local: true
     # find_places granted 2026-08-22 [DB-0808-04] — see routing_cloud.yaml's comment.
-    allowed_tools: [read_log, write_log, read_wisdom, read_intake_queue, find_places]
+    # Five grants 2026-08-28 [DB-0810-03]: read/write_archive, read/write_agent_config,
+    # search_memory — see routing_cloud.yaml. Parity.
+    allowed_tools: [read_log, write_log, read_wisdom, read_intake_queue, find_places, read_archive, write_archive, read_agent_config, write_agent_config, search_memory]
 
   logistics:
     local: true
