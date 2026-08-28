@@ -4442,6 +4442,23 @@ def _openai_compat_stream(
 _HEAD_LAYER_AGENTS = {"synthesizer"}
 _ROUTING_LAYER_AGENTS = {"coordinator"}  # goals + recent context; no constitution/prime_directive
 
+# Specialists on the cached Vertex path (Step 6, [DB-0820-05], approved 2026-08-28).
+# mental_wellbeing + physical_health are the prize (+$0.17/day, more than the deployed
+# head-layer cache earns); the Flash-Lite six ride along (+$0.008/day — included because
+# the A4 gate passed and the diff is the same line, per the Step-6 plan's rule 2).
+# GATED CHANGE: this moves the two clinical-flag agents from _openai_compat_loop to
+# _run_gemini_native_loop — a larger change than the prompt-assembly reorder that A7's
+# pre-sign-off gate demanded an A4 re-run for. The gate runs: 2026-08-28, VM store,
+# clinical deep 3/3 + clinical quick 3/3 + pipeline 3/3, plus a post-change clinical
+# re-run on the native loop (tests/a4_safety_rerun_2026-08-28_*). Any future change to
+# this set owes the same gate. Cache creation pads under the 4,096-token Vertex floor
+# (_pad_for_vertex_cache, applied inside _get_or_create_vertex_cache for every caller).
+_CACHED_SPECIALISTS = {
+    "mental_wellbeing", "physical_health",          # Pro — the measured prize
+    "work_vocation", "relationships", "finance",    # Flash-Lite six — ride-along
+    "learning_growth", "recreation_hobbies", "logistics",
+}
+
 
 def _run_single_agent(agent_name: str, user_input: str,
                       persona: str | None = None, provider: str | None = None,
@@ -4552,7 +4569,8 @@ def _run_single_agent(agent_name: str, user_input: str,
                 result = run_session_gemini_grounded(system_prompt, augmented_input,
                                                      tool_schemas, tool_handlers,
                                                      model=model_override)
-            elif agent_name in (_HEAD_LAYER_AGENTS | _ROUTING_LAYER_AGENTS):
+            elif agent_name in (_HEAD_LAYER_AGENTS | _ROUTING_LAYER_AGENTS
+                                | _CACHED_SPECIALISTS):
                 result = run_session_gemini_cached(system_prompt, augmented_input, tool_schemas,
                                                    tool_handlers, model=model_override, history=history,
                                                    attachments=attachments,
