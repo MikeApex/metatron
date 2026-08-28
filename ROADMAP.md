@@ -280,6 +280,14 @@ Full item in the static plan.*
 > no longer waiting for it. **Run `scripts/check_agent_tools.py` before the audit** — the guard
 > built against that whole class, which found a second live instance the same day. Detail:
 > `archive/PROJECT_LOG.md` § 2026-08-10.
+>
+> **✅ Check 10's blocker cleared 2026-08-28** — `[DB-0810-03]`'s 24 tool-grant rulings were
+> built and deployed (`bfbdbb5`; `check_agent_tools` classes 1–2 empty, routing parity
+> asserted), so the audit no longer runs against known-wrong tool lists. The audit itself
+> remains open. Two A4 notes for whoever runs it: the suite now measures **"safe WITH standing
+> knowledge"** (seeded fixture, 2026-08-28 — do not compare old baselines blind), and
+> mental_wellbeing/physical_health now run the cached native loop (Step 6, `d9b4843`, gated
+> twice on full A4 runs).
 
 **Pre-sign-off gate — prefix caching regression (2026-06-19): ✅ CLEARED ON THE CLOUD PATH 2026-08-04.** The `_run_single_agent()` system prompt restructure (prefix caching change) moved dynamic context from the system prompt into the user message turn, changing the system prompt assembly order for every agent. The A4 clinical-flag hard-fail scenarios were re-run against the updated order on 2026-08-04 and **passed 6/6** — report at `tests/a4_safety_rerun_2026-08-04_gemini.md`, runner at `tests/run_a4_safety.py` (the suites are now scripted; A8's regression gate below calls the same runner rather than the manual A4 procedure).
 

@@ -1,12 +1,14 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-28 (**the Green/Amber spinoff ran and its five builds are DEPLOYED**:
-probe evidence, write_persona gate, ritual halves, Accountability Index, location first
-draft. Handoffs with the Red proposals: `archive/handoffs/2026-08-28-*.md`. **Location still
-owes Mike's APK rebuild + sideload and a VM zones file.** Post-deploy rulings same day: Pro
-flip DECLINED — fix the Coordinator (`[DB-0826-01]`, structural preferred); intentions become
-a list (frequency → urgency); judgment gate cleared for the Vertex path; Places
-reverse-geocode authorised for zone suggestions.)*
+*Updated: 2026-08-28 late (**supervised Red session ② ran all five items and Mike DEPLOYED
+them**: scheduler collision+gates, the full grants pass — **A7 check 10 unblocked** — the
+A4-gated Step-6 caching (suite now measures "safe WITH standing knowledge"), medication
+ranking both halves, and the option-b zone suggestion, live because the Places key already
+existed. Six commits `20c17d0`…`d750fbb`; log fragment 2026-08-28-04.
+**⚠ URGENT (M): the 06:45 travel check is silently skipped every morning until Mike adds
+`respect_quiet_hours: false` to `daily_travel_check` in his VM `scheduler.yaml`** — that,
+the zones file, and the APK sideload are the three steps in
+`archive/handoffs/2026-08-28-post-session-two-mike-steps.md`.)*
 
 *✅ **The capstone plan is the read-first for any backlog work:**
 **`archive/plans/capstone_cluster_review_2026-08-27.md`** — every open item by functional
@@ -17,24 +19,20 @@ register. Geolocation (`[DB-0815-12]`) is **built to its decided design** (extra
 zone abstraction, modes 1+2, ping off-default) — awaiting deploy + APK; Mike defines zones on
 the VM (`config/templates/zones.yaml` is the shape).*
 
-*✅ **Nine builds merged and deployed, each awaiting one live confirmation** (`@waiting`;
-evidence per item in the backlog): decline path `[DB-0827-01]` · context age `[DB-0822-06]` ·
-Bill store `[DB-0818-05]` · Diarist gate `[DB-0822-05]` · label filter `[DB-0827-07]` ·
-false-claim detector + approval gate `[DB-0815-11]` · audit line `[DB-0814-02]`. Medication
-Red spec ready `[DB-0808-14]`; wisdom-store proposal `[DB-0818-06]` awaits Mike; referent
-class `[DB-0826-01]` is the confirmed fix path (probe-measured, structural preferred).*
-
-*✅ **Synthesizer audit executed, gated, deployed** — record + the adherence-not-rules
-caution: `archive/plans/synthesizer_audit_2026-08-18.md` § Execution record; re-measure rule
-in `[DB-0822-08]`'s entry.*
+*✅ **Deployed builds awaiting one live confirmation each** (`@waiting`; evidence per item
+in the backlog): decline path `[DB-0827-01]` · context age `[DB-0822-06]` · Bill store
+`[DB-0818-05]` · Diarist gate `[DB-0822-05]` · label filter `[DB-0827-07]` · false-claim
+detector + approval gate `[DB-0815-11]` · audit line `[DB-0814-02]` · **scheduler collision
+(one morning message) + zone suggestion (one away ping at a calendar venue) from session ②**.
+Wisdom-store proposal `[DB-0818-06]` awaits Mike; referent class `[DB-0826-01]` is the
+confirmed fix path (probe-measured, structural preferred).*
 
 *⚠ **Intake is still dark until Mike's VM edits** (`enabled: true` in mike's `intake.yaml`;
 delete `mike.md`'s six-hour inbox line if present) — gates: `[DB-0820-03]`, `[DB-0820-04]`.*
 
 *⚠ **Caps revert to $100/$175 at the September reset — evidence in** (`[DB-0820-01]`,
-`due: 2026-09-01`). Pro routing `[DB-0820-05]`: **probe run, flip DECLINED** (report:
-`tests/coord_model_probe_2026-08-28_flashlite_vs_pro.md`); what remains there is the
-A4-gated Step-6 caching commit (which also carries `[DB-0818-07]`'s knowledge seeding).
+`due: 2026-09-01`). `[DB-0820-05]` CLOSED: Pro flip declined, **Step-6 caching landed**
+(`d9b4843`, double A4 gate) — eight specialists on the cached path, ~$0.18/day back.
 (M): Mike enables the BigQuery billing export, and flips the Mac's `VERTEX_CACHE_DISABLED`
 himself.*
 
@@ -42,15 +40,13 @@ himself.*
 is `ROADMAP.md` § Section 0. CRM sweep still gated on Mike's plan re-review (`[DB-0827-03]`);
 the `[DB-0818-06]` wisdom-store proposal review still awaits Mike.*
 
-***Next (revised 2026-08-28; spinoff deployed):** **(M) APK rebuild/sideload + VM zones file
-for location** ([DB-0828-01] `due: 2026-09-07`, set at deploy), then ② supervised
-Red session in `core/scheduler.py` (`[DB-0822-07]` + `[DB-0808-11]`) **+ the grants pass
-(`[DB-0810-03]`, all decided — unblocks A7 check 10) + Step-6 caching behind the full A4 run**;
-the medication schema edit (`[DB-0808-14]`, spec ready) fits the same sitting; ③
-email-surfacing session (`[DB-0822-09]` + the `[DB-0822-08]` re-measure, **plus the Red
-proposals waiting verbatim in the 2026-08-28 handoffs**); ④ CRM sweep build (Opus,
-post-review). At the index's deploy, set `[DB-0828-01]` `due:` = deploy+10. Cluster F drains
-on Mike's ordinary use.*
+***Next (session ② done and deployed 2026-08-28 late):** **(M) the three steps in
+`archive/handoffs/2026-08-28-post-session-two-mike-steps.md`** — travel-check flag (urgent),
+VM zones file, APK sideload ([DB-0828-01] `due: 2026-09-07`); then ③ email-surfacing
+session (`[DB-0822-09]` + the `[DB-0822-08]` re-measure, **plus the Red proposals waiting
+verbatim in the 2026-08-28 handoffs**; tier note: farm the Amber halves to Opus workers);
+④ CRM sweep build (Opus, post-review, `[DB-0827-03]`). Cluster F + session ②'s confirms
+drain on Mike's ordinary use. A7 check 10 (the 12-specialist audit) is now runnable.*
 
 *⚠ **The code-dominant inversion question is live and must be decided before A8 executes**
 or A8 is paid for twice. Standing home, three dated rounds:
@@ -134,9 +130,10 @@ from the backlog 2026-08-18 — § A9a is the single home for the review.
 obligations-as-data, scheduler maintenance jobs) — **full statements and reasoning:
 `archive/PROJECT_LOG.md`**; reference now, not current state.
 
-**Seven decisions are queued and none can be made here** — `@session:` items in
-`DEV_BACKLOG.md` § Later § Decisions, which holds the evidence. The one that blocks the roadmap:
-`[DB-0810-03]` (39 tool grants) gates A7 check 10.
+**The 2026-08-28 decisions batch is fully ruled and fully built** — `[DB-0810-03]`'s grants
+landed in session ② (`bfbdbb5`), so **A7 check 10 no longer has a blocker**; the
+12-specialist behavioural audit itself is still unrun. Remaining `@session:` decisions live
+in `DEV_BACKLOG.md` § Later § Decisions.
 
 ---
 

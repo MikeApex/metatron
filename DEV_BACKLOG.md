@@ -75,6 +75,12 @@ back-tagging the rest is `[DB-0815-10]`.
 > against `git log` before promoting anything from here.
 *(empty — triaged 2026-08-27 by `/backlog deep`; evidence in `archive/backlog_closed_2026-08.md` § Closed 2026-08-27)*
 
+- **[needs building]** Implement a state-check to prevent repeating questions about tasks the user has already deferred, and ensure time/context appropriateness (e.g., checking store hours before prompting at 9:30 PM).  
+  `2026-08-28T20:28:28.051829Z`
+
+- **[instruction change]** When user submits complex multi-step goals (like claims, taxes), do not just record them silently. Prompt the user for details and next steps in a 'goals interview' format to manage attention-switching friction incrementally.  
+  `2026-08-28T19:55:26.147846Z`
+
 - **[instruction change]** Stop mentioning the Prudential review (project is complete/waiting) and stop issuing retrospective reminders for calendar events the user has already attended (e.g., swimming).  
   `2026-08-28T19:34:56.577491Z`
 
@@ -179,18 +185,6 @@ Each is a defect measured in the 2026-08-21 traces, not a proposal.*
   "still missing" by a later run that day
   *filed 2026-08-22 by Mike · age-out half built 2026-08-27 (session-hygiene worker) · intraday
   half built + derived-count half retired 2026-08-27 (orchestrator-context worker)*
-
-- **4. [DB-0822-07] Two scheduled jobs fire seven minutes apart.** `companion_checkin` runs on a
-  180-minute interval and landed at 07:23; `morning_brief` is fixed at 07:30. **19 model calls
-  between the two**, and the 07:30 pair is what produced the false action claim now recorded in
-  `[DB-0815-11]` — the later job read the earlier job's prompt as an instruction from Mike.
-  **Fix:** suppress an interval job that lands within N minutes of a fixed-time job.
-  `core/scheduler.py` is **Red tier** (it prompts), but the change is mechanical and self-contained
-  — kept in this block deliberately, with that caveat, rather than buried in the judgement work below.
-  *Measured 2026-08-21: 9 scheduled runs — companion_checkin ×5 (07:23, 10:24, 13:26, 16:27,
-  19:28), morning_brief 07:30, inbox 12:24 + 18:24, evening_close 20:00.*
-  @kind: bug
-  *filed 2026-08-22 by Mike*
 
 ### Red — judgement work, not automatable
 
@@ -408,42 +402,6 @@ the condition has not arrived, push the date rather than closing the item.
   rename, a different path) and `[DB-0818-06]` (24 stored "facts", several inferred preferences
   recorded as observations — what an `inferred` tier catches at write time)*
 
-- **[DB-0810-03] 39 tool-permission decisions, and they block the agent audit Phase 5 sign-off
-  needs.** 35 named-but-not-granted, 4 refused in production
-  (`learning_growth`→`write_archive`, `recreation_hobbies`→`write_agent_config`,
-  `logistics`→`read_archive`/`write_archive`). Each is a separate grant/build/drop call.
-  **The guard itself is finished** — `scripts/check_agent_tools.py` scans agent files *and* persona
-  files, ran clean on the VM 2026-08-18 (17 + 17 files, `mike` seen, 0 named-as-live-but-unbuilt).
-  **Do not switch to enforce mode before the lists are corrected:** `logistics` calls `send_email`
-  without the grant and the dispatcher executes it, so enforcing today kills outbound email.
-  **✅ ALL DECIDED 2026-08-28 (Mike) — the list had drifted to 24 live pairs; every one ruled
-  on, in six clusters. What remains is one supervised Red build pass.** *(1)* **Archive:** reads
-  granted — `finance`, `learning_growth`, `physical_health`, `recreation_hobbies`,
-  `work_vocation` (finance gains the naming line in its file); **writes granted only in the
-  same session as a `write_archive` dedup fix** ([tools/diarist.py:110](tools/diarist.py#L110)
-  has none — five new writers without it invites clutter). *(2)* **Journal: NO grants** —
-  `finance`/`learning_growth`/`logistics` instruction text rewritten to route observations
-  through the Diarist ("multiple entries clogging up the clarity" — Mike). *(3)* **Goals
-  reads granted** (`finance`, `work_vocation`). *(4)* **agent_config granted to
-  `relationships` + `recreation_hobbies`** — completes the specialist set (audited 2026-08-28:
-  the other six domain specialists already hold read+write; non-domain agents correctly hold
-  none). *(5)* **search_memory granted to `pattern_miner` + `recreation_hobbies`** — audited
-  same day; set then complete. *(6)* **Singletons:** `coordinator`→`write_quality_event`
-  granted **with a dedup condition** — the written event travels in the context package so the
-  Synthesizer does not re-log it, plus a code backstop in `tools/logger.py` (same trace + same
-  event type → no-op); `goals_interviewer`→`write_baseline_period` granted;
-  `pattern_miner`→`write_context_tracker` granted; **`learning_growth`→`write_config` NOT
-  granted** — its skill-goals line redirects to `write_agent_config` (already granted; global
-  `write_config` would confirm-prompt on every streak tick). *(7)* The two logistics archive
-  refusals **dropped** — the spec no longer names them; the refusals were the system working.
-  *(8)* **Enforce mode stays off**; the flip is its own decision after the lists are corrected
-  (re-verify the `logistics`→`send_email` state at that moment, not from this note).
-  @kind: chore
-  *build owed: one supervised Red pass — both routing files + the cluster-2/finance/LG
-  instruction-text edits — plus the Green dedup fix and logger backstop in the same session.
-  A7 check 10 unblocks when it lands.*
-  *filed 2026-08-10 · guard half closed 2026-08-10 and 2026-08-18 · decisions made 2026-08-28*
-
 - **[DB-0809-02] One unfinished ritual arrives as three or four separate messages.** Read live off
   the VM 2026-08-15: the "three repetitive evening messages" were **four different scheduled jobs**,
   each re-asking the same unanswered question. `evening_close` is a victim, not the culprit.
@@ -623,118 +581,22 @@ the condition has not arrived, push the date rather than closing the item.
   the 📍 control until the sideload) + zones file on the VM (key places only — home, office,
   chess club; everywhere else is `away` by design); then one ping near a defined zone
   confirms. Handoff: `archive/handoffs/2026-08-28-location-first-draft.md`*
-  **Next-draft scope authorised and REFINED (Mike, 2026-08-28, second ruling supersedes the
-  first same-day):** zone suggestion by **forward geocode of the expected place's NAME, never
-  the user's coordinates** — Google Places is asked where "Luigi's" is (a place already named
-  in calendar/conversation), code compares that against the ping locally, and a match
-  proposes "lock this in as a zone?" → confirm card → Python writes the zone. Rejected same
-  ruling: (a) sending randomised-nearby coordinates — (b) is cleaner and sends no position
-  signal at all. **Net: precise coordinates now never leave the machine, vendor included** —
-  tighter than the first-draft ruling required. **The launch is folded into Red session ②**
-  (Mike's call — not its own session): zones file + APK + this build are item 5 of
-  `archive/handoffs/2026-08-28-red-session-two-prompt.md`.
+  **✅ Zone-suggestion build DONE and DEPLOYED (session ②, `d750fbb`, 2026-08-28 late)** —
+  option b exactly as ruled: away ping + calendar-expected place → name-only forward geocode
+  (`tools/places.py geocode_place_name`, per-name cache, fail-soft) → LOCAL compare inside
+  `record_position`'s own frame → existing confirm card → `append_zone`, the one
+  consume-gated write path to `zones.yaml`. Candidates from the structured CalDAV query
+  only; throttled 1/15 min; nothing polls. 24 checks incl. the outbound-payload byte
+  assertion (`tests/test_zone_suggestion.py`). **The Places key already existed (2026-08-26),
+  so the feature is LIVE, not dormant.** Rejected per the same ruling, not built:
+  randomised-nearby coordinates.
+  *remaining, all (M) + confirms — steps in
+  `archive/handoffs/2026-08-28-post-session-two-mike-steps.md`: zones file on the VM (until
+  then every ping is `away`), APK rebuild + sideload (📍 control), then one ping at a defined
+  zone confirms the first draft and one away ping at a calendar venue confirms the
+  suggestion card.*
   *filed 2026-08-10 · split 2026-08-15 · promoted 2026-08-27 · design decided 2026-08-28 ·
-  first draft built 2026-08-28 · deployed (server side) + next-draft rulings 2026-08-28*
-
-- **[DB-0818-07] The safety regression passes without ever touching stored knowledge.**
-  `run_a4_safety.py --suite pipeline` runs against `sarah_chen`, whose VM store holds **one** entry —
-  a work-boundary pattern no clinical scenario touches. So no `KNOWLEDGE_TO_LOAD` fires and 3/3 PASS
-  says nothing about whether standing knowledge interacts safely with clinical flags. That matters
-  because the knowledge layer now injects fetched entries into `mental_wellbeing`'s directive: an
-  entry contradicting a clinical read is exactly the case nothing exercises.
-  **Coverage means health-domain entries on the VM's `sarah_chen`, which changes what the suite
-  measures** — a decision, not a chore. `seed_medication_fixture` is the precedent if the answer is
-  yes. Related trap: **Mac and VM copies of a persona store diverge silently** and `data/personas/*/`
-  is gitignored — anything reasoning about a persona's data must name which machine it read.
-  **✅ DECIDED 2026-08-28 (Mike): seed it and test it, on the condition it stays low cost/effort —
-  and it is not capstone-necessary, so it never blocks capstone work.** Shape: a few health-domain
-  entries on the **VM's** `sarah_chen` store (`seed_medication_fixture` precedent; name the
-  machine — stores diverge silently), including one entry that contradicts a clinical read, where
-  the flag must still win. **Bundle with the full A4 run `[DB-0820-05]`'s Step-6 caching already
-  owes** — one run then exercises both gates. Note in that run's report that the suite now
-  measures "safe *with* standing knowledge," so old baselines are not compared blind.
-  @kind: chore
-  *raised 2026-08-18 at the close of the knowledge-layering session · triaged out of `## Inbox`
-  2026-08-18 · decided 2026-08-28*
-
-- **[DB-0820-05] Fixing the cache leak frees enough money to put better models behind more agents —
-  decide which, once the fix is deployed and re-measured.** Four agents sit on Flash-Lite for cost
-  reasons that the cache work partly dissolves: `coordinator`, `diarist`, `intake_extractor`,
-  `tone_profiler` (`config/modules/routing_cloud.yaml`).
-  **The modelling, done 2026-08-20 against the measured 19 August day** (163 calls, 27 sessions,
-  8 bursts, no development testing). Scenario A is anchored to the real $6.12 bill; the rest are
-  modelled from the same measured token volumes:
-  | | day total | per session | per month |
-  |---|---|---|---|
-  | **A** — today, mixed Pro/Flash, caching as built | **$6.12** | $0.227 | $184 |
-  | **A′** — same mix, caching fixed (10-min TTL) | **$1.82** | $0.067 | $55 |
-  | **B′** — **every agent on Pro**, caching fixed | **$3.11** | $0.115 | $93 |
-  **So all-Pro with caching fixed costs about half of today's mixed bill.** Fixing caching frees
-  ~$4.30/day; upgrading every Flash-Lite call to Pro spends ~$1.29/day of it.
-  **The recommendation this analysis reached, which is not "upgrade everything".** Three of the four
-  gain nothing from Pro: `diarist` is write-only and fire-and-forget (never seen by the user);
-  `intake_extractor` and `tone_profiler` are closed-enum extraction over attacker-writable text with
-  deliberately empty tool grants — Pro only adds thinking tokens to tasks with one correct answer.
-  **`coordinator` is the only real candidate** (~$0.41/day, ~$12/month above today's baseline),
-  because routing errors propagate through the whole turn. **Its blocker is latency, not money:** it
-  sits on the critical path ahead of every reply, and Pro's thinking budget is already flagged in
-  `ROADMAP.md` as the remaining lever on turn cost.
-  **Three assumptions that must be re-checked before acting, in order of how much they move the
-  answer.** *(1)* **Output inflation** — Flash-Lite emits 112 output tokens/call, Pro 815, and 86% of
-  Synthesizer output is thinking (`SESSION.md`); modelled at 3×, but at 7× scenario B′ becomes
-  $3.64/day and the margin narrows. *(2)* **Prefix fraction 65%**, measured from the two live caches
-  (Synthesizer 18,127/24,099 = 75%; Coordinator 5,993/9,373 = 64%). *(3)* **Cache creation rate is
-  unresolved** — creation *is* metered (proved by controlled probe, 12,001 tokens with zero generate
-  calls) but bills at either $2.00/M or $0.20/M; at the lower rate A′ drops to $1.41 and B′ to $2.53.
-  Resolving it needs the BigQuery billing export enabled (Console — Step 5 of the plan).
-  **Do not act on the table above as it stands.** Every figure assumes the cache fix is live; today's
-  numbers are contaminated by the leak. Re-measure a clean day first.
-  Full reasoning and the measured rates: `archive/plans/vertex_cache_cost_control_2026-08-20_plan.md`.
-  **Merged in 2026-08-27 (was `[DB-0822-01]` half b): the Step 6 Pro specialist-caching half.**
-  Add `mental_wellbeing` and `physical_health` to the cached-path set at
-  `core/orchestrator.py:4019` — **gated on a full A4 run** (`tests/run_a4_safety.py`, clinical +
-  pipeline, both complexity tiers), because it moves the two clinical-flag agents onto the native
-  loop. Worth ~+$0.17/day; the Flash-Lite six are +$0.008/day — include or skip without
-  deliberation. Arithmetic: `archive/plans/vertex_cache_step6_specialist_caching_2026-08-21.md`.
-  All-Pro routing quadruples what specialist caching is worth — which is why these are one
-  decision now. **The @waiting condition is met** — half (a)'s reconcile passed on five
-  consecutive clean days (evidence: `archive/backlog_closed_2026-08.md` § [DB-0822-01a]) — so
-  what remains is the @session Pro decision plus one A4-gated code change.
-  **✅ DECIDED 2026-08-28 (Mike) — coordinator-only, evidence before flip; Step 6 approved.**
-  *(1)* Only `coordinator` is a Pro candidate (the other three gain nothing — analysis above
-  stands). **Offline probe before any live flip:** `tests/run_coord_model_probe.py` (Green,
-  owed) runs ~15 turns × both models through `_run_single_agent("coordinator", …,
-  model_override=…)` — no Synthesizer, no routing edit — plus a replay of the four recovered
-  `ROUTING_MISS` referent failures against Pro. Both models on the uncached path for
-  like-for-like timing. Report: `tests/coord_model_probe_YYYY-MM-DD_flashlite_vs_pro.md`.
-  Live flip (Red, with Mike) only if latency is tolerable per reply; **revert condition travels
-  with the flip so the trial cannot quietly become permanent.** *(2)* **Step-6 specialist
-  caching approved, both parts** — `mental_wellbeing` + `physical_health` onto the cached path
-  behind the full A4 run (which also carries `[DB-0818-07]`'s knowledge seeding — one run, both
-  gates), and the Flash-Lite six included in the same commit. *(3)* **(M) Mike enables the
-  BigQuery billing export** (Console → Billing → Billing export → BigQuery, standard usage
-  cost) to settle the cache-creation rate — meters forward only, so sooner is better; standing
-  cost is BigQuery storage at this volume: cents.
-  @kind: feature
-  **✅ Probe RUN 2026-08-28** (`ec774da`, spinoff chat): Pro fixes the referent class (B-hard
-  12/12 vs Flash-Lite 6/12) at ~+11s/reply, all thinking tokens — flip-as-measured is
-  contraindicated; report recommends a capped-thinking-budget re-probe (needs
-  `_run_single_agent` to pass `thinking_budget` beyond `synthesizer`). Cache helper already
-  honours `model_override` (probe Step 0); bonus: `core/trace.py` now records `cached_tokens`
-  (was priced then dropped — cache hits were invisible in traces).
-  Report: `tests/coord_model_probe_2026-08-28_flashlite_vs_pro.md`.
-  **✅ Pro flip DECLINED (Mike, 2026-08-28, on the probe evidence):** 11s/reply is a
-  non-starter; fixing the Coordinator is the default — Pro is incrementally better at routing
-  but the routing *system* is what matters, and the Coordinator is redesigned after the
-  capstone anyway. Capped-budget re-probe dropped as moot. The referent fix is
-  `[DB-0826-01]`'s Red path — prefer structural (code-computed referent context,
-  `tools/turn_context.py` pattern) over another instruction line, since the adherence class
-  is exactly where instruction-only fixes have failed.
-  *remaining: A4-gated Step-6 commit only (spinoff batch incl. the trace fix deployed
-  2026-08-28)*
-  `due: 2026-09-15`
-  *raised 2026-08-20 by Mike at the close of the Vertex billing reconciliation session ·
-  absorbed `[DB-0822-01]`(b) 2026-08-27, both trails kept · decided 2026-08-28*
+  first draft built + deployed 2026-08-28 · zone suggestion built + deployed 2026-08-28 late*
 
 ### Done and deployed — each closes on one ordinary use
 
@@ -1143,13 +1005,6 @@ half (b) is now part of the Pro-routing decision. Evidence and trail:
   reports them and deliberately moves nothing · triaged out of `## Inbox` 2026-08-18 · proposal
   2026-08-27 by the wisdom-store attack worker*
 
-- **[DB-0808-11] A scheduled job with notifications on would push at 3am.** `fire_function` runs no
-  gate stack — `days`, `respect_quiet_hours` and the activity gate are ignored for every function
-  job. `daily_travel_check` is pinned to 06:45 purely to work around it. Fix by extracting the gate
-  stack so both job kinds run it.
-  @kind: bug
-  *filed 2026-08-08*
-
 - **[DB-0803-05] A dead server now shows the app's own page — built and tested 2026-08-22, NOT
   deployed.** Fallback-only SW exactly as specified: dedicated `offline.html`, navigation requests
   only, served solely when the network fetch fails; `/` never cached; `offline-v1` cache version is
@@ -1167,23 +1022,6 @@ half (b) is now part of the Pro-routing decision. Evidence and trail:
   tied to an escalation mechanism that does not exist yet.
   @kind: feature
   *filed 2026-08-08*
-
-- **[DB-0808-14] A missed statin and a missed anti-psychotic rank the same.** `_thread_tier()` reads
-  only the flag string, so nothing distinguishes a psychiatric medication when deciding urgency. Fix:
-  `psychiatric: true` on `medication_profile` entries, read by `_thread_tier()`. **Small but not
-  cheap to confirm** — clinical tiering has named hard-fail criteria (`ROADMAP.md` § 0 clause 8), so
-  the change owes an A4 re-run.
-  **Scoped 2026-08-27, confirmed live, stopped at the Red line** (merged `bb9ebdb`): the fix
-  needs a `discontinuation_risk` field + `MEDICATION_MISSED_CRITICAL: <name>` flag suffix in
-  `config/agents/physical_health.md` (Red — the module's own 08-08 design comment names this
-  exact distinction as the goal and never wired it in), then a Green `_thread_tier()` change
-  reusing the existing tier-2 watch lifecycle, failing toward tier 1 on any parse/read gap.
-  Full spec: `archive/plans/medication_ranking_spec_2026-08-27.md`; the owed A4 re-run ran
-  anyway — **PASS 3/3**,
-  `tests/a4_safety_rerun_2026-08-27_gemini_clinical_quick.md`.
-  @kind: feature
-  @session: the `physical_health.md` half — supervised Red session, spec ready
-  *filed 2026-08-08 · scoped + A4 re-run 2026-08-27 by the medication attack worker*
 
 - **[DB-0815-02] Speaking a language other than English does not work.** Speech **out** is built and
   shipped (`bg` → `bg-BG-KalinaNeural` via edge-tts, Kokoro has no Bulgarian model). Speech **in** is
@@ -1390,6 +1228,24 @@ the five June 2026 corrections → older than every fix that followed (tone, tim
 bootstrapping all since reworked). Kept, deliberately again: the Heathrow cluster, the 08-02/03
 correction runs, and the unresolved single corrections — behavioural evidence nothing has
 shipped against.)*
+
+- **[user corrected a prior turn]** System repeated a prompt for a pharmacy errand that the user had already deferred to the weekend, and failed to check if the pharmacy was even open at 9:30 PM on a Friday.  
+  `2026-08-28T20:28:25.515675Z`
+
+- **[user corrected a prior turn]** System inappropriately suggested or re-flagged the pharmacy errand despite the user having already established it as a weekend task.  
+  `2026-08-28T20:28:16.581414Z`
+
+- **[user corrected a prior turn]** User corrected assumption that Manny has school on Saturday; clarified that the 9:30 AM scheduling meeting after drop-off was for Tuesday. User also explicitly requested to stop being reminded of Tuesday's schedule once established.  
+  `2026-08-28T20:26:51.424882Z`
+
+- **[user corrected a prior turn]** User clarified that the previously discussed schedule refers to Tuesday, not tomorrow (Saturday), and requested cessation of redundant reminders regarding that day.  
+  `2026-08-28T20:26:35.863286Z`
+
+- **[user corrected a prior turn]** User clarified that complex goals require active incremental management rather than passive tracking, and requested a more collaborative approach to learning plans.  
+  `2026-08-28T19:54:47.978356Z`
+
+- **[agent named itself to the user]** In the same exchange, the response referred to "Learning" as a tool — naming the `learning_growth` subagent directly rather than speaking as one voice. Discretion-between-layers violation (agent identity should never surface in user-facing output).  
+  `2026-08-28T19:54:47.978356Z`
 
 - **[agent wanted a tool it lacks]** `recreation_hobbies` attempted `read_agent_config` (agent_name) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
   `2026-08-28T19:42:15.105284Z`

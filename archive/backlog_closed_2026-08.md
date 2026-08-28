@@ -3368,3 +3368,57 @@ handoffs: `archive/handoffs/2026-08-27-{session-hygiene,decline-path,routing-mis
   channel. The 2026-08-21 draft amendment in
   `archive/security/zdr_terms_evidence_2026-08-20.md` was marked superseded, never applied.
   Fail-closed routing, the north star, and the multi-user expiry all unchanged.
+
+## Closed 2026-08-28 — supervised Red session ② (five items built, deployed same evening)
+
+- **[DB-0822-07] Two scheduled jobs fire seven minutes apart.** Closed by `20c17d0`: an
+  interval session job within 30 min (configurable `interval_near_fixed_minutes`, 0 disables)
+  of a fixed-time session job yields and returns on its next tick — both directions, weekly
+  jobs on their own day only, quiet-hour-suppressed fixed jobs not counted, suppression not
+  recorded as a fire. `tests/test_scheduler_gates.py` part 1 (14 checks). Deployed 2026-08-28.
+
+- **[DB-0808-11] A scheduled job with notifications on would push at 3am.** Closed by
+  `20c17d0`: `fire_function` runs the shared `_gates_block` (days, enabled, quiet hours,
+  activity gates); every `_DEFAULT_JOBS` entry sets `respect_quiet_hours: False` explicitly
+  (silent, pre-dawn on purpose); template `daily_travel_check` carries the flag with its
+  rationale. Structural test asserts no future default can omit the flag.
+  `tests/test_scheduler_gates.py` part 2 (9 checks). **Consequence handed to Mike at
+  close-out: his VM `scheduler.yaml` defines `daily_travel_check` WITHOUT the flag, so the
+  06:45 check is skipped daily until his one-line edit** —
+  `archive/handoffs/2026-08-28-post-session-two-mike-steps.md` § 1.
+
+- **[DB-0810-03] 39 tool-permission decisions (drifted to 24 live pairs), blocking A7 check
+  10.** Decisions 2026-08-28 (session ①), build closed by `bfbdbb5` (session ②): 19 grants in
+  both routing files (parity asserted by YAML load), 5 pairs resolved by instruction text
+  (journals → Diarist; learning_growth skill-goals → `write_agent_config`); Green halves in
+  the same commit — `write_archive` title-match update-not-append (`tools/diarist.py`),
+  `write_quality_event` same-trace/same-type no-op (`tools/logger.py`, keyed on the
+  RequestTrace instance). `check_agent_tools` classes 1–2 empty. Enforce mode untouched
+  (`warn` default; flip is its own decision — re-verify logistics→send_email then).
+  `tests/test_grants_dedup.py` 15 checks. A7 check 10 unblocked. Deployed 2026-08-28.
+
+- **[DB-0818-07] The safety regression passes without ever touching stored knowledge.**
+  Closed by `4eb0dbb`: `run_a4_safety.py` self-seeds a four-entry health/sleep knowledge
+  fixture (two deliberately contradicting the clinical read; values carry no test annotation
+  so the pass condition never reaches the prompt), reports name the store host
+  (`metatron-vm` for the gate run), and carry the do-not-compare-blind note. Gate run on the
+  VM store: clinical deep 3/3, quick 3/3, pipeline 3/3 — the pipeline outputs show the model
+  citing the stored belief and the flag winning anyway
+  (`tests/a4_safety_rerun_2026-08-28_cloud_*.md`).
+
+- **[DB-0820-05] Better models behind more agents once the cache fix freed the money.** Pro
+  flip DECLINED 2026-08-28 on probe evidence (unchanged); the remaining A4-gated Step-6
+  commit closed by `d9b4843`: mental_wellbeing + physical_health + the Flash-Lite six onto
+  the cached Vertex path (`_CACHED_SPECIALISTS`, one set-membership change), ~$0.178/day per
+  the Step-6 arithmetic. Gated twice — pre-change 9/9 on the VM store, post-change 9/9 on the
+  native loop (`tests/a4_safety_rerun_2026-08-28_*_step6_native.md`), cache reads visible.
+  Deployed 2026-08-28, ahead of its `due: 2026-09-15`.
+
+- **[DB-0808-14] A missed statin and a missed anti-psychotic rank the same.** Closed by
+  `f519749`, both halves of `archive/plans/medication_ranking_spec_2026-08-27.md` as written:
+  `physical_health.md` gains `discontinuation_risk` (scoped to abrupt-stop classes) and the
+  `MEDICATION_MISSED_CRITICAL: <name>` suffix; `_thread_tier()` ranks a risk-marked miss
+  tier 2 from the STORED profile via `tools/agent_config`, all failure directions → tier 1.
+  `tests/test_medication_tier.py` 10 checks incl. fallbacks; A4 clinical quick re-run against
+  the edited file 3/3 with the model emitting the name suffix unprompted
+  (`tests/a4_safety_rerun_2026-08-28_cloud_clinical_quick_medranking.md`). Deployed 2026-08-28.
