@@ -386,6 +386,127 @@ def _synth_conditional_sections(kind: str | None, package_text: str) -> str:
     return "\n\n---\n\n".join(parts)
 
 
+_QUIET_CHECKIN_DIRECTIVE = (
+    "NOTHING NEW SINCE THE LAST SCHEDULED RUN{since}. Nothing has come in — no new logs, no "
+    "new threads, no change to what was already open. This run is a light check-in: open on "
+    "not having heard from him for a while and leave the floor to him. Do not re-open the "
+    "day, do not re-list what is already open, and do not manufacture a topic out of "
+    "unchanged context."
+)
+
+_SCHEDULED_FOCUS_HEADER = "SCHEDULED RUN — FOCUS FOR THIS RUN"
+
+_RITUAL_OWNERSHIP_LINE = (
+    "This is the `{kind}` run. Any ritual it owns is in your context above; if none is, this "
+    "run has none. Do not continue or complete a ritual belonging to another scheduled job, "
+    "however visible its earlier output is in the context you have been given."
+)
+
+
+def _scheduled_focus_block(kind: str | None) -> str:
+    """
+    The code-computed directive for one scheduled run: ritual ownership, whether anything is
+    actually new, and which already-asked questions are off limits. Empty string for every
+    user-typed turn, so ordinary conversation is untouched.
+
+    [DB-0809-02] Measured 2026-08-27: four scheduled jobs each re-asked the same unanswered
+    question — five asks, no answer — the 13-virtue list went out four times, and the runs with
+    the least new information were the LONGEST. Two of those three are conditions no instruction
+    can evaluate, because the model cannot see what a previous job asked or whether anything has
+    changed since. So the condition is computed in Python and the conclusion is injected, the
+    same structural gate as _synth_conditional_sections() above: a question whose text is never
+    put in front of the model cannot be re-asked from context.
+
+    NOT A LENGTH CAP. The rejected proposal was "scheduled runs are at most two sentences",
+    which would truncate the run that genuinely has something to say. What is capped is the
+    *occasion*: a run with nothing new becomes a check-in. A run with something new is as long
+    as it needs to be.
+
+    No persona argument: the asked-state lives in the persona-scoped tracker, resolved from the
+    thread-local binding the caller already holds — the same way persist_context_block() reaches
+    it. Passing one here would be a second, ignorable source of truth for identity.
+
+    Fails open and silent: any error here costs the run its focus directive, never its response.
+
+    A8 placement: this is pipeline conduct and stays in core/orchestrator.py beside
+    _synth_conditional_sections(); _owned_rituals() below is config loading and travels with
+    load_config() into core/config.py.
+    """
+    if not kind:
+        return ""
+    lines = [_SCHEDULED_FOCUS_HEADER, "", _RITUAL_OWNERSHIP_LINE.format(kind=kind)]
+    try:
+        from tools.context_tracker import note_scheduled_run
+        state = note_scheduled_run(kind)
+    except Exception as exc:
+        logger.warning(f"[scheduled_focus] asked-state unavailable: {exc}")
+        return "\n".join(lines)
+
+    if state.get("nothing_new"):
+        hours = state.get("hours_since")
+        since = f" ({hours}h ago)" if hours is not None else ""
+        lines += ["", _QUIET_CHECKIN_DIRECTIVE.format(since=since)]
+
+    open_qs = state.get("open_questions") or []
+    if open_qs:
+        may = set(state.get("may_reask") or [])
+        held = [q for q in open_qs if q["text"] not in may]
+        if held:
+            lines += ["", "ALREADY ASKED AND STILL UNANSWERED — DO NOT ASK THESE AGAIN:"]
+            lines += [
+                f"  - \"{q['text']}\" (first asked {q.get('first_asked', 'unknown')}, "
+                f"asked {q.get('ask_count', 1)}×)"
+                for q in held
+            ]
+            lines += [
+                "These are open items, not obligations. Carry them silently; pick one up only "
+                "if the user's own words this turn lead there."
+            ]
+        if may:
+            lines += ["", "MAY BE RAISED ONCE MORE, IF IT IS GENUINELY PRESSING — otherwise "
+                          "leave it alone:"]
+            lines += [f"  - \"{text}\"" for text in state["may_reask"]]
+    return "\n".join(lines)
+
+
+def _owned_rituals(config_dir: Path, kind: str | None) -> list[tuple[str, str]]:
+    """
+    The ritual sections this session owns, as (heading, text). Empty for every session that
+    owns none — which is every user-typed turn and every scheduled job but one.
+
+    [DB-0809-02] A scheduled job does not continue a ritual that is not its own. The evening
+    gate ([DB-0822-10]) proved the mechanism on one file with the owning key written into the
+    code; this generalises it so a second ritual cannot arrive un-gated, and so the ownership is
+    declared where the content is — by the filename.
+
+    OWNERSHIP RULE: `X_ritual.md` belongs to the schedule key `X`, or to any key that starts
+    `X_`. So `evening_ritual.md` is owned by `evening_close`, exactly as before, and a persona
+    that adds `morning_ritual.md` gets it in `morning_brief` and nowhere else. Matching the
+    filename against the key needs no read of scheduler.yaml and nothing hard-coded here, so
+    there is no second copy of the schedule names to go stale — the standing objection to
+    literals in session_kind() above.
+
+    The rituals still live in config/personas/{p}/ rather than config/agents/synthesizer.md,
+    because the content belongs to one user and that file is loaded by every persona
+    (.claude/rules/agent-files.md § One Home Per Rule Class).
+    """
+    if not kind:
+        return []
+    out: list[tuple[str, str]] = []
+    try:
+        paths = sorted(config_dir.glob("*_ritual.md"))
+    except OSError:
+        return []
+    for path in paths:
+        owner = path.name[: -len("_ritual.md")]
+        if not (kind == owner or kind.startswith(f"{owner}_")):
+            continue
+        text = path.read_text().strip()
+        if text:
+            out.append((f"{owner.replace('_', ' ').capitalize()} ritual", text))
+    return out
+
+
 def load_config(persona: str | None = None, kind: str | None = None) -> str:
     """
     Build the system prompt from the four-tier config hierarchy for one persona.
@@ -395,10 +516,10 @@ def load_config(persona: str | None = None, kind: str | None = None) -> str:
     profile are per-persona, under config/personas/{persona}/. There is no
     root-level fallback: a session always belongs to exactly one persona.
 
-    `kind` is the session kind from session_kind() above. The evening ritual is
-    injected only when it is "evening_close"; every other session gets a prompt
-    ~2KB shorter and no virtue list to recite. Defaults to None — a caller that
-    does not know the session kind gets the quieter prompt, not the ritual.
+    `kind` is the session kind from session_kind() above. A ritual is injected only
+    into the scheduled job that owns it (`_owned_rituals`); every other session gets
+    a prompt ~2KB shorter and no virtue list to recite. Defaults to None — a caller
+    that does not know the session kind gets the quieter prompt, not the ritual.
     """
     resolved = resolve_persona(persona)
     sections = []
@@ -452,11 +573,12 @@ def load_config(persona: str | None = None, kind: str | None = None) -> str:
     # and 20:00 on 08-21 — three of the four being ordinary turns that had no business
     # carrying it. See session_kind() for why this is gated in code rather than by
     # another line of instruction.
-    evening_ritual_path = config_dir / "evening_ritual.md"
-    if kind == "evening_close" and evening_ritual_path.exists():
-        evening_ritual = evening_ritual_path.read_text().strip()
-        if evening_ritual:
-            sections.append(_titled("Evening ritual", evening_ritual))
+    #
+    # [DB-0809-02] Generalised 2026-08-28 from evening_ritual.md alone to every `*_ritual.md`
+    # in the persona's config, each owned by the schedule its filename names — see
+    # `_owned_rituals()`. A scheduled job does not continue a ritual that is not its own.
+    for label, text in _owned_rituals(config_dir, kind):
+        sections.append(_titled(label, text))
 
     profile = load_profile(persona=resolved)
     if profile:
@@ -5105,6 +5227,41 @@ def check_false_action_claims(response: str,
     return claims
 
 
+def _close_turn_bookkeeping(visible: str, user_input: str, is_proactive: bool,
+                            kind: str | None) -> None:
+    """
+    Close the asked-state loop, and stamp the scheduled run, at the end of one turn
+    ([DB-0809-02]).
+
+    A scheduled run's questions are recorded as asked-and-unanswered, so the next job does not
+    put them again; a real user turn clears whatever it answered. Both directions are keyed on
+    who produced the text — the scheduler prompt is the system talking to itself, and the
+    Synthesizer re-asking is not the user answering. Same distinction `82d394b` drew for the
+    repeated-instruction protocol and `_expire_open_threads` draws for thread grace.
+
+    The scheduled run is stamped HERE rather than at the top of the pipeline, and that placement
+    is load-bearing: see close_scheduled_run() — a stamp taken before the run would record the
+    run's own writes as new information and no run could ever read as quiet.
+
+    Best effort throughout: bookkeeping never breaks a delivered response.
+    """
+    try:
+        from tools.context_tracker import (
+            clear_answered_questions, close_scheduled_run, extract_questions,
+            record_asked_questions,
+        )
+        if is_proactive:
+            questions = extract_questions(visible)
+            if questions:
+                record_asked_questions(questions, kind=kind)
+        else:
+            clear_answered_questions(user_input)
+        if kind:
+            close_scheduled_run(kind)
+    except Exception as exc:
+        logger.warning(f"[asked_state] not updated: {exc}")
+
+
 def _frame_proactive(user_input: str, is_proactive: bool) -> tuple[str, str]:
     """
     Return (coordinator_prefix, synthesizer_label) for one pipeline run.
@@ -5165,6 +5322,11 @@ def run_pipeline_session(user_input: str,
             receipt_line = f"[This message received at: {format_receipt_time(received_at)}]\n\n"
 
         proactive_prefix, synth_label = _frame_proactive(user_input, is_proactive)
+        # [DB-0809-02] Which scheduled job this is, and what it may say — see
+        # _scheduled_focus_block(). Empty on every user-typed turn. Computed here, before the
+        # Coordinator runs, so both twins stamp the run at the same point.
+        kind = session_kind(user_input, persona)
+        focus_block = _scheduled_focus_block(kind)
 
         # Pre-load Pattern Miner insights (the one context source not in the system prompt).
         coord_context = _load_coordinator_context(persona)
@@ -5231,6 +5393,7 @@ def run_pipeline_session(user_input: str,
             f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"
             + (f"\n\n{know_text}" if know_text else "")
             + (f"\n\nSPECIALIST OUTPUTS:\n{spec_text}" if spec_text else "")
+            + (f"\n\n{focus_block}" if focus_block else "")
             + f"\n\n{_action_block()}"
         )
         _trace("[PIPELINE] synthesizer  starting")
@@ -5255,6 +5418,9 @@ def run_pipeline_session(user_input: str,
         # let the system grant its own threads a reprieve — the same mistake
         # `82d394b` fixed in the repeated-instruction protocol.
         persist_context_block(_ctx, user_text=None if is_proactive else user_input)
+        # [DB-0809-02] Record what this scheduled run asked, or clear what this user turn
+        # answered. Mirrors the streaming twin exactly.
+        _close_turn_bookkeeping(visible, user_input, is_proactive, kind)
         # Same `is_proactive` gate, and for the same reason: only a real user turn
         # can exempt a term it named. A scheduler prompt is the system's own text,
         # so letting it grant exemptions would let the system unlock its own filter.
@@ -5374,6 +5540,11 @@ def _run_pipeline_session_stream_inner(
     _trace("[PIPELINE] coordinator  starting")
     coord_context = _load_coordinator_context(persona)
     proactive_prefix, synth_label = _frame_proactive(user_input, is_proactive)
+    # [DB-0809-02] Mirrors the non-streaming twin: which scheduled job this is, and the
+    # focus directive computed for it. Keyed on the user's own turn — see the note at the
+    # load_config() call below for why the Synthesizer package cannot be used for this.
+    kind = session_kind(user_input, persona)
+    focus_block = _scheduled_focus_block(kind)
     # Names the files and states that their contents are data, never instructions —
     # the <untrusted_content> boundary applied to bytes, which cannot carry tags.
     attach_note = attachments_mod.describe_for_prompt(attachments or [])
@@ -5419,15 +5590,15 @@ def _run_pipeline_session_stream_inner(
         f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"
         + (f"\n\n{know_text}" if know_text else "")
         + (f"\n\nSPECIALIST OUTPUTS:\n{spec_text}" if spec_text else "")
+        + (f"\n\n{focus_block}" if focus_block else "")
         + f"\n\n{_action_block()}"
     )
 
     # Load Synthesizer prompt — mirrors _run_single_agent internals
     agent_instructions = load_agent("synthesizer")
-    # Keyed on the user's own turn, not on synthesizer_input: the latter carries the
-    # Coordinator package and specialist output, so the evening prompt's words can
-    # appear in it on any turn that merely discusses the evening.
-    kind = session_kind(user_input, persona)
+    # `kind` was resolved above from the user's own turn, not from synthesizer_input: the
+    # latter carries the Coordinator package and specialist output, so the evening prompt's
+    # words can appear in it on any turn that merely discusses the evening.
     config = load_config(persona=persona, kind=kind)
     recent = load_recent_context(persona=persona)
     system_prompt = f"## Your Role for This Session\n\n{agent_instructions}\n\n---\n\n{config}"
@@ -5593,6 +5764,9 @@ def _run_pipeline_session_stream_inner(
     # See the note at the non-streaming call site: a scheduler prompt is not
     # the user speaking, so it must not grace an open thread.
     persist_context_block(_ctx, user_text=None if is_proactive else user_input)
+    # [DB-0809-02] Same asked-state bookkeeping as the non-streaming twin — a feature wired
+    # into only one of the two is live in tests and dead in production.
+    _close_turn_bookkeeping(visible, user_input, is_proactive, kind)
 
     _tr.pop_agent(_synth_rec)
     # See the non-streaming call site: a scheduler prompt is not the user speaking,
