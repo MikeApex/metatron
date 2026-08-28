@@ -725,8 +725,53 @@ Two hard rules:
 
 
 def _thread_tier(flag: str) -> int:
-    """2 for any CLINICAL_CONCERN, 1 otherwise. Derived, never model-supplied — see above."""
-    return 2 if "CLINICAL_CONCERN" in (flag or "").upper() else 1
+    """2 for any CLINICAL_CONCERN, 1 otherwise — plus the medication distinction below.
+    Derived, never model-supplied — see above.
+
+    [DB-0808-14], built 2026-08-28: the module's own design comment named "missed heart
+    medication" versus "missed anti-psychotic" as the motivating distinction and only two
+    tiers were ever wired. A `MEDICATION_MISSED_CRITICAL: <name>` flag now ranks tier 2
+    when the *stored profile* marks that medication `discontinuation_risk: true` — the
+    same non-resolvable watch lifecycle CLINICAL_CONCERN already uses, no new state.
+    The name is parsed from the flag's colon suffix (the CLINICAL_CONCERN convention) and
+    looked up in the profile via tools/agent_config.py — never the model-authored note,
+    per physical_health.md's "never from the agent's judgment". Every failure direction
+    falls back to tier 1: unparseable name, unreadable profile, unmatched entry, absent
+    field. Fail toward today's safe-but-undifferentiated behaviour, never toward
+    inventing a risk classification.
+    """
+    up = (flag or "").upper()
+    if "CLINICAL_CONCERN" in up:
+        return 2
+    if "MEDICATION_MISSED_CRITICAL" in up:
+        name = (flag or "").split(":", 1)[1].strip().casefold() if ":" in (flag or "") else ""
+        if name and _medication_discontinuation_risk(name):
+            return 2
+    return 1
+
+
+def _medication_discontinuation_risk(name_cf: str) -> bool:
+    """Does the stored medication_profile mark `name_cf` (casefolded) as
+    discontinuation_risk: true? False on any read/parse failure — see _thread_tier."""
+    try:
+        from tools.agent_config import read_agent_config
+        profile = read_agent_config("physical_health", key="medication_profile")
+        if isinstance(profile, str):
+            profile = json.loads(profile)
+        if isinstance(profile, dict):
+            meds = profile.get("medications", [])
+        elif isinstance(profile, list):
+            meds = profile
+        else:
+            return False
+        for med in meds:
+            if not isinstance(med, dict):
+                continue
+            if str(med.get("name", "")).strip().casefold() == name_cf:
+                return med.get("discontinuation_risk") is True
+        return False
+    except Exception:
+        return False
 
 
 logger = logging.getLogger(__name__)

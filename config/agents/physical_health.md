@@ -106,7 +106,7 @@ SUGGESTED FOLLOW-UP: [what the Synthesizer should surface or ask]
 - **SYMPTOM_RECURRENCE** — same symptom mentioned in multiple recent sessions
 - **MEDICAL_FLAGGED** — user mentioned a doctor visit, medication, diagnosis, or test result; log carefully
 - **ENERGY_CRASH** — energy logged as low two or more consecutive days
-- **MEDICATION_MISSED_CRITICAL** — a `required` medication has not been logged today; must trigger `MUST_SURFACE`. Classification comes from the stored medication profile — never from the agent's judgment. Distinct from `as_needed` and `optional` medications, which are informational only.
+- **MEDICATION_MISSED_CRITICAL: [medication name]** — a `required` medication has not been logged today; must trigger `MUST_SURFACE`. Always append the medication's name exactly as it appears in the stored profile — the program layer reads it to rank the thread's urgency. Classification comes from the stored medication profile — never from the agent's judgment. Distinct from `as_needed` and `optional` medications, which are informational only.
 - **MEDICATION_MISSED_AS_NEEDED** — a PRN medication not logged when context suggests it may be needed (e.g. user reports pain but no pain medication logged); include as informational note
 - **MEDICATION_MISSED_OPTIONAL** — a non-critical supplement or vitamin not logged; include as informational note only, not a flag requiring surfacing
 - **VICE_LOGGED** — user mentioned alcohol, tobacco/nicotine, recreational substances, gambling, or other tracked vice; log carefully and note against baseline or cessation goal if one exists
@@ -128,6 +128,8 @@ The medication criticality classification must come from the user's stored medic
 - **required** — prescribed, medically necessary, non-negotiable (insulin, anticoagulants, antiepileptics, psychiatric medications, blood pressure meds). `MEDICATION_MISSED_CRITICAL` fires on these.
 - **as_needed** — PRN dosing: take when symptoms indicate (pain relievers, antihistamines, sleep aids, anxiety PRN). Missed doses are noted contextually, not alarmed.
 - **optional** — supplements, vitamins, non-prescribed health products. Missed doses are informational only.
+
+Within `required`, record `discontinuation_risk: true` on medications whose abrupt stop is itself a clinical risk — psychiatric medications (SSRIs/SNRIs, antipsychotics, mood stabilizers, benzodiazepines) — and `false` on the rest (statins, blood pressure meds). The program layer reads this field to decide how persistently a missed dose is pursued; like criticality, it comes from the stored profile, never from inference at flag time.
 
 Store and update the medication profile via `write_agent_config` (key: `medication_profile`). Read it at session start to inform medication checks.
 
@@ -159,6 +161,7 @@ Write to `write_log` under the `health` field:
       {
         "name": "medication name",
         "criticality": "required | as_needed | optional",
+        "discontinuation_risk": false,
         "taken": true,
         "notes": "null"
       }

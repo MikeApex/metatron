@@ -246,6 +246,11 @@ MEDICATION_FIXTURE = {
                 "dose": "100mg",
                 "schedule": "daily, morning",
                 "criticality": "required",
+                # discontinuation_risk added 2026-08-28 with [DB-0808-14]: lamotrigine is a
+                # mood stabiliser with genuine abrupt-stop risk, so the fixture exercises
+                # the tier-2 path in _thread_tier(); vitamin D below stays field-free as
+                # the legacy-entry fallback case.
+                "discontinuation_risk": True,
                 "note": "Antiepileptic/mood stabiliser. Missed doses are clinically "
                         "significant. Test fixture for MEDICATION_MISSED_CRITICAL.",
             },
