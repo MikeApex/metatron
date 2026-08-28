@@ -181,3 +181,33 @@ proposals from the spinoff · ④ CRM sweep build (Opus, after Mike's plan re-re
 Green/Amber spinoff chat runs the probe, write_persona gate, ritual code halves, index build and
 location first draft concurrently. (M): BigQuery billing export toggle; caps `[DB-0820-01]`
 due 09-01.
+
+---
+
+## Status update 2026-08-28 (evening) — the spinoff ran, merged, and DEPLOYED
+
+**The Green/Amber spinoff chat delivered all five items in one run** (five worktree workers,
+Fable review, merges `c082fb6`/`75a91d6`/`6451b51`/`029905e`/`ec774da`; archive commits
+`42f17ed`/`172b7ca`); **Mike deployed the batch the same evening** and ruled on everything it
+raised. Handoffs with the Red proposals: `archive/handoffs/2026-08-28-*.md`.
+
+- **Cluster A:** `[DB-0809-02]` ritual halves 🔶 **built + deployed** (asked-state memory,
+  nothing-new focus gate, ritual ownership; one scheduled-run day confirms — the same day
+  serves `[DB-0822-08]`'s re-measure). Its Red Synthesizer line rides session ③.
+- **Cluster B:** `[DB-0815-11]` approval gate 🔶 **built + deployed** (toggle, redundancy
+  refusal). `[DB-0826-01]` is now **the confirmed referent fix path** — probe-measured
+  (Flash-Lite 6/12 vs Pro 12/12 on the competing-referent suite), structural fix preferred.
+- **Cluster E:** `[DB-0820-05]` probe run; **Pro flip DECLINED by Mike** (11s/reply;
+  Coordinator redesign post-capstone makes a flip a temporary patch). Remaining there:
+  the A4-gated Step-6 caching commit only.
+- **First-draft features:** `[DB-0815-12]` location 🔶 **server side deployed**; remaining is
+  Mike's APK sideload + VM zones file, then the option-b zone-suggestion build — all bundled
+  in `archive/handoffs/2026-08-28-location-launch-prompt.md`. Vendor ruling refined same day:
+  Places is queried by expected-place NAME only; coordinates never leave the machine.
+- **Cluster H graduate:** `[DB-0827-09]` Accountability Index 🔶 **code half built +
+  deployed** (counts ride the 05:40 rollup; CLI report on demand). Judgment gate +
+  intentions-as-list (frequency → urgency) ride session ③; audit `[DB-0828-01]`
+  `due: 2026-09-07`.
+
+Session order ②–④ unchanged and next; ③ now carries the ritual Red line, the judgment-gate
+proposal, the Diarist list-shape line, and possibly the location proposal-voicing line.

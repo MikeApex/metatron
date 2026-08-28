@@ -75,6 +75,9 @@ back-tagging the rest is `[DB-0815-10]`.
 > against `git log` before promoting anything from here.
 *(empty — triaged 2026-08-27 by `/backlog deep`; evidence in `archive/backlog_closed_2026-08.md` § Closed 2026-08-27)*
 
+- **[instruction change]** Stop mentioning the Prudential review (project is complete/waiting) and stop issuing retrospective reminders for calendar events the user has already attended (e.g., swimming).  
+  `2026-08-28T19:34:56.577491Z`
+
 - **[needs building]** Fix email parser so it does not strip forwarding context. Forwarded emails currently lose the original recipient data, leading to incorrect assumptions about who the email was intended for.  
   `2026-08-28T16:43:27.304606Z`
 
@@ -620,13 +623,17 @@ the condition has not arrived, push the date rather than closing the item.
   the 📍 control until the sideload) + zones file on the VM (key places only — home, office,
   chess club; everywhere else is `away` by design); then one ping near a defined zone
   confirms. Handoff: `archive/handoffs/2026-08-28-location-first-draft.md`*
-  **Next-draft scope authorised (Mike, 2026-08-28):** zone suggestion by reverse-geocode — a
-  ping in no zone → code queries Google Places (Mike's explicit vendor ruling; the design had
-  reserved location-keyed queries to new vendors) → Metatron proposes "lock this in as a
-  zone?" → confirm card → Python writes the zone. Coordinates still never enter a model
-  prompt; the vendor sees them in code only.
+  **Next-draft scope authorised and REFINED (Mike, 2026-08-28, second ruling supersedes the
+  first same-day):** zone suggestion by **forward geocode of the expected place's NAME, never
+  the user's coordinates** — Google Places is asked where "Luigi's" is (a place already named
+  in calendar/conversation), code compares that against the ping locally, and a match
+  proposes "lock this in as a zone?" → confirm card → Python writes the zone. Rejected same
+  ruling: (a) sending randomised-nearby coordinates — (b) is cleaner and sends no position
+  signal at all. **Net: precise coordinates now never leave the machine, vendor included** —
+  tighter than the first-draft ruling required. Launch prompt (zones file + APK + this
+  build, one supervised session): `archive/handoffs/2026-08-28-location-launch-prompt.md`.
   *filed 2026-08-10 · split 2026-08-15 · promoted 2026-08-27 · design decided 2026-08-28 ·
-  first draft built 2026-08-28 · deployed (server side) + next-draft ruling 2026-08-28*
+  first draft built 2026-08-28 · deployed (server side) + next-draft rulings 2026-08-28*
 
 - **[DB-0818-07] The safety regression passes without ever touching stored knowledge.**
   `run_a4_safety.py --suite pipeline` runs against `sarah_chen`, whose VM store holds **one** entry —
@@ -1382,6 +1389,12 @@ the five June 2026 corrections → older than every fix that followed (tone, tim
 bootstrapping all since reworked). Kept, deliberately again: the Heathrow cluster, the 08-02/03
 correction runs, and the unresolved single corrections — behavioural evidence nothing has
 shipped against.)*
+
+- **[user corrected a prior turn]** Model incorrectly insisted user was at the playground 'admin-masking' and raised the Prudential review. User corrected: he had been working for 3 hours, and instructed model to stop mentioning Prudential.  
+  `2026-08-28T19:34:52.795710Z`
+
+- **[user corrected a prior turn]** Requested to stop mentioning the Prudential review and redundant reminders for completed activities (Manny's swim).  
+  `2026-08-28T19:34:25.680062Z`
 
 - **[user corrected a prior turn]** User corrected my assumption that a dental email for Iva was misdirected to them. I missed the forwarding chain from their secondary account, likely because the email parser didn't pass the forwarding metadata.  
   `2026-08-28T15:24:16.988533Z`
