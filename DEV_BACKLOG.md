@@ -268,6 +268,12 @@ Each is a defect measured in the 2026-08-21 traces, not a proposal.*
   food data (08-18); *"previous request"* resolved to an older lunch instead of the immediately
   prior turn (08-10); *"Approved"* resolved to the wrong pending action and wrongly closed an
   obligation (08-15). Not one trace — a pattern with four data points. Workable now.
+  **Probe-measured 2026-08-28 and CONFIRMED THE FIX PATH (Mike):** Flash-Lite reproduces the
+  class 6/12 on the competing-referent suite; Pro sweeps it 12/12 but the flip is declined on
+  latency (`[DB-0820-05]`). **This item is the default path** — fix the Coordinator, prefer
+  structural referent context (`tools/turn_context.py` pattern) over instruction-only, since
+  Pro's winning move was following a rule `coordinator.md` already states and Flash-Lite
+  ignores. Reproduction suite exists: `tests/run_coord_model_probe.py` Suite B-hard.
   @kind: bug
   *filed 2026-08-26 at Mike's instruction, from the live trace*
 
@@ -610,11 +616,17 @@ the condition has not arrived, push the date rather than closing the item.
   trail even behind a flag); `config/templates/zones.yaml` template — **live zones are Mike's
   to define at `data/personas/mike/zones.yaml` on the VM**; "home since HH:MM" context line.
   No model-callable location tool registered (tightest reading — a grant decision if wanted).
-  *remaining: VM deploy + **Mike's APK rebuild & sideload** (phone won't show the 📍 control
-  until then); then one ping near a defined zone confirms. Handoff:
-  `archive/handoffs/2026-08-28-location-first-draft.md`*
+  *remaining: **Mike's APK rebuild & sideload** (VM deploy done 2026-08-28; phone won't show
+  the 📍 control until the sideload) + zones file on the VM (key places only — home, office,
+  chess club; everywhere else is `away` by design); then one ping near a defined zone
+  confirms. Handoff: `archive/handoffs/2026-08-28-location-first-draft.md`*
+  **Next-draft scope authorised (Mike, 2026-08-28):** zone suggestion by reverse-geocode — a
+  ping in no zone → code queries Google Places (Mike's explicit vendor ruling; the design had
+  reserved location-keyed queries to new vendors) → Metatron proposes "lock this in as a
+  zone?" → confirm card → Python writes the zone. Coordinates still never enter a model
+  prompt; the vendor sees them in code only.
   *filed 2026-08-10 · split 2026-08-15 · promoted 2026-08-27 · design decided 2026-08-28 ·
-  first draft built 2026-08-28*
+  first draft built 2026-08-28 · deployed (server side) + next-draft ruling 2026-08-28*
 
 - **[DB-0818-07] The safety regression passes without ever touching stored knowledge.**
   `run_a4_safety.py --suite pipeline` runs against `sarah_chen`, whose VM store holds **one** entry —
@@ -703,8 +715,15 @@ the condition has not arrived, push the date rather than closing the item.
   honours `model_override` (probe Step 0); bonus: `core/trace.py` now records `cached_tokens`
   (was priced then dropped — cache hits were invisible in traces).
   Report: `tests/coord_model_probe_2026-08-28_flashlite_vs_pro.md`.
-  *remaining: the Pro decision on the probe evidence (Mike) + capped-budget re-probe if
-  chosen; A4-gated Step-6 commit; trace fix deploy rides the spinoff batch*
+  **✅ Pro flip DECLINED (Mike, 2026-08-28, on the probe evidence):** 11s/reply is a
+  non-starter; fixing the Coordinator is the default — Pro is incrementally better at routing
+  but the routing *system* is what matters, and the Coordinator is redesigned after the
+  capstone anyway. Capped-budget re-probe dropped as moot. The referent fix is
+  `[DB-0826-01]`'s Red path — prefer structural (code-computed referent context,
+  `tools/turn_context.py` pattern) over another instruction line, since the adherence class
+  is exactly where instruction-only fixes have failed.
+  *remaining: A4-gated Step-6 commit only (spinoff batch incl. the trace fix deployed
+  2026-08-28)*
   `due: 2026-09-15`
   *raised 2026-08-20 by Mike at the close of the Vertex billing reconciliation session ·
   absorbed `[DB-0822-01]`(b) 2026-08-27, both trails kept · decided 2026-08-28*
@@ -872,10 +891,16 @@ with a date.** Nothing new joins this group open-ended.*
   (journal text is sensitive → the gate's routing must say ZDR-VM basis). Discovered there,
   decision-shaped: a second same-day intention silently overwrites the first in the day log
   (`_deep_merge` scalar replace) — Diarist write-shape call, Mike's.
-  *remaining: VM deploy (rides the spinoff batch) — at that deploy set `[DB-0828-01]` `due:`
-  = deploy+10; judgment gate rides the next Red/agent-file session*
+  **Rulings (Mike, 2026-08-28, post-deploy):** *(a)* intentions become a LIST in the day log —
+  repeated statements of one intention are kept, so **frequency scores urgency** (Diarist
+  write-shape line is Red, session ③; index counts restatements); *(b)* the judgment gate may
+  read journal text on the Vertex path **under Amendment 2026-08-28** — its routing entry
+  records that basis when built; *(c)* daily cadence confirmed sufficient (the 05:40 rollup
+  counts already run — no new job until the gate lands).
+  *remaining: judgment gate + list-shape line ride the next Red/agent-file session; deployed
+  2026-08-28*
   *raised by Mike 2026-08-26 mid-session · triaged out of Inbox 2026-08-27 · design decided
-  2026-08-28 · code half built 2026-08-28*
+  2026-08-28 · code half built 2026-08-28 · deployed + rulings 2026-08-28*
 
 - **[DB-0828-01] Audit the Accountability Index's judgments once it has ten days of data — are
   things characterized as they should be?** Mike's instruction 2026-08-28, filed with the
@@ -885,9 +910,9 @@ with a date.** Nothing new joins this group open-ended.*
   report; miscategorization patterns go back into the judgment gate's instruction or the join
   code.
   @kind: chore
-  @waiting: the `[DB-0827-09]` index build deploying — **at that close, set `due:` to the
-  deploy date + 10 days** (no date until then, so it cannot fire early)
-  *filed 2026-08-28 at Mike's instruction, alongside the index design*
+  `due: 2026-09-07` — the index deployed 2026-08-28; date set per this item's own rule
+  (deploy + 10)
+  *filed 2026-08-28 at Mike's instruction, alongside the index design · dated at deploy*
 
 - **[DB-0827-03] Build the CRM sweep — the design is accepted, and the plan MUST BE REVIEWED
   WITH MIKE AGAIN BEFORE ANY BUILD SESSION STARTS.** That review gate is Mike's explicit
