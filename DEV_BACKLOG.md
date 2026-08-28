@@ -630,8 +630,9 @@ the condition has not arrived, push the date rather than closing the item.
   proposes "lock this in as a zone?" → confirm card → Python writes the zone. Rejected same
   ruling: (a) sending randomised-nearby coordinates — (b) is cleaner and sends no position
   signal at all. **Net: precise coordinates now never leave the machine, vendor included** —
-  tighter than the first-draft ruling required. Launch prompt (zones file + APK + this
-  build, one supervised session): `archive/handoffs/2026-08-28-location-launch-prompt.md`.
+  tighter than the first-draft ruling required. **The launch is folded into Red session ②**
+  (Mike's call — not its own session): zones file + APK + this build are item 5 of
+  `archive/handoffs/2026-08-28-red-session-two-prompt.md`.
   *filed 2026-08-10 · split 2026-08-15 · promoted 2026-08-27 · design decided 2026-08-28 ·
   first draft built 2026-08-28 · deployed (server side) + next-draft rulings 2026-08-28*
 
@@ -1389,6 +1390,9 @@ the five June 2026 corrections → older than every fix that followed (tone, tim
 bootstrapping all since reworked). Kept, deliberately again: the Heathrow cluster, the 08-02/03
 correction runs, and the unresolved single corrections — behavioural evidence nothing has
 shipped against.)*
+
+- **[agent wanted a tool it lacks]** `recreation_hobbies` attempted `read_agent_config` (agent_name) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
+  `2026-08-28T19:42:15.105284Z`
 
 - **[user corrected a prior turn]** Model incorrectly insisted user was at the playground 'admin-masking' and raised the Prudential review. User corrected: he had been working for 3 hours, and instructed model to stop mentioning Prudential.  
   `2026-08-28T19:34:52.795710Z`

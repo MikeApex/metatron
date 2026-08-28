@@ -200,9 +200,10 @@ raised. Handoffs with the Red proposals: `archive/handoffs/2026-08-28-*.md`.
 - **Cluster E:** `[DB-0820-05]` probe run; **Pro flip DECLINED by Mike** (11s/reply;
   Coordinator redesign post-capstone makes a flip a temporary patch). Remaining there:
   the A4-gated Step-6 caching commit only.
-- **First-draft features:** `[DB-0815-12]` location 🔶 **server side deployed**; remaining is
-  Mike's APK sideload + VM zones file, then the option-b zone-suggestion build — all bundled
-  in `archive/handoffs/2026-08-28-location-launch-prompt.md`. Vendor ruling refined same day:
+- **First-draft features:** `[DB-0815-12]` location 🔶 **server side deployed**; the launch
+  (Mike's APK sideload + VM zones file + the option-b zone-suggestion build) is **folded into
+  session ② as item 5** — ready-to-paste prompt:
+  `archive/handoffs/2026-08-28-red-session-two-prompt.md`. Vendor ruling refined same day:
   Places is queried by expected-place NAME only; coordinates never leave the machine.
 - **Cluster H graduate:** `[DB-0827-09]` Accountability Index 🔶 **code half built +
   deployed** (counts ride the 05:40 rollup; CLI report on demand). Judgment gate +
