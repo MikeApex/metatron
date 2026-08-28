@@ -11,11 +11,12 @@ Not a summary — a list of threads to pick up next session.
 Sensitive-tier, local-only, 600 permissions. Persona-scoped.
 """
 
+import hashlib
 import json
 import logging
 import os
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from core.persona import persona_data_dir
@@ -290,6 +291,412 @@ def _normalize_open_threads(raw: list | None) -> list[dict]:
     return out
 
 
+# ---------------------------------------------------------------------------
+# Asked-state memory, and the nothing-new delta  [DB-0809-02]
+#
+# WHY THIS EXISTS: measured on 2026-08-27. Four different scheduled jobs each re-asked the SAME
+# unanswered question — asked five times, never once answered — and the runs carrying the least
+# new information were the longest ones. Nothing in the system recorded that a question had
+# already gone out, so every job re-derived it from the same unchanged context and asked again.
+#
+# Mike's frame: "Most of these should be touched upon ONCE if at all. Runs with little
+# information should be short and sweet."
+#
+# THE MODEL IS NEVER ASKED TO JUDGE ANY OF THIS. Same standing rule as `added` on open threads
+# and `raised` on clinical threads above: every timestamp here is server-stamped at the moment
+# the response leaves the pipeline, and the re-ask decision is arithmetic on those stamps, not a
+# judgement call handed to a model that has just re-read the same context that produced the
+# question the first time.
+#
+# WHAT AN UNANSWERED QUESTION IS: one more OPEN ITEM, surfaced opportunistically — not a
+# broadcast obligation. So the suppression is the default and the re-raise is the exception,
+# which is the opposite of the behaviour measured above.
+#
+# ANSWERED CLEARS IT: `clear_answered_questions()` reuses `_user_engages_thread` — the user's own
+# turn, never system-generated text, for exactly the reason recorded in the CORRECTION above.
+# The Synthesizer re-emitting a question is not the user answering it.
+#
+# THE THRESHOLDS ARE REASONED, NOT MEASURED. There is no data on what interval feels right,
+# because until now there was no mechanism to vary; these are starting values chosen to be
+# clearly safer than the measured failure (5 asks in one day across four jobs), and they are
+# named constants so the session that retunes them does not have to hunt for a magic number:
+#
+#   _REASK_MIN_INTERVAL_HOURS = 20 — a question may not be re-raised within 20 hours of its last
+#       ask. Scheduled jobs run several times a day, so an interval shorter than a day cannot
+#       prevent the exact failure; 20 rather than 24 so a question first asked at the evening
+#       close is eligible again at the following evening close rather than sliding a day each
+#       time.
+#   _MAX_ASKS_PER_QUESTION = 3 — after three asks it is never raised again by a scheduled run.
+#       It stays on file as an open item for a turn where the user raises the subject himself.
+#       Three, not one, because a genuinely pressing thing (a medication, a deadline) deserves
+#       more than a single try — but the measured failure was five and rising.
+#   _MAX_REASKS_PER_DAY = 1 — at most one previously-asked question is re-raised on any calendar
+#       day, ACROSS ALL JOBS. This is the constant that actually closes the measured hole: the
+#       per-question interval alone still permits four different jobs to each re-raise a
+#       different stale question on the same day, which is the same experience for the user.
+#   _ASKED_QUESTION_EXPIRY_DAYS = 14 — an unanswered question is retired after two weeks. Twice
+#       the open-thread cutoff deliberately: a thread is live context and goes stale fast, a
+#       question the user has ignored for a fortnight is answered by that silence.
+#
+# STORAGE: in `context.json` beside the threads, because it is the same object — mid-term memory
+# for one persona, sensitive-tier, 0600. `asked_questions` is live state; retired and answered
+# entries move to `asked_questions_archive` (capped) rather than being deleted, matching
+# archive-on-merge and `expired_open_threads`. Neither is returned by `read_context_tracker()` —
+# the same "archived on disk, never loaded into the model's context" pattern used for resolved
+# clinical threads. What the model gets instead is the code-built directive in
+# `core/orchestrator.py`, which states the questions as things NOT to re-ask; putting the raw
+# list into ordinary context would hand the model the exact text to repeat.
+#
+# THE DELTA: `note_scheduled_run()` fingerprints the material context (thread/pattern/follow-up
+# /held/clinical text, plus the size and mtime of the recent log and journal files) and compares
+# it with the fingerprint stored by the previous scheduled run. Equal means nothing has come in
+# since — the condition that switches the run to a short check-in. Content is hashed, never
+# stored: the fingerprint is a hex digest, so the file gains no second copy of the user's text.
+# ---------------------------------------------------------------------------
+
+_REASK_MIN_INTERVAL_HOURS = 20
+_MAX_ASKS_PER_QUESTION = 3
+_MAX_REASKS_PER_DAY = 1
+_ASKED_QUESTION_EXPIRY_DAYS = 14
+_ASKED_QUESTIONS_CAP = 25
+_ASKED_ARCHIVE_CAP = 50
+
+# How many questions one run may record. A scheduled reply that ends in six questions is the
+# behaviour this item exists to stop; recording all six would make the suppression list itself
+# the source of a six-item recital. The first few are the ones the run actually cared about.
+_MAX_QUESTIONS_PER_RUN = 3
+
+# Content-word overlap (same coefficient as `_USER_ENGAGEMENT_OVERLAP`) at which two question
+# texts are treated as the SAME question. Higher than the engagement threshold on purpose: a
+# false merge here silently suppresses a question that was never asked, while a false split only
+# costs one extra ask. 0.6 is roughly "most of the shorter question's content words appear in
+# the other" — enough to catch the measured case, where the same question was re-asked in
+# slightly different words by four different jobs.
+_QUESTION_MATCH_OVERLAP = 0.6
+
+# Keys written by the asked-state and delta functions below. `write_context_tracker` rebuilds the
+# tracker dict from scratch on every turn, so anything not named here is silently erased by the
+# next ordinary write — which would reset the ask counts several times an hour and restore the
+# exact behaviour this feature removes.
+_CARRIED_KEYS = ("asked_questions", "asked_questions_archive", "scheduled_runs")
+
+
+def _read_raw() -> dict:
+    """The whole tracker file, or {} — including keys `read_context_tracker()` hides."""
+    path = _tracker_path()
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _write_raw(data: dict) -> None:
+    path = _tracker_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2)
+    os.chmod(path, 0o600)
+
+
+def _norm_question(text: str) -> str:
+    return " ".join(str(text or "").split()).strip()
+
+
+def _questions_match(a: str, b: str) -> bool:
+    """Are these the same question? See `_QUESTION_MATCH_OVERLAP`."""
+    if _norm_question(a).casefold() == _norm_question(b).casefold():
+        return True
+    wa, wb = _content_words(a), _content_words(b)
+    if not wa or not wb:
+        return False
+    return len(wa & wb) / min(len(wa), len(wb)) >= _QUESTION_MATCH_OVERLAP
+
+
+def extract_questions(text: str) -> list[str]:
+    """
+    The questions a response actually put to the user, in order, capped at
+    `_MAX_QUESTIONS_PER_RUN`.
+
+    Deliberately crude — a sentence ending in '?' with at least two content words. The cost of a
+    false positive is one question suppressed for 20 hours; the cost of a miss is the measured
+    failure. Rhetorical fragments ("Right?") are filtered by the content-word floor rather than
+    by anything that needs a model.
+    """
+    out: list[str] = []
+    for raw in re.findall(r"[^.!?\n]*\?", text or ""):
+        q = _norm_question(raw)
+        if len(q) < 12 or len(_content_words(q)) < 2:
+            continue
+        if any(_questions_match(q, seen) for seen in out):
+            continue
+        out.append(q)
+        if len(out) >= _MAX_QUESTIONS_PER_RUN:
+            break
+    return out
+
+
+def _prune_asked(asked: list[dict], now: datetime) -> tuple[list[dict], list[dict]]:
+    """Split live asked-state from entries past `_ASKED_QUESTION_EXPIRY_DAYS`."""
+    live, retired = [], []
+    for entry in asked:
+        stamp = entry.get("first_asked")
+        try:
+            age = now - datetime.fromisoformat(stamp)
+        except (TypeError, ValueError):
+            live.append(entry)
+            continue
+        if age > timedelta(days=_ASKED_QUESTION_EXPIRY_DAYS):
+            retired.append({**entry, "closed_on": now.isoformat(timespec="seconds"),
+                            "closed_reason": "expired"})
+        else:
+            live.append(entry)
+    return live, retired
+
+
+def _archive_asked(data: dict, entries: list[dict]) -> None:
+    if not entries:
+        return
+    archive = data.get("asked_questions_archive")
+    if not isinstance(archive, list):
+        archive = []
+    archive = (archive + entries)[-_ASKED_ARCHIVE_CAP:]
+    data["asked_questions_archive"] = archive
+
+
+def record_asked_questions(questions: list[str], kind: str | None = None) -> list[str]:
+    """
+    Record that a scheduled run put these questions to the user and they are, as of now,
+    unanswered. Returns the texts recorded or incremented.
+
+    Called with the response text's questions after a scheduler-initiated run — never after a
+    user-initiated turn, where a question is part of an exchange the user is already in.
+    `asked_at` stamps are server-side (`datetime.now()`), never model-supplied.
+    """
+    now = datetime.now()
+    data = _read_raw()
+    asked = data.get("asked_questions")
+    if not isinstance(asked, list):
+        asked = []
+    asked, retired = _prune_asked(asked, now)
+
+    touched: list[str] = []
+    for q in questions or []:
+        q = _norm_question(q)
+        if not q:
+            continue
+        match = next((e for e in asked if _questions_match(e.get("text", ""), q)), None)
+        if match:
+            match["ask_count"] = int(match.get("ask_count") or 0) + 1
+            match["last_asked"] = now.isoformat(timespec="seconds")
+            if kind:
+                match["last_asked_by"] = kind
+        else:
+            asked.append({
+                "text": q,
+                "first_asked": now.isoformat(timespec="seconds"),
+                "last_asked": now.isoformat(timespec="seconds"),
+                "ask_count": 1,
+                "first_asked_by": kind,
+                "last_asked_by": kind,
+            })
+        touched.append(q)
+
+    if len(asked) > _ASKED_QUESTIONS_CAP:
+        overflow, asked = asked[:-_ASKED_QUESTIONS_CAP], asked[-_ASKED_QUESTIONS_CAP:]
+        _archive_asked(data, [{**e, "closed_on": now.isoformat(timespec="seconds"),
+                               "closed_reason": "capped"} for e in overflow])
+
+    _archive_asked(data, retired)
+    data["asked_questions"] = asked
+    _write_raw(data)
+    return touched
+
+
+def clear_answered_questions(user_text: str | None) -> list[str]:
+    """
+    An answered question clears its asked-state. Returns the texts cleared.
+
+    Matching is `_user_engages_thread` — the same content-word overlap used for open-thread
+    grace, and for the same reason: this input is mostly speech-to-text, so byte-identical
+    matching would almost never fire. `user_text` must be the USER's own turn; a scheduler
+    prompt or the Synthesizer's own re-listing is not an answer to anything.
+    """
+    if not user_text:
+        return []
+    data = _read_raw()
+    asked = data.get("asked_questions")
+    if not isinstance(asked, list) or not asked:
+        return []
+
+    now = datetime.now().isoformat(timespec="seconds")
+    kept, cleared = [], []
+    for entry in asked:
+        if _user_engages_thread(entry.get("text", ""), user_text):
+            cleared.append({**entry, "closed_on": now, "closed_reason": "answered"})
+        else:
+            kept.append(entry)
+    if not cleared:
+        return []
+    _archive_asked(data, cleared)
+    data["asked_questions"] = kept
+    _write_raw(data)
+    return [e.get("text", "") for e in cleared]
+
+
+def _may_reask(entry: dict, now: datetime) -> bool:
+    """Per-question half of the sparse re-ask rule — interval and lifetime cap."""
+    if int(entry.get("ask_count") or 0) >= _MAX_ASKS_PER_QUESTION:
+        return False
+    try:
+        last = datetime.fromisoformat(entry.get("last_asked"))
+    except (TypeError, ValueError):
+        return False
+    return (now - last) >= timedelta(hours=_REASK_MIN_INTERVAL_HOURS)
+
+
+def _context_fingerprint(data: dict) -> str:
+    """
+    A digest of everything that would count as "something new" since the last scheduled run:
+    the tracker's material fields, plus the size and mtime of the recent log and journal files.
+
+    File metadata rather than file content — a log rewritten with the same bytes is not new
+    information, and reading five days of logs to build a prompt line would put real work on the
+    response path. Content is hashed and discarded; the file stores only the digest.
+    """
+    material = {
+        "open_threads": sorted(
+            t.get("text", "") for t in _normalize_open_threads(data.get("open_threads"))
+        ),
+        "patterns": sorted(str(p) for p in (data.get("patterns") or [])),
+        "follow_ups": sorted(str(f) for f in (data.get("follow_ups") or [])),
+        "held_items": sorted(str(h) for h in (data.get("held_items") or [])),
+        "clinical": sorted(
+            f"{t.get('flag')}:{t.get('status')}" for t in (data.get("clinical_threads") or [])
+        ),
+    }
+    stamps: list[str] = []
+    try:
+        root = persona_data_dir()
+        cutoff = date.today() - timedelta(days=5)
+        for sub in ("logs", "journal"):
+            d = root / sub
+            if not d.is_dir():
+                continue
+            for f in sorted(d.iterdir()):
+                try:
+                    st = f.stat()
+                    if date.fromtimestamp(st.st_mtime) < cutoff:
+                        continue
+                    stamps.append(f"{sub}/{f.name}:{st.st_size}:{int(st.st_mtime)}")
+                except OSError:
+                    continue
+    except Exception as exc:      # a fingerprint must never break a response
+        logger.warning(f"[context_tracker] fingerprint file scan skipped: {exc}")
+    material["files"] = stamps
+    blob = json.dumps(material, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:32]
+
+
+def close_scheduled_run(kind: str, at: datetime | None = None) -> None:
+    """
+    Close a scheduled run: stamp the context as it stands NOW.
+
+    The fingerprint is taken at the END of the run, not the start, and that is the whole reason
+    this is a second function rather than one line inside `note_scheduled_run()`. A run writes
+    to its own tracker — open threads, follow-ups, a log line — so a fingerprint taken before
+    the run would differ from the one taken by the next run purely because of what the system
+    itself just wrote, and `nothing_new` would be False forever. That is the same "the system's
+    own output is not evidence" mistake recorded in the CORRECTION above `_OPEN_THREAD_EXPIRY_DAYS`,
+    which had already been made twice in this codebase before this feature existed.
+
+    A run that crashes before this is called leaves the previous stamp in place, so the next run
+    may read as "nothing new" when something did change. That is the safe direction — the cost
+    is one quiet run, against a re-run of the noisy behaviour this item exists to remove.
+    """
+    now = at or datetime.now()
+    data = _read_raw()
+    runs = data.get("scheduled_runs")
+    if not isinstance(runs, dict):
+        runs = {}
+    runs["last"] = {"kind": kind, "at": now.isoformat(timespec="seconds"),
+                    "fingerprint": _context_fingerprint(data)}
+    data["scheduled_runs"] = runs
+    _write_raw(data)
+
+
+def note_scheduled_run(kind: str, at: datetime | None = None) -> dict:
+    """
+    Open a scheduled run: record it, and report what this run may and may not say.
+
+    Returns a dict with:
+      kind            — the schedule key passed in, echoed for the caller's directive.
+      nothing_new     — True when the material context is byte-for-byte what it was when the
+                        previous scheduled run CLOSED (see `close_scheduled_run`). False on the
+                        first ever run, which has no prior stamp and therefore no basis to
+                        claim nothing changed.
+      hours_since     — hours since the previous scheduled run closed, or None.
+      open_questions  — unanswered questions already put to the user. NOT to be re-asked.
+      may_reask       — the subset (at most `_MAX_REASKS_PER_DAY`) this run may raise again,
+                        under `_REASK_MIN_INTERVAL_HOURS` and `_MAX_ASKS_PER_QUESTION`.
+
+    Side-effecting by design: the re-ask budget is spent here, at the one point that certainly
+    happens once per scheduled run. Callers must not treat the result as a pure read. The
+    fingerprint is stamped by `close_scheduled_run()` at the other end of the run.
+    """
+    now = at or datetime.now()
+    data = _read_raw()
+
+    fingerprint = _context_fingerprint(data)
+    runs = data.get("scheduled_runs")
+    if not isinstance(runs, dict):
+        runs = {}
+    last = runs.get("last") if isinstance(runs.get("last"), dict) else None
+
+    nothing_new = bool(last and last.get("fingerprint") == fingerprint)
+    hours_since: float | None = None
+    if last:
+        try:
+            hours_since = round(
+                (now - datetime.fromisoformat(last["at"])).total_seconds() / 3600.0, 1)
+        except (KeyError, TypeError, ValueError):
+            hours_since = None
+
+    asked = data.get("asked_questions")
+    if not isinstance(asked, list):
+        asked = []
+    asked, retired = _prune_asked(asked, now)
+    _archive_asked(data, retired)
+
+    today = now.date().isoformat()
+    reasks = runs.get("reasks") if isinstance(runs.get("reasks"), dict) else {}
+    used_today = int(reasks.get("count") or 0) if reasks.get("date") == today else 0
+
+    budget = max(0, _MAX_REASKS_PER_DAY - used_today)
+    may_reask = [e["text"] for e in asked if _may_reask(e, now)][:budget] if budget else []
+
+    # Budget is spent when a re-ask is OFFERED, not when the model takes it up. The alternative
+    # needs the model to report back what it did, which is the kind of self-report this module
+    # does not rely on anywhere else — and erring toward fewer re-asks is the whole point.
+    runs["reasks"] = {"date": today, "count": used_today + len(may_reask)}
+    data["scheduled_runs"] = runs
+    data["asked_questions"] = asked
+    _write_raw(data)
+
+    return {
+        "kind": kind,
+        "nothing_new": nothing_new,
+        "hours_since": hours_since,
+        "open_questions": [
+            {"text": e.get("text", ""), "first_asked": e.get("first_asked"),
+             "ask_count": int(e.get("ask_count") or 0)}
+            for e in asked
+        ],
+        "may_reask": may_reask,
+    }
+
+
 _THREAD_STATUSES = ("active", "watch", "resolved")
 
 _CLINICAL_PROTOCOL = """\
@@ -404,6 +811,12 @@ def read_context_tracker() -> dict:
     # Archived, never loaded into session context — see the module-level comment above
     # _OPEN_THREAD_EXPIRY_DAYS. Mirrors the resolved-clinical-thread filter just below.
     data.pop("expired_open_threads", None)
+    # Same pattern for the asked-state and scheduled-run bookkeeping ([DB-0809-02]): on disk,
+    # never loaded. Handing the model the verbatim text of a question it must not repeat is
+    # how it gets repeated; what reaches the prompt is the code-built directive in
+    # core/orchestrator.py, which frames these as suppressed open items.
+    for _internal in _CARRIED_KEYS:
+        data.pop(_internal, None)
 
     # Resolved threads are archived on disk but never loaded — a closed concern should not keep
     # colouring the read of new messages, which is the whole failure this field addresses.
@@ -594,6 +1007,15 @@ def write_context_tracker(
         "clinical_threads": threads,
         "expired_open_threads": expired_open_threads,
     }
+
+    # [DB-0809-02] This dict is rebuilt from scratch every turn, so any key not named above is
+    # erased by the next ordinary write. The asked-state and scheduled-run bookkeeping are
+    # written by other functions in this module and must survive that — without this the ask
+    # counts would reset several times an hour and the same question would go out again on the
+    # next job, which is the exact behaviour the feature removes.
+    for _key in _CARRIED_KEYS:
+        if _key in existing:
+            tracker[_key] = existing[_key]
 
     with open(path, "w") as f:
         json.dump(tracker, f, indent=2)
