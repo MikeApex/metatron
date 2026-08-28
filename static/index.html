@@ -270,9 +270,9 @@
     #confirm-yes { background: #7a5c12; color: #fff; border-color: #7a5c12; }
     #confirm-yes:disabled { opacity: 0.5; cursor: not-allowed; }
 
-    /* Spoken-reply and alert toggles. They sit next to the mic rather than in the
-       hidden settings row, because both are meant to be flipped mid-conversation. */
-    #voice-toggle, #alert-toggle {
+    /* Spoken-reply, alert and location toggles. They sit next to the mic rather than in
+       the hidden settings row, because all three are meant to be flipped mid-conversation. */
+    #voice-toggle, #alert-toggle, #loc-toggle {
       width: 56px;
       height: 56px;
       flex: 0 0 auto;
@@ -284,7 +284,7 @@
       cursor: pointer;
       transition: background 0.15s, color 0.15s, border-color 0.15s;
     }
-    #voice-toggle.on, #alert-toggle.on {
+    #voice-toggle.on, #alert-toggle.on, #loc-toggle.on {
       background: #1e3a5f;
       border-color: #1e3a5f;
       color: #e8e8e8;
@@ -292,7 +292,7 @@
 
     /* Alert settings. Collapsed by default — the toggle button carries the state,
        and this is opened only to change how alerts behave. */
-    #alert-settings {
+    #alert-settings, #loc-settings {
       display: none;
       flex-direction: column;
       gap: 10px;
@@ -301,7 +301,18 @@
       border-radius: 12px;
       padding: 12px 14px;
     }
-    #alert-settings.shown { display: flex; }
+    #alert-settings.shown, #loc-settings.shown { display: flex; }
+    #loc-share-btn {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 20px;
+      color: #aaa;
+      font-size: 13px;
+      padding: 8px 16px;
+      cursor: pointer;
+    }
+    #loc-share-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    #loc-note { font-size: 11px; color: #444; line-height: 1.4; }
     .alert-row {
       display: flex;
       align-items: center;
@@ -698,6 +709,22 @@
     <button id="mic-btn">Tap to Speak</button>
     <button id="voice-toggle" title="Spoken replies on/off">🔇</button>
     <button id="alert-toggle" title="Alerts when a message arrives">🔔</button>
+    <button id="loc-toggle" title="Location">📍</button>
+  </div>
+
+  <!-- Location [DB-0815-12]. Two capture modes, both a deliberate act: a switch that
+       attaches a reading to messages you send, and a button that shares one right now.
+       The switch is OFF until it is turned on here — nothing about location starts by
+       itself. Nothing in the app tracks in the background. -->
+  <div id="loc-settings">
+    <div class="alert-row">
+      <label class="alert-check"><input type="checkbox" id="loc-onsend">
+        Include where I am when I send a message</label>
+    </div>
+    <div class="alert-row">
+      <button id="loc-share-btn">Share where I am now</button>
+    </div>
+    <div id="loc-note"></div>
   </div>
 
   <div id="alert-settings">
@@ -1643,6 +1670,11 @@
   // --- API call ---
 
   function sendToServer(input) {
+    // [DB-0815-12] One of the two location capture modes, and a no-op unless the user
+    // switched it on in the location panel. Deliberately not awaited: the reading goes to
+    // POST /location on its own, never into the message, so the send must not wait on a
+    // GPS fix or fail because one did not arrive.
+    maybeSendLocationWithMessage();
     const provider = providerSelect.value;
     const agent = agentSelect.value;
     if (agent === 'coordinator') {
@@ -2036,6 +2068,122 @@
   });
 
   renderAlertControls();
+
+  // --- Location [DB-0815-12] ---
+  //
+  // Two capture modes, and both are a thing the user did: a switch that attaches a reading
+  // to a message they are already sending, and a button that shares one on the spot. Both
+  // use the ordinary "while using the app" permission. There is no background tracking, no
+  // timer and no watchPosition — the later build that adds scheduled pings needs the
+  // "allow all the time" permission and a persistent notification, and is deliberately not
+  // here.
+  //
+  // THE SWITCH IS OFF UNTIL IT IS TURNED ON. The stored value must be exactly 'on'; every
+  // other state of the world — never set, cleared, corrupted, some other string — is off.
+  // This is not the same as `!== 'off'` (the pattern the alert switches use, where the
+  // default is on) and the difference is the whole feature: a location default that could
+  // be arrived at by accident is a location default that is wrong. tests/test_location_
+  // onsend_default.js runs this exact code against a fresh localStorage.
+  //
+  // The coordinate goes to POST /location and nowhere else. It is not attached to the
+  // message, so it never travels through the conversation; the server maps it to a named
+  // place and throws it away. That is why this is fire-and-forget and why a failure is
+  // silent for the on-send path: the message is the thing the user asked for, and it must
+  // not wait on, or be lost to, a GPS fix.
+  const LOC_ONSEND_KEY = 'metatron_location_onsend';
+
+  let locOnSend = localStorage.getItem(LOC_ONSEND_KEY) === 'on';
+
+  // Long enough for a cold fix outdoors, short enough that the button does not look
+  // hung. A cached fix up to a minute old is accepted: the zones this resolves to are
+  // hundreds of metres across, so a fresh reading buys nothing but battery and delay.
+  const LOC_TIMEOUT_MS = 15000;
+  const LOC_MAX_AGE_MS = 60000;
+
+  function readPosition() {
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) { reject(new Error('unsupported')); return; }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve(pos),
+        (err) => reject(err),
+        { enableHighAccuracy: false, timeout: LOC_TIMEOUT_MS, maximumAge: LOC_MAX_AGE_MS },
+      );
+    });
+  }
+
+  async function postLocation(pos) {
+    const res = await authFetch('/location', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        lat: pos.coords.latitude,
+        lon: pos.coords.longitude,
+        accuracy: pos.coords.accuracy,
+        ts: new Date(pos.timestamp || Date.now()).toISOString(),
+        persona: currentPersona,
+      }),
+    });
+    if (!res.ok) throw new Error('rejected');
+    return res.json();
+  }
+
+  // Attached to a message the user is sending, when they have switched that on. Returns
+  // immediately — nothing about sending waits for this.
+  function maybeSendLocationWithMessage() {
+    if (!locOnSend) return;
+    readPosition().then(postLocation).catch(() => {});
+  }
+
+  // The button. Unlike the on-send path this reports what happened, because the user
+  // asked for it and a silent no-op reads as a broken button — which is also the only
+  // place they will find out that the permission prompt was declined.
+  async function shareLocationNow() {
+    const btn = document.getElementById('loc-share-btn');
+    const note = document.getElementById('loc-note');
+    if (btn) btn.disabled = true;
+    if (note) note.textContent = 'Checking where you are...';
+    try {
+      const result = await postLocation(await readPosition());
+      const zone = (result && result.zone) || 'somewhere unnamed';
+      if (note) {
+        note.textContent = zone === 'away'
+          ? "Shared — that spot isn't one of your named places."
+          : `Shared — you're at ${zone}.`;
+      }
+    } catch (e) {
+      if (note) note.textContent = 'Could not get a location fix.';
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  function renderLocControls() {
+    const btn = document.getElementById('loc-toggle');
+    if (btn) btn.classList.toggle('on', locOnSend);
+    const box = document.getElementById('loc-onsend');
+    if (box) box.checked = locOnSend;
+    const note = document.getElementById('loc-note');
+    if (note) {
+      note.textContent = locOnSend
+        ? 'Sent with your messages, while the app is open. Nothing is tracked in the background.'
+        : 'Off. Location is only sent if you switch this on or tap the button.';
+    }
+  }
+
+  document.getElementById('loc-toggle').addEventListener('click', () => {
+    document.getElementById('loc-settings').classList.toggle('shown');
+  });
+
+  document.getElementById('loc-onsend').addEventListener('change', (e) => {
+    locOnSend = e.target.checked;
+    localStorage.setItem(LOC_ONSEND_KEY, locOnSend ? 'on' : 'off');
+    renderLocControls();
+  });
+
+  document.getElementById('loc-share-btn').addEventListener('click', shareLocationNow);
+
+  renderLocControls();
+  // --- end location ---
 
   // Silence is checked at every point where playback could begin, not only on entry.
   //

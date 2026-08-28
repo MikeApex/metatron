@@ -1,0 +1,65 @@
+# Named places — the only form location takes anywhere in this system.
+#
+# COPY THIS TO  data/personas/{persona}/zones.yaml  AND EDIT IT THERE.
+# The live copy is owned by the VM. tools/location.py reads it and never writes it, so
+# nothing here is overwritten by a deploy and nothing you write here reaches a running
+# persona; the copy is deliberate and one-way.
+#
+# ---------------------------------------------------------------------------
+# WHY THIS FILE IS THE WHOLE FEATURE
+#
+# Location is extra-sensitive — above ordinary sensitive (Mike, 2026-08-28). Raw
+# coordinates never enter any model prompt, cloud or local, and no coordinate history is
+# kept at all. What the system stores is a list of times you arrived somewhere you named,
+# and what a model is ever shown is one line: "home since 14:02".
+#
+# So this file is the entire vocabulary. A place that is not named here does not exist to
+# the system: any reading outside every circle below resolves to "away", which is not an
+# error and needs no entry. Naming nothing is a valid configuration — it means every ping
+# resolves to "away" and the feature is inert.
+#
+# The names are read by a model, so write them as you would say them out loud: "home",
+# "the office", "Mum's". A name is also the only description the system has of the place,
+# so avoid anything you would not want stated back to you in a reply.
+#
+# ---------------------------------------------------------------------------
+# SHAPE
+#
+#   name:      what you call the place. Used verbatim in the context line.
+#   lat/lon:   WGS84 decimal degrees — the format a phone map app gives you when you
+#              long-press a point and read off the coordinates.
+#   radius_m:  how far from that point still counts as being there, in metres.
+#
+# A circle is the first-draft abstraction; polygons and dwell-time thresholds are not
+# implemented. Zones may overlap, and THE SMALLEST MATCHING ZONE WINS — so "the office"
+# inside "central London" resolves to "the office", regardless of the order written here.
+# A point exactly on the boundary is inside.
+#
+# Sizing radius_m: phone GPS is commonly accurate to 10–50m outdoors and much worse
+# indoors or in a city street. A radius smaller than the building it describes will flap
+# between the zone and "away" as the reading wanders — each flap is an appended transition
+# and a changed context line. 100–200m for a house, 200–500m for a workplace or campus is
+# a sane starting point. Too large is the cheaper mistake here: it costs precision, where
+# too small costs a log full of arrivals that never happened.
+#
+# ---------------------------------------------------------------------------
+
+zones: []
+
+# Replace the empty list above with entries in this form:
+#
+# zones:
+#   - name: home
+#     lat: 51.50735
+#     lon: -0.12776
+#     radius_m: 150
+#
+#   - name: the office
+#     lat: 51.51520
+#     lon: -0.14190
+#     radius_m: 250
+#
+#   - name: the gym
+#     lat: 51.49410
+#     lon: -0.17540
+#     radius_m: 100

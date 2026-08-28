@@ -1063,6 +1063,71 @@ async def decline_action(req: ConfirmRequest) -> dict:
     return {"status": "declined", "message": line}
 
 
+# ---------------------------------------------------------------------------
+# Location  [DB-0815-12]
+# ---------------------------------------------------------------------------
+
+class LocationPing(BaseModel):
+    lat: float
+    lon: float
+    accuracy: float | None = None
+    ts: str | None = None          # the client's reading time, ISO 8601
+    persona: str | None = None
+
+
+def _record_location(lat: float, lon: float, accuracy: float | None,
+                     ts: str | None, persona: str) -> dict:
+    """Resolve the coordinate to a zone and record a change. Runs on a worker thread —
+    it reads and appends files, and persona scoping is thread-local and fail-closed, so
+    the scope is entered inside the thread that does the work."""
+    from core.persona import persona_scope
+    from tools.location import record_position
+    with persona_scope(persona):
+        return record_position(lat, lon, accuracy=accuracy, ts=ts)
+
+
+@app.post("/location")
+async def location_ping(req: LocationPing) -> dict:
+    """
+    Take one GPS reading from the app and give back the name of the place it is in.
+
+    **The coordinate stops here.** Location is extra-sensitive — above ordinary sensitive
+    (Mike, 2026-08-28) — so raw GPS never enters a model prompt, cloud or local, and no
+    coordinate history is kept anywhere. `record_position()` maps the reading to one of the
+    user's named zones and returns that name; `lat`, `lon` and `accuracy` are never written to
+    disk, never added to the conversation, and never reach `_log_conversation`. What persists
+    is a line in the zone transitions log saying the user arrived somewhere at a time.
+
+    That placement is the enforcement, not a convention: the mapping is Python in
+    `tools/location.py`, per the standing rule that sensitive data paths are enforced in code
+    and never in prompts. Nothing downstream of this handler is in a position to leak a
+    coordinate, because nothing downstream is ever given one.
+
+    Unlike /confirm and /decline this writes **no conversation row and broadcasts nothing**.
+    A ping is not something the user said, and a stream of "you are at home" messages would
+    turn a background signal into a conversation the user did not start. The zone reaches the
+    model as one context line on the next turn — `tools.location.context_block`.
+
+    Two callers, both a deliberate user act (`[DB-0815-12]` design point 3): sending a message
+    with the on-message ping switched on, and the share-location button. Nothing polls, and
+    the endpoint holds no state between calls that could keep running if the app went away.
+
+    Returns `{"zone", "entered_at", "changed"}`. An unknown coordinate is `zone: "away"`, not
+    an error — a user who has not written a zones file gets a working endpoint that knows
+    nothing, which is the truth.
+    """
+    persona_key = req.persona or DEFAULT_PERSONA
+    try:
+        return await asyncio.to_thread(
+            _record_location, req.lat, req.lon, req.accuracy, req.ts, persona_key)
+    except Exception as e:
+        # Deliberately does not echo the request: the detail string is the one place a
+        # coordinate could travel back out of this handler, and an exception message can
+        # carry its arguments.
+        logger.warning(f"[location] ping failed: {type(e).__name__}")
+        raise HTTPException(status_code=500, detail="Could not record the location.")
+
+
 @app.get("/health")
 async def health() -> dict:
     return {"status": "ok"}

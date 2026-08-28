@@ -836,8 +836,12 @@ def load_recent_context(persona: str | None = None, days: int = 5) -> str:
     # tools.confirm added 2026-08-27 [DB-0827-01]: what the user has refused, so the session
     # does not spend a turn arriving at a proposal that tools/confirm.py will not raise, and
     # does not read the absence of a card as licence to ask in prose instead.
+    # tools.location added 2026-08-28 [DB-0815-12]: one line naming where the user last
+    # reported being — "home since 14:02". It is derived in tools/location.py from the zone
+    # transitions log, which has never held a coordinate; raw GPS is extra-sensitive and
+    # never enters a prompt, cloud or local. Empty until the user turns the ping on.
     for _block_source in ("tools.obligations", "tools.calendar_reconcile", "tools.intake",
-                          "tools.confirm"):
+                          "tools.confirm", "tools.location"):
         try:
             import importlib
             block = importlib.import_module(_block_source).context_block(persona)
