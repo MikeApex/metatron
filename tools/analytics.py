@@ -163,6 +163,19 @@ def rollup_day(day: str, persona: str) -> dict | None:
     first = _first_use(persona)
     cohort_day = (date.fromisoformat(day) - date.fromisoformat(first)).days
 
+    # DB-0827-09 Accountability Index — content-free counts only (no intention
+    # text, no names, no dates beyond `day` itself). tools/accountability.py
+    # owns the join logic and the content-free discipline; this rollup only
+    # asks for the day's counts. Never raises — an accountability read failure
+    # must not take down the whole analytics row, matching rollup_yesterday's
+    # own never-crash-the-daemon discipline.
+    try:
+        from tools.accountability import daily_accountability_counts
+        acct = daily_accountability_counts(day, persona, root=ROOT)
+    except Exception:
+        acct = {"intentions_stated": 0, "intentions_resolved_fulfilled": 0,
+                "intentions_resolved_unfulfilled": 0, "intentions_resolved_indeterminate": 0}
+
     return {
         # --- cohort anchor: the fields that cannot be reconstructed later ---
         "date": day,
@@ -187,6 +200,11 @@ def rollup_day(day: str, persona: str) -> dict | None:
         "tool_failures": sum(failures.values()),
         "top_tools": dict(tools.most_common(15)),
         "failed_tools": dict(failures),
+        # --- accountability (DB-0827-09): counts only, re-derivable from data/personas/*/logs ---
+        "intentions_stated": acct["intentions_stated"],
+        "intentions_resolved_fulfilled": acct["intentions_resolved_fulfilled"],
+        "intentions_resolved_unfulfilled": acct["intentions_resolved_unfulfilled"],
+        "intentions_resolved_indeterminate": acct["intentions_resolved_indeterminate"],
         # --- cost: gross margin, not performance telemetry ---
         "tokens_in": tokens_in,
         "tokens_out": tokens_out,
