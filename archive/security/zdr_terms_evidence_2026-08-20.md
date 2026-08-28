@@ -109,7 +109,11 @@ residency is the weaker control; the exception is the lever.
 
 ---
 
-## PROPOSED § Section 0 amendment — not applied; Mike's ruling required
+## PROPOSED § Section 0 amendment — SUPERSEDED 2026-08-28, never applied
+
+*Drafted 2026-08-21 before Google's decision. The opt-out was refused 2026-08-26; Mike ruled
+2026-08-28 and the applied amendment is in `ROADMAP.md` § Section 0 (Amendment 2026-08-28).
+Kept below verbatim as the historical draft.*
 
 Replacing nothing, appended after the CORRECTION block if approved:
 

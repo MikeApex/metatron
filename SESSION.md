@@ -1,26 +1,24 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-27, latest (**a second attack run closes the carried-context class** — the
-decline re-propose guard, per-field log timestamps, the Bill resolution store, the medication
-Red-line spec and the wisdom-store proposal, four workers, all merged — **and deployed by Mike
-at close-out**, so the Cluster F confirmations are live now).*
+*Updated: 2026-08-28 (**the decisions session ran — the capstone batch is 8/8 ruled**: ZDR
+closed with Amendment 2026-08-28 applied, six items converted to build work, grants all
+decided. Dispositions live in each `DEV_BACKLOG.md` entry; reasoning in the log fragment;
+revised session order in the tracker's § Status update 2026-08-28).*
 
 *✅ **The capstone plan is the read-first for any backlog work:**
 **`archive/plans/capstone_cluster_review_2026-08-27.md`** — every open item by functional
 cluster with tier, estimate and status. Goal (Mike): finish this rendition's core features,
 begin full testing; rebuild-adjacent work parked in its Cluster H. **National Rail
 (`[DB-0818-04]`) and geolocation (`[DB-0815-12]`) are first-draft features** by his ruling —
-the Darwin API key is his to register; the location privacy tier is @session.*
+the Darwin API key is his to register; location's design is decided 2026-08-28 (extra-sensitive
+zone abstraction, app modes 1+2, ping default OFF) — build owed.*
 
-*✅ **Nine builds now merged, each awaiting one live confirmation post-deploy** (`@waiting`,
-evidence per item in the backlog): decline path with the re-propose guard `[DB-0827-01]` ·
-context age with the intraday per-field half `[DB-0822-06]` (derived-count half retired as
-stale-premised) · Bill resolution store `[DB-0818-05]` · Diarist user-turn gate `[DB-0822-05]` ·
-empty-label filter `[DB-0827-07]` · false-action-claim detector `[DB-0815-11]` (policy half
-@session) · context-audit line `[DB-0814-02]`. Also from the second attack: `[DB-0808-14]`
-scoped to a ready Red spec (A4 re-run PASS 3/3) and the `[DB-0818-06]` per-entry proposal
-awaiting Mike's review — both specs in `archive/plans/`. `[DB-0826-01]`'s referent class is a
-four-instance pattern, workable now.*
+*✅ **Nine builds merged and deployed, each awaiting one live confirmation** (`@waiting`;
+evidence per item in the backlog): decline path `[DB-0827-01]` · context age `[DB-0822-06]` ·
+Bill store `[DB-0818-05]` · Diarist gate `[DB-0822-05]` · label filter `[DB-0827-07]` ·
+false-claim detector `[DB-0815-11]` (policy decided 08-28, gate build owed) · audit line
+`[DB-0814-02]`. Medication Red spec ready `[DB-0808-14]`; wisdom-store proposal `[DB-0818-06]`
+awaits Mike; referent class `[DB-0826-01]` workable (four instances).*
 
 *✅ **The synthesizer audit is executed, gated, and deployed** (record + watch list:
 `archive/plans/synthesizer_audit_2026-08-18.md` § Execution record; `[DB-0822-10]` closes on
@@ -31,28 +29,31 @@ scheduled-run day before fixing `[DB-0822-08]`/`-09` by instruction.***
 delete `mike.md`'s six-hour inbox line if present) — gates: `[DB-0820-03]`, `[DB-0820-04]`.*
 
 *⚠ **Caps revert to $100/$175 at the September reset — evidence in** (`[DB-0820-01]`,
-`due: 2026-09-01`). The Pro-routing decision `[DB-0820-05]` **absorbed `[DB-0822-01]`'s Step 6
-half** (A4-gated), `due: 2026-09-15`. Mike flips the Mac's `VERTEX_CACHE_DISABLED` himself.*
+`due: 2026-09-01`). Pro routing `[DB-0820-05]` **decided 2026-08-28**: coordinator-only, offline
+probe before any flip; Step-6 caching approved behind one full A4 run (which also carries
+`[DB-0818-07]`'s knowledge seeding). (M): Mike enables the BigQuery billing export, and flips
+the Mac's `VERTEX_CACHE_DISABLED` himself.*
 
-*⛔ **ZDR: refused, ruled on, do not re-open** — `ROADMAP.md` § Section 0 *RESOLVED 2026-08-26*.
-The narrower written-basis amendment ruling is now `[DB-0827-08]`, `due: 2026-09-05`. CRM sweep
-build still gated on Mike's plan re-review (`[DB-0827-03]`).*
+*⛔ **ZDR: refused, ruled on, do not re-open** — `ROADMAP.md` § Section 0 *RESOLVED 2026-08-26*
++ **Amendment 2026-08-28** (written basis updated; `tone_profiler` cleared for anything Mike
+shares; `[DB-0827-08]` closed). CRM sweep build still gated on Mike's plan re-review
+(`[DB-0827-03]`). **The `[DB-0818-06]` wisdom-store proposal review did NOT ride along with the
+decisions batch — still awaiting Mike.***
 
-***Next, in the tracker's order:** ① **one** decisions session with Mike — his ruling
-2026-08-27: the whole batch in a single chat, not spread across several (includes the 39 tool
-grants blocking A7 check 10; the wisdom-store proposal review rides along); ② supervised Red
-session in `core/scheduler.py` (`[DB-0822-07]` + `[DB-0808-11]`) — the medication schema edit
-(`[DB-0808-14]`, spec ready) fits the same sitting; ③ email-surfacing session (`[DB-0822-09]` +
-the re-measure); ④ CRM sweep build (Opus, post-review). Cluster F drains on Mike's ordinary use
-(~30 min, plus three new one-shot confirmations from the second attack).*
+***Next (revised 2026-08-28, Mike's call — grants batched, not their own run):** ② supervised
+Red session in `core/scheduler.py` (`[DB-0822-07]` + `[DB-0808-11]`) **+ the grants pass
+(`[DB-0810-03]`, all decided — unblocks A7 check 10) + Step-6 caching behind the full A4 run**;
+the medication schema edit (`[DB-0808-14]`, spec ready) fits the same sitting; ③
+email-surfacing session (`[DB-0822-09]` + the `[DB-0822-08]` re-measure, plus the ritual's one
+Red Synthesizer line and any spinoff agent-file handoffs); ④ CRM sweep build (Opus,
+post-review). A **Green/Amber spinoff chat runs concurrently**: coordinator model probe,
+write_persona gate, ritual code halves (`[DB-0809-02]`), Accountability Index (`[DB-0827-09]`,
+audit `[DB-0828-01]` follows), location first draft. Cluster F drains on Mike's ordinary use.*
 
 *⚠ **A v1/alpha architecture question is live: invert to code-dominant, with models as discrete
 judgment gates.** Still **no decision**, and it must be **decided before A8 executes** or A8 is
-paid for twice. The conversation now has a standing home — append dated rounds to
-**`archive/plans/code_dominant_rebuild_notes.md`** (no length limit; Mike, 08-27). Three rounds in:
-the 08-22 "built backwards?" discussion; the 08-27 trace audit (392 single-call turns → `[DB-0808-09]`,
-`[DB-0827-02]`); and the 08-10 sink-gap chat's parked thinking (that review also refiled the
-discarded `ROUTING_MISS` as `[DB-0827-05]`).*
+paid for twice. Standing home, three dated rounds in:
+**`archive/plans/code_dominant_rebuild_notes.md`** (no length limit; Mike, 08-27).*
 
 ***Model split, Mike's call 2026-08-18: plan and review in Fable, build in Opus.*** Red-tier
 work is still not delegated at all.

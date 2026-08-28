@@ -3352,3 +3352,19 @@ observation: `[DB-0822-05]` Diarist gate `e6bde3d` · `[DB-0827-07]` empty-label
 age-annotation half `cbd5ca3` (derived-count and intraday halves stay open) · `[DB-0814-02]`
 audit line `17142c0` · `[DB-0827-01]` decline path `0f8f528` (re-propose half open). Worker
 handoffs: `archive/handoffs/2026-08-27-{session-hygiene,decline-path,routing-miss}.md`.)*
+
+## Closed 2026-08-28 — the decisions session (batch 1: the ZDR written basis)
+
+### [DB-0827-08] — CLOSED. The written basis is amended, and tone_profiler is ruled on.
+
+- ~~**[DB-0827-08] The ZDR opt-out is submitted; the § Section 0 amendment ruling is still
+  owed.**~~ **Closed 2026-08-28.** The item's @waiting (Google's decision) had already resolved
+  early — the opt-out was **refused 2026-08-26** (recorded in `ROADMAP.md` § Section 0
+  RESOLVED). Mike's ruling 2026-08-28, applied as **Amendment 2026-08-28** in `ROADMAP.md`
+  § Section 0: testing continues on the `mike` persona, with Mike's own use as the control — he
+  includes only information he is comfortable potentially leaking. **`tone_profiler` continues
+  under the same ruling: anything Mike shares with the tool is usable by it, including
+  third-party correspondence he brings in** — the gate is his decision to share, not the
+  channel. The 2026-08-21 draft amendment in
+  `archive/security/zdr_terms_evidence_2026-08-20.md` was marked superseded, never applied.
+  Fail-closed routing, the north star, and the multi-user expiry all unchanged.

@@ -160,6 +160,25 @@ What is unchanged, and is not weakened by this note:
 > why ZDR, not region-pinning, is the lever worth pulling. Gemini 3.x is not served from regional
 > endpoints anyway (`docs/INFRASTRUCTURE.md` § Vertex AI credentials).
 
+**Amendment 2026-08-28 — the written basis, updated after the refusal (Mike's ruling; closes
+`[DB-0827-08]`).** Supersedes the proposed amendment of 2026-08-21 in
+`archive/security/zdr_terms_evidence_2026-08-20.md`, which was drafted before Google's decision
+and never applied. The facts now in force: the abuse-monitoring exception was requested
+2026-08-22 and **refused 2026-08-26**; the terms governing the VM path are Google's verified
+defaults — no training use, prompt logging only on classifier-flagged traffic, ≤90 days.
+On that basis:
+
+- **Testing continues on the `mike` persona.** The control is Mike's own use: through it he
+  determines and includes only information he is comfortable potentially leaking. This is the
+  2026-08-26 RESOLVED ruling restated as the standing basis, not a new permission.
+- **`tone_profiler` continues under the same ruling (2026-08-28).** Anything Mike shares with
+  the tool is usable by `tone_profiler`, including third-party correspondence he brings in —
+  the gate is his decision to share, not the channel it arrived by.
+- **Unchanged:** fail-closed routing, the north star (architectural security on private
+  hardware), decontextualization for open-tier work, and the multi-user expiry — this entire
+  basis collapses the moment the deployment stops being single-user, because Mike can gate his
+  own data and nobody else's.
+
 **The 2026-06-11 development-testing carve-out is SUPERSEDED (2026-07-28).** It had permitted
 persona data on any cloud model as "test data." After persona unification **nothing at runtime
 distinguishes a synthetic persona from a real one**, so a rule depending on that distinction

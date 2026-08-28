@@ -75,8 +75,13 @@ back-tagging the rest is `[DB-0815-10]`.
 > against `git log` before promoting anything from here.
 *(empty — triaged 2026-08-27 by `/backlog deep`; evidence in `archive/backlog_closed_2026-08.md` § Closed 2026-08-27)*
 
----
+- **[needs building]** Email intake/parser needs updating to preserve and pass forwarding metadata (e.g., forwarded from secondary accounts), as dropping it caused the system to misinterpret a family member's email as a misdirected message.  
+  `2026-08-28T15:24:22.504583Z`
 
+- **[needs building]** Logistics check should not report a route as 'well covered' or complete if the specific geographical locations of the user's scheduled errands are not yet known or recorded.  
+  `2026-08-28T11:10:10.476712Z`
+
+---
 ## Now
 
 **Ranked — position is priority.** Capped at ~10, so something enters by displacing something.
@@ -335,22 +340,6 @@ the condition has not arrived, push the date rather than closing the item.
 
 ### Decisions — each needs one answer from Mike, not effort
 
-- **[DB-0827-08] The ZDR opt-out is submitted; the § Section 0 amendment ruling is still owed,
-  and it does not wait on Google.** Form submitted 2026-08-22 (answers:
-  `archive/security/zdr_optout_form_answers_2026-08-21.md`); **Google's decision expected
-  ~2026-09-05**, recorded either way in `docs/INFRASTRUCTURE.md` § Vertex AI credentials.
-  **The open act is Mike's ruling on the proposed § Section 0 amendment** at the bottom of
-  `archive/security/zdr_terms_evidence_2026-08-20.md` — whether the sensitive-tier default
-  continues on the corrected basis (flagged-only logging, ≤90 days, no training) until the
-  exception is granted or refused; backstop 2026-10-01. Drafted, not applied. If the request is
-  refused, the `tone_profiler` question returns with it. *(Note: the 08-26 § Section 0 RESOLVED
-  ruling covers the mike-persona-keeps-running question; this amendment is the narrower
-  written-basis half.)*
-  @session: rule on the drafted § Section 0 amendment
-  @waiting: Google's decision email to diamond.mike@gmail.com, expected ~2026-09-05
-  `due: 2026-09-05`
-  *raised by Mike 2026-08-20 · form submitted 2026-08-22 · triaged out of Inbox 2026-08-27*
-
 - **[DB-0818-08] Nothing records where a fact came from, so a checked value is overwritten by a
   guessed one — and an answer with no source is delivered as fact.** Mike, 2026-08-18: *"the CRM needs
   some sort of verification tag for data that will allow it to stick to its guns when an edit or
@@ -415,9 +404,33 @@ the condition has not arrived, push the date rather than closing the item.
   files, ran clean on the VM 2026-08-18 (17 + 17 files, `mike` seen, 0 named-as-live-but-unbuilt).
   **Do not switch to enforce mode before the lists are corrected:** `logistics` calls `send_email`
   without the grant and the dispatcher executes it, so enforcing today kills outbound email.
+  **✅ ALL DECIDED 2026-08-28 (Mike) — the list had drifted to 24 live pairs; every one ruled
+  on, in six clusters. What remains is one supervised Red build pass.** *(1)* **Archive:** reads
+  granted — `finance`, `learning_growth`, `physical_health`, `recreation_hobbies`,
+  `work_vocation` (finance gains the naming line in its file); **writes granted only in the
+  same session as a `write_archive` dedup fix** ([tools/diarist.py:110](tools/diarist.py#L110)
+  has none — five new writers without it invites clutter). *(2)* **Journal: NO grants** —
+  `finance`/`learning_growth`/`logistics` instruction text rewritten to route observations
+  through the Diarist ("multiple entries clogging up the clarity" — Mike). *(3)* **Goals
+  reads granted** (`finance`, `work_vocation`). *(4)* **agent_config granted to
+  `relationships` + `recreation_hobbies`** — completes the specialist set (audited 2026-08-28:
+  the other six domain specialists already hold read+write; non-domain agents correctly hold
+  none). *(5)* **search_memory granted to `pattern_miner` + `recreation_hobbies`** — audited
+  same day; set then complete. *(6)* **Singletons:** `coordinator`→`write_quality_event`
+  granted **with a dedup condition** — the written event travels in the context package so the
+  Synthesizer does not re-log it, plus a code backstop in `tools/logger.py` (same trace + same
+  event type → no-op); `goals_interviewer`→`write_baseline_period` granted;
+  `pattern_miner`→`write_context_tracker` granted; **`learning_growth`→`write_config` NOT
+  granted** — its skill-goals line redirects to `write_agent_config` (already granted; global
+  `write_config` would confirm-prompt on every streak tick). *(7)* The two logistics archive
+  refusals **dropped** — the spec no longer names them; the refusals were the system working.
+  *(8)* **Enforce mode stays off**; the flip is its own decision after the lists are corrected
+  (re-verify the `logistics`→`send_email` state at that moment, not from this note).
   @kind: chore
-  @session: 39 grant decisions — its own run, not a side-task in a sweep
-  *filed 2026-08-10 · guard half closed 2026-08-10 and 2026-08-18 · only the decisions remain*
+  *build owed: one supervised Red pass — both routing files + the cluster-2/finance/LG
+  instruction-text edits — plus the Green dedup fix and logger backstop in the same session.
+  A7 check 10 unblocks when it lands.*
+  *filed 2026-08-10 · guard half closed 2026-08-10 and 2026-08-18 · decisions made 2026-08-28*
 
 - **[DB-0809-02] One unfinished ritual arrives as three or four separate messages.** Read live off
   the VM 2026-08-15: the "three repetitive evening messages" were **four different scheduled jobs**,
@@ -441,10 +454,27 @@ the condition has not arrived, push the date rather than closing the item.
   > symptom*. Mike's 08-22 wording asks for brevity **conditioned on there being nothing new** —
   > which is a focus rule that produces brevity, not a cap. **Build it that way**, and do not
   > reintroduce an unconditional length limit. Confirm the reading with him before building.
+  **✅ DECIDED 2026-08-28 (Mike) — reading confirmed, both halves approved; what remains is the
+  build.** *(1)* The 08-22 wording is a **focus rule conditioned on nothing-new, not a length
+  cap** (the rejected ≤2-sentence cap stays rejected): empty context delta since the last run →
+  short check-in, brevity as a consequence. *(2)* **Asked-state memory** in code
+  (`tools/context_tracker.py` territory): a question asked and unanswered is recorded; later
+  jobs do not re-ask. **Pressing things may be re-raised if urgent — but not frequently and not
+  every time.** *(3)* **Ritual ownership:** a scheduled job does not continue a ritual that is
+  not its own — extend the proven `session_kind()` gate pattern.
+  **The target behaviour, Mike's design frame (2026-08-28), which the build should aim at rather
+  than mere de-duplication:** Metatron informs *what to do NOW*. Open items are worked
+  opportunistically off the list, not nagged: don't remind the user to water the plants — note
+  when the user is home with 5–10 free minutes before the next scheduled obligation and suggest
+  it as a good use of the window; or when the user checks in asking for something to do, surface
+  it if it is the highest-priority item fitting the circumstances. An unanswered question is one
+  more open item on that list, not a broadcast obligation. *(Touches the anticipation pass and,
+  later, `[DB-0815-12]` location — "user is home" is a circumstance signal.)*
   @kind: bug
-  @session: give "raise a thing once" cross-session memory of an unanswered question, or forbid a
-  job from continuing a ritual that is not its own
-  *filed 2026-08-09 · rewritten twice as measurement inverted it · third measurement 2026-08-21*
+  *build owed: asked-state memory + nothing-new focus gate + ritual ownership — mostly
+  Green/Amber code; the one Synthesizer-side Red line rides with the email-surfacing Red session*
+  *filed 2026-08-09 · rewritten twice as measurement inverted it · third measurement 2026-08-21 ·
+  decided 2026-08-28*
 
 - **[DB-0815-11] The system recorded a preference change it appears never to have made.** A
   `SELF_APPLIED` event at `2026-08-15T13:51:39Z`: *"Switched output to Bulgarian transliteration
@@ -488,10 +518,25 @@ the condition has not arrived, push the date rather than closing the item.
   at all without confirmation, and whether a self-applied preference should be checked against the
   template rules *before* it is written rather than flagged the morning after by an audit nobody
   reads. The second is buildable today and does not need the first answered.
+  **✅ POLICY DECIDED 2026-08-28 (Mike) — both calls answered; what remains is the build.**
+  *(1)* **Self-applied (inferred) preference writes are gated behind approval for the time
+  being** — a proposal the user confirms, via the same fingerprinted `consume()` pattern
+  `write_config` uses. **The gate must be toggleable**: once the inference engine around these
+  preferences is strong enough, the approval mechanism may be removed entirely and inference
+  permitted again — build it as a switch, not a hard-coded rule. Explicit user instructions
+  remain ungated (stated, not inferred). *(2)* **Pre-write redundancy check:** before writing,
+  `write_persona` checks whether a toggle/setting/rule elsewhere in the system (templates,
+  `scheduler.yaml`, agent config) already covers the preference — a more appropriate home wins
+  over writing a second copy of an existing rule (the 08-18 instance's exact failure).
+  **Design note for later, Mike's (2026-08-28):** as users accrue, persona preferences likely
+  become binaries/tags for common cases instead of free-form text — possibly worth an early look
+  for communication preferences/tone. Not scoped here; recorded so it survives.
   @kind: bug
-  @session: whether `write_persona` may self-apply an inferred preference at all without confirmation
+  @waiting: detection half (`e673330`) — one live `FALSE_ACTION_CLAIM` event or one clean week
+  *build owed: the approval gate (toggleable) + redundancy check in `tools/` — Green/Amber,
+  Opus build session*
   *filed 2026-08-15 from the machine log · third instance folded in 2026-08-21 from the `/backlog
-  deep` machine-log sweep, with the `RULE_CONFLICT` that confirms it*
+  deep` machine-log sweep, with the `RULE_CONFLICT` that confirms it · policy decided 2026-08-28*
 
 - **[DB-0810-11] Where should code replace model judgment?** Raised by Mike 2026-08-05, never given
   its own session. Three strands: (a) deterministic lookups feeding agents evidence instead of asking
@@ -527,9 +572,26 @@ the condition has not arrived, push the date rather than closing the item.
   supplies it, and how scanning bounds itself. Split out of `[DB-0808-04]` 2026-08-15 — keeping them
   as one entry hid a shippable feature behind an unmade decision for a week.
   **First-draft feature — Mike, 2026-08-27: geolocation belongs in this rendition; moved up in the
-  capstone plan. The design pass (privacy tier) is the gating step and needs his session.**
-  @session: the continuous-location privacy tier
-  *filed 2026-08-10 · split 2026-08-15 · promoted 2026-08-27*
+  capstone plan.**
+  **✅ DESIGN DECIDED 2026-08-28 (Mike) — build owed.** *(1)* **Tier: extra-sensitive, above
+  ordinary sensitive — raw coordinates never enter any model prompt, cloud or local.** Models
+  see only a code-derived zone line ("home since 14:02"); Mike defines named zones; the GPS→zone
+  map is Python, enforced in tool code per the standing principle. *(2)* **Storage: zone
+  transitions, not the trail.** No raw coordinate history kept (debug-only raw points, if ever,
+  get `600` perms and a stated expiry). *(3)* **The phone app (Capacitor) is the tracker.
+  First draft ships two capture modes only: on-message ping and a manual button — both
+  "while using the app" permission, every ping traceable to a user action.** **The on-message
+  ping DEFAULTS OFF — the user must turn it on explicitly, and the off-default is confirmed by
+  test after the build.** Background scheduled/stochastic pings (Capacitor background-geolocation
+  plugin, "allow all the time" permission, persistent notification) are **planned improvements
+  for a later date, not this build**. *(4)* **Scanning bounds:** proactive scans fire on zone
+  transitions or scheduled windows, never a poll loop; a location-keyed query to any NEW
+  external vendor is its own decision, not covered here (Darwin's station pair is accepted).
+  @kind: feature
+  *build owed: client capture (both modes + off-default test) · server zone tool + context line ·
+  zone config — Green/Amber, Opus build session; the age annotation reuses `[DB-0822-06]`'s
+  pattern*
+  *filed 2026-08-10 · split 2026-08-15 · promoted 2026-08-27 · design decided 2026-08-28*
 
 - **[DB-0818-07] The safety regression passes without ever touching stored knowledge.**
   `run_a4_safety.py --suite pipeline` runs against `sarah_chen`, whose VM store holds **one** entry —
@@ -541,9 +603,16 @@ the condition has not arrived, push the date rather than closing the item.
   measures** — a decision, not a chore. `seed_medication_fixture` is the precedent if the answer is
   yes. Related trap: **Mac and VM copies of a persona store diverge silently** and `data/personas/*/`
   is gitignored — anything reasoning about a persona's data must name which machine it read.
+  **✅ DECIDED 2026-08-28 (Mike): seed it and test it, on the condition it stays low cost/effort —
+  and it is not capstone-necessary, so it never blocks capstone work.** Shape: a few health-domain
+  entries on the **VM's** `sarah_chen` store (`seed_medication_fixture` precedent; name the
+  machine — stores diverge silently), including one entry that contradicts a clinical read, where
+  the flag must still win. **Bundle with the full A4 run `[DB-0820-05]`'s Step-6 caching already
+  owes** — one run then exercises both gates. Note in that run's report that the suite now
+  measures "safe *with* standing knowledge," so old baselines are not compared blind.
   @kind: chore
-  @session: seed clinical-adjacent knowledge into the test persona, or accept the gap
-  *raised 2026-08-18 at the close of the knowledge-layering session · triaged out of `## Inbox` 2026-08-18*
+  *raised 2026-08-18 at the close of the knowledge-layering session · triaged out of `## Inbox`
+  2026-08-18 · decided 2026-08-28*
 
 - **[DB-0820-05] Fixing the cache leak frees enough money to put better models behind more agents —
   decide which, once the fix is deployed and re-measured.** Four agents sit on Flash-Lite for cost
@@ -588,11 +657,26 @@ the condition has not arrived, push the date rather than closing the item.
   decision now. **The @waiting condition is met** — half (a)'s reconcile passed on five
   consecutive clean days (evidence: `archive/backlog_closed_2026-08.md` § [DB-0822-01a]) — so
   what remains is the @session Pro decision plus one A4-gated code change.
+  **✅ DECIDED 2026-08-28 (Mike) — coordinator-only, evidence before flip; Step 6 approved.**
+  *(1)* Only `coordinator` is a Pro candidate (the other three gain nothing — analysis above
+  stands). **Offline probe before any live flip:** `tests/run_coord_model_probe.py` (Green,
+  owed) runs ~15 turns × both models through `_run_single_agent("coordinator", …,
+  model_override=…)` — no Synthesizer, no routing edit — plus a replay of the four recovered
+  `ROUTING_MISS` referent failures against Pro. Both models on the uncached path for
+  like-for-like timing. Report: `tests/coord_model_probe_YYYY-MM-DD_flashlite_vs_pro.md`.
+  Live flip (Red, with Mike) only if latency is tolerable per reply; **revert condition travels
+  with the flip so the trial cannot quietly become permanent.** *(2)* **Step-6 specialist
+  caching approved, both parts** — `mental_wellbeing` + `physical_health` onto the cached path
+  behind the full A4 run (which also carries `[DB-0818-07]`'s knowledge seeding — one run, both
+  gates), and the Flash-Lite six included in the same commit. *(3)* **(M) Mike enables the
+  BigQuery billing export** (Console → Billing → Billing export → BigQuery, standard usage
+  cost) to settle the cache-creation rate — meters forward only, so sooner is better; standing
+  cost is BigQuery storage at this volume: cents.
   @kind: feature
-  @session: which agents move to Pro — cost is settled, latency on `coordinator` is the open trade
+  *build owed: probe script + report; A4-gated Step-6 commit; live flip pending probe*
   `due: 2026-09-15`
   *raised 2026-08-20 by Mike at the close of the Vertex billing reconciliation session ·
-  absorbed `[DB-0822-01]`(b) 2026-08-27, both trails kept*
+  absorbed `[DB-0822-01]`(b) 2026-08-27, both trails kept · decided 2026-08-28*
 
 ### Done and deployed — each closes on one ordinary use
 
@@ -737,9 +821,32 @@ with a date.** Nothing new joins this group open-ended.*
   window. A9-adjacent (§ A9's content-free constraint applies if it ever becomes a rollup
   field); probably a Pattern Miner or analytics job, not an agent behaviour. Captures only what
   the user voiced, by construction.
+  **✅ DESIGN DECIDED 2026-08-28 (Mike) — build owed.** *(1)* **Evidence split by
+  checkability:** structured outcomes (calendar event occurred, obligation closed) join in
+  code, deterministically; free-text intentions vs journal/event entries go through a nightly
+  Flash-Lite-tier judgment gate (bare, `intake_extractor` pattern) scoring
+  `fulfilled / unfulfilled / indeterminate` — indeterminate stays indeterminate, no forced
+  verdicts. *(2)* **Window:** `stated_for` + 2-day grace when present; undated intentions
+  default to 7 days; the index reports over a trailing 30 days. *(3)* **Surfaces both ways
+  (c, Mike's call):** internal series + content-free count into the A9 rollup, and
+  qualitatively in the weekly retrospective ("six set out, four done", naming the open ones).
+  Unfulfilled intentions also feed `[DB-0809-02]`'s what-to-do-NOW opportunistic surfacing,
+  not nagging. Useful during testing. **Audit follow-up: `[DB-0828-01]`.**
   @kind: feature
-  @session: design pass — what counts as fulfilment evidence, the window, where it surfaces
-  *raised by Mike 2026-08-26 mid-session · triaged out of Inbox 2026-08-27*
+  *raised by Mike 2026-08-26 mid-session · triaged out of Inbox 2026-08-27 · design decided
+  2026-08-28, build owed*
+
+- **[DB-0828-01] Audit the Accountability Index's judgments once it has ten days of data — are
+  things characterized as they should be?** Mike's instruction 2026-08-28, filed with the
+  `[DB-0827-09]` design. Review a sample of `fulfilled` / `unfulfilled` / `indeterminate`
+  verdicts against the underlying entries: indeterminate especially (is the gate dumping hard
+  cases there?), plus spot-checks that fulfilled/unfulfilled verdicts hold. Exit: a short
+  report; miscategorization patterns go back into the judgment gate's instruction or the join
+  code.
+  @kind: chore
+  @waiting: the `[DB-0827-09]` index build deploying — **at that close, set `due:` to the
+  deploy date + 10 days** (no date until then, so it cannot fire early)
+  *filed 2026-08-28 at Mike's instruction, alongside the index design*
 
 - **[DB-0827-03] Build the CRM sweep — the design is accepted, and the plan MUST BE REVIEWED
   WITH MIKE AGAIN BEFORE ANY BUILD SESSION STARTS.** That review gate is Mike's explicit
@@ -1209,6 +1316,33 @@ the five June 2026 corrections → older than every fix that followed (tone, tim
 bootstrapping all since reworked). Kept, deliberately again: the Heathrow cluster, the 08-02/03
 correction runs, and the unresolved single corrections — behavioural evidence nothing has
 shipped against.)*
+
+- **[user corrected a prior turn]** User corrected my assumption that a dental email for Iva was misdirected to them. I missed the forwarding chain from their secondary account, likely because the email parser didn't pass the forwarding metadata.  
+  `2026-08-28T15:24:16.988533Z`
+
+- **[user corrected a prior turn]** User clarified that the dental email concerned Iva and was a forwarded message, which they attribute to the missed detail in previous summaries.  
+  `2026-08-28T15:23:54.611005Z`
+
+- **[a specialist missed a signal it should have caught]** Coordinator routed user's query about 'who is the appointment for' to past health logs (Aug 26) instead of checking the recent Sept 15 dental email that was the immediate subject of the previous turn.  
+  `2026-08-28T15:20:25.997437Z`
+
+- **[user corrected a prior turn]** User indicates previous summaries of the dental appointment email were incomplete or lacked vital details.  
+  `2026-08-28T15:16:45.353085Z`
+
+- **[user corrected a prior turn]** User corrected a hallucinated yoga entry on Aug 26, and pointed out the logistics check falsely claimed to be covered despite missing destination locations for the swim and pharmacy.  
+  `2026-08-28T11:10:06.488451Z`
+
+- **[user corrected a prior turn]** Logged yoga activity on 2026-08-26 was incorrect; user reports no yoga occurred. Rowan payroll deadline is 1st-5th, not a single date.  
+  `2026-08-28T11:09:38.020295Z`
+
+- **[user corrected a prior turn]** Omitted (none).  
+  `2026-08-28T08:28:20.691477Z`
+
+- **[user corrected a prior turn]** System prematurely inferred plant watering was complete based on focus notes, rather than waiting for explicit user confirmation. User had to correct the record.  
+  `2026-08-28T08:26:43.190609Z`
+
+- **[user corrected a prior turn]** Corrected the plant-watering task completion date; the system had prematurely logged it as done.  
+  `2026-08-28T08:26:23.626062Z`
 
 - **[FALSE_COMPLETION_CLAIM]** Synthesizer reported write_contact as done while it was still awaiting user approval; response replaced.  
   `2026-08-27T09:55:11.565159Z`

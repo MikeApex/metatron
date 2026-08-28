@@ -153,3 +153,31 @@ draining Cluster F, now plus three more one-shot confirmations from this run.
 *Evidence trails: `archive/backlog_closed_2026-08.md` § Closed 2026-08-27 (both sections);
 worker handoffs `archive/handoffs/2026-08-27-{session-hygiene,decline-path,routing-miss}.md`;
 deploy by Mike 2026-08-27 evening.*
+
+---
+
+## Status update 2026-08-28 — the decisions session ran; the batch is 8/8 decided
+
+**Session ① is done.** Every item in the decisions batch is ruled on and recorded in its
+`DEV_BACKLOG.md` entry (the authority for each disposition). One closed outright:
+ZDR `[DB-0827-08]` — Amendment 2026-08-28 applied in `ROADMAP.md` § Section 0, `tone_profiler`
+cleared for anything Mike shares. The rest converted from decisions to build work:
+
+- `[DB-0815-11]` write_persona: approval-gated (toggleable) + pre-write redundancy check.
+- `[DB-0809-02]` ritual: focus-rule reading confirmed; asked-state memory + ritual ownership.
+- `[DB-0818-07]` knowledge seeding: yes, bundled into the A4 run Step-6 caching owes.
+- `[DB-0820-05]` Pro routing: coordinator-only, offline probe before any flip; Step-6 approved.
+- `[DB-0810-03]` grants: all 24 live pairs ruled (six clusters; journals route through Diarist;
+  LG `write_config` redirected). **One supervised Red pass builds it — A7 check 10 unblocks.**
+- `[DB-0827-09]` Accountability Index: designed (c=both surfaces); audit filed `[DB-0828-01]`.
+- `[DB-0815-12]` location: extra-sensitive zone abstraction; app modes 1+2, ping default OFF.
+
+**Revised session order (Mike, 2026-08-28 — grants are quick, so batched, not their own run):**
+② supervised Red session: the `core/scheduler.py` pair (`[DB-0822-07]` + `[DB-0808-11]`) **+ the
+grants pass (`[DB-0810-03]` routing files + instruction-text edits + archive dedup) + Step-6
+caching behind the full A4 run (with `[DB-0818-07]` seeding)** · ③ email surfacing + the
+`[DB-0822-08]` re-measure, picking up the ritual's one Red Synthesizer line and any agent-file
+proposals from the spinoff · ④ CRM sweep build (Opus, after Mike's plan re-review). A
+Green/Amber spinoff chat runs the probe, write_persona gate, ritual code halves, index build and
+location first draft concurrently. (M): BigQuery billing export toggle; caps `[DB-0820-01]`
+due 09-01.
