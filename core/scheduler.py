@@ -225,6 +225,103 @@ def _is_active_day(days_str: str) -> bool:
     return day_name == days_str.lower()
 
 
+# How close (minutes) a roaming interval job may land to a fixed-time session
+# job before it yields and stays quiet. On 2026-08-21 companion_checkin landed
+# at 07:23 and morning_brief fired at 07:30 — two conversations back to back,
+# and the second read the first's prompt as an instruction from the user
+# ([DB-0822-07], which fed the [DB-0815-11] false action claim). The fixed job
+# is the richer one, so it speaks alone; the check-in returns on its next tick.
+# Per-persona override: top-level `interval_near_fixed_minutes` in
+# scheduler.yaml. 0 disables.
+_NEAR_FIXED_DEFAULT_MINUTES = 30
+
+
+def _near_fixed_job_blocks(job_name: str, job_cfg: dict, cfg: dict) -> str | None:
+    """
+    Should this interval job yield to a nearby fixed-time job? Returns a reason
+    to skip, or None to proceed.
+
+    Session jobs only, and only the persona's own scheduler.yaml is scanned:
+    function jobs are silent (no session, no message, nothing to collide with),
+    and agent-written jobs are one-offs or rare enough that a collision there
+    is a delay, not a doubled conversation.
+
+    Both directions on purpose — a check-in landing seven minutes *after* the
+    morning brief is as redundant as one landing seven minutes before it.
+    """
+    if "interval_minutes" not in job_cfg or "agent" not in job_cfg:
+        return None
+    try:
+        window = float(cfg.get("interval_near_fixed_minutes",
+                               _NEAR_FIXED_DEFAULT_MINUTES))
+    except (TypeError, ValueError):
+        window = _NEAR_FIXED_DEFAULT_MINUTES
+    if window <= 0:
+        return None
+
+    now = datetime.now()
+    for other_name, other in (cfg.get("schedules") or {}).items():
+        if other_name == job_name or not isinstance(other, dict):
+            continue
+        # Fixed-time SESSION jobs only.
+        if "time" not in other or "agent" not in other:
+            continue
+        if not other.get("enabled", True):
+            continue
+        # A weekly job only collides on its own day; the rest use the same
+        # day gate the jobs themselves run.
+        if "day" in other:
+            if now.strftime("%A").lower() != str(other["day"]).lower():
+                continue
+        elif not _is_active_day(other.get("days", "daily")):
+            continue
+        try:
+            t = dtime.fromisoformat(str(other["time"]))
+        except ValueError:
+            continue
+        # A fixed job that quiet hours will themselves suppress never fires,
+        # so yielding to it would silence the check-in for nothing.
+        if other.get("respect_quiet_hours", True) and time_in_quiet_hours(cfg, t):
+            continue
+        # Nearest occurrence across midnight: yesterday's and tomorrow's slots
+        # count too, so a 23:55 job still shields a 00:05 check-in.
+        for day_shift in (-1, 0, 1):
+            fixed = datetime.combine(now.date() + timedelta(days=day_shift), t)
+            delta = abs((now - fixed).total_seconds()) / 60.0
+            if delta <= window:
+                return (f"lands {delta:.0f}m from fixed job {other_name!r} "
+                        f"({other['time']}, window {window:.0f}m)")
+    return None
+
+
+def _gates_block(job_name: str, job_cfg: dict, cfg: dict, persona: str) -> str | None:
+    """
+    The gate stack shared by BOTH job kinds. Returns a reason to skip, or None
+    to fire.
+
+    Extracted from `fire_session` on 2026-08-28 ([DB-0808-11]): `fire_function`
+    ran none of these gates, so a function job with a push channel and an
+    interval cadence could have pushed at 3am with nothing to stop it —
+    daily_travel_check was pinned to a fixed morning hour purely as a
+    workaround. One function so the two firing paths cannot drift apart again.
+    """
+    if not _is_active_day(job_cfg.get("days", "daily")):
+        return "not an active day"
+    if not job_cfg.get("enabled", True):
+        return "disabled"
+    # Quiet hours are opt-OUT, not opt-in (2026-08-15). They were opt-in until a
+    # session fired at 00:11 on 2026-08-12 and opened with a four-item briefing —
+    # the gate ran and passed, because that job simply never set the flag. Any job
+    # that has to be *remembered* into silence will eventually be forgotten into
+    # waking someone at midnight, and the cost of the two failure directions is not
+    # symmetric: a job wrongly held until morning is a delay, a job wrongly fired at
+    # 00:11 is the product waking the user. A job that genuinely must run overnight
+    # sets `respect_quiet_hours: false` and says so where it is read.
+    if job_cfg.get("respect_quiet_hours", True) and _in_quiet_hours(cfg):
+        return "quiet hours"
+    return _activity_gate_blocks(job_name, job_cfg, persona)
+
+
 # ---------------------------------------------------------------------------
 # Notification dispatch
 # ---------------------------------------------------------------------------
@@ -279,25 +376,16 @@ def fire_session(job_name: str, agent: str, prompt: str,
     if job_cfg is None:
         job_cfg = cfg.get("schedules", {}).get(job_name, {})
 
-    if not _is_active_day(job_cfg.get("days", "daily")):
-        return
-    if not job_cfg.get("enabled", True):
-        return
-    # Quiet hours are opt-OUT, not opt-in (2026-08-15). They were opt-in until a
-    # session fired at 00:11 on 2026-08-12 and opened with a four-item briefing —
-    # the gate ran and passed, because that job simply never set the flag. Any job
-    # that has to be *remembered* into silence will eventually be forgotten into
-    # waking someone at midnight, and the cost of the two failure directions is not
-    # symmetric: a job wrongly held until morning is a delay, a job wrongly fired at
-    # 00:11 is the product waking the user. A job that genuinely must run overnight
-    # sets `respect_quiet_hours: false` and says so where it is read.
-    if job_cfg.get("respect_quiet_hours", True) and _in_quiet_hours(cfg):
-        print(f"[scheduler] [{persona}] skipping {job_name} — quiet hours", flush=True)
-        return
-
-    blocked = _activity_gate_blocks(job_name, job_cfg, persona)
+    blocked = _gates_block(job_name, job_cfg, cfg, persona)
     if blocked:
         print(f"[scheduler] [{persona}] skipping {job_name} — {blocked}", flush=True)
+        return
+
+    # Session jobs only: don't start a second conversation minutes from a
+    # scheduled one. Not recorded as a fire — min_gap counts real firings.
+    near = _near_fixed_job_blocks(job_name, job_cfg, cfg)
+    if near:
+        print(f"[scheduler] [{persona}] skipping {job_name} — {near}", flush=True)
         return
 
     # Recorded before the session runs, not after: a pipeline takes 20-70s, and
@@ -360,9 +448,17 @@ def _log_error(job: str, message: str, persona: str | None = None) -> None:
 # ---------------------------------------------------------------------------
 
 def fire_function(job_name: str, fn_path: str, persona: str,
-                  notification: str = "false") -> None:
+                  notification: str = "false",
+                  job_cfg: dict | None = None) -> None:
     """
     Call a Python function directly (no LLM session). Used for maintenance jobs.
+
+    Runs the same gate stack as `fire_session` ([DB-0808-11], 2026-08-28) —
+    until then a function job ran no gates at all, so one with a push channel
+    and an interval cadence could have pushed at 3am. NOTE the flip side: a
+    silent overnight job (the 05:30-05:40 audits, ambient_refresh) now needs
+    `respect_quiet_hours: False` in its definition or quiet hours will hold it —
+    every `_DEFAULT_JOBS` entry sets the flag explicitly for exactly that reason.
 
     The persona is bound for the call. Without it these jobs inherited whatever
     persona happened to be left in the process from the last session — which is
@@ -382,6 +478,21 @@ def fire_function(job_name: str, fn_path: str, persona: str,
     that specific run actually found something, so "nothing wrong" cannot notify.
     """
     import importlib
+    cfg = _load_config(persona)
+    if job_cfg is None:
+        # Fallback chain mirrors fire_session's, plus the code-defined defaults —
+        # most function jobs live in _DEFAULT_JOBS, not scheduler.yaml.
+        job_cfg = (cfg.get("schedules", {}).get(job_name)
+                   or _DEFAULT_JOBS.get(job_name, {}))
+
+    blocked = _gates_block(job_name, job_cfg, cfg, persona)
+    if blocked:
+        print(f"[scheduler] [{persona}] skipping {job_name} — {blocked}", flush=True)
+        return
+
+    # Same reasoning as fire_session: firing is what min_gap limits.
+    _record_fire(job_name, persona)
+
     try:
         with persona_scope(persona):
             module_path, fn_name = fn_path.rsplit(".", 1)
@@ -426,6 +537,16 @@ def fire_function(job_name: str, fn_path: str, persona: str,
 # deploys, which is the actual requirement. A persona overrides any of these by
 # defining the same key in its own scheduler.yaml — including `enabled: false` to
 # turn one off. Persona config always wins; this is a floor, not a ceiling.
+#
+# EVERY entry here sets `respect_quiet_hours: False` explicitly, because since
+# 2026-08-28 function jobs run the full gate stack ([DB-0808-11]) and most of
+# these fire pre-dawn (05:30-05:40) or overnight — inside the default 22:00-07:00
+# quiet window. Quiet hours protect the user's sleep; these jobs are silent by
+# construction, so the asymmetry that made quiet hours opt-out for session jobs
+# runs the other way here: a silent job wrongly held means the morning brief
+# reads stale data, and no setting can wake anyone. A persona that redefines one
+# of these owns the whole definition (per-key merge above) — carry the flag over
+# or the job goes quiet at night.
 _DEFAULT_JOBS: dict[str, dict] = {
     "ambient_refresh": {
         "enabled": True,
@@ -433,6 +554,7 @@ _DEFAULT_JOBS: dict[str, dict] = {
         "days": "daily",
         "function": "tools.ambient.refresh_ambient_context",
         "notification": False,
+        "respect_quiet_hours": False,   # silent; overnight refresh keeps 07:30 context fresh
     },
     "daily_rule_audit": {
         "enabled": True,
@@ -440,6 +562,7 @@ _DEFAULT_JOBS: dict[str, dict] = {
         "days": "daily",
         "function": "tools.rule_audit.audit_rules",
         "notification": False,
+        "respect_quiet_hours": False,   # silent; pre-dawn on purpose
     },
     "daily_calendar_dedup_audit": {
         "enabled": True,
@@ -447,6 +570,7 @@ _DEFAULT_JOBS: dict[str, dict] = {
         "days": "daily",
         "function": "tools.calendar_audit.audit_calendar_duplicates",
         "notification": False,
+        "respect_quiet_hours": False,   # silent; pre-dawn on purpose
     },
     # A9 product analytics. 05:40 so it follows the other two audits, and it rolls up
     # YESTERDAY, which is a closed day. Collection has to start before Alpha even while
@@ -458,32 +582,36 @@ _DEFAULT_JOBS: dict[str, dict] = {
         "days": "daily",
         "function": "tools.analytics.rollup_yesterday",
         "notification": False,
+        "respect_quiet_hours": False,   # silent; pre-dawn on purpose
     },
     # Notes passed events that nothing in the record mentions, for the morning brief to
     # decide about. `notification: False` is not a preference — reconcile_check returns a
     # plain string and never a notify dict, because the check is crude text matching and
-    # cannot support the claim that anything was missed. Fixed time because fire_function
-    # runs no gate stack at all (`[DB-0808-11]`), so an interval job here could fire at 3am.
+    # cannot support the claim that anything was missed. (The fixed time predates the
+    # gate-stack extraction — kept because ~2h before the brief is simply the right slot.)
     "daily_calendar_reconcile": {
         "enabled": True,
         "time": "05:40",          # after the dedup audit; ~2h before the morning brief reads it
         "days": "daily",
         "function": "tools.calendar_reconcile.reconcile_check",
         "notification": False,
+        "respect_quiet_hours": False,   # silent; pre-dawn on purpose
     },
     # Inbound intake (tools/intake.py): read new messages, classify, queue per domain.
     # Notifies nothing, ever — sweep() returns a plain string, so fire_function's notify
     # path is never taken; what reaches the user rides the morning brief via
-    # context_block(). An interval job is safe here despite the absent gate stack
-    # (`[DB-0808-11]`) because sweep() checks quiet hours itself and no-ops — the
-    # in-code check exists precisely so this entry does not depend on a gate the
-    # mechanism does not run. No-op when the persona has intake disabled (the default).
+    # context_block(). sweep() also checks quiet hours in-code and no-ops — it predates
+    # the gate stack reaching function jobs ([DB-0808-11], closed 2026-08-28). The flag
+    # below defers to that in-code check rather than duplicating the decision at the
+    # scheduler layer; two copies of "is it night?" would eventually disagree.
+    # No-op when the persona has intake disabled (the default).
     "intake_sweep": {
         "enabled": True,
         "interval_minutes": 60,
         "days": "daily",
         "function": "tools.intake.sweep",
         "notification": False,
+        "respect_quiet_hours": False,   # sweep() gates itself; see note above
     },
     # Builds the weekly review digest and PARKS it — context_block() hands it to the
     # next session that loads coordinator context (in practice the morning brief) and
@@ -501,6 +629,7 @@ _DEFAULT_JOBS: dict[str, dict] = {
         "day": "sunday",
         "function": "tools.intake.digest_job",
         "notification": False,
+        "respect_quiet_hours": False,   # silent (parks the digest); 06:30 is inside quiet hours
     },
 }
 
@@ -640,8 +769,9 @@ def _register_schedules(persona: str) -> None:
         # Function jobs call a Python callable directly — no LLM session
         if "function" in job:
             fn_path = job["function"]
-            def make_fn_job(jn=job_name, fp=fn_path, pe=persona, no=notification):
-                return lambda: fire_function(jn, fp, pe, no)
+            def make_fn_job(jn=job_name, fp=fn_path, pe=persona, no=notification,
+                            jc=job):
+                return lambda: fire_function(jn, fp, pe, no, job_cfg=jc)
             job_fn = make_fn_job()
         else:
             agent = job["agent"]

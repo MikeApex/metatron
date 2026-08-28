@@ -27,15 +27,14 @@ is a fact from an airline; this has no equivalent authority behind it.
 The counterpart rule: a model session may judge but must not poll. Neither half does the
 other's work.
 
-FIXED TIME, NOT AN INTERVAL
----------------------------
-`fire_function` runs no gate stack — `days`, `respect_quiet_hours` and the activity gate
-are all checked inside `fire_session` only (DEV_BACKLOG `[DB-0808-11]`). An
-`interval_minutes` job would therefore be capable of firing at 3am with nothing to stop it.
-This is the **third** workaround around that same missing gate stack, after
-`daily_travel_check` at 06:45 and the maintenance jobs at 05:30/05:35. Pinning is cheap
-here because the output is consumed by the morning brief rather than pushed — but the gap
-should not be allowed a fourth dependent.
+FIXED TIME BY CHOICE, NOT AS A WORKAROUND (updated 2026-08-28)
+--------------------------------------------------------------
+The fixed time was originally a workaround: `fire_function` ran no gate stack at all
+(`[DB-0808-11]`), so an interval job could have fired at 3am. That gap is closed — function
+jobs now run the same gates as session jobs (`_gates_block` in core/scheduler.py). The
+05:40 pin stays because it is simply the right slot: ~2h before the morning brief that
+consumes the output. Note the job's `_DEFAULT_JOBS` entry sets `respect_quiet_hours: False`
+— 05:40 is inside the default quiet window, and this job is silent by construction.
 
 It registers in `_DEFAULT_JOBS` (core/scheduler.py), not config/templates/scheduler.yaml.
 Silent token-free infrastructure belongs there: the template is copied **once**, at persona

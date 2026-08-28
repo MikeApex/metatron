@@ -102,16 +102,18 @@ schedules:
   # reports each one once. See tools/travel_watch.py for why detection requires
   # two independent signals before it believes a flight number.
   #
-  # A FIXED MORNING TIME, NOT AN INTERVAL — this is load-bearing. `fire_function`
-  # does not run the gate stack that `fire_session` does: `days`,
-  # `respect_quiet_hours` and the activity gate are all checked inside
-  # fire_session only. An `interval_minutes` job here would therefore be capable
-  # of pushing at 3am with nothing to stop it. Until that gap is closed
-  # (DEV_BACKLOG), any notifying function job must run at an explicit daytime
-  # hour. 06:45 gives time to act on a morning departure.
+  # Function jobs run the full gate stack since 2026-08-28 ([DB-0808-11]) — the
+  # old warning that an interval job here could push at 3am no longer applies.
+  # `respect_quiet_hours: false` is deliberate and load-bearing: 06:45 sits
+  # inside the default 22:00-07:00 quiet window, and without the flag the gate
+  # would silently skip this job every single day. Being woken at 06:45 because
+  # the morning departure is cancelled is the feature's entire point — it
+  # notifies ONLY on an actual delay, cancellation or disruption, so the flag
+  # cannot produce a routine 3am push. 06:45 gives time to act.
   daily_travel_check:
     enabled: true
     time: "06:45"
     days: daily
     function: tools.travel_watch.travel_check
     notification: push
+    respect_quiet_hours: false

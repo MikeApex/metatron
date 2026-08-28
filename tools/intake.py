@@ -75,16 +75,19 @@ the message they were not shown. So:
 WHY THE SWEEP IS SILENT, AND WHY THAT SETTLES AN OLDER DECISION
 ----------------------------------------------------------------
 config/templates/email.yaml records a standing decision that nothing polls the mailbox on
-a timer, because `fire_function` in core/scheduler.py runs no gate stack at all — no
+a timer, made when `fire_function` in core/scheduler.py ran no gate stack at all — no
 quiet hours, no activity gate (`[DB-0808-11]`) — so a scheduled mail job "would push mail
-at 3am with nothing to stop it."
+at 3am with nothing to stop it." That gap closed 2026-08-28: function jobs now run the
+same gates as session jobs.
 
-The objection is about *notification*, not *reading*, and it still holds. `sweep()`
-returns a plain string and never the `{"notify": True}` dict form, so the notify path
-fire_function offers is never taken and the missing gate stack has nothing to gate. What
-reaches the user is the digest, which is a separate fixed-time job whose output goes
-through the morning brief — where quiet hours already apply. Both halves of that
-reconciliation are written into email.yaml too; if you change one, change both.
+The objection was about *notification*, not *reading*, and both layers now hold it:
+`sweep()` returns a plain string and never the `{"notify": True}` dict form, so the notify
+path fire_function offers is never taken — and sweep() still checks quiet hours in-code,
+which is why its `_DEFAULT_JOBS` entry sets `respect_quiet_hours: False` (one copy of the
+decision, here, rather than two that could disagree). What reaches the user is the digest,
+a separate fixed-time job whose output goes through the morning brief — where quiet hours
+already apply. Both halves of that reconciliation are written into email.yaml too; if you
+change one, change both.
 """
 
 from __future__ import annotations
