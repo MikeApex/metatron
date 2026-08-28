@@ -58,6 +58,14 @@ class TurnRecord:
     input_tokens: int = 0
     output_tokens: int = 0
     thinking_tokens: int = 0
+    # The part of input_tokens served from a Vertex context cache — INCLUDED in
+    # input_tokens, never added to it. `record_turn_tokens` has always received
+    # this and forwarded it to the spend guard, but dropped it here, so nothing
+    # reading a trace could tell a cache hit from a miss: every Book entry and
+    # every test looked identical whether caching worked or not. That is the
+    # exact shape of the 2026-06-24 failure (a month of silently uncached calls),
+    # so the number the guard prices on is now also the number a reader can see.
+    cached_tokens: int = 0
     output_text: str = ""
     thinking_text: str = ""
     tool_calls: list[ToolCallRecord] = field(default_factory=list)
@@ -100,6 +108,11 @@ class AgentRecord:
 
     def total_thinking_tokens(self) -> int:
         return sum(t.thinking_tokens for t in self.turns)
+
+    def total_cached_tokens(self) -> int:
+        """Input tokens served from a Vertex context cache. A zero here across a
+        whole run means caching is not happening, not that it is free."""
+        return sum(t.cached_tokens for t in self.turns)
 
     def has_tool_calls(self) -> bool:
         return any(t.tool_calls for t in self.turns) or any(s.has_tool_calls() for s in self.subagents)
@@ -255,6 +268,7 @@ def record_turn_tokens(rec: AgentRecord | None, turn_num: int,
     tr.input_tokens = input_tokens
     tr.output_tokens = output_tokens
     tr.thinking_tokens = thinking_tokens
+    tr.cached_tokens = cached_tokens
     tr.output_text = output_text
     tr.thinking_text = thinking_text
 
@@ -333,6 +347,7 @@ def _agent_to_dict(a: AgentRecord) -> dict:
                 "input_tokens": tr.input_tokens,
                 "output_tokens": tr.output_tokens,
                 "thinking_tokens": tr.thinking_tokens,
+                "cached_tokens": tr.cached_tokens,
                 "output_text": tr.output_text,
                 "thinking_text": tr.thinking_text,
                 "tool_calls": [
@@ -360,6 +375,7 @@ def _agent_to_dict(a: AgentRecord) -> dict:
         "total_input_tokens": a.total_input_tokens(),
         "total_output_tokens": a.total_output_tokens(),
         "total_thinking_tokens": a.total_thinking_tokens(),
+        "total_cached_tokens": a.total_cached_tokens(),
         "duration_ms": a.duration_ms,
     }
 
