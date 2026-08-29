@@ -3422,3 +3422,29 @@ handoffs: `archive/handoffs/2026-08-27-{session-hygiene,decline-path,routing-mis
   `tests/test_medication_tier.py` 10 checks incl. fallbacks; A4 clinical quick re-run against
   the edited file 3/3 with the model emitting the name suffix unprompted
   (`tests/a4_safety_rerun_2026-08-28_cloud_clinical_quick_medranking.md`). Deployed 2026-08-28.
+
+## Closed 2026-08-29 — the confirm-drain session (live exercises with Mike)
+
+- **[DB-0815-05] Corrections about other people were rewriting who Mike is — CLOSED on a live
+  pass.** 2026-08-29 ~13:12–13:20 BST: Mike corrected a contact's name in conversation twice
+  (Iva→Eva, then Eva→Iva after a misroute detour); both corrections routed to `write_contact`
+  through the confirm gate and landed in `crm/contacts.json` (final state `Iva Diamond`
+  verified live). `config/personas/mike/profile.yaml` untouched throughout — mtime still
+  2026-08-20, `name` field clean. The guard (`97b777c`) plus model tool choice both held; the
+  approve-and-act path (`POST /confirm` 13:13:58 → rename applied) exercised too. The detour
+  itself is recorded as evidence on `[DB-0826-01]` (fifth referent-resolution instance), not
+  against this item.
+
+- **[DB-0809-16] The dictation readout has never been spoken to — CLOSED on a live dictated
+  turn.** 2026-08-29, confirm-drain session: Mike dictated a turn by mic in the web app;
+  readout appeared, transcription accurate, turn answered. His verdict verbatim: "Pass."
+  First human-voice exercise of a path previously only code-verified (2026-08-05).
+
+- **[DB-0810-01] Answers appeared twice when the connection dropped — CLOSED on a live
+  reconnect in both environments.** 2026-08-29, confirm-drain session: Mike sent a question and
+  backgrounded immediately (before first chunk), 45+ s away, returned — reply rendered once, in
+  the installed APK (rebuilt this morning, current client) and in Chrome, which was connected
+  concurrently and also rendered once — so the deliberate multi-device broadcast set
+  (`core/server.py:748`) delivered to both sockets without doubling on either. Fix under test
+  was `fd273bf` (detach dying socket, wait for real close, 1500 ms fallback). First run was
+  discarded as evidence: backgrounding after the reply arrived exercises no race.

@@ -294,8 +294,15 @@ Each is a defect measured in the 2026-08-21 traces, not a proposal.*
   structural referent context (`tools/turn_context.py` pattern) over instruction-only, since
   Pro's winning move was following a rule `coordinator.md` already states and Flash-Lite
   ignores. Reproduction suite exists: `tests/run_coord_model_probe.py` Suite B-hard.
+  **Fifth instance, live 2026-08-29 during the confirm drain:** *"Now set it back to Iva"* —
+  one turn after a contact-name correction — was resolved to a **declined email** instead of
+  the rename: the Coordinator re-proposed the refused send (Mike declined again), the
+  Synthesizer claimed the rename done (no `write_contact` call in the trace), and a fabricated
+  "user reversed his decline" `USER_CORRECTION` was logged. The system's own `ROUTING_MISS`
+  event (`2026-08-29T12:14:47Z`) names the misinterpretation — self-diagnosed and proceeded
+  anyway, same as the 08-26 instance.
   @kind: bug
-  *filed 2026-08-26 at Mike's instruction, from the live trace*
+  *filed 2026-08-26 at Mike's instruction, from the live trace · fifth instance 2026-08-29*
 
 - **8. [DB-0827-01] Declining a confirmation does nothing, so the prompt comes back until you
   give in and approve it.** Mike, live 2026-08-27, on the first decline anyone has ever performed:
@@ -350,6 +357,27 @@ Each is a defect measured in the 2026-08-21 traces, not a proposal.*
   @waiting: the owed deploy, then one day with no new empty-label events in the VM quality log
   *filed 2026-08-27 from the deep-run machine sweep, VM quality events read live · built same day
   by the session-hygiene attack worker*
+
+- **10. [DB-0829-01] The log recorded an email as sent while it was still waiting for approval —
+  and it was then declined.** Live 2026-08-29, during the confirm-drain session, watched end to
+  end: Mike asked for an email to Iva Diamond at 13:00; `send_email` correctly raised the
+  confirm gate (nothing was sent — verified in `pending_confirmations.json` and by the absence
+  of any `POST /confirm`); the model's streamed *"That's sent to Iva"* was correctly amended by
+  `enforce_pending_receipt()` — **but in the same exchange the Coordinator dispatched a log
+  write recording "user sent an email to Iva Diamond to coordinate a call for next week"**
+  (trace `2026-08-29T13:00:12`, the dispatch turn's `user_input` states it as fact). Mike then
+  declined the send at 13:05. So the user-facing text was corrected and the durable record was
+  not: the day log carries an event that never happened, which later runs read back as fact —
+  the same carried-state poison mechanism as `[DB-0822-06]`, one layer earlier (written from a
+  *claimed* action rather than a stale one). The 13:07 turn logged the reconsideration, so the
+  record is partially self-corrected this time; nothing guarantees that.
+  **Shape of the fix, not a decision:** the receipt enforcer knows the action is pending — the
+  same signal should gate (or reword) any same-turn log/journal dispatch describing the gated
+  action as done; a declined action should never survive in the log as performed.
+  **Adjacent, same event:** the actions logger recorded `send_email — completed` for the
+  merely-gated call (`journalctl` 13:00:18) — "completed" should not describe a pending action.
+  @kind: bug
+  *filed 2026-08-29 at Mike's instruction, from the live confirm-drain exchange*
 
 ## Later
 
@@ -664,36 +692,6 @@ with a date.** Nothing new joins this group open-ended.*
   @waiting: corpus labelled by Mike on the VM (needs a few days of swept mail first)
   @kind: feature
   *filed 2026-08-20 during intake rollout; steps (b)–(d) are Claude's, (a) and the flip are Mike's*
-
-- **[DB-0810-01] Answers appeared twice when the connection dropped.** Fixed and deployed
-  2026-08-18 (`fd273bf`): the client detaches the dying socket and waits for its real `close` before
-  connecting, with a 1500 ms fallback. `tests/test_ws_reconnect_race.js` 5/5, **confirmed failing on
-  HEAD first**. **Option (ii) was wrong and must not be revisited** — refusing a second connection
-  per persona breaks the deliberate multi-device broadcast set (`core/server.py:748`).
-  @kind: bug
-  @waiting: one live reconnect — background the app past 45s, return, confirm a streaming reply
-  renders once. Browser and Android WebView. **Do not close on "it works now"**: a restart previously
-  looked like a fix and only showed the stored record was clean.
-  *filed 2026-08-10 by Mike, live*
-
-- **[DB-0815-05] Corrections about other people were rewriting who Mike is.** His `profile.yaml`
-  `name` field literally read *"Contact name updated from Eva to Iva."*, and `load_profile()` put
-  that sentence in every head-layer prompt as his name. Almost certainly the mechanism behind a
-  correction he made five times. **Data fixed on the VM 2026-08-15**; guard built and deployed
-  (`97b777c`, registered `704e79b`) — `write_profile` refuses a `name`/`other` value reading as a
-  third-party correction and points the caller at `write_contact`. Narrow and conjunctive by design;
-  verified not to refuse "Robert Smith Jr.".
-  @kind: bug
-  @waiting: one live turn where Mike corrects a contact name, then check `profile.yaml` is untouched
-  — what is being tested is whether the *model* now picks the right tool, which is behaviour
-  *filed 2026-08-15*
-
-
-- **[DB-0809-16] The dictation readout has never been spoken to.** Code-verified against every pass
-  condition 2026-08-05; never run by a human with a microphone.
-  @kind: chore
-  @waiting: one dictated turn
-  *filed 2026-08-05*
 
 - **[DB-0809-21] The calendar reconcile has never had a live candidate to raise — until,
   probably, the Mousetrap duplicates.** `daily_calendar_reconcile` re-ran clean with 0 candidates
@@ -1262,6 +1260,30 @@ bootstrapping all since reworked). Kept, deliberately again: the Heathrow cluste
 correction runs, and the unresolved single corrections — behavioural evidence nothing has
 shipped against.)*
 
+*(swept 2026-08-29 by the confirm-drain session, scoped to actionable-vs-cleared. Deleted with
+pointers: the four referent-resolution events (08-26 undo-merge, 08-18 read-back, 08-15
+'Approved', 08-10 'previous request') → all four are quoted data points inside `[DB-0826-01]`;
+the 08-27 `FALSE_COMPLETION_CLAIM` → the receipt enforcer worked (response replaced) and the
+surviving log-write half is filed as `[DB-0829-01]`; the 08-28 `recreation_hobbies`
+`read_agent_config` denial → **cleared by the `[DB-0810-03]` grants pass**
+(`routing_cloud.yaml:235`, deployed 2026-08-29); the 08-28 "Omitted (none)" empty label →
+`[DB-0827-07]`'s class, fix deployed 2026-08-29, clean-day confirm pending. Kept deliberately:
+the 08-28 dental-forwarding cluster (rides the Inbox forwarding-metadata entries, untriaged),
+the 08-28/29 re-ask and deferral corrections (the asked-state/re-propose fixes deployed
+2026-08-29 — tomorrow's re-measure day is their confirm), the two 08-29 calendar-duplicate
+reports (Mike's resolution owed, with `[DB-0809-21]`'s Mousetrap pair), the ×1
+agent-named-itself discretion slip (check-5 evidence, below promotion threshold), and the
+Heathrow/early-August behavioural clusters per the 08-21 ruling.)*
+
+*(Five 12:12–12:15Z entries synced after the sweep above are all artifacts of the 2026-08-29
+confirm-drain session's own live testing, dispositioned the hour they occurred: the ROUTING_MISS
+and the fabricated "reversed decision" correction → quoted verbatim as `[DB-0826-01]`'s fifth
+instance; the FALSE_COMPLETION_CLAIM → the receipt enforcer catching a premature "rename done"
+claim user-facing (its log-write sibling is `[DB-0829-01]`); the two Iva/Eva corrections → the
+evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording — "causing an
+unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
+entry is a symptom, never a diagnosis.)*
+
 - **[user corrected a prior turn]** Mike is questioning the validity of the "admin-masking" concept noted in his logs, attributing his focus on small tasks to deadline proximity and energy rhythms instead.  
   `2026-08-29T09:38:01.472190Z`
 
@@ -1289,9 +1311,6 @@ shipped against.)*
 - **[agent named itself to the user]** In the same exchange, the response referred to "Learning" as a tool — naming the `learning_growth` subagent directly rather than speaking as one voice. Discretion-between-layers violation (agent identity should never surface in user-facing output).  
   `2026-08-28T19:54:47.978356Z`
 
-- **[agent wanted a tool it lacks]** `recreation_hobbies` attempted `read_agent_config` (agent_name) but it is not in its allowed_tools. Its instruction file asks for this capability. Decide: grant it, build it, or drop the instruction.  
-  `2026-08-28T19:42:15.105284Z`
-
 - **[user corrected a prior turn]** Model incorrectly insisted user was at the playground 'admin-masking' and raised the Prudential review. User corrected: he had been working for 3 hours, and instructed model to stop mentioning Prudential.  
   `2026-08-28T19:34:52.795710Z`
 
@@ -1316,29 +1335,14 @@ shipped against.)*
 - **[user corrected a prior turn]** Logged yoga activity on 2026-08-26 was incorrect; user reports no yoga occurred. Rowan payroll deadline is 1st-5th, not a single date.  
   `2026-08-28T11:09:38.020295Z`
 
-- **[user corrected a prior turn]** Omitted (none).  
-  `2026-08-28T08:28:20.691477Z`
-
 - **[user corrected a prior turn]** System prematurely inferred plant watering was complete based on focus notes, rather than waiting for explicit user confirmation. User had to correct the record.  
   `2026-08-28T08:26:43.190609Z`
 
 - **[user corrected a prior turn]** Corrected the plant-watering task completion date; the system had prematurely logged it as done.  
   `2026-08-28T08:26:23.626062Z`
 
-- **[FALSE_COMPLETION_CLAIM]** Synthesizer reported write_contact as done while it was still awaiting user approval; response replaced.  
-  `2026-08-27T09:55:11.565159Z`
-
-- **[a specialist missed a signal it should have caught]** Coordinator routed "Undo that merge" to work_vocation thinking it referred to the Prudential/Apex project, completely missing the conversational context where the user had just asked to merge the contacts Marcus Whitfield and Marcus Delgado in the immediately preceding turn.  
-  `2026-08-26T16:36:07.024888Z`
-
-- **[a specialist missed a signal it should have caught]** Coordinator interpreted 'Read that back to me again' as a request about Prudential scheduling, but it was a direct request to repeat the food profile data provided in the immediately preceding turn.  
-  `2026-08-18T15:39:33.761495Z`
-
 - **[a specialist missed a signal it should have caught]** Coordinator misinterpreted phonetic Bulgarian speech-to-text bug report as a psychological pivot to rest. User is reporting an audio transcription bug where Bulgarian is parsed as English. 'Raspira' means 'understands' (Разбира), not 'breathe/rest'.  
   `2026-08-15T13:49:28.614262Z`
-
-- **[a specialist missed a signal it should have caught]** Coordinator interpreted 'Approved' as referring to the credit card payment and Prudential call, but the user was approving the test email to Kathleen from the previous turn. Logistics erroneously closed the credit card obligation as a result.  
-  `2026-08-15T11:16:06.210340Z`
 
 - **[a specialist missed a signal it should have caught]** The system failed to route the user's explicit request to check the inbox to the logistics agent in the previous turn.  
   `2026-08-14T15:34:58.664405Z`
@@ -1351,9 +1355,6 @@ shipped against.)*
 
 - **[a specialist missed a signal it should have caught]** Logistics received scheduling directives but only returned a log write confirmation instead of taking the calendar actions.  
   `2026-08-10T15:11:45.521931Z`
-
-- **[a specialist missed a signal it should have caught]** Coordinator misunderstood 'previous request' as the Iva lunch instead of the immediate prior turn asking for Transport, Weather, and Pollen research.  
-  `2026-08-10T10:28:57.401389Z`
 
 - **[a specialist missed a signal it should have caught]** Coordinator missed that the user message was a system instruction about check-in formatting, instead resolving intent as a literal request for a check-in.  
   `2026-08-09T09:06:40.509678Z`
