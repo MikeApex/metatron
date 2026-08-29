@@ -1,0 +1,53 @@
+# CRM sweep — the nightly capture pass over yesterday's record.
+#
+# scripts/new_persona.sh copies this to config/personas/{persona}/crm_sweep.yaml. It holds
+# no credentials and no personal data, so this copy is not gitignored — but the live one
+# describes how closely one person's conversations are read, which is worth treating with
+# the same care.
+#
+# It is also the DEFAULT SOURCE at runtime: tools/crm_sweep.py reads any key absent from
+# the persona's own file from here. Same reasoning as intake.yaml and email.yaml — a
+# template is copied once, at persona creation, and nothing propagates a later change to
+# an existing persona, so a default that lived only here would reach only personas
+# provisioned after it existed.
+#
+# WHAT THIS FILE IS FOR
+# ---------------------
+# People are mentioned all day in conversations that are not *about* them, and the CRM
+# only ever hears the ones that reach the relationships specialist. The sweep reads a
+# whole closed day once a night and SUGGESTS what could be recorded. It never writes.
+# Everything it finds waits for the user to accept it.
+#
+# The design test this file has to pass: the user can make the sweep quieter, or silent,
+# without a code change. If tuning it ever requires editing tools/crm_sweep.py, that is a
+# design failure (CLAUDE.md § Config files are the product).
+
+# OFF by default, and stays off until the user turns it on. The sweep reads a full day of
+# conversation and journal text, which is the most personal material this system holds —
+# that is not something to start doing to a persona because a deploy happened. Same
+# posture as intake.yaml.
+enabled: false
+
+# One batch approval tap before anything is written, covering the whole accepted set
+# rather than each item (Mike, 2026-08-22). Set false and accepted suggestions apply on
+# the user's word alone — the conversation is still the gate, there is just no card.
+# Reachable conversationally through the gated write_config path, so it can be switched
+# off in the moment it becomes a nuisance rather than at the next session.
+apply_confirm: true
+
+# Most suggestions filed from one run. The cap is about the REVIEW, not the model: a list
+# nobody can face in a minute is a list that gets rubber-stamped, and a rubber-stamped
+# review queue is worse than none because it launders guesses into recorded fact.
+# Overflow is counted in the run's state file and dropped, never silently applied — and
+# ranking is recurrence-weighted, so what is dropped is the passing mention rather than
+# the person who came up all week.
+daily_cap: 10
+
+# How many days one run will read when it is catching up after downtime. The cursor
+# normally resolves to yesterday alone; this bounds what a stopped VM can turn into. A
+# month of backlog would be one enormous call against a cap that would discard most of
+# its output anyway.
+max_catchup_days: 7
+
+# How often the sweep runs is NOT set here — it is core/scheduler.py's `crm_sweep` job,
+# because cadence is mechanism and this file is content (One Home Per Rule Class).

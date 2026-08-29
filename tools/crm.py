@@ -1331,6 +1331,16 @@ def list_contacts(
     return json.dumps(results, indent=2)
 
 
+def _interaction_fingerprint(entry_date: str, summary: str) -> str:
+    """Date plus normalized summary — what makes two entries the same event.
+
+    Case- and whitespace-insensitive, because the same conversation logged twice
+    rarely round-trips through a model with identical spacing.
+    """
+    normalized = re.sub(r"\s+", " ", str(summary or "")).strip().casefold()
+    return entry_date + "|" + normalized
+
+
 def log_interaction(
     contact_id: str = "",
     name: str = "",
@@ -1338,14 +1348,35 @@ def log_interaction(
     summary: str = "",
     follow_up: str = "",
     date: str = "",
+    source: str = "",
 ) -> str:
     """
     Append an interaction entry to a contact's interaction_log.
-    Also updates the contact's last_contact date to the interaction date.
+    Also advances the contact's last_contact date when the interaction is more recent.
 
     Passing `contact_id` and `name` together records the user's answer to "which
     Bill?" so the question is not asked again; passing `name` alone reuses an
     answer already given.
+
+    `source` is stamped on the entry when given and is NOT in the tool schema — it is
+    for Python callers that know the provenance (`tools/crm_sweep.py` passes "sweep").
+    A model calling this tool is the conversational path and has no source to declare;
+    exposing the field would only let it assert one.
+
+    Two guards, both for hazards verified live on 2026-08-27 and shipped with the CRM
+    sweep ([DB-0827-03]) because a nightly proposal pipeline turns each from an
+    occasional annoyance into a recurring one:
+
+    - **Duplicate entries are refused, not appended.** The same date and summary
+      logged twice produced two identical rows, so an interaction re-mentioned in a
+      later conversation silently doubled. Refusing is safe here in a way it is not for
+      a near-match on a person: the entry it collides with is already recorded, so
+      nothing is lost.
+    - **`last_contact` only ever advances.** It was assigned unconditionally, so
+      logging a backdated interaction — "I saw Dave last month" — REGRESSED the field
+      and made a current contact look stale. Anything reading it as recency (the
+      contact-frequency prompts) was then wrong in the direction that generates a
+      nudge to call someone you just spoke to.
 
     Returns a confirmation string.
     """
@@ -1398,17 +1429,38 @@ def log_interaction(
         }
         if follow_up:
             entry["follow_up"] = follow_up
+        if source:
+            entry["source"] = source
 
         if "interaction_log" not in target:
             target["interaction_log"] = []
-        target["interaction_log"].append(entry)
-        target["last_contact"] = interaction_date
-        target["updated"] = today
 
-        _save_contacts(contacts)
+        # GUARD 1 — the same event is not filed twice. Reported as a plain statement
+        # rather than an error: nothing went wrong, the entry is simply already there,
+        # and a caller told "Error" would reasonably retry. The write is skipped; the
+        # "which Bill?" answer below is still recorded, because the user did answer it.
+        _fp = _interaction_fingerprint(interaction_date, summary)
+        _duplicate = any(
+            _interaction_fingerprint(e.get("date", ""), e.get("summary", "")) == _fp
+            for e in target["interaction_log"] if isinstance(e, dict))
+
+        if not _duplicate:
+            target["interaction_log"].append(entry)
+            # GUARD 2 — last_contact advances, never regresses. ISO dates compare
+            # correctly as strings, and a missing or malformed stored value loses to
+            # any real date.
+            if interaction_date > str(target.get("last_contact") or ""):
+                target["last_contact"] = interaction_date
+            target["updated"] = today
+
+            _save_contacts(contacts)
 
     if resolution_to_record is not None:
         _record_resolution(*resolution_to_record, "log_interaction")
+
+    if _duplicate:
+        return (f"Already logged for {target['name']} on {interaction_date} "
+                f"— nothing added.")
 
     msg = f"Interaction logged for {target['name']} (id: {target['id']})"
     if "ambiguity" in locals() and ambiguity:

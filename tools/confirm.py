@@ -464,6 +464,12 @@ _EXECUTORS: dict[str, tuple[str, str]] = {
     # which holds no zone tool — and the args carry the PLACE's public geocoded
     # coordinate, never the user's ping.
     "add_zone":              ("tools.location",      "append_zone"),
+    # The batch tap on the nightly CRM sweep ([DB-0827-03]). One card for a whole
+    # accepted set, not one per suggestion — the review already happened in
+    # conversation, and a tap per row is how a review queue becomes a rubber stamp.
+    # The args are ids only, so the replay writes exactly the ledger rows the user
+    # read; there is no content here for a re-statement to drift on.
+    "apply_crm_proposals":   ("tools.crm_sweep",     "apply_crm_proposals"),
 }
 
 

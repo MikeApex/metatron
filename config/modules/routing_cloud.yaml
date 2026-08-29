@@ -79,6 +79,24 @@ agents:
     # post-join leftovers only.
     allowed_tools: []
 
+  crm_sweep:
+    provider: gemini
+    model: "models/gemini-3.1-flash-lite"   # a closed JSON array from one day's text — the intake_extractor shape
+    # PRIVACY TIER, stated because this entry is what authorises it: this agent reads a
+    # WHOLE DAY of conversation and journal text — Sensitive tier, and more of it at once
+    # than anything else here — on the Vertex path. Valid ONLY on the Amendment 2026-08-28
+    # basis (ROADMAP.md § Section 0: ZDR refused, Google's verified defaults in force, Mike
+    # gating his own data personally), and it lapses with that basis the moment the
+    # deployment stops being single-user. It is the same path `relationships` already reads
+    # this material on; nothing new was ruled on for this build ([DB-0827-03]).
+    # Empty grant AND bare dispatch, both deliberate (the intake_extractor/tone_profiler
+    # rationale): its whole input is recorded free text, so it holds no tools and sees no
+    # constitution/goals/profile; with no schemas advertised it cannot emit a tool call.
+    # Dispatched nightly by tools.crm_sweep.sweep, whose output is PROPOSALS the user
+    # reviews — nothing this model produces reaches the CRM without a human yes.
+    # Off by default in crm_sweep.yaml, per persona.
+    allowed_tools: []
+
   tone_profiler:
     provider: gemini
     model: "models/gemini-3.1-flash-lite"   # bounded, mechanical, strict-schema extraction
@@ -176,7 +194,11 @@ agents:
     # read/write_agent_config granted 2026-08-28 [DB-0810-03] (cluster 4): named at
     # relationships.md:202/:318; completes the domain-specialist set — the other six already
     # held both, and non-domain agents correctly hold neither.
-    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, merge_contacts, unmerge_contacts, import_contacts_file, read_profile, write_profile, send_email, search_memory, get_tone_shape, read_wisdom, read_intake_queue, read_agent_config, write_agent_config]
+    # apply_crm_proposals granted 2026-08-29 with the CRM sweep [DB-0827-03]: this is the
+    # agent that owns contact writes, and the sweep's parked suggestions are applied on the
+    # user's word in an ordinary conversation. It takes ledger ids only — the write comes
+    # from the stored row, so this grant cannot be used to author contact content.
+    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, merge_contacts, unmerge_contacts, import_contacts_file, read_profile, write_profile, send_email, search_memory, get_tone_shape, read_wisdom, read_intake_queue, read_agent_config, write_agent_config, apply_crm_proposals]
 
   finance:
     provider: gemini

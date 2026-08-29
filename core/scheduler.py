@@ -600,6 +600,26 @@ _DEFAULT_JOBS: dict[str, dict] = {
         "notification": False,
         "respect_quiet_hours": False,   # silent; pre-dawn on purpose
     },
+    # CRM capture sweep ([DB-0827-03], plan accepted 2026-08-27, re-reviewed 2026-08-29):
+    # reads yesterday's conversation + journal with one bare Flash-Lite call
+    # (config/agents/crm_sweep.md) and files PROPOSALS to an append-only ledger. It never
+    # writes to the CRM — the user accepts or declines in the morning brief and a Python
+    # apply step executes from the ledger by id. 05:50 because 05:45 is the accountability
+    # judgment gate; both follow the 05:40 rollup, and this one wants a closed day.
+    # Like that gate it knowingly breaks this block's "no model tokens" test — one small
+    # call a night on days with a record at all — and sits here rather than in a template
+    # for the same reason (live for every persona at deploy, not copied once at creation).
+    # Returns a plain string, never a notify dict: unreviewed model output must not reach
+    # the user, which is this feature's binding constraint. No-op when the persona has the
+    # sweep disabled (the default).
+    "crm_sweep": {
+        "enabled": True,
+        "time": "05:50",
+        "days": "daily",
+        "function": "tools.crm_sweep.sweep",
+        "notification": False,
+        "respect_quiet_hours": False,   # silent; pre-dawn on purpose
+    },
     # Notes passed events that nothing in the record mentions, for the morning brief to
     # decide about. `notification: False` is not a preference — reconcile_check returns a
     # plain string and never a notify dict, because the check is crude text matching and

@@ -72,6 +72,15 @@ agents:
     # entry is what authorises the Vertex path, and it has no bearing here.
     allowed_tools: []
 
+  crm_sweep:
+    local: true
+    # Parity with routing_cloud.yaml — see the note there: bare dispatch, empty grant, a
+    # whole day of conversation and journal text is Sensitive tier. local: true because on
+    # the local path that text routes to Ollama only, fail-closed — the Amendment 2026-08-28
+    # basis in the cloud entry is what authorises the Vertex path and has no bearing here.
+    # The sweep is off by default per persona (crm_sweep.yaml), on either path.
+    allowed_tools: []
+
   tone_profiler:
     local: true
     # Parity with routing_cloud.yaml -- see the note there for why the grant is empty.
@@ -122,7 +131,9 @@ agents:
     # unmerge_contacts granted 2026-08-22 with the merge confirmation gate [DB-0822-03] —
     # see routing_cloud.yaml's matching comment.
     # read/write_agent_config granted 2026-08-28 [DB-0810-03] — see routing_cloud.yaml. Parity.
-    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, merge_contacts, unmerge_contacts, import_contacts_file, read_profile, write_profile, send_email, search_memory, get_tone_shape, read_wisdom, read_intake_queue, read_agent_config, write_agent_config]
+    # apply_crm_proposals granted 2026-08-29 with the CRM sweep [DB-0827-03] —
+    # see routing_cloud.yaml. Kept in parity.
+    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, merge_contacts, unmerge_contacts, import_contacts_file, read_profile, write_profile, send_email, search_memory, get_tone_shape, read_wisdom, read_intake_queue, read_agent_config, write_agent_config, apply_crm_proposals]
 
   finance:
     local: true

@@ -843,8 +843,15 @@ def load_recent_context(persona: str | None = None, days: int = 5) -> str:
     # tools.accountability added 2026-08-29 [DB-0827-09]: the trailing-7d intention
     # follow-through, parked by the Sunday judgment gate and delivered once — counts plus
     # the user's own words for the weekly retrospective to voice, empty every other day.
+    # tools.crm_sweep added 2026-08-29 [DB-0827-03]: the nightly capture sweep's pending
+    # contact suggestions, with their ledger ids. Empty unless the persona has the sweep
+    # on AND a run filed something new, so a quiet night says nothing. The block carries
+    # its own delivery instruction — one low-key line, list only on request — because
+    # this must fire reliably and the [DB-0822-05]..[DB-0822-09] finding is that an
+    # agent file long enough to hold it is an agent file that stops being followed.
     for _block_source in ("tools.obligations", "tools.calendar_reconcile", "tools.intake",
-                          "tools.confirm", "tools.location", "tools.accountability"):
+                          "tools.confirm", "tools.location", "tools.accountability",
+                          "tools.crm_sweep"):
         try:
             import importlib
             block = importlib.import_module(_block_source).context_block(persona)
@@ -989,6 +996,12 @@ def register_tools() -> tuple[list[dict], dict]:
     # its domain; teach_intake is the user's correction path, confirmation-gated.
     from tools.intake import (read_intake_queue, teach_intake,
                               READ_INTAKE_QUEUE_SCHEMA, TEACH_INTAKE_SCHEMA)
+    # The apply half of the nightly CRM sweep [DB-0827-03]. The sweep itself holds no
+    # tools and is not registered here — it is a scheduler job. This is the one tool the
+    # pipeline gets: it turns the user's yes/no on parked suggestions into writes, taking
+    # ids only, so what lands in the CRM is the row the user read and not a re-statement
+    # of it. Granted to `relationships` alone in both routing files.
+    from tools.crm_sweep import apply_crm_proposals, APPLY_CRM_PROPOSALS_SCHEMA
 
     schemas = [
         WRITE_LOG_SCHEMA, READ_LOG_SCHEMA,
@@ -1033,6 +1046,7 @@ def register_tools() -> tuple[list[dict], dict]:
         WRITE_QUALITY_EVENT_SCHEMA,
         FETCH_URL_SCHEMA, FETCH_RENDERED_SCHEMA, READ_EMAIL_SCHEMA, SEND_EMAIL_SCHEMA,
         IMPORT_CONTACTS_FILE_SCHEMA,
+        APPLY_CRM_PROPOSALS_SCHEMA,
     ]
     handlers = {
         "write_log": write_log,
@@ -1069,6 +1083,7 @@ def register_tools() -> tuple[list[dict], dict]:
         "read_contact": read_contact,
         "list_contacts": list_contacts,
         "log_interaction": log_interaction,
+        "apply_crm_proposals": apply_crm_proposals,
         "search_contacts": search_contacts,
         "merge_contacts": merge_contacts,
         "unmerge_contacts": unmerge_contacts,
