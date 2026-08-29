@@ -840,8 +840,11 @@ def load_recent_context(persona: str | None = None, days: int = 5) -> str:
     # reported being — "home since 14:02". It is derived in tools/location.py from the zone
     # transitions log, which has never held a coordinate; raw GPS is extra-sensitive and
     # never enters a prompt, cloud or local. Empty until the user turns the ping on.
+    # tools.accountability added 2026-08-29 [DB-0827-09]: the trailing-7d intention
+    # follow-through, parked by the Sunday judgment gate and delivered once — counts plus
+    # the user's own words for the weekly retrospective to voice, empty every other day.
     for _block_source in ("tools.obligations", "tools.calendar_reconcile", "tools.intake",
-                          "tools.confirm", "tools.location"):
+                          "tools.confirm", "tools.location", "tools.accountability"):
         try:
             import importlib
             block = importlib.import_module(_block_source).context_block(persona)

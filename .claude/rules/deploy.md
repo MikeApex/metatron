@@ -117,8 +117,15 @@ touch (constitution, `.env*`, keys, `deploy.sh`, settings, the mechanism itself)
 header. The lift covers `Write`/`Edit` only — Bash-side actions (e.g. SSH edits of VM files)
 answer to the auto-mode classifier, which nothing here lifts.
 
-**⚠ UNVERIFIED until probed: hook-allow beating a settings deny is designed from docs, not
-measured** — and this project has twice found matcher behaviour differ from documentation. In a
-fresh session (hooks snapshot at start): lift `data/personas/probe_lift.txt`, attempt the Write,
-record the result HERE replacing this paragraph, delete probe and lift. Until then expect the
-deny to win.
+**❌ PROBED 2026-08-29, Mike present: the settings deny WINS — the lift does not work.** With a
+valid lift in force for `data/personas/probe_lift.txt` (created by Mike's own hand; the hook
+registered in settings and hooks demonstrably firing that session), a `Write` to the lifted
+path was refused: *"File is in a directory that is denied by your permission settings."*
+Whether the hook's `allow` was emitted and overridden, or the deny short-circuits before
+`PreToolUse` hooks run, is indistinguishable from outside — the operative result is the same.
+Two prior findings from the same probe: in an **autonomous** session the classifier blocks even
+*creating* the lift file, by both `Write` and `Bash`. So the mechanism fails closed at every
+layer — safe, and inert. **Open decision (Mike's): retire `scripts/hook_deny_lift.py` per this
+file's standing rule against machinery that does nothing, or keep it dormant against a future
+harness where hook-allow gains precedence.** Until decided, a Denied-tier edit during a plan is
+what it was before the hook: Mike edits it himself, or lifts the deny in settings and restores it.

@@ -33,6 +33,8 @@ When in doubt, log it.
 
 **A user-stated intention IS loggable — as an intention, in a fixed shape.** When the user *themselves* expresses an intent to do something ("I'm going to start running again", "we'll do dinner out Friday"), log it via `write_log` with `intention` as its own key: `{"intention": "<what, in their words>", "stated_for": "<when, if they said>"}` — never as free prose inside `notes`, so intentions stay machine-findable and can later be compared against what actually happened. Two boundaries: this is for intentions the *user voices*, not for calendar entries or obligations the system creates on their behalf; and stating the intention is itself the event — fulfilment gets its own ordinary log entry on the day it occurs, never pre-written.
 
+**Every statement of an intention is logged, including restatements.** The day's record keeps them all as a list — a second intention the same day never displaces the first, and the user saying the same intention again is not a duplicate to skip: restating is itself signal (how often something is voiced scores how much it presses), so log it again each time it is voiced, in their words each time.
+
 ---
 
 ## What to log and where

@@ -157,6 +157,46 @@ def _leaf_paths(node: dict, prefix: str = "") -> list[str]:
     return paths
 
 
+# [DB-0827-09] ruling (a), Mike 2026-08-28: intentions accumulate as a LIST.
+#
+# The Diarist writes one intention per `write_log` call as a top-level scalar
+# (`config/agents/diarist.md` § "A user-stated intention IS loggable"), and _deep_merge
+# replaces a top-level scalar wholesale — so a second intention voiced the same day
+# silently overwrote the first, and a restatement left no trace at all. Nothing is
+# deduped: **every statement appends, restatements included**, because how often an
+# intention is voiced is the signal ("frequency scores urgency"), and a dedup here would
+# destroy exactly the thing the ruling asked to keep.
+#
+# Special-cased in write_log rather than in _deep_merge, which stays general. Lists in
+# the day log are restatements of the day's *state* — `tasks_completed`,
+# `medications_logged` — so an appending merge would duplicate every one of them on the
+# second write of the day. This one key is a feed; the merge rule is not the place to say so.
+#
+# Legacy scalar `intention` keys already on disk are left exactly as they are: no
+# migration runs anywhere, and tools/accountability.py reads both shapes.
+_INTENTIONS_KEY = "intentions"
+
+
+def _split_intention(content: dict) -> tuple[dict, dict | None]:
+    """
+    Lift a top-level scalar `intention` (plus its optional `stated_for`) out of `content`.
+
+    Returns `(content without those keys, the entry to append)`, or `(content, None)`
+    when the write carries no intention. A `stated_for` with no `intention` beside it is
+    left in place untouched — it means nothing on its own, and inventing an intention to
+    hang it on would be this function writing a record nobody asserted.
+    """
+    intention = content.get("intention")
+    if not isinstance(intention, str) or not intention.strip():
+        return content, None
+    rest = {k: v for k, v in content.items() if k not in ("intention", "stated_for")}
+    stated_for = content.get("stated_for")
+    return rest, {
+        "intention": intention.strip(),
+        "stated_for": stated_for.strip() if isinstance(stated_for, str) else "",
+    }
+
+
 def write_log(content: dict | None = None, log_date: str = "") -> str:
     """
     Write a daily log entry to data/logs/YYYY-MM-DD.json.
@@ -180,6 +220,11 @@ def write_log(content: dict | None = None, log_date: str = "") -> str:
     # A write time the model chose is not evidence of when anything was written. Discarded
     # before the merge, so a forged map can never displace the real one — see _WRITTEN_AT_KEY.
     content.pop(_WRITTEN_AT_KEY, None)
+
+    # Held out of the merge entirely — see _split_intention. It is appended to the day's
+    # `intentions` feed after the merge, so a scalar can never reach _deep_merge and
+    # replace the statement before it.
+    content, intention_entry = _split_intention(content)
 
     if not log_date:
         log_date = date.today().isoformat()
@@ -225,6 +270,15 @@ def write_log(content: dict | None = None, log_date: str = "") -> str:
             stamps[path] = now_iso
 
         existing = _deep_merge(existing, content)
+        if intention_entry is not None:
+            feed = existing.get(_INTENTIONS_KEY)
+            if not isinstance(feed, list):
+                feed = []          # a non-list here is corrupt, not a shape to preserve
+            feed.append(intention_entry)
+            existing[_INTENTIONS_KEY] = feed
+            # One stamp for the feed, not per entry: the list is one growing assertion,
+            # the same reading _leaf_paths already applies to every other list.
+            stamps[_INTENTIONS_KEY] = now_iso
         existing["date"] = log_date
         if stamps:
             existing[_WRITTEN_AT_KEY] = stamps

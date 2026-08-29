@@ -64,6 +64,14 @@ agents:
     # to work until a test exercises it on the model that actually serves it).
     allowed_tools: []
 
+  accountability_judge:
+    local: true
+    # Parity with routing_cloud.yaml — see the note there: bare dispatch, empty grant,
+    # journal text is Sensitive tier. local: true because on the local path that text
+    # routes to Ollama only, fail-closed — the Amendment 2026-08-28 basis in the cloud
+    # entry is what authorises the Vertex path, and it has no bearing here.
+    allowed_tools: []
+
   tone_profiler:
     local: true
     # Parity with routing_cloud.yaml -- see the note there for why the grant is empty.

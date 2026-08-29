@@ -584,6 +584,22 @@ _DEFAULT_JOBS: dict[str, dict] = {
         "notification": False,
         "respect_quiet_hours": False,   # silent; pre-dawn on purpose
     },
+    # Accountability judgment gate ([DB-0827-09], proposal accepted 2026-08-28): resolves
+    # yesterday's structurally-indeterminate intentions via a bare Flash-Lite call per
+    # leftover (config/agents/accountability_judge.md). 05:45 so it follows the 05:40
+    # rollup, per the accepted proposal. NOTE it breaks this block's "no model tokens"
+    # test knowingly: the cost is a handful of tiny bare calls on days that have
+    # leftovers at all, and Mike's 2026-08-28 ruling (c) placed it here so it is live
+    # for every persona at deploy rather than copied once at persona creation.
+    # Returns a plain string, never a notify dict — nothing here reaches the user.
+    "daily_accountability_judgment_gate": {
+        "enabled": True,
+        "time": "05:45",
+        "days": "daily",
+        "function": "tools.accountability.run_judgment_gate",
+        "notification": False,
+        "respect_quiet_hours": False,   # silent; pre-dawn on purpose
+    },
     # Notes passed events that nothing in the record mentions, for the morning brief to
     # decide about. `notification: False` is not a preference — reconcile_check returns a
     # plain string and never a notify dict, because the check is crude text matching and

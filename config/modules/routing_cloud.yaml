@@ -63,6 +63,22 @@ agents:
     # action_required false negatives on this model.
     allowed_tools: []
 
+  accountability_judge:
+    provider: gemini
+    model: "models/gemini-3.1-flash-lite"   # one intention, closed verdict enum — the intake_extractor shape
+    # PRIVACY TIER, stated because this entry is what authorises it: this agent reads
+    # JOURNAL TEXT — Sensitive tier — on the Vertex path. That is valid ONLY on the
+    # Amendment 2026-08-28 basis (ROADMAP.md § Section 0: ZDR refused, Google's verified
+    # defaults in force, Mike gating his own data personally), and it lapses with that
+    # basis the moment the deployment stops being single-user. Ruled by Mike 2026-08-28
+    # ([DB-0827-09] ruling b) — not an oversight, and not a precedent for other agents.
+    # Empty grant AND bare dispatch, both deliberate (the intake_extractor/tone_profiler
+    # rationale): its whole input is recorded free text, so it holds no tools and sees
+    # no constitution/goals/profile; with no schemas advertised it cannot emit a tool
+    # call. Dispatched nightly by tools.accountability.run_judgment_gate over the
+    # post-join leftovers only.
+    allowed_tools: []
+
   tone_profiler:
     provider: gemini
     model: "models/gemini-3.1-flash-lite"   # bounded, mechanical, strict-schema extraction
