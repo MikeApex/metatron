@@ -37,7 +37,9 @@ decision-shaped:
    2026-08-29) + the 20:00 run still did ([DB-0822-10]); first 05:45 accountability-gate run
    ([DB-0827-09] — check journalctl or `accountability/verdicts.jsonl`; its Sunday-retro half
    waits for 08-31). Intake went live 2026-08-29 13:54 — if an interest-level email has
-   arrived since, check it surfaced with coordination legs ([DB-0822-09]).
+   arrived since, check it surfaced with coordination legs ([DB-0822-09]). **The 08-29 18:24
+   and 20:00 runs were unobserved** (the drain session closed before them) — they are part of
+   this evidence, not already-checked ground.
 
 4. **One parked Red line rides along:** `synthesizer.md` gained no `source` line for
    write_persona proposals — flagged in `archive/handoffs/2026-08-28-write-persona-gate.md`
@@ -47,9 +49,12 @@ decision-shaped:
 5. **Then the capstone close-out review with Mike** against
    `archive/plans/capstone_cluster_review_2026-08-27.md`: what in this rendition is done,
    what carries, and whether anything continues at all — the parked decisions (the 08-29
-   Inbox triage table, the three @session items, machine-log leftovers: two calendar
-   duplicate pairs + Mousetrap, the intake corpus labelling) are ruled here or explicitly
-   parked with a date.
+   Inbox triage table, the three @session items, the intake corpus labelling) are ruled here
+   or explicitly parked with a date. **Already ruled (Mike, 2026-08-29): the three calendar
+   duplicate pairs — Mover's-Claim/Arbitration (Sep 5), the two Apex-migration events
+   (Sep 1), and [DB-0809-21]'s Mousetrap trio — are all real duplicates; keep either/one,
+   delete the rest.** Executing that dedupe (via the app or `delete_calendar_event`) closes
+   [DB-0809-21]'s outstanding half.
 
 No new Red proposals in this session — it spends existing evidence, it does not open fronts.
 /archive at close.

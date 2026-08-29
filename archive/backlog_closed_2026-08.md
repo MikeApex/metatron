@@ -3448,3 +3448,10 @@ handoffs: `archive/handoffs/2026-08-27-{session-hygiene,decline-path,routing-mis
   (`core/server.py:748`) delivered to both sockets without doubling on either. Fix under test
   was `fd273bf` (detach dying socket, wait for real close, 1500 ms fallback). First run was
   discarded as evidence: backgrounding after the reply arrived exercises no race.
+
+- **[DB-0803-05] A dead server now shows the app's own page — CLOSED on a live outage test.**
+  2026-08-29, confirm-drain session: post-deploy online load installed the service worker
+  (registration now unconditional, `e2a7f87`); Mike stopped `metatron-server` over IAP SSH,
+  reloaded the browser app, and got the app's own offline page — not Chrome's error page.
+  Server restarted and confirmed healthy after. His verdict: "Pass." Fix under test: `2d7f955`
+  (fallback-only SW, navigation requests only, `/` never cached), deployed 2026-08-29.

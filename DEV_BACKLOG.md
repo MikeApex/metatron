@@ -1036,17 +1036,6 @@ half (b) is now part of the Pro-routing decision. Evidence and trail:
   reports them and deliberately moves nothing · triaged out of `## Inbox` 2026-08-18 · proposal
   2026-08-27 by the wisdom-store attack worker*
 
-- **[DB-0803-05] A dead server now shows the app's own page — built and tested 2026-08-22, NOT
-  deployed.** Fallback-only SW exactly as specified: dedicated `offline.html`, navigation requests
-  only, served solely when the network fetch fails; `/` never cached; `offline-v1` cache version is
-  the recovery lever (`2d7f955`; 15/15 in a real `vm`-sandbox execution test). **Also fixed while
-  verifying: SW registration was gated on push permission** — a user who declined notifications
-  never had a service worker at all; now registered unconditionally at startup (`e2a7f87`).
-  @kind: bug
-  @waiting: the owed deploy, then ONE ONLINE LOAD to install the worker, then background/kill the
-  server and reload — the app's own page, not Chrome's error page
-  *filed 2026-08-03 · built 2026-08-22*
-
 - **[DB-0808-06] A flagged clinical thread can never be marked resolved.** `resolved` exists and
   nothing can legitimately set it, so every tier-2 thread is permanent. **The failure direction is
   the safe one — do not fix by relaxing the refusal.** It needs a real administrative-close path,

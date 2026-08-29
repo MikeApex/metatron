@@ -1,35 +1,27 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-29 (**Red session ③ ran — the last planned Red session; every parked Red
-proposal landed.** Email surfacing + coordination check (`[DB-0822-09]`, both halves); the
-ritual Red focus-block line; the judgment gate complete (`[DB-0827-09]`: judge agent file,
-routing with the Amendment 2026-08-28 tier comment, 05:45 job, intentions-as-list with
-`times_stated`, Sunday retro wording + context block — Amber half by an Opus worker,
-Fable-reviewed, 25/25+11/11+9/9). A4 gate PASS 3/3 × three suites. **⚠ VM deploy owed
-(Mike)** — agent files, both routings, `core/{scheduler,orchestrator}.py`,
-`tools/{logger,accountability}.py`. **The deny lift is DEAD — probed, settings deny beats
-hook allow; retire-or-keep is Mike's call** (`.claude/rules/deploy.md`). Fragment
-2026-08-29-03 (…email-surfacing…). Earlier same day: Mike-steps live-verified (06:45 fire is
-the last confirm, fragment -01); billing attribution + meter fixes (fragment -02, **⚠ confirm
-owed: the VM spend counter advancing past `398c575`**).)*
+*Updated: 2026-08-29 late (**the confirm-drain session, Mike present.** Session ③'s batch is
+**deployed and live-verified** (the "deploy done" belief was wrong on open — VM was at
+`398c575`; Mike deployed in-session, `c1ee928` + a second close-out deploy carrying the CRM
+sweep build `f75a338` from a parallel window). **Four items closed on live evidence**
+(`[DB-0815-05]`, `[DB-0809-16]`, `[DB-0810-01]`, `[DB-0803-05]`); the decline loop is dead
+live (`[DB-0827-01]`, 18:24-tail pending); **intake is ON** (Mike's one-line
+`intake.yaml`, first sweep 13:54: 24 mail, 23 unclear surfacing; extractor still off behind
+`[DB-0820-03]`). New: `[DB-0829-01]` (log records gated actions as done) and a fifth referent
+instance on `[DB-0826-01]`, both from live testing. Machine log swept 71→64. **APK is
+current** (Mike rebuilt/sideloaded 08-29 morning). Fragment 2026-08-29-04.)*
 
 *✅ **The capstone plan is the read-first for any backlog work:**
 **`archive/plans/capstone_cluster_review_2026-08-27.md`** — every open item by functional
 cluster with tier, estimate and status. Goal (Mike): finish this rendition's core features,
 begin full testing; rebuild-adjacent work parked in its Cluster H. **National Rail
 (`[DB-0818-04]`) is a first-draft feature** by his ruling — the Darwin API key is his to
-register. Geolocation (`[DB-0815-12]`) is **built to its decided design** (extra-sensitive
-zone abstraction, modes 1+2, ping off-default) — awaiting deploy + APK; Mike defines zones on
-the VM (`config/templates/zones.yaml` is the shape).*
+register. Geolocation (`[DB-0815-12]`): deployed; zones file + one ping at a zone still owed.*
 
-*✅ **Deployed builds awaiting one live confirmation each drain on Mike's ordinary use** —
-the roster and the evidence per item are `@waiting` in `DEV_BACKLOG.md`, which is the only
-copy; this list is not mirrored here (moved out 2026-08-29, volatile budget). Two that need
-Mike rather than use: wisdom-store proposal `[DB-0818-06]`, and referent class `[DB-0826-01]`
-(fix path confirmed, probe-measured, structural preferred).*
-
-*⚠ **Intake is still dark until Mike's VM edits** (`enabled: true` in mike's `intake.yaml`;
-delete `mike.md`'s six-hour inbox line if present) — gates: `[DB-0820-03]`, `[DB-0820-04]`.*
+*⛔ **Decisions are PARKED until capstone close (Mike, 2026-08-29):** the 08-29 Inbox triage
+table (8 entries, dispositions proposed), the three `@session` items, and the intake corpus
+labelling. **Ruled already:** the three calendar duplicate pairs are real — keep either,
+delete the rest; executing closes `[DB-0809-21]`.*
 
 *⚠ **Caps revert to $100/$175 at the September reset — evidence in** (`[DB-0820-01]`,
 `due: 2026-09-01`). Measured 2026-08-29: real use ~$1.50–2.00/day — **the cost risk is test
@@ -37,23 +29,20 @@ runs, not the product** (figures: fragment 2026-08-29-02). (M): BigQuery billing
 flip the Mac's `VERTEX_CACHE_DISABLED` — now with a measured payoff.*
 
 *⛔ **ZDR: refused, ruled on, do not re-open** — the whole basis, incl. Amendment 2026-08-28,
-is `ROADMAP.md` § Section 0. CRM sweep still gated on Mike's plan re-review (`[DB-0827-03]`);
-the `[DB-0818-06]` wisdom-store proposal review still awaits Mike.*
+is `ROADMAP.md` § Section 0. The `[DB-0818-06]` wisdom-store proposal review still awaits
+Mike. CRM sweep: **built** (`f75a338`, parallel window, gate lifted by Mike) — deployed at
+close-out, testing owed.*
 
-*✅ **The daily backup is fixed and live-verified** after 26 silent days of "complete" with no
-current VM data (fragment 2026-08-29-03, …daily-backup…). **⚠ Still true: no off-machine
-copy** — the Restic external-drive job is not installed. Left at Mike's call, unfiled.*
+*✅ **The daily backup is fixed and live-verified** (fragment 2026-08-29-03). **⚠ Still true:
+no off-machine copy** — the Restic external-drive job is not installed. Mike's call, unfiled.*
 
-***Next, in order:** (M) deploy session ③'s batch (`./deploy.sh`); **from 2026-08-30, the
-`[DB-0822-08]` re-measure** — one scheduled-run day of traces, then the propose-vs-report
-decision (procedure + recommendation:
-`archive/handoffs/2026-08-29-re-measure-and-0822-08-decision.md`); (M) intake enable when
-comfortable (the email-surfacing build is dark without it); then ④ CRM sweep build (Opus,
-post-review, `[DB-0827-03]`). (M): phone sideload from the built APK when convenient.
-Confirms drain on ordinary use: travel check 06:45, one 📍 ping at a zone, one
-zone-suggestion card, session ②'s list, plus ③'s (one interest-level email with legs
-attached; one 05:45 gate run; one Sunday retro count). A7 check 10 (the 12-specialist
-audit) is runnable; check 12 is unstarted.*
+***Next: Red session ④ — the prompt is written and Mike-bound for review:**
+**`archive/handoffs/2026-08-30-red-session-four-prompt.md`** (Fable, on/after 2026-08-30, once
+the 20:00 run is in traces). It owns: the `[DB-0822-08]` re-measure + decision, the
+clock-gated confirm drain (incl. the **unobserved 18:24/20:00 runs of 08-29** — decline tail,
+email surfacing), the parked `synthesizer.md` `source` line, the calendar dedupe, and the
+capstone close-out review. Sunday 08-31: the retro half of `[DB-0827-09]`. A7 check 10 is
+runnable; check 12 unstarted.*
 
 *⚠ **The code-dominant inversion question is live and must be decided before A8 executes**
 or A8 is paid for twice. Standing home, three dated rounds:
