@@ -21,10 +21,13 @@ that outlives the call that created it has to report itself here, or the guard's
 silence will be read as safety.
 
 Both thresholds judge usd_billed_est, not usd. The guard sees pipeline turns and
-nothing else, while Vertex also bills cache creation and retried attempts — 23% of
-invocations on 2026-08-21. `usd` stays the raw observed sum so it can be checked
-against the pricing table; the uplift that closes the gap is applied at the point
-of judgement. See config/modules/spend_guard.yaml, unmetered_uplift.
+nothing else, while Vertex also bills cache creation and retried attempts — ~18%
+of invocations but only ~12% of tokens, measured over ten days to 2026-08-28.
+`usd` stays the raw observed sum so it can be checked against the pricing table;
+the uplift that closes the gap is applied at the point of judgement. Take the
+figure from config/modules/spend_guard.yaml, unmetered_uplift, and re-derive it
+by that key's instructions — the count is only meaningful once every state file
+is summed, which is what _budget_root() below exists to guarantee.
 
 Either can trip. Both warn before they stop, so the system does not go silent
 without notice.
@@ -50,7 +53,55 @@ logger = logging.getLogger(__name__)
 
 _ROOT = Path(__file__).parent.parent
 _CONFIG_PATH = _ROOT / "config" / "modules" / "spend_guard.yaml"
-_STATE_DIR = _ROOT / "data" / "diagnostics"
+
+
+def _budget_root() -> Path:
+    """
+    The directory whose data/diagnostics holds this HOST's single daily budget.
+
+    Normally _ROOT. In a git worktree it is the MAIN working tree instead, because
+    a worktree is a second checkout of the same repo on the same machine billing
+    the same Vertex project — but _ROOT resolves from __file__, so each worktree
+    got its own state file and therefore its own full daily budget.
+
+    Measured, not theoretical: on 2026-08-28 the coordinator model probe ran in
+    .claude/worktrees/agent-a53d4604ec183981e and wrote $1.94 / 196 calls /
+    169,609 output tokens into a state file the main checkout has never read. The
+    day's real spend was ~3x the config threshold's worth of independent budgets
+    while every state file individually read as quiet. That is the exact failure
+    the module header describes for two HOSTS, reproduced within one host — and
+    it is worse, because the header's mitigation (thresholds set with two hosts in
+    mind) cannot be sized against a worktree count that changes per session.
+
+    Not solved by a shared counter across hosts, for the reason the header gives:
+    the hosts share no filesystem. Worktrees DO share one, so here the fix is free
+    — no network, no lock beyond the one already held, no new failure mode.
+
+    Fails open to _ROOT on anything unexpected. A guard that cannot find the main
+    checkout must still count, in the wrong place, rather than not count at all.
+    """
+    try:
+        git = _ROOT / ".git"
+        # A worktree's .git is a FILE holding "gitdir: <main>/.git/worktrees/<name>".
+        # A normal checkout's .git is a directory — the VM, and the main Mac tree.
+        if not git.is_file():
+            return _ROOT
+        line = git.read_text(encoding="utf-8", errors="replace").strip()
+        if not line.startswith("gitdir:"):
+            return _ROOT
+        gitdir = Path(line.split(":", 1)[1].strip())
+        if not gitdir.is_absolute():
+            gitdir = (_ROOT / gitdir).resolve()
+        # .../<main>/.git/worktrees/<name>  ->  .../<main>
+        if gitdir.parent.name != "worktrees" or gitdir.parent.parent.name != ".git":
+            return _ROOT
+        main_root = gitdir.parent.parent.parent
+        return main_root if main_root.is_dir() else _ROOT
+    except Exception:
+        return _ROOT
+
+
+_STATE_DIR = _budget_root() / "data" / "diagnostics"
 
 # The thresholds below are PER HOST, and more than one host bills the same
 # Vertex project. The VM runs production; the Mac holds Vertex ADC and runs the
@@ -260,8 +311,10 @@ def _billed_estimate(state: dict, cfg: dict) -> float:
     `state["usd"]` is the honest sum of pipeline turns — the only thing this
     module is called for. Vertex bills more: context-cache creation ingests a
     whole prompt with no generate call attached, and retried or fallback attempts
-    are billed but leave no trace record to count. Measured 2026-08-21, both are
-    invisible here and together ran 23% of invocations.
+    are billed but leave no trace record to count. Both are invisible here; over
+    the ten days to 2026-08-28 they ran ~18% of invocations and ~12% of tokens,
+    and it is the token share the uplift is sized to, because dollars follow
+    tokens and a cache creation is one cheap-but-large "call".
 
     The raw figure stays raw so the arithmetic remains auditable against the
     pricing table; the uplift is applied only where a judgement is made — the

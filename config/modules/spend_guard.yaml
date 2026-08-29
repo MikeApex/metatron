@@ -62,14 +62,29 @@ stop_usd_per_day: 15.0
 # uplifted figure is what the thresholds judge and what usd_billed_est reports.
 #
 # Round UP deliberately: this is a runaway detector, and reading high fails safe.
-# Measured cost ratios were 1.16-1.24 and call ratios 1.23 on both days.
 #
-# RE-DERIVE, don't trust: compare a full day's data/diagnostics/spend_<date>.json
-# against the Cloud Monitoring metric
-# aiplatform.googleapis.com/publisher/online_serving/model_invocation_count.
+# RE-DERIVED 2026-08-29 over ten days (08-19..08-28), and it came DOWN, from 1.25.
+# Call ratio median 1.176 (range 1.101-1.248); input-token ratio median 1.124
+# (range 1.051-1.194); output-token ratio median ~1.09. The uplift is applied to
+# dollars, so it tracks the TOKEN ratio, not the call ratio — an uncounted
+# cache-creation ingest is one extra "call" but a large slug of cheap input, and
+# pricing it as an average call is what read high. 1.20 rounds the worst observed
+# token day (1.194) up, so it still fails safe.
+#
+# COUNT EVERY STATE FILE, not "the" state file — this is how the old figure drifted
+# high. The measurement that produced 1.25 compared Monitoring against ONE
+# spend_<date>.json, and on days with parallel workers the traffic missing from that
+# file was not unmetered at all: it was metered into a git worktree's own copy. See
+# core/spend_guard.py _budget_root(), which now collapses worktrees onto the main
+# checkout so a single file per host is once again the right thing to read.
+#
+# RE-DERIVE, don't trust. Sum data/diagnostics/spend_<date>.json across every host
+# (VM + Mac), then compare against the Cloud Monitoring metrics
+# aiplatform.googleapis.com/publisher/online_serving/model_invocation_count and
+# .../token_count (group by metric.labels.type for input vs output).
 # Set to 1.0 to disable. Retire this in favour of real attribution once the
 # billing export is live again.
-unmetered_uplift: 1.25
+unmetered_uplift: 1.20
 
 # --- Rate limit (pipeline sessions started, rolling 60 minutes) ---
 # Normal load is ~7 scheduled sessions/day plus interactive use. These are set
