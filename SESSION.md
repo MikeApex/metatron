@@ -1,13 +1,17 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-29 (**the three post-② Mike-steps are done, live-verified** — travel check,
-zones file, APK rebuild; **06:45 fire is the last confirm owed**. **The deny tier gained a
-plan-scoped lift** (`scripts/hook_deny_lift.py`) — **⚠ probe owed at next session start**,
-hook-allow vs settings deny is unmeasured; mechanism, floor and probe steps in
-`.claude/rules/deploy.md`. Fragment 2026-08-29-01.*
-*Parallel window, same day: **the 08-27/08-28 bill was development, not the product**; two meter
-defects fixed and deployed (`398c575`). Figures, caching rates and both defects: fragment
-2026-08-29-02. **⚠ one confirm owed: the VM's spend counter advancing past the deploy.**)*
+*Updated: 2026-08-29 (**Red session ③ ran — the last planned Red session; every parked Red
+proposal landed.** Email surfacing + coordination check (`[DB-0822-09]`, both halves); the
+ritual Red focus-block line; the judgment gate complete (`[DB-0827-09]`: judge agent file,
+routing with the Amendment 2026-08-28 tier comment, 05:45 job, intentions-as-list with
+`times_stated`, Sunday retro wording + context block — Amber half by an Opus worker,
+Fable-reviewed, 25/25+11/11+9/9). A4 gate PASS 3/3 × three suites. **⚠ VM deploy owed
+(Mike)** — agent files, both routings, `core/{scheduler,orchestrator}.py`,
+`tools/{logger,accountability}.py`. **The deny lift is DEAD — probed, settings deny beats
+hook allow; retire-or-keep is Mike's call** (`.claude/rules/deploy.md`). Fragment
+2026-08-29-03 (…email-surfacing…). Earlier same day: Mike-steps live-verified (06:45 fire is
+the last confirm, fragment -01); billing attribution + meter fixes (fragment -02, **⚠ confirm
+owed: the VM spend counter advancing past `398c575`**).)*
 
 *✅ **The capstone plan is the read-first for any backlog work:**
 **`archive/plans/capstone_cluster_review_2026-08-27.md`** — every open item by functional
@@ -28,36 +32,28 @@ Mike rather than use: wisdom-store proposal `[DB-0818-06]`, and referent class `
 delete `mike.md`'s six-hour inbox line if present) — gates: `[DB-0820-03]`, `[DB-0820-04]`.*
 
 *⚠ **Caps revert to $100/$175 at the September reset — evidence in** (`[DB-0820-01]`,
-`due: 2026-09-01`). `[DB-0820-05]` CLOSED: Pro flip declined, **Step-6 caching landed**
-(`d9b4843`, double A4 gate) — eight specialists on the cached path, ~$0.18/day back.
-**Measured 2026-08-29 against that reset: Mike's real use runs ~$1.50–2.00/day** (08-27/08-28
-were 19%/36% product, the rest development; one hour of A4+redteam suites cost $6.47, more
-than four days of ordinary use). **The cost risk is test runs, not the product.**
-(M): Mike enables the BigQuery billing export, and flips the Mac's `VERTEX_CACHE_DISABLED`
-himself — the second now has a measured payoff, since a dev run pays cache creation and reads
-it once.*
+`due: 2026-09-01`). Measured 2026-08-29: real use ~$1.50–2.00/day — **the cost risk is test
+runs, not the product** (figures: fragment 2026-08-29-02). (M): BigQuery billing export, and
+flip the Mac's `VERTEX_CACHE_DISABLED` — now with a measured payoff.*
 
 *⛔ **ZDR: refused, ruled on, do not re-open** — the whole basis, incl. Amendment 2026-08-28,
 is `ROADMAP.md` § Section 0. CRM sweep still gated on Mike's plan re-review (`[DB-0827-03]`);
 the `[DB-0818-06]` wisdom-store proposal review still awaits Mike.*
 
-*✅ **The daily backup carried no current VM data for 26 days and said "Backup complete" each
-time** — launchd's minimal `PATH` excludes Homebrew, so `gcloud` never resolved and every pull
-since 08-04 failed; `metatron-vm-latest.tgz` sat at 08-03 while the archives looked healthy.
-Both scripts fixed and live-verified under a scrubbed `PATH` (454 files / 27.9 MB), and today's
-archive rebuilt with current data. A stale or missing pull now says so in the notification.
-Fragment 2026-08-29-03. **⚠ Still true: there is no off-machine copy** — the Restic external-drive
-job (`com.life-manager.backup.plist`) is not installed in `~/Library/LaunchAgents/`. Left at
-Mike's call, unfiled.*
+*✅ **The daily backup is fixed and live-verified** after 26 silent days of "complete" with no
+current VM data (fragment 2026-08-29-03, …daily-backup…). **⚠ Still true: no off-machine
+copy** — the Restic external-drive job is not installed. Left at Mike's call, unfiled.*
 
-***Next: session ③ — ready-to-paste prompt at
-`archive/handoffs/2026-08-29-red-session-three-prompt.md`** (the last planned Red session:
-email surfacing `[DB-0822-09]`, the `[DB-0822-08]` re-measure-then-fix, the ritual Red line,
-judgment gate + Diarist list shape, 08-28 handoff sweep; **its Step 0 is the deny-lift
-probe**); then ④ CRM sweep build (Opus, post-review, `[DB-0827-03]`). (M): phone sideload
-from the built APK when convenient. Confirms drain on ordinary use: travel check firing
-06:45, one 📍 ping at a zone, one zone-suggestion card, plus session ②'s list. A7 check 10
-(the 12-specialist audit) is runnable.*
+***Next, in order:** (M) deploy session ③'s batch (`./deploy.sh`); **from 2026-08-30, the
+`[DB-0822-08]` re-measure** — one scheduled-run day of traces, then the propose-vs-report
+decision (procedure + recommendation:
+`archive/handoffs/2026-08-29-re-measure-and-0822-08-decision.md`); (M) intake enable when
+comfortable (the email-surfacing build is dark without it); then ④ CRM sweep build (Opus,
+post-review, `[DB-0827-03]`). (M): phone sideload from the built APK when convenient.
+Confirms drain on ordinary use: travel check 06:45, one 📍 ping at a zone, one
+zone-suggestion card, session ②'s list, plus ③'s (one interest-level email with legs
+attached; one 05:45 gate run; one Sunday retro count). A7 check 10 (the 12-specialist
+audit) is runnable; check 12 is unstarted.*
 
 *⚠ **The code-dominant inversion question is live and must be decided before A8 executes**
 or A8 is paid for twice. Standing home, three dated rounds:

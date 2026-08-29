@@ -212,3 +212,18 @@ raised. Handoffs with the Red proposals: `archive/handoffs/2026-08-28-*.md`.
 
 Session order ②–④ unchanged and next; ③ now carries the ritual Red line, the judgment-gate
 proposal, the Diarist list-shape line, and possibly the location proposal-voicing line.
+
+---
+
+## Status update 2026-08-29 — session ③ ran; all Red work in the capstone is DONE
+
+**Session ③ (the last planned Red session) landed everything it carried**: email surfacing +
+coordination check (`[DB-0822-09]` both halves, A4 PASS 3/3 × three suites), the ritual Red
+focus-block line, the complete judgment gate (`[DB-0827-09]`: judge file, tier-commented
+routing, 05:45 job, intentions-as-list, Sunday retro wording — Amber half Opus-built,
+Fable-reviewed). The 08-28 handoff sweep consumed the write_persona `source` rider; the
+location proposal-voicing line was confirmed moot (the card is app-side). **Not landed,
+deliberately:** the `[DB-0822-08]` fix — the re-measure day had not elapsed; procedure +
+framed decision in `archive/handoffs/2026-08-29-re-measure-and-0822-08-decision.md`.
+**VM deploy owed (Mike).** Remaining in the capstone: ④ CRM sweep build (Opus, gated on
+Mike's plan re-review `[DB-0827-03]`) — no Red work rides it.

@@ -220,6 +220,10 @@ Each is a defect measured in the 2026-08-21 traces, not a proposal.*
   @kind: bug
   @session: whether to fix by instruction or by giving the Synthesizer an explicit "propose a next
   action or stay silent" gate
+  *Session ③ (2026-08-29) deliberately wrote no fix — the re-measure day had not elapsed at
+  work time. Measurement procedure + the decision framed with a recommendation (measure first,
+  then the structural gate, not another instruction):
+  [archive/handoffs/2026-08-29-re-measure-and-0822-08-decision.md](archive/handoffs/2026-08-29-re-measure-and-0822-08-decision.md).*
   *filed 2026-08-22 by Mike*
 
 - **6. [DB-0822-09] Email is processed and then thrown away.** The 12:24 and 18:24 jobs were
@@ -240,7 +244,15 @@ Each is a defect measured in the 2026-08-21 traces, not a proposal.*
   What is missing is only the Synthesizer surfacing rule and the coordination-check instruction —
   both agent-file (Red) work, unaffected by the gate.*
   @kind: feature
-  *filed 2026-08-22 by Mike*
+  **✅ Both halves BUILT 2026-08-29 (Red session ③):** the Synthesizer absorb-by-default /
+  report-interest-level rule (§ What you receive) + the coordination check in `logistics.md`
+  (intake-queue bullet: transit/parking/food/who-else legs, surfaced plan-shaped) and
+  `recreation_hobbies.md`. A4 gate PASS 3/3 × three suites
+  (`tests/a4_safety_rerun_2026-08-29_gemini_*.md`).
+  @waiting: the owed VM deploy, then Mike's intake enable (`[DB-0820-03]`/`[DB-0820-04]`) —
+  live confirm is one interest-level email (e.g. a concert) surfacing WITH its coordination
+  legs attached, once, not as a bare notice
+  *filed 2026-08-22 by Mike · built 2026-08-29 session ③*
 
 ### Denied tier — Mike's own file
 
@@ -778,10 +790,20 @@ with a date.** Nothing new joins this group open-ended.*
   read journal text on the Vertex path **under Amendment 2026-08-28** — its routing entry
   records that basis when built; *(c)* daily cadence confirmed sufficient (the 05:40 rollup
   counts already run — no new job until the gate lands).
-  *remaining: judgment gate + list-shape line ride the next Red/agent-file session; deployed
-  2026-08-28*
+  **✅ Judgment gate + list shape BUILT 2026-08-29 (Red session ③):**
+  `config/agents/accountability_judge.md` (bare, empty grant, indeterminate-is-correct),
+  routing entries in both files (cloud entry carries the ruling-b Amendment 2026-08-28 tier
+  comment), 05:45 `_DEFAULT_JOBS` line, weekly retrospective wording in
+  `synthesizer_scheduled_sessions.md`; Diarist logs every statement, `write_log` accumulates
+  an `intentions` list (ruling a — restatements kept, `times_stated` in the report), gate
+  verdicts judged-once in `accountability/verdicts.jsonl`, Sunday summary via a sixth
+  context-block source. Tests 25/25 new + 11/11 + 9/9.
+  @waiting: the owed VM deploy, then one 05:45 run with a real leftover (journalctl or a
+  verdicts.jsonl row) and one Sunday retrospective voicing the counts. Audit `[DB-0828-01]`
+  `due: 2026-09-07` then samples the verdicts.
   *raised by Mike 2026-08-26 mid-session · triaged out of Inbox 2026-08-27 · design decided
-  2026-08-28 · code half built 2026-08-28 · deployed + rulings 2026-08-28*
+  2026-08-28 · code half built 2026-08-28 · deployed + rulings 2026-08-28 · gate + list shape
+  built 2026-08-29 session ③*
 
 - **[DB-0828-01] Audit the Accountability Index's judgments once it has ten days of data — are
   things characterized as they should be?** Mike's instruction 2026-08-28, filed with the
