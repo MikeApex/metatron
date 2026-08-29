@@ -44,13 +44,32 @@ log "=== Backup started ==="
 # Best-effort: a VM that is paused, unreachable, or missing gcloud in launchd's
 # PATH must not stop the local backup from running. A local-only backup is worth
 # far more than no backup.
+VM_NOTE=""
 if [[ -x "$SOURCE/scripts/metatron-backup.sh" ]]; then
     log "Pulling VM data..."
     if "$SOURCE/scripts/metatron-backup.sh" >>"$LOGFILE" 2>&1; then
         log "VM pull OK."
     else
         log "WARNING: VM pull failed — archiving local state only."
+        VM_NOTE="VM pull failed"
     fi
+fi
+
+# A failed pull leaves the previous metatron-vm-latest.tgz in place, so the archive
+# below still contains VM data — just stale data, indistinguishable from current once
+# it is encrypted. That is how the 2026-08-04 → 2026-08-29 gap stayed invisible: every
+# run finished with a "Backup complete." notification and nobody had reason to look in
+# the log. Age the file, and put the bad news where it will actually be seen.
+VM_LATEST="$SOURCE/backups/vm/metatron-vm-latest.tgz"
+if [[ -f "$VM_LATEST" ]]; then
+    VM_AGE_DAYS=$(( ( $(date +%s) - $(stat -f %m "$VM_LATEST") ) / 86400 ))
+    log "VM data in this archive is $VM_AGE_DAYS day(s) old."
+    if (( VM_AGE_DAYS >= 2 )); then
+        VM_NOTE="VM data is $VM_AGE_DAYS days old"
+    fi
+else
+    log "WARNING: no VM data present — this archive is local state only."
+    VM_NOTE="no VM data in this backup"
 fi
 
 tar -czf - \
@@ -73,5 +92,12 @@ find "$BACKUP_DIR" -name "life-manager-backup-*.enc" -mtime +"$RETAIN_DAYS" -del
 
 log "Backup complete: $OUTFILE ($(du -sh "$OUTFILE" | cut -f1))"
 
-# Confirm success with a notification.
-osascript -e 'display notification "Backup complete." with title "Life Manager Backup"' 2>/dev/null || true
+# Confirm the outcome with a notification. A degraded run must not look like a clean
+# one — the local archive did get written either way, so "complete" alone is true but
+# misleading when the irreplaceable half of the data is stale.
+if [[ -n "$VM_NOTE" ]]; then
+    log "WARNING: local archive written, but $VM_NOTE."
+    osascript -e "display notification \"Local archive written, but $VM_NOTE.\" with title \"Life Manager Backup\" subtitle \"VM data NOT current\"" 2>/dev/null || true
+else
+    osascript -e 'display notification "Backup complete, VM data current." with title "Life Manager Backup"' 2>/dev/null || true
+fi

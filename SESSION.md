@@ -1,19 +1,13 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-29 (**the three post-② Mike-steps are done, live-verified**: travel check
-un-silenced on the VM — flag confirmed surviving the other chat's deploy, 06:45 fire is the
-last confirm — zones file written (home+office), APK rebuilt and byte-match-verified.
-**The deny tier gained a plan-scoped lift**: `scripts/hook_deny_lift.py`, written only on
-Mike's approval at plan-implementation time, ≤7-day self-deleting expiry, constitution/
-`.env`/keys/`deploy.sh` never liftable — **⚠ probe owed at next session start** (hook-allow
-vs settings deny is unmeasured; instructions in `.claude/rules/deploy.md`). Log fragment
-2026-08-29-01.*
-*Parallel window, same day: **the 08-27/08-28 bill was development, not the product** —
-mike-persona cost was **$1.79 and $3.09** of ~$9.5/~$8.7 billed, and caching now runs 58–88%
-per agent at $0.042/exchange. Two meter defects fixed and deployed (`398c575`): the daily
-budget forked per git worktree, and `unmetered_uplift` was reading high (1.25 → 1.20).
-**⚠ one confirm owed: the VM's spend counter advancing past the deploy.** Fragment
-2026-08-29-02.)*
+*Updated: 2026-08-29 (**the three post-② Mike-steps are done, live-verified** — travel check,
+zones file, APK rebuild; **06:45 fire is the last confirm owed**. **The deny tier gained a
+plan-scoped lift** (`scripts/hook_deny_lift.py`) — **⚠ probe owed at next session start**,
+hook-allow vs settings deny is unmeasured; mechanism, floor and probe steps in
+`.claude/rules/deploy.md`. Fragment 2026-08-29-01.*
+*Parallel window, same day: **the 08-27/08-28 bill was development, not the product**; two meter
+defects fixed and deployed (`398c575`). Figures, caching rates and both defects: fragment
+2026-08-29-02. **⚠ one confirm owed: the VM's spend counter advancing past the deploy.**)*
 
 *✅ **The capstone plan is the read-first for any backlog work:**
 **`archive/plans/capstone_cluster_review_2026-08-27.md`** — every open item by functional
@@ -46,6 +40,15 @@ it once.*
 *⛔ **ZDR: refused, ruled on, do not re-open** — the whole basis, incl. Amendment 2026-08-28,
 is `ROADMAP.md` § Section 0. CRM sweep still gated on Mike's plan re-review (`[DB-0827-03]`);
 the `[DB-0818-06]` wisdom-store proposal review still awaits Mike.*
+
+*✅ **The daily backup carried no current VM data for 26 days and said "Backup complete" each
+time** — launchd's minimal `PATH` excludes Homebrew, so `gcloud` never resolved and every pull
+since 08-04 failed; `metatron-vm-latest.tgz` sat at 08-03 while the archives looked healthy.
+Both scripts fixed and live-verified under a scrubbed `PATH` (454 files / 27.9 MB), and today's
+archive rebuilt with current data. A stale or missing pull now says so in the notification.
+Fragment 2026-08-29-03. **⚠ Still true: there is no off-machine copy** — the Restic external-drive
+job (`com.life-manager.backup.plist`) is not installed in `~/Library/LaunchAgents/`. Left at
+Mike's call, unfiled.*
 
 ***Next: session ③ — ready-to-paste prompt at
 `archive/handoffs/2026-08-29-red-session-three-prompt.md`** (the last planned Red session:

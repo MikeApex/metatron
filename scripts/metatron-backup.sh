@@ -42,6 +42,26 @@ die() { echo "ERROR: $*" >&2; exit 1; }
 
 mkdir -p "$DEST"
 
+# launchd gives a job a minimal PATH — /usr/bin:/bin:/usr/sbin:/sbin — which does
+# not include Homebrew, so a bare `gcloud` resolves when this script is run by hand
+# and not when the daily job runs it. Every scheduled run from 2026-08-04 to
+# 2026-08-29 died on "gcloud: command not found", and because daily-backup.sh treats
+# a failed pull as non-fatal, 26 days of encrypted archives shipped VM data frozen
+# at 2026-08-03 while reporting success. Resolve the binary absolutely.
+GCLOUD="$(command -v gcloud || true)"
+if [[ -z "$GCLOUD" ]]; then
+    for candidate in \
+        /opt/homebrew/bin/gcloud \
+        /usr/local/bin/gcloud \
+        "$HOME/google-cloud-sdk/bin/gcloud" \
+        /opt/homebrew/share/google-cloud-sdk/bin/gcloud \
+        /usr/local/share/google-cloud-sdk/bin/gcloud
+    do
+        [[ -x "$candidate" ]] && { GCLOUD="$candidate"; break; }
+    done
+fi
+[[ -n "$GCLOUD" ]] || die "gcloud not found on PATH or at any known SDK location."
+
 # What we pull, and why:
 #   data/personas/     — all persona data: logs, journals, traces, memory, CRM.
 #                        The irreplaceable part.
@@ -55,7 +75,7 @@ mkdir -p "$DEST"
 # Deliberately excluded: .faiss indexes (rebuildable from the journals we do
 # take, and large), __pycache__, .venv, tools/kokoro.
 log "Pulling data from $VM ..."
-if ! gcloud compute ssh "$VM" --zone="$ZONE" --project="$PROJECT" --tunnel-through-iap \
+if ! "$GCLOUD" compute ssh "$VM" --zone="$ZONE" --project="$PROJECT" --tunnel-through-iap \
         --command "cd ~/$REMOTE_ROOT && tar -czf - \
             --exclude='*/__pycache__' \
             --exclude='*.pyc' \
@@ -87,7 +107,7 @@ log "latest → $DEST/metatron-vm-latest.tgz"
 
 if [[ "$USE_GCS" -eq 1 ]]; then
     log "Copying to $GCS_BUCKET ..."
-    gcloud storage cp "$OUTFILE" "$GCS_BUCKET/" --project="$PROJECT" \
+    "$GCLOUD" storage cp "$OUTFILE" "$GCS_BUCKET/" --project="$PROJECT" \
         && log "GCS copy done." \
         || log "WARNING: GCS copy failed — local copy is still good."
 fi
