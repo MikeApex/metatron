@@ -129,6 +129,11 @@ standing rule distrusts.*
   *Evidence in, 2026-08-27: the `[DB-0822-01]` reconcile passed on five consecutive post-deploy
   days (billed ÷ estimated 1.02×–1.17×, bill running ~$1.8–2.0/day) — the reconciliation supports
   reverting to $100/$175 at the September reset; nothing argues otherwise.*
+  *Evidence in, 2026-08-29: 08-27/08-28 looked alarming (~$9.5/~$8.7 billed) and were not —
+  **mike-persona use was $1.79 and $3.09**, 19% and 36%; the rest was development (one hour of
+  A4+redteam suites cost $6.47). Post-Step-6 caching runs 58–88% per agent, $0.042/exchange.
+  Real use trends ~$1.50–2.00/day, so **$100/$175 has ample headroom for the product** — the
+  cap pressure is test runs. Fragment 2026-08-29-02.*
   `due: 2026-09-01`
   @kind: chore
   *filed 2026-08-20 by Mike*

@@ -7,7 +7,13 @@ last confirm — zones file written (home+office), APK rebuilt and byte-match-ve
 Mike's approval at plan-implementation time, ≤7-day self-deleting expiry, constitution/
 `.env`/keys/`deploy.sh` never liftable — **⚠ probe owed at next session start** (hook-allow
 vs settings deny is unmeasured; instructions in `.claude/rules/deploy.md`). Log fragment
-2026-08-29-01.)*
+2026-08-29-01.*
+*Parallel window, same day: **the 08-27/08-28 bill was development, not the product** —
+mike-persona cost was **$1.79 and $3.09** of ~$9.5/~$8.7 billed, and caching now runs 58–88%
+per agent at $0.042/exchange. Two meter defects fixed and deployed (`398c575`): the daily
+budget forked per git worktree, and `unmetered_uplift` was reading high (1.25 → 1.20).
+**⚠ one confirm owed: the VM's spend counter advancing past the deploy.** Fragment
+2026-08-29-02.)*
 
 *✅ **The capstone plan is the read-first for any backlog work:**
 **`archive/plans/capstone_cluster_review_2026-08-27.md`** — every open item by functional
@@ -18,13 +24,11 @@ register. Geolocation (`[DB-0815-12]`) is **built to its decided design** (extra
 zone abstraction, modes 1+2, ping off-default) — awaiting deploy + APK; Mike defines zones on
 the VM (`config/templates/zones.yaml` is the shape).*
 
-*✅ **Deployed builds awaiting one live confirmation each** (`@waiting`; evidence per item
-in the backlog): decline path `[DB-0827-01]` · context age `[DB-0822-06]` · Bill store
-`[DB-0818-05]` · Diarist gate `[DB-0822-05]` · label filter `[DB-0827-07]` · false-claim
-detector + approval gate `[DB-0815-11]` · audit line `[DB-0814-02]` · **scheduler collision
-(one morning message) + zone suggestion (one away ping at a calendar venue) from session ②**.
-Wisdom-store proposal `[DB-0818-06]` awaits Mike; referent class `[DB-0826-01]` is the
-confirmed fix path (probe-measured, structural preferred).*
+*✅ **Deployed builds awaiting one live confirmation each drain on Mike's ordinary use** —
+the roster and the evidence per item are `@waiting` in `DEV_BACKLOG.md`, which is the only
+copy; this list is not mirrored here (moved out 2026-08-29, volatile budget). Two that need
+Mike rather than use: wisdom-store proposal `[DB-0818-06]`, and referent class `[DB-0826-01]`
+(fix path confirmed, probe-measured, structural preferred).*
 
 *⚠ **Intake is still dark until Mike's VM edits** (`enabled: true` in mike's `intake.yaml`;
 delete `mike.md`'s six-hour inbox line if present) — gates: `[DB-0820-03]`, `[DB-0820-04]`.*
@@ -32,8 +36,12 @@ delete `mike.md`'s six-hour inbox line if present) — gates: `[DB-0820-03]`, `[
 *⚠ **Caps revert to $100/$175 at the September reset — evidence in** (`[DB-0820-01]`,
 `due: 2026-09-01`). `[DB-0820-05]` CLOSED: Pro flip declined, **Step-6 caching landed**
 (`d9b4843`, double A4 gate) — eight specialists on the cached path, ~$0.18/day back.
+**Measured 2026-08-29 against that reset: Mike's real use runs ~$1.50–2.00/day** (08-27/08-28
+were 19%/36% product, the rest development; one hour of A4+redteam suites cost $6.47, more
+than four days of ordinary use). **The cost risk is test runs, not the product.**
 (M): Mike enables the BigQuery billing export, and flips the Mac's `VERTEX_CACHE_DISABLED`
-himself.*
+himself — the second now has a measured payoff, since a dev run pays cache creation and reads
+it once.*
 
 *⛔ **ZDR: refused, ruled on, do not re-open** — the whole basis, incl. Amendment 2026-08-28,
 is `ROADMAP.md` § Section 0. CRM sweep still gated on Mike's plan re-review (`[DB-0827-03]`);
@@ -109,18 +117,15 @@ Three checks still open:
   attached files, opened and passed its first probe 2026-08-20** — live now, not gated on Track E;
   **one manual case, not a suite**, with its limits stated in
   `archive/security/b1b_attachment_injection_2026-08-20.md`.
-- **Check 10** — agent behavioural audits (12 specialists; Coordinator/Synthesizer via pipeline probes)
+- **Check 10** — agent behavioural audits (12 specialists; Coordinator/Synthesizer via pipeline probes). **Unblocked and runnable** since `[DB-0810-03]`'s grants landed (`bfbdbb5`); unrun. Remaining `@session:` decisions: `DEV_BACKLOG.md` § Later § Decisions.
 - **Check 12** — constitution alignment review
 - **A5b/A5c** — re-run `write_aspirational_baseline` with A5 mission-level data (A3 baseline is still a placeholder); A5c preference activation recorded "unknown, confirm if needed."
 
 **A9 — Product analytics — FIRST DRAFT BUILT AND DEPLOYED 2026-08-18; review deferred.** Alpha
-gate requirement. **The core metric is absorbed work, not engagement** — sessions are the
-denominator, so rising engagement is not success. `tools/analytics.py`, 05:40 job, content-free
-per-user rows, cohort anchor pinned. **Refinement is `ROADMAP.md` § A9a**, `@waiting` on `mike`
-holding goals and real data in ongoing use; the five provisional parts (the world-affecting list,
-the un-split T1/T2, COGS, the self-report substitute, per-user collection) are enumerated there,
-with a **`2026-10-01` review date** so the condition cannot sit forever. `[DB-0818-03]` was removed
-from the backlog 2026-08-18 — § A9a is the single home for the review.
+gate requirement. **The core metric is absorbed work, not engagement.** **Full spec, the five
+provisional parts and the `2026-10-01` review date are in [ROADMAP.md](ROADMAP.md) § A9a** — the
+single home, not restated here (duplicate copy cut 2026-08-29). `@waiting` on `mike` holding
+goals and real data in ongoing use.
 
 **A8 — Pre-Alpha code refactor** — gated on A7. Module extraction from
 `core/orchestrator.py` and `core/server.py`. **Full spec, including the regression gate, is in
@@ -129,11 +134,6 @@ from the backlog 2026-08-18 — § A9a is the single home for the review.
 **Four built-and-standing constraints must not be undone** (outbound messaging, `tone_shape`,
 obligations-as-data, scheduler maintenance jobs) — **full statements and reasoning:
 `archive/PROJECT_LOG.md`**; reference now, not current state.
-
-**The 2026-08-28 decisions batch is fully ruled and fully built** — `[DB-0810-03]`'s grants
-landed in session ② (`bfbdbb5`), so **A7 check 10 no longer has a blocker**; the
-12-specialist behavioural audit itself is still unrun. Remaining `@session:` decisions live
-in `DEV_BACKLOG.md` § Later § Decisions.
 
 ---
 
