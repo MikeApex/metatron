@@ -1043,6 +1043,10 @@ APPLY_CRM_PROPOSALS_SCHEMA = {
 }
 
 
+# manual: python3 -m tools.crm_sweep --persona NAME [--digest]
+# Run as a MODULE from the repo root, not as a file path — `python3 tools/crm_sweep.py`
+# puts tools/ on sys.path instead of the root and dies on `import core`. Same invocation
+# as tools/obligations.py, tools/accountability.py and tools/calendar_reconcile.py.
 if __name__ == "__main__":
     import argparse
 
