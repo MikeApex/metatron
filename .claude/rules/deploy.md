@@ -94,3 +94,31 @@ keeping and dev process rather than the product; that ratio is why this rule exi
 
 **`bash scripts/qa_sweep.sh`** is free (9 checks, ~3s) and is the right thing to run after any
 harness edit. It parses; it does not execute — run the thing you changed.
+
+---
+
+## Plan-scoped deny lift (`scripts/hook_deny_lift.py`, 2026-08-29)
+
+**A Denied-tier `Write`/`Edit` is allowable during an approved plan's implementation — by asking
+Mike, never by editing the deny list.** On his yes, write .claude/deny_lift.json — unbackticked
+deliberately: the file exists only while a lift is in force, and `check_claude_md_claims.py`
+reads a backticked path as one that must exist — at repo root, gitignored, scoped to that plan's
+paths with a ≤7-day expiry:
+
+```json
+{"plan": "one-line plan name", "created": "YYYY-MM-DD", "expires": "YYYY-MM-DD",
+ "paths": ["data/personas/mike/zones.yaml"]}
+```
+
+The hook allows exactly those paths until expiry, then deletes the lift — failure mode is the
+deny returning, which fails closed. It **retires** per-phase manual deny-list edits (a forgotten
+restore is silently invisible). Full rationale, and the `NEVER_LIFT` floor a lift can never
+touch (constitution, `.env*`, keys, `deploy.sh`, settings, the mechanism itself): the hook's own
+header. The lift covers `Write`/`Edit` only — Bash-side actions (e.g. SSH edits of VM files)
+answer to the auto-mode classifier, which nothing here lifts.
+
+**⚠ UNVERIFIED until probed: hook-allow beating a settings deny is designed from docs, not
+measured** — and this project has twice found matcher behaviour differ from documentation. In a
+fresh session (hooks snapshot at start): lift `data/personas/probe_lift.txt`, attempt the Write,
+record the result HERE replacing this paragraph, delete probe and lift. Until then expect the
+deny to win.

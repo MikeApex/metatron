@@ -105,9 +105,9 @@ copy here would go stale and the stale copy would keep being read. Read it there
 > runs silently. `deny` is enforced for both families. **`./deploy.sh` is therefore Denied**
 > (Mike's decision, 2026-08-14) — it was the only ungated irreversible action.
 >
-> **Anything that must never happen unattended belongs in the Denied row.** How to probe a
-> permission rule safely, and why `git push` stays Red but inert:
-> [`.claude/rules/deploy.md`](.claude/rules/deploy.md).
+> **Anything that must never happen unattended belongs in the Denied row.** Rule probing, `git push`'s
+> inert Red, and the **plan-scoped deny lift** (2026-08-29 — a Denied `Edit`, only during an approved
+> plan, only by asking Mike, never constitution/`.env`/keys/`deploy.sh`): [`.claude/rules/deploy.md`](.claude/rules/deploy.md).
 
 The Denied row turns two standing prose rules into mechanism: the constitution is Tier 0, and
 **the VM owns live persona config** ([`.claude/rules/personas.md`](.claude/rules/personas.md)).

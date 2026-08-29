@@ -1,14 +1,13 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-28 late (**supervised Red session ② ran all five items and Mike DEPLOYED
-them**: scheduler collision+gates, the full grants pass — **A7 check 10 unblocked** — the
-A4-gated Step-6 caching (suite now measures "safe WITH standing knowledge"), medication
-ranking both halves, and the option-b zone suggestion, live because the Places key already
-existed. Six commits `20c17d0`…`d750fbb`; log fragment 2026-08-28-04.
-**⚠ URGENT (M): the 06:45 travel check is silently skipped every morning until Mike adds
-`respect_quiet_hours: false` to `daily_travel_check` in his VM `scheduler.yaml`** — that,
-the zones file, and the APK sideload are the three steps in
-`archive/handoffs/2026-08-28-post-session-two-mike-steps.md`.)*
+*Updated: 2026-08-29 (**the three post-② Mike-steps are done, live-verified**: travel check
+un-silenced on the VM — flag confirmed surviving the other chat's deploy, 06:45 fire is the
+last confirm — zones file written (home+office), APK rebuilt and byte-match-verified.
+**The deny tier gained a plan-scoped lift**: `scripts/hook_deny_lift.py`, written only on
+Mike's approval at plan-implementation time, ≤7-day self-deleting expiry, constitution/
+`.env`/keys/`deploy.sh` never liftable — **⚠ probe owed at next session start** (hook-allow
+vs settings deny is unmeasured; instructions in `.claude/rules/deploy.md`). Log fragment
+2026-08-29-01.)*
 
 *✅ **The capstone plan is the read-first for any backlog work:**
 **`archive/plans/capstone_cluster_review_2026-08-27.md`** — every open item by functional
@@ -40,13 +39,14 @@ himself.*
 is `ROADMAP.md` § Section 0. CRM sweep still gated on Mike's plan re-review (`[DB-0827-03]`);
 the `[DB-0818-06]` wisdom-store proposal review still awaits Mike.*
 
-***Next (session ② done and deployed 2026-08-28 late):** **(M) the three steps in
-`archive/handoffs/2026-08-28-post-session-two-mike-steps.md`** — travel-check flag (urgent),
-VM zones file, APK sideload ([DB-0828-01] `due: 2026-09-07`); then ③ email-surfacing
-session (`[DB-0822-09]` + the `[DB-0822-08]` re-measure, **plus the Red proposals waiting
-verbatim in the 2026-08-28 handoffs**; tier note: farm the Amber halves to Opus workers);
-④ CRM sweep build (Opus, post-review, `[DB-0827-03]`). Cluster F + session ②'s confirms
-drain on Mike's ordinary use. A7 check 10 (the 12-specialist audit) is now runnable.*
+***Next: session ③ — ready-to-paste prompt at
+`archive/handoffs/2026-08-29-red-session-three-prompt.md`** (the last planned Red session:
+email surfacing `[DB-0822-09]`, the `[DB-0822-08]` re-measure-then-fix, the ritual Red line,
+judgment gate + Diarist list shape, 08-28 handoff sweep; **its Step 0 is the deny-lift
+probe**); then ④ CRM sweep build (Opus, post-review, `[DB-0827-03]`). (M): phone sideload
+from the built APK when convenient. Confirms drain on ordinary use: travel check firing
+06:45, one 📍 ping at a zone, one zone-suggestion card, plus session ②'s list. A7 check 10
+(the 12-specialist audit) is runnable.*
 
 *⚠ **The code-dominant inversion question is live and must be decided before A8 executes**
 or A8 is paid for twice. Standing home, three dated rounds:

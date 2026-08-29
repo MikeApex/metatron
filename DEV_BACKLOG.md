@@ -75,6 +75,12 @@ back-tagging the rest is `[DB-0815-10]`.
 > against `git log` before promoting anything from here.
 *(empty — triaged 2026-08-27 by `/backlog deep`; evidence in `archive/backlog_closed_2026-08.md` § Closed 2026-08-27)*
 
+- **[instruction change]** Suppress or delay scheduled routine outputs if the user is currently active in session or typing, to avoid double-texting collisions.  
+  `2026-08-29T09:34:01.382403Z`
+
+- **[instruction change]** Develop a system check or context-validation step to prevent repeating already-given information or suggestions, specifically regarding checking business hours before suggesting errands and respecting when a user has already deferred a task.  
+  `2026-08-29T06:01:53.767381Z`
+
 - **[needs building]** Implement a state-check to prevent repeating questions about tasks the user has already deferred, and ensure time/context appropriateness (e.g., checking store hours before prompting at 9:30 PM).  
   `2026-08-28T20:28:28.051829Z`
 
@@ -1228,6 +1234,15 @@ the five June 2026 corrections → older than every fix that followed (tone, tim
 bootstrapping all since reworked). Kept, deliberately again: the Heathrow cluster, the 08-02/03
 correction runs, and the unresolved single corrections — behavioural evidence nothing has
 shipped against.)*
+
+- **[user corrected a prior turn]** Mike is questioning the validity of the "admin-masking" concept noted in his logs, attributing his focus on small tasks to deadline proximity and energy rhythms instead.  
+  `2026-08-29T09:38:01.472190Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Mover's Claim Deadline' (2026-09-05T00:00:00, uid=e0126c60-6b77-4343-a970-ae4dcc64ad12@ai-life-manager) and 'DEADLINE: Forced Arbitration Filing' (2026-09-05T00:00:00, uid=46e726b5-b172-49c0-a4b1-acdc2190a44a@ai-life-manager). title_similarity=0.28, shared_attendees=[], shared_words=['deadline']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-08-29T04:35:05.735653Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Finalise Apex migration plan' (2026-09-01T00:00:00, uid=23c8f5b8-8487-4717-bf2d-e5e23bcb63dd@ai-life-manager) and 'Apex migration initial session' (2026-09-01T10:30:00, uid=2249d5df-28d8-4166-b637-9727f6d71026@ai-life-manager). title_similarity=0.59, shared_attendees=[], shared_words=['apex', 'migration']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-08-29T04:35:05.712721Z`
 
 - **[user corrected a prior turn]** System repeated a prompt for a pharmacy errand that the user had already deferred to the weekend, and failed to check if the pharmacy was even open at 9:30 PM on a Friday.  
   `2026-08-28T20:28:25.515675Z`
