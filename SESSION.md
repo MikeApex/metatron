@@ -1,15 +1,14 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-08-29 late (**the confirm-drain session, Mike present.** Session ③'s batch is
-**deployed and live-verified** (the "deploy done" belief was wrong on open — VM was at
-`398c575`; Mike deployed in-session, `c1ee928` + a second close-out deploy carrying the CRM
-sweep build `f75a338` from a parallel window). **Four items closed on live evidence**
-(`[DB-0815-05]`, `[DB-0809-16]`, `[DB-0810-01]`, `[DB-0803-05]`); the decline loop is dead
-live (`[DB-0827-01]`, 18:24-tail pending); **intake is ON** (Mike's one-line
-`intake.yaml`, first sweep 13:54: 24 mail, 23 unclear surfacing; extractor still off behind
-`[DB-0820-03]`). New: `[DB-0829-01]` (log records gated actions as done) and a fifth referent
-instance on `[DB-0826-01]`, both from live testing. Machine log swept 71→64. **APK is
-current** (Mike rebuilt/sideloaded 08-29 morning). Fragment 2026-08-29-04.)*
+*Updated: 2026-09-01 (**a single-item `/fix` session, Mike present.** The spend caps are back
+at **$100 soft / $175 hard** on the September reset — `[DB-0820-01]` closed and removed,
+evidence in `archive/backlog_closed_2026-09.md`. Both budgets re-read from GCP after the
+change; **soft was lowered first** so the gap never narrowed to $25 in passing. Same commit
+stopped three live files (`core/spend_guard.py`, `config/modules/spend_guard.yaml`,
+`infra/stop-vm/main.py`) restating `$70/$150` — none of them read the numbers, so they now
+point at `docs/INFRASTRUCTURE.md`, which is again the only copy. `b33498f`, **not deployed and
+nothing owed** — comments only. Session ③'s batch remains deployed and live-verified from
+08-29. Fragment 2026-09-01-01.)*
 
 *✅ **The capstone plan is the read-first for any backlog work:**
 **`archive/plans/capstone_cluster_review_2026-08-27.md`** — every open item by functional
@@ -23,10 +22,10 @@ table (8 entries, dispositions proposed), the three `@session` items, and the in
 labelling. **Ruled already:** the three calendar duplicate pairs are real — keep either,
 delete the rest; executing closes `[DB-0809-21]`.*
 
-*⚠ **Caps revert to $100/$175 at the September reset — evidence in** (`[DB-0820-01]`,
-`due: 2026-09-01`). Measured 2026-08-29: real use ~$1.50–2.00/day — **the cost risk is test
-runs, not the product** (figures: fragment 2026-08-29-02). (M): BigQuery billing export, and
-flip the Mac's `VERTEX_CACHE_DISABLED` — now with a measured payoff.*
+*⚠ **Caps are $100/$175 again (done 2026-09-01).** Expect a heavy testing day to trip the soft
+cap — that is the control working, recovery is a 60s VM start. Values live in
+`docs/INFRASTRUCTURE.md` § Billing protection, now the only copy. (M) still owed: BigQuery
+billing export, and flip the Mac's `VERTEX_CACHE_DISABLED` — with a measured payoff.*
 
 *⛔ **ZDR: refused, ruled on, do not re-open** — the whole basis, incl. Amendment 2026-08-28,
 is `ROADMAP.md` § Section 0. The `[DB-0818-06]` wisdom-store proposal review still awaits
