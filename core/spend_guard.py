@@ -1,9 +1,14 @@
 """
 core/spend_guard.py — in-process runaway protection.
 
-GCP's budget data lags by hours, so the $70 soft cap and $150 hard cap cannot
-react at runaway speed: a retry loop can burn a month's budget before a budget
-alert fires. This layer sees every API call as it happens and reacts in seconds.
+GCP's budget data lags by hours, so neither the soft cap (stops the VM) nor the
+hard cap (disables billing) can react at runaway speed: a retry loop can burn a
+month's budget before a budget alert fires. This layer sees every API call as it
+happens and reacts in seconds.
+
+The cap amounts are deliberately not written here — docs/INFRASTRUCTURE.md
+§ Billing protection is the source of truth. This docstring said $70/$150 through
+two raises and a revert; nothing in this module reads those numbers.
 
 Two independent guards, because they fail differently:
 

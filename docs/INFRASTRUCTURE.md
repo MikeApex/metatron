@@ -110,17 +110,33 @@ WantedBy=multi-user.target
 ## Billing protection — full mechanism and recovery
 
 **This section is the source of truth for the thresholds — do not quote them from
-memory or from another file.** They have been raised four times.
+memory or from another file.** They have been raised four times and lowered once.
+**Within this section, the table below is the only copy of the numbers** — the
+sub-headings under § Hard cap and § Soft cap deliberately no longer name an amount,
+because they carried the $70/$150 values for three weeks after the table said
+$150/$250.
 
 | Tier | Amount | Fires | Action | Recovery |
 |---|---|---|---|---|
-| **Soft** | $150 | `budget-soft-cap` → `stop-vm` | stops `metatron-vm` | `gcloud compute instances start`, ~60s |
-| **Hard** | $250 | `billing-cap` → `stop-billing` | disables project billing | **days** — runbook below |
+| **Soft** | $100 | `budget-soft-cap` → `stop-vm` | stops `metatron-vm` | `gcloud compute instances start`, ~60s |
+| **Hard** | $175 | `billing-cap` → `stop-billing` | disables project billing | **days** — runbook below |
 
-> **⏳ TEMPORARY — revert both in September (Mike, 2026-08-20).** These are elevated
-> to clear a known cost defect, not because the true budget changed. **When the
-> September cycle resets, bring them back down** — to $100/$175 unless the
-> reconciliation says otherwise. Backlog: `[DB-0820-01]`.
+> **✅ Reverted to $100/$175 on 2026-09-01 at the September reset, as planned — closes
+> `[DB-0820-01]`.** Confirmed live by `gcloud billing budgets list` after the change.
+> **The soft cap was lowered first**, so the intermediate state was $100/$250 rather than
+> $150/$175 — see the gap rule below; it applies to the order of a *reduction* too, not
+> just to choosing the numbers.
+>
+> The reconciliation the revert was conditional on came in and supported it: five
+> consecutive post-deploy days at billed ÷ estimated 1.02×–1.17× (`[DB-0822-01]`,
+> 2026-08-27), and a 2026-08-29 breakdown showing **real `mike`-persona use at
+> ~$1.50–2.00/day** with the alarming 08-27/08-28 totals (~$9.5/~$8.7) driven by
+> development test suites, not the product — one hour of A4 + red-team runs cost $6.47.
+> **So the cap pressure is test runs, and $100/$175 has ample headroom for the product.**
+> A heavy testing day can still trip the soft cap; that is the control working, and the
+> recovery is a 60-second VM start.
+>
+> **The history below is kept because it is the reasoning, not the numbers.**
 >
 > **Raised 2026-08-20 from $100/$175** after the soft cap fired at 10:36 and stopped
 > the VM mid-deploy. The trip was real, but the cause was a defect rather than usage:
@@ -162,11 +178,11 @@ recovery runbook.
 >
 > **✅ `networks/default` has since thawed — corrected 2026-08-03.** Probe-tested twice: an instance created on `default` came up `RUNNING` on `10.128.0.4`, then was deleted. Google restored it between 07-31 and 08-03, past their own 3–5 business day estimate but without further intervention. Earlier revisions of this warning told future sessions to avoid a network that works. `metatron-vm` stays on `metatron-net` by choice, not necessity — moving back would mean another rebuild for no gain.
 
-Budget history: $20 → $30 (2026-07-27) → $40 (2026-07-30) → restructured to $70 soft / $150 hard (2026-07-31).
+Budget history: $20 → $30 (2026-07-27) → $40 (2026-07-30) → restructured to $70 soft / $150 hard (2026-07-31) → $100/$175 (2026-08-09) → $150/$250 (2026-08-20, temporary) → back to $100/$175 (2026-09-01).
 
-**Hard cap ($150 — disables billing, last resort):**
+**Hard cap (disables billing, last resort) — amount in the table above:**
 
-- **Budget resource:** "Metatron & Multi-Model Budget" on billing account `013F3D-66B5CD-955A3A`, `$150` monthly, calendar-period, notifying via Pub/Sub
+- **Budget resource:** "Metatron & Multi-Model Budget" on billing account `013F3D-66B5CD-955A3A`, monthly, calendar-period, notifying via Pub/Sub
 - **Pub/Sub topic:** `billing-cap` in project `metatron-ai-499810`
 - **Budget alert:** fires whenever cost exceeds the budget, publishes `{costAmount, budgetAmount}` to `billing-cap` topic — not just once on first crossing; GCP re-evaluates and re-notifies repeatedly while spend stays over budget
 - **Cloud Function:** `stop-billing` (Python 3.11, Gen2, `us-central1`)
@@ -175,9 +191,9 @@ Budget history: $20 → $30 (2026-07-27) → $40 (2026-07-30) → restructured t
   - Retry policy: `RETRY_POLICY_DO_NOT_RETRY`
   - Source tracked at... *(not yet in the repo — currently only deployed; add under `infra/stop-billing/` if it needs another change. `infra/stop-vm/` shows the pattern.)*
 
-**Soft cap ($70 — stops the VM, the normal control):**
+**Soft cap (stops the VM, the normal control) — amount in the table above:**
 
-- **Budget resource:** "Metatron Soft Cap (stops VM)" on the same billing account, `$70` monthly, calendar-period, scoped to project `211460608583`
+- **Budget resource:** "Metatron Soft Cap (stops VM)" on the same billing account, monthly, calendar-period, scoped to project `211460608583`
 - **Pub/Sub topic:** `budget-soft-cap`
 - **Cloud Function:** `stop-vm` (Python 3.11, Gen2, `us-central1`) — source in [`infra/stop-vm/`](../infra/stop-vm/), deploy with `gcloud functions deploy stop-vm --gen2 --runtime=python311 --region=us-central1 --source=. --entry-point=stop_vm --trigger-topic=budget-soft-cap`
   - Action: if `costAmount > budgetAmount`, no override is active, and the instance is not already `TERMINATED`, stops `metatron-vm`

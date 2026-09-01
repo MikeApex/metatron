@@ -1,9 +1,12 @@
 # Spend guard — daily runaway protection.
 #
-# This exists because GCP's own budget data lags by hours, so the $70 soft cap
-# and $150 hard cap cannot react at runaway speed. A retry loop can burn a
+# This exists because GCP's own budget data lags by hours, so neither the soft
+# cap nor the hard cap can react at runaway speed. A retry loop can burn a
 # month's budget before a budget alert fires. This layer runs in-process and
 # reacts in seconds.
+#
+# Cap amounts are not repeated here — see docs/INFRASTRUCTURE.md § Billing
+# protection. This comment named $70/$150 for a month after they were $100/$175.
 #
 # Two independent guards, because they fail differently:
 #

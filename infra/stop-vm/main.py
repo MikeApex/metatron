@@ -9,8 +9,13 @@ The VM had to be rebuilt on a new network to recover.
 
 So the ordering is deliberate:
 
-    ~$70   this function      stop the VM          recovery: one API call, ~60s
-    ~$150  stop-billing       disable billing      recovery: days, and a frozen VPC
+    soft cap   this function      stop the VM        recovery: one API call, ~60s
+    hard cap   stop-billing       disable billing    recovery: days, and a frozen VPC
+
+The amounts are deliberately not written here — they have moved seven times and a
+comment does not track them. docs/INFRASTRUCTURE.md § Billing protection is the
+source of truth; this function reads the threshold from the budget notification
+itself, never from this file.
 
 Stopping the VM removes the dominant cost (an e2-medium running 24/7, plus the
 scheduler's periodic Vertex AI calls) while leaving every resource intact.

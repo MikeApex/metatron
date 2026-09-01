@@ -113,31 +113,6 @@ Reasoning lives in `archive/PROJECT_LOG.md` § 2026-08-10, last. Every entry car
 checked and when; a verdict without that line is a description, and descriptions are what the
 standing rule distrusts.*
 
-- **1. [DB-0820-01] The spend caps are temporarily too high — bring them back down in
-  September.** Raised 2026-08-20 from **$100/$175 to $150/$250** (soft stops the VM, hard
-  disables billing). Mike's decision, and **explicitly temporary**: the real budget did not
-  change, the caps were lifted to clear a cost *defect* — Vertex context-cache storage, ~$100/mo
-  (`archive/plans/vertex_cache_cost_control_2026-08-20_plan.md`). **When the September cycle
-  resets, put them back**, to $100/$175 unless a reconciliation says otherwise.
-  **Do not lower the soft cap alone.** It was nearly set to $150 against a $175 hard cap, leaving
-  $25 — and the hard cap is an outage (26h VPC freeze, 2026-07-30), has fired *below* its own
-  threshold once, and sits behind spend figures that lag by hours. **Keep ~$100 between the tiers,
-  whatever the absolute numbers.** Values and full reasoning:
-  [docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md) § Billing protection — read them there, never
-  from a script comment (`metatron-vm-override.sh` was stale for months).
-  *Checked 2026-08-20: both budgets confirmed live at 150/250 via `gcloud billing budgets list`.*
-  *Evidence in, 2026-08-27: the `[DB-0822-01]` reconcile passed on five consecutive post-deploy
-  days (billed ÷ estimated 1.02×–1.17×, bill running ~$1.8–2.0/day) — the reconciliation supports
-  reverting to $100/$175 at the September reset; nothing argues otherwise.*
-  *Evidence in, 2026-08-29: 08-27/08-28 looked alarming (~$9.5/~$8.7 billed) and were not —
-  **mike-persona use was $1.79 and $3.09**, 19% and 36%; the rest was development (one hour of
-  A4+redteam suites cost $6.47). Post-Step-6 caching runs 58–88% per agent, $0.042/exchange.
-  Real use trends ~$1.50–2.00/day, so **$100/$175 has ample headroom for the product** — the
-  cap pressure is test runs. Fragment 2026-08-29-02.*
-  `due: 2026-09-01`
-  @kind: chore
-  *filed 2026-08-20 by Mike*
-
 ### Green/Amber — buildable without a prompt
 
 *All three are code fixes in `core/` or `tools/`. Grouped so an automated run can take the block.
@@ -1272,6 +1247,18 @@ claim user-facing (its log-write sibling is `[DB-0829-01]`); the two Iva/Eva cor
 evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording — "causing an
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'DEADLINE: Forced Arbitration Filing' (2026-09-05T00:00:00, uid=46e726b5-b172-49c0-a4b1-acdc2190a44a@ai-life-manager) and 'File forced arbitration regarding the mover's claim' (2026-09-05T00:00:00, uid=c142ae5d-bccb-4e00-95e7-a12c89c78d03@ai-life-manager). title_similarity=0.56, shared_attendees=[], shared_words=['arbitration', 'forced']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-09-01T04:35:08.528358Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Submit mover's claim' (2026-09-05T00:00:00, uid=67f28955-9d6f-407f-ae58-1c0675a77721@ai-life-manager) and 'File forced arbitration regarding the mover's claim' (2026-09-05T00:00:00, uid=c142ae5d-bccb-4e00-95e7-a12c89c78d03@ai-life-manager). title_similarity=0.48, shared_attendees=[], shared_words=['claim', "mover's"]. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-09-01T04:35:08.528222Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Mover's Claim Deadline' (2026-09-05T00:00:00, uid=e0126c60-6b77-4343-a970-ae4dcc64ad12@ai-life-manager) and 'File forced arbitration regarding the mover's claim' (2026-09-05T00:00:00, uid=c142ae5d-bccb-4e00-95e7-a12c89c78d03@ai-life-manager). title_similarity=0.36, shared_attendees=[], shared_words=['claim', "mover's"]. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-09-01T04:35:08.527932Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Mover's Claim Deadline' (2026-09-05T00:00:00, uid=e0126c60-6b77-4343-a970-ae4dcc64ad12@ai-life-manager) and 'Submit mover's claim' (2026-09-05T00:00:00, uid=67f28955-9d6f-407f-ae58-1c0675a77721@ai-life-manager). title_similarity=0.62, shared_attendees=[], shared_words=['claim', "mover's"]. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-09-01T04:35:08.505241Z`
 
 - **[user corrected a prior turn]** Mike is questioning the validity of the "admin-masking" concept noted in his logs, attributing his focus on small tasks to deadline proximity and energy rhythms instead.  
   `2026-08-29T09:38:01.472190Z`
