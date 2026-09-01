@@ -370,6 +370,58 @@ first** — while **anything Mike raises promotes on first report**. And **`Now`
 sections and surfaces them on the sync line at session start, so a time-gated item wakes itself. If
 the condition has not arrived, push the date rather than closing the item.
 
+### Chores — upkeep on a clock
+
+- **[DB-0901-01] The fleet can sit on a deprecated model for weeks without anyone noticing, so
+  check monthly whether Google has shipped something newer we can actually call.**
+  `due: 2026-10-01` · `@kind: chore`
+  **✅ 2026-09-01 run: DONE — nothing to adopt.** `gemini-3.8-flash` is the only thing newer than
+  the fleet, and it **404s on `global`**, so there is nothing to move to. Fleet confirmed on
+  `gemini-3.7-flash` + `gemini-3.5-flash-lite`. Next run 2026-10-01. **A run that finds nothing is
+  a successful run** — record it and push the date; do not close the item, it is standing.
+  **What happened, which is why this is on a clock at all.** On 2026-09-01 the fleet was still on
+  `gemini-3.1-flash-lite` — **deprecated** — and `gemini-3.1-pro-preview`, while three newer Flash
+  generations had shipped unnoticed. `SESSION.md`'s model table was five weeks stale. The standing
+  instruction in `docs/CONVENTIONS.md` § Model version maintenance (*"check at the start of each
+  new phase"*) is a remembered process, and it went stale the way remembered processes do.
+  **Run:** `python3 scripts/check_model_availability.py` — ~20s, costs well under $0.001, no
+  standing cost, and it never edits routing. If it reports nothing, push the date a month and
+  close the loop; that is a successful run, not a wasted one.
+  **The trap it exists to catch, because a hand-check would miss it.** A model can be `200 GA` in
+  the Vertex catalogue and `404` on the `global` endpoint we actually call — true of both
+  `gemini-3.8-flash` and `gemini-3.5-pro` on 2026-09-01. **Catalogue presence is not
+  availability.** The script confirms with a real call for exactly this reason; do not replace it
+  with a glance at the pricing page, which is separately unreliable (that page's context-cache
+  storage table had no 3.7 Flash row at all, while the billing SKU catalogue did).
+  **If it does find something, adopting it is not just a string swap** — it needs a
+  `routing_cloud.yaml` edit (Red), a `spend_guard.yaml` pricing entry (an unpriced model bills at
+  the Pro-rate `default`, and an entry *missing* `cache_storage_per_hour` bills storage at **zero**),
+  and a re-check of the cache token floor, which is per-model.
+  **Deliberately not a scheduler job** (Mike, 2026-09-01) — the scheduler runs the product, and
+  this is a development concern whose only actionable outcome is a developer's Red-tier edit.
+
+- **[DB-0901-02] Gemini 3.7 Flash doubles in price on New Year's Day, and only one of the two
+  places we price it will notice.** `due: 2026-12-15` · `@kind: chore`
+  **What changes on 2027-01-01:** 3.7 Flash input $0.75 → **$1.50**, output $3.75 → **$7.50**,
+  cache-read $0.075 → **$0.15**. Cache *storage* does not change ($1.00/1M/hour). 3.5 Flash-Lite
+  is unaffected — it was never on introductory pricing.
+  **Metatron switches itself, but that has never actually fired.** `config/modules/spend_guard.yaml`
+  carries a `from: "2027-01-01"` block applied by `_apply_dated_overrides()` in
+  `core/spend_guard.py`. It is unit-verified across the boundary but has never run in production.
+  **On the day, confirm it flipped** rather than assuming — one call, then check
+  `data/diagnostics/spend_<date>.json` prices at the new rate.
+  **Chorus does NOT switch itself and will silently understate.** `~/Desktop/chat/server.py` and
+  `insult_sim.py` hold `PRICING` as static tuples; `"gemini-pro"` must go `(0.75, 3.75)` →
+  `(1.50, 7.50)` **by hand** in both files. Its budget caps (`DAILY_CAP`, `SIX_HOUR_CAP`) are
+  denominated in those numbers, so leaving them stale means the caps stop biting at the intended
+  spend. Chorus is outside the repo — this will not show up in any Metatron check.
+  **Why mid-December and not the 31st:** doing it early means the 2027 rates are wrong for a
+  fortnight in the *conservative* direction (over-reporting), which is the safe way to be wrong on
+  this project — a hard-cap trip is an outage, not a cost event.
+  **Cost context:** at the last measured week's volume this moves Metatron from ~$63/mo to
+  ~$106/mo. Still ~23% below the 3.1 Pro fleet it replaced, so nothing needs re-deciding — but the
+  forecast does need re-baselining, and any unit economics built on $0.75/$3.75 breaks that day.
+
 ### Decisions — each needs one answer from Mike, not effort
 
 - **[DB-0818-08] Nothing records where a fact came from, so a checked value is overwritten by a

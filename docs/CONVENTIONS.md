@@ -154,7 +154,7 @@ when a provider announces a new model in a session.
 |---|---|---|
 | Anthropic models | `ANTHROPIC_MODEL`, `routing.yaml` cloud_deep | console.anthropic.com/docs/models |
 | OpenAI models | `OPENAI_MODEL` | platform.openai.com/docs/models |
-| Gemini models | `GEMINI_MODEL`, `GEMINI_PRO_MODEL`, `routing.yaml` cloud_fast/cloud_deep | aistudio.google.com / Gemini API docs |
+| Gemini models | `routing*.yaml` agent entries | **`python3 scripts/check_model_availability.py`** — see below |
 | MCP ask_gemini | session-level via `mcp__ask_gemini__set_model` | MCP tool description lists options |
 | Ollama | `OLLAMA_MODEL` | `ollama list` on the local machine |
 
@@ -162,3 +162,22 @@ when a provider announces a new model in a session.
 > to look and how to check*; recording the current values in a second place is how
 > they go stale. `SESSION.md` is rewritten every session, so it is the copy that
 > stays true.
+
+**For Gemini, "check at the start of each new phase" was not enough, so it is now a script
+and a clock.** That instruction is a remembered process and it went stale the way remembered
+processes do: on 2026-09-01 the fleet was still routing to a **deprecated**
+`gemini-3.1-flash-lite` with three newer Flash generations shipped, and the `SESSION.md` table
+was five weeks old. `scripts/check_model_availability.py` answers it in ~20s for well under
+$0.001; `[DB-0901-01]` carries the monthly `due:` date so it wakes itself at session start.
+
+> **Two things a hand-check gets wrong, both observed 2026-09-01.** A model can read `200 GA`
+> from the Vertex catalogue and `404` on the `global` endpoint we actually call — true of
+> `gemini-3.8-flash` and `gemini-3.5-pro` that day, so **catalogue presence is not
+> availability** and only a live call settles it. And the public pricing page is not a
+> substitute for the billing SKU catalogue: its context-cache-storage table had no 3.7 Flash
+> row at all, while the SKU catalogue published one ($1.00/1M/hour).
+
+**Adopting a new model is never only a string swap.** It needs the `routing*.yaml` entry (Red),
+a `config/modules/spend_guard.yaml` pricing entry — an unpriced model bills at the Pro-rate
+`default`, and an entry that *exists but omits* `cache_storage_per_hour` bills cache storage at
+**zero** — and a re-check of the Vertex cache token floor, which is per-model, not universal.

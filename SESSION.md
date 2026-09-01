@@ -27,6 +27,25 @@ cap — that is the control working, recovery is a 60s VM start. Values live in
 `docs/INFRASTRUCTURE.md` § Billing protection, now the only copy. (M) still owed: BigQuery
 billing export, and flip the Mac's `VERTEX_CACHE_DISABLED` — with a measured payoff.*
 
+*⚠ **The Gemini fleet moved off 3.1 Pro / 3.1 Flash-Lite on 2026-09-01** → `gemini-3.7-flash`
+(reasoning: synthesizer, pattern_miner, goals_interviewer, mental_wellbeing, physical_health,
+research_agent) and `gemini-3.5-flash-lite` (bulk: everything else). 3.1 Flash-Lite was
+deprecated; Pro is gone from the fleet entirely. **DEPLOYED by Mike 2026-09-01 — live.**
+`spend_guard.yaml` pricing is now **date-aware**: 3.7 Flash intro rates until 2026-12-31, list
+rates from 2027-01-01, because both input and cache-read double that day (`[DB-0901-02]` carries
+the December check — Chorus prices the same model in a static table that will NOT switch itself).
+Cache TTL re-derived and **unchanged at 10 min** — it still pays off at <1 hit on every model.
+**Measured effect on running cost, from the real pre-migration week** (Cloud Monitoring, 24.9M
+tokens): **~$137/mo → ~$63/mo, −54%.** The saving is entirely the reasoning tier (−64%); the bulk
+tier went **UP 23%** — 3.5 Flash-Lite costs more than 3.1 Flash-Lite, and that swap was forced by
+deprecation, not chosen. From 2027 the total lands ~$106/mo, still −23% on the old fleet.*
+
+*⛔ **A4 safety testing is SUSPENDED for the remainder of the capstone buildout (Mike,
+2026-09-01).** Consequence to carry: the clinical flags are **unverified on 3.7 Flash** — the
+fleet moved without running `tests/run_a4_safety.py`, and the last clean 6/6 was on a model no
+longer in use. By decision, not oversight; full text in `ROADMAP.md` § Section 0 point 8.
+Re-run `python3 tests/run_a4_safety.py --complexity deep` at capstone close, before Alpha.*
+
 *⛔ **ZDR: refused, ruled on, do not re-open** — the whole basis, incl. Amendment 2026-08-28,
 is `ROADMAP.md` § Section 0. The `[DB-0818-06]` wisdom-store proposal review still awaits
 Mike. CRM sweep: **built** (`f75a338`, parallel window, gate lifted by Mike) — deployed at
@@ -153,15 +172,20 @@ project, and the sleep/launchd steps that must precede any switch to local Ollam
 
 ---
 
-## Model IDs (updated 2026-07-27)
+## Model IDs (updated 2026-09-01)
 
 | Provider | Model | ID | Notes |
 |---|---|---|---|
 | Anthropic | Sonnet 5 (orchestrator fallback) | `claude-sonnet-5` | Only used inside `run_model_conference`'s unused `anthropic` branch — not on the live routing path (cloud/local routing is all Gemini/Ollama). Bumped 2026-07-27 from `claude-sonnet-4-6`. |
 | Anthropic | Opus 5 (`ask_claude` MCP alias `opus`) | `claude-opus-5` | Added 2026-07-27 — new Anthropic release, matches Fable-5-tier capability at half price. `opus-4-8`/`opus-4-7` kept as pinned aliases in `~/.claude/mcp_servers/ask_claude.py`. |
 | OpenAI | o3 | `o3` | |
-| Gemini | Flash-Lite | `gemini-3.1-flash-lite` | ✓ confirmed on Vertex (no `models/` prefix on Vertex) |
-| Gemini | Pro | `gemini-3.1-pro-preview` | ✓ confirmed on Vertex |
+| Gemini | Flash-Lite (bulk tier) | `gemini-3.5-flash-lite` | ✓ live 200 on Vertex `global` 2026-09-01 (no `models/` prefix on Vertex). Replaced `gemini-3.1-flash-lite`, which was deprecated. |
+| Gemini | 3.7 Flash (reasoning tier) | `gemini-3.7-flash` | ✓ live 200 on Vertex `global` 2026-09-01. **Replaced `gemini-3.1-pro-preview` — there is no Pro in the fleet.** The Flash and Pro lines desynced; 3.7 Flash outscores 3.1 Pro at a fraction of the cost. Introductory pricing ends 2026-12-31. |
+
+> **Two models look available and are not.** `gemini-3.8-flash` and `gemini-3.5-pro` both return
+> `200 GA` from the Vertex **catalogue** endpoint and `404` from `generateContent` on `global`.
+> A catalogue listing is not availability — confirm with a live call before wiring any model in.
+> `scripts/check_model_availability.py` does both, monthly.
 
 **Vertex note:** AI Studio uses `models/gemini-*` prefix; Vertex drops the prefix. The orchestrator strips it automatically when `GOOGLE_CLOUD_PROJECT` is set.
 

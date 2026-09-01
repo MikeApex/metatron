@@ -116,7 +116,21 @@ stop_sessions_per_hour: 60
 #                  abandoned caches sitting on a midnight expiry. Storage is now
 #                  charged when the window is granted — see
 #                  spend_guard.record_cache_storage.
+#
+# `from` — OPTIONAL date-scoped override, added 2026-09-01 with the 3.7 Flash migration.
+#          A model entry may carry a `from:` map of ISO dates to rate overrides; the
+#          latest date <= today wins, and any key it omits falls through to the base
+#          rates above it. This exists for exactly one reason: 3.7 Flash is on
+#          introductory pricing that ENDS 2026-12-31, and both input and cache-read
+#          double on 2027-01-01. Pinning the intro rates makes the guard under-report
+#          by 2x from New Year's Day — silently, on the model carrying most traffic.
+#          Pinning the list rates over-reports by 2x now, and with caps at $100/$175 a
+#          spurious hard-cap trip is an OUTAGE on this project, not a cost event
+#          (docs/INFRASTRUCTURE.md § Billing protection). Neither constant is safe, so
+#          the date is in the table rather than in someone's calendar reminder.
 pricing:
+  # Migrated off 2026-09-01; kept because traces predating the migration still price
+  # against these IDs when the guard reconciles a historical window.
   gemini-3.1-pro-preview:
     input: 2.00
     output: 12.00
@@ -127,6 +141,38 @@ pricing:
     output: 1.50
     cached_input: 0.025
     cache_storage_per_hour: 1.00
+
+  # Live fleet as of 2026-09-01. All four figures per model verified against the Cloud
+  # Billing SKU catalogue (services/C7E2-9256-1C43) on 2026-09-01, Global text tier,
+  # standard (not Batch/Flex/Priority/Off-Peak) — not read off the pricing page, whose
+  # context-cache-storage table has no 3.7 Flash row at all.
+  gemini-3.7-flash:
+    # Reasoning tier. Introductory rates; SKU catalogue already lists the post-intro
+    # figures, which is what `from:` below switches to.
+    input: 0.75
+    output: 3.75
+    cached_input: 0.075
+    # SKU "Gemini 3.7 Flash Text Input Caching Storage" = $1.00 per 1M tokens/hour.
+    # Flat across the price change — storage does NOT double in 2027, only read does.
+    cache_storage_per_hour: 1.00
+    from:
+      "2027-01-01":
+        input: 1.50
+        output: 7.50
+        cached_input: 0.15
+  gemini-3.5-flash-lite:
+    # Bulk tier. No introductory period — these are list rates.
+    input: 0.30
+    output: 2.50
+    cached_input: 0.03
+    # SKU "Gemini 3.5 Flash Lite Text Input Caching Storage" = $1.00 per 1M tokens/hour.
+    cache_storage_per_hour: 1.00
+
+  # Unknown models land here. Deliberately the most expensive tier in the fleet: an
+  # unrecognised model should over-report, never under-report. NOTE the asymmetry that
+  # makes this weaker than it looks — `cache_storage_per_hour` is read with
+  # `.get(..., 0.0)` in core/spend_guard.py, so a model entry that EXISTS but omits that
+  # key bills storage at ZERO rather than falling here. Add all four keys or none.
   default:
     input: 2.00
     output: 12.00

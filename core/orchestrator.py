@@ -2770,11 +2770,27 @@ def _pad_for_vertex_cache(system_prompt: str) -> str:
     return f"{system_prompt}\n\n{padding}"
 
 
-# How long a freshly created or refreshed cache lives. Break-even for holding a
-# Pro cache is (storage $/M/min) / (read saving $/M) = 0.0417 extra hits per
-# minute held; 15 days of call data show bursts of ~16 calls over a median 2
-# minutes, p90 10 minutes, separated by 30+ minute gaps. Ten minutes therefore
-# covers the p90 burst exactly and pays for itself at under half a hit.
+# How long a freshly created or refreshed cache lives. The window is set by the BURST
+# SHAPE, not by price: 15 days of call data show bursts of ~16 calls over a median 2
+# minutes, p90 10 minutes, separated by 30+ minute gaps. Ten minutes covers the p90
+# burst exactly. Price only has to confirm that holding it that long is worth it.
+#
+# RE-DERIVED 2026-09-01 for the 3.7 Flash / 3.5 Flash-Lite fleet, because the previous
+# justification was computed for a Pro cache and Pro left the fleet. Break-even is
+# (storage $/M/min) / (read saving $/M), where read saving = input - cached_input:
+#
+#   3.1 Pro        (was)  0.0417 hits/min   0.417 hits to pay off a 10-min hold
+#   3.7 Flash      (now)  0.0247 hits/min   0.247   ← reasoning tier
+#   3.7 Flash from 2027   0.0123 hits/min   0.123   ← read price doubles, storage does not
+#   3.5 Flash-Lite (now)  0.0617 hits/min   0.617   ← bulk tier
+#
+# So 10 minutes still pays for itself at well under one cache hit on every model, and
+# the reasoning tier got cheaper to hold than it was on Pro. Note the asymmetry that
+# makes Flash-Lite the worst row: cache storage is a flat $1.00/1M/hour across every
+# Flash-class model, so the cheaper the model's input, the smaller the saving that flat
+# fee has to be earned back from. A future move to a still-cheaper bulk model shrinks
+# the read saving without shrinking storage — re-run this table before assuming the
+# window survives. Rates and the 2027 step live in config/modules/spend_guard.yaml.
 _VERTEX_CACHE_TTL_MINUTES = 10
 # Refresh only when this much or less is left — so a median burst needs zero
 # refresh calls, and a sustained one needs at most one per five minutes.

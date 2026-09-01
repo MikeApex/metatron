@@ -292,8 +292,22 @@ def read_email(count: int = 10, unread_only: bool = False, folder: str = "INBOX"
 #
 # Sized against cost, which is the only real constraint here: the sweep runs in the
 # background (so IMAP latency is nearly free) and the extraction model's context window
-# is far larger than this. ~500k chars is ~125k tokens, deliberately under the 200k
-# context step where Vertex pricing rises — see config/modules/spend_guard.yaml.
+# is far larger than this. ~500k chars is ~125k tokens.
+#
+# THE CLIFF THIS NUMBER WAS ANCHORED TO NO LONGER EXISTS (checked 2026-09-01). The budget
+# was set to stay under the 200k context step where Vertex pricing rose on 3.1 Pro. The
+# Gemini 3.x generation is flat-rate: the Cloud Billing SKU catalogue publishes no "(Long)"
+# variant for any 3.x model, and every 3.x text SKU is a single untiered band — the 149
+# long-context SKUs that do exist are all 1.5/2.0/2.5. The consumer here is tone_profiler,
+# now on 3.5 Flash-Lite, so nothing on this path pays a step price any more.
+#
+# The BUDGET IS KEPT ANYWAY, because it was never only a cliff-avoidance device — it is a
+# plain cost cap, and raising it raises spend linearly. What changed is that the specific
+# figure is no longer load-bearing: 500k is now an ordinary budget rather than a number
+# pinned to a price boundary, and it can be raised on its merits. Given the note below —
+# that breadth is what surfaces rare pet names and running jokes — that is now a cheap
+# experiment rather than one that would tip the sample over a step. Rates:
+# config/modules/spend_guard.yaml.
 #
 # Recency-weighted, with no time floor. Tone converges quickly, but the things actually
 # worth harvesting — pet names, running jokes, a habitual greeting — are *rare events*

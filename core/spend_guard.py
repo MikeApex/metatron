@@ -188,7 +188,43 @@ def _normalise_model(model: str) -> str:
     return name
 
 
-def _rate_for(model: str) -> tuple[float, float]:
+def _apply_dated_overrides(entry: dict, today: str | None = None) -> dict:
+    """
+    Overlay a pricing entry's optional `from:` date-scoped rates onto its base rates.
+
+    A model on introductory pricing has two correct rate sets separated by a date, and
+    a table that can only hold one of them is wrong for half the year in whichever
+    direction it was pinned. 3.7 Flash is the live case: input and cache-read both
+    double on 2027-01-01 while cache storage stays flat, so no single constant is safe
+    (see config/modules/spend_guard.yaml, which carries the full reasoning).
+
+    Every `from:` date at or before `today` is applied in chronological order, so the
+    latest one wins and any key a layer omits keeps the value beneath it. Absent or
+    malformed `from:` is a no-op — this must never be the reason a cost goes unpriced.
+    """
+    overrides = entry.get("from")
+    if not isinstance(overrides, dict):
+        return entry
+    today = today or date.today().isoformat()
+    # str() so an unquoted YAML date (parsed as datetime.date) compares like a string.
+    applicable = sorted(d for d in (str(k) for k in overrides) if d <= today)
+    if not applicable:
+        return {k: v for k, v in entry.items() if k != "from"}
+    merged = {k: v for k, v in entry.items() if k != "from"}
+    by_str = {str(k): v for k, v in overrides.items()}
+    for stamp in applicable:
+        layer = by_str.get(stamp)
+        if isinstance(layer, dict):
+            merged.update(layer)
+    return merged
+
+
+def _lookup_entry(model: str) -> tuple[dict, bool]:
+    """
+    Resolve a model to its pricing entry. Returns (entry, matched); `matched` is
+    False when the lookup fell through to `default`, so callers can decide whether
+    that is worth a warning rather than every caller re-deriving it.
+    """
     pricing = _load_config().get("pricing", {}) or {}
     name = _normalise_model(model)
     entry = pricing.get(name)
@@ -198,23 +234,21 @@ def _rate_for(model: str) -> tuple[float, float]:
             if key != "default" and name.startswith(key):
                 entry = val
                 break
+    matched = entry is not None
     if entry is None:
         entry = pricing.get("default") or {}
-        if name:
-            logger.warning(f"[spend_guard] no rate for model {name!r} — using default")
+    return _apply_dated_overrides(entry or {}), matched
+
+
+def _rate_for(model: str) -> tuple[float, float]:
+    entry, matched = _lookup_entry(model)
+    if not matched and _normalise_model(model):
+        logger.warning(f"[spend_guard] no rate for model {_normalise_model(model)!r} — using default")
     return float(entry.get("input", 0.0)), float(entry.get("output", 0.0))
 
 
 def _entry_for(model: str) -> dict:
-    pricing = _load_config().get("pricing", {}) or {}
-    name = _normalise_model(model)
-    entry = pricing.get(name)
-    if entry is None:
-        for key, val in pricing.items():
-            if key != "default" and name.startswith(key):
-                entry = val
-                break
-    return entry or pricing.get("default") or {}
+    return _lookup_entry(model)[0]
 
 
 def estimate_usd(model: str, tokens_in: int, tokens_out: int,

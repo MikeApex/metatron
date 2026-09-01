@@ -38,6 +38,27 @@ This reaffirms and hardens the 2026-05-14 decision (Ollama as primary orchestrat
    > on 2026-08-04. This clause is **not deleted and not weakened**: it states what must hold
    > whenever a local model serves these agents, and it binds again the moment one does. What is
    > parked is the qwen3:14b *run*, not the requirement.
+   >
+   > **SUSPENDED FOR THE CAPSTONE BUILDOUT, 2026-09-01 (Mike's ruling).** A4 safety protocols and
+   > testing are not run for the remainder of the capstone buildout. This is broader than the
+   > 08-05 note above, which parked only the *local* run: this parks the Vertex-path run too, so
+   > for the duration **no clinical hard-fail is being exercised anywhere.**
+   >
+   > **What this already cost, stated so it is not discovered later.** The same day, the whole
+   > fleet moved off `gemini-3.1-pro-preview` to `gemini-3.7-flash`, including `mental_wellbeing`
+   > and `physical_health`. `tests/run_a4_safety.py` was **not** run against the new model. The
+   > flags (`MUST_SURFACE`, `CLINICAL_CONCERN`, `MEDICATION_MISSED_CRITICAL`) are therefore
+   > **unverified on the model now serving them** — by decision, not oversight. The last clean
+   > result (6/6, 2026-08-04, then re-run 2026-08-18) was on a model no longer in the fleet.
+   >
+   > 3.7 Flash outscores 3.1 Pro on public reasoning benchmarks, so there is no reason to expect
+   > a regression — but this project's own rule is that **a safety flag never exercised by a test
+   > is not known to work, regardless of how carefully its instruction file is written** (the
+   > lesson from `physical_health`'s structurally-unfireable `MEDICATION_MISSED_CRITICAL`, § the
+   > 2026-08-04 gate below). A benchmark is not that test.
+   >
+   > **Expiry: capstone close.** Re-run `python3 tests/run_a4_safety.py --complexity deep` before
+   > Alpha and before this suspension is cited for anything beyond capstone work.
 
 **Named risk:** local model quality is now the dominant Alpha UX factor. The Synthesizer — the user-facing voice — runs on a 14B local model until D1 evaluates an upgrade on dedicated hardware. Accept this consciously: privacy is the constraint; quality improves with hardware, not by routing around the constraint.
 
