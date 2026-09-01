@@ -1300,6 +1300,9 @@ evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording �
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
 
+- **[a specialist missed a signal it should have caught]** Coordinator produced context package for user update about evening family time and fun coding after a busy work day.  
+  `2026-09-01T16:37:04.643033Z`
+
 - **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'DEADLINE: Forced Arbitration Filing' (2026-09-05T00:00:00, uid=46e726b5-b172-49c0-a4b1-acdc2190a44a@ai-life-manager) and 'File forced arbitration regarding the mover's claim' (2026-09-05T00:00:00, uid=c142ae5d-bccb-4e00-95e7-a12c89c78d03@ai-life-manager). title_similarity=0.56, shared_attendees=[], shared_words=['arbitration', 'forced']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
   `2026-09-01T04:35:08.528358Z`
 

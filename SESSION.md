@@ -1,14 +1,24 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-09-01 (**a single-item `/fix` session, Mike present.** The spend caps are back
-at **$100 soft / $175 hard** on the September reset — `[DB-0820-01]` closed and removed,
-evidence in `archive/backlog_closed_2026-09.md`. Both budgets re-read from GCP after the
-change; **soft was lowered first** so the gap never narrowed to $25 in passing. Same commit
-stopped three live files (`core/spend_guard.py`, `config/modules/spend_guard.yaml`,
-`infra/stop-vm/main.py`) restating `$70/$150` — none of them read the numbers, so they now
-point at `docs/INFRASTRUCTURE.md`, which is again the only copy. `b33498f`, **not deployed and
-nothing owed** — comments only. Session ③'s batch remains deployed and live-verified from
-08-29. Fragment 2026-09-01-01.)*
+*Updated: 2026-09-01 (**the Gemini fleet migration, Mike present.** The whole fleet left
+`gemini-3.1-pro-preview` and the **deprecated** `gemini-3.1-flash-lite` → **`gemini-3.7-flash`**
+(6 agents, incl. both clinical) and **`gemini-3.5-flash-lite`** (13 slots). There is no Pro in
+the fleet: the Flash and Pro lines desynced. `6ebe3a8`, **deployed and VM-verified** — HEAD,
+model counts, both units active, zero pricing-fallback warnings, `usd_cache_storage` non-zero
+(so the storage rate resolves). Measured on the real prior week: **~$137 → ~$63/mo, −54%**, all
+of it the reasoning tier; the **bulk tier went UP 23%**, forced by deprecation not chosen.
+`spend_guard` pricing is now **date-aware** for the 2027 step. Cache TTL re-derived, unchanged.
+New: `scripts/check_model_availability.py`, `[DB-0901-01]` monthly, `[DB-0901-02]` December.
+Fragment 2026-09-01-02. Caps stay $100/$175 from `b33498f`.)*
+
+*⚠ **Two things found and deliberately NOT fixed — both need Mike's word.** (1) **`quick_override`
+reaches the clinical agents on the cloud path.** `core/router.py:98` reads "non-sensitive" as *no
+`local: true`*, and `routing_cloud.yaml` marks **nothing** local — so its `:22` comment *"(non-
+sensitive agents only)"* excludes nothing, and a `quick` call to `mental_wellbeing`/`physical_health`
+runs on the **bulk** model. Pre-existing; today's trace shows `mental_wellbeing ×4` on Flash-Lite.
+Sharper now only because A4 is suspended. (2) **`./deploy.sh` never commits** — it pushes and the VM
+pulls, so a "deploy complete" shipped **nothing** until the work was committed. Say *"owes a commit,
+then a deploy"* in every handoff.*
 
 *✅ **The capstone plan is the read-first for any backlog work:**
 **`archive/plans/capstone_cluster_review_2026-08-27.md`** — every open item by functional
@@ -22,29 +32,16 @@ table (8 entries, dispositions proposed), the three `@session` items, and the in
 labelling. **Ruled already:** the three calendar duplicate pairs are real — keep either,
 delete the rest; executing closes `[DB-0809-21]`.*
 
-*⚠ **Caps are $100/$175 again (done 2026-09-01).** Expect a heavy testing day to trip the soft
-cap — that is the control working, recovery is a 60s VM start. Values live in
-`docs/INFRASTRUCTURE.md` § Billing protection, now the only copy. (M) still owed: BigQuery
-billing export, and flip the Mac's `VERTEX_CACHE_DISABLED` — with a measured payoff.*
+*⚠ **Caps are $100/$175.** A heavy testing day tripping the soft cap is the control working;
+recovery is a 60s VM start. Numbers live in `docs/INFRASTRUCTURE.md` § Billing protection, the
+only copy. (M) still owed: BigQuery billing export, and flip the Mac's `VERTEX_CACHE_DISABLED`
+with a measured payoff.*
 
-*⚠ **The Gemini fleet moved off 3.1 Pro / 3.1 Flash-Lite on 2026-09-01** → `gemini-3.7-flash`
-(reasoning: synthesizer, pattern_miner, goals_interviewer, mental_wellbeing, physical_health,
-research_agent) and `gemini-3.5-flash-lite` (bulk: everything else). 3.1 Flash-Lite was
-deprecated; Pro is gone from the fleet entirely. **DEPLOYED by Mike 2026-09-01 — live.**
-`spend_guard.yaml` pricing is now **date-aware**: 3.7 Flash intro rates until 2026-12-31, list
-rates from 2027-01-01, because both input and cache-read double that day (`[DB-0901-02]` carries
-the December check — Chorus prices the same model in a static table that will NOT switch itself).
-Cache TTL re-derived and **unchanged at 10 min** — it still pays off at <1 hit on every model.
-**Measured effect on running cost, from the real pre-migration week** (Cloud Monitoring, 24.9M
-tokens): **~$137/mo → ~$63/mo, −54%.** The saving is entirely the reasoning tier (−64%); the bulk
-tier went **UP 23%** — 3.5 Flash-Lite costs more than 3.1 Flash-Lite, and that swap was forced by
-deprecation, not chosen. From 2027 the total lands ~$106/mo, still −23% on the old fleet.*
-
-*⛔ **A4 safety testing is SUSPENDED for the remainder of the capstone buildout (Mike,
-2026-09-01).** Consequence to carry: the clinical flags are **unverified on 3.7 Flash** — the
-fleet moved without running `tests/run_a4_safety.py`, and the last clean 6/6 was on a model no
-longer in use. By decision, not oversight; full text in `ROADMAP.md` § Section 0 point 8.
-Re-run `python3 tests/run_a4_safety.py --complexity deep` at capstone close, before Alpha.*
+*⛔ **A4 safety testing is SUSPENDED for the rest of the capstone buildout (Mike, 2026-09-01).**
+Consequence to carry: the clinical flags are **unverified on 3.7 Flash** — the fleet moved
+without running `tests/run_a4_safety.py`, and the last clean 6/6 was on a model no longer in
+use. By decision, not oversight; full text in `ROADMAP.md` § Section 0 pt 8. Re-run
+`python3 tests/run_a4_safety.py --complexity deep` at capstone close, before Alpha.*
 
 *⛔ **ZDR: refused, ruled on, do not re-open** — the whole basis, incl. Amendment 2026-08-28,
 is `ROADMAP.md` § Section 0. The `[DB-0818-06]` wisdom-store proposal review still awaits

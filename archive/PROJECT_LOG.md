@@ -167,6 +167,48 @@ pulled; without that check the fleet would have looked migrated and been unchang
 
 The MCP (`~/.claude/mcp_servers/ask_gemini.py`) and Chorus edits are outside this repo, are not
 carried by any commit here, and need no deploy — they were live the moment they were written.
+
+**Deployed for real on the second attempt (`6ebe3a8`), and verified on the VM rather than
+asserted.** VM `HEAD` = `6ebe3a8`; `routing_cloud.yaml` shows 6 × 3.7 Flash, 13 × 3.5 Flash-Lite,
+**zero** remaining `models/gemini-3.1`; both systemd units active. Today's trace carries a clean
+pre/post split — coordinator, diarist, logistics and work_vocation on 3.5 Flash-Lite and
+synthesizer on 3.7 Flash after the deploy, the 3.1 rows all before it. **Zero
+`no rate for model` / `no cache storage rate` warnings** in the journal.
+
+**The cost guard is provably not blind, which was the specific risk.** `usd_cache_storage` on the
+VM reads **$0.161568** across 42 cache grants — non-zero, so the `cache_storage_per_hour` key
+resolves. At $1.00/1M/hour over a 10-minute window that implies ~969k cached tokens, consistent
+with the observed 1.0M and with the **Flash** rate; Pro's $4.50 would have read ~$0.73. Cache hit
+rate on real traffic is **68%** (1,005,600 cached of 1,469,329 input), which is higher than the
+migration's arithmetic assumed and costs nothing to be wrong about, since every model old and new
+prices cached input at exactly 1/10 of fresh.
+
+**Measured effect on running cost, from the real pre-migration week** (Cloud Monitoring, 24.9M
+tokens over 7 days): **~$137/mo → ~$63/mo, −54%**; ~$106/mo and −23% once the 2027 rates land.
+**The saving is entirely the reasoning tier (−64%). The bulk tier went UP 23%** — 3.5 Flash-Lite
+is $0.30/$2.50 against 3.1 Flash-Lite's $0.25/$1.50 — and that swap was forced by deprecation,
+not chosen for cost. Worth stating because the headline number invites the opposite reading.
+3.1 Pro input alone was 88% of the old bill, so that is where any future tuning should look.
+
+---
+
+**FOUND WHILE VERIFYING, NOT FILED (Mike's call): `quick_override` reaches the clinical agents on
+the cloud path, and the config comment says it does not.** `routing_cloud.yaml:22` reads *"Flash
+override for complexity=\"quick\" calls (non-sensitive agents only)"*. But `core/router.py:98`
+defines non-sensitive as **"does not have `local: true`"**, and in `routing_cloud.yaml` *no agent*
+is marked `local: true` — the whole point of the cloud file is that everything routes to Vertex.
+So on the VM the qualifier excludes nothing: a `complexity="quick"` call to `mental_wellbeing` or
+`physical_health` runs on the **bulk** model. Today's trace shows `mental_wellbeing ×4` served by
+a Flash-Lite.
+
+**This is pre-existing and was not introduced here** — before the migration the same path served
+3.1 Flash-Lite; it now serves 3.5 Flash-Lite. It is recorded because two things make it newly
+worth knowing: the routing file states a protection that does not exist on the path it governs
+(the "granted but never named" class, one layer up), and **A4 is suspended**, so the clinical
+flags are unverified on *both* the model the entry names and the one `quick_override` actually
+substitutes. Not filed as a backlog item because Mike did not ask for one; raised to him in
+session with the recommendation that the comment is corrected either way, since a false
+restriction in a Red-tier file is worse than no comment.
 ### 2026-09-01 (the spend caps come back down, and three files stop restating them) — `b33498f`, **not deployed**
 
 **The caps are back at $100 soft / $175 hard**, reverted on the September calendar reset exactly
