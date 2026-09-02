@@ -1,12 +1,15 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-09-02 (**Mark 2 endeavour plan — planning only, Mike present.** No code, config
-or roadmap touched. **Mike ruled: Alpha ships on Mark 2**, so **A8 is cancelled, not deferred**,
-and **A7 checks 10 and 12 are skipped** — both fold into Mark 2. Dev rules are instated at the
-outset (earn-back survives only for the project layer); persona data maintains into Mark 2 while
-Mark 1 runs; **gate G1 reviews the whole Mark 2 file suite before any production begins**. Plan:
-**`archive/plans/mark2_endeavour_plan_2026-09-02.md`** (596 lines) — read it before any rebuild
-work. Notebook round five appended. Fragment 2026-09-02-03. Nothing owes a deploy.)*
+*Updated: 2026-09-02 (**Model/effort routing build plan reviewed adversarially — build shelved,
+Mike's call.** The dev-environment routing plan from a parallel chat
+(`archive/plans/model_routing_build_plan_2026-09-02.md`) got a hunt-only review: 5 WILL BREAK,
+9 MIGHT BREAK, 6 unanswerable gaps —
+**`archive/plans/model_routing_build_plan_review_2026-09-02_fable-5.md`**. Not being pursued for
+now; the plan itself, saved from the authoring chat, sits beside the review. No code, config or
+roadmap touched. Fragment 2026-09-02-04. Earlier today, same standing: **Alpha ships on Mark 2
+(Mike's ruling)** — A8 cancelled, A7 checks 10+12 fold into Mark 2, gate G1 reviews the Mark 2
+file suite before production. Plan: **`archive/plans/mark2_endeavour_plan_2026-09-02.md`** —
+read it before any rebuild work (fragment 2026-09-02-03). Nothing owes a deploy.)*
 
 ***Next: the four staged Mark 1 sessions still run**, prompts Mike-bound in
 `archive/handoffs/2026-09-02-*`: **⑤ referent fix** (Fable, Red — `[DB-0826-01]`; re-run Suite
