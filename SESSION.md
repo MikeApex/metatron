@@ -11,16 +11,18 @@ the three @session items resolved, intake corpus parked `due: 2026-09-09`, the s
 `source` line **declined forever**. Fragment 2026-09-02-01. Dev-context only — nothing owes a
 deploy.)*
 
-***Next: the two final capstone sessions — prompts staged, Mike-bound:**
-**⑤ `archive/handoffs/2026-09-02-red-session-five-referent-prompt.md`** (Fable, Red, Mike
-present — the `[DB-0826-01]` referent fix; re-run Suite B-hard first, the baseline predates the
-fleet migration) and **⑥ `archive/handoffs/2026-09-02-code-session-three-bugs-prompt.md`**
-(Opus — `[DB-0829-01]` + `[DB-0902-01]` + `[DB-0902-02]`, the `[DB-0822-06]` derived-facts
-rider, the `[DB-0822-09]` surfacing diagnosis). **The capstone closes at ⑥'s end; A4 re-run is
-OFF the close path (Mike, 2026-09-02 — before-Alpha unchanged, ROADMAP § 0 pt 8 amended).**
-**Un-ruled, surfaced at close:** three items the plan listed and no session claimed —
-`[DB-0818-08]` provenance (recommended into ⑥), `[DB-0804-02]` (→ Track B?), `[DB-0808-06]`
-(postpone?) — Mike rules in ⑤/⑥; recorded in the capstone tracker's 09-02 amendment.*
+***Next: four staged sessions, all prompts Mike-bound in `archive/handoffs/2026-09-02-*`:**
+**⑤ referent fix** (Fable, Red — `[DB-0826-01]`; re-run Suite B-hard first, the baseline
+predates the fleet migration) · **⑥ three bugs** (Opus — `[DB-0829-01]`/`[DB-0902-01]`/
+`[DB-0902-02]` + the `[DB-0822-06]` derived-facts rider + the `[DB-0822-09]` surfacing
+diagnosis) · **⑦ capstone remainder** (Fable — `[DB-0818-08]` provenance, `[DB-0804-02]`'s
+buildable slice, `[DB-0808-06]` escalation design; Mike's ruling folded the never-scheduled
+three in) · **the (M)-walkthrough** (Fable — corpus labelling due 09-09, wisdom review, Darwin
+key, zones+APK+ping, BigQuery, Restic; first application of the new CLAUDE.md rule). **The
+capstone closes at ⑦'s end; A4 re-run is OFF the close path (before-Alpha unchanged, ROADMAP
+§ 0 pt 8).** **New standing rule:** CLAUDE.md § *Mike-gated work gets a walkthrough* — and that
+addition puts CLAUDE.md at **307/300**; the restructure it forces is owed, Mike's call on what
+moves out (⑦ checks it).*
 
 *⚠ **Two things found and deliberately NOT fixed — both need Mike's word.** (1) **`quick_override`
 reaches the clinical agents on the cloud path.** `core/router.py:98` reads "non-sensitive" as *no

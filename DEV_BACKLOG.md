@@ -400,6 +400,9 @@ the condition has not arrived, push the date rather than closing the item.
   and spoken without ever being written is untouched by any of them; the wire is covered by the
   zero-source guard, and the gap between the two remains.
   @kind: feature
+  **Scheduled into capstone session ⑦ (Mike, 2026-09-02)** — never claimed by sessions ①–④,
+  surfaced at the close-out; the design above is the build spec. Prompt:
+  `archive/handoffs/2026-09-02-session-seven-capstone-remainder-prompt.md`.
   *raised by Mike 2026-08-18 during Phase 1 testing, from two failures he produced himself in
   consecutive turns · scope against `[DB-0815-07]` (near-match on create — built, did not fire on this
   rename, a different path) and `[DB-0818-06]` (24 stored "facts", several inferred preferences
@@ -965,7 +968,10 @@ half (b) is now part of the Pro-routing decision. Evidence and trail:
   the safe one — do not fix by relaxing the refusal.** It needs a real administrative-close path,
   tied to an escalation mechanism that does not exist yet.
   @kind: feature
-  *filed 2026-08-08*
+  **Scheduled into capstone session ⑦ (Mike, 2026-09-02)** — design the close/escalation path
+  with him; build only if small. Prompt:
+  `archive/handoffs/2026-09-02-session-seven-capstone-remainder-prompt.md`.
+  *filed 2026-08-08 · scheduled ⑦ 2026-09-02*
 
 - **[DB-0815-02] Speaking a language other than English does not work.** Speech **out** is built and
   shipped (`bg` → `bg-BG-KalinaNeural` via edge-tts, Kokoro has no Bulgarian model). Speech **in** is
@@ -996,8 +1002,12 @@ half (b) is now part of the Pro-routing decision. Evidence and trail:
   failures in `/monitor/model_errors`, one of which is already a live instance
   (`research_agent` returning `NoneType object is not iterable` — the user got nothing, not a reason).
   @kind: feature
+  **Scheduled into capstone session ⑦ (Mike, 2026-09-02)** — ⑦ takes the buildable-now slice
+  (degradation wording + small guards) and re-homes the E1-gated rest to Track B with his word.
+  Prompt: `archive/handoffs/2026-09-02-session-seven-capstone-remainder-prompt.md`.
   *filed 2026-08-04 · the refusal-wording half raised by Mike 2026-08-18 and folded in here, because
-  it sat inside Track B reading as security hardening where nobody would look for it*
+  it sat inside Track B reading as security hardening where nobody would look for it · scheduled ⑦
+  2026-09-02*
 
 - **[DB-0815-13] Semantic retrieval *within* a knowledge domain.** `read_wisdom` returns a whole
   domain capped at 15 entries, which is correct while domains are small. **The cap being hit is the

@@ -49,7 +49,8 @@ amended 2026-09-02)** — do not run it. Regression gates that do apply: the tes
 module already carries, plus `tests/test_false_action_claim.py` (item 1 borders it) and the
 pipeline suite if `core/orchestrator.py` is touched.
 
-**At close, the capstone closes.** Update
-`archive/plans/capstone_cluster_review_2026-08-27.md` with a dated close-out note, refresh
-`SESSION.md` (full testing begins; the rebuild question before A8 is the next front), and state
-plainly: **the work owes a commit, then a deploy.** /archive at close.
+**The capstone no longer closes here (amended 2026-09-02, same day):** Mike folded the three
+never-scheduled items into a session ⑦
+(`archive/handoffs/2026-09-02-session-seven-capstone-remainder-prompt.md`), which now carries
+the close ritual. This session ends with a dated status note in the capstone tracker and a
+plain statement of whether **the work owes a commit, then a deploy.** /archive at close.

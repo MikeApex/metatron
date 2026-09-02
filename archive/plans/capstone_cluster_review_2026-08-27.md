@@ -109,15 +109,18 @@ mailbox). ~20–30 Mike-minutes total, spread over ordinary days.
 | ⬜ | [DB-0818-04] | National Rail backend (Darwin) — **blocked on Mike registering the API key (M)** | Amber | ~half day once key exists |
 | ⬜ | [DB-0815-12] | Real-time location signal — @session privacy-tier design pass first | Red @session | design + build TBD |
 
-### Cluster H — Parked for rebuild / not-capstone (Mike to give final ruling)
-[DB-0808-09] turn economics · [DB-0810-11] code-vs-model @session (rebuild notebook anchor) ·
-[DB-0827-06] Synthesizer compression · [DB-0822-08] propose-don't-report (**re-measure
-post-audit first** — may return to Cluster A if the instruction genuinely fails) ·
-[DB-0815-13] semantic retrieval (trigger unfired) · [DB-0815-02] Bulgarian STT (held) ·
-[DB-0820-02] APK file save · [DB-0819-01] subscriptions · [DB-0809-08] missed-opportunity
-metric · [DB-0814-03] mailbox tickets · [DB-0826-02] contact enrichment · [DB-0827-04] field
-promotion (gated) · [DB-0818-09] plausibility check (design with [DB-0818-08]) ·
-[DB-0827-09] Accountability Index (@session design)
+### Cluster H — Parked for rebuild / not-capstone (RULED at the 2026-09-02 close-out review)
+**No longer awaiting a final ruling — the 09-02 review dispositioned its graduates and Mike
+confirmed the rest stay parked.** Departed the cluster: [DB-0822-08] (closed 2026-09-02 on the
+re-measure — the post-audit instruction proposes; no fix written) · [DB-0827-09] (graduated to
+built-and-live 08-28/29; only its live-leftover confirm remains) · [DB-0810-11] (ruled: rides
+the code-dominant rebuild notebook, decided before A8) · [DB-0814-03] (ruled: parked
+post-capstone, scope-against-obligations first). Still parked, unchanged: [DB-0808-09] turn
+economics · [DB-0827-06] Synthesizer compression · [DB-0815-13] semantic retrieval (trigger
+unfired) · [DB-0815-02] Bulgarian STT (held) · [DB-0820-02] APK file save · [DB-0819-01]
+subscriptions · [DB-0809-08] missed-opportunity metric · [DB-0826-02] contact enrichment ·
+[DB-0827-04] field promotion (gated) · [DB-0818-09] plausibility check (design with
+[DB-0818-08], which itself moved INTO the close path — session ⑦).
 
 ### Decisions batch — one working session covers all
 ZDR amendment `[DB-0827-08]` (`due: 2026-09-05`) · 39 tool grants `[DB-0810-03]` (**blocks A7
@@ -270,19 +273,24 @@ The `synthesizer.md` `source` line: declined forever. **A4 re-run removed from t
   diagnosis riding along where the inbox-job fix touches them — prompt at
   `archive/handoffs/2026-09-02-code-session-three-bugs-prompt.md`.
 
-**The capstone closes at the end of session ⑥.** Post-capstone: the confirm clocks
-(`[DB-0828-01]` due 09-07, accountability's first real leftover ~09-03/04, CRM sweep's first
-live digest), Mike's (M) items (corpus labelling due 09-09, wisdom-store review, Darwin key,
-zones file, BigQuery export, Restic decision), and the rebuild question before A8.
+**The capstone closes at the end of session ⑦ (amended same day — see below).** Post-capstone:
+the confirm clocks (`[DB-0828-01]` due 09-07, accountability's first real leftover ~09-03/04,
+CRM sweep's first live digest) and the rebuild question before A8. The (M) items get their own
+walkthrough session rather than waiting — see the same-day amendment.
 
 **Amendment, same day (Mike's question at close: "why is the capstone not complete?"):** three
 items from this plan's own "remaining investment" were never claimed by any scheduled session
-and the 09-02 close path silently treated them as post-capstone — surfaced now rather than
-discovered later: `[DB-0818-08]` provenance (decided 08-28, unstarted — **recommended: add to
-session ⑥ or its own short build; the only one that belongs inside the capstone**),
-`[DB-0804-02]` B4/security remainder (**recommended: move to Track B / Phase 6A, where it
-cannot fully close before E1 anyway**), `[DB-0808-06]` clinical-thread escalation
-(**recommended: postpone, per this plan's own marker**). **Not yet ruled — Mike rules in
-session ⑤ or ⑥.** Everything else that looks unaddressed in this document is either an (M)
-item (Darwin key, zones, corpus labelling, wisdom review) or Cluster H, parked-for-rebuild by
-his 08-27 ruling.
+and the 09-02 close path silently treated them as post-capstone — surfaced at his challenge:
+`[DB-0818-08]` provenance (decided 08-28, unstarted), `[DB-0804-02]` B4/security remainder,
+`[DB-0808-06]` clinical-thread escalation. **RULED same day: all three fold into a new session
+⑦** (`archive/handoffs/2026-09-02-session-seven-capstone-remainder-prompt.md`) — ⑦ takes
+`[DB-0804-02]`'s buildable-now slice and re-homes its E1-gated rest to Track B with Mike's
+word in-session; **the capstone now closes at ⑦'s end**, after ⑤ and ⑥.
+
+**Second ruling, same day — (M) items get walkthroughs, not waits (now CLAUDE.md § Mike-gated
+work):** anything only Mike can do closes in a guided session Claude proposes and prepares.
+First application staged:
+`archive/handoffs/2026-09-02-mike-walkthrough-session-prompt.md` — corpus labelling
+(due 09-09), the wisdom-store review, the Darwin key, location zones + APK + ping, the
+BigQuery export, and the Restic off-machine decision. Everything else that looks unaddressed
+in this document is Cluster H, parked-for-rebuild by his 08-27 ruling and confirmed 09-02.

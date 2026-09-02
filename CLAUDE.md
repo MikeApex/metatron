@@ -262,18 +262,25 @@ the purpose-built account **`diamond.mike.mt@gmail.com`**, not the owner's perso
 
 ---
 
+## Mike-gated work gets a walkthrough, not a wait
+
+**An "(M)" item — anything only Mike can do** (register a key, label a corpus, toggle a console
+setting, give a review) **closes in a guided session, never by sitting on a list** (Mike's
+rule, 2026-09-02). Whenever a session surfaces or depends on one: name it explicitly, then
+**propose an instructional walkthrough session** — steps prepared in advance, Mike executing
+live with guidance. An (M) item standing with no proposed session is the failure this rule
+exists to prevent.
+
+---
+
 ## Chat Archiving
 
-**Run `/archive`** — five steps in `.claude/commands/archive.md`, executed rather than remembered.
-Two rules to carry, because they apply to every session regardless of what it worked on:
-
-> **`archive/PROJECT_LOG.md` is appended. `SESSION.md` is replaced.** Detail goes in the log;
-> only current state stays in the primer. And `PROJECT_LOG.md` is **generated** from
-> `archive/log/` fragments — write a fragment, never edit the log.
-
-Transcripts: `~/.claude/tools/archive_chats.py`, run mid-session at the trigger points, and
-**never reported as partial**. The rest:
-[`.claude/rules/docs-and-logs.md`](.claude/rules/docs-and-logs.md).
+**Run `/archive`** — five steps in `.claude/commands/archive.md`, executed rather than
+remembered. Two rules bind every session: **`archive/PROJECT_LOG.md` is appended** — and it is
+**generated** from `archive/log/` fragments, so write a fragment, never edit the log — while
+**`SESSION.md` is replaced**: detail to the log, current state only in the primer. Transcripts:
+`~/.claude/tools/archive_chats.py`, run mid-session at the trigger points, **never reported as
+partial**. The rest: [`.claude/rules/docs-and-logs.md`](.claude/rules/docs-and-logs.md).
 
 ---
 
