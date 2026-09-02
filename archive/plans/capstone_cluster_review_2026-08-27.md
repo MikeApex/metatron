@@ -227,3 +227,62 @@ deliberately:** the `[DB-0822-08]` fix — the re-measure day had not elapsed; p
 framed decision in `archive/handoffs/2026-08-29-re-measure-and-0822-08-decision.md`.
 **VM deploy owed (Mike).** Remaining in the capstone: ④ CRM sweep build (Opus, gated on
 Mike's plan re-review `[DB-0827-03]`) — no Red work rides it.
+
+---
+
+## Status update 2026-09-02 — Red session ④ ran: the verification pass, and the close path is ruled
+
+**The buildout is finished; this session verified it against four live days of traces
+(08-29 → 09-02) and Mike ruled the close path.** Seven items closed on evidence in one pass:
+`[DB-0822-08]` (proposals now attach — 3-of-4 raises vs the 0-of-13 baseline; closed on Mike's
+ruling, no fix written, the structural-gate design stays in the 08-29 handoff), `[DB-0809-02]`
+(ritual halves confirmed — empty-delta runs short, questions asked once, virtues only at 20:00),
+`[DB-0822-05]`, `[DB-0822-10]`, `[DB-0827-01]`, `[DB-0827-07]`, and `[DB-0809-21]` (calendar
+dedupe **executed live** per Mike's keep-sets — six deletes, verified; emitter confirmed as
+`tools/calendar_audit.py` via `daily_calendar_dedup_audit`).
+
+**The verification also found the residue, which is the remaining capstone work:**
+
+- **Cluster A:** `[DB-0822-06]` REOPENED in substance — the exercise hiatus (ended 08-23) was
+  described three different wrong ways across 08-30/31/09-02, spanning the model migration; the
+  code-computed derived-facts line is back on the table.
+- **Cluster C:** `[DB-0822-09]`'s surfacing half FAILED its first live test (Death Cab tickets:
+  coordination legs generated internally, nothing reached Mike). Related new bug: the two inbox
+  jobs disagree about the same inbox (`[DB-0902-02]`).
+- **Cluster B residue:** `[DB-0826-01]` referent fix (unchanged, last Red build) and
+  `[DB-0829-01]` pending-logged-as-done, plus `[DB-0902-01]` (ROUTING_MISS recording successes
+  since the migration).
+
+**Rulings (Mike, 2026-09-02):** the 08-29 Inbox table triaged 8→0 (1 closed live, 1 closed on
+evidence, 2 merges, 4 filed: `[DB-0902-03..06]`) — evidence in
+`archive/backlog_closed_2026-09.md` § Inbox triage. The three `@session` items: `[DB-0815-11]`
+policy half closed (the gate is the policy); `[DB-0810-11]` parked to the rebuild notebook;
+`[DB-0814-03]` parked post-capstone. `[DB-0820-03]` intake corpus parked `due: 2026-09-09`.
+The `synthesizer.md` `source` line: declined forever. **A4 re-run removed from the close path**
+(before-Alpha requirement unchanged — `ROADMAP.md` § Section 0 pt 8 amended).
+
+**The close path (Mike agreed): two final sessions, then full testing.**
+
+- **⑤ Referent fix** (Fable, Red, Mike present): `[DB-0826-01]` — prompt at
+  `archive/handoffs/2026-09-02-red-session-five-referent-prompt.md`.
+- **⑥ Three-bug code session** (Opus, Green/Amber): `[DB-0829-01]` + `[DB-0902-01]` +
+  `[DB-0902-02]`, with `[DB-0822-06]`'s derived-facts line and `[DB-0822-09]`'s surfacing
+  diagnosis riding along where the inbox-job fix touches them — prompt at
+  `archive/handoffs/2026-09-02-code-session-three-bugs-prompt.md`.
+
+**The capstone closes at the end of session ⑥.** Post-capstone: the confirm clocks
+(`[DB-0828-01]` due 09-07, accountability's first real leftover ~09-03/04, CRM sweep's first
+live digest), Mike's (M) items (corpus labelling due 09-09, wisdom-store review, Darwin key,
+zones file, BigQuery export, Restic decision), and the rebuild question before A8.
+
+**Amendment, same day (Mike's question at close: "why is the capstone not complete?"):** three
+items from this plan's own "remaining investment" were never claimed by any scheduled session
+and the 09-02 close path silently treated them as post-capstone — surfaced now rather than
+discovered later: `[DB-0818-08]` provenance (decided 08-28, unstarted — **recommended: add to
+session ⑥ or its own short build; the only one that belongs inside the capstone**),
+`[DB-0804-02]` B4/security remainder (**recommended: move to Track B / Phase 6A, where it
+cannot fully close before E1 anyway**), `[DB-0808-06]` clinical-thread escalation
+(**recommended: postpone, per this plan's own marker**). **Not yet ruled — Mike rules in
+session ⑤ or ⑥.** Everything else that looks unaddressed in this document is either an (M)
+item (Darwin key, zones, corpus labelling, wisdom review) or Cluster H, parked-for-rebuild by
+his 08-27 ruling.

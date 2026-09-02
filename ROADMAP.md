@@ -59,6 +59,12 @@ This reaffirms and hardens the 2026-05-14 decision (Ollama as primary orchestrat
    >
    > **Expiry: capstone close.** Re-run `python3 tests/run_a4_safety.py --complexity deep` before
    > Alpha and before this suspension is cited for anything beyond capstone work.
+   >
+   > **Amended 2026-09-02 (Mike, capstone close-out review): the re-run is removed from the
+   > capstone close path** — closing the capstone no longer triggers it. The **before-Alpha**
+   > requirement above is unchanged and is now the only clock on it. Consequence, restated so it
+   > is carried consciously: the clinical flags remain unverified on `gemini-3.7-flash` for the
+   > whole period between capstone close and the pre-Alpha run.
 
 **Named risk:** local model quality is now the dominant Alpha UX factor. The Synthesizer — the user-facing voice — runs on a 14B local model until D1 evaluates an upgrade on dedicated hardware. Accept this consciously: privacy is the constraint; quality improves with hardware, not by routing around the constraint.
 

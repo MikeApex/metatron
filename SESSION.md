@@ -1,63 +1,55 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-09-01 (**the Gemini fleet migration, Mike present.** The whole fleet left
-`gemini-3.1-pro-preview` and the **deprecated** `gemini-3.1-flash-lite` → **`gemini-3.7-flash`**
-(6 agents, incl. both clinical) and **`gemini-3.5-flash-lite`** (13 slots). There is no Pro in
-the fleet: the Flash and Pro lines desynced. `6ebe3a8`, **deployed and VM-verified** — HEAD,
-model counts, both units active, zero pricing-fallback warnings, `usd_cache_storage` non-zero
-(so the storage rate resolves). Measured on the real prior week: **~$137 → ~$63/mo, −54%**, all
-of it the reasoning tier; the **bulk tier went UP 23%**, forced by deprecation not chosen.
-`spend_guard` pricing is now **date-aware** for the 2027 step. Cache TTL re-derived, unchanged.
-New: `scripts/check_model_availability.py`, `[DB-0901-01]` monthly, `[DB-0901-02]` December.
-Fragment 2026-09-01-02. Caps stay $100/$175 from `b33498f`.)*
+*Updated: 2026-09-02 (**Red session ④ — the verification pass, Mike present.** Four live trace
+days read; **seven items closed on evidence** (0822-05/08/10, 0809-02, 0827-01/07, 0809-21 —
+the calendar dedupe executed live on the VM, six deletes verified), three held because the
+evidence went the other way: **0822-06 reproduced post-fix** (stale hiatus state three ways
+across three days — derived-facts line back on the table), **0822-09 failed its first live
+test** (interest-level email never surfaced; legs generated one layer down), **0827-09 live
+but unexercised** (clean 05:45 no-ops; first real leftover ~09-03/04). Inbox triaged 8 → 0,
+the three @session items resolved, intake corpus parked `due: 2026-09-09`, the synthesizer
+`source` line **declined forever**. Fragment 2026-09-02-01. Dev-context only — nothing owes a
+deploy.)*
+
+***Next: the two final capstone sessions — prompts staged, Mike-bound:**
+**⑤ `archive/handoffs/2026-09-02-red-session-five-referent-prompt.md`** (Fable, Red, Mike
+present — the `[DB-0826-01]` referent fix; re-run Suite B-hard first, the baseline predates the
+fleet migration) and **⑥ `archive/handoffs/2026-09-02-code-session-three-bugs-prompt.md`**
+(Opus — `[DB-0829-01]` + `[DB-0902-01]` + `[DB-0902-02]`, the `[DB-0822-06]` derived-facts
+rider, the `[DB-0822-09]` surfacing diagnosis). **The capstone closes at ⑥'s end; A4 re-run is
+OFF the close path (Mike, 2026-09-02 — before-Alpha unchanged, ROADMAP § 0 pt 8 amended).**
+**Un-ruled, surfaced at close:** three items the plan listed and no session claimed —
+`[DB-0818-08]` provenance (recommended into ⑥), `[DB-0804-02]` (→ Track B?), `[DB-0808-06]`
+(postpone?) — Mike rules in ⑤/⑥; recorded in the capstone tracker's 09-02 amendment.*
 
 *⚠ **Two things found and deliberately NOT fixed — both need Mike's word.** (1) **`quick_override`
 reaches the clinical agents on the cloud path.** `core/router.py:98` reads "non-sensitive" as *no
 `local: true`*, and `routing_cloud.yaml` marks **nothing** local — so its `:22` comment *"(non-
 sensitive agents only)"* excludes nothing, and a `quick` call to `mental_wellbeing`/`physical_health`
-runs on the **bulk** model. Pre-existing; today's trace shows `mental_wellbeing ×4` on Flash-Lite.
-Sharper now only because A4 is suspended. (2) **`./deploy.sh` never commits** — it pushes and the VM
-pulls, so a "deploy complete" shipped **nothing** until the work was committed. Say *"owes a commit,
-then a deploy"* in every handoff.*
+runs on the **bulk** model. Pre-existing. Sharper now only because A4 is suspended. (2)
+**`./deploy.sh` never commits** — it pushes and the VM pulls, so a "deploy complete" shipped
+**nothing** until the work was committed. Say *"owes a commit, then a deploy"* in every handoff.*
 
 *✅ **The capstone plan is the read-first for any backlog work:**
-**`archive/plans/capstone_cluster_review_2026-08-27.md`** — every open item by functional
-cluster with tier, estimate and status. Goal (Mike): finish this rendition's core features,
-begin full testing; rebuild-adjacent work parked in its Cluster H. **National Rail
-(`[DB-0818-04]`) is a first-draft feature** by his ruling — the Darwin API key is his to
-register. Geolocation (`[DB-0815-12]`): deployed; zones file + one ping at a zone still owed.*
-
-*⛔ **Decisions are PARKED until capstone close (Mike, 2026-08-29):** the 08-29 Inbox triage
-table (8 entries, dispositions proposed), the three `@session` items, and the intake corpus
-labelling. **Ruled already:** the three calendar duplicate pairs are real — keep either,
-delete the rest; executing closes `[DB-0809-21]`.*
+**`archive/plans/capstone_cluster_review_2026-08-27.md`** — clusters, status, and the ruled
+close path (its 2026-09-02 update is current state). **National Rail (`[DB-0818-04]`):** Darwin
+key is Mike's to register. Geolocation (`[DB-0815-12]`): deployed; zones file + one ping owed.*
 
 *⚠ **Caps are $100/$175.** A heavy testing day tripping the soft cap is the control working;
 recovery is a 60s VM start. Numbers live in `docs/INFRASTRUCTURE.md` § Billing protection, the
 only copy. (M) still owed: BigQuery billing export, and flip the Mac's `VERTEX_CACHE_DISABLED`
 with a measured payoff.*
 
-*⛔ **A4 safety testing is SUSPENDED for the rest of the capstone buildout (Mike, 2026-09-01).**
-Consequence to carry: the clinical flags are **unverified on 3.7 Flash** — the fleet moved
-without running `tests/run_a4_safety.py`, and the last clean 6/6 was on a model no longer in
-use. By decision, not oversight; full text in `ROADMAP.md` § Section 0 pt 8. Re-run
-`python3 tests/run_a4_safety.py --complexity deep` at capstone close, before Alpha.*
+*⛔ **A4 safety testing is SUSPENDED (Mike, 2026-09-01) and its re-run is OFF the capstone close
+path (Mike, 2026-09-02).** The clinical flags are **unverified on 3.7 Flash** and stay so until
+the **before-Alpha** run, the only clock left on it — `ROADMAP.md` § Section 0 pt 8, amended.*
 
 *⛔ **ZDR: refused, ruled on, do not re-open** — the whole basis, incl. Amendment 2026-08-28,
 is `ROADMAP.md` § Section 0. The `[DB-0818-06]` wisdom-store proposal review still awaits
-Mike. CRM sweep: **built** (`f75a338`, parallel window, gate lifted by Mike) — deployed at
-close-out, testing owed.*
+Mike. CRM sweep: **built and deployed** — first live morning digest still owed as its confirm.*
 
 *✅ **The daily backup is fixed and live-verified** (fragment 2026-08-29-03). **⚠ Still true:
 no off-machine copy** — the Restic external-drive job is not installed. Mike's call, unfiled.*
-
-***Next: Red session ④ — the prompt is written and Mike-bound for review:**
-**`archive/handoffs/2026-08-30-red-session-four-prompt.md`** (Fable, on/after 2026-08-30, once
-the 20:00 run is in traces). It owns: the `[DB-0822-08]` re-measure + decision, the
-clock-gated confirm drain (incl. the **unobserved 18:24/20:00 runs of 08-29** — decline tail,
-email surfacing), the parked `synthesizer.md` `source` line, the calendar dedupe, and the
-capstone close-out review. Sunday 08-31: the retro half of `[DB-0827-09]`. A7 check 10 is
-runnable; check 12 unstarted.*
 
 *⚠ **The code-dominant inversion question is live and must be decided before A8 executes**
 or A8 is paid for twice. Standing home, three dated rounds:

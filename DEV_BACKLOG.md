@@ -73,31 +73,8 @@ back-tagging the rest is `[DB-0815-10]`.
 > counts, and all three were single events; every one of them was also **older than the code that
 > fixed it**. They were removed on 2026-08-18. Confirm the count *and* compare the evidence date
 > against `git log` before promoting anything from here.
-*(empty — triaged 2026-08-27 by `/backlog deep`; evidence in `archive/backlog_closed_2026-08.md` § Closed 2026-08-27)*
-
-- **[instruction change]** Suppress or delay scheduled routine outputs if the user is currently active in session or typing, to avoid double-texting collisions.  
-  `2026-08-29T09:34:01.382403Z`
-
-- **[instruction change]** Develop a system check or context-validation step to prevent repeating already-given information or suggestions, specifically regarding checking business hours before suggesting errands and respecting when a user has already deferred a task.  
-  `2026-08-29T06:01:53.767381Z`
-
-- **[needs building]** Implement a state-check to prevent repeating questions about tasks the user has already deferred, and ensure time/context appropriateness (e.g., checking store hours before prompting at 9:30 PM).  
-  `2026-08-28T20:28:28.051829Z`
-
-- **[instruction change]** When user submits complex multi-step goals (like claims, taxes), do not just record them silently. Prompt the user for details and next steps in a 'goals interview' format to manage attention-switching friction incrementally.  
-  `2026-08-28T19:55:26.147846Z`
-
-- **[instruction change]** Stop mentioning the Prudential review (project is complete/waiting) and stop issuing retrospective reminders for calendar events the user has already attended (e.g., swimming).  
-  `2026-08-28T19:34:56.577491Z`
-
-- **[needs building]** Fix email parser so it does not strip forwarding context. Forwarded emails currently lose the original recipient data, leading to incorrect assumptions about who the email was intended for.  
-  `2026-08-28T16:43:27.304606Z`
-
-- **[needs building]** Email intake/parser needs updating to preserve and pass forwarding metadata (e.g., forwarded from secondary accounts), as dropping it caused the system to misinterpret a family member's email as a misdirected message.  
-  `2026-08-28T15:24:22.504583Z`
-
-- **[needs building]** Logistics check should not report a route as 'well covered' or complete if the specific geographical locations of the user's scheduled errands are not yet known or recorded.  
-  `2026-08-28T11:10:10.476712Z`
+*(empty — triaged 2026-09-02 by Red session ④'s capstone review, all eight dispositions Mike's;
+evidence in `archive/backlog_closed_2026-09.md` § Inbox triage 2026-09-02)*
 
 ---
 ## Now
@@ -115,31 +92,8 @@ standing rule distrusts.*
 
 ### Green/Amber — buildable without a prompt
 
-*All three are code fixes in `core/` or `tools/`. Grouped so an automated run can take the block.
-Each is a defect measured in the 2026-08-21 traces, not a proposal.*
-
-- **2. [DB-0822-05] The journal records days you never spoke.** The Diarist is not scheduled — the
-  **Coordinator dispatches it** as a fire-and-forget specialist
-  ([core/orchestrator.py:4381](core/orchestrator.py#L4381)). On 08-21 it fired on 10 of 23 runs,
-  and **in 9 of them Mike said nothing at all** — it journalled the assistant's own monologue.
-  Worse, at 10:24 the Synthesizer handed it `"Original user message: 'Good morning. Open with
-  whatever is most time-sensitive today…'"` — that is the **scheduler's** prompt text, filed as
-  Mike's speech. The rule that a scheduler prompt is not user speech was added 2026-08-09
-  (`82d394b`) and **has regressed**. Cost is irrelevant (24 calls, $0.017); the damage is a
-  journal of things the user never said, which later runs then read back as fact — the same
-  mechanism as `[DB-0822-06]`.
-  **Fix in code, not in an instruction:** refuse the dispatch when the session carries no real
-  user turn. An agent-file rule is what already failed.
-  *Measured 2026-08-21 from `data/personas/mike/traces/2026-08-21.jsonl`, read live off the VM.*
-  *Re-verified 2026-08-27: the cited dispatch line drifted — the fire-and-forget dispatch is now
-  [core/orchestrator.py:4660](core/orchestrator.py#L4660); still no guard.*
-  **✅ Built 2026-08-27** (`e6bde3d`, merged): `has_real_user_turn()` gates the Diarist dispatch —
-  a scheduler prompt is not speech; a user who answers a check-in still journals.
-  `tests/test_diarist_user_turn_gate.py`.
-  @kind: bug
-  @waiting: the owed deploy, then one scheduler-only day whose journal stays empty and one
-  answered check-in that still journals — both halves, or the gate is the same bug reversed
-  *filed 2026-08-22 by Mike · built 2026-08-27 by the session-hygiene attack worker*
+*One survivor of the 2026-08-21 trace-measured block — its two siblings closed on live evidence
+2026-09-02 (`archive/backlog_closed_2026-09.md`).*
 
 - **3. [DB-0822-06] It tells Mike his own training day, and got it wrong four ways in one day.**
   Across 08-21 the same hiatus was called *five-day, five-day, day three, day three, **day four**,
@@ -167,39 +121,27 @@ Each is a defect measured in the 2026-08-21 traces, not a proposal.*
   per-field stamps now date. A code-computed "derived facts" line was considered and deliberately
   not built — revisit only if a dated count still gets misread after deploy.
   @kind: bug
-  @waiting: the owed deploy, then one same-day case — a morning-resolved item not reported
-  "still missing" by a later run that day
+  **⚠ Fresh reproduction across three live days, post-deploy — the narrow confirm passed and the
+  item still cannot close (Red session ④, 2026-09-02).** The confirm half held: Prudential,
+  resolved, was raised zero times on 08-29 (7-of-9 the week before), and the 09-01 Apex deferral
+  + plants-watered updates were respected by every later run that day. But the headline failure
+  reproduced: the five-day exercise hiatus **ended 2026-08-23** (Mike's own journal entry), yet
+  08-30 10:48 said *"day three of your scheduled exercise hiatus"*, 08-31 11:21 said it was
+  *"officially over"* (a week late), and 09-02 08:07 said it *"officially wraps up today"* —
+  three different wrong states, spanning the 09-01 model migration, so it is the carried-state
+  mechanism, not the model. The age annotations are live and the model repeats the stale state
+  anyway — the "revisit only if a dated count still gets misread after deploy" condition above
+  has now fired. The deliberately-unbuilt code-computed derived-facts line is back on the table.
+  @waiting: superseded — the confirm arrived and was outweighed by the reproduction above
+  **Merged in 2026-09-02 (Mike's disposition):** the two 08-28/29 Inbox reports of
+  already-given information and suggestions repeating — same carried-state mechanism, now three
+  independent reports of one fault. (Their suggest-at-impossible-times half filed separately as
+  `[DB-0902-03]`.)
   *filed 2026-08-22 by Mike · age-out half built 2026-08-27 (session-hygiene worker) · intraday
-  half built + derived-count half retired 2026-08-27 (orchestrator-context worker)*
+  half built + derived-count half retired 2026-08-27 (orchestrator-context worker) · reproduction
+  on live traces 2026-09-02 (Red session ④) · Inbox repeat-info reports merged in 2026-09-02*
 
 ### Red — judgement work, not automatable
-
-- **5. [DB-0822-08] Nothing is ever proposed — only reported.** The Apex migration due the 31st was
-  raised in **6 of 9** scheduled runs and **not once** did anything offer to put time in the
-  calendar for it. Prudential was raised in **7 of 9** — unchanged all day, waiting on Jason
-  Duross, entirely outside Mike's control — and nothing ever asked *"do you want me to chase
-  him?"*. Mike: *"There was no mention to SCHEDULE a time to do the Apex work, or a question about
-  'Should I follow up with Prudential?'"*
-  **Read this as an adherence failure, not a missing instruction** — Mike's framing is that the
-  agents *"aren't acting proactively on information, even though they're instructed to do so."*
-  **So open the existing proactive-anticipation section of `config/agents/synthesizer.md` and find
-  out why it is not firing before writing another rule.** Adding a rule to a 12,700-token file is
-  the move most likely to be wrong here — see the length→adherence finding in
-  [archive/plans/synthesizer_audit_2026-08-18.md](archive/plans/synthesizer_audit_2026-08-18.md) § 5.
-  **Corollary Mike named:** an item that cannot be acted on should not be raised at all; one that
-  can should arrive with the action attached.
-  *Re-verified 2026-08-27: the file shrank 52,397 → 41,939 bytes in the audit execution
-  (`ce94dd1`) but the Proactive Anticipation section (`synthesizer.md:249–277`, "mandatory pass…
-  cannot be skipped") was untouched. Since length→adherence is the named cause, **re-measure
-  adherence against the post-audit file** — one scheduled-run day of traces — before any fix.*
-  @kind: bug
-  @session: whether to fix by instruction or by giving the Synthesizer an explicit "propose a next
-  action or stay silent" gate
-  *Session ③ (2026-08-29) deliberately wrote no fix — the re-measure day had not elapsed at
-  work time. Measurement procedure + the decision framed with a recommendation (measure first,
-  then the structural gate, not another instruction):
-  [archive/handoffs/2026-08-29-re-measure-and-0822-08-decision.md](archive/handoffs/2026-08-29-re-measure-and-0822-08-decision.md).*
-  *filed 2026-08-22 by Mike*
 
 - **6. [DB-0822-09] Email is processed and then thrown away.** The 12:24 and 18:24 jobs were
   explicitly *"check the user's inbox and summarize any relevant logistics details."* `logistics`
@@ -224,10 +166,23 @@ Each is a defect measured in the 2026-08-21 traces, not a proposal.*
   (intake-queue bullet: transit/parking/food/who-else legs, surfaced plan-shaped) and
   `recreation_hobbies.md`. A4 gate PASS 3/3 × three suites
   (`tests/a4_safety_rerun_2026-08-29_gemini_*.md`).
-  @waiting: the owed VM deploy, then Mike's intake enable (`[DB-0820-03]`/`[DB-0820-04]`) —
-  live confirm is one interest-level email (e.g. a concert) surfacing WITH its coordination
-  legs attached, once, not as a bare notice
-  *filed 2026-08-22 by Mike · built 2026-08-29 session ③*
+  **⚠ First live test FAILED the surfacing half; the coordination half works (Red session ④,
+  2026-09-02).** A genuinely interest-level email — Death Cab for Cutie ticket confirmation,
+  Troxy, Sep 26 — arrived by 09-02. The 11:37 logistics run built exactly the right package:
+  HORIZON_ITEMS carried it and COORDINATION_OPPORTUNITIES attached real legs (*"check travel,
+  transit, and pre-show dining options near Troxy"*), same for Jimmy Carr. **But the user-facing
+  11:36 inbox-summarize run said only** *"Your focus window remains clear for the Apex migration
+  delivery"* — the item never surfaced to Mike in any run that day. Jimmy Carr's earlier
+  surfacing (08-30 14:45) came with only a generic assistance offer. So: legs generated one
+  layer down ✓, Synthesizer report-interest-level rule not firing ✗. Possibly the Synthesizer
+  judged the focus window took precedence — but the summarize job is precisely the reporting
+  channel. Note the 09-02 runs are on `gemini-3.7-flash`, which the instruction was never
+  measured on.
+  @waiting: superseded — intake went live 2026-08-29 13:54 and the confirm ran; the surfacing
+  half needs another look (instruction adherence vs a structural surface, same fork as the
+  closed `[DB-0822-08]`)
+  *filed 2026-08-22 by Mike · built 2026-08-29 session ③ · live test failed surfacing half
+  2026-09-02 (Red session ④)*
 
 ### Denied tier — Mike's own file
 
@@ -279,60 +234,6 @@ Each is a defect measured in the 2026-08-21 traces, not a proposal.*
   @kind: bug
   *filed 2026-08-26 at Mike's instruction, from the live trace · fifth instance 2026-08-29*
 
-- **8. [DB-0827-01] Declining a confirmation does nothing, so the prompt comes back until you
-  give in and approve it.** Mike, live 2026-08-27, on the first decline anyone has ever performed:
-  *"If I decline it keeps asking in a loop. In the end I approved to break the loop."*
-  **There is no decline path anywhere in the system.** `POST /confirm` in `core/server.py` is
-  approve-only; there is no reject endpoint, and `static/index.html` has no decline handler.
-  Declining dismisses the prompt in the browser and changes nothing on the server, so the record
-  stays unapproved in `pending_confirmations.json` and the app's next poll of
-  `/pending-confirmations` raises it again — every cycle, until the 10-minute TTL expires it.
-  **Why this is worse than a cosmetic annoyance, and the reason it is filed rather than fixed
-  late in a session:** the loop's only exit is *approving the thing you just refused*. A gate whose
-  cheapest escape is consent is not a gate. It inverts `tools/confirm.py`'s entire premise — that
-  the user's deliberate act is what authorises an action — into a war of attrition that authorises
-  by exhaustion.
-  **Present since the gate shipped 2026-08-19** (`6d6d46c`), unnoticed for eight days because
-  nobody had declined one: every prior test approved.
-  **Shape of the fix, not a decision:** `POST /decline {token}` that removes the record through the
-  same fingerprinted path `consume()` uses, a client control that calls it, and a decision on
-  whether a decline should also tell the model *"the user said no"* — without that, the next turn
-  can simply re-propose the same action, which is a second, quieter version of the same loop.
-  **✅ Built 2026-08-27** (`0f8f528`, merged): `POST /decline` removes the record through the
-  same fingerprint discipline as `consume()`; refusals retained in `declined_confirmations.json`
-  (capped 200); the client leaves the card up if the server call fails rather than pretending the
-  "No" landed. `tests/test_decline_path.py`, 14 checks, all failing pre-fix. **✅ Re-propose
-  half built 2026-08-27** (merged `4cc9e3e`): `confirm.request()` raises no card for an action
-  refused within 24h unless a genuinely new trigger occurred — the user speaking in a turn that
-  began after the refusal, or an intake row arriving after it (`tools/turn_context.py`,
-  thread-local, fails closed on an unbound thread). A declined-actions context block tells the
-  model the answer stands; an allowed re-ask must say the user declined it before. Window
-  rationale documented at `_REPROPOSE_WINDOW_SECONDS`; ledger records persist past expiry
-  (count-capped, never age-capped). `tests/test_decline_reproposal_guard.py`, 21 checks.
-  @kind: bug
-  @waiting: the owed deploy, then one live decline that stays declined — including through the
-  next scheduled run
-  *filed 2026-08-27 at Mike's instruction, from his own live attempt to decline · built same day
-  by the decline-path attack worker · re-propose half built 2026-08-27 by the
-  orchestrator-context worker*
-
-- **9. [DB-0827-07] The Coordinator writes empty "CLARIFICATION_NEEDED:" quality events — 33
-  since 08-18, 3–5 a day, every one with no content.** Diagnosed 2026-08-27 during the deep run's
-  machine-log sweep (the ⚠ ×33 signature): the Coordinator fills its `USER_CORRECTION:` template
-  slot with the adjacent `CLARIFICATION_NEEDED:` label and nothing after the colon;
-  `_handle_user_correction()` ([core/orchestrator.py:492](core/orchestrator.py#L492)) logs it
-  because `is_null_ish()` does not catch a bare template label. Same slot-noise class as the
-  "None ×90" case `[DB-0815-09]` fixed. Two costs: junk drowns the event log's session-start
-  count, and if the Coordinator genuinely needed clarification those 33 times, the payload is
-  lost. **Fix: extend the null-ish check to bare labels while keeping a label *with* content as
-  real signal.** Machine-originated, promoted at ×33 under the ×3 rule.
-  **✅ Built 2026-08-27** (`24dabae`, merged): `is_null_ish()` drops a bare ALL-CAPS label,
-  keeps `CLARIFICATION_NEEDED: which Bill?` intact. `tests/test_empty_template_label_events.py`.
-  @kind: bug
-  @waiting: the owed deploy, then one day with no new empty-label events in the VM quality log
-  *filed 2026-08-27 from the deep-run machine sweep, VM quality events read live · built same day
-  by the session-hygiene attack worker*
-
 - **10. [DB-0829-01] The log recorded an email as sent while it was still waiting for approval —
   and it was then declined.** Live 2026-08-29, during the confirm-drain session, watched end to
   end: Mike asked for an email to Iva Diamond at 13:00; `send_email` correctly raised the
@@ -353,6 +254,30 @@ Each is a defect measured in the 2026-08-21 traces, not a proposal.*
   merely-gated call (`journalctl` 13:00:18) — "completed" should not describe a pending action.
   @kind: bug
   *filed 2026-08-29 at Mike's instruction, from the live confirm-drain exchange*
+
+- **11. [DB-0902-01] ROUTING_MISS events now record successes, so the miss log is filling with
+  non-misses.** Since the 09-01 fleet migration, the Coordinator files quality events whose
+  detail describes correct behaviour — *"Coordinator handled morning session prompt
+  successfully"*, *"Routed inbox check and logistics task appropriately"*, *"Coordinator test
+  run check"* — under `ROUTING_MISS`. 5 instances 09-01 → 09-02 in
+  `data/personas/mike/logs/quality_events.json`, read live. Same template-slot-noise family as
+  the closed `[DB-0827-07]`, but the payload is non-empty so `is_null_ish()` correctly passes
+  it — the defect is semantic (an event type asserting the opposite of its content), so the fix
+  is not the same one-liner. Diagnose whether this is 3.7 Flash misreading the event template
+  (instruction side, Red) or a slot the code can sanity-check (Green) before choosing.
+  @kind: bug
+  *raised by Mike 2026-09-02 (Red session ④) from the drain read; evidence in the quality log*
+
+- **12. [DB-0902-02] The two inbox jobs disagree about the same inbox.** 08-30 14:45:03
+  (pipeline, *"summarize any relevant logistics details"*) reported **"no new messages"**;
+  14:45:29 (direct, *"any actionable items or urgent messages"*) found the Bupa dental
+  reminder, the Jimmy Carr booking and the GCP budget alert in the same minute. One of the two
+  paths is not reading what the other reads (intake queue vs raw inbox is the obvious suspect —
+  intake went live 08-29 13:54). Same-minute contradiction, so timing does not explain it.
+  Related but not identical: `[DB-0822-09]`'s failed surfacing half — fixing that without this
+  would surface from a channel that sometimes sees nothing.
+  @kind: bug
+  *raised by Mike 2026-09-02 (Red session ④) from the drain read; traces 08-30 14:45*
 
 ## Later
 
@@ -480,56 +405,6 @@ the condition has not arrived, push the date rather than closing the item.
   rename, a different path) and `[DB-0818-06]` (24 stored "facts", several inferred preferences
   recorded as observations — what an `inferred` tier catches at write time)*
 
-- **[DB-0809-02] One unfinished ritual arrives as three or four separate messages.** Read live off
-  the VM 2026-08-15: the "three repetitive evening messages" were **four different scheduled jobs**,
-  each re-asking the same unanswered question. `evening_close` is a victim, not the culprit.
-  **The mechanism: "raise a thing once" has no memory that a question was asked and left
-  unanswered**, so every unrelated job that fires inherits the unfinished ritual from context.
-  **Two prior diagnoses were confidently wrong** (narrative in `archive/backlog_closed_2026-08.md`
-  § Closed 2026-08-15), which is why the third is not being picked without him. **Do not re-apply
-  the ≤2-sentence cap** — rejected deliberately; focus is the target, length only its symptom.
-  **Third measurement, 2026-08-21 — the mechanism is confirmed and it is worse than "three or four
-  messages."** Across 9 scheduled runs: the full 13-virtue list went out **4 times**; the sleep and
-  step-count question was asked in **5 runs and never once answered**, then asked again; Prudential
-  appeared in **7 of 9** and Apex in **6 of 9**, both unchanged all day. **And the length runs the
-  wrong way** — the runs carrying the least new information were the longest (16:27 carried nothing
-  new and ran 1,778 characters; 12:24 ran 227).
-  **Mike, 2026-08-22:** *"Most of these should be touched upon ONCE if at all. Runs with little
-  information should be short and sweet. 'Not much new, but haven't heard from you in a few hours.
-  What's up?' sort of stuff."*
-  > **Flagged, because it reads like the thing this item already rejected.** The `≤2-sentence cap`
-  > was rejected deliberately (above) on the grounds that *focus is the target, length only its
-  > symptom*. Mike's 08-22 wording asks for brevity **conditioned on there being nothing new** —
-  > which is a focus rule that produces brevity, not a cap. **Build it that way**, and do not
-  > reintroduce an unconditional length limit. Confirm the reading with him before building.
-  **✅ DECIDED 2026-08-28 (Mike) — reading confirmed, both halves approved; what remains is the
-  build.** *(1)* The 08-22 wording is a **focus rule conditioned on nothing-new, not a length
-  cap** (the rejected ≤2-sentence cap stays rejected): empty context delta since the last run →
-  short check-in, brevity as a consequence. *(2)* **Asked-state memory** in code
-  (`tools/context_tracker.py` territory): a question asked and unanswered is recorded; later
-  jobs do not re-ask. **Pressing things may be re-raised if urgent — but not frequently and not
-  every time.** *(3)* **Ritual ownership:** a scheduled job does not continue a ritual that is
-  not its own — extend the proven `session_kind()` gate pattern.
-  **The target behaviour, Mike's design frame (2026-08-28), which the build should aim at rather
-  than mere de-duplication:** Metatron informs *what to do NOW*. Open items are worked
-  opportunistically off the list, not nagged: don't remind the user to water the plants — note
-  when the user is home with 5–10 free minutes before the next scheduled obligation and suggest
-  it as a good use of the window; or when the user checks in asking for something to do, surface
-  it if it is the highest-priority item fitting the circumstances. An unanswered question is one
-  more open item on that list, not a broadcast obligation. *(Touches the anticipation pass and,
-  later, `[DB-0815-12]` location — "user is home" is a circumstance signal.)*
-  @kind: bug
-  **✅ Code halves BUILT 2026-08-28** (`6451b51`, spinoff chat): asked-state in `context.json`
-  (question text withheld from the model; re-ask caps incl. max 1/day across all jobs);
-  nothing-new fingerprint stamped at run close → short-check-in directive (a condition — a
-  test asserts no length cap can creep back); ritual ownership generalised to
-  `*_ritual.md`-by-filename. 33/33 tests + evening gate 11/11.
-  *remaining: VM deploy (rides the spinoff batch); one scheduled-run day confirms (doubles as
-  `[DB-0822-08]`'s re-measure day); the Red Synthesizer line rides the email-surfacing session
-  — verbatim in `archive/handoffs/2026-08-28-ritual-halves.md`*
-  *filed 2026-08-09 · rewritten twice as measurement inverted it · third measurement 2026-08-21 ·
-  decided 2026-08-28 · built 2026-08-28*
-
 - **[DB-0815-11] The system recorded a preference change it appears never to have made.** A
   `SELF_APPLIED` event at `2026-08-15T13:51:39Z`: *"Switched output to Bulgarian transliteration
   (Latin alphabet)…"* — but no transliteration line exists in any persona file on the VM (Mike
@@ -552,8 +427,9 @@ the condition has not arrived, push the date rather than closing the item.
   Synthesizer's text are cross-checked against write-family tool calls in the turn's trace; an
   unbacked claim logs a `FALSE_ACTION_CLAIM` event carrying the sentence — log-only, response
   untouched, both pipeline paths. Registered in the sync so it is collected, not discarded.
-  `tests/test_false_action_claim.py`. **The @session policy half is unchanged and still the
-  item's exit.**
+  `tests/test_false_action_claim.py`. **The @session policy half was decided 2026-08-28 (the
+  approval gate below is the policy) and confirmed closed at the capstone review 2026-09-02 —
+  the @waiting detection exit is all that remains.**
   **A third arrived 2026-08-18 and it is the one that settles the question, because unlike the other
   two it can be checked end to end.** `SELF_APPLIED` at `09:17:27Z` wrote an Interaction Preference
   into `config/personas/mike.md:16` — *"Open sessions with the most time-sensitive commitment,
@@ -593,7 +469,8 @@ the condition has not arrived, push the date rather than closing the item.
   08-18 line scores 0.857 vs the template and is refused). 19/19 tests. Two flags in
   `archive/handoffs/2026-08-28-write-persona-gate.md`: refusal applies to stated preferences
   too (deliberate reversal of warn-never-block), and `synthesizer.md` carries no `source` line
-  (schema does the work; Red session may add one).
+  — **DECLINED FOREVER (Mike, 2026-09-02, Red session ④): the schema does the work and fails
+  safe; no agent-file line will be added. Flag closed.**
   *remaining: VM deploy (rides the spinoff batch), then the @waiting exit above*
   *filed 2026-08-15 from the machine log · third instance folded in 2026-08-21 from the `/backlog
   deep` machine-log sweep, with the `RULE_CONFLICT` that confirms it · policy decided 2026-08-28*
@@ -614,8 +491,10 @@ the condition has not arrived, push the date rather than closing the item.
   inversion (opened 2026-08-22, round two 2026-08-27). Thinking only, no build; read it before
   giving this decision its session, because the inversion is strand (b) taken seriously.
   @session: is (c) — a standing review protocol — worth a session, or is this three items?
+  **Parked to the rebuild notebook (Mike, 2026-09-02, capstone review):** this decision rides
+  the code-dominant inversion question and is ruled there, before A8 — not in capstone scope.
   *filed 2026-08-10 · the wisdom-embedding strand closed 2026-08-15 (`13134bc`) · notebook
-  anchored 2026-08-27*
+  anchored 2026-08-27 · parked to the rebuild question 2026-09-02*
 
 - **[DB-0814-03] Manage the mailbox as tickets rather than as a stream**, so a thread has a state
   instead of being re-read each pass. Real and unbuilt. **Blocked on what a ticket *is*** (a thread,
@@ -625,7 +504,10 @@ the condition has not arrived, push the date rather than closing the item.
   **Scope against obligations before designing anything new.**
   @kind: feature
   @session: what a ticket is, and whether obligations already are one
-  *filed 2026-08-14 by Mike via the VM*
+  **Parked post-capstone (Mike, 2026-09-02, capstone review)** — explicitly not this
+  rendition's work; the scope-against-obligations note above is the entry condition for
+  whichever session picks it up.
+  *filed 2026-08-14 by Mike via the VM · parked 2026-09-02*
 
 - **[DB-0815-12] Real-time location as a signal.** GPS and proactive area-scanning. Needs a design
   pass before anything is built on it: the privacy tier for **continuous** location, which layer
@@ -682,27 +564,6 @@ the condition has not arrived, push the date rather than closing the item.
 finished work with no exit. **A fix is confirmed in the session that makes it, or it is time-gated
 with a date.** Nothing new joins this group open-ended.*
 
-- **[DB-0822-10] The virtue list can no longer reach an ordinary session — fixed and deployed
-  2026-08-27, awaiting one evening turn to confirm.** Franklin's 13 virtues were injected into
-  **every** session's system prompt, so the full list went out at 16:27, 18:24, 19:28 and 20:00 on
-  08-21 with only one line of prose in `synthesizer.md` scoping it to the evening — an instruction
-  that was already right and was simply not followed.
-  **Fixed as injection code, per the item's own ruling that a second copy of an ignored rule is not
-  a fix.** `session_kind()` ([core/orchestrator.py:297](core/orchestrator.py#L297)) matches the turn
-  against the persona's **own configured** `evening_close` prompt read from `scheduler.yaml` — not
-  a literal, which would go stale silently the first time Mike reworded it on the VM — and
-  `load_config()` injects `evening_ritual.md` only on a match. Recital is now structurally
-  impossible rather than discouraged. `7069ea1`, deployed. `tests/test_evening_ritual_gate.py`,
-  11/11.
-  **Why this is not closed yet:** the only live check so far was a **10:56 morning** check-in, which
-  would not have carried the ritual under the old code either — it proves nothing. Two turns close
-  it, and the first is free.
-  @kind: bug
-  @waiting: one ordinary **afternoon or evening** turn with no virtue list, and one 20:00
-  `evening_close` that still carries it — the second half matters, because a gate that suppresses
-  the ritual everywhere is the same bug wearing the opposite sign
-  *filed 2026-08-22 by Mike · premise corrected same day · fixed and deployed 2026-08-27*
-
 - **[DB-0820-03] The intake extractor is deployed and switched off; it stays off until it passes a
   test built from Mike's own mail.** The exit is a specific run, not ordinary use, so it cannot rot
   here: **(a)** Mike labels ~50 real messages into `tests/intake_fixtures/` on the VM (personal
@@ -718,20 +579,11 @@ with a date.** Nothing new joins this group open-ended.*
   flip — A4's lesson, recorded in `routing.yaml`'s entry.
   @waiting: corpus labelled by Mike on the VM (needs a few days of swept mail first)
   @kind: feature
+  `due: 2026-09-09` — parked with a date at the capstone review (Mike, 2026-09-02): the sweep has
+  been accumulating real mail since intake went live 08-29 13:54, so a week's corpus exists by
+  then. Note the toggles are distinct: Mike enabled the **sweep** (code tier) 08-29; the
+  **extractor** (model tier) this item gates stays off until the eval passes.
   *filed 2026-08-20 during intake rollout; steps (b)–(d) are Claude's, (a) and the flip are Mike's*
-
-- **[DB-0809-21] The calendar reconcile has never had a live candidate to raise — until,
-  probably, the Mousetrap duplicates.** `daily_calendar_reconcile` re-ran clean with 0 candidates
-  through 08-10. **On 2026-08-25T04:35 the machine log carried two "possible duplicate calendar
-  entries" reports** (three overlapping Mousetrap matinee events for 08-25, similarity 0.89 and
-  0.45) — timestamped in the maintenance window, which is almost certainly this mechanism firing
-  on a live candidate at last. **Two exits, both cheap:** confirm the emitter is
-  `daily_calendar_reconcile` (one grep of its code path against the entry wording), then close;
-  and **Mike resolves the actual duplicates** — three Mousetrap events, keep one.
-  @kind: chore
-  *filed 2026-08-09 · deferred by Mike · live-candidate evidence found 2026-08-27 in the deep-run
-  machine sweep*
-  `due: 2026-09-01`
 
 - **[DB-0810-05] Writing tone has never been learned from a real mailbox.** Built and committed
   (`88957e6`); **every test used stubs.** The distillation half is well covered. The IMAP half is
@@ -779,6 +631,42 @@ with a date.** Nothing new joins this group open-ended.*
 
 ### Unbuilt — real capability that does not exist
 
+- **[DB-0902-03] Suggestions arrive at times they cannot be acted on, and re-ask what was already
+  deferred.** Mike, twice (08-28 20:28, 08-29 06:01): a shop errand suggested at 9:30 PM with no
+  check of opening hours; questions re-asked about tasks he had already said "later" to. The
+  deferral-respect half overlaps the built decline/re-propose guard but that guard covers
+  *confirmations*, not suggestions. The new capability: **before a suggestion is raised, check it
+  is currently actionable** — opening hours, an earlier deferral, time of day. (The
+  repeat-information half of the same two reports was merged into `[DB-0822-06]` — same
+  carried-state mechanism.)
+  @kind: feature
+  *filed 2026-09-02 from the 08-28/29 Inbox pair, disposition Mike's (capstone review)*
+
+- **[DB-0902-04] A complex multi-step goal is swallowed silently instead of interviewed.** Mike
+  (08-28): dropping "the mover's claim" or "taxes" just records a line — no follow-up questions,
+  no breakdown, so the pieces surface later as friction. Wanted: a short goals-interview-style
+  prompt for details and next steps when a complex goal arrives, incremental to manage
+  attention-switching. Mike 2026-09-02: *"File it. Should be fixed."* Touches the Goals
+  Interviewer overhaul flag (pre-Alpha) and `[DB-0818-08]`-adjacent capture design.
+  @kind: feature
+  *filed 2026-09-02 from the 08-28 Inbox entry, disposition Mike's (capstone review)*
+
+- **[DB-0902-05] Forwarded email loses its forwarding trail, so the tool misreads who mail was
+  for.** Two same-day reports (08-28), one live failure: a family member's email forwarded from a
+  secondary account arrived stripped of the original recipient data, and the system read it as
+  misdirected. Fix in the parser (`tools/mail.py` / intake path): preserve and pass forwarding
+  metadata. The 08-28 dental-forwarding machine-log cluster is this item's runtime twin.
+  @kind: bug
+  *filed 2026-09-02, merging the two 08-28 Inbox entries — one fault, one item (Mike's
+  disposition, capstone review)*
+
+- **[DB-0902-06] Logistics claims a route is "well covered" without knowing where the errands
+  are.** Mike (08-28): the route check reported coverage while the errand locations were not yet
+  recorded — confidence it had not earned. Rule: no coverage claim unless the specific locations
+  are known; otherwise say what is missing. Instruction or code guard in the logistics path.
+  @kind: bug
+  *filed 2026-09-02 from the 08-28 Inbox entry, disposition Mike's (capstone review)*
+
 - **[DB-0827-09] Accountability Index — measure which stated intentions, goals and planned
   events actually happened in a period**, reading both the user's follow-through and Metatron's
   intended effect. Raised by Mike 2026-08-26 while fixing the Diarist's plan-vs-event confusion.
@@ -823,8 +711,17 @@ with a date.** Nothing new joins this group open-ended.*
   an `intentions` list (ruling a — restatements kept, `times_stated` in the report), gate
   verdicts judged-once in `accountability/verdicts.jsonl`, Sunday summary via a sixth
   context-block source. Tests 25/25 new + 11/11 + 9/9.
-  @waiting: the owed VM deploy, then one 05:45 run with a real leftover (journalctl or a
-  verdicts.jsonl row) and one Sunday retrospective voicing the counts. Audit `[DB-0828-01]`
+  **✓ Gate confirmed live 2026-09-02 (Red session ④, journalctl):** ran at 05:45 on
+  08-30/31, 09-01/02 — `accountability gate: 0 judged (0f/0u/0i)` each day, the correct no-op
+  (no closed-window leftovers yet; `verdicts.jsonl` absent because the gate only appends
+  verdicts, verified against `run_judgment_gate()`). Sunday 08-30 parked the weekly summary —
+  `weekly summary parked (1 stated, 1 done)` — **but no run that day voiced it** (the 20:00
+  close carried virtues + Apex only). With 1-stated/1-done and nothing open, silence may be the
+  model judging the ceremony not worth it; watch the next Sunday with open items. Mike's 09-01
+  *"fun coding tonight"* intention was captured (`write_log` recorded stated intention) and
+  becomes the first real leftover when its window closes.
+  @waiting: one 05:45 run judging a real leftover (a verdicts.jsonl row — the 09-01 intention
+  matures ~09-03/04) and one Sunday retrospective voicing the counts. Audit `[DB-0828-01]`
   `due: 2026-09-07` then samples the verdicts.
   *raised by Mike 2026-08-26 mid-session · triaged out of Inbox 2026-08-27 · design decided
   2026-08-28 · code half built 2026-08-28 · deployed + rulings 2026-08-28 · gate + list shape
@@ -1299,6 +1196,21 @@ claim user-facing (its log-write sibling is `[DB-0829-01]`); the two Iva/Eva cor
 evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording — "causing an
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
+
+- **[a specialist missed a signal it should have caught]** Routed inbox check and logistics task appropriately.  
+  `2026-09-02T10:36:18.660217Z`
+
+- **[a specialist missed a signal it should have caught]** Coordinator attempted output without valid structured format or handled an empty scheduled check-in trigger incorrectly.  
+  `2026-09-02T10:08:48.704932Z`
+
+- **[a specialist missed a signal it should have caught]** Coordinator received a scheduled programmatic morning briefing directive instead of a direct user message; handled appropriately as an anticipatory logistics pass.  
+  `2026-09-02T09:00:10.695770Z`
+
+- **[a specialist missed a signal it should have caught]** Coordinator test run check  
+  `2026-09-01T19:00:27.725541Z`
+
+- **[a specialist missed a signal it should have caught]** Coordinator handled morning session prompt successfully.  ×2  
+  `2026-09-02T06:30:24.716553Z`
 
 - **[a specialist missed a signal it should have caught]** Coordinator produced context package for user update about evening family time and fun coding after a busy work day.  
   `2026-09-01T16:37:04.643033Z`
