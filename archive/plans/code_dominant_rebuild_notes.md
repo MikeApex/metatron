@@ -185,3 +185,101 @@ level — got its first concrete answer, and the shape is exactly this notebook'
 insurance (`[DB-0827-02]` closed; probe found no tail above 3,930, exposure ~$0.26/day) — which
 removes "runaway thinking cost" from the list of problems the rebuild needs to solve, and the
 `THINKING_CAP_HIT` quality event will say so if that changes.
+
+---
+
+## 2026-09-02 — Round five: the endeavour gets a shape, and Mike rules six things
+
+*From the Mark 2 scoping conversation. The architecture thinking stays here; the sequencing,
+gates and cost move to a companion —
+**[mark2_endeavour_plan_2026-09-02.md](mark2_endeavour_plan_2026-09-02.md)**, written the same
+day. **This notebook is still open**: the plan is a plan, not the commission, so the retirement
+condition at the head of this file has not fired.*
+
+**Amended later the same day — the development pipeline was audited as a second pass and lives in
+§ 4b of the companion plan** (twelve items: archiving, the plan-scoped permission lift, the
+backlog pipeline as a cross-project standard, The Book as REQUIREMENT R1, troubleshooting,
+`SessionStart` / `/mark2-code` / model selection, parallel windows, `/fix`, docs-as-tests, the
+model mechanism interface, one home for the standard, a dev-side cost meter). Not restated here —
+single-bin rule. The rebuild-salient half is already in point 1 below.
+
+**Mike's rulings (2026-09-02):** Alpha ships on **Mark 2**; A7 checks 10 and 12 are **skipped**
+and fold into Mark 2; **no correction-history corpus** — tests instead; **development rules are
+instated at the outset**, not discovered; **persona data maintains into Mark 2 while Mark 1 still
+runs**; and a **full review of the complete Mark 2 file suite before any production begins**.
+Consequence carried explicitly: **A8 is cancelled, not deferred** — `ROADMAP.md` still reads as
+though it is live work.
+
+Five things this round establishes that the first four did not.
+
+**1. "The rules" are three buckets, and conflating them produced the round's one real error.**
+Development rules (the Claude Code surface — 2,344 lines across `CLAUDE.md`, `.claude/rules/`,
+five commands and a 689-line hook), project rules (the constitution, agent files, what the runtime
+obeys), and operational knowledge (VM, billing, Vertex, Tailscale — facts about the world, not
+rules at all). A proposal to start Mark 2 near-empty and let mechanisms *earn their way back* was
+aimed at the development bucket and was wrong there: those rules protect against process failures
+whose cost is real work lost, and there is no upside to re-learning them. **Mike's correction:
+instate the development rules at the outset; discovery-by-failure belongs inside the project
+layer.** The rebuild-salient half is that a code-dominant repo *structurally* removes the reason
+for much of that machinery — the rules-directory split, the context-gate hook, ownership freezes
+and read-first lists all compensate for a codebase whose call graph cannot be grepped and whose
+seams cannot be tested. **In the development bucket, a rule that has to be earned back is
+therefore a diagnostic that the inversion underdelivered**, not a rule that was missing.
+
+**2. The criterion that sorts what can be discarded from what cannot:** *if the failure a rule
+prevents is **silent**, it cannot be quarantined; if the failure announces itself, it can.* This
+is the same insight round two and three kept meeting from different directions — the eight-day
+`daily_calendar_dedup_audit` discard, the month of silently uncached Vertex calls, `ROUTING_MISS`
+declared dead by a code grep — turned into a sorting rule. It also decides *delivery mechanism*,
+because only root `CLAUDE.md` survives `/compact`: silently-absent knowledge must live there,
+area knowledge in a path-scoped rule, failure-time knowledge behind a slash command, and
+runtime-enforced rules **in code**, where a failing test makes discovery unnecessary.
+
+**3. The derivation order is fixed, and the gate list is an input, not an output.** Mike's
+correction to a draft that had the packet *shipping* a judgment-gate list: much of that is exactly
+what needs redesign. Order is **domain model → persistent record format → seams → gates, derived
+last**. The 392 single-call tool-turns are evidence that current gate placement is wrong and a map
+of where judgment is exercised today; the taxonomy the redesign produces should be free to look
+nothing like them. Same correction to the thresholds question — Mark 2 needs a standing discipline
+(every number standing in for judgment gets an owner and a re-check date), not an enumeration of
+Mark 1's.
+
+**4. The data is not in the shape the inversion assumes, and this is measured, not estimated.**
+A shared append-only event log was proposed as the Mark 1 → Mark 2 contract. It does not exist.
+Thirteen append-only streams exist with thirteen schemas and no common envelope; **the trace
+stream is a conversation log, not a domain event log** (`trace_id / ts / user_input /
+synth_response / pipeline / grounded` — a turn happened, not an obligation was created); and
+~25 modules hold authoritative mutable state via whole-file `json.dump`, the substantive eight
+being `crm.py` (20 write sites), `intake`, `accountability`, `context_tracker`, `confirm`,
+`wishes`, `baselines`, `wisdom`. `context.json` is the pattern in miniature — `open_threads`,
+`patterns`, `follow_ups`, `held_items`, current state with nothing behind it. **One counter-example
+already holds the target shape:** the FAISS index is genuinely derived and rebuildable from
+`memory/metadata.json`. Also worth recording because a session will otherwise assume otherwise:
+**the Mac's `data/personas/mike/` is a local-dev remnant** — the live data is on the VM — and
+`data/personas/**` is `deny`-listed for `Edit` only, so `Read` needs no lift.
+
+**Decision: a point-in-time state export at cutover; Mark 2 event-sourced from day one.**
+Rejected: retrofitting event emission into Mark 1, which breaks the bugfix-only freeze, touches
+exactly the modules holding live data, and buys replayable history only forward from today. An
+event log's value is forward — it makes *Mark 2's* derived state rebuildable, which is this
+notebook's thesis expressed in storage.
+
+**5. Mark 1's errors become tests, not a corpus.** A proposed labelled correction-history corpus
+(from `USER_CORRECTION` events, the CRM merge/undo archive, and traces) was **rejected by Mike:
+most of the errors are functions of Mark 1's construction and of poorly-followed directions, so
+carrying them adds little and distracts.** What replaces it is better and cheaper — **a suite that
+fails on Mark 2 if any of those error classes recurs**: duplicate people from substring name
+matching, an unreversible or misrouted merge, a derived fact stated three different ways, a
+clinical flag reaching the user verbatim, deliberation emitted as the answer, an event emitter
+invisible to static analysis, a scheduled job whose output is discarded, and work reported done
+that never happened. Each must be **observed failing before the code that satisfies it exists**.
+Two things fall out: the trace corpus becomes Mark 1's most valuable asset as the **regression
+oracle** (replay real days, diff against Mark 1), and the suite gives the inversion its first
+measurable claim rather than an argued one.
+
+**Also settled:** a **new repo** (`~/Desktop/metatron2`), not a branch or a `v2/` subdirectory,
+with Mark 1 mounted write-denied — a fresh root is what forces each rule to be re-adopted
+deliberately. And a named gate, **G1**, reviewing the complete Mark 2 file suite *as a set* before
+any production code, because the failure being guarded against is a collection of individually
+sensible files that together say something nobody chose. Checklist and cost budget: § 4 and § 7 of
+the companion plan.

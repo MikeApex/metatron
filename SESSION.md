@@ -1,28 +1,24 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-09-02 (**Red session ④ — the verification pass, Mike present.** Four live trace
-days read; **seven items closed on evidence** (0822-05/08/10, 0809-02, 0827-01/07, 0809-21 —
-the calendar dedupe executed live on the VM, six deletes verified), three held because the
-evidence went the other way: **0822-06 reproduced post-fix** (stale hiatus state three ways
-across three days — derived-facts line back on the table), **0822-09 failed its first live
-test** (interest-level email never surfaced; legs generated one layer down), **0827-09 live
-but unexercised** (clean 05:45 no-ops; first real leftover ~09-03/04). Inbox triaged 8 → 0,
-the three @session items resolved, intake corpus parked `due: 2026-09-09`, the synthesizer
-`source` line **declined forever**. Fragment 2026-09-02-01. Dev-context only — nothing owes a
-deploy.)*
+*Updated: 2026-09-02 (**Mark 2 endeavour plan — planning only, Mike present.** No code, config
+or roadmap touched. **Mike ruled: Alpha ships on Mark 2**, so **A8 is cancelled, not deferred**,
+and **A7 checks 10 and 12 are skipped** — both fold into Mark 2. Dev rules are instated at the
+outset (earn-back survives only for the project layer); persona data maintains into Mark 2 while
+Mark 1 runs; **gate G1 reviews the whole Mark 2 file suite before any production begins**. Plan:
+**`archive/plans/mark2_endeavour_plan_2026-09-02.md`** (596 lines) — read it before any rebuild
+work. Notebook round five appended. Fragment 2026-09-02-03. Nothing owes a deploy.)*
 
-***Next: four staged sessions, all prompts Mike-bound in `archive/handoffs/2026-09-02-*`:**
-**⑤ referent fix** (Fable, Red — `[DB-0826-01]`; re-run Suite B-hard first, the baseline
-predates the fleet migration) · **⑥ three bugs** (Opus — `[DB-0829-01]`/`[DB-0902-01]`/
-`[DB-0902-02]` + the `[DB-0822-06]` derived-facts rider + the `[DB-0822-09]` surfacing
-diagnosis) · **⑦ capstone remainder** (Fable — `[DB-0818-08]` provenance, `[DB-0804-02]`'s
-buildable slice, `[DB-0808-06]` escalation design; Mike's ruling folded the never-scheduled
-three in) · **the (M)-walkthrough** (Fable — corpus labelling due 09-09, wisdom review, Darwin
-key, zones+APK+ping, BigQuery, Restic; first application of the new CLAUDE.md rule). **The
-capstone closes at ⑦'s end; A4 re-run is OFF the close path (before-Alpha unchanged, ROADMAP
-§ 0 pt 8).** **New standing rule:** CLAUDE.md § *Mike-gated work gets a walkthrough* — and that
-addition puts CLAUDE.md at **307/300**; the restructure it forces is owed, Mike's call on what
-moves out (⑦ checks it).*
+***Next: the four staged Mark 1 sessions still run**, prompts Mike-bound in
+`archive/handoffs/2026-09-02-*`: **⑤ referent fix** (Fable, Red — `[DB-0826-01]`; re-run Suite
+B-hard first, the baseline predates the fleet migration) · **⑥ three bugs** (Opus —
+`[DB-0829-01]`/`[DB-0902-01]`/`[DB-0902-02]` + the `[DB-0822-06]` derived-facts rider + the
+`[DB-0822-09]` surfacing diagnosis) · **⑦ capstone remainder** (Fable — `[DB-0818-08]`,
+`[DB-0804-02]`'s buildable slice, `[DB-0808-06]`) · **the (M)-walkthrough** (Fable — corpus
+labelling due 09-09, wisdom review, Darwin key, zones+APK+ping, BigQuery, Restic). **The capstone
+closes at ⑦'s end; A4 re-run is OFF the close path** (before-Alpha unchanged, ROADMAP § 0 pt 8).
+**They still run because they make Mark 1 usable for however long Mark 2 takes, and Mark 1's
+traces are Mark 2's regression oracle.** CLAUDE.md is at **307/300**; the restructure is owed,
+Mike's call on what moves out (⑦ checks it).*
 
 *⚠ **Two things found and deliberately NOT fixed — both need Mike's word.** (1) **`quick_override`
 reaches the clinical agents on the cloud path.** `core/router.py:98` reads "non-sensitive" as *no
@@ -53,9 +49,11 @@ Mike. CRM sweep: **built and deployed** — first live morning digest still owed
 *✅ **The daily backup is fixed and live-verified** (fragment 2026-08-29-03). **⚠ Still true:
 no off-machine copy** — the Restic external-drive job is not installed. Mike's call, unfiled.*
 
-*⚠ **The code-dominant inversion question is live and must be decided before A8 executes**
-or A8 is paid for twice. Standing home, three dated rounds:
-**`archive/plans/code_dominant_rebuild_notes.md`**.*
+*⚠ **The inversion is decided: Alpha ships on Mark 2 (Mike, 2026-09-02).** Architecture thinking
+stays in **`archive/plans/code_dominant_rebuild_notes.md`** (five rounds); sequencing, gates,
+buckets and cost in **`archive/plans/mark2_endeavour_plan_2026-09-02.md`**. **`ROADMAP.md` is
+deliberately NOT updated and still reads as though A8 is live work** — Mike handles that and the
+Mark 1 decommission condition manually. Known, not an oversight.*
 
 ***Model split, Mike's call 2026-08-18: plan and review in Fable, build in Opus.*** Red-tier
 work is still not delegated at all.
@@ -114,8 +112,11 @@ Three checks still open:
   attached files, opened and passed its first probe 2026-08-20** — live now, not gated on Track E;
   **one manual case, not a suite**, with its limits stated in
   `archive/security/b1b_attachment_injection_2026-08-20.md`.
-- **Check 10** — agent behavioural audits (12 specialists; Coordinator/Synthesizer via pipeline probes). **Unblocked and runnable** since `[DB-0810-03]`'s grants landed (`bfbdbb5`); unrun. Remaining `@session:` decisions: `DEV_BACKLOG.md` § Later § Decisions.
-- **Check 12** — constitution alignment review
+- **Check 10** — agent behavioural audits. **SKIPPED by Mike's ruling 2026-09-02** — folds into
+  Mark 2. It was the largest Mark-2-invalidated item on the board (8–12 hrs against agent files
+  the rebuild discards). Remaining `@session:` decisions: `DEV_BACKLOG.md` § Later § Decisions.
+- **Check 12** — constitution alignment review. **SKIPPED by the same ruling** — folds into
+  Mark 2, where Tier 0 is unchanged.
 - **A5b/A5c** — re-run `write_aspirational_baseline` with A5 mission-level data (A3 baseline is still a placeholder); A5c preference activation recorded "unknown, confirm if needed."
 
 **A9 — Product analytics — FIRST DRAFT BUILT AND DEPLOYED 2026-08-18; review deferred.** Alpha
@@ -124,9 +125,9 @@ provisional parts and the `2026-10-01` review date are in [ROADMAP.md](ROADMAP.m
 single home, not restated here (duplicate copy cut 2026-08-29). `@waiting` on `mike` holding
 goals and real data in ongoing use.
 
-**A8 — Pre-Alpha code refactor** — gated on A7. Module extraction from
-`core/orchestrator.py` and `core/server.py`. **Full spec, including the regression gate, is in
-[ROADMAP.md](ROADMAP.md) § A8** — not restated here, it was a duplicate copy.
+**A8 — Pre-Alpha code refactor — CANCELLED (Mike, 2026-09-02).** Refactoring
+`core/orchestrator.py` into modules Mark 2 replaces is work paid for twice. **`ROADMAP.md` § A8
+still reads as live** — Mike updates it manually. Do not start it.
 
 **Four built-and-standing constraints must not be undone** (outbound messaging, `tone_shape`,
 obligations-as-data, scheduler maintenance jobs) — **full statements and reasoning:
