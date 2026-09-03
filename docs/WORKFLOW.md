@@ -375,3 +375,22 @@ not write.
 - **New backlog items go to `.claude/backlog_inbox/<slug>.md`**, not straight into the file.
 - **`archive/PROJECT_LOG.md` is generated** from the fragments in `archive/log/` — never edit it
   by hand.
+
+---
+
+## Which model runs which kind of session
+
+**Mike's call, 2026-08-18: plan and review in Fable 5, build in Opus 5.** The split is by the
+shape of the work, not its size — planning and adversarial review reward the stronger reasoner,
+execution against a settled plan does not.
+
+**Red-tier work is not delegated at all** — not to a subagent, and not split across the two.
+There the judgement *is* the work, so handing it to a worker with a fresh context is handing
+away the thing being paid for. (`CLAUDE.md` § Change tiers is the authority on what is Red.)
+
+Every plan and every ready-to-paste prompt states its model on the first line. A prompt without
+one makes whoever pastes it re-derive a decision that was already made.
+
+*(Moved here 2026-09-03 from `SESSION.md`'s handoff block, which had carried it as a standing
+rule since 08-18 while the primer sat over its volatile-lines budget. It is a workflow rule, not
+session state.)*

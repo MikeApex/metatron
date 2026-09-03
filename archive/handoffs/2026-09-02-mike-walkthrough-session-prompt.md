@@ -47,5 +47,12 @@ not back onto a list.
    installed. This one is a decision first: install it now (walk through the drive setup), or
    decline with a date. Either way it stops being an unfiled ⚠ in `SESSION.md`.
 
+7. **Flip the Mac's `VERTEX_CACHE_DISABLED` — with a measured payoff, not on principle.**
+   The kill switch is set by hand on this machine, so every local Coordinator run pays full
+   input tokens. Measure one cached vs uncached pass first and flip only if the number earns
+   it; the Vertex 4,096-token floor makes "cache on" not automatically cheaper.
+   *(Added 2026-09-03 from `SESSION.md`'s caps paragraph, which was carrying it as an ownerless
+   (M) while the primer sat over its volatile-lines budget. It has an owner now: this session.)*
+
 At close: each item either closed with its evidence or re-dated by Mike's word. Update
 `DEV_BACKLOG.md`/`SESSION.md` accordingly. /archive at close.

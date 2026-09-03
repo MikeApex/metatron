@@ -189,100 +189,6 @@ standing rule distrusts.*
 
 ### Green/Amber — a second block, found after the first pass
 
-- **7. [DB-0826-01] "Undo that merge" was read as a work project, so the undo never happened.**
-  Live 2026-08-26, trace `b92ce0c3`, one minute after the contact merge that turn was plainly
-  about. The Coordinator routed it to **work_vocation**, which searched memory for *"Prudential
-  Apex project merge"* and *"Prudential Apex merge branch commit file"* — it resolved "merge" to
-  the work project and "that" to nothing at all.
-  **The tool was never the problem.** `unmerge_contacts` is granted to `relationships` in both
-  routing files and documented at
-  [config/agents/relationships.md:308](config/agents/relationships.md#L308). It was not called.
-  Instead the Synthesizer dispatched three subagents by hand and finished by instructing
-  `relationships` to *"Call `write_contact` to create a new contact for Marcus Delgado, in order
-  to undo the previous merge"* — **reconstructing a record by hand, which
-  `relationships.md:308` explicitly forbids** ("never reconstruct them yourself"), and which
-  would have produced a new id, an empty interaction log and a silent divergence from the
-  archived original.
-  **The Synthesizer diagnosed this correctly and proceeded anyway.** In the same turn it wrote a
-  `write_quality_event` recording that the Coordinator *"completely missed the conversational
-  context"* — so the signal exists in `quality_events.json` already.
-  **What this is, stated so it is not fixed as a CRM bug:** a Coordinator referent-resolution
-  failure. "That merge" is a pronoun pointing at the previous turn, and the routing layer
-  resolved it against work context instead. Same family as the adherence cluster
-  `[DB-0822-05]`–`[DB-0822-10]`, not the contact-gate cluster.
-  **Do not fix it blind** — the routing layer carries no reproduction yet, and one trace is one
-  trace. A second data point is cheap: any short referring turn ("undo that", "cancel it",
-  "do the other one") after a contact operation.
-  **@waiting condition MET 2026-08-27** — the `[DB-0827-05]` fix recovered the discarded
-  `ROUTING_MISS` history, and it holds at least three prior instances of this exact class:
-  *"Read that back to me again"* resolved to Prudential scheduling instead of the previous turn's
-  food data (08-18); *"previous request"* resolved to an older lunch instead of the immediately
-  prior turn (08-10); *"Approved"* resolved to the wrong pending action and wrongly closed an
-  obligation (08-15). Not one trace — a pattern with four data points. Workable now.
-  **Probe-measured 2026-08-28 and CONFIRMED THE FIX PATH (Mike):** Flash-Lite reproduces the
-  class 6/12 on the competing-referent suite; Pro sweeps it 12/12 but the flip is declined on
-  latency (`[DB-0820-05]`). **This item is the default path** — fix the Coordinator, prefer
-  structural referent context (`tools/turn_context.py` pattern) over instruction-only, since
-  Pro's winning move was following a rule `coordinator.md` already states and Flash-Lite
-  ignores. Reproduction suite exists: `tests/run_coord_model_probe.py` Suite B-hard.
-  **Fifth instance, live 2026-08-29 during the confirm drain:** *"Now set it back to Iva"* —
-  one turn after a contact-name correction — was resolved to a **declined email** instead of
-  the rename: the Coordinator re-proposed the refused send (Mike declined again), the
-  Synthesizer claimed the rename done (no `write_contact` call in the trace), and a fabricated
-  "user reversed his decline" `USER_CORRECTION` was logged. The system's own `ROUTING_MISS`
-  event (`2026-08-29T12:14:47Z`) names the misinterpretation — self-diagnosed and proceeded
-  anyway, same as the 08-26 instance.
-  **BUILT 2026-09-03, and the cause was not what this entry assumed.** The Coordinator was
-  never given the conversation at all: both live call sites in `core/orchestrator.py`
-  invoked `_run_single_agent("coordinator", ...)` with no `history` argument, so its only
-  view of the recent past was ambient facts, open threads and five days of day-logs — no
-  conversational turn anywhere in it. *"That merge"* was matched against the only
-  merge-shaped thing in scope, which on 08-26 was the Prudential Apex **branch** merge in
-  the logs. So `coordinator.md:129` ("a pronoun without a clear referent") was
-  **unfollowable, not ignored**, and the ruled premise above — *Pro's winning move was
-  following a rule Flash-Lite ignores* — is wrong: Pro was shown the turns, because
-  `tests/run_coord_model_probe.py` has always passed `history` and therefore never measured
-  the condition production runs in. The 6/12 of 2026-08-28 measured a model, on an easier
-  setup than the live one.
-  **The fix, both halves.** `_coord_history()` hands the Coordinator the last six messages
-  (copied, never the caller's list — every model loop appends its own turn to it); and
-  `tools/turn_referent.py` `context_block()` states what the previous turn *did* — the
-  tools that ran, on which objects, and whether each completed, failed, is **still waiting**
-  on the user, or was **refused**. The second half is what a transcript cannot give: on
-  08-29 the reply text said the email was sent, the confirm ledger said pending, and the
-  ledger was right. Fails open — a missing or stale trace leaves today's behaviour, never
-  an error.
-  **Numbers, `gemini-3.5-flash-lite`, Suite B-hard × 3 runs per cell**
-  (`tests/run_referent_probe.py`, raw in `tests/referent_probe_2026-09-03_*.json`).
-  Referent resolution — did `RESOLVED_INTENT` name the right thing, and *only* it:
-
-  | arm | referent | dispatch | ask-rate |
-  |---|---|---|---|
-  | no history, no block — what shipped until today | **0/12** | 2/12 | 8% |
-  | history only | 6/12 | 7/12 | 0% |
-  | history + referent block | **12/12** | 9/12 | 0% |
-
-  The full arm was 12/12 on the referent in both runs of the day (24/24). **`"Approved."` —
-  the 08-15 and 08-29 shape — is the case that separates the two halves: 0/3 with history
-  alone (it named *both* pending approvals, which is the live failure) and 3/3 with the
-  block.** The 3 residual dispatch misses are all `"Approved."` routing to `logistics`
-  rather than `relationships` with the referent already correctly resolved — a taxonomy
-  disagreement about who owns emailing a landlord, not this class.
-  **Ask-rate is the wrong primary meter and was replaced.** It is 0% in every arm, and if
-  the referent is supplied it *should* be: nothing is left to ask about. The pass condition
-  is referent-resolution rate, with ask-rate kept as the secondary — a fix may buy safety
-  with a clarifying question, never with silence.
-  **No `coordinator.md` edit was made or is needed** — 12/12 without one, and the block
-  carries its own instruction inline, so a second copy in the agent file would be a One
-  Home Per Rule Class violation.
-  **CLOSE CONDITION (M):** owed a commit and a deploy, then one live referring turn on the
-  VM — any short *"undo that"* / *"approved"* immediately after an action — landing on the
-  right specialist. Until that runs, this is measured on `danny_park` reconstructions, not
-  on the five live traces, which live in `mike`'s VM-owned data and are not replayable here.
-  @kind: bug
-  *filed 2026-08-26 at Mike's instruction, from the live trace · fifth instance 2026-08-29 ·
-  built and measured 2026-09-03, awaiting the post-deploy live confirm*
-
 - **10. [DB-0829-01] The log recorded an email as sent while it was still waiting for approval —
   and it was then declined.** Live 2026-08-29, during the confirm-drain session, watched end to
   end: Mike asked for an email to Iva Diamond at 13:00; `send_email` correctly raised the
@@ -1255,6 +1161,21 @@ claim user-facing (its log-write sibling is `[DB-0829-01]`); the two Iva/Eva cor
 evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording — "causing an
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
+
+- **[user corrected a prior turn]** ```  
+  `2026-09-03T10:27:19.763865Z`
+
+- **[user corrected a prior turn]** User corrected prior turn where system misattributed a quality event write; corrected routing and logging behavior.  
+  `2026-09-03T10:25:32.600826Z`
+
+- **[user corrected a prior turn]** User correction in prior turn where meal logging was triggered unexpectedly; user now says 'Read that back to me again.' referring to what was just logged/said.  
+  `2026-09-03T10:24:06.987144Z`
+
+- **[user corrected a prior turn]** User corrected implied meal logging by explicitly stating 'Log what I ate today — cereal and milk for breakfast.'  
+  `2026-09-03T10:23:39.716333Z`
+
+- **[a specialist missed a signal it should have caught]** User uploaded a Cheder schedule PDF to add to their schedule. Coordinator routed to Logistics and Diarist without routing error.  
+  `2026-09-03T10:21:10.310340Z`
 
 - **[a specialist missed a signal it should have caught]** Scheduled proactive logistic session triggered without user input; coordinator successfully handled anticipatory logistics pass without routing error.  
   `2026-09-03T09:00:13.874785Z`

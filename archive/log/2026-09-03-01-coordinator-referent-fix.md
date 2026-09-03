@@ -74,5 +74,7 @@ left there.** One line into `ACTION_TOOLS`, 10/10, evidence in
 unclassified after `merge_contacts` and `import_contacts_file` on 08-18, which is the argument
 for fixing it on sight rather than queueing it.
 
-Commit `6483e27`, close-out `8caaeb7`, both pushed to `origin/main`. **Not deployed — the fix is live on the Mac only**, and `[DB-0826-01]` stays open until one live referring turn on the VM confirms it.
+**Deployed and live-confirmed the same day, so `[DB-0826-01]` is CLOSED.** Two real user turns against the deployed VM on persona `mike` (not `proactive`, which `send_one` hardcodes and which would have made the block correctly report that the user never spoke): *"Log what I ate today — cereal and milk for breakfast."* → logged, then *"Read that back to me again."* → *"For today's log, I have recorded cereal and milk for breakfast under your nutrition notes."* That is the 08-18 instance verbatim, which used to resolve to the Prudential schedule. Evidence in `archive/backlog_closed_2026-09.md`. Commits `6483e27` (fix), `8caaeb7` (close-out), `cc58a5b` (`apply_crm_proposals`).
+
+**Left open deliberately and not filed:** *"Approved."* still chooses `logistics` over `relationships` on 2 of 3 runs with the referent already correct. It is a taxonomy question about who owns emailing a landlord, not this class, and filing it on probe evidence alone would put an item on the list that no user has yet noticed.
 

@@ -568,6 +568,14 @@ metatron-vm` → `git pull origin main` → `pip install -q -r requirements.txt`
 `.git/hooks/post-commit` prints a reminder to deploy. It does **not** auto-deploy
 — deployment is always manual.
 
+> **`./deploy.sh` never commits — it pushes what is already committed, and the VM pulls
+> that.** So running it with work still in the working tree reports "deploy complete" and
+> ships **nothing**. This has happened. The phrasing that prevents it is *"owes a commit,
+> then a deploy"* — say that in any handoff or close-out, never "owes a deploy" alone.
+> *(Carried in `SESSION.md`'s handoff paragraph in every session from 2026-08-29 until
+> 2026-09-03, when the primer crossed its volatile-lines budget and this moved to the file
+> that owns deploy detail. It is a permanent property of the script, not session state.)*
+
 ---
 
 ## Python environment

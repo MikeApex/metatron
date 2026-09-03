@@ -9,58 +9,55 @@ open threads. `coordinator.md`'s pronoun rule was *unfollowable*, not ignored, a
 measured an easier condition than production. Fixed in two halves — `_coord_history()` passes
 six messages, and `tools/turn_referent.py` states what the previous turn *did*, including a
 pending or declined action the transcript reports as done. Referent resolution **0/12 → 6/12
-(history) → 12/12 (both)**. No `coordinator.md` edit: 12/12 without one. Fragment
-2026-09-03-01, commit `6483e27`. **Owes a push and a deploy — live on the Mac only.**)*
+(history) → 12/12 (both)**. No `coordinator.md` edit: 12/12 without one. **Deployed and
+live-confirmed on `mike` the same day** — *"Read that back to me again."* after a food log now
+reads back the food, which is the 08-18 instance verbatim — so `[DB-0826-01]` is **closed**.
+Fragment 2026-09-03-01; commits `6483e27`, `8caaeb7`, `cc58a5b`. Nothing owes a deploy.)*
 
 ***Next: three of the four staged Mark 1 sessions still run**, prompts Mike-bound in
 `archive/handoffs/2026-09-02-*`: **⑥ three bugs** (Opus — `[DB-0829-01]`/`[DB-0902-01]`/
 `[DB-0902-02]` + the `[DB-0822-06]` derived-facts rider + the `[DB-0822-09]` surfacing
 diagnosis) · **⑦ capstone remainder** (Fable — `[DB-0818-08]`, `[DB-0804-02]`'s buildable
 slice, `[DB-0808-06]`) · **the (M)-walkthrough** (Fable — corpus labelling due 09-09, wisdom
-review, Darwin key, zones+APK+ping, BigQuery, Restic). **⑤ referent fix is built** (above) —
-its close condition is one live referring turn on the VM after deploy. **The capstone closes at
-⑦'s end; A4 re-run is OFF the close path** (before-Alpha unchanged, ROADMAP § 0 pt 8). **They
+review, Darwin key, zones+APK+ping, BigQuery, Restic). **⑤ referent fix is done and closed.**
+**The capstone closes at ⑦'s end; A4 re-run is OFF the close path** (before-Alpha unchanged,
+ROADMAP § 0 pt 8). **They
 still run because they make Mark 1 usable for however long Mark 2 takes, and Mark 1's traces
 are Mark 2's regression oracle.** CLAUDE.md is at **307/300**; the restructure is owed, Mike's
 call on what moves out (⑦ checks it).*
 
-*⚠ **Two things found and deliberately NOT fixed — both need Mike's word.** (1) **`quick_override`
-reaches the clinical agents on the cloud path.** `core/router.py:98` reads "non-sensitive" as *no
+*⚠ **Found and deliberately NOT fixed — needs Mike's word. `quick_override` reaches the
+clinical agents on the cloud path.** `core/router.py:98` reads "non-sensitive" as *no
 `local: true`*, and `routing_cloud.yaml` marks **nothing** local — so its `:22` comment *"(non-
 sensitive agents only)"* excludes nothing, and a `quick` call to `mental_wellbeing`/`physical_health`
-runs on the **bulk** model. Pre-existing. Sharper now only because A4 is suspended. (2)
-**`./deploy.sh` never commits** — it pushes and the VM pulls, so a "deploy complete" shipped
-**nothing** until the work was committed. Say *"owes a commit, then a deploy"* in every handoff.*
+runs on the **bulk** model. Pre-existing. Sharper now only because A4 is suspended.
+(`./deploy.sh` never commits → moved 2026-09-03 to `docs/INFRASTRUCTURE.md` § the deploy
+pipeline.)*
 
 *✅ **The capstone plan is the read-first for any backlog work:**
 **`archive/plans/capstone_cluster_review_2026-08-27.md`** — clusters, status, and the ruled
 close path (its 2026-09-02 update is current state). **National Rail (`[DB-0818-04]`):** Darwin
 key is Mike's to register. Geolocation (`[DB-0815-12]`): deployed; zones file + one ping owed.*
 
-*⚠ **Caps are $100/$175.** A heavy testing day tripping the soft cap is the control working;
-recovery is a 60s VM start. Numbers live in `docs/INFRASTRUCTURE.md` § Billing protection, the
-only copy. (M) still owed: BigQuery billing export, and flip the Mac's `VERTEX_CACHE_DISABLED`
-with a measured payoff.*
+*⚠ **A tripped soft cap is the control working, not an outage** — recovery is a 60s VM start.
+Cap numbers: `docs/INFRASTRUCTURE.md` § Billing protection, the only copy. Both owed (M)s
+(BigQuery export, the `VERTEX_CACHE_DISABLED` flip) are items 5 and 7 of the (M)-walkthrough.*
 
-*⛔ **A4 safety testing is SUSPENDED (Mike, 2026-09-01) and its re-run is OFF the capstone close
-path (Mike, 2026-09-02).** The clinical flags are **unverified on 3.7 Flash** and stay so until
-the **before-Alpha** run, the only clock left on it — `ROADMAP.md` § Section 0 pt 8, amended.*
+*⛔ **Two rulings that are settled — do not re-open either; both live in `ROADMAP.md` § Section
+0.** (1) **A4 safety testing is SUSPENDED** (Mike, 09-01) and its re-run is **off the capstone
+close path** (09-02): the clinical flags are **unverified on 3.7 Flash** and stay so until the
+**before-Alpha** run, now the only clock on it (pt 8, amended). (2) **ZDR is refused**, incl.
+Amendment 2026-08-28. Still owed against these: the `[DB-0818-06]` wisdom-store proposal review
+(Mike's), and the CRM sweep's first live morning digest as its confirm (built and deployed).*
 
-*⛔ **ZDR: refused, ruled on, do not re-open** — the whole basis, incl. Amendment 2026-08-28,
-is `ROADMAP.md` § Section 0. The `[DB-0818-06]` wisdom-store proposal review still awaits
-Mike. CRM sweep: **built and deployed** — first live morning digest still owed as its confirm.*
-
-*✅ **The daily backup is fixed and live-verified** (fragment 2026-08-29-03). **⚠ Still true:
-no off-machine copy** — the Restic external-drive job is not installed. Mike's call, unfiled.*
+*⚠ **No off-machine backup copy** — the daily backup is fixed and live-verified (fragment
+2026-08-29-03), but the Restic external-drive job is not installed. Mike's call, unfiled.*
 
 *⚠ **The inversion is decided: Alpha ships on Mark 2 (Mike, 2026-09-02).** Architecture thinking
 stays in **`archive/plans/code_dominant_rebuild_notes.md`** (five rounds); sequencing, gates,
 buckets and cost in **`archive/plans/mark2_endeavour_plan_2026-09-02.md`**. **`ROADMAP.md` is
 deliberately NOT updated and still reads as though A8 is live work** — Mike handles that and the
 Mark 1 decommission condition manually. Known, not an oversight.*
-
-***Model split, Mike's call 2026-08-18: plan and review in Fable, build in Opus.*** Red-tier
-work is still not delegated at all.
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -87,8 +84,10 @@ A voice-first personal AI life manager — a director and companion for a human 
 If you need to find a specific file, tool, or planning document: **[CODEBASE_INDEX.md](CODEBASE_INDEX.md)**.
 For **why** something was built the way it is — reasoning, rejected options, corrections —
 [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md). For deploy, recovery or rebuild detail:
-[docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md). For which command to fire and when:
-[docs/WORKFLOW.md](docs/WORKFLOW.md). None of the three is loaded by `/metatron-code`.
+[docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md). For which command to fire and when — **and
+which model runs which kind of session** (plan/review in Fable, build in Opus; Red never
+delegated): [docs/WORKFLOW.md](docs/WORKFLOW.md). None of the three is loaded by
+`/metatron-code`.
 
 ---
 
@@ -104,7 +103,7 @@ subagent dispatch; threat model and security backlog (`archive/security/`); **se
 **user-attached photos and documents, new-message alerts, and a waiting indicator (2026-08-20)**;
 **the Coordinator's view of the previous turn — six messages of history plus
 `tools/turn_referent.py`, which states what that turn actually did including a pending or
-declined action (2026-09-03, `[DB-0826-01]`, undeployed)**.
+declined action (2026-09-03, `[DB-0826-01]`, deployed and live-confirmed)**.
 *Dates and reasoning for all of it: [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).*
 
 ### In progress / next

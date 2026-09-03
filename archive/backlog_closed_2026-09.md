@@ -225,3 +225,50 @@ a classification (`merge_contacts` and `import_contacts_file` were the first two
 
 *Filed and closed 2026-09-03 by the referent-fix session (⑤); noticed while reusing
 `core/actions.py` for `tools/turn_referent.py`.*
+
+### "Undo that merge" was read as a work project, so the undo never happened — `[DB-0826-01]` closed 2026-09-03
+
+Five instances 08-10 to 08-29: a short referring turn after an action — *"undo that merge"*,
+*"read that back to me again"*, *"previous request"*, *"approved"*, *"now set it back to Iva"* —
+resolved against the wrong referent, twice with the system's own `ROUTING_MISS` naming the
+misinterpretation and proceeding anyway.
+
+**The cause was not the one the item, the probe or the 2026-08-28 ruling assumed.** The
+Coordinator was never given the conversation: both live call sites in `core/orchestrator.py`
+called it with no `history`, so its whole view of the recent past was ambient facts, open
+threads and five days of day-logs, containing no conversational turn. *"That merge"* matched
+the only merge-shaped thing in scope — on 08-26 a Prudential Apex **branch** merge in the logs.
+`coordinator.md:129` was therefore **unfollowable, not ignored**, and the Flash-Lite-vs-Pro
+probe could not have found this: it has always supplied `history`, so its 6/12 measured a
+model on a condition production never provided.
+
+**Fixed in two halves** (`6483e27`): `_coord_history()` passes the last six messages, copied
+rather than the caller's list; and `tools/turn_referent.py` states what the previous turn *did*
+— tools run, their objects, and whether each completed, failed, is still waiting on the user or
+was refused. The second half is what a transcript cannot give: on 08-29 the reply text said the
+email to Iva was sent, the confirm ledger said pending, and the ledger was right. Fails open.
+
+**Evidence.** `gemini-3.5-flash-lite`, Suite B-hard x3 (`tests/run_referent_probe.py`, raw JSON
+in `tests/referent_probe_2026-09-03_*.json`): referent named correctly **0/12** with neither
+half, **6/12** with history alone, **12/12** with both — 24/24 across two full-arm runs.
+*"Approved."* separates the halves: 0/3 on history alone (it named *both* pending approvals,
+which is the 08-15 failure) and 3/3 with the block. `tests/test_turn_referent.py` 16/16.
+
+**Live confirm, deployed VM, persona `mike`, real user turns, 2026-09-03:**
+*"Log what I ate today — cereal and milk for breakfast."* → logged; then *"Read that back to me
+again."* → *"For today's log, I have recorded cereal and milk for breakfast under your nutrition
+notes."* That is the 08-18 instance verbatim, which previously resolved to the Prudential
+schedule.
+
+**No `coordinator.md` edit** — 12/12 without one, and the block carries its own instruction
+inline, so a second copy in the agent file would break One Home Per Rule Class. **Ask-rate was
+replaced as the pass condition**: it is 0% in every arm and correctly so once the referent is
+supplied.
+
+**Known and left open, deliberately:** *"Approved."* still routes to `logistics` rather than
+`relationships` on 2 of 3 runs with the referent already correctly resolved — a taxonomy
+disagreement about who owns emailing a landlord, not this class. Not filed; raise it if it is
+seen live.
+
+*Closed 2026-09-03 by Red session ⑤, built and measured the same day. Reasoning in full:
+`archive/PROJECT_LOG.md` § 2026-09-03.*
