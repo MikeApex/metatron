@@ -76,39 +76,6 @@ back-tagging the rest is `[DB-0815-10]`.
 *(empty — triaged 2026-09-02 by Red session ④'s capstone review, all eight dispositions Mike's;
 evidence in `archive/backlog_closed_2026-09.md` § Inbox triage 2026-09-02)*
 
-- **[needs building]** Cross-turn file attachment persistence: User attached a PDF in an earlier turn, but file data was not accessible across subsequent conversational turns, requiring re-upload. File attachments should persist in session context/storage across turns so references to previously uploaded files can be processed without re-attaching.  
-  `2026-09-03T10:31:25.572235Z`
-- **A one-character typo in a scheduler day makes a job never run, and nothing says so.**
-  **NOT the defect this was first filed as — the original headline was wrong and is corrected
-  here rather than left to argue for the wrong fix.** Filed 2026-09-03 claiming `day:` was
-  ignored and every weekly job was therefore broken. It is not. **The two keys drive different
-  layers**, and both are working as built:
-  - `day:` (singular) is read at **registration** — `_register_schedules` takes its weekly
-    branch on `"time" in job and "day" in job` and calls `schedule.every().<day>.at(t)`.
-  - `days:` is read by the **firing gate** — `_is_active_day`, comparing
-    `strftime("%A").lower()`.
-
-  So `weekly_pattern_miner` and `weekly_physical_review`, which set only `day:`, are correct:
-  their gate defaults to `"daily"`, but registration only ever invokes them on Sunday. **They
-  have not been running daily.** Verified on the VM 2026-09-03 by reading the daemon's own
-  registration lines after a restart.
-
-  **What IS real, and is why this stays open:** a plausible typo in `days:` fails **silently
-  and permanently**. `days: sun` matches nothing on any day — no error, no warning, the job
-  simply never fires. That is exactly how `weekly_clinical_review` shipped inert twice on
-  2026-09-03: once registered daily (no `day:`), once gated to nothing (`days: sun`). A job
-  setting only `days:` also registers daily and is then gated six days a week — functionally
-  right, but not what the author intended.
-  **Recommended fix:** validate scheduling keys at config load and refuse an unrecognised day
-  value loudly, rather than accepting any string and comparing it. The narrower alternative —
-  make `_is_active_day` accept three-letter abbreviations — treats the symptom and leaves the
-  next silent key. **Also worth doing: document the two-layer split where a job is written**;
-  it is in no doc, and cost a session an hour to derive from the daemon's log lines.
-  @kind: bug
-  *found 2026-09-03 during session ⑦'s post-deploy verification · headline corrected the same
-  day after the premise was tested rather than assumed · the `days: sun` and missing-`day:`
-  halves were this session's own bugs and are fixed in `config/templates/scheduler.yaml`, the
-  live `mike` config, and a two-layer regression test in `tests/test_clinical_escalation.py`*
 
 - **A `quick` request can send the clinical agents to the cheap model, because "non-sensitive" is
 defined as "not marked local" and the cloud routing file marks nothing local.**
@@ -323,6 +290,36 @@ standing rule distrusts.*
   messages" while the inbox has unread mail
   *raised by Mike 2026-09-02 (Red session ④) from the drain read; traces 08-30 14:45 · built 2026-09-03 (session ⑥)*
 
+- **13. [DB-0903-03] A file attached in one turn was gone by the next — the user was told to
+  re-upload a PDF whose bytes were on disk the whole time.** Live 2026-09-03 10:31 (Cheder
+  schedule PDF; the 11:27 exchange states it outright: *"files attached in earlier messages are
+  not retained in accessible storage across turns"*). The bytes and index rows always survived —
+  what was missing was any way to *address* them once the client stopped re-sending the id.
+  **✅ BUILT 2026-09-03 (Opus 5 worker, `d7c7fc7`, merged; undeployed at time of writing).**
+  A message with no files of its own that refers back to one ("read the pdf I sent",
+  "summarise tenancy.pdf") revives it from the store into the turn. Reference matching is in
+  Python (`references_earlier_files()` in `core/attachments.py`) — filename/stem, type word +
+  back-reference phrase, or bare back-reference taking the most recent file; load-on-hit, never
+  always-carry (a 5 MB PDF re-sent through a day of idle chat is a token bill nobody asked for);
+  suppressed on proactive turns. Revived content re-enters through the same
+  `describe_for_prompt()` path and `<untrusted_content>` boundary as a fresh upload — the
+  fresh-attachment wording is byte-identical and pinned by a test, since the Red-tier agent
+  files refer to that sentence. **Standing-cost answers, per the costs rule:** two clocks —
+  24h `CARRY_TTL_SECONDS` bounds prompt reuse (meter: tokens; 2 files / 5 MB per turn), 30d
+  `RETENTION_SECONDS` bounds disk (the history UI serves past attachments, so a 24h disk sweep
+  would blank images in scrollable history); deletion is `sweep_expired()` at next upload, mode
+  600, survives restart with TTLs applied from stored timestamps. Known limit: a persona that
+  stops uploading keeps its last files until the next upload sweeps.
+  `tests/test_attachment_persistence.py` 21/21; existing attachment suites 18/18 + 15/15.
+  **One Red-tier follow-up proposed, not applied** (handoff
+  `archive/handoffs/2026-09-03-attachment-persistence.md`): a Coordinator line naming *which*
+  file was opened on an ambiguous back-reference — without it, ambiguity resolves silently.
+  @kind: bug
+  @waiting: the owed deploy, then the scripted live confirm — attach a PDF, send two unrelated
+  turns, ask "what did the pdf I sent say?"; pass is an answer from the file with no re-upload
+  *raised by Mike 2026-09-03 live in the app · built 2026-09-03 (Green/Amber spinoff) · rank 13
+  proposed at entry: below the four @waiting confirms only because it, too, now waits on one*
+
 ## Later
 
 **Three groups, and the group is the useful fact about an item.** *Decisions* are blocked on a
@@ -427,76 +424,6 @@ the condition has not arrived, push the date rather than closing the item.
   @session: Mike to pick 1, 2 or 3 — recommendation is 1 (accept), and the item closes on that
   answer with no build
   *filed 2026-09-03 at Mike's instruction, from the live evidence that closed `[DB-0822-09]`*
-
-- **[DB-0815-11] The system recorded a preference change it appears never to have made.** A
-  `SELF_APPLIED` event at `2026-08-15T13:51:39Z`: *"Switched output to Bulgarian transliteration
-  (Latin alphabet)…"* — but no transliteration line exists in any persona file on the VM (Mike
-  grepped). Either it wrote somewhere unexamined or it reported an action it did not take. **Honest
-  caveat:** he reverted his language test the same day, so "written then reverted" cannot be
-  distinguished from "never written" without a backup.
-  **The second-order concern is the real one:** this was the second wrong self-applied preference in
-  four days (the 08-12 check-in consolidation was the first, and he rejected it). Both were silent.
-  **Resolved 2026-08-21 — a clean instance, with the ambiguity above removed.** The 10:24 run opened
-  *"I have made a note to open sessions exactly that way going forward. I've logged the instruction
-  change so it sticks."* **The trace for that run contains no `config_writer` call of any kind** —
-  the only writes were `write_log` from three specialists. So this is **not** "wrote somewhere
-  unexamined": it is a reported action that was never taken, proven by the absence of the call
-  rather than by grepping for its result. It also had no user instruction behind it — it was
-  reacting to the 07:30 **scheduler prompt** (see `[DB-0822-07]`, the seven-minute job collision).
-  Mike, 2026-08-22: *"False action claim is unacceptable and needs to be addressed."*
-  **This makes the item buildable:** cross-check claimed actions against the trace's tool calls
-  before the response is emitted. `core/` — no agent file needed for the detection half.
-  **✅ Detection half built 2026-08-27** (`e673330`, merged): persistence claims in the
-  Synthesizer's text are cross-checked against write-family tool calls in the turn's trace; an
-  unbacked claim logs a `FALSE_ACTION_CLAIM` event carrying the sentence — log-only, response
-  untouched, both pipeline paths. Registered in the sync so it is collected, not discarded.
-  `tests/test_false_action_claim.py`. **The @session policy half was decided 2026-08-28 (the
-  approval gate below is the policy) and confirmed closed at the capstone review 2026-09-02 —
-  the @waiting detection exit is all that remains.**
-  **A third arrived 2026-08-18 and it is the one that settles the question, because unlike the other
-  two it can be checked end to end.** `SELF_APPLIED` at `09:17:27Z` wrote an Interaction Preference
-  into `config/personas/mike.md:16` — *"Open sessions with the most time-sensitive commitment,
-  overdue follow-up, or unresolved thread, naming it specifically…"*. **It landed, and it was
-  redundant on arrival.** The next morning's rule audit (`RULE_CONFLICT`, `2026-08-19T04:30Z`) scored
-  it **0.88 against `config/templates/scheduler.yaml:21`** — the *template*, so every persona already
-  had the rule. So the store now has two homes for one instruction, and the personal copy states
-  nothing the shared one does not.
-  **What this changes about the decision.** The first two instances could each be argued away — one
-  was rejected on taste, one could not be distinguished from "written then reverted". This one wrote
-  a real line to a real file, unasked, that duplicates a rule already in force, and **it is the same
-  class as `[DB-0818-06]`'s eight interaction preferences sitting where behaviour rules cannot reach
-  them.** The rule audit's own caveat applies to the *partner*, not the flagged preference — and here
-  the partner is a template, not a wording coincidence.
-  **Two separable calls, and they are not the same question:** whether `write_persona` may self-apply
-  at all without confirmation, and whether a self-applied preference should be checked against the
-  template rules *before* it is written rather than flagged the morning after by an audit nobody
-  reads. The second is buildable today and does not need the first answered.
-  **✅ POLICY DECIDED 2026-08-28 (Mike) — both calls answered; what remains is the build.**
-  *(1)* **Self-applied (inferred) preference writes are gated behind approval for the time
-  being** — a proposal the user confirms, via the same fingerprinted `consume()` pattern
-  `write_config` uses. **The gate must be toggleable**: once the inference engine around these
-  preferences is strong enough, the approval mechanism may be removed entirely and inference
-  permitted again — build it as a switch, not a hard-coded rule. Explicit user instructions
-  remain ungated (stated, not inferred). *(2)* **Pre-write redundancy check:** before writing,
-  `write_persona` checks whether a toggle/setting/rule elsewhere in the system (templates,
-  `scheduler.yaml`, agent config) already covers the preference — a more appropriate home wins
-  over writing a second copy of an existing rule (the 08-18 instance's exact failure).
-  **Design note for later, Mike's (2026-08-28):** as users accrue, persona preferences likely
-  become binaries/tags for common cases instead of free-form text — possibly worth an early look
-  for communication preferences/tone. Not scoped here; recorded so it survives.
-  @kind: bug
-  @waiting: detection half (`e673330`) — one live `FALSE_ACTION_CLAIM` event or one clean week
-  **✅ Gate BUILT 2026-08-28** (`75a91d6`, spinoff chat): inferred writes propose-and-confirm
-  via `consume()`; toggle `proactive.persona.inferred_write_auto_accept` (default false, no
-  tool writes the file); redundancy refusal at `NEAR_DUPLICATE` names the existing home (the
-  08-18 line scores 0.857 vs the template and is refused). 19/19 tests. Two flags in
-  `archive/handoffs/2026-08-28-write-persona-gate.md`: refusal applies to stated preferences
-  too (deliberate reversal of warn-never-block), and `synthesizer.md` carries no `source` line
-  — **DECLINED FOREVER (Mike, 2026-09-02, Red session ④): the schema does the work and fails
-  safe; no agent-file line will be added. Flag closed.**
-  *remaining: VM deploy (rides the spinoff batch), then the @waiting exit above*
-  *filed 2026-08-15 from the machine log · third instance folded in 2026-08-21 from the `/backlog
-  deep` machine-log sweep, with the `RULE_CONFLICT` that confirms it · policy decided 2026-08-28*
 
 - **[DB-0810-11] Where should code replace model judgment?** Raised by Mike 2026-08-05, never given
   its own session. Three strands: (a) deterministic lookups feeding agents evidence instead of asking
@@ -654,6 +581,25 @@ with a date.** Nothing new joins this group open-ended.*
 
 ### Unbuilt — real capability that does not exist
 
+- **[DB-0903-02] A plausible typo in a scheduler `days:` value makes the job never run, silently
+  and permanently — nothing validates day names.** `days: sun` matches nothing on any day (the
+  firing gate `_is_active_day` compares `strftime("%A").lower()`, so only full lowercase day
+  names ever match) — no error, no warning, the job simply never fires. Exactly how
+  `weekly_clinical_review` shipped inert twice on 2026-09-03. A job setting only `days:` also
+  registers daily and is then gated six days a week — functionally right, not what the author
+  meant. **The fix is Red-tier and is why this sits here:** validate scheduling keys at config
+  load in `core/scheduler.py` and refuse an unrecognised day value loudly. The narrower
+  alternative — accepting three-letter abbreviations in `_is_active_day` — treats the symptom
+  and leaves the next silent key.
+  **✅ The doc half is DONE (2026-09-03, `764d218`):** the two-layer `day:`/`days:` split is now
+  documented where jobs are written (comment block atop `config/templates/scheduler.yaml`) and
+  in `docs/INFRASTRUCTURE.md` — it previously cost a session an hour to derive from daemon logs.
+  The immediate bugs were fixed same day by session ⑦ (template, live `mike` config, regression
+  test in `tests/test_clinical_escalation.py`); what remains is only the loud-validation build.
+  @kind: bug
+  *found 2026-09-03 during session ⑦'s post-deploy verification (dev-session find → Later) ·
+  headline corrected same day — `day:`-only jobs were never broken · doc half closed 2026-09-03*
+
 - **[DB-0902-03] Suggestions arrive at times they cannot be acted on, and re-ask what was already
   deferred.** Mike, twice (08-28 20:28, 08-29 06:01): a shop errand suggested at 9:30 PM with no
   check of opening hours; questions re-asked about tasks he had already said "later" to. The
@@ -762,25 +708,22 @@ with a date.** Nothing new joins this group open-ended.*
   (deploy + 10)
   *filed 2026-08-28 at Mike's instruction, alongside the index design · dated at deploy*
 
-- **[DB-0827-03] Build the CRM sweep — the design is accepted, and the plan MUST BE REVIEWED
-  WITH MIKE AGAIN BEFORE ANY BUILD SESSION STARTS.** That review gate is Mike's explicit
-  instruction (2026-08-27), given when he accepted the plan: file it, do not build. The full
-  design, budget and test plan: `archive/plans/crm_sweep_plan_2026-08-27.md`.
-  **Shape in one line:** nightly Flash-Lite extractor (bare, empty grant — `intake_extractor`
-  pattern) over yesterday's conversations + journal → validated proposals into an append-only
-  `crm/proposals.jsonl` → quiet morning-brief digest → Mike accepts conversationally → Python
-  applies from the ledger by id, behind a toggleable batch confirm tap.
-  **Binding constraints carried from the plan:** proposes, never writes; additive only, no
-  merges, `notes` never a target; sensitive tier under the § Section 0 ruling of 08-26.
-  **Build facts:** Opus session (Mike's 08-18 split); `config/agents/crm_sweep.md` and
-  `routing_cloud.yaml` are **Red**; two `tools/crm.py` guards ship with it (`log_interaction`
-  dedup, `last_contact` advance-only — both hazards verified live 08-27). **Dependency:**
-  `[DB-0827-01]` (decline-does-nothing) should land before or with the confirm tap.
-  **Step 0 of the build:** re-take the 2026-08-19 measurements (1 `log_interaction` per 200
-  traces) before relying on them.
+- **[DB-0827-03] The CRM sweep is BUILT, DEPLOYED and ENABLED — it now owes only its first live
+  morning digest as the confirm.** Built 2026-08-29 (session ④, `f75a338`/`89cfbcb`; deployed by
+  Mike in-session — log fragment `archive/log/2026-08-29-05-crm-sweep-built.md`): nightly
+  Flash-Lite extractor over yesterday's conversations + journal → validated proposals into
+  append-only `crm/proposals.jsonl` → quiet morning-brief digest → Mike accepts conversationally
+  → Python applies from the ledger by id. **The ledger is live and filling** — real proposals
+  dated 2026-08-29 confirmed on the VM 2026-09-03 (`/backlog verify` sweep). The binding
+  constraints held: proposes, never writes; additive only; `notes` never a target; sensitive
+  tier under the § Section 0 ruling of 08-26.
+  *(This entry sat a full state behind reality — "@waiting: Mike's pre-build review" — from
+  2026-08-29 to 2026-09-03; the retitle was owed by the 08-29 log fragment and applied at the
+  09-03 verify sweep.)*
   @kind: feature
-  @waiting: Mike's pre-build review of the plan doc
-  *filed 2026-08-27 at Mike's instruction, plan accepted same day*
+  @waiting: the first live morning digest voicing a proposal to Mike — close on that exchange
+  *filed 2026-08-27 at Mike's instruction · built + deployed + enabled 2026-08-29 · retitled
+  2026-09-03*
 
 - **[DB-0827-04] Review contact notes and promote recurring patterns into new CRM fields —
   Mike's idea (2026-08-19), gated until notes are rich.** The mechanism is sound and its trigger
@@ -837,19 +780,6 @@ half (b) is now part of the Pro-routing decision. Evidence and trail:
   starting — a rebuild that rewrites the agent layer supersedes this.
   @kind: chore
   *filed 2026-08-27 during the audit execution session, at Mike's instruction*
-
-- **[DB-0820-04] No hostile test email has ever been aimed at the intake extractor.** The B1
-  `injection` suite (`tests/run_b1_redteam.py`) proved the email row against **Logistics**
-  (2026-08-08, 3/3) — but the intake pipeline is a new reader of attacker-written text, and its
-  extractor has no row of its own. Build one payload aimed at it (`[SYSTEM: …]`-class, in a
-  message body the sweep classifies); pass = the payload is labelled as content, nothing else
-  happens — no category outside the enum, no `important` manipulation beyond flagging oddness.
-  Run against `danny_park`, per the standing B1 note (an ordinary-life persona, so a clinical
-  thread cannot pre-empt the payload and produce a pass that proves nothing). Also advances
-  **B1b**, one of the three open A7 checks — which is why this stays its own item.
-  @waiting: intake enabled on the VM and the sweep processing real mail
-  @kind: feature
-  *filed 2026-08-20 during intake rollout — plan § verification step 7, built nothing yet*
 
 - **[DB-0820-02] A file sent from the phone app cannot be saved back out of it.** Tapping a photo
   opens it full-size and tapping a document saves it — **in the browser PWA only** (built and
@@ -1240,8 +1170,8 @@ entry is a symptom, never a diagnosis.)*
 - **[user corrected a prior turn]** User noted that previous all-day Cheder entries were not removed when the timed sessions and travel blocks were added.  
   `2026-09-03T12:03:19.235386Z`
 
-- **[user corrected a prior turn]** User requested flagging the issue of not being able to access previously uploaded files across turns for the backlog.  
-  `2026-09-03T10:28:38.181404Z`
+- **[user corrected a prior turn]** User corrected file persistence issue across turns and asked to flag it for the backlog  ×2  
+  `2026-09-03T17:12:09.421170Z`
 
 - **[user corrected a prior turn]** ```  
   `2026-09-03T10:27:19.763865Z`
