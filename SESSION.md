@@ -1,27 +1,28 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-09-02 (**Model/effort routing build plan reviewed adversarially — build shelved,
-Mike's call.** The dev-environment routing plan from a parallel chat
-(`archive/plans/model_routing_build_plan_2026-09-02.md`) got a hunt-only review: 5 WILL BREAK,
-9 MIGHT BREAK, 6 unanswerable gaps —
-**`archive/plans/model_routing_build_plan_review_2026-09-02_fable-5.md`**. Not being pursued for
-now; the plan itself, saved from the authoring chat, sits beside the review. No code, config or
-roadmap touched. Fragment 2026-09-02-04. Earlier today, same standing: **Alpha ships on Mark 2
-(Mike's ruling)** — A8 cancelled, A7 checks 10+12 fold into Mark 2, gate G1 reviews the Mark 2
-file suite before production. Plan: **`archive/plans/mark2_endeavour_plan_2026-09-02.md`** —
-read it before any rebuild work (fragment 2026-09-02-03). Nothing owes a deploy.)*
+*Updated: 2026-09-03 (**The Coordinator now sees the previous turn — `[DB-0826-01]` built and
+measured.** A short referring turn ("undo that merge", "approved") was resolving against the
+wrong thing because **the Coordinator was never passed the conversation at all** — both live
+call sites called it with no `history`, so its only view of the recent past was day-logs and
+open threads. `coordinator.md`'s pronoun rule was *unfollowable*, not ignored, and the
+2026-08-28 probe could not have seen it: that probe has always supplied history, so its 6/12
+measured an easier condition than production. Fixed in two halves — `_coord_history()` passes
+six messages, and `tools/turn_referent.py` states what the previous turn *did*, including a
+pending or declined action the transcript reports as done. Referent resolution **0/12 → 6/12
+(history) → 12/12 (both)**. No `coordinator.md` edit: 12/12 without one. Fragment
+2026-09-03-01, commit `6483e27`. **Owes a push and a deploy — live on the Mac only.**)*
 
-***Next: the four staged Mark 1 sessions still run**, prompts Mike-bound in
-`archive/handoffs/2026-09-02-*`: **⑤ referent fix** (Fable, Red — `[DB-0826-01]`; re-run Suite
-B-hard first, the baseline predates the fleet migration) · **⑥ three bugs** (Opus —
-`[DB-0829-01]`/`[DB-0902-01]`/`[DB-0902-02]` + the `[DB-0822-06]` derived-facts rider + the
-`[DB-0822-09]` surfacing diagnosis) · **⑦ capstone remainder** (Fable — `[DB-0818-08]`,
-`[DB-0804-02]`'s buildable slice, `[DB-0808-06]`) · **the (M)-walkthrough** (Fable — corpus
-labelling due 09-09, wisdom review, Darwin key, zones+APK+ping, BigQuery, Restic). **The capstone
-closes at ⑦'s end; A4 re-run is OFF the close path** (before-Alpha unchanged, ROADMAP § 0 pt 8).
-**They still run because they make Mark 1 usable for however long Mark 2 takes, and Mark 1's
-traces are Mark 2's regression oracle.** CLAUDE.md is at **307/300**; the restructure is owed,
-Mike's call on what moves out (⑦ checks it).*
+***Next: three of the four staged Mark 1 sessions still run**, prompts Mike-bound in
+`archive/handoffs/2026-09-02-*`: **⑥ three bugs** (Opus — `[DB-0829-01]`/`[DB-0902-01]`/
+`[DB-0902-02]` + the `[DB-0822-06]` derived-facts rider + the `[DB-0822-09]` surfacing
+diagnosis) · **⑦ capstone remainder** (Fable — `[DB-0818-08]`, `[DB-0804-02]`'s buildable
+slice, `[DB-0808-06]`) · **the (M)-walkthrough** (Fable — corpus labelling due 09-09, wisdom
+review, Darwin key, zones+APK+ping, BigQuery, Restic). **⑤ referent fix is built** (above) —
+its close condition is one live referring turn on the VM after deploy. **The capstone closes at
+⑦'s end; A4 re-run is OFF the close path** (before-Alpha unchanged, ROADMAP § 0 pt 8). **They
+still run because they make Mark 1 usable for however long Mark 2 takes, and Mark 1's traces
+are Mark 2's regression oracle.** CLAUDE.md is at **307/300**; the restructure is owed, Mike's
+call on what moves out (⑦ checks it).*
 
 *⚠ **Two things found and deliberately NOT fixed — both need Mike's word.** (1) **`quick_override`
 reaches the clinical agents on the cloud path.** `core/router.py:98` reads "non-sensitive" as *no
@@ -100,7 +101,10 @@ Coordinator–Synthesizer pipeline; all 14 agent files (deep passes + flag audit
 grounded Research search; CRM, Wishes, CalDAV, scheduler-write and profile tools; parallel
 subagent dispatch; threat model and security backlog (`archive/security/`); **server auth,
 `fetch_url`, `read_email`, and the `<untrusted_content>` boundary (2026-08-04)**;
-**user-attached photos and documents, new-message alerts, and a waiting indicator (2026-08-20)**.
+**user-attached photos and documents, new-message alerts, and a waiting indicator (2026-08-20)**;
+**the Coordinator's view of the previous turn — six messages of history plus
+`tools/turn_referent.py`, which states what that turn actually did including a pending or
+declined action (2026-09-03, `[DB-0826-01]`, undeployed)**.
 *Dates and reasoning for all of it: [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).*
 
 ### In progress / next
