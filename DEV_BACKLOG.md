@@ -76,8 +76,10 @@ back-tagging the rest is `[DB-0815-10]`.
 *(empty — triaged 2026-09-02 by Red session ④'s capstone review, all eight dispositions Mike's;
 evidence in `archive/backlog_closed_2026-09.md` § Inbox triage 2026-09-02)*
 
----
+- **[needs building]** Cross-turn file attachment persistence: User attached a PDF in an earlier turn, but file data was not accessible across subsequent conversational turns, requiring re-upload. File attachments should persist in session context/storage across turns so references to previously uploaded files can be processed without re-attaching.  
+  `2026-09-03T10:31:25.572235Z`
 
+---
 ## Now
 
 **Ranked — position is priority.** Capped at ~10, so something enters by displacing something.
@@ -138,9 +140,26 @@ standing rule distrusts.*
   already-given information and suggestions repeating — same carried-state mechanism, now three
   independent reports of one fault. (Their suggest-at-impossible-times half filed separately as
   `[DB-0902-03]`.)
+  **✅ The derived-count half is now BUILT, deployed and VM-verified (session ⑥, 2026-09-03,
+  `54073b6`)** — the half retired on 08-27 whose own re-open condition fired.
+  `derived_facts()` recomputes counts by subtraction from the date each line was written, on
+  the principle that **a count is only ever a claim about a date**. Validated against reality:
+  *"Day 3"* written 2026-08-21 puts day 1 at 08-19 and a 5-day period ending **2026-08-23** —
+  exactly the date Mike's journal records the hiatus ending — and the 08-22 entry derives the
+  same start and end independently. Run against the four real log files carrying such counts,
+  all four periods are correctly reported as ended. Deliberately narrow: two forms only
+  (`day N of an M-day X`, `N days since X`), both pure arithmetic over a stored date; nothing
+  needing a judgement about whether a thing is still true, which is the filtering this item has
+  twice declined. Lands in `augmented_input`, not the cached system prompt, so the Vertex
+  prefix cache is undisturbed; returns "" when nothing parses. `tests/test_derived_facts.py`,
+  15 checks.
+  @waiting: 2026-09-10 — close on one live run reading a dated count back correctly. Note the
+  four stale counts age out of the 5-day log window on 2026-09-04, so the confirm needs either
+  a run before then or a fresh dated count.
   *filed 2026-08-22 by Mike · age-out half built 2026-08-27 (session-hygiene worker) · intraday
   half built + derived-count half retired 2026-08-27 (orchestrator-context worker) · reproduction
-  on live traces 2026-09-02 (Red session ④) · Inbox repeat-info reports merged in 2026-09-02*
+  on live traces 2026-09-02 (Red session ④) · Inbox repeat-info reports merged in 2026-09-02 ·
+  derived-count half built 2026-09-03 (session ⑥)*
 
 ### Red — judgement work, not automatable
 
@@ -182,8 +201,20 @@ standing rule distrusts.*
   @waiting: superseded — intake went live 2026-08-29 13:54 and the confirm ran; the surfacing
   half needs another look (instruction adherence vs a structural surface, same fork as the
   closed `[DB-0822-08]`)
+  **✅ DIAGNOSED 2026-09-03 (session ⑥) — and it is NOT the `[DB-0902-02]` inbox split**, which
+  was the open question. Both 09-02 runs called `read_email(count=15)`: the same source. In the
+  11:36 pipeline run `logistics` produced a **536-token** package and the Synthesizer received
+  **21,630 input tokens** and emitted **177** — *"Your focus window remains clear for the Apex
+  migration delivery, Mike."* The Death Cab and Jimmy Carr items were in front of it and were
+  dropped. So the remaining fix is Synthesizer-side, now **confirmed rather than suspected**,
+  and the fork this item has carried since the closed `[DB-0822-08]` resolves the same way:
+  **make HORIZON_ITEMS structural rather than attempt a third instruction** — the reasoning
+  `enforce_pending_receipt` already records for taking a report away from the model.
+  @session: Mike to rule on Red proposal 2 in
+  `archive/plans/red_proposals_2026-09-03_session_six.md` (recommendation: the structural
+  option). Not edited here — `synthesizer.md` is Red.
   *filed 2026-08-22 by Mike · built 2026-08-29 session ③ · live test failed surfacing half
-  2026-09-02 (Red session ④)*
+  2026-09-02 (Red session ④) · diagnosed 2026-09-03 (session ⑥)*
 
 ### Denied tier — Mike's own file
 
@@ -208,7 +239,23 @@ standing rule distrusts.*
   **Adjacent, same event:** the actions logger recorded `send_email — completed` for the
   merely-gated call (`journalctl` 13:00:18) — "completed" should not describe a pending action.
   @kind: bug
-  *filed 2026-08-29 at Mike's instruction, from the live confirm-drain exchange*
+  **✅ BUILT, deployed and VM-verified 2026-09-03 (session ⑥, `54073b6`) — and the filed
+  premise above is corrected by the trace.** The `relationships` specialist that watched the
+  gate fire logged it **correctly** (*"Initiated outreach... Pending user approval in the
+  app."*). The false record came from the **fire-and-forget Diarist**, dispatched at 13:00:12
+  — 1.6s into the turn and **before** the blocking specialist called `send_email` — so nothing
+  it saw could contradict the Coordinator's optimistic directive. Three fixes: fire-and-forget
+  now starts after the blocking specialists return (the confirmation store is authoritative
+  by then) and its directive gains a system-generated PENDING block; `core/actions.py` gained
+  a third outcome, since a gated call is neither completed nor failed and was being reported
+  `send_email — completed` to the Synthesizer *and* the journal; and `_COMPLETION_CLAIM_RES`
+  now catches the live *"That's sent to Iva."*, which matched none of the four patterns — so
+  the user saw the false claim and its correction stacked, not the correction alone. That half
+  was recorded above as working. `tests/test_pending_action_record.py`, 13 checks, 9 failing
+  on HEAD first.
+  @waiting: 2026-09-10 — close on one live gated-then-declined action on the VM: the reply
+  must carry only the waiting line, and the day log must not say the thing was done
+  *filed 2026-08-29 at Mike's instruction, from the live confirm-drain exchange · built 2026-09-03 (session ⑥)*
 
 - **11. [DB-0902-01] ROUTING_MISS events now record successes, so the miss log is filling with
   non-misses.** Since the 09-01 fleet migration, the Coordinator files quality events whose
@@ -221,7 +268,23 @@ standing rule distrusts.*
   is not the same one-liner. Diagnose whether this is 3.7 Flash misreading the event template
   (instruction side, Red) or a slot the code can sanity-check (Green) before choosing.
   @kind: bug
-  *raised by Mike 2026-09-02 (Red session ④) from the drain read; evidence in the quality log*
+  **⚠ Worse than filed, and the fork resolves to BOTH halves (session ⑥, 2026-09-03).** Live
+  count is **15 since 09-01, not 5**, still firing on 09-03. Measured across all 34 events in
+  the log: **19 before 09-01 with 0 noise; 15 after with 13.** The break is exactly the fleet
+  migration, with no code change between — and the pre-09-01 events are genuine and valuable
+  (several became work, including `[DB-0826-01]`). The cause is an instruction gap the model
+  change exposed: **`coordinator.md` never defines ROUTING_MISS at all** — line 208 lists it
+  as an available event type and nothing says what one is; only `synthesizer.md` defines it.
+  **✅ Green half built and deployed (`54073b6`):** `asserts_routing_success()` refuses an event
+  whose detail claims the routing worked and names nothing that went wrong. Tuned for
+  precision, not recall — dropping noise costs nothing, dropping a real fault costs the signal
+  — and measured at **0 of 21 genuine misses rejected, 8 of 13 noise rejected**
+  (`tests/test_routing_miss_success.py`). **Cannot close:** the remaining five assert nothing
+  about success and are merely descriptive; separating those from a real report needs the
+  semantic guessing `[DB-0827-07]` was closed to avoid.
+  @session: Mike to rule on Red proposal 1 — the coordinator.md ROUTING_MISS definition, in
+  `archive/plans/red_proposals_2026-09-03_session_six.md`. That is what closes this.
+  *raised by Mike 2026-09-02 (Red session ④) from the drain read; evidence in the quality log · Green half built 2026-09-03 (session ⑥)*
 
 - **12. [DB-0902-02] The two inbox jobs disagree about the same inbox.** 08-30 14:45:03
   (pipeline, *"summarize any relevant logistics details"*) reported **"no new messages"**;
@@ -232,7 +295,23 @@ standing rule distrusts.*
   Related but not identical: `[DB-0822-09]`'s failed surfacing half — fixing that without this
   would surface from a channel that sometimes sees nothing.
   @kind: bug
-  *raised by Mike 2026-09-02 (Red session ④) from the drain read; traces 08-30 14:45*
+  **✅ BUILT, deployed and VM-verified 2026-09-03 (session ⑥, `54073b6`).** The suspect named
+  above was right and the mechanism was not: the queue was **never filled, not drained**.
+  `read_intake_queue` does advance a cursor on read, but the cursors file has **never had a
+  `logistics` key**. The real cause is that **24 of 25 records in the live intake store carry
+  `domain: null` and `category: "unclear"`** — the extractor is off behind `[DB-0820-03]`'s
+  eval gate, the persona has zero `rules:`, and `unclear` maps to a null domain. So the queue
+  returns zero for **every** domain, permanently, whatever is in the inbox. Nothing in the old
+  return value said so, and `"(nothing new for this domain)"` reads as "the inbox is empty".
+  The empty answer now states its reason (computed from config and the store) and explicitly
+  forbids the sentence Mike heard. `tests/test_intake_queue_empty.py`, 10 checks.
+  **Note the coupling:** `[DB-0820-03]`'s corpus labelling (due 09-09) is what makes the queue
+  carry anything at all. This fix stops it lying about being empty; it does not fill it.
+  **Diagnosis returned on `[DB-0822-09]`: the surfacing miss is NOT this split** — both 09-02
+  runs called `read_email(count=15)`, the same source. See that item.
+  @waiting: 2026-09-10 — close on one live pipeline inbox job that no longer reports "no new
+  messages" while the inbox has unread mail
+  *raised by Mike 2026-09-02 (Red session ④) from the drain read; traces 08-30 14:45 · built 2026-09-03 (session ⑥)*
 
 ## Later
 

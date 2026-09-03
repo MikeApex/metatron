@@ -294,3 +294,37 @@ First application staged:
 (due 09-09), the wisdom-store review, the Darwin key, location zones + APK + ping, the
 BigQuery export, and the Restic off-machine decision. Everything else that looks unaddressed
 in this document is Cluster H, parked-for-rebuild by his 08-27 ruling and confirmed 09-02.
+
+---
+
+## Status note — 2026-09-03, session ⑥ ran (commit `54073b6`, deployed and VM-verified)
+
+**All five items in the ⑥ brief are done; nothing from it is owed a commit or a deploy.**
+The VM is on `54073b6`, both units active, and the four new suites pass there.
+
+- **`[DB-0829-01]`** — a declined email no longer survives in the log as sent. Three fixes:
+  the gated third outcome on the ACTIONS line (which also fixes the journal line),
+  fire-and-forget dispatch deferred until the confirmation store is authoritative, and the
+  completion-claim patterns widened to catch the live *"That's sent to Iva."*
+  **Ready to close**; its confirm is one live gated-then-declined action on the VM.
+- **`[DB-0902-01]`** — Green half built and measured (0 of 21 genuine misses rejected, 8 of
+  13 noise). **Cannot close yet**: the remaining five noise events need the `coordinator.md`
+  definition, staged as Red proposal 1.
+- **`[DB-0902-02]`** — built. The queue was never filled, not drained: 24 of 25 records carry
+  no domain because the extractor is off behind `[DB-0820-03]`. **Ready to close** on one
+  live pipeline inbox job that no longer says "no new messages".
+  *Note the coupling this exposes:* `[DB-0820-03]`'s corpus labelling (due 09-09, item 1 of
+  the (M)-walkthrough) is what actually makes the intake queue carry anything. Until it runs,
+  the queue is empty by construction and the fix here only stops it lying about that.
+- **`[DB-0822-06]`** — the derived-facts line is built, validated against Mike's own journal
+  date, and live. **Cannot close yet**: its condition is a dated count read back correctly on
+  the VM, and the four stale counts age out of the 5-day window on 2026-09-04.
+- **`[DB-0822-09]`** — diagnosed. The surfacing miss is **not** the inbox split; both 09-02
+  runs read the same source and the Synthesizer dropped a 536-token package. Red proposal 2,
+  with a recommendation to make it structural rather than a third instruction attempt.
+
+**Two Red proposals await Mike** —
+`archive/plans/red_proposals_2026-09-03_session_six.md`. Both are staged, neither applied;
+the Green halves already remove the user-visible damage in each case, so neither is urgent.
+
+**The capstone still closes at ⑦'s end.** ⑦ and the (M)-walkthrough remain unrun.

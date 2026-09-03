@@ -1,30 +1,37 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-09-03 (**The Coordinator now sees the previous turn — `[DB-0826-01]` built and
-measured.** A short referring turn ("undo that merge", "approved") was resolving against the
-wrong thing because **the Coordinator was never passed the conversation at all** — both live
-call sites called it with no `history`, so its only view of the recent past was day-logs and
-open threads. `coordinator.md`'s pronoun rule was *unfollowable*, not ignored, and the
-2026-08-28 probe could not have seen it: that probe has always supplied history, so its 6/12
-measured an easier condition than production. Fixed in two halves — `_coord_history()` passes
-six messages, and `tools/turn_referent.py` states what the previous turn *did*, including a
-pending or declined action the transcript reports as done. Referent resolution **0/12 → 6/12
-(history) → 12/12 (both)**. No `coordinator.md` edit: 12/12 without one. **Deployed and
-live-confirmed on `mike` the same day** — *"Read that back to me again."* after a food log now
-reads back the food, which is the 08-18 instance verbatim — so `[DB-0826-01]` is **closed**.
-Fragment 2026-09-03-01; commits `6483e27`, `8caaeb7`, `cc58a5b`. Nothing owes a deploy.)*
+*Updated: 2026-09-03 (**Session ⑥ ran — three bugs fixed, one rider built, one diagnosis
+returned.** Commit `54073b6`, deployed and VM-verified; nothing owes a commit or a deploy.
+**A declined email no longer survives in the log as sent `[DB-0829-01]`**; **the miss log no
+longer fills with successes `[DB-0902-01]`**; **the two inbox jobs no longer disagree
+`[DB-0902-02]`**; **the derived-facts line is built `[DB-0822-06]`**. Three of those corrected
+the premise they were filed under, which is the part worth carrying: the false email record came
+from the **fire-and-forget Diarist**, dispatched before the specialist that raised the confirm
+gate — not from the specialist that watched it; the ROUTING_MISS break is **exactly the 09-01
+fleet migration** (19 events before with 0 noise, 15 after with 13, no code change between) and
+`coordinator.md` **never defines ROUTING_MISS at all**; the intake queue was **never filled, not
+drained**. Suite 67/1, the one failure pre-existing and environmental (passes on the VM).
+Evidence and measurements: `archive/sessions/2026-09-03 — Session ⑥ ...md` + the capstone
+tracker's dated note.)*
 
-***Next: three of the four staged Mark 1 sessions still run**, prompts Mike-bound in
-`archive/handoffs/2026-09-02-*`: **⑥ three bugs** (Opus — `[DB-0829-01]`/`[DB-0902-01]`/
-`[DB-0902-02]` + the `[DB-0822-06]` derived-facts rider + the `[DB-0822-09]` surfacing
-diagnosis) · **⑦ capstone remainder** (Fable — `[DB-0818-08]`, `[DB-0804-02]`'s buildable
-slice, `[DB-0808-06]`) · **the (M)-walkthrough** (Fable — corpus labelling due 09-09, wisdom
-review, Darwin key, zones+APK+ping, BigQuery, Restic). **⑤ referent fix is done and closed.**
-**The capstone closes at ⑦'s end; A4 re-run is OFF the close path** (before-Alpha unchanged,
-ROADMAP § 0 pt 8). **They
-still run because they make Mark 1 usable for however long Mark 2 takes, and Mark 1's traces
-are Mark 2's regression oracle.** CLAUDE.md is at **307/300**; the restructure is owed, Mike's
-call on what moves out (⑦ checks it).*
+***Next: ⑦ capstone remainder** (Fable — `[DB-0818-08]`, `[DB-0804-02]`'s buildable slice,
+`[DB-0808-06]`) and **the (M)-walkthrough** (Fable — corpus labelling due 09-09, wisdom review,
+Darwin key, zones+APK+ping, BigQuery, Restic); prompts in `archive/handoffs/2026-09-02-*`. **⑤
+and ⑥ are done.** **The capstone closes at ⑦'s end; A4 re-run is OFF the close path**
+(before-Alpha unchanged, ROADMAP § 0 pt 8). They still run because they make Mark 1 usable for
+however long Mark 2 takes, and Mark 1's traces are Mark 2's regression oracle. CLAUDE.md is at
+**307/300** and SESSION.md at **204/200**; the restructure is owed, Mike's call on what moves
+out (⑦ checks it).*
+
+*⚠ **Two Red proposals await Mike's word** —
+`archive/plans/red_proposals_2026-09-03_session_six.md`, neither applied, neither urgent (the
+Green halves removed the user-visible damage). (1) a ROUTING_MISS definition for
+`coordinator.md`, which closes the last five noise events code cannot judge. (2)
+**`[DB-0822-09]`'s surfacing miss is NOT the inbox split** — ruled out on the traces: both 09-02
+runs read the same source and the Synthesizer dropped a 536-token package carrying the Death Cab
+item; recommendation is to make HORIZON_ITEMS structural, not a third instruction. **Standing
+fact:** the intake queue is empty **by construction** until `[DB-0820-03]`'s corpus labelling
+runs (due 09-09) — ⑥ stopped it lying about that, it did not make it carry anything.*
 
 *⚠ **Found and deliberately NOT fixed — needs Mike's word. `quick_override` reaches the
 clinical agents on the cloud path.** `core/router.py:98` reads "non-sensitive" as *no
@@ -101,9 +108,8 @@ grounded Research search; CRM, Wishes, CalDAV, scheduler-write and profile tools
 subagent dispatch; threat model and security backlog (`archive/security/`); **server auth,
 `fetch_url`, `read_email`, and the `<untrusted_content>` boundary (2026-08-04)**;
 **user-attached photos and documents, new-message alerts, and a waiting indicator (2026-08-20)**;
-**the Coordinator's view of the previous turn — six messages of history plus
-`tools/turn_referent.py`, which states what that turn actually did including a pending or
-declined action (2026-09-03, `[DB-0826-01]`, deployed and live-confirmed)**.
+**the Coordinator's view of the previous turn (`[DB-0826-01]`) and the session-⑥ record-honesty
+fixes — gated actions, the miss log, the inbox split, derived counts (2026-09-03)**.
 *Dates and reasoning for all of it: [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).*
 
 ### In progress / next
