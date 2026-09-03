@@ -496,6 +496,62 @@ async def _resolve_attachments(ids: list, persona: str) -> list[dict]:
     return attachments_mod.cap_for_message(resolved)
 
 
+async def _recent_attachments(persona: str, exclude_ids: set[str]) -> list[dict]:
+    """
+    The persona's stored files that a later turn could still refer back to.
+
+    Scoped to the persona rather than to a conversation id because this server has
+    no such id: `_session_history` is one running conversation per persona, so the
+    persona *is* the conversation and the carry TTL is what bounds the window.
+
+    Ordered newest first and read only a few rows deep — `attachments_mod.carryable()`
+    applies the TTL and the caps, so the query has to do no more than avoid dragging
+    the whole table into memory to find the last two files.
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM attachments WHERE persona=? ORDER BY ts DESC LIMIT 20",
+            (persona,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+    return [dict(r) for r in rows if r["id"] not in exclude_ids]
+
+
+async def _revive_attachments(persona: str, user_input: str,
+                              fresh: list[dict]) -> list[dict]:
+    """
+    Files the user sent earlier and is now referring to, ready to re-enter the turn.
+
+    This is the answer to "use the PDF I gave you": the bytes were always on disk,
+    but nothing addressed them once the client stopped re-sending their ids. The
+    match is made on the user's own words (core/attachments.references_earlier_files),
+    and the result joins the same attachment list a fresh upload uses — one path into
+    the prompt, one description, one trust boundary.
+
+    Nothing is revived for a message that carries its own files: a user who has just
+    attached something is talking about that, and pulling yesterday's photograph in
+    alongside it would answer a question nobody asked.
+    """
+    if fresh or not (user_input or "").strip():
+        return []
+    candidates = await _recent_attachments(persona, {a["id"] for a in fresh})
+    if not candidates:
+        return []
+    return attachments_mod.references_earlier_files(
+        user_input, attachments_mod.carryable(candidates)
+    )
+
+
+async def _forget_attachments(ids: list[str]) -> None:
+    """Drop index rows for files the disk sweep has already deleted."""
+    if not ids:
+        return
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.executemany("DELETE FROM attachments WHERE id=?", [(i,) for i in ids])
+        await db.commit()
+
+
 async def _bind_attachments(ids: list[str], exchange_id: str) -> None:
     """Record which exchange each file was sent with, once that exchange exists."""
     if not ids:
@@ -769,6 +825,19 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                 # Scheduler-initiated exchanges are flagged so traces record that
                 # Metatron opened the conversation rather than the user.
                 proactive = bool(data.get("proactive"))
+                # Files the user sent in an earlier turn and is now pointing back at.
+                # These go to the model but not to the client or the exchange row:
+                # the user did not attach them to this message, so a chip under it
+                # would misreport what they did, and re-binding them here would
+                # rewrite which turn they arrived in.
+                #
+                # Never on a proactive turn: that prompt is written by the scheduler,
+                # so its words are not a user referring to anything, and a phrase like
+                # "the photo" in a job's text would silently bill for a file.
+                revived = [] if proactive else await _revive_attachments(
+                    persona_key, user_input, attached
+                )
+                pipeline_attachments = attached + revived
                 history = _session_history.setdefault(persona_key, [])
 
                 # Notify other devices that a new exchange is starting
@@ -794,7 +863,7 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                         for chunk in run_pipeline_session_stream(
                             user_input, persona=persona_orch, provider=provider,
                             history=history, is_proactive=proactive,
-                            received_at=received_at, attachments=attached,
+                            received_at=received_at, attachments=pipeline_attachments,
                         ):
                             asyncio.run_coroutine_threadsafe(queue.put(chunk), loop).result()
                     except NotImplementedError:
@@ -1441,6 +1510,13 @@ async def upload_attachment(file: UploadFile = File(...), persona: str | None = 
         None, attachments_mod.save, persona_key, data, file.filename or "", mime
     )
     await _insert_attachment(record)
+
+    # Expire the store on the way past. This is the only thing that deletes an
+    # attachment, and it runs here — at a write — rather than as a scheduled job:
+    # the moment the store grows is the moment a sweep has something to collect,
+    # and it needs no new daily job to be registered or kept alive.
+    expired = await loop.run_in_executor(None, attachments_mod.sweep_expired, persona_key)
+    await _forget_attachments(expired)
 
     return _public_attachments([record])[0]
 
