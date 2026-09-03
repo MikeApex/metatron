@@ -706,6 +706,132 @@ def _intraday_age(written_at: str | None) -> str:
     return f"{int(minutes // 60)} hours ago"
 
 
+# `re` is imported as `_re` further down the file, after this block runs at import
+# time. Bound here so the patterns below can compile where they are defined rather
+# than being deferred into the function that uses them.
+import re as _re  # noqa: E402
+
+_WORD_NUMBERS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
+    "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "fourteen": 14,
+    "a": 1, "an": 1,
+}
+
+_NUM = r"(\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fourteen)"
+
+# "Day 3 of 5-day exercise hiatus", "day three of a 5 day break", "day 2 of the 7-day cycle".
+_DAY_N_OF_M_RE = _re.compile(
+    rf"\bday\s+{_NUM}\s+of\s+(?:an?\s+|the\s+)?{_NUM}[-\s]day\b", _re.IGNORECASE)
+
+# "3 days since the last session", "five days since he called".
+_DAYS_SINCE_RE = _re.compile(rf"\b{_NUM}\s+days?\s+since\b", _re.IGNORECASE)
+
+
+def _as_int(token: str) -> int | None:
+    token = (token or "").strip().lower()
+    if token.isdigit():
+        return int(token)
+    return _WORD_NUMBERS.get(token)
+
+
+def derived_facts(text: str, written_on: str, today=None) -> list[str]:
+    """Recompute every date-derived count in `text` as of today.
+
+    [DB-0822-06], the half that was deliberately not built on 2026-08-27 and whose own
+    re-open condition then fired. `physical_health` wrote *"Day 3 of 5-day exercise
+    hiatus"* into the health log on 2026-08-21. The hiatus ended 2026-08-23 — Mike's own
+    journal entry — and later runs kept reading the stored number as if it were current:
+    08-30 *"day three of your scheduled exercise hiatus"*, 08-31 *"officially over"* (a
+    week late), 09-02 *"officially wraps up today"*. Three wrong states across three days,
+    spanning the 09-01 model migration, so this is the carried state and not the model.
+
+    The age annotations built in `cbd5ca3`/`4cc9e3e` date the *line* — "(logged 9 days
+    ago)" — and the model repeated the stale count anyway. Dating a sentence is not the
+    same as correcting the number inside it. This does the arithmetic instead: a count is
+    only ever a claim about a date, so given the date the line was written, the count
+    today follows by subtraction and nothing has to be believed.
+
+    Worked on the real case: "Day 3" written on 2026-08-21 puts day 1 at 2026-08-19, so a
+    5-day period ran to 2026-08-23 — which is exactly the date Mike's journal records it
+    ending. Read on 08-30 this returns "ended 2026-08-23, 7 days ago".
+
+    Deliberately narrow. Only two forms are recognised, both of which are pure arithmetic
+    over a stored date: "day N of an M-day X" and "N days since X". Anything needing a
+    judgement about whether the thing is still true is not here — that is the filtering
+    this item has twice decided against. Returns [] when nothing parses, which is the
+    common case and costs one regex scan.
+    """
+    from datetime import date as _date, timedelta as _td
+
+    if not text or not written_on:
+        return []
+    try:
+        written = _date.fromisoformat(str(written_on)[:10])
+    except ValueError:
+        return []
+    today = today or _date.today()
+    if today < written:
+        return []
+
+    facts: list[str] = []
+
+    for m in _DAY_N_OF_M_RE.finditer(text):
+        n, total = _as_int(m.group(1)), _as_int(m.group(2))
+        if not n or not total or n > total:
+            continue
+        start = written - _td(days=n - 1)
+        end = start + _td(days=total - 1)
+        position = (today - start).days + 1
+        if position > total:
+            over = (today - end).days
+            facts.append(
+                f'"{m.group(0)}" was written on {written.isoformat()}, which puts day 1 '
+                f'at {start.isoformat()}. That {total}-day period ENDED on '
+                f'{end.isoformat()} — {_relative_age(over)}. It is not running now.')
+        else:
+            facts.append(
+                f'"{m.group(0)}" was written on {written.isoformat()}. As of today it is '
+                f'day {position} of {total}, ending {end.isoformat()}.')
+
+    for m in _DAYS_SINCE_RE.finditer(text):
+        n = _as_int(m.group(1))
+        if n is None:
+            continue
+        event = written - _td(days=n)
+        facts.append(
+            f'"{m.group(0)}..." was written on {written.isoformat()}, which puts the '
+            f'event on {event.isoformat()}. As of today it is {(today - event).days} '
+            f'days since, not {n}.')
+
+    return facts
+
+
+_DERIVED_HEADER = (
+    "[DERIVED FACTS — computed by the system just now, by subtraction from the date each "
+    "line was written. These are arithmetic, not anyone's recollection: where one "
+    "contradicts a count written in the text above, the line below is correct and the "
+    "text is stale. Do not repeat a superseded count to the user.]"
+)
+
+
+def derived_facts_block(entries: list[tuple[str, str]]) -> str:
+    """One block for the whole context, from (date_written, text) pairs. "" when nothing
+    parses — a persona whose logs carry no derived counts pays nothing for this."""
+    lines: list[str] = []
+    for written_on, text in entries:
+        try:
+            lines.extend(derived_facts(text, written_on))
+        except Exception as exc:  # noqa: BLE001
+            # Context assembly must never fail because a count would not parse.
+            logger.warning(f"[context] derived facts failed for {written_on}: {exc}")
+    if not lines:
+        return ""
+    # Same fact written on several days collapses to one line.
+    seen: set[str] = set()
+    unique = [ln for ln in lines if not (ln in seen or seen.add(ln))]
+    return _DERIVED_HEADER + "\n" + "\n".join(f"- {ln}" for ln in unique)
+
+
 def _render_today_log(entry: dict) -> str:
     """
     Today's log field by field, each with the time it was actually asserted.
@@ -750,6 +876,10 @@ def load_recent_context(persona: str | None = None, days: int = 5) -> str:
     tracker_path = data_dir / "context.json"
 
     sections = []
+    # (date the text was written, text) — everything a derived count could be hiding in.
+    # Open threads are included as well as logs: the thread text is model-authored and
+    # carries counts of exactly the same kind.
+    derived_sources: list[tuple[str, str]] = []
 
     # Ambient world context — date/time always live; weather/news from last refresh
     try:
@@ -779,6 +909,9 @@ def load_recent_context(persona: str | None = None, days: int = 5) -> str:
                     for t in tracker["open_threads"]
                 ]
                 lines.append("**Open threads:** " + " | ".join(thread_texts))
+                for t in tracker["open_threads"]:
+                    if isinstance(t, dict) and t.get("added"):
+                        derived_sources.append((t["added"], t.get("text", "")))
             if tracker.get("patterns"):
                 lines.append("**Patterns noted:** " + " | ".join(tracker["patterns"]))
             if tracker.get("follow_ups"):
@@ -810,6 +943,7 @@ def load_recent_context(persona: str | None = None, days: int = 5) -> str:
                     entry.pop("_written_at", None)
                     body = _json.dumps(entry, ensure_ascii=False)
                 recent_entries.append(f"  {d} ({_relative_age(i)}): {body}")
+                derived_sources.append((d, body))
             except Exception:
                 pass
 
@@ -818,6 +952,15 @@ def load_recent_context(persona: str | None = None, days: int = 5) -> str:
             "## Recent Logs (last 5 days — each line is what was recorded on that date, "
             "not necessarily what is true now)\n" + "\n".join(recent_entries)
         )
+
+    # [DB-0822-06] The line above dates each record; this one corrects the counts inside
+    # them. Both are needed — the age annotations went live on 2026-08-27 and the stale
+    # "day three of your exercise hiatus" was still being read back on 08-30, 08-31 and
+    # 09-02, which is the re-open condition that put this here. Placed after the logs so
+    # it reads as a correction to text the model has just seen.
+    derived = derived_facts_block(derived_sources)
+    if derived:
+        sections.append(derived)
 
     # Open obligations and passed-event candidates. In the context rather than behind a
     # tool because the whole point of the obligation store is that something outstanding
@@ -1479,7 +1622,12 @@ _COMPLETION_CLAIM_RES = [
         r"\b(?:i(?:'ve| have)|we(?:'ve| have))\s+(?:now\s+)?"
         r"(?:merged|added|created|sent|deleted|removed|updated|saved|renamed|"
         r"unmerged|closed|booked|scheduled)\b",
-        r"\bthat(?:'s| is)\s+(?:all\s+)?(?:done|sorted|taken care of)\b",
+        # "sent|merged|..." added 2026-09-03: on 2026-08-29 the live reply *"That's
+        # sent to Iva."* matched none of these four patterns, so enforce_pending_receipt
+        # took the append branch and the user was shown the false claim and its
+        # correction stacked together, rather than the correction alone. [DB-0829-01].
+        r"\bthat(?:'s| is)\s+(?:all\s+)?(?:done|sorted|taken care of|sent|merged|"
+        r"added|created|deleted|removed|updated|saved|booked|scheduled)\b",
         r"\b(?:it(?:'s| is)|they(?:'re| are))\s+(?:now\s+)?"
         r"(?:merged|added|created|sent|deleted|removed|updated|saved|renamed)\b",
         r"\b(?:done|all set)\b[.!]",
@@ -1560,6 +1708,80 @@ def enforce_pending_receipt(text: str, new_pending: list[dict]) -> str:
         return waiting
 
     return f"{text.rstrip()}\n\n{waiting}" if text and text.strip() else waiting
+
+
+# Words a write-only agent would use to record each gated action as having happened.
+# Deliberately a closed map keyed on the action name, not a general past-tense
+# detector: a phrase is only looked for when THAT action is, at this moment, sitting
+# unapproved in the confirmation store. "Sent" in a directive is unremarkable; "sent"
+# in a directive while `send_email` is awaiting approval is the [DB-0829-01] failure
+# verbatim. Scoping it this way is what keeps it out of the semantic guessing that
+# [DB-0827-07] was closed to avoid.
+_ACTION_DONE_WORDS: dict[str, tuple[str, ...]] = {
+    "send_email": ("sent", "emailed", "has been sent", "was sent"),
+    "merge_contacts": ("merged",),
+    "unmerge_contacts": ("unmerged", "split"),
+    "import_contacts_file": ("imported",),
+    "apply_crm_proposals": ("applied", "updated"),
+    "write_calendar_event": ("booked", "scheduled", "added to the calendar"),
+    "update_calendar_event": ("moved", "rescheduled", "updated"),
+    "delete_calendar_event": ("cancelled", "canceled", "deleted", "removed"),
+    "teach_intake": ("taught", "added the rule"),
+    "write_schedule": ("scheduled",),
+    "delete_schedule": ("unscheduled", "deleted", "removed"),
+}
+
+
+def pending_directive_note(directive: str, new_pending: list[dict]) -> tuple[str, bool]:
+    """Correct a dispatch directive that describes a gated action as already done.
+
+    [DB-0829-01], live 2026-08-29 and read off the trace on 2026-09-03. Mike asked for
+    an email to Iva Diamond at 13:00. `send_email` raised the confirm gate and sent
+    nothing; the `relationships` specialist, which watched that happen, logged it
+    correctly as *"Initiated outreach ... Pending user approval in the app."* But the
+    fire-and-forget Diarist had been dispatched 1.6 seconds into the turn — BEFORE the
+    blocking specialist ever called `send_email` — carrying a Coordinator-authored
+    directive that read *"Log that user sent an email to Iva Diamond."* It wrote exactly
+    that into the day log. Mike declined the send five minutes later.
+
+    So the durable record said an email was sent that never was, and later runs read a
+    day log back as fact — the carried-state poison of [DB-0822-06], one layer earlier.
+
+    The Diarist could not have known better: it runs on its own thread with its own
+    trace and has no relay back, so nothing it sees contradicts its directive. The
+    signal it needs already exists — the confirmation store, which is server state and
+    not any model's account of itself. This function is how that signal reaches it.
+
+    Returns `(amended_directive, asserted_done)`. The note is appended in every case, so
+    the true state is present whether or not the directive was wrong. `asserted_done`
+    reports the narrower fact that the directive actively described a gated action as
+    finished; the caller records that as a quality event rather than suppressing the
+    dispatch, because suppression would also discard everything ELSE the turn asked to
+    be logged, and a lost breakfast is a worse trade than a corrected sentence.
+    """
+    if not new_pending:
+        return directive, False
+
+    lowered = (directive or "").lower()
+    asserted = any(
+        w in lowered
+        for p in new_pending
+        for w in _ACTION_DONE_WORDS.get(p.get("action", ""), ())
+    )
+
+    described = "; ".join(
+        f"{p.get('action', 'an action')} ({p.get('description', '') or 'no description'})"
+        for p in new_pending
+    )
+    note = (
+        "\n\n[SYSTEM RECORD — generated from the confirmation store, not by any agent. "
+        "The following was requested during this turn and has NOT happened: "
+        f"{described}. It is waiting for the user to approve it in the app and they may "
+        "still decline it. Nothing has been performed. If anything above describes it as "
+        "done, that is wrong: record it as proposed and awaiting the user's approval, "
+        "never as completed.]"
+    )
+    return f"{directive.rstrip()}{note}", asserted
 
 
 def filter_output(text: str, agent_name: str, user_text: str | None = None) -> str:
@@ -4954,6 +5176,14 @@ def _dispatch_from_coordinator(
 
     outputs: dict = {}
     blocking: list = []
+    fire_and_forget: list = []
+
+    # Confirmations outstanding BEFORE any specialist runs. Anything new by the end of
+    # the blocking loop was raised by this dispatch, which is the signal
+    # pending_directive_note() needs. Captured here rather than passed in from the two
+    # callers so the two paths cannot drift — the streaming twin is the one that
+    # matters in production.
+    _pending_at_dispatch = _pending_tokens(persona)
 
     # Invert the domain->agents map once, into agent->domains. Built even when no knowledge
     # was fetched so the lookup below is unconditional and cheap; the file is tiny and cached.
@@ -5028,12 +5258,8 @@ def _dispatch_from_coordinator(
                 directive = f"{directive}\n\n{block}"
 
         if is_ff:
-            def _bg(a: str = agent, d: str = directive, c: str | None = complexity) -> None:
-                try:
-                    run_session(a, user_input=d, persona=persona, complexity=c)
-                except Exception as exc:
-                    logger.warning(f"[fire_and_forget] {a} failed: {exc}")
-            threading.Thread(target=_bg, daemon=True).start()
+            # Collected, NOT started — see the deferral note below the blocking loop.
+            fire_and_forget.append((agent, directive, complexity))
             outputs[agent] = f"{agent}: dispatched (async)"
         else:
             blocking.append((agent, directive, complexity))
@@ -5072,6 +5298,47 @@ def _dispatch_from_coordinator(
                 except Exception as exc:
                     outputs[a] = f"[Subagent error — {exc}]"
                     logger.warning(f"[PIPELINE] {a} failed: {exc}")
+
+    # Fire-and-forget agents start HERE, after the blocking specialists have finished,
+    # and not in the loop above where they used to. [DB-0829-01]: the Diarist was
+    # starting ~1.6s into the turn, before the specialist that would call `send_email`
+    # had called it, so a directive written in the Coordinator's optimistic past tense
+    # ("user sent an email to Iva Diamond") could never be contradicted by the gate that
+    # then refused the send. Deferring the start is what makes the confirmation store
+    # authoritative at the moment the directive is handed over.
+    #
+    # This costs nothing the user can see. These agents are fire-and-forget precisely
+    # because no reply waits on them, and the reply itself cannot be produced until the
+    # blocking specialists return anyway — so the Diarist now starts at the moment the
+    # Synthesizer does, rather than racing it.
+    if fire_and_forget:
+        new_pending = _pending_raised_since(_pending_at_dispatch, persona)
+        for agent, directive, complexity in fire_and_forget:
+            directive, asserted_done = pending_directive_note(directive, new_pending)
+            if asserted_done:
+                actions = ", ".join(sorted({p.get("action", "an action")
+                                            for p in new_pending}))
+                logger.warning(
+                    "[pending_receipt] %s directive described %s as done while it "
+                    "awaited approval — corrected before dispatch", agent, actions)
+                try:
+                    from tools.logger import write_quality_event
+                    write_quality_event(
+                        event_type="FALSE_COMPLETION_CLAIM",
+                        detail=(f"Coordinator directive to {agent} described {actions} "
+                                f"as already done while it was still awaiting user "
+                                f"approval; directive corrected before dispatch."),
+                    )
+                except Exception:  # noqa: BLE001
+                    # Instrumentation must never cost the corrected dispatch.
+                    pass
+
+            def _bg(a: str = agent, d: str = directive, c: str | None = complexity) -> None:
+                try:
+                    run_session(a, user_input=d, persona=persona, complexity=c)
+                except Exception as exc:
+                    logger.warning(f"[fire_and_forget] {a} failed: {exc}")
+            threading.Thread(target=_bg, daemon=True).start()
 
     return outputs
 

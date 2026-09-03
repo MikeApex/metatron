@@ -174,6 +174,31 @@ def _failed(tc) -> bool:
     return str(getattr(tc, "result_preview", "")).startswith("Error")
 
 
+# A gated call is neither of the two states this file used to have. tools/confirm.py
+# returns these statuses INSTEAD of performing the action: the tool ran, it did not
+# fail, and nothing happened. [DB-0829-01], live 2026-08-29 — `send_email` raised the
+# confirm gate at 13:00, was reported here as `send_email — completed` to both the
+# Synthesizer and the journal (journalctl 13:00:18), and Mike declined the send five
+# minutes later. "Completed" is the one word this line must never apply to an action
+# the user has not yet approved, because the whole point of the block is that it is
+# read as evidence rather than as a claim.
+_NOT_PERFORMED_STATUSES = ("PENDING_CONFIRMATION", "DECLINED_RECENTLY")
+
+
+def _gated(tc) -> bool:
+    """A tool call the confirm gate intercepted — nothing was performed.
+
+    Read from the tool's own returned status, not from the confirmation store: the
+    store is shared mutable state that a later turn can drain, while the trace record
+    is what this request actually observed. Matched as a substring because the status
+    arrives inside a JSON payload (`{"status": "PENDING_CONFIRMATION", ...}`) that
+    core/trace.py truncates to 800 characters — the status is the first field, so the
+    truncation cannot hide it.
+    """
+    preview = str(getattr(tc, "result_preview", ""))
+    return any(s in preview for s in _NOT_PERFORMED_STATUSES)
+
+
 def action_provenance_block(trace) -> str:
     """The ACTIONS block for one request, ready to paste into Synthesizer input.
 
@@ -188,7 +213,9 @@ def action_provenance_block(trace) -> str:
     # is one fact, and the args are not echoed: an email body or a journal entry
     # pasted here would cost hundreds of tokens and add nothing the specialist
     # prose does not already carry.
-    tally: dict[tuple[str, bool], int] = {}
+    # Three outcomes, not two: a gated call ran without failing and without doing
+    # anything, and collapsing it into either neighbour states something false.
+    tally: dict[tuple[str, str], int] = {}
     unclassified: set[str] = set()
 
     for agent in _walk(getattr(trace, "pipeline", []) or []):
@@ -199,20 +226,35 @@ def action_provenance_block(trace) -> str:
                     continue
                 if not is_classified(name):
                     unclassified.add(name)
-                key = (name, _failed(tc))
+                # Order matters: a gated call is checked first because it is the
+                # narrower, positively-identified state. `_failed` is the fallback.
+                if _gated(tc):
+                    outcome = "gated"
+                elif _failed(tc):
+                    outcome = "failed"
+                else:
+                    outcome = "done"
+                key = (name, outcome)
                 tally[key] = tally.get(key, 0) + 1
 
     if not tally:
         return _NONE
 
-    # Failures first — the case the Synthesizer most needs to see.
-    rows = sorted(tally.items(), key=lambda kv: (not kv[0][1], kv[0][0]))
+    # Failures first, then gated, then completions — the two the Synthesizer most
+    # needs to see are the two where it would otherwise tell the user it worked.
+    _RANK = {"failed": 0, "gated": 1, "done": 2}
+    rows = sorted(tally.items(), key=lambda kv: (_RANK[kv[0][1]], kv[0][0]))
     lines = []
-    for (name, failed), count in rows:
+    for (name, outcome), count in rows:
         times = f" x{count}" if count > 1 else ""
         mark = " (unrecognised tool — reported as an action)" if name in unclassified else ""
-        if failed:
+        if outcome == "failed":
             lines.append(f"- {name} — ATTEMPTED AND FAILED{times}: did NOT complete{mark}")
+        elif outcome == "gated":
+            lines.append(
+                f"- {name} — AWAITING THE USER'S APPROVAL{times}: NOT performed. The "
+                f"user has not approved it yet and may decline it. Do not report it as "
+                f"done, and do not record it anywhere as having happened{mark}")
         else:
             lines.append(f"- {name} — completed{times}{mark}")
 

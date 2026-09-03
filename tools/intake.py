@@ -641,11 +641,17 @@ def _save_cursors(cursors: dict, persona: str | None = None) -> None:
 
 
 def _queue_rows(domain: str, persona: str | None = None,
-                cursors: dict | None = None) -> list[dict]:
-    """Un-consumed records for one domain, oldest first."""
+                cursors: dict | None = None,
+                rows: list[dict] | None = None) -> list[dict]:
+    """Un-consumed records for one domain, oldest first.
+
+    `rows` lets a caller that has already read the store pass it in. records.jsonl is
+    append-only forever, so a second full read per call is a cost that only grows.
+    """
     cursors = _load_cursors(persona) if cursors is None else cursors
     since = cursors.get(domain, "")
-    return [row for row in read_records(persona=persona)
+    source = read_records(persona=persona) if rows is None else rows
+    return [row for row in source
             if row.get("domain") == domain and row.get("seen_at", "") > since]
 
 
@@ -655,6 +661,76 @@ def _age_days(row: dict) -> int:
     except Exception:
         return 0
     return max(0, (datetime.now() - seen).days)
+
+
+def _empty_queue(domain: str, records: list[dict] | None = None) -> dict:
+    """The empty-queue answer, and why it is not simply "no new messages".
+
+    [DB-0902-02]. On 2026-08-30 two inbox jobs disagreed about the same inbox inside one
+    minute. At 14:45:03 the pipeline job ("summarize any relevant logistics details")
+    ran `logistics`, which called `read_intake_queue("logistics")`, received
+    `{"count": 0, "items": "(nothing new for this domain)"}` and told Mike **"I've
+    checked the inbox, and there are no new messages."** At 14:45:29 the direct job
+    called `read_email` instead and found ten unread, including a dental reminder, a
+    ticket booking and a GCP budget alert.
+
+    The queue was not drained — it was never filled. Measured on the live store
+    2026-09-03: **24 of 25 intake records carry `domain: null` and `category:
+    "unclear"`.** The extractor that would classify them is off by design behind
+    [DB-0820-03]'s eval gate, the persona has zero `rules:`, and `unclear` maps to a
+    null domain — so with the current configuration `read_intake_queue` returns zero for
+    every domain, permanently, no matter what is in the inbox.
+
+    Nothing about the old return value said any of that. "Nothing new for this domain"
+    is true and reads as "the inbox is empty", and an agent asked to check the inbox
+    reported the second. So the answer now carries the reason, computed from config and
+    from the store rather than asserted: **an empty queue is a fact about the queue, and
+    this says so.** Making the two jobs read the same source is the other half and is an
+    instruction change, not a code one — it is not made here.
+    """
+    # Two independent facts, gathered independently. They were one try-block until a
+    # config read that raised also swallowed the record count — and a clause is only
+    # added when it was actually established, never when it was merely assumed. Saying
+    # "the extractor is disabled" because the config could not be read would be this
+    # function inventing the explanation it exists to supply.
+    why = []
+    try:
+        cfg = load_config()
+        if not cfg.get("enabled"):
+            why.append("the intake sweep is switched off for this persona")
+        if not (cfg.get("extractor") or {}).get("enabled"):
+            why.append(
+                "message classification is not active (the intake extractor is "
+                "disabled), so most messages are recorded as 'unclear' and routed to "
+                "no domain at all")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[intake] empty-queue config lookup failed: {exc}")
+
+    try:
+        # Records the sweep ingested but could not route anywhere. This is the number
+        # that makes the queue's emptiness legible: 24 messages seen, none classified.
+        source = read_records() if records is None else records
+        unrouted = sum(1 for row in source if not row.get("domain"))
+        if unrouted:
+            why.append(f"{unrouted} ingested message(s) currently carry no domain and "
+                       f"so appear in no queue")
+    except Exception as exc:  # noqa: BLE001
+        # A queue read must never fail because its explanation could not be computed.
+        logger.warning(f"[intake] empty-queue record count failed: {exc}")
+
+    note = (
+        f"The {domain} intake queue is empty. This is a fact about the queue, NOT about "
+        "the user's inbox — the two are different sources and an empty queue does not "
+        "mean there are no new messages."
+    )
+    if why:
+        note += " " + ("Specifically: " + "; ".join(why) + ".")
+    note += (
+        " Do not tell the user their inbox is empty or that they have no new messages "
+        "on the strength of this result. If the task was to check the inbox, call "
+        "read_email."
+    )
+    return {"count": 0, "items": "(nothing new for this domain)", "note": note}
 
 
 def read_intake_queue(domain: str) -> dict:
@@ -677,9 +753,11 @@ def read_intake_queue(domain: str) -> dict:
         return {"error": "domain is required"}
 
     cursors = _load_cursors()
-    rows = _queue_rows(domain, cursors=cursors)
+    # One read of the append-only store, shared with _empty_queue below.
+    records = read_records()
+    rows = _queue_rows(domain, cursors=cursors, rows=records)
     if not rows:
-        return {"count": 0, "items": "(nothing new for this domain)"}
+        return _empty_queue(domain, records)
 
     # Subjects and sender names are attacker-written text; they cross the trust
     # boundary here exactly as email bodies do in tools/mail.py.

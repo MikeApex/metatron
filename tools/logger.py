@@ -75,6 +75,86 @@ def is_null_ish(text: str) -> bool:
     match = _TEMPLATE_LABEL_RE.match((text or "").strip().strip("[](){}\"'").strip())
     return bool(match) and _null_value(match.group(1))
 
+
+# --- ROUTING_MISS that reports a success ------------------------------------
+#
+# [DB-0902-01]. From 2026-06-22 to 2026-08-29 every ROUTING_MISS in the live log was a
+# real routing fault, and several became backlog items — the referent-resolution work of
+# [DB-0826-01] started as one. From 2026-09-01 the same event type began carrying
+# *"Coordinator handled morning session prompt successfully."*, *"Routed inbox check and
+# logistics task appropriately."*, *"...without routing error."* Measured on the live log
+# 2026-09-03: 19 events before 09-01, of which 0 are noise; 15 from 09-01 on, of which 13
+# are. The break is exactly the 09-01 fleet migration, with no code change between.
+#
+# The cause is an instruction gap the model change exposed: `config/agents/coordinator.md`
+# defines USER_CORRECTION at length and **never defines ROUTING_MISS at all** — line 208
+# lists it as an available event type and nothing tells the Coordinator what one is. Only
+# `synthesizer.md` carries the definition. gemini-3.1-pro-preview inferred it correctly for
+# three months; gemini-3.7-flash fills the slot with a description of what it just did.
+# That half is an agent-file fix and is not made here.
+#
+# What IS made here is the half code can decide without guessing: an event whose detail
+# asserts the routing went RIGHT is self-contradictory with its own type, whatever the
+# model meant. This is deliberately NOT the is_null_ish() test from [DB-0827-07] — these
+# payloads are non-empty and that check correctly passes them.
+#
+# The rule is tuned for precision, not recall, because the two errors cost very different
+# things: dropping a noise event costs nothing, and dropping a real routing fault costs the
+# signal this event type exists to carry. Measured against all 34 events in the live log:
+# **0 of 21 genuine misses rejected**, 8 of 13 noise events rejected. The 5 it lets
+# through assert nothing about success — they are merely descriptive ("Coordinator test run
+# check"), which is a different defect and one that cannot be separated from a real report
+# without the semantic guessing this guard exists to avoid.
+
+_SUCCESS_CLAIM_RE = re.compile(
+    r"\b(successful(?:ly)?|correctly|appropriately|properly|as required|as expected|"
+    r"valid(?:ly)?|without (?:a |any )?(?:routing )?(?:error|miss|issue|problem)s?|"
+    r"no (?:routing )?(?:error|miss|issue)s?)\b", re.I)
+
+# "Agents not called successfully" is a failure report that happens to contain the word
+# "successfully" — a real 2026-06-26 event, and the one case that made a naive keyword
+# rule reject a genuine miss.
+_NEGATOR_RE = re.compile(
+    r"\b(not|never|no|without|fail(?:ed|s|ing)?|unable|rather than|instead of|"
+    r"lack(?:ing|ed)?|absent|missing)\b", re.I)
+
+_FAILURE_CLAIM_RE = re.compile(
+    r"\b(miss(?:ed|es|ing)|mis(?:interpret|ident|underst|read|took|rout|handl)\w*|"
+    r"instead of|rather than|fail(?:ed|ure|s)|did ?n[o']t|does ?n[o']t|was ?n[o']t|"
+    r"were ?n[o']t|could ?n[o']t|not (?:called|routed|surfaced|executed|taken|"
+    r"come through|received)|no (?:response|specialist|output|data)|incorrect\w*|"
+    r"wrong\w*|unable|omitted|skipped|lost|error|gap|should have)\b", re.I)
+
+
+def asserts_routing_success(detail: str) -> bool:
+    """True when a ROUTING_MISS detail claims the routing went right and names nothing
+    that went wrong — an event asserting the opposite of its own type.
+
+    Both halves are required. A detail that claims success AND names a failure is kept:
+    *"...handled appropriately as an anticipatory logistics pass"* alongside a real
+    complaint is ambiguous, and ambiguity resolves in favour of keeping the event.
+    """
+    text = detail or ""
+
+    claims_success = False
+    for m in _SUCCESS_CLAIM_RE.finditer(text):
+        # "without a routing error" and "no routing miss" carry their own negator and
+        # are success assertions as they stand — matched whole, so exempt from the
+        # look-back below.
+        if m.group(0).lower().startswith(("without", "no ")):
+            claims_success = True
+            continue
+        if not _NEGATOR_RE.search(text[max(0, m.start() - 40):m.start()]):
+            claims_success = True
+
+    if not claims_success:
+        return False
+
+    # Strip the success phrases before looking for failure words, or the "miss" inside
+    # "without routing miss" reads as a report of a miss.
+    return not _FAILURE_CLAIM_RE.search(_SUCCESS_CLAIM_RE.sub(" ", text))
+
+
 _WRITE_LOG_LOCK = threading.Lock()
 _WRITE_QUALITY_EVENT_LOCK = threading.Lock()
 
@@ -387,6 +467,17 @@ def write_quality_event(
             f"write_quality_event({event_type!r}): detail {detail!r} carries no "
             "information — this is the 'no correction happened' case, so do not "
             "write an event at all. See is_null_ish()."
+        )
+    # [DB-0902-01] — see asserts_routing_success(). Refused rather than rewritten: the
+    # caller is describing correct behaviour, so there is no event here to salvage, and
+    # a rewritten detail would be this module inventing a fault nobody observed.
+    if event_type == "ROUTING_MISS" and asserts_routing_success(detail):
+        raise ValueError(
+            f"write_quality_event(ROUTING_MISS): detail {detail!r} describes routing "
+            "that WORKED. A ROUTING_MISS records a signal the routing missed — a "
+            "specialist that should have been called and was not, or an intent read "
+            "wrongly. Routing that went as intended is not an event: do not log "
+            "anything. See asserts_routing_success()."
         )
 
     logs_dir = _logs_dir()
