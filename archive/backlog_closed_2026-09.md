@@ -9,6 +9,99 @@ third of what has looked open in the past turned out to be already fixed.
 
 ---
 
+## ✅ [DB-0822-09] Email was processed and then thrown away — closed 2026-09-03
+
+**Closed 2026-09-03, on live evidence, after three iterations in one day.** The most expensive
+specialist by input volume was producing nothing the user saw: on 2026-08-22 `logistics`
+ingested 397,216 tokens across two inbox jobs and what reached Mike was one due date. The
+coordination half was built 2026-08-29; the **surfacing** half failed its first live test on
+09-02 and is what closed here.
+
+### The 09-02 failure, and what it was not
+
+A genuinely interest-level email — Death Cab for Cutie, Troxy, 26 September — arrived. The
+11:37 `logistics` run built exactly the right package: `HORIZON_ITEMS` carried it,
+`COORDINATION_OPPORTUNITIES` attached real legs. **The user-facing 11:36 run said only** *"Your
+focus window remains clear for the Apex migration delivery."*
+
+This was suspected of being the `[DB-0902-02]` intake-queue split. **It was not**, and ruling
+that out mattered: both runs called `read_email(count=15)` — the same source. `logistics`
+produced a 536-token package, the Synthesizer received 21,630 input tokens including it, and
+emitted 177 words about something else. The loss was entirely downstream.
+
+### Three iterations, because the first two were live-tested and found wanting
+
+1. **An injected must-deliver block, no ledger — killed before it was built.** Mike's question
+   (*"how would the code know whether something is of interest?"*) forced the scoping that
+   found it. Code never decides interest — `logistics` does, and across the three runs where
+   specialist output survives in traces that judgement is sound (8 findings, 0 junk). But
+   Jimmy Carr appears in **all three** of those runs and the dental appointment in two, so
+   guaranteed delivery with no record of what was already said would have told Mike about the
+   same comedy show daily until 13 September. That is `[DB-0822-06]`'s carried-state failure
+   through a new channel, and **worse than the silent drop it replaces** — the Synthesizer's
+   dropping was doing double duty as the fault *and* the noise filter.
+2. **`HORIZON_ITEMS` as a JSON template slot — built, deployed, and inert.** The live test
+   passed on the reply and failed on the ledger: every item reached Mike and
+   `data/personas/mike/horizon/ledger.json` did not exist. `logistics` had emitted no
+   `HORIZON_ITEMS:` line at all — conversational markdown with none of its documented output
+   format — having emitted the full block the previous day on the same model. **Output-format
+   adherence varies run to run: a template slot is not a channel, it is a request.**
+   *Recorded because it very nearly closed on the wrong evidence — the reply contained every
+   item the backlog named, and only a missing file contradicted it.*
+3. **`record_horizon_item` as a tool call — what shipped.** Structured by construction: it
+   cannot be replaced by prose, its arguments cannot be malformed and silently ignored, and a
+   refusal is visible. Already the codebase's answer wherever a relay must not be lost
+   (`write_quality_event`, `open_obligation`).
+
+### The evidence that closed it
+
+All on the VM, 2026-09-03, after deploy:
+
+- **The tool fires and the ledger fills.** A direct `--agent logistics` run filed five findings.
+  A direct run does not pass through `_file_horizon_items`, so those entries **can only** have
+  come from the tool call — which is what made this decisive rather than suggestive.
+- **The Synthesizer delivers them unprompted.** A bare *"How is my week shaping up?"* returned
+  all five: both 09-05 deadlines, the Maria meeting, Rosh Hashana, the dental consultation.
+- **Offer accounting is correct.** `offers=1` after that session, not 2 — the window collapsed
+  the Coordinator's and Synthesizer's separate context loads into one charge, as designed. A
+  later session took the same batch to `offers=2`, so the count increments across sessions and
+  the batch exhausts next time it would be shown.
+- **The 09-02 case itself now files and lands.** A plain *"Check my inbox and summarize any
+  relevant logistics details"* — the exact failing directive — filed four new findings
+  including **Death Cab for Cutie @ Troxy, 2026-09-26**, and the reply carried all of them.
+  This needed one more fix to get there: filing was happening only when the directive named
+  the horizon scan, so `logistics.md` now files on **every** directive (`7aa1f2a`).
+
+### Built
+
+`tools/horizon.py` (ledger, `(date, venue)` identity, context block, `record_horizon_item`),
+the parser and both pipeline wirings in `core/orchestrator.py`, grants in both routing files,
+`logistics.md`. `tests/test_horizon_ledger.py` — 29 checks.
+
+**Two placement decisions the tests pin against source**, because neither is visible in
+behaviour until a finding has already been lost: the offer is charged **where the block is
+served**, not once per turn from the close-out (a finding filed mid-turn was never in the block
+that turn built); and the block is built **after** the sign-off veto (on "over and out" the
+Synthesizer never runs).
+
+**The dedupe key is a sorted token set, and that was found by test, not review.** The first
+version normalised the venue to a string, so `"The London Palladium"` and
+`"the london palladium, London"` did not match — the exact case the design exists for.
+
+### Known limit, carried out of the close deliberately
+
+**An item filed without a venue does not dedupe against the same item filed with one.** Seen
+live in the closing test: *"Dental surgeon consultation - Iva Diamond"* (2026-09-15, no venue)
+and *"Dental Appointment (John Doran)"* (2026-09-15, Bupa Dental Care Crossrail) are one
+appointment held as two entries, because the first keyed on its title and the second on its
+venue. Cost is bounded — Mike may hear about one real appointment twice, each capped at two
+offers — and it is not the failure this item was about. **Closing anyway rather than widening
+the key**, because matching a venue-less item against a venued one by title similarity is the
+semantic guessing `[DB-0827-07]` was closed to keep out of this codebase. Raised with Mike at
+the close; not filed as an item because he did not ask for one.
+
+---
+
 ## ✅ [DB-0820-01] The spend caps are temporarily too high — brought back down on 2026-09-01
 
 **Closed 2026-09-01.** The GCP budgets were reverted from the temporary **$150/$250** to

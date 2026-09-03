@@ -163,96 +163,6 @@ standing rule distrusts.*
 
 ### Red — judgement work, not automatable
 
-- **6. [DB-0822-09] Email is processed and then thrown away.** The 12:24 and 18:24 jobs were
-  explicitly *"check the user's inbox and summarize any relevant logistics details."* `logistics`
-  ran and ingested **397,216 tokens — the largest input of any agent that day** — and what reached
-  Mike was one due date plus the virtue list. **The most expensive specialist by volume produced
-  nothing the user saw.**
-  **The shape Mike wants** (2026-08-22, verbatim intent): email should keep admin *off* his plate,
-  but there must be **some** reporting — especially **interest-level items**, e.g. concerts he is
-  presumably looking forward to. And beyond reporting, **a check on whether anything needs
-  coordinating around them**: parking, food before or after, transit, whether other friends are
-  going.
-  **Two halves, deliberately one item:** the discard is a bug in what the Synthesizer surfaces; the
-  coordination check is new capability in `logistics` / `recreation_hobbies`. They share a surface
-  and splitting them would have each half wait on the other.
-  *Re-verified 2026-08-27, and the build is cheaper than when filed: the intake queue and
-  per-agent `read_intake_queue` grants already exist (disabled behind `[DB-0820-03]`'s eval gate).
-  What is missing is only the Synthesizer surfacing rule and the coordination-check instruction —
-  both agent-file (Red) work, unaffected by the gate.*
-  @kind: feature
-  **✅ Both halves BUILT 2026-08-29 (Red session ③):** the Synthesizer absorb-by-default /
-  report-interest-level rule (§ What you receive) + the coordination check in `logistics.md`
-  (intake-queue bullet: transit/parking/food/who-else legs, surfaced plan-shaped) and
-  `recreation_hobbies.md`. A4 gate PASS 3/3 × three suites
-  (`tests/a4_safety_rerun_2026-08-29_gemini_*.md`).
-  **⚠ First live test FAILED the surfacing half; the coordination half works (Red session ④,
-  2026-09-02).** A genuinely interest-level email — Death Cab for Cutie ticket confirmation,
-  Troxy, Sep 26 — arrived by 09-02. The 11:37 logistics run built exactly the right package:
-  HORIZON_ITEMS carried it and COORDINATION_OPPORTUNITIES attached real legs (*"check travel,
-  transit, and pre-show dining options near Troxy"*), same for Jimmy Carr. **But the user-facing
-  11:36 inbox-summarize run said only** *"Your focus window remains clear for the Apex migration
-  delivery"* — the item never surfaced to Mike in any run that day. Jimmy Carr's earlier
-  surfacing (08-30 14:45) came with only a generic assistance offer. So: legs generated one
-  layer down ✓, Synthesizer report-interest-level rule not firing ✗. Possibly the Synthesizer
-  judged the focus window took precedence — but the summarize job is precisely the reporting
-  channel. Note the 09-02 runs are on `gemini-3.7-flash`, which the instruction was never
-  measured on.
-  @waiting: superseded — intake went live 2026-08-29 13:54 and the confirm ran; the surfacing
-  half needs another look (instruction adherence vs a structural surface, same fork as the
-  closed `[DB-0822-08]`)
-  **✅ DIAGNOSED 2026-09-03 (session ⑥) — and it is NOT the `[DB-0902-02]` inbox split**, which
-  was the open question. Both 09-02 runs called `read_email(count=15)`: the same source. In the
-  11:36 pipeline run `logistics` produced a **536-token** package and the Synthesizer received
-  **21,630 input tokens** and emitted **177** — *"Your focus window remains clear for the Apex
-  migration delivery, Mike."* The Death Cab and Jimmy Carr items were in front of it and were
-  dropped. So the remaining fix is Synthesizer-side, now **confirmed rather than suspected**,
-  and the fork this item has carried since the closed `[DB-0822-08]` resolves the same way:
-  **make HORIZON_ITEMS structural rather than attempt a third instruction** — the reasoning
-  `enforce_pending_receipt` already records for taking a report away from the model.
-  **✅ BUILT 2026-09-03 (Mike approved the structural option, `a4a9364`).** Findings now go
-  to a ledger and come back as their own context block with its own delivery instruction,
-  instead of riding in specialist prose the Synthesizer can drop.
-  **The scoping changed the shape, and the reason is worth keeping:** code does *not* decide
-  what is interesting — `logistics` does, and across the three runs where specialist output
-  survives in the traces that judgement is sound (8 findings, 0 junk). What code decides is
-  the only question it can answer without guessing: **has this already been said.** That is
-  load-bearing rather than a refinement — Jimmy Carr appears in all three of those runs and
-  the dental appointment in two, so guaranteed delivery *without* a ledger would have told
-  Mike about the same comedy show daily until Sept 13. That is `[DB-0822-06]`'s carried-state
-  failure through a new channel, and strictly worse than the silent drop it replaces: the
-  Synthesizer's dropping was doing double duty as the fault *and* the noise filter.
-  Identity is by key (same date, same venue), never similarity. Prose could not carry it, so
-  the Red half is a **format** change — `logistics.md` emits `HORIZON_ITEMS` as JSON with
-  `date` and `venue` as fields. The key is a sorted token *set*, which is what survives
-  ", London" being appended on one run and not the other; the tests found that, not review.
-  `tools/horizon.py` + `tests/test_horizon_ledger.py` (22 checks).
-  **⚠ LIVE TEST RUN 2026-09-03 AFTER DEPLOY — the item does NOT close, and the reason is not
-  in the build.** Two runs on the VM with the exact 09-02 directive. **Delivery succeeded:**
-  the reply carried Death Cab (Troxy, Sep 26), Jimmy Carr, Iva's dental appointment and the
-  George School social — the items dropped silently on 09-02 — and it additionally caught a
-  calendar collision (SE10 Sukkot the same afternoon as Death Cab). **But it succeeded by the
-  Synthesizer's own compliance, not through the ledger: `data/personas/mike/horizon/ledger.json`
-  does not exist.** Nothing was filed, because `logistics` **emitted no `HORIZON_ITEMS:` line
-  at all** — no filing trace, no parse warning. A direct run confirms why: it returned
-  conversational markdown with none of its documented output format, no `ACTIONS TAKEN:` and
-  no `FLAGS:` either. On 09-02 the same agent on the same model (`gemini-3.5-flash-lite`) did
-  emit the structured block. **Adherence to the output format is unreliable run to run**, so
-  the JSON schema made the format precise and still rides on the model choosing to emit it —
-  the exact class of failure this whole cluster is about.
-  **What would close it:** make the relay a **tool call** — `record_horizon_item(title, date,
-  venue, kind, detail)` — instead of a template slot. A tool call is structured by
-  construction: it cannot be silently omitted in favour of prose, and its arguments cannot be
-  malformed and ignored. That is the established pattern here for structured relay that must
-  not be lost (`write_quality_event`, `open_obligation`), and it is what `.claude/rules/
-  agent-files.md` means by a named tool being a specification. Cost: one new tool in `tools/
-  horizon.py` (Green), a routing grant in both `routing*.yaml` (Red), and one line in
-  `logistics.md` (Red). The ledger, the block, the dedupe and both placement decisions are
-  built and tested — only the input path changes.
-  @session: Mike to approve the tool-call relay. Everything downstream of it is done.
-  *filed 2026-08-22 by Mike · built 2026-08-29 session ③ · live test failed surfacing half
-  2026-09-02 (Red session ④) · diagnosed 2026-09-03 (session ⑥)*
-
 ### Denied tier — Mike's own file
 
 ### Green/Amber — a second block, found after the first pass
@@ -1285,6 +1195,9 @@ claim user-facing (its log-write sibling is `[DB-0829-01]`); the two Iva/Eva cor
 evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording — "causing an
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
+
+- **[user corrected a prior turn]** ```  
+  `2026-09-03T13:11:27.250966Z`
 
 - **[user corrected a prior turn]** User noted that previous all-day Cheder entries were not removed when the timed sessions and travel blocks were added.  
   `2026-09-03T12:03:19.235386Z`

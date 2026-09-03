@@ -253,3 +253,46 @@ half-satisfied on the reading alone.
 
 **Positive, recorded as a signal not a confirm.** Three post-deploy sessions produced no
 ROUTING_MISS at all; the only quality event was a genuine USER_CORRECTION.
+
+---
+
+# `[DB-0822-09]` closed — the relay becomes a tool call
+
+Third iteration, after the second was live-tested and found inert.
+
+**What shipped.** `record_horizon_item(title, date, venue, kind, detail)` — registered, granted
+to `logistics` in both routing files, named in `logistics.md`. A tool call is structured by
+construction: it cannot be replaced by prose, its arguments cannot be malformed and silently
+ignored, and a refusal is visible.
+
+**Live evidence, in order:**
+
+1. Pipeline run on the inbox directive — **still filed nothing**, though the tool was granted
+   and offered (33 tools in the live allowlist). A granted tool is not a used one.
+2. Direct run naming the horizon scan — **filed five findings**. A direct run bypasses
+   `_file_horizon_items`, so those entries can only have come from the tool.
+3. Next pipeline session — **delivered all five unprompted** to a bare "How is my week shaping
+   up?".
+4. Offer accounting correct: `offers=1`, not 2 — the window collapsed the two head-layer
+   context loads into one charge.
+5. Gap found and closed: filing happened only when the directive named the horizon scan. Two
+   places still said *surface as HORIZON_ITEMS* — the scan header and the intake-queue
+   interest-level rule, which is the one the Death Cab email travels through. Both now say
+   *file with `record_horizon_item`* (`7aa1f2a`).
+6. **The 09-02 case closed on its own terms:** the same failing directive filed Death Cab @
+   Troxy, Jimmy Carr, the Bupa dental appointment and the George School social; the reply
+   carried all of them; the earlier batch moved to `offers=2`, so non-repetition was observed
+   live rather than only unit-tested.
+
+**Known limit, carried out of the close deliberately.** An item filed without a venue does not
+dedupe against the same item filed with one — one 09-15 dental appointment is held as two
+entries. Bounded, not the failure this item was about, and widening the key means the
+similarity-matching `[DB-0827-07]` was closed to keep out. Mike's call, unfiled.
+
+**Cost.** Six live sessions, 412,620 input tokens (271,049 cached), 4,734 output — **under
+$0.14** priced at the reasoning tier throughout, so genuinely less. The waste was time, not
+money: a first attempt scheduled two sessions either side of a 320-second wait purely to let my
+own `_OFFER_WINDOW_SECONDS` expire, re-verifying exhaustion the unit tests already cover. Mike
+stopped it. The live value was in what tests cannot see — the ledger filling, the Synthesizer
+delivering, the accounting — and the ordinary run of sessions supplied the offer increment for
+free.

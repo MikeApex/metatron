@@ -23,23 +23,22 @@ however long Mark 2 takes, and Mark 1's traces are Mark 2's regression oracle. C
 **307/300** and SESSION.md at **204/200**; the restructure is owed, Mike's call on what moves
 out (⑦ checks it).*
 
-*⚠ **The horizon build is live and inert — `[DB-0822-09]` does NOT close.** Both session-⑥ Red
-proposals were built and deployed (`a4a9364`, Mike approved). The post-deploy test read as a
-pass — Death Cab, Jimmy Carr, the dental appointment and the alumni social all reached Mike,
-plus a calendar collision nobody asked for — **but the ledger file does not exist**: they
-arrived by the Synthesizer's own compliance, through the same channel that failed on 09-02.
-`logistics` **emitted no `HORIZON_ITEMS:` line at all**, returning conversational markdown with
-none of its documented output format; on 09-02 the same agent on the same model emitted the
-full block. **Format adherence varies run to run.** The Red edit made the schema precise (a
-dedupe key cannot be pulled from prose — that part was right) and left the *emission* resting
-on the model choosing to fill a template slot. **What closes it: make the relay a tool call**
-(`record_horizon_item`) — structured by construction, the codebase's existing answer for relay
-that must not be lost. Ledger, dedupe, block and both placement decisions are built and tested;
-only the input path changes. Cost: one tool (Green) + a grant in both routing files and one
-line in `logistics.md` (Red). **Mike's call — nothing else is owed on this item.**
-`[DB-0902-01]`'s definition is live and that afternoon produced no ROUTING_MISS at all; its
-week-long clock stands. **Standing fact:** the intake queue is empty by construction until
-`[DB-0820-03]`'s corpus labelling runs (due 09-09).*
+*✅ **`[DB-0822-09]` is CLOSED — an interest-level email now reaches Mike once.** Three
+iterations in one day, the first two live-tested and found wanting. The template-slot version
+deployed and was **inert**: the reply carried every item and the ledger file did not exist,
+because `logistics` emitted no `HORIZON_ITEMS:` line at all — **output-format adherence varies
+run to run, so a template slot is not a channel, it is a request.** What shipped is
+`record_horizon_item`, a tool call: structured by construction, cannot be replaced by prose.
+Closed on live evidence — the exact failing 09-02 directive filed **Death Cab @ Troxy** plus
+three more, the reply carried them, and the earlier batch moved to `offers=2`, so
+non-repetition was observed rather than only unit-tested. Evidence:
+`archive/backlog_closed_2026-09.md`. **Known limit, carried out deliberately:** an item filed
+without a venue does not dedupe against the same item filed with one (one 09-15 dental
+appointment is held as two entries). Bounded, not the failure this item was about, and
+widening the key means the similarity-matching `[DB-0827-07]` was closed to keep out — **Mike's
+call, unfiled.** `[DB-0902-01]`'s definition is live; its week-long clock stands. **Standing
+fact:** the intake queue is empty by construction until `[DB-0820-03]`'s corpus labelling runs
+(due 09-09).*
 
 *⚠ **Found and deliberately NOT fixed — needs Mike's word. `quick_override` reaches the
 clinical agents on the cloud path.** `core/router.py:98` reads "non-sensitive" as *no
