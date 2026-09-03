@@ -110,6 +110,20 @@ for fixing it on sight rather than queueing it.
 
 **Left open deliberately and not filed:** *"Approved."* still chooses `logistics` over `relationships` on 2 of 3 runs with the referent already correct. It is a taxonomy question about who owns emailing a landlord, not this class, and filing it on probe evidence alone would put an item on the list that no user has yet noticed.
 
+**Housekeeping, recorded because it recurs and was noticed as noise.** `data/personas/danny_park/`
+had been dirty across several sessions — `context.json`, the FAISS index (7.7 KB → 70 KB) and
+205 lines of near-duplicate health logs — all live-test byproduct sitting on top of a curated
+5-entry fixture that the B1a red-team cases depend on for their `held_items` and phishing
+pattern. Restored to HEAD (`git restore data/personas/danny_park/`); nothing deliberate was in
+the diff, checked before discarding. **It will come back:** any live `run_pipeline_session`
+against `danny_park` writes those three files, which is what the persona is for. Today's
+polluter was the one end-to-end run through the edited call site — `tests/run_referent_probe.py`
+deliberately points `turn_referent`'s `persona_data_dir` at a tmp tree for exactly this reason.
+A `scripts/reset_test_persona.sh` was offered and not built; Mike has not asked for one.
+
+Final state: four commits plus a sync line, all pushed, working tree clean, nothing owing a
+deploy.
+
 ### 2026-09-02 (Model/effort routing guidelines — verified, planned, build parked)
 
 Planning only. No code, config or roadmap touched; one new file, `archive/plans/`. Mike supplied a
