@@ -1155,6 +1155,7 @@ def register_tools() -> tuple[list[dict], dict]:
     # ids only, so what lands in the CRM is the row the user read and not a re-statement
     # of it. Granted to `relationships` alone in both routing files.
     from tools.crm_sweep import apply_crm_proposals, APPLY_CRM_PROPOSALS_SCHEMA
+    from tools.horizon import record_horizon_item, RECORD_HORIZON_ITEM_SCHEMA
 
     schemas = [
         WRITE_LOG_SCHEMA, READ_LOG_SCHEMA,
@@ -1200,6 +1201,7 @@ def register_tools() -> tuple[list[dict], dict]:
         FETCH_URL_SCHEMA, FETCH_RENDERED_SCHEMA, READ_EMAIL_SCHEMA, SEND_EMAIL_SCHEMA,
         IMPORT_CONTACTS_FILE_SCHEMA,
         APPLY_CRM_PROPOSALS_SCHEMA,
+        RECORD_HORIZON_ITEM_SCHEMA,
     ]
     handlers = {
         "write_log": write_log,
@@ -1274,6 +1276,7 @@ def register_tools() -> tuple[list[dict], dict]:
         "read_intake_queue": read_intake_queue,
         "teach_intake": teach_intake,
         "write_quality_event": write_quality_event,
+        "record_horizon_item": record_horizon_item,
         "write_persona": write_persona,
         "write_profile": write_profile,
         "read_profile": read_profile,

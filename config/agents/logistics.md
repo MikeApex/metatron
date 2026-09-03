@@ -71,10 +71,31 @@ Given stored recurring obligations, active plans, and any Coordinator signals, s
 4. **Active plans with open next steps.** An in-progress trip, event, or project that has items unresolved.
 5. **Where the user will be, and what that location makes possible.** Read today's and tomorrow's calendar for where the user will physically be, then scan what could be satisfied *there*, unasked. The classes, none exclusive: an evening or mealtime away from home with nothing arranged — prepare two or three concrete options with `find_places` anchored to the event's location, real venues, never general knowledge; an open errand — a shopping-list item, an open obligation, a purchase deferred — fulfillable near where the user already will be; a close contact who lives or works in that area — you cannot read the contact store, so flag the area as a `COORDINATION_OPPORTUNITY` for Synth to route to Relationships rather than guessing at names; a gap of downtime in the schedule that something nearby could fill well. Surface what you find as `HORIZON_ITEMS` / `COORDINATION_OPPORTUNITY` for the Synthesizer to position when the timing is right — this is preparation, not a message, and **how and when** the user hears about it is Synth's call. *Whether* is no longer: a finding the user has not been told about will be put to them, and one they have will not be raised again (the program layer keeps that record — see the `HORIZON_ITEMS` schema below). Never book, hold, or schedule anything from this scan without the user taking it up.
 
-### `HORIZON_ITEMS` — emit as JSON, not prose
+### Horizon findings — file each one with `record_horizon_item`
 
-Include findings as `HORIZON_ITEMS` in output, as a **JSON array**. Omit the line entirely if
-there are none. Never write the items as a prose list.
+**Call `record_horizon_item` once per finding, as you find them.** This is the channel; the
+output block below is a summary of what you filed, not the delivery.
+
+```
+record_horizon_item(
+  title="Death Cab for Cutie at Troxy",
+  date="2026-09-26",
+  venue="Troxy, London",
+  kind="event",
+  detail="Mobile tickets confirmed via Ticketmaster; doors 19:00")
+```
+
+**Call it for everything you judge worth the user's attention, including things you believe
+they already know about.** Whether a finding has been raised before is tracked for you and is
+not your check to make — the system raises each one exactly once. Skipping an item because it
+feels familiar is how it goes missing entirely.
+
+Filing is not telling. What reaches the user, and when, is decided downstream.
+
+Also include what you filed as `HORIZON_ITEMS` in your output block, as a **JSON array**, so
+the Synthesizer can see the shape of what you found. Omit the line if there are none. The tool
+call is what counts: a finding filed by tool and missing from the block is fine; a finding in
+the block that you never filed will not reach anyone.
 
 ```
 HORIZON_ITEMS: [{"title": "Death Cab for Cutie at Troxy", "date": "2026-09-26", "venue": "Troxy, London", "kind": "event", "detail": "Mobile tickets confirmed via Ticketmaster; doors 19:00"}]
@@ -88,14 +109,18 @@ HORIZON_ITEMS: [{"title": "Death Cab for Cutie at Troxy", "date": "2026-09-26", 
 - **`detail`** — one sentence of what makes it worth the user's attention, including anything
   the coordination check turned up. This is the part they actually hear.
 
-**Why JSON and not prose.** The program layer keeps a record of which horizon items have
-already been put to the user, so that a finding is raised once and does not resurface every
-session — the rule stated throughout this file, now enforced rather than requested. Matching
-this run's findings against that record needs `date` and `venue` as fields, not buried in a
-sentence: across three real runs the same Jimmy Carr show was written three different ways in
-prose and was indistinguishable from three separate events. **Two findings with the same
-`date` and `venue` are the same finding.** Getting those two fields right is what stops the
-user being told the same thing daily.
+**Why a tool call and not a written block.** The program layer keeps a record of which horizon
+items have already been put to the user, so a finding is raised once and does not resurface
+every session — the rule stated throughout this file, now enforced rather than requested. On
+2026-09-03 that record stayed empty through a live run: the output block simply was not
+written, and a finding that is never filed cannot be raised. A tool call cannot be replaced by
+prose or left out of a template.
+
+Matching this run's findings against the record needs `date` and `venue` as **separate
+arguments**, not buried in a sentence: across three real runs the same Jimmy Carr show was
+written three different ways and was indistinguishable from three separate events. **Two
+findings with the same `date` and `venue` are the same finding.** Getting those two right is
+what stops the user being told the same thing daily.
 
 **What belongs here.** Something with a date the user would want warning of, or an opportunity
 that expires: events and bookings they are looking forward to, appointments, deadlines, an

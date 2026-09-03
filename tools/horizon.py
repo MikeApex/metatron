@@ -336,3 +336,104 @@ def mark_engaged(user_text: str | None, persona: str | None = None) -> int:
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"[horizon] mark_engaged failed: {exc}")
         return 0
+
+
+# ---------------------------------------------------------------------------
+# The tool — how findings actually arrive
+# ---------------------------------------------------------------------------
+#
+# Live-tested 2026-09-03, after the template-slot version deployed: `logistics` emitted no
+# `HORIZON_ITEMS:` line at all — not malformed, absent — returning conversational markdown
+# with none of its documented output format, no `ACTIONS TAKEN:` and no `FLAGS:` either. The
+# same agent on the same model had emitted the full structured block the day before. Output
+# format adherence varies run to run, so a template slot is not a channel: it is a request.
+#
+# A tool call is structured by construction. It cannot be quietly replaced by prose, its
+# arguments cannot be malformed and silently ignored, and a refusal is visible. That is
+# already this codebase's answer wherever a relay must not be lost — `write_quality_event`,
+# `open_obligation` — and it is what `.claude/rules/agent-files.md` means by a named tool
+# being a specification rather than a suggestion.
+#
+# The prose parser in core/orchestrator.py is kept as a second channel rather than removed:
+# it costs one substring check per specialist output, and a run that does emit the block
+# should not have its findings dropped for using the older route. Both land in the same
+# ledger, and `record()` dedupes by key, so a finding arriving twice is filed once.
+
+
+def record_horizon_item(title: str, date: str = "", venue: str = "",
+                        kind: str = "", detail: str = "") -> str:
+    """File one horizon finding. Called by the specialist, once per finding.
+
+    Deliberately one call per item rather than a list: a model that has to assemble a JSON
+    array is back to emitting a structure it can get wrong, which is the failure this tool
+    exists to route around. Repeating a small call is the reliable shape.
+    """
+    item = {"title": title, "date": date, "venue": venue, "kind": kind, "detail": detail}
+    if not _valid(item):
+        # Stated plainly so the model can correct itself on the next call. `date` is the
+        # field that goes wrong, and it must never be guessed at on the model's behalf —
+        # the whole ledger turns on it being real.
+        return ("Not filed: a horizon item needs a non-empty `title`, and `date` must be "
+                "YYYY-MM-DD or empty — never a phrase like 'next Tuesday'. Nothing was "
+                "recorded; call again with the corrected fields.")
+    if _is_past(item):
+        return (f"Not filed: {date} has already passed, so there is nothing to warn the "
+                f"user about. This is not an error.")
+
+    tally = record([item])
+    if tally["new"]:
+        return f"Filed: {title}. The user has not been told about this one yet."
+    return (f"Already on file: {title}. It has been recorded before, so it will not be "
+            f"raised with the user again. Nothing further is needed.")
+
+
+RECORD_HORIZON_ITEM_SCHEMA = {
+    "name": "record_horizon_item",
+    "description": (
+        "File one upcoming thing the user should be told about — an event, appointment, "
+        "booking, deadline, errand or opportunity you found while scanning. Call it once "
+        "per finding, as you find them. The system tracks which findings the user has "
+        "already been told about and raises each one exactly once, so call this for "
+        "everything you judge worth their attention and never skip an item because it "
+        "might have been mentioned before — that check is not yours to make. Filing is "
+        "not telling: what reaches the user is decided downstream."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "title": {
+                "type": "string",
+                "description": "What it is, in the user's terms. No reference numbers or ids.",
+            },
+            "date": {
+                "type": "string",
+                "description": (
+                    "The date the thing happens, as YYYY-MM-DD. Use the start date for a "
+                    "range. Leave empty if it genuinely has no date — never invent one and "
+                    "never write a phrase like 'next Tuesday'."
+                ),
+            },
+            "venue": {
+                "type": "string",
+                "description": (
+                    "Where it happens, if anywhere — a venue or place name. Leave empty "
+                    "otherwise. Together with the date this is what identifies the finding, "
+                    "so give the venue as plainly as you can."
+                ),
+            },
+            "kind": {
+                "type": "string",
+                "description": ("One of: event, appointment, booking, deadline, errand, "
+                                "opportunity."),
+            },
+            "detail": {
+                "type": "string",
+                "description": (
+                    "One sentence on what makes this worth the user's attention, including "
+                    "anything a coordination check turned up. This is the part they hear."
+                ),
+            },
+        },
+        "required": ["title"],
+    },
+}

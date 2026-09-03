@@ -159,7 +159,13 @@ agents:
   logistics:
     local: true
     # find_places granted 2026-08-22 [DB-0808-04] — see routing_cloud.yaml's comment.
-    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, update_calendar_event, delete_calendar_event, check_calendar_conflicts, get_weather, get_environmental_snapshot, get_tfl_status, get_flight_status, get_travel_time, get_regional_transit_info, find_places, read_profile, write_profile, write_schedule, list_schedules, delete_schedule, fetch_url, fetch_rendered, read_email, read_agent_config, write_agent_config, search_memory, read_archive, write_archive, open_obligation, close_obligation, reopen_obligation, list_obligations, read_intake_queue]
+    # record_horizon_item granted 2026-09-03 [DB-0822-09]: the horizon relay becomes a tool
+    # call because the template slot did not arrive. Live-tested after the schema change
+    # deployed, `logistics` emitted no HORIZON_ITEMS line at all — conversational markdown
+    # with none of its documented output format — having emitted the full block the day
+    # before on the same model. A tool call cannot be replaced by prose or malformed and
+    # ignored. Logistics only: it is the sole agent whose file specifies horizon findings.
+    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, update_calendar_event, delete_calendar_event, check_calendar_conflicts, get_weather, get_environmental_snapshot, get_tfl_status, get_flight_status, get_travel_time, get_regional_transit_info, find_places, read_profile, write_profile, write_schedule, list_schedules, delete_schedule, fetch_url, fetch_rendered, read_email, read_agent_config, write_agent_config, search_memory, read_archive, write_archive, open_obligation, close_obligation, reopen_obligation, list_obligations, read_intake_queue, record_horizon_item]
     # read/write_agent_config, search_memory, read/write_archive granted 2026-08-05 — see
     # routing_cloud.yaml for the full rationale. Kept in parity.
     # update_calendar_event, delete_calendar_event, check_calendar_conflicts added

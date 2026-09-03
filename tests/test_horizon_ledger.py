@@ -266,6 +266,81 @@ def _():
     assert H.record([DEATH_CAB])["new"] == 1
 
 
+# --- the tool, which is how findings actually arrive ------------------------
+
+@check("the tool files a finding and says it is new")
+def _():
+    reset()
+    out = H.record_horizon_item(title="Death Cab for Cutie at Troxy", date=FUTURE,
+                                venue="Troxy, London", kind="event",
+                                detail="Mobile tickets confirmed")
+    assert "Filed" in out, out
+    assert "not been told" in out, out
+    assert "Death Cab" in H.context_block()
+
+
+@check("filing the same finding twice says so, and does not duplicate it")
+def _():
+    reset()
+    H.record_horizon_item(title="Jimmy Carr Performance", date=LATER,
+                          venue="The London Palladium")
+    out = H.record_horizon_item(title="Jimmy Carr: Laughs Funny", date=LATER,
+                                venue="the london palladium, London")
+    assert "Already on file" in out, out
+    assert len(ledger()) == 1, ledger()
+
+
+@check("a bad date is refused with a correction, never guessed at")
+def _():
+    reset()
+    out = H.record_horizon_item(title="Something", date="next Tuesday")
+    assert "Not filed" in out, out
+    assert "YYYY-MM-DD" in out, out
+    assert ledger() == {}, "an unparseable date reached the ledger"
+
+
+@check("a past date is refused, and is not reported as an error")
+def _():
+    reset()
+    gone = (date.today() - timedelta(days=2)).isoformat()
+    out = H.record_horizon_item(title="Last week's gig", date=gone, venue="Troxy")
+    assert "already passed" in out, out
+    assert "not an error" in out, out
+
+
+@check("title is the only required argument — an undated finding still files")
+def _():
+    reset()
+    assert "Filed" in H.record_horizon_item(title="Renew passport")
+    assert "Renew passport" in H.context_block()
+
+
+@check("the schema tells the specialist NOT to pre-filter on what was already raised")
+def _():
+    # The whole hazard: an agent that skips a familiar-feeling item removes the only
+    # chance the ledger has to decide. logistics.md says this too; the schema must, since
+    # it is what the model sees at the moment of the call.
+    desc = H.RECORD_HORIZON_ITEM_SCHEMA["description"]
+    assert "never skip an item" in desc, desc
+    assert "exactly once" in desc, desc
+
+
+@check("the tool is registered, granted to logistics, and named in its agent file")
+def _():
+    orch = (ROOT / "core" / "orchestrator.py").read_text(encoding="utf-8")
+    assert '"record_horizon_item": record_horizon_item,' in orch, "not in the handlers dict"
+    assert "RECORD_HORIZON_ITEM_SCHEMA," in orch, "schema not registered"
+    for routing in ("routing.yaml", "routing_cloud.yaml"):
+        text = (ROOT / "config" / "modules" / routing).read_text(encoding="utf-8")
+        logistics = [ln for ln in text.splitlines()
+                     if "allowed_tools:" in ln and "get_regional_transit_info" in ln]
+        assert logistics, f"{routing}: could not find the logistics grant line"
+        assert "record_horizon_item" in logistics[0], f"{routing}: not granted to logistics"
+    agent = (ROOT / "config" / "agents" / "logistics.md").read_text(encoding="utf-8")
+    assert "record_horizon_item" in agent, (
+        "granted but not named in logistics.md — a tool the agent is never told to call")
+
+
 # --- pipeline wiring --------------------------------------------------------
 
 @check("the real 09-02 output is parsed and stripped from what Synth reads")

@@ -70,6 +70,12 @@ ACTION_TOOLS: frozenset[str] = frozenset({
     # A taught intake rule permanently changes what mail the user sees — a standing
     # config write behind the confirm gate, and unambiguously an action.
     "teach_intake",
+    # record_horizon_item files a finding into the horizon ledger [DB-0822-09]. Classified
+    # as an action on the same reading as write_quality_event: it persists a record, and the
+    # honest failure direction here is over-reporting a name Mike can query rather than a
+    # silent write. It is bookkeeping about what to SHOW, not a change to the user's own
+    # data, so nothing downstream should describe it to the user as something that was done.
+    "record_horizon_item",
     # Logs, journal, wisdom — the user asks for these directly ("log that")
     "write_log", "write_quality_event",
     "write_journal", "write_archive",
