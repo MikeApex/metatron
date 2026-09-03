@@ -1,9 +1,10 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-09-03 (**Session ⑦ ran — THE CAPSTONE IS CLOSED.** All three remaining
-items worked; the cluster's remaining investment is spent. **Nothing owes a commit; everything
-owes a deploy** — `./deploy.sh` is Denied to a session, so it is Mike's to run, and nothing
-below is live until he does.
+*Updated: 2026-09-03 (**Session ⑦ ran — THE CAPSTONE IS CLOSED, and it is deployed and
+VM-verified** (`18d6923`; suite **72/72 on the VM**, both units active). All three remaining
+items worked; the cluster's remaining investment is spent. **Nothing owes a commit or a
+deploy.** **One config line is owed by Mike — see the ⚠ below; without it the clinical review
+never runs.**
 **Where a fact came from is now recorded `[DB-0818-08]`** — a contact detail read from a real
 artefact is no longer silently replaced by a guessed one, and an inferred fact reaches the model
 as a sentence about the inference rather than a fact with a "be tentative" note beside it.
@@ -24,11 +25,14 @@ pt 8), so clinical flags remain unverified on `gemini-3.7-flash` by decision. `C
 **298/300** (the four-tier hierarchy moved to `.claude/rules/personas.md`);
 **`.claude/rules/deploy.md` is 131/100 and still owes a pass.***
 
-*⚠ **Found and deliberately NOT fixed — needs Mike's word. `quick_override` reaches the
-clinical agents on the cloud path.** `core/router.py:98` reads "non-sensitive" as *no
-`local: true`*, and `routing_cloud.yaml` marks **nothing** local — so its `:22` comment *"(non-
-sensitive agents only)"* excludes nothing, and a `quick` call to `mental_wellbeing`/`physical_health`
-runs on the **bulk** model. Pre-existing. Sharper now only because A4 is suspended.*
+*⚠ **OWED BY MIKE, one line, and the feature is half-inert without it.** The weekly clinical
+review job is in `config/templates/scheduler.yaml` but not in the live
+`config/personas/mike/scheduler.yaml` — a VM-owned, Denied path the deploy correctly does not
+overwrite. Until it is added, **a tier-2 health flag is recorded but nothing ever offers to
+close it.** Add under `schedules:` — `weekly_clinical_review: {enabled: true, time: "11:00",
+days: sunday, function: tools.escalation.review_clinical_escalations, notification: none}`.
+**`days:` must be the full lowercase day name** — it shipped as `sun` first, which matches
+nothing on any day; fixed in the template with a regression test.*
 
 *⚠ **Two things left open by ⑦, both small.** B4's **max-chain-depth** message cannot be written
 until the 3-round limit exists in code rather than only in `synthesizer.md` — re-homed to Track B
@@ -38,13 +42,12 @@ week-long clock stands. **Standing fact:** the intake queue is empty by construc
 `[DB-0820-03]`'s corpus labelling runs (due 09-09).*
 
 *⚠ **A tripped soft cap is the control working, not an outage** — recovery is a 60s VM start.
-Cap numbers: `docs/INFRASTRUCTURE.md` § Billing protection, the only copy. Both owed (M)s
-(BigQuery export, the `VERTEX_CACHE_DISABLED` flip) are items 5 and 7 of the (M)-walkthrough.
-**The VM is reached at `https://metatron-vm.tail0acc5d.ts.net:8001`** — `/health` returns 401
-under server auth, which is not a fault; ⑦ misread a wrong hostname as an outage for an hour.*
+Cap numbers: `docs/INFRASTRUCTURE.md` § Billing protection, the only copy — which also carries
+the server address, already; ⑦ misread a wrong hostname as an outage. Both owed (M)s (BigQuery
+export, `VERTEX_CACHE_DISABLED`) are items 5 and 7 of the (M)-walkthrough.*
 
-*⚠ **No off-machine backup copy** — the daily backup is fixed and live-verified (fragment
-2026-08-29-03), but the Restic external-drive job is not installed. Mike's call, unfiled.*
+*⚠ **No off-machine backup copy** — daily backup live-verified (fragment 2026-08-29-03); the
+Restic external-drive job is not installed. Mike's call, deliberately unfiled.*
 
 *⛔ **Two rulings that are settled — do not re-open either; both live in `ROADMAP.md` § Section
 0.** (1) **A4 safety testing is SUSPENDED** (Mike, 09-01), re-run **off** the capstone close path
@@ -107,32 +110,19 @@ wording, and the clinical escalation inbox (2026-09-03, BUILT AND UNDEPLOYED)**.
 
 ### In progress / next
 
-**A7 — Phase 5 sign-off — BLOCKED.** A1–A6 complete; Track B2 fully built. The 2026-08-05
-pre-sign-off gate cleared the *regression* gate on the cloud path (6/6 + pipeline 3/3), **not A7**.
-Three checks still open:
+**A7 — Phase 5 sign-off — BLOCKED on B1 alone.** A1–A6 complete, Track B2 built. **Checks 10
+and 12 are SKIPPED** (Mike, 2026-09-02 — both fold into Mark 2) and **A8 is CANCELLED** (same
+ruling; `ROADMAP.md` § A8 still reads as live, Mike updates it manually — do not start it).
+What is genuinely left: **B1b's calendar, web-page and CardDAV rows, gated on Track E**, plus
+**A5b/A5c** (re-run `write_aspirational_baseline` with A5 mission-level data; A5c preference
+activation recorded "unknown"). B1a passes (102/0). The attached-files row passed one manual
+probe on 08-20 — **one case, not a suite**. **B4 is now partially built** — see
+`[DB-0804-02]`. Per-item detail and the standing evidence live in
+[ROADMAP.md](ROADMAP.md) § Track A/B, which owns them; this line is the status, not the record.
 
-- **B1** — red team. **B1a passed** (re-run 2026-08-08 post-filter-upgrade: 102 pass, 0 error,
-  `tests/security_redteam_2026-08-08.md`). **B1b not closed** — email row covered (`injection`,
-  3/3 vs `danny_park`); calendar, web and CardDAV rows untouched, gated on Track E. **A fifth row,
-  attached files, opened and passed its first probe 2026-08-20** — live now, not gated on Track E;
-  **one manual case, not a suite**, with its limits stated in
-  `archive/security/b1b_attachment_injection_2026-08-20.md`.
-- **Check 10** — agent behavioural audits. **SKIPPED by Mike's ruling 2026-09-02** — folds into
-  Mark 2. It was the largest Mark-2-invalidated item on the board (8–12 hrs against agent files
-  the rebuild discards). Remaining `@session:` decisions: `DEV_BACKLOG.md` § Later § Decisions.
-- **Check 12** — constitution alignment review. **SKIPPED by the same ruling** — folds into
-  Mark 2, where Tier 0 is unchanged.
-- **A5b/A5c** — re-run `write_aspirational_baseline` with A5 mission-level data (A3 baseline is still a placeholder); A5c preference activation recorded "unknown, confirm if needed."
-
-**A9 — Product analytics — FIRST DRAFT BUILT AND DEPLOYED 2026-08-18; review deferred.** Alpha
-gate requirement. **The core metric is absorbed work, not engagement.** **Full spec, the five
-provisional parts and the `2026-10-01` review date are in [ROADMAP.md](ROADMAP.md) § A9a** — the
-single home, not restated here (duplicate copy cut 2026-08-29). `@waiting` on `mike` holding
-goals and real data in ongoing use.
-
-**A8 — Pre-Alpha code refactor — CANCELLED (Mike, 2026-09-02).** Refactoring
-`core/orchestrator.py` into modules Mark 2 replaces is work paid for twice. **`ROADMAP.md` § A8
-still reads as live** — Mike updates it manually. Do not start it.
+**A9 — Product analytics — built and deployed 2026-08-18, review deferred to `2026-10-01`.**
+Alpha gate requirement; the core metric is absorbed work, not engagement. Spec and the five
+provisional parts: [ROADMAP.md](ROADMAP.md) § A9a, the single home. `@waiting` on real use.
 
 **Four built-and-standing constraints must not be undone** (outbound messaging, `tone_shape`,
 obligations-as-data, scheduler maintenance jobs) — **full statements and reasoning:

@@ -78,8 +78,67 @@ evidence in `archive/backlog_closed_2026-09.md` § Inbox triage 2026-09-02)*
 
 - **[needs building]** Cross-turn file attachment persistence: User attached a PDF in an earlier turn, but file data was not accessible across subsequent conversational turns, requiring re-upload. File attachments should persist in session context/storage across turns so references to previously uploaded files can be processed without re-attaching.  
   `2026-09-03T10:31:25.572235Z`
+- **A weekly scheduled job can run every day, because the gate ignores the key the live config uses.**
+`core/scheduler._gates_block` reads only `job_cfg.get("days", "daily")`. The live
+`config/personas/mike/scheduler.yaml` writes `day: sunday` (singular) for
+`weekly_physical_review` — which the gate never looks at, so `days` falls back to `"daily"`
+and the day gate passes **every day**. Measured 2026-09-03: a job carrying only
+`day: sunday`, evaluated on a Thursday, returns `None` from `_gates_block` (= fire).
+
+`day:` IS read, but only in `_near_fixed_job_blocks` (`:273`), which compares *other* jobs
+when deciding whether a roaming interval job should stay quiet. So the key is not dead —
+it is live in one place and ignored in the one that decides firing, which is why this has
+survived.
+
+**Whether `weekly_physical_review` has actually been firing daily is NOT established** —
+`_minutes_since_last_fire` and the time match may be holding it to once a week for other
+reasons. Check that before treating this as a live incident rather than a latent one; the
+scheduler error log and the trace history will show it.
+
+**Two directions, and they are different fixes:** make `_is_active_day` accept `day:` as a
+synonym (smallest, keeps the live config working as its author intended), or refuse an
+unknown scheduling key loudly at config load (larger, catches the next one too — a silent
+key is how this class of bug ships). A third of the value is just that a typo in `days:`
+currently fails closed *silently* — `days: sun` matches nothing on any day, which is how
+`weekly_clinical_review` shipped inert on 2026-09-03.
+
+**The template TEACHES the broken key, which is why this has spread.**
+`config/templates/scheduler.yaml:70` carries `day: sunday  # monday | tuesday | ... | sunday`
+as the documented convention, and **both** weekly jobs in the template use it
+(`weekly_pattern_miner`, `weekly_physical_review`) — as does the live `mike` config, which was
+seeded from it. So every weekly job in the project is written against a key the firing gate
+does not read. Any fix has to correct the template's comment too, or the next weekly job
+copies the same pattern.
+
+*found 2026-09-03 during session ⑦'s post-deploy verification, while checking why the new
+clinical review job was not in the live scheduler · the `days: sun` half was this session's
+own bug and is fixed in `config/templates/scheduler.yaml` with a regression test in
+`tests/test_clinical_escalation.py`; this item is the pre-existing half*
+- **A `quick` request can send the clinical agents to the cheap model, because "non-sensitive" is
+defined as "not marked local" and the cloud routing file marks nothing local.**
+`core/router.py:98` reads non-sensitive as *absence of* `local: true`, and `routing_cloud.yaml`
+sets `local: true` on nothing — so the `:22` comment *"(non-sensitive agents only)"* excludes
+nothing at all, and a `quick_override` call to `mental_wellbeing` or `physical_health` runs on
+the **bulk** tier rather than the reasoning tier.
+
+Pre-existing, not introduced by any recent change. It matters more than it did because A4
+safety testing is suspended (ROADMAP § 0 pt 8), so nothing is currently exercising the clinical
+flags on any model, let alone on the bulk one.
+
+**Needs Mike's word on the fix direction, which is why it has not been actioned:** mark the
+sensitive agents explicitly in `routing_cloud.yaml` (narrow, honest, but re-states a list that
+already exists elsewhere and can drift), or invert the router's default so unknown-tier agents
+are treated as sensitive (fail-closed, matches the project's standing posture, but may make
+`quick` stop working for agents that legitimately want it). Recommendation: the router
+inversion, because a routing file that forgets to mark a new sensitive agent is the same class
+of silent failure as the one being fixed.
+
+*carried in SESSION.md as an unfiled ⚠ since session ⑥ (2026-09-03) and filed 2026-09-03 by
+session ⑦ during its close, because an item recorded only in a primer paragraph is one primer
+rewrite away from being lost — and the primer was over its ceiling holding it*
 
 ---
+
 ## Now
 
 **Ranked — position is priority.** Capped at ~10, so something enters by displacing something.

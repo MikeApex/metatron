@@ -131,9 +131,14 @@ schedules:
   #
   # Costs nothing per run — a direct Python call, no model session, on a daemon that
   # is already running; it reads one small JSON file.
+  # `days:` takes the FULL lowercase day name — `_is_active_day` compares against
+  # `strftime("%A").lower()`, so `sun` matches nothing and the job silently never fires.
+  # Caught 2026-09-03 in post-deploy verification, having been written as `sun` first.
+  # Note also that `day:` (singular) is NOT read by the gate at all, so a job relying on
+  # it runs every day — filed 2026-09-03, untriaged in `DEV_BACKLOG.md` § Inbox.
   weekly_clinical_review:
     enabled: true
     time: "11:00"
-    days: sun
+    days: sunday
     function: tools.escalation.review_clinical_escalations
     notification: none

@@ -247,6 +247,42 @@ def _():
         assert CT.read_context_tracker()["clinical_threads"], "the thread was dropped"
 
 
+# --- the job that runs the review -------------------------------------------
+
+@check("the scheduled review job would actually fire")
+def _():
+    """
+    Written after post-deploy verification on 2026-09-03 caught it NOT firing. The job
+    shipped as `days: sun`, and `_is_active_day` compares against the full lowercase day
+    name — so `sun` matched nothing, on every day of the week, forever. The build was
+    correct and the schedule was inert, which is the same failure shape as `[DB-0822-09]`
+    one day earlier and is invisible to every other test in this file.
+    """
+    import yaml
+    from unittest.mock import patch
+    from datetime import datetime
+    import core.scheduler as S
+
+    cfg = yaml.safe_load(open("config/templates/scheduler.yaml"))
+    job = cfg["schedules"]["weekly_clinical_review"]
+    assert job["function"] == "tools.escalation.review_clinical_escalations", job
+    assert job.get("enabled") is True, job
+    # `day:` singular is not read by the gate — a job relying on it runs every day.
+    assert "day" not in job, "use `days:`; `day:` is ignored by _gates_block"
+
+    class _Sunday(datetime):
+        @classmethod
+        def now(cls, *a, **k):
+            return datetime(2026, 9, 6)
+
+    with patch.object(S, "datetime", _Sunday):
+        assert S._is_active_day(job["days"]), (
+            f"days: {job['days']!r} never matches — _is_active_day wants the full "
+            f"lowercase day name")
+    # And it is genuinely weekly, not daily.
+    assert job["days"] != "daily", job
+
+
 # ---------------------------------------------------------------------------
 
 def main() -> int:

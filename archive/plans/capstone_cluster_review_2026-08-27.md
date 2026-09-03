@@ -450,3 +450,65 @@ as `tests/run_b1_redteam.py --suite deputy`.
 - **Ceilings:** `CLAUDE.md` paid (307 → 298; the four-tier hierarchy moved to
   `.claude/rules/personas.md` with its rationale). `.claude/rules/deploy.md` is 131/100 and is
   **pre-existing debt this session did not touch.**
+
+---
+
+## Post-deploy verification — 2026-09-03 (commit `18d6923`)
+
+**Deployed by Mike and verified on the VM. Everything built this session is live and passing
+there — and the verification caught one thing that was live and inert.**
+
+| Check | Result |
+|---|---|
+| VM commit | `18d6923` |
+| `metatron-server` / `metatron-scheduler` | both `active` |
+| Full suite, on the VM | **72 pass, 0 fail** (the local `list_personas` failure is a Mac-only fixture gap, as long suspected — it passes here) |
+| The three new suites | 15 + 12 + 14, all pass on the VM |
+| `close_clinical_escalation` in `_EXECUTORS` | **registered without `tools.escalation` being imported** — the specific failure the durable registration in `confirm.py` was written to prevent |
+| Hedge rendering | confirmed live on the VM: `observed` renders as the inference, `stated` renders bare |
+| Degradation notice | confirmed live |
+| Red-team gate | filter 88/88 PASS, confused-deputy PASS (run pre-deploy) |
+
+### ⚠ The correction: `[DB-0808-06]` shipped half-inert, and the close was premature
+
+**The escalation inbox is live and recording. The weekly review that offers a close was not
+running, and would never have run.** Two separate faults, found only because the deploy was
+verified rather than assumed:
+
+1. **The job was never in the live config.** It was added to
+   `config/templates/scheduler.yaml`; the file the daemon reads is
+   `config/personas/mike/scheduler.yaml`, which the deploy correctly does not overwrite
+   because it holds Mike's quiet hours and preferences. Its seven jobs did not include
+   `weekly_clinical_review`. **Adding it is Mike's — that path is Denied and VM-owned.**
+2. **Even once added, it would never have fired.** It shipped as `days: sun`, and
+   `_is_active_day` compares against `strftime("%A").lower()` — so `sun` matches nothing, on
+   every day of the week, permanently. Fixed to `days: sunday`, with a regression test
+   (`tests/test_clinical_escalation.py`, "the scheduled review job would actually fire") so a
+   wrong day key cannot ship silently again.
+
+**This is the same failure shape the 09-03 note above records for `[DB-0822-09]` — correct
+build, inert delivery — one day later, in a session that had just written that lesson down.**
+Worth stating plainly rather than filing quietly: the tests all passed, on both machines,
+against a job that could not run. Nothing in the suite looked at whether the schedule was
+reachable, because nothing had been asked to.
+
+**Consequence for the close.** `[DB-0818-08]` and `[DB-0804-02]`'s slice are unaffected — both
+are code on live paths and verified on the VM. `[DB-0808-06]` remains closed **as built**, and
+its remaining step is a config line Mike applies, tracked in `SESSION.md` rather than
+re-opened as an item. The alerting half — the part Mike identified as the real gap — is live
+now: a tier-2 flag lands in the inbox from this deploy onward.
+
+### Found while verifying, filed not fixed
+
+**A weekly job can run every day.** `_gates_block` reads only `days:`; the live config writes
+`day:` (singular) for `weekly_physical_review`, which the gate never looks at, so `days`
+defaults to `"daily"` and the day gate passes every day. Measured: a job carrying only
+`day: sunday`, evaluated on a Thursday, returns "fire". **Whether that job has actually been
+running daily is not established** — the time match and `_minutes_since_last_fire` may be
+holding it — and that check is the first step.
+
+**The template teaches the broken key**, which is why it spread:
+`config/templates/scheduler.yaml:70` documents `day: sunday  # monday | ... | sunday` as the
+convention, and both weekly jobs in the template use it, as does the live `mike` config seeded
+from it. **Every weekly job in the project is written against a key the firing gate does not
+read.** Filed to the Inbox; not fixed here, per this session's no-new-fronts rule.
