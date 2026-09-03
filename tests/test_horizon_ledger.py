@@ -1,0 +1,336 @@
+"""
+tests/test_horizon_ledger.py — a horizon finding reaches the user once, and only once
+([DB-0822-09]).
+
+On 2026-09-02 `logistics` judged a Death Cab for Cutie ticket confirmation worth Mike's
+attention, attached the coordination legs, and emitted it as HORIZON_ITEMS in a 536-token
+package. The Synthesizer received 21,630 input tokens including that package and replied
+with 177 words about something else. The item never reached him.
+
+The fix delivers such findings structurally — which is only safe because of the ledger this
+file tests. The three runs where specialist output survives in the traces:
+
+    08-29 10:31   dental · Jimmy Carr · George School socials
+    08-30 20:46   dental · Jimmy Carr
+    09-02 11:37   Jimmy Carr · Death Cab · George School London
+
+Jimmy Carr in all three. **Guaranteed delivery without the ledger would have told Mike about
+the same comedy show every day until 13 September** — the [DB-0822-06] carried-state failure
+through a new channel, and strictly worse than the silent drop it replaces. So the binding
+assertion here is the dedupe across the *real* prose variants, which share no title string.
+
+Standalone runner (no pytest dependency), matching the convention of the other
+scripts in tests/.
+
+Usage:
+    python3 tests/test_horizon_ledger.py
+
+Exits 0 if every check passes, 1 otherwise.
+"""
+
+import json
+import shutil
+import sys
+import tempfile
+from datetime import date, datetime, timedelta
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+import tools.horizon as H  # noqa: E402
+
+_results: list[tuple[str, bool, str]] = []
+
+
+def check(name: str):
+    def wrap(fn):
+        try:
+            fn()
+            _results.append((name, True, ""))
+        except AssertionError as e:
+            _results.append((name, False, f"assertion: {e}"))
+        except Exception as e:
+            _results.append((name, False, f"{type(e).__name__}: {e}"))
+        return fn
+    return wrap
+
+
+# --- isolate the ledger from any real persona -------------------------------
+
+_TMP = Path(tempfile.mkdtemp(prefix="horizon-test-"))
+_LEDGER = _TMP / "ledger.json"
+H._store_path = lambda persona=None: _LEDGER          # noqa: E305
+H.resolve_persona = lambda persona=None: "test"       # noqa: E305
+
+
+def reset():
+    if _LEDGER.exists():
+        _LEDGER.unlink()
+
+
+def ledger() -> dict:
+    return json.loads(_LEDGER.read_text()) if _LEDGER.exists() else {}
+
+
+FUTURE = (date.today() + timedelta(days=20)).isoformat()
+LATER = (date.today() + timedelta(days=40)).isoformat()
+
+DEATH_CAB = {"title": "Death Cab for Cutie at Troxy", "date": FUTURE,
+             "venue": "Troxy, London", "kind": "event",
+             "detail": "Mobile tickets confirmed via Ticketmaster"}
+
+# The same Jimmy Carr show as written by two different runs. No title string in common.
+CARR_0829 = {"title": "Jimmy Carr Performance", "date": LATER,
+             "venue": "The London Palladium", "kind": "event",
+             "detail": "September 13th at 9:30 PM"}
+CARR_0902 = {"title": "Jimmy Carr: Laughs Funny", "date": LATER,
+             "venue": "the london palladium, London", "kind": "event",
+             "detail": "Tickets booked, reference 26224N-69S3AH8RKL"}
+
+
+# ---------------------------------------------------------------------------
+
+@check("the real Jimmy Carr prose variants resolve to one finding")
+def _():
+    assert H.item_key(CARR_0829) == H.item_key(CARR_0902), (
+        f"{H.item_key(CARR_0829)!r} != {H.item_key(CARR_0902)!r} — the same show would be "
+        f"raised twice")
+
+
+@check("filing the same show from three runs leaves one ledger entry")
+def _():
+    reset()
+    assert H.record([CARR_0829])["new"] == 1
+    assert H.record([CARR_0829])["new"] == 0
+    assert H.record([CARR_0902])["new"] == 0
+    assert len(ledger()) == 1, ledger()
+
+
+@check("a re-file refreshes the wording but never the offer count")
+def _():
+    reset()
+    H.record([CARR_0829])
+    H.context_block()                      # charges one offer
+    before = list(ledger().values())[0]
+    assert before["offers"] == 1, before
+    H.record([CARR_0902])                  # richer wording arrives on a later run
+    after = list(ledger().values())[0]
+    assert after["offers"] == 1, "re-filing reset the offer count"
+    assert "26224N" in after["item"]["detail"], "the later, fuller wording was not kept"
+
+
+@check("different events stay distinct")
+def _():
+    reset()
+    H.record([DEATH_CAB, CARR_0829])
+    assert len(ledger()) == 2, ledger()
+
+
+@check("an undelivered finding appears in the block, with its detail")
+def _():
+    reset()
+    H.record([DEATH_CAB])
+    block = H.context_block()
+    assert "Death Cab" in block, block
+    assert "Troxy" in block, block
+    assert "Ticketmaster" in block, block
+
+
+@check("the block tells the model to place it, not to decide whether")
+def _():
+    reset()
+    H.record([DEATH_CAB])
+    block = H.context_block()
+    assert "do not judge whether to mention them" in block, block
+    assert "NOT yet been told" in block, block
+
+
+def _age_offer_stamp():
+    """Push every last-offer stamp outside the window, so the next block counts a new
+    session. Cheaper and more deterministic than sleeping through _OFFER_WINDOW_SECONDS."""
+    data = ledger()
+    for row in data.values():
+        row["last_offered_at"] = (datetime.now() - timedelta(hours=1)).isoformat(
+            timespec="seconds")
+    _LEDGER.write_text(json.dumps(data))
+
+
+@check("nothing waiting costs nothing — no block, no tokens")
+def _():
+    reset()
+    assert H.context_block() == "", "an empty ledger produced a block"
+
+
+@check("a finding is written off after _MAX_OFFERS sessions, not carried forever")
+def _():
+    reset()
+    H.record([DEATH_CAB])
+    for _ in range(H._MAX_OFFERS):
+        assert "Death Cab" in H.context_block()
+        _age_offer_stamp()
+    assert H.context_block() == "", (
+        f"still offered after {H._MAX_OFFERS} sessions — this is the groundhog-day failure")
+
+
+@check("the two head-layer reads of one session count as ONE offer")
+def _():
+    reset()
+    H.record([DEATH_CAB])
+    H.context_block()          # coordinator
+    H.context_block()          # synthesizer, same exchange
+    assert list(ledger().values())[0]["offers"] == 1, ledger()
+
+
+@check("a second session counts a second offer, and then it stops being shown")
+def _():
+    reset()
+    H.record([DEATH_CAB])
+    H.context_block()
+    _age_offer_stamp()
+    assert "Death Cab" in H.context_block(), "dropped after only one offer"
+    assert list(ledger().values())[0]["offers"] == 2
+    _age_offer_stamp()
+    assert H.context_block() == "", "a finding is being pressed a third time"
+
+
+@check("the user engaging with a finding discharges it immediately")
+def _():
+    reset()
+    H.record([DEATH_CAB])
+    assert H.mark_engaged("tell me more about the Death Cab gig at Troxy") == 1
+    assert list(ledger().values())[0]["delivered_at"]
+    assert H.context_block() == "", "a discharged finding is still being offered"
+
+
+@check("an unrelated user turn discharges nothing")
+def _():
+    reset()
+    H.record([DEATH_CAB])
+    assert H.mark_engaged("what's on my calendar tomorrow") == 0
+    assert "Death Cab" in H.context_block()
+
+
+@check("system text can never discharge a finding — no user words, no discharge")
+def _():
+    reset()
+    H.record([DEATH_CAB])
+    assert H.mark_engaged(None) == 0
+    assert H.mark_engaged("") == 0
+    assert "Death Cab" in H.context_block()
+
+
+@check("a finding whose date has passed is dropped, never delivered late")
+def _():
+    reset()
+    past = {"title": "Old gig", "date": (date.today() - timedelta(days=3)).isoformat(),
+            "venue": "Somewhere", "kind": "event", "detail": "over"}
+    H.record([past])
+    assert H.context_block() == "", "a past event was offered to the user"
+
+
+@check("a malformed item is rejected, not repaired into an invented date")
+def _():
+    reset()
+    tally = H.record([
+        {"title": "No date given", "date": "next Tuesday", "venue": "X"},   # unparseable
+        {"date": FUTURE, "venue": "X"},                                     # no title
+        "not a dict",
+        {"title": "", "date": FUTURE},                                      # empty title
+    ])
+    assert tally["invalid"] == 4, tally
+    assert ledger() == {}, ledger()
+
+
+@check("an undated finding is still keyed and still delivered")
+def _():
+    reset()
+    H.record([{"title": "Renew passport", "date": "", "venue": "",
+               "kind": "deadline", "detail": "photos needed"}])
+    assert "Renew passport" in H.context_block()
+
+
+@check("soonest first — this week outranks October")
+def _():
+    reset()
+    H.record([CARR_0829, DEATH_CAB])       # LATER, then FUTURE
+    block = H.context_block()
+    assert block.index("Death Cab") < block.index("Jimmy Carr"), block
+
+
+@check("an unreadable ledger degrades to silence, never an exception")
+def _():
+    reset()
+    _LEDGER.write_text("{ this is not json")
+    assert H.context_block() == ""
+    assert H.record([DEATH_CAB])["new"] == 1
+
+
+# --- pipeline wiring --------------------------------------------------------
+
+@check("the real 09-02 output is parsed and stripped from what Synth reads")
+def _():
+    reset()
+    import core.orchestrator as O
+    out = {"logistics": (
+        "ACTIONS TAKEN:\n  - Checked the inbox.\n\n"
+        'HORIZON_ITEMS: [{"title": "Death Cab for Cutie", "date": "' + FUTURE + '", '
+        '"venue": "Troxy, London", "kind": "event", "detail": "Mobile tickets confirmed"}]'
+        "\n\nFLAGS:\n  - none")}
+    cleaned = O._file_horizon_items(out, persona="test")
+    assert "HORIZON_ITEMS" not in cleaned["logistics"], (
+        "left in the specialist prose — the Synthesizer would see every finding twice, "
+        "including the ones the ledger suppressed:\n" + cleaned["logistics"])
+    assert "Checked the inbox" in cleaned["logistics"], "the rest of the output was lost"
+    assert "Death Cab" in H.context_block()
+
+
+@check("a fenced HORIZON_ITEMS block parses too")
+def _():
+    reset()
+    import core.orchestrator as O
+    out = {"logistics": 'HORIZON_ITEMS: ```json\n[{"title": "Gig", "date": "' + FUTURE +
+           '", "venue": "Troxy"}]\n```'}
+    O._file_horizon_items(out, persona="test")
+    assert "Gig" in H.context_block()
+
+
+@check("prose HORIZON_ITEMS are logged and dropped, never crash the turn")
+def _():
+    reset()
+    import core.orchestrator as O
+    out = {"logistics": "HORIZON_ITEMS:\n  - Death Cab for Cutie at Troxy, Sept 26"}
+    cleaned = O._file_horizon_items(out, persona="test")   # must not raise
+    assert isinstance(cleaned["logistics"], str)
+    assert H.context_block() == "", "unparseable prose was filed as a finding"
+
+
+@check("the block is built after the sign-off veto, at BOTH pipeline sites")
+def _():
+    # Building it before the veto charges an offer on a turn where the Synthesizer never
+    # runs — the finding would burn a chance on a reply the user never got.
+    # Sliced from the file rather than inspect.getsource, which truncates the streaming
+    # generator at 30 of its ~200 lines and silently reports the wiring as absent.
+    text = (ROOT / "core" / "orchestrator.py").read_text(encoding="utf-8")
+    # The streaming path's body lives in `_run_pipeline_session_stream_inner`;
+    # `run_pipeline_session_stream` is a thin wrapper around it.
+    for name in ("run_pipeline_session", "_run_pipeline_session_stream_inner"):
+        body = text.split(f"\ndef {name}(", 1)[1].split("\ndef ", 1)[0]
+        assert "_horizon_block(persona)" in body, f"{name} never builds the block"
+        assert body.index("_signoff_skip(") < body.index("_horizon_block(persona)"), (
+            f"{name} builds the horizon block before the sign-off veto — a finding would "
+            f"be charged an offer on a turn where the Synthesizer never runs")
+        assert "horizon_text" in body.split("synthesizer_input = ")[1][:600], (
+            f"{name} builds the block but never passes it to the Synthesizer")
+
+
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    shutil.rmtree(_TMP, ignore_errors=True)
+    failed = 0
+    for name, ok, detail in _results:
+        print(f"{'PASS' if ok else 'FAIL'}  {name}{'' if ok else '  — ' + detail}")
+        failed += 0 if ok else 1
+    print(f"\n{len(_results) - failed}/{len(_results)} passed")
+    sys.exit(1 if failed else 0)

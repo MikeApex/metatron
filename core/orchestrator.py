@@ -992,6 +992,11 @@ def load_recent_context(persona: str | None = None, days: int = 5) -> str:
     # its own delivery instruction — one low-key line, list only on request — because
     # this must fire reliably and the [DB-0822-05]..[DB-0822-09] finding is that an
     # agent file long enough to hold it is an agent file that stops being followed.
+    # tools.horizon added 2026-09-03 [DB-0822-09]: findings logistics judged worth the
+    # user's attention and the user has NOT yet been told about. The ledger, not this list,
+    # is what makes the block safe to deliver unconditionally — see tools/horizon.py on why
+    # guaranteed delivery without a record of what was already said is worse than the silent
+    # drop it replaces. Empty once everything on file has been raised, which is most turns.
     # tools.turn_referent added 2026-09-03 [DB-0826-01]: what the previous exchange
     # actually did, so a short referring turn has something true to point at. LAST in the
     # list on purpose — it is the most recent thing in the context and must read as more
@@ -999,7 +1004,7 @@ def load_recent_context(persona: str | None = None, days: int = 5) -> str:
     # Empty outside a live conversation, so a quiet morning pays nothing.
     for _block_source in ("tools.obligations", "tools.calendar_reconcile", "tools.intake",
                           "tools.confirm", "tools.location", "tools.accountability",
-                          "tools.crm_sweep", "tools.turn_referent"):
+                          "tools.crm_sweep", "tools.horizon", "tools.turn_referent"):
         try:
             import importlib
             block = importlib.import_module(_block_source).context_block(persona)
@@ -5113,6 +5118,93 @@ def _file_wisdom_proposals(outputs: dict, persona: str | None = None) -> dict:
     return cleaned
 
 
+_HORIZON_ITEMS_RE = _re.compile(
+    # Same two forms as WISDOM_PROPOSAL: a fenced block, or a bare JSON array on the line.
+    # The bare form is non-greedy to the first closing bracket — the schema is flat, so
+    # there is nothing to nest, and an item's own `detail` cannot contain one unescaped.
+    r'HORIZON_ITEMS:\s*(?:```(?:json)?\s*(?P<fenced>.*?)```|(?P<bare>\[.*?\]))',
+    _re.DOTALL,
+)
+
+
+def _file_horizon_items(outputs: dict, persona: str | None = None) -> dict:
+    """File HORIZON_ITEMS emitted by specialists, and strip them from what the Synthesizer
+    sees. Returns the cleaned outputs.
+
+    [DB-0822-09]. The findings do not go to the Synthesizer as part of a specialist's prose
+    any more — that is the channel that lost the Death Cab item on 2026-09-02, where a
+    536-token package reached a Synthesizer that emitted 177 words about something else.
+    They go to tools/horizon.py, which drops anything the user has already been told about,
+    and come back through `context_block()` as their own block with their own delivery
+    instruction. Same shape and same reasoning as `_file_wisdom_proposals` above: structured
+    relay in this pipeline means Python parses it, because the alternative is three lossy
+    hops through models that each have something else to attend to.
+
+    Stripped rather than left in place so there is exactly one channel. Leaving them would
+    put every finding in front of the Synthesizer twice — once raw, including the ones the
+    ledger has deliberately suppressed as already-said, which is the repetition this whole
+    mechanism exists to prevent.
+    """
+    if not outputs:
+        return outputs
+
+    from tools.horizon import record
+
+    cleaned: dict = {}
+    for agent, text in outputs.items():
+        if not isinstance(text, str) or "HORIZON_ITEMS:" not in text:
+            cleaned[agent] = text
+            continue
+
+        items: list = []
+        for match in _HORIZON_ITEMS_RE.finditer(text):
+            raw = (match.group("fenced") or match.group("bare") or "").strip()
+            try:
+                parsed = json.loads(raw)
+            except json.JSONDecodeError as exc:
+                # A specialist that wrote prose instead of JSON is a real regression in its
+                # agent file, not a user-visible fault — logged loudly, never raised.
+                logger.warning(f"[horizon] {agent} HORIZON_ITEMS parse error: {exc}")
+                continue
+            items.extend(parsed if isinstance(parsed, list) else [parsed])
+
+        if items:
+            try:
+                with persona_scope(resolve_persona(persona)):
+                    tally = record(items, persona)
+                _trace(f"[HORIZON] {agent}: {tally['new']} new, {tally['known']} known, "
+                       f"{tally['invalid']} invalid")
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(f"[horizon] {agent} filing failed: {exc}")
+
+        cleaned[agent] = _HORIZON_ITEMS_RE.sub("", text).strip()
+
+    return cleaned
+
+
+def _horizon_block(persona: str | None = None) -> str:
+    """This turn's horizon block, for the Synthesizer bundle. "" when nothing is waiting.
+
+    Called after `_file_horizon_items()` and before the Synthesizer runs, so a finding
+    discovered *this* turn is put to the user in the exchange that found it. Without this the
+    delivery would always lag by a session — and an inbox-summarize job that reads the mail,
+    finds a concert and says nothing about it until tomorrow is the [DB-0822-09] complaint
+    almost exactly.
+
+    The same block is also served from `load_recent_context()` at the start of every session,
+    which is what gives an undelivered finding its second chance. Both routes call the same
+    function, and its offer window collapses the repeats inside one exchange into a single
+    charge — so wiring it in twice costs the finding nothing.
+    """
+    try:
+        from tools.horizon import context_block
+        with persona_scope(resolve_persona(persona)):
+            return context_block(persona)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[horizon] block failed: {exc}")
+        return ""
+
+
 def has_real_user_turn(user_input: str,
                        is_proactive: bool,
                        attachments: list[dict] | None = None) -> bool:
@@ -5589,6 +5681,20 @@ def _close_turn_bookkeeping(visible: str, user_input: str, is_proactive: bool,
     except Exception as exc:
         logger.warning(f"[asked_state] not updated: {exc}")
 
+    # [DB-0822-09] Horizon findings, on the same who-produced-the-text distinction the
+    # function already turns on. `mark_engaged` is given the user's own words only: a
+    # scheduler prompt that happens to mention a concert must not discharge the finding
+    # about that concert, which is the [DB-0822-05] confusion one layer over. Counting the
+    # delivery ATTEMPT is deliberately not done here — tools/horizon.py charges it at the
+    # point the block is actually served, because a finding filed mid-turn was never in the
+    # block this turn built and must not be charged for it.
+    try:
+        from tools.horizon import mark_engaged
+        if not is_proactive:
+            mark_engaged(user_input)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[horizon] turn bookkeeping not updated: {exc}")
+
 
 def _frame_proactive(user_input: str, is_proactive: bool) -> tuple[str, str]:
     """
@@ -5721,6 +5827,7 @@ def run_pipeline_session(user_input: str,
             user_turn=has_real_user_turn(user_input, is_proactive, attachments),
         )
         specialist_outputs = _file_wisdom_proposals(specialist_outputs, persona=persona)
+        specialist_outputs = _file_horizon_items(specialist_outputs, persona=persona)
 
         # Bundle specialist outputs for Synthesizer (exclude async fire-and-forget)
         spec_text = "\n\n".join(
@@ -5743,11 +5850,15 @@ def run_pipeline_session(user_input: str,
         # The ACTIONS block goes last, closest to the response, and is always
         # present: see _action_block().
         know_text = _knowledge_block(knowledge)
+        # [DB-0822-09] Built HERE, after the sign-off veto above: a finding must not be
+        # charged an offer on a turn where the Synthesizer never runs.
+        horizon_text = _horizon_block(persona)
         synthesizer_input = (
             f"{proactive_prefix}{receipt_line}{synth_label}:\n{user_input}{attach_note}\n\n"
             f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"
             + (f"\n\n{know_text}" if know_text else "")
             + (f"\n\nSPECIALIST OUTPUTS:\n{spec_text}" if spec_text else "")
+            + (f"\n\n{horizon_text}" if horizon_text else "")
             + (f"\n\n{focus_block}" if focus_block else "")
             + f"\n\n{_action_block()}"
         )
@@ -5920,6 +6031,7 @@ def _run_pipeline_session_stream_inner(
         user_turn=has_real_user_turn(user_input, is_proactive, attachments),
     )
     specialist_outputs = _file_wisdom_proposals(specialist_outputs, persona=persona)
+    specialist_outputs = _file_horizon_items(specialist_outputs, persona=persona)
     spec_text = "\n\n".join(
         f"--- {agent} ---\n{output}"
         for agent, output in specialist_outputs.items()
@@ -5940,11 +6052,14 @@ def _run_pipeline_session_stream_inner(
 
     # Build Synthesizer input — ACTIONS block last and unconditional, as above.
     know_text = _knowledge_block(knowledge)
+    # [DB-0822-09] After the sign-off veto, as in the non-streaming twin above.
+    horizon_text = _horizon_block(persona)
     synthesizer_input = (
         f"{proactive_prefix}{receipt_line}{synth_label}:\n{user_input}{attach_note}\n\n"
         f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"
         + (f"\n\n{know_text}" if know_text else "")
         + (f"\n\nSPECIALIST OUTPUTS:\n{spec_text}" if spec_text else "")
+        + (f"\n\n{horizon_text}" if horizon_text else "")
         + (f"\n\n{focus_block}" if focus_block else "")
         + f"\n\n{_action_block()}"
     )
