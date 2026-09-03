@@ -44,32 +44,48 @@ ruled on.
   features** (Mike). Darwin API key registration is Mike's; location's privacy-tier design pass
   is @session.
 
-## Part 3 — Functional clusters, status as of 2026-08-27 (post-attack, post-deploy)
+## Part 3 — Functional clusters
+
+**Status refreshed 2026-09-03 at capstone close. The rest of this section is as written on
+2026-08-27** — the cluster groupings, the tier calls and the estimates are the original
+judgements and are left alone.
 
 Tier = change tier. Est = rough Claude wall-clock. **(M)** = Mike's minutes.
 Status: ✅ closed · 🔶 built+deployed, awaiting one live confirmation · ⬜ open.
 
+> **Read the Status column, not the row text, for what is outstanding.** On a ✅ row the "One
+> line" and "Est" cells are the 08-27 description of work that has since finished — a
+> `confirm:` note or a `~half day` estimate there is history, not a to-do.
+>
+> **Why this needed a refresh at all, recorded because it is the failure this file is prone
+> to:** 13 of the 24 rows still showed ⬜/🔶 for items that had closed. Six sessions appended
+> dated notes *below* this table rather than updating it, so the summary at the top drifted
+> while the narrative underneath stayed correct — and the summary is the part anyone reads
+> first. Mike spotted it on sight (*"why are there so many empty boxes?"*).
+
+**Count at close: 14 closed · 4 built and awaiting one live confirmation · 6 open.**
+
 ### Cluster A — Scheduled-session hygiene
 | Status | Item | One line | Tier | Est |
 |---|---|---|---|---|
-| 🔶 | [DB-0822-05] | Journal recorded days never spoken — dispatch gate built (`e6bde3d`) | Green | done; confirm: one scheduler-only day journal stays empty AND one answered check-in still journals |
-| 🔶 | [DB-0827-07] | 33 empty CLARIFICATION_NEEDED events — null-label filter built (`24dabae`) | Green | done; confirm: one clean day in the VM quality log |
+| ✅ | [DB-0822-05] | Journal recorded days never spoken — dispatch gate built (`e6bde3d`) | Green | done; confirm: one scheduler-only day journal stays empty AND one answered check-in still journals |
+| ✅ | [DB-0827-07] | 33 empty CLARIFICATION_NEEDED events — null-label filter built (`24dabae`) | Green | done; confirm: one clean day in the VM quality log |
 | 🔶 | [DB-0822-06] | Stale state as fact — age annotation built (`cbd5ca3`); **intraday half built + derived-count half retired as stale-premised (second attack, `4cc9e3e`)** | Amber | done; confirm: one same-day case post-deploy |
-| ⬜ | [DB-0822-07] | Two jobs fire 7 min apart — suppress the collision | **Red** (`core/scheduler.py`) | 1–2h supervised |
-| ⬜ | [DB-0809-02] | Same unanswered question re-asked by every job | Red @session | decision + 2–4h |
+| ✅ | [DB-0822-07] | Two jobs fire 7 min apart — suppress the collision | **Red** (`core/scheduler.py`) | 1–2h supervised |
+| ✅ | [DB-0809-02] | Same unanswered question re-asked by every job | Red @session | decision + 2–4h |
 
 ### Cluster B — Action integrity
 | Status | Item | One line | Tier | Est |
 |---|---|---|---|---|
-| 🔶 | [DB-0827-01] | Decline built (`0f8f528`) — **re-propose guard built too (second attack, `4cc9e3e`)**; confirm: one live decline that stays declined through the next scheduled run | Amber | done |
+| ✅ | [DB-0827-01] | Decline built (`0f8f528`) — **re-propose guard built too (second attack, `4cc9e3e`)**; confirm: one live decline that stays declined through the next scheduled run | Amber | done |
 | 🔶 | [DB-0815-11] | False-action-claim detector built (`e673330`), events collected | Amber | done; **@session policy half open** (may `write_persona` self-apply?) |
 | ✅ | [DB-0827-05] | ROUTING_MISS collected again (`5b444be`) — closed, +3 more types registered on main | Green | — |
-| ⬜ | [DB-0826-01] | "Undo that merge" referent failure — **@waiting MET**: recovered ROUTING_MISS history holds 3 prior instances (08-10 "previous request", 08-15 "Approved", 08-18 "read that back") | Red (`coordinator.md`) | ~2–3h |
+| ✅ | [DB-0826-01] | "Undo that merge" referent failure — **@waiting MET**: recovered ROUTING_MISS history holds 3 prior instances (08-10 "previous request", 08-15 "Approved", 08-18 "read that back") | Red (`coordinator.md`) | ~2–3h |
 
 ### Cluster C — Email/intake capstone
 | Status | Item | One line | Tier | Est |
 |---|---|---|---|---|
-| ⬜ | [DB-0822-09] | Email read then discarded — Synthesizer surfacing rule + coordination check; intake plumbing already exists | Red | ~half day |
+| ✅ | [DB-0822-09] | Email read then discarded — Synthesizer surfacing rule + coordination check; intake plumbing already exists | Red | ~half day |
 | ⬜ | [DB-0820-03] | Intake extractor off until eval — (a) corpus labeling is **(M)**, then eval+review | Amber | 2–3h + (M) |
 | ⬜ | [DB-0820-04] | Hostile email at the extractor (advances B1b/A7) | Amber | 1–2h, after intake on |
 
@@ -77,15 +93,15 @@ Status: ✅ closed · 🔶 built+deployed, awaiting one live confirmation · ⬜
 | Status | Item | One line | Tier | Est |
 |---|---|---|---|---|
 | ⬜ | [DB-0827-03] | CRM sweep — gated on Mike's plan re-review **(M)**, then Opus build | Red | ~half day |
-| ⬜ | [DB-0818-08] | Provenance tiers (decided: build both halves + hedge test) | Amber/Red | ~half day |
+| ✅ | [DB-0818-08] | Provenance tiers — **both halves built and tested, session ⑦ 2026-09-03** (`16bfcd5`); job 2's live hedge test passed against a baseline arm | Amber/Red | done |
 | 🔶 | [DB-0818-05] | Asks which Bill twice — resolution store built (second attack, `6b0a6d5`); confirm: ask-answer-ask-again, no second question | Amber | done |
 | 🔶 | [DB-0818-06] | 24 non-facts in the wisdom store — per-entry proposal filed (`archive/plans/wisdom_store_cleanup_proposal_2026-08-27.md`); execution is Mike's review + a VM session **(M)** | Amber | proposal done |
 
 ### Cluster E — Cost & model routing
 | Status | Item | One line | Tier | Est |
 |---|---|---|---|---|
-| ⬜ | [DB-0820-01] | Caps → $100/$175 at Sept reset (evidence in) | chore | 15min, `due: 2026-09-01` |
-| ⬜ | [DB-0820-05] | Which agents get Pro + Step-6 caching (A4-gated) — one decision | @session + Amber | decision + 2–3h, `due: 2026-09-15` |
+| ✅ | [DB-0820-01] | Caps → $100/$175 at Sept reset (evidence in) | chore | 15min, `due: 2026-09-01` |
+| ✅ | [DB-0820-05] | Which agents get Pro + Step-6 caching (A4-gated) — one decision | @session + Amber | decision + 2–3h, `due: 2026-09-15` |
 
 ### Cluster F — Verification waits (deploy DONE 2026-08-27 — these now drain on ordinary use)
 [DB-0822-10] one afternoon turn without the virtue list + one 20:00 that carries it ·
@@ -98,10 +114,10 @@ mailbox). ~20–30 Mike-minutes total, spread over ordinary days.
 ### Cluster G — Safety & security remainder
 | Status | Item | One line | Tier | Est |
 |---|---|---|---|---|
-| ⬜ | [DB-0808-11] | Function jobs skip quiet hours — would push at 3am | **Red** (`core/scheduler.py`) | ~2h supervised |
-| ⬜ | [DB-0808-14] | Psychiatric meds rank same as statins — scoped, confirmed live, **Red half remains** (spec: `archive/plans/medication_ranking_spec_2026-08-27.md`); owed A4 re-run DONE, PASS 3/3 | **Red** (`physical_health.md`) + Green follow-up | ~1h supervised + ~1h |
-| ⬜ | [DB-0804-02] | B4 graceful-failure wording + security remainder | Amber/Red | ~half day |
-| ⬜ | [DB-0808-06] | Clinical threads can never close — escalation design | postpone? | — |
+| ✅ | [DB-0808-11] | Function jobs skip quiet hours — would push at 3am | **Red** (`core/scheduler.py`) | ~2h supervised |
+| ✅ | [DB-0808-14] | Psychiatric meds rank same as statins — scoped, confirmed live, **Red half remains** (spec: `archive/plans/medication_ranking_spec_2026-08-27.md`); owed A4 re-run DONE, PASS 3/3 | **Red** (`physical_health.md`) + Green follow-up | ~1h supervised + ~1h |
+| ⬜ | [DB-0804-02] | B4 graceful-failure wording + security remainder — **buildable slice shipped ⑦ 2026-09-03**; what is left is E1-gated or needs chain-depth enforcement in code first | Amber/Red | remainder re-homed to Track B |
+| ✅ | [DB-0808-06] | Clinical threads can never close — **escalation inbox built and the weekly review is live on the VM, session ⑦ 2026-09-03** (`16bfcd5`, `c24efe4`) | Amber | done |
 
 ### First-draft features (Mike's 2026-08-27 promotion)
 | Status | Item | One line | Tier | Est |
