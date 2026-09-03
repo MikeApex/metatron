@@ -210,9 +210,26 @@ standing rule distrusts.*
   and the fork this item has carried since the closed `[DB-0822-08]` resolves the same way:
   **make HORIZON_ITEMS structural rather than attempt a third instruction** — the reasoning
   `enforce_pending_receipt` already records for taking a report away from the model.
-  @session: Mike to rule on Red proposal 2 in
-  `archive/plans/red_proposals_2026-09-03_session_six.md` (recommendation: the structural
-  option). Not edited here — `synthesizer.md` is Red.
+  **✅ BUILT 2026-09-03 (Mike approved the structural option, `a4a9364`).** Findings now go
+  to a ledger and come back as their own context block with its own delivery instruction,
+  instead of riding in specialist prose the Synthesizer can drop.
+  **The scoping changed the shape, and the reason is worth keeping:** code does *not* decide
+  what is interesting — `logistics` does, and across the three runs where specialist output
+  survives in the traces that judgement is sound (8 findings, 0 junk). What code decides is
+  the only question it can answer without guessing: **has this already been said.** That is
+  load-bearing rather than a refinement — Jimmy Carr appears in all three of those runs and
+  the dental appointment in two, so guaranteed delivery *without* a ledger would have told
+  Mike about the same comedy show daily until Sept 13. That is `[DB-0822-06]`'s carried-state
+  failure through a new channel, and strictly worse than the silent drop it replaces: the
+  Synthesizer's dropping was doing double duty as the fault *and* the noise filter.
+  Identity is by key (same date, same venue), never similarity. Prose could not carry it, so
+  the Red half is a **format** change — `logistics.md` emits `HORIZON_ITEMS` as JSON with
+  `date` and `venue` as fields. The key is a sorted token *set*, which is what survives
+  ", London" being appended on one run and not the other; the tests found that, not review.
+  `tools/horizon.py` + `tests/test_horizon_ledger.py` (22 checks).
+  @waiting: 2026-09-12 — close on one live interest-level email that reaches Mike, and is
+  then NOT repeated in the following sessions. Both directions matter; the second is the one
+  the ledger exists for.
   *filed 2026-08-22 by Mike · built 2026-08-29 session ③ · live test failed surfacing half
   2026-09-02 (Red session ④) · diagnosed 2026-09-03 (session ⑥)*
 
@@ -282,8 +299,13 @@ standing rule distrusts.*
   (`tests/test_routing_miss_success.py`). **Cannot close:** the remaining five assert nothing
   about success and are merely descriptive; separating those from a real report needs the
   semantic guessing `[DB-0827-07]` was closed to avoid.
-  @session: Mike to rule on Red proposal 1 — the coordinator.md ROUTING_MISS definition, in
-  `archive/plans/red_proposals_2026-09-03_session_six.md`. That is what closes this.
+  **✅ Red half APPLIED 2026-09-03 (Mike approved, `a4a9364`).** `coordinator.md` now defines
+  `ROUTING_MISS` beside the `USER_CORRECTION` rule it mirrors, and says the thing the code
+  guard cannot: routing that worked is not an event and there is no slot to fill. Cache-safe
+  — the file grew, so it moves away from the 4,096-token Vertex floor, not toward it.
+  @waiting: 2026-09-12 — close when a week of `quality_events.json` carries no ROUTING_MISS
+  describing routing that worked. Both halves are now in place; the guard catches the
+  self-contradicting ones, the definition should stop the merely-descriptive five.
   *raised by Mike 2026-09-02 (Red session ④) from the drain read; evidence in the quality log · Green half built 2026-09-03 (session ⑥)*
 
 - **12. [DB-0902-02] The two inbox jobs disagree about the same inbox.** 08-30 14:45:03

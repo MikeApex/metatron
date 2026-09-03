@@ -155,3 +155,64 @@ A4 not run — suspended, and off the capstone close path (ROADMAP § 0 pt 8, am
 - Both Red proposals above — Mike's call, staged not applied.
 - The five descriptive-but-not-self-contradicting ROUTING_MISS events: code cannot
   separate them from real reports without semantic guessing. Closes with proposal 1.
+
+---
+
+# Addendum — both Red proposals built the same day (commit `a4a9364`)
+
+Mike approved both in-session. The second changed shape during scoping.
+
+## Proposal 1 — `coordinator.md` ROUTING_MISS definition
+
+Applied as written. Cache-safe by direction (the file grew).
+
+## Proposal 2 — the question that reshaped it
+
+Mike asked: *"How would the code know whether something is of interest?"*
+
+**It doesn't, and shouldn't.** `logistics` makes that judgement and it stays there; code only
+guarantees the relay — `_file_wisdom_proposals`' precedent, whose docstring generalises it:
+*structured relay in this pipeline means Python parses it.* Across the three runs where
+specialist output survives in traces, that judgement is sound: 8 findings, 0 junk.
+
+**But the second-order answer nearly inverted the recommendation.** Jimmy Carr appears in all
+three of those runs, the dental appointment in two. Guaranteed delivery with no record of what
+was already said would have repeated the same show daily until Sept 13 — `[DB-0822-06]`'s
+carried-state failure through a new channel, worse than the drop it replaces. **The
+Synthesizer's dropping was doing double duty: the fault and the noise filter.** This killed the
+cheaper no-ledger option outright.
+
+**So the Red edit became a format change, not an instruction.** Identity is `(date, venue)` —
+a key, not a similarity judgement. Prose could not carry it: the same show was written with no
+title string in common across two runs. `logistics.md` now emits JSON.
+
+### Found by the tests, not by review
+
+The first key normalised the venue to a string, so `"The London Palladium"` and
+`"the london palladium, London"` did not match — the exact case the design exists for. The key
+is now a sorted token **set**: both are `{london, palladium}`, while `{troxy, london}` stays
+distinct from `{london}`.
+
+### Two placement decisions, each worth one of a finding's two chances
+
+1. The offer is charged **where the block is served**, not once per turn — a finding filed
+   mid-turn was never in the block that turn built.
+2. The block is built **after the sign-off veto** — on "over and out" the Synthesizer never
+   runs, so an earlier build burns a chance on a reply never produced.
+
+Both asserted against source in `tests/test_horizon_ledger.py` (22 checks), because neither is
+visible in behaviour until a finding has already been lost.
+
+### A Red-file contract was updated rather than left to drift
+
+`logistics.md` said *"whether the user hears about it is Synth's call."* Now: *how and when*
+are Synth's call, *whether* is not. Leaving that line in place is how code and instruction
+drift apart.
+
+## State
+
+Suite 69 files: 68 pass, 1 pre-existing environmental fail. qa_sweep 9/9. A4 not run.
+Both items time-gated to 2026-09-12 — `[DB-0822-09]`'s confirm needs delivery **and**
+non-repetition, since the second is the risk this build introduced.
+
+**Owes a deploy** (`config/` and `core/` changed).

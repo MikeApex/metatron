@@ -23,15 +23,16 @@ however long Mark 2 takes, and Mark 1's traces are Mark 2's regression oracle. C
 **307/300** and SESSION.md at **204/200**; the restructure is owed, Mike's call on what moves
 out (⑦ checks it).*
 
-*⚠ **Two Red proposals await Mike's word** —
-`archive/plans/red_proposals_2026-09-03_session_six.md`, neither applied, neither urgent (the
-Green halves removed the user-visible damage). (1) a ROUTING_MISS definition for
-`coordinator.md`, which closes the last five noise events code cannot judge. (2)
-**`[DB-0822-09]`'s surfacing miss is NOT the inbox split** — ruled out on the traces: both 09-02
-runs read the same source and the Synthesizer dropped a 536-token package carrying the Death Cab
-item; recommendation is to make HORIZON_ITEMS structural, not a third instruction. **Standing
-fact:** the intake queue is empty **by construction** until `[DB-0820-03]`'s corpus labelling
-runs (due 09-09) — ⑥ stopped it lying about that, it did not make it carry anything.*
+*✅ **Both session-⑥ Red proposals are BUILT (Mike approved in-session, `a4a9364`).**
+`coordinator.md` now defines `ROUTING_MISS`; horizon findings are delivered structurally via
+`tools/horizon.py`. **The scoping changed the second one and the reason is the keeper:** code
+never decides what is interesting — `logistics` does, and does it well — it decides **has this
+already been said**, and that ledger is what makes guaranteed delivery safe rather than
+telling Mike about the same Jimmy Carr show daily until Sept 13. So the Red edit became a
+**format** change (`HORIZON_ITEMS` as JSON, `date`/`venue` as fields) because the dedupe key
+cannot be pulled out of prose. Both time-gated to **2026-09-12**; `[DB-0822-09]`'s confirm
+needs delivery **and** non-repetition. **Standing fact:** the intake queue is empty by
+construction until `[DB-0820-03]`'s corpus labelling runs (due 09-09).*
 
 *⚠ **Found and deliberately NOT fixed — needs Mike's word. `quick_override` reaches the
 clinical agents on the cloud path.** `core/router.py:98` reads "non-sensitive" as *no

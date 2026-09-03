@@ -97,3 +97,25 @@ behaviour has been built and then not fired, and the project's own repeated find
 that a rule in a 52KB agent file is not a control. `enforce_pending_receipt`'s docstring
 already states the precedent for taking the report away from the model. (1) is worth
 doing anyway as the cheap half, but it should not be the thing relied upon.
+
+---
+
+## ✅ BOTH APPLIED — 2026-09-03, commit `a4a9364` (Mike approved in session)
+
+**Proposal 1** applied as written, beside the `USER_CORRECTION` rule it mirrors.
+
+**Proposal 2** applied as the **structural** option, with one change the scoping forced and
+the recommendation above did not anticipate: the Red edit is a **format** change, not an
+instruction. `logistics.md` now emits `HORIZON_ITEMS` as JSON with `date` and `venue` as
+separate fields, because the ledger's dedupe key cannot be extracted from prose — across three
+real runs the same show was written two ways with no title string in common. Delivery itself
+is Green (`tools/horizon.py`).
+
+**What the scoping added that this document got wrong.** It recommended making delivery
+structural without asking what would happen once it was guaranteed. Mike's question — *"how
+would the code know whether something is of interest?"* — is what surfaced it. The answer is
+that code never decides interest (`logistics` does, and does it well), but that guaranteed
+delivery without a record of what was already said would have repeated the same Jimmy Carr
+show daily until 13 September. **The ledger is not a refinement of the structural option; it
+is the thing that makes it safe.** Recommending "make it structural" before establishing that
+was the gap in this document.
