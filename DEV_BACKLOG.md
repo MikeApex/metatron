@@ -227,9 +227,29 @@ standing rule distrusts.*
   `date` and `venue` as fields. The key is a sorted token *set*, which is what survives
   ", London" being appended on one run and not the other; the tests found that, not review.
   `tools/horizon.py` + `tests/test_horizon_ledger.py` (22 checks).
-  @waiting: 2026-09-12 — close on one live interest-level email that reaches Mike, and is
-  then NOT repeated in the following sessions. Both directions matter; the second is the one
-  the ledger exists for.
+  **⚠ LIVE TEST RUN 2026-09-03 AFTER DEPLOY — the item does NOT close, and the reason is not
+  in the build.** Two runs on the VM with the exact 09-02 directive. **Delivery succeeded:**
+  the reply carried Death Cab (Troxy, Sep 26), Jimmy Carr, Iva's dental appointment and the
+  George School social — the items dropped silently on 09-02 — and it additionally caught a
+  calendar collision (SE10 Sukkot the same afternoon as Death Cab). **But it succeeded by the
+  Synthesizer's own compliance, not through the ledger: `data/personas/mike/horizon/ledger.json`
+  does not exist.** Nothing was filed, because `logistics` **emitted no `HORIZON_ITEMS:` line
+  at all** — no filing trace, no parse warning. A direct run confirms why: it returned
+  conversational markdown with none of its documented output format, no `ACTIONS TAKEN:` and
+  no `FLAGS:` either. On 09-02 the same agent on the same model (`gemini-3.5-flash-lite`) did
+  emit the structured block. **Adherence to the output format is unreliable run to run**, so
+  the JSON schema made the format precise and still rides on the model choosing to emit it —
+  the exact class of failure this whole cluster is about.
+  **What would close it:** make the relay a **tool call** — `record_horizon_item(title, date,
+  venue, kind, detail)` — instead of a template slot. A tool call is structured by
+  construction: it cannot be silently omitted in favour of prose, and its arguments cannot be
+  malformed and ignored. That is the established pattern here for structured relay that must
+  not be lost (`write_quality_event`, `open_obligation`), and it is what `.claude/rules/
+  agent-files.md` means by a named tool being a specification. Cost: one new tool in `tools/
+  horizon.py` (Green), a routing grant in both `routing*.yaml` (Red), and one line in
+  `logistics.md` (Red). The ledger, the block, the dedupe and both placement decisions are
+  built and tested — only the input path changes.
+  @session: Mike to approve the tool-call relay. Everything downstream of it is done.
   *filed 2026-08-22 by Mike · built 2026-08-29 session ③ · live test failed surfacing half
   2026-09-02 (Red session ④) · diagnosed 2026-09-03 (session ⑥)*
 
@@ -306,6 +326,9 @@ standing rule distrusts.*
   @waiting: 2026-09-12 — close when a week of `quality_events.json` carries no ROUTING_MISS
   describing routing that worked. Both halves are now in place; the guard catches the
   self-contradicting ones, the definition should stop the merely-descriptive five.
+  *Early signal 2026-09-03, post-deploy: three live sessions that afternoon produced no
+  ROUTING_MISS at all — the only quality event was a genuine USER_CORRECTION. One afternoon,
+  not a week; recorded as encouraging, not as the confirm.*
   *raised by Mike 2026-09-02 (Red session ④) from the drain read; evidence in the quality log · Green half built 2026-09-03 (session ⑥)*
 
 - **12. [DB-0902-02] The two inbox jobs disagree about the same inbox.** 08-30 14:45:03
@@ -1262,6 +1285,9 @@ claim user-facing (its log-write sibling is `[DB-0829-01]`); the two Iva/Eva cor
 evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording — "causing an
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
+
+- **[user corrected a prior turn]** User noted that previous all-day Cheder entries were not removed when the timed sessions and travel blocks were added.  
+  `2026-09-03T12:03:19.235386Z`
 
 - **[user corrected a prior turn]** User requested flagging the issue of not being able to access previously uploaded files across turns for the backlog.  
   `2026-09-03T10:28:38.181404Z`

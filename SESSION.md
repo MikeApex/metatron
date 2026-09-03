@@ -23,16 +23,23 @@ however long Mark 2 takes, and Mark 1's traces are Mark 2's regression oracle. C
 **307/300** and SESSION.md at **204/200**; the restructure is owed, Mike's call on what moves
 out (⑦ checks it).*
 
-*✅ **Both session-⑥ Red proposals are BUILT (Mike approved in-session, `a4a9364`).**
-`coordinator.md` now defines `ROUTING_MISS`; horizon findings are delivered structurally via
-`tools/horizon.py`. **The scoping changed the second one and the reason is the keeper:** code
-never decides what is interesting — `logistics` does, and does it well — it decides **has this
-already been said**, and that ledger is what makes guaranteed delivery safe rather than
-telling Mike about the same Jimmy Carr show daily until Sept 13. So the Red edit became a
-**format** change (`HORIZON_ITEMS` as JSON, `date`/`venue` as fields) because the dedupe key
-cannot be pulled out of prose. Both time-gated to **2026-09-12**; `[DB-0822-09]`'s confirm
-needs delivery **and** non-repetition. **Standing fact:** the intake queue is empty by
-construction until `[DB-0820-03]`'s corpus labelling runs (due 09-09).*
+*⚠ **The horizon build is live and inert — `[DB-0822-09]` does NOT close.** Both session-⑥ Red
+proposals were built and deployed (`a4a9364`, Mike approved). The post-deploy test read as a
+pass — Death Cab, Jimmy Carr, the dental appointment and the alumni social all reached Mike,
+plus a calendar collision nobody asked for — **but the ledger file does not exist**: they
+arrived by the Synthesizer's own compliance, through the same channel that failed on 09-02.
+`logistics` **emitted no `HORIZON_ITEMS:` line at all**, returning conversational markdown with
+none of its documented output format; on 09-02 the same agent on the same model emitted the
+full block. **Format adherence varies run to run.** The Red edit made the schema precise (a
+dedupe key cannot be pulled from prose — that part was right) and left the *emission* resting
+on the model choosing to fill a template slot. **What closes it: make the relay a tool call**
+(`record_horizon_item`) — structured by construction, the codebase's existing answer for relay
+that must not be lost. Ledger, dedupe, block and both placement decisions are built and tested;
+only the input path changes. Cost: one tool (Green) + a grant in both routing files and one
+line in `logistics.md` (Red). **Mike's call — nothing else is owed on this item.**
+`[DB-0902-01]`'s definition is live and that afternoon produced no ROUTING_MISS at all; its
+week-long clock stands. **Standing fact:** the intake queue is empty by construction until
+`[DB-0820-03]`'s corpus labelling runs (due 09-09).*
 
 *⚠ **Found and deliberately NOT fixed — needs Mike's word. `quick_override` reaches the
 clinical agents on the cloud path.** `core/router.py:98` reads "non-sensitive" as *no

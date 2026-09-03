@@ -328,3 +328,15 @@ The VM is on `54073b6`, both units active, and the four new suites pass there.
 the Green halves already remove the user-visible damage in each case, so neither is urgent.
 
 **The capstone still closes at ⑦'s end.** ⑦ and the (M)-walkthrough remain unrun.
+
+**Update, same day (post-deploy live test).** Both session-⑥ Red proposals were approved by
+Mike, built and deployed (`a4a9364`). `[DB-0902-01]`'s definition is live and the afternoon's
+sessions produced no ROUTING_MISS at all — a signal, not the week-long confirm.
+**`[DB-0822-09]` does not close and the reason is worth carrying:** the delivery build is
+correct and inert. The live test's reply carried every item the backlog named, but the ledger
+file does not exist — `logistics` emitted no `HORIZON_ITEMS:` line at all, returning
+conversational markdown with none of its documented output format, having emitted the full
+structured block on 09-02 from the same model. Format adherence varies run to run, so the
+schema fix left the *emission* resting on a template slot. Closing it needs the relay to become
+a **tool call** (`record_horizon_item`) — Mike's call; everything downstream of it is built and
+tested.

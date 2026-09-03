@@ -216,3 +216,40 @@ Both items time-gated to 2026-09-12 — `[DB-0822-09]`'s confirm needs delivery 
 non-repetition, since the second is the risk this build introduced.
 
 **Owes a deploy** (`config/` and `core/` changed).
+
+---
+
+# Live test after deploy — the build works and its input never arrives
+
+Two runs on the VM with the 09-02 directive.
+
+**Read as a pass.** The reply carried Death Cab (Troxy, Sep 26), Jimmy Carr, Iva's dental
+appointment and the George School social — exactly the set dropped on 09-02 — and additionally
+flagged that SE10 Sukkot falls the same afternoon as the concert.
+
+**Was not a pass.** `data/personas/mike/horizon/ledger.json` does not exist. Nothing was filed.
+The items arrived through the Synthesizer's own compliance — the channel that failed on 09-02.
+
+**Cause.** `logistics` emitted no `HORIZON_ITEMS:` line at all. A direct run returned
+conversational markdown with none of its documented output format — no `ACTIONS TAKEN:`, no
+`FLAGS:`. On 09-02 the same agent on the same model emitted the full structured block. Adherence
+varies run to run.
+
+**What this says about the fix.** The Red edit made the *schema* precise — correct, since a
+dedupe key cannot be extracted from prose — but left the *emission of the block* resting on the
+model filling a template slot. Same class of failure as everything else in this cluster, one
+level further out than anyone had looked.
+
+**What closes it.** `record_horizon_item(title, date, venue, kind, detail)` as a tool call
+rather than a template slot: structured by construction, cannot be replaced by prose, cannot be
+malformed and ignored. The codebase's existing answer for relay that must not be lost. Ledger,
+dedupe key, context block and both placement decisions are built and tested — only the input
+path changes. One tool (Green), a grant in both routing files (Red), one line in `logistics.md`
+(Red).
+
+**How nearly this was filed as a success.** The reply contained every item the backlog entry
+named. Only a missing file contradicted it. The confirm as written would have been marked
+half-satisfied on the reading alone.
+
+**Positive, recorded as a signal not a confirm.** Three post-deploy sessions produced no
+ROUTING_MISS at all; the only quality event was a genuine USER_CORRECTION.
