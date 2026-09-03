@@ -81,6 +81,34 @@ EnvironmentFile=/home/md-homefolder/multi-model-mcp/.env
 WantedBy=multi-user.target
 ```
 
+### Scheduler job config — `day:` vs `days:` drive different layers
+
+Found 2026-09-03, cost a session an hour to derive, and shipped a weekly clinical-review
+job inert twice before it was caught. `config/templates/scheduler.yaml` jobs can carry
+two different-looking keys and they are not redundant:
+
+| Key | Read by | When | Expects |
+|---|---|---|---|
+| `day:` (singular) | `_register_schedules` in `core/scheduler.py` | Once, at daemon start — takes the weekly branch when `"time" in job and "day" in job`, and calls `schedule.every().<day>.at(t)` | A full lowercase day name (`sunday`), because it becomes a `schedule` library attribute (`schedule.every().sunday`) |
+| `days:` (plural) | `_is_active_day`, via `_gates_block`, on **every** firing attempt | Compares against `datetime.now().strftime("%A").lower()` | A full lowercase day name, or one of `daily` / `weekdays` / `weekend` |
+
+**A job needs both, and a plausible abbreviation is a silent, permanent no-op:**
+
+- Only `days:` set → the job **registers daily** (no weekly branch taken) and the firing
+  gate then narrows it to the named day(s) — fires weekly, but from a daily registration.
+- Only `day:` set → the job **registers weekly** but the firing gate defaults `days` to
+  `"daily"`, so the gate is open every day the job happens to be checked — in practice
+  still weekly, because registration only ever invokes it on `day`.
+- `days: sun` (or any abbreviation) → matches `strftime("%A").lower()` on **no day,
+  ever**. This is exactly how `weekly_clinical_review` shipped inert twice: `day:
+  sunday` was correct, `days: sun` was not, and nothing errored — the job registered,
+  the gate silently declined to fire it, every week.
+
+**Rule of thumb:** a weekly job in this file sets `day:` for registration; add `days:`
+only if you also want the firing gate to double-check the day (redundant but harmless
+when both are spelled out identically and in full). A job that should run daily needs
+neither — `time:` alone registers `schedule.every().day.at(t)`, and the gate's `days`
+default (`"daily"`) already passes every day.
 
 ---
 
