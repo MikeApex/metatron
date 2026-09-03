@@ -1,44 +1,37 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-09-03 (**Session ⑦ ran — THE CAPSTONE IS CLOSED, and it is deployed and
-VM-verified** (`18d6923`; suite **72/72 on the VM**, both units active). All three remaining
-items worked; the cluster's remaining investment is spent. **Nothing owes a commit or a
-deploy.** The tracker's status table was refreshed at close — it was 13/24 stale — and now
-reads **14 closed · 4 awaiting one live confirmation · 6 open**.
-**Where a fact came from is now recorded `[DB-0818-08]`** — a contact detail read from a real
-artefact is no longer silently replaced by a guessed one, and an inferred fact reaches the model
-as a sentence about the inference rather than a fact with a "be tentative" note beside it.
-**A flagged health concern now alerts something `[DB-0808-06]`** — tier-2 threads land in a
-development-side inbox that will one day route to next of kin or physicians, and close through a
-code-raised card past a 14-day dwell. **A failure now says what it cost the user `[DB-0804-02]`**
-— a raw exception was reaching the composing layer verbatim.
-**The theme worth carrying: two of the three items had EXPIRED PREMISES** — the blocker each
-described, and that `ROADMAP.md` repeated, had already been removed by unrelated work and nothing
-noticed. The re-open-against-current-code rule caught both and changed what got built each time.
-Detail: `archive/PROJECT_LOG.md` § 2026-09-03 and the capstone tracker's close-out.)*
+*Updated: 2026-09-03 evening (**verify pass + Green/Amber spinoff — four backlog items closed
+in one sitting, deployed by Mike in-session.** A `/backlog verify` over `## Now` found zero
+failed claims; the wider sweep found `[DB-0827-03]` a full state stale — retitled: the CRM
+sweep is live and owes only its first morning digest. Two workers then shipped:
+**a file attached in one turn now survives to later turns `[DB-0903-03]`** — "what did the pdf
+say?" revives it from the store; closed on a live confirm (codeword read back three turns
+after upload, `danny_park`, not `mike`). **A hostile email aimed at intake bounces off,
+proven `[DB-0820-04]`** — gate PASS 5/0/0, advances B1b. **`[DB-0815-11]` closed on its
+clean-week exit** (zero `FALSE_ACTION_CLAIM` since the 08-27 deploy). The scheduler
+`day:`/`days:` trap is now documented where jobs are written (`764d218`); the loud-validation
+build is `[DB-0903-02]`, Red-tier, Later. Detail: `archive/PROJECT_LOG.md` § 2026-09-03
+evening.)*
 
 ***Next: the (M)-walkthrough** (Fable — corpus labelling due 09-09, wisdom review, Darwin key,
-zones+APK+ping, BigQuery, Restic); prompt in `archive/handoffs/2026-09-02-*`. **Sessions ⑤, ⑥ and
-⑦ are all done and the capstone is closed** — it is no longer the read-first for backlog work;
-`DEV_BACKLOG.md` is. **A4's re-run stays off the close path** (before-Alpha only, ROADMAP § 0
-pt 8), so clinical flags remain unverified on `gemini-3.7-flash` by decision. `CLAUDE.md` is now
-**298/300** (the four-tier hierarchy moved to `.claude/rules/personas.md`);
+zones+APK+ping, BigQuery, Restic); prompt in `archive/handoffs/2026-09-02-*`. After it: two
+Green candidates fit one Sonnet worker — forwarded-email metadata `[DB-0902-05]` and the
+logistics coverage guard's code half `[DB-0902-06]` (Now-before-Later is Mike's rule, and
+everything in `## Now` is time-gated 09-05–09-12). **A4's re-run stays off the close path**
+(before-Alpha only, ROADMAP § 0 pt 8), so clinical flags remain unverified on
+`gemini-3.7-flash` by decision. `CLAUDE.md` is **298/300**;
 **`.claude/rules/deploy.md` is 131/100 and still owes a pass.***
 
-*✅ **`[DB-0808-06]` is complete** — the weekly clinical review is in the live VM config,
-registered (`sunday at 11:00`), restarted and verified against live data. **A scheduler job
-needs BOTH day keys and they are not redundant:** `day:` drives registration (without it the
-job registers *daily*), `days:` drives the firing gate (and needs the full lowercase day name —
-`sun` matches nothing, ever). **And `scheduler.yaml` is never re-read by the running daemon** —
-a config edit does nothing until `sudo systemctl restart metatron-scheduler`. All three cost a
-silent inert deploy on 09-03. Two-layer regression test in `tests/test_clinical_escalation.py`.*
-
-*⚠ **Two things left open by ⑦, both small.** B4's **max-chain-depth** message cannot be written
-until the 3-round limit exists in code rather than only in `synthesizer.md` — re-homed to Track B
-with the E1-gated B1b rows and B3, inside `[DB-0804-02]`. And `[DB-0903-01]`, the horizon dedupe
-fork, still closes on one answer (recommendation: accept the known limit). `[DB-0902-01]`'s
-week-long clock stands. **Standing fact:** the intake queue is empty by construction until
-`[DB-0820-03]`'s corpus labelling runs (due 09-09).*
+*⚠ **Thread expiry is structurally dead — measured 2026-09-03, decision owed, due 09-05.**
+111 audited writes, 0 expiries; the Synthesizer's rewording refreshes a thread's `added` date,
+so a rephrased thread can never age. Fork marked `@session` in `[DB-0814-02]` (fuzzy identity
+is the `[DB-0827-07]` semantic-guessing class — Mike picks, nobody builds quietly). Also
+open: B4's **max-chain-depth** needs the 3-round limit in code first (`[DB-0804-02]`);
+`[DB-0903-01]`'s horizon-dedupe fork closes on one answer (rec: accept); `[DB-0902-01]`'s
+week clock runs to 09-12; the one Inbox item (clinical agents reachable on the **bulk** tier
+via `quick`) needs Mike's ruling against the 08-09 "routing stays as-is" decision.
+**Standing fact:** the intake queue is empty by construction until `[DB-0820-03]`'s corpus
+labelling runs (due 09-09).*
 
 *⚠ **A tripped soft cap is the control working, not an outage** — recovery is a 60s VM start.
 Cap numbers: `docs/INFRASTRUCTURE.md` § Billing protection, the only copy — which also carries
@@ -103,8 +96,8 @@ subagent dispatch; threat model and security backlog (`archive/security/`); **se
 `fetch_url`, `read_email`, and the `<untrusted_content>` boundary (2026-08-04)**;
 **user-attached photos and documents, new-message alerts, and a waiting indicator (2026-08-20)**;
 **the Coordinator's view of the previous turn (`[DB-0826-01]`), the session-⑥ record-honesty
-fixes (2026-09-03), and the session-⑦ capstone remainder — fact provenance, the degradation
-wording, and the clinical escalation inbox (2026-09-03, BUILT AND UNDEPLOYED)**.
+fixes, the session-⑦ capstone remainder — fact provenance, the degradation wording, the
+clinical escalation inbox — and cross-turn attachment persistence (all 2026-09-03, deployed)**.
 *Dates and reasoning for all of it: [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).*
 
 ### In progress / next

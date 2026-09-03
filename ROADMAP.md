@@ -629,7 +629,16 @@ the Observer-agent concept instead of intuition.
 > split payload, and the Coordinator's own handling). **This row's boundary is not
 > `<untrusted_content>`:** bytes cannot carry tags, so it rests on
 > `core/attachments.describe_for_prompt()` plus the matching sections in `coordinator.md` and
-> `synthesizer.md`. Any change to those three is a change to this control.
+> `synthesizer.md`. Any change to those three is a change to this control. **Changed and
+> re-pinned 2026-09-03 (`d7c7fc7`):** cross-turn attachment persistence revives stored files
+> through the same `describe_for_prompt()` path; the fresh-attachment wording is byte-identical
+> and pinned by `tests/test_attachment_persistence.py`.
+>
+> **✅ A sixth row exists and passed 2026-09-03: hostile email aimed at the intake pipeline**
+> (`[DB-0820-04]`, closed) — gate PASS 5/0/0: the code tier provably uninfluenced (identical
+> output vs a benign control), the disabled model extractor refused the injected instruction.
+> Runner `tests/run_intake_redteam.py`, report `tests/security_redteam_2026-09-03_intake.md`.
+> Re-run it at the `[DB-0820-03]` extractor flip.
 
 Build: Use GPT-4o and/or o3 to generate adversarial prompts across all attack categories below. Run each against live Coordinator and Synthesizer. Log result for each.
 

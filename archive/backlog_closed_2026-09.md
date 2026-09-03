@@ -507,3 +507,29 @@ claims occurred" from "detector silently broken" — the in-tree tests
 assurance. If a false action claim is ever again seen live with no matching event, re-open
 against the detector first. The 2026-08-28 design note (persona preferences as binaries/tags
 as users accrue) survives in the Mark 2 notebook's orbit, not here.
+
+---
+
+## ✅ [DB-0903-03] A file attached in one turn was gone by the next — closed 2026-09-03
+
+**Raised by Mike live in the app 10:31, built by an Opus 5 worker the same day (`d7c7fc7`),
+deployed by Mike, closed on the scripted live confirm the same evening.** A message with no
+files of its own that refers back to one revives it from the store into the turn: matching in
+Python (`references_earlier_files()`, `core/attachments.py`), load-on-hit, proactive turns
+excluded, revived content re-entering through the same `describe_for_prompt()` path and
+`<untrusted_content>` boundary as a fresh upload (fresh wording byte-identical, pinned by test).
+Two clocks: 24h carry TTL (tokens), 30d disk retention (the history UI serves old attachments);
+`sweep_expired()` at next upload deletes; mode 600; restart-safe.
+
+**Closing evidence — live end-to-end on the VM, persona `danny_park` (not `mike`, to avoid
+test pollution), 2026-09-03 evening:** a PDF carrying the codeword `PLUM-LANTERN-42` was
+uploaded and sent in turn 1; turns 2–3 were unrelated (stretching, hydration); turn 4 asked
+*"What was the verification codeword in the pdf I sent you earlier?"* with no attachment ids —
+the reply: *"The verification codeword in that document is PLUM-LANTERN-42, Danny."* **PASS.**
+Suite evidence: `tests/test_attachment_persistence.py` 21/21; existing attachment suites
+18/18 + 15/15.
+
+**Open remainder, deliberately not lost:** a proposed Red-tier Coordinator line (name *which*
+file was opened on an ambiguous back-reference) sits in
+`archive/handoffs/2026-09-03-attachment-persistence.md` for a future Red session. Without it
+the feature works; ambiguity resolves silently.

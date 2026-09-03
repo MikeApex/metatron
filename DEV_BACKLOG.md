@@ -290,35 +290,6 @@ standing rule distrusts.*
   messages" while the inbox has unread mail
   *raised by Mike 2026-09-02 (Red session ④) from the drain read; traces 08-30 14:45 · built 2026-09-03 (session ⑥)*
 
-- **13. [DB-0903-03] A file attached in one turn was gone by the next — the user was told to
-  re-upload a PDF whose bytes were on disk the whole time.** Live 2026-09-03 10:31 (Cheder
-  schedule PDF; the 11:27 exchange states it outright: *"files attached in earlier messages are
-  not retained in accessible storage across turns"*). The bytes and index rows always survived —
-  what was missing was any way to *address* them once the client stopped re-sending the id.
-  **✅ BUILT 2026-09-03 (Opus 5 worker, `d7c7fc7`, merged; undeployed at time of writing).**
-  A message with no files of its own that refers back to one ("read the pdf I sent",
-  "summarise tenancy.pdf") revives it from the store into the turn. Reference matching is in
-  Python (`references_earlier_files()` in `core/attachments.py`) — filename/stem, type word +
-  back-reference phrase, or bare back-reference taking the most recent file; load-on-hit, never
-  always-carry (a 5 MB PDF re-sent through a day of idle chat is a token bill nobody asked for);
-  suppressed on proactive turns. Revived content re-enters through the same
-  `describe_for_prompt()` path and `<untrusted_content>` boundary as a fresh upload — the
-  fresh-attachment wording is byte-identical and pinned by a test, since the Red-tier agent
-  files refer to that sentence. **Standing-cost answers, per the costs rule:** two clocks —
-  24h `CARRY_TTL_SECONDS` bounds prompt reuse (meter: tokens; 2 files / 5 MB per turn), 30d
-  `RETENTION_SECONDS` bounds disk (the history UI serves past attachments, so a 24h disk sweep
-  would blank images in scrollable history); deletion is `sweep_expired()` at next upload, mode
-  600, survives restart with TTLs applied from stored timestamps. Known limit: a persona that
-  stops uploading keeps its last files until the next upload sweeps.
-  `tests/test_attachment_persistence.py` 21/21; existing attachment suites 18/18 + 15/15.
-  **One Red-tier follow-up proposed, not applied** (handoff
-  `archive/handoffs/2026-09-03-attachment-persistence.md`): a Coordinator line naming *which*
-  file was opened on an ambiguous back-reference — without it, ambiguity resolves silently.
-  @kind: bug
-  @waiting: the owed deploy, then the scripted live confirm — attach a PDF, send two unrelated
-  turns, ask "what did the pdf I sent say?"; pass is an answer from the file with no re-upload
-  *raised by Mike 2026-09-03 live in the app · built 2026-09-03 (Green/Amber spinoff) · rank 13
-  proposed at entry: below the four @waiting confirms only because it, too, now waits on one*
 
 ## Later
 
@@ -549,8 +520,10 @@ with a date.** Nothing new joins this group open-ended.*
   @waiting: a contact with real back-and-forth in that mailbox, then `get_tone_shape(refresh=true)`.
   **Pass:** `sent_folder_found: true`, both counts non-zero, a `tone_shape` a human recognises.
   **Fail loudly on:** any life event, date or third-party name in the profile.
-  *filed 2026-08-10 by Mike*
-  `due: 2026-09-01`
+  *filed 2026-08-10 by Mike · due pushed 09-01 → 10-01 at the 09-03 verify pass: the blocker is
+  a mailbox with no real correspondence, which no amount of effort changes — pushed, not closed,
+  per the standing due-date rule*
+  `due: 2026-10-01`
 
 - **[DB-0814-02] Old conversation threads now expire — but neither signal that keeps one alive has
   been measured.** Shipped and deployed (`37b0b03`, `eb01025`, `5cf0a5e`): threads auto-drop 7 days
@@ -575,8 +548,20 @@ with a date.** Nothing new joins this group open-ended.*
   line to `context_audit.jsonl` beside `context.json` (600), with `added`/`removed`/`expired` as
   separate fields — folding the last two together is what would hide a dead expiry again.
   `tests/test_context_audit_line.py`. Measurement follows once it has run a few days deployed.
+  **⚠ MEASURED 2026-09-03 (the read this item was waiting for), and the answer is "expiry is
+  structurally dead", not "grace works":** 111 audited writes, **0 expiries**;
+  `expired_open_threads` still 0 after 20 days. The discriminating evidence: all four live
+  open threads carry `added: 2026-09-03` — including the mover's-claim thread, which appears
+  verbatim in the 09-02 20:41 conversation. The exact-text match that preserves a thread's
+  birthdate is defeated by the Synthesizer's rewording (the one-changed-character weakness this
+  item already recorded), so `added` refreshes on rewrite and **a rephrased thread can never
+  age**. The fix is a thread-identity decision — fuzzy matching is the semantic-guessing
+  class `[DB-0827-07]` was closed to keep out, so this is a fork for Mike, not a quiet build.
+  @session: thread identity across rewording — accept that only exact-text-stable threads
+  expire, or design a bounded identity key (e.g. date+entity tokens, the `[DB-0903-01]` fork's
+  sibling). Measurement half is done; the due date below now times the decision, not the read.
   @kind: bug
-  *filed 2026-08-14 by Mike · timestamp half closed 2026-08-15*
+  *filed 2026-08-14 by Mike · timestamp half closed 2026-08-15 · measured 2026-09-03*
   `due: 2026-09-05`
 
 ### Unbuilt — real capability that does not exist
