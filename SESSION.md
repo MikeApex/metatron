@@ -3,7 +3,8 @@
 *Updated: 2026-09-03 (**Session ⑦ ran — THE CAPSTONE IS CLOSED, and it is deployed and
 VM-verified** (`18d6923`; suite **72/72 on the VM**, both units active). All three remaining
 items worked; the cluster's remaining investment is spent. **Nothing owes a commit or a
-deploy.** **Nothing is owed.**
+deploy.** The tracker's status table was refreshed at close — it was 13/24 stale — and now
+reads **14 closed · 4 awaiting one live confirmation · 6 open**.
 **Where a fact came from is now recorded `[DB-0818-08]`** — a contact detail read from a real
 artefact is no longer silently replaced by a guessed one, and an inferred fact reaches the model
 as a sentence about the inference rather than a fact with a "be tentative" note beside it.
