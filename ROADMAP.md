@@ -341,8 +341,13 @@ checks 10 and 12 remain open by deliberate deprioritization.
 > and acknowledged moves to `watch`, where it is **still open but deliberately does not lead the
 > response** — so a `watch`-state thread producing no crisis framing on an unrelated turn is
 > **correct behaviour, not a missed flag.** Scoring it as a failure would be the obvious mistake.
-> Tier is derived in Python: any `CLINICAL_CONCERN` is tier 2 and **cannot be resolved from a
-> session** (no administrative-close mechanism exists yet — `[DB-0808-06]`). The hard-fail
+> Tier is derived in Python: any `CLINICAL_CONCERN` is tier 2 and **still cannot be resolved
+> from a session** — but the administrative close it was waiting for now EXISTS (`[DB-0808-06]`
+> closed 2026-09-03). A tier-2 flag is recorded in `tools/escalation.py`'s inbox when raised;
+> a weekly `fire_function` review offers a close past a 14-day dwell through a code-raised
+> confirmation card, and `context_tracker.administratively_resolve` is the only path to
+> `resolved`. **The conversational refusal is unchanged** — a session that submits `resolved`
+> is still coerced to `watch`, so nothing about reading an A4 or Check 10 result changes. The hard-fail
 > semantics in §0 clause 8 are unchanged: the flag must still *fire* identically. What changed is
 > only how long it keeps dominating afterwards. Built to fix a B1a finding where a stale flag
 > hijacked 15 unrelated turns. A4 gate re-run for the agent-file edits the same day —
@@ -675,7 +680,7 @@ Fix all findings from B1. Implement from `archive/security/security_backlog_2026
 - **Authentication on `/session` endpoint** — **shared secret / token auth** (decided 2026-06-10; not Tailscale ACL — D1's Android app removes the Tailscale-only substrate, and an ACL control would be invalidated by it). Tailscale remains defense-in-depth where present.
 - **Principle of Least Privilege** — per-agent tool injection whitelist in `orchestrator.register_tools()`; each session receives only the tools that agent legitimately needs
 - **`write_agent_config`/`write_config` access control** — human-in-the-loop confirmation gate in Python tool code (not a prompt instruction); no agent can permanently modify system behavior without explicit user confirmation. **✅ `write_config` fully gated 2026-08-05** (every write, no exceptions — matches `send_email`'s two-step pattern). **`write_agent_config` gated for its guarded-key subset only** (`_GUARDED_KEYS` in `tools/agent_config.py`, e.g. `physical_health`'s `medication_profile`) — a blanket gate on every routine specialist write (workout plans, budget structures) was scoped out deliberately as unusable friction on the common case; see `archive/PROJECT_LOG.md` 2026-08-05 for the reasoning. Whether this narrower scope satisfies the item as written, or whether it needs revisiting, is a B3 baseline-doc question, not decided here. **⚠ The gate refused correctly but never completed anything, from 2026-08-05 until 2026-08-15** — approval was recorded and nothing spent it, so every gated action expired unperformed while the user believed it had happened. Fixed in `2602e2e` (`[DB-0815-03]`): `POST /confirm` now executes server-side through the same fingerprinted `consume()`. **Read any pre-08-15 evidence that "the gate held" as evidence of the refusal only**, never of the approve-and-act path, which had no test until that commit.
-- **Confused deputy enforcement** — sub-agent output treated as opaque strings in orchestrator; never eval'd, JSON-parsed for tool calls, or passed as raw system prompt content without wrapping
+- **Confused deputy enforcement** — sub-agent output treated as opaque strings in orchestrator; never eval'd, JSON-parsed for tool calls, or passed as raw system prompt content without wrapping. **✅ Its regression test exists and passes** — `tests/run_b1_redteam.py --suite deputy`, re-run 2026-09-03 (`tests/security_redteam_2026-09-03_deputy.md`). Confirmed while working `[DB-0804-02]`, which had carried it as outstanding.
 - **`run_session_anthropic` loop iteration limit** — add iteration counter matching `_openai_compat_loop`'s `max_iterations=8`
 - ~~**Output filter upgrade** — move from keyword matching to regex+semantic approach; catches paraphrases and obfuscated forms; verify coverage of Synthesizer output (not just Coordinator)~~ **✅ built and DEPLOYED 2026-08-08 (`7c70cd9`)** (`[DB-0808-07]`; shipped in a joint commit with the parallel session's work, since `core/orchestrator.py` carried both — post-deploy verified with a live `/session` call on the VM, because `register_tools()` only runs when a session runs). Four tiers: obfuscation-tolerant identifier regexes, a new architecture-*narration* tier for paraphrases that name nothing on either list, the sentence-gated loose tier, and a widened arch-vocabulary set. Coverage is Synthesizer-only by design — Coordinator output is the internal context package and never reaches a user. Verified: filter suite 61 → 86 checks with the original 61 unchanged and passing, disclosure 15/15, deputy 2/2. **Known gap left open deliberately:** the filter still has no view of the user's own turn, so the Exchange 027 false positive survives — `[DB-0808-05]`.
 - **CORS restriction** — `allow_origins=["*"]` → explicit hostname allowlist
@@ -701,6 +706,19 @@ Housekeeping: consolidate the duplicate backlog files — `archive/security/secu
 ---
 
 **B4 — Error handling and graceful degradation (6A / D6)**
+
+> **PARTIALLY BUILT 2026-09-03** (`[DB-0804-02]`'s capstone slice; built and undeployed at time
+> of writing). Specialist failure and the context tracker are done — `_unavailable_notice()` in
+> `core/orchestrator.py` replaces a raw exception with a consequence carrying no exception, no
+> agent name and no reason, and `tools/context_tracker.py` no longer reads an unreadable tracker
+> as "nothing outstanding" and preserves a damaged file before the next write replaces it (that
+> write was destroying clinical threads). 12 checks in `tests/test_degradation_paths.py`.
+>
+> **Max chain depth is NOT built, and cannot be as written.** The 3-round limit exists only as
+> instruction in `config/agents/synthesizer.md`; `CHAIN_LIMIT_REACHED` appears nowhere in code,
+> so nothing can detect the condition and there is no moment at which a message could fire.
+> **That is a build, not wording** — enforce the limit in code first. Ollama-unavailable,
+> transient-API-retry and partial-fan-out remain open and untouched.
 
 Define and implement degradation paths for:
 - Specialist failure mid-pipeline: what does Synthesizer tell the user? (Must not reveal architecture or that a specialist was called)

@@ -24,6 +24,21 @@ data/personas/{name}/                  logs, journal, memory, traces, conversati
                                        crm, wisdom, archive, config, baselines
 ```
 
+## The four-tier goal hierarchy
+
+Relocated from root `CLAUDE.md` 2026-09-03 (its ceiling); every tier below 0 lives under
+`config/personas/**`, so this fires whenever one is opened. Root `CLAUDE.md` keeps the load
+order and the fail-closed clause — `/compact` drops path-scoped rules and never re-injects.
+
+| Tier | File | Owned by | Changes |
+|---|---|---|---|
+| 0 — Tool Constitution | `config/constitution.md` | The tool | Never — shared by every persona |
+| 1 — Prime Directive | `config/personas/{persona}/prime_directive.md` | User | Rarely |
+| 2 — Mission | `config/personas/{persona}/mission.md` | User | At life transitions |
+| 3 — Goals | `config/personas/{persona}/goals.yaml` | User | Frequently |
+
+Tiers 1–3 are per-persona; **no root-level fallback** (below). The VM owns the live copies.
+
 **Identity resolution is fail-closed.** `core/persona.py` is the single source of truth.
 `resolve_persona()` checks, in order: an explicit argument, thread-local state (set by
 `persona_scope()`), then `METATRON_PERSONA`. If none resolves it **raises** — it never falls back

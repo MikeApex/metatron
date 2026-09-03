@@ -373,65 +373,6 @@ the condition has not arrived, push the date rather than closing the item.
   answer with no build
   *filed 2026-09-03 at Mike's instruction, from the live evidence that closed `[DB-0822-09]`*
 
-- **[DB-0818-08] Nothing records where a fact came from, so a checked value is overwritten by a
-  guessed one — and an answer with no source is delivered as fact.** Mike, 2026-08-18: *"the CRM needs
-  some sort of verification tag for data that will allow it to stick to its guns when an edit or
-  contradictory information is incoming"*, scoped at his instruction to **a universal, not a CRM
-  feature**.
-  **Two live failures the same afternoon, and they look unrelated until the missing field is named.**
-  *(1)* `Kathaleen Jermyn` was in the CRM off her own email signature; a dictated correction to
-  `Kathleen` renamed the record in place — no near-match surfaced, no confirmation asked, and **the
-  correct spelling is the one now gone.** *(2)* Asked for the Southeastern line, `research_agent` ran
-  two web searches, retrieved **zero sources** (`grounded: False`, trace `2026-08-18T16:48`), and
-  answered *"Southeastern services are reported as having a good service overall"* with an invented
-  incident. One overwrote a sourced value with an unsourced one; the other presented an unsourced
-  claim as sourced. **Same missing field.**
-  **The shape: three tiers, the smallest set that separates those two.** `verified` — checked against
-  an external artefact (email header, calendar invite, retrieved source) → **surface the conflict and
-  ask**. `stated` — the user said it → overwrite freely; he is the authority on his own life.
-  `inferred` — the model concluded it → overwrite freely, and **never present as fact without saying
-  so**.
-  **The constraint that must survive into the build, Mike's own words: "user instruction should
-  generally be the winner."** The tag produces a **confirmation, never a refusal** — one question,
-  once, not a veto and not a question every time. A tool that argues about how his family's names are
-  spelled is worse than one that occasionally takes a wrong spelling.
-  **Why it plausibly suppresses hallucination — his claim, recorded as a hypothesis, not a promise.**
-  `inferred` is not a state anything can currently be in, so an answer assembled from nothing is
-  shaped identically to one assembled from sources. Give it a tier and the refusal becomes mechanical
-  rather than a matter of model judgment: **an answer with no `verified` or `stated` input cannot be
-  phrased as fact.** Same control as the zero-source guard, applied to the store instead of the wire —
-  **scope them together rather than building it twice.**
-  **The hard part is not the schema, it is the capture.** Provenance has to be recorded by code that
-  knows the source, and most write paths are model-called with no source argument at all: `read_email`
-  and the CalDAV reader hold an artefact and know it, `write_contact` mid-conversation does not.
-  **Scope the capture before the schema** — a tag defaulting to `verified` because nothing filled it
-  in would claim a check the system never did, which is worse than no tag.
-  **✅ DECIDED 2026-08-19 (Mike) — build both halves, and hold the second to a test.** The two
-  failures need two different mechanisms and only one of them can be enforced. **Job 1, certain:**
-  record the tier, and gate overwriting of a `verified` value behind one confirmation — a Python
-  `if` at the write path, closing the `Kathaleen` case outright. **Job 2, influence only:** nothing
-  can mechanically detect that a sentence sounds too confident, so *every* option here is odds, not
-  enforcement. **Build it by rewriting the fact, not by tagging it** — the store renders an
-  `inferred` value into the prompt as *"you inferred, but have not confirmed, that…"* rather than
-  `value [inferred]` plus a rule, because **a marker beside a fact is an instruction the model can
-  negotiate with, and this exact pattern has already failed**: `[RETRIEVAL: NONE]` was attached to
-  the Southeastern turn on 08-18 and the Synthesizer softened it instead of refusing. With the
-  hedge inside the claim there is no separate rule to weigh against being helpful.
-  **The test is part of the build, not a follow-up:** seed an `inferred` fact, ask a question that
-  depends on it, and check the reply hedges. **If it does not, job 2 is recorded as still open** —
-  the point of testing it is to avoid believing it closed. **Scope known and not claimed as
-  covered:** the tiers only reach facts that travel *through the store*. A fact invented mid-turn
-  and spoken without ever being written is untouched by any of them; the wire is covered by the
-  zero-source guard, and the gap between the two remains.
-  @kind: feature
-  **Scheduled into capstone session ⑦ (Mike, 2026-09-02)** — never claimed by sessions ①–④,
-  surfaced at the close-out; the design above is the build spec. Prompt:
-  `archive/handoffs/2026-09-02-session-seven-capstone-remainder-prompt.md`.
-  *raised by Mike 2026-08-18 during Phase 1 testing, from two failures he produced himself in
-  consecutive turns · scope against `[DB-0815-07]` (near-match on create — built, did not fire on this
-  rename, a different path) and `[DB-0818-06]` (24 stored "facts", several inferred preferences
-  recorded as observations — what an `inferred` tier catches at write time)*
-
 - **[DB-0815-11] The system recorded a preference change it appears never to have made.** A
   `SELF_APPLIED` event at `2026-08-15T13:51:39Z`: *"Switched output to Bulgarian transliteration
   (Latin alphabet)…"* — but no transliteration line exists in any persona file on the VM (Mike
@@ -908,8 +849,11 @@ half (b) is now part of the Pro-routing decision. Evidence and trail:
   **Where it must be scoped, not built blind.** A confirmation on every unusual-looking entry is
   worse than none — he flies at odd hours and rucks before dawn, so a system that queries every
   early time teaches him to dismiss it. **The bar is a single question, once, on a genuine
-  mismatch.** Same constraint as `[DB-0818-08]`, and the two should be designed together: a
-  confidence tier on a captured value is what makes "are you sure?" answerable rather than
+  mismatch.** Same constraint as `[DB-0818-08]` — **which closed 2026-09-03 and built exactly
+  that shape**, so this is now a matter of reusing it rather than co-designing it: see
+  `_VERIFIABLE_DETAILS` and the checked-detail gate in `tools/crm.py`, where a value read from an
+  artefact is marked in Python and one confirmation fires only when something would replace it.
+  A confidence tier on a captured value is what makes "are you sure?" answerable rather than
   reflexive. Also a live instance of `[DB-0810-11]` — where code replaces model judgement.
   @kind: feature
   *raised by Mike 2026-08-18 from a passing test — he asked what the test would have missed, which
@@ -987,16 +931,6 @@ half (b) is now part of the Pro-routing decision. Evidence and trail:
   reports them and deliberately moves nothing · triaged out of `## Inbox` 2026-08-18 · proposal
   2026-08-27 by the wisdom-store attack worker*
 
-- **[DB-0808-06] A flagged clinical thread can never be marked resolved.** `resolved` exists and
-  nothing can legitimately set it, so every tier-2 thread is permanent. **The failure direction is
-  the safe one — do not fix by relaxing the refusal.** It needs a real administrative-close path,
-  tied to an escalation mechanism that does not exist yet.
-  @kind: feature
-  **Scheduled into capstone session ⑦ (Mike, 2026-09-02)** — design the close/escalation path
-  with him; build only if small. Prompt:
-  `archive/handoffs/2026-09-02-session-seven-capstone-remainder-prompt.md`.
-  *filed 2026-08-08 · scheduled ⑦ 2026-09-02*
-
 - **[DB-0815-02] Speaking a language other than English does not work.** Speech **out** is built and
   shipped (`bg` → `bg-BG-KalinaNeural` via edge-tts, Kokoro has no Bulgarian model). Speech **in** is
   blocked with **no viable option**: `base.en` cannot emit Cyrillic at all; multilingual `base` gets
@@ -1016,7 +950,8 @@ half (b) is now part of the Pro-routing decision. Evidence and trail:
   @kind: feature
   *filed 2026-08-09*
 
-- **[DB-0804-02] Security hardening remainder.** B4's five degradation paths, B2's confused-deputy
+- **[DB-0804-02] Security hardening remainder — the buildable slice shipped 2026-09-03; what is
+  left is gated on E1 or needs code that does not exist.** B4's five degradation paths, B2's confused-deputy
   regression test, and Wave 2 (B1b, B3) gated on Track E. Full scope in `ROADMAP.md` § Track B.
   **The half B4 under-specifies is the wording, and Mike asked for it directly (2026-08-18):** on
   failure the user should be told *"I can't do that now because xyz"*, not shown an error. The
@@ -1025,10 +960,23 @@ half (b) is now part of the Pro-routing decision. Evidence and trail:
   calendar right now"* is allowed; anything naming the mechanism is not. Write the copy against real
   failures in `/monitor/model_errors`, one of which is already a live instance
   (`research_agent` returning `NoneType object is not iterable` — the user got nothing, not a reason).
+  **✅ BUILT 2026-09-03 by session ⑦ (undeployed at time of writing), and the item stays open for
+  the remainder.** Two degradation paths done: a failed specialist no longer puts a raw exception
+  into the composing layer (`_unavailable_notice()` — a consequence carrying no exception, no
+  agent name and **no reason**, since "the model timed out" is itself architecture), and an
+  unreadable context tracker no longer reads as "nothing is outstanding" and is preserved before
+  the next write replaces it — **that write was destroying clinical threads**. 12 checks in
+  `tests/test_degradation_paths.py`; regression gate filter 88/88 + deputy PASS.
+  **B2's confused-deputy regression test needed no build** — it exists and passes as
+  `tests/run_b1_redteam.py --suite deputy`. That part of this item was already satisfied.
+  **What is left, with Mike's word (2026-09-02), re-homed to Track B:**
+  *(a)* **Max chain depth cannot be written as wording.** The 3-round limit lives only as
+  instruction in `config/agents/synthesizer.md` and `CHAIN_LIMIT_REACHED` appears in no code, so
+  nothing can detect the condition and there is no moment at which a message could fire — enforce
+  the limit in code first, then write the copy. *(b)* Ollama-unavailable, transient-API retry and
+  partial fan-out: untouched. *(c)* B1b's calendar, web-page and CardDAV rows, and B3: gated on E1.
+  **Phase 6A cannot close before E1 regardless** — that was always the honest critical path.
   @kind: feature
-  **Scheduled into capstone session ⑦ (Mike, 2026-09-02)** — ⑦ takes the buildable-now slice
-  (degradation wording + small guards) and re-homes the E1-gated rest to Track B with his word.
-  Prompt: `archive/handoffs/2026-09-02-session-seven-capstone-remainder-prompt.md`.
   *filed 2026-08-04 · the refusal-wording half raised by Mike 2026-08-18 and folded in here, because
   it sat inside Track B reading as security hardening where nobody would look for it · scheduled ⑦
   2026-09-02*

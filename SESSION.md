@@ -1,71 +1,56 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-09-03 (**Session ⑥ ran — three bugs fixed, one rider built, one diagnosis
-returned.** Commit `54073b6`, deployed and VM-verified; nothing owes a commit or a deploy.
-**A declined email no longer survives in the log as sent `[DB-0829-01]`**; **the miss log no
-longer fills with successes `[DB-0902-01]`**; **the two inbox jobs no longer disagree
-`[DB-0902-02]`**; **the derived-facts line is built `[DB-0822-06]`**. Three of those corrected
-the premise they were filed under, which is the part worth carrying: the false email record came
-from the **fire-and-forget Diarist**, dispatched before the specialist that raised the confirm
-gate — not from the specialist that watched it; the ROUTING_MISS break is **exactly the 09-01
-fleet migration** (19 events before with 0 noise, 15 after with 13, no code change between) and
-`coordinator.md` **never defines ROUTING_MISS at all**; the intake queue was **never filled, not
-drained**. Suite 67/1, the one failure pre-existing and environmental (passes on the VM).
-Evidence and measurements: `archive/sessions/2026-09-03 — Session ⑥ ...md` + the capstone
-tracker's dated note.)*
+*Updated: 2026-09-03 (**Session ⑦ ran — THE CAPSTONE IS CLOSED.** All three remaining
+items worked; the cluster's remaining investment is spent. **Nothing owes a commit; everything
+owes a deploy** — `./deploy.sh` is Denied to a session, so it is Mike's to run, and nothing
+below is live until he does.
+**Where a fact came from is now recorded `[DB-0818-08]`** — a contact detail read from a real
+artefact is no longer silently replaced by a guessed one, and an inferred fact reaches the model
+as a sentence about the inference rather than a fact with a "be tentative" note beside it.
+**A flagged health concern now alerts something `[DB-0808-06]`** — tier-2 threads land in a
+development-side inbox that will one day route to next of kin or physicians, and close through a
+code-raised card past a 14-day dwell. **A failure now says what it cost the user `[DB-0804-02]`**
+— a raw exception was reaching the composing layer verbatim.
+**The theme worth carrying: two of the three items had EXPIRED PREMISES** — the blocker each
+described, and that `ROADMAP.md` repeated, had already been removed by unrelated work and nothing
+noticed. The re-open-against-current-code rule caught both and changed what got built each time.
+Detail: `archive/PROJECT_LOG.md` § 2026-09-03 and the capstone tracker's close-out.)*
 
-***Next: ⑦ capstone remainder** (Fable — `[DB-0818-08]`, `[DB-0804-02]`'s buildable slice,
-`[DB-0808-06]`) and **the (M)-walkthrough** (Fable — corpus labelling due 09-09, wisdom review,
-Darwin key, zones+APK+ping, BigQuery, Restic); prompts in `archive/handoffs/2026-09-02-*`. **⑤
-and ⑥ are done.** **The capstone closes at ⑦'s end; A4 re-run is OFF the close path**
-(before-Alpha unchanged, ROADMAP § 0 pt 8). They still run because they make Mark 1 usable for
-however long Mark 2 takes, and Mark 1's traces are Mark 2's regression oracle. CLAUDE.md is at
-**307/300** and SESSION.md at **204/200**; the restructure is owed, Mike's call on what moves
-out (⑦ checks it).*
-
-*✅ **`[DB-0822-09]` is CLOSED — an interest-level email now reaches Mike once.** Three
-iterations in one day, the first two live-tested and found wanting. The template-slot version
-deployed and was **inert**: the reply carried every item and the ledger file did not exist,
-because `logistics` emitted no `HORIZON_ITEMS:` line at all — **output-format adherence varies
-run to run, so a template slot is not a channel, it is a request.** What shipped is
-`record_horizon_item`, a tool call: structured by construction, cannot be replaced by prose.
-Closed on live evidence — the exact failing 09-02 directive filed **Death Cab @ Troxy** plus
-three more, the reply carried them, and the earlier batch moved to `offers=2`, so
-non-repetition was observed rather than only unit-tested. Evidence:
-`archive/backlog_closed_2026-09.md`. **Known limit, carried out deliberately:** an item filed
-without a venue does not dedupe against the same item filed with one (one 09-15 dental
-appointment is held as two entries). Bounded, not the failure this item was about, and
-widening the key means the similarity-matching `[DB-0827-07]` was closed to keep out — **filed
-as `[DB-0903-01]`, a three-way fork closing on one answer, recommendation: accept it.** `[DB-0902-01]`'s definition is live; its week-long clock stands. **Standing
-fact:** the intake queue is empty by construction until `[DB-0820-03]`'s corpus labelling runs
-(due 09-09).*
+***Next: the (M)-walkthrough** (Fable — corpus labelling due 09-09, wisdom review, Darwin key,
+zones+APK+ping, BigQuery, Restic); prompt in `archive/handoffs/2026-09-02-*`. **Sessions ⑤, ⑥ and
+⑦ are all done and the capstone is closed** — it is no longer the read-first for backlog work;
+`DEV_BACKLOG.md` is. **A4's re-run stays off the close path** (before-Alpha only, ROADMAP § 0
+pt 8), so clinical flags remain unverified on `gemini-3.7-flash` by decision. `CLAUDE.md` is now
+**298/300** (the four-tier hierarchy moved to `.claude/rules/personas.md`);
+**`.claude/rules/deploy.md` is 131/100 and still owes a pass.***
 
 *⚠ **Found and deliberately NOT fixed — needs Mike's word. `quick_override` reaches the
 clinical agents on the cloud path.** `core/router.py:98` reads "non-sensitive" as *no
 `local: true`*, and `routing_cloud.yaml` marks **nothing** local — so its `:22` comment *"(non-
 sensitive agents only)"* excludes nothing, and a `quick` call to `mental_wellbeing`/`physical_health`
-runs on the **bulk** model. Pre-existing. Sharper now only because A4 is suspended.
-(`./deploy.sh` never commits → moved 2026-09-03 to `docs/INFRASTRUCTURE.md` § the deploy
-pipeline.)*
+runs on the **bulk** model. Pre-existing. Sharper now only because A4 is suspended.*
 
-*✅ **The capstone plan is the read-first for any backlog work:**
-**`archive/plans/capstone_cluster_review_2026-08-27.md`** — clusters, status, and the ruled
-close path (its 2026-09-02 update is current state). **National Rail (`[DB-0818-04]`):** Darwin
-key is Mike's to register. Geolocation (`[DB-0815-12]`): deployed; zones file + one ping owed.*
+*⚠ **Two things left open by ⑦, both small.** B4's **max-chain-depth** message cannot be written
+until the 3-round limit exists in code rather than only in `synthesizer.md` — re-homed to Track B
+with the E1-gated B1b rows and B3, inside `[DB-0804-02]`. And `[DB-0903-01]`, the horizon dedupe
+fork, still closes on one answer (recommendation: accept the known limit). `[DB-0902-01]`'s
+week-long clock stands. **Standing fact:** the intake queue is empty by construction until
+`[DB-0820-03]`'s corpus labelling runs (due 09-09).*
 
 *⚠ **A tripped soft cap is the control working, not an outage** — recovery is a 60s VM start.
 Cap numbers: `docs/INFRASTRUCTURE.md` § Billing protection, the only copy. Both owed (M)s
-(BigQuery export, the `VERTEX_CACHE_DISABLED` flip) are items 5 and 7 of the (M)-walkthrough.*
-
-*⛔ **Two rulings that are settled — do not re-open either; both live in `ROADMAP.md` § Section
-0.** (1) **A4 safety testing is SUSPENDED** (Mike, 09-01) and its re-run is **off the capstone
-close path** (09-02): the clinical flags are **unverified on 3.7 Flash** and stay so until the
-**before-Alpha** run, now the only clock on it (pt 8, amended). (2) **ZDR is refused**, incl.
-Amendment 2026-08-28. Still owed against these: the `[DB-0818-06]` wisdom-store proposal review
-(Mike's), and the CRM sweep's first live morning digest as its confirm (built and deployed).*
+(BigQuery export, the `VERTEX_CACHE_DISABLED` flip) are items 5 and 7 of the (M)-walkthrough.
+**The VM is reached at `https://metatron-vm.tail0acc5d.ts.net:8001`** — `/health` returns 401
+under server auth, which is not a fault; ⑦ misread a wrong hostname as an outage for an hour.*
 
 *⚠ **No off-machine backup copy** — the daily backup is fixed and live-verified (fragment
 2026-08-29-03), but the Restic external-drive job is not installed. Mike's call, unfiled.*
+
+*⛔ **Two rulings that are settled — do not re-open either; both live in `ROADMAP.md` § Section
+0.** (1) **A4 safety testing is SUSPENDED** (Mike, 09-01), re-run **off** the capstone close path
+(09-02); **before-Alpha** is the only clock (pt 8, amended). (2) **ZDR is refused**, incl.
+Amendment 2026-08-28. Still owed against these: the `[DB-0818-06]` wisdom-store proposal review
+(Mike's), and the CRM sweep's first live morning digest as its confirm (built and deployed).*
 
 *⚠ **The inversion is decided: Alpha ships on Mark 2 (Mike, 2026-09-02).** Architecture thinking
 stays in **`archive/plans/code_dominant_rebuild_notes.md`** (five rounds); sequencing, gates,
@@ -115,8 +100,9 @@ grounded Research search; CRM, Wishes, CalDAV, scheduler-write and profile tools
 subagent dispatch; threat model and security backlog (`archive/security/`); **server auth,
 `fetch_url`, `read_email`, and the `<untrusted_content>` boundary (2026-08-04)**;
 **user-attached photos and documents, new-message alerts, and a waiting indicator (2026-08-20)**;
-**the Coordinator's view of the previous turn (`[DB-0826-01]`) and the session-⑥ record-honesty
-fixes — gated actions, the miss log, the inbox split, derived counts (2026-09-03)**.
+**the Coordinator's view of the previous turn (`[DB-0826-01]`), the session-⑥ record-honesty
+fixes (2026-09-03), and the session-⑦ capstone remainder — fact provenance, the degradation
+wording, and the clinical escalation inbox (2026-09-03, BUILT AND UNDEPLOYED)**.
 *Dates and reasoning for all of it: [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).*
 
 ### In progress / next

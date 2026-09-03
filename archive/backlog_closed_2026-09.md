@@ -366,3 +366,91 @@ seen live.
 
 *Closed 2026-09-03 by Red session ⑤, built and measured the same day. Reasoning in full:
 `archive/PROJECT_LOG.md` § 2026-09-03.*
+
+---
+
+## [DB-0818-08] Nothing recorded where a fact came from — CLOSED 2026-09-03 (session ⑦)
+
+**Both halves built and both tested. Owes a deploy, tracked in `SESSION.md`, not here.**
+
+**What a user gets.** A contact detail the system read off a real record — today, the Google
+address book — is no longer quietly replaced by one the model concluded; it asks once, naming
+where the value on file came from, and stops asking after that answer. And a fact the tool
+merely inferred about the user is no longer handed to the model as a fact with a "be tentative"
+note beside it.
+
+**The re-open changed the decided design, which is the part worth keeping.**
+
+1. **Job 1's own worked failure could no longer recur.** `Kathaleen → Kathleen` was closed on
+   2026-08-26 by the identity-rename gate added after the Stephen/Steven case, which asks on any
+   identity-field change regardless of provenance. Tagging that path would only have let the gate
+   ask *less* often. The item and the roadmap both still described it as open.
+2. **A provenance tier already existed** in `tools/wisdom.py` (`stated`/`observed`), model-declared
+   in the schema — while `log_interaction` deliberately keeps `source` out of its schema for the
+   exact inverse reason. Two stores, opposite rules.
+3. **Job 2's failure was live at one function**, and `write_wisdom`'s schema already promised the
+   behaviour nothing implemented.
+
+**Mike's rulings, 2026-09-03.** *Contacts:* ask before replacing a **checked** detail.
+**Rejected — the full per-field schema:** no artefact can back an occupation or a how-met, so the
+tag would read "unknown" on most fields, buy nothing the narrow version does not, and cost a
+relabelling of every record. *Authority:* a model may assert `stated`/`observed`; **only code may
+set `verified`**.
+
+**Evidence.** `tests/test_fact_provenance.py`, 15 checks — including the full
+card → approve → execute path through the real confirmation store, and that an approved
+correction **clears** the mark so the same correction is never questioned twice.
+
+**Job 2's live acceptance test ran with a baseline arm**, because "the reply hedged" is not
+evidence the change did anything. Same fact, question and model on `danny_park`. Old rendering:
+*"somewhere in that 6:00 to 9:00 AM window"* — the inferred window asserted as fact. New
+rendering: *"earlier in the day"*, no window claimed, closing by inviting correction.
+**n=1 per arm — evidence, not proof**, and job 2 was always scoped as influence, not enforcement.
+
+**Scope not claimed as covered** (unchanged from the item): the tiers reach only facts that
+travel through a store. A fact invented mid-turn and spoken without ever being written is
+untouched; the wire is covered by the zero-source guard, and the gap between the two remains.
+
+*Closed 2026-09-03 by session ⑦. Reasoning in full: `archive/PROJECT_LOG.md` § 2026-09-03.*
+
+---
+
+## [DB-0808-06] A flagged clinical thread could never be closed — CLOSED 2026-09-03 (session ⑦)
+
+**Closed on a reframe, not on the design the item proposed. Owes a deploy.**
+
+**The premise had expired.** The item and `ROADMAP.md` § A7 both explained the refusal as waiting
+on an administrative channel that "does not exist yet". Two things had since been built for
+unrelated reasons that together are one: `tools/confirm.py` (model-excluded, user-approved,
+executed server-side) and `core/scheduler.fire_function` (maintenance jobs, no model session).
+
+**Mike moved the problem upstream, 2026-09-03: a tier-2 flag alerted nothing.** It surfaced once,
+moved to `watch`, and lived on in a file only the model reads. The close problem was the visible
+end of that; the alert problem was the whole of it. His ruling: build a development-side inbox
+that one day routes to next of kin or physicians, and archive from there on a periodic check.
+
+**Built.** `tools/escalation.py` — every tier-2 thread lands there once (idempotent per flag,
+because the Synthesizer resubmits its whole thread list every turn), sensitive-tier 0600, and
+**every record states that nothing was routed anywhere**, because a queue that looks monitored and
+is not is worse than an obviously empty one. A weekly `fire_function` review offers a close past a
+14-day dwell through a **code-raised** card; `context_tracker.administratively_resolve` is the only
+path to `resolved` and no session can reach it. **The conversational refusal is untouched** — a
+session submitting `resolved` is still coerced to `watch`.
+
+**The failure direction stayed safe, as the item required.** Nothing auto-closes: there is no
+recipient to route to yet, and a timer is not a second opinion.
+
+**Two figures chosen rather than asked, recorded so they can be overruled:** the 14-day dwell, and
+`notification: none` on the weekly job — a scheduled push about the worst thing in someone's life
+is exactly what the dwell exists to avoid.
+
+**Standing limit, recorded on every close rather than hidden in an omission:** the deployment is
+single-user, so the person closing a clinical escalation is also its subject. `archived_by` says
+so. This is the design's limit until a third-party channel exists, not an oversight.
+
+**Evidence.** `tests/test_clinical_escalation.py`, 14 checks — including that a session still
+cannot resolve a tier-2 thread, that a close without a token performs nothing, that an approved
+close archives rather than deletes and keeps the basis, and that the review never closes anything
+on its own.
+
+*Closed 2026-09-03 by session ⑦. Reasoning in full: `archive/PROJECT_LOG.md` § 2026-09-03.*

@@ -340,3 +340,113 @@ structured block on 09-02 from the same model. Format adherence varies run to ru
 schema fix left the *emission* resting on a template slot. Closing it needs the relay to become
 a **tool call** (`record_horizon_item`) — Mike's call; everything downstream of it is built and
 tested.
+
+---
+
+## CAPSTONE CLOSE — 2026-09-03, session ⑦ ran
+
+**The capstone is closed.** All three remaining-investment items were worked; two closed
+outright, one closed on a design Mike ruled and a build that followed it. What follows is
+what closed, what was re-homed, and what the testing phase starts holding.
+
+### What closed
+
+**`[DB-0818-08]` — nothing recorded where a fact came from. CLOSED, both halves.**
+
+The re-open against current code moved the design before a line was written, which is the
+part worth carrying forward:
+
+1. **Job 1's worked failure was already closed by something else.** The `Kathaleen → Kathleen`
+   rename could not recur: `tools/crm.py`'s identity gate (added 2026-08-26 after the
+   Stephen/Steven case) already asks on *any* identity-field change, regardless of provenance.
+   A provenance tag on that path would only have let the gate ask *less* often. **The item's
+   own worked example had been fixed by a blunter mechanism, and neither the item nor the
+   roadmap knew it.**
+2. **A provenance tier already existed in one store, with the opposite rule about who sets it.**
+   `tools/wisdom.py` exposed `stated`/`observed` in its tool schema (model-declared);
+   `log_interaction` deliberately kept `source` out of its schema for the exact inverse reason.
+3. **Job 2's failure was live, and its site was one function.** `_knowledge_block` rendered
+   `key (observed): value` plus the rule "put those back tentatively" — the marker-beside-a-fact
+   pattern the 08-28 decision names as already failed (`[RETRIEVAL: NONE]`, 08-18). The
+   `write_wisdom` schema already *promised* the behaviour; nothing implemented it.
+
+**Mike's two rulings, 2026-09-03.** *Contacts:* ask before replacing a **checked** detail —
+one Python read from a real artefact — rather than schema-tagging every field (rejected: no
+artefact can back an occupation or a how-met, so the tag would read "unknown" on most fields
+and buy nothing option 1 does not, at the cost of relabelling every record). *Authority:* a
+model may assert `stated`/`observed`; **only code may set `verified`**, because the first
+distinction is knowledge only the model in the turn has and the second requires an artefact.
+
+Built: `_VERIFIABLE_DETAILS` + `_verified_source` (out of every schema) + the checked-detail
+gate in `tools/crm.py`; `google_contacts` marking in `tools/contacts_import.py`; the hedge
+moved inside the claim in `_knowledge_block`; the authority ruling recorded at
+`tools/wisdom.PROVENANCE` with a never-add-`verified` note. 15 checks,
+`tests/test_fact_provenance.py`.
+
+**Job 2 passed its live acceptance test, with a baseline arm.** Same fact, question and model,
+`danny_park`. Old rendering: *"somewhere in that 6:00 to 9:00 AM window"* — the inferred window
+asserted as fact. New rendering: *"earlier in the day"*, no window claimed, closing with a
+question inviting correction. **n=1 per arm** — evidence, not proof, and job 2 was always scoped
+as influence rather than enforcement.
+
+**`[DB-0808-06]` — a flagged clinical thread could never be closed. CLOSED, on a reframe.**
+
+Both the item and `ROADMAP.md` § A7 explained the refusal the same way: closing needs an
+administrative channel that "does not exist yet". **Mike named the real gap on 2026-09-03, and
+it was upstream of closing: a tier-2 flag alerted nothing.** It surfaced once, moved to `watch`,
+and lived on in a file only the model reads.
+
+His ruling: build a development-side inbox that one day routes to next of kin or physicians,
+and let a periodic check archive from there. Built as `tools/escalation.py` — every tier-2
+thread lands there once, and **the record states in so many words that nothing was routed
+anywhere**, because a queue that looks monitored and is not is worse than an obviously empty
+one. A weekly `fire_function` job offers a close for anything past a 14-day dwell; the user
+answers a code-raised confirmation card, and the archive keeps the flag, its detail, when it
+was raised, when it closed and on what basis. `administratively_resolve` is the only path to
+`resolved` and cannot be reached from a session — **the conversational refusal is untouched.**
+14 checks, `tests/test_clinical_escalation.py`.
+
+*Two figures chosen rather than asked, stated so they can be overruled: the 14-day dwell, and
+`notification: none` on the weekly job. A scheduled push about the worst thing in someone's
+life is what the dwell exists to avoid.* Cost: no model session, no standing resource.
+
+*Also found while re-opening it: the mechanism the 08-08 note said was missing had since been
+built for other reasons — `tools/confirm.py`'s model-excluded approval path and
+`core/scheduler.fire_function`. **The second item this session where a blocker had expired and
+nothing noticed.***
+
+### What was re-homed
+
+**`[DB-0804-02]` — the buildable-now slice shipped; the rest returns to Track B.**
+
+Built: the specialist-failure path (a raw exception was reaching the Synthesizer as
+`[Subagent error — ...]`, which is architecture-revealing and told the user nothing — the live
+`research_agent` `NoneType` instance Mike named on 08-18); and the context-tracker path, which
+no longer reads as *"nothing is outstanding"* when the file is unreadable and now preserves a
+damaged file before the next write replaces it — **that write was destroying clinical threads.**
+12 checks, `tests/test_degradation_paths.py`.
+
+**Not built, and why — B4's max-chain-depth message cannot be written.** The 3-round limit
+exists only as instruction in `config/agents/synthesizer.md`; `CHAIN_LIMIT_REACHED` appears
+nowhere in code. There is no moment at which a message could fire, so this is a build, not
+wording. Returned to Track B with the rest (B1b's three E1-gated rows, B3).
+
+**Already satisfied, needing no build:** B2's confused-deputy regression test exists and passes
+as `tests/run_b1_redteam.py --suite deputy`.
+
+### What the testing phase starts with
+
+- **Owed a deploy.** Everything above is committed and unshipped; `./deploy.sh` is Denied to a
+  session, so this is Mike's.
+- **A4 remains suspended**, and its re-run is off this close path by the 09-02 amendment.
+  Before-Alpha is the only clock. Clinical flags stay unverified on `gemini-3.7-flash`.
+- **Regression gate run:** filter 88/88 PASS, confused-deputy PASS
+  (`tests/security_redteam_2026-09-03_*.md`). The disclosure and injection suites were not run
+  — they need live model calls and were out of this session's scope.
+- **Suite: 71/72 files.** The one failure is the known local-environment `list_personas` case,
+  which passes on the VM.
+- **`quick_override` still reaches the clinical agents on the cloud path** — found in ⑥,
+  deliberately unfixed, still needs Mike's word.
+- **Ceilings:** `CLAUDE.md` paid (307 → 298; the four-tier hierarchy moved to
+  `.claude/rules/personas.md` with its rationale). `.claude/rules/deploy.md` is 131/100 and is
+  **pre-existing debt this session did not touch.**

@@ -153,17 +153,10 @@ before he can judge it, and in a ten-item table that cost lands ten times.
 
 ## Four-Tier Goal Hierarchy
 
-| Tier | File | Owned by | Changes |
-|---|---|---|---|
-| 0 — Tool Constitution | `config/constitution.md` | The tool | Never — shared by every persona |
-| 1 — Prime Directive | `config/personas/{persona}/prime_directive.md` | User | Rarely |
-| 2 — Mission | `config/personas/{persona}/mission.md` | User | At life transitions |
-| 3 — Goals | `config/personas/{persona}/goals.yaml` | User | Frequently |
-
-Tiers 1–3 are per-persona. There is no root-level fallback; identity resolution is fail-closed
-and the VM owns the live copies — [`.claude/rules/personas.md`](.claude/rules/personas.md).
-
-Always load in this order. The Constitution is the root context for every agent.
+Constitution (Tier 0, never changes) → prime directive → mission → goals, **always loaded in
+that order**, Constitution first for every agent. Tiers 1–3 are per-persona; no root-level
+fallback. Table, owners and fail-closed resolution:
+[`.claude/rules/personas.md`](.claude/rules/personas.md) (moved 2026-09-03, ceiling).
 
 ---
 
