@@ -7,6 +7,18 @@
 #   terminal  — stdout + macOS notification banner
 #   push      — Web Push to registered phone PWA
 #   both      — terminal and push
+#
+# day: vs days: — two different keys that drive two different layers (found 2026-09-03,
+# the hard way — see weekly_clinical_review below for the incident). `day:` (singular)
+# is read ONCE, at daemon start, by `_register_schedules` in core/scheduler.py — it
+# takes the weekly branch and calls `schedule.every().<day>.at(t)`. `days:` (plural) is
+# read on EVERY firing attempt, by `_is_active_day`, which compares against
+# `strftime("%A").lower()`. Both need a FULL lowercase day name (`sunday`, not `sun`) —
+# an abbreviation matches nothing on any day, silently and permanently. A weekly job
+# needs `day:` for registration; `days:` is redundant but harmless if spelled the same.
+# A daily job needs neither — `time:` alone registers daily and the gate's `days`
+# default (`daily`) already passes every day. Full writeup:
+# docs/INFRASTRUCTURE.md § Scheduler job config.
 
 quiet_hours:
   start: "22:00"
