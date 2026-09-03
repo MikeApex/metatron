@@ -35,8 +35,8 @@ non-repetition was observed rather than only unit-tested. Evidence:
 `archive/backlog_closed_2026-09.md`. **Known limit, carried out deliberately:** an item filed
 without a venue does not dedupe against the same item filed with one (one 09-15 dental
 appointment is held as two entries). Bounded, not the failure this item was about, and
-widening the key means the similarity-matching `[DB-0827-07]` was closed to keep out — **Mike's
-call, unfiled.** `[DB-0902-01]`'s definition is live; its week-long clock stands. **Standing
+widening the key means the similarity-matching `[DB-0827-07]` was closed to keep out — **filed
+as `[DB-0903-01]`, a three-way fork closing on one answer, recommendation: accept it.** `[DB-0902-01]`'s definition is live; its week-long clock stands. **Standing
 fact:** the intake queue is empty by construction until `[DB-0820-03]`'s corpus labelling runs
 (due 09-09).*
 

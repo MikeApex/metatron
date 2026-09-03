@@ -338,6 +338,41 @@ the condition has not arrived, push the date rather than closing the item.
 
 ### Decisions — each needs one answer from Mike, not effort
 
+- **[DB-0903-01] The same appointment can be raised twice, when one mention names the place and
+  the other does not.** Seen live 2026-09-03 in the run that closed `[DB-0822-09]`: Iva's
+  15 September dental appointment sits in the horizon ledger as **two entries** — *"Dental
+  surgeon consultation - Iva Diamond"* (filed from the calendar, no venue) and *"Dental
+  Appointment (John Doran)"* (filed from the inbox, venue *Bupa Dental Care Crossrail*). One
+  appointment, so Mike hears about it twice.
+  **Cause, and why it is not a coding slip.** `tools/horizon.py` identifies a finding by
+  `(date, venue)` as a sorted token set — deliberately a key comparison and not a similarity
+  judgement, because that is what makes the ledger's dedupe defensible. When `venue` is empty
+  the key falls back to the title, so a venue-less filing and a venued filing of the same event
+  key differently and cannot meet. The fallback is doing its job; the two filings simply have no
+  field in common to match on.
+  **Bounded, which is why this is Later and not Now.** Each entry is capped at two offers, so
+  the worst case is one real appointment mentioned twice rather than the daily repetition
+  `[DB-0822-09]`'s ledger was built to prevent. Nothing is lost and nothing false is said.
+  **The decision, and it is a real fork — not "go and fix it".**
+  1. **Accept it.** Duplicates are rare (they need the same event filed from two sources with
+     asymmetric venue data) and the cost is one extra sentence.
+  2. **Match on date plus title-token overlap when one side has no venue.** Closes this case,
+     and is exactly the semantic guessing `[DB-0827-07]` was closed to keep out of this
+     codebase — two different 15 September appointments sharing the word "dental" would merge,
+     and a merge silently deletes a finding, which is a worse failure than a duplicate.
+  3. **Require `venue` whenever `date` is present**, refusing the filing otherwise. Deterministic
+     and cheap, but it discards real findings that genuinely have no place — a deadline, a
+     payroll transfer, a form to return. Three of the five findings in the closing test had no
+     venue.
+  **Recommendation: (1), and revisit only if Mike actually notices a duplicate in ordinary use.**
+  Option 2 trades a visible, harmless fault for an invisible, harmful one; option 3 breaks the
+  undated/unvenued findings that are a third of real volume. The limit is already recorded in
+  `archive/backlog_closed_2026-09.md` under `[DB-0822-09]`, so nothing is lost by leaving it.
+  @kind: bug
+  @session: Mike to pick 1, 2 or 3 — recommendation is 1 (accept), and the item closes on that
+  answer with no build
+  *filed 2026-09-03 at Mike's instruction, from the live evidence that closed `[DB-0822-09]`*
+
 - **[DB-0818-08] Nothing records where a fact came from, so a checked value is overwritten by a
   guessed one — and an answer with no source is delivered as fact.** Mike, 2026-08-18: *"the CRM needs
   some sort of verification tag for data that will allow it to stick to its guns when an edit or

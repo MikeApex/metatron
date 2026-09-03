@@ -97,8 +97,9 @@ appointment held as two entries, because the first keyed on its title and the se
 venue. Cost is bounded — Mike may hear about one real appointment twice, each capped at two
 offers — and it is not the failure this item was about. **Closing anyway rather than widening
 the key**, because matching a venue-less item against a venued one by title similarity is the
-semantic guessing `[DB-0827-07]` was closed to keep out of this codebase. Raised with Mike at
-the close; not filed as an item because he did not ask for one.
+semantic guessing `[DB-0827-07]` was closed to keep out of this codebase. **Filed at Mike's
+instruction as `[DB-0903-01]`** (Later § Decisions) — a three-way fork with a recommendation to
+accept it, closing on his answer rather than on a build.
 
 ---
 
