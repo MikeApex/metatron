@@ -117,3 +117,23 @@ schedules:
     function: tools.travel_watch.travel_check
     notification: push
     respect_quiet_hours: false
+
+  # [DB-0808-06], 2026-09-03. A tier-2 clinical concern that has sat unreviewed past
+  # the dwell in tools/escalation.py is offered for closing — as a confirmation card
+  # the user answers, never as an automatic close, because there is no recipient to
+  # route it to yet and a timer is not a second opinion.
+  #
+  # Weekly, and NOT push-notified. The re-offer window inside the function is what
+  # actually paces this; the weekly cadence just means a due item waits at most seven
+  # days. `notification: none` is the load-bearing setting: an unprompted phone alert
+  # about the worst thing in someone's life, arriving on a schedule, is precisely the
+  # behaviour the dwell exists to avoid. The card waits until they are in the app.
+  #
+  # Costs nothing per run — a direct Python call, no model session, on a daemon that
+  # is already running; it reads one small JSON file.
+  weekly_clinical_review:
+    enabled: true
+    time: "11:00"
+    days: sun
+    function: tools.escalation.review_clinical_escalations
+    notification: none

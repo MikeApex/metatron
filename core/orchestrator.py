@@ -5022,10 +5022,26 @@ def _knowledge_block(entries: list[dict], domains: list[str] | None = None) -> s
     """
     Render fetched wisdom entries for a model's input.
 
-    `provenance` is rendered because it governs how the fact is put back to the user — the
-    constitution's hypotheses-not-verdicts rule. An observed pattern stated to the user as
-    established fact is the failure this field exists to prevent, and a model cannot apply
-    that distinction to a value it was never shown.
+    `provenance` governs how the fact is put back to the user — the constitution's
+    hypotheses-not-verdicts rule. An observed pattern stated to the user as established
+    fact is the failure this field exists to prevent.
+
+    THE HEDGE IS INSIDE THE CLAIM, NOT BESIDE IT ([DB-0818-08], 2026-09-03). Until now
+    this rendered `key (observed): value` and appended a rule — "put those back
+    tentatively". That is a marker beside a fact, which is an instruction a model can
+    weigh against being helpful, and THIS EXACT PATTERN HAS ALREADY FAILED HERE: on
+    2026-08-18 a `[RETRIEVAL: NONE]` marker was attached to a turn with zero retrieved
+    sources and the Synthesizer softened it rather than refusing, answering an invented
+    train incident as fact.
+
+    So an observed entry is no longer rendered as a fact at all. Its sentence is about
+    the inference — "you inferred this, and have not confirmed it" — so a model copying
+    the line into its answer copies the hedge with it, and there is no separate rule left
+    to negotiate with. A stated entry renders bare, because the user said it and the tool
+    is not entitled to be tentative about his own account of his life.
+
+    The value itself is never rewritten, only prefixed: case surgery on a string opening
+    with a proper noun is how a hedge turns into a visible mangling.
 
     `domains` optionally narrows to the subset one specialist should see.
     """
@@ -5034,15 +5050,20 @@ def _knowledge_block(entries: list[dict], domains: list[str] | None = None) -> s
     if not entries:
         return ""
 
-    lines = [
-        f"- [{e.get('domain', 'other')}] {e.get('key', '')} "
-        f"({e.get('provenance', 'observed')}): {e.get('value', '')}"
-        for e in entries
-    ]
+    lines = []
+    for e in entries:
+        prefix = f"- [{e.get('domain', 'other')}] {e.get('key', '')}: "
+        value = e.get("value", "")
+        if e.get("provenance", "observed") == "stated":
+            lines.append(prefix + str(value))
+        else:
+            lines.append(
+                prefix + "you inferred this, and have not confirmed it with the user "
+                f"— {value}"
+            )
     return (
-        "KNOWLEDGE ON FILE (standing facts about the user, already recorded — treat as known, "
-        "do not ask the user to repeat them; 'observed' items were inferred rather than "
-        "stated, so put those back tentatively):\n" + "\n".join(lines)
+        "KNOWLEDGE ON FILE (standing facts about the user, already recorded — treat as "
+        "known, do not ask the user to repeat them):\n" + "\n".join(lines)
     )
 
 
@@ -5230,6 +5251,63 @@ def has_real_user_turn(user_input: str,
     return bool((user_input or "").strip()) or bool(attachments)
 
 
+# WHAT THE USER LOSES WHEN A SPECIALIST FAILS — B4's first degradation path, built
+# 2026-09-03 ([DB-0804-02]). One line per area, phrased as the CONSEQUENCE the user can
+# feel, never as the part of the system that produced it.
+#
+# The wording is Mike's ask of 2026-08-18: on a failure he should be told "I can't do
+# that now because xyz", not shown an error. The live instance he named — research_agent
+# returning `'NoneType' object is not iterable` — reached the Synthesizer verbatim as
+# `[Subagent error — ...]`, which is architecture-revealing on its face and tells the
+# user nothing. He got no reason at all.
+#
+# An area with no entry falls back to a bare statement rather than to the agent's name,
+# because the name IS the architecture. A new specialist added without a line here
+# therefore degrades to something vague and safe, not to a leak.
+_UNAVAILABLE_CONSEQUENCE = {
+    "logistics": "their calendar, travel and day-to-day arrangements",
+    "time_director": "their schedule and the shape of the day",
+    "relationships": "what is on file about the people in their life",
+    "finance": "their spending and money picture",
+    "physical_health": "their training, sleep and medication record",
+    "mental_wellbeing": "the standing picture of how they have been",
+    "work_vocation": "their work and career context",
+    "learning_growth": "what they are learning and working on",
+    "recreation_hobbies": "their interests and downtime",
+    "research_agent": "anything that has to be looked up outside their own records",
+}
+
+
+def _unavailable_notice(agent_name: str) -> str:
+    """
+    What the Synthesizer is told in place of a failed specialist's output.
+
+    NOT the user-facing sentence. Python cannot write that one: the reply is composed in
+    the Synthesizer's voice, in the middle of a conversation whose shape it alone holds,
+    and a fixed string dropped into it would read as a system message in a product whose
+    whole premise is that there is no system to see. So this states the consequence and
+    the posture, and the Synthesizer says it in its own words.
+
+    Three things it deliberately does not carry: the exception, the agent's name, and the
+    reason. The first two are architecture (`CLAUDE.md` § Discretion). The third is too —
+    "the model timed out" and "the calendar service refused" are both facts about
+    machinery the user has never been told exists. The consequence is the only part of a
+    failure that belongs to them.
+
+    The real exception is not lost; it is logged by the caller and surfaces in
+    /monitor/model_errors, which is where it is actionable.
+    """
+    what = _UNAVAILABLE_CONSEQUENCE.get(agent_name)
+    lost = f" to {what}" if what else ""
+    return (
+        f"[UNAVAILABLE THIS TURN — you could not get{lost}. "
+        f"Answer with what you do have. If the missing part is what the user actually "
+        f"asked for, tell them plainly that you cannot get to it right now and offer to "
+        f"come back to it. Do not guess at it, do not invent a value for it, do not "
+        f"explain why it is missing, and do not dwell on it.]"
+    )
+
+
 def _dispatch_from_coordinator(
     coord_output: str,
     persona: str | None = None,
@@ -5391,7 +5469,7 @@ def _dispatch_from_coordinator(
                 try:
                     outputs[a] = future.result()
                 except Exception as exc:
-                    outputs[a] = f"[Subagent error — {exc}]"
+                    outputs[a] = _unavailable_notice(a)
                     logger.warning(f"[PIPELINE] {a} failed: {exc}")
 
     # Fire-and-forget agents start HERE, after the blocking specialists have finished,

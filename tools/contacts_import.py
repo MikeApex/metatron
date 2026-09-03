@@ -209,10 +209,18 @@ def _import_batch(raw_contacts: list[dict], source_label: str) -> str:
         # of an existing record became a gated act — a phone-matched contact whose name
         # differs from the CRM's is an ordinary import outcome, not a silent rename by
         # a model, and 200 of them would be 200 ten-minute confirmations.
+        # _verified_source: these details came out of the user's own Google address
+        # book, not out of a conversation — so a later in-conversation correction to
+        # one of them asks once before replacing it ([DB-0818-08]). This is the only
+        # caller that marks anything today; a header or invite reader would be the
+        # next. It rides alongside _bulk deliberately: _bulk suppresses the CARDS an
+        # import would otherwise raise 200 of, and marking is not a card.
         if match:
-            outcome = crm.write_contact(contact_id=match["id"], _bulk=True, **write_kwargs)
+            outcome = crm.write_contact(contact_id=match["id"], _bulk=True,
+                                        _verified_source="google_contacts", **write_kwargs)
         else:
-            outcome = crm.write_contact(_bulk=True, **write_kwargs)
+            outcome = crm.write_contact(_bulk=True,
+                                        _verified_source="google_contacts", **write_kwargs)
 
         if outcome.startswith("Error:"):
             skipped += 1

@@ -78,6 +78,19 @@ OVERFLOW_DOMAIN = "other"
 # did we infer it?" is decidable from the model's own context. The two values carry the same
 # load — they set the surfacing register, per the constitution's hypotheses-not-verdicts
 # rule: `observed` is surfaced tentatively, `stated` is surfaced plainly.
+# WHO MAY SET A TIER (Mike's ruling, 2026-09-03, [DB-0818-08]).
+#
+# These two are model-declared, and that is correct: "did the user say this, or did I
+# infer it" is knowledge only the model in the turn has, and no Python caller can derive
+# it. The default is the tentative one, so a writer that declares nothing understates
+# rather than overstates.
+#
+# A THIRD TIER — `verified`, meaning Python read the value out of an artefact — MUST
+# NEVER BE ADDED TO THIS TUPLE. It would land in WRITE_WISDOM_SCHEMA's enum and become a
+# claim the model could assert about a check nothing performed, which is worse than
+# having no tier at all. `verified` lives only where code sets it and no schema exposes
+# it: `tools/crm.py`'s `_verified_source`, on the same rule as `log_interaction`'s
+# `source`.
 PROVENANCE = ("stated", "observed")
 DEFAULT_PROVENANCE = "observed"
 

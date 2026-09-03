@@ -29,6 +29,19 @@ _CRM_LOCK = threading.Lock()
 # near-duplicate title matching — evidence for the agent to weigh, not a verdict.
 _OWN_IDENTITY_SIMILARITY_THRESHOLD = 0.80
 
+# [DB-0818-08] THE DETAILS A CHECK CAN STAND BEHIND, AND WHY ONLY THESE THREE.
+#
+# A contact detail is `verified` only when Python read it out of a structured artefact
+# the user maintains or received — an address-book export, an email header, a calendar
+# invite. These three are the ones where a replaced value causes a message to go to the
+# wrong place; an employer or a how-met that drifts is an annoyance, not a misdelivery,
+# and is not worth a tap.
+#
+# `social` is deliberately out: it is a nested dict of per-platform handles, so the mark
+# would need a key per platform, and no artefact path writes one today. Add it when one
+# does, not before — an empty axis is a mark nobody can trust.
+_VERIFIABLE_DETAILS = ("email", "phone", "address")
+
 # [DB-0815-07] Same shape of check as _OWN_IDENTITY_SIMILARITY_THRESHOLD, applied to
 # *other* contacts' names instead of the user's own identity, so a new record whose
 # name closely resembles an existing one is surfaced before write_contact creates a
@@ -789,6 +802,84 @@ def _dedup_candidates(contacts: list[dict], name: str) -> list[dict]:
 # Public tool functions
 # ---------------------------------------------------------------------------
 
+def _verified_marks(contact: dict) -> dict:
+    """The details on this record that Python read out of an artefact, if any."""
+    marks = contact.get("verified_details")
+    return marks if isinstance(marks, dict) else {}
+
+
+def _standing_verified(contact: dict, field: str) -> dict | None:
+    """
+    The mark for `field`, but only while the stored value is still the one that was
+    checked.
+
+    A mark whose value has drifted from what the record now holds is spent: something
+    already replaced the checked value (with an approval, or before this existed), so
+    there is nothing left to defend and asking again would be asking about a value that
+    is gone. Returns None in that case rather than a stale mark.
+    """
+    mark = _verified_marks(contact).get(field)
+    if not isinstance(mark, dict):
+        return None
+    stored = str((contact.get("contact_info") or {}).get(field) or "").strip()
+    if stored.casefold() != str(mark.get("value") or "").strip().casefold():
+        return None
+    return mark
+
+
+_SOURCE_PHRASES = {
+    "google_contacts": "the user's Google address book",
+    "email_header": "an email they received",
+    "calendar_invite": "a calendar invitation",
+}
+
+
+def _source_phrase(mark: dict) -> str:
+    """
+    How a mark's origin is described on a confirmation card.
+
+    Plain language, because the card is read by the user, not by a developer — and it
+    carries no architecture: it names the RECORD the value came out of, never the code
+    path or the tool that read it (`CLAUDE.md` § Discretion). An unmapped source falls
+    back to the bare string rather than to "unknown", so a new artefact path that
+    forgets to add a phrase here degrades to something still true.
+    """
+    raw = str(mark.get("source") or "").strip()
+    phrase = _SOURCE_PHRASES.get(raw, raw or "a checked record")
+    recorded = str(mark.get("recorded") or "").strip()
+    return f"{phrase} ({recorded})" if recorded else phrase
+
+
+def _apply_verified_marks(contact: dict, contact_info: dict | None,
+                          source: str, today: str) -> None:
+    """
+    Bring the marks into line with a write that has just happened.
+
+    Two directions, and the second is the one that keeps the mark honest:
+
+    - A write that carries a `source` marks every detail it supplied as checked.
+    - A write that does NOT carry one and changes a marked detail CLEARS that mark. The
+      new value was not read from an artefact, so leaving the mark would claim a check
+      of a value nothing checked — the exact failure this field exists to prevent, and
+      worse than having no mark at all.
+    """
+    if not contact_info:
+        return
+    marks = dict(_verified_marks(contact))
+    for field in _VERIFIABLE_DETAILS:
+        incoming = str(contact_info.get(field) or "").strip()
+        if not incoming:
+            continue
+        if source:
+            marks[field] = {"value": incoming, "source": source, "recorded": today}
+        else:
+            marks.pop(field, None)
+    if marks:
+        contact["verified_details"] = marks
+    else:
+        contact.pop("verified_details", None)
+
+
 def write_contact(
     name: str,
     first_name: str = "",
@@ -815,6 +906,7 @@ def write_contact(
     contact_id: str = "",
     confirm_token: str = "",
     _bulk: bool = False,
+    _verified_source: str = "",
 ) -> str:
     """
     Create or update a contact record.
@@ -850,6 +942,13 @@ def write_contact(
     alongside the new id rather than refusing or silently merging — see
     `_dedup_candidates`. [DB-0815-07]: three duplicate-person records were found
     with no dedup on the write path.
+
+    `_verified_source` marks the details this write supplied as read from a real
+    artefact, and is NOT in the tool schema — the same discipline as `_bulk` and as
+    `log_interaction`'s `source`. Only Python that is holding the artefact may claim a
+    check; a model calling this tool has none to declare, and exposing the field would
+    let it assert one, which is worse than no mark at all ([DB-0818-08]). Replacing a
+    marked detail asks once; see the checked-detail gate on the update path.
     """
     from tools.confirm import consume, request
 
@@ -1087,12 +1186,70 @@ def write_contact(
                         return json.dumps(request(
                             "write_contact", _gate_args, description=_pending_update))
 
+                    # THE CHECKED-DETAIL GATE ([DB-0818-08], 2026-09-03). The rename
+                    # gate above defends who the record IS. This defends the details
+                    # that decide where a message actually goes.
+                    #
+                    # The failure it closes, from 2026-08-18: a value Python read out
+                    # of a real artefact is replaced by one the model concluded, in
+                    # place, with nothing asked and no near-match surfaced — and the
+                    # checked value is the one that is gone. Renaming was already
+                    # gated; replacing a checked address was not.
+                    #
+                    # Narrow on purpose, and narrower than the rename gate. It fires
+                    # only when ALL of: the detail is one of the three a misdelivery
+                    # turns on, a mark says Python read it from an artefact, the stored
+                    # value is still that checked one, and the incoming value differs.
+                    # Filling an empty field, correcting an unmarked value, and
+                    # re-writing the same value all pass without a tap — so this puts
+                    # no tap in front of ordinary enrichment.
+                    #
+                    # It is a confirmation and never a refusal: Mike's constraint on
+                    # this item is that user instruction generally wins, and a tool
+                    # that argues about how a name or an address is spelled is worse
+                    # than one that occasionally takes a wrong one. One question, once
+                    # — approving it also clears the mark, via _apply_verified_marks
+                    # below, so the same correction is never questioned twice.
+                    _checked_conflicts = []
+                    if contact_info and not _approved and not _bulk and not _verified_source:
+                        for _f in _VERIFIABLE_DETAILS:
+                            _incoming = str(contact_info.get(_f) or "").strip()
+                            if not _incoming:
+                                continue
+                            _mark = _standing_verified(contact, _f)
+                            if not _mark:
+                                continue
+                            _current = str(_mark.get("value") or "").strip()
+                            if _incoming.casefold() == _current.casefold():
+                                continue
+                            _checked_conflicts.append((_f, _current, _incoming, _mark))
+
+                    if _checked_conflicts:
+                        _who = str(contact.get("name") or "").strip() or contact_id
+                        _pending_detail = (
+                            f"Replace a checked detail for {_who}?\n\n"
+                            + "\n".join(
+                                f"    {f}: {cur} → {new_v}\n"
+                                f"      on file from {_source_phrase(m)}"
+                                for f, cur, new_v, m in _checked_conflicts
+                            )
+                            + "\n\nThe value on file was read from a real record, not "
+                              "guessed. Approve if the new one is the correction; "
+                              "decline to keep what is on file."
+                        )
+                        # Same lock discipline as the rename gate above: request()
+                        # takes its own lock on a different file, and nothing has been
+                        # written to this record.
+                        return json.dumps(request(
+                            "write_contact", _gate_args, description=_pending_detail))
+
                     for field, value in _str_fields:
                         if value:
                             contact[field] = value
                     for field, value in _collection_fields:
                         if value is not None:
                             contact[field] = value
+                    _apply_verified_marks(contact, contact_info, _verified_source, today)
                     contact["updated"] = today
                     _save_contacts(contacts)
                     return f"{contact_id}\n\nWarning: {_warning}" if _warning else contact_id
@@ -1126,6 +1283,9 @@ def write_contact(
             "created": today,
             "updated": today,
         }
+        # A record created from an artefact carries its marks from the start, so the
+        # first conversational correction to one of its details is the one that asks.
+        _apply_verified_marks(new_contact, contact_info, _verified_source, today)
         # Computed against the pre-append contact list, so the new record never
         # matches itself.
         dedup_candidates = _dedup_candidates(contacts, name)

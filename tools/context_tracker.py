@@ -16,10 +16,13 @@ import json
 import logging
 import os
 import re
+import shutil
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from core.persona import persona_data_dir
+from contextlib import nullcontext
+
+from core.persona import persona_data_dir, persona_scope
 
 _ROOT = Path(__file__).parent.parent
 
@@ -381,6 +384,40 @@ _QUESTION_MATCH_OVERLAP = 0.6
 _CARRIED_KEYS = ("asked_questions", "asked_questions_archive", "scheduled_runs")
 
 
+def _preserve_corrupt(path: Path) -> str:
+    """
+    Copy an unparseable tracker aside before anything overwrites it. Returns the name
+    kept, or "" if nothing was.
+
+    B4's context-tracker degradation path ([DB-0804-02], 2026-09-03). The file was read
+    in three places with two different reactions — `_read_raw` and the write path both
+    swallowed a decode error and carried on with `{}`, and the very next write then
+    replaced the damaged file with a fresh one. Every open thread, follow-up and held
+    item in it was gone at that point, INCLUDING CLINICAL THREADS, which are the one
+    thing on this tracker that is carried forward rather than replaced precisely because
+    it must not be deletable ([DB-0808-06], `_merge_clinical_threads`). A corrupt file is
+    often mostly readable by hand; an overwritten one never is.
+
+    Never raises. This runs on the recovery path of a failure that has already happened,
+    and a preservation that itself throws would turn a degraded session into a dead one.
+    """
+    try:
+        if not path.exists() or path.stat().st_size == 0:
+            return ""
+        stamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+        kept = path.with_name(f"{path.stem}.corrupt-{stamp}{path.suffix}")
+        if kept.exists():
+            return kept.name
+        shutil.copy2(path, kept)
+        os.chmod(kept, 0o600)
+        logger.warning(
+            "[context_tracker] unreadable tracker preserved as %s before overwrite",
+            kept.name)
+        return kept.name
+    except Exception:  # noqa: BLE001 — see docstring
+        return ""
+
+
 def _read_raw() -> dict:
     """The whole tracker file, or {} — including keys `read_context_tracker()` hides."""
     path = _tracker_path()
@@ -388,7 +425,10 @@ def _read_raw() -> dict:
         return {}
     try:
         return json.loads(path.read_text())
-    except (OSError, json.JSONDecodeError):
+    except json.JSONDecodeError:
+        _preserve_corrupt(path)
+        return {}
+    except OSError:
         return {}
 
 
@@ -838,16 +878,38 @@ def read_context_tracker() -> dict:
         Synthesizer pays for it only in the sessions that have one — which is nearly none.
     """
     path = _tracker_path()
+    _empty = {
+        "last_session": None,
+        "open_threads": [],
+        "patterns": [],
+        "follow_ups": [],
+        "held_items": [],
+        "clinical_threads": [],
+    }
     if not path.exists():
-        return {
-            "last_session": None,
-            "open_threads": [],
-            "patterns": [],
-            "follow_ups": [],
-            "held_items": [],
-            "clinical_threads": [],
-        }
-    data = json.load(open(path))
+        return _empty
+    try:
+        data = json.load(open(path))
+    except json.JSONDecodeError:
+        # B4 degradation path ([DB-0804-02], 2026-09-03). This was a bare json.load, so a
+        # damaged tracker reached the model as a traceback on a tool call.
+        #
+        # "Empty" and "unreadable" must not look the same here, and that is the whole
+        # point of the notice. An empty tracker is a true statement — nothing is open. An
+        # unreadable one is the absence of an answer, and a model handed a silently empty
+        # structure will say "you have nothing outstanding" with complete confidence. That
+        # is the same shape as the fabricated-source failure this codebase already knows
+        # about: an answer assembled from nothing, delivered as fact.
+        #
+        # The notice names no file, no format and no mechanism — only that the standing
+        # picture is unavailable this turn, which is the consequence the user owns.
+        _preserve_corrupt(path)
+        return {**_empty, "_unavailable": (
+            "The standing picture of what is open and ongoing could not be read this "
+            "turn. Do NOT tell the user they have nothing outstanding — that is not "
+            "known right now. Work from this conversation alone, and if they ask about "
+            "something ongoing, say plainly that you cannot get to it at the moment."
+        )}
     # Backfill fields for trackers written before they existed.
     data.setdefault("held_items", [])
     data.setdefault("clinical_threads", [])
@@ -915,6 +977,20 @@ def _merge_clinical_threads(
                 f"kept as 'watch'. It closes only via administrative acknowledgment."
             )
 
+        # THE ALERT ([DB-0808-06], 2026-09-03). A tier-2 flag used to reach this point,
+        # move to `watch`, and be carried in a file only the model reads — notifying
+        # nothing and nobody. It is now also recorded in the escalation inbox, once,
+        # from Python. `raise_escalation` is idempotent per flag and never raises, so a
+        # re-submitted thread list costs nothing and a broken inbox cannot cost the user
+        # the response being composed around this flag.
+        if tier == 2:
+            try:
+                from tools.escalation import raise_escalation
+                raise_escalation(flag, note=str(item.get("note") or ""),
+                                 raised=prior.get("raised") or today)
+            except Exception:  # noqa: BLE001 — see raise_escalation's docstring
+                pass
+
         prior_status = prior.get("status")
         out.append({
             "flag": flag,
@@ -938,6 +1014,50 @@ def _merge_clinical_threads(
         out.append(carried)
 
     return out, notices
+
+
+def administratively_resolve(flag: str, persona: str | None = None) -> bool:
+    """
+    Set a clinical thread to `resolved` on disk, bypassing the tier-2 coercion.
+
+    THE ONE CALLER IS `tools/escalation.close_clinical_escalation`, and it arrives only
+    after the user has approved a code-raised confirmation card. Nothing model-facing
+    reaches this: it takes no tool schema, and `_merge_clinical_threads` — the path every
+    session writes through — still refuses `resolved` for tier 2 exactly as before.
+
+    Resolved threads are filtered out of `read_context_tracker` but stay on disk, so the
+    thread is archived rather than deleted (the project's standing rule). Returns True if
+    a thread was changed.
+    """
+    flag = str(flag or "").strip()
+    if not flag:
+        return False
+    # This module resolves its own path from the AMBIENT persona (`_tracker_path` takes no
+    # argument), while the caller runs from the scheduler and holds one explicitly. Binding
+    # it here rather than accepting the argument and quietly ignoring it: the failure that
+    # would cause is a clinical thread resolved on the wrong person's tracker.
+    with (persona_scope(persona) if persona else nullcontext()):
+        return _administratively_resolve_bound(flag)
+
+
+def _administratively_resolve_bound(flag: str) -> bool:
+    data = _read_raw()
+    threads = data.get("clinical_threads")
+    if not isinstance(threads, list):
+        return False
+    changed = False
+    for t in threads:
+        if t.get("flag") == flag and t.get("status") != "resolved":
+            t["status"] = "resolved"
+            t["resolved"] = date.today().isoformat()
+            t["resolved_via"] = "administrative review"
+            changed = True
+    if changed:
+        data["clinical_threads"] = threads
+        _write_raw(data)
+        logger.warning("[context_tracker] clinical thread administratively resolved: %s",
+                       flag)
+    return changed
 
 
 def write_context_tracker(
@@ -998,6 +1118,9 @@ def write_context_tracker(
         try:
             existing = json.loads(path.read_text())
         except json.JSONDecodeError:
+            # The write below replaces this file wholesale. Keep the damaged copy first
+            # — see _preserve_corrupt; clinical threads live here.
+            _preserve_corrupt(path)
             existing = {}
 
     threads, notices = _merge_clinical_threads(

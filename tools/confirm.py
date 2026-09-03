@@ -470,6 +470,15 @@ _EXECUTORS: dict[str, tuple[str, str]] = {
     # The args are ids only, so the replay writes exactly the ledger rows the user
     # read; there is no content here for a re-statement to drift on.
     "apply_crm_proposals":   ("tools.crm_sweep",     "apply_crm_proposals"),
+    # THE ONLY PATH BY WHICH A TIER-2 CLINICAL THREAD EVER CLOSES ([DB-0808-06],
+    # 2026-09-03). The card is raised by the scheduler's periodic review — by code, never
+    # by a model, the same rule as add_zone above — because a model that could raise it
+    # could argue its way toward a closed crisis thread. The conversational path still
+    # refuses `resolved` outright. This line is the DURABLE registration: tools/escalation
+    # also setdefault-registers it at import, but nothing imports that module at startup,
+    # so without this entry an approved close would land as "nothing here knows how to
+    # carry that out".
+    "close_clinical_escalation": ("tools.escalation", "close_clinical_escalation"),
 }
 
 
