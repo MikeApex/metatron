@@ -849,9 +849,14 @@ def load_recent_context(persona: str | None = None, days: int = 5) -> str:
     # its own delivery instruction — one low-key line, list only on request — because
     # this must fire reliably and the [DB-0822-05]..[DB-0822-09] finding is that an
     # agent file long enough to hold it is an agent file that stops being followed.
+    # tools.turn_referent added 2026-09-03 [DB-0826-01]: what the previous exchange
+    # actually did, so a short referring turn has something true to point at. LAST in the
+    # list on purpose — it is the most recent thing in the context and must read as more
+    # salient than the day logs above it, which is where "undo that merge" went instead.
+    # Empty outside a live conversation, so a quiet morning pays nothing.
     for _block_source in ("tools.obligations", "tools.calendar_reconcile", "tools.intake",
                           "tools.confirm", "tools.location", "tools.accountability",
-                          "tools.crm_sweep"):
+                          "tools.crm_sweep", "tools.turn_referent"):
         try:
             import importlib
             block = importlib.import_module(_block_source).context_block(persona)
@@ -5330,6 +5335,33 @@ def _frame_proactive(user_input: str, is_proactive: bool) -> tuple[str, str]:
     return f"{_PROACTIVE_FRAME}\n\n", "SCHEDULER DIRECTIVE (the user has not spoken yet)"
 
 
+# How much of the conversation the Coordinator is shown. [DB-0826-01], 2026-09-03.
+#
+# It was shown NONE of it until this line existed. Both call sites below invoked
+# _run_single_agent("coordinator", ...) with no `history` at all, so every referring turn
+# — "undo that merge", "approved", "cancel my previous request" — was routed by an agent
+# that could not see what it referred to, against a context holding only day logs and open
+# threads. That is the whole of [DB-0826-01]. Measured 2026-09-03 on gemini-3.5-flash-lite,
+# Suite B-hard x3: the Coordinator named the right referent in 0 of 12 referring turns with
+# neither half of the fix, 6 of 12 with history alone, and 12 of 12 with history plus
+# tools/turn_referent.py — which is why both halves shipped together.
+#
+# Six messages, not the Synthesizer's ten. Three exchanges reaches past the competing
+# referent in every recorded instance (the furthest, 2026-08-26, was two exchanges back)
+# and costs roughly 300-600 input tokens per turn on the bulk tier — under a cent a day at
+# any plausible volume. It goes in the user message, so the cached system prefix is
+# unchanged and the Vertex 4,096-token floor is not approached from either side.
+#
+# COPIED, never the caller's list. Every model loop in this file appends its own turn to
+# the `history` object it is handed; passing the live list would splice the Coordinator's
+# raw routing package into the conversation the Synthesizer then reads.
+_COORD_HISTORY_MESSAGES = 6
+
+
+def _coord_history(history: list[dict] | None) -> list[dict] | None:
+    return [dict(h) for h in history[-_COORD_HISTORY_MESSAGES:]] if history else None
+
+
 def run_pipeline_session(user_input: str,
                          persona: str | None = None,
                          provider: str | None = None,
@@ -5398,7 +5430,7 @@ def run_pipeline_session(user_input: str,
         _trace("[PIPELINE] coordinator  starting")
         coord_output = _run_single_agent(
             "coordinator", coord_input, persona=persona, provider=provider,
-            attachments=attachments,
+            attachments=attachments, history=_coord_history(history),
         )
         _trace(f"[PIPELINE] coordinator  done  ({len(coord_output)} chars)")
         # Gated behind AI_TRACE (the existing debug flag) rather than always-on:
@@ -5609,7 +5641,7 @@ def _run_pipeline_session_stream_inner(
         if coord_context else f"{proactive_prefix}{receipt_line}{user_input}{attach_note}"
     )
     coord_output = _run_single_agent("coordinator", coord_input, persona=persona, provider=provider,
-                                     attachments=attachments)
+                                     attachments=attachments, history=_coord_history(history))
     _trace(f"[PIPELINE] coordinator  done  ({len(coord_output)} chars) → dispatching specialists")
     _handle_user_correction(coord_output)
     # Knowledge fetch mirrors run_pipeline_session() exactly. THIS IS THE PATH THAT MATTERS:

@@ -378,9 +378,23 @@ def parse_package(output: str) -> dict:
     }
 
 
-def run_turn(case: dict, model: str, persona: str) -> dict:
-    """One Coordinator call. Returns latency, tokens and the parsed package."""
-    history = [dict(h) for h in case.get("history", [])]  # the loops append to this; never share it
+def run_turn(case: dict, model: str, persona: str, with_history: bool = True) -> dict:
+    """One Coordinator call. Returns latency, tokens and the parsed package.
+
+    `with_history=False` reproduces the condition that shipped until 2026-09-03, when
+    both live Coordinator call sites in core/orchestrator.py invoked
+    `_run_single_agent("coordinator", ...)` with no `history=` argument at all — only the
+    Synthesizer was given the conversation. This probe has always supplied `history`, so
+    every number it produced before that date, including the 6/12 Flash-Lite baseline of
+    2026-08-28, measured a strictly easier condition than the one the five [DB-0826-01]
+    failures actually happened in.
+
+    The gap is now closed in production — `_coord_history()` passes the last six messages
+    — so True is once again the live condition and stays the default, which also keeps the
+    historical figures comparable. False is kept because it is the only way to re-measure
+    what the fix bought. See tests/run_referent_probe.py, which drives all three arms.
+    """
+    history = [dict(h) for h in case.get("history", [])] if with_history else []  # the loops append to this; never share it
     t = _tr.start_request_trace(case["message"], persona)
     started = time.monotonic()
     error = None

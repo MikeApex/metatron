@@ -231,8 +231,56 @@ standing rule distrusts.*
   "user reversed his decline" `USER_CORRECTION` was logged. The system's own `ROUTING_MISS`
   event (`2026-08-29T12:14:47Z`) names the misinterpretation — self-diagnosed and proceeded
   anyway, same as the 08-26 instance.
+  **BUILT 2026-09-03, and the cause was not what this entry assumed.** The Coordinator was
+  never given the conversation at all: both live call sites in `core/orchestrator.py`
+  invoked `_run_single_agent("coordinator", ...)` with no `history` argument, so its only
+  view of the recent past was ambient facts, open threads and five days of day-logs — no
+  conversational turn anywhere in it. *"That merge"* was matched against the only
+  merge-shaped thing in scope, which on 08-26 was the Prudential Apex **branch** merge in
+  the logs. So `coordinator.md:129` ("a pronoun without a clear referent") was
+  **unfollowable, not ignored**, and the ruled premise above — *Pro's winning move was
+  following a rule Flash-Lite ignores* — is wrong: Pro was shown the turns, because
+  `tests/run_coord_model_probe.py` has always passed `history` and therefore never measured
+  the condition production runs in. The 6/12 of 2026-08-28 measured a model, on an easier
+  setup than the live one.
+  **The fix, both halves.** `_coord_history()` hands the Coordinator the last six messages
+  (copied, never the caller's list — every model loop appends its own turn to it); and
+  `tools/turn_referent.py` `context_block()` states what the previous turn *did* — the
+  tools that ran, on which objects, and whether each completed, failed, is **still waiting**
+  on the user, or was **refused**. The second half is what a transcript cannot give: on
+  08-29 the reply text said the email was sent, the confirm ledger said pending, and the
+  ledger was right. Fails open — a missing or stale trace leaves today's behaviour, never
+  an error.
+  **Numbers, `gemini-3.5-flash-lite`, Suite B-hard × 3 runs per cell**
+  (`tests/run_referent_probe.py`, raw in `tests/referent_probe_2026-09-03_*.json`).
+  Referent resolution — did `RESOLVED_INTENT` name the right thing, and *only* it:
+
+  | arm | referent | dispatch | ask-rate |
+  |---|---|---|---|
+  | no history, no block — what shipped until today | **0/12** | 2/12 | 8% |
+  | history only | 6/12 | 7/12 | 0% |
+  | history + referent block | **12/12** | 9/12 | 0% |
+
+  The full arm was 12/12 on the referent in both runs of the day (24/24). **`"Approved."` —
+  the 08-15 and 08-29 shape — is the case that separates the two halves: 0/3 with history
+  alone (it named *both* pending approvals, which is the live failure) and 3/3 with the
+  block.** The 3 residual dispatch misses are all `"Approved."` routing to `logistics`
+  rather than `relationships` with the referent already correctly resolved — a taxonomy
+  disagreement about who owns emailing a landlord, not this class.
+  **Ask-rate is the wrong primary meter and was replaced.** It is 0% in every arm, and if
+  the referent is supplied it *should* be: nothing is left to ask about. The pass condition
+  is referent-resolution rate, with ask-rate kept as the secondary — a fix may buy safety
+  with a clarifying question, never with silence.
+  **No `coordinator.md` edit was made or is needed** — 12/12 without one, and the block
+  carries its own instruction inline, so a second copy in the agent file would be a One
+  Home Per Rule Class violation.
+  **CLOSE CONDITION (M):** owed a commit and a deploy, then one live referring turn on the
+  VM — any short *"undo that"* / *"approved"* immediately after an action — landing on the
+  right specialist. Until that runs, this is measured on `danny_park` reconstructions, not
+  on the five live traces, which live in `mike`'s VM-owned data and are not replayable here.
   @kind: bug
-  *filed 2026-08-26 at Mike's instruction, from the live trace · fifth instance 2026-08-29*
+  *filed 2026-08-26 at Mike's instruction, from the live trace · fifth instance 2026-08-29 ·
+  built and measured 2026-09-03, awaiting the post-deploy live confirm*
 
 - **10. [DB-0829-01] The log recorded an email as sent while it was still waiting for approval —
   and it was then declined.** Live 2026-08-29, during the confirm-drain session, watched end to
@@ -1206,6 +1254,27 @@ claim user-facing (its log-write sibling is `[DB-0829-01]`); the two Iva/Eva cor
 evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording — "causing an
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
+
+- **[a specialist missed a signal it should have caught]** Coordinator output generated successfully for morning check-in schedule directive.  
+  `2026-09-03T07:12:08.505940Z`
+
+- **[a specialist missed a signal it should have caught]** Morning brief triggered but Coordinator produced no specialist calls; morning briefs require whole-person sessions (Mental Wellbeing and Physical Health).  
+  `2026-09-03T06:30:30.144538Z`
+
+- **[a specialist missed a signal it should have caught]** Coordinator generated valid structured package for evening check-in session start without user input  
+  `2026-09-02T19:41:09.970248Z`
+
+- **[a specialist missed a signal it should have caught]** Day-close session initialization triggered by scheduler; routing to Mental Wellbeing, Physical Health, and Diarist as required by cross-domain routing rules for day-close sessions.  
+  `2026-09-02T19:00:14.839170Z`
+
+- **[user corrected a prior turn]** Testing tool call before output generation  
+  `2026-09-02T16:37:27.360134Z`
+
+- **[a specialist missed a signal it should have caught]** Coordinator routing test session for day-close / scheduled trigger without user message  
+  `2026-09-02T16:35:40.650904Z`
+
+- **[a specialist missed a signal it should have caught]** Scheduled session trigger opening a quiet check-in at 5:10 PM on Wednesday Sept 2, 2026. Coordinator routing for quiet evening check-in covering active work deadlines and upcoming Sept 5 deadlines.  
+  `2026-09-02T16:10:06.813346Z`
 
 - **[a specialist missed a signal it should have caught]** Routed inbox check and logistics task appropriately.  
   `2026-09-02T10:36:18.660217Z`
