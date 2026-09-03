@@ -75,22 +75,6 @@ back-tagging the rest is `[DB-0815-10]`.
 > against `git log` before promoting anything from here.
 *(empty — triaged 2026-09-02 by Red session ④'s capstone review, all eight dispositions Mike's;
 evidence in `archive/backlog_closed_2026-09.md` § Inbox triage 2026-09-02)*
-- **A contact change can be applied without appearing on the line that says what happened.**
-`apply_crm_proposals` is a state-changing tool that is in neither `ACTION_TOOLS` nor
-`READ_TOOLS` in [core/actions.py](core/actions.py), so `is_action()` falls through to the
-name-prefix guess. It happens to guess right, but the guess is the point: the ACTIONS line
-the Synthesizer receives is the record that stops it telling Mike something landed when it
-did not, and a tool nobody classified is one nobody checked. `tests/test_action_provenance.py`
-has been failing on exactly this — 9/10, "every registered tool is explicitly classified — no
-prefix guessing" — which is the guard doing its job and being ignored. Same class as
-`[DB-0810-13]`, the Kathaleen email reported as sent.
-
-Fix is one line: add it to whichever set it belongs to. Left alone here because it is
-unrelated to what this session was doing and predates it — 9/10 both before and after
-`6483e27`.
-
-*raised 2026-09-03 by the referent-fix session (⑤), noticed while reusing `core/actions.py`
-for `tools/turn_referent.py`; Mike did not ask for it.*
 
 ---
 
@@ -1271,6 +1255,9 @@ claim user-facing (its log-write sibling is `[DB-0829-01]`); the two Iva/Eva cor
 evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording — "causing an
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
+
+- **[a specialist missed a signal it should have caught]** Scheduled proactive logistic session triggered without user input; coordinator successfully handled anticipatory logistics pass without routing error.  
+  `2026-09-03T09:00:13.874785Z`
 
 - **[a specialist missed a signal it should have caught]** Coordinator output generated successfully for morning check-in schedule directive.  
   `2026-09-03T07:12:08.505940Z`

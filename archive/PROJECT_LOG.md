@@ -98,11 +98,15 @@ touched, so its pipeline suite did not either. Gates run: `tests/test_turn_refer
 dependency and every other test in `tests/` is a plain script), fourteen related standalone
 tests all green, and one live end-to-end pipeline run through the edited call site, which routed
 *"Undo that merge."* to `relationships` and attempted the unmerge rather than searching
-work_vocation for a Prudential project. `tests/test_action_provenance.py` is 9/10 both before
-and after — `apply_crm_proposals` is unclassified in `core/actions.py`, pre-existing and
-unrelated.
+work_vocation for a Prudential project. `tests/test_action_provenance.py` was 9/10 both before
+and after — `apply_crm_proposals` unclassified in `core/actions.py`, pre-existing and unrelated
+— **filed to the Inbox and then fixed on Mike's instruction in the same session rather than
+left there.** One line into `ACTION_TOOLS`, 10/10, evidence in
+`archive/backlog_closed_2026-09.md`. It is the third tool to reach the contact store
+unclassified after `merge_contacts` and `import_contacts_file` on 08-18, which is the argument
+for fixing it on sight rather than queueing it.
 
-Commit `6483e27`. **Not deployed and not pushed** — the fix is live on the Mac only.
+Commit `6483e27`, close-out `8caaeb7`, both pushed to `origin/main`. **Not deployed — the fix is live on the Mac only**, and `[DB-0826-01]` stays open until one live referring turn on the VM confirms it.
 
 ### 2026-09-02 (Model/effort routing guidelines — verified, planned, build parked)
 

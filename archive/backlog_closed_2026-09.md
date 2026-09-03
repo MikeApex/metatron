@@ -206,3 +206,22 @@ scope-against-obligations entry condition. `[DB-0820-03]` intake corpus **parked
 `due: 2026-09-09`**. The parked `synthesizer.md` `source` line: **declined forever**.
 **A4 re-run removed from the capstone close path (Mike)** — the before-Alpha requirement in
 `ROADMAP.md` § Section 0 is unchanged.
+
+### A contact change could be applied without appearing on the line that says what happened — closed 2026-09-03
+
+`apply_crm_proposals` writes accepted rows into the contact store behind the batch confirm
+gate ([tools/crm_sweep.py:918](../tools/crm_sweep.py#L918)), and was in neither `ACTION_TOOLS`
+nor `READ_TOOLS`, so `is_action()` fell through to the name-prefix guess. The guess happened
+to be right; the point is that nobody had checked. The ACTIONS line the Synthesizer receives
+is what stops it telling Mike something landed when it did not — same class as `[DB-0810-13]`,
+the Kathaleen email reported as sent — and `tests/test_action_provenance.py` had been sitting
+at 9/10 on exactly this assertion ("every registered tool is explicitly classified — no prefix
+guessing"), i.e. the guard working and being read past.
+
+Added to `ACTION_TOOLS` in [core/actions.py](../core/actions.py). Test 10/10. Raised and fixed
+in the same session at Mike's instruction rather than left in the Inbox — it had been
+unclassified since the CRM sweep shipped, and it is the third tool to reach the store without
+a classification (`merge_contacts` and `import_contacts_file` were the first two, 2026-08-18).
+
+*Filed and closed 2026-09-03 by the referent-fix session (⑤); noticed while reusing
+`core/actions.py` for `tools/turn_referent.py`.*

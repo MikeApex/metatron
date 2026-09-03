@@ -58,6 +58,12 @@ ACTION_TOOLS: frozenset[str] = frozenset({
     # unmerge_contacts reverses a merge from the pre-merge snapshot — state-changing
     # in both directions, so it is an action like the merge it undoes. [DB-0822-03].
     "merge_contacts", "unmerge_contacts", "import_contacts_file",
+    # apply_crm_proposals writes the accepted rows into the contact store behind the
+    # batch confirm gate (tools/crm_sweep.py:918) — the model maps the user's words to
+    # ledger ids and never supplies a value, but the write is real. Added 2026-09-03;
+    # it had been unclassified since the sweep shipped, which is the same gap the two
+    # tools above were added to close.
+    "apply_crm_proposals",
     # Commitments and scheduled jobs
     "open_obligation", "close_obligation", "reopen_obligation",
     "write_schedule", "delete_schedule",
