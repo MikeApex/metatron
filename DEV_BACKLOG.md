@@ -1162,6 +1162,9 @@ evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording â
 unintended email to be sent" â€” is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
 
+- **[user corrected a prior turn]** User requested flagging the issue of not being able to access previously uploaded files across turns for the backlog.  
+  `2026-09-03T10:28:38.181404Z`
+
 - **[user corrected a prior turn]** ```  
   `2026-09-03T10:27:19.763865Z`
 
