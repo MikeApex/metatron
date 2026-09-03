@@ -267,20 +267,38 @@ def _():
     job = cfg["schedules"]["weekly_clinical_review"]
     assert job["function"] == "tools.escalation.review_clinical_escalations", job
     assert job.get("enabled") is True, job
-    # `day:` singular is not read by the gate — a job relying on it runs every day.
-    assert "day" not in job, "use `days:`; `day:` is ignored by _gates_block"
+
+    # LAYER 1 — REGISTRATION reads `day:` (singular). `_register_schedules` takes the
+    # weekly branch only on `"time" in job and "day" in job`; without it the job is
+    # registered `every().day` and runs daily. This is what the journal line
+    # "weekly_clinical_review: daily at 11:00" revealed on 2026-09-03.
+    assert "day" in job, "no `day:` — this registers DAILY, not weekly"
+    assert job["day"] == "sunday", job
+
+    # LAYER 2 — THE FIRING GATE reads `days:` and compares the FULL lowercase day name.
+    # It shipped as `sun`, which matches nothing on any day of the week, permanently.
+    assert "days" in job, job
 
     class _Sunday(datetime):
         @classmethod
         def now(cls, *a, **k):
             return datetime(2026, 9, 6)
 
+    class _Thursday(datetime):
+        @classmethod
+        def now(cls, *a, **k):
+            return datetime(2026, 9, 3)
+
     with patch.object(S, "datetime", _Sunday):
         assert S._is_active_day(job["days"]), (
             f"days: {job['days']!r} never matches — _is_active_day wants the full "
             f"lowercase day name")
-    # And it is genuinely weekly, not daily.
+    with patch.object(S, "datetime", _Thursday):
+        assert not S._is_active_day(job["days"]), "fires on the wrong day"
+
     assert job["days"] != "daily", job
+    # The two keys must agree, or the job registers for one day and gates on another.
+    assert job["day"] == job["days"], job
 
 
 # ---------------------------------------------------------------------------

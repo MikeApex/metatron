@@ -3,8 +3,7 @@
 *Updated: 2026-09-03 (**Session ⑦ ran — THE CAPSTONE IS CLOSED, and it is deployed and
 VM-verified** (`18d6923`; suite **72/72 on the VM**, both units active). All three remaining
 items worked; the cluster's remaining investment is spent. **Nothing owes a commit or a
-deploy.** **One config line is owed by Mike — see the ⚠ below; without it the clinical review
-never runs.**
+deploy.** **Nothing is owed.**
 **Where a fact came from is now recorded `[DB-0818-08]`** — a contact detail read from a real
 artefact is no longer silently replaced by a guessed one, and an inferred fact reaches the model
 as a sentence about the inference rather than a fact with a "be tentative" note beside it.
@@ -25,14 +24,13 @@ pt 8), so clinical flags remain unverified on `gemini-3.7-flash` by decision. `C
 **298/300** (the four-tier hierarchy moved to `.claude/rules/personas.md`);
 **`.claude/rules/deploy.md` is 131/100 and still owes a pass.***
 
-*⚠ **OWED BY MIKE, one line, and the feature is half-inert without it.** The weekly clinical
-review job is in `config/templates/scheduler.yaml` but not in the live
-`config/personas/mike/scheduler.yaml` — a VM-owned, Denied path the deploy correctly does not
-overwrite. Until it is added, **a tier-2 health flag is recorded but nothing ever offers to
-close it.** Add under `schedules:` — `weekly_clinical_review: {enabled: true, time: "11:00",
-days: sunday, function: tools.escalation.review_clinical_escalations, notification: none}`.
-**`days:` must be the full lowercase day name** — it shipped as `sun` first, which matches
-nothing on any day; fixed in the template with a regression test.*
+*✅ **`[DB-0808-06]` is complete** — the weekly clinical review is in the live VM config,
+registered (`sunday at 11:00`), restarted and verified against live data. **A scheduler job
+needs BOTH day keys and they are not redundant:** `day:` drives registration (without it the
+job registers *daily*), `days:` drives the firing gate (and needs the full lowercase day name —
+`sun` matches nothing, ever). **And `scheduler.yaml` is never re-read by the running daemon** —
+a config edit does nothing until `sudo systemctl restart metatron-scheduler`. All three cost a
+silent inert deploy on 09-03. Two-layer regression test in `tests/test_clinical_escalation.py`.*
 
 *⚠ **Two things left open by ⑦, both small.** B4's **max-chain-depth** message cannot be written
 until the 3-round limit exists in code rather than only in `synthesizer.md` — re-homed to Track B

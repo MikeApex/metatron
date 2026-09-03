@@ -131,14 +131,19 @@ schedules:
   #
   # Costs nothing per run — a direct Python call, no model session, on a daemon that
   # is already running; it reads one small JSON file.
-  # `days:` takes the FULL lowercase day name — `_is_active_day` compares against
-  # `strftime("%A").lower()`, so `sun` matches nothing and the job silently never fires.
-  # Caught 2026-09-03 in post-deploy verification, having been written as `sun` first.
-  # Note also that `day:` (singular) is NOT read by the gate at all, so a job relying on
-  # it runs every day — filed 2026-09-03, untriaged in `DEV_BACKLOG.md` § Inbox.
+  # BOTH day keys are set, and they are not redundant — they drive DIFFERENT layers.
+  # Worked out the hard way on 2026-09-03, after this job shipped inert twice:
+  #   `day:`  (singular) is read at REGISTRATION — `_register_schedules` calls
+  #           `schedule.every().<day>.at(t)`. Without it the job registers DAILY.
+  #   `days:` is read by the FIRING GATE — `_is_active_day` compares against
+  #           `strftime("%A").lower()`, so it needs the FULL lowercase day name.
+  #           This shipped as `sun` first, which matches nothing on any day, ever.
+  # The other weekly jobs set only `day:`, which is correct and sufficient: their gate
+  # defaults to "daily", but registration only ever invokes them on their day.
   weekly_clinical_review:
     enabled: true
-    time: "11:00"
+    day: sunday
     days: sunday
+    time: "11:00"
     function: tools.escalation.review_clinical_escalations
     notification: none

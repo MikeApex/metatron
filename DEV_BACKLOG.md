@@ -78,42 +78,38 @@ evidence in `archive/backlog_closed_2026-09.md` § Inbox triage 2026-09-02)*
 
 - **[needs building]** Cross-turn file attachment persistence: User attached a PDF in an earlier turn, but file data was not accessible across subsequent conversational turns, requiring re-upload. File attachments should persist in session context/storage across turns so references to previously uploaded files can be processed without re-attaching.  
   `2026-09-03T10:31:25.572235Z`
-- **A weekly scheduled job can run every day, because the gate ignores the key the live config uses.**
-`core/scheduler._gates_block` reads only `job_cfg.get("days", "daily")`. The live
-`config/personas/mike/scheduler.yaml` writes `day: sunday` (singular) for
-`weekly_physical_review` — which the gate never looks at, so `days` falls back to `"daily"`
-and the day gate passes **every day**. Measured 2026-09-03: a job carrying only
-`day: sunday`, evaluated on a Thursday, returns `None` from `_gates_block` (= fire).
+- **A one-character typo in a scheduler day makes a job never run, and nothing says so.**
+  **NOT the defect this was first filed as — the original headline was wrong and is corrected
+  here rather than left to argue for the wrong fix.** Filed 2026-09-03 claiming `day:` was
+  ignored and every weekly job was therefore broken. It is not. **The two keys drive different
+  layers**, and both are working as built:
+  - `day:` (singular) is read at **registration** — `_register_schedules` takes its weekly
+    branch on `"time" in job and "day" in job` and calls `schedule.every().<day>.at(t)`.
+  - `days:` is read by the **firing gate** — `_is_active_day`, comparing
+    `strftime("%A").lower()`.
 
-`day:` IS read, but only in `_near_fixed_job_blocks` (`:273`), which compares *other* jobs
-when deciding whether a roaming interval job should stay quiet. So the key is not dead —
-it is live in one place and ignored in the one that decides firing, which is why this has
-survived.
+  So `weekly_pattern_miner` and `weekly_physical_review`, which set only `day:`, are correct:
+  their gate defaults to `"daily"`, but registration only ever invokes them on Sunday. **They
+  have not been running daily.** Verified on the VM 2026-09-03 by reading the daemon's own
+  registration lines after a restart.
 
-**Whether `weekly_physical_review` has actually been firing daily is NOT established** —
-`_minutes_since_last_fire` and the time match may be holding it to once a week for other
-reasons. Check that before treating this as a live incident rather than a latent one; the
-scheduler error log and the trace history will show it.
+  **What IS real, and is why this stays open:** a plausible typo in `days:` fails **silently
+  and permanently**. `days: sun` matches nothing on any day — no error, no warning, the job
+  simply never fires. That is exactly how `weekly_clinical_review` shipped inert twice on
+  2026-09-03: once registered daily (no `day:`), once gated to nothing (`days: sun`). A job
+  setting only `days:` also registers daily and is then gated six days a week — functionally
+  right, but not what the author intended.
+  **Recommended fix:** validate scheduling keys at config load and refuse an unrecognised day
+  value loudly, rather than accepting any string and comparing it. The narrower alternative —
+  make `_is_active_day` accept three-letter abbreviations — treats the symptom and leaves the
+  next silent key. **Also worth doing: document the two-layer split where a job is written**;
+  it is in no doc, and cost a session an hour to derive from the daemon's log lines.
+  @kind: bug
+  *found 2026-09-03 during session ⑦'s post-deploy verification · headline corrected the same
+  day after the premise was tested rather than assumed · the `days: sun` and missing-`day:`
+  halves were this session's own bugs and are fixed in `config/templates/scheduler.yaml`, the
+  live `mike` config, and a two-layer regression test in `tests/test_clinical_escalation.py`*
 
-**Two directions, and they are different fixes:** make `_is_active_day` accept `day:` as a
-synonym (smallest, keeps the live config working as its author intended), or refuse an
-unknown scheduling key loudly at config load (larger, catches the next one too — a silent
-key is how this class of bug ships). A third of the value is just that a typo in `days:`
-currently fails closed *silently* — `days: sun` matches nothing on any day, which is how
-`weekly_clinical_review` shipped inert on 2026-09-03.
-
-**The template TEACHES the broken key, which is why this has spread.**
-`config/templates/scheduler.yaml:70` carries `day: sunday  # monday | tuesday | ... | sunday`
-as the documented convention, and **both** weekly jobs in the template use it
-(`weekly_pattern_miner`, `weekly_physical_review`) — as does the live `mike` config, which was
-seeded from it. So every weekly job in the project is written against a key the firing gate
-does not read. Any fix has to correct the template's comment too, or the next weekly job
-copies the same pattern.
-
-*found 2026-09-03 during session ⑦'s post-deploy verification, while checking why the new
-clinical review job was not in the live scheduler · the `days: sun` half was this session's
-own bug and is fixed in `config/templates/scheduler.yaml` with a regression test in
-`tests/test_clinical_escalation.py`; this item is the pre-existing half*
 - **A `quick` request can send the clinical agents to the cheap model, because "non-sensitive" is
 defined as "not marked local" and the cloud routing file marks nothing local.**
 `core/router.py:98` reads non-sensitive as *absence of* `local: true`, and `routing_cloud.yaml`

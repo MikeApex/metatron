@@ -493,10 +493,8 @@ against a job that could not run. Nothing in the suite looked at whether the sch
 reachable, because nothing had been asked to.
 
 **Consequence for the close.** `[DB-0818-08]` and `[DB-0804-02]`'s slice are unaffected — both
-are code on live paths and verified on the VM. `[DB-0808-06]` remains closed **as built**, and
-its remaining step is a config line Mike applies, tracked in `SESSION.md` rather than
-re-opened as an item. The alerting half — the part Mike identified as the real gap — is live
-now: a tier-2 flag lands in the inbox from this deploy onward.
+are code on live paths and verified on the VM. **`[DB-0808-06]` is now genuinely complete —
+see the section below**, which closes the gap this one opened.
 
 ### Found while verifying, filed not fixed
 
@@ -507,8 +505,66 @@ defaults to `"daily"` and the day gate passes every day. Measured: a job carryin
 running daily is not established** — the time match and `_minutes_since_last_fire` may be
 holding it — and that check is the first step.
 
-**The template teaches the broken key**, which is why it spread:
-`config/templates/scheduler.yaml:70` documents `day: sunday  # monday | ... | sunday` as the
-convention, and both weekly jobs in the template use it, as does the live `mike` config seeded
-from it. **Every weekly job in the project is written against a key the firing gate does not
-read.** Filed to the Inbox; not fixed here, per this session's no-new-fronts rule.
+**⚠ This claim was WRONG and is corrected in the section below.** The two keys drive different
+layers; the existing weekly jobs are correct and have not been running daily. Recorded rather
+than deleted, because the wrong version was reported to Mike before it was tested.
+
+---
+
+## `[DB-0808-06]` completed — 2026-09-03, live config fixed and verified
+
+**The clinical review is now registered, running, and proven to fire on the right day.** Mike
+asked for the gap closed rather than carried, and authorised the edit to the Denied,
+VM-owned `config/personas/mike/scheduler.yaml` — which `.claude/rules/personas.md` already
+names as the sanctioned method (*"edit on the VM directly and let the next backup capture
+it"*). Backed up first, to `~/scheduler.yaml.bak-20260903T175350`.
+
+Journal line after restart: **`weekly_clinical_review: sunday at 11:00`**. The function was
+then executed against live `mike` data and returned `clinical escalation review: nothing due`
+— correct, since no tier-2 flag exists yet. Both units active.
+
+### It shipped inert twice before it worked, for two different reasons
+
+Worth recording in full, because a third silent-schedule failure in one day is a pattern, not
+bad luck.
+
+1. **`days: sun` matched nothing.** `_is_active_day` compares `strftime("%A").lower()`, so the
+   abbreviation never matches — on any day, permanently. No error, no warning.
+2. **The daemon never re-reads `scheduler.yaml`.** Its loop watches
+   `data/personas/{p}/schedules.yaml` (agent-written) and re-registers only on that or a DST
+   change. A config edit without a `systemctl restart metatron-scheduler` does nothing, which
+   `core/scheduler.py`'s own comment describes as *"the user told it was set, nothing
+   happening, no error anywhere."*
+
+### The correction that matters most: `day:` is not ignored
+
+The section above filed a defect claiming `day:` (singular) is unread and every weekly job in
+the project was therefore broken. **That was wrong, and it was reported to Mike before it was
+tested.** The keys drive two different layers:
+
+| Key | Layer | Read by | Effect if absent |
+|---|---|---|---|
+| `day:` | **registration** | `_register_schedules` → `schedule.every().<day>.at(t)` | job registers **daily** |
+| `days:` | **firing gate** | `_is_active_day` | gate defaults to `"daily"` and never blocks |
+
+So `weekly_pattern_miner` and `weekly_physical_review`, which set only `day:`, are correct:
+their gate defaults open, but registration only ever invokes them on Sunday. **They have not
+been running daily.** Confirmed by reading the daemon's own registration lines after a
+restart, which is what should have been done before filing.
+
+The residual defect is real but much narrower, and the Inbox item has been rewritten to it: **a
+typo in `days:` fails silently and forever**, and a job setting only `days:` registers daily and
+is then gated six days a week. Recommended fix is to validate scheduling keys at config load
+and refuse an unrecognised day value loudly — and to document the two-layer split, which
+appears in no doc and had to be derived from log lines.
+
+### What this cost, and what caught it
+
+Three silent-schedule failures in one session, all of the same family: **the tests passed
+every time.** Nothing in the suite asked whether the schedule was reachable, because nothing
+had been asked to. The regression test now covers **both layers** and asserts the two keys
+agree — and it caught its own author, failing the moment `day:` was added because the test had
+encoded the wrong understanding.
+
+`[DB-0808-06]` is complete: the alerting half records every tier-2 flag, and the closing half
+is scheduled, registered and verified.
