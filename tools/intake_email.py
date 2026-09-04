@@ -39,6 +39,7 @@ import logging
 import re
 
 from tools.intake import Envelope, register_adapter
+from tools.intake_forward import unwrap as unwrap_forward
 from tools.mail import (TIMEOUT_SECONDS, _body_text, _decode, _imap_quote,
                         _load_config)
 
@@ -67,6 +68,39 @@ def _parse_labels(payload) -> list[str]:
         return []
     inner = match.group(1)
     return [_clean_label(tok) for tok in re.findall(r'"[^"]*"|\S+', inner) if tok.strip()]
+
+
+def _intake_cfg() -> dict:
+    """The intake config, not the mail config.
+
+    Separate loader because `_load_config()` in this module is mail.py's — it reads
+    `email.yaml` (host, credentials), while `forwarding.own_addresses` lives in
+    `intake.yaml`. Passing the wrong one would leave the gate reading an absent key and
+    the unwrap silently disabled, which is exactly the class of failure this feature
+    exists to fix. Cached per call is fine: fetch runs once per sweep.
+    """
+    try:
+        from tools.intake import load_config
+        return load_config() or {}
+    except Exception as exc:
+        logger.warning(f"[intake] could not read intake.yaml for forward unwrap: {exc}")
+        return {}
+
+
+def _auth_results(msg) -> str:
+    """The TOPMOST `Authentication-Results` header only.
+
+    Changed 2026-09-04 after review: this returned all of them joined, which handed the
+    gate attacker-written bytes. An MTA strips only the AR headers carrying its own
+    authserv-id, so any others in the message are text the sender supplied — and a
+    forged `dkim=pass` among them satisfied the gate even with the real server's
+    `dkim=fail` present. Headers are prepended, so [0] is the receiving server's.
+    """
+    try:
+        all_ar = msg.get_all("Authentication-Results") or []
+        return str(all_ar[0]) if all_ar else ""
+    except Exception:
+        return ""
 
 
 def _received_iso(msg) -> str:
@@ -225,6 +259,7 @@ def fetch(limit: int = 50, skip=None) -> list[Envelope]:
                     wanted.append(seq)
             wanted = wanted[:limit]        # ascending → oldest unseen first
 
+        intake_cfg = _intake_cfg()      # once per fetch, not once per message
         spec = "(X-GM-LABELS BODY.PEEK[])" if wants_labels else "(BODY.PEEK[])"
         for mid in wanted:
             try:
@@ -245,7 +280,7 @@ def fetch(limit: int = 50, skip=None) -> list[Envelope]:
             msg = email.message_from_bytes(msg_data[0][1], policy=email.policy.default)
             display, address = email.utils.parseaddr(_decode(msg.get("From")))
 
-            envelopes.append(Envelope(
+            env = Envelope(
                 channel="email",
                 native_id=_native_id(msg),
                 received=_received_iso(msg),
@@ -255,7 +290,26 @@ def fetch(limit: int = 50, skip=None) -> list[Envelope]:
                 body=_body_text(msg)[:ADAPTER_BODY_CHARS],
                 thread_id=_thread_id(msg),
                 signals=_signals(msg, labels),
-            ))
+            )
+
+            # Self-forward unwrapping [DB-0904-01]. Done HERE, in the adapter, because
+            # this is the only point that still holds the raw message: the gate needs
+            # `Authentication-Results`, which is a header the Envelope deliberately does
+            # not carry (it is receiver metadata, not message content). Doing it later
+            # would mean either widening Envelope for one consumer or re-fetching.
+            #
+            # `ledger_safe=False` on an unwrapped envelope is carried in signals rather
+            # than returned, because `fetch()`'s contract is a list of Envelopes and the
+            # sweep is the only caller that teaches the ledger.
+            try:
+                env, ledger_safe = unwrap_forward(env, intake_cfg, _auth_results(msg))
+                if not ledger_safe:
+                    env.signals["ledger_safe"] = False
+            except Exception as exc:      # never lose a message to the unwrap
+                logger.warning(f"[intake] forward unwrap failed, using the "
+                               f"message as received: {exc}")
+
+            envelopes.append(env)
     finally:
         try:
             conn.close()

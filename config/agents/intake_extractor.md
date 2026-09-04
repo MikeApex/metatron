@@ -114,8 +114,22 @@ search, not a category override.
 Return only this JSON object — no prose before or after, no code fence:
 
 ```
-{"category": "<one category>", "domain": "<one domain, or null>", "important": false}
+{"category": "<one category>", "domain": "<one domain, or null>", "confidence": 0.0, "important": false}
 ```
+
+`confidence` is how certain you are of the **category**, 0.0 to 1.0. It is read by code,
+not by a person, and nothing rewards a high number:
+
+- **0.9–1.0** — the message plainly is this thing; no other reading survives.
+- **0.6–0.8** — most likely this, but a reasonable person could read it otherwise.
+- **0.3–0.5** — a guess with something behind it.
+- **0.0–0.2** — you are picking because you were asked to.
+
+**Report the number you actually hold, and never omit the field.** An honest 0.4 is more
+useful than a defensive 0.9: below a threshold set elsewhere, a low score routes the
+message to a person, which is exactly what a wrong confident answer denies them. A reply
+that omits `confidence` is treated as having none, which routes the message to a person
+anyway — so omitting it buys nothing and loses your category.
 
 All three keys every time. If you are unsure of the domain but sure of the category,
 still answer both — an omitted `domain` is read as "no opinion" and the message is

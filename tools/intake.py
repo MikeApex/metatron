@@ -385,9 +385,42 @@ class Classification:
     reason: str
 
 
+# The only keys `match:` understands. Named as a constant because the failure of getting
+# this wrong is silent and total — see _match_rule.
+_MATCH_KEYS = ("sender", "subject", "list_id")
+
+
 def _match_rule(env: Envelope, rule: dict) -> bool:
     match = rule.get("match") or {}
     if not match:
+        return False
+
+    # A MATCH BLOCK WITH NO RECOGNISED KEY MATCHES NOTHING, NOT EVERYTHING (2026-09-04).
+    # Until this check existed, every key below was tested with `if key: ... return False`
+    # and the function ended in `return True` — so a block containing only unknown keys
+    # skipped every test and matched EVERY MESSAGE. One typo in a hand-edited rule would
+    # therefore classify the entire inbox as that rule's category and silence it, with no
+    # error anywhere.
+    #
+    # It is reachable and plausible, not theoretical. `teach_intake()` already refuses a
+    # rule with no match at all ("Rules without a match would apply to everything"), and
+    # maps its own `subject_contains` argument to `subject` — but config/templates/intake.yaml
+    # invites hand-editing in as many words, and `sender_contains` is exactly what someone
+    # would write, because it is the name of teach_intake's parameter.
+    #
+    # Fails closed to a NON-match: an over-narrow rule shows the user a message they wanted
+    # hidden, which they can see and correct. An over-broad one hides mail they needed, which
+    # is invisible by construction — the failure this whole module is built around.
+    # Same class as the scheduler `day:`/`days:` trap, `[DB-0903-02]`.
+    # Presence is not enough: `match: {sender: }` — a trailing colon, the commonest YAML
+    # typo — parses to {'sender': None}, which would satisfy a key-presence check, then
+    # skip all three tests below (each guarded by `if value:`) and return True for every
+    # message. That is the same catastrophe by a shorter route. Require a usable VALUE.
+    if not any(str(match.get(k) or "").strip() for k in _MATCH_KEYS):
+        logger.warning(
+            f"[intake] ignoring a rule with no usable match value among "
+            f"{list(_MATCH_KEYS)}: {sorted(match)}. It matches nothing. "
+            f"Did you mean 'sender', 'subject' or 'list_id'?")
         return False
     sender = match.get("sender")
     if sender and not fnmatch.fnmatch(env.sender_address.lower(), str(sender).lower()):
@@ -1151,7 +1184,15 @@ def sweep(persona: str | None = None) -> str:
         # its own `unclear` default would teach it that everything unfamiliar is
         # unfamiliar, and learning from the extractor is deferred to Phase 3 so a
         # model's guess cannot harden into a rule before the eval corpus exists.
-        if result.source in ("rule", "headers"):
+        # `ledger_safe: False` marks an UNWRAPPED self-forward [DB-0904-01]. The
+        # original sender came out of a message body — attacker-writable text — and
+        # authentication proved only that the user forwarded it, not that the quoted
+        # header inside is truthful. Routing on it is cheap to get wrong and easy to
+        # correct; TEACHING THE LEDGER FROM IT IS NEITHER, because a forged identity
+        # would harden into a standing rule that then mislabels that sender's real
+        # mail. Route on it, never learn from it.
+        ledger_safe = (env.signals or {}).get("ledger_safe", True)
+        if result.source in ("rule", "headers") and ledger_safe:
             observe(ledger, env, result.category)
         seen[env.id] = now
         processed_threads.add(env.thread_id or env.id)

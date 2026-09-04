@@ -53,7 +53,24 @@ _LOCATION_FIELDS = {"city", "country", "timezone"}
 # vs _CONTACT_FIELDS being separate groups — setting one must never touch the
 # other, and a shared dict makes that guarantee a matter of code discipline
 # instead of structure.
-_LANGUAGE_FIELDS = {"input_language", "output_language"}
+_LANGUAGE_FIELDS = {"input_language", "output_language",
+                    "primary_language", "secondary_language"}
+
+# TWO PAIRS, AND THE SPLIT IS THE POINT (Mike's schema, 2026-09-04). `input_language`
+# and `output_language` are the LIVE SETTING — what the pipeline should read and write
+# right now. `primary_language` and `secondary_language` are FACTS ABOUT THE PERSON —
+# which languages they have, independent of what the tool is currently configured to do.
+#
+# They were conflated before, in the worst possible place: the wisdom store held THREE
+# overlapping entries (`language_preference`, `language_preference_bulgarian`,
+# `primary_language`) alongside the real `output_language` field the code reads, so a
+# stated fact about the user and a runtime setting were the same kind of thing recorded
+# in four places. Naming the axis is what stops it recurring — a fact has one home and a
+# setting has another, and neither can be written by mistaking itself for the other.
+#
+# Deliberately NOT named `*_default`, which Mike's first sketch suggested: a "default"
+# implies a per-session override that does not exist, and renaming the two live fields
+# would break every reader of them for no behaviour change.
 
 # Stored value is an ISO 639-1 code ("bg"), not the free-text name the user
 # actually says ("Bulgarian"), for two reasons: (1) it's the canonical, unambiguous

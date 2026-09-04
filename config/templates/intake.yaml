@@ -37,6 +37,29 @@ channels:
 # job, because cadence is mechanism and this file is content (One Home Per Rule Class).
 
 
+# ── Forwarded mail ────────────────────────────────────────────────────────────
+#
+# A message the user forwards to themselves arrives with THEM as the sender, so the
+# rules below, the learned sender ledger and every bulk header describe the wrong
+# person. Measured on the 2026-09-04 corpus: 18 of 33 real messages, 55% of inbound,
+# with all three signals dead.
+#
+# Unwrapping reads the original sender out of the forwarded header block — but a
+# `From:` line inside a body is text an attacker writes, so it is gated on the outer
+# message AUTHENTICATING as the user's (dkim/arc pass whose signing domain matches).
+# A forward that fails that check is left wrapped and classified exactly as before:
+# no worse than today, which is the right failure direction. Full reasoning:
+# tools/intake_forward.py.
+#
+# OFF BY DEFAULT and it must stay that way in this template — `own_addresses` names
+# real addresses, so a shipped default would either be empty (useless) or someone
+# else's (wrong). Each persona fills its own.
+forwarding:
+  enabled: false
+  own_addresses: []
+    # - you@example.com        # other accounts you forward FROM
+
+
 # ── Categories ────────────────────────────────────────────────────────────────
 #
 # A CLOSED ENUM, and it must stay closed. The extractor agent is a small model choosing

@@ -5077,6 +5077,50 @@ _WISDOM_PROPOSAL_RE = _re.compile(
 )
 
 
+def _reroute_refused_complaint(agent: str, key: str, value: str,
+                               result: str, persona: str | None = None) -> None:
+    """A wisdom proposal refused as a complaint is recorded as a quality event instead.
+
+    WHY THIS IS IN PYTHON AND NOT AN AGENT INSTRUCTION (Mike's build, 2026-09-04). The six
+    specialists that emit `WISDOM_PROPOSAL` are exactly the six NOT granted
+    `write_quality_event` — only the Coordinator and Synthesizer have it. So the obvious
+    design, telling the refused agent to log it instead, names a tool the agent cannot
+    call: the `.claude/rules/agent-files.md` trap, one layer along. Granting six agents a
+    new tool to salvage a misfile is a large Red-tier change for a small problem.
+
+    Doing it here needs no grant at all. The specialist proposes as it always has; the
+    store refuses; the orchestrator — which is already the only writer on this path —
+    records the complaint where a defect can actually be fixed.
+
+    THE POINT IS THAT THE INFORMATION IS NOT LOST. A guard that refuses without a
+    destination just deletes the user's complaint more tidily than storing it wrongly did:
+    on the Diarist's fire-and-forget path nobody even reads the refusal string. Recording
+    it is what makes the refusal an improvement rather than a quieter failure.
+
+    Silent on anything that is not a refusal — a normal write returns a confirmation and
+    falls straight through.
+    """
+    if not isinstance(result, str) or not result.startswith("Not recorded:"):
+        return
+    if "reads as a report about this system" not in result:
+        return          # the reserved-terms refusal (medication/clinical/crisis) — not ours
+    try:
+        from tools.logger import write_quality_event
+        with persona_scope(resolve_persona(persona)):
+            write_quality_event(
+                event_type="USER_CORRECTION",
+                source_agent=agent,
+                detail=(f"Complaint about the tool was proposed as a standing fact and "
+                        f"refused by the wisdom store's complaint guard. "
+                        f"Proposed key: {key!r}. What the user reported: {value}"),
+            )
+        _trace(f"[KNOWLEDGE] {agent}'s complaint '{key}' rerouted to a quality event")
+    except Exception as exc:
+        # Never raise into the pipeline for bookkeeping. The refusal already happened and
+        # the trace above records the attempt; a failed reroute must not cost the turn.
+        logger.warning(f"[knowledge] could not reroute {agent} complaint '{key}': {exc}")
+
+
 def _file_wisdom_proposals(outputs: dict, persona: str | None = None) -> dict:
     """
     File WISDOM_PROPOSAL blocks emitted by specialists, and strip them from what the
@@ -5134,6 +5178,7 @@ def _file_wisdom_proposals(outputs: dict, persona: str | None = None) -> dict:
                         provenance=prop.get("provenance", ""),
                     )
                     _trace(f"[KNOWLEDGE] proposal from {agent}: {result}")
+                    _reroute_refused_complaint(agent, key, value, result, persona)
                 except Exception as exc:
                     logger.warning(f"[knowledge] {agent} proposal '{key}' failed: {exc}")
 

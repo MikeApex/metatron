@@ -153,6 +153,45 @@ _LEGACY_CATEGORIES = {"patterns", "seasonal", "annual", "preferences", "quirks"}
 _RESERVED_KEY_TERMS = ("medication", "clinical", "crisis")
 
 
+# ---------------------------------------------------------------------------
+# The complaint guard (2026-09-04, Mike's instruction)
+# ---------------------------------------------------------------------------
+# THE STORE IS FOR FACTS ABOUT THE USER. A complaint is a fact about the TOOL, and the
+# two are linguistically identical at the moment of capture: "the transcription keeps
+# mangling my speech" is a durable-sounding observation, and an agent handed it has
+# exactly one durable-storage verb to reach for. So it goes in the wrong drawer — not
+# from carelessness, but because there was no other drawer.
+#
+# Measured 2026-09-04 on the live store: of 24 entries judged not to be facts about
+# Mike, three were straight tool defects (`voice_transcription_issues`,
+# `crm_update_friction`, `bulgarian_speech_to_text_issues`) already tracked properly in
+# DEV_BACKLOG, and a fourth (`system_framing_preference`) was feedback about a feature's
+# wording. They had been retrieved as though they were knowledge about him.
+#
+# WHY A CODE GUARD AND NOT AN INSTRUCTION. The same week, the intake extractor ignored an
+# explicit, twice-sharpened instruction to answer `unclear`, and the fix there was also a
+# code-side floor. A behaviour obtainable only by asking nicely is not a behaviour you
+# have. This mirrors _RESERVED_KEY_TERMS exactly: refuse, and name the right destination
+# in the refusal — a refusal that does not say where else to put it just loses the
+# information, which is worse than misfiling it.
+#
+# DELIBERATELY NARROW. These fire on the KEY, not the value, and every term names the
+# system or a malfunction rather than a life subject. A guard broad enough to catch every
+# complaint would also catch real facts — "user finds mornings difficult" is not a bug
+# report — and a false refusal silently discards a true fact on the Diarist's
+# fire-and-forget path, where nobody reads the return string. Prefer misses to false
+# positives here.
+_COMPLAINT_KEY_TERMS = (
+    "transcription", "mistranscri", "stt_", "_bug", "bug_", "_defect", "defect_",
+    "_glitch", "glitch_", "_broken", "broken_", "_failure", "failure_", "_error",
+    "error_", "friction", "not_working", "doesnt_work", "doesn_t_work",
+    # Named in full rather than reaching for "issues", which would refuse `sleep_issues`
+    # and other real facts about the user. Specific beats broad: this list is allowed to
+    # miss, it is not allowed to eat a true fact.
+    "speech_to_text", "speech_recognition", "text_to_speech",
+)
+
+
 def resolve_domain(raw: str) -> tuple[str, str]:
     """
     Resolve a caller-supplied domain to a stored one.
@@ -447,6 +486,18 @@ def write_wisdom(key: str, value: str, domain: str = "", provenance: str = "") -
             f"never depend on a fact that may or may not be looked up. Use "
             f"`write_agent_config` — a {reserved} fact belongs in the agent's own profile, "
             f"where the flag reads it every time."
+        )
+
+    complaint = next((t for t in _COMPLAINT_KEY_TERMS if t in (key or "").lower()), "")
+    if complaint:
+        return (
+            f"Not recorded: '{key}' reads as a report about this system, not a standing "
+            f"fact about the user — this store holds durable knowledge about them, and a "
+            f"tool defect filed here is retrieved later as though it were something true "
+            f"of the person. Record it with `log_quality_event` "
+            f"(event_type=USER_CORRECTION), which reaches the development backlog where a "
+            f"defect can actually be fixed. If this really is a fact about the user rather "
+            f"than about the tool, keep the fact and rename the key without '{complaint}'."
         )
 
     resolved_domain, proposed = resolve_domain(domain)

@@ -79,14 +79,19 @@ _JSON_RE = re.compile(r"\{.*?\}", re.DOTALL)
 _UNRESOLVED = object()
 
 
-def _confidence_threshold(persona: str | None = None) -> float:
-    """`extractor.confidence_threshold` from the persona's intake.yaml. 0 = off."""
+def _floor_settings(persona: str | None = None) -> tuple[float, bool]:
+    """`(confidence_threshold, require_confidence)` — one config read, not two.
+
+    Both keys live in the same `extractor:` block and were being fetched by separate
+    functions, each parsing the YAML again, on every message.
+    """
     try:
         from tools.intake import load_config
-        return float((load_config(persona).get("extractor") or {})
-                     .get("confidence_threshold", 0) or 0)
+        cfg = (load_config(persona).get("extractor") or {})
+        return (float(cfg.get("confidence_threshold", 0) or 0),
+                bool(cfg.get("require_confidence", True)))
     except Exception:
-        return 0.0
+        return 0.0, True
 
 
 def _build_input(env: Envelope) -> str:
@@ -169,7 +174,8 @@ def _parse(raw: str) -> dict:
             "important": bool(data.get("important", False))}
 
 
-def apply_confidence_floor(result: dict, threshold: float) -> dict:
+def apply_confidence_floor(result: dict, threshold: float,
+                           require: bool = True) -> dict:
     """Demote a low-confidence answer to `unclear`, which surfaces to the user.
 
     `threshold <= 0` is off, and is the default — the floor stays inert until a run of
@@ -177,17 +183,44 @@ def apply_confidence_floor(result: dict, threshold: float) -> dict:
     the surface/silence dial blind, and that dial is the whole product: too low and
     obligations are silenced, too high and the user's inbox is handed back to them.
 
-    A result carrying no confidence is never demoted. `unclear` keeps its domain, so a
-    demoted message still reaches the right specialist's queue.
+    A MISSING CONFIDENCE IS TREATED AS FAILING THE FLOOR, not as passing it
+    (`require_confidence`, default True whenever a floor is set). Measured 2026-09-04:
+    asked for the field on every message, the model supplied it on **61%** and omitted
+    it on the rest. Treating a missing field as "no opinion, let it through" would leave
+    39% of mail bypassing the control entirely — a floor with a hole that size is not a
+    floor, and the hole is invisible because nothing errors.
+
+    The reasoning is the same one that governs the whole module: an answer that ignores
+    its own output contract is not evidence of confidence. Demoting it costs one
+    surfaced message; trusting it costs a silenced obligation. Set
+    `extractor.require_confidence: false` to take the other trade deliberately.
+
+    ⚠ A DEMOTED RESULT IS CURRENTLY DISCARDED WHOLE by `sweep()`, which gates on
+    `found["category"] != "unclear"` — so the model's domain, its `important` flag and
+    the `demoted_*` keys below are all lost, and a demoted high-value message becomes
+    indistinguishable from one nothing could read. That is a real gap, stated rather
+    than papered over: an earlier draft of this docstring claimed the domain survived,
+    and it does not. Closing it means teaching `sweep()` to keep a demoted result's
+    domain — worth doing before any threshold is switched on, since demotion is
+    pointless if the routing it preserves is thrown away.
     """
     if threshold <= 0:
         return result
     confidence = result.get("confidence")
-    if confidence is None or confidence >= threshold:
+    if confidence is None:
+        if not require:
+            return result
+        demoted = dict(result)
+        demoted["category"] = "unclear"
+        demoted["demoted_from"] = result.get("category")
+        demoted["demoted_reason"] = "no confidence reported"
+        return demoted
+    if confidence >= threshold:
         return result
     demoted = dict(result)
     demoted["category"] = "unclear"
     demoted["demoted_from"] = result.get("category")
+    demoted["demoted_reason"] = f"confidence {confidence} below {threshold}"
     return demoted
 
 
@@ -220,7 +253,8 @@ def extract(env: Envelope, persona: str | None = None) -> dict:
         logger.warning(f"[intake] extractor call failed for {env.id}: {exc}")
         return {"category": "unclear", "domain": _UNRESOLVED,
                 "confidence": None, "important": False}
-    return apply_confidence_floor(_parse(raw), _confidence_threshold(persona))
+    threshold, require = _floor_settings(persona)
+    return apply_confidence_floor(_parse(raw), threshold, require)
 
 
 def has_domain_opinion(result: dict) -> bool:

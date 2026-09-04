@@ -175,6 +175,11 @@ data/diagnostics/
 # Local backups pulled from the VM — real user data, never committed
 backups/
 
+# Local-only working files: review sheets, scratch notes, anything holding persona
+# data that must never be committed. Added 2026-09-04 for the wisdom-store review —
+# the alternative was writing personal data into archive/plans/, which IS committed.
+local/
+
 # deploy.sh's mutual-exclusion lock — runtime state, one machine only
 .deploy.lock/
 
