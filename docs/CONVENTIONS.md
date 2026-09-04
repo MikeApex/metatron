@@ -168,7 +168,12 @@ and a clock.** That instruction is a remembered process and it went stale the wa
 processes do: on 2026-09-01 the fleet was still routing to a **deprecated**
 `gemini-3.1-flash-lite` with three newer Flash generations shipped, and the `SESSION.md` table
 was five weeks old. `scripts/check_model_availability.py` answers it in ~20s for well under
-$0.001; `[DB-0901-01]` carries the monthly `due:` date so it wakes itself at session start.
+$0.001; `[DB-0901-01]` carries the **weekly** `due:` date so it wakes itself at session start.
+**Weekly since 2026-09-04, monthly before it** (Mike): 3.8 Flash `404`'d on 09-01 and was
+callable on 09-04, so a monthly clock had a 27-day blind spot on a same-price upgrade. The run
+is cheap in tokens (~$0.001, most of it free filtering) — the cadence was never limited by cost.
+**The date is the floor, not the trigger**: run it on any credible signal a model shipped. The
+09-04 adoption came from a launch email, not the clock.
 
 > **Two things a hand-check gets wrong, both observed 2026-09-01.** A model can read `200 GA`
 > from the Vertex catalogue and `404` on the `global` endpoint we actually call — true of

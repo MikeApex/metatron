@@ -1,11 +1,16 @@
 # Cloud routing configuration — used when DEPLOYMENT_MODE=cloud (VM deployment).
 #
-# All agents route to Vertex AI Gemini 3.7 Flash / 3.5 Flash-Lite via the google-genai SDK.
+# All agents route to Vertex AI Gemini 3.8 Flash / 3.5 Flash-Lite via the google-genai SDK.
 # Migrated off 3.1 Pro + 3.1 Flash-Lite on 2026-09-01: 3.1 Flash-Lite was deprecated, and the
-# Flash and Pro lines have desynced — 3.7 Flash outscores 3.1 Pro at a fraction of the price,
-# so the reasoning tier is a Flash model now. 3.5 Pro and 3.8 Flash exist in the Vertex catalogue
-# but 404 on the `global` endpoint, so neither was an option. Availability re-checked monthly by
-# scripts/check_model_availability.py.
+# Flash and Pro lines have desynced, so the reasoning tier is a Flash model now. Reasoning tier
+# moved 3.7 → 3.8 Flash on 2026-09-04 — same price, higher scores across every published
+# benchmark, cache floor re-checked and unchanged.
+#
+# 3.8 Flash was listed in the Vertex catalogue on 2026-09-01 and 404'd on the `global` endpoint,
+# which is why it was passed over then; it answered a live call on 09-04. `gemini-3.5-pro` is
+# still catalogue-only. **A 404 is a dated observation, not a standing fact** — re-confirm before
+# writing a model off, not just before wiring one in. Availability re-checked WEEKLY by
+# scripts/check_model_availability.py (monthly until 2026-09-04; the three-day gap above is why).
 # No Ollama references — the VM does no local inference.
 # Privacy basis: Vertex AI ZDR (contractual sequestration, no training on data).
 # This file is a temporary path; north star is private hardware (local/A100/H100).
@@ -41,7 +46,7 @@ agents:
 
   synthesizer:
     provider: gemini
-    model: "models/gemini-3.7-flash"        # user-facing voice; safety flag integration; top reasoning tier available
+    model: "models/gemini-3.8-flash"        # user-facing voice; safety flag integration; top reasoning tier available
     # read_wisdom + write_wisdom granted 2026-08-15 with the knowledge layer. The Synthesizer
     # is the main conversational writer — the agent actually present when the user states a
     # standing fact — and it is the fallback for turns the Coordinator's KNOWLEDGE_TO_LOAD did
@@ -115,7 +120,7 @@ agents:
 
   pattern_miner:
     provider: gemini
-    model: "models/gemini-3.7-flash"        # analytical depth; scheduler task, not on real-time path
+    model: "models/gemini-3.8-flash"        # analytical depth; scheduler task, not on real-time path
     # All four wisdom tools granted 2026-08-15. pattern_miner.md:106 has instructed
     # `find_duplicate_wisdom` since Phase 3 and this agent was granted NO wisdom tool at all —
     # the instructed-but-ungranted class that the knowledge-layer work exists to close,
@@ -129,7 +134,7 @@ agents:
 
   goals_interviewer:
     provider: gemini
-    model: "models/gemini-3.7-flash"        # interview quality matters; runs infrequently
+    model: "models/gemini-3.8-flash"        # interview quality matters; runs infrequently
     # write_baseline_period granted 2026-08-28 [DB-0810-03]: instructed at
     # goals_interviewer.md:236, never granted.
     allowed_tools: [read_goals, write_goals, write_config, write_retrospective, create_semantic_anchor, write_aspirational_baseline, update_goal, write_baseline_period]
@@ -148,20 +153,24 @@ agents:
 
   mental_wellbeing:
     provider: gemini
-    model: "models/gemini-3.7-flash"        # clinical flags (MUST_SURFACE, CLINICAL_CONCERN) — see note
-    # MOVED OFF 3.1 Pro 2026-09-01 with the fleet migration. The "never downgrade" rule this
-    # entry used to carry is NOT waived on the merits: 3.7 Flash scores above 3.1 Pro on public
-    # reasoning benchmarks, so this is not a downgrade on paper — but a benchmark is not our
-    # clinical hard-fail suite, and that suite (tests/run_a4_safety.py) was NOT run for this
-    # change. Mike suspended A4 safety testing for the remainder of the capstone buildout
-    # (2026-09-01, recorded in ROADMAP.md § Section 0 and SESSION.md). So the honest status is:
-    # the flags are UNVERIFIED on this model, by decision, not by oversight. Re-run
-    # `python3 tests/run_a4_safety.py --complexity deep` at capstone close before Alpha.
+    model: "models/gemini-3.8-flash"        # clinical flags (MUST_SURFACE, CLINICAL_CONCERN) — see note
+    # MOVED 3.1 Pro → 3.7 Flash 2026-09-01, then 3.7 → 3.8 Flash 2026-09-04. The "never
+    # downgrade" rule this entry used to carry is NOT waived on the merits: each hop scores
+    # above the last on public reasoning benchmarks, so neither is a downgrade on paper — but a
+    # benchmark is not our clinical hard-fail suite, and that suite (tests/run_a4_safety.py) has
+    # NOT been run for EITHER change. Mike suspended A4 safety testing for the remainder of the
+    # capstone buildout (2026-09-01, recorded in ROADMAP.md § Section 0 and SESSION.md).
+    #
+    # So the honest status is: the flags are UNVERIFIED on this model, by decision, not by
+    # oversight — and this is now the SECOND consecutive unverified hop, which is the part that
+    # compounds. The last green run (6/6, tests/a4_safety_rerun_2026-08-04_gemini.md; 3/3 quick,
+    # 2026-08-18) was against 3.1 Pro / 3.1 Flash-Lite — a model no longer in the fleet.
+    # Re-run `python3 tests/run_a4_safety.py --complexity deep` at capstone close before Alpha.
     allowed_tools: [read_log, write_log, write_journal, search_memory, read_agent_config, write_agent_config, read_wisdom, write_wisdom]
 
   physical_health:
     provider: gemini
-    model: "models/gemini-3.7-flash"        # medication / symptom class; same safety rationale + A4 note as MW
+    model: "models/gemini-3.8-flash"        # medication / symptom class; same safety rationale + A4 note as MW
     # read_agent_config granted 2026-08-04: MEDICATION_MISSED_CRITICAL classification must come
     # from the stored medication_profile and never from inference (physical_health.md:106,123).
     # Without the read grant the flag is structurally unfireable — the agent is required to
@@ -288,7 +297,7 @@ agents:
 
   research_agent:
     provider: gemini
-    model: "models/gemini-3.7-flash"        # grounded search; decontextualized only
+    model: "models/gemini-3.8-flash"        # grounded search; decontextualized only
     allowed_tools: [fetch_url, fetch_rendered, get_pollen_forecast]
     # get_pollen_forecast added 2026-08-08. It is the data source for the pollen leg of
     # the routing coordinator.md already carried ("sore throat" → Physical Health →

@@ -182,7 +182,7 @@ agents:
 
   research_agent:
     provider: gemini
-    model: "models/gemini-3.7-flash"         # grounded search; decontextualized only
+    model: "models/gemini-3.8-flash"         # grounded search; decontextualized only
     allowed_tools: [fetch_url, fetch_rendered, get_pollen_forecast]
     # get_pollen_forecast added 2026-08-08. It is the data source for the pollen leg of
     # the routing coordinator.md already carried ("sore throat" → Physical Health →

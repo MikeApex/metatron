@@ -171,6 +171,35 @@ pricing:
         input: 1.50
         output: 7.50
         cached_input: 0.15
+  gemini-3.8-flash:
+    # Reasoning tier from 2026-09-04. Adopted the day it became callable: it 404'd on the
+    # `global` endpoint on 09-01 and returned live on 09-04 — catalogue presence was NOT
+    # availability, which is why the chore re-checks with a real call.
+    #
+    # ⚠ THE ONE FIGURE HERE THAT IS INFERRED, NOT VERIFIED. Every rate below is read off the
+    # Cloud Billing SKU catalogue (services/C7E2-9256-1C43, Global text tier, standard) the
+    # same way 3.7 Flash's were — and the SKUs read $1.50 / $7.50 / $0.15, IDENTICAL to
+    # 3.7 Flash's SKUs. But we are billed $0.75/$3.75 for 3.7 today under introductory
+    # pricing that the SKU catalogue does not express. Google's launch announcement states
+    # 3.8 ships "at the same price as 3.7", so the intro rates are entered here — but the
+    # END DATE of 3.8's introductory period is UNKNOWN and was not verifiable from any
+    # source reachable on this machine. The 2027-01-01 date below is COPIED FROM 3.7, not
+    # confirmed for 3.8. If 3.8's intro ends earlier, this guard under-reports 2x until it
+    # does. Confirmed against the BigQuery billing export once real 3.8 traffic lands —
+    # [DB-0904-02].
+    input: 0.75
+    output: 3.75
+    cached_input: 0.075
+    # SKU "Gemini 3.8 Flash Text Input Caching Storage" = $1.00 per 1M tokens/hour, flat —
+    # verified 2026-09-04, same as 3.7. All four keys present deliberately: an entry that
+    # EXISTS but omits cache_storage_per_hour bills storage at ZERO (see `default` note).
+    cache_storage_per_hour: 1.00
+    from:
+      "2027-01-01":
+        input: 1.50
+        output: 7.50
+        cached_input: 0.15
+
   gemini-3.5-flash-lite:
     # Bulk tier. No introductory period — these are list rates.
     input: 0.30
