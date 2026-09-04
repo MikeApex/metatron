@@ -430,54 +430,6 @@ the condition has not arrived, push the date rather than closing the item.
   whichever session picks it up.
   *filed 2026-08-14 by Mike via the VM · parked 2026-09-02*
 
-- **[DB-0815-12] Real-time location as a signal.** GPS and proactive area-scanning. Needs a design
-  pass before anything is built on it: the privacy tier for **continuous** location, which layer
-  supplies it, and how scanning bounds itself. Split out of `[DB-0808-04]` 2026-08-15 — keeping them
-  as one entry hid a shippable feature behind an unmade decision for a week.
-  **First-draft feature — Mike, 2026-08-27: geolocation belongs in this rendition; moved up in the
-  capstone plan.**
-  **✅ DESIGN DECIDED 2026-08-28 (Mike) — build owed.** *(1)* **Tier: extra-sensitive, above
-  ordinary sensitive — raw coordinates never enter any model prompt, cloud or local.** Models
-  see only a code-derived zone line ("home since 14:02"); Mike defines named zones; the GPS→zone
-  map is Python, enforced in tool code per the standing principle. *(2)* **Storage: zone
-  transitions, not the trail.** No raw coordinate history kept (debug-only raw points, if ever,
-  get `600` perms and a stated expiry). *(3)* **The phone app (Capacitor) is the tracker.
-  First draft ships two capture modes only: on-message ping and a manual button — both
-  "while using the app" permission, every ping traceable to a user action.** **The on-message
-  ping DEFAULTS OFF — the user must turn it on explicitly, and the off-default is confirmed by
-  test after the build.** Background scheduled/stochastic pings (Capacitor background-geolocation
-  plugin, "allow all the time" permission, persistent notification) are **planned improvements
-  for a later date, not this build**. *(4)* **Scanning bounds:** proactive scans fire on zone
-  transitions or scheduled windows, never a poll loop; a location-keyed query to any NEW
-  external vendor is its own decision, not covered here (Darwin's station pair is accepted).
-  @kind: feature
-  **✅ First draft BUILT 2026-08-28** (`029905e`, spinoff chat): both capture modes in
-  `static/index.html` (ping strict-off-default, JS test 11/11; manual button);
-  `POST /location` resolves the coordinate in-handler — no coordinate on disk, in a response,
-  or in a prompt (asserted against bytes, 30/30 + 10/10); transitions-only log (0600, no raw
-  trail even behind a flag); `config/templates/zones.yaml` template — **live zones are Mike's
-  to define at `data/personas/mike/zones.yaml` on the VM**; "home since HH:MM" context line.
-  No model-callable location tool registered (tightest reading — a grant decision if wanted).
-  *remaining: **Mike's APK rebuild & sideload** (VM deploy done 2026-08-28; phone won't show
-  the 📍 control until the sideload) + zones file on the VM (key places only — home, office,
-  chess club; everywhere else is `away` by design); then one ping near a defined zone
-  confirms. Handoff: `archive/handoffs/2026-08-28-location-first-draft.md`*
-  **✅ Zone-suggestion build DONE and DEPLOYED (session ②, `d750fbb`, 2026-08-28 late)** —
-  option b exactly as ruled: away ping + calendar-expected place → name-only forward geocode
-  (`tools/places.py geocode_place_name`, per-name cache, fail-soft) → LOCAL compare inside
-  `record_position`'s own frame → existing confirm card → `append_zone`, the one
-  consume-gated write path to `zones.yaml`. Candidates from the structured CalDAV query
-  only; throttled 1/15 min; nothing polls. 24 checks incl. the outbound-payload byte
-  assertion (`tests/test_zone_suggestion.py`). **The Places key already existed (2026-08-26),
-  so the feature is LIVE, not dormant.** Rejected per the same ruling, not built:
-  randomised-nearby coordinates.
-  *remaining, all (M) + confirms — steps in
-  `archive/handoffs/2026-08-28-post-session-two-mike-steps.md`: zones file on the VM (until
-  then every ping is `away`), APK rebuild + sideload (📍 control), then one ping at a defined
-  zone confirms the first draft and one away ping at a calendar venue confirms the
-  suggestion card.*
-  *filed 2026-08-10 · split 2026-08-15 · promoted 2026-08-27 · design decided 2026-08-28 ·
-  first draft built + deployed 2026-08-28 · zone suggestion built + deployed 2026-08-28 late*
 
 ### Done and deployed — each closes on one ordinary use
 
@@ -498,8 +450,68 @@ with a date.** Nothing new joins this group open-ended.*
   `extractor.enabled: true` in mike's `intake.yaml`. Closes on the flip, citing the eval output.
   On the **local** routing path the eval must be re-run against the local model before the same
   flip — A4's lesson, recorded in `routing.yaml`'s entry.
-  @waiting: corpus labelled by Mike on the VM (needs a few days of swept mail first)
+  **✅ (a) DONE, and the corpus is smaller than the item assumes — 2026-09-04.** The mailbox holds
+  **33 messages from 9 senders**, total, across 07-29→09-01. There is no ~50 to be had and waiting
+  does not produce one (~1 message/day). `tests/build_intake_corpus.py` (new) writes labelled stubs
+  from live envelopes — the swept `records.jsonl` **cannot** serve as the corpus source, because it
+  stores no bodies by design and the `--extractor` half grades on the body. All 33 labelled by Mike
+  in session. **18 of 33 are forwards from his own address**, so the sender signal — which the code
+  tier partly classifies on — is dead on 55% of the corpus. **`bill_statement` has zero examples and
+  is therefore untested.**
+  **✅ (b) DONE, and the number is stark: the code tier classifies 1 of 33 (3%).** With no taught
+  rules and an empty ledger, 32/33 land on `unclear`. That is the designed cold start, now measured:
+  **the extractor is effectively the entire classifier**, not a fallback for what code cannot do.
+  **❌ (c) FAILS THE GATE — the flip did NOT happen.** Worst-run `action_required` false negatives
+  = 1–2 across every configuration tried. One failure is stable across all runs: *"Fwd: Quotes for
+  Allied Mover Damages"* → `correspondence`.
+  **⚠ THE FINDING THAT OUTRANKS THE GATE: a single run cannot gate this.** Identical corpus,
+  identical agent file, consecutive runs returned **1, 3, 1, 1, 2** false negatives. `--runs N`
+  now repeats and **gates on the worst run** (`tests/run_intake_eval.py`), and `--persona` was added
+  because the runner died in `resolve_persona()` before reading a fixture — it had never been run
+  against a real corpus.
+  **Mike's ruling 2026-09-04 on relaxing the gate: no.** The gate currently fails on any non-`unclear`
+  answer, which is stricter than its own docstring (it fails on `correspondence`, which *surfaces*).
+  Proposed relaxing it to fail only on `digest`/`silent` — the outcomes that actually *hide* a
+  message. He declined the relaxation: *"unclear needs to come up more for this to have any validity
+  in the future."* Fix the model, not the test.
+  **A/B/C run on the `unclear` problem, 2026-09-04 — no winner, and a third of the data is void.**
+  Three variant agent files (counterargue / self-reported confidence / both) × 3 runs. **Run 3 of
+  every variant collapsed identically** (32/33 unclear, domain 0/20) — a transient call failure, not
+  behaviour, with every call hitting the defensive `unclear` floor. Reading runs 1–2 only:
+  base 5/66 unclear at 1,1 gate misses · **counterargue 12/66 unclear but 2,2 gate misses and domain
+  14–15/20 — it raises doubt AND degrades accuracy** · confidence 10/66 at 1,1, accuracy intact ·
+  both 6/66 at 1,1. **The confidence axis is the better lever and counterargue should not ship.**
+  `apply_confidence_floor()` is built and **inert** (`extractor.confidence_threshold`, default 0) —
+  the threshold must be picked from a confidence-vs-correctness sweep, not intuition, because that
+  dial is the product: too low silences obligations, too high hands the user back their inbox.
+  **✅ The domain axis was built in the same session and is the clear win** — see the entry below.
+  **Next, and it needs no one:** dump confidence against correctness for the `confidence` variant,
+  pick the threshold from the curve, re-run `--runs 5`. Then (d)'s scoped `/code-review`, then the
+  flip decision.
+  @waiting: threshold sweep, then Mike's flip decision citing the eval output
   @kind: feature
+
+- **[DB-0904-01] A forwarded email is filed as if the user wrote it, so triage is blind on more
+  than half of real inbound.** Forward something into the intake account and the sender the
+  classifier sees is *the user*. The sender ledger, the `rules:` layer and every header signal are
+  built on who sent it, so all three go dark; on the labelled corpus this is **18 of 33 messages**.
+  Those messages are classified from subject and body alone, which is why the extractor is carrying
+  the whole load there.
+  **Mike's requirement, 2026-09-04:** *"The tool should recognize a forward from the user's other
+  account and look in the body of the email for the original sender."*
+  **⚠ THE UNWRAP IS A SECURITY BOUNDARY AND MUST BE AUTHENTICATED, NOT PATTERN-MATCHED.** A
+  `From:` line inside a body is attacker-writable text. If the unwrap trusts it, anyone able to
+  spoof the user's address hands the system a forged sender identity — and **the ledger learns from
+  what it sees**, so the poison hardens into a rule. **Gate the unwrap on the forward actually
+  authenticating as the user's (DKIM/ARC pass), never on the `From:` header matching**, which is
+  trivially forged. Because it changes a path that meets hostile input, `tests/run_intake_redteam.py`
+  gets a row for it — the suite that already covers this surface (`[DB-0820-04]`, PASS 5/0/0).
+  **Sequencing:** this lands before the extractor flip is worth re-measuring. It changes what the
+  code tier can resolve unaided, which is the 3% figure `[DB-0820-03]` measured — so the corpus
+  result should be re-run after it, not before.
+  @kind: feature
+  @waiting: nothing — buildable now
+  *raised by Mike 2026-09-04 from reading the labelled corpus in the (M)-walkthrough session*
   `due: 2026-09-09` — parked with a date at the capstone review (Mike, 2026-09-02): the sweep has
   been accumulating real mail since intake went live 08-29 13:54, so a week's corpus exists by
   then. Note the toggles are distinct: Mike enabled the **sweep** (code tier) 08-29; the
@@ -842,8 +854,14 @@ half (b) is now part of the Pro-routing decision. Evidence and trail:
   in the capstone plan.** Blocking input: the Darwin / Rail Data Marketplace API registration is
   Mike's to do (his account, his key).
   @kind: feature
-  @waiting: Darwin API key registered by Mike
-  *filed 2026-08-18 · promoted 2026-08-27*
+  **DEFERRED TO MARK 2 — Mike, 2026-09-04, in the walkthrough session convened to close it.**
+  The registration walkthrough was prepared and presented; his call on seeing it was *"too
+  involved, skip and we'll revisit at a later time in mark 2."* This is a decision, not a
+  slip: it leaves with a destination rather than returning to a list, per CLAUDE.md § Mike-gated
+  work gets a walkthrough. **Do not re-propose the registration as a standalone (M).** It rides
+  the Mark 2 transit work (`archive/plans/mark2_endeavour_plan_2026-09-02.md`).
+  @waiting: Mark 2 — Darwin API key registered by Mike as part of that build
+  *filed 2026-08-18 · promoted 2026-08-27 · deferred to Mark 2 2026-09-04*
 
 - **[DB-0818-05] The tool asks which Bill, then asks again about the same Bill.** Family and close
   friends resolve on frequency alone; the hard case is sparse — *"Bill Thompson from work"*, *"Bill
@@ -894,9 +912,32 @@ half (b) is now part of the Pro-routing decision. Evidence and trail:
   hand-reviewed 08-15 KEY_MAP, not a live read (store is Denied-tier); it counts **eleven**
   interaction preferences where this item says eight — the transplant should treat those eleven
   as one review pass, since several likely collapse into one persona-file line.
+  **✅ HALF EXECUTED 2026-09-04 (Mike approved per-group in session).** Eight entries archived
+  with reasons, store **80 → 72**, backup taken first (`wisdom.pre-cleanup-2026-09-04.json`):
+  one duplicate merged (`post_travel_recovery`), three tool defects retired, two dated
+  observations, one content-free entry, and `language_preference` (which duplicated
+  `profile.yaml`'s `output_language`). Nothing deleted — `retire_wisdom_entries()` was added to
+  `tools/wisdom.py` for the class the proposal called "plain deletion", because this codebase
+  has no delete and forcing them through `merge_wisdom_entries` would have written a
+  `merged_into` pointer naming an entry that does not hold the same fact.
+  **⚠ THE PROPOSAL WAS STALE AND THE STORE IS GROWING FASTER THAN IT IS CLEANED.** It was built
+  from a 2026-08-15 read of 59 entries. Live count on 2026-09-04 was **80** — 2 of its 24 were
+  already gone, and **21 entries written since then have never been assessed**. Those 21 carry
+  the same faults: language settings now duplicated **three** ways (`language_preference_bulgarian`,
+  `primary_language`, plus the one just retired) against `profile.yaml`'s real field;
+  instructions-to-the-tool stored as facts (`no_prudential_review_talk`, `no_swimming_reminders`);
+  three post-travel entries, two standard-breakfast entries, eight overlapping momentum/recovery
+  entries; and contact facts filed as wisdom (`gym_steven_identity`, `horatiu_stefan_status`,
+  `kathleen_jermyn_spelling`). **Cleaning without fixing the writer buys three weeks.**
+  **What remains, and it is one sitting, not two:** the 11 interaction preferences → persona
+  file (Mike's judgement — several collapse into one line, and he flagged `avoid_travel_assumptions`
+  as likely a misfiled complaint rather than a preference), the 3 recurring obligations →
+  `open_obligation` (held back deliberately: transplanting one needs its *value* read and its
+  recurrence judged, which is a decision, not a move), and the 21 unassessed entries. Values for
+  all 14 are staged at `/tmp/wisdom_group_a_2026-09-04.json` on the VM.
   @kind: chore
-  @waiting: Mike reviews the proposal, then the execution session (VM-owned data; the
-  persona-file transplant is the judgement half)
+  @waiting: one sitting with Mike — Group A (11 preferences) + Group B (3 obligations) + the 21
+  unassessed entries, together so the store gets one coherent pass
   *found 2026-08-15 by reading all 59 live entries during the schema migration (`a35acfa`), which
   reports them and deliberately moves nothing · triaged out of `## Inbox` 2026-08-18 · proposal
   2026-08-27 by the wisdom-store attack worker*
@@ -1148,6 +1189,57 @@ claim user-facing (its log-write sibling is `[DB-0829-01]`); the two Iva/Eva cor
 evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording — "causing an
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
+
+- **[user corrected a prior turn]** User prompt injected instructions into the system via untrusted content in the previous turn  
+  `2026-09-04T06:30:26.062400Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Travel to Cheder' (2026-10-11T09:00:00, uid=62bcc50a-ca0c-46a0-b987-9f5c586be030@ai-life-manager) and 'Cheder' (2026-10-11T10:00:00, uid=e33c9e5b-c524-4694-9e1e-bf8094249e9c@ai-life-manager). title_similarity=0.55, shared_attendees=[], shared_words=['cheder']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-09-04T04:35:15.012210Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Cheder' (2026-10-11T00:00:00, uid=8f9fbb09-26b9-40cf-a986-272803e5abef@ai-life-manager) and 'Travel from Cheder' (2026-10-11T12:30:00, uid=a6c1ba52-af0a-4ebd-ab1e-accdcca9b627@ai-life-manager). title_similarity=0.5, shared_attendees=[], shared_words=['cheder']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-09-04T04:35:15.012087Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Cheder' (2026-10-11T00:00:00, uid=8f9fbb09-26b9-40cf-a986-272803e5abef@ai-life-manager) and 'Cheder' (2026-10-11T10:00:00, uid=e33c9e5b-c524-4694-9e1e-bf8094249e9c@ai-life-manager). title_similarity=1.0, shared_attendees=[], shared_words=['cheder']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-09-04T04:35:15.011875Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Cheder' (2026-10-11T00:00:00, uid=8f9fbb09-26b9-40cf-a986-272803e5abef@ai-life-manager) and 'Travel to Cheder' (2026-10-11T09:00:00, uid=62bcc50a-ca0c-46a0-b987-9f5c586be030@ai-life-manager). title_similarity=0.55, shared_attendees=[], shared_words=['cheder']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-09-04T04:35:15.011767Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Travel to Intergenerational Service at BRS/ Simchat Torah' (2026-10-03T09:00:00, uid=cb4b1cd6-f83c-4f36-8498-0e5faa58106f@ai-life-manager) and 'Intergenerational Service at BRS/ Simchat Torah' (2026-10-03T10:00:00, uid=48392c9b-0119-4222-9cc9-ea5dc9ac73b3@ai-life-manager). title_similarity=0.9, shared_attendees=[], shared_words=['brs/', 'intergenerational', 'service', 'simchat', 'torah']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-09-04T04:35:15.011646Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Travel to Cheder - Sukkot' (2026-09-27T09:00:00, uid=63291a3f-9ffe-41a2-bbf8-87f423ab821c@ai-life-manager) and 'Cheder - Sukkot' (2026-09-27T10:00:00, uid=21edac34-edec-4772-b06b-afa86622377e@ai-life-manager). title_similarity=0.75, shared_attendees=[], shared_words=['cheder', 'sukkot']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-09-04T04:35:15.011537Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Cheder (Sukkot)' (2026-09-27T00:00:00, uid=eaad8b85-7b03-4bec-bdff-45e8dfe510b7@ai-life-manager) and 'Travel from Cheder - Sukkot' (2026-09-27T12:30:00, uid=6f585035-fef7-419a-a2b8-3a9d82c1be63@ai-life-manager). title_similarity=0.62, shared_attendees=[], shared_words=['cheder']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-09-04T04:35:15.011405Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Cheder (Sukkot)' (2026-09-27T00:00:00, uid=eaad8b85-7b03-4bec-bdff-45e8dfe510b7@ai-life-manager) and 'Cheder - Sukkot' (2026-09-27T10:00:00, uid=21edac34-edec-4772-b06b-afa86622377e@ai-life-manager). title_similarity=0.87, shared_attendees=[], shared_words=['cheder']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-09-04T04:35:15.011299Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Cheder (Sukkot)' (2026-09-27T00:00:00, uid=eaad8b85-7b03-4bec-bdff-45e8dfe510b7@ai-life-manager) and 'Travel to Cheder - Sukkot' (2026-09-27T09:00:00, uid=63291a3f-9ffe-41a2-bbf8-87f423ab821c@ai-life-manager). title_similarity=0.65, shared_attendees=[], shared_words=['cheder']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-09-04T04:35:15.011181Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Travel to Yom Kippur Children's Service at BRS' (2026-09-21T09:00:00, uid=72da8953-4e35-47d0-8ac5-b5426bf96ffe@ai-life-manager) and 'Yom Kippur Children's Service at BRS' (2026-09-21T10:00:00, uid=aecf7719-40d5-4c8c-93f7-c13fbb8cd529@ai-life-manager). title_similarity=0.88, shared_attendees=[], shared_words=['brs', "children's", 'kippur', 'service', 'yom']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-09-04T04:35:15.011059Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Travel to Cheder - Nosh and Natter & Decorating the Sukkah!' (2026-09-20T09:00:00, uid=da1ae770-b07f-474e-abae-0944a0445814@ai-life-manager) and 'Cheder - Nosh and Natter & Decorating the Sukkah!' (2026-09-20T10:00:00, uid=26f30b4c-e580-4594-b880-e398572e0984@ai-life-manager). title_similarity=0.91, shared_attendees=[], shared_words=['cheder', 'decorating', 'natter', 'nosh', 'sukkah!']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-09-04T04:35:15.010933Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Cheder (Nosh and Natter & Decorating the Sukkah!)' (2026-09-20T00:00:00, uid=36f049c3-5cb9-48ad-bcce-5ba7b5141782@ai-life-manager) and 'Travel from Cheder - Nosh and Natter & Decorating the Sukkah!' (2026-09-20T12:30:00, uid=49e30088-3a6e-4ac4-80ec-daab34ebdbf2@ai-life-manager). title_similarity=0.85, shared_attendees=[], shared_words=['cheder', 'decorating', 'natter']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-09-04T04:35:15.010784Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Cheder (Nosh and Natter & Decorating the Sukkah!)' (2026-09-20T00:00:00, uid=36f049c3-5cb9-48ad-bcce-5ba7b5141782@ai-life-manager) and 'Cheder - Nosh and Natter & Decorating the Sukkah!' (2026-09-20T10:00:00, uid=26f30b4c-e580-4594-b880-e398572e0984@ai-life-manager). title_similarity=0.96, shared_attendees=[], shared_words=['cheder', 'decorating', 'natter']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-09-04T04:35:15.010667Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Cheder (Nosh and Natter & Decorating the Sukkah!)' (2026-09-20T00:00:00, uid=36f049c3-5cb9-48ad-bcce-5ba7b5141782@ai-life-manager) and 'Travel to Cheder - Nosh and Natter & Decorating the Sukkah!' (2026-09-20T09:00:00, uid=da1ae770-b07f-474e-abae-0944a0445814@ai-life-manager). title_similarity=0.87, shared_attendees=[], shared_words=['cheder', 'decorating', 'natter']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-09-04T04:35:15.010512Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Travel to Children's Service Rosh Hashana at BRS' (2026-09-12T09:00:00, uid=58ed7838-87db-4eec-b261-0836f89c629f@ai-life-manager) and 'Children's Service Rosh Hashana at BRS' (2026-09-12T10:00:00, uid=ae208e9b-3e1f-4fdc-9b96-8cf64a0454f6@ai-life-manager). title_similarity=0.88, shared_attendees=[], shared_words=['brs', "children's", 'hashana', 'rosh', 'service']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-09-04T04:35:15.010170Z`
+
+- **[same rule in two places]** This preference may already be covered by a rule that applies to everyone. Preference: config/personas/mike.md:14 — Do not read back or summarize emails that have already been triaged. Candidate rule(s) it may restate: (0.50) [wording only] config/agents/logistics.md:277 — **An interest-level item does not end at "noted" — it gets a coordination check.** When a message concerns something the user is plausibly looking forward to — a concert or event t Candidates are ranked by wording overlap, which is weak at this scale — the flagged preference is the reliable part, the partner is a starting point. If the preference says nothing the shared rule does not, delete it. If it is a genuine personal refinement, keep it and reword it so the difference is all it states.  
+  `2026-09-04T04:30:12.634443Z`
 
 - **[user corrected a prior turn]** ```  
   `2026-09-03T13:11:27.250966Z`

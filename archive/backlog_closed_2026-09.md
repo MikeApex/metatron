@@ -533,3 +533,49 @@ Suite evidence: `tests/test_attachment_persistence.py` 21/21; existing attachmen
 file was opened on an ambiguous back-reference) sits in
 `archive/handoffs/2026-09-03-attachment-persistence.md` for a future Red session. Without it
 the feature works; ambiguity resolves silently.
+
+---
+
+## 2026-09-04 — closed in the (M)-walkthrough session
+
+### `[DB-0815-12]` Real-time location as a signal — **CLOSED on a live end-to-end ping**
+
+The confirm this item had owed since its 2026-08-28 deploy finally ran, with Mike standing
+near a named zone. **It failed first, and the failure was the find.**
+
+**What the user saw:** "Could not get a location fix." — every time, with no permission
+prompt. **The cause:** `android/app/src/main/AndroidManifest.xml` declared four permissions
+(internet, mic, audio settings, vibrate) and **no location permission at all**, so Android
+refused `navigator.geolocation` at the OS level before the app ever saw the request.
+
+**Why it survived to the confirm.** The item shipped with "JS test 11/11" — tests that run in
+a browser, where geolocation needs no manifest entry. The Android packaging layer was never
+exercised. This is the project's own standing lesson (`ROADMAP.md` § the 2026-08-04 gate:
+*a path never exercised by a test is not known to work*) landing on a feature rather than a
+safety flag.
+
+**Fixed and verified:** `ACCESS_COARSE_LOCATION` + `ACCESS_FINE_LOCATION` added, APK rebuilt,
+`aapt2 dump badging` confirms both inside the built artifact, `check_apk_sync.sh` confirms the
+bundled web assets still match `static/index.html`.
+
+**Rejected: the `@capacitor/geolocation` plugin.** It does not replace `navigator.geolocation`,
+so adopting it meant rewriting `readPosition()` and breaking both the 11 passing JS tests and
+the browser path. Two manifest lines keep one code path working in both places.
+
+**Close evidence (server-side, not just the screen):** transitions file present at mode `600`,
+one transition recorded, `current_zone() == "home"`, and `context_block()` renders
+`home since 20:22 — a place they named…` with **no coordinate anywhere in it**. Phone → server
+→ zone name → prompt, holding end to end for the first time.
+
+### BigQuery billing export (M) — **CLOSED on evidence; no console action was ever needed**
+
+Carried as an owed (M) since the caps work. Verified live 2026-09-04:
+`billing_export.gcp_billing_export_resource_v1_013F3D_66B5CD_955A3A`, **62,764 rows, usage
+through the current day**. It was reported dead on 2026-08-22, corrected the same day, and the
+correction never reached the two places that repeated it. Both now fixed:
+`config/modules/spend_guard.yaml`'s "dark since 2026-08-12" comment — which was the stated
+justification for the `unmetered_uplift` factor — and this item.
+
+**Consequence worth carrying:** the uplift is no longer the only way to size the unmetered
+residual. `scripts/vertex_cost_reconcile.py` reads the export and attributes it per SKU;
+re-derive the factor from real rows before trusting it further.

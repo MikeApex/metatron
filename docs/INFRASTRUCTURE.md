@@ -350,14 +350,34 @@ cd ..
                                # skipped sync or a stale, un-rebuilt APK before it ships
 ```
 
-**Sideload to phone:**
+**Sideload to phone. The APK is always served at `http://100.70.67.45:8888/app-debug.apk`**
+(Mike's standing rule, 2026-09-03) — the Mac's Tailscale address, port 8888, that filename.
+Copy the built APK to a staging directory and serve **only that directory**:
+
 ```bash
-# Serve the APK from Mac (phone connects to Mac via Tailscale)
-cd ~/Desktop/multi-model-mcp
-python3 -m http.server 8888
-# Then on the phone browser: http://<mac-tailscale-ip>:8888/android/app/build/outputs/apk/debug/app-debug.apk
+mkdir -p /tmp/metatron-apk
+cp ~/Desktop/multi-model-mcp/android/app/build/outputs/apk/debug/app-debug.apk /tmp/metatron-apk/
+cd /tmp/metatron-apk && python3 -m http.server 8888 --bind 100.70.67.45
+# Then on the phone browser: http://100.70.67.45:8888/app-debug.apk
 ```
-Phone must have "Install from unknown sources" enabled for the browser.
+
+Phone must have "Install from unknown sources" enabled for the browser, and Tailscale up.
+Installing over an existing build keeps the login — same app ID.
+
+> **Two deliberate departures from what this said before 2026-09-03, both of which shipped
+> real exposure.** The old steps were `cd ~/Desktop/multi-model-mcp && python3 -m http.server
+> 8888`, with no `--bind`.
+>
+> 1. **Serve the staging directory, never the repo root.** From the repo root that command
+>    publishes `.env`, `vertex-key.json`, `data/personas/mike/**` and every archive to anyone
+>    who can reach the port — Denied-tier files handed out by a Green-tier convenience step.
+> 2. **`--bind` to the Tailscale address, never the default.** Without it the server listens on
+>    every interface, so the whole local network is served, not the tailnet. The bind is what
+>    makes "phone connects via Tailscale" true rather than merely intended.
+>
+> The IP is recorded here as an exception to *do not record values with a short half-life* —
+> it is a **Tailscale** address, stable for the life of the tailnet node, not the VM's
+> reassigning external IP. If it ever moves, `tailscale status` is the lookup.
 
 **When to rebuild the APK:** any time `static/index.html` changes the `SERVER` constant, the login flow, or UI structure. Pure server-side changes (agent files, orchestrator logic) do not require a rebuild.
 

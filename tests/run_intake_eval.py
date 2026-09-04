@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from collections import defaultdict
 from datetime import datetime
@@ -51,6 +52,9 @@ import tools.intake as intake                        # noqa: E402
 from tools.intake import Envelope                    # noqa: E402
 
 FIXTURES_DIR = Path(__file__).parent / "intake_fixtures"
+
+# Filled by _score() so --runs can tabulate without re-plumbing every return value.
+_LAST: dict = {"misses": 0, "domain_hit": 0, "domain_scored": 0, "unclear": 0}
 
 # The categories the corpus may label with — kept in lockstep with
 # config/templates/intake.yaml. A label outside this set is a fixture error.
@@ -94,35 +98,107 @@ def to_envelope(fx: dict) -> Envelope:
     )
 
 
-def classify_code_only(env: Envelope, cfg: dict) -> str:
+def classify_code_only(env: Envelope, cfg: dict) -> tuple[str, str | None]:
     """The free path: rules → ledger → headers → unclear. No ledger state in eval —
-    the corpus measures the rules and headers as shipped, not one mailbox's history."""
-    return intake.classify(env, cfg, ledger={}).category
+    the corpus measures the rules and headers as shipped, not one mailbox's history.
+
+    Returns `(category, domain)`. The code tier has no domain *opinion* — it reads the
+    per-category default out of config — so a domain score in this mode measures the
+    defaults table, not a classifier. Reported separately for that reason.
+    """
+    result = intake.classify(env, cfg, ledger={})
+    return result.category, result.domain
 
 
-def classify_with_extractor(env: Envelope, cfg: dict) -> str:
+def classify_with_extractor(env: Envelope, cfg: dict) -> tuple[str, str | None]:
     """Phase 3+: code stages first, the extractor agent on what they leave unclear.
 
     Dispatched exactly as production will: bare (no personal context), quick tier.
     Import is deferred so the free mode never touches the model stack.
+
+    Mirrors the sweep's precedence (tools/intake.py): the model's domain beats the
+    category default; no opinion falls through to the default.
     """
-    category = classify_code_only(env, cfg)
+    category, domain = classify_code_only(env, cfg)
     if category != "unclear":
-        return category
-    from tools.intake_extract import extract_category   # Phase 3 module
-    return extract_category(env)
+        return category, domain
+    from tools.intake_extract import extract, has_domain_opinion   # Phase 3 module
+    found = extract(env)
+    if found["category"] == "unclear":
+        return "unclear", domain
+    resolved = (found["domain"] if has_domain_opinion(found)
+                else intake._effective_domain(found["category"], cfg))
+    return found["category"], resolved
+
+
+def _norm_domain(value) -> str:
+    """Fixture and runtime domains onto one vocabulary. `""` means unlabelled."""
+    if value is None:
+        return "null"
+    text = str(value).strip().lower()
+    return "null" if text in ("null", "none") else text
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     parser.add_argument("--extractor", action="store_true",
                         help="also run the intake_extractor agent on unclear messages")
+    # Added 2026-09-03: without it the runner dies in resolve_persona() before reading
+    # a single fixture. Fail-closed persona resolution is correct and this runner had
+    # simply never supplied one — it had never been run against a real corpus.
+    parser.add_argument("--persona", default="mike",
+                        help="whose intake.yaml supplies the rules (default: mike)")
+    # Added 2026-09-04. A single run cannot gate this: measured on one corpus and one
+    # unchanged agent file, five consecutive runs returned 1, 3, 1, 1 and 2
+    # `action_required` false negatives. The model's answer moves between identical
+    # runs, so "the gate passed" from one run means only that it passed that time.
+    # THE GATE IS SCORED ON THE WORST RUN, never the last or the mean — a classifier
+    # that silences an obligation one time in five silences it in production.
+    parser.add_argument("--runs", type=int, default=1,
+                        help="repeat N times and gate on the worst run (model modes only)")
+    parser.add_argument("--variant", default="",
+                        help="agent file to test instead of intake_extractor "
+                             "(e.g. intake_extractor_counterargue)")
     args = parser.parse_args()
 
     fixtures = load_fixtures()
     if not fixtures:
         print("Corpus is empty.")
         return 2
+    if args.variant:
+        os.environ["METATRON_INTAKE_EXTRACTOR_AGENT"] = args.variant
+        print(f"variant agent: {args.variant}")
+
+    from core.persona import persona_scope
+    with persona_scope(args.persona):
+        if args.runs <= 1:
+            return _score(fixtures, args)
+
+        worst, summaries = 0, []
+        for i in range(1, args.runs + 1):
+            print(f"\n{'=' * 62}\nRUN {i} of {args.runs}\n{'=' * 62}")
+            rc = _score(fixtures, args)
+            summaries.append((i, _LAST["misses"], _LAST["domain_hit"],
+                              _LAST["domain_scored"], _LAST["unclear"]))
+            worst = max(worst, rc)
+
+        print(f"\n{'=' * 62}\nACROSS {args.runs} RUNS\n{'=' * 62}")
+        print(f"{'run':>4} {'gate misses':>12} {'domain':>10} {'said unclear':>13}")
+        for i, misses, dh, ds, unc in summaries:
+            dom = f"{dh}/{ds}" if ds else "-"
+            print(f"{i:>4} {misses:>12} {dom:>10} {unc:>13}")
+        worst_misses = max(s[1] for s in summaries)
+        best_misses = min(s[1] for s in summaries)
+        print(f"\ngate misses: worst {worst_misses}, best {best_misses}")
+        if worst_misses != best_misses:
+            print("  ⚠ the gate's answer is not stable across identical runs — "
+                  "the worst run is the honest one")
+        print(f"unclear rate: "
+              f"{sum(s[4] for s in summaries)}/{len(fixtures) * args.runs} across all runs")
+        return 1 if worst_misses else 0
+
+
+def _score(fixtures: list[dict], args) -> int:
     cfg = intake.load_config()
     if not cfg.get("categories"):
         # Template only — eval never needs a persona's taught rules.
@@ -135,10 +211,28 @@ def main() -> int:
     unclear_count = 0
     results = []
 
+    domain_hit = domain_miss = 0
+    domain_unlabelled = 0
+    domain_mismatches: list[tuple[str, str, str]] = []
+
     for fx in fixtures:
         expected = fx["label"]
-        got = classify(to_envelope(fx), cfg)
+        got, got_domain = classify(to_envelope(fx), cfg)
         results.append((fx["_file"], expected, got))
+
+        # The second axis, scored separately and never gating. A fixture with no
+        # `domain` written is skipped rather than counted wrong — the corpus was
+        # labelled on one axis before this one existed, and silently scoring those
+        # as failures would make a partial corpus look like a broken classifier.
+        want_domain = (fx.get("domain") or "").strip()
+        if not want_domain:
+            domain_unlabelled += 1
+        elif _norm_domain(want_domain) == _norm_domain(got_domain):
+            domain_hit += 1
+        else:
+            domain_miss += 1
+            domain_mismatches.append(
+                (fx["_file"], _norm_domain(want_domain), _norm_domain(got_domain)))
         if got == "unclear":
             unclear_count += 1
         if got == expected:
@@ -167,6 +261,18 @@ def main() -> int:
           if not args.extractor else
           f"\nStill unclear after extractor: {unclear_count}/{len(fixtures)}")
 
+    # ── Domain axis (2026-09-03) ─────────────────────────────────────────────
+    scored = domain_hit + domain_miss
+    print(f"\ndomain axis: {domain_hit}/{scored} correct"
+          + (f" ({100 * domain_hit / scored:.0f}%)" if scored else "")
+          + (f" · {domain_unlabelled} fixture(s) carry no domain label"
+             if domain_unlabelled else ""))
+    if not args.extractor and scored:
+        print("  (code-only mode: this scores the per-category defaults in "
+              "intake.yaml, not a classifier — the model is what answers this axis)")
+    for name, want, got in domain_mismatches:
+        print(f"  DOMAIN {name}: expected {want}, got {got}")
+
     print(f"\naction_required false negatives (the gate — must be 0): "
           f"{len(action_required_misses)}")
     for name, got in action_required_misses:
@@ -179,6 +285,8 @@ def main() -> int:
             if expected != "action_required":
                 print(f"  {name}: expected {expected}, got {got}")
 
+    _LAST.update(misses=len(action_required_misses), domain_hit=domain_hit,
+                 domain_scored=domain_hit + domain_miss, unclear=unclear_count)
     return 1 if action_required_misses else 0
 
 

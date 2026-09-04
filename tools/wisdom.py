@@ -586,6 +586,70 @@ def find_duplicate_wisdom(domain: str = "", threshold: float = 0.85) -> list[dic
     return groups
 
 
+def retire_wisdom_entries(keys: list[str], reason: str) -> str:
+    """
+    Archive entries that do not belong in the fact store, with the reason recorded.
+
+    THE DIFFERENCE FROM merge_wisdom_entries, AND WHY BOTH EXIST. A merge says "this
+    fact is a duplicate of that one" and leaves a `merged_into` pointer to the survivor.
+    A retirement says "this was never a fact about the user at all" — a tool complaint,
+    a dated observation, a content-free placeholder — and there is no survivor to point
+    at. Forcing those through `merge_wisdom_entries` would write a `merged_into` naming
+    an entry that does not contain the same fact, which is a lie in the archive.
+
+    Nothing is deleted. Same destination and permissions as a merge: entries move to
+    archive/wisdom/ with `retired` and `retired_reason` fields (data storage is cheap;
+    fidelity loss is not — CLAUDE.md § Archive-on-merge).
+
+    Added 2026-09-03 for `[DB-0818-06]`'s cleanup, which proposed "plain deletion" for
+    eleven entries. Plain deletion is not available in this codebase by design, and the
+    proposal's phrase should be read as "removed from the store", not "destroyed".
+
+    Args:
+        keys:   Keys to retire.
+        reason: Why these do not belong in standing knowledge. Recorded on each entry.
+
+    Returns:
+        Confirmation string listing what was archived and what was not found.
+    """
+    wisdom_path = _wisdom_path()
+    if not wisdom_path.exists():
+        return "No wisdom file found."
+    if not reason or not reason.strip():
+        return "Not retired: a reason is required — an unexplained removal is unauditable."
+
+    with _wisdom_lock():
+        entries = _all_entries()
+        archive_dir = persona_data_dir() / "archive" / "wisdom"
+        archive_dir.mkdir(parents=True, exist_ok=True)
+
+        today = date.today().isoformat()
+        wanted = set(keys)
+        archived, remaining = [], []
+
+        for entry in entries:
+            if entry.get("key") in wanted:
+                entry["retired"] = today
+                entry["retired_reason"] = reason.strip()
+                archive_path = archive_dir / f"{entry['key']}_retired_{today}.json"
+                with open(archive_path, "w") as f:
+                    json.dump(entry, f, indent=2)
+                os.chmod(archive_path, 0o600)
+                archived.append(entry["key"])
+            else:
+                remaining.append(entry)
+
+        with open(wisdom_path, "w") as f:
+            json.dump(remaining, f, indent=2)
+        os.chmod(wisdom_path, 0o600)
+
+    missing = sorted(wanted - set(archived))
+    out = f"Retired {len(archived)}: {', '.join(sorted(archived))}." if archived else "Retired nothing."
+    if missing:
+        out += f" Not found (already gone): {', '.join(missing)}."
+    return out
+
+
 def merge_wisdom_entries(keep_key: str, source_keys: list[str], merged_value: str = "") -> str:
     """
     Archive source entries and optionally update the kept entry.

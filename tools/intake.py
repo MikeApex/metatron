@@ -1122,13 +1122,21 @@ def sweep(persona: str | None = None) -> str:
         important = False
         if extractor_on and result.category == "unclear" and result.source == "default":
             try:
-                from tools.intake_extract import extract
+                from tools.intake_extract import extract, has_domain_opinion
                 found = extract(env, persona)
                 if found["category"] != "unclear":
+                    # Domain precedence (2026-09-03): the model's answer beats the
+                    # category default, and a user `rules:` entry beats both — which
+                    # is why the rule path never reaches here. A model that returned
+                    # no usable domain falls through to the category default, so this
+                    # axis can only improve routing, never lose a queue entry that
+                    # the old one-to-one mapping would have made.
+                    domain = (found["domain"] if has_domain_opinion(found)
+                              else _effective_domain(found["category"], cfg))
                     result = Classification(
                         found["category"],
                         _effective_disposition(found["category"], cfg),
-                        _effective_domain(found["category"], cfg),
+                        domain,
                         "extractor", "extractor classification")
                     important = found.get("important", False)
             except Exception as exc:

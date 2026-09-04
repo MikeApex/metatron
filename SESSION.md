@@ -1,57 +1,77 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-09-03 evening (**verify pass + Green/Amber spinoff — four backlog items closed
-in one sitting, deployed by Mike in-session.** A `/backlog verify` over `## Now` found zero
-failed claims; the wider sweep found `[DB-0827-03]` a full state stale — retitled: the CRM
-sweep is live and owes only its first morning digest. Two workers then shipped:
-**a file attached in one turn now survives to later turns `[DB-0903-03]`** — "what did the pdf
-say?" revives it from the store; closed on a live confirm (codeword read back three turns
-after upload, `danny_park`, not `mike`). **A hostile email aimed at intake bounces off,
-proven `[DB-0820-04]`** — gate PASS 5/0/0, advances B1b. **`[DB-0815-11]` closed on its
-clean-week exit** (zero `FALSE_ACTION_CLAIM` since the 08-27 deploy). The scheduler
-`day:`/`days:` trap is now documented where jobs are written (`764d218`); the loud-validation
-build is `[DB-0903-02]`, Red-tier, Later. Detail: `archive/PROJECT_LOG.md` § 2026-09-03
-evening.)*
+*Updated: 2026-09-04 (**the (M)-walkthrough — the first application of "Mike-gated work gets a
+walkthrough, not a wait." Six items entered; three closed, two re-dated by his word, one half
+done.**) **Location works end to end `[DB-0815-12]` — closed on a live ping**, and the confirm
+found a real defect: the APK declared *no location permission at all*, so Android refused every
+fix silently; two manifest lines, rebuilt, verified inside the artifact. **BigQuery export needed
+no console work** — live all along, 62,764 rows; the stale "dark since 08-12" claim in
+`spend_guard.yaml` (the justification for `unmetered_uplift`) is corrected. **Wisdom store 80 →
+72**, eight entries archived with reasons. Detail: `archive/PROJECT_LOG.md` § 2026-09-04.*
 
-***Next: the (M)-walkthrough** (Fable — corpus labelling due 09-09, wisdom review, Darwin key,
-zones+APK+ping, BigQuery, Restic); prompt in `archive/handoffs/2026-09-02-*`. After it: two
-Green candidates fit one Sonnet worker — forwarded-email metadata `[DB-0902-05]` and the
-logistics coverage guard's code half `[DB-0902-06]` (Now-before-Later is Mike's rule, and
-everything in `## Now` is time-gated 09-05–09-12). **A4's re-run stays off the close path**
-(before-Alpha only, ROADMAP § 0 pt 8), so clinical flags remain unverified on
-`gemini-3.7-flash` by decision. `CLAUDE.md` is **298/300**;
-**`.claude/rules/deploy.md` is 131/100 and still owes a pass.***
+***Next: one sitting with Mike finishes the wisdom store `[DB-0818-06]`*** — 11 interaction
+preferences → persona file, 3 obligations → `open_obligation`, **plus 21 entries written since
+the 08-15 review that nobody has assessed** and which carry the same faults (language settings
+duplicated three ways, instructions-to-the-tool stored as facts, contact facts in the wrong
+store). Values staged at `/tmp/wisdom_group_a_2026-09-04.json` on the VM. **Mike's open design
+question, answered but not built:** how to stop complaints being recorded as wisdom — the answer
+is the guard `write_wisdom` already runs for safety-flag terms, plus a `FRICTION:` line beside
+`WISDOM_PROPOSAL:` so there is a drawer to put them in. **Awaiting his word before filing.**
 
-*⚠ **Thread expiry is structurally dead — measured 2026-09-03, decision owed, due 09-05.**
-111 audited writes, 0 expiries; the Synthesizer's rewording refreshes a thread's `added` date,
-so a rephrased thread can never age. Fork marked `@session` in `[DB-0814-02]` (fuzzy identity
-is the `[DB-0827-07]` semantic-guessing class — Mike picks, nobody builds quietly). Also
-open: B4's **max-chain-depth** needs the 3-round limit in code first (`[DB-0804-02]`);
-`[DB-0903-01]`'s horizon-dedupe fork closes on one answer (rec: accept); `[DB-0902-01]`'s
-week clock runs to 09-12; the one Inbox item (clinical agents reachable on the **bulk** tier
-via `quick`) needs Mike's ruling against the 08-09 "routing stays as-is" decision.
-**Standing fact:** the intake queue is empty by construction until `[DB-0820-03]`'s corpus
-labelling runs (due 09-09).*
+*⚠ **The intake extractor did not flip, and a single run cannot gate it `[DB-0820-03]`.** Same
+corpus, same agent file, consecutive runs: **1, 3, 1, 1, 2** false negatives. `--runs N` now
+gates on the **worst** run. Mike ruled against relaxing the gate — *"unclear needs to come up more
+for this to have any validity."* The A/B/C pass found **no winner and a third of its data void**
+(run 3 of every variant collapsed on a transient call failure). Reading runs 1–2: **counterargue
+raises doubt AND degrades accuracy — do not ship it**; the confidence axis is the better lever.
+`apply_confidence_floor()` is built and inert until a threshold is picked **from a
+confidence-vs-correctness sweep, not intuition**. **The corpus is 33 messages, not ~50 — the
+mailbox holds no more**, 18 are self-forwards, and `bill_statement` has zero examples.*
 
-*⚠ **A tripped soft cap is the control working, not an outage** — recovery is a 60s VM start.
-Cap numbers: `docs/INFRASTRUCTURE.md` § Billing protection, the only copy — which also carries
-the server address, already; ⑦ misread a wrong hostname as an outage. Both owed (M)s (BigQuery
-export, `VERTEX_CACHE_DISABLED`) are items 5 and 7 of the (M)-walkthrough.*
+*✅ **The intake domain axis is built and is the session's clear win** (Mike's ruling: a triplet
+{domain, category, importance}). `intake.yaml` had claimed since 08-19 that domain and disposition
+were independent while the code derived domain from category 1:1 — so a bill needing payment could
+not reach finance. `work_vocation` gained `read_intake_queue` in the same change, because a domain
+the extractor can file to whose agent cannot read the queue is a black hole.*
 
-*⚠ **No off-machine backup copy** — daily backup live-verified (fragment 2026-08-29-03); the
-Restic external-drive job is not installed. Mike's call, deliberately unfiled.*
+*⚠ **Nothing from this session is committed or deployed.** Changed: `tools/{intake,intake_extract,wisdom}.py`,
+`tests/{run_intake_eval,build_intake_corpus}.py`, `config/agents/{intake_extractor,work_vocation}.md`,
+both routing files, `config/modules/{spend_guard,templates/intake}.yaml`,
+`android/app/src/main/AndroidManifest.xml`, `docs/INFRASTRUCTURE.md`. Files were **scp'd to the VM
+individually** for the eval — the VM is ahead of git and behind a real deploy. **The three
+`config/agents/intake_extractor_{counterargue,confidence,both}.md` variants are test artifacts**
+with no routing entry; delete them when the confidence question closes. **`## Machine log` grew
+90 → 107 from this session's own test traffic** — those signatures are artifacts, not production
+signal.*
 
-*⛔ **Two rulings that are settled — do not re-open either; both live in `ROADMAP.md` § Section
-0.** (1) **A4 safety testing is SUSPENDED** (Mike, 09-01), re-run **off** the capstone close path
-(09-02); **before-Alpha** is the only clock (pt 8, amended). (2) **ZDR is refused**, incl.
-Amendment 2026-08-28. Still owed against these: the `[DB-0818-06]` wisdom-store proposal review
-(Mike's), and the CRM sweep's first live morning digest as its confirm (built and deployed).*
+*⚠ **No off-machine backup — Mike declined a date twice (2026-09-04); a recorded acceptance of a
+named risk, not an unfiled worry. Do not re-raise it as an open item.** Detail:
+`archive/log/2026-09-04-01-m-walkthrough-session.md`.*
+
+*⚠ **Item 7 (`VERTEX_CACHE_DISABLED` on the Mac) — measured, and the recommendation is to flip it
+ON.** The 08-21 finding that caching was net-negative has **reversed**: over the last 14 days the
+billing export shows 3.5 Flash-Lite cached reads costing $0.119 against $1.19 they would have cost
+uncached, for $0.13 of storage — **net +$0.94**. The sliding-TTL work fixed it. On the Mac the
+idle cost is fractions of a cent. **Mike flips it; the session never reads `.env`.**
+
+*⛔ **Two settled rulings — do not re-open; both in `ROADMAP.md` § Section 0.** A4 safety testing
+is SUSPENDED (before-Alpha is the only clock); ZDR is refused.*
 
 *⚠ **The inversion is decided: Alpha ships on Mark 2 (Mike, 2026-09-02).** Architecture thinking
-stays in **`archive/plans/code_dominant_rebuild_notes.md`** (five rounds); sequencing, gates,
-buckets and cost in **`archive/plans/mark2_endeavour_plan_2026-09-02.md`**. **`ROADMAP.md` is
-deliberately NOT updated and still reads as though A8 is live work** — Mike handles that and the
-Mark 1 decommission condition manually. Known, not an oversight.*
+stays in **`archive/plans/code_dominant_rebuild_notes.md`**; sequencing, gates and cost in
+**`archive/plans/mark2_endeavour_plan_2026-09-02.md`**. **The Darwin API key `[DB-0818-04]` was
+deferred into Mark 2 by Mike on 09-04** — do not re-propose it as a standalone (M).
+**`ROADMAP.md` is deliberately NOT updated and still reads as though A8 is live work** — Mike
+handles that and the Mark 1 decommission condition manually. Known, not an oversight.*
+
+*⚠ **Thread expiry is structurally dead — measured 2026-09-03, decision owed, was due 09-05.**
+111 audited writes, 0 expiries; the Synthesizer's rewording refreshes a thread's `added` date, so
+a rephrased thread can never age. Fork marked `@session` in `[DB-0814-02]`. Also open: B4's
+max-chain-depth needs the 3-round limit in code first (`[DB-0804-02]`); `[DB-0903-01]`'s
+horizon-dedupe fork closes on one answer (rec: accept); `[DB-0902-01]`'s week clock runs to 09-12;
+the one Inbox item (clinical agents reachable on the **bulk** tier via `quick`) needs Mike's ruling
+against the 08-09 "routing stays as-is" decision. `CLAUDE.md` is **298/300**;
+**`.claude/rules/deploy.md` is 131/100 and still owes a pass.***
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).

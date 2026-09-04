@@ -75,7 +75,24 @@ certs
 certs_backup/
 
 # Android build — Capacitor generated; regenerate with: npx cap add android
-android/
+#
+# ⚠ EXCEPT THE MANIFEST, WHICH IS HAND-EDITED AND REGENERATION DESTROYS IT (2026-09-04).
+# AndroidManifest.xml carries ACCESS_COARSE_LOCATION / ACCESS_FINE_LOCATION, added after the
+# first real location ping failed with "could not get a location fix" and no permission prompt
+# — Android refuses navigator.geolocation at the OS level without them, silently. Those lines
+# are not reproducible by `npx cap add android`; it writes the default four-permission manifest
+# and location dies again with no error anywhere. Un-ignoring needs every parent directory
+# re-admitted, which is why this is six lines rather than one.
+# scripts/check_apk_sync.sh also asserts both permissions in the BUILT APK, so a regeneration
+# that slips past git is still caught at build time.
+android/*
+!android/app/
+android/app/*
+!android/app/src/
+android/app/src/*
+!android/app/src/main/
+android/app/src/main/*
+!android/app/src/main/AndroidManifest.xml
 
 # Node dependencies
 node_modules/

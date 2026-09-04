@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme"
+        android:networkSecurityConfig="@xml/network_security_config">
+        <activity
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
+            android:name=".MainActivity"
+            android:label="@string/title_activity_main"
+            android:theme="@style/AppTheme.NoActionBarLaunch"
+            android:launchMode="singleTask"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
+        </provider>
+    </application>
+
+    <!-- Permissions -->
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- navigator.vibrate() in the WebView is inert without this. Normal-tier, so it
+         is granted at install with no runtime request. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- navigator.geolocation in the WebView is refused by the OS without these, and
+         refused *silently*: the app never sees a prompt, so the failure reads as "could
+         not get a location fix" and looks like a GPS problem. Found 2026-09-03 by the
+         first real ping [DB-0815-12] — the 11 passing JS tests run in a browser, where
+         geolocation needs no manifest, so nothing exercised this layer.
+         Dangerous-tier, so declaring them is necessary and not sufficient: Android 6+
+         also requires a runtime grant. Both are declared because a coarse-only grant
+         still satisfies zone resolution (circles are 100m+), and asking for fine alone
+         would make a coarse answer a refusal. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+</manifest>

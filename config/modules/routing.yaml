@@ -123,7 +123,8 @@ agents:
     local: true
     # search_memory granted 2026-08-05 — see routing_cloud.yaml. Kept in parity.
     # read/write_archive + read_goals granted 2026-08-28 [DB-0810-03] — see routing_cloud.yaml.
-    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, search_memory, read_wisdom, read_archive, write_archive, read_goals]
+    # read_intake_queue granted 2026-09-03 — see routing_cloud.yaml. Kept in parity.
+    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, search_memory, read_wisdom, read_archive, write_archive, read_goals, read_intake_queue]
 
   relationships:
     local: true

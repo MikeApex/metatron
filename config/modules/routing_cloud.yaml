@@ -192,7 +192,11 @@ agents:
     # Apex consolidation brief in order to connect "put that on your active items" to it.
     # read_archive + write_archive + read_goals granted 2026-08-28 [DB-0810-03] (clusters 1+3):
     # work_vocation.md names all three (:196-197 archive lists, :112 goals alignment).
-    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, search_memory, read_wisdom, read_archive, write_archive, read_goals]
+    # read_intake_queue granted 2026-09-03 with the intake domain axis: work_vocation
+    # became a routable domain that day, and a domain the extractor can file to whose
+    # agent cannot read the queue is a black hole — mail sorted correctly and never
+    # seen. Granting the tool is part of adding the domain, not a follow-up.
+    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, search_memory, read_wisdom, read_archive, write_archive, read_goals, read_intake_queue]
 
   relationships:
     provider: gemini

@@ -59,10 +59,21 @@ stop_usd_per_day: 15.0
 #     the result, and carries no retry field to count them from.
 #
 # Metering creation exactly is easy; the residual is not attributable without the
-# BigQuery billing export, which has been dark since 2026-08-12. So the whole gap
-# is carried as one honest factor rather than half-fixed with an unmeasurable
-# remainder. `usd` below stays the raw sum of what was actually observed; the
-# uplifted figure is what the thresholds judge and what usd_billed_est reports.
+# BigQuery billing export. So the whole gap is carried as one honest factor rather
+# than half-fixed with an unmeasurable remainder. `usd` below stays the raw sum of
+# what was actually observed; the uplifted figure is what the thresholds judge and
+# what usd_billed_est reports.
+#
+# ✅ THE EXPORT IS LIVE — corrected 2026-09-03. This comment said it had "been dark
+# since 2026-08-12" and that was already wrong when written: the 08-22 session
+# reported it dead, was corrected the same day ([DB-0822-01] had it on and
+# backfilling forward), and the correction never reached this line. Verified
+# directly 2026-09-03: `billing_export.gcp_billing_export_resource_v1_013F3D_66B5CD_955A3A`
+# holds 62,764 rows with usage through that day. **The uplift above is therefore no
+# longer the only way to size the residual** — `scripts/vertex_cost_reconcile.py`
+# reads the export and can attribute it per SKU. Re-derive the factor from the
+# export before trusting it further; it is a measured stand-in for something now
+# measurable directly.
 #
 # Round UP deliberately: this is a runaway detector, and reading high fails safe.
 #

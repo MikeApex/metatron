@@ -59,6 +59,19 @@ channels:
 #   domain — where does the substance go? A specialist's queue, or null (nothing filed;
 #     the row in records.jsonl is the whole outcome).
 #
+# ⚠ THE DOMAINS BELOW ARE DEFAULTS, NOT THE ANSWER (changed 2026-09-03, Mike's ruling).
+# Until that date this axis was independent in this comment and welded to the category
+# in the code: `_effective_domain()` looked the domain up from the category, one-to-one,
+# so `action_required` always meant logistics and a bill needing payment could not reach
+# finance. The extractor now returns a triplet — {domain, category, importance}, three
+# axes it answers separately — and its domain beats the default here. A user `rules:`
+# entry still beats both. What is written per-category below is what happens when the
+# code tier classifies alone, or when the model expresses no domain opinion.
+#
+# Found by hand-labelling the real corpus (2026-09-03): work correspondence from a
+# financial adviser is `correspondence`, whose default domain is relationships, and it
+# belongs to work_vocation. Three instances in one sitting.
+#
 # They answer different questions and must not be collapsed. A gig announcement from a
 # venue the user follows is `silent` AND `recreation`: it never interrupts anyone, and
 # Recreation knows about the gig — interest is judged by the domain on its next run, not

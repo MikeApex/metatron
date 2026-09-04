@@ -39,4 +39,33 @@ if ! diff -q "$SOURCE" "$BUNDLED" > /dev/null 2>&1; then
     exit 1
 fi
 
+# ── Permissions the app cannot work without ──────────────────────────────────
+# Asserted on the MANIFEST SOURCE, because regeneration is the failure being caught:
+# `npx cap add android` rewrites this file with its default four permissions, and
+# .gitignore's own comment tells people to run it. Location then dies at the OS level
+# with no permission prompt and no error — the app says "could not get a location fix",
+# which reads as a GPS problem and is not one. Found 2026-09-04 by the first real ping
+# [DB-0815-12], a week after the feature was called shipped.
+#
+# Checked here rather than in the built APK on purpose: an aapt2 read is a second
+# toolchain dependency that behaves differently under `set -euo pipefail`, and the
+# manifest is the thing that gets destroyed. Fix the source, rebuild, and the APK follows.
+MANIFEST="android/app/src/main/AndroidManifest.xml"
+if [ ! -f "$MANIFEST" ]; then
+    echo "!!! $MANIFEST is missing — the Android project was removed or never generated." >&2
+    exit 1
+fi
+MISSING=""
+for PERM in ACCESS_COARSE_LOCATION ACCESS_FINE_LOCATION RECORD_AUDIO INTERNET VIBRATE; do
+    grep -q "android.permission.$PERM" "$MANIFEST" || MISSING="$MISSING $PERM"
+done
+if [ -n "$MISSING" ]; then
+    echo "!!! MANIFEST IS MISSING PERMISSIONS:$MISSING" >&2
+    echo "    It was probably regenerated (npx cap add android), which discards" >&2
+    echo "    hand-added permissions. $MANIFEST is tracked in git for exactly this" >&2
+    echo "    reason — restore it with 'git checkout -- $MANIFEST', then rebuild." >&2
+    exit 1
+fi
+echo "Verified: manifest declares location, mic, internet and vibrate permissions."
+
 echo "Verified: $APK's bundled index.html matches $SOURCE."
