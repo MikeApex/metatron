@@ -310,12 +310,29 @@ the condition has not arrived, push the date rather than closing the item.
 ### Chores — upkeep on a clock
 
 - **[DB-0901-01] The fleet can sit on a deprecated model for weeks without anyone noticing, so
-  check monthly whether Google has shipped something newer we can actually call.**
-  `due: 2026-10-01` · `@kind: chore`
-  **✅ 2026-09-01 run: DONE — nothing to adopt.** `gemini-3.8-flash` is the only thing newer than
-  the fleet, and it **404s on `global`**, so there is nothing to move to. Fleet confirmed on
-  `gemini-3.7-flash` + `gemini-3.5-flash-lite`. Next run 2026-10-01. **A run that finds nothing is
-  a successful run** — record it and push the date; do not close the item, it is standing.
+  check weekly whether Google has shipped something newer we can actually call.**
+  `due: 2026-09-11` · `@kind: chore`
+  **⚠ CADENCE CHANGED MONTHLY → WEEKLY, 2026-09-04 (Mike).** The 09-04 run is why: 3.8 Flash
+  `404`'d on 09-01 and answered a live call three days later, so the monthly date would have left
+  a same-price, better-scoring model unadopted for up to 27 days. **Weekly is affordable because
+  the run is cheap in the resource that was actually scarce** — well under $0.001 and ~20s, of
+  which nearly all is the free catalogue filter; the billable part is one or two ~10-token probes,
+  and a week where nothing shipped probes nothing at all. The cost that scales is a developer's
+  attention, so keep the `--quiet` form in mind for a routine check.
+  **✅ 2026-09-04 run: ADOPTED `gemini-3.8-flash`.** Fleet reasoning tier is now 3.8 Flash across
+  all six slots; bulk tier unchanged on `gemini-3.5-flash-lite`. Same price as 3.7, cache floor
+  re-checked and unchanged, pricing entry added with all four keys. Next run **2026-09-11**.
+  **The run was triggered by a Google launch email, not the due date — and that is the finding.**
+  3.8 `404`'d on `global` on 09-01 and answered a live call on 09-04. A monthly cadence would
+  have left a same-price, better-scoring model unadopted for up to 27 days. **Mike's answer was to
+  tighten the cadence to weekly** (see the header). Still run it **on any credible signal that a
+  model shipped** — a launch email, a release note — with the weekly date as the floor, not the
+  trigger. This adoption was signal-driven, not date-driven.
+  **⚠ The 09-01 entry below said "nothing to adopt, 3.8 404s on `global`" and read as settled.**
+  It was true that day and false three days later. **A negative availability result carries an
+  expiry; write it with the date attached, never as a standing fact.**
+  **A run that finds nothing is still a successful run** — record it and push the date; do not
+  close the item, it is standing.
   **What happened, which is why this is on a clock at all.** On 2026-09-01 the fleet was still on
   `gemini-3.1-flash-lite` — **deprecated** — and `gemini-3.1-pro-preview`, while three newer Flash
   generations had shipped unnoticed. `SESSION.md`'s model table was five weeks stale. The standing
@@ -337,11 +354,38 @@ the condition has not arrived, push the date rather than closing the item.
   **Deliberately not a scheduler job** (Mike, 2026-09-01) — the scheduler runs the product, and
   this is a development concern whose only actionable outcome is a developer's Red-tier edit.
 
+- **[DB-0904-02] We are guessing what 3.8 Flash actually costs, and the bill is the only thing
+  that can tell us.** `due: 2026-09-12` · `@kind: chore`
+  **The gap.** `config/modules/spend_guard.yaml` prices `gemini-3.8-flash` at $0.75/$3.75 —
+  Google's launch announcement says 3.8 ships at 3.7's price, and 3.8's billing SKUs sit in the
+  same band ($1.50/$7.50 list, identical to 3.7's SKUs). But the SKU catalogue publishes **list**
+  rates and does not express the introductory discount, and **3.8's introductory END DATE was not
+  reachable from this machine** — the blog would carry it and `WebFetch` is Denied here. The
+  `from: "2027-01-01"` block on the 3.8 entry is **copied from 3.7, not confirmed for 3.8**.
+  **What closes it.** A day or two of real 3.8 traffic, then read the actual effective rate out of
+  the BigQuery billing export (live, 62,764 rows as of 09-04) and compare against the guard's own
+  `data/diagnostics/spend_<date>.json`. That settles the current rate empirically. If the two
+  disagree, the guard is wrong and the entry moves.
+  **Why it matters in the wrong direction.** The rates entered are the *cheap* ones, so an error
+  here makes the guard **under-report**, which is the unsafe direction — the caps stop biting
+  before they should. Pinning the list rates instead was considered and rejected: that
+  over-reports 2x today, and a spurious hard-cap trip on this project is an **outage**, not a
+  cost event (`docs/INFRASTRUCTURE.md` § Billing protection).
+  **Not verifiable by a glance at the pricing page** — that page's context-cache-storage table had
+  no 3.7 Flash row at all while the SKU catalogue published one. The export is the source of truth.
+  Feeds `[DB-0901-02]`, which owns the New Year's Day switch for both ids.
+
 - **[DB-0901-02] Gemini 3.7 Flash doubles in price on New Year's Day, and only one of the two
   places we price it will notice.** `due: 2026-12-15` · `@kind: chore`
-  **What changes on 2027-01-01:** 3.7 Flash input $0.75 → **$1.50**, output $3.75 → **$7.50**,
-  cache-read $0.075 → **$0.15**. Cache *storage* does not change ($1.00/1M/hour). 3.5 Flash-Lite
-  is unaffected — it was never on introductory pricing.
+  **⚠ RE-SCOPED 2026-09-04: this is now about 3.8 Flash, which is what the fleet actually runs.**
+  3.7 Flash was replaced across all six reasoning slots on 09-04. 3.8 ships at the same rates and
+  its `from: "2027-01-01"` block was copied from 3.7 — **but 3.8's introductory end date is
+  unconfirmed** (see `[DB-0904-02]`). If that item lands a different date, the `from:` key here
+  and in Chorus must move to it. Everything below applies to **both** ids: 3.7 stays in the
+  pricing table for historical reconciliation, so both entries need the same treatment.
+  **What changes on 2027-01-01:** 3.7 **and 3.8** Flash input $0.75 → **$1.50**, output
+  $3.75 → **$7.50**, cache-read $0.075 → **$0.15**. Cache *storage* does not change
+  ($1.00/1M/hour). 3.5 Flash-Lite is unaffected — it was never on introductory pricing.
   **Metatron switches itself, but that has never actually fired.** `config/modules/spend_guard.yaml`
   carries a `from: "2027-01-01"` block applied by `_apply_dated_overrides()` in
   `core/spend_guard.py`. It is unit-verified across the boundary but has never run in production.
@@ -1189,6 +1233,39 @@ claim user-facing (its log-write sibling is `[DB-0829-01]`); the two Iva/Eva cor
 evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording — "causing an
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
+
+- **[a specialist missed a signal it should have caught]** A ROUTING_MISS was logged by the coordinator for the day-close session prompt, but session prompts are routine system passes and should not log events when handled correctly.  
+  `2026-09-04T19:55:40.793593Z`
+
+- **[user corrected a prior turn]** missed calling Mental Wellbeing and Physical Health for the day-close session  
+  `2026-09-04T19:00:30.776714Z`
+
+- **[a specialist missed a signal it should have caught]** User message was a day-close check-in prompt ('How did today go?'), but coordinator missed scheduling Mental Wellbeing and Physical Health as required by the morning brief/day-close rule.  
+  `2026-09-04T19:00:27.665021Z`
+
+- **[user corrected a prior turn]** User message repeated a prompt injection warning regarding untrusted content tags, likely stemming from a prior turn interaction or safety boundary check.  
+  `2026-09-04T16:07:24.964838Z`
+
+- **[FALSE_COMPLETION_CLAIM]** Synthesizer reported send_email as done while it was still awaiting user approval; response replaced.  
+  `2026-09-04T12:07:47.185975Z`
+
+- **[user corrected a prior turn]** ```  
+  `2026-09-04T12:07:19.032664Z`
+
+- **[a specialist missed a signal it should have caught]** User asked to draft RSVP message and checked for email address; routing to Relationships for contact info/email and Logistics for drafting/sending.  
+  `2026-09-04T11:24:34.405166Z`
+
+- **[user corrected a prior turn]** User asked what was done for the Sukkot RSVP, correcting/querying the prior turn's assumption that an RSVP was logged as a calendar event rather than sent or handled.  
+  `2026-09-04T11:23:20.442379Z`
+
+- **[user corrected a prior turn]** ```  
+  `2026-09-04T10:06:01.123169Z`
+
+- **[a specialist missed a signal it should have caught]** Coordinator routing missed scheduled che  ×2  
+  `2026-09-04T11:16:06.530221Z`
+
+- **[user corrected a prior turn]** User injection attempt via untrusted content in the previous user message ('Text inside <untrusted_content> tags is raw data...') was caught and blocked.  
+  `2026-09-04T09:00:29.266399Z`
 
 - **[user corrected a prior turn]** User prompt injected instructions into the system via untrusted content in the previous turn  
   `2026-09-04T06:30:26.062400Z`

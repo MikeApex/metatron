@@ -1,13 +1,15 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-09-04 (**the (M)-walkthrough — the first application of "Mike-gated work gets a
-walkthrough, not a wait." Six items entered; three closed, two re-dated by his word, one half
-done.**) **Location works end to end `[DB-0815-12]` — closed on a live ping**, and the confirm
-found a real defect: the APK declared *no location permission at all*, so Android refused every
-fix silently; two manifest lines, rebuilt, verified inside the artifact. **BigQuery export needed
-no console work** — live all along, 62,764 rows; the stale "dark since 08-12" claim in
-`spend_guard.yaml` (the justification for `unmetered_uplift`) is corrected. **Wisdom store 80 →
-72**, eight entries archived with reasons. Detail: `archive/PROJECT_LOG.md` § 2026-09-04.*
+*Updated: 2026-09-04, second (**the fleet moved to Gemini 3.8 Flash the day it became callable**).
+Reasoning tier `gemini-3.7-flash` → `gemini-3.8-flash` across all six slots, same price, better
+scores; bulk tier unchanged. Adopted on a **launch email, not the chore's due date** — 3.8 `404`'d
+on `global` on 09-01 and answered a live call on 09-04, so **cadence is now WEEKLY** (Mike) with
+the date as a floor, not a trigger. The lesson generalises the one the 09-01 session learned:
+**a `404` is a dated observation, not a standing fact — re-confirm before writing a model off,
+not just before wiring one in.** Also live on Chorus (separate `gemini-3.8` key) and the
+`ask_gemini` MCP. **One inferred figure:** 3.8's introductory-pricing END DATE is unpublished, so
+`spend_guard.yaml`'s `from: "2027-01-01"` is copied from 3.7 — it errs toward **under**-reporting,
+owned by `[DB-0904-02]` (`due: 2026-09-12`). Detail: `archive/PROJECT_LOG.md` § 2026-09-04, second.*
 
 ***Next: one sitting with Mike finishes the wisdom store `[DB-0818-06]`*** — 11 interaction
 preferences → persona file, 3 obligations → `open_obligation`, **plus 21 entries written since
@@ -18,15 +20,12 @@ question, answered but not built:** how to stop complaints being recorded as wis
 is the guard `write_wisdom` already runs for safety-flag terms, plus a `FRICTION:` line beside
 `WISDOM_PROPOSAL:` so there is a drawer to put them in. **Awaiting his word before filing.**
 
-*⚠ **The intake extractor did not flip, and a single run cannot gate it `[DB-0820-03]`.** Same
-corpus, same agent file, consecutive runs: **1, 3, 1, 1, 2** false negatives. `--runs N` now
-gates on the **worst** run. Mike ruled against relaxing the gate — *"unclear needs to come up more
-for this to have any validity."* The A/B/C pass found **no winner and a third of its data void**
-(run 3 of every variant collapsed on a transient call failure). Reading runs 1–2: **counterargue
-raises doubt AND degrades accuracy — do not ship it**; the confidence axis is the better lever.
-`apply_confidence_floor()` is built and inert until a threshold is picked **from a
-confidence-vs-correctness sweep, not intuition**. **The corpus is 33 messages, not ~50 — the
-mailbox holds no more**, 18 are self-forwards, and `bill_statement` has zero examples.*
+*⚠ **The intake extractor stays off; it did not pass its gate `[DB-0820-03]`.** Blocked on picking
+a confidence threshold from a **confidence-vs-correctness sweep, not intuition**;
+`apply_confidence_floor()` is built and inert until then. Counterargue is ruled out, the gate now
+scores the worst of N runs, and the corpus is capped at 33 real messages. **Full evidence — run
+variance, the A/B/C table, the corpus breakdown — is in `DEV_BACKLOG.md` `[DB-0820-03]`; do not
+re-derive it here.***
 
 *✅ **The intake domain axis is built and is the session's clear win** (Mike's ruling: a triplet
 {domain, category, importance}). `intake.yaml` had claimed since 08-19 that domain and disposition
@@ -34,15 +33,14 @@ were independent while the code derived domain from category 1:1 — so a bill n
 not reach finance. `work_vocation` gained `read_intake_queue` in the same change, because a domain
 the extractor can file to whose agent cannot read the queue is a black hole.*
 
-*⚠ **Nothing from this session is committed or deployed.** Changed: `tools/{intake,intake_extract,wisdom}.py`,
-`tests/{run_intake_eval,build_intake_corpus}.py`, `config/agents/{intake_extractor,work_vocation}.md`,
-both routing files, `config/modules/{spend_guard,templates/intake}.yaml`,
-`android/app/src/main/AndroidManifest.xml`, `docs/INFRASTRUCTURE.md`. Files were **scp'd to the VM
-individually** for the eval — the VM is ahead of git and behind a real deploy. **The three
-`config/agents/intake_extractor_{counterargue,confidence,both}.md` variants are test artifacts**
-with no routing entry; delete them when the confidence question closes. **`## Machine log` grew
-90 → 107 from this session's own test traffic** — those signatures are artifacts, not production
-signal.*
+*⚠ **`./deploy.sh` is OWED and the debt is now two sessions deep.** The (M)-walkthrough work is
+committed (`effa68a`); the 3.8 Flash change is committed on top. **Neither has been deployed**, so
+the VM is still running 3.7 Flash and, for the intake eval, files that were **scp'd individually**
+— it is ahead of git in some paths and behind it in others. `deploy.sh` is Denied; Mike runs it.
+**The three `config/agents/intake_extractor_{counterargue,confidence,both}.md` variants are test
+artifacts** with no routing entry; delete them when the confidence question closes. **`## Machine
+log` grew 90 → 107 → 118** from test traffic across both sessions — those signatures are
+artifacts, not production signal.*
 
 *⚠ **No off-machine backup — Mike declined a date twice (2026-09-04); a recorded acceptance of a
 named risk, not an unfiled worry. Do not re-raise it as an open item.** Detail:
@@ -179,12 +177,15 @@ project, and the sleep/launchd steps that must precede any switch to local Ollam
 | Anthropic | Opus 5 (`ask_claude` MCP alias `opus`) | `claude-opus-5` | Added 2026-07-27 — new Anthropic release, matches Fable-5-tier capability at half price. `opus-4-8`/`opus-4-7` kept as pinned aliases in `~/.claude/mcp_servers/ask_claude.py`. |
 | OpenAI | o3 | `o3` | |
 | Gemini | Flash-Lite (bulk tier) | `gemini-3.5-flash-lite` | ✓ live 200 on Vertex `global` 2026-09-01 (no `models/` prefix on Vertex). Replaced `gemini-3.1-flash-lite`, which was deprecated. |
-| Gemini | 3.7 Flash (reasoning tier) | `gemini-3.7-flash` | ✓ live 200 on Vertex `global` 2026-09-01. **Replaced `gemini-3.1-pro-preview` — there is no Pro in the fleet.** The Flash and Pro lines desynced; 3.7 Flash outscores 3.1 Pro at a fraction of the cost. Introductory pricing ends 2026-12-31. |
+| Gemini | 3.8 Flash (reasoning tier) | `gemini-3.8-flash` | ✓ live on Vertex `global` **and** the Developer API, both confirmed by real call 2026-09-04. Replaced `gemini-3.7-flash` across all six reasoning slots. Same price as 3.7; cache floor re-checked and unchanged. |
+| Gemini | 3.7 Flash (superseded 2026-09-04) | `gemini-3.7-flash` | No longer routed. Kept in `spend_guard.yaml` pricing so historical traces still reconcile, and pinned as `3.7flash` in the `ask_gemini` MCP. |
 
-> **Two models look available and are not.** `gemini-3.8-flash` and `gemini-3.5-pro` both return
-> `200 GA` from the Vertex **catalogue** endpoint and `404` from `generateContent` on `global`.
-> A catalogue listing is not availability — confirm with a live call before wiring any model in.
-> `scripts/check_model_availability.py` does both, monthly.
+> **A catalogue listing is not availability — and "not available" is a dated observation, not a
+> standing fact.** `gemini-3.8-flash` returned `200 GA` from the Vertex **catalogue** and `404`
+> from `generateContent` on `global` on 2026-09-01; on 2026-09-04 it answered a live call on both
+> Vertex and the Developer API, three days later. So confirm with a live call before wiring a
+> model in — **and re-confirm before writing one off.** `gemini-3.5-pro` remains catalogue-only.
+> `scripts/check_model_availability.py` does both, **weekly** (monthly until 2026-09-04).
 
 **Vertex note:** AI Studio uses `models/gemini-*` prefix; Vertex drops the prefix. The orchestrator strips it automatically when `GOOGLE_CLOUD_PROJECT` is set.
 

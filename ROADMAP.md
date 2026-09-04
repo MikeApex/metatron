@@ -63,8 +63,18 @@ This reaffirms and hardens the 2026-05-14 decision (Ollama as primary orchestrat
    > **Amended 2026-09-02 (Mike, capstone close-out review): the re-run is removed from the
    > capstone close path** — closing the capstone no longer triggers it. The **before-Alpha**
    > requirement above is unchanged and is now the only clock on it. Consequence, restated so it
-   > is carried consciously: the clinical flags remain unverified on `gemini-3.7-flash` for the
+   > is carried consciously: the clinical flags remain unverified on the serving model for the
    > whole period between capstone close and the pre-Alpha run.
+   >
+   > **Updated 2026-09-04: the serving model is now `gemini-3.8-flash`, and this is the SECOND
+   > consecutive unverified hop.** The reasoning tier moved 3.7 → 3.8 across all six slots,
+   > `mental_wellbeing` and `physical_health` included. `run_a4_safety.py` was not run — Mike's
+   > explicit instruction this session was to ignore clinical testing, so this is again decision,
+   > not oversight. **The clause is deliberately no longer written against a model id**: it named
+   > 3.7 and went stale in three days, which is the same short-half-life trap CLAUDE.md warns
+   > about. The live ids are in `SESSION.md` § Model IDs; what this clause owns is the *state* —
+   > unverified since 2026-08-18, now across two model changes. The before-Alpha re-run is
+   > unchanged and remains the only clock.
 
 **Named risk:** local model quality is now the dominant Alpha UX factor. The Synthesizer — the user-facing voice — runs on a 14B local model until D1 evaluates an upgrade on dedicated hardware. Accept this consciously: privacy is the constraint; quality improves with hardware, not by routing around the constraint.
 
