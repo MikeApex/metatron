@@ -251,14 +251,19 @@ standing rule distrusts.*
   above was right and the mechanism was not: the queue was **never filled, not drained**.
   `read_intake_queue` does advance a cursor on read, but the cursors file has **never had a
   `logistics` key**. The real cause is that **24 of 25 records in the live intake store carry
-  `domain: null` and `category: "unclear"`** — the extractor is off behind `[DB-0820-03]`'s
-  eval gate, the persona has zero `rules:`, and `unclear` maps to a null domain. So the queue
+  `domain: null` and `category: "unclear"`** — the extractor was off behind `[DB-0820-03]`'s
+  eval gate (that item closed 09-05 and the extractor is now parked permanently), the persona
+  had zero `rules:`, and `unclear` maps to a null domain. So the queue
   returns zero for **every** domain, permanently, whatever is in the inbox. Nothing in the old
   return value said so, and `"(nothing new for this domain)"` reads as "the inbox is empty".
   The empty answer now states its reason (computed from config and the store) and explicitly
   forbids the sentence Mike heard. `tests/test_intake_queue_empty.py`, 10 checks.
-  **Note the coupling:** `[DB-0820-03]`'s corpus labelling (due 09-09) is what makes the queue
-  carry anything at all. This fix stops it lying about being empty; it does not fill it.
+  **Note the coupling: what fills the queue is classification, and that is now partly answered.**
+  `[DB-0820-03]` closed 2026-09-05 (`archive/backlog_closed_2026-09.md`) — six taught `rules:`
+  took the labelled corpus from 1/33 to 11/33 classified, and the two Prudential rules are the
+  first records in the store to carry a non-null domain (`finance`). So the queue can now carry
+  something; the remaining 22/33 stay `unclear` with a null domain until `[DB-0905-01]`'s
+  research gate exists. This fix stops it lying about being empty; it does not fill it.
   **Diagnosis returned on `[DB-0822-09]`: the surfacing miss is NOT this split** — both 09-02
   runs called `read_email(count=15)`, the same source. See that item.
   @waiting: 2026-09-10 — close on one live pipeline inbox job that no longer reports "no new
@@ -421,94 +426,6 @@ the condition has not arrived, push the date rather than closing the item.
 finished work with no exit. **A fix is confirmed in the session that makes it, or it is time-gated
 with a date.** Nothing new joins this group open-ended.*
 
-- **[DB-0820-03] The intake extractor is deployed and switched off; it stays off until it passes a
-  test built from Mike's own mail.** The exit is a specific run, not ordinary use, so it cannot rot
-  here: **(a)** Mike labels ~50 real messages into `tests/intake_fixtures/` on the VM (personal
-  data — gitignored, never committed); **(b)** `python3 tests/run_intake_eval.py` free mode scores
-  the code-only tier and sanity-checks the nine categories against real mail *before* any model is
-  graded on them; **(c)** `--extractor` runs Flash-Lite through the production path (bare, no
-  tools) — **gate: zero `action_required` false negatives**, `unclear` counts as a pass;
-  **(d)** a scoped `/code-review` of the model-tier code (`tools/intake_extract.py`, the sweep's
-  extractor branch, `config/agents/intake_extractor.md`) — unreviewed since written, and it meets
-  attacker-writable input with a model in the loop the day the switch flips. Then and only then:
-  `extractor.enabled: true` in mike's `intake.yaml`. Closes on the flip, citing the eval output.
-  On the **local** routing path the eval must be re-run against the local model before the same
-  flip — A4's lesson, recorded in `routing.yaml`'s entry.
-  **✅ (a) DONE, and the corpus is smaller than the item assumes — 2026-09-04.** The mailbox holds
-  **33 messages from 9 senders**, total, across 07-29→09-01. There is no ~50 to be had and waiting
-  does not produce one (~1 message/day). `tests/build_intake_corpus.py` (new) writes labelled stubs
-  from live envelopes — the swept `records.jsonl` **cannot** serve as the corpus source, because it
-  stores no bodies by design and the `--extractor` half grades on the body. All 33 labelled by Mike
-  in session. **18 of 33 are forwards from his own address**, so the sender signal — which the code
-  tier partly classifies on — is dead on 55% of the corpus. **`bill_statement` has zero examples and
-  is therefore untested.**
-  **✅ (b) DONE, and the number is stark: the code tier classifies 1 of 33 (3%).** With no taught
-  rules and an empty ledger, 32/33 land on `unclear`. That is the designed cold start, now measured:
-  **the extractor is effectively the entire classifier**, not a fallback for what code cannot do.
-  **❌ (c) FAILS THE GATE — the flip did NOT happen.** Worst-run `action_required` false negatives
-  = 1–2 across every configuration tried. One failure is stable across all runs: *"Fwd: Quotes for
-  Allied Mover Damages"* → `correspondence`.
-  **⚠ THE FINDING THAT OUTRANKS THE GATE: a single run cannot gate this.** Identical corpus,
-  identical agent file, consecutive runs returned **1, 3, 1, 1, 2** false negatives. `--runs N`
-  now repeats and **gates on the worst run** (`tests/run_intake_eval.py`), and `--persona` was added
-  because the runner died in `resolve_persona()` before reading a fixture — it had never been run
-  against a real corpus.
-  **Mike's ruling 2026-09-04 on relaxing the gate: no.** The gate currently fails on any non-`unclear`
-  answer, which is stricter than its own docstring (it fails on `correspondence`, which *surfaces*).
-  Proposed relaxing it to fail only on `digest`/`silent` — the outcomes that actually *hide* a
-  message. He declined the relaxation: *"unclear needs to come up more for this to have any validity
-  in the future."* Fix the model, not the test.
-  **A/B/C run on the `unclear` problem, 2026-09-04 — no winner, and a third of the data is void.**
-  Three variant agent files (counterargue / self-reported confidence / both) × 3 runs. **Run 3 of
-  every variant collapsed identically** (32/33 unclear, domain 0/20) — a transient call failure, not
-  behaviour, with every call hitting the defensive `unclear` floor. Reading runs 1–2 only:
-  base 5/66 unclear at 1,1 gate misses · **counterargue 12/66 unclear but 2,2 gate misses and domain
-  14–15/20 — it raises doubt AND degrades accuracy** · confidence 10/66 at 1,1, accuracy intact ·
-  both 6/66 at 1,1. **The confidence axis is the better lever and counterargue should not ship.**
-  `apply_confidence_floor()` is built and **inert** (`extractor.confidence_threshold`, default 0) —
-  the threshold must be picked from a confidence-vs-correctness sweep, not intuition, because that
-  dial is the product: too low silences obligations, too high hands the user back their inbox.
-  **✅ The domain axis was built in the same session and is the clear win** — see the entry below.
-  **Next, and it needs no one:** dump confidence against correctness for the `confidence` variant,
-  pick the threshold from the curve, re-run `--runs 5`. Then (d)'s scoped `/code-review`, then the
-  flip decision.
-  **⚠ SWEEP RUN 2026-09-05 (Opus worker, `dddd7fe`) — the confidence floor cannot open the gate;
-  the extractor stays OFF, now on evidence.** The lowest threshold with zero worst-run
-  `action_required` false negatives is **0.95**, which demotes 28/33 (85%) to `unclear` — the
-  hand-the-user-back-their-inbox failure the dial exists to prevent. Every affordable threshold
-  still silences an obligation: worst-run FN 2 at ≤0.80, 1 at 0.85–0.90. Message-level cause: one
-  `action_required` fixture is misread as `correspondence` at confidence **exactly 0.80 in all
-  five runs** — the same value the correct calls report, so no threshold separates them; a second
-  is *more* confident when wrong (0.9) than right (0.8). With the floor off the model said
-  `unclear` **0 times in 33, all five runs** — Mike's "unclear needs to come up more for this to
-  have any validity" objection is confirmed literally. Code tier re-measured 1/33 under the
-  eval's designed empty ledger (the live mailbox's 9/33 with five taught rules stands — different
-  measurement, not a contradiction). Confidence omission re-measured at **0/160** clean answers:
-  `effa68a` closed that hole completely, so `require_confidence` costs nothing.
-  **The finding that outlives the item: three of five sweep runs were void and looked perfect.**
-  The Mac spend guard's in-process 60-sessions/hour stop refused runs 3–5 wholesale;
-  `extract()` scores a refusal as `unclear`, `unclear` passes the gate, so the runner printed
-  0 gate misses for runs the model never saw. This deterministically retro-explains the 09-04
-  "run 3 collapsed identically" result — that data is void. Runner now returns a distinct
-  INVALID on guard refusal and gained `--dump-confidence` (both additive); re-run as five
-  single-run processes. Guard untouched. Report:
-  `tests/intake_confidence_sweep_2026-09-05_gemini-flash-lite.md`.
-  **✅ Direction ruled 2026-09-05 (Mike): teach `rules:`.** The code tier is the path — live
-  mailbox already 9/33 with five taught rules and forwards now unwrap; the extractor stays
-  parked with its evidence. Rejected: grow-the-corpus (nothing improves meanwhile), stronger
-  tier (permanent per-message cost on a bulk-tier pipeline), park-entirely. The three A/B/C
-  variant agent files moved to `archive/agent_variants/` — out of active config, kept for
-  reference (Mike's word on the disposition).
-  @session: a rules-teaching walkthrough — Mike + the live sender list, teaching `rules:` for
-  his real senders via `teach_intake`, then re-measure the code tier against the corpus
-  @kind: feature
-
-  `due: 2026-09-09` — parked with a date at the capstone review (Mike, 2026-09-02): the sweep has
-  been accumulating real mail since intake went live 08-29 13:54, so a week's corpus exists by
-  then. Note the toggles are distinct: Mike enabled the **sweep** (code tier) 08-29; the
-  **extractor** (model tier) this item gates stays off until the eval passes.
-  *filed 2026-08-20 during intake rollout; steps (b)–(d) are Claude's, (a) and the flip are Mike's*
-
 - **[DB-0810-05] Writing tone has never been learned from a real mailbox.** Built and committed
   (`88957e6`); **every test used stubs.** The distillation half is well covered. The IMAP half is
   not, and it is the part most likely to behave differently against live Gmail: `_sent_folder()`
@@ -586,6 +503,49 @@ with a date.** Nothing new joins this group open-ended.*
   `due: 2026-09-12`
 
 ### Unbuilt — real capability that does not exist
+
+- **[DB-0905-01] The system cannot learn who a sender is, so every new sender is Mike's problem
+  forever.** Taught `rules:` work and are cheap — six of them took the labelled corpus from 1/33
+  to 11/33 classified with zero `action_required` false negatives (`[DB-0820-03]`, closed
+  2026-09-05). They stop there because **Mike ruled, four separate times in one sitting, that a
+  sender is not a category**: Bupa Dental is logistics *and* physical_health; a ticketing firm's
+  mail is a recreation booking when it concerns tickets and a promotion otherwise; George
+  Diamond's message was `action_required` this time and may not be next time; Samsung sent one
+  `action_required` and one `notification` from a single address. **The capability he asked for:
+  the rules should accrue automatically via a research gate** — the system researches an unknown
+  sender, concludes what kind of correspondent it is, and proposes the rule itself.
+  **The cost shape is why this is worth building and is the argument that killed the extractor,
+  inverted.** The model extractor was priced out on permanent per-message cost against a bulk-tier
+  pipeline. A research gate pays **once per new sender**, then the rule is free forever — 19
+  distinct senders across 33 messages, and new-sender arrival decays as the mailbox is learned.
+  **The risk is blast radius, not accuracy.** The extractor gets one message wrong once; a
+  research gate hardens the same mistake into a standing rule that mislabels that sender's mail
+  afterwards — the failure `tools/intake_forward.py` already refuses to take (`ledger_safe`).
+  It also contradicts `teach_intake`'s two-step confirmation, which exists so that a permanent
+  silencing traces to Mike's explicit word rather than a model's paraphrase. **Proposed
+  resolution, not yet ruled: the gate researches and PROPOSES; the rules land in the weekly
+  digest for batch approval.** That keeps the approval property and matches the digest's stated
+  purpose as a training surface rather than a report (`config/templates/intake.yaml` § Digest).
+  **Three capability gaps stand in the way, all measured 2026-09-05, none of them a config
+  choice:**
+  1. **A rule carries one domain.** `domain` is single-valued and `_effective_domain()` returns
+     one, so Bupa cannot be logistics *and* physical_health.
+  2. **`physical_health` has no `read_intake_queue`** in either `routing.yaml` or
+     `routing_cloud.yaml` — routing anything to it today files into a queue nobody opens. Red-tier.
+  3. **There is no sender *class*** — only a literal address or an fnmatch glob, so "any ticketing
+     organization" is inexpressible. The subject-substring workaround was tested against the real
+     corpus and fails: 2 of 4 ticket confirmations contain the word "ticket", and TodayTix's reads
+     *"Order confirmed! Get excited for The Mousetrap!"*.
+  **Also unbuilt, and it is the other half of what Mike described:** the interest gate exists as
+  far as the queue — `promotion` ships silent + domain recreation, `announcement` digest +
+  recreation, and `recreation_hobbies` holds `read_intake_queue` — but **nothing carries
+  Recreation's verdict back to surfacing.** "Run by Recreation for interest level before being
+  surfaced" is currently a one-way trip.
+  **Do not re-litigate the model extractor here.** It is parked permanently on measured evidence
+  and this is not a route back to it: a research gate reads one sender once, not every message.
+  @kind: feature
+  *filed 2026-09-05 at the rules-teaching walkthrough, on Mike's explicit go-ahead; supersedes
+  the teach-rules half of the closed `[DB-0820-03]`*
 
 - **[DB-0902-03] Suggestions arrive at times they cannot be acted on, and re-ask what was already
   deferred.** Mike, twice (08-28 20:28, 08-29 06:01): a shop errand suggested at 9:30 PM with no
@@ -1126,6 +1086,12 @@ claim user-facing (its log-write sibling is `[DB-0829-01]`); the two Iva/Eva cor
 evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording — "causing an
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
+
+- **[user corrected a prior turn]** taught rule: {'sender': 'kathaleen.jermyn@prudential.com'} → category='correspondence', disposition='surface', domain='finance', note='taught 2026-09-05 — financial advisers - their mail is correspondence and belongs to finance, not the relationships default (Mike, 2026-09-05 walkthrough)'  ×2  
+  `2026-09-05T12:05:20.799158Z`
+
+- ⚠ **[user corrected a prior turn]** taught rule: {'sender': 'googleplay-noreply@google.com'} → category='notification', disposition='silent', note='taught 2026-09-05 — Google machine notices; nothing here ever needs me (Mike, 2026-09-05 walkthrough)'  ×4  
+  `2026-09-05T12:01:06.712534Z`
 
 - **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Manny's swim class' (2026-09-04T09:30:00, uid=bd4174bd-fa57-42f8-a137-5b86c8b2c731@ai-life-manager) and 'Manny's swim class' (2026-09-04T10:00:00, uid=e55deb2e-5ecc-4a2c-80fc-4da93bf27dff@ai-life-manager). title_similarity=1.0, shared_attendees=[], shared_words=['class', "manny's", 'swim']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
   `2026-09-05T04:35:20.010531Z`

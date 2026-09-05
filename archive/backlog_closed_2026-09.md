@@ -713,3 +713,72 @@ pass. On the VM after deploy: the 12:14:53 registration block shows all 21 jobs 
 **zero ERROR lines** — no false positive on the live VM-owned config or its three agent-written
 jobs, and `weekly_clinical_review: sunday at 11:00` present — and the suite runs 47/47 against
 the deployed code.
+
+---
+
+## ✅ [DB-0820-03] The intake extractor was gated on an eval it cannot pass — closed 2026-09-05
+
+**Closed on Mike's disposition at the rules-teaching walkthrough.** The item's exit was always
+"the extractor flips on, citing the eval output". It never will: the 09-05 confidence sweep
+proved no affordable threshold clears the gate, and the ruled alternative — teach `rules:` —
+was executed here and works, but only for a minority of real senders. The item has answered its
+own question, and what remains is a different feature with a different cost argument, filed as
+`[DB-0905-01]`.
+
+### What the walkthrough measured
+
+| | resolved | gate (action_required FN) | domain axis |
+|---|---|---|---|
+| Baseline | **1/33** | 0 | 0/20 |
+| After 4 Google rules | 7/33 | 0 | 0/20 |
+| After 2 Prudential rules | **11/33 (33%)** | **0** | **4/20** |
+
+**Six rules taught, every one verified firing on real corpus mail** (11 messages total):
+`no-reply@accounts.google.com` (3), `no-reply@google.com` (2), `noreply-accounts@google.com` (1),
+`googleplay-noreply@google.com` (1) → `notification`/silent; `jason.duross@prudential.com` (2)
+and `kathaleen.jermyn@prudential.com` (2) → `correspondence`/surface/**finance**. Taught through
+`teach_intake` under `persona_scope("mike")` on the VM, which owns the file. Nothing enabled or
+relaxed on the extractor. No deploy owed.
+
+Two by-products worth keeping. The baseline's one hard mismatch — `no-reply@google.com` misread
+as `promotion` off a Gmail category label — disappeared, because a taught rule outranks the
+header tier. And the domain axis moved off zero for the first time: the Prudential rules override
+`correspondence`'s `relationships` default with `finance`, which is the 09-03 domain-axis work
+doing exactly what it was built for.
+
+### The finding that outlives the item: the premise in the handoff prompt was false
+
+The prompt, `SESSION.md` and this item all stated the code tier resolved **9/33 with five taught
+rules**. `config/personas/mike/intake.yaml` on the VM contained **no `rules:` key at all** — the
+whole file was `enabled: true` plus the forwarding block, and the ledger held one entry. The
+9/33 was a live-mailbox observation that was written down as though it were a corpus measurement
+and then re-quoted across three documents. **A number measured on one source and recorded
+without naming it will be re-read as a claim about a different source.** The real baseline was
+the same 1/33 the 09-04 eval reported.
+
+### Why "teach rules" stops at 11/33 — Mike's ruling, four times over
+
+Asked to rule sender by sender, Mike rejected the *shape* of the rule rather than any particular
+rule: **a sender is not a category.** Bupa Dental is logistics *and* physical_health. A ticketing
+firm's mail is a recreation booking when it concerns tickets and a promotion otherwise. George
+Diamond's message is `action_required` this time and may not be next time. Samsung sent one
+`action_required` and one `notification` from one address. Group B survived only because those
+four Google addresses genuinely emit one thing.
+
+Three capability gaps were measured, not assumed:
+
+1. **A rule carries one domain.** `domain` is single-valued and `_effective_domain()` returns one.
+2. **`physical_health` has no `read_intake_queue`** in either `routing.yaml` or
+   `routing_cloud.yaml` — routing to it would file into a queue nobody opens.
+3. **There is no sender *class*** — only a literal address or glob. The subject-substring
+   workaround was tested against the corpus and fails: 2 of 4 ticket confirmations contain the
+   word "ticket"; TodayTix's reads *"Order confirmed! Get excited for The Mousetrap!"*.
+
+### The extractor is parked permanently, with its evidence
+
+Not deleted, not disproven — **priced out.** Lowest zero-false-negative threshold is 0.95, which
+demotes 85% of the corpus to `unclear`; every affordable threshold silences an obligation; with
+the floor off the model said `unclear` 0/33 in all five runs. Report:
+`tests/intake_confidence_sweep_2026-09-05_gemini-flash-lite.md`. The three A/B/C variant agent
+files are in `archive/agent_variants/`. **If the extractor is ever revisited, `run_intake_redteam.py`
+still owes the self-forward-unwrap row** (`ROADMAP.md` § Track B) — that debt survives this close.
