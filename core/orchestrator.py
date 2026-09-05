@@ -4770,6 +4770,17 @@ def _run_single_agent(agent_name: str, user_input: str,
         system_prompt = f"## Your Role for This Session\n\n{agent}"
         augmented_input = user_input
         context_sections = {"agent_file": agent}
+        # ...except the date, for the Diarist. It writes dated records
+        # (write_journal, write_log) but was the one specialist skipping the clock
+        # branch below, because it leaves that branch for goals and the clock went
+        # with them. On 2026-09-05 it filed the day's journal entry to 2026-03-30
+        # and burned two turns on hallucinated log_dates before write_log's ±7-day
+        # guard forced it onto the real one. Goals stay out; the clock goes in.
+        if agent_name == "diarist" and not bare:
+            clock = clock_line()
+            if clock:
+                augmented_input = f"{clock}\n\n---\n\n{user_input}"
+                context_sections["clock"] = clock
     elif agent_name in _HEAD_LAYER_AGENTS:
         # Full config (constitution → prime_directive → mission → goals) + recent context.
         kind = session_kind(user_input, persona)

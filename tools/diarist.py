@@ -47,6 +47,26 @@ def write_journal(text: str, entry_date: str = "", tags: list[str] | None = None
     """
     if not entry_date:
         entry_date = date.today().isoformat()
+    else:
+        # Same guard, same reasoning, as write_log's log_date check
+        # (tools/logger.py, [DB-0809-12]) — and this is why it is here now. On
+        # 2026-09-05 the Diarist filed the day's family-day entry to 2026-03-30.
+        # write_log refused two hallucinated dates in the same session and the
+        # third attempt landed correctly; write_journal had no guard, so the
+        # journal entry went 159 days into the past and nothing said so. A
+        # backfilled day or a session crossing midnight explains a few days;
+        # nothing explains months.
+        try:
+            parsed = date.fromisoformat(entry_date)
+        except ValueError:
+            return (f"Error: entry_date {entry_date!r} is not a valid YYYY-MM-DD date. "
+                    f"Omit it to default to today.")
+        drift_days = abs((parsed - date.today()).days)
+        if drift_days > 7:
+            return (f"Error: entry_date {entry_date!r} is {drift_days} days from today "
+                    f"({date.today().isoformat()}) — refused as a likely hallucinated "
+                    f"date rather than a real backdate. Use the date from your clock "
+                    f"line, or omit entry_date to default to today.")
 
     journal_dir = _journal_dir()
     journal_dir.mkdir(parents=True, exist_ok=True)
