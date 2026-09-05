@@ -5268,10 +5268,16 @@ def _horizon_block(persona: str | None = None, session: str | None = None) -> st
     """This turn's horizon block, for the Synthesizer bundle. "" when nothing is waiting.
 
     `session` is the scheduled-session key from `session_kind()`, or None for a user-typed
-    turn. On `evening_close` a second block is appended: tomorrow's findings in full, already
-    delivered ones included, because Mike's evening wrap-up is a review rather than a bulletin
-    (2026-09-05). Ordinary turns never see it. The review is read-only — it charges no offer
-    and marks nothing delivered, so it cannot consume a finding's chance to be raised properly.
+    turn. Two sessions append a second, wider block (2026-09-05): `evening_close` gets
+    tomorrow in full and `weekly_review` gets the coming seven days, both **including already
+    delivered findings**, because a wrap-up and a weekly are reviews rather than bulletins.
+    Ordinary turns see neither. Both are read-only — they charge no offer and mark nothing
+    delivered, so neither can consume a finding's chance to be raised properly.
+
+    **These two are the counterweight to `_due_now()`.** The gate holds anything past tomorrow
+    unless it has a deadline or a precursor due, which is only safe because these sessions
+    still take the long view. Quieting the ordinary turn and widening the review are one
+    decision, not two.
 
     Called after `_file_horizon_items()` and before the Synthesizer runs, so a finding
     discovered *this* turn is put to the user in the exchange that found it. Without this the
@@ -5285,11 +5291,13 @@ def _horizon_block(persona: str | None = None, session: str | None = None) -> st
     charge — so wiring it in twice costs the finding nothing.
     """
     try:
-        from tools.horizon import context_block, review_block
+        from tools.horizon import context_block, review_block, week_block
         with persona_scope(resolve_persona(persona)):
             blocks = [context_block(persona)]
             if session == "evening_close":
                 blocks.append(review_block(persona))
+            elif session == "weekly_review":
+                blocks.append(week_block(persona))
         return "\n\n".join(b for b in blocks if b)
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"[horizon] block failed: {exc}")

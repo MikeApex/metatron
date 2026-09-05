@@ -336,6 +336,82 @@ def context_block(persona: str | None = None) -> str:
         return ""
 
 
+def _digest(persona: str | None, lo: date, hi: date, header: str) -> str:
+    """A read-only digest of findings dated in [lo, hi], **ignoring delivery state**. "" when
+    the window is empty.
+
+    Shared by `review_block` and `week_block`, which differ only in their window and framing.
+    Everything true of one is true of the other, and the important part is what this does NOT
+    do: it never writes. No offer is charged, nothing is marked delivered, the ledger is not
+    reopened for writing at all. A digest is a re-reading, not a raising — so a finding still
+    awaiting its first proper mention keeps that status and `context_block()` will still serve
+    it in the ordinary way.
+
+    That read-only property is the whole safety argument for suspending raise-once here, and it
+    is asserted by test rather than left to inspection.
+    """
+    try:
+        persona = resolve_persona(persona)
+        with _LOCK:
+            data = _read(persona)
+
+        rows = []
+        for row in data.values():
+            item = row.get("item") or {}
+            raw = str(item.get("date") or "").strip()
+            if not raw:
+                continue
+            try:
+                when = date.fromisoformat(raw)
+            except ValueError:
+                continue
+            if not (lo <= when <= hi):
+                continue
+            rows.append((when, item))
+        if not rows:
+            return ""
+
+        rows.sort(key=lambda r: (r[0], str(r[1].get("title") or "")))
+        lines = []
+        for when, item in rows:
+            where = str(item.get("venue") or "").strip()
+            detail = str(item.get("detail") or "").strip()
+            # The date is shown only when the window spans more than one day — on a
+            # one-day digest every line would carry the same date, which is noise.
+            when_part = f" — {when.isoformat()}" if lo != hi else ""
+            lines.append(
+                f"- {item.get('title')}{when_part}"
+                + (f", {where}" if where and when_part else f" — {where}" if where else "")
+                + (f". {detail}" if detail else ""))
+        return header + "\n" + "\n".join(lines)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[horizon] digest failed: {exc}")
+        return ""
+
+
+def week_block(persona: str | None = None) -> str:
+    """The coming week's findings for the weekly review, **delivered ones included**. "" when
+    the week is empty.
+
+    Mike's instruction, 2026-09-05: *"Weekly meeting should go over the week's coming
+    obligations."* The counterpart to `review_block`'s tomorrow, and it exists for the same
+    reason: the proximity gate now holds anything past tomorrow, so without a session that
+    deliberately widens the window, a commitment on Friday would not be seen until Thursday.
+    **The gate is what makes this necessary — quieting the ordinary turn is only safe if some
+    session still takes the long view.**
+
+    Runs Monday morning by Mike's choice, covering today through the next six days.
+    """
+    today = date.today()
+    return _digest(
+        persona, today, today + timedelta(days=6),
+        "[THE WEEK AHEAD — the weekly review. Everything below falls in the next seven days. "
+        "Go through them with the user, including any already raised on an earlier turn: this "
+        "is a review of the week, not a bulletin of new things, and the point is that they see "
+        "the shape of it in one go. Lead with whatever needs doing soonest or needs something "
+        "done first. Say them in your own voice, never as a list you were handed.]")
+
+
 def review_block(persona: str | None = None) -> str:
     """Tomorrow's findings for the evening close, **including ones already delivered**. "" when
     tomorrow is empty.
@@ -356,44 +432,15 @@ def review_block(persona: str | None = None) -> str:
     *findings ledger* for tomorrow, not tomorrow's calendar. The calendar reaches the head
     layer by its own route. This closes the half that the raise-once rule was suppressing.
     """
-    try:
-        persona = resolve_persona(persona)
-        tomorrow = date.today() + timedelta(days=1)
-        with _LOCK:
-            data = _read(persona)
-
-        lines = []
-        for row in data.values():
-            item = row.get("item") or {}
-            raw = str(item.get("date") or "").strip()
-            if not raw:
-                continue
-            try:
-                if date.fromisoformat(raw) != tomorrow:
-                    continue
-            except ValueError:
-                continue
-            where = str(item.get("venue") or "").strip()
-            detail = str(item.get("detail") or "").strip()
-            lines.append(
-                f"- {item.get('title')}"
-                + (f" — {where}" if where else "")
-                + (f". {detail}" if detail else ""))
-
-        if not lines:
-            return ""
-
-        return (
-            "[TOMORROW — the evening review. Go through all of these with the user, including "
-            "any you have already raised on an earlier turn: this is the one moment in the day "
-            "where repeating something is the point, because they are reviewing tomorrow, not "
-            "hearing news. Some of these may also appear in the block above — those are the "
-            "same items, not additional ones, so cover each thing once. Say them in your own "
-            "voice and never as a list you were handed.]\n"
-            + "\n".join(lines))
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(f"[horizon] review block failed: {exc}")
-        return ""
+    tomorrow = date.today() + timedelta(days=1)
+    return _digest(
+        persona, tomorrow, tomorrow,
+        "[TOMORROW — the evening review. Go through all of these with the user, including "
+        "any you have already raised on an earlier turn: this is the one moment in the day "
+        "where repeating something is the point, because they are reviewing tomorrow, not "
+        "hearing news. Some of these may also appear in the block above — those are the "
+        "same items, not additional ones, so cover each thing once. Say them in your own "
+        "voice and never as a list you were handed.]")
 
 
 def _charge_offers(data: dict, keys: list[str], now: datetime | None = None) -> bool:

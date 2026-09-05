@@ -544,6 +544,76 @@ def _():
     assert H.review_block() == ""
 
 
+@check("week: the coming seven days, delivered or not")
+def _():
+    reset()
+    day3 = (date.today() + timedelta(days=3)).isoformat()
+    H.record([_bare(day3)])
+    assert H.mark_engaged("tell me about the thing on " + day3) == 1
+    assert H.context_block() == "", "precondition: discharged for ordinary turns"
+    assert day3 in H.week_block(), "the weekly review skipped an already-delivered item"
+
+
+@check("week: a held finding inside the week is seen here — the gate's counterweight")
+def _():
+    reset()
+    day5 = (date.today() + timedelta(days=5)).isoformat()
+    H.record([_bare(day5)])
+    assert H.context_block() == "", "precondition: the gate holds it on ordinary turns"
+    assert day5 in H.week_block(), (
+        "a Friday commitment is held by the gate AND absent from the weekly review — that "
+        "combination loses it entirely, which is what makes quieting ordinary turns unsafe")
+
+
+@check("week: stops at seven days")
+def _():
+    reset()
+    H.record([_bare((date.today() + timedelta(days=6)).isoformat()),
+              _bare((date.today() + timedelta(days=7)).isoformat())])
+    block = H.week_block()
+    assert (date.today() + timedelta(days=6)).isoformat() in block, block
+    assert (date.today() + timedelta(days=7)).isoformat() not in block, "reached past the week"
+
+
+@check("week: soonest first, and each line carries its date")
+def _():
+    reset()
+    d2 = (date.today() + timedelta(days=2)).isoformat()
+    d5 = (date.today() + timedelta(days=5)).isoformat()
+    H.record([_bare(d5), _bare(d2)])
+    block = H.week_block()
+    assert block.index(d2) < block.index(d5), block
+
+
+@check("week: reading it charges nothing and delivers nothing")
+def _():
+    reset()
+    H.record([_bare((date.today() + timedelta(days=3)).isoformat())])
+    before = json.dumps(ledger(), sort_keys=True)
+    H.week_block()
+    H.week_block()
+    assert json.dumps(ledger(), sort_keys=True) == before, "the weekly review wrote to the ledger"
+
+
+@check("week: an empty week costs nothing")
+def _():
+    reset()
+    H.record([_bare(LATER)])
+    assert H.week_block() == ""
+
+
+@check("the evening review carries no date suffix; the weekly one does")
+def _():
+    reset()
+    # No date in the title or venue — _bare() puts one in both, which would mask this.
+    H.record([{"title": "Dentist", "date": TOMORROW, "venue": "Highgate",
+               "kind": "appointment", "detail": "9am"}])
+    assert TOMORROW not in H.review_block().split("]\n", 1)[1], (
+        "every line of a one-day digest would carry the same date — noise")
+    assert TOMORROW in H.week_block().split("]\n", 1)[1], (
+        "a seven-day digest must say which day each item falls on")
+
+
 @check("review: fires on evening_close only, and never on an ordinary turn")
 def _():
     text = (ROOT / "core" / "orchestrator.py").read_text(encoding="utf-8")
@@ -552,7 +622,9 @@ def _():
         "the review is not gated on the evening session — it would repeat delivered "
         "findings on every turn, which is the groundhog-day failure this module exists "
         "to prevent")
-    assert "review_block" in body
+    assert 'session == "weekly_review"' in body, (
+        "the week block is not gated on the weekly session")
+    assert "review_block" in body and "week_block" in body
 
 
 # ---------------------------------------------------------------------------
