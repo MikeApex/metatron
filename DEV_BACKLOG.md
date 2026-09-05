@@ -75,6 +75,9 @@ back-tagging the rest is `[DB-0815-10]`.
 > against `git log` before promoting anything from here.
 *(empty — last triaged 2026-09-05; evidence in `archive/backlog_closed_2026-09.md`)*
 
+- **[instruction change]** Quiet check-in execution returned 'nothing urgent requires your attention' instead of asking what is going on when there are no updates to share, failing to reflect the existing standing rule. Update check-in instruction execution so the assistant prompts for what is going on when there are no items to report.  
+  `2026-09-05T13:49:02.201353Z`
+
 ---
 ## Now
 
@@ -502,6 +505,56 @@ with a date.** Nothing new joins this group open-ended.*
   `due: 2026-09-12`
 
 ### Unbuilt — real capability that does not exist
+
+- **[DB-0905-02] Anyone who wants to use Metatron has to install a VPN first, which is not an
+  install experience.** The phone and browser reach the VM only over Tailscale; the Android APK
+  hardcodes the MagicDNS name (`static/index.html:782`) and the server's publicly-trusted cert is
+  Tailscale-issued (`core/server.py:1945-1958`). For Mike this is invisible; for the first alpha
+  user who is not Mike it is the whole onboarding.
+  **The blocker that made this unfileable is gone, and that is what changed since the roadmap
+  wrote it up.** Tailscale was doing three jobs on the client path: reachability, TLS, and access
+  control. The third ended 2026-08-04 — every endpoint sits behind a shared-password → token gate
+  (`core/server.py:97-151`), the WebSocket refuses to join a broadcast group before an `auth`
+  frame passes (`core/server.py:763-789`), and `auth.require_configured()` stops the server
+  booting unconfigured. Removing Tailscale from the client no longer exposes an unauthenticated
+  server. It would have in June, which is why the roadmap's version of this has sat.
+  **The transport is a ruling, not a config choice, which is why this carries `@session:`.**
+  1. **Tailscale Funnel** — `tailscale funnel` on the VM, no new vendor, the existing cert keeps
+     working, nothing installed on the phone. Constrained to ports 443/8443/10000 (so the server
+     moves off 8001 or sits behind a local proxy) and relayed through Tailscale's infrastructure,
+     so it is rate-limited and not the transport for a voice product at cohort scale.
+  2. **Cloudflare Tunnel** — what `ROADMAP.md` § *Pre-Alpha* specifies. Better at scale, stable
+     hostname, outbound-only. **It adds a vendor that terminates TLS and therefore sees plaintext
+     session traffic, which is sensitive-tier.** Not barred under the 2026-08-26 single-user
+     ruling — the control there is Mike's own judgement about what he puts in — but it is a second
+     vendor holding the same material, and § Section 0 has never been asked about it. **That
+     ruling is this item's real content.**
+  3. **Public 443 + Let's Encrypt** — fewest runtime parts, but puts the origin IP on the public
+     internet, and the external IP reassigns on every stop/start (`CLAUDE.md` § *Infrastructure
+     traps* 1–2), so it needs a static IP or dynamic DNS. Least attractive.
+  **The build is small and identical whichever wins:** a systemd unit for the tunnel so a VM
+  resume does not silently leave the phone routeless; the new hostname added to `ALLOWED_ORIGINS`
+  (`core/server.py:75-82` — the allowlist is explicit and `allow_credentials=True` forbids a
+  wildcard, so a missed origin fails as a browser CORS error rather than an obvious one); `SERVER`
+  repointed and **the APK rebuilt**. Tailscale stays on the VM for SSH/admin — this removes it
+  from the user path only.
+  **What the change actually costs is a security property, and it should not be discovered later.**
+  Today an attacker must be on the tailnet before the password matters; afterwards the password is
+  the only control. `auth.failure_delay()` exists, but B1's 102-case red-team suite has only ever
+  run against a VPN-fronted server, and none of its cases target the login path. **Owed alongside
+  this, not after it:** a pass on lockout policy, token TTL, and whether one shared password is the
+  right shape once the user is not Mike. Related: B1b's open rows (`ROADMAP.md` § B1).
+  **Cost:** both tunnels are free-tier; the standing cost is one small process on the VM. The
+  ancillary cost is that all tunnel traffic is outbound through the VM's external IP — the sole
+  egress path that already cannot be deleted — and **no meter reports tunnel egress separately**;
+  it lands in the same GCE network-egress line as Vertex calls.
+  **Supersedes `ROADMAP.md` § *Pre-Alpha: Cloudflare Tunnel for phone connectivity***, which
+  predates the auth gate and treats the vendor choice as settled.
+  @kind: feature
+  @session: which transport — Tailscale Funnel, Cloudflare Tunnel, or a public 443? The Cloudflare
+  option needs a § Section 0 ruling on a second TLS-terminating vendor.
+  *filed 2026-09-05 on Mike's explicit go-ahead, from a question about removing the Tailscale
+  dependency on the app and web client*
 
 - **[DB-0905-01] The system cannot learn who a sender is, so every new sender is Mike's problem
   forever.** Taught `rules:` work and are cheap — six of them took the labelled corpus from 1/33
@@ -1114,6 +1167,12 @@ claim user-facing (its log-write sibling is `[DB-0829-01]`); the two Iva/Eva cor
 evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording — "causing an
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
+
+- **[user corrected a prior turn]** User corrected 2:44 quiet check-in behavior: when there is nothing urgent to report, assistant should ask what is going on instead of simply stating nothing is needed.  
+  `2026-09-05T13:48:51.845689Z`
+
+- **[user corrected a prior turn]** User corrected planning horizon and horizon-surfacing meta-instruction after system raised advanced preview items too far out.  
+  `2026-09-05T13:44:59.914958Z`
 
 - **[user corrected a prior turn]** User corrected planning horizon and horizon-surfacing behavior: requested that only items with precursors, deadlines, or actionable reasons get highlighted in advance, reserving deep horizon previews for evening wrap-ups and weekly review meetings.  
   `2026-09-05T12:31:28.194655Z`
