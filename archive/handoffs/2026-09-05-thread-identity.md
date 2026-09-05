@@ -7,8 +7,9 @@ stopwords and generic action/time words dropped, crudely stemmed, digits kept �
 the same thread if the sets are equal or share 2 anchors (`_anchor_tokens` / `_same_thread`,
 modelled on `tools/horizon.py:_norm`; no scores, no model call, nothing semantic).
 
-**Commit:** `9f9e2b1` on branch `worker/thread-identity` in the worktree —
+**Commit:** `a4b64b5` on branch `wt/thread-identity` in the worktree —
 `tools/context_tracker.py`, `tests/test_thread_identity.py` (new), `tests/test_open_thread_expiry.py`.
+(This file's own SHA correction is the commit on top of it; nothing else differs.)
 
 **Close `[DB-0814-02]`.** Evidence: 16 new checks in `tests/test_thread_identity.py`, and a
 before/after probe on the same scenario — on HEAD a thread reworded daily stayed permanently one
