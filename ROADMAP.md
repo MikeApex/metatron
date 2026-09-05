@@ -649,6 +649,16 @@ the Observer-agent concept instead of intuition.
 > output vs a benign control), the disabled model extractor refused the injected instruction.
 > Runner `tests/run_intake_redteam.py`, report `tests/security_redteam_2026-09-03_intake.md`.
 > Re-run it at the `[DB-0820-03]` extractor flip.
+>
+> **⚠ A SEVENTH SURFACE OPENED 2026-09-05 and is not yet in the suite: self-forward
+> unwrapping** (`tools/intake_forward.py`, `[DB-0904-01]`). It lifts a sender identity out of
+> a message *body* — attacker-writable — and hands it to the classifier the ledger learns from.
+> Gated on the outer message authenticating as the user's (topmost `Authentication-Results`
+> only, trusted authserv-id, signing domain matching). **A scoped `/code-review` found two
+> attacker-reachable bypasses in that gate before it shipped**, both now regression-tested in
+> `tests/test_intake_forward.py` (24 checks) — but that file is a unit suite, not an adversarial
+> one. **`run_intake_redteam.py` owes this row**, and it should be written before the extractor
+> flip, not after.
 
 Build: Use GPT-4o and/or o3 to generate adversarial prompts across all attack categories below. Run each against live Coordinator and Synthesizer. Log result for each.
 

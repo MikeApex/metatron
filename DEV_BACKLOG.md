@@ -535,27 +535,6 @@ with a date.** Nothing new joins this group open-ended.*
   @waiting: threshold sweep, then Mike's flip decision citing the eval output
   @kind: feature
 
-- **[DB-0904-01] A forwarded email is filed as if the user wrote it, so triage is blind on more
-  than half of real inbound.** Forward something into the intake account and the sender the
-  classifier sees is *the user*. The sender ledger, the `rules:` layer and every header signal are
-  built on who sent it, so all three go dark; on the labelled corpus this is **18 of 33 messages**.
-  Those messages are classified from subject and body alone, which is why the extractor is carrying
-  the whole load there.
-  **Mike's requirement, 2026-09-04:** *"The tool should recognize a forward from the user's other
-  account and look in the body of the email for the original sender."*
-  **⚠ THE UNWRAP IS A SECURITY BOUNDARY AND MUST BE AUTHENTICATED, NOT PATTERN-MATCHED.** A
-  `From:` line inside a body is attacker-writable text. If the unwrap trusts it, anyone able to
-  spoof the user's address hands the system a forged sender identity — and **the ledger learns from
-  what it sees**, so the poison hardens into a rule. **Gate the unwrap on the forward actually
-  authenticating as the user's (DKIM/ARC pass), never on the `From:` header matching**, which is
-  trivially forged. Because it changes a path that meets hostile input, `tests/run_intake_redteam.py`
-  gets a row for it — the suite that already covers this surface (`[DB-0820-04]`, PASS 5/0/0).
-  **Sequencing:** this lands before the extractor flip is worth re-measuring. It changes what the
-  code tier can resolve unaided, which is the 3% figure `[DB-0820-03]` measured — so the corpus
-  result should be re-run after it, not before.
-  @kind: feature
-  @waiting: nothing — buildable now
-  *raised by Mike 2026-09-04 from reading the labelled corpus in the (M)-walkthrough session*
   `due: 2026-09-09` — parked with a date at the capstone review (Mike, 2026-09-02): the sweep has
   been accumulating real mail since intake went live 08-29 13:54, so a week's corpus exists by
   then. Note the toggles are distinct: Mike enabled the **sweep** (code tier) 08-29; the
@@ -932,59 +911,6 @@ half (b) is now part of the Pro-routing decision. Evidence and trail:
   `data/personas/mike/crm/name_resolutions.json`)
   *raised by Mike 2026-08-18 · built 2026-08-27 by the CRM attack worker*
 
-- **[DB-0818-06] 24 of Mike's 59 stored "facts" are not facts about him.** The **writers are
-  half-fixed, the store is not.** `write_wisdom`'s schema and `synthesizer.md` now separate an
-  intention from a habit — a live run caught the Synthesizer writing *"wants to change breakfast"* as
-  a standing fact twice in two turns, and the next run kept the observed pattern and dropped the
-  intention. **The existing bad entries remain**, including intention-shaped ones written before the
-  fix (`dietary_analysis_interest`, `lunch_options`).
-  **Why a user notices:** eight are **interaction preferences sitting where behaviour rules cannot
-  reach them** (`communication_style_preference`, `reduced_prompting_preference`,
-  `avoid_travel_assumptions`, five more). A preference stored as a fact is retrieved only if
-  something thinks to look it up; a preference in the persona file is in every prompt. Also
-  `language_preference` duplicates `profile.yaml`'s real `output_language` field — two homes for one
-  setting, and the copy can drift from the one the code reads.
-  **The rest:** three tool defects filed against the user, two recurring obligations that belong in
-  `open_obligation`, two near-duplicate pairs, one dated June observation, one content-free entry.
-  **Do not bulk-move.** Persona data is VM-owned and each class needs a different destination:
-  `merge_wisdom_entries` for duplicates (archive-on-merge), `write_persona` for the preferences, plain
-  deletion for the tool defects. Per-entry assignment: `scripts/migrate_wisdom_schema.py` KEY_MAP.
-  **✅ Per-entry proposal delivered 2026-08-27** (merged `c2798eb`):
-  `archive/plans/wisdom_store_cleanup_proposal_2026-08-27.md` — all 24 dispositioned with
-  destinations (11 preferences → persona file, 3 obligations, 2 duplicate merges, 3 tool
-  defects, 2 transients, 2 content-free, 1 duplicating `profile.yaml`). Built from the
-  hand-reviewed 08-15 KEY_MAP, not a live read (store is Denied-tier); it counts **eleven**
-  interaction preferences where this item says eight — the transplant should treat those eleven
-  as one review pass, since several likely collapse into one persona-file line.
-  **✅ HALF EXECUTED 2026-09-04 (Mike approved per-group in session).** Eight entries archived
-  with reasons, store **80 → 72**, backup taken first (`wisdom.pre-cleanup-2026-09-04.json`):
-  one duplicate merged (`post_travel_recovery`), three tool defects retired, two dated
-  observations, one content-free entry, and `language_preference` (which duplicated
-  `profile.yaml`'s `output_language`). Nothing deleted — `retire_wisdom_entries()` was added to
-  `tools/wisdom.py` for the class the proposal called "plain deletion", because this codebase
-  has no delete and forcing them through `merge_wisdom_entries` would have written a
-  `merged_into` pointer naming an entry that does not hold the same fact.
-  **⚠ THE PROPOSAL WAS STALE AND THE STORE IS GROWING FASTER THAN IT IS CLEANED.** It was built
-  from a 2026-08-15 read of 59 entries. Live count on 2026-09-04 was **80** — 2 of its 24 were
-  already gone, and **21 entries written since then have never been assessed**. Those 21 carry
-  the same faults: language settings now duplicated **three** ways (`language_preference_bulgarian`,
-  `primary_language`, plus the one just retired) against `profile.yaml`'s real field;
-  instructions-to-the-tool stored as facts (`no_prudential_review_talk`, `no_swimming_reminders`);
-  three post-travel entries, two standard-breakfast entries, eight overlapping momentum/recovery
-  entries; and contact facts filed as wisdom (`gym_steven_identity`, `horatiu_stefan_status`,
-  `kathleen_jermyn_spelling`). **Cleaning without fixing the writer buys three weeks.**
-  **What remains, and it is one sitting, not two:** the 11 interaction preferences → persona
-  file (Mike's judgement — several collapse into one line, and he flagged `avoid_travel_assumptions`
-  as likely a misfiled complaint rather than a preference), the 3 recurring obligations →
-  `open_obligation` (held back deliberately: transplanting one needs its *value* read and its
-  recurrence judged, which is a decision, not a move), and the 21 unassessed entries. Values for
-  all 14 are staged at `/tmp/wisdom_group_a_2026-09-04.json` on the VM.
-  @kind: chore
-  @waiting: one sitting with Mike — Group A (11 preferences) + Group B (3 obligations) + the 21
-  unassessed entries, together so the store gets one coherent pass
-  *found 2026-08-15 by reading all 59 live entries during the schema migration (`a35acfa`), which
-  reports them and deliberately moves nothing · triaged out of `## Inbox` 2026-08-18 · proposal
-  2026-08-27 by the wisdom-store attack worker*
 
 - **[DB-0815-02] Speaking a language other than English does not work.** Speech **out** is built and
   shipped (`bg` → `bg-BG-KalinaNeural` via edge-tts, Kokoro has no Bulgarian model). Speech **in** is

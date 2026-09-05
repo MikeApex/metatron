@@ -1,56 +1,46 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-09-04, second (**the fleet moved to Gemini 3.8 Flash the day it became callable**).
-Reasoning tier `gemini-3.7-flash` → `gemini-3.8-flash` across all six slots, same price, better
-scores; bulk tier unchanged. Adopted on a **launch email, not the chore's due date** — 3.8 `404`'d
-on `global` on 09-01 and answered a live call on 09-04, so **cadence is now WEEKLY** (Mike) with
-the date as a floor, not a trigger. The lesson generalises the one the 09-01 session learned:
-**a `404` is a dated observation, not a standing fact — re-confirm before writing a model off,
-not just before wiring one in.** Also live on Chorus (separate `gemini-3.8` key) and the
-`ask_gemini` MCP. **One inferred figure:** 3.8's introductory-pricing END DATE is unpublished, so
-`spend_guard.yaml`'s `from: "2027-01-01"` is copied from 3.7 — it errs toward **under**-reporting,
-owned by `[DB-0904-02]` (`due: 2026-09-12`). Detail: `archive/PROJECT_LOG.md` § 2026-09-04, second.*
+*Updated: 2026-09-05 (**forwards are seen through, a code review found the gate did not hold,
+and the wisdom store went 80 → 23**). Intake can now read the original sender out of a
+self-forward — 18 of 33 real messages were forwards, so the rules, ledger and headers all
+described the wrong person. **A scoped `/code-review` then found two attacker-reachable
+bypasses in that gate**, both fixed and regression-tested; 20 passing tests had covered only
+the paths I thought of. **Separately, found by testing: a rule with an unrecognised `match:`
+key matched EVERY message and silenced the whole inbox** — `sender_contains` is the plausible
+typo, being `teach_intake`'s own parameter name. Both commits deployed by Mike in-session.
+Detail: `archive/PROJECT_LOG.md` § 2026-09-05.*
 
-***Next: one sitting with Mike finishes the wisdom store `[DB-0818-06]`*** — 11 interaction
-preferences → persona file, 3 obligations → `open_obligation`, **plus 21 entries written since
-the 08-15 review that nobody has assessed** and which carry the same faults (language settings
-duplicated three ways, instructions-to-the-tool stored as facts, contact facts in the wrong
-store). Values staged at `/tmp/wisdom_group_a_2026-09-04.json` on the VM. **Mike's open design
-question, answered but not built:** how to stop complaints being recorded as wisdom — the answer
-is the guard `write_wisdom` already runs for safety-flag terms, plus a `FRICTION:` line beside
-`WISDOM_PROPOSAL:` so there is a drawer to put them in. **Awaiting his word before filing.**
+***Next: `[DB-0820-03]`'s remaining two steps, neither needing Mike.*** Re-sweep the confidence
+threshold now the production agent file actually asks for the field (it never did — enabling the
+floor would have demoted every message), then the scoped review of the model-tier code is
+**done**, so what is left is the flip decision itself. **Finding 5 should close first:** a demoted
+result is discarded whole by `sweep()`, so the domain and importance the demotion exists to
+preserve are thrown away.
 
-*⚠ **The intake extractor stays off; it did not pass its gate `[DB-0820-03]`.** Blocked on picking
-a confidence threshold from a **confidence-vs-correctness sweep, not intuition**;
-`apply_confidence_floor()` is built and inert until then. Counterargue is ruled out, the gate now
-scores the worst of N runs, and the corpus is capped at 33 real messages. **Full evidence — run
-variance, the A/B/C table, the corpus breakdown — is in `DEV_BACKLOG.md` `[DB-0820-03]`; do not
-re-derive it here.***
+*⚠ **The intake extractor stays off. Mike ruled against relaxing its gate** — it currently fails
+on any non-`unclear` answer, stricter than its own docstring, and narrowing it to `digest`/`silent`
+was declined: *"unclear needs to come up more for this to have any validity."* **A single run
+cannot gate it**: identical corpus and agent file gave 1, 3, 1, 1, 2 false negatives, so `--runs N`
+now scores the **worst** run. Counterargue is ruled out — it raised doubt *and* degraded accuracy.
+**Full evidence lives in `DEV_BACKLOG.md` `[DB-0820-03]`; do not re-derive it here.***
 
-*✅ **The intake domain axis is built and is the session's clear win** (Mike's ruling: a triplet
-{domain, category, importance}). `intake.yaml` had claimed since 08-19 that domain and disposition
-were independent while the code derived domain from category 1:1 — so a bill needing payment could
-not reach finance. `work_vocation` gained `read_intake_queue` in the same change, because a domain
-the extractor can file to whose agent cannot read the queue is a black hole.*
+*✅ **The wisdom store's three intake classes are closed, and one is not.** Corroboration (an
+`observed` fact waits for a second sighting in 14 days — the sender ledger's own bar, one file
+away), the user's recorded word (`record_wisdom_response`; a denial does **not** delete the entry
+and agreement does **not** promote `observed` to `stated`), and an absence-of-evidence self-check
+in the six writers. **Still open, and the largest class: a preference recorded as a discovery when
+it was already policy** — five of eleven cleared this session were describing behaviour already
+instructed in `config/modules/synthesizer_scheduled_sessions.md`. The redundancy guard catches
+this on the persona path only, not the wisdom path.*
 
-*⚠ **`./deploy.sh` is OWED and the debt is now two sessions deep.** The (M)-walkthrough work is
-committed (`effa68a`); the 3.8 Flash change is committed on top. **Neither has been deployed**, so
-the VM is still running 3.7 Flash and, for the intake eval, files that were **scp'd individually**
-— it is ahead of git in some paths and behind it in others. `deploy.sh` is Denied; Mike runs it.
-**The three `config/agents/intake_extractor_{counterargue,confidence,both}.md` variants are test
-artifacts** with no routing entry; delete them when the confidence question closes. **`## Machine
-log` grew 90 → 107 → 118** from test traffic across both sessions — those signatures are
-artifacts, not production signal.*
+*⚠ **Test artifacts to delete when the confidence question closes:** the three
+`config/agents/intake_extractor_{counterargue,confidence,both}.md` variants, which have no routing
+entry. **`## Machine log` grew 90 → 118+** from this session's own eval traffic — artifacts, not
+production signal.*
 
-*⚠ **No off-machine backup — Mike declined a date twice (2026-09-04); a recorded acceptance of a
-named risk, not an unfiled worry. Do not re-raise it as an open item.** Detail:
-`archive/log/2026-09-04-01-m-walkthrough-session.md`.*
-
-*⚠ **Item 7 (`VERTEX_CACHE_DISABLED` on the Mac) — measured, and the recommendation is to flip it
-ON.** The 08-21 finding that caching was net-negative has **reversed**: over the last 14 days the
-billing export shows 3.5 Flash-Lite cached reads costing $0.119 against $1.19 they would have cost
-uncached, for $0.13 of storage — **net +$0.94**. The sliding-TTL work fixed it. On the Mac the
-idle cost is fractions of a cent. **Mike flips it; the session never reads `.env`.**
+*⚠ **No off-machine backup — Mike declined a date twice; a recorded acceptance of a named risk,
+not an unfiled worry. Do not re-raise it.** `VERTEX_CACHE_DISABLED` was flipped ON on the Mac
+2026-09-05 (billing export: net **+$0.94**/14d, the 08-21 net-negative finding having reversed).*
 
 *⛔ **Two settled rulings — do not re-open; both in `ROADMAP.md` § Section 0.** A4 safety testing
 is SUSPENDED (before-Alpha is the only clock); ZDR is refused.*

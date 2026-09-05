@@ -579,3 +579,67 @@ justification for the `unmetered_uplift` factor — and this item.
 **Consequence worth carrying:** the uplift is no longer the only way to size the unmetered
 residual. `scripts/vertex_cost_reconcile.py` reads the export and attributes it per SKU;
 re-derive the factor from real rows before trusting it further.
+
+---
+
+## 2026-09-05 — closed
+
+### `[DB-0818-06]` The wisdom store held facts that were not facts about Mike — **CLOSED, 80 → 23**
+
+Mike marked all 48 remaining entries in session. Fourteen invalid and removed, seven moved to
+the layer that can act on them, four merged, one edited. Everything archived with its reason;
+nothing destroyed (`retire_wisdom_entries()` was added for the class the 2026-08-27 proposal
+called "plain deletion", because this codebase has no delete and forcing them through
+`merge_wisdom_entries` would have written a `merged_into` pointer naming an entry that does not
+hold the same fact).
+
+**The proposal was stale when the sitting started** — built from a 08-15 read of 59 entries
+against a live store of 80, with 2 of its 24 already gone and 21 entries never assessed.
+
+**Where the seven went:** household facts (Manny's school days, plant watering threshold,
+hot-weather care) → `logistics` agent config; "stop reminding me about swimming" → persona file,
+generalised past swimming; `avoid_travel_assumptions` → `coordinator.md` as a reasoning rule;
+`growth_planning_preference` + `routine_stabilization_anchors` → superseded by the NEW_GOAL
+protocol, which is what both were asking for. Recurring dates (credit card, payroll, Manny's
+swim) → live recurring calendar entries, payroll as **two** entries after Mike's correction that
+it cannot be started before the 1st and is due on the 5th.
+
+**Mike's second question is what made this worth doing.** For each invalid entry: was the
+mechanism curtailed, or would it reproduce? **Twelve of fourteen would have reproduced.** Three
+classes are now closed in code — corroboration (an `observed` fact waits for a second sighting
+in 14 days, the sender ledger's own bar), the user's recorded word (`record_wisdom_response`,
+where a denial does not delete the entry and agreement does not promote `observed` to `stated`),
+and an absence-of-evidence self-check in the six writers.
+
+**One class remains open and is the largest: a preference recorded as a discovery when it was
+already policy.** Five of the eleven interaction preferences were describing behaviour already
+instructed in `config/modules/synthesizer_scheduled_sessions.md`. The redundancy guard caught it
+twice live but only guards the persona path, not the wisdom path. Not filed as a new item —
+it is stated in `SESSION.md` and in the log fragment, and filing it would ask `/backlog` to rank
+a design observation against nine concrete items.
+
+Commits `3a01894` (mechanisms + Red-tier agent changes), deployed by Mike in-session.
+
+### `[DB-0904-01]` A forwarded email was filed as if Mike wrote it — **CLOSED on the build**
+
+18 of 33 real messages are self-forwards, so the taught rules, the sender ledger and every bulk
+header described the wrong person on 55% of inbound. `tools/intake_forward.py` reads the original
+sender out of the forwarded header block, gated on the outer message authenticating as Mike's.
+
+**Verified against the live mailbox:** 11 unwrap, distinct senders **9 → 19**. The code tier's
+own resolution stayed at 1/33 — because nothing in it consumes a sender without a taught rule or
+a learned ledger, and the eval passes an empty ledger by design — but **five taught sender rules
+take it to 9/33, and before the unwrap those same rules matched nothing.**
+
+**A scoped `/code-review` found two attacker-reachable bypasses in the gate before it shipped:**
+every `Authentication-Results` header was searched including attacker-added ones, and the sender
+was read from anywhere in the first 1,200 chars so a body *opening* with `From:` chose the
+identity. Both fixed, both now named regression checks; 24/24, and Gmail's real headers still
+pass. **The lesson: 20 passing tests had covered only the paths I thought of.**
+
+**What is NOT closed here, and has one home rather than two:** the adversarial suite row.
+`tests/test_intake_forward.py` is a unit suite. `run_intake_redteam.py` owes this surface a row
+before the extractor flip — tracked in `ROADMAP.md` § B1b, not re-filed here.
+
+Commit `effa68a`, deployed by Mike in-session. Enabled for `mike` in
+`config/personas/mike/intake.yaml`.
