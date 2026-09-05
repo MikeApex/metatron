@@ -587,25 +587,6 @@ with a date.** Nothing new joins this group open-ended.*
 
 ### Unbuilt — real capability that does not exist
 
-- **[DB-0903-02] A plausible typo in a scheduler `days:` value makes the job never run, silently
-  and permanently — nothing validates day names.** `days: sun` matches nothing on any day (the
-  firing gate `_is_active_day` compares `strftime("%A").lower()`, so only full lowercase day
-  names ever match) — no error, no warning, the job simply never fires. Exactly how
-  `weekly_clinical_review` shipped inert twice on 2026-09-03. A job setting only `days:` also
-  registers daily and is then gated six days a week — functionally right, not what the author
-  meant. **The fix is Red-tier and is why this sits here:** validate scheduling keys at config
-  load in `core/scheduler.py` and refuse an unrecognised day value loudly. The narrower
-  alternative — accepting three-letter abbreviations in `_is_active_day` — treats the symptom
-  and leaves the next silent key.
-  **✅ The doc half is DONE (2026-09-03, `764d218`):** the two-layer `day:`/`days:` split is now
-  documented where jobs are written (comment block atop `config/templates/scheduler.yaml`) and
-  in `docs/INFRASTRUCTURE.md` — it previously cost a session an hour to derive from daemon logs.
-  The immediate bugs were fixed same day by session ⑦ (template, live `mike` config, regression
-  test in `tests/test_clinical_escalation.py`); what remains is only the loud-validation build.
-  @kind: bug
-  *found 2026-09-03 during session ⑦'s post-deploy verification (dev-session find → Later) ·
-  headline corrected same day — `day:`-only jobs were never broken · doc half closed 2026-09-03*
-
 - **[DB-0902-03] Suggestions arrive at times they cannot be acted on, and re-ask what was already
   deferred.** Mike, twice (08-28 20:28, 08-29 06:01): a shop errand suggested at 9:30 PM with no
   check of opening hours; questions re-asked about tasks he had already said "later" to. The

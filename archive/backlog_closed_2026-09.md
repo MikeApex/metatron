@@ -672,3 +672,44 @@ testing suspended (ROADMAP § 0 pt 8), the clinical flags are unverified on *bot
 the before-Alpha re-run; the 2026-08-18 and 08-27 `--complexity quick` gate passes (3/3) were
 on the Flash-Lite path and predate the 09-01/09-04 model hops. The before-Alpha A4 run remains
 the only clock, and ROADMAP § A7 check 8's flag notes this reaffirmation.
+
+### [DB-0903-02] A typo in a scheduler `days:` value made the job never run, silently — **CLOSED 2026-09-05, verified in production**
+
+`days: sun` matched nothing on any day: `_is_active_day` compares against
+`strftime("%A").lower()`, so only `daily`, `weekdays`, `weekend` or a full lowercase day name
+ever matched. No error, no warning — `weekly_clinical_review` shipped inert twice on
+2026-09-03 and the logs showed nothing distinguishable from an ordinary "not an active day"
+skip. The doc half closed 2026-09-03 (`764d218`); this closes the loud-validation build
+(`7118972`, Red-tier, deployed by Mike the same day).
+
+`schedule_key_error()` in `core/scheduler.py` validates both keys — `days:` (plural, the
+firing gate) and `day:` (singular, weekly registration, which becomes a `schedule` library
+attribute and so takes full names only). Three places consume it: registration skips the job
+and logs an ERROR naming the job, the value and the accepted forms; `_gates_block` refuses it
+ahead of the day gate, so no firing path can report it as an ordinary skip; and
+`_report_invalid_schedules` re-reads the config hourly from the main loop.
+
+**Decisions taken at close, so they are not re-litigated:**
+
+1. **Skip-loudly, not daemon-down.** One typo'd job must not take down the other twenty. The
+   cost of that choice is that a skipped job is silent after its one registration line, which
+   is why the hourly re-report exists at all — a single line in a scrollback nobody scrolls is
+   what this bug already was. Hourly rather than per 30s tick: 2,880 lines a day is its own
+   kind of silence. The re-report reads from disk, so a typo introduced by an edit while the
+   daemon runs is caught without a restart — the live config is VM-owned and edited there.
+2. **The hourly report prints only; it does not append to `scheduler_errors.json`.** That file
+   is a growing JSON array with no rotation, so an hourly append would add ~24 entries a day
+   for as long as the typo stood. Registration writes the durable record once; journald rotates.
+3. **`_is_active_day` still refuses abbreviations**, per the item's own reasoning: accepting
+   `sun` fixes one spelling and leaves the next mistyped key exactly as silent. It gained only
+   case normalisation — `days: Daily` previously failed the exact-match keyword branch and
+   would have been this same bug in new clothes.
+
+**Evidence.** `tests/test_scheduler_day_validation.py`, 47 checks, standalone-script style —
+confirmed failing on HEAD before the build. Covers the bad value refused loudly, every accepted
+form still passing, a `day:`-only weekly job registering untouched, agent-written jobs validated
+on the same path, non-strings not crashing the validator, and the error repeating on a second
+pass. On the VM after deploy: the 12:14:53 registration block shows all 21 jobs registered with
+**zero ERROR lines** — no false positive on the live VM-owned config or its three agent-written
+jobs, and `weekly_clinical_review: sunday at 11:00` present — and the suite runs 47/47 against
+the deployed code.
