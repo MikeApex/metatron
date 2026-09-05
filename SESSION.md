@@ -1,26 +1,28 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-09-05, fourth (**the scheduler's silent day-name typo is closed; four deploys
-verified across the day**). A mistyped `days:` value is now refused out loud instead of
-disabling a job forever — the job is **skipped loudly**, the daemon and its twenty siblings
-carry on, and the error repeats hourly rather than scrolling out of sight (`7118972`,
-`28c2f21`; `[DB-0903-02]` closed). Earlier today: thread identity `[DB-0814-02]` built,
-deployed and **live in production** — expiry now runs against real traffic; the extractor's
-direction ruled **teach `rules:`**, with the walkthrough prompt already written; the confidence
-sweep spent its lever (no viable threshold exists, so the gate stays off on evidence). Detail:
-`archive/PROJECT_LOG.md` § 2026-09-05, second through fourth.*
+*Updated: 2026-09-05, fifth (**intake now files 1 in 3 of Mike's mail by itself, up from 1 in
+33 — and the direction it was ruled on has run out**). The rules-teaching walkthrough ran with
+Mike present: six taught `rules:` took the labelled corpus from **1/33 to 11/33** classified
+without surfacing, `action_required` false negatives zero throughout, domain axis off zero for
+the first time (0/20 → 4/20). Confirmed on live mail he seeded — a Prudential forward unwrapped,
+hit its rule and routed to `finance`, the first time those three built things were seen working
+together. `[DB-0820-03]` **closed**; `[DB-0905-01]` filed for the research gate. Earlier today:
+scheduler day-name validation, thread identity live, the confidence lever spent. Detail:
+`archive/PROJECT_LOG.md` § 2026-09-05, second through fifth. `683d00d`, `859a4c5`.*
 
-***Next, one Mike-gated session, prompt already written:*** the rules-teaching walkthrough for
-intake `[DB-0820-03]` — `archive/handoffs/2026-09-05-rules-teaching-walkthrough-prompt.md`.
-**Nothing is awaiting deploy.**
+***Next: no Mike-gated session is queued and nothing is awaiting deploy.*** One Inbox item is
+untriaged — Mike's 09-05 instruction on confining advance horizon previews. `/backlog` owns it.
 
-*⚠ **The intake extractor stays off — now on measured evidence, not just the gate.** The lowest
-zero-false-negative threshold (0.95) demotes 85% of the corpus to `unclear`; every affordable
-threshold silences an obligation on the worst run, and with the floor off the model said
-`unclear` 0/33 in all five runs — Mike's validity objection confirmed literally. **Direction
-ruled 2026-09-05: teach `rules:`** — a rules-teaching walkthrough is the proposed next sitting;
-the three variant agent files moved to `archive/agent_variants/`. **Full evidence:
-`DEV_BACKLOG.md` `[DB-0820-03]`; do not re-derive it here.***
+*⚠ **The intake extractor is parked permanently — priced out, not disproven — and teaching
+`rules:` has hit its own ceiling at 11/33.** Mike ruled, four ways in one sitting, that **a
+sender is not a category**: one organisation mails from several addresses (Bupa arrived from a
+second address the corpus had never seen), a ticketing firm's mail splits on whether it concerns
+tickets, and one address sends both an obligation and a notice. Three gaps block the rest, all
+measured: a rule carries **one** domain, **`physical_health` has no `read_intake_queue`** in
+either routing file, and there is no sender *class*. The successor is `[DB-0905-01]` — a research
+gate that consults prior correspondence **as code, never as a model judgement**, evidence first
+and external research last. **Full evidence: `DEV_BACKLOG.md` `[DB-0905-01]` and
+`archive/backlog_closed_2026-09.md`; do not re-derive it here.***
 
 *✅ **The wisdom store's three intake classes are closed, and one is not.** Corroboration (an
 `observed` fact waits for a second sighting in 14 days — the sender ledger's own bar, one file
@@ -30,11 +32,6 @@ in the six writers. **Still open, and the largest class: a preference recorded a
 it was already policy** — five of eleven cleared this session were describing behaviour already
 instructed in `config/modules/synthesizer_scheduled_sessions.md`. The redundancy guard catches
 this on the persona path only, not the wisdom path.*
-
-*⚠ **Test artifacts to delete when the confidence question closes:** the three
-`config/agents/intake_extractor_{counterargue,confidence,both}.md` variants, which have no routing
-entry. **`## Machine log` grew 90 → 118+** from this session's own eval traffic — artifacts, not
-production signal.*
 
 *⚠ **No off-machine backup — Mike declined a date twice; a recorded acceptance of a named risk,
 not an unfiled worry. Do not re-raise it.** `VERTEX_CACHE_DISABLED` was flipped ON on the Mac
@@ -56,8 +53,8 @@ real expiries expected ~09-15 — status in `[DB-0814-02]`. Also open: B4's max-
 the 3-round limit in code first (`[DB-0804-02]`); `[DB-0902-01]`'s week clock runs to 09-12; the
 other three `## Now` confirms fall due 09-10. Closed 09-05, do not re-raise: `[DB-0903-01]`
 (duplicates accepted), the clinical-agents-via-`quick` Inbox item (accepted risk, reaffirming
-08-09 — noted at ROADMAP § A7 check 8), and `[DB-0903-02]` (scheduler day-name validation,
-verified on the VM). `CLAUDE.md` is **298/300**; **`.claude/rules/deploy.md` is 131/100 and
+08-09 — noted at ROADMAP § A7 check 8), `[DB-0903-02]` (scheduler day-name validation, verified
+on the VM), and `[DB-0820-03]` (the extractor's eval gate, closed as unmeetable). `CLAUDE.md` is **298/300**; **`.claude/rules/deploy.md` is 131/100 and
 still owes a pass.***
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and

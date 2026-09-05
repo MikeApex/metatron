@@ -651,7 +651,11 @@ the Observer-agent concept instead of intuition.
 > (`[DB-0820-04]`, closed) — gate PASS 5/0/0: the code tier provably uninfluenced (identical
 > output vs a benign control), the disabled model extractor refused the injected instruction.
 > Runner `tests/run_intake_redteam.py`, report `tests/security_redteam_2026-09-03_intake.md`.
-> Re-run it at the `[DB-0820-03]` extractor flip.
+> **The `[DB-0820-03]` extractor flip this said to re-run at will not happen** — that item closed
+> 2026-09-05 and the model extractor is parked permanently on measured evidence
+> (`archive/backlog_closed_2026-09.md`). Re-run instead at any future change to the intake
+> classification path; its successor is `[DB-0905-01]`, whose research gate reads sender history
+> as code.
 >
 > **⚠ A SEVENTH SURFACE OPENED 2026-09-05 and is not yet in the suite: self-forward
 > unwrapping** (`tools/intake_forward.py`, `[DB-0904-01]`). It lifts a sender identity out of
@@ -660,8 +664,11 @@ the Observer-agent concept instead of intuition.
 > only, trusted authserv-id, signing domain matching). **A scoped `/code-review` found two
 > attacker-reachable bypasses in that gate before it shipped**, both now regression-tested in
 > `tests/test_intake_forward.py` (24 checks) — but that file is a unit suite, not an adversarial
-> one. **`run_intake_redteam.py` owes this row**, and it should be written before the extractor
-> flip, not after.
+> one. **`run_intake_redteam.py` owes this row, and the debt did not close with the extractor.**
+> It was written as due "before the extractor flip"; that flip is now cancelled, but the unwrap
+> ships and runs on every sweep — it fired on live mail 2026-09-05 — so the row is owed on its
+> own account, not the extractor's. `[DB-0905-01]`'s research gate would widen the same surface:
+> it draws conclusions about a sender from history that includes attacker-written bodies.
 
 Build: Use GPT-4o and/or o3 to generate adversarial prompts across all attack categories below. Run each against live Coordinator and Synthesizer. Log result for each.
 
