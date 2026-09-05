@@ -354,6 +354,47 @@ def session_kind(user_input: str, persona: str | None = None) -> str | None:
     return best[0] if best else None
 
 
+def carries_weekly_review(kind: str | None, persona: str | None = None) -> bool:
+    """Whether THIS session should also carry the week-ahead horizon digest.
+
+    Two ways to say yes, and the second is the point (Mike, 2026-09-05):
+
+    1. **A dedicated session** whose key is `weekly_review`. Its own time, its own slot.
+    2. **`weekly_review_on: <weekday>` on any other schedule entry** — so the weekly can ride
+       a brief the user already has rather than adding a proactive session to their week.
+       `morning_brief` with `weekly_review_on: monday` gives them the week's shape inside
+       Monday's brief and changes nothing on the other six days.
+
+    Mike asked for the second because a separate session is a real cost to the user — another
+    interruption, on a product whose core metric is *absorbed* work against attention spent.
+    Being able to fold it into a fixed point they already have is the cheaper answer, and
+    which one to take is a per-user choice rather than something this code should decide.
+
+    Read from the persona's own `scheduler.yaml`, never from a literal here — the same
+    standing objection that keeps schedule names out of `session_kind()` above. The weekday is
+    matched against `strftime("%A").lower()`, identical to `core/scheduler.py`'s own day
+    comparison, so a mistyped name behaves the same way there as here.
+    """
+    if not kind:
+        return False
+    if kind == "weekly_review":
+        return True
+    try:
+        import yaml
+        path = persona_config_dir(persona) / "scheduler.yaml"
+        if not path.exists():
+            return False
+        with open(path) as f:
+            cfg = yaml.safe_load(f) or {}
+    except (OSError, ValueError, yaml.YAMLError):
+        # Same failure posture as session_kind(): a malformed schedule must not take the
+        # session down, and it fails toward the quieter prompt.
+        return False
+    entry = (cfg.get("schedules") or {}).get(kind) or {}
+    want = str(entry.get("weekly_review_on") or "").strip().lower()
+    return bool(want) and want == datetime.now().strftime("%A").lower()
+
+
 def _synth_conditional_sections(kind: str | None, package_text: str) -> str:
     """
     Prompt sections the Synthesizer gets only when their trigger is present this
@@ -5268,11 +5309,15 @@ def _horizon_block(persona: str | None = None, session: str | None = None) -> st
     """This turn's horizon block, for the Synthesizer bundle. "" when nothing is waiting.
 
     `session` is the scheduled-session key from `session_kind()`, or None for a user-typed
-    turn. Two sessions append a second, wider block (2026-09-05): `evening_close` gets
-    tomorrow in full and `weekly_review` gets the coming seven days, both **including already
-    delivered findings**, because a wrap-up and a weekly are reviews rather than bulletins.
-    Ordinary turns see neither. Both are read-only — they charge no offer and mark nothing
-    delivered, so neither can consume a finding's chance to be raised properly.
+    turn. Two wider blocks can be appended (2026-09-05), both **including already delivered
+    findings**, because a wrap-up and a weekly are reviews rather than bulletins: `evening_close`
+    gets tomorrow in full, and any session `carries_weekly_review()` accepts gets the coming
+    seven days. Ordinary turns see neither. Both are read-only — they charge no offer and mark
+    nothing delivered, so neither can consume a finding's chance to be raised properly.
+
+    The two are deliberately **not** exclusive: a Sunday `evening_close` carrying
+    `weekly_review_on: sunday` yields both, which is a coherent thing to want. Each block's
+    wording tells the model that items repeated across blocks are the same items.
 
     **These two are the counterweight to `_due_now()`.** The gate holds anything past tomorrow
     unless it has a deadline or a precursor due, which is only safe because these sessions
@@ -5296,7 +5341,7 @@ def _horizon_block(persona: str | None = None, session: str | None = None) -> st
             blocks = [context_block(persona)]
             if session == "evening_close":
                 blocks.append(review_block(persona))
-            elif session == "weekly_review":
+            if carries_weekly_review(session, persona):
                 blocks.append(week_block(persona))
         return "\n\n".join(b for b in blocks if b)
     except Exception as exc:  # noqa: BLE001

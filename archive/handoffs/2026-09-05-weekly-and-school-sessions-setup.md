@@ -1,95 +1,90 @@
-# Two sessions to add to Mike's persona config — 2026-09-05
+# Persona config to add on the VM — 2026-09-05
 
-**These are `Denied`-tier edits: `config/personas/mike*` is VM-owned and Claude Code cannot
-write them.** Everything below is prepared to paste. The tool-side half is already built,
-committed and inert until these land — `session_kind()` matches a turn against the persona's
-**configured prompts**, so an absent entry means the new block simply never fires. Code first,
-config second, which is the standing rule.
+**`config/personas/mike*` is `Denied`-tier and VM-owned; the Mac copy is not authoritative.**
+Everything here is a command to run **on the VM**, ready to paste. The tool-side half is built,
+committed and inert until these land: `session_kind()` matches a turn against the persona's
+**configured prompts**, so an absent entry cannot fire. Code first, config second.
 
 Origin: Mike's correction in exchange `004`, 2026-09-05 — *"Evening wrap up is where tomorrow's
 horizon should lie. Weekly meeting should go over the week's coming obligations. Meet about
-Manny's school would cover those things specifically school and Manny related."* The evening
-half shipped. These are the other two.
+Manny's school would cover those things specifically school and Manny related."*
 
-**Mike's ruling on where each belongs, 2026-09-05:** the weekly check-in is a **tool-level**
-concern; the school check-in is **persona-level**. That split is why only one of them has code
-behind it.
+Mike's two rulings that shaped the build: the **weekly check-in is tool-level**, the **school
+check-in is persona-level**. And the weekly is a **setting, not a fixed session** — it can ride
+a brief he already has rather than adding a proactive interruption to his week.
 
 ---
 
-## 1. `weekly_review` — tool-level behaviour, persona-level schedule
+## 1. The weekly review — one line, no new session (recommended)
 
-Paste into `~/multi-model-mcp/config/personas/mike/scheduler.yaml` under `schedules:`.
+`weekly_review_on: <weekday>` on **any** schedule entry makes that session carry the week-ahead
+digest on that day and no other. The recommended shape adds nothing to Mike's week:
+
+```bash
+cd ~/multi-model-mcp
+cp config/personas/mike/scheduler.yaml \
+   config/personas/mike/scheduler.yaml.bak-$(date +%Y%m%d-%H%M%S)
+
+python3 - <<'PY'
+import re, pathlib
+p = pathlib.Path("config/personas/mike/scheduler.yaml")
+s = p.read_text()
+assert "weekly_review_on" not in s, "already set — nothing to do"
+# Insert the key into the existing morning_brief entry, right after its `enabled:` line.
+s = re.sub(r"(?m)^(  morning_brief:\n(?:.*\n)*?    enabled: .*\n)",
+           r"\1    weekly_review_on: monday   # week-ahead digest rides Monday's brief\n",
+           s, count=1)
+assert "weekly_review_on" in s, "morning_brief entry not found — insert by hand"
+p.write_text(s)
+print(s[s.index("  morning_brief:"):][:400])
+PY
+
+sudo systemctl restart metatron-scheduler
+```
+
+**What it does:** on Mondays the morning brief also carries the coming seven days —
+already-raised items included, since it is a review. The other six mornings are unchanged.
+
+**The alternative, if a standalone slot is preferred later.** Add this instead; the same code
+serves it, and `weekly_review` needs no `weekly_review_on` key because the session key alone is
+enough:
 
 ```yaml
   weekly_review:
     enabled: true
-    day: monday             # monday | tuesday | ... | sunday
+    day: monday
     time: "08:30"
     agent: coordinator
     prompt: "Weekly review. Go through the week ahead — what is committed, what is due, and anything that needs something done first. Cover the whole week, including things already mentioned."
     notification: push
-    # The counterweight to the horizon proximity gate: ordinary turns hold anything
-    # past tomorrow, so a Friday commitment is seen here or not until it is nearly due.
 ```
 
-**On the time — the one thing worth a second's thought before pasting.** `morning_brief` runs
-07:30 daily, and the scheduled-session conduct says morning and evening sessions are *not
-interruptible*. 08:30 puts an hour between them; anything tighter risks two proactive sessions
-treading on each other every Monday. Move it later freely — the behaviour does not depend on
-the hour. **Do not move it to Sunday 09:00 or 09:30**, which are the pattern-miner and physical
-review.
-
-**What is already built and will start working the moment this entry exists:**
-
-- `week_block()` in `tools/horizon.py` — the coming seven days, **including findings already
-  delivered**, read-only (charges no offer, marks nothing delivered).
-- Dispatch in `core/orchestrator._horizon_block()` on `session == "weekly_review"`.
-- Conduct in `config/modules/synthesizer_scheduled_sessions.md` § Weekly review — three phases,
-  opening on the week's *shape* before any item.
-
-`day:` is validated since 2026-09-05 (`[DB-0903-02]`), so a mistyped day name now fails loudly
-rather than silently never firing. That was worth having for exactly this.
+If that route is taken, keep it clear of 07:30 (`morning_brief`) — scheduled sessions are
+non-interruptible, and two proactive turns thirty minutes apart every Monday would grate. That
+adjacency is the whole reason the setting exists.
 
 ---
 
-## 2. `manny_school` — persona-level, no tool code at all
+## 2. Manny's school check-in — Sunday afternoon, persona-level, no tool code
 
-Two files, both in `~/multi-model-mcp/config/personas/mike/`.
+Two files. Sunday 16:00 is clear of the 09:00 pattern-miner and 09:30 physical review.
 
-### 2a. The schedule entry
+```bash
+cd ~/multi-model-mcp
+cp config/personas/mike/scheduler.yaml \
+   config/personas/mike/scheduler.yaml.bak-$(date +%Y%m%d-%H%M%S)
 
-```yaml
+cat >> config/personas/mike/scheduler.yaml <<'YAML'
   manny_school:
     enabled: true
-    day: wednesday          # CADENCE IS YOURS TO SET — see below
-    time: "19:30"
+    day: sunday             # monday | tuesday | ... | sunday
+    time: "16:00"
     agent: coordinator
     prompt: "Manny's school check-in. Go through anything school or Manny related that is coming up or outstanding — forms, dates, fees, clubs, appointments, things needing a decision."
     notification: push
-```
+YAML
 
-**The cadence is the one thing I could not derive, so it is marked rather than guessed.**
-Options, with a recommendation:
-
-1. **Weekly, term-time evening (recommended)** — Wednesday 19:30 as written. School admin
-   arrives on a weekly rhythm and a week is short enough that nothing dated goes stale between
-   check-ins. Costs one proactive session a week.
-2. **Fortnightly** — halves the interruption, but a form that arrives the day after one
-   check-in waits nearly two weeks for its session. Safe only because of the decision below.
-3. **Termly** — matches how school milestones actually cluster, but far too coarse for
-   anything dated; it becomes a planning conversation, not a check-in.
-
-I would take (1) and drop to (2) if it proves quiet.
-
-### 2b. `manny_school_ritual.md`
-
-The ownership rule in `core/orchestrator._owned_rituals()` is **`X_ritual.md` belongs to
-schedule key `X`** — so this filename binds the content to the `manny_school` session and to
-nothing else. It is injected into that session and no other, exactly as `evening_ritual.md` is
-today. Nothing needs to be registered.
-
-```markdown
+cat > config/personas/mike/manny_school_ritual.md <<'MD'
 # Manny's school check-in
 
 This session covers one subject: Manny and his schooling. Everything else waits.
@@ -104,46 +99,67 @@ Friday outranks a trip in three weeks, even though the trip is the larger thing.
 something needs a step before it can happen — a payment, a booking, a form — that step is the
 item, and its deadline is the one that matters.
 
+**It is Sunday afternoon, so the week ahead is the natural frame.** What lands this coming week
+comes first; anything further out is worth a line only if something has to be done about it
+now.
+
 **Raise things here whether or not they have come up elsewhere.** This is a review of a
-subject, so repetition within it is the point. Outside this session the ordinary rule holds
-and nothing changes: a school item near enough or urgent enough still surfaces on any turn, so
+subject, so repetition within it is the point. Outside this session the ordinary rule holds and
+nothing changes: a school item near enough or urgent enough still surfaces on any turn, so
 nothing waits on this check-in to be heard. This session guarantees coverage; it does not hold
 anything back. *(Mike's decision, 2026-09-05: guarantee, do not suppress — a form due tomorrow
-must never sit silent waiting for a Wednesday.)*
+must never sit silent waiting for Sunday.)*
 
 **End on what needs a decision from Mike**, and ask it plainly. One or two things, not a list.
 If genuinely nothing is outstanding, say so in a line and ask how Manny is getting on — that is
 the fallback, not the usual shape.
+MD
+
+sudo systemctl restart metatron-scheduler
 ```
 
+**Nothing needs registering.** `core/orchestrator._owned_rituals()` binds `X_ritual.md` to
+schedule key `X`, so `manny_school_ritual.md` is injected into the `manny_school` session and
+into no other — exactly as `evening_ritual.md` is today.
+
 ---
 
-## The known limit of the school session, stated so it is not discovered later
+## Verify
+
+```bash
+cd ~/multi-model-mcp
+python3 -c "
+import yaml
+c = yaml.safe_load(open('config/personas/mike/scheduler.yaml'))
+for k, v in c['schedules'].items():
+    print(f\"{k:24} day={v.get('day') or v.get('days')!s:10} time={v.get('time')!s:8} weekly={v.get('weekly_review_on')}\")
+"
+sudo systemctl status metatron-scheduler --no-pager | head -5
+```
+
+`day:` is validated since 2026-09-05 (`[DB-0903-02]`), so a mistyped weekday now fails loudly
+rather than silently never firing.
+
+**First real firing is the proof — none of this can be verified from the Mac.** Sunday 16:00 and
+Monday 07:30 are the two to watch.
+
+---
+
+## The known limit of the school session
 
 **Nothing tags a horizon finding as school-related.** `record_horizon_item()` carries `title`,
-`date`, `venue`, `kind`, `detail` and the two new precursor fields — there is no topic. A
-`topic` field filled by Logistics was proposed and **withdrawn on Mike's ruling that the school
-half is persona-level, not a tool concern.**
+`date`, `venue`, `kind`, `detail` and the two precursor fields — no topic. A `topic` field
+filled by Logistics was proposed and **withdrawn on Mike's ruling that the school half is
+persona-level, not a tool concern.**
 
-The consequence: this session scopes itself by its *prompt and conduct*, so the model picks
-school material out of the context it already has. That is a model judgement, and it will
-occasionally miss something worded without an obvious school cue, or pull in something
-adjacent. It is cheap and correctable, and it costs no tool surface.
+So this session scopes itself by its prompt and conduct: the model picks school material out of
+context it already has. That is a model judgement, and it will occasionally miss something
+worded without an obvious school cue.
 
-**It is also low-risk, because of the guarantee-don't-suppress decision.** A school item missed
-by this session is not lost — it still surfaces on an ordinary turn when it comes near or its
-precursor falls due, like anything else. Had suppression been chosen, this limitation would
-have been serious rather than cosmetic.
+**Low-risk, because of the guarantee-don't-suppress decision.** A school item missed here is not
+lost — it still surfaces on an ordinary turn when it comes near or its precursor falls due. Had
+suppression been chosen, this would have been serious rather than cosmetic.
 
-If it does prove to miss things in practice, the fix is the `topic` field, and it is a small
-build: one optional argument on `record_horizon_item`, one line in `logistics.md`, one
-predicate in `tools/horizon.py`.
-
----
-
-## After pasting
-
-1. `sudo systemctl restart metatron-scheduler` on the VM — the scheduler reads `scheduler.yaml`
-   at start.
-2. Confirm the entries parsed: the day-name validator will refuse a bad `day:` loudly.
-3. First real firing is the proof. Nothing here can be verified from the Mac.
+If it does miss things in practice the fix is the `topic` field, and it is small: one optional
+argument on `record_horizon_item`, one line in `logistics.md`, one predicate in
+`tools/horizon.py`.

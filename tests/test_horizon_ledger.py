@@ -622,9 +622,49 @@ def _():
         "the review is not gated on the evening session — it would repeat delivered "
         "findings on every turn, which is the groundhog-day failure this module exists "
         "to prevent")
-    assert 'session == "weekly_review"' in body, (
-        "the week block is not gated on the weekly session")
+    assert "carries_weekly_review(session, persona)" in body, (
+        "the week block is not gated on the weekly-review setting")
     assert "review_block" in body and "week_block" in body
+
+
+@check("weekly: a dedicated weekly_review session carries the week")
+def _():
+    import core.orchestrator as O
+    assert O.carries_weekly_review("weekly_review", persona="test")
+
+
+@check("weekly: an ordinary turn and an unconfigured session carry nothing")
+def _():
+    import core.orchestrator as O
+    assert not O.carries_weekly_review(None, persona="test")
+    assert not O.carries_weekly_review("morning_brief", persona="test")
+
+
+@check("weekly: it can ride an existing brief on its configured day, and only then")
+def _():
+    import core.orchestrator as O
+    from datetime import datetime
+    import tempfile, yaml as _yaml
+    today = datetime.now().strftime("%A").lower()
+    other = "monday" if today != "monday" else "tuesday"
+
+    with tempfile.TemporaryDirectory() as tmp:
+        cfg = Path(tmp) / "scheduler.yaml"
+        real = O.persona_config_dir
+        O.persona_config_dir = lambda persona=None: Path(tmp)  # noqa: E731
+        try:
+            cfg.write_text(_yaml.safe_dump(
+                {"schedules": {"morning_brief": {"weekly_review_on": today}}}))
+            assert O.carries_weekly_review("morning_brief"), (
+                "a brief configured to carry the weekly review on today did not")
+
+            cfg.write_text(_yaml.safe_dump(
+                {"schedules": {"morning_brief": {"weekly_review_on": other}}}))
+            assert not O.carries_weekly_review("morning_brief"), (
+                "the weekly review fired on a day it was not configured for — it would "
+                "run every morning instead of once a week")
+        finally:
+            O.persona_config_dir = real
 
 
 # ---------------------------------------------------------------------------

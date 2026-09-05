@@ -409,7 +409,9 @@ def week_block(persona: str | None = None) -> str:
         "Go through them with the user, including any already raised on an earlier turn: this "
         "is a review of the week, not a bulletin of new things, and the point is that they see "
         "the shape of it in one go. Lead with whatever needs doing soonest or needs something "
-        "done first. Say them in your own voice, never as a list you were handed.]")
+        "done first. Some of these may also appear in a block above — those are the same "
+        "items, not additional ones, so cover each thing once. Say them in your own voice, "
+        "never as a list you were handed.]")
 
 
 def review_block(persona: str | None = None) -> str:
