@@ -48,6 +48,53 @@ def _error_log_path(persona: str | None = None):
 
 WEEKDAYS = {"monday", "tuesday", "wednesday", "thursday", "friday"}
 WEEKEND = {"saturday", "sunday"}
+DAY_NAMES = WEEKDAYS | WEEKEND
+
+# `days:` (plural) is the firing gate, read on every attempt by `_is_active_day`.
+# `day:` (singular) is read once at registration and becomes
+# `schedule.every().<day>`, which has attributes for full day names only — there
+# is no `schedule.every().weekdays`.
+_DAYS_KEYWORDS = {"daily", "weekdays", "weekend"}
+_ACCEPTED_DAYS = ("daily, weekdays, weekend, or a full lowercase day name "
+                  "(monday…sunday)")
+_ACCEPTED_DAY = "a full lowercase day name (monday…sunday)"
+
+
+def schedule_key_error(job_cfg: dict) -> str | None:
+    """
+    Why this job's day keys are unusable, or None if they are fine.
+
+    `_is_active_day` compares `days:` against `strftime("%A").lower()`, so
+    `days: sun` matches nothing on any day and the job never fires — silently,
+    permanently, with no error anywhere. That is how weekly_clinical_review
+    shipped inert twice on 2026-09-03 ([DB-0903-02]).
+
+    Validated here rather than by teaching `_is_active_day` to accept
+    abbreviations: accepting `sun` fixes one spelling and leaves the next
+    mistyped key exactly as silent. Case is normalised rather than refused,
+    because the day-name branch of `_is_active_day` already lowercased its
+    input — refusing `Daily` would invent a new silent failure of the same shape.
+    """
+    if not isinstance(job_cfg, dict):
+        return None
+
+    days = job_cfg.get("days")
+    if days is not None:
+        if not isinstance(days, str) or days.strip().lower() not in (
+                _DAYS_KEYWORDS | DAY_NAMES):
+            return f"days: {days!r} is not a recognised value — accepted: {_ACCEPTED_DAYS}"
+
+    day = job_cfg.get("day")
+    if day is not None:
+        if not isinstance(day, str) or day.strip().lower() not in DAY_NAMES:
+            return f"day: {day!r} is not a recognised value — accepted: {_ACCEPTED_DAY}"
+
+    return None
+
+
+def _invalid_schedule_line(job_name: str, err: str, persona: str) -> str:
+    return (f"  [scheduler] [{persona}] ERROR: job {job_name!r} — {err}. "
+            f"Job SKIPPED — it can never fire until the value is corrected.")
 
 
 # ---------------------------------------------------------------------------
@@ -215,14 +262,23 @@ def _activity_gate_blocks(job_name: str, job_cfg: dict, persona: str) -> str | N
 
 
 def _is_active_day(days_str: str) -> bool:
+    """
+    Does today match this job's `days:` value?
+
+    Deliberately still exact-match on full names — an unrecognised value returns
+    False, and `schedule_key_error` is what makes that loud. Teaching this
+    function to accept `sun` would treat the symptom and leave the next mistyped
+    key as silent as this one was ([DB-0903-02]).
+    """
     day_name = datetime.now().strftime("%A").lower()
+    days_str = str(days_str).strip().lower()
     if days_str == "daily":
         return True
     if days_str == "weekdays":
         return day_name in WEEKDAYS
     if days_str == "weekend":
         return day_name in WEEKEND
-    return day_name == days_str.lower()
+    return day_name == days_str
 
 
 # How close (minutes) a roaming interval job may land to a fixed-time session
@@ -305,6 +361,12 @@ def _gates_block(job_name: str, job_cfg: dict, cfg: dict, persona: str) -> str |
     daily_travel_check was pinned to a fixed morning hour purely as a
     workaround. One function so the two firing paths cannot drift apart again.
     """
+    # Before the day gate, because "not an active day" is exactly what a typo'd
+    # value looks like from here — and looking like an ordinary skip is what let
+    # it run inert for two deploys.
+    bad_key = schedule_key_error(job_cfg)
+    if bad_key:
+        return f"invalid schedule config — {bad_key}"
     if not _is_active_day(job_cfg.get("days", "daily")):
         return "not an active day"
     if not job_cfg.get("enabled", True):
@@ -752,6 +814,43 @@ def _fire_due_one_offs(persona: str) -> None:
             _log_error(name, f"one-off failed: {e}", persona)
 
 
+# How often the daemon re-reports jobs it had to skip. Not every 30s tick: at
+# 2,880 lines a day the report would be its own kind of silence. Not once at
+# startup either — this daemon runs for weeks, and a single line in a scrollback
+# nobody scrolls is what [DB-0903-02] already was.
+_INVALID_REPORT_INTERVAL_MINUTES = 60
+
+
+def _report_invalid_schedules(persona: str) -> list[tuple[str, str]]:
+    """
+    Re-read the schedule config and log every job with an unusable day key.
+
+    Read from disk each call rather than from a registration-time cache, so a
+    typo introduced by an edit while the daemon is running is caught without a
+    restart — the live config is edited on the VM, where a restart is a separate
+    deliberate act.
+
+    Prints only; it does not touch `scheduler_errors.json`. Registration already
+    wrote the durable record once, and that file is a growing JSON array with no
+    rotation — an hourly append would add ~24 entries a day for as long as the
+    typo stands. journald rotates; the JSON file does not.
+    """
+    cfg = _load_config(persona)
+    jobs = dict(cfg.get("schedules") or {})
+    for name, job in _load_agent_schedules(persona).items():
+        jobs.setdefault(name, job)
+
+    invalid: list[tuple[str, str]] = []
+    for job_name, job in jobs.items():
+        if not isinstance(job, dict) or not job.get("enabled", True):
+            continue
+        err = schedule_key_error(job)
+        if err:
+            invalid.append((job_name, err))
+            print(_invalid_schedule_line(job_name, err, persona), flush=True)
+    return invalid
+
+
 def _register_schedules(persona: str) -> None:
     cfg = _load_config(persona)
     persona_cfg = dict(cfg.get("schedules", {}))
@@ -798,6 +897,16 @@ def _register_schedules(persona: str) -> None:
       # crash loop, not a degraded job — so each job is isolated.
       try:
         if not job.get("enabled", True):
+            continue
+
+        # Skip-loudly, not daemon-down: one typo'd job must not take the six
+        # good ones with it. The trade is that a skipped job says nothing more
+        # after this line, which is why `_report_invalid_schedules` repeats it
+        # from the main loop ([DB-0903-02]).
+        bad_key = schedule_key_error(job)
+        if bad_key:
+            _log_error(job_name, bad_key, persona)
+            print(_invalid_schedule_line(job_name, bad_key, persona), flush=True)
             continue
 
         notification = job.get("notification", "terminal")
@@ -877,6 +986,10 @@ def main() -> None:
     # happening, no error anywhere. Same silent-failure shape as SEQ 021.
     agent_mtime = _agent_schedules_mtime(persona)
 
+    # Registration has just reported any invalid job; the heartbeat re-reports
+    # it hourly from here so it cannot scroll out of sight.
+    last_invalid_report = datetime.now()
+
     while True:
         offset = datetime.now().astimezone().utcoffset()
         if offset != current_offset:
@@ -892,6 +1005,11 @@ def main() -> None:
             schedule.clear()
             _register_schedules(persona=persona)
             agent_mtime = new_mtime
+
+        if ((datetime.now() - last_invalid_report).total_seconds()
+                >= _INVALID_REPORT_INTERVAL_MINUTES * 60):
+            _report_invalid_schedules(persona)
+            last_invalid_report = datetime.now()
 
         _fire_due_one_offs(persona)
 
