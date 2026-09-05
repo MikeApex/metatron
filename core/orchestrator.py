@@ -4835,7 +4835,15 @@ def _run_single_agent(agent_name: str, user_input: str,
         if extras:
             system_prompt = f"{system_prompt}\n\n---\n\n{extras}"
         augmented_input = f"[Recent context]\n{recent}\n\n---\n\n{user_input}" if recent else user_input
-        context_sections = {"agent_file": agent, "config": config, "recent_context": recent}
+        # `conduct` is recorded because it is CONDITIONAL — the one section whose presence a
+        # trace cannot otherwise confirm. Diagnosing the 2026-09-05 14:45 check-in ("nothing
+        # urgent requires your attention", with no question back) required answering "did the
+        # rule reach the model at all", and the trace could not: this text is appended to the
+        # system prompt and was then dropped on the floor. It had to be reproduced out of band
+        # to tell an instruction-adherence failure from a plumbing one — which are opposite
+        # repairs. Costs nothing on ordinary turns, where it is empty.
+        context_sections = {"agent_file": agent, "config": config, "recent_context": recent,
+                            "conduct": extras}
     elif agent_name in _ROUTING_LAYER_AGENTS:
         # Routing layer: goals.yaml + profile + recent context. No constitution/prime_directive —
         # values are enforced by the Synthesizer; Coordinator needs domain and context only.
@@ -6315,6 +6323,9 @@ def _run_pipeline_session_stream_inner(
             "agent_file": agent_instructions,
             "config": config,
             "recent_context": recent,
+            # Conditional, so its absence is invisible without this — see the twin in
+            # _run_single_agent(). This is the streaming path the live server actually uses.
+            "conduct": extras,
             "conversation_history": _history_display,
         },
     )
