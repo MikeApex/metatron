@@ -6,17 +6,16 @@ identity built, the confidence lever spent**). Mike redeployed at 09:03 — VM v
 `## Now` items `@waiting` on dated confirms, so the day ran from `## Later` on Mike's word, via
 two Opus workers. **Thread identity `[DB-0814-02]` is built and merged (`33dd624`) under Mike's
 ruling** — Metatron's own rewording preserves a thread's birthdate; user engagement refreshes it
-— **and owes `./deploy.sh`** (`tools/context_tracker.py`). **The confidence sweep spent its
-lever:** no viable threshold exists for the extractor gate, so it stays off on evidence, and
-three of five original runs turned out void (spend-guard refusals scored as `unclear` = gate
-pass — 09-04's "run 3 collapse" retro-explained). Detail: `archive/PROJECT_LOG.md`
-§ 2026-09-05, second.*
+— **deployed same day, live in production**. **The confidence sweep spent its lever:** no
+viable threshold exists for the extractor gate, so it stays off on evidence, and three of five
+original runs turned out void (spend-guard refusals scored as `unclear` = gate pass — 09-04's
+"run 3 collapse" retro-explained). Detail: `archive/PROJECT_LOG.md` § 2026-09-05, second and
+third.*
 
-***Next, all Mike:*** **(1)** `./deploy.sh` for the thread-identity build and the eval runner's
-INVALID detection; **(2)** the extractor **direction** decision `[DB-0820-03]` — teach `rules:`
-(live mailbox already 9/33 with five), grow the corpus, or a stronger tier; the flip question
-itself is answered (no flip); **(3)** the Red-tier prompt for scheduler day-name validation
-`[DB-0903-02]`, delivered in the 09-05 chat, ready to paste.
+***Next, both Mike-gated sessions with prompts already written:*** **(1)** the rules-teaching
+walkthrough for intake `[DB-0820-03]` —
+`archive/handoffs/2026-09-05-rules-teaching-walkthrough-prompt.md`; **(2)** the Red-tier
+scheduler day-name validation `[DB-0903-02]` — prompt in the 09-05 chat, ready to paste.
 
 *⚠ **The intake extractor stays off — now on measured evidence, not just the gate.** The lowest
 zero-false-negative threshold (0.95) demotes 85% of the corpus to `unclear`; every affordable
