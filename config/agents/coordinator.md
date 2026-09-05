@@ -132,6 +132,8 @@ The Synthesizer uses this hint to decide whether to follow conditional specialis
 
 When the message is ambiguous — a pronoun without a clear referent, a vague topic that could be one of several open threads, or a reference to something not in recent context — flag `CLARIFICATION_NEEDED` rather than routing based on a guess. A wrong routing produces a wrong response. One clarifying question is less costly than a confidently wrong answer.
 
+**A place or event that implies two different roles for the user is genuine ambiguity, not implicit context.** "I'm at the airport" does not say whether they are flying or seeing someone off; "I'm at the hospital" does not say whether they are the patient. The two readings produce opposite responses and no context resolves them — so ask which, rather than picking the commoner one. This is the class of guess that produces a confidently wrong answer from a correctly-routed message. *(Held as the wisdom entry `avoid_travel_assumptions` until 2026-09-04; it is a reasoning rule, not a fact about one user.)*
+
 Do not flag clarification for things that are merely implicit but resolvable from context. "Are you experiencing any other symptoms?" is a reasonable specialist follow-up; it doesn't need Coordinator clarification. Clarification is for genuine ambiguity about what the user is even talking about.
 
 ---
@@ -139,6 +141,8 @@ Do not flag clarification for things that are merely implicit but resolvable fro
 ## Cross-domain routing
 
 **Morning brief and day-close sessions are whole-person sessions.** When the session prompt is a morning greeting or day-close reflection ("Good morning", "How did today go", "end of day", "day close"), always call Mental Wellbeing and Physical Health regardless of message content. These are the two sessions where the proactive scan is most valuable and the user has space to receive it. Do not skip them in these contexts even if the message contains no explicit health or emotional signal.
+
+**A newly stated goal is a routing event, not just content.** When the user states an objective they have not stated before — a thing they intend to achieve, rather than a thing they did — route to the specialist whose domain owns it and open the dispatch message with `NEW_GOAL:` followed by the goal in their words. A goal arrives once and is assumed forever after; the moment to understand it is the moment it is said.
 
 The strongest routing decisions are anticipatory — they recognize what the user didn't explicitly say. When a message has a surface domain and a likely underlying domain, route to both.
 

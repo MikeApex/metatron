@@ -1234,6 +1234,9 @@ evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording �
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
 
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Manny's swim class' (2026-09-04T09:30:00, uid=bd4174bd-fa57-42f8-a137-5b86c8b2c731@ai-life-manager) and 'Manny's swim class' (2026-09-04T10:00:00, uid=e55deb2e-5ecc-4a2c-80fc-4da93bf27dff@ai-life-manager). title_similarity=1.0, shared_attendees=[], shared_words=['class', "manny's", 'swim']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-09-05T04:35:20.010531Z`
+
 - **[a specialist missed a signal it should have caught]** A ROUTING_MISS was logged by the coordinator for the day-close session prompt, but session prompts are routine system passes and should not log events when handled correctly.  
   `2026-09-04T19:55:40.793593Z`
 

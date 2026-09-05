@@ -1059,7 +1059,7 @@ def register_tools() -> tuple[list[dict], dict]:
     )
     from tools.wisdom import (
         write_wisdom, read_wisdom, WRITE_WISDOM_SCHEMA, READ_WISDOM_SCHEMA,
-        find_duplicate_wisdom, merge_wisdom_entries,
+        find_duplicate_wisdom, merge_wisdom_entries, record_wisdom_response,
         FIND_DUPLICATE_WISDOM_SCHEMA, MERGE_WISDOM_ENTRIES_SCHEMA,
     )
     from tools.pattern_miner import (
@@ -1218,6 +1218,7 @@ def register_tools() -> tuple[list[dict], dict]:
         "read_wisdom": read_wisdom,
         "find_duplicate_wisdom": find_duplicate_wisdom,
         "merge_wisdom_entries": merge_wisdom_entries,
+        "record_wisdom_response": record_wisdom_response,
         "search_memory": search_memory,
         "read_context_tracker": read_context_tracker,
         "write_context_tracker": write_context_tracker,
@@ -1356,6 +1357,7 @@ _ALWAYS_CONFIDENTIAL = [
     "read_recent_insights", "write_baseline_period", "read_baseline_periods",
     "write_retrospective", "get_baseline_context", "read_context_tracker",
     "write_context_tracker", "find_duplicate_wisdom", "merge_wisdom_entries",
+    "record_wisdom_response",
     "write_contact", "read_contact", "list_contacts", "log_interaction",
     "search_contacts", "write_persona", "get_tone_shape", "tone_profiler",
     # Routing / architecture terms

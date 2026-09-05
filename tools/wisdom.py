@@ -230,6 +230,93 @@ def resolve_provenance(raw: str) -> str:
     return key if key in PROVENANCE else DEFAULT_PROVENANCE
 
 
+# ---------------------------------------------------------------------------
+# Corroboration — an observed fact waits for a second sighting
+# ---------------------------------------------------------------------------
+#
+# WHY (Mike's ruling, 2026-09-05, from the 48-entry review). Of fourteen entries thrown
+# out as invalid, FIVE were a single observation generalised into a standing pattern —
+# one park visit became a "halo effect on cognitive focus"; one week's training became a
+# fitness strategy. The store accepted each on one sighting and then served it back as
+# knowledge about him.
+#
+# THE MECHANISM ALREADY EXISTED ONE FILE AWAY. tools/intake.py's sender ledger will not
+# act on a pattern until it has seen it N times, for exactly this reason. The knowledge
+# store required one. This applies the same bar to the same class of claim.
+#
+# STATED FACTS ARE NOT AFFECTED. The user saying "I have oatmeal for breakfast" is not a
+# pattern needing corroboration — it is testimony, and asking for it twice would be
+# insulting. Only `observed` waits.
+#
+# NOTHING IS LOST WHILE IT WAITS. The first sighting is recorded in pending.json with its
+# date; a second sighting of the same key promotes it, carrying both dates. A pending
+# entry that is never seen again simply expires, which is the correct outcome for a
+# one-off that looked like a pattern.
+_PENDING_FILENAME = "pending.json"
+
+# How long a first sighting waits. Chosen, not defaulted: a genuine pattern in this
+# store's subject matter — training, sleep, focus, food — recurs within a fortnight or it
+# is not a pattern. Longer, and a coincidence two months apart gets promoted; shorter, and
+# a real weekly rhythm misses its second sighting.
+_PENDING_DAYS = 14
+
+
+def _pending_path(persona: str | None = None) -> Path:
+    return persona_data_dir(persona) / "wisdom" / _PENDING_FILENAME
+
+
+def _load_pending(persona: str | None = None) -> dict:
+    p = _pending_path(persona)
+    if not p.exists():
+        return {}
+    try:
+        return json.load(open(p)) or {}
+    except Exception:
+        return {}
+
+
+def _save_pending(data: dict, persona: str | None = None) -> None:
+    p = _pending_path(persona)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    json.dump(data, open(p, "w"), indent=2)
+    try:
+        os.chmod(p, 0o600)
+    except OSError:
+        pass
+
+
+def _key_exists(key: str) -> bool:
+    try:
+        return any(e.get("key") == key for e in _all_entries())
+    except Exception:
+        return False
+
+
+def _corroborate(key: str, value: str) -> tuple[bool, str]:
+    """`(promote, note)` — has this observation been seen before, within the window?"""
+    from datetime import datetime, timedelta
+    pending = _load_pending()
+    cutoff = (date.today() - timedelta(days=_PENDING_DAYS)).isoformat()
+    pending = {k: v for k, v in pending.items() if (v or {}).get("first_seen", "") >= cutoff}
+
+    prior = pending.get(key)
+    if prior:
+        pending.pop(key, None)
+        _save_pending(pending)
+        return True, f"corroborated (first seen {prior.get('first_seen')})"
+
+    pending[key] = {"first_seen": date.today().isoformat(), "value": value}
+    _save_pending(pending)
+    return False, (
+        f"Held, not filed: '{key}' is an observation seen once. It is recorded as pending "
+        f"and becomes a standing fact if the same thing is observed again within "
+        f"{_PENDING_DAYS} days. A single sighting is an event, not a pattern — five of the "
+        f"fourteen entries removed on 2026-09-04 were one-offs promoted to knowledge. "
+        f"Nothing is lost: state it as fact if the user says it outright, and it is filed "
+        f"immediately."
+    )
+
+
 def _wisdom_path() -> Path:
     return persona_data_dir() / "wisdom" / "wisdom.json"
 
@@ -503,6 +590,16 @@ def write_wisdom(key: str, value: str, domain: str = "", provenance: str = "") -
     resolved_domain, proposed = resolve_domain(domain)
     resolved_provenance = resolve_provenance(provenance)
 
+    # An OBSERVED fact waits for a second sighting; a STATED one is filed at once.
+    # Updating an entry that already exists is exempt: the fact is already standing
+    # knowledge and this is a correction, which must never be delayed.
+    corroboration = ""
+    if resolved_provenance == "observed" and not _key_exists(key):
+        promote, note = _corroborate(key, value)
+        if not promote:
+            return note
+        corroboration = note
+
     # A REFUSAL HERE IS NEVER TERMINAL, AND THAT IS DELIBERATE.
     #
     # The obvious design — refuse an unrecognised domain loudly, as tools/profile.py refuses an
@@ -538,6 +635,13 @@ def write_wisdom(key: str, value: str, domain: str = "", provenance: str = "") -
         }
         if proposed:
             record["proposed_domain"] = proposed
+        if corroboration:
+            record["corroboration"] = corroboration
+            # AWAITING THE USER'S WORD (Mike's ruling, 2026-09-05). A corroborated
+            # observation is filed immediately — it is NOT gated on the user agreeing —
+            # but it is marked so the Synthesizer can put it to them, and their answer
+            # is recorded beside it. See record_wisdom_response().
+            record["user_response"] = "pending"
 
         action = "added"
         for entry in entries:
@@ -699,6 +803,58 @@ def retire_wisdom_entries(keys: list[str], reason: str) -> str:
     if missing:
         out += f" Not found (already gone): {', '.join(missing)}."
     return out
+
+
+def record_wisdom_response(key: str, response: str, pushback: str = "") -> str:
+    """Record the user's reaction to an observation. Never changes its provenance.
+
+    WHY THE ENTRY SURVIVES A DENIAL (Mike's ruling, 2026-09-05). The obvious design is to
+    delete an observation the user rejects. That throws away the more interesting datum:
+    **that the tool inferred something about them which is not true, and what they said
+    about it.** A denial is evidence about the user and about the inference, and the
+    entry is the only place both sit together.
+
+    So provenance stays `observed` whatever they answer. `accepted` does not promote it to
+    `stated` — the user agreeing that an inference is correct does not make it testimony,
+    and quietly upgrading the tier on agreement would recreate the exact hole the
+    2026-09-04 review found, where three inferences were filed as things Mike had said.
+
+    Args:
+        key:      The entry the user was shown.
+        response: "accepted" | "denied".
+        pushback: Their own words, verbatim, when they pushed back. Kept as said —
+                  a paraphrase of a correction is how the correction gets lost.
+    """
+    response = (response or "").strip().lower()
+    if response not in ("accepted", "denied"):
+        return "Not recorded: response must be 'accepted' or 'denied'."
+
+    with _wisdom_lock():
+        wisdom_path = _wisdom_path()
+        if not wisdom_path.exists():
+            return "No wisdom file found."
+        try:
+            entries = json.load(open(wisdom_path))
+        except json.JSONDecodeError:
+            return "Wisdom file is unreadable."
+
+        for entry in entries:
+            if entry.get("key") == key:
+                entry["user_response"] = response
+                entry["user_response_date"] = date.today().isoformat()
+                if pushback.strip():
+                    entry["user_pushback"] = pushback.strip()
+                entry["provenance"] = "observed"      # never upgraded by agreement
+                break
+        else:
+            return f"No entry '{key}'."
+
+        json.dump(entries, open(wisdom_path, "w"), indent=2)
+        os.chmod(wisdom_path, 0o600)
+
+    tail = f" Their words kept verbatim: {pushback.strip()!r}." if pushback.strip() else ""
+    return (f"Recorded: the user {response} '{key}'. It remains an observation — "
+            f"agreement does not make it something they stated.{tail}")
 
 
 def merge_wisdom_entries(keep_key: str, source_keys: list[str], merged_value: str = "") -> str:

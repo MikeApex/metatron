@@ -44,6 +44,10 @@ agents:
     # the program layer also writes template-slot events, so the backstop covers both paths.
     allowed_tools: [write_quality_event]
 
+    # record_wisdom_response granted 2026-09-05 with the observation-review ruling:
+    # a corroborated observation is put to the user and their answer recorded beside
+    # it. The Synthesizer is the only agent that speaks to the user, so it is the only
+    # one that can carry the answer back. Provenance stays `observed` either way.
   synthesizer:
     provider: gemini
     model: "models/gemini-3.8-flash"        # user-facing voice; safety flag integration; top reasoning tier available
@@ -52,7 +56,7 @@ agents:
     # standing fact — and it is the fallback for turns the Coordinator's KNOWLEDGE_TO_LOAD did
     # not predict. Without the read grant the pre-fetch is the ONLY path to the store and a
     # mid-conversation turn toward a subject has no way to reach it.
-    allowed_tools: [run_subagent, run_model_conference, write_persona, write_profile, read_profile, write_config, write_wishes, read_wishes, generate_emergency_card, write_quality_event, write_schedule, list_schedules, delete_schedule, update_goal, open_obligation, close_obligation, reopen_obligation, list_obligations, read_wisdom, write_wisdom, teach_intake]
+    allowed_tools: [run_subagent, run_model_conference, write_persona, write_profile, read_profile, write_config, write_wishes, read_wishes, generate_emergency_card, write_quality_event, write_schedule, list_schedules, delete_schedule, update_goal, open_obligation, close_obligation, reopen_obligation, list_obligations, read_wisdom, write_wisdom, teach_intake, record_wisdom_response]
 
   # ── Data and analysis ────────────────────────────────────────────────────────
 
