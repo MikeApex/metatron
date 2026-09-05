@@ -129,6 +129,13 @@ _ROOT = Path(__file__).parent.parent
 #      behaved. No special-casing was added for "changed text" because none was needed — it
 #      would have duplicated behaviour the merge step already provides.
 #
+#      >>> SIGNAL 2 IS SUPERSEDED. See THREAD IDENTITY below (Mike, 2026-09-05). The reasoning
+#      >>> above made the same mistake as the first grace rule, one level down: it read *whose*
+#      >>> rewording it was as irrelevant. It is not. Measured 2026-09-03: 111 audited writes,
+#      >>> 0 expiries, every live thread stamped with the current day — because the Synthesizer
+#      >>> rewords the list it re-emits, and exact-text identity reads each rewording as a
+#      >>> brand-new thread. Expiry was structurally unreachable.
+#
 # EXTENSION beyond the literal brief, needed to make the correction actually hold: the same
 # "mere presence is not evidence" principle has to apply AFTER a thread is archived too, not
 # only at the instant it crosses the cutoff. Without this, a thread archived on this write would
@@ -140,6 +147,52 @@ _ROOT = Path(__file__).parent.parent
 # filters `open_threads` against the full archive (prior + newly expired) before merging, and a
 # match is dropped unless `_user_engages_thread` grants grace for it too. See the comment at that
 # filter for the mechanics.
+#
+# ---------------------------------------------------------------------------
+# THREAD IDENTITY ACROSS REWORDING  (Mike's ruling, 2026-09-05)
+#
+# THE MEASUREMENT THAT FORCED IT: 111 audited writes over 20 days, 0 expiries,
+# `expired_open_threads` still empty. All four live threads carried `added: 2026-09-03`,
+# including one that appears verbatim in the 09-02 conversation. Nothing was expiring because
+# nothing could get old: `_merge_open_threads` preserved a thread's birthdate only on an EXACT
+# text match, and the Synthesizer rewrites the whole list every response. One changed character
+# and the code sees a new thread and stamps today. A rephrased thread was immortal, and every
+# thread is rephrased eventually.
+#
+# THE RULING — the same principle as the CORRECTION above, applied to the birthdate rather than
+# to grace. What matters is WHO reworded it:
+#
+#   * Reworded by METATRON (the Synthesizer's routine re-statement of a list it re-emits every
+#     turn) -> the thread KEEPS its original `added` date. The system re-stating its own prior
+#     output is not evidence of anything, and that includes not being evidence of newness.
+#   * Reworded because the USER engaged it this turn (`user_text`, the same origin-guaranteed
+#     signal grace already keys on) -> the date REFRESHES. The user bringing a thread up is the
+#     one event that genuinely makes it live again.
+#
+# THE IDENTITY KEY IS A KEY COMPARISON, NOT A SIMILARITY JUDGEMENT. Open-ended semantic matching
+# is the class [DB-0827-07] was closed to keep out of this codebase, so identity here is bounded
+# and deterministic, and the precedent is `tools/horizon.py:_norm` — a sorted token set, chosen
+# there for exactly this defensibility. `_anchor_tokens` reduces a thread to its content tokens
+# (stopwords dropped, generic action/time words dropped, lightly stemmed so "movers"/"mover's"
+# and "waiting"/"wait" land on one form, digits kept because "topic 3" and "topic 4" must stay
+# apart). `_same_thread` then compares those sets: identical sets, or `_IDENTITY_MIN_SHARED_ANCHORS`
+# shared anchors. No score, no threshold on a continuous scale, no model call.
+#
+# WHY 2 SHARED ANCHORS AND NOT AN OVERLAP RATIO: the false positive this item recorded is short
+# generic threads — "call the dentist" against "call mom later" scores 0.5 on the grace bar's
+# overlap coefficient, comfortably over its 0.34. Under anchor sets those are {dentist} and {mom}
+# ("call" and "later" are generic), sharing nothing, and even without the generic list they would
+# share one token where two are required. A ratio gets *looser* as threads get shorter, which is
+# precisely backwards; a fixed count of shared anchors gets stricter, because a two-word thread
+# has fewer anchors to share.
+#
+# WHICH WAY TO BE WRONG: toward over-merging. Reading two different threads as one means the
+# OLDER birthdate wins and something may expire early — into `expired_open_threads`, an archive,
+# recoverable, and re-openable the moment the user mentions it. Reading one thread as two is the
+# disease being fixed: an immortal thread that quietly misinforms every turn forever. So ties
+# resolve to the oldest matching birthdate, and identity is used to block a reworded thread from
+# walking back out of the archive as well as to carry a date forward.
+# ---------------------------------------------------------------------------
 #
 # The date is server-stamped, never taken from the model, for the same reason `raised` is
 # server-stamped on clinical threads above: a model asked to invent "when did this start" will
@@ -188,26 +241,144 @@ def _user_engages_thread(thread_text: str, user_text: str | None) -> bool:
     `user_text` must come from the user's message, never from anything the system generated —
     that distinction is the entire point of this rework (see CORRECTION above). This function
     only does the matching; the caller is responsible for the origin guarantee.
+
+    Both sides are stemmed (2026-09-05) so "movers" and "mover's" are one word. This matters more
+    than it did: since the THREAD IDENTITY ruling, user engagement is the ONLY thing that refreshes
+    a thread's date, so a miss here no longer merely withholds grace — it lets a live thread age
+    out. The input is mostly speech-to-text, where plurals and tenses drift turn to turn. The bar
+    itself (`_USER_ENGAGEMENT_OVERLAP`) is unchanged.
     """
     if not user_text:
         return False
-    thread_words = _content_words(thread_text)
-    turn_words = _content_words(user_text)
+    thread_words = {_stem(w) for w in _content_words(thread_text)}
+    turn_words = {_stem(w) for w in _content_words(user_text)}
     if not thread_words or not turn_words:
         return False
     overlap = len(thread_words & turn_words) / min(len(thread_words), len(turn_words))
     return overlap >= _USER_ENGAGEMENT_OVERLAP
 
 
-def _merge_open_threads(incoming: list | None, existing: list[dict]) -> list[dict]:
+# --- Thread identity ------------------------------------------------------------------------
+# See the THREAD IDENTITY block above `_OPEN_THREAD_EXPIRY_DAYS` for the ruling and the reasoning.
+
+# Two threads are the same thread if their anchor sets are identical, or if they share at least
+# this many anchors. A COUNT, not a ratio, deliberately: a ratio loosens as threads get shorter,
+# which is where the recorded false positive lives ("call the dentist" / "call mom later").
+_IDENTITY_MIN_SHARED_ANCHORS = 2
+
+# Tokens that describe the SHAPE of a thread rather than its subject. Deliberately short — the
+# risk of a long list is stripping a thread down to nothing, at which point it matches everything
+# or nothing depending on which side you are on. Everything here is stemmed form, because
+# `_anchor_tokens` stems before it filters.
+_GENERIC_ANCHOR_TOKENS = {
+    "ask", "call", "chase", "check", "confirm", "discuss", "email", "follow", "followup",
+    "get", "give", "look", "make", "mention", "need", "reply", "send", "sort", "sort",
+    "talk", "tell", "thing", "stuff", "update", "want",
+    "afternoon", "evening", "later", "month", "morning", "soon", "today", "tomorrow",
+    "tonight", "week", "weekend", "yesterday",
+}
+
+_ANCHOR_TOKEN_RE = re.compile(r"[a-z0-9']+")
+
+
+def _stem(word: str) -> str:
+    """
+    A deliberately crude suffix strip, so "movers" / "mover's" / "mover" are one anchor.
+
+    Not a linguistic stemmer and not trying to be: it must be deterministic and inspectable, and
+    both sides of every comparison go through it, so an over-aggressive strip ("business" ->
+    "busines") costs nothing as long as it is consistent. The 3-character floor stops it eating
+    short words down to noise.
+
+    A trailing "y" is stripped rather than restored, so "recovery" and "recovering" both land on
+    "recover" — a nominalisation and its own verb are the commonest way one thread gets restated
+    as another ("the mover's claim" / "claiming from the movers"). It also keeps "stories" with
+    "story", which restoring the y would not: one pass would give "story" and "stor". Consistency
+    across both sides is the only property this needs; producing real words is not one of them.
+    """
+    w = word.strip("'")
+    for suffix in ("'s", "ies", "ing", "ed", "es", "y", "s"):
+        if w.endswith(suffix) and len(w) - len(suffix) >= 3:
+            return w[: -len(suffix)]
+    return w
+
+
+def _anchor_tokens(text: str) -> frozenset[str]:
+    """
+    The identity key of a thread: its distinctive content tokens, stemmed, as a set.
+
+    Same shape as `tools/horizon.py:_norm` and for the same reason — a set survives reordering,
+    an inserted qualifier and a stray comma, while genuinely different subjects stay different.
+    Digits are kept as their own anchors (unlike `_content_words`, which is alpha-only and serves
+    the separate grace matcher): "topic 3" and "topic 4" are two threads, and an amount or a
+    house number is often the most identifying token a thread has.
+    """
+    out: set[str] = set()
+    for raw in _ANCHOR_TOKEN_RE.findall((text or "").lower()):
+        if any(ch.isdigit() for ch in raw):
+            out.add(raw)
+            continue
+        if len(raw) < 3 or raw in _STOPWORDS:
+            continue
+        stemmed = _stem(raw)
+        if stemmed in _GENERIC_ANCHOR_TOKENS or stemmed in _STOPWORDS or len(stemmed) < 3:
+            continue
+        out.add(stemmed)
+    return frozenset(out)
+
+
+def _same_thread(a: frozenset[str], b: frozenset[str]) -> bool:
+    """
+    Is this the same thread, reworded? A key comparison — no score, no model, no threshold on a
+    continuous scale. An empty key never matches anything, including another empty key: a thread
+    made entirely of stopwords has no identity to assert.
+    """
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    return len(a & b) >= _IDENTITY_MIN_SHARED_ANCHORS
+
+
+def _carried_added(text: str, dated: list[tuple[frozenset[str], str]]) -> str | None:
+    """
+    The `added` date a reworded thread inherits, or None if this is genuinely a new thread.
+
+    `dated` is pre-sorted oldest-first, so the oldest matching birthdate wins — the deliberate
+    direction of error recorded in the THREAD IDENTITY block: expiring early into a recoverable
+    archive beats an immortal thread.
+    """
+    key = _anchor_tokens(text)
+    if not key:
+        return None
+    for other_key, added in dated:
+        if _same_thread(key, other_key):
+            return added
+    return None
+
+
+def _merge_open_threads(
+    incoming: list | None, existing: list[dict], user_text: str | None = None
+) -> list[dict]:
     """
     Stamp incoming open threads with an `added` date, carrying it forward when a thread is
-    simply being re-sent unchanged.
+    simply being re-sent — unchanged, OR reworded by the Synthesizer.
 
     `open_threads` is replace-semantics like `patterns`/`follow_ups` (unlike `clinical_threads`,
     which merges) — a thread the model omits this turn is dropped. What this function preserves
     is only the *age* of a thread that survives: if the same text was open last session, its
     original `added` date carries over; new text gets stamped today.
+
+    Three cases, in order (Mike's ruling 2026-09-05 — see the THREAD IDENTITY block above):
+
+      1. Exact text match against a stored thread -> keep that thread's `added`. Unchanged
+         behaviour, and still first because it is the cheapest and least arguable.
+      2. New text, but the USER engaged it this turn (`user_text`) -> stamp TODAY. Checked
+         BEFORE identity, because a user-driven rewording is the one case that is supposed to
+         reset the clock, and it must win over the carry-forward below.
+      3. New text with no user engagement -> if it is the same thread reworded
+         (`_same_thread` on anchor sets), inherit the ORIGINAL `added`; otherwise stamp today.
+         This is the fix: Metatron rewording its own list no longer resets a thread's age.
 
     Accepts plain strings (the normal, model-facing shape) or already-timestamped dicts
     (round-tripping data this module itself produced), so a caller passing either shape back
@@ -215,6 +386,16 @@ def _merge_open_threads(incoming: list | None, existing: list[dict]) -> list[dic
     """
     today = date.today().isoformat()
     existing_by_text = {t.get("text"): t.get("added") for t in existing if t.get("text")}
+
+    # Oldest birthdate first — `_carried_added` takes the first match, so ties and multi-matches
+    # resolve to the oldest. Text is the tie-break purely to keep the order deterministic.
+    # Undated entries (legacy data, or a thread just graced by `_expire_open_threads`) are
+    # excluded: they have no date to lend.
+    dated = sorted(
+        ((_anchor_tokens(t["text"]), t["added"]) for t in existing
+         if t.get("text") and t.get("added")),
+        key=lambda pair: (pair[1], sorted(pair[0])),
+    )
 
     out: list[dict] = []
     for item in incoming or []:
@@ -226,7 +407,11 @@ def _merge_open_threads(incoming: list | None, existing: list[dict]) -> list[dic
             added = None
         if not text:
             continue
-        out.append({"text": text, "added": added or existing_by_text.get(text) or today})
+        if not added:
+            added = existing_by_text.get(text)
+        if not added and not _user_engages_thread(text, user_text):
+            added = _carried_added(text, dated)
+        out.append({"text": text, "added": added or today})
     return out
 
 
@@ -826,7 +1011,7 @@ def _audit_path() -> Path:
 
 
 def _append_audit(added: list[str], removed: list[str], expired: list[str],
-                  open_count: int) -> None:
+                  open_count: int, reworded: list[str] | None = None) -> None:
     """
     Append one line describing what this write did to the open threads.
 
@@ -838,6 +1023,11 @@ def _append_audit(added: list[str], removed: list[str], expired: list[str],
     that question answerable: an expiry now leaves a mark whether or not the archive is
     later capped or the thread is later resent.
 
+    `reworded` (2026-09-05) is a fourth category, not a re-cut of the first three: a thread that
+    arrived as new text but was recognised as an existing thread reworded, and so kept its
+    original birthdate. Separate for the same reason `removed` and `expired` are separate — the
+    whole value of this file is that categories are not folded together.
+
     Never raises. An audit line that could break a context write would be worse than no
     audit line — the tracker is on the response path.
     """
@@ -848,6 +1038,7 @@ def _append_audit(added: list[str], removed: list[str], expired: list[str],
             "added": added,
             "removed": removed,
             "expired": expired,
+            "reworded": reworded or [],
             "open_count": open_count,
         }
         with open(path, "a") as f:
@@ -1078,11 +1269,12 @@ def write_context_tracker(
         open_threads: Unresolved topics to carry forward, as plain strings.
                       E.g. ["bookstore P&L review scheduled for Thursday"].
                       Stamped with an `added` date on write (server-side, not model-supplied);
-                      a thread re-sent with the same text keeps its original `added` date rather
-                      than looking freshly opened every session. A thread older than
-                      `_OPEN_THREAD_EXPIRY_DAYS` is auto-dropped and archived unless `user_text`
-                      shows the user engaging it, or its wording has materially changed — see the
-                      module comment above `_OPEN_THREAD_EXPIRY_DAYS`.
+                      a thread re-sent keeps its original `added` date — whether re-sent verbatim
+                      or reworded, since rewording it is something Metatron does to its own list
+                      every turn. Only the user engaging a thread refreshes the date. A thread
+                      older than `_OPEN_THREAD_EXPIRY_DAYS` is auto-dropped and archived unless
+                      `user_text` shows the user engaging it — see the module comments above
+                      `_OPEN_THREAD_EXPIRY_DAYS`.
         patterns:     Recurring observations worth noting.
                       E.g. ["writing stalls when sleep under 6 hours"].
         follow_ups:   Specific questions to ask next exchange or session.
@@ -1144,21 +1336,34 @@ def write_context_tracker(
     # a brand-new thread (stamped today) — undoing the drop in the same write that made it, and
     # on a caller that keeps resending identical text, reproducing the original incident exactly
     # one write later every time. Only the same two signals that grant grace before archiving can
-    # bring a thread back afterwards: the user engaging it, or the caller sending different
-    # wording (which is not "the same thread" under this module's exact-text identity anyway, and
-    # is handled for free by `_merge_open_threads`'s normal new-thread path).
-    archived_texts = {t.get("text") for t in prior_expired_open_threads if t.get("text")}
-    archived_texts |= {t.get("text") for t in newly_expired if t.get("text")}
+    # bring a thread back afterwards: the user engaging it, or the caller sending genuinely
+    # different content.
+    #
+    # [DB-0814-02, 2026-09-05] That last clause used to read "different wording", and matched on
+    # exact text — which made this filter as defeatable as the birthdate carry-forward it mirrors.
+    # A one-word rewrite of a thread archived seconds earlier walked straight back into
+    # `open_threads` stamped today, which is the immortality bug wearing a different hat. Both
+    # sides now use the same anchor-set identity, so a thread stays archived until the USER brings
+    # it up.
+    archived_keys = [
+        _anchor_tokens(t["text"])
+        for t in list(prior_expired_open_threads) + list(newly_expired)
+        if isinstance(t, dict) and t.get("text")
+    ]
 
     def _text_of(item) -> str:
         return str((item.get("text") if isinstance(item, dict) else item) or "").strip()
 
+    def _is_archived(text: str) -> bool:
+        key = _anchor_tokens(text)
+        return any(_same_thread(key, k) for k in archived_keys)
+
     filtered_incoming = [
         item for item in (open_threads or [])
-        if _text_of(item) not in archived_texts or _user_engages_thread(_text_of(item), user_text)
+        if not _is_archived(_text_of(item)) or _user_engages_thread(_text_of(item), user_text)
     ]
 
-    stamped_open_threads = _merge_open_threads(filtered_incoming, still_eligible)
+    stamped_open_threads = _merge_open_threads(filtered_incoming, still_eligible, user_text)
 
     expired_open_threads = prior_expired_open_threads
     if newly_expired:
@@ -1198,11 +1403,21 @@ def write_context_tracker(
                if t.get("text")}
     _after = {t.get("text") for t in stamped_open_threads if t.get("text")}
     _expired_now = [t.get("text") for t in newly_expired if t.get("text")]
+    # [DB-0814-02, 2026-09-05] `reworded` is ADDED alongside the original three, never folded into
+    # them — collapsing categories here is what hid a dead expiry for 20 days. It names the threads
+    # that arrived as new text and inherited an older birthdate, i.e. the Synthesizer restating
+    # something it already had. Those still appear in `added`/`removed` as the raw text delta they
+    # are; this field is what lets a future read tell "the list churned" from "a thread is aging".
+    _reworded = sorted(
+        t["text"] for t in stamped_open_threads
+        if t.get("text") and t["text"] not in _before and t.get("added") not in (None, today)
+    )
     _append_audit(
         added=sorted(_after - _before),
         removed=sorted(_before - _after - set(_expired_now)),
         expired=_expired_now,
         open_count=len(stamped_open_threads),
+        reworded=_reworded,
     )
 
     msg = f"Context tracker updated ({path})"
