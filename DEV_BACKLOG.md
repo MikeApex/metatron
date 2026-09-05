@@ -75,8 +75,10 @@ back-tagging the rest is `[DB-0815-10]`.
 > against `git log` before promoting anything from here.
 *(empty — last triaged 2026-09-05; evidence in `archive/backlog_closed_2026-09.md`)*
 
----
+- **[instruction change]** User requested restricting advance horizon previews so that items without active precursors, proximate deadlines, or specific triggers are not surfaced deeply in advance. Confine tomorrow's horizon exclusively to the evening wrap-up, upcoming week commitments to the weekly review, and school logistics to dedicated Manny check-ins.  
+  `2026-09-05T12:32:11.618456Z`
 
+---
 ## Now
 
 **Ranked — position is priority.** Capped at ~10, so something enters by displacing something.
@@ -543,6 +545,35 @@ with a date.** Nothing new joins this group open-ended.*
   surfaced" is currently a one-way trip.
   **Do not re-litigate the model extractor here.** It is parked permanently on measured evidence
   and this is not a route back to it: a research gate reads one sender once, not every message.
+  **✅ LIVE EXAMPLE, seeded and swept 2026-09-05 — an organisation is not an address.** Mike put two
+  messages in the inbox and the sweep ran early. One proved the taught path end to end:
+  `jason.duross@prudential.com` arrived as a self-forward, **unwrapped**, hit the taught rule, and
+  routed to `finance` — `src=rule`, and the finance queue carried an item for the first time. The
+  other is why this item exists. A Bupa follow-up arrived from **`no-reply@bupadentalcare.co.uk`**
+  while the labelled corpus holds **`crossrail@email.bupadentalcare.co.uk`** — same organisation,
+  different sending address. **A sender rule taught from the corpus would not have fired**, and the
+  second address is discoverable only by receiving mail from it. It landed `unclear`, and it is also
+  a clean instance of gap 1 above: a post-appointment follow-up is logistics *and* physical_health.
+  **⚠ MIKE'S REQUIREMENT ON HOW THE GATE DECIDES (2026-09-05): consult the inbox before concluding
+  anything.** Before the gate proposes a rule for an unknown sender it must search prior
+  correspondence for the **same or similar domain, and for keywords**, and let what it finds inform
+  the decision. **That search runs as code or an API call — never as a model judgement.** The point
+  is that the evidence be deterministic and inspectable even when the conclusion drawn from it is
+  not; a gate that asks a model "who is this sender" without first checking whether the user has
+  been corresponding with them for a year is guessing next to an answer it already owns.
+  **Three sources, cheapest first, and the first two are free:**
+  1. **`read_records()` — every message intake has ever seen.** Local JSONL, sender and subject on
+     every row, no network. A domain-suffix match over this would have connected the two Bupa
+     addresses immediately.
+  2. **The mailbox itself, over IMAP.** `search_correspondence(address)` in `tools/mail.py` is
+     already this shape — IMAP `SEARCH` on `FROM`/`TO` in both directions, internal, granted to no
+     agent, output wrapped as attacker-writable. **What it cannot do yet is the part needed here:
+     it matches one exact address.** The gate needs domain-level (`*@bupadentalcare.co.uk`) and
+     keyword search, which is an extension of an existing tested path rather than a new one.
+     Note `[DB-0810-05]`'s standing caution — the IMAP half fails silently by design, so a thin
+     result must be distinguishable from a failed search before anything is concluded from it.
+  3. **External research, last.** Only for a sender with no history at all, which is the only case
+     where the first two return nothing and the per-sender cost is genuinely unavoidable.
   @kind: feature
   *filed 2026-09-05 at the rules-teaching walkthrough, on Mike's explicit go-ahead; supersedes
   the teach-rules half of the closed `[DB-0820-03]`*
@@ -1086,6 +1117,9 @@ claim user-facing (its log-write sibling is `[DB-0829-01]`); the two Iva/Eva cor
 evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording — "causing an
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
+
+- **[user corrected a prior turn]** User corrected planning horizon and horizon-surfacing behavior: requested that only items with precursors, deadlines, or actionable reasons get highlighted in advance, reserving deep horizon previews for evening wrap-ups and weekly review meetings.  
+  `2026-09-05T12:31:28.194655Z`
 
 - **[user corrected a prior turn]** taught rule: {'sender': 'kathaleen.jermyn@prudential.com'} → category='correspondence', disposition='surface', domain='finance', note='taught 2026-09-05 — financial advisers - their mail is correspondence and belongs to finance, not the relationships default (Mike, 2026-09-05 walkthrough)'  ×2  
   `2026-09-05T12:05:20.799158Z`
