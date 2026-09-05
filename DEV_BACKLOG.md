@@ -75,9 +75,6 @@ back-tagging the rest is `[DB-0815-10]`.
 > against `git log` before promoting anything from here.
 *(empty — last triaged 2026-09-05; evidence in `archive/backlog_closed_2026-09.md`)*
 
-- **[instruction change]** User requested restricting advance horizon previews so that items without active precursors, proximate deadlines, or specific triggers are not surfaced deeply in advance. Confine tomorrow's horizon exclusively to the evening wrap-up, upcoming week commitments to the weekly review, and school logistics to dedicated Manny check-ins.  
-  `2026-09-05T12:32:11.618456Z`
-
 ---
 ## Now
 

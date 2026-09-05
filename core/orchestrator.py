@@ -5264,8 +5264,14 @@ def _file_horizon_items(outputs: dict, persona: str | None = None) -> dict:
     return cleaned
 
 
-def _horizon_block(persona: str | None = None) -> str:
+def _horizon_block(persona: str | None = None, session: str | None = None) -> str:
     """This turn's horizon block, for the Synthesizer bundle. "" when nothing is waiting.
+
+    `session` is the scheduled-session key from `session_kind()`, or None for a user-typed
+    turn. On `evening_close` a second block is appended: tomorrow's findings in full, already
+    delivered ones included, because Mike's evening wrap-up is a review rather than a bulletin
+    (2026-09-05). Ordinary turns never see it. The review is read-only — it charges no offer
+    and marks nothing delivered, so it cannot consume a finding's chance to be raised properly.
 
     Called after `_file_horizon_items()` and before the Synthesizer runs, so a finding
     discovered *this* turn is put to the user in the exchange that found it. Without this the
@@ -5279,9 +5285,12 @@ def _horizon_block(persona: str | None = None) -> str:
     charge — so wiring it in twice costs the finding nothing.
     """
     try:
-        from tools.horizon import context_block
+        from tools.horizon import context_block, review_block
         with persona_scope(resolve_persona(persona)):
-            return context_block(persona)
+            blocks = [context_block(persona)]
+            if session == "evening_close":
+                blocks.append(review_block(persona))
+        return "\n\n".join(b for b in blocks if b)
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"[horizon] block failed: {exc}")
         return ""
@@ -5991,7 +6000,7 @@ def run_pipeline_session(user_input: str,
         know_text = _knowledge_block(knowledge)
         # [DB-0822-09] Built HERE, after the sign-off veto above: a finding must not be
         # charged an offer on a turn where the Synthesizer never runs.
-        horizon_text = _horizon_block(persona)
+        horizon_text = _horizon_block(persona, session=kind)
         synthesizer_input = (
             f"{proactive_prefix}{receipt_line}{synth_label}:\n{user_input}{attach_note}\n\n"
             f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"
@@ -6192,7 +6201,7 @@ def _run_pipeline_session_stream_inner(
     # Build Synthesizer input — ACTIONS block last and unconditional, as above.
     know_text = _knowledge_block(knowledge)
     # [DB-0822-09] After the sign-off veto, as in the non-streaming twin above.
-    horizon_text = _horizon_block(persona)
+    horizon_text = _horizon_block(persona, session=kind)
     synthesizer_input = (
         f"{proactive_prefix}{receipt_line}{synth_label}:\n{user_input}{attach_note}\n\n"
         f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"

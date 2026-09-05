@@ -112,6 +112,20 @@ HORIZON_ITEMS: [{"title": "Death Cab for Cutie at Troxy", "date": "2026-09-26", 
 - **`kind`** — one of `event`, `appointment`, `booking`, `deadline`, `errand`, `opportunity`.
 - **`detail`** — one sentence of what makes it worth the user's attention, including anything
   the coordination check turned up. This is the part they actually hear.
+- **`precursor`** — if something has to happen *in advance* for this to work, say what, in a
+  few words: a form posted, a booking made, travel arranged, a thing bought. `""` when the
+  finding needs nothing done beforehand, which is most of them.
+- **`precursor_by`** — `YYYY-MM-DD`, the last day that precursor can happen. `""` if there is
+  no precursor or no real cut-off. Never invent one.
+
+**The precursor fields are what let a distant finding be raised early.** Findings more than a
+day out are otherwise held until they come near — the user's instruction, 2026-09-05: *"only
+items with precursors, deadlines, or other reasons get highlighted deeply in advance."* A
+`deadline` always carries; everything else at distance surfaces when its `precursor_by`
+arrives, not when the event does. So a concert in three weeks with the tickets already in hand
+has no precursor and waits, while the same concert needing return travel booked by the 19th
+carries that date and is raised then. **Filling these in is how a far-off thing that genuinely
+needs acting on now still reaches the user** — leave them empty and it will simply wait.
 
 **Why a tool call and not a written block.** The program layer keeps a record of which horizon
 items have already been put to the user, so a finding is raised once and does not resurface

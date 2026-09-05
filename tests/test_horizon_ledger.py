@@ -76,17 +76,29 @@ def ledger() -> dict:
 FUTURE = (date.today() + timedelta(days=20)).isoformat()
 LATER = (date.today() + timedelta(days=40)).isoformat()
 
+# Near enough that `_due_now` serves it — see NEAR_BY below.
+NEAR_BY = (date.today() + timedelta(days=1)).isoformat()
+
+# Both fixtures carry a near `precursor_by`, and that is deliberate. Since 2026-09-05 a
+# finding more than `_NEAR_DAYS` out is HELD unless it is a deadline or has a precursor
+# falling now (`_due_now`), so a bare far-dated event no longer reaches `context_block()` at
+# all. These fixtures exist to exercise the LEDGER — dedupe, offers, discharge — which needs
+# an item that actually serves. The gate itself is tested separately below, on bare items.
+# `precursor_by` is not part of `item_key`, so identity and dedupe are unaffected by it.
 DEATH_CAB = {"title": "Death Cab for Cutie at Troxy", "date": FUTURE,
              "venue": "Troxy, London", "kind": "event",
-             "detail": "Mobile tickets confirmed via Ticketmaster"}
+             "detail": "Mobile tickets confirmed via Ticketmaster",
+             "precursor": "book return travel", "precursor_by": NEAR_BY}
 
 # The same Jimmy Carr show as written by two different runs. No title string in common.
 CARR_0829 = {"title": "Jimmy Carr Performance", "date": LATER,
              "venue": "The London Palladium", "kind": "event",
-             "detail": "September 13th at 9:30 PM"}
+             "detail": "September 13th at 9:30 PM",
+             "precursor": "book return travel", "precursor_by": NEAR_BY}
 CARR_0902 = {"title": "Jimmy Carr: Laughs Funny", "date": LATER,
              "venue": "the london palladium, London", "kind": "event",
-             "detail": "Tickets booked, reference 26224N-69S3AH8RKL"}
+             "detail": "Tickets booked, reference 26224N-69S3AH8RKL",
+             "precursor": "book return travel", "precursor_by": NEAR_BY}
 
 
 # ---------------------------------------------------------------------------
@@ -273,7 +285,8 @@ def _():
     reset()
     out = H.record_horizon_item(title="Death Cab for Cutie at Troxy", date=FUTURE,
                                 venue="Troxy, London", kind="event",
-                                detail="Mobile tickets confirmed")
+                                detail="Mobile tickets confirmed",
+                                precursor="book return travel", precursor_by=NEAR_BY)
     assert "Filed" in out, out
     assert "not been told" in out, out
     assert "Death Cab" in H.context_block()
@@ -357,7 +370,10 @@ def _():
         "left in the specialist prose — the Synthesizer would see every finding twice, "
         "including the ones the ledger suppressed:\n" + cleaned["logistics"])
     assert "Checked the inbox" in cleaned["logistics"], "the rest of the output was lost"
-    assert "Death Cab" in H.context_block()
+    # The ledger, not the block: this real 09-02 item is a bare far-dated event, so `_due_now`
+    # correctly holds it back from delivery. What this test is about is that it was PARSED and
+    # FILED — holding is the gate's job and is asserted on its own below.
+    assert any("Death Cab" in r["item"]["title"] for r in ledger().values()), ledger()
 
 
 @check("a fenced HORIZON_ITEMS block parses too")
@@ -367,7 +383,7 @@ def _():
     out = {"logistics": 'HORIZON_ITEMS: ```json\n[{"title": "Gig", "date": "' + FUTURE +
            '", "venue": "Troxy"}]\n```'}
     O._file_horizon_items(out, persona="test")
-    assert "Gig" in H.context_block()
+    assert any("Gig" in r["item"]["title"] for r in ledger().values()), ledger()
 
 
 @check("prose HORIZON_ITEMS are logged and dropped, never crash the turn")
@@ -391,12 +407,152 @@ def _():
     # `run_pipeline_session_stream` is a thin wrapper around it.
     for name in ("run_pipeline_session", "_run_pipeline_session_stream_inner"):
         body = text.split(f"\ndef {name}(", 1)[1].split("\ndef ", 1)[0]
-        assert "_horizon_block(persona)" in body, f"{name} never builds the block"
-        assert body.index("_signoff_skip(") < body.index("_horizon_block(persona)"), (
+        assert "_horizon_block(persona, session=kind)" in body, (
+            f"{name} never builds the block — or builds it without the session kind, which "
+            f"is what switches on the evening review")
+        assert body.index("_signoff_skip(") < body.index("_horizon_block(persona"), (
             f"{name} builds the horizon block before the sign-off veto — a finding would "
             f"be charged an offer on a turn where the Synthesizer never runs")
         assert "horizon_text" in body.split("synthesizer_input = ")[1][:600], (
             f"{name} builds the block but never passes it to the Synthesizer")
+
+
+# ---------------------------------------------------------------------------
+# The proximity gate (2026-09-05). Mike: "you're looking ahead too far in the future...
+# only items with precursors, deadlines, or other reasons get highlighted deeply in
+# advance." Before this, `context_block()` served everything undelivered at any distance
+# and told the Synthesizer not to judge whether to mention it.
+# ---------------------------------------------------------------------------
+
+TOMORROW = (date.today() + timedelta(days=1)).isoformat()
+
+def _bare(when: str, kind: str = "event", **extra) -> dict:
+    """A finding with nothing to make it urgent — no precursor, plain kind."""
+    return {"title": f"Thing on {when}", "date": when, "venue": f"Venue {when}",
+            "kind": kind, "detail": "d", **extra}
+
+
+@check("gate: today and tomorrow speak for themselves")
+def _():
+    reset()
+    H.record([_bare(date.today().isoformat()), _bare(TOMORROW)])
+    block = H.context_block()
+    assert date.today().isoformat() in block, block
+    assert TOMORROW in block, block
+
+
+@check("gate: a distant event with nothing to do about it waits")
+def _():
+    reset()
+    H.record([_bare(FUTURE)])
+    assert H.context_block() == "", "a far-off event with no precursor was pushed anyway"
+
+
+@check("gate: a deadline carries at any distance")
+def _():
+    reset()
+    H.record([_bare(LATER, kind="deadline")])
+    assert LATER in H.context_block(), "a deadline was held back"
+
+
+@check("gate: a distant thing whose precursor falls now is raised now")
+def _():
+    reset()
+    H.record([_bare(FUTURE, precursor="post the packet", precursor_by=TOMORROW)])
+    assert FUTURE in H.context_block(), (
+        "the mover's-claim shape — deadline weeks out, the action due tomorrow — was held")
+
+
+@check("gate: a precursor still far off does not pull the item forward")
+def _():
+    reset()
+    H.record([_bare(LATER, precursor="book travel", precursor_by=FUTURE)])
+    assert H.context_block() == "", "a precursor 20 days out surfaced the item today"
+
+
+@check("gate: an undated finding is never held — there is nothing to measure")
+def _():
+    reset()
+    H.record([{"title": "Undated thing", "date": "", "venue": "", "kind": "event",
+               "detail": "d"}])
+    assert "Undated thing" in H.context_block()
+
+
+@check("gate: a held finding keeps its offers — quieter, never lossier")
+def _():
+    reset()
+    H.record([_bare(FUTURE)])
+    for _ in range(H._MAX_OFFERS + 2):
+        H.context_block()
+        _age_offer_stamp()
+    assert list(ledger().values())[0]["offers"] == 0, (
+        "a finding was charged for an offer the user never saw — it would be written off "
+        "before it ever came near enough to be said")
+
+
+@check("gate: a bad precursor_by is refused at filing, not guessed at")
+def _():
+    reset()
+    out = H.record_horizon_item(title="X", date=FUTURE, venue="V",
+                                precursor="do a thing", precursor_by="next Tuesday")
+    assert "Not filed" in out, out
+    assert ledger() == {}, ledger()
+
+
+# ---------------------------------------------------------------------------
+# The evening review (2026-09-05). Mike: "Daily wrap up should run through all of
+# tomorrow's events whether previously stated or not. It's a review."
+# ---------------------------------------------------------------------------
+
+@check("review: tomorrow is read out even after it has already been delivered")
+def _():
+    reset()
+    H.record([_bare(TOMORROW)])
+    assert H.mark_engaged("tell me about the thing on " + TOMORROW) == 1
+    assert H.context_block() == "", "precondition: it should be discharged for normal turns"
+    assert TOMORROW in H.review_block(), (
+        "the evening review skipped an item the user had already heard — that is exactly "
+        "the half a review must not drop")
+
+
+@check("review: reading tomorrow out charges nothing and delivers nothing")
+def _():
+    reset()
+    H.record([_bare(TOMORROW)])
+    before = json.dumps(ledger(), sort_keys=True)
+    H.review_block()
+    H.review_block()
+    assert json.dumps(ledger(), sort_keys=True) == before, (
+        "the review wrote to the ledger — it must be read-only, or it would consume the "
+        "finding's chance to be raised properly")
+
+
+@check("review: stops at tomorrow — today and the rest of the week are not its job")
+def _():
+    reset()
+    H.record([_bare(date.today().isoformat()), _bare(TOMORROW), _bare(FUTURE)])
+    block = H.review_block()
+    assert TOMORROW in block, block
+    assert FUTURE not in block, "the review reached into next month"
+    assert date.today().isoformat() not in block, "the review re-ran today"
+
+
+@check("review: an empty tomorrow costs nothing")
+def _():
+    reset()
+    H.record([_bare(FUTURE)])
+    assert H.review_block() == ""
+
+
+@check("review: fires on evening_close only, and never on an ordinary turn")
+def _():
+    text = (ROOT / "core" / "orchestrator.py").read_text(encoding="utf-8")
+    body = text.split("\ndef _horizon_block(", 1)[1].split("\ndef ", 1)[0]
+    assert 'session == "evening_close"' in body, (
+        "the review is not gated on the evening session — it would repeat delivered "
+        "findings on every turn, which is the groundhog-day failure this module exists "
+        "to prevent")
+    assert "review_block" in body
 
 
 # ---------------------------------------------------------------------------

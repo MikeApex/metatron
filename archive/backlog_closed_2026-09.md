@@ -782,3 +782,84 @@ the floor off the model said `unclear` 0/33 in all five runs. Report:
 `tests/intake_confidence_sweep_2026-09-05_gemini-flash-lite.md`. The three A/B/C variant agent
 files are in `archive/agent_variants/`. **If the extractor is ever revisited, `run_intake_redteam.py`
 still owes the self-forward-unwrap row** (`ROADMAP.md` § Track B) — that debt survives this close.
+
+---
+
+## 2026-09-05, sixth — the horizon stops looking too far ahead
+
+**Closed: the Inbox instruction-change item of 2026-09-05T12:32** — *"restrict advance horizon
+previews so that items without active precursors, proximate deadlines, or specific triggers are
+not surfaced deeply in advance."* Filed by the machine from Mike's own correction in exchange
+`004`; built the same day.
+
+### What was actually wrong, which was not what the first diagnosis said
+
+The troubleshoot of exchange `004` reported the rule's home as
+`config/modules/synthesizer_scheduled_sessions.md`. **That was wrong** — that file had no horizon
+content at all. The real chain:
+
+1. `config/agents/logistics.md` § Horizon scan files every finding via `record_horizon_item()`.
+   Only class 1 of its five scan classes carries a window ("next 7–14 days"); classes 2–5 have none.
+2. `tools/horizon.py` `context_block()` served **every undelivered, non-past item at any
+   distance**, and instructed the Synthesizer: *"Judge the placement and the wording; do not judge
+   whether to mention them."*
+
+So there was no proximity judgement anywhere, and the one agent positioned to make it was
+explicitly forbidden from doing so. A hotel that was always a *maybe* was pressed on Mike beside
+things happening that day.
+
+Logistics had also written a `horizon_surfacing_rule` key into its own agent config during that
+exchange. **Nothing reads that key** — `grep` finds it nowhere else in the repo. It is dead, and
+is now superseded.
+
+### The gate, and whose numbers these are
+
+`_due_now()` in `tools/horizon.py`, at the point of service rather than at filing — *filing is not
+telling* is unchanged. Four ways through, and they are Mike's own, given when the build was put to
+him with a looser proposal:
+
+- **Today or tomorrow** (`_NEAR_DAYS = 1`). He cut this from the three days proposed.
+- **A `deadline`**, at any distance.
+- **A precursor falling today or tomorrow** — new `precursor` / `precursor_by` fields on
+  `record_horizon_item()`. His words: *"if there are necessary items today or for tomorrow for
+  longer term items, those should be served as well."* The mover's claim is the shape: deadline
+  the 9th, packet in Monday's post — the posting is what earns the mention, not the deadline.
+- **Undated** — nothing to measure, so nothing to hold it on.
+
+**A held finding is not discharged and is not charged an offer.** The filter runs before
+`_charge_offers`, so an item keeps its full `_MAX_OFFERS` for when it comes near. Quieter, not
+lossier — that distinction is why the gate sits at service and not at filing, and it has a test.
+
+### The evening close became a review
+
+Mike, unprompted, on the second question: *"Daily wrap up should run through all of tomorrow's
+events whether previously stated or not. It's a review."* `review_block()` serves all of
+tomorrow **including already-delivered items**, gated on `session_kind() == "evening_close"`.
+
+This deliberately suspends raise-once, which governs everywhere else and is load-bearing. It is
+safe because the review is **read-only**: it charges no offer, marks nothing delivered, writes
+nothing at all. Being read out in a review is not the same event as being raised, and a finding
+still awaiting its first proper mention keeps that status.
+
+### Verification
+
+`tests/test_horizon_ledger.py` **42/42**; `qa_sweep` 9/9. **Baselined at HEAD first (29/29)** —
+13 existing tests were asserting the old always-serve behaviour with far-dated bare-event
+fixtures, and without the baseline run those would have been reported as pre-existing failures.
+The fixtures now carry a near `precursor_by` (identity is `date|venue`, so dedupe is unaffected)
+and the gate is tested separately on bare items.
+
+The composed block was **run**, not just compiled, on both paths: tomorrow's appointment and a
+distant deadline serve; a concert 30 days out with tickets in hand is held; the evening path
+appends the review. Running it surfaced one rough edge — an undelivered item for tomorrow appears
+in both blocks on evening close — fixed with a disambiguating clause rather than by trimming the
+review, since trimming recreates the partial-review problem.
+
+### Still open, deliberately
+
+The other two halves of Mike's instruction — the week's obligations to a weekly review, school
+items to a Manny check-in — **are not built, because neither session exists.** His live
+`config/personas/mike/scheduler.yaml` on the VM defines `morning_brief`, `companion_checkin`,
+`evening_close`, `location_anticipation` and four `fire_function` maintenance jobs. There is no
+user-facing weekly review and no school session. Creating them is a Denied-tier edit to his
+persona config, which the VM owns — an (M) item, and it gets a walkthrough.

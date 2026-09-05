@@ -156,6 +156,11 @@ _NOT_TOOLS = {
     # relationships.md. None is a tool; nothing was deleted from an agent file to
     # clear them, which would have been the wrong fix.
     "open_threads", "follow_ups", "held_items", "overdue_only",
+    # Added 2026-09-05: a FIELD of record_horizon_item(), documented in logistics.md's
+    # horizon schema beside `title`/`date`/`venue`/`kind`/`detail`. Those five are single
+    # words and so never matched; this one is snake_case and does. Same class as the four
+    # above — the tool it belongs to is registered, the field is not a tool.
+    "precursor_by",
 }
 
 # Headings under which a named tool is understood to be unbuilt. Matched against

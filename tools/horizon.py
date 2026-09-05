@@ -52,7 +52,7 @@ import json
 import logging
 import re
 import threading
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from core.persona import persona_data_dir, resolve_persona
@@ -71,6 +71,11 @@ _MAX_OFFERS = 2
 # Both head-layer agents load context inside one exchange; this collapses those two reads
 # into a single offer. Longer than a session, shorter than the gap between two.
 _OFFER_WINDOW_SECONDS = 300
+
+# How near a finding must be to speak for itself. One, so "today and tomorrow" — Mike's own
+# boundary, 2026-09-05, chosen over the three days first proposed to him. Anything further out
+# needs a reason (`_due_now`): a deadline, or a precursor falling inside this same window.
+_NEAR_DAYS = 1
 
 # Findings whose date has passed are dropped rather than delivered (see `_is_past`): telling
 # the user about a concert the morning after it happened is the staleness this system keeps
@@ -152,6 +157,12 @@ def _valid(item) -> bool:
             date.fromisoformat(raw_date)
         except ValueError:
             return False
+    raw_by = str(item.get("precursor_by") or "").strip()
+    if raw_by:
+        try:
+            date.fromisoformat(raw_by)
+        except ValueError:
+            return False
     return item_key(item).strip(" |") != ""
 
 
@@ -209,7 +220,54 @@ def record(items: list, persona: str | None = None) -> dict:
     return tally
 
 
-def _undelivered(data: dict, today: date | None = None) -> list[tuple[str, dict]]:
+def _due_now(item: dict, today: date | None = None) -> bool:
+    """Whether an undelivered finding has earned *this* exchange, or should wait for one
+    nearer the day.
+
+    Mike's correction, 2026-09-05: *"you're looking ahead too far in the future... only items
+    with precursors, deadlines, or other reasons get highlighted deeply in advance."* Until
+    this gate existed there was none — `context_block()` served every undelivered item at any
+    distance and told the Synthesizer not to judge whether to mention them, so a hotel that
+    was always a *maybe* was pressed on him alongside things happening that day.
+
+    Four ways through, and they are his four:
+
+    - **Today or tomorrow.** The near window is the default reason to speak.
+    - **A deadline**, at any distance. A date that bites is worth the advance notice; that is
+      what makes it a deadline rather than an event.
+    - **A precursor falling today or tomorrow** — the thing that must happen *now* for a
+      distant thing to work. The mover's claim is the shape: deadline the 9th, packet in
+      Monday's post. The date that earns the mention is the posting, not the deadline.
+    - **Undated.** Nothing to measure, so nothing to hold it on.
+
+    A held finding is not discarded and is not charged an offer (`context_block` filters
+    before `_charge_offers`) — it keeps its full `_MAX_OFFERS` for when it comes near. That
+    is the difference between quieter and lossier, and it is the whole reason the gate sits
+    at the point of service rather than at filing.
+    """
+    today = today or date.today()
+    raw = str(item.get("date") or "").strip()
+    if not raw:
+        return True
+    try:
+        when = date.fromisoformat(raw)
+    except ValueError:
+        return True
+    if (when - today).days <= _NEAR_DAYS:
+        return True
+    if str(item.get("kind") or "").strip().lower() == "deadline":
+        return True
+    raw_by = str(item.get("precursor_by") or "").strip()
+    if raw_by:
+        try:
+            return (date.fromisoformat(raw_by) - today).days <= _NEAR_DAYS
+        except ValueError:
+            return True
+    return False
+
+
+def _undelivered(data: dict, today: date | None = None,
+                 gate: bool = True) -> list[tuple[str, dict]]:
     rows = []
     for key, row in data.items():
         if row.get("delivered_at"):
@@ -218,6 +276,8 @@ def _undelivered(data: dict, today: date | None = None) -> list[tuple[str, dict]
             continue
         item = row.get("item") or {}
         if _is_past(item, today):
+            continue
+        if gate and not _due_now(item, today):
             continue
         rows.append((key, row))
     # Soonest first: a thing happening this week matters more than one in October.
@@ -273,6 +333,66 @@ def context_block(persona: str | None = None) -> str:
             "this as a list you were handed.]\n" + "\n".join(lines))
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"[horizon] context block failed: {exc}")
+        return ""
+
+
+def review_block(persona: str | None = None) -> str:
+    """Tomorrow's findings for the evening close, **including ones already delivered**. "" when
+    tomorrow is empty.
+
+    Mike, 2026-09-05: *"Daily wrap up should run through all of tomorrow's events whether
+    previously stated or not. It's a review."* Everywhere else in this module the governing
+    rule is raise-each-thing-once, and it is load-bearing — repetition is the hazard the whole
+    ledger exists to bound. The evening close is the one place that rule is wrong: a review
+    that skips the half of tomorrow you already heard about is not a review of tomorrow.
+
+    So this deliberately ignores `delivered_at`, and just as deliberately does not touch it.
+    Nothing here is charged an offer, nothing is marked delivered, nothing is written at all —
+    the function only reads. An item that was still awaiting its first mention keeps that
+    status and will be served normally by `context_block()`; being read out in a review is not
+    the same event as being raised.
+
+    Scope worth stating, because the wording invites the wrong expectation: this is the
+    *findings ledger* for tomorrow, not tomorrow's calendar. The calendar reaches the head
+    layer by its own route. This closes the half that the raise-once rule was suppressing.
+    """
+    try:
+        persona = resolve_persona(persona)
+        tomorrow = date.today() + timedelta(days=1)
+        with _LOCK:
+            data = _read(persona)
+
+        lines = []
+        for row in data.values():
+            item = row.get("item") or {}
+            raw = str(item.get("date") or "").strip()
+            if not raw:
+                continue
+            try:
+                if date.fromisoformat(raw) != tomorrow:
+                    continue
+            except ValueError:
+                continue
+            where = str(item.get("venue") or "").strip()
+            detail = str(item.get("detail") or "").strip()
+            lines.append(
+                f"- {item.get('title')}"
+                + (f" — {where}" if where else "")
+                + (f". {detail}" if detail else ""))
+
+        if not lines:
+            return ""
+
+        return (
+            "[TOMORROW — the evening review. Go through all of these with the user, including "
+            "any you have already raised on an earlier turn: this is the one moment in the day "
+            "where repeating something is the point, because they are reviewing tomorrow, not "
+            "hearing news. Some of these may also appear in the block above — those are the "
+            "same items, not additional ones, so cover each thing once. Say them in your own "
+            "voice and never as a list you were handed.]\n"
+            + "\n".join(lines))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[horizon] review block failed: {exc}")
         return ""
 
 
@@ -361,14 +481,21 @@ def mark_engaged(user_text: str | None, persona: str | None = None) -> int:
 
 
 def record_horizon_item(title: str, date: str = "", venue: str = "",
-                        kind: str = "", detail: str = "") -> str:
+                        kind: str = "", detail: str = "",
+                        precursor: str = "", precursor_by: str = "") -> str:
     """File one horizon finding. Called by the specialist, once per finding.
 
     Deliberately one call per item rather than a list: a model that has to assemble a JSON
     array is back to emitting a structure it can get wrong, which is the failure this tool
     exists to route around. Repeating a small call is the reliable shape.
+
+    `precursor`/`precursor_by` added 2026-09-05. They are what let a distant finding earn an
+    early mention without re-opening the door to every distant finding earning one — see
+    `_due_now`. Both are optional and most findings have neither; filing is unchanged for
+    them.
     """
-    item = {"title": title, "date": date, "venue": venue, "kind": kind, "detail": detail}
+    item = {"title": title, "date": date, "venue": venue, "kind": kind, "detail": detail,
+            "precursor": precursor, "precursor_by": precursor_by}
     if not _valid(item):
         # Stated plainly so the model can correct itself on the next call. `date` is the
         # field that goes wrong, and it must never be guessed at on the model's behalf —
@@ -431,6 +558,24 @@ RECORD_HORIZON_ITEM_SCHEMA = {
                 "description": (
                     "One sentence on what makes this worth the user's attention, including "
                     "anything a coordination check turned up. This is the part they hear."
+                ),
+            },
+            "precursor": {
+                "type": "string",
+                "description": (
+                    "If something must happen in advance for this to work — a form posted, a "
+                    "booking made, travel arranged, a thing bought — say what it is, in a few "
+                    "words. Leave empty when the finding needs nothing done beforehand, which "
+                    "is most of them."
+                ),
+            },
+            "precursor_by": {
+                "type": "string",
+                "description": (
+                    "The last day the precursor can happen, as YYYY-MM-DD. This is what lets "
+                    "a distant finding be raised early: it surfaces when this date is near, "
+                    "not when the event is. Leave empty if there is no precursor or no real "
+                    "cut-off — never invent one, and never write a phrase like 'next week'."
                 ),
             },
         },
