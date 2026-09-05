@@ -493,9 +493,14 @@ with a date.** Nothing new joins this group open-ended.*
   INVALID on guard refusal and gained `--dump-confidence` (both additive); re-run as five
   single-run processes. Guard untouched. Report:
   `tests/intake_confidence_sweep_2026-09-05_gemini-flash-lite.md`.
-  @session: the flip question is answered (no flip). What remains is direction, Mike's call:
-  teach `rules:` to lift the code tier (already 9/33 live with five rules), grow the corpus and
-  re-measure, or re-try the extractor on a stronger tier — the confidence lever alone is spent.
+  **✅ Direction ruled 2026-09-05 (Mike): teach `rules:`.** The code tier is the path — live
+  mailbox already 9/33 with five taught rules and forwards now unwrap; the extractor stays
+  parked with its evidence. Rejected: grow-the-corpus (nothing improves meanwhile), stronger
+  tier (permanent per-message cost on a bulk-tier pipeline), park-entirely. The three A/B/C
+  variant agent files moved to `archive/agent_variants/` — out of active config, kept for
+  reference (Mike's word on the disposition).
+  @session: a rules-teaching walkthrough — Mike + the live sender list, teaching `rules:` for
+  his real senders via `teach_intake`, then re-measure the code tier against the corpus
   @kind: feature
 
   `due: 2026-09-09` — parked with a date at the capstone review (Mike, 2026-09-02): the sweep has

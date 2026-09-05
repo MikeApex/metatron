@@ -21,10 +21,10 @@ itself is answered (no flip); **(3)** the Red-tier prompt for scheduler day-name
 *⚠ **The intake extractor stays off — now on measured evidence, not just the gate.** The lowest
 zero-false-negative threshold (0.95) demotes 85% of the corpus to `unclear`; every affordable
 threshold silences an obligation on the worst run, and with the floor off the model said
-`unclear` 0/33 in all five runs — Mike's validity objection confirmed literally. The three
-`config/agents/intake_extractor_{counterargue,confidence,both}.md` variants are **now deletable**
-(Red-tier edit, needs Mike present). **Full evidence: `DEV_BACKLOG.md` `[DB-0820-03]`; do not
-re-derive it here.***
+`unclear` 0/33 in all five runs — Mike's validity objection confirmed literally. **Direction
+ruled 2026-09-05: teach `rules:`** — a rules-teaching walkthrough is the proposed next sitting;
+the three variant agent files moved to `archive/agent_variants/`. **Full evidence:
+`DEV_BACKLOG.md` `[DB-0820-03]`; do not re-derive it here.***
 
 *✅ **The wisdom store's three intake classes are closed, and one is not.** Corroboration (an
 `observed` fact waits for a second sighting in 14 days — the sender ledger's own bar, one file
