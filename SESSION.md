@@ -1,37 +1,52 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-09-05, fifth (**intake now files 1 in 3 of Mike's mail by itself, up from 1 in
-33 — and the direction it was ruled on has run out**). The rules-teaching walkthrough ran with
-Mike present: six taught `rules:` took the labelled corpus from **1/33 to 11/33** classified
-without surfacing, `action_required` false negatives zero throughout, domain axis off zero for
-the first time (0/20 → 4/20). Confirmed on live mail he seeded — a Prudential forward unwrapped,
-hit its rule and routed to `finance`, the first time those three built things were seen working
-together. `[DB-0820-03]` **closed**; `[DB-0905-01]` filed for the research gate. Earlier today:
-scheduler day-name validation, thread identity live, the confidence lever spent. Detail:
-`archive/PROJECT_LOG.md` § 2026-09-05, second through fifth. `683d00d`, `859a4c5`.*
+*Updated: 2026-09-05, sixth (**the horizon stops pressing things weeks away — and three
+mechanisms turned out to be reporting success for things that had not happened**). Two live
+troubleshoots that each opened into a build. Exchange `004`: the day's journal was filed to
+2026-03-30 because the **Diarist is the one specialist that ran without a clock**, and
+`write_journal` had no date guard to catch it; both fixed. Exchange `006`: Mike was told the
+duplicate Friday swim class was gone — the delete had returned `success: true` on a one-off
+copy while the recurring 10:00 series kept firing. **Series deleted and verified this session.**
+Detail: `archive/PROJECT_LOG.md` § 2026-09-05, sixth. `73354e8`, `4abdb84`, `bb3df5a`,
+`471373a`, `4461107`, `282a50b`.*
 
-***Next: no Mike-gated session is queued and nothing is awaiting deploy.*** One Inbox item is
-untriaged — Mike's 09-05 instruction on confining advance horizon previews. `/backlog` owns it.
+***Next: `./deploy.sh` is owed for `4461107` and `282a50b` — the VM is at `471373a`.*** Then
+the persona pastes below. No Mike-gated session is queued; the Inbox item on horizon previews
+is **closed**.
 
-*⚠ **The intake extractor is parked permanently — priced out, not disproven — and teaching
-`rules:` has hit its own ceiling at 11/33.** Mike ruled, four ways in one sitting, that **a
-sender is not a category**: one organisation mails from several addresses (Bupa arrived from a
-second address the corpus had never seen), a ticketing firm's mail splits on whether it concerns
-tickets, and one address sends both an obligation and a notice. Three gaps block the rest, all
-measured: a rule carries **one** domain, **`physical_health` has no `read_intake_queue`** in
-either routing file, and there is no sender *class*. The successor is `[DB-0905-01]` — a research
-gate that consults prior correspondence **as code, never as a model judgement**, evidence first
-and external research last. **Full evidence: `DEV_BACKLOG.md` `[DB-0905-01]` and
-`archive/backlog_closed_2026-09.md`; do not re-derive it here.***
+*⚠ **Two persona files are prepared and NOT pasted — verified absent on the VM, so the weekly
+review and the Manny's-school check-in cannot fire yet.** `weekly_review_on: monday` on
+`morning_brief`, and a `manny_school` entry plus `manny_school_ritual.md` (Sunday 16:00).
+Commands, tested against a real copy of Mike's `scheduler.yaml`:
+`archive/handoffs/2026-09-05-weekly-and-school-sessions-setup.md`. `config/personas/mike*` is
+Denied and VM-owned — `./deploy.sh` will never carry these.*
 
-*✅ **The wisdom store's three intake classes are closed, and one is not.** Corroboration (an
-`observed` fact waits for a second sighting in 14 days — the sender ledger's own bar, one file
-away), the user's recorded word (`record_wisdom_response`; a denial does **not** delete the entry
-and agreement does **not** promote `observed` to `stated`), and an absence-of-evidence self-check
-in the six writers. **Still open, and the largest class: a preference recorded as a discovery when
-it was already policy** — five of eleven cleared this session were describing behaviour already
-instructed in `config/modules/synthesizer_scheduled_sessions.md`. The redundancy guard catches
-this on the persona path only, not the wisdom path.*
+*✅ **The horizon serves near things only, and the reviews take the long view.** Past tomorrow a
+finding is held unless it is a `deadline` or its new `precursor_by` falls today/tomorrow —
+Mike's own four conditions, `_NEAR_DAYS = 1` cut from the three proposed to him. **A held
+finding is never charged an offer**, so this is quieter, not lossier. The counterweight:
+`review_block()` (tomorrow, on `evening_close`) and `week_block()` (seven days, on any session
+carrying `weekly_review_on`) suspend raise-once, which is safe **only because both are
+read-only**. The weekly is a **setting, not a session**, so it rides a brief already in the
+week — his call, and the reasoning is the product's own: a session is attention spent.*
+
+*⚠ **Two open items from `006`, both closed by Mike as "skip, no backlog item" — do not file
+them.** (1) Nothing distinguishes deleting a calendar **occurrence** from deleting a **series**;
+that is what made the swim delete report success wrongly. (2) The 2:44 check-in ignores its
+conduct — proved **adherence, not plumbing**: `session_kind()` resolved and 8,278 chars of
+conduct were injected. More prose will not fix it (`[DB-0822-10]`); it needs a code gate.*
+
+*⚠ **The intake extractor is parked permanently (priced out, not disproven) and teaching
+`rules:` tops out at 11/33 — because Mike ruled that a sender is not a category.** Successor is
+`[DB-0905-01]`, a research gate reading prior correspondence **as code, never a model judgement**.
+**Evidence and the three measured gaps: `DEV_BACKLOG.md` `[DB-0905-01]` and
+`archive/backlog_closed_2026-09.md`. Do not re-derive it here.***
+
+*✅ **The wisdom store's three intake classes are closed; the largest one is not — a preference
+recorded as a discovery when it was already policy.** Five of eleven cleared on 09-05 were
+describing behaviour already instructed in `config/modules/synthesizer_scheduled_sessions.md`.
+The redundancy guard covers the persona path only, not the wisdom path — and **that guard was
+itself citing the wrong home until `282a50b`** (see the handoff above).*
 
 *⚠ **No off-machine backup — Mike declined a date twice; a recorded acceptance of a named risk,
 not an unfiled worry. Do not re-raise it.** `VERTEX_CACHE_DISABLED` was flipped ON on the Mac
