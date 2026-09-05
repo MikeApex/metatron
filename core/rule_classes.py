@@ -136,6 +136,11 @@ NEGATIVE = re.compile(
     r"\b(never|not|no|don't|dont|do not|stop|avoid|drop|without|refrain|skip)\b", re.I
 )
 
+# Fewest content words a rule may have and still be judged by the overlap coefficient.
+# See similarity(): below this the coefficient degenerates to "does this common word
+# appear", and a one-word rule becomes a perfect match for everything.
+_OVERLAP_MIN_WORDS = 3
+
 
 class Rule:
     __slots__ = ("text", "source", "layer", "line", "words", "classes")
@@ -166,10 +171,28 @@ def similarity(a: Rule, b: Rule) -> float:
     scores the real duplicates below any usable threshold. Dividing by the
     smaller set asks the right question: is the shorter rule contained in the
     longer one?
+
+    **A rule of one or two content words is not a home, and before 2026-09-05 it was
+    the best-scoring one available.** The overlap coefficient divides by the smaller
+    set, so a rule reducing to `{check}` — which is all `prompt: "Check in."` in
+    `config/templates/scheduler.yaml` amounts to after stopwords — scores a perfect
+    1.000 against *any* rule mentioning a check-in, and out-ranks every genuine match
+    permanently. That is what refused Mike's check-in instruction on 2026-09-05 while
+    citing a line reading `prompt: "Check in."` as the place the rule was held.
+
+    Below the floor the coefficient answers the wrong question — "is this common word
+    present" rather than "is the shorter rule contained in the longer" — so it falls
+    back to Jaccard, which penalises the length gap exactly as intended here and puts
+    such a pair well under any usable threshold. Three, because two content words is
+    still a bare subject and a verb; genuine short rules ("Do not tell the user to
+    enjoy things" → four content words) are untouched.
     """
     if not a.words or not b.words:
         return 0.0
-    return len(a.words & b.words) / min(len(a.words), len(b.words))
+    inter = len(a.words & b.words)
+    if min(len(a.words), len(b.words)) < _OVERLAP_MIN_WORDS:
+        return inter / len(a.words | b.words)
+    return inter / min(len(a.words), len(b.words))
 
 
 def contradicts(a: Rule, b: Rule) -> bool:
@@ -234,12 +257,31 @@ def _rel(path: Path) -> str:
 def shared_rules(persona: str | None = None) -> list[Rule]:
     """Every rule that applies beyond a single persona file.
 
-    Agent files (all personas) plus scheduler prompts (this persona, and the
-    template every new persona inherits). These are what a new personal
-    preference might be restating.
+    Agent files and the shared `config/modules/*.md` conduct (all personas), plus
+    scheduler prompts (this persona, and the template every new persona inherits).
+    These are what a new personal preference might be restating.
+
+    **`config/modules/*.md` was missing until 2026-09-05, and the corpus had gone stale
+    rather than been written wrong.** It covered agent files because that is where the
+    scheduled-session conduct lived — until the 2026-08-27 synthesizer audit moved it out
+    to `config/modules/synthesizer_scheduled_sessions.md`, and nothing moved the corpus
+    with it. The failure is not that a rule was missed but that a *worse* partner was then
+    cited as its home: on 2026-09-05 `write_persona` refused Mike's check-in instruction
+    naming `config/templates/scheduler.yaml:52`, a line reading `prompt: "Check in."`,
+    while the rule it was actually restating sat in the module file this glob now reads.
+    A refusal the user cannot verify is worse than no refusal, because it sends them to
+    edit the wrong file.
+
+    Same consequence for `tools/rule_audit.py`, which sweeps this corpus every morning and
+    shared the blind spot.
     """
     rules: list[Rule] = []
     for f in sorted((ROOT / "config" / "agents").glob("*.md")):
+        rules += read_bold_rules(f)
+    # Same bolded-imperative convention as the agent files, which is why the same reader
+    # works. Only `*.md` — `config/modules/` also holds routing and spend YAML, which is
+    # configuration rather than instruction and has no business in a rule corpus.
+    for f in sorted((ROOT / "config" / "modules").glob("*.md")):
         rules += read_bold_rules(f)
     if persona:
         rules += read_scheduler_prompts(

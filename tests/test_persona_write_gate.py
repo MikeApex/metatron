@@ -375,3 +375,39 @@ if __name__ == "__main__":
     print()
     print(f"{len(failures)} failed" if failures else "all passed")
     sys.exit(1 if failures else 0)
+
+
+def test_a_one_word_rule_is_never_a_home():
+    """`prompt: "Check in."` scored 1.000 against anything mentioning a check-in.
+
+    The overlap coefficient divides by the smaller set, so a rule reducing to a single
+    content word matched everything and out-ranked every genuine candidate. On
+    2026-09-05 that refused a real user instruction while citing a line reading
+    `prompt: "Check in."` as the rule's home — a refusal Mike could not verify, and one
+    that would have sent him to edit the wrong file.
+    """
+    from core.rule_classes import Rule, similarity
+    tiny = Rule("Check in.", "config/templates/scheduler.yaml", "scheduler", 52)
+    real = Rule("During check-ins with nothing urgent to share, use the opportunity "
+                "to ask what is going on.", "<new>", "persona")
+    assert len(tiny.words) == 1, tiny.words
+    score = similarity(real, tiny)
+    assert score < 0.4, f"a one-word rule still out-ranks everything: {score}"
+
+
+def test_the_floor_leaves_genuine_short_rules_alone():
+    """Three content words, not more: a real short rule must still be able to be a home."""
+    from core.rule_classes import Rule, similarity
+    short = Rule("Do not tell the user to enjoy things.", "config/agents/synthesizer.md",
+                 "agent", 82)
+    restated = Rule("Never tell me to enjoy something.", "<new>", "persona")
+    assert len(short.words) >= 3, short.words
+    assert similarity(restated, short) >= 0.4, similarity(restated, short)
+
+
+def test_shared_rules_covers_the_modules_conduct():
+    """The corpus went stale when the scheduled-session conduct moved out of the agent
+    files in the 2026-08-27 audit — nothing moved the corpus with it."""
+    from core.rule_classes import shared_rules
+    sources = {r.source for r in shared_rules(None)}
+    assert any("config/modules/" in s for s in sources), sorted(sources)
