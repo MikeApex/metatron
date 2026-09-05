@@ -73,32 +73,7 @@ back-tagging the rest is `[DB-0815-10]`.
 > counts, and all three were single events; every one of them was also **older than the code that
 > fixed it**. They were removed on 2026-08-18. Confirm the count *and* compare the evidence date
 > against `git log` before promoting anything from here.
-*(empty — triaged 2026-09-02 by Red session ④'s capstone review, all eight dispositions Mike's;
-evidence in `archive/backlog_closed_2026-09.md` § Inbox triage 2026-09-02)*
-
-
-- **A `quick` request can send the clinical agents to the cheap model, because "non-sensitive" is
-defined as "not marked local" and the cloud routing file marks nothing local.**
-`core/router.py:98` reads non-sensitive as *absence of* `local: true`, and `routing_cloud.yaml`
-sets `local: true` on nothing — so the `:22` comment *"(non-sensitive agents only)"* excludes
-nothing at all, and a `quick_override` call to `mental_wellbeing` or `physical_health` runs on
-the **bulk** tier rather than the reasoning tier.
-
-Pre-existing, not introduced by any recent change. It matters more than it did because A4
-safety testing is suspended (ROADMAP § 0 pt 8), so nothing is currently exercising the clinical
-flags on any model, let alone on the bulk one.
-
-**Needs Mike's word on the fix direction, which is why it has not been actioned:** mark the
-sensitive agents explicitly in `routing_cloud.yaml` (narrow, honest, but re-states a list that
-already exists elsewhere and can drift), or invert the router's default so unknown-tier agents
-are treated as sensitive (fail-closed, matches the project's standing posture, but may make
-`quick` stop working for agents that legitimately want it). Recommendation: the router
-inversion, because a routing file that forgets to mark a new sensitive agent is the same class
-of silent failure as the one being fixed.
-
-*carried in SESSION.md as an unfiled ⚠ since session ⑥ (2026-09-03) and filed 2026-09-03 by
-session ⑦ during its close, because an item recorded only in a primer paragraph is one primer
-rewrite away from being lost — and the primer was over its ceiling holding it*
+*(empty — last triaged 2026-09-05; evidence in `archive/backlog_closed_2026-09.md`)*
 
 ---
 
@@ -405,41 +380,6 @@ the condition has not arrived, push the date rather than closing the item.
 
 ### Decisions — each needs one answer from Mike, not effort
 
-- **[DB-0903-01] The same appointment can be raised twice, when one mention names the place and
-  the other does not.** Seen live 2026-09-03 in the run that closed `[DB-0822-09]`: Iva's
-  15 September dental appointment sits in the horizon ledger as **two entries** — *"Dental
-  surgeon consultation - Iva Diamond"* (filed from the calendar, no venue) and *"Dental
-  Appointment (John Doran)"* (filed from the inbox, venue *Bupa Dental Care Crossrail*). One
-  appointment, so Mike hears about it twice.
-  **Cause, and why it is not a coding slip.** `tools/horizon.py` identifies a finding by
-  `(date, venue)` as a sorted token set — deliberately a key comparison and not a similarity
-  judgement, because that is what makes the ledger's dedupe defensible. When `venue` is empty
-  the key falls back to the title, so a venue-less filing and a venued filing of the same event
-  key differently and cannot meet. The fallback is doing its job; the two filings simply have no
-  field in common to match on.
-  **Bounded, which is why this is Later and not Now.** Each entry is capped at two offers, so
-  the worst case is one real appointment mentioned twice rather than the daily repetition
-  `[DB-0822-09]`'s ledger was built to prevent. Nothing is lost and nothing false is said.
-  **The decision, and it is a real fork — not "go and fix it".**
-  1. **Accept it.** Duplicates are rare (they need the same event filed from two sources with
-     asymmetric venue data) and the cost is one extra sentence.
-  2. **Match on date plus title-token overlap when one side has no venue.** Closes this case,
-     and is exactly the semantic guessing `[DB-0827-07]` was closed to keep out of this
-     codebase — two different 15 September appointments sharing the word "dental" would merge,
-     and a merge silently deletes a finding, which is a worse failure than a duplicate.
-  3. **Require `venue` whenever `date` is present**, refusing the filing otherwise. Deterministic
-     and cheap, but it discards real findings that genuinely have no place — a deadline, a
-     payroll transfer, a form to return. Three of the five findings in the closing test had no
-     venue.
-  **Recommendation: (1), and revisit only if Mike actually notices a duplicate in ordinary use.**
-  Option 2 trades a visible, harmless fault for an invisible, harmful one; option 3 breaks the
-  undated/unvenued findings that are a third of real volume. The limit is already recorded in
-  `archive/backlog_closed_2026-09.md` under `[DB-0822-09]`, so nothing is lost by leaving it.
-  @kind: bug
-  @session: Mike to pick 1, 2 or 3 — recommendation is 1 (accept), and the item closes on that
-  answer with no build
-  *filed 2026-09-03 at Mike's instruction, from the live evidence that closed `[DB-0822-09]`*
-
 - **[DB-0810-11] Where should code replace model judgment?** Raised by Mike 2026-08-05, never given
   its own session. Three strands: (a) deterministic lookups feeding agents evidence instead of asking
   them to recall — `tools/scheduling.py` is the worked example; (b) code that removes agent calls
@@ -532,7 +472,30 @@ with a date.** Nothing new joins this group open-ended.*
   **Next, and it needs no one:** dump confidence against correctness for the `confidence` variant,
   pick the threshold from the curve, re-run `--runs 5`. Then (d)'s scoped `/code-review`, then the
   flip decision.
-  @waiting: threshold sweep, then Mike's flip decision citing the eval output
+  **⚠ SWEEP RUN 2026-09-05 (Opus worker, `dddd7fe`) — the confidence floor cannot open the gate;
+  the extractor stays OFF, now on evidence.** The lowest threshold with zero worst-run
+  `action_required` false negatives is **0.95**, which demotes 28/33 (85%) to `unclear` — the
+  hand-the-user-back-their-inbox failure the dial exists to prevent. Every affordable threshold
+  still silences an obligation: worst-run FN 2 at ≤0.80, 1 at 0.85–0.90. Message-level cause: one
+  `action_required` fixture is misread as `correspondence` at confidence **exactly 0.80 in all
+  five runs** — the same value the correct calls report, so no threshold separates them; a second
+  is *more* confident when wrong (0.9) than right (0.8). With the floor off the model said
+  `unclear` **0 times in 33, all five runs** — Mike's "unclear needs to come up more for this to
+  have any validity" objection is confirmed literally. Code tier re-measured 1/33 under the
+  eval's designed empty ledger (the live mailbox's 9/33 with five taught rules stands — different
+  measurement, not a contradiction). Confidence omission re-measured at **0/160** clean answers:
+  `effa68a` closed that hole completely, so `require_confidence` costs nothing.
+  **The finding that outlives the item: three of five sweep runs were void and looked perfect.**
+  The Mac spend guard's in-process 60-sessions/hour stop refused runs 3–5 wholesale;
+  `extract()` scores a refusal as `unclear`, `unclear` passes the gate, so the runner printed
+  0 gate misses for runs the model never saw. This deterministically retro-explains the 09-04
+  "run 3 collapsed identically" result — that data is void. Runner now returns a distinct
+  INVALID on guard refusal and gained `--dump-confidence` (both additive); re-run as five
+  single-run processes. Guard untouched. Report:
+  `tests/intake_confidence_sweep_2026-09-05_gemini-flash-lite.md`.
+  @session: the flip question is answered (no flip). What remains is direction, Mike's call:
+  teach `rules:` to lift the code tier (already 9/33 live with five rules), grow the corpus and
+  re-measure, or re-try the extractor on a stronger tier — the confidence lever alone is spent.
   @kind: feature
 
   `due: 2026-09-09` — parked with a date at the capstone review (Mike, 2026-09-02): the sweep has
@@ -592,12 +555,30 @@ with a date.** Nothing new joins this group open-ended.*
   item already recorded), so `added` refreshes on rewrite and **a rephrased thread can never
   age**. The fix is a thread-identity decision — fuzzy matching is the semantic-guessing
   class `[DB-0827-07]` was closed to keep out, so this is a fork for Mike, not a quiet build.
-  @session: thread identity across rewording — accept that only exact-text-stable threads
-  expire, or design a bounded identity key (e.g. date+entity tokens, the `[DB-0903-01]` fork's
-  sibling). Measurement half is done; the due date below now times the decision, not the read.
+  **✅ Ruling given 2026-09-05 (Mike, in session, on the due date):** a rewording by **Metatron
+  itself** (the Synthesizer's routine re-statement) must **preserve** the thread's original
+  `added` date; a rewording driven by **user conversation or flagging** refreshes it. This is
+  the grace design's own principle — the user engaging is the signal, the Synthesizer resending
+  is noise — applied to identity. Build dispatched same day to an Opus worker.
+  **✅ BUILT and MERGED same day (`a4b64b5`, merge `33dd624`) — NOT yet deployed.** Identity is
+  a bounded anchor-token key (stopwords + a short generic-action/time list dropped, light
+  stemming, digits kept; same thread = identical sets or ≥2 shared anchors — a **count**, not a
+  ratio, because a ratio loosens exactly on the short generic threads where the recorded false
+  positive lives). The dentist/mom pair stays two threads, asserted directly. Wrong-direction
+  choice is explicit: over-merge, because the older birthdate winning means an early expiry
+  into a recoverable archive, while under-merge is the immortal-thread disease itself. The
+  audit line gained a fourth field `reworded` (additive; nothing folded). One old test asserted
+  the bug ("reworded thread appears fresh") and was inverted with the reasoning kept, not
+  deleted. 16 new checks + expiry + audit suites pass post-merge in the main tree; a
+  before/after probe shows a daily-reworded thread expiring where on HEAD it sat permanently
+  one day old. Known stale wording left in place (out of manifest): `core/translate.py`'s
+  header still says exact-text matching.
+  @waiting: `./deploy.sh` (Mike), then the live confirm — a Synthesizer-reworded thread keeping
+  its birthdate in `context_audit.jsonl` within days, and first real expiries by ~09-15
   @kind: bug
-  *filed 2026-08-14 by Mike · timestamp half closed 2026-08-15 · measured 2026-09-03*
-  `due: 2026-09-05`
+  *filed 2026-08-14 by Mike · timestamp half closed 2026-08-15 · measured 2026-09-03 · ruling
+  2026-09-05, build dispatched*
+  `due: 2026-09-12`
 
 ### Unbuilt — real capability that does not exist
 

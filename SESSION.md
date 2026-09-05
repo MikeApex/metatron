@@ -1,28 +1,30 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-09-05 (**forwards are seen through, a code review found the gate did not hold,
-and the wisdom store went 80 → 23**). Intake can now read the original sender out of a
-self-forward — 18 of 33 real messages were forwards, so the rules, ledger and headers all
-described the wrong person. **A scoped `/code-review` then found two attacker-reachable
-bypasses in that gate**, both fixed and regression-tested; 20 passing tests had covered only
-the paths I thought of. **Separately, found by testing: a rule with an unrecognised `match:`
-key matched EVERY message and silenced the whole inbox** — `sender_contains` is the plausible
-typo, being `teach_intake`'s own parameter name. Both commits deployed by Mike in-session.
-Detail: `archive/PROJECT_LOG.md` § 2026-09-05.*
+*Updated: 2026-09-05, second (**attack day: the deploy debt cleared, three rulings, thread
+identity built, the confidence lever spent**). Mike redeployed at 09:03 — VM verified on
+`3a01894`, 3.8 Flash live in all six slots, scp-drift gone. `/backlog attack` found all four
+`## Now` items `@waiting` on dated confirms, so the day ran from `## Later` on Mike's word, via
+two Opus workers. **Thread identity `[DB-0814-02]` is built and merged (`33dd624`) under Mike's
+ruling** — Metatron's own rewording preserves a thread's birthdate; user engagement refreshes it
+— **and owes `./deploy.sh`** (`tools/context_tracker.py`). **The confidence sweep spent its
+lever:** no viable threshold exists for the extractor gate, so it stays off on evidence, and
+three of five original runs turned out void (spend-guard refusals scored as `unclear` = gate
+pass — 09-04's "run 3 collapse" retro-explained). Detail: `archive/PROJECT_LOG.md`
+§ 2026-09-05, second.*
 
-***Next: `[DB-0820-03]`'s remaining two steps, neither needing Mike.*** Re-sweep the confidence
-threshold now the production agent file actually asks for the field (it never did — enabling the
-floor would have demoted every message), then the scoped review of the model-tier code is
-**done**, so what is left is the flip decision itself. **Finding 5 should close first:** a demoted
-result is discarded whole by `sweep()`, so the domain and importance the demotion exists to
-preserve are thrown away.
+***Next, all Mike:*** **(1)** `./deploy.sh` for the thread-identity build and the eval runner's
+INVALID detection; **(2)** the extractor **direction** decision `[DB-0820-03]` — teach `rules:`
+(live mailbox already 9/33 with five), grow the corpus, or a stronger tier; the flip question
+itself is answered (no flip); **(3)** the Red-tier prompt for scheduler day-name validation
+`[DB-0903-02]`, delivered in the 09-05 chat, ready to paste.
 
-*⚠ **The intake extractor stays off. Mike ruled against relaxing its gate** — it currently fails
-on any non-`unclear` answer, stricter than its own docstring, and narrowing it to `digest`/`silent`
-was declined: *"unclear needs to come up more for this to have any validity."* **A single run
-cannot gate it**: identical corpus and agent file gave 1, 3, 1, 1, 2 false negatives, so `--runs N`
-now scores the **worst** run. Counterargue is ruled out — it raised doubt *and* degraded accuracy.
-**Full evidence lives in `DEV_BACKLOG.md` `[DB-0820-03]`; do not re-derive it here.***
+*⚠ **The intake extractor stays off — now on measured evidence, not just the gate.** The lowest
+zero-false-negative threshold (0.95) demotes 85% of the corpus to `unclear`; every affordable
+threshold silences an obligation on the worst run, and with the floor off the model said
+`unclear` 0/33 in all five runs — Mike's validity objection confirmed literally. The three
+`config/agents/intake_extractor_{counterargue,confidence,both}.md` variants are **now deletable**
+(Red-tier edit, needs Mike present). **Full evidence: `DEV_BACKLOG.md` `[DB-0820-03]`; do not
+re-derive it here.***
 
 *✅ **The wisdom store's three intake classes are closed, and one is not.** Corroboration (an
 `observed` fact waits for a second sighting in 14 days — the sender ledger's own bar, one file
@@ -52,13 +54,14 @@ deferred into Mark 2 by Mike on 09-04** — do not re-propose it as a standalone
 **`ROADMAP.md` is deliberately NOT updated and still reads as though A8 is live work** — Mike
 handles that and the Mark 1 decommission condition manually. Known, not an oversight.*
 
-*⚠ **Thread expiry is structurally dead — measured 2026-09-03, decision owed, was due 09-05.**
-111 audited writes, 0 expiries; the Synthesizer's rewording refreshes a thread's `added` date, so
-a rephrased thread can never age. Fork marked `@session` in `[DB-0814-02]`. Also open: B4's
-max-chain-depth needs the 3-round limit in code first (`[DB-0804-02]`); `[DB-0903-01]`'s
-horizon-dedupe fork closes on one answer (rec: accept); `[DB-0902-01]`'s week clock runs to 09-12;
-the one Inbox item (clinical agents reachable on the **bulk** tier via `quick`) needs Mike's ruling
-against the 08-09 "routing stays as-is" decision. `CLAUDE.md` is **298/300**;
+*⚠ **Thread expiry is fixed in code, not yet in production.** Mike's 09-05 ruling (Metatron
+rewording preserves the birthdate; user engagement refreshes) is built and merged; after deploy,
+confirm birthdates survive rewording in `context_audit.jsonl` (new fourth field `reworded`) and
+expect first real expiries ~09-15 — status in `[DB-0814-02]`. Also open: B4's max-chain-depth
+needs the 3-round limit in code first (`[DB-0804-02]`); `[DB-0902-01]`'s week clock runs to
+09-12; the other three `## Now` confirms fall due 09-10. Closed 09-05, do not re-raise:
+`[DB-0903-01]` (duplicates accepted) and the clinical-agents-via-`quick` Inbox item (accepted
+risk, reaffirming 08-09 — noted at ROADMAP § A7 check 8). `CLAUDE.md` is **298/300**;
 **`.claude/rules/deploy.md` is 131/100 and still owes a pass.***
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and

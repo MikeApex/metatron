@@ -643,3 +643,32 @@ before the extractor flip — tracked in `ROADMAP.md` § B1b, not re-filed here.
 
 Commit `effa68a`, deployed by Mike in-session. Enabled for `mike` in
 `config/personas/mike/intake.yaml`.
+
+### `[DB-0903-01]` The same appointment raised twice when only one filing names the venue — **CLOSED on Mike's answer, no build**
+
+The fork was put to Mike 2026-09-05 with the recommendation to accept, and he accepted. One
+appointment filed from two sources with asymmetric venue data keys differently in
+`tools/horizon.py`'s deliberate `(date, venue)` token-set comparison, so it can be offered
+twice — bounded at two offers per entry, nothing lost, nothing false said. The alternatives
+were rejected for the reasons filed: title-token overlap is the semantic-guessing class
+`[DB-0827-07]` was closed to keep out (a wrong merge silently deletes a finding, worse than a
+duplicate), and requiring `venue` beside `date` discards the undated/unvenued findings that
+were 3 of 5 in `[DB-0822-09]`'s closing test.
+
+**Re-open condition, stated at close:** Mike actually noticing duplicates in ordinary use.
+The limit remains recorded under `[DB-0822-09]`'s close in this file.
+
+### Inbox: `quick` can route the clinical agents to the bulk tier — **CLOSED as accepted risk, Mike's ruling 2026-09-05**
+
+`core/router.py:98` reads non-sensitive as *absence of* `local: true`; `routing_cloud.yaml`
+marks nothing local, so the complexity guard's "(non-sensitive agents only)" excludes nothing
+and a `quick_override` to `mental_wellbeing`/`physical_health` runs on the bulk tier. Put to
+Mike 2026-09-05 with three directions (router inversion recommended, explicit marking,
+leave as-is). **He chose leave-as-is — a reaffirmation of the 2026-08-09 "routing stays as-is"
+decision with this consequence now explicitly known and recorded.**
+
+**What this acceptance carries, so it is not rediscovered as a surprise:** with A4 safety
+testing suspended (ROADMAP § 0 pt 8), the clinical flags are unverified on *both* tiers until
+the before-Alpha re-run; the 2026-08-18 and 08-27 `--complexity quick` gate passes (3/3) were
+on the Flash-Lite path and predate the 09-01/09-04 model hops. The before-Alpha A4 run remains
+the only clock, and ROADMAP § A7 check 8's flag notes this reaffirmation.

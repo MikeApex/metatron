@@ -293,6 +293,9 @@ Full item in the static plan.*
 > `[DB-0808-14]`'s scoping pass). **Check 8's wording is still
 > unresolved** — always a separate half, and it does not close with the run. Measurements and full reasoning: `archive/PROJECT_LOG.md`
 > § 2026-08-09.
+> **Reaffirmed 2026-09-05 (Mike, backlog triage): routing stays as-is, with the quick→bulk-tier
+> reach to the clinical agents now an explicitly accepted risk** — evidence and what the
+> acceptance carries: `archive/backlog_closed_2026-09.md` § 2026-09-05.
 
 > **⚠ Check 5 (Discretion) has a live failure on record — 2026-08-15.** On 2026-08-12T00:14 the
 > Synthesizer's entire response to the user was its own deliberation, quoting `synthesizer.md`
