@@ -14,9 +14,15 @@ test below (`test: byte-identical resend with no user engagement expires`) is th
 version of this suite could not have caught, because it never modelled "resent, but the user
 never engaged it."
 
-The corrected rule: a thread past the cutoff is archived unless (1) the user's own turn engages
-it (content-word overlap, `_user_engages_thread`), or (2) its wording materially changed (which
-needs no special code — see the module comment in tools/context_tracker.py).
+The corrected rule: a thread past the cutoff is archived unless the user's own turn engages it
+(content-word overlap, `_user_engages_thread`).
+
+A SECOND correction, 2026-09-05: there used to be a second escape — "its wording materially
+changed" — and it was the same mistake one level down. It rested on exact-text identity, and the
+Synthesizer rewords the list it re-emits every response, so in 20 days of production nothing ever
+grew old enough to expire. Rewording by Metatron now preserves a thread's date; only the user
+refreshes it. The block below that asserted the old behaviour is inverted rather than deleted.
+The ruling's own coverage lives in tests/test_thread_identity.py.
 
 Run:  python3 tests/test_open_thread_expiry.py
 Exit: 0 all pass, 1 on any failure.
@@ -186,10 +192,16 @@ def main() -> int:
             not _user_engages_thread("bookstore P&L review scheduled for Thursday", None),
         )
 
-        # --- Grace signal 2: materially changed wording resets the clock ------------------
-        # No special-case code implements this — it falls out of _merge_open_threads' existing
-        # exact-text carry-forward: reworded text does not match the stored entry, so it is
-        # treated as brand new and stamped today. See the module comment for the reasoning.
+        # --- Grace signal 2 REVERSED: rewording alone no longer resets the clock ----------
+        # This block asserted the OPPOSITE until 2026-09-05 ("reworded thread appears fresh,
+        # stamped today"), and that assertion was the bug. Grace signal 2 rested on exact-text
+        # identity, so any rewording read as a brand-new thread — and the Synthesizer rewords the
+        # whole list every response. Measured over 20 days: 111 writes, 0 expiries, every live
+        # thread stamped with the current day. Mike's ruling: a rewording by Metatron preserves
+        # the thread's original date; only the USER engaging it refreshes. Full reasoning in the
+        # THREAD IDENTITY block in tools/context_tracker.py; the ruling's own coverage is in
+        # tests/test_thread_identity.py. Kept here, inverted, so the old expectation cannot
+        # quietly come back.
         shutil.rmtree(persona_data_dir(), ignore_errors=True)
         write_context_tracker(["bookstore P&L review scheduled for Thursday"], [], [])
         _age_thread(
@@ -202,10 +214,8 @@ def main() -> int:
         state = read_context_tracker()
         open_texts = {t["text"]: t for t in state["open_threads"]}
         check(
-            "reworded thread appears fresh, stamped today",
-            "bookstore P&L review scheduled for next Tuesday instead" in open_texts
-            and open_texts["bookstore P&L review scheduled for next Tuesday instead"]["added"]
-            == today,
+            "a past-cutoff thread the user never engaged does NOT survive by being reworded",
+            open_texts == {},
             str(open_texts),
         )
         raw = json.loads(tracker_path.read_text())
@@ -213,6 +223,26 @@ def main() -> int:
         check(
             "the old (now-superseded) wording is archived, since it had crossed the cutoff",
             "bookstore P&L review scheduled for Thursday" in archived_texts,
+        )
+        # ...and within the window, a rewording is carried forward on its ORIGINAL date rather
+        # than restarting the clock. This is the case the measurement caught in production.
+        shutil.rmtree(persona_data_dir(), ignore_errors=True)
+        write_context_tracker(["bookstore P&L review scheduled for Thursday"], [], [])
+        _age_thread(
+            tracker_path, "bookstore P&L review scheduled for Thursday",
+            _OPEN_THREAD_EXPIRY_DAYS - 2,
+        )
+        expected_added = (
+            date.today() - timedelta(days=_OPEN_THREAD_EXPIRY_DAYS - 2)
+        ).isoformat()
+        write_context_tracker(
+            ["bookstore P&L review scheduled for next Tuesday instead"], [], [],
+        )
+        state = read_context_tracker()
+        check(
+            "a rewording inside the window keeps the original added date",
+            [t["added"] for t in state["open_threads"]] == [expected_added],
+            str(state["open_threads"]),
         )
 
         # --- Bare-string legacy data reads without error -----------------------------------
