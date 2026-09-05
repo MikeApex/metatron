@@ -1,21 +1,18 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-09-05, second (**attack day: the deploy debt cleared, three rulings, thread
-identity built, the confidence lever spent**). Mike redeployed at 09:03 — VM verified on
-`3a01894`, 3.8 Flash live in all six slots, scp-drift gone. `/backlog attack` found all four
-`## Now` items `@waiting` on dated confirms, so the day ran from `## Later` on Mike's word, via
-two Opus workers. **Thread identity `[DB-0814-02]` is built and merged (`33dd624`) under Mike's
-ruling** — Metatron's own rewording preserves a thread's birthdate; user engagement refreshes it
-— **deployed same day, live in production**. **The confidence sweep spent its lever:** no
-viable threshold exists for the extractor gate, so it stays off on evidence, and three of five
-original runs turned out void (spend-guard refusals scored as `unclear` = gate pass — 09-04's
-"run 3 collapse" retro-explained). Detail: `archive/PROJECT_LOG.md` § 2026-09-05, second and
-third.*
+*Updated: 2026-09-05, fourth (**the scheduler's silent day-name typo is closed; four deploys
+verified across the day**). A mistyped `days:` value is now refused out loud instead of
+disabling a job forever — the job is **skipped loudly**, the daemon and its twenty siblings
+carry on, and the error repeats hourly rather than scrolling out of sight (`7118972`,
+`28c2f21`; `[DB-0903-02]` closed). Earlier today: thread identity `[DB-0814-02]` built,
+deployed and **live in production** — expiry now runs against real traffic; the extractor's
+direction ruled **teach `rules:`**, with the walkthrough prompt already written; the confidence
+sweep spent its lever (no viable threshold exists, so the gate stays off on evidence). Detail:
+`archive/PROJECT_LOG.md` § 2026-09-05, second through fourth.*
 
-***Next, both Mike-gated sessions with prompts already written:*** **(1)** the rules-teaching
-walkthrough for intake `[DB-0820-03]` —
-`archive/handoffs/2026-09-05-rules-teaching-walkthrough-prompt.md`; **(2)** the Red-tier
-scheduler day-name validation `[DB-0903-02]` — prompt in the 09-05 chat, ready to paste.
+***Next, one Mike-gated session, prompt already written:*** the rules-teaching walkthrough for
+intake `[DB-0820-03]` — `archive/handoffs/2026-09-05-rules-teaching-walkthrough-prompt.md`.
+**Nothing is awaiting deploy.**
 
 *⚠ **The intake extractor stays off — now on measured evidence, not just the gate.** The lowest
 zero-false-negative threshold (0.95) demotes 85% of the corpus to `unclear`; every affordable
@@ -53,15 +50,15 @@ deferred into Mark 2 by Mike on 09-04** — do not re-propose it as a standalone
 **`ROADMAP.md` is deliberately NOT updated and still reads as though A8 is live work** — Mike
 handles that and the Mark 1 decommission condition manually. Known, not an oversight.*
 
-*⚠ **Thread expiry is fixed in code, not yet in production.** Mike's 09-05 ruling (Metatron
-rewording preserves the birthdate; user engagement refreshes) is built and merged; after deploy,
-confirm birthdates survive rewording in `context_audit.jsonl` (new fourth field `reworded`) and
-expect first real expiries ~09-15 — status in `[DB-0814-02]`. Also open: B4's max-chain-depth
-needs the 3-round limit in code first (`[DB-0804-02]`); `[DB-0902-01]`'s week clock runs to
-09-12; the other three `## Now` confirms fall due 09-10. Closed 09-05, do not re-raise:
-`[DB-0903-01]` (duplicates accepted) and the clinical-agents-via-`quick` Inbox item (accepted
-risk, reaffirming 08-09 — noted at ROADMAP § A7 check 8). `CLAUDE.md` is **298/300**;
-**`.claude/rules/deploy.md` is 131/100 and still owes a pass.***
+*⚠ **Thread expiry is live and now owes one observation, not a deploy.** Confirm birthdates
+survive Metatron's own rewording in `context_audit.jsonl` (new fourth field `reworded`); first
+real expiries expected ~09-15 — status in `[DB-0814-02]`. Also open: B4's max-chain-depth needs
+the 3-round limit in code first (`[DB-0804-02]`); `[DB-0902-01]`'s week clock runs to 09-12; the
+other three `## Now` confirms fall due 09-10. Closed 09-05, do not re-raise: `[DB-0903-01]`
+(duplicates accepted), the clinical-agents-via-`quick` Inbox item (accepted risk, reaffirming
+08-09 — noted at ROADMAP § A7 check 8), and `[DB-0903-02]` (scheduler day-name validation,
+verified on the VM). `CLAUDE.md` is **298/300**; **`.claude/rules/deploy.md` is 131/100 and
+still owes a pass.***
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
