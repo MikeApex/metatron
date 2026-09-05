@@ -56,6 +56,14 @@ FIXTURES_DIR = Path(__file__).parent / "intake_fixtures"
 # Filled by _score() so --runs can tabulate without re-plumbing every return value.
 _LAST: dict = {"misses": 0, "domain_hit": 0, "domain_scored": 0, "unclear": 0}
 
+# --dump-confidence (2026-09-05). The confidence floor is a dial with a cost on both
+# sides — too low silences obligations, too high hands the user back their inbox — and
+# picking a number for it needs the model's self-reported confidence PER MESSAGE, not an
+# aggregate. `extract()` already returns the field; nothing was recording it. Rows are
+# appended only when the flag is set, so the default path is unchanged.
+_CONFIDENCE_ROWS: list[dict] = []
+_DUMP: dict = {"on": False, "run": 1}
+
 # The categories the corpus may label with — kept in lockstep with
 # config/templates/intake.yaml. A label outside this set is a fixture error.
 CATEGORIES = {
@@ -124,6 +132,14 @@ def classify_with_extractor(env: Envelope, cfg: dict) -> tuple[str, str | None]:
         return category, domain
     from tools.intake_extract import extract, has_domain_opinion   # Phase 3 module
     found = extract(env)
+    if _DUMP["on"]:
+        _CONFIDENCE_ROWS.append({
+            "run": _DUMP["run"], "file": env.native_id,
+            "category": found.get("category"),
+            "confidence": found.get("confidence"),
+            "domain": (found["domain"] if has_domain_opinion(found) else "_unresolved"),
+            "important": found.get("important"),
+        })
     if found["category"] == "unclear":
         return "unclear", domain
     resolved = (found["domain"] if has_domain_opinion(found)
@@ -159,6 +175,10 @@ def main() -> int:
     parser.add_argument("--variant", default="",
                         help="agent file to test instead of intake_extractor "
                              "(e.g. intake_extractor_counterargue)")
+    parser.add_argument("--dump-confidence", default="", metavar="PATH",
+                        help="write one JSONL row per model-answered message "
+                             "(run, file, category, confidence, domain) — the raw "
+                             "material for choosing extractor.confidence_threshold")
     args = parser.parse_args()
 
     fixtures = load_fixtures()
@@ -169,15 +189,28 @@ def main() -> int:
         os.environ["METATRON_INTAKE_EXTRACTOR_AGENT"] = args.variant
         print(f"variant agent: {args.variant}")
 
+    _DUMP["on"] = bool(args.dump_confidence and args.extractor)
+    if args.dump_confidence and not args.extractor:
+        print("--dump-confidence needs --extractor: the code tier reports no confidence.")
+        return 2
+
     from core.persona import persona_scope
     with persona_scope(args.persona):
         if args.runs <= 1:
-            return _score(fixtures, args)
+            rc = _score(fixtures, args)
+            _write_confidence_dump(args)
+            return rc
 
         worst, summaries = 0, []
         for i in range(1, args.runs + 1):
             print(f"\n{'=' * 62}\nRUN {i} of {args.runs}\n{'=' * 62}")
+            _DUMP["run"] = i
             rc = _score(fixtures, args)
+            _write_confidence_dump(args)   # after every run: a crash mid-sweep
+                                           # must not cost the runs already paid for
+            if rc == 3:
+                summaries.append((i, None, 0, 0, 0))   # INVALID — never scored
+                continue
             summaries.append((i, _LAST["misses"], _LAST["domain_hit"],
                               _LAST["domain_scored"], _LAST["unclear"]))
             worst = max(worst, rc)
@@ -186,16 +219,76 @@ def main() -> int:
         print(f"{'run':>4} {'gate misses':>12} {'domain':>10} {'said unclear':>13}")
         for i, misses, dh, ds, unc in summaries:
             dom = f"{dh}/{ds}" if ds else "-"
-            print(f"{i:>4} {misses:>12} {dom:>10} {unc:>13}")
-        worst_misses = max(s[1] for s in summaries)
-        best_misses = min(s[1] for s in summaries)
+            shown = "INVALID" if misses is None else misses
+            print(f"{i:>4} {shown:>12} {dom:>10} {unc:>13}")
+
+        # An INVALID run is excluded, not counted as a clean zero. Averaging a refused
+        # run into the gate is exactly how three void runs once read as three passes.
+        scored = [s for s in summaries if s[1] is not None]
+        if not scored:
+            print("\nNO RUN WAS SCORED — every run hit the spend guard. Re-run each "
+                  "pass as its own process.")
+            return 3
+        if len(scored) < len(summaries):
+            print(f"\n⚠ {len(summaries) - len(scored)} of {args.runs} runs INVALID and "
+                  f"excluded — the gate below rests on {len(scored)} run(s).")
+        worst_misses = max(s[1] for s in scored)
+        best_misses = min(s[1] for s in scored)
         print(f"\ngate misses: worst {worst_misses}, best {best_misses}")
         if worst_misses != best_misses:
             print("  ⚠ the gate's answer is not stable across identical runs — "
                   "the worst run is the honest one")
         print(f"unclear rate: "
-              f"{sum(s[4] for s in summaries)}/{len(fixtures) * args.runs} across all runs")
+              f"{sum(s[4] for s in scored)}/{len(fixtures) * len(scored)} "
+              f"across {len(scored)} scored run(s)")
         return 1 if worst_misses else 0
+
+
+def _guard_state(n: int) -> tuple[bool, str]:
+    """`(safe_to_score, message)` — will the spend guard refuse part of this run?
+
+    ADDED 2026-09-05, AFTER A SWEEP SCORED THREE VOID RUNS AS PASSES. The rate guard
+    counts every extractor call as a pipeline session in an in-process deque, and stops
+    at `stop_sessions_per_hour` (60). A `--runs 5` sweep over 33 fixtures asks for 165
+    in one process, so runs 3-5 were refused wholesale. `extract()` turns any failure
+    into `unclear` by design, `unclear` counts as a gate PASS by design, and the two
+    correct behaviours compose into a runner that printed **0 gate misses** for three
+    runs in which the model was never called at all.
+
+    This is the same shape as the 2026-09-04 A/B/C observation that "run 3 of every
+    variant collapsed identically to 32/33 unclear" — attributed then to a transient API
+    failure. It was the guard, and it was deterministic: the third run is exactly where
+    a 33-message corpus crosses 60 calls in one process.
+
+    A run that cannot be scored must say so instead of scoring well. Invoke each run as
+    its own process (`--runs 1` in a shell loop) to reset the counter; do not lift the
+    guard, which is a safety net and not this runner's to move.
+    """
+    try:
+        from core import spend_guard
+        cfg = spend_guard._load_config()
+        stop = int(cfg.get("stop_sessions_per_hour", 0) or 0)
+        if not stop:
+            return True, ""
+        used = spend_guard._sessions_last_hour()
+        if used + n > stop:
+            return False, (f"spend guard: {used} sessions used this hour, this run needs "
+                           f"{n} more, limit is {stop}. {used + n - stop} message(s) "
+                           f"would be REFUSED and scored as `unclear` — which counts as "
+                           f"a gate pass. Run each pass as its own process instead.")
+        return True, ""
+    except Exception:
+        return True, ""   # never let the check itself stop an eval
+
+
+def _write_confidence_dump(args) -> None:
+    """Rewrite the JSONL from scratch each call — the rows are cumulative in memory,
+    so this is idempotent and safe to call after every run."""
+    if not _DUMP["on"]:
+        return
+    path = Path(args.dump_confidence)
+    path.write_text("\n".join(json.dumps(r) for r in _CONFIDENCE_ROWS) + "\n")
+    print(f"\nconfidence dump: {len(_CONFIDENCE_ROWS)} rows -> {path}")
 
 
 def _score(fixtures: list[dict], args) -> int:
@@ -205,6 +298,12 @@ def _score(fixtures: list[dict], args) -> int:
         cfg = intake._template_defaults()
 
     classify = classify_with_extractor if args.extractor else classify_code_only
+
+    if args.extractor:
+        safe, why = _guard_state(len(fixtures))
+        if not safe:
+            print(f"\n*** RUN NOT SCORED — {why}")
+            return 3   # INVALID, distinct from pass (0) and gate failure (1)
 
     per_label: dict[str, dict] = defaultdict(lambda: {"tp": 0, "fn": 0, "fp": 0})
     action_required_misses: list[tuple[str, str]] = []
