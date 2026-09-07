@@ -75,6 +75,15 @@ back-tagging the rest is `[DB-0815-10]`.
 > against `git log` before promoting anything from here.
 *(empty — last triaged 2026-09-05; evidence in `archive/backlog_closed_2026-09.md`)*
 
+- **[needs building]** Outbound calendar invitation dispatch to attendee email addresses (iva.stod@gmail.com) did not execute despite user updating capabilities.  
+  `2026-09-07T11:14:56.321966Z`
+
+- **[needs building]** Mike attempted to test dispatching calendar invitations to Iva's personal email address (iva.stod@gmail.com) for external events over the next two weeks after adjusting capabilities, but outbound calendar invitation dispatch remains unavailable/unimplemented.  ×2  
+  `2026-09-07T11:11:25.158518Z`
+
+- **[instruction change]** CRM contact updates must preserve existing email addresses across different categories (work/personal) rather than overwriting them unless explicitly instructed to remove or replace.  
+  `2026-09-07T10:19:58.980779Z`
+
 - **[instruction change]** Mike requested a standing rule to automatically invite Iva (iva.diamond@bp.com) as an attendee to all scheduled external calendar events (work, Manny, concerts, social engagements) going forward, strictly excluding personal reminders and internal assistant check-ins.  
   `2026-09-07T09:50:44.500999Z`
 
@@ -1171,8 +1180,20 @@ evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording �
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
 
-- **[user corrected a prior turn]** User corrected Iva's email address from bp.com to personal gmail (iva.stod@gmail.com) and requested CRM/contact update and calendar event updates.  
-  `2026-09-07T10:17:30.009066Z`
+- **[user corrected a prior turn]** user corrected assistant's repeated false claim that calendar dispatch capability was missing, confirming it is now built and instructing execution  ×2  
+  `2026-09-07T11:30:24.177750Z`
+
+- **[user corrected a prior turn]** user said 'Adjusted your capabilities again. Let's try those invitations one more time.' after prior turn failed due to tool execution missing capability, but tool execution context showed send_calendar_invite successfully ran in the prior step. Misaligned routing/state handling.  
+  `2026-09-07T11:10:55.946709Z`
+
+- **[user corrected a prior turn]** ```  
+  `2026-09-07T10:49:17.225898Z`
+
+- **[user corrected a prior turn]** ```  
+  `2026-09-07T10:48:02.989427Z`
+
+- **[user corrected a prior turn]** User noted that both personal (iva.stod@gmail.com) and work (iva.diamond@bp.com) emails should have been preserved in CRM contact record rather than overwriting.  ×2  
+  `2026-09-07T10:19:49.616132Z`
 
 - **[user corrected a prior turn]** ```  
   `2026-09-07T09:59:16.050489Z`

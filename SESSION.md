@@ -1,56 +1,56 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-09-05, sixth (**the horizon stops pressing things weeks away — and three
-mechanisms turned out to be reporting success for things that had not happened**). Two live
-troubleshoots that each opened into a build. Exchange `004`: the day's journal was filed to
-2026-03-30 because the **Diarist is the one specialist that ran without a clock**, and
-`write_journal` had no date guard to catch it; both fixed. Exchange `006`: Mike was told the
-duplicate Friday swim class was gone — the delete had returned `success: true` on a one-off
-copy while the recurring 10:00 series kept firing. **Series deleted and verified this session.**
-Detail: `archive/PROJECT_LOG.md` § 2026-09-05, sixth. `73354e8`, `4abdb84`, `bb3df5a`,
-`471373a`, `4461107`, `282a50b`.*
+*Updated: 2026-09-07, second (**Metatron could not invite anyone, and said it had — now it
+can, after three wrong turns**). `attendees` on a calendar event was always a private label:
+names, not addresses, no `ATTENDEE` line anywhere, so no invitation was ever sent and a bare
+`success: true` was read back as one delivered. New `send_calendar_invite` sends a real
+`METHOD:REQUEST` invitation as an approved email — the confirm gate and CRM allowlist cover it
+unchanged. **Three of the four commits fixed my own errors, each found only when Mike
+re-tested**: a gated tool needs an entry in `confirm._EXECUTORS` as well as the orchestrator
+(16/16 tests passed while it was broken, because they drove `consume()` and the app drives
+`execute()`); and the tool was granted to `relationships` when the Coordinator routes invitation
+requests to `logistics`. Detail: `archive/PROJECT_LOG.md` § 2026-09-07, second. `8c512b5`,
+`c1ed1d0`, `45c9260`, `b2b1dc7`.*
 
-***Next: nothing is owed — the VM is at `4db2640`, `origin/main` matches, and the persona
-pastes are in and firing (2026-09-07).*** No Mike-gated session is queued; the Inbox item on
-horizon previews is **closed**.
+***Next: nothing is owed. The VM is deployed through `b2b1dc7` and Mike confirmed invitations
+working (2026-09-07).*** No Mike-gated session is queued.
+
+*✅ **A gated tool is now checked against the server's executor map before it ships.**
+`scripts/check_confirm_executors.py`, check 1b in `qa_sweep` — the same two-halves-one-commit
+class as the `get_weather` grant/doc split that `check_agent_tools.py` exists for. Its
+exemption list is empty and should stay so: the one entry it started with was covering a
+scanner blind spot, which silences the finding that would have revealed it.*
+
+*⚠ **Inviting to N events is N approval cards.** `logistics.md` says to state how many are
+coming rather than doing one and calling it all of them. Batching into one approval was not
+built and is a real change if wanted. Mike's standing rule from 09-07 — auto-invite Iva to
+external events — sits untriaged in the Inbox and is now buildable.*
 
 *✅ **Both new sessions are pasted, live, and verified firing (2026-09-07).** `manny_school` ran
 Sunday 09-06 at 16:00 and gave its nothing-outstanding fallback verbatim, closing question
 included; Monday's `morning_brief` carried the week via `weekly_review_on: monday`. **A session
 that correctly finds nothing is indistinguishable from one that never ran — answer "did it
-fire" from the scheduler log, not from what reached the phone.** Detail:
-`archive/PROJECT_LOG.md` § 2026-09-07.*
+fire" from the scheduler log, not from what reached the phone.***
 
 *✅ **The horizon serves near things only, and the reviews take the long view.** Past tomorrow a
-finding is held unless it is a `deadline` or its new `precursor_by` falls today/tomorrow —
-Mike's own four conditions, `_NEAR_DAYS = 1` cut from the three proposed to him. **A held
-finding is never charged an offer**, so this is quieter, not lossier. The counterweight:
-`review_block()` (tomorrow, on `evening_close`) and `week_block()` (seven days, on any session
-carrying `weekly_review_on`) suspend raise-once, which is safe **only because both are
-read-only**. The weekly is a **setting, not a session**, so it rides a brief already in the
-week — his call, and the reasoning is the product's own: a session is attention spent.*
+finding is held unless it is a `deadline` or its `precursor_by` falls today/tomorrow —
+`_NEAR_DAYS = 1`. **A held finding is never charged an offer**, so this is quieter, not lossier.
+`review_block()` and `week_block()` suspend raise-once, safe **only because both are read-only**.*
 
-*⚠ **Two open items from `006`, both closed by Mike as "skip, no backlog item" — do not file
-them.** (1) Nothing distinguishes deleting a calendar **occurrence** from deleting a **series**;
-that is what made the swim delete report success wrongly. (2) The 2:44 check-in ignores its
-conduct — proved **adherence, not plumbing**: `session_kind()` resolved and 8,278 chars of
-conduct were injected. More prose will not fix it (`[DB-0822-10]`); it needs a code gate.*
+*⚠ **Two open items from 09-05 `006`, both closed by Mike as "skip, no backlog item" — do not
+file them.** (1) Nothing distinguishes deleting a calendar **occurrence** from a **series**.
+(2) The 2:44 check-in ignores its conduct — **adherence, not plumbing**; needs a code gate
+(`[DB-0822-10]`), not more prose.*
 
 *⚠ **The intake extractor is parked permanently (priced out, not disproven) and teaching
 `rules:` tops out at 11/33 — because Mike ruled that a sender is not a category.** Successor is
 `[DB-0905-01]`, a research gate reading prior correspondence **as code, never a model judgement**.
-**Evidence and the three measured gaps: `DEV_BACKLOG.md` `[DB-0905-01]` and
-`archive/backlog_closed_2026-09.md`. Do not re-derive it here.***
-
-*✅ **The wisdom store's three intake classes are closed; the largest one is not — a preference
-recorded as a discovery when it was already policy.** Five of eleven cleared on 09-05 were
-describing behaviour already instructed in `config/modules/synthesizer_scheduled_sessions.md`.
-The redundancy guard covers the persona path only, not the wisdom path — and **that guard was
-itself citing the wrong home until `282a50b`** (see the handoff above).*
+**Evidence: `DEV_BACKLOG.md` `[DB-0905-01]` and `archive/backlog_closed_2026-09.md`. Do not
+re-derive it here.***
 
 *⚠ **No off-machine backup — Mike declined a date twice; a recorded acceptance of a named risk,
 not an unfiled worry. Do not re-raise it.** `VERTEX_CACHE_DISABLED` was flipped ON on the Mac
-2026-09-05 (billing export: net **+$0.94**/14d, the 08-21 net-negative finding having reversed).*
+2026-09-05 (billing export: net **+$0.94**/14d).*
 
 *⛔ **Two settled rulings — do not re-open; both in `ROADMAP.md` § Section 0.** A4 safety testing
 is SUSPENDED (before-Alpha is the only clock); ZDR is refused.*
