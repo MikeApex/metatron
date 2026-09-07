@@ -1185,7 +1185,9 @@ def register_tools() -> tuple[list[dict], dict]:
     # is still disabled on the project, so the pull cannot run regardless. The module
     # keeps the function so the path is revivable, not so it is reachable.
     from tools.contacts_import import import_contacts_file, IMPORT_CONTACTS_FILE_SCHEMA
-    from tools.mail import read_email, send_email, READ_EMAIL_SCHEMA, SEND_EMAIL_SCHEMA
+    from tools.mail import (read_email, send_email, send_calendar_invite,
+                            READ_EMAIL_SCHEMA, SEND_EMAIL_SCHEMA,
+                            SEND_CALENDAR_INVITE_SCHEMA)
     # Inbound triage. read_intake_queue is a specialist's view of what intake filed to
     # its domain; teach_intake is the user's correction path, confirmation-gated.
     from tools.intake import (read_intake_queue, teach_intake,
@@ -1240,6 +1242,7 @@ def register_tools() -> tuple[list[dict], dict]:
         WRITE_SCHEDULE_SCHEMA, LIST_SCHEDULES_SCHEMA, DELETE_SCHEDULE_SCHEMA,
         WRITE_QUALITY_EVENT_SCHEMA,
         FETCH_URL_SCHEMA, FETCH_RENDERED_SCHEMA, READ_EMAIL_SCHEMA, SEND_EMAIL_SCHEMA,
+        SEND_CALENDAR_INVITE_SCHEMA,
         IMPORT_CONTACTS_FILE_SCHEMA,
         APPLY_CRM_PROPOSALS_SCHEMA,
         RECORD_HORIZON_ITEM_SCHEMA,
@@ -1292,6 +1295,7 @@ def register_tools() -> tuple[list[dict], dict]:
         "import_contacts_file": import_contacts_file,
         "read_email": read_email,
         "send_email": send_email,
+        "send_calendar_invite": send_calendar_invite,
         "write_wishes": write_wishes,
         "read_wishes": read_wishes,
         "generate_emergency_card": generate_emergency_card,

@@ -37,12 +37,14 @@ _ROOT = Path(__file__).parent.parent
 # at call time and the return value is what gets read back at answer time: on
 # 2026-09-07 a session reported a person had been invited by Google Calendar on
 # the strength of a bare success:true. Sending is `send_email`'s job, behind its
-# confirm gate and CRM recipient allowlist.
+# confirm gate and CRM recipient allowlist; send_calendar_invite (2026-09-07) is the
+# tool that actually invites someone, and rides that same gate.
 _ATTENDEES_ARE_LABELS_ONLY = (
     "No invitation was sent. Attendee names are recorded on the event as a local "
     "label for conflict and duplicate matching only — nobody has been notified, "
     "and nothing will appear in their calendar. Do not tell the user that anyone "
-    "has been invited. To actually contact a person, use send_email."
+    "has been invited. To genuinely invite them, use send_calendar_invite — that sends a "
+    "real invitation they can accept, and needs the user's approval first."
 )
 
 
@@ -914,3 +916,121 @@ DELETE_CALENDAR_EVENT_SCHEMA = {
         "required": ["uid"],
     },
 }
+
+
+# --- Invitation support -----------------------------------------------------
+#
+# Everything below exists so that "invite Iva to the concert" can be honoured.
+# Before 2026-09-07 it could not be: `attendees` on a write is a private label
+# (see _ATTENDEES_ARE_LABELS_ONLY) and no standard ATTENDEE line was ever
+# emitted, so sessions reported invitations that had never been sent.
+#
+# The chosen route deliberately does NOT put an ATTENDEE line on the stored
+# CalDAV event and let the server mail people. That would create an outbound
+# message to a third party on the calendar path, around `send_email`'s
+# confirmation gate and its CRM recipient allowlist — the single-owner property
+# bought on 2026-08-09/10. Instead the invitation is a normal approved email
+# carrying a METHOD:REQUEST iCalendar part, sent by tools.mail.send_calendar_invite
+# through exactly the gate every other outbound message goes through.
+
+
+def _escape_ical(s: str) -> str:
+    """RFC 5545 text escaping. Module-level twin of the _esc closures above."""
+    return s.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
+
+
+def find_event_for_invite(uid: str = "", title: str = "", date: str = "") -> dict:
+    """
+    Resolve the single event an invitation refers to.
+
+    Two ways in, because the agent that owns outbound messaging is
+    `relationships`, which holds no calendar tool and so will rarely have a uid
+    to hand. Resolving here in Python is the same move `_resolve_attendees()`
+    already makes in the other direction — reaching into the CRM on the calendar's
+    behalf — and it keeps sending in one place rather than granting a second
+    agent the calendar.
+
+    Ambiguity is an error, never a guess: inviting someone to the wrong event is
+    not recoverable by the user once the mail has gone.
+
+    Returns the event dict, or {"error": ...} with "candidates" when more than
+    one event on `date` matches `title`.
+    """
+    if uid:
+        return _get_event_by_uid(uid)
+    if not (title and date):
+        return {"error": "Give either uid, or both title and date (YYYY-MM-DD)."}
+
+    # _query_events, not read_calendar: read_calendar wraps its event list into an
+    # <untrusted_content> STRING at the return boundary, so `.get("events")` there is
+    # text, not rows, and every match below would silently find nothing.
+    day = _query_events(date, date)
+    if "error" in day:
+        return day
+    events = day.get("events") or []
+    needle = title.strip().lower()
+    matches = [e for e in events
+               if needle in (e.get("title") or "").lower()
+               or (e.get("title") or "").lower() in needle]
+    if not matches:
+        return {"error": f"No event matching '{title}' on {date}. "
+                         f"Events that day: {[e.get('title') for e in events] or 'none'}."}
+    if len(matches) > 1:
+        return {"error": f"'{title}' on {date} matches {len(matches)} events — say which one.",
+                "candidates": [{"uid": e.get("uid"), "title": e.get("title"),
+                                "start": e.get("start")} for e in matches]}
+    return matches[0]
+
+
+def build_invite_ics(event: dict, organizer_email: str, attendee_email: str,
+                     attendee_name: str = "") -> str:
+    """
+    Build a METHOD:REQUEST iCalendar payload for `event`.
+
+    METHOD:REQUEST plus a real ATTENDEE line is what makes a mail client show
+    Accept/Decline and write the event into the recipient's own calendar. The
+    UID is the event's real UID, so a later update or cancellation for the same
+    UID supersedes this one in the recipient's calendar rather than duplicating it.
+
+    The event's own title, description and location are used verbatim. For an
+    event the user created that is exactly right; for one imported from someone
+    else's invitation the text is attacker-writable, which is why the whole
+    payload is rendered into the approval preview before anything is sent.
+    """
+    tz = _load_config().get("timezone", "UTC")
+    now_utc = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+    def _dt(value: str, is_end: bool = False) -> str:
+        # An all-day event has no "T" in its ISO form and takes DATE values.
+        if "T" not in (value or ""):
+            d = datetime.strptime(value, "%Y-%m-%d")
+            prop = "DTEND" if is_end else "DTSTART"
+            return f"{prop};VALUE=DATE:{d.strftime('%Y%m%d')}"
+        d = datetime.fromisoformat(value)
+        prop = "DTEND" if is_end else "DTSTART"
+        return f"{prop};TZID={tz}:{d.strftime('%Y%m%dT%H%M%S')}"
+
+    cn = _escape_ical(attendee_name) if attendee_name else attendee_email
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//AI Life Manager//NONSGML//EN",
+        "METHOD:REQUEST",
+        "BEGIN:VEVENT",
+        f"UID:{event.get('uid', '')}",
+        f"DTSTAMP:{now_utc}",
+        _dt(event.get("start", "")),
+        _dt(event.get("end", ""), is_end=True),
+        f"SUMMARY:{_escape_ical(event.get('title', ''))}",
+        f"DESCRIPTION:{_escape_ical(event.get('description', '') or '')}",
+        f"LOCATION:{_escape_ical(event.get('location', '') or '')}",
+        f"ORGANIZER:mailto:{organizer_email}",
+        f"ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;"
+        f"RSVP=TRUE;CN={cn}:mailto:{attendee_email}",
+        "SEQUENCE:0",
+        "STATUS:CONFIRMED",
+    ]
+    if event.get("recurrence"):
+        lines.append(f"RRULE:{event['recurrence']}")
+    lines += ["END:VEVENT", "END:VCALENDAR", ""]
+    return "\r\n".join(lines)

@@ -670,6 +670,167 @@ def send_email(to: str, subject: str, body: str, confirm_token: str = "",
     return {"status": "sent", "to": to_norm, "recipient": who, "subject": subject}
 
 
+
+def send_calendar_invite(to: str, uid: str = "", title: str = "", date: str = "",
+                         message: str = "", confirm_token: str = "",
+                         disclosure_note: str = "") -> dict:
+    """
+    Invite someone to an event already in the user's calendar.
+
+    Built 2026-09-07. Until then the assistant could not invite anyone at all and
+    said it had — `attendees` on a calendar write is a private label that notifies
+    nobody. Three routes were considered; this is the one chosen, and the reason
+    matters for anyone tempted to simplify it later:
+
+      Rejected — put a real ATTENDEE line on the stored CalDAV event and let the
+      calendar server mail people. Fewer moving parts, but it creates an outbound
+      message to a third party on the calendar-write path, around this module's
+      confirmation gate and its CRM recipient allowlist. A model that hallucinated
+      an attendee would mail a real person with no preview.
+
+      Chosen — an ordinary approved email carrying a METHOD:REQUEST iCalendar part.
+      The recipient's mail client shows Accept/Decline and writes the event to their
+      calendar, which is the outcome wanted; and the send is subject to exactly the
+      controls every other outbound message is subject to.
+
+    Two-step like send_email: the first call returns PENDING_CONFIRMATION and sends
+    nothing. The confirmation fingerprint covers the recipient AND the resolved
+    event uid, so an approval for one invitation cannot be replayed to send another.
+
+    Args:
+        to:      Recipient address — must be a saved contact or the user's own.
+        uid:     UID of the event, when known.
+        title, date: Alternative to uid — the event's title and its YYYY-MM-DD date.
+                 Resolved in Python because the agent that owns outbound messaging
+                 holds no calendar tool. Ambiguity is an error, never a guess.
+        message: Optional note in the covering email. The event details come from
+                 the calendar; this is only what the user wants said alongside.
+        disclosure_note: Same meaning and same reasoning as on send_email — kept out
+                 of `args` so supplying it on the first call and not the retry cannot
+                 fail the send.
+    """
+    from tools.caldav import build_invite_ics, find_event_for_invite
+    from tools.confirm import consume, request
+
+    to_norm = (to or "").strip().lower()
+    if not to_norm:
+        return {"error": "No recipient given."}
+
+    allowed = _known_recipients()
+    if to_norm not in allowed:
+        return {"error": (
+            f"'{to}' is not a known recipient. An invitation can only go to you or to a "
+            f"saved contact — add them with write_contact first if this is someone real. "
+            f"This limit is enforced in code and cannot be waived for this invitation."
+        )}
+    who = allowed[to_norm]
+
+    event = find_event_for_invite(uid=uid, title=title, date=date)
+    if "error" in event:
+        return event
+
+    args = {"to": to_norm, "uid": event.get("uid", ""), "message": message}
+
+    ok, reason = consume(confirm_token or None, "send_calendar_invite", args)
+    if not ok:
+        if confirm_token:
+            return {"error": f"Not sent. {reason}"}
+        shaped = (disclosure_note or "").strip()
+        when = event.get("start", "")
+        where = event.get("location", "") or ""
+        return request(
+            "send_calendar_invite", args,
+            description=(
+                f"Send a calendar invitation to {who} ({to_norm})\n"
+                f"Event: {event.get('title', '')}\n"
+                f"When: {when}" + (f"\nWhere: {where}" if where else "") + "\n\n"
+                f"They will be able to accept or decline, and the event will appear in "
+                f"their calendar. They will see the event's title, time and location."
+                + (f"\n\nCovering note: {message}" if message else "")
+                + (f"\n\n⚠ SHAPED BY OTHER CONTEXT — {shaped}\n"
+                   f"Nothing about this is stated in the invitation. Check the premise "
+                   f"still holds before approving." if shaped else "")
+            ),
+        )
+
+    cfg = _load_config()
+    auth = cfg.get("auth") or {}
+    username = (auth.get("username") or "").strip()
+    password = auth.get("password") or ""
+    smtp_host = (cfg.get("smtp_host") or "smtp.gmail.com").strip()
+    smtp_port = int(cfg.get("smtp_port") or 587)
+    if not (username and password):
+        return {"error": "Email is not configured for sending (email.yaml needs auth)."}
+
+    ics = build_invite_ics(event, organizer_email=username, attendee_email=to_norm,
+                           attendee_name=who if who != "you" else "")
+
+    import smtplib
+    from email.message import EmailMessage
+
+    msg = EmailMessage()
+    msg["From"] = username
+    msg["To"] = to_norm
+    msg["Subject"] = f"Invitation: {event.get('title', 'Event')}"
+    body_lines = [f"You are invited to: {event.get('title', '')}",
+                  f"When: {event.get('start', '')}"]
+    if event.get("location"):
+        body_lines.append(f"Where: {event['location']}")
+    if message:
+        body_lines += ["", message]
+    msg.set_content("\n".join(body_lines))
+
+    # Two representations of the same invitation, deliberately. The alternative part
+    # is what a mail client reads to show Accept/Decline; the attachment is the
+    # fallback for a client that ignores it, and is what makes this work at all for
+    # recipients on restrictive corporate mail systems.
+    msg.add_alternative(ics, subtype="calendar", params={"method": "REQUEST",
+                                                         "charset": "UTF-8"})
+    msg.add_attachment(ics.encode("utf-8"), maintype="text", subtype="calendar",
+                       filename="invite.ics", params={"method": "REQUEST"})
+
+    try:
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=TIMEOUT_SECONDS) as s:
+            s.starttls()
+            s.login(username, password)
+            s.send_message(msg)
+    except Exception as e:
+        return {"error": f"Invitation failed to send: {e}"}
+
+    return {"status": "invitation_sent", "to": to_norm, "recipient": who,
+            "event": event.get("title", ""), "uid": event.get("uid", ""),
+            "start": event.get("start", "")}
+
+
+SEND_CALENDAR_INVITE_SCHEMA = {
+    "name": "send_calendar_invite",
+    "description": (
+        "Invite someone to an event that is already in the user's calendar. This is the "
+        "ONLY way to invite anyone to anything — the `attendees` field on write_calendar_event "
+        "is a private label that notifies nobody. The recipient gets an email they can accept "
+        "or decline, and the event appears in their own calendar. "
+        "Requires the user's explicit approval: the first call returns PENDING_CONFIRMATION "
+        "and sends nothing — show the user what will be sent and leave it with them. Approving "
+        "it in the app is what sends it; do not call this tool a second time, and never claim "
+        "an invitation was sent before that. Recipients are limited in code to the user's own "
+        "address and saved contacts. Create the event first if it does not exist yet."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "to": {"type": "string", "description": "Recipient address — a saved contact's, or the user's own."},
+            "uid": {"type": "string", "description": "UID of the event, if you have it from a calendar tool. Otherwise give title and date."},
+            "title": {"type": "string", "description": "The event's title, if you do not have its uid. Must be given with date."},
+            "date": {"type": "string", "description": "The event's date as YYYY-MM-DD, if you do not have its uid. Must be given with title."},
+            "message": {"type": "string", "description": "Optional note to include alongside the invitation. The event's own title, time and location are sent automatically — do not repeat them here."},
+            "confirm_token": {"type": "string", "description": "Not for you to set. The app supplies this when it carries out an action the user has approved; leave it out of every call you make."},
+            "disclosure_note": {"type": "string", "description": "Required whenever something you know about a DIFFERENT person shaped this invitation — who was invited, who was left off, why now. Shown to the user for approval and never sent to the recipient."},
+        },
+        "required": ["to"],
+    },
+}
+
+
 SEND_EMAIL_SCHEMA = {
     "name": "send_email",
     "description": (

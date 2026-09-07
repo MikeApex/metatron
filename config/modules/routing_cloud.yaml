@@ -228,7 +228,14 @@ agents:
     # agent that owns contact writes, and the sweep's parked suggestions are applied on the
     # user's word in an ordinary conversation. It takes ledger ids only — the write comes
     # from the stored row, so this grant cannot be used to author contact content.
-    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, merge_contacts, unmerge_contacts, import_contacts_file, read_profile, write_profile, send_email, search_memory, get_tone_shape, read_wisdom, read_intake_queue, read_agent_config, write_agent_config, apply_crm_proposals]
+    # send_calendar_invite granted 2026-09-07: the assistant repeatedly told Mike that Iva
+    # had been invited via calendar when nothing had ever been sent — `attendees` on a
+    # calendar write is a private label that notifies nobody. The new tool sends a real
+    # METHOD:REQUEST invitation as an approved email. It goes HERE and not to `logistics`,
+    # even though logistics owns the calendar, because the 2026-08-09/10 consolidation put
+    # every outbound message behind one owner and one gate; the tool resolves the event
+    # itself in Python so this agent needs no calendar grant to use it.
+    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, merge_contacts, unmerge_contacts, import_contacts_file, read_profile, write_profile, send_email, send_calendar_invite, search_memory, get_tone_shape, read_wisdom, read_intake_queue, read_agent_config, write_agent_config, apply_crm_proposals]
 
   finance:
     provider: gemini

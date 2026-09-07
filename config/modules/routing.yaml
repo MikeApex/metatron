@@ -138,7 +138,8 @@ agents:
     # read/write_agent_config granted 2026-08-28 [DB-0810-03] — see routing_cloud.yaml. Parity.
     # apply_crm_proposals granted 2026-08-29 with the CRM sweep [DB-0827-03] —
     # see routing_cloud.yaml. Kept in parity.
-    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, merge_contacts, unmerge_contacts, import_contacts_file, read_profile, write_profile, send_email, search_memory, get_tone_shape, read_wisdom, read_intake_queue, read_agent_config, write_agent_config, apply_crm_proposals]
+    # send_calendar_invite granted 2026-09-07 — see routing_cloud.yaml. Kept in parity.
+    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, merge_contacts, unmerge_contacts, import_contacts_file, read_profile, write_profile, send_email, send_calendar_invite, search_memory, get_tone_shape, read_wisdom, read_intake_queue, read_agent_config, write_agent_config, apply_crm_proposals]
 
   finance:
     local: true
