@@ -442,6 +442,13 @@ def consume(token: str | None, action: str, args: dict,
 # its tool's name — it gates one branch of `write_profile`, not the whole tool.
 _EXECUTORS: dict[str, tuple[str, str]] = {
     "send_email":            ("tools.mail",          "send_email"),
+    # Registered 2026-09-07 WITH the tool, not after it. Shipping without this line
+    # is what made the first version of send_calendar_invite fail in production while
+    # 16/16 of its own tests passed: the tests drove consume() directly, so nothing
+    # exercised execute(), and the user's approval came back "Nothing here knows how
+    # to carry out 'send_calendar_invite'". A gated tool is not shipped until it is in
+    # BOTH this map and the orchestrator's handlers.
+    "send_calendar_invite":  ("tools.mail",          "send_calendar_invite"),
     "write_config":          ("tools.config_writer", "write_config"),
     "write_profile_contact": ("tools.profile",       "write_profile"),
     "write_agent_config":    ("tools.agent_config",  "write_agent_config"),

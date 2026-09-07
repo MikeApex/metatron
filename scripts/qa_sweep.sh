@@ -62,6 +62,14 @@ run_check() {
 # register_tools() does not provide, which the model reads as a real capability.
 run_check "agent-tools" "$PY" scripts/check_agent_tools.py --quiet
 
+# --- 1b. Gated actions vs the server's executor map ---------------------------
+# The sibling of check 1, one layer down. A confirmation-gated tool is split across
+# confirm.request() in the tool and confirm._EXECUTORS in the server; ship one half
+# and the user's approval returns "Nothing here knows how to carry out 'X'".
+# Added 2026-09-07 after send_calendar_invite did exactly that in production with
+# 16/16 of its own tests green.
+run_check "confirm-executors" "$PY" scripts/check_confirm_executors.py
+
 # --- 2. Persona consistency --------------------------------------------------
 run_check "personas" "$PY" scripts/check_personas.py
 

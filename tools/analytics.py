@@ -57,7 +57,7 @@ ROOT = Path(__file__).resolve().parent.parent
 # Real-world effects the user would otherwise have done themselves. Deliberately
 # short: every addition raises the headline metric, so it is a decision, not a tidy-up.
 _WORLD_AFFECTING = {
-    "send_email",
+    "send_email", "send_calendar_invite",
     "write_calendar_event", "update_calendar_event", "delete_calendar_event",
     "write_schedule", "delete_schedule",
     "open_obligation", "close_obligation", "reopen_obligation",

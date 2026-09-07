@@ -143,6 +143,7 @@ _TOOL_RESOURCE_LABELS: dict[str, str] = {
     "get_environmental_snapshot": "Weather/Air Quality/News",
     "read_email": "Email (IMAP)",
     "send_email": "Email (SMTP)",
+    "send_calendar_invite": "Email (SMTP)",
     "search_correspondence": "Email (IMAP)",
 }
 _CALENDAR_PREFIXES = ("read_calendar", "write_calendar", "update_calendar", "delete_calendar", "check_calendar_conflicts")

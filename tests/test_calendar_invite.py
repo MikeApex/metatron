@@ -131,6 +131,32 @@ def main() -> int:
                 results.append(check("a spent token is refused",
                                      "error" in r and len(sent) == 1))
 
+            # 4b. THE production failure of 2026-09-07 (seq 010). Everything above
+            #     passed while the real thing was broken, because these tests drove
+            #     consume() and the app drives confirm.execute() — a SECOND registry
+            #     (_EXECUTORS) the tool had not been added to. Mike approved the
+            #     invitation and got back "Nothing here knows how to carry out
+            #     'send_calendar_invite'". Drive the path the app drives.
+            sent.clear()
+            r = run(mail.send_calendar_invite, to=CONTACT, uid=EVENT["uid"])
+            tok2 = r.get("confirm_token") or r.get("token")
+            results.append(check("the action is in the server's executor map",
+                                 "send_calendar_invite" in confirm._EXECUTORS))
+            if tok2:
+                confirm.approve(tok2)
+                ps = _patches()
+                for pp in ps:
+                    pp.start()
+                try:
+                    r = confirm.execute(tok2)
+                finally:
+                    for pp in ps:
+                        pp.stop()
+                results.append(check("approving in the app actually sends it",
+                                     r.get("status") == "executed" and len(sent) == 1))
+                results.append(check("  ...and does not report unexecutable",
+                                     r.get("status") != "unexecutable"))
+
             # 5. Ambiguity is an error, never a guess.
             two = [dict(EVENT), dict(EVENT, uid="evt-2@ai-life-manager",
                                      start="2026-09-20T09:00:00")]
