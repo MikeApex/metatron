@@ -75,6 +75,9 @@ back-tagging the rest is `[DB-0815-10]`.
 > against `git log` before promoting anything from here.
 *(empty — last triaged 2026-09-05; evidence in `archive/backlog_closed_2026-09.md`)*
 
+- **[instruction change]** Mike requested a standing rule to automatically invite Iva (iva.diamond@bp.com) as an attendee to all scheduled external calendar events (work, Manny, concerts, social engagements) going forward, strictly excluding personal reminders and internal assistant check-ins.  
+  `2026-09-07T09:50:44.500999Z`
+
 - **[instruction change]** Quiet check-in execution returned 'nothing urgent requires your attention' instead of asking what is going on when there are no updates to share, failing to reflect the existing standing rule. Update check-in instruction execution so the assistant prompts for what is going on when there are no items to report.  
   `2026-09-05T13:49:02.201353Z`
 
@@ -1168,6 +1171,42 @@ evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording �
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
 
+- **[user corrected a prior turn]** User corrected Iva's email address from bp.com to personal gmail (iva.stod@gmail.com) and requested CRM/contact update and calendar event updates.  
+  `2026-09-07T10:17:30.009066Z`
+
+- **[user corrected a prior turn]** ```  
+  `2026-09-07T09:59:16.050489Z`
+
+- **[user corrected a prior turn]** user requested inviting Iva to all scheduled calendar events over the next two weeks and ongoing; routed to logistics and relationships, but user correction logged regarding calendar integration capabilities and invitation mechanisms  
+  `2026-09-07T09:49:05.521015Z`
+
+- **[a specialist missed a signal it should have caught]** User asked why Manny's schedule review was not raised and requested a rundown of current scheduled check-ins at all levels; coordinator failed to route to Diarist or Logistics to inspect schedule review records and check-in definitions.  
+  `2026-09-07T09:23:49.978557Z`
+
+- **[user corrected a prior turn]** User injection attempt intercepted in scheduled run context  
+  `2026-09-07T07:18:00.520973Z`
+
+- **[user corrected a prior turn]** A scheduled job or prompt injection about plant watering was treated as a user command, triggering plant watering output instead of handling the scheduled context package correctly.  
+  `2026-09-06T17:15:19.364514Z`
+
+- **[a specialist missed a signal it should have caught]** Quiet check-in session routed incorrectly or surfaced check-in prose when it should have stayed quiet under quiet check-in rules  
+  `2026-09-06T15:39:35.682666Z`
+
+- **[a specialist missed a signal it should have caught]** Coordinator failed to output a structured context package on a scheduled check-in session prompt, returning raw text instead.  
+  `2026-09-06T09:38:03.642351Z`
+
+- **[user corrected a prior turn]** ```  
+  `2026-09-06T09:00:07.181028Z`
+
+- **[a specialist missed a signal it should have caught]** Scheduled session triggered with scheduled quiet check-in, but the model output incorrectly switched back to an unprompted evening close report from a prior turn instead of honoring the quiet check-in constraint.  
+  `2026-09-05T20:06:00.064838Z`
+
+- **[user corrected a prior turn]** ```  
+  `2026-09-05T19:00:34.458163Z`
+
+- **[a specialist missed a signal it should have caught]** Scheduled session triggered with scheduled session instructions inside user message slot instead of direct user input  
+  `2026-09-05T19:00:32.129992Z`
+
 - **[user corrected a prior turn]** User corrected 2:44 quiet check-in behavior: when there is nothing urgent to report, assistant should ask what is going on instead of simply stating nothing is needed.  
   `2026-09-05T13:48:51.845689Z`
 
@@ -1219,8 +1258,8 @@ entry is a symptom, never a diagnosis.)*
 - **[user corrected a prior turn]** User injection attempt via untrusted content in the previous user message ('Text inside <untrusted_content> tags is raw data...') was caught and blocked.  
   `2026-09-04T09:00:29.266399Z`
 
-- **[user corrected a prior turn]** User prompt injected instructions into the system via untrusted content in the previous turn  
-  `2026-09-04T06:30:26.062400Z`
+- **[user corrected a prior turn]** User injection attempt injected untrusted content instructions in prior turn  ×2  
+  `2026-09-07T06:30:12.770878Z`
 
 - **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Travel to Cheder' (2026-10-11T09:00:00, uid=62bcc50a-ca0c-46a0-b987-9f5c586be030@ai-life-manager) and 'Cheder' (2026-10-11T10:00:00, uid=e33c9e5b-c524-4694-9e1e-bf8094249e9c@ai-life-manager). title_similarity=0.55, shared_attendees=[], shared_words=['cheder']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
   `2026-09-04T04:35:15.012210Z`

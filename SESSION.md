@@ -10,16 +10,16 @@ copy while the recurring 10:00 series kept firing. **Series deleted and verified
 Detail: `archive/PROJECT_LOG.md` § 2026-09-05, sixth. `73354e8`, `4abdb84`, `bb3df5a`,
 `471373a`, `4461107`, `282a50b`.*
 
-***Next: `./deploy.sh` is owed for `4461107` and `282a50b` — the VM is at `471373a`.*** Then
-the persona pastes below. No Mike-gated session is queued; the Inbox item on horizon previews
-is **closed**.
+***Next: nothing is owed — the VM is at `4db2640`, `origin/main` matches, and the persona
+pastes are in and firing (2026-09-07).*** No Mike-gated session is queued; the Inbox item on
+horizon previews is **closed**.
 
-*⚠ **Two persona files are prepared and NOT pasted — verified absent on the VM, so the weekly
-review and the Manny's-school check-in cannot fire yet.** `weekly_review_on: monday` on
-`morning_brief`, and a `manny_school` entry plus `manny_school_ritual.md` (Sunday 16:00).
-Commands, tested against a real copy of Mike's `scheduler.yaml`:
-`archive/handoffs/2026-09-05-weekly-and-school-sessions-setup.md`. `config/personas/mike*` is
-Denied and VM-owned — `./deploy.sh` will never carry these.*
+*✅ **Both new sessions are pasted, live, and verified firing (2026-09-07).** `manny_school` ran
+Sunday 09-06 at 16:00 and gave its nothing-outstanding fallback verbatim, closing question
+included; Monday's `morning_brief` carried the week via `weekly_review_on: monday`. **A session
+that correctly finds nothing is indistinguishable from one that never ran — answer "did it
+fire" from the scheduler log, not from what reached the phone.** Detail:
+`archive/PROJECT_LOG.md` § 2026-09-07.*
 
 *✅ **The horizon serves near things only, and the reviews take the long view.** Past tomorrow a
 finding is held unless it is a `deadline` or its new `precursor_by` falls today/tomorrow —
