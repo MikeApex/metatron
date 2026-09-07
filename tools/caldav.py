@@ -30,6 +30,21 @@ from tools.untrusted import (UNTRUSTED_CONTENT_INSTRUCTION, contains_injection_m
 
 _ROOT = Path(__file__).parent.parent
 
+# `attendees` is a local label, not an invitation. It is written as the custom
+# property X-ATTENDEE-NAMES — names, not addresses — and no standard ATTENDEE
+# line is ever emitted, so no CalDAV server sends anybody anything. Returned on
+# every write that carries attendees because the schema description is read once
+# at call time and the return value is what gets read back at answer time: on
+# 2026-09-07 a session reported a person had been invited by Google Calendar on
+# the strength of a bare success:true. Sending is `send_email`'s job, behind its
+# confirm gate and CRM recipient allowlist.
+_ATTENDEES_ARE_LABELS_ONLY = (
+    "No invitation was sent. Attendee names are recorded on the event as a local "
+    "label for conflict and duplicate matching only — nobody has been notified, "
+    "and nothing will appear in their calendar. Do not tell the user that anyone "
+    "has been invited. To actually contact a person, use send_email."
+)
+
 
 def _config_path(persona: str | None = None) -> Path:
     """Per-persona. Each persona has its own calendar and its own credentials."""
@@ -308,7 +323,8 @@ def write_calendar_event(
                       which is worse than useless.
         all_day:      True for a date-only event with no clock time.
         attendees:    Optional list of attendee names, cross-referenced against
-                      CRM contacts for conflict/duplicate matching.
+                      CRM contacts for conflict/duplicate matching. **A label,
+                      not an invitation** — no notification is sent to anyone.
         override_duplicate: Set True to create the event anyway when an
                       identical event (same title, same exact time) already
                       exists. Default refuses — see the duplicate_event error.
@@ -503,6 +519,10 @@ def write_calendar_event(
         "end": end,
         "url": event_url,
     }
+    if attendees:
+        result["attendees_recorded"] = attendees
+        result["invitations_sent"] = False
+        result["note"] = _ATTENDEES_ARE_LABELS_ONLY
     if conflict_check_failed:
         result["conflict_check"] = {"status": "failed", "reason": conflict_result["check_error"]}
     else:
@@ -547,7 +567,8 @@ def update_calendar_event(
         uid:          UID of the event to update (from a prior read_calendar,
                       write_calendar_event, or check_calendar_conflicts result).
         title, start, end, description, location, all_day, recurrence,
-        alarm_minutes_before, attendees: Same meaning as write_calendar_event.
+        alarm_minutes_before, attendees: Same meaning as write_calendar_event —
+                      including that attendees are labels, never invitations.
                       Pass only the fields that changed; the rest carry over
                       from the existing event.
 
@@ -672,6 +693,10 @@ def update_calendar_event(
         return {"error": f"Failed to update calendar event: {e}"}
 
     result = {"success": True, "uid": uid, "title": title_to_write, "start": new_start, "end": new_end}
+    if new_attendees:
+        result["attendees_recorded"] = new_attendees
+        result["invitations_sent"] = False
+        result["note"] = _ATTENDEES_ARE_LABELS_ONLY
     if conflict_check_failed:
         result["conflict_check"] = {"status": "failed", "reason": conflict_result["check_error"]}
     else:
@@ -820,7 +845,10 @@ WRITE_CALENDAR_EVENT_SCHEMA = {
                     "Optional attendee names, e.g. ['Jonas']. Cross-referenced "
                     "against CRM contacts and used in duplicate/conflict matching — "
                     "include this whenever the event is a meeting with a specific "
-                    "person, it materially improves duplicate detection."
+                    "person, it materially improves duplicate detection. "
+                    "THIS DOES NOT INVITE ANYONE: it records a name on the event "
+                    "for matching, sends no notification, and puts nothing in "
+                    "anyone else's calendar. Never report an attendee as invited."
                 ),
             },
             "override_duplicate": {
@@ -865,7 +893,7 @@ UPDATE_CALENDAR_EVENT_SCHEMA = {
             "all_day": {"type": "boolean", "description": "New all_day flag, if changing."},
             "recurrence": {"type": "string", "description": "New RRULE body, if changing."},
             "alarm_minutes_before": {"type": "integer", "description": "New alarm offset, if changing."},
-            "attendees": {"type": "array", "items": {"type": "string"}, "description": "New attendee list, if changing."},
+            "attendees": {"type": "array", "items": {"type": "string"}, "description": "New attendee list, if changing. Records names for matching only — invites nobody, notifies nobody."},
         },
         "required": ["uid"],
     },
