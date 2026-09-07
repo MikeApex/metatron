@@ -282,7 +282,19 @@ agents:
     # with none of its documented output format — having emitted the full block the day
     # before on the same model. A tool call cannot be replaced by prose or malformed and
     # ignored. Logistics only: it is the sole agent whose file specifies horizon findings.
-    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, update_calendar_event, delete_calendar_event, check_calendar_conflicts, get_weather, get_environmental_snapshot, get_tfl_status, get_flight_status, get_travel_time, get_regional_transit_info, find_places, read_profile, write_profile, write_schedule, list_schedules, delete_schedule, fetch_url, fetch_rendered, read_email, read_agent_config, write_agent_config, search_memory, read_archive, write_archive, open_obligation, close_obligation, reopen_obligation, list_obligations, read_intake_queue, record_horizon_item]
+    # send_calendar_invite ALSO granted here 2026-09-07, reversing the same-day decision
+    # to keep it on `relationships` alone. That reading was wrong in practice: "invite Iva
+    # to the events we've been discussing" is a calendar request, the Coordinator routes it
+    # here, and relationships was never dispatched — so Mike asked four times and was told
+    # four times that the capability needed building (seq 011-013). Relationships also
+    # cannot enumerate events; it holds no calendar tool, so it can only invite to an event
+    # somebody else already named.
+    # This does NOT undo the 2026-08-09/10 single-owner consolidation. That rule is about
+    # who AUTHORS outbound prose, which is where disclosure discretion lives; an invitation's
+    # payload is an event that already exists. What actually protects the send — the confirm
+    # gate and the CRM recipient allowlist — is enforced in Python for both agents and is
+    # untouched. Relationships keeps its grant for person-centred conversations.
+    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, update_calendar_event, delete_calendar_event, check_calendar_conflicts, send_calendar_invite, get_weather, get_environmental_snapshot, get_tfl_status, get_flight_status, get_travel_time, get_regional_transit_info, find_places, read_profile, write_profile, write_schedule, list_schedules, delete_schedule, fetch_url, fetch_rendered, read_email, read_agent_config, write_agent_config, search_memory, read_archive, write_archive, open_obligation, close_obligation, reopen_obligation, list_obligations, read_intake_queue, record_horizon_item]
     # update_calendar_event, delete_calendar_event, check_calendar_conflicts added
     # 2026-08-05 — required to act on what the calendar-conflict build detects:
     # Logistics could previously only create events, never move, correct, or
