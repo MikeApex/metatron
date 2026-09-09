@@ -799,7 +799,18 @@ def send_calendar_invite(to: str, uid: str = "", title: str = "", date: str = ""
 
     return {"status": "invitation_sent", "to": to_norm, "recipient": who,
             "event": event.get("title", ""), "uid": event.get("uid", ""),
-            "start": event.get("start", "")}
+            "start": event.get("start", ""),
+            # Measured 2026-09-07, after Mike reported this as a failure twice: Google's
+            # CalDAV interface stores an ATTENDEE property and does nothing with it — no
+            # guest appears in the UI, no invitation is sent by Google. The invitation
+            # above is real and delivered; the calendar simply has no record of it. Said
+            # here because the return value is what the model reads when it answers.
+            "visible_on_calendar": False,
+            "note": ("The invitation was sent by email and the recipient can accept it. "
+                     "It will NOT show as a guest on the user's own calendar event, and "
+                     "the calendar keeps no record that it was sent — that is expected, "
+                     "not a failure. Do not tell the user to check their calendar to "
+                     "confirm it.")}
 
 
 SEND_CALENDAR_INVITE_SCHEMA = {
