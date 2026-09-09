@@ -1,41 +1,28 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-09-07, second (**Metatron could not invite anyone, and said it had — now it
-can, after three wrong turns**). `attendees` on a calendar event was always a private label:
-names, not addresses, no `ATTENDEE` line anywhere, so no invitation was ever sent and a bare
-`success: true` was read back as one delivered. New `send_calendar_invite` sends a real
-`METHOD:REQUEST` invitation as an approved email — the confirm gate and CRM allowlist cover it
-unchanged. **Three of the four commits fixed my own errors, each found only when Mike
-re-tested**: a gated tool needs an entry in `confirm._EXECUTORS` as well as the orchestrator
-(16/16 tests passed while it was broken, because they drove `consume()` and the app drives
-`execute()`); and the tool was granted to `relationships` when the Coordinator routes invitation
-requests to `logistics`. Detail: `archive/PROJECT_LOG.md` § 2026-09-07, second. `8c512b5`,
-`c1ed1d0`, `45c9260`, `b2b1dc7`.*
+*Updated: 2026-09-09 (**invitations are sent by email and the calendar cannot show them — the
+09-07 close-out called this resolved and it was not**). The seven invitations to Iva were real
+and delivered (Sent Mail, valid `METHOD:REQUEST`, zero bounces); Mike's own Google Calendar
+showed no guest and never will. **Google's CalDAV endpoint stores an `ATTENDEE` line and ignores
+it** — it returns 201 and echoes the line back normalised, which is why it was proposed as the
+fix; tested on one real event, no guest appeared and no invitation was sent. **Accepting a
+property is not honouring it.** So `logistics.md` and `send_calendar_invite`'s return
+(`visible_on_calendar: false`) now say a working send will look like nothing happened. Detail:
+`archive/PROJECT_LOG.md` § 2026-09-09. `0e154b9`.*
 
-***Next: nothing is owed. The VM is deployed through `b2b1dc7` and Mike confirmed invitations
-working (2026-09-07).*** No Mike-gated session is queued.
+***Next: `0e154b9` needs deploy — the VM is at `b2b1dc7`.*** Nothing else owed; no Mike-gated
+session queued.
 
-*✅ **A gated tool is now checked against the server's executor map before it ships.**
-`scripts/check_confirm_executors.py`, check 1b in `qa_sweep` — the same two-halves-one-commit
-class as the `get_weather` grant/doc split that `check_agent_tools.py` exists for. Its
-exemption list is empty and should stay so: the one entry it started with was covering a
-scanner blind spot, which silences the finding that would have revealed it.*
+*⛔ **Real calendar guest management is deferred to Mark 2 (Mike, 2026-09-09) — do not
+re-propose it against the Mark 1 CalDAV path.** It needs the Google Calendar API over OAuth,
+which hits the 7-day refresh-token expiry under Testing publishing status that reversed Google
+Contacts on 2026-08-08. Filed in the Inbox with the measurement.*
 
-*⚠ **Inviting to N events is N approval cards.** `logistics.md` says to state how many are
-coming rather than doing one and calling it all of them. Batching into one approval was not
-built and is a real change if wanted. Mike's standing rule from 09-07 — auto-invite Iva to
-external events — sits untriaged in the Inbox and is now buildable.*
-
-*✅ **Both new sessions are pasted, live, and verified firing (2026-09-07).** `manny_school` ran
-Sunday 09-06 at 16:00 and gave its nothing-outstanding fallback verbatim, closing question
-included; Monday's `morning_brief` carried the week via `weekly_review_on: monday`. **A session
-that correctly finds nothing is indistinguishable from one that never ran — answer "did it
-fire" from the scheduler log, not from what reached the phone.***
-
-*✅ **The horizon serves near things only, and the reviews take the long view.** Past tomorrow a
-finding is held unless it is a `deadline` or its `precursor_by` falls today/tomorrow —
-`_NEAR_DAYS = 1`. **A held finding is never charged an offer**, so this is quieter, not lossier.
-`review_block()` and `week_block()` suspend raise-once, safe **only because both are read-only**.*
+*⚠ **Inviting to N events is N approval cards, and the one-call-per-event rule did not hold on
+its first live run** — two of the seven were the same event on the same UID. `logistics.md` now
+says to state how many approvals are coming; batching them into one was not built and is a real
+change if wanted. Mike's standing rule from 09-07 — auto-invite Iva to external events — sits
+untriaged in the Inbox.*
 
 *⚠ **Two open items from 09-05 `006`, both closed by Mike as "skip, no backlog item" — do not
 file them.** (1) Nothing distinguishes deleting a calendar **occurrence** from a **series**.

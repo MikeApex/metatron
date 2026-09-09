@@ -75,6 +75,15 @@ back-tagging the rest is `[DB-0815-10]`.
 > against `git log` before promoting anything from here.
 *(empty — last triaged 2026-09-05; evidence in `archive/backlog_closed_2026-09.md`)*
 
+- **[instruction change]** User requested that venue recommendations rigorously verify live operating hours and closure status via Google Maps/Places before recommending, prompted by Arôme Bakery being recommended while closed on a Tuesday afternoon.  
+  `2026-09-08T14:27:53.140047Z`
+
+- **[needs building]** Plant watering tracking check must integrate localized home weather (precipitation in London) to account for outdoor watering, and resolve the sync failure where user-reported waterings failed to update the last-watered baseline date.  
+  `2026-09-08T08:54:16.419430Z`
+
+- **[instruction change]** Plant watering checks failed to reflect Mike's recorded watering logs, remaining stuck on August 4, and failed to check home-location weather to recognise that current rainfall in London treats outdoor plants as watered. Logic needs to sync with logged waterings and evaluate local precipitation before flagging plants as overdue.  
+  `2026-09-08T08:53:11.891063Z`
+
 - **[needs building]** Outbound calendar invitation dispatch to attendee email addresses (iva.stod@gmail.com) did not execute despite user updating capabilities.  
   `2026-09-07T11:14:56.321966Z`
 
@@ -89,8 +98,12 @@ back-tagging the rest is `[DB-0815-10]`.
 
 - **[instruction change]** Quiet check-in execution returned 'nothing urgent requires your attention' instead of asking what is going on when there are no updates to share, failing to reflect the existing standing rule. Update check-in instruction execution so the assistant prompts for what is going on when there are no items to report.  
   `2026-09-05T13:49:02.201353Z`
+- **Invitations are sent, but Mike's own calendar shows no guest and no sign anything happened — and it cannot, over CalDAV.** Metatron sends real `METHOD:REQUEST` invitations by email (seven delivered to Iva 2026-09-07, correct payloads, zero bounces, verified in Sent Mail) and the recipient can accept them. What does not work, and cannot be made to work on the current integration: the guest appearing on the event in Google Calendar, Google sending the invitation itself, and an acceptance flowing back onto the event. **Measured, not assumed (2026-09-07):** Google's CalDAV endpoint accepts an `ATTENDEE` line and echoes it back on a read — which looked like success and is why this was proposed as a fix — but the guest never appears in the Google Calendar UI and no invitation is sent. Storing the property and honouring it are different things; only the first was true. Tested on one real event with Mike's own address as the guest, then reverted.
+  **The only route to real guest management is the Google Calendar API over OAuth** (`sendUpdates=all`), which replaces the CalDAV write path for events carrying guests. It runs into the wall that reversed the Google Contacts integration on 2026-08-08: under **Testing** publishing status the refresh token expires every 7 days, so it breaks weekly until the app is verified — same account, same GCP project, same constraint. So this is an integration change with an OAuth-verification prerequisite, not a patch.
+  **Deferred to Mark 2 by Mike, 2026-09-09** — do not re-propose against the Mark 1 CalDAV path. Interim behaviour is built and deployed: invitations go by email, and `logistics.md` plus `send_calendar_invite`'s return value both state that the calendar will show nothing, so a working send is not reported as a failure. Raised by Mike after reporting invitations as unsent three times.
 
 ---
+
 ## Now
 
 **Ranked — position is priority.** Capped at ~10, so something enters by displacing something.
@@ -1179,6 +1192,84 @@ claim user-facing (its log-write sibling is `[DB-0829-01]`); the two Iva/Eva cor
 evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording — "causing an
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Travel to Cheder' (2026-11-08T09:00:00, uid=9f9be746-94ac-4fd4-8f60-f4d16b402972@ai-life-manager) and 'Cheder' (2026-11-08T10:00:00, uid=e80d1e0f-e19a-4fce-901f-c5ae135a3a85@ai-life-manager). title_similarity=0.55, shared_attendees=[], shared_words=['cheder']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-09-09T04:35:21.461718Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Cheder' (2026-11-08T00:00:00, uid=179a483a-fa25-4d49-a80a-94430fc9f5b6@ai-life-manager) and 'Travel from Cheder' (2026-11-08T12:30:00, uid=bfbf65ac-2ac5-43a4-a533-52e2adc6ba37@ai-life-manager). title_similarity=0.5, shared_attendees=[], shared_words=['cheder']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-09-09T04:35:21.461531Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Cheder' (2026-11-08T00:00:00, uid=179a483a-fa25-4d49-a80a-94430fc9f5b6@ai-life-manager) and 'Cheder' (2026-11-08T10:00:00, uid=e80d1e0f-e19a-4fce-901f-c5ae135a3a85@ai-life-manager). title_similarity=1.0, shared_attendees=[], shared_words=['cheder']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-09-09T04:35:21.461295Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Cheder' (2026-11-08T00:00:00, uid=179a483a-fa25-4d49-a80a-94430fc9f5b6@ai-life-manager) and 'Travel to Cheder' (2026-11-08T09:00:00, uid=9f9be746-94ac-4fd4-8f60-f4d16b402972@ai-life-manager). title_similarity=0.55, shared_attendees=[], shared_words=['cheder']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-09-09T04:35:21.365919Z`
+
+- **[user corrected a prior turn]** ```  
+  `2026-09-08T19:56:48.095819Z`
+
+- **[a specialist missed a signal it should have caught]** Routing miss: scheduled evening check-in handled as user turn  ×2  
+  `2026-09-08T19:56:46.758936Z`
+
+- **[user corrected a prior turn]** The scheduled system inbox check incorrectly ran following a quiet check-in user prompt.  
+  `2026-09-08T17:23:03.076096Z`
+
+- **[a specialist missed a signal it should have caught]** Routing miss: The scheduled session input 'Quiet check-in — raise it only if something matters right now.' was treated as a prompt to open a full session with preamble rather than keeping it quiet.  ×2  
+  `2026-09-09T07:28:10.308435Z`
+
+- **[user corrected a prior turn]** User asked what they just approved, referring to an unintended contact creation of 'Leto' as a friend that occurred in the previous turn due to a phantom tool call approval prompt.  
+  `2026-09-08T15:09:03.611283Z`
+
+- **[user corrected a prior turn]** ```  
+  `2026-09-08T15:08:06.028343Z`
+
+- **[user corrected a prior turn]** User corrected closing status of Arôme Bakery ('Arome cafe is closed. Should be visible my Google maps or places. You should have caught that. Make a note.') and noted that venue place-checking missed it.  
+  `2026-09-08T14:27:18.609643Z`
+
+- **[user corrected a prior turn]** User correction: prior turn logged a quality event with blank/placeholder detail 'Us', correcting here to properly record routing/handling state.  
+  `2026-09-08T14:18:55.485137Z`
+
+- **[a specialist missed a signal it should have caught]** User asked to check inbox and summarize logistics details; router missed Logistics specialist completely and routed nothing, failing to handle an inbound message correctly.  
+  `2026-09-08T14:16:16.707052Z`
+
+- **[a specialist missed a signal it should have caught]** user provided a contact name and phone number 'Sherrie Waldov - cousin 215 696 0455', but the coordinator routed to no specialists instead of Relationships to save/update the contact.  
+  `2026-09-08T12:38:51.959706Z`
+
+- **[a specialist missed a signal it should have caught]** User asked to check for an emailed text alert from friend Aron, missing email/message search routing in prior turn  
+  `2026-09-08T09:49:07.060816Z`
+
+- **[user corrected a prior turn]** ```  
+  `2026-09-08T09:46:01.754614Z`
+
+- **[a specialist missed a signal it should have caught]** User asked for travel directions ('Travel recommendation? How do we get there?') to the Wallace Collection, but Logistics specialist was missed in the routing.  
+  `2026-09-08T09:46:00.328485Z`
+
+- **[user corrected a prior turn]** ```  
+  `2026-09-08T09:44:51.478252Z`
+
+- **[user corrected a prior turn]** User corrected plant watering records and pointed out that rain at home location should factor into outdoor plant watering status; user also asked if stale note was cleared.  
+  `2026-09-08T08:52:29.450564Z`
+
+- **[a specialist missed a signal it should have caught]** Synthesizer misrouted the prior turn's unprompted quiet check-in response by generating a conversational reply instead of maintaining silent automated state.  
+  `2026-09-08T08:49:31.866830Z`
+
+- **[user corrected a prior turn]** ```  
+  `2026-09-08T07:23:45.623049Z`
+
+- **[a specialist missed a signal it should have caught]** Synthesizer misrouted the previous message by handling a prompt asking for time-sensitive priorities with a generic question instead of consulting the logistics and work specialists for the active ILR application submission window.  
+  `2026-09-08T07:23:44.112493Z`
+
+- **[a specialist missed a signal it should have caught]** The user's previous message about untrusted content tags was mishandled in the coordination layer, resulting in an empty run instead of routing to a specialist or processing intent correctly.  
+  `2026-09-08T06:30:07.029041Z`
+
+- **[user corrected a prior turn]** User corrected the outcome of the Vialto call: the call was today, not tomorrow, and they are set to submit the application tomorrow (requiring a half-hour in the morning).  
+  `2026-09-07T20:12:43.004091Z`
+
+- **[user corrected a prior turn]** ```  
+  `2026-09-07T18:22:39.964109Z`
+
+- **[user corrected a prior turn]** ```  
+  `2026-09-07T15:21:54.901169Z`
 
 - **[user corrected a prior turn]** user corrected assistant's repeated false claim that calendar dispatch capability was missing, confirming it is now built and instructing execution  ×2  
   `2026-09-07T11:30:24.177750Z`
