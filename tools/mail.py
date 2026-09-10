@@ -73,6 +73,36 @@ def _load_config(persona: str | None = None) -> dict:
     return yaml.safe_load(path.read_text()) or {}
 
 
+# Appended to every authentication failure on this path — read and send alike.
+#
+# Regenerating an app-specific password in the Google account does nothing on its
+# own: the new value has to be written into this persona's email.yaml on the
+# machine running Metatron. Saying only the first half cost a morning on
+# 2026-09-10 — Mike changed his account password (which silently revokes every
+# app password), was told to update it "in your account settings", did exactly
+# that, and the retest ran against a file nobody had written to. `[DB-0910-01]`.
+# The two-step framing is deliberate: a specialist paraphrases this text before
+# the user ever sees it, so the step that gets dropped has to be the one marked
+# as the one that gets dropped.
+def _safe_config_path(persona: str | None = None) -> str:
+    try:
+        return str(_config_path(persona))
+    except Exception:
+        return "this persona's email.yaml"
+
+
+def _credential_remedy(persona: str | None = None) -> str:
+    return (
+        f" Note that changing the Google account password revokes every app-specific "
+        f"password with it. Fixing this takes TWO steps, and the second is the one "
+        f"usually missed: (1) generate a new app-specific password in the Google "
+        f"account, then (2) write that value into the auth.password line of "
+        f"{_safe_config_path(persona)} on the machine running this system. Step 1 alone "
+        f"changes nothing here. No restart is needed afterwards — this file is "
+        f"re-read on every call."
+    )
+
+
 # The provisioning template doubles as the default source. A template is copied once, at
 # persona creation, and nothing propagates a later change to an existing persona — so a
 # new key added there would otherwise reach only personas created after it, which for a
@@ -220,6 +250,7 @@ def read_email(count: int = 10, unread_only: bool = False, folder: str = "INBOX"
                 f"IMAP login rejected for {username}: {e}. For Gmail this is usually "
                 f"either IMAP not enabled in the account settings, or an ordinary "
                 f"account password used where an app-specific password is required."
+                + _credential_remedy()
             )}
 
         # readonly=True: SELECT rather than EXAMINE semantics, so nothing is flagged.
@@ -493,7 +524,8 @@ def search_correspondence(address: str, char_budget: int = _CORR_CHAR_BUDGET) ->
         try:
             conn.login(username, password)
         except imaplib.IMAP4.error as e:
-            return {"error": f"IMAP login rejected for {username}: {e}"}
+            return {"error": f"IMAP login rejected for {username}: {e}"
+                             + _credential_remedy()}
 
         sent = _sent_folder(cfg, conn)
         received = _sample_direction(conn, "INBOX", "FROM", address)
@@ -665,7 +697,8 @@ def send_email(to: str, subject: str, body: str, confirm_token: str = "",
             s.login(username, password)
             s.send_message(msg)
     except Exception as e:
-        return {"error": f"Send failed: {e}"}
+        hint = _credential_remedy() if isinstance(e, smtplib.SMTPAuthenticationError) else ""
+        return {"error": f"Send failed: {e}{hint}"}
 
     return {"status": "sent", "to": to_norm, "recipient": who, "subject": subject}
 
@@ -795,7 +828,8 @@ def send_calendar_invite(to: str, uid: str = "", title: str = "", date: str = ""
             s.login(username, password)
             s.send_message(msg)
     except Exception as e:
-        return {"error": f"Invitation failed to send: {e}"}
+        hint = _credential_remedy() if isinstance(e, smtplib.SMTPAuthenticationError) else ""
+        return {"error": f"Invitation failed to send: {e}{hint}"}
 
     return {"status": "invitation_sent", "to": to_norm, "recipient": who,
             "event": event.get("title", ""), "uid": event.get("uid", ""),

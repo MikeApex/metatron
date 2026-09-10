@@ -60,6 +60,39 @@ def _load_config(persona: str | None = None) -> dict:
     return yaml.safe_load(path.read_text()) or {}
 
 
+# Appended to CalDAV failures that are actually authentication failures (401/403).
+#
+# Same lesson as tools/mail.py's _credential_remedy, and it has to live in both
+# because the two integrations hold the same app-specific password in two separate
+# files: changing the Google account password revokes it, and regenerating it in
+# the account reaches neither file. On 2026-09-10 caldav.yaml still held the value
+# from 2026-08-03 while the account had moved on, and the failure text said only
+# "CalDAV request failed: 401" — true, and useless for acting on. `[DB-0910-01]`.
+def _safe_config_path(persona: str | None = None) -> str:
+    try:
+        return str(_config_path(persona))
+    except Exception:
+        return "this persona's caldav.yaml"
+
+
+def _credential_remedy(persona: str | None = None) -> str:
+    return (
+        f" A 401 here almost always means the app-specific password has been revoked, "
+        f"which happens automatically whenever the Google account password changes. "
+        f"Fixing this takes TWO steps, and the second is the one usually missed: "
+        f"(1) generate a new app-specific password in the Google account, then "
+        f"(2) write that value into the auth.password line of {_safe_config_path(persona)} "
+        f"on the machine running this system. Step 1 alone changes nothing here. "
+        f"No restart is needed afterwards — this file is re-read on every call."
+    )
+
+
+def _auth_hint(e: Exception) -> str:
+    """The remedy above, but only when the server actually rejected the credentials."""
+    status = getattr(getattr(e, "response", None), "status_code", None)
+    return _credential_remedy() if status in (401, 403) else ""
+
+
 def _parse_ical_dt(val: str) -> str:
     """Parse iCalendar datetime string to ISO 8601. Returns val unchanged on failure."""
     if not val:
@@ -190,7 +223,7 @@ def _query_events(start_date: str, end_date: str, persona: str | None = None) ->
         )
         response.raise_for_status()
     except requests.RequestException as e:
-        return {"error": f"CalDAV request failed: {e}"}
+        return {"error": f"CalDAV request failed: {e}{_auth_hint(e)}"}
 
     try:
         root = ET.fromstring(response.text)
@@ -229,7 +262,7 @@ def _get_event_by_uid(uid: str, persona: str | None = None) -> dict:
             return {"error": f"No event found with uid '{uid}'."}
         response.raise_for_status()
     except requests.RequestException as e:
-        return {"error": f"Failed to fetch event: {e}"}
+        return {"error": f"Failed to fetch event: {e}{_auth_hint(e)}"}
 
     raw_events = _parse_ical_events(response.text)
     if not raw_events:
@@ -511,7 +544,7 @@ def write_calendar_event(
         )
         response.raise_for_status()
     except requests.RequestException as e:
-        return {"error": f"Failed to write calendar event: {e}"}
+        return {"error": f"Failed to write calendar event: {e}{_auth_hint(e)}"}
 
     result = {
         "success": True,
@@ -692,7 +725,7 @@ def update_calendar_event(
         )
         response.raise_for_status()
     except requests.RequestException as e:
-        return {"error": f"Failed to update calendar event: {e}"}
+        return {"error": f"Failed to update calendar event: {e}{_auth_hint(e)}"}
 
     result = {"success": True, "uid": uid, "title": title_to_write, "start": new_start, "end": new_end}
     if new_attendees:
@@ -735,7 +768,7 @@ def delete_calendar_event(uid: str) -> dict:
             return {"error": f"No event found with uid '{uid}'."}
         response.raise_for_status()
     except requests.RequestException as e:
-        return {"error": f"Failed to delete calendar event: {e}"}
+        return {"error": f"Failed to delete calendar event: {e}{_auth_hint(e)}"}
 
     return {"success": True, "uid": uid}
 

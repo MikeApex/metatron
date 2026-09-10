@@ -9,6 +9,54 @@ third of what has looked open in the past turned out to be already fixed.
 
 ---
 
+## ✅ [DB-0910-01] Told to fix an expired email password "in your account settings" — the message now names the second half of the job — closed 2026-09-10
+
+**The user-visible change:** when the mailbox or calendar rejects the credentials, the failure
+text now says the new app-specific password has to be **written into this persona's
+`email.yaml` / `caldav.yaml` on the machine running the system**, and names that file by its
+resolved path. Before, it said only that an app-specific password was required — which reads
+as "go regenerate one in Google", and Mike did exactly that on 2026-09-10, after which the
+retest ran against a file nobody had written to. Cost three exchanges and a morning of failed
+inbox reads and blocked calendar writes.
+
+### What was built
+
+Text only; no behaviour change, no auto-recovery — an app-specific password cannot be learned,
+derived or refreshed by the system, and the item was explicitly not to grow into one.
+
+- **`tools/mail.py`** — `_credential_remedy()`, appended at four authentication-failure sites:
+  both IMAP `login rejected` paths (`read_email`, the contact-history sampler) and both SMTP
+  paths (`send_email`, `send_calendar_invite`). The SMTP sites append it only for
+  `smtplib.SMTPAuthenticationError`, so an ordinary send failure is not decorated with
+  credential advice.
+- **`tools/caldav.py`** — the same helper plus `_auth_hint()`, appended at all five
+  `requests.RequestException` sites. It fires **only on 401/403**; a 500 or a timeout gets the
+  bare error. It lives in both files rather than one because the two integrations hold the same
+  app password in two separate files, and a password change kills both.
+- Both messages state the fix as **two numbered steps with the second marked as the one usually
+  missed**, because a specialist paraphrases this text before the user ever sees it — the 09-10
+  failure was a paraphrase dropping the half that was not flagged. Both also say **no restart is
+  needed**, which is true and was separately unclear: `_load_config()` runs per invocation.
+- `_safe_config_path()` in both files. `persona_config_dir()` fails closed when no persona is in
+  scope (deliberate — `.claude/rules/personas.md`), and an error-message builder that raises
+  would turn a clean tool error into a traceback. Falls back to the bare filename.
+
+### The evidence
+
+Exercised directly rather than by inspection: the rendered text was printed for `mike` both
+inside and outside a `persona_scope`; `_auth_hint` confirmed to return the remedy on 401 and the
+empty string on 500 and on an exception with no `.response`. `tests/test_calendar_invite.py`
+19/19, `tests/run_calendar_conflict_tests.py` 24/24, `tests/test_intake_forward.py` 24/24,
+`scripts/qa_sweep.sh` 10/10.
+
+**What is not verified, stated rather than implied:** how a specialist paraphrases the new text
+to the user. That needs a live credential failure, which is not worth manufacturing — the
+two-step framing is the mitigation, and the next real failure is the test.
+
+**Deploy:** `tools/` — needs `./deploy.sh`, which is Mike's to run.
+
+---
+
 ## ✅ [DB-0822-09] Email was processed and then thrown away — closed 2026-09-03
 
 **Closed 2026-09-03, on live evidence, after three iterations in one day.** The most expensive

@@ -185,6 +185,28 @@ standing rule distrusts.*
   on live traces 2026-09-02 (Red session ④) · Inbox repeat-info reports merged in 2026-09-02 ·
   derived-count half built 2026-09-03 (session ⑥)*
 
+- **4. [DB-0910-02] It named a lecture as today's confirmed commitment while the calendar was
+  refusing to answer, and said nothing about the gap.** Live 2026-09-10 07:30, the proactive
+  morning session (exchange `001`, `mike`). `logistics` called `read_calendar` and got CalDAV
+  `401`; it called `read_email` and got `AUTHENTICATIONFAILED`. It then fell back to two
+  `search_memory` calls and the Synthesizer opened with *"Today's primary commitment is the BRS
+  Elul lecture with Jonathan Hall at 7:30 PM"* — stated flat, as a confirmed diary item, on a turn
+  where **no diary was readable**. The lecture came out of journal text, not the calendar. The
+  same reply did mention the credential failure, in a later sentence, as a separate housekeeping
+  note — so the two facts were both present and never connected.
+  **This is the fact-provenance class, firing on the silent-failure path.** The 2026-09-03
+  provenance work covers what a specialist reports; it does not cover a specialist substituting
+  recall for a source that just errored, nor the Synthesizer's inability to tell the two apart.
+  A recalled item is not wrong — it may well be right — but presenting it in the grammar of a
+  confirmed commitment is what makes it unfalsifiable to the user, and it happens exactly when
+  the data source is down, which is when he is least able to catch it.
+  **Open question, and it decides the shape of the fix:** does the Synthesizer receive any marker
+  distinguishing "read from calendar" from "recalled from memory" in the specialist package? If
+  it does, this is agent-file wording. If it does not, it is a package-format change and belongs
+  in code — check before proposing either. **Not yet verified against current code.**
+  *raised by Mike 2026-09-10 from the exchange-001 troubleshoot; trace evidence at
+  `data/personas/mike/traces/2026-09-10.jsonl` 07:30:16, logistics turns 1-5*
+
 ### Red — judgement work, not automatable
 
 ### Denied tier — Mike's own file
@@ -296,7 +318,6 @@ standing rule distrusts.*
   @waiting: 2026-09-10 — close on one live pipeline inbox job that no longer reports "no new
   messages" while the inbox has unread mail
   *raised by Mike 2026-09-02 (Red session ④) from the drain read; traces 08-30 14:45 · built 2026-09-03 (session ⑥)*
-
 
 ## Later
 
@@ -1193,6 +1214,30 @@ evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording �
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
 
+- **[user corrected a prior turn]** User corrected plant watering weather check logic in previous turn  
+  `2026-09-10T11:37:31.323401Z`
+
+- **[user corrected a prior turn]** User pointed out that the Dolly Parton event was not showing on the calendar despite previous success claims, requiring a re-write.  
+  `2026-09-10T11:36:17.107876Z`
+
+- **[user corrected a prior turn]** User reported that the Dolly Parton / British Library reading event was not visible on the calendar despite the previous confirmation message claiming it was scheduled.  
+  `2026-09-10T10:11:02.847405Z`
+
+- **[a specialist missed a signal it should have caught]** Coordinator missed user instruction to schedule attached event ('and the attached as well' - Moody's & CubeLogic reception on 24 Sept 6-10pm).  
+  `2026-09-10T09:29:49.686459Z`
+
+- **[a specialist missed a signal it should have caught]** User sent a system/scheduler prompt ('Anticipatory logistics pass...') rather than a direct conversational message, but Coordinator treated it as an incoming user turn instead of handling the anticipatory pass.  
+  `2026-09-10T09:00:12.124595Z`
+
+- **[user corrected a prior turn]** User message injected previous system prompt/instructions instead of conversation text in the turn before last  
+  `2026-09-10T06:30:19.181521Z`
+
+- **[user corrected a prior turn]** ```  
+  `2026-09-09T16:37:04.540671Z`
+
+- **[user corrected a prior turn]** User stated a check-in request with 'Quiet check-in — raise it only if something matters right now', but the intake parsed a scheduled prompt preamble rather than treating it as an explicit user utterance needing a quiet check-in response.  
+  `2026-09-09T13:36:01.279263Z`
+
 - **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Travel to Cheder' (2026-11-08T09:00:00, uid=9f9be746-94ac-4fd4-8f60-f4d16b402972@ai-life-manager) and 'Cheder' (2026-11-08T10:00:00, uid=e80d1e0f-e19a-4fce-901f-c5ae135a3a85@ai-life-manager). title_similarity=0.55, shared_attendees=[], shared_words=['cheder']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
   `2026-09-09T04:35:21.461718Z`
 
@@ -1433,8 +1478,8 @@ entry is a symptom, never a diagnosis.)*
 - **[user corrected a prior turn]** ```  
   `2026-09-03T10:27:19.763865Z`
 
-- **[user corrected a prior turn]** User corrected prior turn where system misattributed a quality event write; corrected routing and logging behavior.  
-  `2026-09-03T10:25:32.600826Z`
+- **[user corrected a prior turn]** User corrected a prompt routing issue in the previous turn; logging quality event for coordinator routing check.  ×2  
+  `2026-09-10T07:10:40.933395Z`
 
 - **[user corrected a prior turn]** User correction in prior turn where meal logging was triggered unexpectedly; user now says 'Read that back to me again.' referring to what was just logged/said.  
   `2026-09-03T10:24:06.987144Z`

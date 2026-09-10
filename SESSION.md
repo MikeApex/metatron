@@ -1,17 +1,18 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-09-09 (**invitations are sent by email and the calendar cannot show them — the
-09-07 close-out called this resolved and it was not**). The seven invitations to Iva were real
-and delivered (Sent Mail, valid `METHOD:REQUEST`, zero bounces); Mike's own Google Calendar
-showed no guest and never will. **Google's CalDAV endpoint stores an `ATTENDEE` line and ignores
-it** — it returns 201 and echoes the line back normalised, which is why it was proposed as the
-fix; tested on one real event, no guest appeared and no invitation was sent. **Accepting a
-property is not honouring it.** So `logistics.md` and `send_calendar_invite`'s return
-(`visible_on_calendar: false`) now say a working send will look like nothing happened. Detail:
-`archive/PROJECT_LOG.md` § 2026-09-09. `0e154b9`.*
+*Updated: 2026-09-10 (**a credential fix that named only half the job, and a commitment asserted
+while the calendar was refusing to answer**). Auth failures on mail and CalDAV now say the new
+app-specific password must be **written into this persona's `email.yaml`/`caldav.yaml`**, not just
+regenerated in Google — two numbered steps with the second flagged, because a specialist
+paraphrases the text before Mike reads it and on 09-10 the paraphrase dropped exactly the
+unflagged half. `[DB-0910-01]` closed. Troubleshooting the exchange that raised it found the worse
+fault: with the calendar 401'ing, `logistics` fell back to memory and the Synthesizer stated a
+recalled lecture as *"today's primary commitment"* — fact-provenance failing on the silent-failure
+path, filed as `[DB-0910-02]` at rank 2 with its shape-deciding question unresolved by design.
+Detail: `archive/PROJECT_LOG.md` § 2026-09-10.*
 
-***Next: `0e154b9` needs deploy — the VM is at `b2b1dc7`.*** Nothing else owed; no Mike-gated
-session queued.
+***Next: two commits owe one deploy — `0e154b9` (09-09 invitation wording) and this session's
+`tools/` change. The VM is at `b2b1dc7`.*** No Mike-gated session queued.
 
 *⛔ **Real calendar guest management is deferred to Mark 2 (Mike, 2026-09-09) — do not
 re-propose it against the Mark 1 CalDAV path.** It needs the Google Calendar API over OAuth,
