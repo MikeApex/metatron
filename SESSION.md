@@ -1,23 +1,25 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-09-10 (**a credential fix that named only half the job, and a commitment asserted
-while the calendar was refusing to answer**). Auth failures on mail and CalDAV now say the new
-app-specific password must be **written into this persona's `email.yaml`/`caldav.yaml`**, not just
-regenerated in Google — two numbered steps with the second flagged, because a specialist
-paraphrases the text before Mike reads it and on 09-10 the paraphrase dropped exactly the
-unflagged half. `[DB-0910-01]` closed. Troubleshooting the exchange that raised it found the worse
-fault: with the calendar 401'ing, `logistics` fell back to memory and the Synthesizer stated a
-recalled lecture as *"today's primary commitment"* — fact-provenance failing on the silent-failure
-path, filed as `[DB-0910-02]` at rank 2 with its shape-deciding question unresolved by design.
-Detail: `archive/PROJECT_LOG.md` § 2026-09-10.*
+*Updated: 2026-09-18 (**Build phases 1–2 — the compass rule made testable, and a worked run that
+moved phase 6 off the optional list**). The Build vertical's artifacts, validators, job ledger and
+Inquiry substrate are built: 104 checks across five suites, `qa_sweep` 10/10, nothing deployed and
+nothing user-visible by design. The ordering rule that separates a compass from a filter now has
+real evidence — the RSVP transcript's turn 2 fails validation on three independent grounds and
+turn 4 passes, first run, no tuning. A worked Inquiry run on run 1's own gap then found that
+**every compass question in it needs `search_conversations`, which is not built**, so run 1 before
+phase 6 would build a filter through the substrate while following the spine correctly. The § 15
+Librarian/Planner interview ran; Mike overruled three of four proposals. Detail:
+`archive/PROJECT_LOG.md` § 2026-09-18.*
 
-***Next: two commits owe one deploy — `0e154b9` (09-09 invitation wording) and this session's
-`tools/` change. The VM is at `b2b1dc7`.*** No Mike-gated session queued.
+***Next: Build phase 3 (writer + the four overlay seams; seam 2 is Red and is not delegated).***
+Still owed: **two commits and one deploy** — `0e154b9` (09-09 invitation wording) and the 09-10
+`tools/` change; the VM is at `b2b1dc7`. Build phases 1–6 deploy together, so they add nothing to
+that debt. No Mike-gated session queued; phase 7 becomes one once phases 3–6 land.
 
-*⛔ **Real calendar guest management is deferred to Mark 2 (Mike, 2026-09-09) — do not
-re-propose it against the Mark 1 CalDAV path.** It needs the Google Calendar API over OAuth,
-which hits the 7-day refresh-token expiry under Testing publishing status that reversed Google
-Contacts on 2026-08-08. Filed in the Inbox with the measurement.*
+*⛔ **Real calendar guest management is deferred to Mark 2 (Mike, 2026-09-09) — do not re-propose
+it against the Mark 1 CalDAV path.** The OAuth route and the 7-day refresh-token wall that makes
+it an integration change rather than a patch: `DEV_BACKLOG.md` § Inbox, which holds the
+measurement.*
 
 *⚠ **Inviting to N events is N approval cards, and the one-call-per-event rule did not hold on
 its first live run** — two of the seven were the same event on the same UID. `logistics.md` now
@@ -25,10 +27,9 @@ says to state how many approvals are coming; batching them into one was not buil
 change if wanted. Mike's standing rule from 09-07 — auto-invite Iva to external events — sits
 untriaged in the Inbox.*
 
-*⚠ **Two open items from 09-05 `006`, both closed by Mike as "skip, no backlog item" — do not
-file them.** (1) Nothing distinguishes deleting a calendar **occurrence** from a **series**.
-(2) The 2:44 check-in ignores its conduct — **adherence, not plumbing**; needs a code gate
-(`[DB-0822-10]`), not more prose.*
+*⚠ **Two items Mike closed as "skip, no backlog item" on 09-05 — do not file them.** The
+calendar occurrence-vs-series gap, and the 2:44 check-in's conduct. Both stated in full in
+`archive/log/2026-09-05-06-horizon-gate-and-two-guards-that-lied.md`.*
 
 *⚠ **The intake extractor is parked permanently (priced out, not disproven) and teaching
 `rules:` tops out at 11/33 — because Mike ruled that a sender is not a category.** Successor is
@@ -50,15 +51,13 @@ deferred into Mark 2 by Mike on 09-04** — do not re-propose it as a standalone
 **`ROADMAP.md` is deliberately NOT updated and still reads as though A8 is live work** — Mike
 handles that and the Mark 1 decommission condition manually. Known, not an oversight.*
 
-*⚠ **Thread expiry is live and now owes one observation, not a deploy.** Confirm birthdates
-survive Metatron's own rewording in `context_audit.jsonl` (new fourth field `reworded`); first
-real expiries expected ~09-15 — status in `[DB-0814-02]`. Also open: B4's max-chain-depth needs
-the 3-round limit in code first (`[DB-0804-02]`); `[DB-0902-01]`'s week clock runs to 09-12; the
-other three `## Now` confirms fall due 09-10. Closed 09-05, do not re-raise: `[DB-0903-01]`
-(duplicates accepted), the clinical-agents-via-`quick` Inbox item (accepted risk, reaffirming
-08-09 — noted at ROADMAP § A7 check 8), `[DB-0903-02]` (scheduler day-name validation, verified
-on the VM), and `[DB-0820-03]` (the extractor's eval gate, closed as unmeetable). `CLAUDE.md` is **298/300**; **`.claude/rules/deploy.md` is 131/100 and
-still owes a pass.***
+*⚠ **Thread expiry is live and owes one observation, not a deploy** — confirm birthdates survive
+Metatron's own rewording in `context_audit.jsonl` (fourth field `reworded`); first real expiries
+were due ~09-15, status in `[DB-0814-02]`. Also open: B4's max-chain-depth needs the 3-round limit
+in code first (`[DB-0804-02]`). **Every dated confirm in `## Now` has now fallen due — the sync's
+`⚠ due:` line is the live list, not this paragraph.** Items closed 09-05 and not to be re-raised
+are in `archive/backlog_closed_2026-09.md`, which is their only home. `CLAUDE.md` is **298/300**;
+**`.claude/rules/deploy.md` is 131/100 and still owes a pass.***
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -97,15 +96,9 @@ delegated): [docs/WORKFLOW.md](docs/WORKFLOW.md). None of the three is loaded by
 **Phase 5 intent:** Coordinator Agent + Specialist Modules
 
 ### Built
-Coordinator–Synthesizer pipeline; all 14 agent files (deep passes + flag audit complete);
-grounded Research search; CRM, Wishes, CalDAV, scheduler-write and profile tools; parallel
-subagent dispatch; threat model and security backlog (`archive/security/`); **server auth,
-`fetch_url`, `read_email`, and the `<untrusted_content>` boundary (2026-08-04)**;
-**user-attached photos and documents, new-message alerts, and a waiting indicator (2026-08-20)**;
-**the Coordinator's view of the previous turn (`[DB-0826-01]`), the session-⑥ record-honesty
-fixes, the session-⑦ capstone remainder — fact provenance, the degradation wording, the
-clinical escalation inbox — and cross-turn attachment persistence (all 2026-09-03, deployed)**.
-*Dates and reasoning for all of it: [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).*
+**The Phase 5 catalogue moved out on 2026-09-18 — it was finished work, and a primer holds state.**
+What exists: [CODEBASE_INDEX.md](CODEBASE_INDEX.md). When and why each piece was built:
+[archive/PROJECT_LOG.md](archive/PROJECT_LOG.md). Everything through 2026-09-03 is deployed.
 
 ### In progress / next
 
@@ -119,9 +112,25 @@ probe on 08-20 — **one case, not a suite**. **B4 is now partially built** — 
 `[DB-0804-02]`. Per-item detail and the standing evidence live in
 [ROADMAP.md](ROADMAP.md) § Track A/B, which owns them; this line is the status, not the record.
 
-**A9 — Product analytics — built and deployed 2026-08-18, review deferred to `2026-10-01`.**
-Alpha gate requirement; the core metric is absorbed work, not engagement. Spec and the five
-provisional parts: [ROADMAP.md](ROADMAP.md) § A9a, the single home. `@waiting` on real use.
+**A9 — built and deployed 2026-08-18; `@waiting` on real use, review `2026-10-01`.** Spec, the
+five provisional parts and the date: [ROADMAP.md](ROADMAP.md) § A9a, the single home.
+
+**BUILD — the vertical that constructs capabilities. Phases 1–2 of 7 done, 2026-09-18.** Plan:
+[archive/plans/build_vertical_plan_2026-09-18.md](archive/plans/build_vertical_plan_2026-09-18.md),
+which owns the sequencing, the rulings and the cost — this line is the status, not the record.
+Built: `core/build/{ids,jobs,schemas,manifest,probe,condense,settle,policy,index,cost}.py` and five
+test suites (104 checks). **Next is phase 3** — the writer and the four overlay seams; **seam 2 is
+`core/router.py`, Red tier, written in the main session and not delegated.** Nothing deploys until
+phase 6; phases 1–6 go to the VM as one deploy.
+
+> **Two things that change what phases 3–6 build, each owned by its own document.**
+> **Phase 6 is now a prerequisite for run 1, not a convenience** — every compass question on run
+> 1's own gap needs the unbuilt `search_conversations`:
+> [build_worked_inquiry_home_care_2026-09-18.md](archive/plans/build_worked_inquiry_home_care_2026-09-18.md).
+> And **Mike's § 15 rulings bind phases 3–5**, three of four overturning the proposal:
+> [build_librarian_planner_parameters_2026-09-18.md](archive/plans/build_librarian_planner_parameters_2026-09-18.md),
+> which also carries the one open cost question — the per-job tripwire is the only spend guard
+> left and its `$2.50` default is a placeholder to be set from run 1's evidence.
 
 **Four built-and-standing constraints must not be undone** (outbound messaging, `tone_shape`,
 obligations-as-data, scheduler maintenance jobs) — **full statements and reasoning:

@@ -288,6 +288,19 @@ def record_turn_tokens(rec: AgentRecord | None, turn_num: int,
     except Exception:
         pass
 
+    # Build's per-job meter, for the same reason and in the same place: this is
+    # the one point every provider path reports through. A NO-OP unless a Build
+    # job is bound on this thread, so it costs an attribute lookup on every
+    # ordinary session and nothing else. Prices come from spend_guard's table,
+    # never a second one — the two meters cannot disagree about a token's cost.
+    try:
+        from core.build.cost import record_job_tokens
+        record_job_tokens(rec.model or "", input_tokens,
+                          output_tokens + thinking_tokens,
+                          tokens_cached=cached_tokens)
+    except Exception:
+        pass
+
 
 def record_retrieval(rec: AgentRecord | None,
                      search_queries: list[str] | None,
