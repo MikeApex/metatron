@@ -1,20 +1,21 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-09-18 (**Build phases 1–2 — the compass rule made testable, and a worked run that
-moved phase 6 off the optional list**). The Build vertical's artifacts, validators, job ledger and
-Inquiry substrate are built: 104 checks across five suites, `qa_sweep` 10/10, nothing deployed and
-nothing user-visible by design. The ordering rule that separates a compass from a filter now has
-real evidence — the RSVP transcript's turn 2 fails validation on three independent grounds and
-turn 4 passes, first run, no tuning. A worked Inquiry run on run 1's own gap then found that
-**every compass question in it needs `search_conversations`, which is not built**, so run 1 before
-phase 6 would build a filter through the substrate while following the spine correctly. The § 15
-Librarian/Planner interview ran; Mike overruled three of four proposals. Detail:
-`archive/PROJECT_LOG.md` § 2026-09-18.*
+*Updated: 2026-09-18 (**Build phase 3 — the writer, the four seams, and two gates that were
+inert**). Build can now write, and what it writes is loadable and verifiable: the choke-point
+writer refuses any path `git ls-files` knows, holds an allowlist not a deny list, and journals
+every byte before it lands; four seams make a generated capability reachable through `load_agent`,
+routing, the Coordinator's closed valid-name list and the consequence/filter/domain literals.
+61 new checks; `qa_sweep` is now 11/11. **Two gates were built to spec and did not hold as
+specified** — the constitution gate rejected the very clause it requires, and the tool-naming
+check inherited a documented blind spot from the tracked regex. Both fixed, both recorded as plan
+corrections. **The phase 3 diff is deliberately uncommitted**, awaiting the § 14 second-model
+review. Detail: `archive/PROJECT_LOG.md` § 2026-09-18.*
 
-***Next: Build phase 3 (writer + the four overlay seams; seam 2 is Red and is not delegated).***
-Still owed: **two commits and one deploy** — `0e154b9` (09-09 invitation wording) and the 09-10
-`tools/` change; the VM is at `b2b1dc7`. Build phases 1–6 deploy together, so they add nothing to
-that debt. No Mike-gated session queued; phase 7 becomes one once phases 3–6 land.
+***Next: Build phase 4 (runner, brief, registry, coherence, wiring; the `_DEFAULT_JOBS` entry is
+Red).*** Still owed: **two commits, one uncommitted tree, one deploy** — `0e154b9` (09-09
+invitation wording), the 09-10 `tools/` change, and phase 3's diff; the VM is at `b2b1dc7`. Build
+phases 1–6 deploy together, so they add nothing to that debt. No Mike-gated session queued; phase
+7 becomes one once phases 3–6 land.
 
 *⛔ **Real calendar guest management is deferred to Mark 2 (Mike, 2026-09-09) — do not re-propose
 it against the Mark 1 CalDAV path.** The OAuth route and the 7-day refresh-token wall that makes
@@ -56,8 +57,8 @@ Metatron's own rewording in `context_audit.jsonl` (fourth field `reworded`); fir
 were due ~09-15, status in `[DB-0814-02]`. Also open: B4's max-chain-depth needs the 3-round limit
 in code first (`[DB-0804-02]`). **Every dated confirm in `## Now` has now fallen due — the sync's
 `⚠ due:` line is the live list, not this paragraph.** Items closed 09-05 and not to be re-raised
-are in `archive/backlog_closed_2026-09.md`, which is their only home. `CLAUDE.md` is **298/300**;
-**`.claude/rules/deploy.md` is 131/100 and still owes a pass.***
+are in `archive/backlog_closed_2026-09.md`, which is their only home. **`CLAUDE.md` is 300/300 and this file is AT its ceiling —
+the next addition to either MOVES A SECTION OUT, and this file's own count is deliberately not written here because restating it changes it**; **`.claude/rules/deploy.md` is 131/100 and owes a pass.***
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -113,13 +114,13 @@ one-case-not-a-suite caveat. This line is the status, not the record.
 **A9 — built and deployed 2026-08-18; `@waiting` on real use, review `2026-10-01`.** Spec, the
 five provisional parts and the date: [ROADMAP.md](ROADMAP.md) § A9a, the single home.
 
-**BUILD — the vertical that constructs capabilities. Phases 1–2 of 7 done, 2026-09-18.** Plan:
+**BUILD — the vertical that constructs capabilities. Phases 1–3 of 7 done, 2026-09-18.** Plan:
 [archive/plans/build_vertical_plan_2026-09-18.md](archive/plans/build_vertical_plan_2026-09-18.md),
 which owns the sequencing, the rulings and the cost — this line is the status, not the record.
-Built: `core/build/{ids,jobs,schemas,manifest,probe,condense,settle,policy,index,cost}.py` and five
-test suites (104 checks). **Next is phase 3** — the writer and the four overlay seams; **seam 2 is
-`core/router.py`, Red tier, written in the main session and not delegated.** Nothing deploys until
-phase 6; phases 1–6 go to the VM as one deploy.
+Built: `core/build/` (14 modules, +`writer`/`overlay`/`constitution`/`verify`),
+`scripts/check_build_registration.py` as `qa_sweep` check 11, `config/modules/build.yaml`, eight
+suites (178 checks). **Next is phase 4** — runner, brief, registry, coherence, wiring. Nothing
+deploys until phase 6. **Phase 3's diff is uncommitted**, pending the § 14 Fable 5 review.
 
 > **Two things that change what phases 3–6 build, each owned by its own document.**
 > **Phase 6 is now a prerequisite for run 1, not a convenience** — every compass question on run
