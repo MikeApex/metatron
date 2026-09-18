@@ -1219,6 +1219,12 @@ evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording â
 unintended email to be sent" â€” is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
 
+- **[a specialist missed a signal it should have caught]** Coordinator missed routing the scheduled day-close check-in (Quiet check-in / evening reflection) to Mental Wellbeing and Diarist as required by the whole-person day-close rule.  
+  `2026-09-18T19:36:42.187364Z`
+
+- **[user corrected a prior turn]** ```  
+  `2026-09-18T17:07:27.981213Z`
+
 - **[a specialist missed a signal it should have caught]** User requested a recap of notifications and missed scheduled items, which arrived after a period of absence; handled via standard multi-domain routing to catch logistics, location/meal query, and playdate scheduling.  
   `2026-09-18T10:09:27.304198Z`
 
