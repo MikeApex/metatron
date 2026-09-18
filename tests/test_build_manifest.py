@@ -285,6 +285,34 @@ def _():
     assert not (named & forbidden), named & forbidden
 
 
+@check("a source may declare which SHAPE of question its tool can serve")
+def _():
+    # read_journal is registered and takes one date, so the journal source is
+    # `available` while being useless for a question about patterns over weeks.
+    assert M.answers_shape("journal", "single_point") is True
+    assert M.answers_shape("journal", "behavioural") is False
+    # A source with no restriction serves any shape — the field is opt-in, so
+    # adding it to the table is a deliberate statement, not a default.
+    assert M.answers_shape("log", "behavioural") is True
+    assert M.answers_shape("log", "single_point") is True
+
+
+@check("unaskable() names the registered tools that cannot serve a shape")
+def _():
+    named = ["journal", "log", "wisdom"]
+    assert M.unaskable(named, "behavioural") == ["journal"], M.unaskable(named, "behavioural")
+    assert M.unaskable(named, "single_point") == [], M.unaskable(named, "single_point")
+
+
+@check("an unavailable source is NOT reported as unaskable — different problems")
+def _():
+    # conversations has no registered tool at all. That is needs_tool, and it
+    # resolves by writing a tool; unaskable resolves by widening one. Reporting
+    # them as the same thing would put the wrong brief in front of Mike.
+    assert M.unaskable(["conversations"], "behavioural") == []
+    assert "conversations" in M.unavailable()
+
+
 @check("capabilities come from agent-file stems, not from the routing files")
 def _():
     names = M.capability_names()

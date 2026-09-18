@@ -15,6 +15,8 @@ state than *"this never retrieves"*, and collapsing the two is what made the
 old flag unreadable. So:
 
     needs_tool     the handler is not registered. Nothing was asked.
+    unaskable      the handler IS registered and cannot answer this SHAPE of
+                   question. Nothing was asked, for a different reason.
     no_data        it ran and returned nothing. The question is answerable in
                    principle and unanswered in fact — an interview item, not a
                    build blocker.
@@ -22,6 +24,15 @@ old flag unreadable. So:
     error          it raised. Recorded with the exception text, never silently
                    folded into no_data, because an error means the source's
                    availability is UNKNOWN rather than false.
+
+`unaskable` was added 2026-09-18, after the worked Inquiry run walked straight
+past the gap it names. `read_journal` is registered and takes ONE DATE, so the
+journal reported `available: true` against a question asking how Mike talks
+about something across 61 files. That probe returns one day or nothing and
+settles as `no_data` — *"there is nothing recorded"* — when the truth is *"this
+tool cannot be asked that."* The first means a FACT is missing; the second
+means a TOOL is, and only the second earns a `needs_tool` brief. The shape
+restriction lives in manifest.py's `answers` field, so CODE decides it.
 
 THE INJECTION ANSWER. `candidate_sources` is validated against the manifest id
 list, and the probe arguments come from manifest._SOURCES, not from the model.
@@ -52,7 +63,7 @@ _EMPTY_MAX_CHARS = 120
 
 
 def probe(source_id: str, persona: str | None = None,
-          overrides: dict | None = None) -> dict:
+          overrides: dict | None = None, data_kind: str = "") -> dict:
     """
     One evidence record for one manifest source.
 
@@ -60,6 +71,13 @@ def probe(source_id: str, persona: str | None = None,
     a question actually needs (a date range, a search term). It is merged over
     the fixed arguments and is itself code-written — settle.py and condense.py
     pass it; no model value reaches here.
+
+    `data_kind` is the SHAPE of the question being asked (`single_point` or
+    `behavioural`). Supplied, it is checked against the source's `answers`
+    restriction BEFORE the call, so a tool that cannot serve this shape returns
+    `unaskable` rather than being called and returning a misleading nothing.
+    Omitted, the check does not run — which is the honest default for a caller
+    that does not know the shape, and is why settle.py always passes it.
     """
     entry = M.source(source_id)
     if entry is None:
@@ -71,6 +89,16 @@ def probe(source_id: str, persona: str | None = None,
     if handler is None:
         return _record(source_id, tool_name, state="needs_tool", rows=0,
                        error=f"{tool_name} is not registered")
+
+    # Checked BEFORE the call, deliberately. Calling a single-date reader with a
+    # behavioural question returns one day or nothing, and that answer is
+    # indistinguishable from an empty corpus once it is a row count.
+    if data_kind and not M.answers_shape(source_id, data_kind):
+        return _record(
+            source_id, tool_name, state="unaskable", rows=0,
+            error=(f"{tool_name} is registered but cannot answer a "
+                   f"{data_kind} question — it serves "
+                   f"{entry.get('answers')} only"))
 
     args = {**(entry.get("probe") or {}), **(overrides or {})}
     args = {k: v for k, v in args.items() if v not in ("", None)}
@@ -148,7 +176,8 @@ def count_rows(raw: Any) -> tuple[int, str]:
     return len([line for line in text.splitlines() if line.strip()]), "text"
 
 
-def probe_all(source_ids: list[str], persona: str | None = None) -> list[dict]:
+def probe_all(source_ids: list[str], persona: str | None = None,
+              data_kind: str = "") -> list[dict]:
     """Evidence for each named source, in order, deduplicated."""
     seen: set[str] = set()
     out: list[dict] = []
@@ -156,7 +185,7 @@ def probe_all(source_ids: list[str], persona: str | None = None) -> list[dict]:
         if source_id in seen or source_id == M.USER_SOURCE:
             continue
         seen.add(source_id)
-        out.append(probe(source_id, persona))
+        out.append(probe(source_id, persona, data_kind=data_kind))
     return out
 
 
@@ -167,12 +196,22 @@ def summarise(records: list[dict]) -> dict:
     `data_available` is true when ANY probed source returned rows. A question
     with three sources of which one answers is answerable; requiring all three
     would park work on the absence of a source nobody needed.
+
+    `needs_tool` collects BOTH kinds of missing tool — the unregistered one and
+    the registered one that cannot be asked this shape — because both resolve
+    the same way: a brief Mike builds on the Mac. `unaskable` is reported
+    separately alongside it so the brief can say WHICH of the two it is, since
+    "write this tool" and "widen this tool" are different pieces of work.
     """
     return {
         "data_available": any(r.get("data_available") for r in records),
         "evidence": records,
         "needs_tool": sorted({
-            r["tool"] for r in records if r.get("state") == "needs_tool"
+            r["tool"] for r in records
+            if r.get("state") in ("needs_tool", "unaskable")
+        }),
+        "unaskable": sorted({
+            r["tool"] for r in records if r.get("state") == "unaskable"
         }),
         "errors": [r["error"] for r in records if r.get("state") == "error"],
         "rows_total": sum(int(r.get("rows") or 0) for r in records),

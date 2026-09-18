@@ -51,6 +51,22 @@ _ROOT = Path(__file__).parent.parent.parent
 # Every entry is inside the read set (plan section 6.3). Adding a row here does
 # not grant anything: the grant allowlist lives in the writer, and a source the
 # writer refuses is still refused however this table reads.
+#
+# `answers` (OPTIONAL) narrows which SHAPE of question a source can serve. Omit
+# it and the source answers any shape.
+#
+# It exists because "the tool is registered" and "the tool can answer this" are
+# different facts, and the gap between them is invisible. `read_journal` is
+# registered and takes ONE DATE, so the journal reads as available while being
+# useless for "how does Mike talk about work stress" across 61 files. Without
+# this field that question probes, returns one day or nothing, and settles as
+# `no_data` — "there is nothing recorded" — when the truth is "this tool cannot
+# be asked that." Found 2026-09-18 by the worked Inquiry run, which named the
+# journal as a source for an intent question and got no warning at all.
+#
+# This is the same class of collapse the three probe states exist to prevent,
+# one level further in: an UNASKABLE question must not look like an UNANSWERED
+# one, because the first is a missing tool and the second is a missing fact.
 # ---------------------------------------------------------------------------
 
 _SOURCES: tuple[dict[str, Any], ...] = (
@@ -59,7 +75,8 @@ _SOURCES: tuple[dict[str, Any], ...] = (
      "probe": {"days": 14}},
     {"id": "journal", "tool": "read_journal", "kind": "behavioural",
      "description": "the Diarist's narrative record, one file per day",
-     "probe": {"entry_date": ""}},
+     "probe": {"entry_date": ""},
+     "answers": ["single_point"]},
     {"id": "journal_range", "tool": "read_journal_range", "kind": "behavioural",
      "description": "journal entries across a date range, condensed",
      "probe": {"start": "", "end": "", "max_entries": 40}},
@@ -177,6 +194,30 @@ def sources(registered: set[str] | None = None) -> list[dict]:
 def source_ids() -> list[str]:
     """Every source id, available or not. What candidate_sources validates against."""
     return [source["id"] for source in _SOURCES]
+
+
+def answers_shape(source_id: str, data_kind: str) -> bool:
+    """
+    Can this source be ASKED a question of this shape at all?
+
+    A source with no `answers` restriction serves any shape. One that declares a
+    restriction serves only the shapes it lists — so `journal` (single-date
+    `read_journal`) cannot serve a `behavioural` question, and saying so is the
+    difference between "there is nothing recorded" and "this cannot be asked".
+    """
+    entry = source(source_id)
+    if entry is None:
+        return False
+    allowed = entry.get("answers")
+    return True if not allowed else str(data_kind or "") in allowed
+
+
+def unaskable(source_ids_wanted: list[str], data_kind: str) -> list[str]:
+    """Named sources whose tool exists but cannot serve this question's shape."""
+    return [
+        s for s in source_ids_wanted
+        if source(s) is not None and not answers_shape(s, data_kind)
+    ]
 
 
 def source(source_id: str) -> dict | None:

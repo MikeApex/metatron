@@ -105,8 +105,48 @@ the last clean 6/6 was on a model no longer in the fleet.
 ### Phase A — Close Mark 1 (in the Mark 1 repo)
 A1. Sessions ⑤ ⑥ ⑦ + the (M) walkthrough.
 A2. **Incident-derived test specification** (§ 6) — written here, where the incidents are documented.
-A3. **The carry-forward dossier** — the last substantive Mark 1 work.
+A3. **The carry-forward dossier** — the last substantive Mark 1 work. Contents specified in § 3a.
 A4. **The quarantine file** — built from the agent instruction files (§ 4).
+
+### § 3a. The carry-forward dossier — contents (agreed 2026-09-09)
+
+*From the artifact discussion with Claude Code, 2026-09-09. Governing principle: **pointers into
+the locked Mark 1 tree, never copies** — the tree is frozen at cutover, so a `file:line` reference
+is stable forever, while a copy is the only thing that can drift or contaminate the refactor. The
+Mark 1 codebase is mounted read-only in Mark 2 sessions (C2) but is **not autoloaded** — these
+artifacts are the reference layer that makes loading it unnecessary in the common case.*
+
+Four small files, not one document — each is consulted at a different moment (setup,
+per-integration build, pre-rewrite, importer work), matching § 1's delivery principle. Written in
+the Mark 1 repo during Phase A, **before** the Mark 2 repo exists: items 1, 2 and 4 feed the
+Phase B redesign packet, and the extraction needs Mark 1's tree, archive and live environment —
+which a fresh Mark 2 session deliberately lacks. Each gets one line in Mark 2's root `CLAUDE.md`
+map; none is ever autoloaded.
+
+1. **Environment & credentials map.** Not the keys — the *existence* of the keys. Which services
+   are provisioned (GCP project, Vertex, Tailscale, the dedicated Google account, Ollama, the four
+   model APIs), where each credential lives (env-var names, key-file paths, VM vs. Mac), and which
+   are shared with Mark 1 vs. need fresh provisioning. Names locations only, never values. The
+   highest silent-absence risk of the four: a build session that doesn't know a key exists will
+   re-provision it, leaving two systems holding divergent credentials to one account.
+2. **Integration quirk ledger.** One entry per external surface (Calendar, Gmail, location/APK,
+   BigQuery, the model APIs): auth mechanism, scopes, and the quirks bought with debugging time —
+   the Vertex 4,096-token cache-floor class. Facts about *the world*, not about Mark 1's code, so
+   they survive any refactor untouched.
+3. **Hard-won code index.** A pointer list, never a snippet file: `file:line — what it solves —
+   why it was expensive to derive`. Candidates: Vertex cache padding, Tailscale DNS recovery, SSE
+   trace streaming, systemd unit specifics, FAISS rebuild-from-metadata. The rule it encodes:
+   *before rewriting X from scratch, read this first* — read, judge, rewrite. The locked tree is
+   the snippet store; this is its index.
+4. **Data-shape census, importer-facing.** § 5's findings formalized per store: path, schema
+   as-it-actually-is, write pattern, authoritative vs. derived fields. Rides with the D1 importer
+   spec rather than standing alone.
+
+**Deliberately not created:** a failure catalogue (ruling 3 — the test spec and quarantine file
+are its replacements) and any architecture summary of Mark 1 (the redesign must not start from
+Mark 1's shape). Items 1–3 are purity-safe to write early because they are facts about the world
+and the data under any design; item 3 is indexed by problem, not architecture. Suggested home:
+`archive/carryforward/`, so the set is findable as a set.
 
 ### Phase B — Redesign, outside Claude Code
 B1. **Assemble the packet** — internal, plus a scrubbed external variant. Precedent and template:

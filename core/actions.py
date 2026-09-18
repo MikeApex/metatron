@@ -46,6 +46,11 @@ from __future__ import annotations
 ACTION_TOOLS: frozenset[str] = frozenset({
     # Messaging
     "send_email",
+    # send_calendar_invite mails an invitation to a real attendee (tools/mail.py:707).
+    # It sends the user's words to a third party and cannot be recalled — the most
+    # clearly outward-facing tool in the fleet, and it shipped 2026-09-07 unclassified.
+    # Found 2026-09-18 by the test below, not by anyone reading the file.
+    "send_calendar_invite",
     # Calendar
     "write_calendar_event", "update_calendar_event", "delete_calendar_event",
     # Contacts / CRM
@@ -80,6 +85,11 @@ ACTION_TOOLS: frozenset[str] = frozenset({
     "write_log", "write_quality_event",
     "write_journal", "write_archive",
     "write_wisdom", "merge_wisdom_entries",
+    # record_wisdom_response stores the user's reaction to an observation, keeping their
+    # pushback VERBATIM (tools/wisdom.py:808). It persists their own words and changes what
+    # the store says about them, so it is an action on the same reading as write_wisdom —
+    # not a read that happens to leave a trace. Unclassified since 2026-09-05.
+    "record_wisdom_response",
     "write_insight_report",
     # Goals, config, identity
     "write_goals", "update_goal",

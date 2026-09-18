@@ -102,15 +102,13 @@ What exists: [CODEBASE_INDEX.md](CODEBASE_INDEX.md). When and why each piece was
 
 ### In progress / next
 
-**A7 — Phase 5 sign-off — BLOCKED on B1 alone.** A1–A6 complete, Track B2 built. **Checks 10
-and 12 are SKIPPED** (Mike, 2026-09-02 — both fold into Mark 2) and **A8 is CANCELLED** (same
-ruling; `ROADMAP.md` § A8 still reads as live, Mike updates it manually — do not start it).
-What is genuinely left: **B1b's calendar, web-page and CardDAV rows, gated on Track E**, plus
-**A5b/A5c** (re-run `write_aspirational_baseline` with A5 mission-level data; A5c preference
-activation recorded "unknown"). B1a passes (102/0). The attached-files row passed one manual
-probe on 08-20 — **one case, not a suite**. **B4 is now partially built** — see
-`[DB-0804-02]`. Per-item detail and the standing evidence live in
-[ROADMAP.md](ROADMAP.md) § Track A/B, which owns them; this line is the status, not the record.
+**A7 — Phase 5 sign-off — BLOCKED on B1 alone.** A1–A6 complete, Track B2 built, B1a passing.
+**Checks 10 and 12 are SKIPPED and A8 is CANCELLED** (Mike, 2026-09-02 — both fold into Mark 2;
+`ROADMAP.md` § A8 still reads as live, Mike updates it manually — do not start it). Genuinely
+left: B1b's calendar, web-page and CardDAV rows (gated on Track E), A5b/A5c, and B4's
+max-chain-depth `[DB-0804-02]`. **Per-item detail and the standing evidence are in
+[ROADMAP.md](ROADMAP.md) § Track A/B, which owns them** — including the attached-files row's
+one-case-not-a-suite caveat. This line is the status, not the record.
 
 **A9 — built and deployed 2026-08-18; `@waiting` on real use, review `2026-10-01`.** Spec, the
 five provisional parts and the date: [ROADMAP.md](ROADMAP.md) § A9a, the single home.
@@ -128,9 +126,14 @@ phase 6; phases 1–6 go to the VM as one deploy.
 > 1's own gap needs the unbuilt `search_conversations`:
 > [build_worked_inquiry_home_care_2026-09-18.md](archive/plans/build_worked_inquiry_home_care_2026-09-18.md).
 > And **Mike's § 15 rulings bind phases 3–5**, three of four overturning the proposal:
-> [build_librarian_planner_parameters_2026-09-18.md](archive/plans/build_librarian_planner_parameters_2026-09-18.md),
-> which also carries the one open cost question — the per-job tripwire is the only spend guard
-> left and its `$2.50` default is a placeholder to be set from run 1's evidence.
+> [build_librarian_planner_parameters_2026-09-18.md](archive/plans/build_librarian_planner_parameters_2026-09-18.md).
+>
+> ⚠ **Build's `$2.50` per-job spend limit is a PLACEHOLDER and phase 7 must say so out loud before
+> run 1 starts.** `cost.budget_notice()` carries the wording and self-clears once
+> `budget.per_job_usd` is set in `config/modules/build.yaml`; **phase 4 owes the two call sites**
+> (the runner, before a job's first node, and `build_board.py`'s header). It is a placeholder
+> because the § 15 ruling removed the per-question reading ration, leaving this the only bound on
+> a run's spend — set it from what run 1 actually costs.
 
 **Four built-and-standing constraints must not be undone** (outbound messaging, `tone_shape`,
 obligations-as-data, scheduler maintenance jobs) — **full statements and reasoning:

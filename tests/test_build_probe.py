@@ -208,6 +208,71 @@ def _():
     assert summary["rows_total"] == 3, summary
 
 
+@check("a registered tool that cannot answer this SHAPE is `unaskable`")
+def _():
+    # read_journal is registered and takes ONE DATE. Asked a behavioural
+    # question it would return one day or nothing, and that answer is
+    # indistinguishable from an empty corpus once it is a row count.
+    with FakeTools({"read_journal": lambda **kw: "2026-09-01 a single day"}):
+        record = PR.probe("journal", PERSONA, data_kind="behavioural")
+    assert record["state"] == "unaskable", record
+    assert record["rows"] == 0 and record["data_available"] is False
+    assert "cannot answer a behavioural question" in record["error"], record
+
+
+@check("the same source answers fine when the shape fits")
+def _():
+    with FakeTools({"read_journal": lambda **kw: "2026-09-01 a single day"}):
+        record = PR.probe("journal", PERSONA, data_kind="single_point")
+    assert record["state"] == "data", record
+
+
+@check("`unaskable` is checked BEFORE the call — the tool is never invoked")
+def _():
+    called = []
+    with FakeTools({"read_journal": lambda **kw: called.append(1) or "x"}):
+        PR.probe("journal", PERSONA, data_kind="behavioural")
+    assert not called, (
+        "calling it anyway would produce a row count that looks like an answer")
+
+
+@check("a source with no shape restriction answers any shape")
+def _():
+    with FakeTools({"get_log_window": lambda **kw: "a\n\nb"}):
+        for kind in ("single_point", "behavioural", ""):
+            record = PR.probe("log", PERSONA, data_kind=kind)
+            assert record["state"] == "data", (kind, record)
+
+
+@check("`unaskable` is NOT `no_data` — a missing tool, not a missing fact")
+def _():
+    with FakeTools({"read_journal": lambda **kw: ""}):
+        empty = PR.probe("journal", PERSONA, data_kind="single_point")
+        unaskable = PR.probe("journal", PERSONA, data_kind="behavioural")
+    assert empty["state"] == "no_data", empty
+    assert unaskable["state"] == "unaskable", unaskable
+    # One means the fact is missing. The other means the TOOL is. Only the
+    # second earns a needs_tool brief, and collapsing them is what let the
+    # worked Inquiry run walk straight past this gap on 2026-09-18.
+    assert empty["state"] != unaskable["state"]
+
+
+@check("summarise() folds unaskable into needs_tool AND reports it separately")
+def _():
+    records = [
+        {"tool": "read_journal", "state": "unaskable", "rows": 0,
+         "data_available": False, "error": "cannot answer behavioural"},
+        {"tool": "search_conversations", "state": "needs_tool", "rows": 0,
+         "data_available": False, "error": "not registered"},
+    ]
+    summary = PR.summarise(records)
+    # Both resolve the same way — a brief Mike builds on the Mac.
+    assert summary["needs_tool"] == ["read_journal", "search_conversations"], summary
+    # But "write this tool" and "widen this tool" are different work, so the
+    # brief has to be able to say which.
+    assert summary["unaskable"] == ["read_journal"], summary
+
+
 # ---------------------------------------------------------------------------
 # settle — policies first, then data
 # ---------------------------------------------------------------------------
@@ -299,6 +364,19 @@ def _():
     row = out["rows"][0]
     assert row["status"] == SET.NEEDS_TOOL, row
     assert out["needs_tool"] == ["search_conversations"], out["needs_tool"]
+
+
+@check("a behavioural question naming only the single-date journal reports unaskable")
+def _():
+    reset()
+    with FakeTools({"read_journal": lambda **kw: "one day"}):
+        out = SET.settle({"spine": [
+            question("q1", "intent", "How does he write about work stress?",
+                     ["journal"]),
+        ]}, PERSONA)
+    row = out["rows"][0]
+    assert row["status"] == SET.NEEDS_TOOL, row
+    assert "read_journal" in out["needs_tool"], out["needs_tool"]
 
 
 @check("settle reports its own arithmetic")
@@ -438,6 +516,46 @@ def _():
     COST.approve_limit(job_id, 1.00, persona=PERSONA)
     assert COST.would_exceed(job_id, 1.50, PERSONA) is True
     assert COST.would_exceed(job_id, 0.50, PERSONA) is False
+
+
+@check("the placeholder budget announces itself while it is still a placeholder")
+def _():
+    reset()
+    assert COST.limit_source() == "placeholder", COST.limit_source()
+    notice = COST.budget_notice()
+    assert notice, "a placeholder limit that says nothing is just a limit"
+    assert "PLACEHOLDER" in notice and "2.50" in notice, notice
+    assert "run 1" in notice, "the notice must say when to replace it"
+
+
+@check("the notice self-clears once a real figure is configured")
+def _():
+    reset()
+    import tempfile, os
+    from pathlib import Path as _P
+    tmp = _P(tempfile.mkdtemp()) / "build.yaml"
+    tmp.write_text("budget:\n  per_job_usd: 4.0\n", encoding="utf-8")
+    saved = COST._CONFIG_PATH
+    COST._CONFIG_PATH = tmp
+    try:
+        assert COST.limit_source() == "configured", COST.limit_source()
+        assert COST.budget_notice() == "", (
+            "a warning that outlives its cause becomes noise people scroll past")
+        assert COST.job_limit() == 4.0
+    finally:
+        COST._CONFIG_PATH = saved
+    assert COST.budget_notice(), "the notice must come back when config goes away"
+
+
+@check("an approved per-job limit also silences the notice for that job")
+def _():
+    reset()
+    job_id = J.create("a gap", trigger="test")["job_id"]
+    assert COST.budget_notice(job_id, PERSONA), "not yet approved"
+    COST.approve_limit(job_id, 6.0, persona=PERSONA)
+    assert COST.limit_source(job_id, PERSONA) == "approved"
+    assert COST.budget_notice(job_id, PERSONA) == "", (
+        "Mike naming a figure for this job IS the decision the notice asks for")
 
 
 @check("day_total aggregates across jobs")

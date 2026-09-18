@@ -41,12 +41,31 @@ from typing import Any
 
 _ROOT = Path(__file__).parent.parent.parent
 
-# Hardcoded default, used until config/modules/build.yaml exists (phase 3
-# creates that file, for the writer's autonomy ceiling). Deliberately a floor
-# rather than a guess at the right number: the first three bootstrap runs are
-# what will set it, and a limit that trips is a cheap signal while a limit that
-# never trips is no signal at all.
+# $2.50 is a PLACEHOLDER (Mike, 2026-09-18), kept deliberately rather than
+# replaced with a better guess: the first three bootstrap runs are what set the
+# real figure, and a limit that trips is a cheap signal while a limit that never
+# trips is no signal at all.
+#
+# It is a placeholder BECAUSE the per-question reading ration was removed the
+# same day — the Librarian reads as much as it needs, so this tripwire is now
+# the only thing bounding a run's spend, and it was chosen before anyone had
+# measured what a Librarian pass actually costs.
+#
+# `budget_notice()` announces that, and MUST be surfaced before run 1 begins
+# (Mike's instruction). It stops announcing itself the moment a real figure is
+# configured, so it cannot become background noise.
 DEFAULT_JOB_LIMIT_USD = 2.50
+
+PLACEHOLDER_NOTICE = (
+    f"⚠ Build's per-job spend limit is ${DEFAULT_JOB_LIMIT_USD:.2f}, and that is "
+    "a PLACEHOLDER, not a measured figure. It was set on 2026-09-18 before any "
+    "Build run had happened, and on the same day the Librarian's per-question "
+    "reading ration was removed — so this limit is now the only thing bounding a "
+    "run's spend. Expect it to be wrong in one direction or the other. Watch what "
+    "run 1 actually costs, then set `budget.per_job_usd` in "
+    "config/modules/build.yaml from that evidence. This notice disappears when "
+    "you do."
+)
 
 _CONFIG_PATH = _ROOT / "config" / "modules" / "build.yaml"
 
@@ -202,15 +221,48 @@ def job_limit(job_id: str = "", persona: str | None = None) -> float:
 
 
 def _configured_limit() -> float:
+    value = _config_value()
+    return DEFAULT_JOB_LIMIT_USD if value is None else value
+
+
+def _config_value() -> float | None:
+    """The configured limit, or None when nothing has been configured."""
     if not _CONFIG_PATH.exists():
-        return DEFAULT_JOB_LIMIT_USD
+        return None
     try:
         import yaml
         cfg = yaml.safe_load(_CONFIG_PATH.read_text(encoding="utf-8")) or {}
         value = (cfg.get("budget") or {}).get("per_job_usd")
-        return float(value) if value is not None else DEFAULT_JOB_LIMIT_USD
+        return None if value is None else float(value)
     except Exception:
-        return DEFAULT_JOB_LIMIT_USD
+        return None
+
+
+def limit_source(job_id: str = "", persona: str | None = None) -> str:
+    """Where the limit in force came from: approved | configured | placeholder."""
+    if job_id and approved_limit(job_id, persona) is not None:
+        return "approved"
+    return "configured" if _config_value() is not None else "placeholder"
+
+
+def budget_notice(job_id: str = "", persona: str | None = None) -> str:
+    """
+    The placeholder warning, or "" once a real figure is configured.
+
+    MUST BE SURFACED BEFORE RUN 1 BEGINS (Mike, 2026-09-18). Returning a string
+    rather than logging is deliberate: a log line is not a decision point, and
+    the whole reason this exists is that the number was chosen before anything
+    had been measured. Callers that owe this notice:
+
+      · core/build/runner.py   before the first node of a job          (phase 4)
+      · scripts/build_board.py in its header while the notice is live  (phase 4)
+      · the phase 7 walkthrough, read aloud before run 1 starts
+
+    Self-clearing — it returns "" the moment `budget.per_job_usd` is set in
+    config/modules/build.yaml, so it cannot decay into noise anyone learns to
+    scroll past.
+    """
+    return "" if limit_source(job_id, persona) != "placeholder" else PLACEHOLDER_NOTICE
 
 
 def approve_limit(job_id: str, limit_usd: float, persona: str | None = None) -> dict:

@@ -121,7 +121,22 @@ def _settle_one(question: dict, persona: str | None) -> tuple[dict, str]:
             return {**base, "settled_by": "", "status": NEEDS_INTERVIEW}, NEEDS_INTERVIEW
         return {**base, "settled_by": ""}, "residue"
 
-    records = PR.probe_all(probeable, persona)
+    # The question's SHAPE decides which sources can even be asked, so it is
+    # derived here and passed down. A question that names only lookup sources is
+    # a lookup; one that names a source holding behaviour over time is a pattern
+    # question, and a single-date reader cannot serve it.
+    #
+    # This inference is imperfect and the direction of its error is chosen. A
+    # single-date question that names `journal` will be read as behavioural and
+    # report `unaskable`, costing one unnecessary brief that Mike can see and
+    # reject. The opposite error — calling a single-date reader for a pattern
+    # question and settling its one-row answer as `no_data` — builds a
+    # capability on "that fact does not exist" when the truth is "that tool
+    # cannot be asked", and nothing surfaces it. A visible false positive beats
+    # a silent false negative, which is the same trade the three probe states
+    # were built on.
+    data_kind = "single_point" if _is_single_point(probeable) else "behavioural"
+    records = PR.probe_all(probeable, persona, data_kind=data_kind)
     summary = PR.summarise(records)
     row = {
         **base,

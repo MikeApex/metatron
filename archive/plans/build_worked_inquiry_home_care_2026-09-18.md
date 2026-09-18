@@ -113,9 +113,30 @@ surface alone. That is a filter, arrived at through the substrate rather than th
 and the spine would have been followed correctly the whole way. **Phase 6 is not a convenience
 ahead of run 1; it is what stops run 1 rebuilding turn 2.**
 
-`read_journal_range` is the second brief and does not show as a gap here only because `journal` is
-registered — `read_journal` exists and takes a single date, so the source reads as available while
-being useless for a range. **That is a manifest limitation worth fixing in phase 6 alongside the
-tool**: a source whose tool is registered but cannot answer the shape of question being asked is a
-third state the probe does not currently distinguish, and it will read as `no_data` rather than
-`needs_tool`.
+**5. `read_journal_range` did not show as a gap, and that was a defect — now fixed.** `journal`
+read as *available* because `read_journal` is registered; that it takes a single date and is
+useless across 61 files was invisible. A pattern question against it would have returned one day
+and settled as `no_data` — *"there is nothing recorded"* — when the truth was *"this tool cannot
+be asked that."*
+
+**The probe gained a fourth state the same day (Mike: "yes build it").** A source may now declare
+which *shape* of question its tool can serve (`answers` in `manifest.py`), checked **before** the
+call so a misleading row count is never produced. `journal` declares `single_point` only. The same
+check re-run against this question set:
+
+| question | class | before | after |
+|---|---|---|---|
+| q2, q3 *stated intentions* | `intent` | `needs_tool` (conversations) | `needs_tool` — **and `journal` now flagged `unaskable`** |
+| q4 *unmetered cost* | `cost` | `needs_tool` | unchanged |
+| q1, q5–q10 | — | answerable | unchanged |
+
+`unaskable` folds into `needs_tool` for routing — both resolve as a brief Mike builds — but is
+reported separately, because *"write this tool"* and *"widen this tool"* are different pieces of
+work and the brief has to say which. An unregistered source is **not** reported as unaskable; they
+are different problems with different fixes.
+
+**The inference is imperfect and its error direction was chosen.** A single-date question naming
+`journal` will read as behavioural and report `unaskable`, costing one unnecessary brief Mike can
+see and reject. The opposite error is silent and builds a capability on a false premise. A visible
+false positive beats a silent false negative — the same trade the three original probe states rest
+on. Tests: `tests/test_build_probe.py` (6 checks), `tests/test_build_manifest.py` (3).
