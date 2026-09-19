@@ -1,21 +1,20 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-09-18 (**Build phase 3 — the writer, the four seams, and two gates that were
-inert**). Build can now write, and what it writes is loadable and verifiable: the choke-point
-writer refuses any path `git ls-files` knows, holds an allowlist not a deny list, and journals
-every byte before it lands; four seams make a generated capability reachable through `load_agent`,
-routing, the Coordinator's closed valid-name list and the consequence/filter/domain literals.
-61 new checks; `qa_sweep` is now 11/11. **Two gates were built to spec and did not hold as
-specified** — the constitution gate rejected the very clause it requires, and the tool-naming
-check inherited a documented blind spot from the tracked regex. Both fixed, both recorded as plan
-corrections. **The phase 3 diff is deliberately uncommitted**, awaiting the § 14 second-model
-review. Detail: `archive/PROJECT_LOG.md` § 2026-09-18.*
+*Updated: 2026-09-19 (**Build phase 3 reviewed three times — twelve findings, all fixed**). The
+§ 14 second-model review came back in three parts: six defects, then five, then one. All are
+closed, and the shape is the finding — **each round's defect class was the previous round's fix**:
+prose never made mechanism, then mechanisms scoped to the probe that prompted them, then a
+mechanism improved in only one of its two homes. None of the 61 checks passing at submission had
+caught any of them, because each test was written by the reasoning that wrote the defect. Suites
+now 36/23/19 plus 117 from phases 1–2; `qa_sweep` 11/11. **Mike committed the phase as
+`12d7dd2`** — tree clean, and this close-out's push carries it offsite. Detail, and the two things
+deliberately NOT changed: `archive/PROJECT_LOG.md` § 2026-09-19.*
 
 ***Next: Build phase 4 (runner, brief, registry, coherence, wiring; the `_DEFAULT_JOBS` entry is
-Red).*** Still owed: **two commits, one uncommitted tree, one deploy** — `0e154b9` (09-09
-invitation wording), the 09-10 `tools/` change, and phase 3's diff; the VM is at `b2b1dc7`. Build
-phases 1–6 deploy together, so they add nothing to that debt. No Mike-gated session queued; phase
-7 becomes one once phases 3–6 land.
+Red).*** Still owed: **three commits and one deploy** — `0e154b9` (09-09 invitation wording), the
+09-10 `tools/` change, and `12d7dd2` (phase 3); the VM is at `b2b1dc7`. Build phases 1–6 deploy
+together, so they add nothing to that debt. No Mike-gated session queued; phase 7 becomes one
+once phases 3–6 land.
 
 *⛔ **Real calendar guest management is deferred to Mark 2 (Mike, 2026-09-09) — do not re-propose
 it against the Mark 1 CalDAV path.** The OAuth route and the 7-day refresh-token wall that makes
@@ -119,8 +118,8 @@ five provisional parts and the date: [ROADMAP.md](ROADMAP.md) § A9a, the single
 which owns the sequencing, the rulings and the cost — this line is the status, not the record.
 Built: `core/build/` (14 modules, +`writer`/`overlay`/`constitution`/`verify`),
 `scripts/check_build_registration.py` as `qa_sweep` check 11, `config/modules/build.yaml`, eight
-suites (178 checks). **Next is phase 4** — runner, brief, registry, coherence, wiring. Nothing
-deploys until phase 6. **Phase 3's diff is uncommitted**, pending the § 14 Fable 5 review.
+suites (195 checks). **Next is phase 4** — runner, brief, registry, coherence, wiring. Nothing
+deploys until phase 6. **Phase 3 is committed (`12d7dd2`), reviewed, and corrected to plan v3.4.**
 
 > **Two things that change what phases 3–6 build, each owned by its own document.**
 > **Phase 6 is now a prerequisite for run 1, not a convenience** — every compass question on run
