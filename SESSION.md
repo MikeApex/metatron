@@ -132,30 +132,12 @@ rounds, Fable 5) but not committed** (see the handoff above). Nothing deploys un
 carry the `answer_interview_item` grant: it is registered and granted to nothing, so [N6] cannot
 be answered in conversation until then.
 
-> **Two phase-5 questions phase 4 left open, both stated rather than decided.** N8b's advisory
-> pass currently re-reads its own plan through `build_planner`, because § 10 lists four agent
-> files and none is a reviewer — **which file carries the N8b instruction is phase 5's call.**
-> And the § 6.3 read set now has a second consumer: `registry.py` counts dispatches from the
-> trace files, so a capability's run line exists whether or not the A9 rollup ever changes.
-
-> **Two things that change what phases 3–6 build, each owned by its own document.**
-> **Phase 6 is now a prerequisite for run 1, not a convenience** — every compass question on run
-> 1's own gap needs the unbuilt `search_conversations`:
-> [build_worked_inquiry_home_care_2026-09-18.md](archive/plans/build_worked_inquiry_home_care_2026-09-18.md).
-> And **Mike's § 15 rulings bind phases 3–5**, three of four overturning the proposal:
-> [build_librarian_planner_parameters_2026-09-18.md](archive/plans/build_librarian_planner_parameters_2026-09-18.md).
->
-> ⚠ **Build's `$2.50` per-job spend limit is a PLACEHOLDER and phase 7 must say so out loud before
-> run 1 starts.** ✅ **Both call sites landed in phase 4** — the runner leads every tick with the
-> notice, `build_board.py` leads its header with it, and both self-clear the moment
-> `budget.per_job_usd` is set in `config/modules/build.yaml`. It is a placeholder because the § 15
-> ruling removed the per-question reading ration, leaving this the only bound on a run's spend —
-> **set it from what run 1 actually costs.** An over-budget job parks and is released by
-> `cost.approve_limit()` **run on the VM over ssh**, never from the Mac board (plan v3.5 C2).
-
-**Four built-and-standing constraints must not be undone** (outbound messaging, `tone_shape`,
-obligations-as-data, scheduler maintenance jobs) — **full statements and reasoning:
-`archive/PROJECT_LOG.md`**; reference now, not current state.
+> **What binds phases 5–7, each owned elsewhere — moved out 2026-09-19 at the ceiling.** N8b's
+> reviewer file (phase 5's call); the § 6.3 read set's second consumer (`registry.py`); phase 6
+> as a **prerequisite** for run 1; Mike's § 15 rulings; and the `$2.50` PLACEHOLDER limit phase 7
+> must say out loud (both notice call sites landed; `cost.approve_limit()` on the VM releases a
+> parked job). Homes: the plan at v3.7, the two 09-18 Build documents in `archive/plans/`, and
+> `archive/PROJECT_LOG.md` § 2026-09-18/19 — which also holds the four standing constraints.
 
 ---
 
