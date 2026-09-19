@@ -1,19 +1,25 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-09-19 (**Build phase 4 — the driver walks the graph, and the suite that tested it
-spent real money**). Runner, brief, registry, coherence, the two board scripts and the wiring;
-86 new checks, every prior suite unchanged, `qa_sweep` 11/11. Three plan corrections recorded
-first as v3.5, all of them claims the plan made about a file nobody had opened. Five defects
-found in this session's own code, four by its own tests — the sharpest being **N10 having no
-artifact, so approving a job silently undid the approval every thirty minutes.** Detail, and the
-phase-5 questions it leaves: `archive/PROJECT_LOG.md` § 2026-09-19. Earlier today:
-`/adversarial-review` (`dac3561`) and phase 3's three review rounds (`12d7dd2`).*
+*Updated: 2026-09-19 (**Build phase 4 reviewed by running it — three rounds, seventeen defects,
+all closed**). The runner walked to `landed` through the real writer and the real 18-check sweep on
+the fixture repo; fourteen defects in round 1, three small ones after the fixes, none after the
+third. The four that mattered: `refuse()` deleted a landed capability, a limit crossed during the
+Planner call failed the job instead of parking it, corrections were attributed to the Diarist or
+the tick, and the `log` source had never probed at all (a phase-2 signature mismatch). Report,
+three parts: `archive/plans/build_phase4_runner_review_2026-09-19_fable-5.md`; reasoning and the
+one design change (a scheduled session now counts as an exchange): `archive/PROJECT_LOG.md`
+§ 2026-09-19. Earlier today: phase 4 built, `/adversarial-review` (`dac3561`), phase 3's rounds.*
 
 *⚠ **Phase 4 is UNCOMMITTED in this tree, by instruction** — `core/build/{runner,brief,registry,
 coherence}.py`, `tools/build.py`, `scripts/build_{board,brief}.py`, four test files, edits to
 `core/{actions,orchestrator,scheduler,build/jobs,build/schemas}.py` + `scripts/sync_dev_backlog.py`,
-**and the plan's v3.5 corrections** — so a fresh clone still reads the plan at v3.4 until Mike
-commits. The close-out (this file + the log) went offsite on its own.*
+**the plan's v3.5–v3.7 corrections, and all three review rounds' fixes** (`manifest`, `probe`,
+`writer`, `logger`, `turn_referent` among them) — so a fresh clone still reads the plan at v3.4
+until Mike commits. **`tools/turn_referent.py` is not a phase-4 file and changes every ordinary
+user turn** — the referent block now skips a tick and a Diarist trace; it ships WITH phase 4. **The same tree carries the headset-mode chat's uncommitted changes** (`.gitignore`,
+`android/**`, `scripts/{check_apk_sync.sh,renew_cert.sh}`, `tests/test_turn_source_marker.py`,
+`DEV_BACKLOG.md`); `git diff` each file before staging. The close-out (this file + the log) went
+offsite on its own.*
 
 *⚠ **A test suite wrote into two live meters and tripped the daily spend stop** — fixed, and
 `(M)`: **`rm data/personas/mike/traces/2026-09-19.jsonl` on the Mac**, 112 fake records, all of
@@ -117,12 +123,14 @@ five provisional parts and the date: [ROADMAP.md](ROADMAP.md) § A9a, the single
 
 **BUILD — the vertical that constructs capabilities. Phases 1–4 of 7 done, 2026-09-19.** Plan:
 [archive/plans/build_vertical_plan_2026-09-18.md](archive/plans/build_vertical_plan_2026-09-18.md),
-**now at v3.5** — it owns the sequencing, the rulings and the cost; this line is the status, not
+**now at v3.7** — it owns the sequencing, the rulings and the cost; this line is the status, not
 the record. Built: `core/build/` (18 modules), `tools/build.py`, `scripts/build_{board,brief}.py`
 + `check_build_registration.py` as `qa_sweep` check 11, `config/modules/build.yaml`, twelve suites
-(281 checks). Phase 3 is committed (`12d7dd2`); **phase 4 is not** (see the handoff above).
-Nothing deploys until phase 6. **Next is phase 5** — the four agent files, on Fable 5, plus both
-routing files.
+(**336 checks**, 281 before the review rounds). Phase 3 is committed (`12d7dd2`); **phase 4 is reviewed to a clean pass (three
+rounds, Fable 5) but not committed** (see the handoff above). Nothing deploys until phase 6.
+**Next is phase 5** — the four agent files, on Fable 5, plus both routing files, which also
+carry the `answer_interview_item` grant: it is registered and granted to nothing, so [N6] cannot
+be answered in conversation until then.
 
 > **Two phase-5 questions phase 4 left open, both stated rather than decided.** N8b's advisory
 > pass currently re-reads its own plan through `build_planner`, because § 10 lists four agent
