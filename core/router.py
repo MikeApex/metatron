@@ -54,11 +54,88 @@ class ModelConfig:
 
 
 def _load_routing() -> dict:
+    """
+    The routing config for this deployment mode, with Build's overlay merged in.
+
+    SEAM 2 of Build's four load seams, and the only Red-tier one. resolve_model()
+    and get_allowed_tools() below need no change at all: they read the merged
+    dict, and a generated capability is an ordinary entry in it by the time they
+    see it.
+    """
     path = _routing_config_path()
+    cfg: dict = {}
     if path.exists():
         with open(path) as f:
-            return yaml.safe_load(f) or {}
-    return {}
+            cfg = yaml.safe_load(f) or {}
+    return _merge_overlay_routing(cfg)
+
+
+def _merge_overlay_routing(cfg: dict) -> dict:
+    """
+    Add Build's generated capabilities to the agent table. TRACKED ALWAYS WINS.
+
+    Three properties, each load-bearing:
+
+    1. **A tracked name is never overridden.** The writer refuses a colliding
+       name up front; this is the second line, and it holds even if a record
+       reached the overlay some other way.
+
+    2. **`model_ref` is resolved HERE, at load time, to the named tracked
+       agent's live model.** A generated record must not pin a model id: ids
+       have a short half-life in this project — the reasoning tier moved twice
+       in four days in September 2026 — and a record pinning one would strand
+       its capability on a retired id with nobody editing it. A ref that does
+       not resolve is SKIPPED rather than registered half-built, so the failure
+       is the existing, understood "no entry in the routing config" raise rather
+       than a silent route to a model that does not exist.
+
+    3. **It fails open to "no overlay".** Any failure returns the tracked config
+       unchanged. This function sits on the path that routes EVERY agent,
+       tracked ones included, so a broken overlay record must not be able to
+       take a tracked session down. Build's fail-closed half is the writer and
+       core/build/verify.py, where refusing costs nothing.
+    """
+    mode = os.environ.get("DEPLOYMENT_MODE", "local")
+    try:
+        from core.build.overlay import routing_entries
+        entries = routing_entries(mode)
+    except Exception as exc:
+        _trace(f"[ROUTE] overlay unavailable, tracked routing only: {exc}")
+        return cfg
+    if not entries:
+        return cfg
+
+    agents = dict(cfg.get("agents") or {})
+    for name, entry in entries.items():
+        if name in agents:
+            _trace(f"[ROUTE] overlay entry {name!r} ignored — a tracked agent owns that name")
+            continue
+        merged = dict(entry)
+        ref = merged.pop("model_ref", None)
+        if ref:
+            tracked = agents.get(str(ref))
+            if not isinstance(tracked, dict) or not tracked.get("model"):
+                _trace(f"[ROUTE] overlay entry {name!r} skipped — model_ref "
+                       f"{ref!r} resolves to no tracked model")
+                continue
+            # BOTH halves come from the tracked agent, and the record's own
+            # provider is DISCARDED rather than deferred to.
+            #
+            # `setdefault` was the defect: the record always carried a provider,
+            # so it always won, and `model_ref` only ever governed the model. A
+            # record could therefore name a sensible tracked agent for its model
+            # and still route itself to an entirely different vendor, with every
+            # individual field reading correctly. The schema now refuses a record
+            # that sets a provider at all; this is the half that holds even if
+            # one reaches the overlay by another route.
+            merged.pop("provider", None)
+            merged["model"] = tracked["model"]
+            merged["provider"] = tracked.get("provider", "gemini")
+        agents[name] = merged
+
+    out = dict(cfg)
+    out["agents"] = agents
+    return out
 
 
 def resolve_model(agent: str, complexity: str | None = None) -> ModelConfig:

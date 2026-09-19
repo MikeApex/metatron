@@ -1,0 +1,56 @@
+# config/modules/build.yaml — the Build vertical's autonomy ceiling.
+#
+# Plan: archive/plans/build_vertical_plan_2026-09-18.md § 6.4
+#
+# THIS FILE IS ON THE WRITER'S HARDCODED DENY LIST. Build may not raise its own
+# ceiling: core/build/writer.py refuses this path at every ceiling, and
+# scripts/check_build_registration.py asserts that the deny list still names it,
+# so a later "simplification" fails the sweep rather than quietly widening the
+# grant. The ceiling is raised only by a human editing a file Build cannot reach.
+#
+# A ceiling is not a wall. An edit ABOVE the ceiling is never dropped — it parks
+# as an approval request. That is what makes the ceiling expandable later
+# without the expansion being invisible.
+
+autonomy:
+  # generated_registration — the v1 ceiling: Build may write overlay records,
+  #   policies and (when the flag below allows) overlay agent files. Nothing
+  #   tracked, ever.
+  # amber | red — reserved. Neither is implemented; naming them here records
+  #   that the ceiling is a dial rather than a boolean, which is what stops the
+  #   next widening being written as a special case.
+  ceiling: "generated_registration"
+
+  # v1 default. Raised BY HAND on the VM, by Mike, for the duration of the
+  # bootstrap runs (plan § 11), and lowered again afterwards unless he decides
+  # at the end of § 11 — with three runs of evidence — to leave it raised.
+  #
+  # This is the genuine widening § 13.10 concedes: the harness `ask` on
+  # config/agents/*.md is a control on CLAUDE CODE sessions and was never in
+  # scope for runtime writes. The equivalent control for a runtime write is this
+  # flag plus the writer's path rules, which is why it defaults false.
+  may_create_agent_files: false
+
+agent_construction:
+  # A HARDCODED FLOOR lives in core/build/writer.py. This value may LOWER it,
+  # never raise it — a config that could raise the limit would be a ceiling
+  # Build's own output could argue its way past.
+  #
+  # Why the limit is in code at all: six of six of Mike's 2026-08-21 complaints
+  # were rules already written in synthesizer.md and ignored, while every rule
+  # moved to Python held on first contact. An agent file that grows without
+  # bound is an agent that stops following its own instructions.
+  max_lines: 220
+
+  # Checked by presence of the `## ` heading. `Confidentiality` is the one that
+  # is a security control rather than a style rule: it is the INSTRUCTION-layer
+  # half of the two-layer architecture, and filter_output() is only the
+  # backstop. A generated agent without it narrates its own tooling.
+  required_sections: [Role, Scope, Output format, Confidentiality]
+
+# budget.per_job_usd is DELIBERATELY ABSENT.
+#
+# The $2.50 default in core/build/cost.py is a PLACEHOLDER and cost.budget_notice()
+# says so out loud until this key is set. Setting it here to silence the notice
+# before run 1 has measured anything would retire the warning without answering
+# it. The figure comes from what run 1 actually costs (plan § 16 phase 7).

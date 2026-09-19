@@ -8,6 +8,26 @@ after the adversarial review at
 `archive/plans/build_vertical_plan_2026-09-18.md` — the current filename is harness-generated.
 Every code claim was re-checked against the working tree at `7bca654`.*
 
+**What changed from v3.3 to v3.4.** One finding from the review's Part 3: seam 3 resolved a
+display name without the whitespace collapse the schema applies, so the two stopped agreeing on
+exactly the rule the v3.3 round added. Fixed in `core/build/overlay.py` alone by importing the
+schema's normalisation rather than restating it. Touched: § 6 (a third correction entry) and
+§ 12 (one assertion on the overlay-seam row). Nothing else moved.
+
+**What changed from v3.2 to v3.3.** Five more from the review's Part 2 re-check — four defects
+the first round's fixes introduced or left beside them, and one observation that the sweep's
+independent re-assertion was narrower than the writer's. Same files, no new ones. Touched: § 6
+(a second corrections blockquote beside the first) and § 12 (one new assertion per item on the
+same three rows). Their shape differs from the first six and the plan says so: those were prose
+never made mechanism; these are mechanisms scoped to the case that prompted them.
+
+**What changed from v3.1 to v3.2.** Six defects from the phase 3 second-model review, all
+confirmed and all fixed in `core/build/writer.py`, `core/build/schemas.py` and the seams — no new
+files. Touched: § 6 (the six recorded as corrections, in the blockquote convention § 8 already
+uses) and § 12 (one new assertion per defect, on the writer, overlay-seam and constitution rows).
+Their common shape is worth the plan carrying: each was a place where this document stated a rule
+in prose and the implementation honoured the prose exactly. Nothing else moved.
+
 **What changed from v3 to v3.1.** All seven Opus findings and its three verification notes are
 adopted as written, with two decisions fixed by Mike: seam 3 rewrites the Coordinator's
 valid-name paragraph at prompt assembly and the re-cache per landing is accepted (finding 3);
@@ -586,6 +606,164 @@ an inheritance. No persona in scope → no overlay; every tracked behaviour exac
 `config/personas/{p}/` was the review's cited pattern and was
 rejected only because it sits on the writer's own deny list and finding 3 kept it there.
 
+> **Corrections recorded deliberately — v3.2, 2026-09-19, after the phase 3 second-model
+> review.** Six defects, all confirmed and all fixed in the writer, `schemas.py` and the seams.
+> Each is recorded here for the same reason § 8's correction is: the spec was followed and the
+> spec was what was wrong, so a session reading only the prose above would rebuild the defect.
+>
+> 1. **The undo journal was a way around all three path rules.** `revert()` replayed whatever the
+>    journal named, and the journal is a file inside an allow-root — so anything able to write one
+>    entry could name any path on the machine and have `revert()` act on it. § 6.7's *"the journal
+>    is the only undo"* described the mechanism and never said the journal is not itself an
+>    artifact. **Now:** `apply()` refuses any `undo.*.jsonl` under the job directory, and
+>    `revert()` runs `check_path()` on every entry before restoring — allow-roots only, never a
+>    tracked path, never a deny-list path; an entry that fails is logged and skipped. Fail-closed
+>    when `git` cannot be asked: a revert that cannot verify its paths does nothing and says so.
+>
+> 2. **`name` was checked against three sets and `display_name` against none.** But `display_name`
+>    is the string the Coordinator copies and the string seam 3 splices into the closed valid-name
+>    list, and it resolves to an agent name through `_normalize_agent()`'s generic fallback whether
+>    or not anything registered it. A record displaying `"Mental Wellbeing"` put a duplicate in
+>    that list and pointed its directory entry at a tracked agent — shadowing through the one field
+>    the collision rule did not cover. **Now:** refused at schema time when the normalised display
+>    name matches a tracked agent, a `_AGENT_NAME_MAP` key or value, or a display string in
+>    `coordinator.md`'s closed list; seam 3 skips such an addition independently, so schema and
+>    seam agree. `_AGENT_NAME_MAP` moved to module scope to make both checks possible — and
+>    callers now take a copy, which also closes a cross-persona leak the in-function literal had.
+>
+> 3. **Both tool scans required backticks.** `send_email` written as ordinary prose passed every
+>    gate. § 6.3's *"the same regex `check_agent_tools.py` already runs"* is what carried the
+>    limitation in. **Now:** the writer's scan matches any live `register_tools()` name as a bare
+>    whole word, backticked or not — safe precisely because the candidate set is the live registry,
+>    where every name is snake_case and none is an English word.
+>    **`scripts/check_agent_tools.py` is deliberately unchanged and still shares the gap**: on a
+>    tracked file the evidence gate is what keeps 34 field names out of the report, and that trade
+>    is right there and wrong only here.
+>
+> 4. **The narration scan read the agent file only.** Three record fields are prompt text too —
+>    `display_name` and `coordinator.directory_entry` are spliced into the Coordinator's system
+>    prompt by seam 3, and `unavailable_consequence` reaches the Synthesizer by seam 4 — and none
+>    was scanned, so a record could carry the leak its agent file was refused for. **Now:** all
+>    three are scanned whole (not only inside quoted spans, as the agent file is — these fields are
+>    short and entirely prompt-facing), and `display_name` is restricted to letters, digits, spaces
+>    and `&`, because it lands inside a quoted item in a closed list where a backtick or a newline
+>    rewrites the sentence rather than merely looking odd.
+>
+> 5. **`model_ref` governed the model and never the provider.** The record always carried a
+>    `provider`, and seam 2 merged it with `setdefault`, so the record's value always won: a
+>    capability could name a sensible tracked agent for its model and still route itself to another
+>    vendor, with every individual field reading correctly. **Now:** a `provider` on the record is
+>    refused at schema time; seam 2 discards any it finds and takes provider *and* model from the
+>    tracked agent. A `model_ref` must also name an agent present in **both** routing files — one
+>    present in only one resolves under one `DEPLOYMENT_MODE` and vanishes under the other, which
+>    is the split the single-record shape exists to make impossible.
+>
+> 6. **`find_places`'s condition was prose.** § 6.3 says a capability wanting it *"must list it in
+>    `risks[]`, which N8b reads and the brief shows Mike"* — and nothing enforced that, so the one
+>    outbound grant whose exposure depends on a human seeing it was handed out as silently as any
+>    other. **Now:** `apply()` reads the plan, and a conditional grant with no matching `risks[]`
+>    entry naming it is refused. Checked against the plan and not the record, so a capability
+>    cannot vouch for itself.
+>
+> **What the six have in common, which is the finding above the findings:** every one is a place
+> where the plan stated a rule in prose and the implementation honoured the prose exactly. The
+> rules that held were the ones already expressed as a mechanism. That is this project's own
+> standing lesson — *six of six of Mike's 2026-08-21 complaints were rules already written in
+> `synthesizer.md` and ignored, while every rule moved to Python held on first contact* — arriving
+> one layer up, in a plan rather than an agent file.
+
+> **Corrections recorded deliberately — v3.3, 2026-09-19, after the review's Part 2 re-check.**
+> The six above were confirmed closed. Five more were found BESIDE them — four introduced or
+> left by the fixes themselves, one an observation about the second line. Recorded here for the
+> same reason: the prose was followed and the prose was incomplete.
+>
+> **The shape they share, and it is not the shape the first six shared.** Those six were prose
+> that was never made mechanism. These five are mechanisms that were made, and scoped to the
+> case that prompted them. Defect 2 stopped a generated capability capturing a TRACKED agent's
+> dispatch and said nothing about a second generated capability capturing the first one's.
+> Defect 4 scanned record fields against the static confidential list, not the live registry the
+> sibling gate reads. Both closed the reported case exactly. **A fix scoped to its probe is the
+> characteristic second-round defect, and the second landed capability — § 11's bootstrap
+> sequence — is where the first of them arrives.**
+>
+> **N1. One generated capability could capture another's dispatch.** Display-name uniqueness was
+> checked against tracked names and the closed list, not against other overlay records. Two
+> capabilities displaying `Home Care` both landed: `coordinator_additions()` returned the string
+> twice and the name map kept one winner, chosen by sort order. A capability displaying `Garden`
+> beside one named `garden` captured it outright. **Now:** refused at schema time against every
+> peer record's display AND every peer record's name, with peers computed from the overlay on
+> disk plus the other records in the same `apply()`; seam 3 drops a duplicate independently
+> through one `accepted_displays()` filter that both halves of the seam read, so the closed list
+> and the name map cannot disagree about which capabilities exist. First wins by sorted name, so
+> the outcome is stable across a restart.
+>
+> **N2. A look-alike of a tracked display name landed.** `Mental  Wellbeing` — two spaces —
+> satisfies the charset, normalises to `mental__wellbeing` which is not tracked, and lowercases
+> to a string the reserved set does not hold. It spliced into the closed list one space from the
+> real entry, on the model whose own map comment records that it cannot reliably copy that list.
+> **Now:** every display-name comparison runs on a collapsed, case-folded form, so a name
+> differing from a reserved one only by whitespace or case is refused.
+>
+> **N3. The two identifier gates read different sets.** `_check_record_fields()` matched
+> `_ALWAYS_CONFIDENTIAL`, which carries 37 of the 78 registered tool names — so
+> `unavailable_consequence: "their send_email digest"` landed in prompt text while the
+> agent-file grant gate refused the same token. § 12's *"a confidential identifier in
+> `unavailable_consequence` must fail"* held for `routing.yaml` and failed for a tool name, which
+> is the canonical confidential identifier. **Now:** the record-field gate reads the live
+> `register_tools()` set through the same `_registered_names_in()` the grant gate uses, in
+> addition to the static list.
+>
+> **N4. The journal rule was case-sensitive on a case-insensitive filesystem.** `Undo.jsonl`
+> passed `check_path()` and is the same inode as the journal on APFS. `revert()`'s new path rules
+> stop a forged journal reaching a tracked or denied file, so the blast radius was already
+> bounded — but it could still restore arbitrary bytes into another capability's overlay agent
+> file, bypassing every content gate. Not reachable on the VM, where ext4 makes it a different
+> file; recorded because **the tests run on the Mac and a fixture-green result would not have
+> shown it.** **Now:** the name test is case-insensitive, and where both files exist the paths are
+> compared by inode.
+>
+> **Observation 2 — the second line looked for less than the first.**
+> `scripts/check_build_registration.py` called the validator with `tracked_names` alone, so the
+> sweep re-asserted the three-set `name` rule and neither of the rules added for N-round defects
+> 2 and 5. Independent re-assertion is that script's entire job, and a narrower one is a false
+> reassurance. **Now:** it passes `reserved_display`, `model_ref_names` and `peer_displays`, so
+> every rule the writer enforces at write time is checked again against what is actually on disk.
+>
+> **Two things the review raised that are NOT changed, both deliberate.**
+> `revert()`'s summary still opens with `reverted —` even when every entry was skipped; the
+> `SKIPPED` clause is the signal, and phase 4 is where a caller will read it — noted here so that
+> caller keys on the clause rather than the prefix. And `scripts/check_agent_tools.py` still
+> requires backticks on the tracked tree, by the standing decision that its evidence gate is what
+> keeps 34 field names out of that report; the writer's bare-word scan is the only line for bare
+> names, and a hand-placed overlay file is not re-checked for them.
+
+> **Correction recorded deliberately — v3.4, 2026-09-19, after the review's Part 3 re-check.**
+> The five above were confirmed closed. **One finding, and it is the same fault the v3.3 round
+> was written to remove, surviving in the last place nobody re-read.**
+>
+> **P3-1. Seam 3 resolved a display name without collapsing its whitespace.** The schema
+> collapses before every display-name comparison — that WAS the N2 fix — and
+> `_resolves_to_tracked()` kept resolving the raw string. So a hand-placed record displaying
+> `Mental  Wellbeing` normalised to `mental__wellbeing`, missed the tracked set, and was
+> surfaced into the closed valid-name list beside the real entry. **Now:** the seam imports the
+> schema's own `_collapse` and `_resolve_display` through one `_display_helpers()` pair, so
+> there is a single definition of the normalisation behind both checks rather than two that
+> agree until one is edited.
+>
+> **Why it is worth a correction entry despite its reach.** The writer refuses such a record
+> (N2) and the sweep's overlay pass flags it (observation 2), so this needed BOTH existing lines
+> bypassed to matter. What makes it worth recording is not the exposure: it is that seam and
+> schema agreeing *independently* is the property this whole correction sequence set out to
+> establish, and the fix that established it in the validator did not reach the seam that was
+> supposed to be checking the validator. **A rule duplicated in two places is a rule that holds
+> until one copy is improved** — which is why the fix is a shared import and not a second
+> collapse call.
+>
+> **The sequence, stated once so the shape is legible:** round one was prose never made
+> mechanism; round two was mechanisms scoped to the probe that prompted them; round three was a
+> mechanism improved in one of its two homes. Each round's defect class is the previous round's
+> fix, examined one level closer.
+
 **1. Job gate** — exists, correct state, budget untripped, attempts remaining.
 
 **2. Path rules — three, in this order, all HARDCODED.**
@@ -999,11 +1177,11 @@ guided session with the steps prepared in advance and Mike executing live.
 | Restart | create job → `kill -9` mid-node → restart → print `states('mike')` | Resumes at `attempt: 2`, no duplicate artifacts |
 | **Manifest privacy** | `python3 tests/test_build_manifest.py` | Greps the manifest for every string value in `profile.yaml`, fails on any hit — **the privacy proof for Inquiry** |
 | Probe honesty | `python3 tests/test_build_probe.py` | Empty journal → `data_available: false, rows: 0`, not an exception |
-| **Writer** `[v3]` | `python3 tests/test_build_writer.py` | Every path in a fixture repo's `git ls-files` refused at **all three** ceilings, including one that is *also* under an allow-root; every deny-list path refused; a path outside both allow-roots refused; a record with one routing entry refused; an agent file naming a tool outside its grant refused; every § 6.3 refused grant refused at all ceilings; `revert()` restores byte-identical by sha256 for agent file, record, policy and journal; with `git` unavailable, `apply()` refuses everything. **`[v3.1]` Allowlist complement (Opus finding 2):** for every handler name the live `register_tools()` registers that is not in the read set — `teach_intake`, `apply_crm_proposals`, `merge_contacts` among them — a record granting it is refused **even though no refused list names it**, so the test tracks the surface as it grows. **`[v3.1]` Name collision over three sets (finding 5):** a record named `time_director` — agent file present, no routing entry — is refused, as is one matching a `routing.yaml`-only or `routing_cloud.yaml`-only name. **`[v3.1]` Common-word names (finding 1):** a record named `garden` lands, and `filter_output()` then passes *"I watered the garden this morning"* untouched while still suppressing *"the garden agent's routing.yaml entry"*; a record named `home_care` leaves *"your home-care tasks are up to date"* untouched |
-| **Overlay seams** `[v3]` | `python3 tests/test_build_overlay.py` | A fixture record under a fixture persona: `load_agent` returns the overlay file only when no tracked file of that name exists; `resolve_model` returns the `model_ref` agent's live model and the record's `allowed_tools`; a tracked name in a record is ignored; consequence and domain map see the record; a malformed record is logged and skipped with every tracked agent still loading. **`[v3.1]` Seam 3 (finding 3):** the assembled Coordinator **system prompt**'s valid-name sentence contains the overlay display name exactly once inside the existing closed list, § Specialist directory carries the entry, no separate `## Additional specialists` block exists anywhere in the prompt, and `coordinator.md`'s sha256 is unchanged after assembly. **`[v3.1]` `PersonaError` (finding 6):** with no persona bound, `load_overlay()` returns `{}`, `load_agent` of a tracked name still succeeds, and `resolve_model()` of a tracked agent still succeeds — the existing `tests/test_a4_complexity_threading.py` run unchanged is the regression gate. **`[v3.1]` Persona-keyed cache (note 3):** two fixture personas with different overlay records — the domain map served to each carries only its own capability names, in either order of first call |
+| **Writer** `[v3]` | `python3 tests/test_build_writer.py` | Every path in a fixture repo's `git ls-files` refused at **all three** ceilings, including one that is *also* under an allow-root; every deny-list path refused; a path outside both allow-roots refused; a record with one routing entry refused; an agent file naming a tool outside its grant refused; every § 6.3 refused grant refused at all ceilings; `revert()` restores byte-identical by sha256 for agent file, record, policy and journal; with `git` unavailable, `apply()` refuses everything. **`[v3.1]` Allowlist complement (Opus finding 2):** for every handler name the live `register_tools()` registers that is not in the read set — `teach_intake`, `apply_crm_proposals`, `merge_contacts` among them — a record granting it is refused **even though no refused list names it**, so the test tracks the surface as it grows. **`[v3.1]` Name collision over three sets (finding 5):** a record named `time_director` — agent file present, no routing entry — is refused, as is one matching a `routing.yaml`-only or `routing_cloud.yaml`-only name. **`[v3.1]` Common-word names (finding 1):** a record named `garden` lands, and `filter_output()` then passes *"I watered the garden this morning"* untouched while still suppressing *"the garden agent's routing.yaml entry"*; a record named `home_care` leaves *"your home-care tasks are up to date"* untouched. **`[v3.2]` The four writer-side review defects (§ 6):** an edit whose path is the job's own undo journal is refused, and a forged journal entry naming a deny-listed path is skipped by `revert()` rather than replayed — asserted by appending one to a real journal and checking the path is still absent afterwards; a `display_name` of `"Mental Wellbeing"`, `"Time Director"`, `"Research"`, `"Logistics"` or `"Pattern Miner"` is refused; `send_email` written as bare prose with no backticks is refused; a record setting `routing.cloud.provider` is refused, as is a `model_ref` present in only one routing file; and `find_places` is refused unless the PLAN's `risks[]` names it — with a risks entry that does not name it also refused, so the check cannot pass on a vague one. **`[v3.3]` Part 2 (§ 6):** a second record displaying a landed record's display name is refused, as is one whose display resolves to another record's NAME (`Garden` beside a capability named `garden`); `Mental  Wellbeing`, `Time  Director` and `MENTAL  WELLBEING` are refused as whitespace/case look-alikes of a reserved name; and `Undo.jsonl`, `UNDO.JSONL` and `Undo.JSONL` are all refused with the journal left byte-identical |
+| **Overlay seams** `[v3]` | `python3 tests/test_build_overlay.py` | A fixture record under a fixture persona: `load_agent` returns the overlay file only when no tracked file of that name exists; `resolve_model` returns the `model_ref` agent's live model and the record's `allowed_tools`; a tracked name in a record is ignored; consequence and domain map see the record; a malformed record is logged and skipped with every tracked agent still loading. **`[v3.1]` Seam 3 (finding 3):** the assembled Coordinator **system prompt**'s valid-name sentence contains the overlay display name exactly once inside the existing closed list, § Specialist directory carries the entry, no separate `## Additional specialists` block exists anywhere in the prompt, and `coordinator.md`'s sha256 is unchanged after assembly. **`[v3.1]` `PersonaError` (finding 6):** with no persona bound, `load_overlay()` returns `{}`, `load_agent` of a tracked name still succeeds, and `resolve_model()` of a tracked agent still succeeds — the existing `tests/test_a4_complexity_threading.py` run unchanged is the regression gate. **`[v3.1]` Persona-keyed cache (note 3):** two fixture personas with different overlay records — the domain map served to each carries only its own capability names, in either order of first call. **`[v3.2]` The two seam-side review defects (§ 6):** a hand-written record displaying `"Mental Wellbeing"` — bypassing the writer, which refuses it — adds NO duplicate to the assembled prompt's valid-name line and does not enter the name map, so schema and seam agree independently; and a record that sets its own `provider` is served the tracked agent's provider by `resolve_model()`, not its own. **`[v3.3]` Part 2 (§ 6):** two hand-placed records sharing a display name put that string into the assembled prompt's valid-name line exactly ONCE and leave one entry in the name map, so the closed list can never carry a duplicate whatever reached the overlay. **`[v3.4]` Part 3 (§ 6):** a hand-placed record displaying `Mental  Wellbeing`, `Mental & Wellbeing`, `Mental and Wellbeing`, `  Mental Wellbeing  `, `MENTAL WELLBEING` or `Time  Director` is surfaced by NEITHER half of seam 3 and leaves the assembled Coordinator prompt **byte-identical** to the no-overlay baseline — asserted against the baseline rather than by string absence, because the padded form strips to a string already in the closed list as the tracked entry |
 | **"Same checks" claim** `[v3]` | `qa_sweep.sh --verbose` vs `core.build.verify.run_all()`, diff the name sets with `:overlay` stripped | **`[v3.1]` Two equalities, not one (finding 4):** verify's `SHARED_CHECKS` names must equal the sweep's set **exactly** — the ten plus `build-registration`; verify's remaining names must equal its declared `ADDED_CHECKS` exactly (`knowledge-domains`, `capability-tests`, `action-provenance`); a name in neither fails. **Proves** it rather than asserting it, over a subset that cannot drift. Second assertion: on a tree with an overlay present, `qa_sweep.sh` reports **zero** overlay files (it cannot see them) and `run_all()`'s overlay pass reports each one |
 | **Run ledger** `[v3.1]` | after run 1 lands: `python3 scripts/build_board.py --run-cost` | The ledger's `landed` row for `home_care` carries one run line — `execution_mode`, `latency_budget_ms`, expected dispatches/day written by N8 from the trigger's observed frequency, and the analytics rollup's actual dispatch count once a day has passed; the board shows **1 of 4** leaf capabilities under the Coordinator against the tier's due condition (finding 7, § 14, § 16). A landed capability with no run line fails `check_build_registration.py` |
-| Constitution | run `constitution.check` on a generated agent with `## Confidentiality` deleted, and on one over `max_lines` | Both must fail |
+| Constitution | run `constitution.check` on a generated agent with `## Confidentiality` deleted, and on one over `max_lines` | Both must fail. **`[v3.2]` The record-field defect (§ 6):** narration in `coordinator.directory_entry`, a confidential identifier in `unavailable_consequence`, and a provider name in `display_name` must each fail and must each NAME THE FIELD in the defect — the three fields reach a prompt and none was scanned. Plus the charset: `Home/Care`, ``Home`Care``, `Home\nCare`, `Home_Care` and `Home<Care>` refused; `Home Care`, `Work & Vocation` and `Zone 2` accepted. **`[v3.3]` Part 2 (§ 6):** `send_email`, `read_email` and `merge_contacts` in `unavailable_consequence` each fail naming the field — none is on the static list, and all three are live registered tools; and `check_build_registration.py --overlay` exits 1 on a hand-placed record carrying a whitespace look-alike display name and a `model_ref` in neither routing file, which the sweep passed while it called the validator with `tracked_names` alone |
 | Budget | set the limit to `0.01`, run a job | Parks at `awaiting_approval`, never starts N10; ledger spend reconciles against the day's trace |
 | **Trace contract** | run one job → `python3 tools/metatron_monitor.py` | Renders in The Book with the three agents **nested**. Open The Book — rendering is the criterion, not the JSONL |
 | Latency `[v3]` | run 1's acceptance with timing assertions | Blocking capability stays inside its declared budget; a `deferred` one returns immediately and lands via `context_block` on a later turn |

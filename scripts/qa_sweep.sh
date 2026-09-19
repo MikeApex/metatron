@@ -159,6 +159,17 @@ run_check "claude-md-claims" "$PY" scripts/check_claude_md_claims.py
 # session simplifying `--git-common-dir` back out.
 run_check "deploy-lock" bash scripts/check_deploy_lock.sh
 
+# --- 11. Build's landing invariants (the 11th CHECK; 1b is why sections stop at 9)
+# Build writes no tracked file; it lands an OVERLAY that four seams read. That
+# guarantee rests on things a later edit could quietly remove -- the writer's
+# hardcoded deny list naming core/build/** and config/modules/build.yaml, the
+# .gitignore line that already covers the overlay, and the grant allowlist
+# matching the live register_tools(). This asserts them, and validates every
+# overlay record natively: no other check in this sweep can SEE an overlay file,
+# because the greps above go through `git ls-files` and the check scripts glob
+# config/agents/*.md.
+run_check "build-registration" "$PY" scripts/check_build_registration.py
+
 # --- Report ------------------------------------------------------------------
 echo
 if [[ ${#FAILURES[@]} -eq 0 ]]; then

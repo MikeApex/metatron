@@ -350,7 +350,16 @@ READ_CAP = 15
 # ---------------------------------------------------------------------------
 
 _DOMAIN_MAP_PATH = _ROOT / "config" / "modules" / "knowledge_domains.yaml"
-_domain_map_cache: tuple[float, dict[str, list[str]]] | None = None
+
+# KEYED BY PERSONA, not a single process-global tuple.
+#
+# The old cache was one (mtime, dict) for the whole process. That was correct
+# while the map came only from a tracked file, which is the same for everyone —
+# and became wrong the moment Build's seam 4 started adding per-persona
+# capability names to it, because one server process serves several personas and
+# whichever called first would have populated the map for all of them. A cache
+# whose contents depend on the caller must be keyed by the caller.
+_domain_map_cache: dict[str, tuple[float, tuple, dict[str, list[str]]]] = {}
 
 
 def domain_agent_map() -> dict[str, list[str]]:
@@ -362,17 +371,26 @@ def domain_agent_map() -> dict[str, list[str]]:
     A domain absent from the file maps to no agent rather than raising — a missing line
     should degrade to "this domain reaches the Synthesizer only", never break a session.
 
-    Cached on mtime, so an edit is picked up without a restart. The file is ~40 lines and
-    this is called once per pipeline turn; the cache is politeness, not necessity.
-    """
-    global _domain_map_cache
+    SEAM 4 of Build's four load seams: a generated capability joins the domains
+    its record names. EXISTING domains only — a record may join one, never
+    create one, because a new key here is a subject nothing else reads and no
+    tracked agent serves. The tracked file is never edited; knowledge_domains.yaml
+    keeps exactly the roster it has.
 
+    Cached on (persona, mtime, overlay contents), so an edit to either side is
+    picked up without a restart.
+    """
     try:
         mtime = _DOMAIN_MAP_PATH.stat().st_mtime
     except OSError:
         return {}
-    if _domain_map_cache and _domain_map_cache[0] == mtime:
-        return _domain_map_cache[1]
+
+    additions = _overlay_domain_additions()
+    persona_key, additions_key = additions
+
+    cached = _domain_map_cache.get(persona_key)
+    if cached and cached[0] == mtime and cached[1] == additions_key:
+        return cached[2]
 
     import yaml as _yaml
 
@@ -385,8 +403,39 @@ def domain_agent_map() -> dict[str, list[str]]:
         str(domain): [str(a) for a in (agents or [])]
         for domain, agents in (raw.get("domains") or {}).items()
     }
-    _domain_map_cache = (mtime, loaded)
+    for domain, names in additions_key:
+        if domain in loaded:
+            for name in names:
+                if name not in loaded[domain]:
+                    loaded[domain].append(name)
+
+    _domain_map_cache[persona_key] = (mtime, additions_key, loaded)
     return loaded
+
+
+def _overlay_domain_additions() -> tuple[str, tuple]:
+    """
+    (persona key, sorted domain->names) from Build's overlay. Never raises.
+
+    The additions double as the cache key. They are cheap to recompute because
+    core/build/overlay.py caches the records themselves on their own mtimes, and
+    deriving the key from the real contents is what makes a stale merged map
+    impossible rather than merely unlikely.
+    """
+    try:
+        from core.persona import resolve_persona
+        persona = resolve_persona()
+    except Exception:
+        # No persona in scope is the ordinary case for a scheduler maintenance
+        # job or a bare CLI call. It gets the tracked map and no overlay, under
+        # its own cache key so it cannot be served a persona's merged map.
+        return ("", ())
+    try:
+        from core.build.overlay import domain_additions
+        items = domain_additions(persona)
+    except Exception:
+        return (persona, ())
+    return (persona, tuple(sorted((d, tuple(sorted(n))) for d, n in items.items())))
 
 
 def agents_for_domain(domain: str) -> list[str]:

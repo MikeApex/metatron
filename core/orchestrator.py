@@ -679,11 +679,191 @@ def _handle_user_correction(coord_output: str) -> None:
 
 
 def load_agent(name: str) -> str:
-    """Load a sub-agent instruction file from config/agents/{name}.md."""
+    """
+    Load a sub-agent instruction file from config/agents/{name}.md.
+
+    SEAM 1 of Build's four load seams. A TRACKED file always wins: the overlay
+    is consulted only when config/agents/{name}.md does not exist, so a
+    generated capability can never shadow a tracked agent. The seam fails open
+    — if the overlay cannot be read, this raises exactly as it did before.
+    """
     agent_path = AGENTS_DIR / f"{name}.md"
-    if not agent_path.exists():
-        raise FileNotFoundError(f"Agent not found: {agent_path}")
-    return agent_path.read_text().strip()
+    if agent_path.exists():
+        return agent_path.read_text().strip()
+
+    overlay_path = _overlay_agent_file(name)
+    if overlay_path is not None:
+        return overlay_path.read_text(encoding="utf-8").strip()
+
+    raise FileNotFoundError(f"Agent not found: {agent_path}")
+
+
+def _overlay_agent_file(name: str):
+    """
+    The overlay instruction file for `name`, or None. Never raises.
+
+    Swallowing every exception is deliberate here and only here: this runs on
+    the path that loads EVERY agent, tracked ones included, and a broken
+    overlay record must not be able to take down a tracked session. The
+    fail-closed half of Build's design lives in core/build/writer.py and
+    core/build/verify.py, where a refusal costs nothing.
+    """
+    try:
+        from core.build.overlay import agent_file
+        return agent_file(name)
+    except Exception as exc:
+        logger.warning(f"[overlay] agent lookup for {name!r} failed: {exc}")
+        return None
+
+
+# ---------------------------------------------------------------------------
+# SEAM 3 — the Coordinator's valid-name list, rewritten at PROMPT ASSEMBLY
+# ---------------------------------------------------------------------------
+#
+# The valid-name list is a CLOSED list in a cached system prompt: "copy these
+# strings exactly, character for character". A generated capability that is not
+# in that sentence is a name the model has been told is invalid.
+#
+# The rejected alternative was injecting the new names as a context block. That
+# would leave the system prompt saying the name was invalid and a context block
+# saying it was — on a model whose own _AGENT_NAME_MAP comment records that it
+# cannot reliably copy even the EXISTING list. Two contradicting instructions to
+# a model already known to fumble this one is not a fallback, it is a coin toss.
+#
+# So the sentence itself is rewritten, in memory, at assembly. THE TRACKED FILE
+# IS NEVER TOUCHED ON DISK — config/agents/coordinator.md keeps its tracked list
+# and its sha256, and tests/test_build_overlay.py asserts exactly that.
+#
+# COST, ACCEPTED BY MIKE 2026-09-18 AND PRICED IN THE PLAN'S Section 14: the
+# system prompt changes once per landing, so the Vertex prompt cache for
+# `coordinator` is created afresh on the first turn after each landing. Once per
+# capability, never per turn, and never for `synthesizer`, whose prompt this
+# does not touch. _pad_for_vertex_cache()'s 4,096-token floor is unaffected
+# because the prompt only ever GROWS here.
+
+# Compiled on first use, not at import: this block sits above the module's
+# `import re as _re`, and a pattern that has to be moved whenever the imports
+# are reordered is a pattern that will one day be moved wrongly.
+# The Coordinator's display-name -> agent-name map.
+#
+# MODULE LEVEL since 2026-09-19, because two other things must read it. The
+# overlay record validator refuses a `display_name` that resolves INTO this map
+# — a record displaying "Mental Wellbeing" would otherwise put a duplicate into
+# the closed valid-name list and point its directory entry at a tracked agent —
+# and seam 3 checks the same thing independently, so schema and seam agree. As a
+# local literal it was readable only by the function using it, so neither check
+# could exist.
+#
+# CALLERS TAKE A COPY before merging anything in. Mutating this dict would carry
+# one persona's capability names into the next request on the same process.
+_AGENT_NAME_MAP = {
+    # Full names
+    "mental wellbeing": "mental_wellbeing",
+    "physical health": "physical_health",
+    "work & vocation": "work_vocation",
+    "work and vocation": "work_vocation",
+    "learning & growth": "learning_growth",
+    "learning and growth": "learning_growth",
+    "recreation & hobbies": "recreation_hobbies",
+    "recreation and hobbies": "recreation_hobbies",
+    "research agent": "research_agent",
+    "goals interviewer": "goals_interviewer",
+    "pattern miner": "pattern_miner",
+    "time director": "time_director",
+    # Single-word abbreviations: Flash-Lite sometimes shortens multi-word names
+    "research": "research_agent",
+    "mental": "mental_wellbeing",
+    "physical": "physical_health",
+    "work": "work_vocation",
+    "learning": "learning_growth",
+    "recreation": "recreation_hobbies",
+    "goals": "goals_interviewer",
+    "pattern": "pattern_miner",
+    "time": "time_director",
+}
+
+def normalize_agent_name(name: str, name_map: dict[str, str] | None = None) -> str:
+    """
+    A name the Coordinator said -> the agent name to dispatch.
+
+    The generic fallback is the half that matters for Build: a display name
+    resolves to an agent name whether or not anything registered it, which is
+    why a generated `display_name` must be checked against the TRACKED agent
+    names and not merely against this map's keys.
+    """
+    lowered = str(name or "").lower()
+    table = _AGENT_NAME_MAP if name_map is None else name_map
+    if lowered in table:
+        return table[lowered]
+    return lowered.replace(" & ", "_").replace(" and ", "_").replace(" ", "_")
+
+
+_VALID_NAMES_PATTERN = r'(^\*\*Valid `"agent"` values\*\*[^\n]*:\s*\n)([^\n]+)$'
+_DIRECTORY_HEADING = "## Specialist directory"
+
+
+@lru_cache(maxsize=2)
+def _valid_names_re():
+    import re
+    return re.compile(_VALID_NAMES_PATTERN, re.MULTILINE)
+
+
+def _overlay_coordinator_prompt(agent_text: str, persona: str | None = None) -> str:
+    """
+    The Coordinator's instructions with any generated capabilities spliced in.
+
+    Returns the text UNCHANGED when there is no overlay, when it cannot be read,
+    or when the anchors are not found — this seam fails open like the other
+    three, and a Coordinator running on its tracked list is the pre-Build
+    behaviour rather than a broken one.
+    """
+    try:
+        from core.build.overlay import coordinator_additions
+        names, entries = coordinator_additions(persona)
+    except Exception as exc:
+        logger.warning(f"[overlay] coordinator additions failed: {exc}")
+        return agent_text
+    if not names:
+        return agent_text
+
+    text = _splice_valid_names(agent_text, names)
+    return _append_directory_entries(text, entries)
+
+
+def _splice_valid_names(text: str, names: list[str]) -> str:
+    """Append `"Display Name"` to the closed list, inside the same sentence."""
+    match = _valid_names_re().search(text)
+    if not match:
+        logger.warning("[overlay] coordinator valid-name list not found; "
+                       "generated capabilities are NOT in the closed list")
+        return text
+    listing = match.group(2)
+    additions = [f'`"{n}"`' for n in names if f'`"{n}"`' not in listing]
+    if not additions:
+        return text
+    return text[:match.start(2)] + listing.rstrip() + " · " + " · ".join(additions) \
+        + text[match.end(2):]
+
+
+def _append_directory_entries(text: str, entries: list[str]) -> str:
+    """
+    Add each directory entry INSIDE the existing Specialist directory section.
+
+    Deliberately not a new "## Additional specialists" heading: a second
+    directory is a second place to look, and the Coordinator reads one.
+    """
+    if not entries:
+        return text
+    start = text.find(_DIRECTORY_HEADING)
+    if start == -1:
+        logger.warning("[overlay] '%s' not found; directory entries dropped",
+                       _DIRECTORY_HEADING)
+        return text
+    import re
+    nxt = re.search(r'^## ', text[start + len(_DIRECTORY_HEADING):], re.MULTILINE)
+    end = start + len(_DIRECTORY_HEADING) + nxt.start() if nxt else len(text)
+    block = "\n" + "\n\n".join(e.strip() for e in entries) + "\n\n"
+    return text[:end].rstrip() + "\n" + block + text[end:]
 
 
 def _relative_age(days_ago: int) -> str:
@@ -1418,6 +1598,20 @@ _CONTEXT_SENSITIVE = [
     "coordinator", "synthesizer", "orchestrator",
 ]
 
+def _overlay_confidential() -> list[str]:
+    """
+    Generated capability names, for the SENTENCE-GATED tier. Never raises.
+
+    Returns [] on any failure, which leaves the filter exactly as strong as it
+    was before Build existed — the tracked lists are untouched by this path.
+    """
+    try:
+        from core.build.overlay import confidential_names
+        return confidential_names()
+    except Exception:
+        return []
+
+
 # Vocabulary that, when appearing in the same sentence as a context-sensitive
 # term, signals an architecture leak rather than ordinary prose.
 #
@@ -1941,7 +2135,16 @@ def filter_output(text: str, agent_name: str, user_text: str | None = None) -> s
             return _suppress(f"architecture narration {m.group(0)!r} found")
 
     # Tier 3 — spaced identifiers and common-word agent names, sentence-gated.
-    for term in list(_ALWAYS_CONFIDENTIAL) + list(_CONTEXT_SENSITIVE):
+    #
+    # SEAM 4. Generated capability names join _CONTEXT_SENSITIVE HERE, at filter
+    # time, and never _ALWAYS_CONFIDENTIAL. That is not a detail: tier 1 matches
+    # a substring however it is punctuated or squashed and replaces the WHOLE
+    # reply with the canned fallback, so `home_care` on that list would suppress
+    # "your home-care tasks are up to date" and a one-word name like `garden`
+    # would suppress every reply containing the word. Tier 3 fires only inside a
+    # sentence carrying architecture vocabulary, which is exactly the mechanism
+    # built for names that are also ordinary English.
+    for term in list(_ALWAYS_CONFIDENTIAL) + list(_CONTEXT_SENSITIVE) + _overlay_confidential():
         rx = _term_regex(term, _LOOSE_JOINER)
         for m in rx.finditer(norm):
             start, end = _sentence_bounds(norm, m.start())
@@ -4808,6 +5011,8 @@ def _run_single_agent(agent_name: str, user_input: str,
 
     _trace(f"[AGENT] {agent_name}  provider={provider}  model={model_override}{'  bare=True' if bare else ''}")
     agent = load_agent(agent_name)
+    if agent_name == "coordinator":
+        agent = _overlay_coordinator_prompt(agent, persona)
 
     if bare or agent_name in {"research_agent", "diarist"}:
         # No personal config or context — decontextualized / diagnostic mode.
@@ -5430,6 +5635,16 @@ def _unavailable_notice(agent_name: str) -> str:
     /monitor/model_errors, which is where it is actionable.
     """
     what = _UNAVAILABLE_CONSEQUENCE.get(agent_name)
+    if not what:
+        # SEAM 4. The literal above is the tracked roster; a generated
+        # capability carries its own consequence in its overlay record. Still
+        # degrades to a bare statement when neither has one — never to the
+        # agent's name, because the name IS the architecture.
+        try:
+            from core.build.overlay import unavailable_consequence
+            what = unavailable_consequence(agent_name) or None
+        except Exception:
+            what = None
     lost = f" to {what}" if what else ""
     return (
         f"[UNAVAILABLE THIS TURN — you could not get{lost}. "
@@ -5500,38 +5715,24 @@ def _dispatch_from_coordinator(
             for _agent in _agents:
                 _agent_domains.setdefault(_agent, []).append(_domain)
 
-    _AGENT_NAME_MAP = {
-        # Full names
-        "mental wellbeing": "mental_wellbeing",
-        "physical health": "physical_health",
-        "work & vocation": "work_vocation",
-        "work and vocation": "work_vocation",
-        "learning & growth": "learning_growth",
-        "learning and growth": "learning_growth",
-        "recreation & hobbies": "recreation_hobbies",
-        "recreation and hobbies": "recreation_hobbies",
-        "research agent": "research_agent",
-        "goals interviewer": "goals_interviewer",
-        "pattern miner": "pattern_miner",
-        "time director": "time_director",
-        # Single-word abbreviations: Flash-Lite sometimes shortens multi-word names
-        "research": "research_agent",
-        "mental": "mental_wellbeing",
-        "physical": "physical_health",
-        "work": "work_vocation",
-        "learning": "learning_growth",
-        "recreation": "recreation_hobbies",
-        "goals": "goals_interviewer",
-        "pattern": "pattern_miner",
-        "time": "time_director",
-    }
+    # A LOCAL COPY. The overlay merge below mutates this map, and mutating the
+    # module-level constant would carry one persona's display names into the
+    # next request handled by the same process.
+    name_map = dict(_AGENT_NAME_MAP)
+
+    # SEAM 3, second half. The Coordinator answers with the DISPLAY name it was
+    # shown ("Home Care"); this is what turns that back into the record name.
+    # The generic fallback would get `home_care` right by luck for that example
+    # and wrong for any display name that is not the identifier with spaces.
+    try:
+        from core.build.overlay import name_map_additions
+        for _display, _name in name_map_additions(persona).items():
+            name_map.setdefault(_display, _name)
+    except Exception as _exc:
+        logger.warning(f"[overlay] coordinator name map not extended: {_exc}")
 
     def _normalize_agent(name: str) -> str:
-        lowered = name.lower()
-        if lowered in _AGENT_NAME_MAP:
-            return _AGENT_NAME_MAP[lowered]
-        # Generic fallback: lowercase + replace " & "/" and "/" spaces with underscore
-        return lowered.replace(" & ", "_").replace(" and ", "_").replace(" ", "_")
+        return normalize_agent_name(name, name_map)
 
     for spec in specialists:
         agent = spec.get("agent", "")

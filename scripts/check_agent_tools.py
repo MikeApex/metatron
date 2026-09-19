@@ -196,16 +196,47 @@ def _load_registered_tools() -> set[str]:
     return {s["name"] for s in schemas} | set(handlers)
 
 
-def _load_routing(which: str) -> dict[str, list[str] | None]:
-    """agent -> allowed_tools (None = no whitelist = all tools advertised)."""
+def _load_routing(which: str, overlay: Path | None = None) -> dict[str, list[str] | None]:
+    """
+    agent -> allowed_tools (None = no whitelist = all tools advertised).
+
+    With `overlay`, the MERGED view is returned: tracked entries plus each
+    generated capability's grant for this routing side. Merged rather than
+    replaced because a generated agent file may legitimately reference a tracked
+    agent, and because tracked always wins — the same rule core/router.py's
+    seam 2 applies at runtime, so this check sees what the router will see.
+    """
     import yaml
     name = "routing_cloud.yaml" if which == "cloud" else "routing.yaml"
     path = ROOT / "config" / "modules" / name
-    if not path.exists():
-        return {}
-    cfg = yaml.safe_load(path.read_text()) or {}
-    return {a: c.get("allowed_tools") if isinstance(c, dict) else None
-            for a, c in (cfg.get("agents") or {}).items()}
+    out: dict[str, list[str] | None] = {}
+    if path.exists():
+        cfg = yaml.safe_load(path.read_text()) or {}
+        out = {a: c.get("allowed_tools") if isinstance(c, dict) else None
+               for a, c in (cfg.get("agents") or {}).items()}
+    if overlay is not None:
+        side = "cloud" if which == "cloud" else "local"
+        for record in _overlay_records(overlay):
+            agent = str(record.get("name") or "")
+            if not agent or agent in out:
+                continue
+            entry = (record.get("routing") or {}).get(side) or {}
+            out[agent] = entry.get("allowed_tools")
+    return out
+
+
+def _overlay_records(overlay: Path) -> list[dict]:
+    """Every capability record in an overlay tree. Unreadable ones are skipped."""
+    import yaml
+    found: list[dict] = []
+    for path in sorted((overlay / "capabilities").glob("*.yaml")):
+        try:
+            record = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if isinstance(record, dict):
+            found.append(record)
+    return found
 
 
 # A bolded label used as a section marker, e.g. "**Phase 6 tools (deferred):**".
@@ -334,6 +365,12 @@ def main() -> int:
     ap.add_argument("--quiet", action="store_true", help="findings only, no clean lines")
     ap.add_argument("--no-personas", action="store_true",
                     help="skip config/personas/**.md (agent files only, pre-2026-08-18 behaviour)")
+    ap.add_argument("--overlay", default=None,
+                    help="check a Build OVERLAY tree instead of config/agents/. "
+                         "qa_sweep.sh's greps go through `git ls-files` and this "
+                         "script globs config/agents/*.md, so an overlay file is "
+                         "invisible to every existing check — on the VM and on "
+                         "the Mac alike. core/build/verify.py passes this.")
     ap.add_argument("--personas-root", default=None,
                     help="override the persona config root. Exists so the acceptance test "
                          "can point at a fixture: the real mike persona files are gitignored "
@@ -342,9 +379,14 @@ def main() -> int:
 
     registered = _load_registered_tools()
     routings = ["cloud", "local"] if args.routing == "both" else [args.routing]
-    allowed_by_routing = {r: _load_routing(r) for r in routings}
+    overlay = Path(args.overlay) if args.overlay else None
+    if overlay is not None and not overlay.is_dir():
+        print(f"No overlay tree at {overlay}")
+        return 2
+    allowed_by_routing = {r: _load_routing(r, overlay) for r in routings}
 
-    agent_files = sorted(AGENTS_DIR.glob("*.md"))
+    agent_files = (sorted((overlay / "agents").glob("*.md")) if overlay
+                   else sorted(AGENTS_DIR.glob("*.md")))
     if args.agent:
         agent_files = [f for f in agent_files if f.stem == args.agent]
         if not agent_files:
@@ -355,7 +397,8 @@ def main() -> int:
     # instruction text. See the module docstring for why the attribution set is
     # read from the orchestrator rather than listed here.
     personas_root = Path(args.personas_root) if args.personas_root else PERSONAS_DIR
-    persona_files: list[Path] = [] if args.no_personas else _persona_files(personas_root)
+    skip_personas = args.no_personas or overlay is not None
+    persona_files: list[Path] = [] if skip_personas else _persona_files(personas_root)
     persona_agents, attribution_warning = _persona_reading_agents()
     if args.agent:
         persona_agents = {a for a in persona_agents if a == args.agent}
@@ -377,8 +420,10 @@ def main() -> int:
     print("=" * 72)
     print(f"Tool references in {len(agent_files)} agent file(s) and "
           f"{len(persona_files)} persona file(s) vs {len(registered)} registered tools")
-    if args.no_personas:
-        print("  persona scan: DISABLED by --no-personas")
+    if skip_personas:
+        print("  persona scan: DISABLED"
+              + (" by --overlay (persona files are tracked-tree material)"
+                 if overlay is not None else " by --no-personas"))
     elif not persona_files:
         print("  ⚠ PERSONA SCAN READ ZERO FILES — this report says nothing about persona")
         print(f"    files. Looked in: {personas_root}")
@@ -489,8 +534,26 @@ def main() -> int:
         print("Class 1: build the tool, or move the line into a deferred section so")
         print("it reads as a plan. Deleting the instruction is the last resort — the")
         print("aspiration is the design record.")
+
+    # CLASS 2 IS ADVISORY ON THE TRACKED TREE AND FATAL ON AN OVERLAY.
+    #
+    # On a tracked file the usual fix is "add the grant", which is a human
+    # decision about what an agent should be allowed to do — so failing the
+    # sweep on it would block work on a judgement call, and the class is
+    # reported rather than enforced.
+    #
+    # A GENERATED agent file has no such human. Nobody is going to come along
+    # and add the grant, so the reference is simply a tool the agent has been
+    # TOLD it has and does not — and because `allowed_tools` filters schemas
+    # while dispatch_tool() checks nothing (.claude/rules/agent-files.md), being
+    # told is enough to call it. `logistics` called `write_agent_config` three
+    # times in production without the grant and the dispatcher executed each.
+    # So on the overlay path this is a landing blocker, not a note.
+    if args.overlay and not_granted:
+        print("Class 2 is FATAL on an overlay: a generated agent naming a tool it")
+        print("was not granted has been told it has a capability nothing will add.")
     print("=" * 72)
-    return 1 if nonexistent else 0
+    return 1 if nonexistent or (args.overlay and not_granted) else 0
 
 
 if __name__ == "__main__":

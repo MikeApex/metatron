@@ -84,6 +84,10 @@ SCHEMA_VERSIONS: dict[str, str] = {
     "question_set": "question_set/1",
     "answer_ledger": "answer_ledger/1",
     "build_plan": "build_plan/1",
+    # Not a model artifact — the writer produces it. It is here because it is
+    # the fourth thing with a schema, and one home for schema strings is worth
+    # more than a tidy separation between model-written and code-written.
+    "overlay_capability": "overlay_capability/1",
 }
 
 # `new` is the disposition a model reaches for by default, because it matches
@@ -849,3 +853,357 @@ def climb(kind: str, raw: Any, **checks: Any) -> tuple[dict | None, list[str], l
         "build_plan": validate_build_plan,
     }[kind]
     return obj, validator(obj, **checks), notes
+
+
+# ---------------------------------------------------------------------------
+# The overlay capability record — the registration matrix as ONE record
+# ---------------------------------------------------------------------------
+#
+# Registration is not a checklist of edits to tracked files. It is one record,
+# written by the writer into the overlay, that the four load seams read.
+#
+# The live evidence that humans do not complete a checklist reliably is in the
+# tree right now: `config/agents/time_director.md` exists, `_AGENT_NAME_MAP`
+# maps to it, `_UNAVAILABLE_CONSEQUENCE` carries a line for it — and it appears
+# in NEITHER routing file nor the Coordinator's name list. Anything naming it
+# raises at core/router.py:112-117. A half-wired agent is in the tree today.
+# One record with required fields is the answer to that class of defect; a
+# longer checklist is not.
+
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_AGENT_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{2,31}$")
+
+
+# Letters, digits, spaces and an ampersand. Nothing else, because this string is
+# SPLICED INTO A PROMPT by seam 3 — inside a backticked, quoted item in a closed
+# list — so a backtick, a quote or a newline in it rewrites the sentence the
+# Coordinator is reading rather than merely looking odd. Underscores are refused
+# too: a display name is a human string, and one that looks like an identifier
+# invites exactly the confusion between the two names this record separates.
+_DISPLAY_NAME_RE = re.compile(r"^[A-Za-z0-9 &]+$")
+
+
+def validate_overlay_capability(record: dict,
+                                tracked_names: set[str] | None = None,
+                                read_set: set[str] | None = None,
+                                known_domains: set[str] | None = None,
+                                reserved_display: set[str] | None = None,
+                                model_ref_names: set[str] | None = None,
+                                peer_displays: dict[str, str] | None = None) -> list[str]:
+    """
+    Return the defect list for an overlay capability record. Empty means valid.
+
+    `tracked_names` is the union of THREE sets — the agents in routing.yaml,
+    the agents in routing_cloud.yaml, and the stems of config/agents/*.md — and
+    the union is load-bearing rather than belt-and-braces. The routing files
+    alone are not enough: `time_director` and `goals_interview_reference` have
+    agent files and no routing entry, so a record named `time_director` would
+    pass a routing-only check and then be split across the seams — seam 1 loads
+    the TRACKED prose, seam 2 merges the OVERLAY's tools and model. Tracked
+    wins in every seam, so the collision lands a record nothing ever loads
+    whole. It is refused up front instead.
+
+    `read_set` is the writer's hardcoded grant allowlist, passed in rather than
+    imported so there is exactly one home for it (core/build/writer.py). Both
+    routing entries' `allowed_tools` must be identical and both a subset of it.
+
+    Each argument defaults to None meaning "not checked here" — the writer
+    always passes all three, and check_build_registration.py re-asserts the
+    same three-set rule independently.
+    """
+    defects: list[str] = []
+    if not isinstance(record, dict):
+        return ["overlay_capability is not an object"]
+
+    expected = SCHEMA_VERSIONS["overlay_capability"]
+    if _text(record.get("schema")) != expected:
+        defects.append(f"schema must be {expected!r}, got {record.get('schema')!r}")
+
+    from core.build.ids import is_job_id
+    if not is_job_id(_text(record.get("job_id"))):
+        defects.append(f"job_id {record.get('job_id')!r} is not a BLD-MMDD-NN id")
+
+    version = record.get("version")
+    if not isinstance(version, int) or isinstance(version, bool) or version < 1:
+        defects.append("version must be a positive integer")
+    if _is_blank(record.get("generated_at")):
+        defects.append("generated_at is missing")
+
+    name = _text(record.get("name"))
+    if not _AGENT_NAME_RE.match(name):
+        defects.append(f"name {name!r} must match {_AGENT_NAME_RE.pattern}")
+    elif tracked_names is not None and name in tracked_names:
+        defects.append(
+            f"name {name!r} collides with a tracked agent — a record by that "
+            "name would be split across the seams (tracked prose, overlay "
+            "tools) and never loaded whole"
+        )
+
+    display = _text(record.get("display_name"))
+    if not display:
+        defects.append("display_name is empty — it is what the Coordinator copies")
+    elif not _DISPLAY_NAME_RE.match(display):
+        defects.append(
+            f"display_name {display!r} must match {_DISPLAY_NAME_RE.pattern} — it "
+            "is spliced into a quoted item inside the Coordinator's closed "
+            "valid-name list, so punctuation in it rewrites that sentence"
+        )
+    else:
+        defects.extend(_check_display_name(
+            display, _text(record.get("name")), tracked_names, reserved_display,
+            peer_displays))
+
+    if _text(record.get("agent_file")) != f"agents/{name}.md":
+        defects.append(
+            f"agent_file must be 'agents/{name}.md', got "
+            f"{record.get('agent_file')!r} — the record and the file it names "
+            "are loaded by different seams and must not be able to disagree"
+        )
+    if not _SHA256_RE.match(_text(record.get("agent_sha256")).lower()):
+        defects.append("agent_sha256 is not a 64-character hex digest")
+
+    _check_overlay_routing(record, read_set, model_ref_names, defects)
+
+    coordinator = record.get("coordinator")
+    if not isinstance(coordinator, dict):
+        defects.append("coordinator block is missing")
+    else:
+        entry = _text(coordinator.get("directory_entry"))
+        if not entry:
+            defects.append("coordinator.directory_entry is empty")
+        elif display and display not in entry:
+            defects.append(
+                f"coordinator.directory_entry does not name {display!r} — the "
+                "directory entry and the valid-name list are spliced into the "
+                "same prompt and must agree"
+            )
+
+    if _is_blank(record.get("unavailable_consequence")):
+        defects.append(
+            "unavailable_consequence is empty — an area with no entry degrades "
+            "to a bare statement, which is safe but tells the user nothing"
+        )
+
+    _check_overlay_confidential(record, name, defects)
+
+    domains = record.get("knowledge_domains", [])
+    if not isinstance(domains, list):
+        defects.append("knowledge_domains must be a list")
+    elif known_domains is not None:
+        for domain in domains:
+            if _text(domain) not in known_domains:
+                defects.append(
+                    f"knowledge_domains names {domain!r}, which is not a "
+                    "wisdom domain — a capability may join an existing domain, "
+                    "never create one"
+                )
+
+    mode = _text(record.get("execution_mode")).lower()
+    if mode not in EXECUTION_MODES:
+        defects.append(f"execution_mode must be one of {list(EXECUTION_MODES)}")
+    budget = record.get("latency_budget_ms")
+    if not isinstance(budget, (int, float)) or isinstance(budget, bool) or budget <= 0:
+        defects.append("latency_budget_ms must be a positive number")
+
+    return defects
+
+
+def _collapse(text: str) -> str:
+    """
+    The COMPARISON FORM of a display name: internal whitespace collapsed to one
+    space, ends trimmed, case folded by the caller.
+
+    `Mental  Wellbeing` passed every check it should have failed: it satisfies
+    the charset, normalises to `mental__wellbeing` which is not a tracked agent,
+    and lowercases to a string the reserved set does not contain — so it spliced
+    into the closed valid-name list one space away from the real entry, on a
+    model whose own map comment records that it cannot reliably copy that list.
+    Every display-name comparison now runs on this form.
+    """
+    return re.sub(r"\s+", " ", str(text or "")).strip()
+
+
+def _resolve_display(display: str) -> str:
+    """The agent name a display string dispatches to, via the Coordinator's own map."""
+    collapsed = _collapse(display)
+    try:
+        from core.orchestrator import normalize_agent_name
+        return normalize_agent_name(collapsed)
+    except Exception:
+        return collapsed.lower().replace(" & ", "_").replace(" and ", "_") \
+                        .replace(" ", "_")
+
+
+def _check_display_name(display: str, own_name: str,
+                        tracked_names: set[str] | None,
+                        reserved_display: set[str] | None,
+                        peer_displays: dict[str, str] | None) -> list[str]:
+    """
+    Four collisions, in order of severity. Each returns immediately: one clear
+    reason is more useful than four restatements of the same string.
+
+    THE NAME RULE WAS NEVER ENOUGH. `name` was checked against three sets and
+    `display_name` against none — but display_name is the string the model
+    copies and the string seam 3 splices into the closed list, and it resolves
+    to an agent name through the generic fallback whether or not anything
+    registered it.
+
+    The fourth collision is the one the first fix missed: a second GENERATED
+    capability capturing the first one's dispatch. Not tracked shadowing — the
+    same mechanism one layer down, arriving on the second landed capability,
+    which is exactly the bootstrap sequence in plan Section 11.
+    """
+    defects: list[str] = []
+    collapsed = _collapse(display)
+    lowered = collapsed.casefold()
+    resolved = _resolve_display(collapsed)
+
+    if tracked_names and resolved in tracked_names:
+        return [f"display_name {display!r} resolves to tracked agent {resolved!r} "
+                "— the Coordinator would dispatch that agent instead"]
+
+    if reserved_display:
+        reserved = {_collapse(r).casefold() for r in reserved_display}
+        if lowered in reserved or resolved in reserved_display:
+            return [f"display_name {display!r} is already a name the Coordinator "
+                    "knows — it is in the name map or the closed valid-name "
+                    "list, or differs from one only by whitespace or case"]
+
+    for peer_name, peer_display in (peer_displays or {}).items():
+        if peer_name == own_name:
+            continue
+        if _collapse(peer_display).casefold() == lowered:
+            defects.append(
+                f"display_name {display!r} duplicates the display name of "
+                f"overlay capability {peer_name!r} — the closed valid-name list "
+                "would carry the same string twice and the name map would keep "
+                "one winner, chosen by sort order"
+            )
+            return defects
+        if resolved == peer_name:
+            defects.append(
+                f"display_name {display!r} resolves to overlay capability "
+                f"{peer_name!r} — it would capture that capability's dispatch"
+            )
+            return defects
+    return defects
+
+
+def _check_overlay_routing(record: dict, read_set: set[str] | None,
+                           model_ref_names: set[str] | None,
+                           defects: list[str]) -> None:
+    """
+    BOTH entries, one record — parity is a schema property, not a convention.
+
+    v2 demanded routing_local and routing_cloud in the same apply() call; a
+    record missing either entry does not validate and cannot be written at all.
+    The evidence that convention alone does not hold is routing.yaml itself: the
+    2026-07-27 diarist fix landed write_log/write_wisdom in the cloud file and
+    missed the local one, silently losing both under DEPLOYMENT_MODE=local.
+    """
+    routing = record.get("routing")
+    if not isinstance(routing, dict):
+        defects.append("routing block is missing — both entries live in one record")
+        return
+
+    local = routing.get("local")
+    cloud = routing.get("cloud")
+    if not isinstance(local, dict):
+        defects.append("routing.local is missing")
+    if not isinstance(cloud, dict):
+        defects.append("routing.cloud is missing")
+    if not isinstance(local, dict) or not isinstance(cloud, dict):
+        return
+
+    if local.get("local") is not True:
+        defects.append(
+            "routing.local.local must be true — a generated capability is "
+            "Sensitive unless it can demonstrate it never touches persona data"
+        )
+    # PROVIDER IS INHERITED, NEVER DECLARED. `model_ref` existed so a record
+    # could not pin a stale model id — and a record could still pin a PROVIDER,
+    # which seam 2 honoured. That let a record route itself to another vendor
+    # entirely while every field in it looked correct. Both halves now come from
+    # the tracked agent the ref names.
+    if cloud.get("provider") is not None:
+        defects.append(
+            "routing.cloud.provider is set — provider and model are both "
+            "inherited from the agent model_ref names, so that a record cannot "
+            "route itself to a vendor nobody chose for it"
+        )
+
+    # A model id, not a model ref, is the failure this refuses. Ids have a short
+    # half-life here — the reasoning tier moved twice in four days this month —
+    # and a generated record pinning one would strand the capability on a
+    # retired id with nobody editing it. Seam 2 resolves the ref at load time.
+    ref = _text(cloud.get("model_ref"))
+    if not ref:
+        defects.append("routing.cloud.model_ref is empty")
+    elif not _AGENT_NAME_RE.match(ref):
+        defects.append(
+            f"routing.cloud.model_ref {ref!r} is not an agent name — it must "
+            "name a tracked agent whose live model seam 2 resolves, never a "
+            "model id, which goes stale with nobody editing this record"
+        )
+    elif model_ref_names is not None and ref not in model_ref_names:
+        defects.append(
+            f"routing.cloud.model_ref {ref!r} is not in BOTH routing files — a "
+            "ref present in only one resolves under one DEPLOYMENT_MODE and "
+            "vanishes under the other, which is the split the one-record shape "
+            "exists to make impossible"
+        )
+    if cloud.get("model") is not None:
+        defects.append(
+            "routing.cloud.model is set — a record pins a model_ref, never a model"
+        )
+
+    local_tools = local.get("allowed_tools")
+    cloud_tools = cloud.get("allowed_tools")
+    for label, tools in (("local", local_tools), ("cloud", cloud_tools)):
+        if not isinstance(tools, list):
+            defects.append(f"routing.{label}.allowed_tools must be a list")
+    if not isinstance(local_tools, list) or not isinstance(cloud_tools, list):
+        return
+
+    if list(local_tools) != list(cloud_tools):
+        defects.append(
+            "routing.local.allowed_tools and routing.cloud.allowed_tools differ "
+            "— the grant is the same grant whichever file serves it, and a "
+            "split one is the 2026-07-27 diarist defect"
+        )
+    if read_set is not None:
+        outside = sorted({_text(t) for t in local_tools} - read_set)
+        if outside:
+            defects.append(
+                f"allowed_tools names {outside}, outside the read set — a grant "
+                "not on the allowlist is refused whether or not anything names "
+                "it as dangerous"
+            )
+
+
+def _check_overlay_confidential(record: dict, name: str, defects: list[str]) -> None:
+    """
+    confidential_names go to the SENTENCE-GATED list, never the unconditional one.
+
+    _ALWAYS_CONFIDENTIAL is for identifiers "impossible in natural prose", and
+    one substring hit replaces the whole reply with the canned fallback — its
+    matcher joins tokens across up to four punctuation characters or none, so
+    `home_care` there would suppress "your home-care tasks" and a single-word
+    name like `garden` would suppress every reply containing that word.
+    _CONTEXT_SENSITIVE fires only inside a sentence carrying architecture
+    vocabulary, which is exactly the mechanism for a name that is also English.
+
+    The record cannot choose which list it lands on — seam 4 hardcodes that —
+    so what is checked here is only that the names are present and include the
+    capability's own name, which is the one that would otherwise be missed.
+    """
+    names = record.get("confidential_names")
+    if not isinstance(names, list) or not names:
+        defects.append("confidential_names must be a non-empty list")
+        return
+    flat = {_text(n) for n in names}
+    if name and name not in flat:
+        defects.append(
+            f"confidential_names does not include {name!r} — the capability's "
+            "own name is the one the filter must know about"
+        )
