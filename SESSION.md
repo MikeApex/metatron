@@ -1,64 +1,60 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-09-19 (**a plan can now be handed to a reviewer whose job is to break it**).
-`/adversarial-review [plan] [model] [effort]` spawns a read-only reviewer — Fable and `medium` by
-default — that reads a plan cold, verifies its claims against real paths and symbols, and returns
-defects ranked by cost-if-wrong; `verify` resumes the same reviewer on the revised plan. No write
-tools, so the command lands the report. **`.claude/agents/` was not admitted by `.gitignore`** —
-the command would have shipped without its agent; fixed. Earlier today: phase 3's three review
-rounds, committed `12d7dd2`. Both: `archive/PROJECT_LOG.md` § 2026-09-19.*
+*Updated: 2026-09-19 (**Build phase 4 — the driver walks the graph, and the suite that tested it
+spent real money**). Runner, brief, registry, coherence, the two board scripts and the wiring;
+86 new checks, every prior suite unchanged, `qa_sweep` 11/11. Three plan corrections recorded
+first as v3.5, all of them claims the plan made about a file nobody had opened. Five defects
+found in this session's own code, four by its own tests — the sharpest being **N10 having no
+artifact, so approving a job silently undid the approval every thirty minutes.** Detail, and the
+phase-5 questions it leaves: `archive/PROJECT_LOG.md` § 2026-09-19. Earlier today:
+`/adversarial-review` (`dac3561`) and phase 3's three review rounds (`12d7dd2`).*
 
-*⚠ **A parallel window has uncommitted Build phase 4 work in this tree** — `core/build/`
-runner/brief/registry/coherence, `tools/build.py`, `scripts/build_*.py`, tests, `core/{actions,orchestrator,scheduler}.py`. Not this session's; none staged here.*
+*⚠ **Phase 4 is UNCOMMITTED in this tree, by instruction** — `core/build/{runner,brief,registry,
+coherence}.py`, `tools/build.py`, `scripts/build_{board,brief}.py`, four test files, edits to
+`core/{actions,orchestrator,scheduler,build/jobs,build/schemas}.py` + `scripts/sync_dev_backlog.py`,
+**and the plan's v3.5 corrections** — so a fresh clone still reads the plan at v3.4 until Mike
+commits. The close-out (this file + the log) went offsite on its own.*
 
-***Next: Build phase 4 (runner, brief, registry, coherence, wiring; the `_DEFAULT_JOBS` entry is
-Red).*** Still owed: **three commits and one deploy** — `0e154b9` (09-09 invitation wording), the
-09-10 `tools/` change, and `12d7dd2` (phase 3); the VM is at `b2b1dc7`. Build phases 1–6 deploy
-together, so they add nothing to that debt. No Mike-gated session queued; phase 7 becomes one
-once phases 3–6 land.
+*⚠ **A test suite wrote into two live meters and tripped the daily spend stop** — fixed, and
+`(M)`: **`rm data/personas/mike/traces/2026-09-19.jsonl` on the Mac**, 112 fake records, all of
+them this session's. The path is Denied so nothing here can touch it. The spend file was moved
+aside and local sessions are unblocked. Rule now in the suite: **a test that exercises a seam for
+real must stub every live meter that seam ends in.**
 
-*⛔ **Real calendar guest management is deferred to Mark 2 (Mike, 2026-09-09) — do not re-propose
-it against the Mark 1 CalDAV path.** The OAuth route and the 7-day refresh-token wall that makes
-it an integration change rather than a patch: `DEV_BACKLOG.md` § Inbox, which holds the
-measurement.*
+***Next: Build phase 5 (the four agent files, Fable 5) — and it now also owns both routing
+files***, including `request_build` on `coordinator`'s `allowed_tools` (plan v3.5 C3: the grant
+had no owner, and without it the tool is registered and unaskable). Still owed: **three commits
+and one deploy** — `0e154b9` (09-09 invitation wording), the 09-10 `tools/` change, and `12d7dd2`
+(phase 3); the VM is at `b2b1dc7`. Build phases 1–6 deploy together. Phase 7 becomes the Mike-gated
+session once 3–6 land.
 
-*⚠ **Inviting to N events is N approval cards, and the one-call-per-event rule did not hold on
-its first live run** — two of the seven were the same event on the same UID. `logistics.md` now
-says to state how many approvals are coming; batching them into one was not built and is a real
-change if wanted. Mike's standing rule from 09-07 — auto-invite Iva to external events — sits
-untriaged in the Inbox.*
+## ⛔ Do not re-open — settled, with its evidence elsewhere
 
-*⚠ **Two items Mike closed as "skip, no backlog item" on 09-05 — do not file them.** The
-calendar occurrence-vs-series gap, and the 2:44 check-in's conduct. Both stated in full in
-`archive/log/2026-09-05-06-horizon-gate-and-two-guards-that-lied.md`.*
+**This is an INDEX, not the record.** Each line is a ruling a session would otherwise re-derive
+or re-propose; the reasoning lives in the file named beside it and is read on demand. Compressed
+from eight full paragraphs on 2026-09-19, when the primer crossed both its ceilings and its own
+note said the next addition must move a section out — the content did not change, it went back to
+the homes each paragraph was already pointing at.
 
-*⚠ **The intake extractor is parked permanently (priced out, not disproven) and teaching
-`rules:` tops out at 11/33 — because Mike ruled that a sender is not a category.** Successor is
-`[DB-0905-01]`, a research gate reading prior correspondence **as code, never a model judgement**.
-**Evidence: `DEV_BACKLOG.md` `[DB-0905-01]` and `archive/backlog_closed_2026-09.md`. Do not
-re-derive it here.***
+| Settled | Where the reasoning is |
+|---|---|
+| **Real calendar guest management → Mark 2** (Mike, 09-09). Do not re-propose against the Mark 1 CalDAV path — it is an integration change, not a patch | `DEV_BACKLOG.md` § Inbox, which holds the OAuth route and the 7-day refresh-token measurement |
+| **Alpha ships on Mark 2** (Mike, 09-02), and the **Darwin API key `[DB-0818-04]` folded into it** (09-04) — not a standalone (M). `ROADMAP.md` still reads as though A8 is live; **Mike updates that manually, it is not an oversight** | `archive/plans/mark2_endeavour_plan_2026-09-02.md` (sequencing, gates, cost) · `archive/plans/code_dominant_rebuild_notes.md` (architecture) |
+| **A4 safety testing SUSPENDED** (before-Alpha is the only clock) and **ZDR refused** | `ROADMAP.md` § Section 0 — both, in full |
+| **The intake extractor is parked permanently** (priced out, not disproven); teaching `rules:` tops out at 11/33 because **a sender is not a category** (Mike). Successor `[DB-0905-01]` reads correspondence **as code, never a model judgement** | `DEV_BACKLOG.md` `[DB-0905-01]` · `archive/backlog_closed_2026-09.md`. **Do not re-derive** |
+| **No off-machine backup** — Mike declined a date twice. A recorded acceptance of a named risk, not an unfiled worry; **do not re-raise** | this line is the record. `VERTEX_CACHE_DISABLED` ON on the Mac since 09-05 (net **+$0.94**/14d) |
+| **Two items closed 09-05 as "skip, no backlog item"** — the calendar occurrence-vs-series gap, and the 2:44 check-in's conduct. **Do not file them** | `archive/log/2026-09-05-06-horizon-gate-and-two-guards-that-lied.md` |
+| **Items closed 09-05 are not to be re-raised** | `archive/backlog_closed_2026-09.md`, their only home |
 
-*⚠ **No off-machine backup — Mike declined a date twice; a recorded acceptance of a named risk,
-not an unfiled worry. Do not re-raise it.** `VERTEX_CACHE_DISABLED` was flipped ON on the Mac
-2026-09-05 (billing export: net **+$0.94**/14d).*
+**Open, and each owned by its id — the sync's `⚠ due:` line is the live list, not this table.**
+Inviting to N events is N approval cards and the one-call-per-event rule did not hold on its
+first live run; `logistics.md` now states how many approvals are coming, batching was not built.
+Thread expiry owes **one observation, not a deploy** — birthdates surviving Metatron's own
+rewording in `context_audit.jsonl` (`[DB-0814-02]`). B4's max-chain-depth needs the 3-round limit
+in code first (`[DB-0804-02]`). Mike's 09-07 auto-invite rule sits untriaged in the Inbox.
 
-*⛔ **Two settled rulings — do not re-open; both in `ROADMAP.md` § Section 0.** A4 safety testing
-is SUSPENDED (before-Alpha is the only clock); ZDR is refused.*
-
-*⚠ **The inversion is decided: Alpha ships on Mark 2 (Mike, 2026-09-02).** Architecture thinking
-stays in **`archive/plans/code_dominant_rebuild_notes.md`**; sequencing, gates and cost in
-**`archive/plans/mark2_endeavour_plan_2026-09-02.md`**. **The Darwin API key `[DB-0818-04]` was
-deferred into Mark 2 by Mike on 09-04** — do not re-propose it as a standalone (M).
-**`ROADMAP.md` is deliberately NOT updated and still reads as though A8 is live work** — Mike
-handles that and the Mark 1 decommission condition manually. Known, not an oversight.*
-
-*⚠ **Thread expiry is live and owes one observation, not a deploy** — confirm birthdates survive
-Metatron's own rewording in `context_audit.jsonl` (fourth field `reworded`); first real expiries
-were due ~09-15, status in `[DB-0814-02]`. Also open: B4's max-chain-depth needs the 3-round limit
-in code first (`[DB-0804-02]`). **Every dated confirm in `## Now` has now fallen due — the sync's
-`⚠ due:` line is the live list, not this paragraph.** Items closed 09-05 and not to be re-raised
-are in `archive/backlog_closed_2026-09.md`, which is their only home. **`CLAUDE.md` is 300/300 and this file is AT its ceiling —
-the next addition to either MOVES A SECTION OUT, and this file's own count is deliberately not written here because restating it changes it**; **`.claude/rules/deploy.md` is 131/100 and owes a pass.***
+**Ceilings owed:** `CLAUDE.md` 300/300 · `.claude/rules/deploy.md` 131/100. This file's own count
+is deliberately not written here, because restating it changes it.
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -114,13 +110,20 @@ one-case-not-a-suite caveat. This line is the status, not the record.
 **A9 — built and deployed 2026-08-18; `@waiting` on real use, review `2026-10-01`.** Spec, the
 five provisional parts and the date: [ROADMAP.md](ROADMAP.md) § A9a, the single home.
 
-**BUILD — the vertical that constructs capabilities. Phases 1–3 of 7 done, 2026-09-18.** Plan:
+**BUILD — the vertical that constructs capabilities. Phases 1–4 of 7 done, 2026-09-19.** Plan:
 [archive/plans/build_vertical_plan_2026-09-18.md](archive/plans/build_vertical_plan_2026-09-18.md),
-which owns the sequencing, the rulings and the cost — this line is the status, not the record.
-Built: `core/build/` (14 modules, +`writer`/`overlay`/`constitution`/`verify`),
-`scripts/check_build_registration.py` as `qa_sweep` check 11, `config/modules/build.yaml`, eight
-suites (195 checks). **Next is phase 4** — runner, brief, registry, coherence, wiring. Nothing
-deploys until phase 6. **Phase 3 is committed (`12d7dd2`), reviewed, and corrected to plan v3.4.**
+**now at v3.5** — it owns the sequencing, the rulings and the cost; this line is the status, not
+the record. Built: `core/build/` (18 modules), `tools/build.py`, `scripts/build_{board,brief}.py`
++ `check_build_registration.py` as `qa_sweep` check 11, `config/modules/build.yaml`, twelve suites
+(281 checks). Phase 3 is committed (`12d7dd2`); **phase 4 is not** (see the handoff above).
+Nothing deploys until phase 6. **Next is phase 5** — the four agent files, on Fable 5, plus both
+routing files.
+
+> **Two phase-5 questions phase 4 left open, both stated rather than decided.** N8b's advisory
+> pass currently re-reads its own plan through `build_planner`, because § 10 lists four agent
+> files and none is a reviewer — **which file carries the N8b instruction is phase 5's call.**
+> And the § 6.3 read set now has a second consumer: `registry.py` counts dispatches from the
+> trace files, so a capability's run line exists whether or not the A9 rollup ever changes.
 
 > **Two things that change what phases 3–6 build, each owned by its own document.**
 > **Phase 6 is now a prerequisite for run 1, not a convenience** — every compass question on run
@@ -130,11 +133,12 @@ deploys until phase 6. **Phase 3 is committed (`12d7dd2`), reviewed, and correct
 > [build_librarian_planner_parameters_2026-09-18.md](archive/plans/build_librarian_planner_parameters_2026-09-18.md).
 >
 > ⚠ **Build's `$2.50` per-job spend limit is a PLACEHOLDER and phase 7 must say so out loud before
-> run 1 starts.** `cost.budget_notice()` carries the wording and self-clears once
-> `budget.per_job_usd` is set in `config/modules/build.yaml`; **phase 4 owes the two call sites**
-> (the runner, before a job's first node, and `build_board.py`'s header). It is a placeholder
-> because the § 15 ruling removed the per-question reading ration, leaving this the only bound on
-> a run's spend — set it from what run 1 actually costs.
+> run 1 starts.** ✅ **Both call sites landed in phase 4** — the runner leads every tick with the
+> notice, `build_board.py` leads its header with it, and both self-clear the moment
+> `budget.per_job_usd` is set in `config/modules/build.yaml`. It is a placeholder because the § 15
+> ruling removed the per-question reading ration, leaving this the only bound on a run's spend —
+> **set it from what run 1 actually costs.** An over-budget job parks and is released by
+> `cost.approve_limit()` **run on the VM over ssh**, never from the Mac board (plan v3.5 C2).
 
 **Four built-and-standing constraints must not be undone** (outbound messaging, `tone_shape`,
 obligations-as-data, scheduler maintenance jobs) — **full statements and reasoning:
