@@ -28,6 +28,11 @@ and one deploy** — `0e154b9` (09-09 invitation wording), the 09-10 `tools/` ch
 (phase 3); the VM is at `b2b1dc7`. Build phases 1–6 deploy together. Phase 7 becomes the Mike-gated
 session once 3–6 land.
 
+*Also ready to build, separately: **the headset-button plan** (Opus 5) — cleared by
+`/adversarial-review`'s first live use, third `verify` round clean. Hand the build chat the plan
+(`~/.claude/plans/for-the-metatron-app-modular-meerkat.md`) and
+`archive/plans/adversarial_review_for-the-metatron-app-modular-meerkat_2026-09-19.md` together.*
+
 ## ⛔ Do not re-open — settled, with its evidence elsewhere
 
 **This is an INDEX, not the record.** Each line is a ruling a session would otherwise re-derive
