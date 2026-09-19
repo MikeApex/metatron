@@ -21,7 +21,7 @@ experiences is not work.
 
 ## 1 — Command glossary
 
-Five slash commands, three of them with modes. Everything else in here is a script you run
+Six slash commands, three of them with modes. Everything else in here is a script you run
 directly, a guard that runs itself, or — since 2026-08-14 — a rule file that delivers itself.
 
 ### The commands
@@ -44,6 +44,17 @@ size. Five steps: classify the change against the approval tiers, check the prem
 true against today's code, dispatch (a worker for routine work, me for anything sensitive),
 review what comes back, then one diff for you to approve once.
 *The rules: one task per `/fix`, there is no `/fix-all`, and `/fix` never deploys.*
+
+**`/adversarial-review [plan] [model] [effort]`** — a plan gets read by someone whose job is
+to break it. Spawns a read-only reviewer (Fable by default; `opus`/`sonnet`/`haiku` also take)
+that reads the plan cold, then checks every claim it makes about the code against the code, and
+returns defects ranked by what they cost if you build on them — split into the ones that change
+the plan's shape and the ones that change a single step. Effort (`low`/`medium`/`high`) sets how
+much of the codebase gets verified and is the cost lever. `/adversarial-review verify` sends the
+revised plan back to the same reviewer.
+*The rules: it writes no code and nothing gets built until it reports; fewer findings is a
+result, not a failure; and the reviewer dies with the chat — the file in `archive/plans/` is what
+crosses to another session.*
 
 **`/backlog`** — reads `DEV_BACKLOG.md` in full (~4k tokens), sorts the Inbox into `Now` and
 `Later` with you setting the priorities, and checks anything about to be worked against the real
@@ -116,6 +127,7 @@ high-level or survey-shaped work may need one deliberate read that low-level wor
 | …start any session | `/metatron-code` |
 | :--- | :--- |
 | …change something, fix a bug, make an edit | `/fix <what you want>` |
+| …find out what's wrong with a plan before building it | `/adversarial-review` |
 | …work out why Metatron replied badly | `/metatron-troubleshoot DATE SEQ "what went wrong"` |
 | …know what's outstanding, or pick something up | `/backlog` |
 | …find out whether the list is still true | `/backlog verify` |
@@ -383,6 +395,8 @@ not write.
 **Mike's call, 2026-08-18: plan and review in Fable 5, build in Opus 5.** The split is by the
 shape of the work, not its size — planning and adversarial review reward the stronger reasoner,
 execution against a settled plan does not.
+`/adversarial-review` defaults to Fable for exactly this reason; naming another model
+overrides the default for one run, not the ruling.
 
 **Red-tier work is not delegated at all** — not to a subagent, and not split across the two.
 There the judgement *is* the work, so handing it to a worker with a fresh context is handing

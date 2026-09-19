@@ -44,6 +44,13 @@ venv/
 !.claude/rules/
 .claude/rules/*
 !.claude/rules/*.md
+# .claude/agents/ admitted 2026-09-19, for the worktree reason above: a slash
+# command is tracked but the subagent it spawns lives here, so an ignored agents
+# directory ships the command without the agent and /adversarial-review fails in
+# every worktree and every fresh clone. Caught by the close-out diff, not by use.
+!.claude/agents/
+.claude/agents/*
+!.claude/agents/*.md
 
 # ---------------------------------------------------------------------------
 # CREDENTIALS — never committed.

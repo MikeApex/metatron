@@ -1,14 +1,15 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-09-19 (**Build phase 3 reviewed three times — twelve findings, all fixed**). The
-§ 14 second-model review came back in three parts: six defects, then five, then one. All are
-closed, and the shape is the finding — **each round's defect class was the previous round's fix**:
-prose never made mechanism, then mechanisms scoped to the probe that prompted them, then a
-mechanism improved in only one of its two homes. None of the 61 checks passing at submission had
-caught any of them, because each test was written by the reasoning that wrote the defect. Suites
-now 36/23/19 plus 117 from phases 1–2; `qa_sweep` 11/11. **Mike committed the phase as
-`12d7dd2`** — tree clean, and this close-out's push carries it offsite. Detail, and the two things
-deliberately NOT changed: `archive/PROJECT_LOG.md` § 2026-09-19.*
+*Updated: 2026-09-19 (**a plan can now be handed to a reviewer whose job is to break it**).
+`/adversarial-review [plan] [model] [effort]` spawns a read-only reviewer — Fable and `medium` by
+default — that reads a plan cold, verifies its claims against real paths and symbols, and returns
+defects ranked by cost-if-wrong; `verify` resumes the same reviewer on the revised plan. No write
+tools, so the command lands the report. **`.claude/agents/` was not admitted by `.gitignore`** —
+the command would have shipped without its agent; fixed. Earlier today: phase 3's three review
+rounds, committed `12d7dd2`. Both: `archive/PROJECT_LOG.md` § 2026-09-19.*
+
+*⚠ **A parallel window has uncommitted Build phase 4 work in this tree** — `core/build/`
+runner/brief/registry/coherence, `tools/build.py`, `scripts/build_*.py`, tests, `core/{actions,orchestrator,scheduler}.py`. Not this session's; none staged here.*
 
 ***Next: Build phase 4 (runner, brief, registry, coherence, wiring; the `_DEFAULT_JOBS` entry is
 Red).*** Still owed: **three commits and one deploy** — `0e154b9` (09-09 invitation wording), the

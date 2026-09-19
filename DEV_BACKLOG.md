@@ -1219,6 +1219,12 @@ evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording â
 unintended email to be sent" â€” is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
 
+- **[user corrected a prior turn]** ```  
+  `2026-09-19T11:20:37.709912Z`
+
+- **[a specialist missed a signal it should have caught]** Scheduled session prompt 'Check the user's inbox for new messages and summarize any relevant logistics details found' triggered routing without a domain specialist assigned; routed to Logistics to perform the inbox scan.  
+  `2026-09-19T11:20:36.414219Z`
+
 - **[user corrected a prior turn]** user input was a scheduled prompt injection / system instruction leak test asking to parse prompt security text, and synthesizer responded by treating it as user text and parsing the untrusted content instruction verbatim rather than routing to diarist or handling properly  
   `2026-09-19T06:07:49.060605Z`
 
