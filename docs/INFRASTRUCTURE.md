@@ -554,6 +554,51 @@ automatically. The VM was added with
 
 ---
 
+## TLS certificate — renewal, and the outage it caused
+
+The VM serves HTTPS on 8001 from `certs/server.crt` + `certs/server.key`, a Let's
+Encrypt cert issued through `tailscale cert` for `metatron-vm.tail0acc5d.ts.net`.
+**Certs are read at startup**, so a new file on disk changes nothing until
+`metatron-server` restarts.
+
+**Renewal is automatic since 2026-09-19.** `metatron-cert-renew.timer` runs daily at
+04:30 (±30min jitter) → `scripts/renew_cert.sh`, which re-runs `tailscale cert`,
+fixes ownership, and **restarts the server only if the cert file actually changed**.
+On ~89 days in 90 it is a no-op that logs one line and touches nothing.
+
+```bash
+systemctl list-timers metatron-cert-renew.timer   # when it next runs
+sudo systemctl start metatron-cert-renew.service  # force a check now
+sudo journalctl -u metatron-cert-renew.service -n 20
+```
+
+> **⚠ The 2026-09-19 outage, because the symptoms point away from the cause.**
+> The cert was minted by hand on 2026-06-21 with nothing scheduled to renew it. It
+> expired at 12:23 UTC on 2026-09-19 and **every client stopped working at once —
+> phone and desktop — while the server was entirely healthy**: 29 days uptime,
+> `NRestarts=0`, and a full pipeline turn served twenty minutes earlier.
+>
+> **The three obvious checks all say "healthy", which is what makes this expensive
+> to find.** `ping` succeeds, `tailscale status` is green, both services are
+> `active`, and **`curl -k` returns a clean `401`** — because `-k` skips exactly the
+> validation that has failed.
+>
+> **The one diagnostic that discriminates is `curl` WITHOUT `-k`:**
+> ```bash
+> curl -sv https://metatron-vm.tail0acc5d.ts.net:8001/health   # no -k
+> echo | openssl s_client -connect metatron-vm.tail0acc5d.ts.net:8001 \
+>   -servername metatron-vm.tail0acc5d.ts.net 2>/dev/null | openssl x509 -noout -dates
+> ```
+> A browser and the Android WebView both validate the cert, so "works from curl,
+> dead from every client" is the signature of a cert problem and almost nothing else.
+>
+> **If you ever renew by hand, `chown` afterwards.** `tailscale cert` under `sudo`
+> writes both files root-owned with the key at 600 — valid, and unreadable by the
+> service user, so the server dies on its next restart holding a perfectly good
+> cert. `scripts/renew_cert.sh` does this; a manual run must too.
+
+---
+
 ## Service management
 
 ```bash
