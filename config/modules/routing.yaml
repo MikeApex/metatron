@@ -38,7 +38,12 @@ agents:
   coordinator:
     local: true
     # write_quality_event granted 2026-08-28 [DB-0810-03] — see routing_cloud.yaml. Parity.
-    allowed_tools: [write_quality_event]
+    # request_build granted 2026-09-24 (Build v4.11 phase B-Red) — reasoning in
+    # routing_cloud.yaml, which holds it. Parity, and the parity is load-bearing here:
+    # check_build_registration.py asserts both files carry a capability's grant, and the
+    # 2026-07-27 Diarist defect (commit 814e6c3) is the standing evidence for why a grant
+    # added to the cloud file alone goes silently missing whenever DEPLOYMENT_MODE is local.
+    allowed_tools: [write_quality_event, request_build]
 
     # record_wisdom_response granted 2026-09-05 with the observation-review ruling:
     # a corroborated observation is put to the user and their answer recorded beside
@@ -111,7 +116,13 @@ agents:
 
   mental_wellbeing:
     local: true
-    allowed_tools: [read_log, write_log, write_journal, search_memory, read_agent_config, write_agent_config, read_wisdom, write_wisdom]
+    # request_build granted 2026-09-24 to all eight personal specialists — the CATEGORY layer
+    # of the four-layer graph (Coord → category agent → tier-3 agent → Synthesizer). Full
+    # reasoning in routing_cloud.yaml, which holds it. Parity, and the parity is load-bearing:
+    # the 2026-07-27 Diarist defect (commit 814e6c3) is the standing evidence for a grant added
+    # to the cloud file alone going silently missing whenever DEPLOYMENT_MODE is local.
+    # `run_subagent` is deliberately NOT granted yet — see routing_cloud.yaml.
+    allowed_tools: [read_log, write_log, write_journal, search_memory, read_agent_config, write_agent_config, read_wisdom, write_wisdom, request_build]
 
   physical_health:
     local: true
@@ -121,14 +132,16 @@ agents:
     # write_wisdom REMOVED 2026-08-15 — never instructed; physical_health proposes instead.
     # See routing_cloud.yaml for the full rationale. Kept in parity.
     # read/write_archive granted 2026-08-28 [DB-0810-03] — see routing_cloud.yaml. Parity.
-    allowed_tools: [read_log, write_log, search_memory, read_wisdom, read_profile, write_profile, read_agent_config, write_agent_config, read_archive, write_archive]
+    # request_build granted 2026-09-24 — reasoning on mental_wellbeing above.
+    allowed_tools: [read_log, write_log, search_memory, read_wisdom, read_profile, write_profile, read_agent_config, write_agent_config, read_archive, write_archive, request_build]
 
   work_vocation:
     local: true
     # search_memory granted 2026-08-05 — see routing_cloud.yaml. Kept in parity.
     # read/write_archive + read_goals granted 2026-08-28 [DB-0810-03] — see routing_cloud.yaml.
     # read_intake_queue granted 2026-09-03 — see routing_cloud.yaml. Kept in parity.
-    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, search_memory, read_wisdom, read_archive, write_archive, read_goals, read_intake_queue]
+    # request_build granted 2026-09-24 — reasoning on mental_wellbeing above.
+    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, search_memory, read_wisdom, read_archive, write_archive, read_goals, read_intake_queue, request_build]
 
   relationships:
     local: true
@@ -139,7 +152,8 @@ agents:
     # apply_crm_proposals granted 2026-08-29 with the CRM sweep [DB-0827-03] —
     # see routing_cloud.yaml. Kept in parity.
     # send_calendar_invite granted 2026-09-07 — see routing_cloud.yaml. Kept in parity.
-    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, merge_contacts, unmerge_contacts, import_contacts_file, read_profile, write_profile, send_email, send_calendar_invite, search_memory, get_tone_shape, read_wisdom, read_intake_queue, read_agent_config, write_agent_config, apply_crm_proposals]
+    # request_build granted 2026-09-24 — reasoning on mental_wellbeing above.
+    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, merge_contacts, unmerge_contacts, import_contacts_file, read_profile, write_profile, send_email, send_calendar_invite, search_memory, get_tone_shape, read_wisdom, read_intake_queue, read_agent_config, write_agent_config, apply_crm_proposals, request_build]
 
   finance:
     local: true
@@ -147,20 +161,23 @@ agents:
     # Kept in parity.
     # write_archive + read_goals granted 2026-08-28 [DB-0810-03]; write_journal deliberately
     # NOT granted (Diarist routes journals) — see routing_cloud.yaml. Parity.
-    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, read_archive, write_archive, read_goals, open_obligation, close_obligation, reopen_obligation, list_obligations, search_memory, read_wisdom, read_intake_queue]
+    # request_build granted 2026-09-24 — reasoning on mental_wellbeing above.
+    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, read_archive, write_archive, read_goals, open_obligation, close_obligation, reopen_obligation, list_obligations, search_memory, read_wisdom, read_intake_queue, request_build]
 
   learning_growth:
     local: true
     # read/write_archive granted 2026-08-28 [DB-0810-03]; write_config and write_journal
     # deliberately NOT granted — see routing_cloud.yaml. Parity.
-    allowed_tools: [read_log, write_log, search_memory, read_agent_config, write_agent_config, read_wisdom, read_archive, write_archive]
+    # request_build granted 2026-09-24 — reasoning on mental_wellbeing above.
+    allowed_tools: [read_log, write_log, search_memory, read_agent_config, write_agent_config, read_wisdom, read_archive, write_archive, request_build]
 
   recreation_hobbies:
     local: true
     # find_places granted 2026-08-22 [DB-0808-04] — see routing_cloud.yaml's comment.
     # Five grants 2026-08-28 [DB-0810-03]: read/write_archive, read/write_agent_config,
     # search_memory — see routing_cloud.yaml. Parity.
-    allowed_tools: [read_log, write_log, read_wisdom, read_intake_queue, find_places, read_archive, write_archive, read_agent_config, write_agent_config, search_memory]
+    # request_build granted 2026-09-24 — reasoning on mental_wellbeing above.
+    allowed_tools: [read_log, write_log, read_wisdom, read_intake_queue, find_places, read_archive, write_archive, read_agent_config, write_agent_config, search_memory, request_build]
 
   logistics:
     local: true
@@ -172,7 +189,8 @@ agents:
     # before on the same model. A tool call cannot be replaced by prose or malformed and
     # ignored. Logistics only: it is the sole agent whose file specifies horizon findings.
     # send_calendar_invite granted 2026-09-07 — see routing_cloud.yaml. Kept in parity.
-    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, update_calendar_event, delete_calendar_event, check_calendar_conflicts, send_calendar_invite, get_weather, get_environmental_snapshot, get_tfl_status, get_flight_status, get_travel_time, get_regional_transit_info, find_places, read_profile, write_profile, write_schedule, list_schedules, delete_schedule, fetch_url, fetch_rendered, read_email, read_agent_config, write_agent_config, search_memory, read_archive, write_archive, open_obligation, close_obligation, reopen_obligation, list_obligations, read_intake_queue, record_horizon_item]
+    # request_build granted 2026-09-24 — reasoning on mental_wellbeing above.
+    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, update_calendar_event, delete_calendar_event, check_calendar_conflicts, send_calendar_invite, get_weather, get_environmental_snapshot, get_tfl_status, get_flight_status, get_travel_time, get_regional_transit_info, find_places, read_profile, write_profile, write_schedule, list_schedules, delete_schedule, fetch_url, fetch_rendered, read_email, read_agent_config, write_agent_config, search_memory, read_archive, write_archive, open_obligation, close_obligation, reopen_obligation, list_obligations, read_intake_queue, record_horizon_item, request_build]
     # read/write_agent_config, search_memory, read/write_archive granted 2026-08-05 — see
     # routing_cloud.yaml for the full rationale. Kept in parity.
     # update_calendar_event, delete_calendar_event, check_calendar_conflicts added

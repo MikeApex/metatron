@@ -42,7 +42,29 @@ agents:
     # the written event still travels in the output package (so the Synthesizer does not re-log
     # it), and tools/logger.py no-ops a second write of the same event type in the same trace —
     # the program layer also writes template-slot events, so the backstop covers both paths.
-    allowed_tools: [write_quality_event]
+    #
+    # request_build granted 2026-09-24 (Build v4.11 phase B-Red). THE TRIGGER OF THE WHOLE
+    # BUILD VERTICAL, and until now it had no owner: the plan assigned it to a phase that a
+    # later revision deleted, so it survived as a word on the deploy line with no test behind
+    # it — found by the cold reviewer, not by anyone building.
+    #
+    # It FILES a gap and never builds anything in the turn. A Build run is minutes and
+    # dollars in a Claude Code session Mike starts by hand, so a tool that returned only
+    # after one would be lying about what calling it costs. The reply is a ticket id.
+    #
+    # WHEN TO CALL IT IS WRITTEN BY REQUEST SHAPE, NOT BY "IF YOU CANNOT ANSWER" —
+    # config/agents/coordinator.md holds the four shapes. The distinction is the point: the
+    # recorded failure this vertical exists to catch is the Coordinator doing a standing
+    # judgement itself from stale context (the plant-watering runs of 09-11/14/15), and it
+    # produced a PLAUSIBLE answer every time. No event, no ticket, nothing to notice. So a
+    # gap is filed even when an answer is available from context — a plausible shallow
+    # answer is the failure, not the fallback.
+    #
+    # The over-filing direction is cheap by construction (a ticket Mike closes, capped at
+    # max_proposed: 12). Under-filing is the expensive one and it is silent, which is why
+    # tests/fixtures/build_trigger_requests.yaml runs both halves through the real
+    # Coordinator on this tier and is re-run whenever coordinator.md changes.
+    allowed_tools: [write_quality_event, request_build]
 
     # record_wisdom_response granted 2026-09-05 with the observation-review ruling:
     # a corroborated observation is put to the user and their answer recorded beside
@@ -170,7 +192,17 @@ agents:
     # compounds. The last green run (6/6, tests/a4_safety_rerun_2026-08-04_gemini.md; 3/3 quick,
     # 2026-08-18) was against 3.1 Pro / 3.1 Flash-Lite — a model no longer in the fleet.
     # Re-run `python3 tests/run_a4_safety.py --complexity deep` at capstone close before Alpha.
-    allowed_tools: [read_log, write_log, write_journal, search_memory, read_agent_config, write_agent_config, read_wisdom, write_wisdom]
+    # request_build granted 2026-09-24 to all eight personal specialists (Mike's ruling,
+    # reversing the leaf-first deferral for the grant only). These eight are the CATEGORY
+    # layer of the four-layer graph — Coord → category agent → tier-3 agent → Synthesizer —
+    # and v3.7 § 2 puts the trigger at both levels: Coord files when nothing owns the
+    # request, a category agent files when nothing IN ITS DOMAIN owns it. The second is the
+    # higher-signal one, because the domain owner knows what its domain should cover and
+    # Coord only knows its directory. `run_subagent` is NOT granted yet: there are no tier-3
+    # agents to dispatch, and with the depth guard now admitting depth 1 a category agent
+    # holding it could only call sideways into another category agent, which is a loop
+    # forming rather than a design. It arrives with the first landed capability.
+    allowed_tools: [read_log, write_log, write_journal, search_memory, read_agent_config, write_agent_config, read_wisdom, write_wisdom, request_build]
 
   physical_health:
     provider: gemini
@@ -196,7 +228,8 @@ agents:
     # physical_health.md:184-185 assigns three named lists (supplements, plans, medical). The
     # write grant landed with the write_archive dedup fix in tools/diarist.py — five new archive
     # writers in one pass without dedup invites clutter.
-    allowed_tools: [read_log, write_log, search_memory, read_wisdom, read_profile, write_profile, read_agent_config, write_agent_config, read_archive, write_archive]
+    # request_build granted 2026-09-24 — reasoning on mental_wellbeing above.
+    allowed_tools: [read_log, write_log, search_memory, read_wisdom, read_profile, write_profile, read_agent_config, write_agent_config, read_archive, write_archive, request_build]
 
   work_vocation:
     provider: gemini
@@ -209,7 +242,8 @@ agents:
     # became a routable domain that day, and a domain the extractor can file to whose
     # agent cannot read the queue is a black hole — mail sorted correctly and never
     # seen. Granting the tool is part of adding the domain, not a follow-up.
-    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, search_memory, read_wisdom, read_archive, write_archive, read_goals, read_intake_queue]
+    # request_build granted 2026-09-24 — reasoning on mental_wellbeing above.
+    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, search_memory, read_wisdom, read_archive, write_archive, read_goals, read_intake_queue, request_build]
 
   relationships:
     provider: gemini
@@ -235,7 +269,8 @@ agents:
     # even though logistics owns the calendar, because the 2026-08-09/10 consolidation put
     # every outbound message behind one owner and one gate; the tool resolves the event
     # itself in Python so this agent needs no calendar grant to use it.
-    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, merge_contacts, unmerge_contacts, import_contacts_file, read_profile, write_profile, send_email, send_calendar_invite, search_memory, get_tone_shape, read_wisdom, read_intake_queue, read_agent_config, write_agent_config, apply_crm_proposals]
+    # request_build granted 2026-09-24 — reasoning on mental_wellbeing above.
+    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, merge_contacts, unmerge_contacts, import_contacts_file, read_profile, write_profile, send_email, send_calendar_invite, search_memory, get_tone_shape, read_wisdom, read_intake_queue, read_agent_config, write_agent_config, apply_crm_proposals, request_build]
 
   finance:
     provider: gemini
@@ -249,7 +284,8 @@ agents:
     # names both (:209 managed lists, :211 goal alignment). write_journal deliberately NOT
     # granted (cluster 2) — observations route through the Diarist; the journal line in
     # finance.md was rewritten in the same pass.
-    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, read_archive, write_archive, read_goals, open_obligation, close_obligation, reopen_obligation, list_obligations, search_memory, read_wisdom, read_intake_queue]
+    # request_build granted 2026-09-24 — reasoning on mental_wellbeing above.
+    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, read_archive, write_archive, read_goals, open_obligation, close_obligation, reopen_obligation, list_obligations, search_memory, read_wisdom, read_intake_queue, request_build]
 
   learning_growth:
     provider: gemini
@@ -259,7 +295,8 @@ agents:
     # the skill-goals line redirected to write_agent_config, already held; global write_config
     # would confirm-prompt on every streak tick. write_journal NOT granted (cluster 2) —
     # observations route through the Diarist; both lines rewritten in the same pass.
-    allowed_tools: [read_log, write_log, search_memory, read_agent_config, write_agent_config, read_wisdom, read_archive, write_archive]
+    # request_build granted 2026-09-24 — reasoning on mental_wellbeing above.
+    allowed_tools: [read_log, write_log, search_memory, read_agent_config, write_agent_config, read_wisdom, read_archive, write_archive, request_build]
 
   recreation_hobbies:
     provider: gemini
@@ -269,7 +306,8 @@ agents:
     # Five grants 2026-08-28 [DB-0810-03] (clusters 1, 4, 5): read/write_archive (:128/:229-230),
     # read/write_agent_config (:116/:236 — the 2026-08-10 production refusal class, now completing
     # the domain-specialist set), search_memory (:124). All five instructed and never granted.
-    allowed_tools: [read_log, write_log, read_wisdom, read_intake_queue, find_places, read_archive, write_archive, read_agent_config, write_agent_config, search_memory]
+    # request_build granted 2026-09-24 — reasoning on mental_wellbeing above.
+    allowed_tools: [read_log, write_log, read_wisdom, read_intake_queue, find_places, read_archive, write_archive, read_agent_config, write_agent_config, search_memory, request_build]
 
   logistics:
     provider: gemini
@@ -294,7 +332,8 @@ agents:
     # payload is an event that already exists. What actually protects the send — the confirm
     # gate and the CRM recipient allowlist — is enforced in Python for both agents and is
     # untouched. Relationships keeps its grant for person-centred conversations.
-    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, update_calendar_event, delete_calendar_event, check_calendar_conflicts, send_calendar_invite, get_weather, get_environmental_snapshot, get_tfl_status, get_flight_status, get_travel_time, get_regional_transit_info, find_places, read_profile, write_profile, write_schedule, list_schedules, delete_schedule, fetch_url, fetch_rendered, read_email, read_agent_config, write_agent_config, search_memory, read_archive, write_archive, open_obligation, close_obligation, reopen_obligation, list_obligations, read_intake_queue, record_horizon_item]
+    # request_build granted 2026-09-24 — reasoning on mental_wellbeing above.
+    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, update_calendar_event, delete_calendar_event, check_calendar_conflicts, send_calendar_invite, get_weather, get_environmental_snapshot, get_tfl_status, get_flight_status, get_travel_time, get_regional_transit_info, find_places, read_profile, write_profile, write_schedule, list_schedules, delete_schedule, fetch_url, fetch_rendered, read_email, read_agent_config, write_agent_config, search_memory, read_archive, write_archive, open_obligation, close_obligation, reopen_obligation, list_obligations, read_intake_queue, record_horizon_item, request_build]
     # update_calendar_event, delete_calendar_event, check_calendar_conflicts added
     # 2026-08-05 — required to act on what the calendar-conflict build detects:
     # Logistics could previously only create events, never move, correct, or

@@ -35,13 +35,37 @@ def run_subagent(agent_name: str, message: str, complexity: str = "",
     """
     from core.orchestrator import run_session
 
-    # Recursion guard: specialists must not spawn further subagents.
-    # Only the Coordinator (depth 0) may call run_subagent.
+    # Recursion guard, DEPTH-AWARE since 2026-09-24 rather than binary.
+    #
+    # It used to refuse at depth >= 1: only the Coordinator could spawn. That was
+    # right while the graph was two layers, and it blocks the four-layer one Mike
+    # ruled for on 2026-09-24 — Coord -> category router -> tier-3 agent -> Synth,
+    # where a category agent's whole job is to fan out to the narrow agents Build
+    # constructs beneath it (build plan v3.7 § 2, "the tier"). A binary guard makes
+    # that architecture unreachable.
+    #
+    # MAX_SUBAGENT_DEPTH = 2 admits exactly that chain and nothing longer: depth 0
+    # is the Coordinator dispatching a category router, depth 1 is the router
+    # dispatching a tier-3 agent, and depth 2 refuses. A tier-3 agent is by
+    # definition narrow and has nothing to delegate to, so a call from there is a
+    # loop forming, not a design.
+    #
+    # WHAT THIS IS NOT. The confused-deputy control is architectural and is NOT this
+    # guard: `_dispatch_from_coordinator()` is the only function that parses free
+    # text into dispatch calls, and its only call site is fed `coord_output` — the
+    # Coordinator's own text — never a specialist's. That property is asserted by
+    # `tests/run_b1_redteam.py --suite deputy` (security_testing_plan check 6) and is
+    # untouched here. It is also why a router must fan out by CALLING run_subagent
+    # rather than by having its output parsed for SPECIALISTS_TO_CALL: a second
+    # dispatch parser reading agent output would break check 6 directly, and this
+    # relaxation exists precisely so that the safe route is available.
+    MAX_SUBAGENT_DEPTH = 2
     depth = int(os.environ.get("_SUBAGENT_DEPTH", "0"))
-    if depth >= 1:
+    if depth >= MAX_SUBAGENT_DEPTH:
         return (
-            f"Error: run_subagent cannot be called from within a specialist session. "
-            f"Only the Coordinator may spawn subagents. "
+            f"Error: run_subagent cannot be called at delegation depth {depth}. "
+            f"The chain is Coordinator -> category agent -> specialist, and this "
+            f"session is already at the end of it. "
             f"Perform this task directly without delegating."
         )
 
