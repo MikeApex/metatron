@@ -799,7 +799,8 @@ command but not survived its review is not finished.
 streams for up to 3 minutes before restarting the server. Mike runs it. No session does.
 
 **This is a catch-up deploy with Build inside it, not a Build deploy.** The VM is at `b2b1dc7`;
-count the range at deploy time — it was 18 when first measured, 31 by the time C started:
+count the range at deploy time — it was 18 when first measured, 31 by the time C started, **34 as
+of `75744e5`**:
 
 ```bash
 cd /Users/md-homefolder/Desktop/multi-model-mcp && git rev-list --count b2b1dc7..HEAD
@@ -809,7 +810,29 @@ cd /Users/md-homefolder/Desktop/multi-model-mcp && git rev-list --count b2b1dc7.
 checks below are ordered so the general health of the catch-up is established *before* the three
 Build-specific probes, so a failure can be attributed.
 
-### Pre-flight, on the MacBook — all four verified 2026-09-24 and re-runnable
+### Every remote command here goes through the IAP tunnel — plain `ssh` does NOT reach the VM
+
+**Corrected 2026-09-24 after `ssh metatron-vm` was actually run and returned
+`Permission denied (publickey)`.** Since the 2026-07-31 VPC rebuild `metatron-net` has no public SSH
+ingress — only tcp:22 from the IAP range `35.235.240.0/20` (`deploy.sh:115-118`). Every remote
+command below is written out in full in this shape:
+
+```bash
+gcloud compute ssh metatron-vm --zone=us-central1-a --project=metatron-ai-499810 \
+  --tunnel-through-iap --command '<the remote command>'
+```
+
+**Do not shorten it to a shell variable.** zsh does not word-split an unquoted parameter expansion,
+so `$VM 'cmd'` runs the whole string as one command name and fails.
+
+**The VM's checkout is `~/multi-model-mcp`, not `~/metatron`** (`deploy.sh:120`). Three commands
+below named the wrong path and have been corrected.
+
+**No pasteable block here carries a `#` comment,** inline or on its own line — `interactive_comments`
+is unset in this shell, so `#` is an argument, not a comment. Two inline ones were removed from the
+health block for that reason.
+
+### Pre-flight, on the MacBook — all four re-verified at `75744e5`, and re-runnable
 
 **1. Nothing untracked that committed code imports.** This is `.claude/rules/deploy.md` rule 4's
 sharpest form: a tracked file already exists on the VM so a pull updates it, but an **untracked** one
@@ -878,11 +901,33 @@ in-process distinguishes them; the refusal converts a silent wrong-machine write
 one and cannot stop a caller that lies. Phase C found this and correctly stopped rather than faking
 the rest (plan § 3 N14, v4.12).
 
-**The real gate is a host marker on the two systemd units, which only a deploy can set.** On the VM,
-add an environment line to `metatron-server` and `metatron-scheduler` — e.g.
-`Environment=METATRON_HOST=vm` — then `sudo systemctl daemon-reload` **before** `./deploy.sh`, per
-rule 3, because `deploy.sh` restarts both units and an edited-but-unreloaded unit applies at the
-worst possible moment.
+**The real gate is a host marker on the two systemd units, which only a deploy can set.** Add it as a
+**drop-in**, not by editing the unit text: `docs/INFRASTRUCTURE.md` § Systemd units carries both unit
+files verbatim and its rebuild step says to write that text to `/etc/systemd/system/`, so an in-place
+edit would be silently reverted by the next rebuild. A drop-in is one file, survives a unit rewrite,
+and is removed by deleting it.
+
+Run this **first, before `./deploy.sh`** — rule 3, because `deploy.sh` restarts both units and an
+edited-but-unreloaded unit applies at the worst possible moment:
+
+```bash
+gcloud compute ssh metatron-vm --zone=us-central1-a --project=metatron-ai-499810 \
+  --tunnel-through-iap --command 'sudo mkdir -p /etc/systemd/system/metatron-server.service.d /etc/systemd/system/metatron-scheduler.service.d && printf "[Service]\nEnvironment=METATRON_HOST=vm\n" | sudo tee /etc/systemd/system/metatron-server.service.d/host.conf /etc/systemd/system/metatron-scheduler.service.d/host.conf && sudo systemctl daemon-reload && systemctl show metatron-server metatron-scheduler -p Environment'
+```
+
+`sudo tee` takes both paths in one call and writes the same two lines to each. The trailing
+`systemctl show` is the confirmation, and it is valid precisely because the marker is an
+`Environment=` directive — `show -p Environment` does **not** report `EnvironmentFile=` contents, so a
+marker put in `.env` instead would be invisible to this check and to any later audit.
+
+> **Expect `METATRON_HOST=vm` in both lines alongside the existing
+> `METATRON_PERSONA_STRICT=0 METATRON_PERSONA_FALLBACK=mike`.** A drop-in is applied after the main
+> unit, so it also wins over `.env`; nothing there sets `METATRON_HOST`, so there is no conflict to
+> resolve.
+
+**Owed after the marker is confirmed live:** one line in `docs/INFRASTRUCTURE.md` § Systemd units
+recording the drop-in, or a VM rebuild from that doc drops the marker and `file_ticket`'s gate fails
+closed on the VM it is meant to permit.
 
 > **This is a unit-file change, so rule 3 DOES apply to it** — unlike the rest of this deploy, where
 > nothing under `b2b1dc7..HEAD` touches a `.service` or `.timer`. Do the `daemon-reload` first.
@@ -893,8 +938,12 @@ and a `file_ticket` that requires a variable nothing sets refuses every legitima
 marker on the units → `daemon-reload` → deploy → confirm the variable is live in both units'
 environment → then the code half, as ordinary development.**
 
+Re-run the same check **after** the deploy — `deploy.sh` restarts both units, and the marker
+surviving that restart is the thing the code half will depend on:
+
 ```bash
-ssh metatron-vm 'systemctl show metatron-scheduler metatron-server -p Environment'
+gcloud compute ssh metatron-vm --zone=us-central1-a --project=metatron-ai-499810 \
+  --tunnel-through-iap --command 'systemctl show metatron-scheduler metatron-server -p Environment'
 ```
 
 ### Rule 2 — the config key and its gate, stated because it is the one live behaviour change
@@ -917,11 +966,20 @@ Watch for the SSE drain message. A drain timeout is reported and the restart pro
 ### Post-deploy, on the VM — general health first
 
 ```bash
-ssh metatron-vm
-cd ~/metatron && git log --oneline -1          # matches the Mac's HEAD
-systemctl status metatron-server metatron-scheduler --no-pager | head -20
-curl -s https://metatron-vm.tail0acc5d.ts.net:8001/health   # no -k, deliberately
+gcloud compute ssh metatron-vm --zone=us-central1-a --project=metatron-ai-499810 \
+  --tunnel-through-iap --command 'cd ~/multi-model-mcp && git log --oneline -1 && systemctl status metatron-server metatron-scheduler --no-pager | head -20'
 ```
+
+The first line of that output must equal the Mac's `git rev-parse --short HEAD`. Then, **from the
+MacBook** — this one goes over Tailscale and needs no tunnel:
+
+```bash
+curl -s https://metatron-vm.tail0acc5d.ts.net:8001/health
+```
+
+**Pass: `{"detail":"Authentication required."}`** — a 401 with the cert validating is the healthy
+answer, and `-k` is deliberately absent. Run pre-deploy 2026-09-24 and it returned exactly that, so
+the client path is known good going in; a change here after the deploy is attributable.
 
 > **`curl` WITHOUT `-k` is the diagnostic.** `-k` skips exactly the cert validation that fails, so
 > a `curl -k` that returns 401 says "healthy" during a total client outage. That cost a 26-hour
@@ -941,14 +999,15 @@ Then one ordinary turn through the app, which also closes phase A's owed **(M)**
 
 1. **The read door answers a presence check for `mike`.**
    ```bash
-   cd /Users/md-homefolder/Desktop/multi-model-mcp && python3 scripts/vm_read.py --persona mike --presence log
+   cd /Users/md-homefolder/Desktop/multi-model-mcp && python3 scripts/vm_read.py --persona mike presence log
    ```
    Expect `{state, count, window}` and **no content**. A door that answers `no_data` for everything
    looks identical to one that is working — so check `count` is non-zero for `log`, which `mike` has
    years of.
 2. **`build_tick` resolves in the scheduler log.**
    ```bash
-   ssh metatron-vm 'sudo journalctl -u metatron-scheduler --since "40 min ago" | grep -i build_tick'
+   gcloud compute ssh metatron-vm --zone=us-central1-a --project=metatron-ai-499810 \
+     --tunnel-through-iap --command 'sudo journalctl -u metatron-scheduler --since "40 min ago" | grep -i build_tick'
    ```
    Expect a line reporting nothing registered. **Expect no `ModuleNotFoundError`** — that is what the
    re-point from `core.build.runner.tick` was for.
@@ -956,7 +1015,8 @@ Then one ordinary turn through the app, which also closes phase A's owed **(M)**
    and that needs a standing judgement over a history — *"when did I last water the fig?"* is the
    recorded shape. Then:
    ```bash
-   ssh metatron-vm 'cat ~/metatron/data/personas/mike/build/tickets.jsonl | tail -3'
+   gcloud compute ssh metatron-vm --zone=us-central1-a --project=metatron-ai-499810 \
+     --tunnel-through-iap --command 'tail -3 ~/multi-model-mcp/data/personas/mike/build/tickets.jsonl'
    ```
    Expect one row at `proposed` with a non-null gap. **A plausible answer with no ticket is the
    failure** — that is the under-filing case § 13.14 names, and it is a FAIL even if the answer was
@@ -967,7 +1027,8 @@ Then one ordinary turn through the app, which also closes phase A's owed **(M)**
 `deploy.sh` has no rollback. The VM is a git checkout, so:
 
 ```bash
-ssh metatron-vm 'cd ~/metatron && git checkout b2b1dc7 && sudo systemctl restart metatron-scheduler metatron-server'
+gcloud compute ssh metatron-vm --zone=us-central1-a --project=metatron-ai-499810 \
+  --tunnel-through-iap --command 'cd ~/multi-model-mcp && git checkout b2b1dc7 && sudo systemctl restart metatron-scheduler metatron-server'
 ```
 
 That returns the VM to its pre-deploy commit. **It does not undo `pip install`** — irrelevant here,
