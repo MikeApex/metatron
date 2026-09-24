@@ -618,8 +618,182 @@ once both have landed. So write your own tests and say in the handoff what they 
 
 ---
 
-## Phases C, E, F
+## Phase C
 
-Pending. Written on request, in § 16 order: C (the five subagent definitions and `/build`) →
-`/adversarial-review` of C's command (Fable, `high`) → E (the deploy checklist, Mike's hands) →
-F (bootstrap runs 1–3 as a live walkthrough).
+```
+Model: Opus 5, effort xhigh.
+```
+
+/metatron-code first.
+
+You are building **phase C of Build v4.11**: the **five Build subagent definitions and the `/build`
+command** — the layer that actually drives the graph phase A built. This is the last phase before
+the deploy. Nothing user-visible ships and nothing deploys, but this is the phase that makes Build
+runnable, so it gets its own adversarial review before it touches a real ticket.
+
+### Read before you write anything
+
+1. **`archive/plans/build_vertical_plan_2026-09-24.md` — in full** (998 lines, every section binds).
+   Header changelog and the two review files (`adversarial_review_..._2026-09-24.md`,
+   `..._cold-fable.md`) hold the reasons behind every mechanism. **Read them for reasons, never to
+   re-review the plan** — both ended clean.
+2. **Binding hardest here:** § 3 **the node graph, in full — this is your specification**, every node
+   N2→N14 including the four channels at N12 and the one-sitting rule at N13; § 0 (all thirteen
+   rulings, especially 2 on models, 5 on Inquiry's vacuum, 6 on every question travelling, 8 on the
+   review, 11 on the read doors); § 4 (the artifacts your agents produce); § 7 (**the agent table and
+   the command's four forms**); § 12 (three rows, quoted below); § 14; § 16.
+3. **`.claude/rules/docs-and-logs.md`** — it governs `.claude/commands/**`. The rule that binds you:
+   **command files carry procedure, not history.** When an incident teaches something the lesson goes
+   to `archive/log/` and the command gets at most a line. `archive.md` is capped at 150 lines and
+   `backlog.md` at 200 in `CEILINGS`; `build.md` has no entry yet, which is not licence to sprawl.
+4. **`.claude/agents/adversarial-reviewer.md`** — the convention your five definitions follow:
+   frontmatter `name`, `description`, `model`, `tools`, then the body. Copy its shape.
+5. **`SESSION.md` and `ROADMAP.md`**, loaded by `/metatron-code`.
+
+### Preconditions
+
+- `git log --oneline -1` shows **`2894ad5`** or later. Phases 0, A, B-Red, B and D are committed:
+  the 16-module `core/build/` package, the read doors, `request_build` on the Coordinator and the
+  eight category agents, and `search_conversations` / `read_journal_range`.
+- **`core/build/driver.py` already exists and is tested (19 checks).** You are not writing the
+  runner. Read it before you write the command.
+- Nothing in `core/build/` needs changing. If you think it does, that is a finding for the handoff.
+
+### Work in a worktree
+
+```bash
+cd /Users/md-homefolder/Desktop/multi-model-mcp && ./scripts/new_worktree.sh v4c-command
+```
+
+`/Users/md-homefolder/Desktop/metatron-wt-v4c-command`, **absolute paths only**.
+
+### The five agent definitions — § 7's table, exactly
+
+| File | `model:` | `tools:` | What it is |
+|---|---|---|---|
+| `.claude/agents/build-inquiry.md` | `opus` | **none** | judgement in a vacuum — the gap text, trigger, mode, and in REPAIR the dossier. **No manifest, no data, no tools.** Carries the compass rule and the spine abstract from v3.7 § 15 |
+| `.claude/agents/build-librarian.md` | `opus` | `Read, Grep, Bash(python3 scripts/vm_read.py *)` | locator then adjudicator; reads as much as it needs, no ration |
+| `.claude/agents/build-planner.md` | `opus` | `Read, Grep, Glob` | plans, never creates; opens the code to direct the new agent at the right tools |
+| `.claude/agents/build-implementer.md` | `opus` | `Read, Edit, Write, Bash, Grep, Glob` | builds against a settled plan, **Amber and Green files only** |
+| `.claude/agents/build-coherence.md` | `fable` | `Read` | reads the landed set |
+
+**Three rules on the definitions, each from the plan:**
+
+1. **No agent names its model in its body** (§ 7). The frontmatter carries it; the prose must not.
+2. **None of them reaches a Vertex model.** These are Claude Code subagent definitions on Mike's
+   subscription, not runtime agent files — ruling 1. They have **no routing entries** and
+   `resolve_model("build_inquiry")` raising is permanently correct (§ 8).
+3. **The implementer's prompt carries the worktree's ABSOLUTE path and forbids relative paths.** A
+   subagent's cwd stays pinned to the main tree, so a relative `Write` lands there — this is the
+   `/fix` rule and cold read 4. Its Bash grant is the test and sweep commands only; it never runs
+   `deploy.sh`, `git push`, `git commit` or `git add`.
+
+### The command — `.claude/commands/build.md`
+
+Four forms (§ 7):
+
+```
+/build [--persona mike]                    list open tickets (fetched) and jobs in flight
+/build [--persona mike] BLD-MMDD-NN        run the graph from wherever the artifacts say it is
+/build [--persona mike] repair BLD-MMDD-NN same, REPAIR mode, dossier first
+/build coherence                           the periodic set review
+```
+
+**The single most important property, and the one a reviewer will attack first: the command is NOT
+the runner. `core/build/driver.py` is.** The command asks the driver for the next step, spawns the
+subagent or runs the code node the driver names, hands the result back, and repeats. It stops where
+the driver says a human gate is. **A model cannot skip a park or add a retry, because the driver
+will not name the step** — that was Opus finding 1, and the whole control layer was salvaged into
+Python for exactly this reason. Do not reimplement node order, retry counts, the send-back bound or
+the park states in markdown.
+
+**What the command does that the driver cannot:**
+
+- **[N6] the interview happens in chat**, in the build session, with Mike in front of it.
+  `answer_interview_item` is retired — do not call it.
+- **[N8]** spawns the **`adversarial-reviewer` agent definition directly**, with the same three-line
+  prompt `/adversarial-review` sends — brief path, `high`, repo root — and nothing else. The report
+  lands in the **job directory**, not `archive/plans/`, so nothing tracked is written before [N9].
+- **[N11]** spawns the implementer into `./scripts/new_worktree.sh --sandbox <slug>`.
+- **[N13]** applies the patch to the main tree, writes the **Red half of `files[]` there** — where
+  the harness's `ask` rules prompt Mike — flips the registry row `staged` → `landed`, and runs the
+  driver's wiring gate. **One unbroken sitting**, ending in Mike's commit or the printed revert.
+- **It never commits, pushes or deploys.** Ever.
+
+`--persona` defaults to `mike`; the job directory, the board and the registry row all carry it
+(cold read 5).
+
+### Also in this phase: `tests/test_build_manifest.py`
+
+**It does not exist, and `core/build/manifest.py`'s docstring cites it twice** as the thing enforcing
+the content-free rule — *"still enforced by `tests/test_build_manifest.py`'s grep of every profile
+value"*. So the rule that keeps the manifest safe to render into a prompt has no test while the
+docstring asserts it does. Phase D found it; § 12 gives manifest no row.
+
+**It belongs here** because the manifest is rendered into the Librarian's prompt, which is what you
+are writing. Write it: assert the manifest a Librarian receives contains **no persona values** — ids,
+descriptions and shapes only — by grepping every value from a populated fixture persona against the
+rendered output. If you conclude the docstring's claim is wrong rather than merely untested, say so
+in the handoff; do not quietly delete the sentence.
+
+### The § 12 rows this phase must satisfy — verbatim, do not paraphrase
+
+| Piece | Command | Proves |
+|---|---|---|
+| Resume | start `/build BLD-…`, kill the session after N4, restart | N2 and N4 skipped, N7 runs; no duplicate artifact |
+| Review sees the table | run N7 → N10 → N8 on a fixture job | the file handed to `/adversarial-review` contains the question table; the review lands in the brief after it (finding 6) |
+| Persona-qualified ids | two fixture personas each filing on the same day | the same `BLD-MMDD-NN` in both ticket files; `/build --persona a BLD-…` and `--persona b` open different job directories; `/build BLD-…` with no persona resolves `mike` (cold read 5) |
+
+All three are runnable on fixture jobs without a real ticket and without a deploy. **The End-to-end
+row is phase F's, not yours.**
+
+### The exit gate — this phase is not done when the files exist
+
+`/adversarial-review .claude/commands/build.md` **in Fable at `high`**, per § 14 and § 16: *"reviewed
+by `/adversarial-review` (Fable) before it runs a real ticket."* Run it, put the two ranked blocks in
+your handoff, and **address or explicitly refuse each finding**. A phase C that has written the
+command but not survived its review is not finished.
+
+### Standing rules
+
+1. **Work in `/Users/md-homefolder/Desktop/metatron-wt-v4c-command`, by absolute path.**
+2. **Run what you changed. A green sweep is not a test.**
+3. **Never `git commit`, never `git push`, never `./deploy.sh`.**
+4. **No Red file** — `config/agents/*.md`, `config/modules/routing*.yaml`,
+   `core/{router,persona,scheduler,spend_guard}.py`. Note `.claude/agents/` and `.claude/commands/`
+   are **not** Red; `config/agents/` is. If a Red file seems needed, stop and say so.
+5. **Nothing leaves this machine.**
+6. **A live gate run dirties tracked fixture-persona files** — `git checkout HEAD --` them before
+   generating the patch.
+7. **Disagree in the handoff, not in the code.** § 0's rulings are Mike's and the two reviews' closed
+   findings are not reopened.
+
+### Cost
+
+**§ 14 budget: $12–18**, which includes the `/adversarial-review` pass. Say so if you pass $18.
+
+### Handoff
+
+1. `python3 ~/.claude/tools/archive_chats.py`
+2. The patch:
+   ```bash
+   WT=/Users/md-homefolder/Desktop/metatron-wt-v4c-command
+   OUT=/Users/md-homefolder/Desktop/multi-model-mcp/archive/handoffs/2026-09-24-build-phase-C.patch
+   git -C "$WT" diff HEAD --binary > "$OUT"
+   for f in $(git -C "$WT" ls-files --others --exclude-standard); do
+     git -C "$WT" diff --no-index --binary /dev/null "$f" >> "$OUT" || true
+   done
+   ```
+3. `archive/handoffs/2026-09-24-build-phase-C.md` — what shipped; the three § 12 rows **with output
+   pasted**; the `test_build_manifest.py` result and whether the docstring's claim held; **the
+   adversarial review's two ranked blocks and your response to each finding**; what was left open;
+   cost against $12–18.
+4. **Leave the worktree in place.**
+
+---
+
+## Phases E and F
+
+Pending. E is the deploy checklist — Mike's hands, every command with its machine and full path,
+and it carries everything in `b2b1dc7..HEAD`, not Build's commits alone. F is bootstrap runs 1–3 as
+a live walkthrough, written once C has been reviewed clean.
