@@ -12,7 +12,7 @@ Persona-scoped. Every session belongs to exactly one persona.
 
 import json
 import os
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from core.persona import PersonaError, persona_data_dir, persona_scope, resolve_persona
@@ -121,6 +121,148 @@ def read_journal(entry_date: str = "") -> dict:
 
     with open(journal_path) as f:
         return json.load(f)
+
+
+# Caps for read_journal_range. They match the read door's published caps (plan
+# section 6) rather than sitting under them: a tool ceiling below the door's
+# would make the door's cap a lie, and a tool with no ceiling of its own is
+# unbounded the moment anything calls it directly.
+#
+# Unlike get_log_window's `max_entries`, 0 does NOT mean "no limit" here. That
+# convention is what makes a read tool unbounded by default, and this is a
+# research read over a store with no natural ceiling.
+JOURNAL_RANGE_MAX_DAYS = 90
+JOURNAL_RANGE_MAX_ENTRIES = 200
+JOURNAL_RANGE_DEFAULT_ENTRIES = 50
+
+
+def read_journal_range(start: str = "", end: str = "", max_entries: int = 0) -> dict:
+    """
+    Read journal entries across a date range.
+
+    The sibling of read_journal, which takes one date. A single-date read cannot
+    answer anything about how something is recorded over time — see
+    `core/build/manifest.py`'s `answers` field, which marks read_journal as
+    single-point for exactly that reason.
+
+    Args:
+        start: First date, YYYY-MM-DD, inclusive. Empty means as far back as the
+               window ceiling allows from `end` — the widest this tool will
+               serve, so a presence check finds the corpus if there is one.
+        end:   Last date, YYYY-MM-DD, inclusive. Empty means today.
+        max_entries: Cap on entries returned. 0 or less uses the default of 50;
+               anything above 200 is capped at 200. When the window holds more,
+               the MOST RECENT are kept — matching get_log_window, so the
+               freshest material is the material that survives a truncation.
+
+    Returns:
+        A dict, always the same shape:
+          start, end    the dates actually read, after any clamp
+          days          [{date, entries}, ...] oldest first, days with no
+                        journal file omitted
+          day_count     days carrying entries
+          entry_count   entries returned
+          total_entries entries found in the window, before max_entries
+          truncated     True when total_entries > entry_count
+          note          "" or a sentence naming any clamp that was applied
+          error         "" when the read succeeded
+
+        A range spanning dates with no journal file is not an error — it returns
+        an empty `days`. Nor is an unreadable or malformed day file: it is
+        skipped, because one bad file must not cost the caller the whole window.
+
+    Note on the argument names: `start`/`end`, not `start_date`/`end_date`.
+    `core/build/manifest.py`'s `_SOURCES` table specifies this call as
+    `{"start": "", "end": "", "max_entries": 40}` and the read door issues it
+    verbatim; that file's own docstring records what a mismatched argument costs
+    — a TypeError, `state: error`, and a source that reads as broken rather than
+    as empty.
+    """
+    if max_entries is None or max_entries <= 0:
+        max_entries = JOURNAL_RANGE_DEFAULT_ENTRIES
+    max_entries = min(int(max_entries), JOURNAL_RANGE_MAX_ENTRIES)
+
+    def _blank(resolved_start: str, resolved_end: str, error: str = "",
+               note: str = "") -> dict:
+        return {"start": resolved_start, "end": resolved_end, "days": [],
+                "day_count": 0, "entry_count": 0, "total_entries": 0,
+                "truncated": False, "note": note, "error": error}
+
+    try:
+        last = date.fromisoformat(end) if end else date.today()
+    except ValueError:
+        return _blank(start, end, error=f"end {end!r} is not an ISO date (YYYY-MM-DD).")
+
+    note = ""
+    if start:
+        try:
+            first = date.fromisoformat(start)
+        except ValueError:
+            return _blank(start, end,
+                          error=f"start {start!r} is not an ISO date (YYYY-MM-DD).")
+        if first > last:
+            return _blank(start, last.isoformat(),
+                          error=f"start {first.isoformat()} is after end {last.isoformat()}.")
+    else:
+        first = last - timedelta(days=JOURNAL_RANGE_MAX_DAYS - 1)
+
+    span = (last - first).days + 1
+    if span > JOURNAL_RANGE_MAX_DAYS:
+        first = last - timedelta(days=JOURNAL_RANGE_MAX_DAYS - 1)
+        note = (f"Window of {span} days narrowed to the most recent "
+                f"{JOURNAL_RANGE_MAX_DAYS}, from {first.isoformat()}. "
+                f"Call again with an earlier end date to read further back.")
+
+    journal_dir = _journal_dir()
+    days: list[dict] = []
+    total = 0
+    current = first
+    while current <= last:
+        path = journal_dir / f"{current.isoformat()}.json"
+        if path.exists():
+            try:
+                payload = json.loads(path.read_text())
+            except (OSError, ValueError):
+                payload = None  # a damaged day is skipped, not fatal to the window
+            if isinstance(payload, dict):
+                entries = payload.get("entries")
+                if isinstance(entries, list) and entries:
+                    days.append({"date": current.isoformat(), "entries": entries})
+                    total += len(entries)
+        current += timedelta(days=1)
+
+    if total > max_entries:
+        # Keep the most recent `max_entries`, walking backwards from the newest
+        # day and dropping whole days once the budget is spent.
+        kept: list[dict] = []
+        budget = max_entries
+        for day in reversed(days):
+            if budget <= 0:
+                break
+            entries = day["entries"]
+            if len(entries) > budget:
+                entries = entries[-budget:]
+            kept.append({"date": day["date"], "entries": entries})
+            budget -= len(entries)
+        days = list(reversed(kept))
+        dropped = total - max_entries
+        note = (note + " " if note else "") + (
+            f"{dropped} older entries not shown (showing the {max_entries} most "
+            f"recent of {total}). Narrow the window or raise max_entries to see more."
+        )
+
+    returned = sum(len(day["entries"]) for day in days)
+    return {
+        "start": first.isoformat(),
+        "end": last.isoformat(),
+        "days": days,
+        "day_count": len(days),
+        "entry_count": returned,
+        "total_entries": total,
+        "truncated": total > returned,
+        "note": note,
+        "error": "",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -261,6 +403,40 @@ READ_JOURNAL_SCHEMA = {
             "entry_date": {
                 "type": "string",
                 "description": "Date in YYYY-MM-DD format. Leave empty for today.",
+            },
+        },
+        "required": [],
+    },
+}
+
+READ_JOURNAL_RANGE_SCHEMA = {
+    "name": "read_journal_range",
+    "description": (
+        "Read journal entries across a date range, oldest first. Use this instead of "
+        "read_journal whenever the question is about how something is recorded over "
+        "time rather than about one particular day — read_journal returns a single "
+        "date and cannot answer that."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "start": {
+                "type": "string",
+                "description": (
+                    "First date to read, YYYY-MM-DD, inclusive. Leave empty for the "
+                    f"widest window available ({JOURNAL_RANGE_MAX_DAYS} days back)."
+                ),
+            },
+            "end": {
+                "type": "string",
+                "description": "Last date to read, YYYY-MM-DD, inclusive. Leave empty for today.",
+            },
+            "max_entries": {
+                "type": "integer",
+                "description": (
+                    "Maximum entries to return, keeping the most recent. Default "
+                    f"{JOURNAL_RANGE_DEFAULT_ENTRIES}, maximum {JOURNAL_RANGE_MAX_ENTRIES}."
+                ),
             },
         },
         "required": [],

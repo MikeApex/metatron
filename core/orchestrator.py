@@ -1253,8 +1253,12 @@ def register_tools() -> tuple[list[dict], dict]:
     from tools.config_writer import write_config, WRITE_CONFIG_SCHEMA
     from tools.diarist import (
         write_journal, read_journal, WRITE_JOURNAL_SCHEMA, READ_JOURNAL_SCHEMA,
+        read_journal_range, READ_JOURNAL_RANGE_SCHEMA,
         write_archive, read_archive, WRITE_ARCHIVE_SCHEMA, READ_ARCHIVE_SCHEMA,
     )
+    # The verbatim conversation record, searchable. Nothing could search it before
+    # 2026-09-24; search_memory is a FAISS index over logs and journal entries only.
+    from tools.conversations import search_conversations, SEARCH_CONVERSATIONS_SCHEMA
     from tools.wisdom import (
         write_wisdom, read_wisdom, WRITE_WISDOM_SCHEMA, READ_WISDOM_SCHEMA,
         find_duplicate_wisdom, merge_wisdom_entries, record_wisdom_response,
@@ -1370,8 +1374,9 @@ def register_tools() -> tuple[list[dict], dict]:
         WRITE_LOG_SCHEMA, READ_LOG_SCHEMA,
         READ_GOALS_SCHEMA, WRITE_GOALS_SCHEMA, UPDATE_GOAL_SCHEMA,
         WRITE_CONFIG_SCHEMA,
-        WRITE_JOURNAL_SCHEMA, READ_JOURNAL_SCHEMA,
+        WRITE_JOURNAL_SCHEMA, READ_JOURNAL_SCHEMA, READ_JOURNAL_RANGE_SCHEMA,
         WRITE_ARCHIVE_SCHEMA, READ_ARCHIVE_SCHEMA,
+        SEARCH_CONVERSATIONS_SCHEMA,
         WRITE_WISDOM_SCHEMA, READ_WISDOM_SCHEMA,
         FIND_DUPLICATE_WISDOM_SCHEMA, MERGE_WISDOM_ENTRIES_SCHEMA,
         SEARCH_MEMORY_SCHEMA,
@@ -1423,8 +1428,10 @@ def register_tools() -> tuple[list[dict], dict]:
         "write_config": write_config,
         "write_journal": write_journal,
         "read_journal": read_journal,
+        "read_journal_range": read_journal_range,
         "write_archive": write_archive,
         "read_archive": read_archive,
+        "search_conversations": search_conversations,
         "write_wisdom": write_wisdom,
         "read_wisdom": read_wisdom,
         "find_duplicate_wisdom": find_duplicate_wisdom,

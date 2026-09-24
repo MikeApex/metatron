@@ -118,8 +118,12 @@ ACTION_TOOLS: frozenset[str] = frozenset({
 # `generate_emergency_card` formats stored data into a string and writes nothing
 # (tools/wishes.py:119).
 READ_TOOLS: frozenset[str] = frozenset({
-    "read_log", "read_goals", "read_journal", "read_archive", "read_wisdom",
+    "read_log", "read_goals", "read_journal", "read_journal_range",
+    "read_archive", "read_wisdom",
     "find_duplicate_wisdom", "search_memory", "read_context_tracker",
+    # search_conversations reads the conversation JSONL and advances no cursor —
+    # unlike read_intake_queue below, it leaves no presentation state behind.
+    "search_conversations",
     "get_log_window", "read_recent_insights",
     "read_baseline_periods", "get_baseline_context",
     "shuffled_null_score", "score_against_anchors",
