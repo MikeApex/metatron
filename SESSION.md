@@ -1,34 +1,35 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-09-24 (**Build v4 phase A — `core/build/` rebuilt with salvage, the overlay
-retired**). Build is development, not execution (Mike): it runs in Claude Code on the Mac on the
-subscription, Mike starts each build, approves the plan, commits and deploys; Vertex serves only
-execution. Plan: `archive/plans/build_vertical_plan_2026-09-24.md` **v4.11** — it owns the
-thirteen § 0 rulings, the sequencing (§ 16: 0, A, B, B-Red, D, C, E, F), the cost ($65–106) and
-the kept/changed/deleted list (§ 10). **Phase 0 committed at `505b254`; phase A is built and
-green and is waiting to be landed** — handoff at
-`archive/handoffs/2026-09-24-build-phase-A.md` (tracked), the 1.1 MB patch beside it
-**deliberately untracked** because it is redundant the moment the phase commits; the worktree
-`../metatron-wt-v4a-package` is the other copy and is left in place. Reasoning, options rejected and what three tests found that the
-plan had not: `archive/PROJECT_LOG.md` § 2026-09-24 (phase A).*
+*Updated: 2026-09-24 (**Build v4 — phases 0, A and B-Red committed**). Build is development, not
+execution (Mike): it runs in Claude Code on the Mac on the subscription, Mike starts each build,
+approves the plan, commits and deploys; Vertex serves only execution. Plan:
+`archive/plans/build_vertical_plan_2026-09-24.md` **v4.11** — it owns the thirteen § 0 rulings, the
+sequencing (§ 16), the cost ($65–106) and the kept/changed/deleted list (§ 10). Reasoning, options
+rejected, and four things believed true that were not: `archive/PROJECT_LOG.md` § 2026-09-24, third.*
 
-***Next, and it is a commit rather than a build.*** ***Land phase A:*** apply the patch to the
-main tree, `git diff` it — **including `core/orchestrator.py` and `core/trace.py`, where the
-headset chat also has committed lines** — and make one commit. The patch excludes
-`core/{router,scheduler}.py`, which are Mike's Red half and already sit uncommitted in the main
-tree. **Until that commit the main tree is half-landed:** `core/scheduler.py` names
-`core.build.tick.build_tick` and that module is not there yet, so the REPAIR counter is dark
-locally. The VM is unaffected (still `b2b1dc7`). Verified against the current HEAD `3066d66`,
-not just its own base: both halves applied to a scratch worktree gave 12/12 sweep, 236 build
-checks and three regression gates green. **Then phase B** — the read door on `core/server.py`,
-`probe.py` behind it, `scripts/vm_read.py`, auth, tests ($8–12, Opus 5). Nothing deploys until
-phase E, which sends 0, A, B, B-Red and D to the VM together.*
+***Next: phases B and D, and they may run SIMULTANEOUSLY*** — they share no file and both branch
+from `224e5d4`. Complete, self-contained prompts are in
+`archive/plans/build_v4_phase_prompts_2026-09-24.md`; hand a fresh Opus 5 window one and nothing
+else. **B** = the read doors (`core/build/doors.py`, `scripts/vm_read.py`, the endpoint on
+`core/server.py`; $8–12). **D** = `search_conversations` and `read_journal_range`, ordinary
+development ($4–7). Then C (the five subagent definitions and `/build`), its `/adversarial-review`
+in Fable, then E. **Nothing deploys until E — and E is 18 commits deep, not Build's**
+(`b2b1dc7..HEAD`), so it is a catch-up deploy with Build inside it and its checklist must separate
+the two before blaming Build for anything the VM then does. Spend ≈ **$29–42** of $65–106.*
 
-*(M) **owed after the phase-A commit, in the main tree: one pipeline turn on `--persona mike`.**
-Phase A ran that gate as `danny_park` because `config/personas/mike*` is gitignored and VM-only,
-so `--persona mike` raises in any worktree — five minutes, and the only part of the phase a
-worktree structurally cannot run. Still owed generally: **three commits and one deploy** —
-`0e154b9` (09-09 invitation wording), the 09-10 `tools/` change, and `12d7dd2` (phase 3).*
+***The graph is four layers now** (Mike, 2026-09-24): Coord → ~12 category agents, which route and
+no longer do → tier-3 agent → Synthesizer. Build exists to construct the tier-3 agents; the category
+files are emptied by hand at rollout. v3.7 § 2 specified this as "the tier", deferred to four leaf
+capabilities — **the trigger and the guard were brought forward**: `request_build` is granted to the
+eight personal specialists in both routing files, and `tools/subagent.py` is depth-aware
+(`MAX_SUBAGENT_DEPTH = 2`). `run_subagent` is **not** granted yet, and the eight hold the tool with
+no filing instruction until rollout — the 16 class-2 advisories in `check_agent_tools.py` are that
+marker.*
+
+*(M) **owed at phase E, not before: one pipeline turn on `--persona mike`, on the VM.**
+`config/personas/mike*` is VM-only, so that turn cannot run on the Mac in **any** tree — phase A's
+handoff said otherwise and was wrong. The `danny_park` substitute passed against the landed main
+tree. Also riding E: `0e154b9`, the 09-10 `tools/` change, and `12d7dd2`.*
 
 *⚠ **Headset mode is built, device-tested and committed (`3066d66`, `0b044f9`); one half owes a
 deploy.** Hold a bud → "I'm here" → speak → silence sends → reply spoken; works screen-off in a
@@ -66,15 +67,13 @@ the homes each paragraph was already pointing at.
 | **Two items closed 09-05 as "skip, no backlog item"** — the calendar occurrence-vs-series gap, and the 2:44 check-in's conduct. **Do not file them** | `archive/log/2026-09-05-06-horizon-gate-and-two-guards-that-lied.md` |
 | **Items closed 09-05 are not to be re-raised** | `archive/backlog_closed_2026-09.md`, their only home |
 
-**Open, and each owned by its id — the sync's `⚠ due:` line is the live list, not this table.**
-Inviting to N events is N approval cards and the one-call-per-event rule did not hold on its
-first live run; `logistics.md` now states how many approvals are coming, batching was not built.
-Thread expiry owes **one observation, not a deploy** — birthdates surviving Metatron's own
-rewording in `context_audit.jsonl` (`[DB-0814-02]`). B4's max-chain-depth needs the 3-round limit
-in code first (`[DB-0804-02]`). Mike's 09-07 auto-invite rule sits untriaged in the Inbox.
+**Open, each owned by its id — the sync's `⚠ due:` line is the live list, not this file.**
+Batched invitations, unbuilt. Thread expiry `[DB-0814-02]`, owes one observation not a deploy.
+B4 max-chain-depth `[DB-0804-02]`, needs the 3-round limit in code first. Mike's 09-07
+auto-invite rule, untriaged in the Inbox. **Evidence for all four is in `DEV_BACKLOG.md`.**
 
-**Ceilings owed:** `.claude/rules/deploy.md` 131/100 (`CLAUDE.md` is at 300/300 — at it, not
-over). This file's own count is deliberately not written here, because restating it changes it.
+**Ceilings owed:** run `python3 scripts/check_claude_md_claims.py` — it is the authority, and a
+number copied here goes stale the next time anything is edited.
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -119,31 +118,27 @@ What exists: [CODEBASE_INDEX.md](CODEBASE_INDEX.md). When and why each piece was
 
 ### In progress / next
 
-**A7 — Phase 5 sign-off — BLOCKED on B1 alone.** A1–A6 complete, Track B2 built, B1a passing.
-**Checks 10 and 12 are SKIPPED and A8 is CANCELLED** (Mike, 2026-09-02 — both fold into Mark 2;
-`ROADMAP.md` § A8 still reads as live, Mike updates it manually — do not start it). Genuinely
-left: B1b's calendar, web-page and CardDAV rows (gated on Track E), A5b/A5c, and B4's
-max-chain-depth `[DB-0804-02]`. **Per-item detail and the standing evidence are in
-[ROADMAP.md](ROADMAP.md) § Track A/B, which owns them** — including the attached-files row's
-one-case-not-a-suite caveat. This line is the status, not the record.
+**A7 — Phase 5 sign-off — BLOCKED on B1 alone.** A1–A6 complete, B2 built, B1a passing. Checks 10
+and 12 SKIPPED, A8 CANCELLED (Mike, 09-02 — both fold into Mark 2; `ROADMAP.md` § A8 still reads
+as live and Mike updates that manually — do not start it). Left: B1b's calendar, web-page and
+CardDAV rows (gated on Track E), A5b/A5c, `[DB-0804-02]`. **[ROADMAP.md](ROADMAP.md) § Track A/B
+owns the per-item detail and the standing evidence.**
 
 **A9 — built and deployed 2026-08-18; `@waiting` on real use, review `2026-10-01`.** Spec, the
 five provisional parts and the date: [ROADMAP.md](ROADMAP.md) § A9a, the single home.
 
-**BUILD — the vertical that constructs capabilities. v4.11; phase 0 committed, phase A built and
-awaiting its commit, phase B next.** Plan:
+**BUILD — the vertical that constructs capabilities. v4.11; phases 0, A and B-Red committed
+(`505b254`, `760c260`, `224e5d4`); B and D next and parallel.** Plan:
 [archive/plans/build_vertical_plan_2026-09-24.md](archive/plans/build_vertical_plan_2026-09-24.md)
 — it owns the rulings, the sequencing, the cost and the kept/changed/deleted list; this line is
 the status, not the record. **What exists now:** `core/build/` is 17 files (16 modules +
-`__init__`), 236 checks across eleven suites, sweep check 12
-(`scheduler-functions-resolve`), a rewritten `check_build_registration.py`, `--sandbox` on
-`new_worktree.sh`, and six content gates — the sixth being the **tier gate**, which refuses a
-capability doing standing judgement over a history on the bulk tier (§ D2's measured variance;
-`core/build/gates.py` carries the reasoning and the deliberately-unbuilt local-mode half).
-The old 19-module package, its four load seams and eight suites are deleted. Landing
-instructions and what is still owed: the handoff paragraph at the top of this file. The
-coordinating-window prompt:
-[archive/plans/build_v4_walkthrough_prompt_2026-09-24.md](archive/plans/build_v4_walkthrough_prompt_2026-09-24.md).
+`__init__`), 236 checks across eleven suites, sweep check 12 (`scheduler-functions-resolve`), a
+rewritten `check_build_registration.py`, `--sandbox` on `new_worktree.sh`, six content gates —
+the sixth being the **tier gate**, refusing a capability that makes a standing judgement over a
+history on the bulk tier — and the trigger: `request_build` on the Coordinator and the eight
+category agents, with the filing condition written by request shape in `coordinator.md`. The old
+19-module package, its four load seams and eight suites are deleted. Per-phase prompts:
+[archive/plans/build_v4_phase_prompts_2026-09-24.md](archive/plans/build_v4_phase_prompts_2026-09-24.md).
 
 ---
 
