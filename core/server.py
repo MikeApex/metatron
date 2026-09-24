@@ -385,6 +385,32 @@ def _row_with_attachments(row) -> dict:
     return out
 
 
+# The turn origins the trace is allowed to record. Deliberately a closed set, not
+# whatever the client sends: the field is written into every trace row and a client
+# could otherwise put arbitrary text there.
+_TURN_SOURCES = {"ui", "headset"}
+
+
+def normalise_turn_source(value) -> str:
+    """
+    Map a client-supplied turn origin onto the closed set, defaulting to "ui".
+
+    Only "headset" is distinguished from ordinary use, and for one reason: a headset
+    press is the only way a turn can start without the user meaning it — in a pocket,
+    at a median ~26k input tokens of Coordinator, specialists and Synthesizer. Nothing
+    else in a trace separates a stray press from a real question, and it cannot be
+    worked out afterwards, which is why the field is recorded from the first line
+    rather than derived later.
+    """
+    # isinstance first, not just membership: receive_json accepts any JSON, so a
+    # client can send {"source": {...}} or a list, and `x in <set>` raises TypeError
+    # on an unhashable value — inside the WebSocket loop, which would drop the socket.
+    # Found by tests/test_turn_source_marker.py rather than by a user losing a session.
+    if isinstance(value, str) and value in _TURN_SOURCES:
+        return value
+    return "ui"
+
+
 async def _get_recent_exchanges(persona: str, limit: int = 20) -> list[dict]:
     """Return last `limit` exchanges as dicts for WS history message."""
     async with aiosqlite.connect(DB_PATH) as db:
@@ -825,6 +851,7 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                 # Scheduler-initiated exchanges are flagged so traces record that
                 # Metatron opened the conversation rather than the user.
                 proactive = bool(data.get("proactive"))
+                source = normalise_turn_source(data.get("source"))
                 # Files the user sent in an earlier turn and is now pointing back at.
                 # These go to the model but not to the client or the exchange row:
                 # the user did not attach them to this message, so a chip under it
@@ -864,6 +891,7 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                             user_input, persona=persona_orch, provider=provider,
                             history=history, is_proactive=proactive,
                             received_at=received_at, attachments=pipeline_attachments,
+                            source=source,
                         ):
                             asyncio.run_coroutine_threadsafe(queue.put(chunk), loop).result()
                     except NotImplementedError:

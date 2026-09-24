@@ -21,6 +21,24 @@
             </intent-filter>
         </activity>
 
+        <!-- Holds the media session that receives the headset button, for exactly as
+             long as headset mode is armed.
+
+             The `microphone` half of foregroundServiceType is not optional and not
+             cosmetic: Android 11+ silences mic capture for an app that is not in the
+             foreground unless a foreground service of that type holds it. With only
+             mediaPlayback declared, a press with the screen locked records silence and
+             the client files it as "No speech detected" — a clean-looking no-op on the
+             exact case the feature exists for, while every foreground test passes.
+
+             `stopWithTask` is false so onTaskRemoved runs and can disarm deliberately;
+             see MetatronHeadsetService. -->
+        <service
+            android:name=".MetatronHeadsetService"
+            android:exported="false"
+            android:stopWithTask="false"
+            android:foregroundServiceType="mediaPlayback|microphone" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -49,4 +67,19 @@
          would make a coarse answer a refusal. -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+
+    <!-- Headset mode. MICROPHONE is the one that decides whether the feature works at
+         all: without it the foreground service cannot hold a microphone-typed capture,
+         and Android 11+ then records silence whenever the app is not in front — which
+         the client reports as "No speech detected", indistinguishable from a mis-press
+         without listening to the stored .webm.
+
+         POST_NOTIFICATIONS is dangerous-tier on Android 13+, so declaring it is
+         necessary and not sufficient; MainActivity requests it at runtime. Without the
+         grant the service runs invisibly, holding the media button with nothing on
+         screen to say so. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

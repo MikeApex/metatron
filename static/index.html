@@ -272,7 +272,7 @@
 
     /* Spoken-reply, alert and location toggles. They sit next to the mic rather than in
        the hidden settings row, because all three are meant to be flipped mid-conversation. */
-    #voice-toggle, #alert-toggle, #loc-toggle {
+    #voice-toggle, #alert-toggle, #loc-toggle, #headset-toggle {
       width: 56px;
       height: 56px;
       flex: 0 0 auto;
@@ -284,7 +284,7 @@
       cursor: pointer;
       transition: background 0.15s, color 0.15s, border-color 0.15s;
     }
-    #voice-toggle.on, #alert-toggle.on, #loc-toggle.on {
+    #voice-toggle.on, #alert-toggle.on, #loc-toggle.on, #headset-toggle.on {
       background: #1e3a5f;
       border-color: #1e3a5f;
       color: #e8e8e8;
@@ -710,6 +710,7 @@
     <button id="voice-toggle" title="Spoken replies on/off">🔇</button>
     <button id="alert-toggle" title="Alerts when a message arrives">🔔</button>
     <button id="loc-toggle" title="Location">📍</button>
+    <button id="headset-toggle" title="Headset button on/off">🎧</button>
   </div>
 
   <!-- Location [DB-0815-12]. Two capture modes, both a deliberate act: a switch that
@@ -1300,6 +1301,24 @@
   let wsAuthFailed = false;
   let ownBubble = null;
   let ownAccumulated = '';
+  let ownExchangeId = null;          // the exchange currently streaming to this device
+  let ownInput = '';                 // its prompt, kept so the bubble can be rebuilt
+  // The one exchange whose reply was in flight when the socket died. It is the ONLY
+  // row any recovery path may speak, and the only origin marker available, since a
+  // stored exchange row carries no column saying which device sent it.
+  //
+  // It is NOT removed from shownIds. An earlier version did, and that quietly
+  // reclassified the exchange as someone else's: the chunks arriving on the new
+  // socket found no foreign bubble and were dropped, the foreign 'done' branch then
+  // re-added the id, and the catch-up row was deduplicated away — so the answer never
+  // appeared at all, and orphanedOwnId stayed set until some later reconnect read a
+  // stale reply out of nowhere. The exchange is still ours; what it lost is its
+  // socket, so the fix is to re-adopt it below, not to disown it.
+  let orphanedOwnId = null;
+  let orphanedAt = 0;
+  // A reply that never arrives by any route must not be spoken an hour later when
+  // something unrelated forces a reconnect.
+  const ORPHAN_TTL_MS = 10 * 60 * 1000;
   const foreignBubbles = new Map();  // exchange_id → {bubble, accumulated}
   const shownIds = new Set();        // exchange_ids rendered on this device
   let lastSeenId = 0;
@@ -1454,7 +1473,16 @@
       if ((current || ws === null) && ownBubble) {
         stopWorking(ownBubble);
         ownBubble.textContent = ownAccumulated || '[Connection lost]';
-        ownBubble = null; ownAccumulated = '';
+        // This reply is orphaned: its 'done' was going to arrive on a socket that is
+        // now gone. Remember which one, so the frames that continue arriving on the
+        // NEXT socket can be recognised as ours and re-adopted (see 'chunk' below),
+        // and so a reply that completed while we were fully offline can be spoken
+        // when history rebuilds.
+        if (ownExchangeId) {
+          orphanedOwnId = ownExchangeId;
+          orphanedAt = Date.now();
+        }
+        ownBubble = null; ownAccumulated = ''; ownExchangeId = null;
         setLoading(false);
       }
       // A socket already replaced must not touch the status line or start a
@@ -1521,6 +1549,18 @@
       }
 
       case 'chunk': {
+        // The reply we lost a socket to is still being generated, and its chunks are
+        // arriving here. Re-adopt it: rebuild the bubbles renderHistory wiped (the
+        // exchange row is only written at completion, so the history frame could not
+        // have carried it) and let the ordinary own-exchange path below take over —
+        // including the 'done' branch, which is what speaks it.
+        if (!ownBubble && msg.exchange_id === orphanedOwnId) {
+          if (ownInput) addMessage('user', ownInput);
+          ownBubble = addMessage('assistant', '');
+          ownExchangeId = msg.exchange_id;
+          ownAccumulated = '';
+          setLoading(true);
+        }
         if (shownIds.has(msg.exchange_id)) {
           // Own exchange: update streaming bubble
           if (ownBubble) {
@@ -1549,8 +1589,11 @@
             stopWorking(ownBubble);
             ownBubble.textContent = ownAccumulated;
             speakResponse(ownAccumulated);
-            ownBubble = null; ownAccumulated = '';
+            ownBubble = null; ownAccumulated = ''; ownExchangeId = null;
           }
+          // Delivered — whether on its original socket or a re-adopted one. Either
+          // way it is no longer owed, so no later reconnect can speak it again.
+          if (msg.exchange_id === orphanedOwnId) orphanedOwnId = null;
           setLoading(false);
           maybeAlert(false);
         } else {
@@ -1580,7 +1623,7 @@
           if (ownBubble) {
             stopWorking(ownBubble);
             ownBubble.textContent = replacement || "I can't help with that right now.";
-            ownBubble = null; ownAccumulated = '';
+            ownBubble = null; ownAccumulated = ''; ownExchangeId = null;
           }
           setLoading(false);
         } else {
@@ -1612,7 +1655,7 @@
           if (ownBubble) {
             stopWorking(ownBubble);
             ownBubble.textContent = 'Error: ' + (msg.text || 'unknown error');
-            ownBubble = null; ownAccumulated = '';
+            ownBubble = null; ownAccumulated = ''; ownExchangeId = null;
           }
           setLoading(false);
         } else {
@@ -1638,8 +1681,27 @@
       // by its own 'done' frame has alerted once already, and the 'message'
       // broadcast that follows it must not alert a second time.
       if (live) maybeAlert(!!row.proactive);
+      speakIfOrphaned(row);
     }
     if (row.id > lastSeenId) lastSeenId = row.id;
+  }
+
+  // The reply the socket died on. Spoken only while armed, only for the one
+  // de-listed exchange id, and only once.
+  //
+  // It MUST NOT be "speak the newest reply": a stored row carries only
+  // id, exchange_id, user, assistant, ts, attachments, proactive — nothing says
+  // which device sent it — so "newest own" is not derivable, and an armed
+  // reconnect would read out someone else's exchange, or a proactive one.
+  function speakIfOrphaned(row) {
+    if (!orphanedOwnId) return;
+    // Expire rather than carry it indefinitely. If the reply never arrived by any
+    // route the turn failed server-side, and reading it out when something unrelated
+    // forces a reconnect an hour later is worse than never saying it.
+    if (Date.now() - orphanedAt > ORPHAN_TTL_MS) { orphanedOwnId = null; return; }
+    if (row.exchange_id !== orphanedOwnId) return;
+    orphanedOwnId = null;
+    if (headsetMode && row.assistant) speakResponse(row.assistant);
   }
 
   function renderHistory(messages) {
@@ -1659,6 +1721,10 @@
       addMessage('assistant', msg.assistant, msg.ts);
       shownIds.add(msg.exchange_id);
       if (msg.id > lastSeenId) lastSeenId = msg.id;
+      // The common recovery case: the reply was already stored by the time the
+      // socket came back, so this rebuild is what delivers it. The text always
+      // came back this way; what never happened was saying it out loud.
+      speakIfOrphaned(msg);
     }
     evictOldest(shownIds, 100);
     // Force: on load the newest exchange must be the one in view, whatever the
@@ -1709,6 +1775,11 @@
     addMessage('user', input, null, sent);
     clearAttachments();
     ownBubble = addMessage('assistant', '');
+    ownExchangeId = exchangeId;   // so onclose knows which reply was orphaned
+    ownInput = input;             // and so a re-adopted bubble can be rebuilt
+    // A new turn supersedes any older one still owed. Without this, a reply that
+    // never arrived stays queued and gets spoken on top of the one being asked for.
+    orphanedOwnId = null;
     startWorking(ownBubble);
     ownAccumulated = '';
     setLoading(true);
@@ -1720,6 +1791,10 @@
       agent: 'coordinator',
       provider: provider || null,
       attachments: sent.map(a => a.id),
+      // Recorded so a stray pocket press is distinguishable from a deliberate
+      // question in the trace. It cannot be worked out afterwards, and a headset
+      // press is the one turn origin that can happen by accident.
+      source: headsetMode ? 'headset' : 'ui',
     }));
   }
 
@@ -1775,6 +1850,25 @@
   const SILENCE_MS = 2500;
   const SILENCE_RMS = 0.04;  // 0–1 normalised; tune up if triggering on background noise
 
+  // Headset mode replaces the silence auto-stop with a hard cap, because the two
+  // cannot coexist: with the screen dark, silence would send the turn and the
+  // user's own "now send it" press would then REOPEN the mic into pocket noise,
+  // sending a second turn nobody asked for. So while armed, only a press sends.
+  //
+  // The cap exists for the opposite mistake — a press whose second press never
+  // comes. It DISCARDS rather than sends. Sending would turn one stray pocket
+  // press into a two-minute Whisper job plus, on pocket noise rather than silence,
+  // a full pipeline turn: the most expensive outcome available here, from the
+  // cheapest possible mistake. A turn the user never ended is not one to send.
+  const HEADSET_MAX_RECORD_MS = 120000;
+  let maxRecordTimer = null;
+  let discardRecording = false;   // set by the cap; read in mediaRecorder.onstop
+  // Declared here, beside the recording code that reads it, rather than in the
+  // headset block far below: startRecording() runs before that block's `let` would
+  // otherwise be initialised on some paths, and a temporal-dead-zone throw inside
+  // the mic path would read as "the mic is broken".
+  let headsetMode = false;
+
   function resetMic() {
     micBtn.classList.remove('listening', 'loading');
     micBtn.disabled = false;
@@ -1785,6 +1879,7 @@
   function stopSilenceDetection() {
     if (silencePoller) { clearInterval(silencePoller); silencePoller = null; }
     if (silenceTimer)  { clearTimeout(silenceTimer);   silenceTimer  = null; }
+    if (maxRecordTimer){ clearTimeout(maxRecordTimer); maxRecordTimer = null; }
     if (analyser)      { analyser.disconnect();         analyser      = null; }
     if (audioCtx)      { audioCtx.close();              audioCtx      = null; }
   }
@@ -1799,6 +1894,13 @@
     // arriving late and talking over a follow-up already being recorded, which the
     // toggle only avoids by turning the feature off entirely.
     stopSpeaking();
+
+    // Re-entrancy guard. isRecording is only set once getUserMedia resolves, which on
+    // a cold permission prompt is seconds, so two calls in that window both proceed:
+    // the second overwrites mediaRecorder and the first MediaStream is never stopped,
+    // leaving a live microphone with nothing holding a reference to close it. micIntent
+    // already marks the window — it just was not being read.
+    if (micIntent || isRecording) return;
 
     // Claim silence before awaiting the mic, not after. isRecording is only set once
     // getUserMedia resolves, which on a cold permission prompt can be seconds — and a
@@ -1834,6 +1936,17 @@
       micBtn.classList.remove('listening');
       micBtn.textContent = 'Tap to Speak';
 
+      // The 120s cap fired. Drop the audio without transcribing it — no /transcribe
+      // request, no pipeline turn, no Whisper job. The tone is the only report,
+      // because the screen is presumed dark.
+      if (discardRecording) {
+        discardRecording = false;
+        audioChunks = [];
+        setStatus('Mic timed out — discarded', '#666');
+        playTone(TONE_TIMEOUT);
+        return;
+      }
+
       if (audioChunks.length === 0) { setStatus('No audio captured', '#666'); return; }
 
       const blob = new Blob(audioChunks, { type: 'audio/webm' });
@@ -1868,7 +1981,25 @@
 
     mediaRecorder.start();
 
-    // Silence detection: stop automatically after SILENCE_MS of quiet post-speech
+    // Sounded here, not at the press: everything above this line can take time
+    // (the permission prompt, getUserMedia, later the Bluetooth profile switch),
+    // and a "speak now" tone before the mic is live costs the first words of
+    // every turn — invisibly, because the transcript just starts mid-sentence.
+    if (headsetMode) playTone(TONE_MIC_OPEN);
+
+    // While armed, the press is the only thing that sends (see HEADSET_MAX_RECORD_MS).
+    // The cap is the backstop for a second press that never arrives.
+    if (headsetMode) {
+      maxRecordTimer = setTimeout(() => {
+        if (!isRecording) return;
+        discardRecording = true;
+        stopRecording();
+      }, HEADSET_MAX_RECORD_MS);
+    }
+
+    // Silence detection: stop automatically after SILENCE_MS of quiet post-speech.
+    // Skipped entirely while armed — see HEADSET_MAX_RECORD_MS.
+    if (headsetMode) return;
     try {
       audioCtx = new AudioContext();
       analyser = audioCtx.createAnalyser();
@@ -1964,6 +2095,172 @@
 
   renderVoiceToggle();
 
+  // --- Headset mode: the button on a Bluetooth headset drives the mic ---
+  //
+  // Armed with one tap, and that tap is load-bearing rather than ceremony. Two
+  // things in this page only exist after an in-page gesture: the AudioContext
+  // (see unlockAudio above — playTone and speakResponse are both silent without
+  // it) and a media session, which a page must own before any platform will
+  // deliver it a media-key press. Launching the app is not an in-page gesture,
+  // so a headset flow that armed itself would come up with no tones and no
+  // spoken reply, and nothing to show why.
+  //
+  // Arming also BOUNDS THE COST. A headset press starts a full pipeline turn, so
+  // a press in a pocket is real money. An unarmed app ignores the button
+  // entirely, which is the control the rest of this rests on.
+  //
+  // Not persisted, deliberately — see armHeadsetMode().
+
+  let lastHeadsetPress = 0;
+
+  function isNative() {
+    try { return !!(window.Capacitor && window.Capacitor.isNativePlatform &&
+                    window.Capacitor.isNativePlatform()); } catch { return false; }
+  }
+
+  // A page with no active media session receives no media keys. In a browser this
+  // silent loop is what holds one. NOT started under Capacitor: there the native
+  // MediaSession in MetatronHeadsetService owns the button, and two sessions in one
+  // app competing for the same press is not something to leave to chance.
+  let headsetAnchor = null;
+  function startAnchor() {
+    if (isNative() || headsetAnchor) return;
+    try {
+      const ctx = audioCtxShared;
+      if (!ctx) return;
+      const buf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);  // 1s of silence
+      const src = ctx.createBufferSource();
+      src.buffer = buf; src.loop = true;
+      src.connect(ctx.destination);
+      src.start(0);
+      headsetAnchor = src;
+    } catch {}
+  }
+  function stopAnchor() {
+    if (!headsetAnchor) return;
+    try { headsetAnchor.stop(); } catch {}
+    headsetAnchor = null;
+  }
+
+  function setMediaHandlers(on) {
+    if (!navigator.mediaSession || !navigator.mediaSession.setActionHandler) return;
+    // play/pause/stop all route to the same place: one physical button maps to
+    // different actions depending on what the platform believes is playing, and
+    // guessing which is a bug that only shows up on someone else's headset.
+    for (const action of ['play', 'pause', 'stop']) {
+      try {
+        navigator.mediaSession.setActionHandler(
+          action, on ? () => window.__metatronHeadsetButton() : null);
+      } catch {}
+    }
+  }
+
+  function armHeadsetMode() {
+    // Native first, and only continue if it actually armed. It refuses when the mic
+    // permission was declined — a microphone-typed foreground service cannot start
+    // without RECORD_AUDIO — and arming the page anyway would light 🎧 over a button
+    // that can never work, with the permission prompt the only visible clue.
+    if (isNative()) {
+      let started = false;
+      try { started = !!(window.Metatron && window.Metatron.arm()); } catch {}
+      if (!started) {
+        setStatus('Allow the microphone, then tap 🎧 again', '#a44');
+        return;
+      }
+    }
+
+    unlockAudio();
+    try { audioCtxShared && audioCtxShared.resume(); } catch {}
+    startAnchor();
+    setMediaHandlers(true);
+    // Spoken replies are off by default, and a headset turn answered silently is a
+    // dead end. Forced on for the duration WITHOUT writing localStorage, so the
+    // user's own 🔇 preference is still there when they disarm.
+    if (!voiceEnabled) { voiceEnabled = true; renderVoiceToggle(); }
+    headsetMode = true;
+    renderHeadsetToggle();
+    // Proves the audio path works BEFORE it is relied on with the screen dark. If
+    // this is silent, nothing else in headset mode will be audible either, and
+    // finding that out at arming time is the whole point of making it a tap.
+    playTone(TONE_ARMED);
+  }
+
+  function disarmHeadsetMode() {
+    // Close an open mic first. Disarming removes the only two things that would ever
+    // have ended this recording — the button and the notification — and the silence
+    // detector is off while armed, so without this the mic stays live for up to the
+    // full 120s cap after the user has been told the feature is off. Discarded, not
+    // sent: they were switching it off, not asking a question.
+    if (isRecording) {
+      discardRecording = true;
+      stopRecording();
+    }
+    headsetMode = false;
+    setMediaHandlers(false);
+    stopAnchor();
+    if (isNative()) { try { window.Metatron && window.Metatron.disarm(); } catch {} }
+    // Restore the stored preference rather than leaving voice forced on.
+    const stored = localStorage.getItem('metatron_voice') === 'on';
+    if (voiceEnabled !== stored) { voiceEnabled = stored; renderVoiceToggle(); }
+    renderHeadsetToggle();
+  }
+
+  // The single entry point. Called by the mediaSession handlers above and, on
+  // Android, by MetatronHeadsetService via evaluateJavascript — which is why it
+  // hangs off window rather than being a local.
+  // Returns true when this page took responsibility for the press. The Android
+  // service reads that value back and stops itself on false — so returning false
+  // while unarmed is what resolves a service that has outlived the page that armed
+  // it, rather than leaving a live notification over a dead button.
+  window.__metatronHeadsetButton = function () {
+    if (!headsetMode) return false;
+
+    // Bluetooth stacks routinely deliver one press as two events (down and up).
+    // Undebounced, that opens the mic and closes it again in the same instant.
+    // Still "handled": it is the same press, not a lost one.
+    const now = Date.now();
+    if (now - lastHeadsetPress < 400) return true;
+    lastHeadsetPress = now;
+
+    // A transcription is in flight. /transcribe runs behind a single-slot
+    // semaphore that returns 503 rather than queueing, so an overlapping press
+    // has to be dropped here — sending it would just produce an error. Dropped
+    // deliberately by a live page, so still handled.
+    if (micBtn.disabled) return true;
+
+    if (isRecording) {
+      playTone(TONE_SENT);
+      stopRecording();
+    } else {
+      // No tone here. startRecording() awaits getUserMedia — and, once Bluetooth
+      // SCO routing lands, a profile switch of up to a second — so a tone fired
+      // now would say "speak" before the mic exists and the first words would be
+      // lost. It is played inside startRecording() once the recorder is running.
+      startRecording();
+    }
+    return true;
+  };
+
+  // Called by the service when the notification's Stop action is used, so the page
+  // and the service never disagree about whether the button is live.
+  window.__metatronDisarm = function () {
+    if (headsetMode) disarmHeadsetMode();
+  };
+
+  function renderHeadsetToggle() {
+    const btn = document.getElementById('headset-toggle');
+    btn.classList.toggle('on', headsetMode);
+    btn.title = headsetMode
+      ? 'Headset button is live — tap to release it'
+      : 'Headset button off — tap to control Metatron from your headphones';
+  }
+
+  document.getElementById('headset-toggle').addEventListener('click', () => {
+    if (headsetMode) disarmHeadsetMode(); else armHeadsetMode();
+  });
+
+  renderHeadsetToggle();
+
   // --- New-message alerts ---
   //
   // A reply lands tens of seconds after it is asked for — the wait is dominated by
@@ -1985,7 +2282,18 @@
   // spoken-reply path already unlocks on the first tap. It cannot play before that
   // first tap — which is the reason vibration is a separate toggle rather than a
   // detail of this one.
-  function playPing() {
+  //
+  // Four events now share this, and in headset mode the screen is dark, so they must
+  // be told apart BY EAR alone. The reply ping is unchanged (rising, two notes); the
+  // three headset cues are single notes at distinct pitches, low to high in the order
+  // a turn actually happens, with the timeout deliberately below all of them.
+  const TONE_REPLY    = [880, 1174.66]; // A5→D6 rising — a reply landed (unchanged)
+  const TONE_ARMED    = [440, 659.25];  // A4→E5 rising — headset mode is live
+  const TONE_MIC_OPEN = [523.25];       // C5  — mic is live, speak now
+  const TONE_SENT     = [783.99];       // G5  — turn sent, Metatron is thinking
+  const TONE_TIMEOUT  = [329.63];       // E4  — mic capped and DISCARDED, nothing sent
+
+  function playTone(freqs) {
     if (!audioCtxShared) return;
     try {
       const ctx = audioCtxShared;
@@ -2000,13 +2308,14 @@
 
       const osc = ctx.createOscillator();
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(880, now);            // A5
-      osc.frequency.setValueAtTime(1174.66, now + 0.09); // D6
+      freqs.forEach((f, i) => osc.frequency.setValueAtTime(f, now + i * 0.09));
       osc.connect(gain);
       osc.start(now);
       osc.stop(now + 0.34);
     } catch {}
   }
+
+  function playPing() { playTone(TONE_REPLY); }
 
   function vibrateAlert() {
     // Absent on desktop and in some WebViews, where it is a silent no-op — which is

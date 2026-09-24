@@ -92,6 +92,13 @@ certs_backup/
 # re-admitted, which is why this is six lines rather than one.
 # scripts/check_apk_sync.sh also asserts both permissions in the BUILT APK, so a regeneration
 # that slips past git is still caught at build time.
+#
+# ⚠ AND THE JAVA SOURCES, ADMITTED 2026-09-19 — they were never tracked before that, which
+# means MainActivity.java's two bug-bought fixes (the BridgeWebChromeClient subclass that
+# keeps onShowFileChooser alive, and the immediate mic grant) existed on ONE machine, with
+# no copy in any push or offsite backup. Headset mode adds two more files on the same terms,
+# so the exposure was about to triple rather than stay flat. Same reasoning as the manifest:
+# hand-written, not reproducible by `npx cap add android`, and lost with no diff to show it.
 android/*
 !android/app/
 android/app/*
@@ -100,6 +107,14 @@ android/app/src/*
 !android/app/src/main/
 android/app/src/main/*
 !android/app/src/main/AndroidManifest.xml
+!android/app/src/main/java/
+android/app/src/main/java/*
+!android/app/src/main/java/com/
+android/app/src/main/java/com/*
+!android/app/src/main/java/com/mike/
+android/app/src/main/java/com/mike/*
+!android/app/src/main/java/com/mike/metatron/
+!android/app/src/main/java/com/mike/metatron/*.java
 
 # Node dependencies
 node_modules/

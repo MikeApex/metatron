@@ -149,13 +149,21 @@ class AgentRecord:
 
 
 class RequestTrace:
-    def __init__(self, user_input: str, persona: str | None, is_proactive: bool = False):
+    def __init__(self, user_input: str, persona: str | None, is_proactive: bool = False,
+                 source: str = "ui"):
         self.trace_id = str(uuid.uuid4())[:8]
         self.ts = datetime.now().isoformat()
         self.persona = persona
         self.user_input = user_input
         self.synth_response: str = ""
         self.is_proactive = is_proactive
+        # How the turn was started: "ui" (typed or on-screen mic), "headset" (a press
+        # on a Bluetooth headset button). Recorded from the first line rather than
+        # derived later, because a turn's origin cannot be reconstructed after the
+        # fact and a headset press is the one origin that can happen by accident —
+        # in a pocket, at ~26k input tokens a turn. Nothing else distinguishes a
+        # stray press from a deliberate question once the trace is written.
+        self.source = source
         self.pipeline: list[AgentRecord] = []
         self.start_mono = time.monotonic()
         self._lock = threading.Lock()  # guards pipeline/subagent list mutations from worker threads
@@ -185,8 +193,9 @@ def _set_current_agent(rec: AgentRecord | None) -> None:
 # Lifecycle
 # ---------------------------------------------------------------------------
 
-def start_request_trace(user_input: str, persona: str | None, is_proactive: bool = False) -> RequestTrace:
-    t = RequestTrace(user_input, persona, is_proactive)
+def start_request_trace(user_input: str, persona: str | None, is_proactive: bool = False,
+                        source: str = "ui") -> RequestTrace:
+    t = RequestTrace(user_input, persona, is_proactive, source)
     set_trace(t)
     return t
 
@@ -401,6 +410,7 @@ def _serialize(t: RequestTrace, duration_ms: int) -> dict:
         "user_input": t.user_input,
         "synth_response": t.synth_response,
         "is_proactive": t.is_proactive,
+        "source": t.source,
         "duration_ms": duration_ms,
         "pipeline": [_agent_to_dict(a) for a in t.pipeline],
         # Trace-level roll-up, for the one-line header tag only. False means an agent

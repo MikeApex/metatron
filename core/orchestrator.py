@@ -6446,6 +6446,7 @@ def run_pipeline_session_stream(
     is_proactive: bool = False,
     received_at: datetime | None = None,
     attachments: list[dict] | None = None,
+    source: str = "ui",
 ) -> Iterator[str]:
     """
     Streaming variant of run_pipeline_session().
@@ -6466,7 +6467,7 @@ def run_pipeline_session_stream(
         yield from _run_pipeline_session_stream_inner(
             user_input, persona=bound, provider=provider, history=history,
             is_proactive=is_proactive, received_at=received_at,
-            attachments=attachments,
+            attachments=attachments, source=source,
         )
 
 
@@ -6478,6 +6479,7 @@ def _run_pipeline_session_stream_inner(
     is_proactive: bool = False,
     received_at: datetime | None = None,
     attachments: list[dict] | None = None,
+    source: str = "ui",
 ) -> Iterator[str]:
     """
     Pass 1 (Coordinator): runs blocking, identical to run_pipeline_session().
@@ -6499,7 +6501,7 @@ def _run_pipeline_session_stream_inner(
         yield "[DONE]"
         return
 
-    _tr.start_request_trace(user_input, persona, is_proactive=is_proactive)
+    _tr.start_request_trace(user_input, persona, is_proactive=is_proactive, source=source)
 
     # See the non-streaming path: the token set before the turn is what makes a
     # confirmation raised BY this turn distinguishable from one already outstanding.
