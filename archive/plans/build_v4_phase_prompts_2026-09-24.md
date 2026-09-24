@@ -893,6 +893,50 @@ cd /Users/md-homefolder/Desktop/multi-model-mcp && ./scripts/qa_sweep.sh
 Expect 12/12 including `scheduler-functions-resolve`. **It parses; it does not execute** — which is
 why checks 2 and 3 exist above it.
 
+### Pre-flight 5, on the VM — the gate the other four cannot see, and the one that stopped this deploy
+
+**RAN 2026-09-24: `./deploy.sh` aborted at the VM's `git pull` with
+`error: The following untracked working tree files would be overwritten by merge: scripts/renew_cert.sh`.**
+Nothing deployed, nothing restarted — `set -e` in the remote heredoc stopped before `pip install` and
+before both `systemctl restart` lines, so the VM stayed on its pre-deploy commit. The push and the
+fetch had both landed.
+
+**This is the 2026-08-20 untracked-file landmine pointed the other way, and gate 1 is blind to it.**
+Gate 1 asks *what have I not committed on the Mac that committed code imports*. This asks *what
+exists untracked on the VM that the incoming range brings under version control* — and git refuses
+that merge, correctly, rather than overwriting a file nobody tracked. `scripts/renew_cert.sh` was
+written directly on the VM on 2026-09-19 to stop the certificate expiring, then committed to the repo
+in `579908e` without the VM's copy ever being removed. Any file created live on the VM and later
+committed lands in this trap.
+
+Run this **before `./deploy.sh`**. It fetches, then prints the intersection of the VM's untracked
+files with the paths the incoming range touches. **Every line it prints will abort the deploy:**
+
+```bash
+gcloud compute ssh metatron-vm --zone=us-central1-a --project=metatron-ai-499810 \
+  --tunnel-through-iap --command 'cd ~/multi-model-mcp && git fetch -q origin main && git status --porcelain -uall | sed -n "s/^?? //p" | sort > /tmp/vm_untracked.txt && git diff --name-only HEAD origin/main | sort > /tmp/incoming.txt && comm -12 /tmp/vm_untracked.txt /tmp/incoming.txt && echo "(end of list — empty above means the pull is clear)"'
+```
+
+**For each file it names, three checks before removing anything, in this order.** The 2026-09-24 case
+was `scripts/renew_cert.sh`, the script that keeps the TLS certificate alive — and a dead cert is a
+total client outage while the server looks perfectly healthy (the 09-19 incident, and `curl -k`
+returns a clean 401 throughout). A file in this list can be load-bearing in a way its name does not
+advertise, so *delete and retry* is the wrong reflex:
+
+1. **Back it up on the VM, then diff it against the incoming version.** Byte-identical is the easy
+   case and was the actual one. Different means the live copy has diverged and may be the one that
+   works, since it is the one that has run.
+2. **Find what executes it.** `systemctl cat <unit>` for the path. The cert-renew timer ran
+   `/home/md-homefolder/multi-model-mcp/scripts/renew_cert.sh` daily at 04:30, i.e. exactly the path
+   about to be replaced.
+3. **Check git's recorded file mode**, on the MacBook: `git ls-files -s <path>`. `100755` keeps the
+   executable bit through the pull; **`100644` silently removes it**, and a timer whose `ExecStart`
+   loses `+x` fails every night with the cert expiring ~90 days later and nothing saying so. It was
+   `100755` here. Checked, not assumed.
+
+Then remove the VM's copy and re-run the deploy — the tracked version replaces it at the same path
+with the same content, which is what `579908e` was for.
+
 ### Two rules that do NOT apply this time, checked so they are not carried as worry
 
 - **Rule 3, `daemon-reload` before the deploy:** no `.service` or `.timer` file changed in
