@@ -1,5 +1,26 @@
 # Build — the vertical that constructs Metatron's capabilities
 
+**v4.12, 2026-09-24 — three § 3 mechanisms corrected against the code phase C actually built.**
+Mike's ruling: *"if the new code works as well as the planned code, just keep the new code."* Phase C
+wrote the `/build` command against this plan and, in doing so, became the first thing ever to
+exercise the driver end to end. Its review rounds found ten defects, eight with their fault site
+inside `core/build/`, and the fixes moved the code **ahead of** § 3 in three places. Rather than
+leave the plan describing mechanisms the code has superseded — which guarantees a future session
+reads § 3 and faithfully re-implements a defect — the three descriptions are corrected in place,
+each marked `v4.12` and carrying why:
+
+1. **§ 3 N8 — the send-back count** is recorded rejections, not `build_plan.v*.json` files, and the
+   park fires *before* the Planner is re-spawned rather than one Opus call after it.
+2. **§ 3 N11/N12 — the four channels** run inside N11's `implementer_gate`, not at N12, because a
+   retry would otherwise re-baseline over attempt 1's own refused write.
+3. **§ 3 N14 — a failed acceptance does not file a REPAIR from the Mac.** The ticket file is
+   VM-side and `file_ticket` refuses non-VM writers; the residue (no in-process host check) is named
+   and lands in phase E.
+
+*Nothing else moved, and no § 0 ruling is touched. The two adversarial reviews that cleared v4.10
+are unaffected: each of these three is a place their clean pass certified prose that had never been
+run, which is this plan's own most repeated lesson.*
+
 *Plan v4.11, 2026-09-24 — v4 revised eleven times the same day; v4.11 is instructional only
 (Mike's note on the Coordinator under-filing, § 3 and § 13.14, no mechanism changed) after the adversarial review at
 `archive/plans/adversarial_review_build_vertical_plan_2026-09-24.md` (Opus 5, effort high; ten
@@ -349,8 +370,14 @@ the same three-line prompt `/adversarial-review` sends — the brief's path, `hi
 (finding 6). The driver lands the report in the job directory, not in `archive/plans/`, so
 nothing tracked is written before [N9]; the `/adversarial-review` command itself stays what it is,
 a tool for plans. Fable. The two ranked blocks are appended to the brief by the driver. A structural finding sends the plan back to N7 once (rung 2, the rejected plan plus
-the findings, then N10 again); a second failure parks the job for Mike. The send-back count is
-the number of `build_plan.v*.json` artifacts on disk, so it survives a lost session.
+the findings, then N10 again); a second failure parks the job for Mike. **The send-back count is a
+count of recorded REJECTIONS, and the park fires before the Planner is spawned again** — v4.12,
+corrected against phase C's built code. It was the number of `build_plan.v*.json` artifacts on
+disk, which reads as durable and is one Opus call too late: a plan file only exists *after* the
+Planner has run, so counting files spends the expensive node the bound exists to refuse. The
+rejection is recorded in `attempts.jsonl`, which is the same durable home and survives a lost
+session identically. `driver.MAX_SEND_BACKS = MAX_PLAN_VERSIONS - 1` so the two cannot drift, and
+the plan-file count survives as the backstop it always was rather than the trigger.
 
 **[N9] Mike approves**, edits the plan file directly if he wants (the plan-mode convention), or
 refuses. Nothing before this point touched the repo.
@@ -383,7 +410,11 @@ path in the implementer's half fails validation.
 `./`-anchored to the main tree and do not reach `../metatron-wt-<slug>` (finding 3), and
 `git status` cannot see gitignored paths (verify NEW 2) — which is where the credentials and the
 persona trees are. So the writer's hardcoded deny list is salvaged into `gates.py` and the
-driver applies it at N12 through **four channels**: (a) `git status --porcelain -uall` in the
+driver applies it through **four channels** — **inside N11's `implementer_gate`, not at N12**
+(v4.12, corrected against phase C's built code: a channel refusal has to be a park at the moment
+the implementer returns, because on a retry the attempt-2 baseline would otherwise be taken with
+attempt 1's write already on disk, and the hash delta would then pass the exact change it had
+refused a minute earlier). The channels are: (a) `git status --porcelain -uall` in the
 worktree for tracked and untracked paths — `-uall`, because without it git collapses untracked
 files in a new directory to one `dir/` entry that matches neither `files[]` nor the deny list
 (the commit guard's own recorded lesson; cold verify NEW 2); (b) a recursive hash of an **enumerated** list of
@@ -488,7 +519,17 @@ records which branch fired.
 **N14 acceptance on the VM, then close.** The acceptance test the plan wrote runs on the VM
 against Mike's data **and** against a fixture persona with no history (ruling 7, § 12). The
 registry row was committed at N13; N14 records the acceptance result beside it on the next
-commit, or files a REPAIR if it failed.
+commit. **A failed acceptance does NOT file a REPAIR ticket from the Mac** — v4.12, corrected
+against phase C's built code. The ticket file is `data/personas/{p}/build/tickets.jsonl` **on the
+VM**, written only by `request_build` and `tick.py`, and the board reads a fetched copy; a
+`file_ticket` call on the Mac would append to a Mac-local persona tree the VM never sees, minting a
+`BLD-MMDD-NN` against a stale ledger that can collide with the VM's next allocation. So
+`tickets.file_ticket` refuses any caller outside `TICKET_WRITERS`. **A failed acceptance is
+reported to Mike and the repair is filed on the VM**, by the REPAIR counter at `build_tick` or by
+Mike asking for one. *Named residue: nothing in-process distinguishes Mac from VM —
+`DEPLOYMENT_MODE` is `cloud` on both — so the refusal converts a silent wrong-machine write into an
+explicit one and cannot stop a caller that lies. A real gate needs a host marker on the two systemd
+units, which is a deploy change and sits in phase E.*
 
 **The Coordinator has to define the need in the first place — Mike's note, 2026-09-24, and
 the risk the whole vertical rests on.** Nothing downstream can build a capability for a gap
