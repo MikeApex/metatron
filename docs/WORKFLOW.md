@@ -392,11 +392,14 @@ not write.
 
 ## Which model runs which kind of session
 
-**Mike's call, 2026-08-18: plan and review in Fable 5, build in Opus 5.** The split is by the
-shape of the work, not its size — planning and adversarial review reward the stronger reasoner,
-execution against a settled plan does not.
-`/adversarial-review` defaults to Fable for exactly this reason; naming another model
-overrides the default for one run, not the ruling.
+**Mike's call, 2026-09-24: plan in Opus 5, review in Fable 5, build in Opus 5.** This replaces
+the 08-18 rule (plan *and* review in Fable). The reason is independence, not capability: a plan
+reviewed by a different model from the one that wrote it gets read by something other than its
+own kind, which is what the review is for — and Opus 5 sits at Fable-tier capability at half the
+cost. `/adversarial-review` defaults to Fable for exactly this reason; naming another model
+overrides the default for one run, not the ruling. Build's own nodes follow the same split
+(Inquiry, Librarian, Planner, Implementer on Opus; review and coherence on Fable —
+`archive/plans/build_vertical_plan_2026-09-24.md` § 7).
 
 **Red-tier work is not delegated at all** — not to a subagent, and not split across the two.
 There the judgement *is* the work, so handing it to a worker with a fresh context is handing

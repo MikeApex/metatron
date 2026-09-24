@@ -1,14 +1,14 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-09-19 (**Build phase 4 reviewed by running it — three rounds, seventeen defects,
-all closed**). The runner walked to `landed` through the real writer and the real 18-check sweep on
-the fixture repo; fourteen defects in round 1, three small ones after the fixes, none after the
-third. The four that mattered: `refuse()` deleted a landed capability, a limit crossed during the
-Planner call failed the job instead of parking it, corrections were attributed to the Diarist or
-the tick, and the `log` source had never probed at all (a phase-2 signature mismatch). Report,
-three parts: `archive/plans/build_phase4_runner_review_2026-09-19_fable-5.md`; reasoning and the
-one design change (a scheduled session now counts as an exchange): `archive/PROJECT_LOG.md`
-§ 2026-09-19. Earlier today: phase 4 built, `/adversarial-review` (`dac3561`), phase 3's rounds.*
+*Updated: 2026-09-24 (**Build v4 — Build moves into Claude Code, plan reviewed clean by two
+models**). Build is development, not execution (Mike): it runs in Claude Code on the Mac on the
+subscription, Mike starts each build, approves the plan, commits and deploys; Vertex serves only
+execution. Plan: `archive/plans/build_vertical_plan_2026-09-24.md` **v4.11**, superseding v3.7
+and the 09-17 v2 entirely — thirteen rulings in § 0, ten review rounds (Opus ×7, cold Fable ×3)
+to a clean pass, both review files beside it. `core/build/` is **rebuilt with salvage**, the
+overlay retired. Model rule changed generally: **plan in Opus, review in Fable, build in Opus**
+(`docs/WORKFLOW.md`). Reasoning, options rejected and what the reviews overturned:
+`archive/PROJECT_LOG.md` § 2026-09-24.*
 
 *⚠ **Phase 4 is UNCOMMITTED in this tree, by instruction** — `core/build/{runner,brief,registry,
 coherence}.py`, `tools/build.py`, `scripts/build_{board,brief}.py`, four test files, edits to
@@ -27,12 +27,12 @@ them this session's. The path is Denied so nothing here can touch it. The spend 
 aside and local sessions are unblocked. Rule now in the suite: **a test that exercises a seam for
 real must stub every live meter that seam ends in.**
 
-***Next: Build phase 5 (the four agent files, Fable 5) — and it now also owns both routing
-files***, including `request_build` on `coordinator`'s `allowed_tools` (plan v3.5 C3: the grant
-had no owner, and without it the tool is registered and unaskable). Still owed: **three commits
-and one deploy** — `0e154b9` (09-09 invitation wording), the 09-10 `tools/` change, and `12d7dd2`
-(phase 3); the VM is at `b2b1dc7`. Build phases 1–6 deploy together. Phase 7 becomes the Mike-gated
-session once 3–6 land.
+***Next: Build v4 phase 0 — Mike commits the phase-4 tree as the record, then the coordinating
+window*** (paste `archive/plans/build_v4_walkthrough_prompt_2026-09-24.md` into a new Opus 5
+window, effort xhigh). It writes the per-phase prompts (0, A, B, B-Red, D, C, E, F) for separate
+windows. **The two v3 build windows are abandoned** — capture their transcripts, then close. Still
+owed: **three commits and one deploy** — `0e154b9` (09-09 invitation wording), the 09-10 `tools/`
+change, and `12d7dd2` (phase 3); the VM is at `b2b1dc7`. v4 phases 0–D deploy together at E.*
 
 *Also ready to build, separately: **the headset-button plan** (Opus 5) — cleared by
 `/adversarial-review`'s first live use, third `verify` round clean. Hand the build chat the plan
@@ -93,8 +93,8 @@ If you need to find a specific file, tool, or planning document: **[CODEBASE_IND
 For **why** something was built the way it is — reasoning, rejected options, corrections —
 [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md). For deploy, recovery or rebuild detail:
 [docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md). For which command to fire and when — **and
-which model runs which kind of session** (plan/review in Fable, build in Opus; Red never
-delegated): [docs/WORKFLOW.md](docs/WORKFLOW.md). None of the three is loaded by
+which model runs which kind of session** (plan in Opus, review in Fable, build in Opus — Mike,
+2026-09-24; Red never delegated): [docs/WORKFLOW.md](docs/WORKFLOW.md). None of the three is loaded by
 `/metatron-code`.
 
 ---
@@ -121,23 +121,14 @@ one-case-not-a-suite caveat. This line is the status, not the record.
 **A9 — built and deployed 2026-08-18; `@waiting` on real use, review `2026-10-01`.** Spec, the
 five provisional parts and the date: [ROADMAP.md](ROADMAP.md) § A9a, the single home.
 
-**BUILD — the vertical that constructs capabilities. Phases 1–4 of 7 done, 2026-09-19.** Plan:
-[archive/plans/build_vertical_plan_2026-09-18.md](archive/plans/build_vertical_plan_2026-09-18.md),
-**now at v3.7** — it owns the sequencing, the rulings and the cost; this line is the status, not
-the record. Built: `core/build/` (18 modules), `tools/build.py`, `scripts/build_{board,brief}.py`
-+ `check_build_registration.py` as `qa_sweep` check 11, `config/modules/build.yaml`, twelve suites
-(**336 checks**, 281 before the review rounds). Phase 3 is committed (`12d7dd2`); **phase 4 is reviewed to a clean pass (three
-rounds, Fable 5) but not committed** (see the handoff above). Nothing deploys until phase 6.
-**Next is phase 5** — the four agent files, on Fable 5, plus both routing files, which also
-carry the `answer_interview_item` grant: it is registered and granted to nothing, so [N6] cannot
-be answered in conversation until then.
-
-> **What binds phases 5–7, each owned elsewhere — moved out 2026-09-19 at the ceiling.** N8b's
-> reviewer file (phase 5's call); the § 6.3 read set's second consumer (`registry.py`); phase 6
-> as a **prerequisite** for run 1; Mike's § 15 rulings; and the `$2.50` PLACEHOLDER limit phase 7
-> must say out loud (both notice call sites landed; `cost.approve_limit()` on the VM releases a
-> parked job). Homes: the plan at v3.7, the two 09-18 Build documents in `archive/plans/`, and
-> `archive/PROJECT_LOG.md` § 2026-09-18/19 — which also holds the four standing constraints.
+**BUILD — the vertical that constructs capabilities. v4.11, 2026-09-24, reviewed clean; phase 0
+next.** Plan: [archive/plans/build_vertical_plan_2026-09-24.md](archive/plans/build_vertical_plan_2026-09-24.md)
+— it owns the rulings, the sequencing (§ 16: 0, A, B, B-Red, D, C, E, F), the cost ($65–106) and
+the kept/changed/deleted list for phases 1–4 (§ 10); this line is the status, not the record.
+Built under v3 and still in the tree, uncommitted: `core/build/` (19 modules), `tools/build.py`,
+`scripts/build_{board,brief}.py`, twelve suites — phase 0 commits them as the record, phase A
+salvages what § 10 names and deletes the rest. Nothing deploys until E. The coordinating-window
+prompt: [archive/plans/build_v4_walkthrough_prompt_2026-09-24.md](archive/plans/build_v4_walkthrough_prompt_2026-09-24.md).
 
 ---
 
