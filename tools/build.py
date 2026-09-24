@@ -60,8 +60,12 @@ def request_build(gap: str, trigger: str = "", mode: str = "construct",
     from core.build import tickets as T
 
     try:
+        # `writer` names one of the two VM-side callers file_ticket admits. The
+        # ticket inbox is VM state with no write path from the Mac, and a Build
+        # session calling this would append to a local tree the VM never reads.
         row = T.file_ticket(gap=gap, trigger=trigger or "coordinator", mode=mode,
-                            capability_hint=capability_hint)
+                            capability_hint=capability_hint,
+                            writer="request_build")
     except T.TicketError as exc:
         return f"Not filed: {exc}"
     except Exception as exc:

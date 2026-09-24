@@ -119,6 +119,10 @@ def repair_scan(persona: str | None, built: set[str] | None = None) -> list[str]
                 trigger=(f"build_tick REPAIR scan — {sig} seen x{count} "
                          f"in {REPAIR_WINDOW_DAYS}d"),
                 mode="repair", capability_hint=capability, persona=persona,
+                # One of the two VM-side writers file_ticket admits. This runs
+                # in the scheduler on the VM, which is the machine that owns the
+                # ticket inbox.
+                writer="repair_scan",
             )
             filed.append(f"{row['job_id']} (REPAIR {capability} x{count})")
         except T.TicketError:

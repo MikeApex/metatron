@@ -197,6 +197,21 @@ def build_plan() -> dict:
              "home": "config/personas/{p}/profile.yaml",
              "if_user_lacks_it": "ask"},
         ],
+        # What the content gate reads. Required on an agent plan since phase C:
+        # every one of these was hand-assembled at N13 from Red prose that had
+        # just been typed, and `routing.allowed_tools` is where the
+        # told-not-granted scan reads the grant — absent, that scan is SKIPPED
+        # rather than failed, so an agent file naming an ungranted tool passed.
+        "record": {
+            "name": "home_care",
+            "display_name": "Home Care",
+            "directory_entry": "keeps standing household care from going unnoticed",
+            "unavailable_consequence": "you will not be reminded about the plants",
+            "routing": {"allowed_tools": ["get_log_window", "read_profile"]},
+        },
+        # The question ids the capability cannot work without. The ledger's
+        # if_user_lacks_it rule is enforced on exactly these rows and no others.
+        "required_inputs": ["q2", "q4"],
         "risks": ["grants read_profile, which is inside the read set"],
         "citations": [
             {"gate": "capability", "question_id": "q1", "ledger_row": "q1"},

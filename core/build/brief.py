@@ -31,9 +31,150 @@ stays what it is, a tool for plans in archive/plans/.
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 
 from core.build import table as TBL
+
+# ---------------------------------------------------------------------------
+# N8's output contract, in one place
+#
+# THE REVIEWER EMITS MARKDOWN AND TWO CONSUMERS WANTED STRUCTURE, AND NOTHING
+# CONVERTED BETWEEN THEM. `adversarial-reviewer.md` returns `Wrong:` / `Fails:`
+# / `Costs:` prose under `## STRUCTURAL` and `## LOCAL`; append_review() below
+# renders `finding['title']` and `finding['detail']`; and the send-back reads
+# the defect text out of each finding. Three shapes, no parser — so the first
+# structural finding at N8 either raised on the index or wrote `**?** —` into
+# the brief, at the one node the send-back bound depends on.
+#
+# The parse lives HERE, next to the renderer, for the same reason
+# coherence.parse_findings() lives beside its own report: the module that owns
+# the artifact owns the shape of it. One canonical dict carries every key all
+# three layers already ask for, so no consumer had to change.
+# ---------------------------------------------------------------------------
+
+REVIEW_SCHEMA = "review/1"
+
+_BLOCK_RE = re.compile(r"^#{1,4}\s*(STRUCTURAL|LOCAL|NEW)\b", re.I)
+_START_RE = re.compile(r"^(\d+)\.\s+(.*)$")
+_FIELD_RE = re.compile(r"^\**(Wrong|Fails|Costs)\**\s*:\s*(.*)$", re.I)
+_NONE_RE = re.compile(r"^\**\(?none\)?\**\.?$", re.I)
+_VERDICT_RE = re.compile(r"^\**VERDICT\**\s*:\s*(.*)$", re.I | re.S)
+_CONFIDENCE_RE = re.compile(r"\b(high|medium|speculative)\b\.?\s*$", re.I)
+
+
+def parse_review(raw) -> dict:
+    """
+    The reviewer's markdown → the one shape the brief and the send-back read.
+
+    Returns {schema, structural[], local[], verdict, unparsed}. Each finding
+    carries every key a consumer already expects:
+
+        wrong / fails / costs   the three sentences, verbatim
+        title                   the `wrong` sentence — what append_review() bolds
+        detail                  fails + costs + the reference line
+        rank                    the reviewer's GLOBAL rank, preserved across the
+                                two blocks, which is why numbering is
+                                non-contiguous within one
+        refs, confidence
+
+    A dict in is passed through, so a caller that already has structure (a
+    replayed artifact, a test) is not re-parsed. TOLERANT BY DESIGN: a report
+    that does not match the format at all lands whole in `unparsed` rather than
+    raising — the review is evidence, and losing it to a format change would be
+    worse than rendering it plainly.
+    """
+    if isinstance(raw, dict):
+        return raw
+    text = _strip_fence(str(raw or ""))
+    out = {"schema": REVIEW_SCHEMA, "structural": [], "local": [],
+           "verdict": "", "unparsed": ""}
+    if not text.strip():
+        return out
+
+    # The ten-defect escape hatch: the agent returns this line and nothing else.
+    verdict = _VERDICT_RE.search(text)
+    if verdict and not _BLOCK_RE.search(text):
+        out["verdict"] = " ".join(verdict.group(1).split())
+        out["structural"] = [{
+            "rank": 1, "title": out["verdict"], "detail": "",
+            "wrong": out["verdict"], "fails": "", "costs": "",
+            "refs": "", "confidence": "high",
+        }]
+        return out
+
+    block, current, seen_block = None, None, False
+    for line in text.splitlines():
+        stripped = line.strip()
+        heading = _BLOCK_RE.match(stripped)
+        if heading:
+            current = _close(current, out, block)
+            name = heading.group(1).lower()
+            # A `## NEW` block is a verify round's new findings; they are
+            # structural for our purposes — they go back to the Planner.
+            block = "local" if name == "local" else "structural"
+            seen_block = True
+            continue
+        if block is None:
+            continue
+        if _NONE_RE.match(stripped):
+            continue
+
+        start = _START_RE.match(stripped)
+        if start:
+            current = _close(current, out, block)
+            current = {"rank": int(start.group(1)), "refs": start.group(2).strip(),
+                       "wrong": "", "fails": "", "costs": ""}
+            continue
+        if current is None:
+            continue
+
+        field = _FIELD_RE.match(stripped)
+        if field:
+            current["_last"] = field.group(1).lower()
+            current[current["_last"]] = field.group(2).strip()
+        elif stripped and current.get("_last"):
+            current[current["_last"]] = (
+                current[current["_last"]] + " " + stripped).strip()
+        elif stripped and not current["wrong"]:
+            current["refs"] = (current["refs"] + " " + stripped).strip()
+
+    _close(current, out, block)
+
+    if not seen_block:
+        out["unparsed"] = text.strip()
+    return out
+
+
+def _close(current: dict | None, out: dict, block: str | None) -> None:
+    """Finish one finding and file it under its block."""
+    if not current or not block:
+        return None
+    wrong = current.get("wrong") or current.get("refs") or ""
+    costs = current.get("costs", "")
+    confidence = _CONFIDENCE_RE.search(costs)
+    detail = " ".join(p for p in (current.get("fails", ""), costs) if p).strip()
+    if current.get("refs") and current.get("wrong"):
+        detail = f"{detail} `{current['refs']}`".strip()
+    out[block].append({
+        "rank": current.get("rank", 0),
+        "title": wrong,
+        "detail": detail,
+        "wrong": wrong,
+        "fails": current.get("fails", ""),
+        "costs": costs,
+        "refs": current.get("refs", ""),
+        "confidence": (confidence.group(1).lower() if confidence else ""),
+    })
+    return None
+
+
+def _strip_fence(text: str) -> str:
+    text = str(text or "").strip()
+    if not text.startswith("```"):
+        return text
+    body = text.split("\n", 1)[1] if "\n" in text else ""
+    return body.rsplit("```", 1)[0].strip()
 
 
 def render(job: dict, question_set: dict, ledger: dict, plan: dict,

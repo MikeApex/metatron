@@ -152,7 +152,8 @@ def upsert(row: dict, path: Path | None = None) -> dict:
 
 def new_row(name: str, kind: str, ticket: str, job_id: str, persona: str,
             execution_mode: str, latency_budget_ms: int,
-            status: str = "staged", version: int = 1) -> dict:
+            status: str = "staged", version: int = 1,
+            display_name: str = "") -> dict:
     """
     A fresh row, with the run line present and EMPTY.
 
@@ -160,9 +161,17 @@ def new_row(name: str, kind: str, ticket: str, job_id: str, persona: str,
     absent key reads as "this row predates the run line"; an explicit None reads
     as "nothing has been counted yet", which is the true statement and the one
     check_build_registration.py can assert.
+
+    `display_name` IS NOT DECORATION. It is the only source of `peers` for the
+    next capability's name-collision gate — that check compares a proposed
+    display name against what every landed capability already answers to, and
+    the registry is where it looks. Written empty, the check that stops
+    capability two from capturing capability one's dispatch compares against
+    empty strings and passes everything.
     """
     return {
         "name": name,
+        "display_name": display_name,
         "kind": kind,
         "ticket": ticket,
         "job_id": job_id,

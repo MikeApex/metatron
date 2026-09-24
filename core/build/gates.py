@@ -216,6 +216,58 @@ def dirty_paths(tree: Path) -> set[str]:
     return set(porcelain(tree))
 
 
+# Tracked trees a test run dirties as an ordinary side-effect. Restoring them is
+# not a courtesy — both are on the deny list, so left in place a benign fixture
+# write is read as a boundary violation and parks the job from its own dirt.
+FIXTURE_TREES: tuple[str, ...] = ("data/personas", "config/personas")
+
+
+def restore_fixtures(tree: Path, paths: tuple[str, ...] = FIXTURE_TREES) -> list[str]:
+    """
+    `git checkout HEAD --` the fixture trees. Returns what was actually dirty.
+
+    **A live gate run dirties TRACKED fixture-persona files** — SESSION.md
+    records this as a standing rule earned twice. It bites Build twice over:
+    the dirt trips the deny-list channel, and anything left by the time the
+    patch is written lands in the patch and breaks the path-set assertion.
+
+    Only tracked content is restored. An UNTRACKED write under `data/personas/`
+    is gitignored, so it is invisible to the porcelain — the recursive hash in
+    channel (b) is what sees that one, and it should: a new file in a persona
+    tree is not a test side-effect.
+    """
+    dirty = [p for p in porcelain(tree)
+             if any(p == root or p.startswith(root + "/") for root in paths)]
+    if not dirty:
+        return []
+    present = [root for root in paths if (tree / root).exists()]
+    if present:
+        try:
+            _git(tree, "checkout", "HEAD", "--", *present)
+        except GateError:
+            # A path with nothing at HEAD cannot be checked out, which is not a
+            # failure — there was nothing tracked to restore.
+            pass
+    return dirty
+
+
+def snapshot(worktree: Path, main_tree: Path) -> dict:
+    """
+    Every channel's reading, in one call. The before and the after are the same
+    shape, so `check_channels` can be handed two of these.
+
+    Taken as one function because the four channels only mean anything as a
+    SET: (a) sees tracked and untracked paths, (b) and (c) see the gitignored
+    ones git cannot, (d) sees the main tree. Any three of them has a hole.
+    """
+    return {
+        "worktree_hashes": hash_paths(worktree, WORKTREE_HASHED),
+        "main_hashes": hash_paths(main_tree, MAIN_TREE_HASHED),
+        "main_dirty": sorted(dirty_paths(main_tree)),
+        "worktree_changed": porcelain(worktree),
+    }
+
+
 def _git(tree: Path, *args: str) -> str:
     try:
         proc = subprocess.run(["git", *args], cwd=str(tree),

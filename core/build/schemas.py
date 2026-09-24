@@ -544,6 +544,75 @@ def apply_derived_status(ledger: dict) -> dict:
     return out
 
 
+def record_interview_answer(ledger: dict, question_id: str, answer: str,
+                            when: str | None = None) -> dict:
+    """
+    Write [N6]'s answer into its row, in the one shape the rest of the system
+    reads. Returns the updated ledger; raises SchemaError on an unknown id.
+
+    THE LEDGER HAS NO `answer` FIELD, and this is the encoding chosen instead.
+    An `ask_user` row left as it is carries Mike's answer nowhere the Planner or
+    the question table reads, so the answer is invisible to the reviewer at N8
+    and to Mike at [N9]; flipped to `found` by hand it needs an inventory block,
+    which invites a fabricated one.
+
+    So the inventory is written HERE, by code, and every field of it is true:
+    the source IS the user, the form IS an interview, the coverage IS the day it
+    was said, and it WAS said once at build time. The answer itself goes in
+    `decision`, which is the one field beyond the inventory that
+    `table._location()` renders — so the answer reaches the audit that exists to
+    show every question travelled.
+
+    A first-class `answer` field rendered by table.py would be cleaner; table.py
+    was outside this change's permitted files.
+    """
+    rows = ledger.get("rows")
+    if not isinstance(rows, list):
+        raise SchemaError("answer_ledger", ["rows is missing"])
+    text = str(answer or "").strip()
+    if not text:
+        raise SchemaError("answer_ledger", [
+            f"the interview answer for {question_id!r} is empty — an unanswered "
+            "interview item stays `ask_user`; it is not answered with nothing"])
+
+    day = when or datetime.now().date().isoformat()
+    updated, found = [], False
+    for row in rows:
+        if not isinstance(row, dict) or _text(row.get("question_id")) != question_id:
+            updated.append(row)
+            continue
+        found = True
+        updated.append({
+            **row,
+            "verdict": "found",
+            "decision": text,
+            "inventory": {
+                **(row.get("inventory") or {}),
+                "source": "user",
+                "form": "interview",
+                "coverage": {"from": day, "to": day},
+                "completeness": "stated once, by the user, at build time",
+                "freshness": day,
+            },
+        })
+    if not found:
+        raise SchemaError("answer_ledger", [
+            f"no ledger row for {question_id!r} — an interview item must name a "
+            "question that travelled"])
+
+    out = dict(ledger)
+    out["rows"] = updated
+    return apply_derived_status(out)
+
+
+def open_interview_items(ledger: dict) -> list[str]:
+    """Question ids still awaiting the user. What N5 writes to ledger_check."""
+    return [_text(row.get("question_id"))
+            for row in (ledger.get("rows") or [])
+            if isinstance(row, dict)
+            and _text(row.get("verdict")).lower() == "ask_user"]
+
+
 def validate_answer_ledger(ledger: dict, question_ids: list[str] | None = None,
                            declared_variables: set[str] | None = None,
                            required_inputs: set[str] | None = None) -> list[str]:
@@ -924,6 +993,8 @@ def validate_build_plan(plan: dict, red_paths: set[str] | None = None,
             "defect the registration matrix exists to end"
         )
 
+    _check_record(plan, kind, defects)
+    _check_required_inputs(plan, question_ids, defects)
     _check_citations(plan, question_ids, defects)
     _check_files(plan, red_paths, defects)
     _check_information_sources(plan, defects)
@@ -931,6 +1002,98 @@ def validate_build_plan(plan: dict, red_paths: set[str] | None = None,
     _check_plan_variables(plan, defects)
     _check_state_record(plan, defects)
     return defects
+
+
+# The fields core/build/verify.content_gate reads. Three are prompt text that
+# the Coordinator or the Synthesizer will carry; the fourth is the grant.
+RECORD_PROSE_FIELDS: tuple[str, ...] = (
+    "display_name", "directory_entry", "unavailable_consequence",
+)
+
+
+def _check_record(plan: dict, kind: str, defects: list[str]) -> None:
+    """
+    `record{}` — what the content gate reads, and it had no home in this schema.
+
+    Every input content_gate() needs was being assembled by hand at N13 from
+    Red prose that had just been typed: the three scanned fields, and
+    `routing.allowed_tools`, which is where constitution.check() reads the
+    grant from. A record without the last one does not merely skip one check —
+    `check_told_not_granted` is passed None and SILENTLY DOES NOT RUN, so a
+    generated agent file naming a tool it was never granted passes the gate
+    with zero defects.
+
+    Required for `kind: agent` only. A policy or a context_block generates no
+    agent file, so there is nothing for these fields to describe.
+    """
+    if kind != "agent":
+        return
+    record = plan.get("record")
+    if not isinstance(record, dict):
+        defects.append(
+            "an agent plan has no record{} block — the content gate reads "
+            f"{list(RECORD_PROSE_FIELDS)} and routing.allowed_tools from it, and "
+            "without it every one of those checks runs on nothing")
+        return
+
+    if _is_blank(record.get("name")):
+        defects.append("record.name is empty")
+    for field in RECORD_PROSE_FIELDS:
+        if _is_blank(record.get(field)):
+            defects.append(
+                f"record.{field} is empty — it is prompt text the content gate "
+                "scans, and an empty field is not scanned")
+
+    granted = (record.get("routing") or {}).get("allowed_tools") \
+        if isinstance(record.get("routing"), dict) else None
+    if not isinstance(granted, list):
+        defects.append(
+            "record.routing.allowed_tools must be a list — it is where the "
+            "told-not-granted scan reads the grant, and when it is absent that "
+            "scan is skipped in silence rather than failing")
+
+
+def _check_required_inputs(plan: dict, question_ids: set[str] | None,
+                           defects: list[str]) -> None:
+    """
+    `required_inputs[]` — the question ids this capability cannot work without.
+
+    The ledger is re-validated against exactly this set at N7, which is what
+    makes `if_user_lacks_it` mandatory on those rows and optional elsewhere
+    (ruling 7's second verdict). Nothing declared it, so the caller either
+    passed None — leaving the rule inert — or invented a proxy that differed
+    between sessions.
+    """
+    required = plan.get("required_inputs")
+    if not isinstance(required, list):
+        defects.append(
+            "required_inputs must be a list of question ids — without it the "
+            "ledger's if_user_lacks_it rule is never enforced on any row")
+        return
+    if question_ids is None:
+        return
+    unknown = sorted({_text(q) for q in required} - set(question_ids))
+    if unknown:
+        defects.append(
+            f"required_inputs names questions that were never asked: {unknown}")
+
+
+def required_inputs(plan: dict) -> set[str]:
+    """The declared set, as the ledger re-validation wants it."""
+    return {_text(q) for q in (plan.get("required_inputs") or []) if _text(q)}
+
+
+def revalidate_ledger(ledger: dict, plan: dict,
+                      question_ids: list[str] | None = None) -> list[str]:
+    """
+    The N7 re-validation, with `required_inputs` taken FROM THE PLAN.
+
+    One call, so the set cannot be forgotten or guessed at. This is the only
+    place `if_user_lacks_it` becomes mandatory, and it is mandatory on exactly
+    the rows the plan says it depends on.
+    """
+    return validate_answer_ledger(ledger, question_ids=question_ids,
+                                  required_inputs=required_inputs(plan))
 
 
 def _check_citations(plan: dict, question_ids: set[str] | None,

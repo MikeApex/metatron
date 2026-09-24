@@ -55,6 +55,11 @@ def _reset() -> None:
 
 
 def _file(gap: str, **kw) -> dict:
+    # `writer` names one of the two VM-side callers file_ticket admits. Supplied
+    # here so every OTHER assertion in this suite still exercises what it was
+    # written to exercise; the allowlist itself is asserted at the foot of the
+    # file rather than by leaving every case unable to file.
+    kw.setdefault("writer", "request_build")
     return TK.file_ticket(gap=gap, trigger="test", persona=F.PERSONA, **kw)
 
 
@@ -177,7 +182,8 @@ def _():
     _reset()
     _persona_dir("persona_b")
     a = _file("gap for a")
-    b = TK.file_ticket(gap="gap for b", trigger="test", persona="persona_b")
+    b = TK.file_ticket(gap="gap for b", trigger="test", persona="persona_b",
+                       writer="request_build")
     assert a["job_id"] == b["job_id"] == TODAY + "01", (a, b)
     assert len(TK.read_rows(F.PERSONA)) == 1
     assert len(TK.read_rows("persona_b")) == 1
@@ -225,6 +231,51 @@ def _():
 
 def _cleanup() -> None:
     shutil.rmtree(_TMP, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
+# The ticket inbox is VM state (phase C, review finding 9)
+# ---------------------------------------------------------------------------
+
+@check("file_ticket REFUSES a caller that does not name a VM-side writer")
+def _():
+    _reset()
+    try:
+        TK.file_ticket(gap="a gap filed from the wrong machine", trigger="test",
+                       persona=F.PERSONA)
+    except TK.TicketError as exc:
+        assert "writer=" in str(exc), exc
+        assert "no write path from the Mac" in str(exc), (
+            "the refusal must say WHY, not just that the argument is missing: "
+            "a ticket filed on the Mac lands in a tree the VM never reads and "
+            "mints an id against a stale ledger")
+    else:
+        raise AssertionError(
+            "a ticket filed with no writer was accepted — N14 calling this from "
+            "a Build session is exactly the case that must refuse")
+    assert not TK.read_rows(F.PERSONA), "the refused ticket was written anyway"
+
+
+@check("an unknown writer is refused as firmly as a missing one")
+def _():
+    _reset()
+    for bogus in ("", "build_session", "N14", "mike"):
+        try:
+            TK.file_ticket(gap=f"gap from {bogus}", trigger="test",
+                           persona=F.PERSONA, writer=bogus)
+        except TK.TicketError:
+            continue
+        raise AssertionError(f"writer={bogus!r} was accepted")
+    assert not TK.read_rows(F.PERSONA)
+
+
+@check("both VM-side writers are admitted — the allowlist is not a wall")
+def _():
+    _reset()
+    for writer in sorted(TK.TICKET_WRITERS):
+        row = TK.file_ticket(gap=f"a real gap from {writer}", trigger="test",
+                             persona=F.PERSONA, writer=writer)
+        assert row["job_id"].startswith(TODAY), row
 
 
 try:

@@ -233,10 +233,29 @@ def duplicate_of(fp: str, persona: str | None = None) -> tuple[str, str] | None:
 # Filing
 # ---------------------------------------------------------------------------
 
+# The two callers that legitimately write a ticket, and both run ON THE VM:
+# `request_build` (the Coordinator's tool) and the REPAIR counter in tick.py.
+#
+# WHY THIS IS A NAMED ALLOWLIST AND NOT A MACHINE CHECK. The ticket file lives
+# under `data/personas/{p}/build/`, which exists in both checkouts, and nothing
+# in-process distinguishes the Mac from the VM — DEPLOYMENT_MODE is `cloud` on
+# both. So a Build session on the Mac calling this would append to a Mac-local
+# persona tree the VM never sees, minting an id against a stale ledger that can
+# collide with the VM's next allocation, and the board would never list it.
+#
+# The allowlist cannot stop a caller that lies. What it does is convert a silent
+# wrong-machine write into an explicit refusal naming the rule, which is the
+# same standard `.claude/rules/agent-files.md` applies to a named tool. A true
+# machine-level gate needs an env marker set by the systemd units — a deploy
+# change, and Mike's to make.
+TICKET_WRITERS: frozenset[str] = frozenset({"request_build", "repair_scan"})
+
+
 def file_ticket(gap: str, trigger: str, mode: str = "construct",
-                capability_hint: str = "", persona: str | None = None) -> dict:
+                capability_hint: str = "", persona: str | None = None,
+                writer: str = "") -> dict:
     """
-    File one ticket. Returns the row.
+    File one ticket. Returns the row. VM-SIDE ONLY — see TICKET_WRITERS.
 
     Refusals raise TicketError with the reason in the message; request_build
     turns that into an explanatory string rather than an exception, house style,
@@ -244,6 +263,15 @@ def file_ticket(gap: str, trigger: str, mode: str = "construct",
     narrates to the user.
     """
     from core.build.ids import next_job_id
+
+    if writer not in TICKET_WRITERS:
+        raise TicketError(
+            f"file_ticket needs writer= one of {sorted(TICKET_WRITERS)}, got "
+            f"{writer!r}. The ticket inbox is VM state and there is no write "
+            "path from the Mac to it: a ticket filed here lands in a local "
+            "persona tree the VM never reads, with an id allocated against a "
+            "stale ledger. A failed acceptance is REPORTED and recorded on the "
+            "registry row; REPAIR is filed on the VM by the correction counter.")
 
     mode = _norm(mode)
     if mode not in MODES:

@@ -200,3 +200,42 @@ def content_gate(agent_text: str, record: dict, granted: list[str],
     if plan is not None and ledger is not None:
         defects += gates.check_tier(plan, ledger)
     return defects
+
+
+def content_gate_for(plan: dict, ledger: dict, agent_text: str) -> list[str]:
+    """
+    The content gate with every input derived FROM THE PLAN AND THE REGISTRY.
+
+    content_gate() takes eight arguments, and at N13 they were assembled by hand
+    from Red prose that had just been typed. Two had no source at all — `record`,
+    which no artifact carried, and `peers`, which nothing produced — so the
+    honest thing a caller could do was invent a dict and pass `{}`. And
+    `peers={}` makes check_names' collision check, the one that stops a second
+    capability capturing the first one's dispatch, run against nothing.
+
+    Here every argument is derived:
+
+      record   the plan's record{} block, now required by the schema
+      granted  record.routing.allowed_tools — the same list the routing entry
+               carries, and where constitution.check() reads the grant from; a
+               record without it skips the told-not-granted scan in silence
+      peers    name -> display_name for every OTHER capability in the registry,
+               which is why the implementer writes display_name onto its row
+      risks    the plan's risks[], so a grant outside the read set must be
+               declared there or the gate fails
+    """
+    from core.build import doors, registry
+
+    record = dict(plan.get("record") or {})
+    routing = record.get("routing") if isinstance(record.get("routing"), dict) else {}
+    granted = list((routing or {}).get("allowed_tools") or [])
+    name = str(record.get("name")
+               or (plan.get("capability") or {}).get("id") or "")
+
+    peers = {
+        other: str(row.get("display_name") or "")
+        for other, row in registry.capabilities().items()
+        if other != name
+    }
+    return content_gate(agent_text, record, granted, set(doors.READ_SET),
+                        list(plan.get("risks") or []), peers, plan, ledger)

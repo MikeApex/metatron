@@ -50,7 +50,12 @@ def make_repo(name: str) -> Path:
     git(repo, "config", "user.email", "fixture@example.invalid")
     git(repo, "config", "user.name", "fixture")
     for rel, body in (
-        (".gitignore", ".env\n.venv/\ncerts/\ndata/personas/\n*key*.json\n.claude/*\n"),
+        (".gitignore",
+         ".env\n.venv/\ncerts/\ndata/personas/\n*key*.json\n.claude/*\n"
+         # The real repo ignores __pycache__ too, and a gate run creates it:
+         # code_checks() runs py_compile and the suites. Without this line the
+         # fixture puts .pyc files into the patch that reality never would.
+         "__pycache__/\n"),
         ("tools/existing.py", "VALUE = 1\n"),
         ("config/modules/routing.yaml", "agents:\n  logistics: {}\n"),
         ("config/constitution.md", "# constitution\n"),
@@ -63,7 +68,21 @@ def make_repo(name: str) -> Path:
     (repo / "data" / "personas" / "x").mkdir(parents=True)
     (repo / "data" / "personas" / "x" / "profile.yaml").write_text(
         "name: x\n", encoding="utf-8")
+
+    # THE REAL REPO HAS BOTH HALVES AND THIS FIXTURE ONLY HAD ONE.
+    # `.gitignore` carries `data/personas/*/`, AND 65 files under it are
+    # tracked regardless — git keeps tracking what was already tracked when a
+    # rule is added. So the tree contains ignored-and-invisible persona paths
+    # (which is why channel (b) hashes them) and tracked persona files that a
+    # gate run dirties into the porcelain and then into the patch (which is why
+    # SESSION.md's standing rule exists). Forced in, because `add -A` honours
+    # the ignore.
+    logs = repo / "data" / "personas" / "tracked_fixture" / "logs"
+    logs.mkdir(parents=True)
+    (logs / "2026-09-01.json").write_text('{"entries": []}\n', encoding="utf-8")
+
     git(repo, "add", "-A")
+    git(repo, "add", "-f", "data/personas/tracked_fixture/logs/2026-09-01.json")
     git(repo, "commit", "-qm", "base")
     return repo
 
@@ -884,6 +903,183 @@ def _cleanup() -> None:
     except Exception:
         pass
     shutil.rmtree(_TMP, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
+# THE FIXTURE RESTORE, AND WHY IT RUNS FIRST (phase C, review finding 8)
+#
+# SESSION.md records it as a standing rule earned twice: a live gate run dirties
+# TRACKED fixture-persona files. It bites Build twice — `data/personas/` is on
+# the deny list, so the dirt is read as a boundary violation; and anything still
+# dirty when the patch is written goes into the patch.
+# ---------------------------------------------------------------------------
+
+TRACKED_FIXTURE = "data/personas/tracked_fixture/logs/2026-09-01.json"
+
+
+@check("an UNRESTORED fixture write is refused as a deny-list violation")
+def _():
+    clean_worktree()
+    before = snapshot()
+    # What the implementer's own test run does before it reports — to a TRACKED
+    # persona file, so this is channel (a) refusing, not the hash.
+    write(WT, TRACKED_FIXTURE, '{"entries": [1]}\n')
+    assert TRACKED_FIXTURE in G.porcelain(WT), G.porcelain(WT)
+    refusals, _notes = verdict(before)
+    assert any("data/personas" in r for r in refusals), (
+        "the deny-list channel is doing its job — which is exactly why the "
+        f"restore has to come first: {refusals}")
+    G.restore_fixtures(WT)
+
+
+@check("restore_fixtures() clears it, and names what it restored")
+def _():
+    clean_worktree()
+    assert git(WT, "ls-files", TRACKED_FIXTURE).strip(), (
+        "the fixture persona file is not tracked in this worktree, so this "
+        "check would pass vacuously")
+    before = snapshot()
+    write(WT, TRACKED_FIXTURE, '{"entries": [1]}\n')
+    assert G.porcelain(WT) == [TRACKED_FIXTURE], (
+        f"the write did not dirty what this check restores: {G.porcelain(WT)}")
+    restored = G.restore_fixtures(WT)
+    assert restored == [TRACKED_FIXTURE], restored
+    refusals, _notes = verdict(before)
+    assert not refusals, (
+        "after the restore a benign test side-effect must not park the job: "
+        f"{refusals}")
+
+
+@check("the restore does NOT open a hole — a NEW file in a persona tree still refuses")
+def _():
+    git(WT, "checkout", "HEAD", "--", ".")
+    before = snapshot()
+    write(WT, "data/personas/x/stolen.json", '{"exfiltrated": true}')
+    G.restore_fixtures(WT)
+    refusals, _notes = verdict(before)
+    assert refusals, (
+        "restore_fixtures only restores TRACKED content. A new file in a "
+        "persona tree is not a test side-effect and must still be refused")
+    (WT / "data" / "personas" / "x" / "stolen.json").unlink()
+
+
+@check("snapshot() carries all four channels, so none can be dropped by a caller")
+def _():
+    git(WT, "checkout", "HEAD", "--", ".")
+    snap = G.snapshot(WT, MAIN)
+    assert set(snap) == {"worktree_hashes", "main_hashes", "main_dirty",
+                         "worktree_changed"}, snap
+    assert ".env" in snap["worktree_hashes"], snap["worktree_hashes"].keys()
+    assert ".git/hooks" in snap["main_hashes"], snap["main_hashes"].keys()
+
+
+# ---------------------------------------------------------------------------
+# implementer_gate — the order, and the durable park (findings 2 and 8)
+# ---------------------------------------------------------------------------
+
+def _gate_job(slug: str):
+    """A job directory pointed at the temp tree, and a plan naming WT's files."""
+    from core.build import jobs as J
+    J.jobs_root = lambda: _TMP / "jobs"                  # type: ignore[assignment]
+    from tests.support import build_fixtures as BF
+    job = BF.JOB_ID
+    shutil.rmtree(_TMP / "jobs", ignore_errors=True)
+    J.ensure(job, BF.PERSONA)
+    plan = BF.build_plan()
+    plan["files"] = [{"path": p, "half": "implementer"} for p in sorted(IMPLEMENTER_FILES)]
+    plan["tests"] = []
+    return job, BF.PERSONA, plan
+
+
+@check("the baseline is taken ONCE and REUSED, so a retry cannot re-arm a channel")
+def _():
+    from core.build import driver as D
+    git(WT, "checkout", "HEAD", "--", ".")
+    job, persona, _plan = _gate_job("baseline")
+
+    first = D.channel_baseline(job, WT, MAIN, persona)
+    # Attempt 1 plants a deny-list write and is refused.
+    write(WT, ".env", "SECRET=stolen\n")
+    second = D.channel_baseline(job, WT, MAIN, persona)
+    assert second == first, (
+        "re-taking the baseline would fold attempt 1's violation into the "
+        "'before' reading, so channels (b) and (c) would pass the very change "
+        "they had just refused")
+    assert G.hash_delta(second["worktree_hashes"],
+                        G.hash_paths(WT, G.WORKTREE_HASHED)), (
+        "the kept baseline must still see the planted .env")
+    (WT / ".env").write_text("SECRET=main\n", encoding="utf-8")
+
+
+@check("a channel refusal PARKS the job durably — it is never a retry")
+def _():
+    from core.build import driver as D
+    from core.build import jobs as J
+    git(WT, "checkout", "HEAD", "--", ".")
+    job, persona, plan = _gate_job("refusal")
+
+    D.channel_baseline(job, WT, MAIN, persona)
+    write(WT, ".env", "SECRET=stolen\n")
+    patch, refusals, _notes = D.implementer_gate(job, WT, MAIN, plan, persona)
+
+    assert patch is None and refusals, refusals
+    assert J.has_artifact(job, "park", persona), (
+        "a boundary violation must stop the job ON DISK. Before the durable "
+        "park the only way to stop was to fail a node twice, so the one event "
+        "that must never be retried was answered with a retry")
+    assert D.next_step(job, persona).kind == "parked"
+    assert (WT / ".env").exists(), "the worktree is left in place to be read"
+    (WT / ".env").write_text("SECRET=main\n", encoding="utf-8")
+
+
+@check("implementer_gate restores fixtures BEFORE the channels look")
+def _():
+    from core.build import driver as D
+    from core.build import jobs as J
+    git(WT, "checkout", "HEAD", "--", ".")
+    job, persona, plan = _gate_job("order")
+
+    D.channel_baseline(job, WT, MAIN, persona)
+    # The implementer wrote its files AND its test run dirtied a fixture.
+    write(WT, "tools/home_care.py", "def care():\n    return 1\n")
+    write(WT, "tests/test_home_care.py", "print('ok')\n")
+    write(WT, TRACKED_FIXTURE, '{"entries": [1]}\n')
+
+    patch, refusals, notes = D.implementer_gate(job, WT, MAIN, plan, persona)
+    assert not refusals, (
+        "the fixture dirt is the standing rule's own side-effect and must not "
+        f"read as an escape: {refusals}")
+    assert not J.has_artifact(job, "park", persona)
+    assert any("fixture" in n for n in notes), notes
+    assert patch is not None
+    landed = D.patch_paths(patch.read_text())
+    assert landed == IMPLEMENTER_FILES, (
+        f"a fixture path in the patch would reach Mike's tree at N13: {landed}")
+    git(WT, "checkout", "HEAD", "--", ".")
+    for rel in IMPLEMENTER_FILES:
+        (WT / rel).unlink(missing_ok=True)
+
+
+@check("a patch whose path set is not files[] parks, and the patch is discarded")
+def _():
+    from core.build import driver as D
+    from core.build import jobs as J
+    git(WT, "checkout", "HEAD", "--", ".")
+    job, persona, plan = _gate_job("pathset")
+    plan["files"] = [{"path": "tools/home_care.py", "half": "implementer"}]
+
+    D.channel_baseline(job, WT, MAIN, persona)
+    write(WT, "tools/home_care.py", "def care():\n    return 1\n")
+    write(WT, "tests/test_home_care.py", "print('ok')\n")
+
+    patch, refusals, _notes = D.implementer_gate(job, WT, MAIN, plan, persona)
+    assert patch is None and refusals, refusals
+    assert J.has_artifact(job, "park", persona)
+    assert not J.artifact_path(job, "implementation.patch", persona).exists(), (
+        "a patch the gate refused must not remain as the cursor for N11")
+    git(WT, "checkout", "HEAD", "--", ".")
+    for rel in IMPLEMENTER_FILES:
+        (WT / rel).unlink(missing_ok=True)
 
 
 try:

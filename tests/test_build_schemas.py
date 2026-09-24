@@ -406,4 +406,144 @@ def _():
         "remaining ids must be renumbered so the density rule still holds")
 
 
+# ---------------------------------------------------------------------------
+# record{} — what the content gate reads (phase C, review finding 4)
+#
+# Phase A's plan schema had no home for any of this, so at N13 the record was
+# hand-assembled from Red prose that had just been typed and `peers` was passed
+# empty. The gate ran; it checked almost nothing.
+# ---------------------------------------------------------------------------
+
+def _plan(**over) -> dict:
+    plan = F.build_plan()
+    plan.update(over)
+    return plan
+
+
+def _defects(plan: dict) -> list[str]:
+    return S.validate_build_plan(plan, red_paths=F.red_paths(),
+                                 question_ids=F.question_ids())
+
+
+@check("an agent plan with NO record{} fails — the gate would read nothing")
+def _():
+    plan = _plan()
+    plan.pop("record")
+    assert hit(_defects(plan), "no record{} block"), _defects(plan)
+
+
+@check("record.routing.allowed_tools is REQUIRED, because its absence is silent")
+def _():
+    plan = _plan()
+    plan["record"] = {k: v for k, v in plan["record"].items() if k != "routing"}
+    assert hit(_defects(plan), "told-not-granted"), (
+        "the defect must name the scan that goes missing, not just the field: "
+        "constitution.check passes granted=None and check_told_not_granted is "
+        "SKIPPED rather than failed")
+
+
+@check("each scanned prose field of record{} is required on its own")
+def _():
+    for field in S.RECORD_PROSE_FIELDS:
+        plan = _plan()
+        plan["record"][field] = ""
+        assert hit(_defects(plan), f"record.{field} is empty"), field
+
+
+@check("a non-agent plan needs no record{} — there is no agent file to describe")
+def _():
+    plan = _plan()
+    plan.pop("record")
+    plan["capability"]["kind"] = "tool"
+    plan["registration"] = []
+    assert not hit(_defects(plan), "record{}"), _defects(plan)
+
+
+# ---------------------------------------------------------------------------
+# required_inputs[] — ruling 7's second verdict (phase C, review finding 7)
+# ---------------------------------------------------------------------------
+
+@check("a plan with no required_inputs fails rather than silently disabling the rule")
+def _():
+    plan = _plan()
+    plan.pop("required_inputs")
+    assert hit(_defects(plan), "required_inputs must be a list"), _defects(plan)
+
+
+@check("required_inputs may not name a question that was never asked")
+def _():
+    plan = _plan(required_inputs=["q2", "q99"])
+    assert hit(_defects(plan), "never asked"), _defects(plan)
+
+
+@check("revalidate_ledger makes if_user_lacks_it mandatory on EXACTLY those rows")
+def _():
+    ledger = F.answer_ledger()
+    for row in ledger["rows"]:
+        row.pop("if_user_lacks_it", None)
+    ids = sorted(F.question_ids())
+    assert not S.validate_answer_ledger(ledger, question_ids=ids), (
+        "without a plan the rule is correctly silent")
+
+    plan = _plan(required_inputs=["q2"])
+    strict = S.revalidate_ledger(ledger, plan, question_ids=ids)
+    assert len(strict) == 1, strict
+    assert "if_user_lacks_it" in strict[0], strict
+    assert "rows[2]" in strict[0] or "q2" in strict[0], (
+        f"the defect must point at the required row, not any row: {strict}")
+
+
+# ---------------------------------------------------------------------------
+# The interview answer has a home (phase C, review finding 5)
+# ---------------------------------------------------------------------------
+
+@check("open_interview_items is every ask_user row, derived not asserted")
+def _():
+    ledger = F.answer_ledger()
+    ledger["rows"][0]["verdict"] = "ask_user"
+    assert S.open_interview_items(ledger)[0] == ledger["rows"][0]["question_id"]
+
+
+@check("an interview answer lands as a VALID row that derives `settled`")
+def _():
+    ledger = F.answer_ledger()
+    qid = ledger["rows"][0]["question_id"]
+    ledger["rows"][0]["verdict"] = "ask_user"
+    answered = S.record_interview_answer(ledger, qid, "Wednesdays, after eight")
+    row = answered["rows"][0]
+    assert row["verdict"] == "found" and row["status"] == "settled", row
+    assert row["decision"] == "Wednesdays, after eight", row
+    assert row["inventory"]["source"] == "user", row
+    assert row["inventory"]["form"] == "interview", row
+    assert row["inventory"]["coverage"]["from"] == row["inventory"]["freshness"]
+    assert not S.validate_answer_ledger(
+        answered, question_ids=sorted(F.question_ids())), (
+        "the answered row must validate — the alternative is a hand-written "
+        "inventory, which is how a fabricated one gets in")
+    assert not S.open_interview_items(answered), (
+        "an answered item must stop being an open interview item")
+
+
+@check("an EMPTY interview answer is refused — that is not an answer")
+def _():
+    ledger = F.answer_ledger()
+    qid = ledger["rows"][0]["question_id"]
+    try:
+        S.record_interview_answer(ledger, qid, "   ")
+    except S.SchemaError as exc:
+        assert "not answered with nothing" in str(exc), exc
+    else:
+        raise AssertionError("an empty answer was accepted")
+
+
+@check("an answer for a question that never travelled is refused")
+def _():
+    try:
+        S.record_interview_answer(F.answer_ledger(), "q99", "an answer")
+    except S.SchemaError as exc:
+        assert "no ledger row" in str(exc), exc
+    else:
+        raise AssertionError("an answer landed on a question with no row")
+
+
 suite.exit()
