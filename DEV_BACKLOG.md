@@ -1287,6 +1287,12 @@ evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording �
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
 
+- **[a specialist missed a signal it should have caught]** Coordinator emitted natural response directly instead of routing package for synthesizer in quiet check-in.  
+  `2026-09-24T19:39:08.196992Z`
+
+- **[user corrected a prior turn]** ```  
+  `2026-09-24T17:15:38.823425Z`
+
 - **[user corrected a prior turn]** user re-stated a prior turn or correction — user is testing the headset again ("Testing, testing, one, two, three.")  
   `2026-09-24T14:26:18.888994Z`
 
@@ -1344,8 +1350,8 @@ entry is a symptom, never a diagnosis.)*
 - **[user corrected a prior turn]** ```  
   `2026-09-21T17:11:58.466787Z`
 
-- **[a specialist missed a signal it should have caught]** The scheduled watering check was triggered, but the coordinator failed to surface a logistics routing call to verify the plant watering status against the conditional criteria in the system prompt.  
-  `2026-09-21T17:11:56.859755Z`
+- **[a specialist missed a signal it should have caught]** Coordinator prompt used scheduled session instruction about plant watering instead of routing through a specialist or handling it as a system check.  ×2  
+  `2026-09-24T17:15:37.317748Z`
 
 - **[THINKING_CAP_HIT]** thinking hit the 4096-token budget (reported 4097, turn 1). The 2026-08-27 probe found no replies above 3,930 — a cap hit means the distribution moved or a reply was clipped; check its quality.  
   `2026-09-21T13:19:58.489033Z`

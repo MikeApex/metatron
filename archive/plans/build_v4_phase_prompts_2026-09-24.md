@@ -792,8 +792,192 @@ command but not survived its review is not finished.
 
 ---
 
-## Phases E and F
+## Phase E — the deploy checklist (Mike's hands; not a window prompt)
 
-Pending. E is the deploy checklist — Mike's hands, every command with its machine and full path,
-and it carries everything in `b2b1dc7..HEAD`, not Build's commits alone. F is bootstrap runs 1–3 as
-a live walkthrough, written once C has been reviewed clean.
+**`./deploy.sh` is Denied-tier** (`.claude/rules/deploy.md`): it pushes, SSHs the VM, pulls, runs
+`pip install -r requirements.txt`, restarts the scheduler immediately, then drains in-flight SSE
+streams for up to 3 minutes before restarting the server. Mike runs it. No session does.
+
+**This is a catch-up deploy with Build inside it, not a Build deploy.** The VM is at `b2b1dc7`;
+count the range at deploy time — it was 18 when first measured, 31 by the time C started:
+
+```bash
+cd /Users/md-homefolder/Desktop/multi-model-mcp && git rev-list --count b2b1dc7..HEAD
+```
+
+**Consequence to hold onto:** if the VM misbehaves afterwards, Build is one of ~30 suspects. The
+checks below are ordered so the general health of the catch-up is established *before* the three
+Build-specific probes, so a failure can be attributed.
+
+### Pre-flight, on the MacBook — all four verified 2026-09-24 and re-runnable
+
+**1. Nothing untracked that committed code imports.** This is `.claude/rules/deploy.md` rule 4's
+sharpest form: a tracked file already exists on the VM so a pull updates it, but an **untracked** one
+does not exist there at all — so committing a tracked file that imports an untracked one deploys an
+`ImportError`. On 2026-08-20 two sessions each held a half of `core/orchestrator.py` importing a
+module the other had not committed.
+
+```bash
+cd /Users/md-homefolder/Desktop/multi-model-mcp && git status --porcelain -uall | grep '^??'
+```
+Expect only `archive/handoffs/*.patch`. Any `.py` in that list is a stop.
+
+**2. What the VM will actually pull imports — checked against a clean export, not the working tree.**
+The working tree can import fine on files the VM will not receive. The only honest check:
+
+```bash
+cd /Users/md-homefolder/Desktop/multi-model-mcp \
+  && D=/tmp/metatron-headcheck-$(date +%s) && mkdir -p "$D" && git archive HEAD | tar -x -C "$D" \
+  && cd "$D" && METATRON_AUTH_PASSWORD=dummy-for-import-check python3 -c "
+import sys; sys.path.insert(0,'.')
+for m in ('core.orchestrator','core.server','core.scheduler','core.router','core.trace','core.auth',
+          'core.build.driver','core.build.doors','core.build.tick','core.build.tickets',
+          'core.build.manifest','core.build.gates','core.build.registry','core.build.table',
+          'core.build.brief','core.build.coherence','core.build.verify','core.build.jobs',
+          'core.build.schemas','core.build.index','core.build.policy','core.build.constitution',
+          'core.build.ids','tools.build','tools.conversations','tools.diarist','tools.subagent'):
+    __import__(m)
+print('all import cleanly from a clean HEAD export')"
+```
+
+> **The dummy password is required, not a shortcut.** `core/server.py` refuses to import without
+> `METATRON_AUTH_PASSWORD`, and `.env` is gitignored so a clean export never has it. Without the
+> dummy this check reports a false failure every single time. **The VM's own `.env` already carries
+> the var** — auth landed in `11a166d` on 2026-08-04, before `b2b1dc7` — so this is an artefact of
+> the export, not a deploy gap. Checked, not assumed.
+
+**3. Every scheduled job resolves.** `fire_function` swallows a dangling dotted path silently, every
+30 minutes, which is what sweep check 12 exists for. Run it from the clean export as well:
+
+```bash
+cd "$D" && METATRON_AUTH_PASSWORD=dummy python3 scripts/check_scheduler_functions.py
+```
+Expect `0 finding(s) — 12 function job(s) checked`.
+
+**4. The sweep, on the MacBook main tree.**
+
+```bash
+cd /Users/md-homefolder/Desktop/multi-model-mcp && ./scripts/qa_sweep.sh
+```
+Expect 12/12 including `scheduler-functions-resolve`. **It parses; it does not execute** — which is
+why checks 2 and 3 exist above it.
+
+### Two rules that do NOT apply this time, checked so they are not carried as worry
+
+- **Rule 3, `daemon-reload` before the deploy:** no `.service` or `.timer` file changed in
+  `b2b1dc7..HEAD`. The cert-renew timer the headset chat added lives on the VM and is not deployed
+  from this repo. **Nothing owed.**
+- **`requirements.txt` is unchanged** in the range, so `pip install` is a no-op and no new dependency
+  can be missing on the VM.
+
+### A deploy-only gate this phase owes — the host marker
+
+**`core/build/tickets.file_ticket` refuses any caller outside `TICKET_WRITERS`, and that refusal
+cannot currently tell the Mac from the VM.** `DEPLOYMENT_MODE` is `cloud` on both, so nothing
+in-process distinguishes them; the refusal converts a silent wrong-machine write into an explicit
+one and cannot stop a caller that lies. Phase C found this and correctly stopped rather than faking
+the rest (plan § 3 N14, v4.12).
+
+**The real gate is a host marker on the two systemd units, which only a deploy can set.** On the VM,
+add an environment line to `metatron-server` and `metatron-scheduler` — e.g.
+`Environment=METATRON_HOST=vm` — then `sudo systemctl daemon-reload` **before** `./deploy.sh`, per
+rule 3, because `deploy.sh` restarts both units and an edited-but-unreloaded unit applies at the
+worst possible moment.
+
+> **This is a unit-file change, so rule 3 DOES apply to it** — unlike the rest of this deploy, where
+> nothing under `b2b1dc7..HEAD` touches a `.service` or `.timer`. Do the `daemon-reload` first.
+
+The matching code half — `file_ticket` also requiring `METATRON_HOST=vm` — is **not written**, and
+should not be until the marker is actually on the units: config before its gate is rule 2 inverted,
+and a `file_ticket` that requires a variable nothing sets refuses every legitimate VM write. **Order:
+marker on the units → `daemon-reload` → deploy → confirm the variable is live in both units'
+environment → then the code half, as ordinary development.**
+
+```bash
+ssh metatron-vm 'systemctl show metatron-scheduler metatron-server -p Environment'
+```
+
+### Rule 2 — the config key and its gate, stated because it is the one live behaviour change
+
+`build_tick` is `enabled: True` at `interval_minutes: 30` and **starts running the moment the
+scheduler restarts.** Rule 2 says config never ships before the code that gates it; here they ship
+together in the same commit range, which is the correct shape. What it will do: read the registry,
+find no capability registered, and return — `config/build/registry.yaml` is empty until run 1 lands.
+So the first live behaviour is a no-op every half hour, by construction. **Named so it is conscious
+rather than discovered in a log.**
+
+### The deploy
+
+```bash
+cd /Users/md-homefolder/Desktop/multi-model-mcp && ./deploy.sh
+```
+
+Watch for the SSE drain message. A drain timeout is reported and the restart proceeds anyway.
+
+### Post-deploy, on the VM — general health first
+
+```bash
+ssh metatron-vm
+cd ~/metatron && git log --oneline -1          # matches the Mac's HEAD
+systemctl status metatron-server metatron-scheduler --no-pager | head -20
+curl -s https://metatron-vm.tail0acc5d.ts.net:8001/health   # no -k, deliberately
+```
+
+> **`curl` WITHOUT `-k` is the diagnostic.** `-k` skips exactly the cert validation that fails, so
+> a `curl -k` that returns 401 says "healthy" during a total client outage. That cost a 26-hour
+> chase on 2026-09-19.
+
+Then one ordinary turn through the app, which also closes phase A's owed **(M)**:
+
+- Open `https://metatron-vm.tail0acc5d.ts.net:8001`, persona **`mike`**, ask anything.
+- **Pass:** a coherent reply carrying real context, no stack trace in
+  `sudo journalctl -u metatron-server -n 50`.
+- This is the `--persona mike` pipeline turn that **cannot run on the Mac in any tree**, because
+  `config/personas/mike*` is VM-only. Phase A ran it as `danny_park` and that is all a worktree can do.
+- **Also newly live here:** the headset chat's `source` field. Turns now record whether they started
+  from the UI or a headset press; before this deploy they did not.
+
+### Post-deploy, the three Build probes
+
+1. **The read door answers a presence check for `mike`.**
+   ```bash
+   cd /Users/md-homefolder/Desktop/multi-model-mcp && python3 scripts/vm_read.py --persona mike --presence log
+   ```
+   Expect `{state, count, window}` and **no content**. A door that answers `no_data` for everything
+   looks identical to one that is working — so check `count` is non-zero for `log`, which `mike` has
+   years of.
+2. **`build_tick` resolves in the scheduler log.**
+   ```bash
+   ssh metatron-vm 'sudo journalctl -u metatron-scheduler --since "40 min ago" | grep -i build_tick'
+   ```
+   Expect a line reporting nothing registered. **Expect no `ModuleNotFoundError`** — that is what the
+   re-point from `core.build.runner.tick` was for.
+3. **`request_build` files a ticket from a fixture turn.** Ask the app something no specialist owns
+   and that needs a standing judgement over a history — *"when did I last water the fig?"* is the
+   recorded shape. Then:
+   ```bash
+   ssh metatron-vm 'cat ~/metatron/data/personas/mike/build/tickets.jsonl | tail -3'
+   ```
+   Expect one row at `proposed` with a non-null gap. **A plausible answer with no ticket is the
+   failure** — that is the under-filing case § 13.14 names, and it is a FAIL even if the answer was
+   right.
+
+### If it goes wrong
+
+`deploy.sh` has no rollback. The VM is a git checkout, so:
+
+```bash
+ssh metatron-vm 'cd ~/metatron && git checkout b2b1dc7 && sudo systemctl restart metatron-scheduler metatron-server'
+```
+
+That returns the VM to its pre-deploy commit. **It does not undo `pip install`** — irrelevant here,
+since `requirements.txt` is unchanged. Do not `git reset --hard` on the VM; the checkout is enough
+and leaves the fetched objects in place for a retry.
+
+---
+
+## Phase F
+
+Pending. Bootstrap runs 1–3 as one live walkthrough with Mike executing — run 1 `home_care`, run 2
+the induced REPAIR, run 3 the weekend-correspondence policy, each acceptance on Mike's data and on a
+fixture persona. **Written once C has been reviewed clean**, per the coordinating brief.

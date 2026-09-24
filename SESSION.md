@@ -7,17 +7,20 @@ approves the plan, commits and deploys; Vertex serves only execution. Plan:
 sequencing (§ 16), the cost ($65–106) and the kept/changed/deleted list (§ 10). Reasoning, options
 rejected, and four things believed true that were not: `archive/PROJECT_LOG.md` § 2026-09-24, third.*
 
-***Next: phase C*** — the five Build subagent definitions and `/build`, then its
-`/adversarial-review` in Fable before it runs a real ticket ($12–18, Opus 5). The prompt is not
-written yet; `archive/plans/build_v4_phase_prompts_2026-09-24.md` holds 0, A, B, B-Red and D and
-stubs C, E, F. **Two things are owed inside C** rather than after it: `tests/test_build_manifest.py`,
-which `core/build/manifest.py`'s docstring cites twice as enforcing the content-free rule and which
-**does not exist** — so that rule has no test while the docstring says it does, and the manifest is
-rendered into the Librarian's prompt, which C builds. Then E. **Nothing deploys until E, and E
-carries everything in `b2b1dc7..HEAD`, not Build's commits alone** — a catch-up deploy with Build
-inside it, so its checklist must separate the two before blaming Build for whatever the VM then
-does. Count the range at deploy time; it was 18 and then 29 within one afternoon. Spend ≈ **$41–61**
-of $65–106.*
+***Next: phase E, the deploy — every build phase is now committed.*** Its checklist is written in
+`archive/plans/build_v4_phase_prompts_2026-09-24.md` § Phase E and its four pre-flight gates have
+already been run green, including the one that matters most: **what the VM will pull imports, checked
+against a clean `git archive HEAD` export** rather than the working tree, which can import fine on
+files the VM will never receive. **E carries everything in `b2b1dc7..HEAD`, not Build's commits
+alone** — a catch-up deploy with Build inside it, so if the VM misbehaves afterwards Build is one of
+~30 suspects and the checklist establishes general health *before* the three Build probes. Count the
+range at deploy time; it moved 18 → 31 in one afternoon. **Then F**, the bootstrap walkthrough —
+runs 1–3 with Mike executing, written when he asks. Spend ≈ **$75–100** of $65–106, and **the build
+will finish over** — almost entirely phase A's driver needing repair once phase C finally drove it.*
+
+***Earned three times in one session, and the reason Build cost what it did:* a thing that reads
+correctly and has never been run is not known to work — reading it harder will not find it.** The
+three instances, and what each cost: `archive/PROJECT_LOG.md` § 2026-09-24, fifth.*
 
 ***The graph is four layers now** (Mike, 2026-09-24): Coord → ~12 category agents, which route and
 no longer do → tier-3 agent → Synthesizer. Build exists to construct the tier-3 agents; the category
@@ -127,8 +130,9 @@ owns the per-item detail and the standing evidence.**
 **A9 — built and deployed 2026-08-18; `@waiting` on real use, review `2026-10-01`.** Spec, the
 five provisional parts and the date: [ROADMAP.md](ROADMAP.md) § A9a, the single home.
 
-**BUILD — the vertical that constructs capabilities. v4.11; phases 0, A, B-Red, B and D committed
-(`505b254`, `760c260`, `224e5d4`, `7c48ade`, `a3bf3e1`); C next, nothing deployed.** Plan:
+**BUILD — the vertical that constructs capabilities. v4.12; every phase committed
+(`505b254`, `760c260`, `224e5d4`, `7c48ade`, `a3bf3e1`, `9339c82`, `52bb929`); E and F left, nothing
+deployed.** Plan:
 [archive/plans/build_vertical_plan_2026-09-24.md](archive/plans/build_vertical_plan_2026-09-24.md)
 — it owns the rulings, the sequencing, the cost and the kept/changed/deleted list; this line is
 the status, not the record. **What exists now:** `core/build/` is 17 files (16 modules +
@@ -136,10 +140,12 @@ the status, not the record. **What exists now:** `core/build/` is 17 files (16 m
 rewritten `check_build_registration.py`, `--sandbox` on `new_worktree.sh`, six content gates —
 the sixth being the **tier gate**, refusing a capability that makes a standing judgement over a
 history on the bulk tier — the trigger (`request_build` on the Coordinator and the eight category
-agents, filing condition by request shape in `coordinator.md`), and **the read doors**: one
-persona-bound endpoint on `core/server.py`, `core/build/doors.py`, `scripts/vm_read.py`, with the
-seven live feeds refused outright. **330 checks across thirteen suites.** The old 19-module package,
-its four load seams and eight suites are deleted. Per-phase prompts:
+agents, filing condition by request shape in `coordinator.md`), **the read doors** (one persona-bound
+endpoint on `core/server.py`, `core/build/doors.py`, `scripts/vm_read.py`, the seven live feeds
+refused outright), and **`/build` with its five subagent definitions**, the command taking every step
+from `core/build/driver.py` so it can hand out none the driver refuses. **398 checks across fourteen
+suites.** The old 19-module package, its four load seams and eight suites are deleted. Per-phase
+prompts, now including E's deploy checklist:
 [archive/plans/build_v4_phase_prompts_2026-09-24.md](archive/plans/build_v4_phase_prompts_2026-09-24.md).
 
 ---
