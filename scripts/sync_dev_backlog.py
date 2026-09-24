@@ -76,7 +76,18 @@ MACHINE_TYPES = {"TOOL_DENIED", "RULE_CONFLICT", "SELF_APPLIED", "UNGROUNDED_ANS
                  # while registered nowhere — found 2026-08-27 when the reconciliation
                  # test's own failure was read instead of skipped. Same silent-discard
                  # class as ROUTING_MISS above, caught by the guard this time.
-                 "FALSE_COMPLETION_CLAIM", "MERGE_AUTO_ACCEPTED", "THINKING_CAP_HIT"}
+                 "FALSE_COMPLETION_CLAIM", "MERGE_AUTO_ACCEPTED", "THINKING_CAP_HIT",
+                 # Build, 2026-09-19. BUILD_PROPOSED is the deliberate REDUNDANT
+                 # record beside the Build ledger: the VM has no write path to
+                 # this file, but fetch_events already pulls quality events over
+                 # /monitor/file, so a filed gap reaches the Inbox on the next
+                 # sync. Two records until one earns trust; it retires when Build
+                 # is proven. BUILD_CHECK_FAILED is emitted by
+                 # core/build/verify's failure path when a landing is reverted —
+                 # registered HERE and not only emitted, because the standing
+                 # lesson of this file is that an unregistered type is silently
+                 # discarded (ROUTING_MISS, 5 events lost on the live VM).
+                 "BUILD_PROPOSED", "BUILD_CHECK_FAILED"}
 
 WANTED = USER_TYPES | MACHINE_TYPES
 
@@ -143,6 +154,14 @@ LABELS = {
     # From the false-action-claim detector, 2026-08-27: the runtime told the user
     # an action happened (sent, scheduled, saved) that the logs show never did.
     "FALSE_ACTION_CLAIM": "the runtime claimed an action it didn't take",
+    # Build filed a capability gap. The ticket itself lives in the VM's Build
+    # ledger; this is the second record, so a gap is visible to a triage pass
+    # that never opens the board.
+    "BUILD_PROPOSED": "a capability gap was filed",
+    # A landing was reverted because a check failed. Names the check — the
+    # failing output itself is carried verbatim into the next attempt's brief,
+    # not here, because an event is a signal and the output is a document.
+    "BUILD_CHECK_FAILED": "a build landing failed its checks and was reverted",
 }
 
 ROOT = Path(__file__).resolve().parent.parent

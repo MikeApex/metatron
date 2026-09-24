@@ -653,7 +653,63 @@ def _load_coordinator_context(persona: str | None = None) -> str:
     return ""
 
 
-def _handle_user_correction(coord_output: str) -> None:
+# Not specialists: the head layer, Build's own tick root, and the Diarist, which
+# is write-only and fire-and-forget — it never answers the user, so it can never
+# be what the user is correcting.
+_HEAD_AND_ROOT_AGENTS = frozenset({"coordinator", "synthesizer", "build", "diarist"})
+
+
+def _corrected_agents(persona: str | None = None) -> list[str]:
+    """
+    The specialist(s) that ran on the PREVIOUS turn — who a correction is about.
+
+    WHY THIS IS CODE AND NOT A MODEL FIELD (build plan section 3). `source_agent` on
+    `write_quality_event` is model-filled, and only the Coordinator and Synthesizer
+    hold that grant — so a specialist that answered wrongly emits NOTHING about
+    itself, and every correction was attributed to whichever head-layer agent
+    happened to notice it. Counting those events per agent therefore measured
+    "who reads the user's complaint", not "who caused it", which is the wrong
+    number for the one thing it feeds: Build's REPAIR trigger fires at three
+    recurrences for a named capability, and an attribution that always says
+    `coordinator` can never reach three for anything else.
+
+    The previous turn is the right turn by construction: a correction is about
+    what already happened, and core/trace.py writes at finish_request_trace(),
+    so the newest record on disk is the exchange being corrected.
+
+    Returns [] when nothing can be determined — the caller then keeps the old
+    behaviour rather than inventing an attribution.
+    """
+    try:
+        # THE NEWEST RECORD IS OFTEN NOT THE EXCHANGE — a `build_tick` and the
+        # fire-and-forget Diarist both write their own traces, and the Diarist's
+        # finishes AFTER the turn it followed, so it is routinely the record on
+        # top when a correction arrives. Attributing the user's complaint to the
+        # Diarist is worse than attributing it to the Coordinator: REPAIR counts
+        # `source_agent ∩ registry`, so a wrong name never reaches three and the
+        # trigger goes inert.
+        #
+        # `last_exchange()` is the ONE definition of "a record the user could be
+        # correcting", shared with turn_referent's own context block. This used
+        # to be a second copy of that scan, and the two disagreed — attribution
+        # skipped ticks while the referent block still announced one as the
+        # previous exchange.
+        #
+        # A SCHEDULED SESSION QUALIFIES, deliberately: it runs the full pipeline,
+        # and a specialist it dispatched is exactly what a user's next turn
+        # corrects. An earlier version skipped anything proactive and lost those.
+        from tools.turn_referent import _walk, last_exchange
+        trace = last_exchange(persona)
+        if not trace:
+            return []
+        names = [str(a.get("agent") or "") for a in _walk(trace.get("pipeline") or [])]
+        return sorted({n for n in names if n and n not in _HEAD_AND_ROOT_AGENTS})
+    except Exception as e:
+        logger.warning(f"[PIPELINE] could not attribute correction: {e}")
+        return []
+
+
+def _handle_user_correction(coord_output: str, persona: str | None = None) -> None:
     """
     Extract USER_CORRECTION from Coordinator output and log it via write_quality_event.
 
@@ -664,6 +720,12 @@ def _handle_user_correction(coord_output: str) -> None:
     into one `None. ×90` entry that drowned the real signatures in Mike's session-start line.
     Dropping them here rather than at the display layer keeps the *count* honest too, which
     matters because a machine item's ×3 promotion bar is read off these events.
+
+    **Attribution changed 2026-09-19 (build phase 4):** the event now names the
+    specialist(s) that ran on the previous turn rather than `coordinator`, which
+    merely noticed it. See `_corrected_agents()`. Falls back to `coordinator`
+    when the previous turn cannot be read — the old behaviour, kept as the
+    fallback rather than as the default.
     """
     import re as _re
     match = _re.search(r'^USER_CORRECTION:\s*(.+)$', coord_output, _re.MULTILINE)
@@ -673,7 +735,10 @@ def _handle_user_correction(coord_output: str) -> None:
             detail = match.group(1).strip()
             if is_null_ish(detail):
                 return
-            write_quality_event("USER_CORRECTION", "coordinator", detail)
+            blamed = _corrected_agents(persona)
+            write_quality_event("USER_CORRECTION",
+                                ",".join(blamed) if blamed else "coordinator",
+                                detail)
         except Exception as e:
             logger.warning(f"[PIPELINE] USER_CORRECTION log failed: {e}")
 
@@ -1223,9 +1288,17 @@ def load_recent_context(persona: str | None = None, days: int = 5) -> str:
     # list on purpose — it is the most recent thing in the context and must read as more
     # salient than the day logs above it, which is where "undo that merge" went instead.
     # Empty outside a live conversation, so a quiet morning pays nothing.
+    # tools.build added 2026-09-19 (build phase 4): the Build jobs parked at a HUMAN
+    # GATE and nothing else — needing answers, needing a raised spend limit, needing
+    # a brief read, needing accepting. A job mid-pipeline is the system working, and
+    # saying so would be narrating process. Empty on most days by construction, and
+    # the one place the over-budget ask is surfaced: there is no confirm card for it
+    # deliberately, because an executor entry would make raising Build's own spend
+    # limit a one-tap action. Placed BEFORE turn_referent, which is last on purpose.
     for _block_source in ("tools.obligations", "tools.calendar_reconcile", "tools.intake",
                           "tools.confirm", "tools.location", "tools.accountability",
-                          "tools.crm_sweep", "tools.horizon", "tools.turn_referent"):
+                          "tools.crm_sweep", "tools.horizon", "tools.build",
+                          "tools.turn_referent"):
         try:
             import importlib
             block = importlib.import_module(_block_source).context_block(persona)
@@ -1379,6 +1452,16 @@ def register_tools() -> tuple[list[dict], dict]:
     # of it. Granted to `relationships` alone in both routing files.
     from tools.crm_sweep import apply_crm_proposals, APPLY_CRM_PROPOSALS_SCHEMA
     from tools.horizon import record_horizon_item, RECORD_HORIZON_ITEM_SCHEMA
+    # The Build vertical's whole agent-callable surface — two tools, both
+    # returning in milliseconds. request_build FILES a gap; it never builds
+    # anything in the turn, because a Build run is minutes and dollars and a
+    # name in the valid-agent list would be a lie about what calling it costs.
+    # Neither is granted to anything yet: the grant is `request_build` on
+    # `coordinator`'s allowed_tools in both routing files, and it lands in
+    # phase 5 with the agent files, so the instruction and the grant arrive
+    # together rather than repeating the time_director half-wiring.
+    from tools.build import (request_build, REQUEST_BUILD_SCHEMA,
+                             answer_interview_item, ANSWER_INTERVIEW_ITEM_SCHEMA)
 
     schemas = [
         WRITE_LOG_SCHEMA, READ_LOG_SCHEMA,
@@ -1426,6 +1509,7 @@ def register_tools() -> tuple[list[dict], dict]:
         IMPORT_CONTACTS_FILE_SCHEMA,
         APPLY_CRM_PROPOSALS_SCHEMA,
         RECORD_HORIZON_ITEM_SCHEMA,
+        REQUEST_BUILD_SCHEMA, ANSWER_INTERVIEW_ITEM_SCHEMA,
     ]
     handlers = {
         "write_log": write_log,
@@ -1506,6 +1590,8 @@ def register_tools() -> tuple[list[dict], dict]:
         "write_persona": write_persona,
         "write_profile": write_profile,
         "read_profile": read_profile,
+        "request_build": request_build,
+        "answer_interview_item": answer_interview_item,
     }
 
     return schemas, handlers
@@ -1573,6 +1659,13 @@ _ALWAYS_CONFIDENTIAL = [
     "mental_wellbeing", "physical_health", "work_vocation",
     "learning_growth", "recreation_hobbies", "research_agent",
     "time_director", "pattern_miner", "goals_interviewer",
+    # The four Build agents. THE UNCONDITIONAL LIST IS RIGHT FOR THESE and wrong
+    # for a generated capability's name, which is the distinction seam 4 turns
+    # on: these are tracked underscore identifiers, impossible in natural prose,
+    # so one substring hit is a real leak. A generated name like `home_care` or
+    # `garden` is ordinary English and goes to _CONTEXT_SENSITIVE instead, where
+    # it fires only inside a sentence carrying architecture vocabulary.
+    "build_inquiry", "build_librarian", "build_planner", "build_coherence",
     # Tool names
     "run_subagent", "run_model_conference", "write_log", "read_log",
     "write_journal", "read_journal", "write_archive", "read_archive",
@@ -6228,7 +6321,7 @@ def run_pipeline_session(user_input: str,
                   file=sys.stderr)
 
         # Handle any USER_CORRECTION flag in Coordinator output
-        _handle_user_correction(coord_output)
+        _handle_user_correction(coord_output, persona)
 
         # Fetch the standing knowledge the Coordinator selected, before dispatch — the
         # specialists that read those subjects get them appended to their directives.
@@ -6435,7 +6528,7 @@ def _run_pipeline_session_stream_inner(
     coord_output = _run_single_agent("coordinator", coord_input, persona=persona, provider=provider,
                                      attachments=attachments, history=_coord_history(history))
     _trace(f"[PIPELINE] coordinator  done  ({len(coord_output)} chars) → dispatching specialists")
-    _handle_user_correction(coord_output)
+    _handle_user_correction(coord_output, persona)
     # Knowledge fetch mirrors run_pipeline_session() exactly. THIS IS THE PATH THAT MATTERS:
     # the server streams, so a feature wired only into the non-streaming function is live in
     # tests and dead in production. Any change to the knowledge wiring changes both.

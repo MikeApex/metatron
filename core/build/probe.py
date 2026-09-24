@@ -9,7 +9,7 @@ what came back.
 With the probe, `data_available` is evidence. Without it the whole Answer
 Ledger is a claim.
 
-THREE STATES, NEVER TWO. This is core/trace.py's is_grounded() lesson one layer
+FIVE STATES, NEVER TWO. This is core/trace.py's is_grounded() lesson one layer
 up — *"we asked and nothing came back"* is a different and much more useful
 state than *"this never retrieves"*, and collapsing the two is what made the
 old flag unreadable. So:
@@ -90,6 +90,19 @@ def probe(source_id: str, persona: str | None = None,
         return _record(source_id, tool_name, state="needs_tool", rows=0,
                        error=f"{tool_name} is not registered")
 
+    # A LIVE FEED IS NOT PROBED. Its availability is its registration, and it
+    # has no corpus to count — the answer exists only when the capability asks,
+    # at runtime. Probing one would make a real outbound third-party call per
+    # question (unpriced), and five of the seven require a real-world argument
+    # no code-written default can honestly supply. Reported as its own state so
+    # it can never be read as `no_data`, which would mean "there is nothing
+    # there" about a source that answers every time it is called.
+    if entry.get("live"):
+        return _record(source_id, tool_name, state="live", rows=0,
+                       error=f"{tool_name} is a live feed: registered and "
+                             f"answerable at runtime, with no stored history to "
+                             f"probe")
+
     # Checked BEFORE the call, deliberately. Calling a single-date reader with a
     # behavioural question returns one day or nothing, and that answer is
     # indistinguishable from an empty corpus once it is a row count.
@@ -100,7 +113,7 @@ def probe(source_id: str, persona: str | None = None,
                    f"{data_kind} question — it serves "
                    f"{entry.get('answers')} only"))
 
-    args = {**(entry.get("probe") or {}), **(overrides or {})}
+    args = {**(entry.get("probe") or {}), **_probe_dates(entry), **(overrides or {})}
     args = {k: v for k, v in args.items() if v not in ("", None)}
 
     try:
@@ -127,6 +140,24 @@ def probe(source_id: str, persona: str | None = None,
         rows=rows, probe=args, raw_kind=kind,
         sample_ok=rows > 0,
     )
+
+
+def _probe_dates(entry: dict) -> dict:
+    """
+    A window ending today, for a source that declares `probe_dates: N`.
+
+    Computed at call time and never written into the manifest literal. This is
+    the standing "do not record a value with a short half-life" rule applied to
+    a probe argument: a date in the table is correct on the day it is typed and
+    silently wrong the next.
+    """
+    days = entry.get("probe_dates")
+    if not days:
+        return {}
+    from datetime import date, timedelta
+    today = date.today()
+    return {"start_date": (today - timedelta(days=int(days))).isoformat(),
+            "end_date": today.isoformat()}
 
 
 def _handler(tool_name: str):
@@ -214,5 +245,10 @@ def summarise(records: list[dict]) -> dict:
             r["tool"] for r in records if r.get("state") == "unaskable"
         }),
         "errors": [r["error"] for r in records if r.get("state") == "error"],
+        # Live feeds are neither answered nor missing: the tool is registered
+        # and will answer at runtime, and there is no corpus to count now.
+        # Reported so the Librarian's evidence says so rather than showing a
+        # bare 0 rows, which reads as "there is nothing there".
+        "live": sorted({r["tool"] for r in records if r.get("state") == "live"}),
         "rows_total": sum(int(r.get("rows") or 0) for r in records),
     }

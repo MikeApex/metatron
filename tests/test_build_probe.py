@@ -170,18 +170,19 @@ def _():
 
 @check("probe arguments are CODE-written — the injection answer")
 def _():
-    seen: dict = {}
-
-    def spy(**kwargs):
-        seen.update(kwargs)
-        return "one row"
-
-    with FakeTools({"get_log_window": spy}):
-        PR.probe("log", PERSONA)
-    assert seen == M.source("log")["probe"], (seen, M.source("log")["probe"])
-    # The model names a source; this asserts it cannot choose the call. A corpus
-    # carrying an injected instruction can influence what is NAMED, never what
-    # is CALLED.
+    # The point is that NOTHING a model wrote reaches a tool call. A computed
+    # date window is still code-written: it comes from `probe_dates` in the
+    # table, not from any question, and it is computed at call time precisely
+    # so a literal cannot go stale.
+    from core.build import manifest as M
+    from core.build import probe as P
+    for source_id in ("log", "calendar"):
+        entry = M.source(source_id)
+        record = P.probe(source_id, PERSONA)
+        expected = {**(entry.get("probe") or {}), **P._probe_dates(entry)}
+        expected = {k: v for k, v in expected.items() if v not in ("", None)}
+        assert record["probe"] == expected, (record["probe"], expected)
+        assert set(record["probe"]) <= set(expected), record["probe"]
 
 
 @check("a signature mismatch is reported as a defect, not as no_data")
@@ -568,6 +569,85 @@ def _():
     total = COST.day_total(PERSONA)
     assert total["jobs"] == 2 and total["calls"] == 2, total
     assert total["usd"] > 0, total
+
+
+# ---------------------------------------------------------------------------
+# REVIEW ROUND 1 — the Fable 5.1 phase-4 review
+# ---------------------------------------------------------------------------
+
+@check("REVIEW D4: EVERY manifest source's fixed args fit its handler's signature")
+def _():
+    # `log` — the primary corpus — carried {"days": 14} against
+    # get_log_window(start_date, end_date, …). Every probe of it raised
+    # TypeError and recorded `state: error`, so `data_available` was False on
+    # every question naming it, each reached the Librarian as "the code could
+    # not read the logs", and no log-backed single_point question could ever
+    # settle by data. Section 3 calls N3 the highest-value node; this made it
+    # blind to the richest source in the system.
+    #
+    # Asserted over ALL sources by binding the signature, not by probing `log`
+    # alone: the defect class is "a table entry that fits no signature", and
+    # one fixed entry does not close it.
+    import inspect
+
+    from core.build import manifest as M
+    from core.build import probe as P
+
+    unfit = []
+    for source in M.sources():
+        handler = P._handler(source["tool"])
+        if handler is None:
+            continue                     # needs_tool — a different, tested state
+        if source.get("live"):
+            continue                     # never called at all; asserted below
+        args = {**(source.get("probe") or {}), **P._probe_dates(source)}
+        args = {k: v for k, v in args.items() if v not in ("", None)}
+        try:
+            inspect.signature(handler).bind(**args)
+        except TypeError as exc:
+            unfit.append(f"{source['id']} -> {source['tool']}({args}): {exc}")
+    assert not unfit, ("manifest probe args do not fit their tools:\n  "
+                       + "\n  ".join(unfit))
+
+
+@check("REVIEW D4: a LIVE FEED is never called — no outbound API call during Inquiry")
+def _():
+    # Probing the seven outbound feeds would make a real third-party call per
+    # question, every job, which section 14 never priced; five of them require a
+    # real-world argument no code-written default can honestly supply; and "is
+    # there a corpus here" has no meaning for a source whose answer exists only
+    # at the moment it is asked. Asserted by making the handler EXPLODE: if the
+    # probe ever calls one, this test says so.
+    from core.build import manifest as M
+    from core.build import probe as P
+
+    def _explode(**kw):
+        raise AssertionError("a live feed was actually called during a probe")
+
+    live = [s["id"] for s in M.sources() if s.get("live")]
+    assert len(live) == 7, live
+    with FakeTools({s["tool"]: _explode for s in M.sources()}):
+        for source_id in live:
+            record = P.probe(source_id, PERSONA)
+            assert record["state"] == "live", record
+            assert record["rows"] == 0 and record["data_available"] is False
+            # Never `no_data`, which would mean "there is nothing there" about
+            # a source that answers every time it is called.
+            assert record["state"] != "no_data"
+    summary = P.summarise([P.probe(s, PERSONA) for s in live])
+    assert summary["live"] and not summary["needs_tool"], summary
+
+
+@check("REVIEW D4: the log source probes to data|no_data — never to `error`")
+def _():
+    from core.build import probe as P
+    record = P.probe("log", PERSONA)
+    assert record["state"] in ("data", "no_data"), record
+    assert not record["error"], record["error"]
+    # A window computed at CALL TIME — a date written into the manifest literal
+    # is correct on the day it is typed and wrong the next.
+    assert set(record["probe"]) == {"start_date", "end_date"}, record["probe"]
+    assert record["probe"]["start_date"] < record["probe"]["end_date"]
 
 
 # ---------------------------------------------------------------------------

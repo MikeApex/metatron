@@ -106,6 +106,58 @@ def last_trace(persona: str | None = None) -> dict | None:
     return None
 
 
+def is_exchange(trace: dict | None) -> bool:
+    """
+    Is this record a turn the user could refer to, or be correcting?
+
+    THE TEST IS A COORDINATOR IN THE PIPELINE, and it is the only test, because
+    every real turn runs one and nothing else does. Two kinds of record are
+    written that are NOT exchanges:
+
+      · a `build_tick` — proactive, rooted at `build`, its own RequestTrace.
+      · the **Diarist** — fire-and-forget on its own thread with its own trace,
+        finished AFTER the turn it followed, so it is frequently the newest
+        record on disk when the next turn arrives (core/trace.py's push_agent
+        comment).
+
+    A SCHEDULED SESSION IS an exchange and passes: it runs the full pipeline,
+    the user can say "undo that" about it, and a specialist it dispatched can be
+    what the user is correcting.
+
+    Defined here, once, and read by both callers — `context_block()` below and
+    `core/orchestrator._corrected_agents()`. Those two had the rule separately
+    and disagreed: attribution skipped ticks while the referent block still
+    announced one as "the exchange immediately before this one". A rule
+    duplicated in two places holds until one copy is improved.
+    """
+    if not trace:
+        return False
+    return any(str(a.get("agent") or "") == "coordinator"
+               for a in _walk(trace.get("pipeline") or []))
+
+
+def last_exchange(persona: str | None = None) -> dict | None:
+    """
+    The newest record that is actually an exchange, or None.
+
+    Scans backwards rather than taking the newest, because the newest is
+    routinely a Diarist trace or a Build tick — see is_exchange().
+    """
+    for path in _trace_files(persona):          # newest date first
+        try:
+            lines = [ln for ln in path.read_text().splitlines() if ln.strip()]
+        except OSError:
+            continue
+        for line in reversed(lines):            # newest record first
+            try:
+                trace = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if is_exchange(trace):
+                return trace
+    return None
+
+
 def _walk(agents: list) -> list:
     """Agents and their subagents — a specialist's tool calls are nested one level down."""
     out = []
@@ -206,7 +258,12 @@ def context_block(persona: str | None = None) -> str:
     today's behaviour rather than an error.
     """
     try:
-        trace = last_trace(persona)
+        # The newest EXCHANGE, not the newest record. A `build_tick` writes its
+        # own RequestTrace, so after a tick with work this block announced the
+        # tick as "the exchange immediately before this one" and added "This was
+        # a scheduled run — the user did not speak in it." The user's "undo
+        # that" then resolved against Build's own machinery.
+        trace = last_exchange(persona)
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"[turn_referent] trace unreadable: {exc}")
         return ""

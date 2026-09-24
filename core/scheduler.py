@@ -711,6 +711,38 @@ _DEFAULT_JOBS: dict[str, dict] = {
         "notification": False,
         "respect_quiet_hours": False,   # sweep() gates itself; see note above
     },
+    # Build's driver (build phase 4, 2026-09-19). Replays the Build ledger, advances
+    # any job that is not waiting on a human, and runs the REPAIR scan that counts
+    # recurring faults against built capabilities.
+    #
+    # WITH AN EMPTY QUEUE IT COSTS NOTHING: it reads one JSONL, finds nothing
+    # runnable and returns at zero tokens and milliseconds of CPU. That is what makes
+    # a 30-minute cadence affordable, and it is why this belongs here rather than in a
+    # persona's scheduler.yaml — there is no meaningful sense in which one person wants
+    # the Build driver configured differently from another.
+    #
+    # It knowingly breaks this block's "no model tokens" test, like the two gates
+    # above: a tick WITH work runs Inquiry -> Librarian -> Planner and bills real
+    # tokens to that job's own budget, hard-stopped by a per-job tripwire. Nothing can
+    # be in flight unless Mike triaged a ticket off `proposed` first, so the tokens are
+    # never spent without a human having said yes to that job.
+    #
+    # `notification: False` is not a preference and must not be flipped: tick() returns
+    # a plain string and never a notify dict, because nothing in Build reaches the user
+    # unreviewed. What Mike sees rides tools/build.py's context_block() on a session he
+    # started, which is the reviewed path.
+    #
+    # 30 minutes matches jobs.STALE_MINUTES = 45, which leaves one tick of slack before
+    # a job is treated as stalled — so an ordinary long node is never re-entered
+    # underneath itself.
+    "build_tick": {
+        "enabled": True,
+        "interval_minutes": 30,
+        "days": "daily",
+        "function": "core.build.runner.tick",
+        "notification": False,
+        "respect_quiet_hours": False,   # silent; a tick never speaks to the user
+    },
     # Builds the weekly review digest and PARKS it — context_block() hands it to the
     # next session that loads coordinator context (in practice the morning brief) and
     # clears it. Deliberately no notification channel of its own: a dedicated push here

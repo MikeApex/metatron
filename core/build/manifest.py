@@ -70,9 +70,19 @@ _ROOT = Path(__file__).parent.parent.parent
 # ---------------------------------------------------------------------------
 
 _SOURCES: tuple[dict[str, Any], ...] = (
+    # `start_date`/`end_date`, NOT `days` — tools/pattern_miner.get_log_window
+    # takes a window, not a length. The `{"days": 14}` this carried fitted no
+    # signature, so every probe of the primary corpus raised TypeError and
+    # recorded `state: error`: `data_available: False` on every question naming
+    # `log`, each one reaching the Librarian as "the code could not read the
+    # logs", and no log-backed single-point question ever settling by data.
+    # Section 3 calls N3 the highest-value node; this made it blind to the
+    # richest source in the system. `_probe_dates()` fills the window at call
+    # time, because a date written into a literal goes stale overnight.
     {"id": "log", "tool": "get_log_window", "kind": "behavioural",
      "description": "daily logs — what was done, eaten, felt, logged",
-     "probe": {"days": 14}},
+     "probe": {"start_date": "", "end_date": ""},
+     "probe_dates": 14},
     {"id": "journal", "tool": "read_journal", "kind": "behavioural",
      "description": "the Diarist's narrative record, one file per day",
      "probe": {"entry_date": ""},
@@ -83,9 +93,15 @@ _SOURCES: tuple[dict[str, Any], ...] = (
     {"id": "conversations", "tool": "search_conversations", "kind": "behavioural",
      "description": "verbatim conversation turns, searchable",
      "probe": {"query": "", "k": 20}},
+    # A `query` is REQUIRED by search_memory and was absent, so every probe of
+    # the index raised TypeError. The probe word is code-written and deliberately
+    # generic: this call asks "does the index return anything at all", not
+    # anything about the question — a question-derived query here would put model
+    # text into a tool call, which is the one thing section 13.3 forbids. The
+    # condenser narrows it through `overrides` when a real search is wanted.
     {"id": "memory", "tool": "search_memory", "kind": "behavioural",
      "description": "the FAISS index over logs and journal entries",
-     "probe": {"k": 8}},
+     "probe": {"query": "day", "k": 8}},
     {"id": "wisdom", "tool": "read_wisdom", "kind": "single_point",
      "description": "standing facts and patterns, by domain",
      "probe": {}},
@@ -101,12 +117,17 @@ _SOURCES: tuple[dict[str, Any], ...] = (
     {"id": "insights", "tool": "read_recent_insights", "kind": "behavioural",
      "description": "Pattern Miner reports",
      "probe": {}},
+    # read_archive(category) takes a required category and had none. "books" is
+    # the category tools/diarist.py's own docstring names first; the probe only
+    # has to establish whether the archive answers at all.
     {"id": "archive", "tool": "read_archive", "kind": "behavioural",
      "description": "archived records, with their merged_into pointers",
-     "probe": {}},
+     "probe": {"category": "books"}},
+    # Same defect as `log`: read_calendar takes start_date/end_date, not `days`.
     {"id": "calendar", "tool": "read_calendar", "kind": "single_point",
      "description": "calendar entries over a window",
-     "probe": {"days": 14}},
+     "probe": {"start_date": "", "end_date": ""},
+     "probe_dates": 14},
     {"id": "schedules", "tool": "list_schedules", "kind": "single_point",
      "description": "scheduled prompts and their cadence",
      "probe": {}},
@@ -116,39 +137,62 @@ _SOURCES: tuple[dict[str, Any], ...] = (
     {"id": "contacts", "tool": "list_contacts", "kind": "single_point",
      "description": "the CRM — who the user knows",
      "probe": {}},
+    # `count`, not `limit` — read_email(count, unread_only, folder).
     {"id": "email", "tool": "read_email", "kind": "behavioural",
      "description": "recent mail",
-     "probe": {"limit": 20}},
+     "probe": {"count": 20}},
     {"id": "intake_queue", "tool": "read_intake_queue", "kind": "behavioural",
      "description": "classified inbound items awaiting disposition",
-     "probe": {}},
+     # read_intake_queue(domain) requires one; "logistics" is the domain
+     # every persona has, and the probe only asks whether the queue answers.
+     "probe": {"domain": "logistics"}},
     {"id": "context_tracker", "tool": "read_context_tracker", "kind": "single_point",
      "description": "open threads, clinical threads, carried state",
      "probe": {}},
+    # read_agent_config(agent_name) requires one; the Coordinator exists in
+    # every deployment, so the probe can always be issued. (`agent` was not a
+    # parameter of anything.)
     {"id": "agent_config", "tool": "read_agent_config", "kind": "single_point",
      "description": "the per-persona data store an agent reads at runtime",
-     "probe": {"agent": ""}},
+     "probe": {"agent_name": "coordinator"}},
+
+    # ---- LIVE FEEDS: `live: True`, and deliberately NOT probed -------------
+    #
+    # These seven are the outbound reads of section 6.3. Probing them is wrong in
+    # three separate ways, and the first is the one that costs money:
+    #
+    #   1. A probe would make a REAL third-party API call — seven of them per
+    #      job, every job, during Inquiry. Nothing in section 14 priced that, and
+    #      an N3 that quietly bills an external vendor per question is the
+    #      "unseen cost" class CLAUDE.md § Costs names.
+    #   2. Five of them REQUIRE a real-world argument — a flight number, an
+    #      origin and destination, a city, a line list, a place description.
+    #      There is no honest code-written default; inventing one probes nothing
+    #      and `find_places` would send the invented string outbound.
+    #   3. The question a probe answers — "is there a corpus here?" — has no
+    #      meaning for a live feed. There is no stored history to count. Its
+    #      answer exists only at the moment the capability asks.
+    #
+    # So availability for these IS registration, and their evidence row says
+    # exactly that: the tool is live, there is nothing to count, and the
+    # Librarian adjudicates rather than settling on a row count. This is the
+    # same distinction the fourth probe state was added for on 2026-09-18 —
+    # "registered" and "can answer this" are different facts — one step further:
+    # "registered" and "has a corpus" are different facts too.
     {"id": "weather", "tool": "get_weather", "kind": "single_point",
-     "description": "live weather, including days since rain",
-     "probe": {}},
+     "description": "live weather, including days since rain", "live": True},
     {"id": "environment", "tool": "get_environmental_snapshot", "kind": "single_point",
-     "description": "ambient environmental conditions",
-     "probe": {}},
+     "description": "ambient environmental conditions", "live": True},
     {"id": "transit_tfl", "tool": "get_tfl_status", "kind": "single_point",
-     "description": "London transit status",
-     "probe": {}},
+     "description": "London transit status", "live": True},
     {"id": "regional_transit", "tool": "get_regional_transit_info", "kind": "single_point",
-     "description": "regional transit information",
-     "probe": {}},
+     "description": "regional transit information", "live": True},
     {"id": "flights", "tool": "get_flight_status", "kind": "single_point",
-     "description": "flight status by number",
-     "probe": {}},
+     "description": "flight status by number", "live": True},
     {"id": "travel_time", "tool": "get_travel_time", "kind": "single_point",
-     "description": "door-to-door travel time between two points",
-     "probe": {}},
+     "description": "door-to-door travel time between two points", "live": True},
     {"id": "places", "tool": "find_places", "kind": "single_point",
-     "description": "place and venue lookup from a description",
-     "probe": {}},
+     "description": "place and venue lookup from a description", "live": True},
 )
 
 # The literal "user" is always a legal candidate source and is not a row here:

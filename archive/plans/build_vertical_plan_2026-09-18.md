@@ -8,6 +8,38 @@ after the adversarial review at
 `archive/plans/build_vertical_plan_2026-09-18.md` — the current filename is harness-generated.
 Every code claim was re-checked against the working tree at `7bca654`.*
 
+**What changed from v3.6 to v3.7.** The phase-4 review's **Part 2 re-check** re-ran all ten
+round-1 probes unchanged and confirmed **all fourteen closed, nothing reopened.** Three items
+were left open, and all three are now fixed: the landed brief recorded the state it was written
+from rather than the one it reached; `turn_referent`'s referent block still presented a
+`build_tick` as *"the exchange immediately before this one"*; and a landing-day run count divided
+by a day that held only Build's own tick. Touched: § 3 (the exchange rule), § 12 (one assertion
+each on the end-to-end and run-ledger rows), § 14 (the measured-day rule). **The shape is the
+round-3 shape again, and it is worth saying so:** two of the three are *a rule that existed in one
+place and not the other* — attribution learned to skip a tick while the referent block did not,
+and the brief learned which state it could be written from but not which state to report.
+
+**What changed from v3.5 to v3.6.** The phase-4 second-model review
+(`archive/plans/build_phase4_runner_review_2026-09-19_fable-5.md`, Fable 5.1, ten probes that RAN
+the runner rather than reading it) returned **fourteen defects; all fourteen fixed.** Touched:
+§ 3 (a fifth probe state and the live-feed rule), § 5 (`resume_to` on the ledger), § 7 (the
+post-node budget gate), § 8 (the park/fail correction), § 12 (one assertion per defect on the
+runner, probe, coherence and jobs rows), § 14 (the run line's expected figure is now `None`).
+**Their common shape is the third distinct one this plan has produced** — round 1 was prose never
+made mechanism, round 2 mechanisms scoped to their probe, round 3 a mechanism improved in one of
+two homes. **These are mechanisms that were never EXERCISED**: a refusal path with no state
+guard, a park that could not be resumed, a parse the prompt never produced, a brief write refused
+every time, a probe table whose arguments fitted no signature. Each read correctly and had never
+once run. *The review's method is why — every finding came from running the code.*
+
+**What changed from v3.4 to v3.5.** Three corrections agreed with Mike on 2026-09-19, before
+phase 4 was written. Each is recorded in the section whose prose was wrong rather than collected
+in one place: § 14 and § 12's run-ledger row (the dispatch count does not come from the A9
+rollup), § 8 (an over-budget job is approved on the VM, never through a confirm card), and § 10
+plus § 16's phase-5 line (the Coordinator's `request_build` grant had no owner). Their common
+shape is worth naming, because it is not the shape of any of the three phase-3 rounds: **each is
+a claim this plan made about a file nobody had opened.** Nothing else moved.
+
 **What changed from v3.3 to v3.4.** One finding from the review's Part 3: seam 3 resolved a
 display name without the whitespace collapse the schema applies, so the two stopped agreeing on
 exactly the rule the v3.3 round added. Fixed in `core/build/overlay.py` alone by importing the
@@ -251,6 +283,15 @@ quality event written beside the ticket: the VM has no write path to `DEV_BACKLO
 `sync_dev_backlog.py:fetch_events` already pulls quality events over `/monitor/file`, so the event
 reaches § Inbox on the next sync with one label added to its event map. Two records until one
 earns trust — the second one carried by a path that already exists.
+
+> **`[v3.7]` What counts as "the previous turn" has ONE definition, in
+> `tools/turn_referent.is_exchange()`: a trace with a `coordinator` in its pipeline.** Two things
+> write their own `RequestTrace` and are not turns — a `build_tick`, and the **Diarist**, which is
+> fire-and-forget on its own thread and finishes AFTER the turn it followed, so it is routinely
+> the newest record on disk when the next turn arrives. Both readers of that file use this rule:
+> the correction attribution below, and `context_block()`, which had its own idea and announced a
+> tick as *"the exchange immediately before this one"*. **A scheduled session passes** — it runs
+> the full pipeline, and its specialist is what a user's next turn corrects.
 
 **REPAIR is filed by code — and the signal it counts is now code-written too `[v3]`, finding 6.**
 `write_quality_event(source_agent=…)` is model-filled today, and only the Coordinator and
@@ -764,6 +805,182 @@ rejected only because it sits on the writer's own deny list and finding 3 kept i
 > mechanism improved in one of its two homes. Each round's defect class is the previous round's
 > fix, examined one level closer.
 
+> **Corrections recorded deliberately — v3.6, 2026-09-19, after the phase 4 review.**
+> Fourteen findings, all confirmed by a reviewer who RAN the runner, all fixed. Grouped by what
+> each one broke; the full probe evidence is in
+> `archive/plans/build_phase4_runner_review_2026-09-19_fable-5.md`.
+>
+> **The shape, and it is a new one.** Every defect here is a mechanism that was **never
+> exercised**. Round 1 was prose never made mechanism; round 2, mechanisms scoped to the probe
+> that prompted them; round 3, a mechanism improved in only one of its two homes. These read
+> correctly and had never once run — which is precisely what a review that executes finds and a
+> review that reads cannot.
+>
+> **THE ONE THAT COULD HAVE DESTROYED WORK.**
+>
+> **D1. `refuse()` reverted ANY job, including a landed one.** `approve()` and `accept()` both
+> checked state; `refuse()` checked nothing. `build_board.py --refuse` with a mistyped id deleted
+> a live capability's overlay files while the registry went on saying `landed` — an orphan the
+> coherence pass would report, and no way back: the files were new, so the undo journal holds no
+> `bytes_before`. **The one irreversible board command was the one without a guard.** Now: only
+> `briefed` and `verifying` — the two gates where a refusal means something — and a terminal job
+> is refused by name.
+>
+> **THE TWO THAT MADE A GATE UNREACHABLE.**
+>
+> **D2. A job crossing its limit DURING a call was failed terminally, not parked.** Pre-node
+> refuses to start; nothing caught what the call itself crossed. The crossing surfaced at the
+> Planner's `writer.apply(dry_run=True)` file check, whose job gate refuses on spend; the planner
+> read that as a plan defect and rung 3 failed the job — past `awaiting_approval`, the one state
+> that exists to let Mike raise the limit, leaving `cost.approve_limit()` nothing to release.
+> **With the $2.50 placeholder this was the likeliest way run 1's budget question got answered.**
+> Now: a **post-node** budget gate parks what the call crossed, and a dry run is not budget-gated
+> at all — it writes nothing and costs nothing.
+>
+> **D7. A job parked above the ceiling could not be resumed.** `resume()` sent every job to
+> `planning`; a job parked at N12 came back with every artifact present, skipped every node, and
+> stalled — N12 runs from `executing`, `approve()` wants `briefed`. The `PARKED` message's *"raise
+> the flag on the VM to proceed"* led nowhere without ledger surgery. Now: parking records
+> `resume_to` on the status row and `resume()` returns there; a later transition clears it, so a
+> stale target cannot send a second resume to the wrong node.
+>
+> **THE FOUR THAT MADE A MECHANISM INERT.**
+>
+> **D3. Correction attribution blamed whatever wrote the newest trace.** `last_trace()` returns
+> the most recent record, and the **Diarist** is fire-and-forget on its own thread with its own
+> `RequestTrace`, finished *after* the turn it followed — so the record on top when a correction
+> arrives is plausibly the Diarist's, or a `build_tick`'s. REPAIR counts `source_agent ∩
+> registry`, so a mis-attributed correction never reaches three and **the trigger this
+> attribution exists to feed was inert.** Now: scan back for the newest record that is not
+> proactive and carries a `coordinator` — the only shape a real exchange has.
+>
+> **D6. The coherence model pass dropped every well-formed reply.** The prompt asked for a JSON
+> list; `repair_json` — built for context blocks, which are objects — extracts the first `{…}`
+> from a list and returned the first *finding* as a dict, so `.get("findings")` was None and every
+> reply was rejected as *"findings is not a list"* with `model_ran: True` beside it. The board
+> read as a review that ran and found nothing. Now: the prompt asks for an object AND both shapes
+> parse, because a parser must not depend on a model following a format instruction.
+>
+> **D8. REPAIR filed a fresh ticket for every correction after the third.** The gap text embedded
+> the count, and `create()` fingerprints the gap — so ×4 hashed differently, escaped the dedupe
+> and filed again. Nine more corrections fill `max_proposed` with one fault. Now: the gap is the
+> fault; the count is evidence and lives in `trigger`, which is not fingerprinted.
+>
+> **D13. [N6] was unreachable in conversation.** The context block named the job and the gap but
+> not the **questions**, and a parked job has no `brief.md` — the writer refuses that write by
+> design. The questions existed only in an artifact on disk. Now the block carries them.
+>
+> **THE THREE ABOUT SAYING WHAT HAPPENED.**
+>
+> **D11. A writer crash read as a successful apply.** `apply()`'s exception path returns
+> `"{job_id}: writer failed and reverted — …"`, which starts with neither `PARKED` nor `REFUSED`,
+> so N12 ran the full 18-check sweep against an overlay that was never applied and put
+> `capability-tests FAILED` on the board while *"disk full"* went nowhere. Now N12 **checks for
+> the success prefix** rather than matching known failures — a whitelist of one cannot be outgrown
+> by a new failure mode.
+>
+> **D9. The run line's expected figure was the Coordinator's turns per day**, identical for every
+> capability regardless of what filed it, and `0.0` on a fresh persona — the *"it never fires"*
+> verdict its own docstring forbids inferring from an inability to count. Now `None`, and the
+> figure is owed to whatever phase gives a trigger an identity. The **actual** count is measured
+> from day one and is the number that matters.
+>
+> **D14c.** `_reject` said *"rejected after retry"* on the dry-run path, where no retry ran.
+>
+> **THE THREE THAT WERE NEVER WRITTEN AT ALL.**
+>
+> **D5. Coherence could not see a surface map, so its overlap detector never fired.**
+> `record_landing()` wrote none and the overlay record has no such field, so the corpus carried
+> `surface: []` for everything — and § 13.7's own falsifiable example, *"both claim `create` on
+> `plant_watering`"*, was the one comparison the pass was structurally unable to make. Now the
+> registry row carries `{entity, operation, status}` triples; the model's `reason` prose stays
+> out, because that row is rendered into a **tracked** file.
+>
+> **D10. Two Build events in one trace collapsed to one.** `write_quality_event` dedupes by event
+> type per trace — right for a correction with two legitimate writers, wrong for events carrying
+> their own job id. Two jobs failing in one tick recorded one `BUILD_CHECK_FAILED`, so the second
+> capability's revert had no signal **in exactly the turn the redundant record was meant to earn
+> its keep.** Now both Build types are exempt by name; the original guard is intact, not widened.
+>
+> **D14a. Every brief write after N10 was silently refused.** `WRITABLE_STATES` is
+> `{briefed, executing}` and each call site set the new state first, so the landed brief still
+> said `State: briefed` with no Verification section — the one thing [N13] reads — and a revert
+> deleted it along with the failing output the next attempt was supposed to carry. Now the brief
+> is written **before** the state moves and **after** any revert. **`_write_partial_brief` was
+> removed rather than fixed**: every one of its three call sites parked the job first, so it could
+> never once have succeeded. Widening the writer's gate for a convenience was the alternative and
+> was rejected — what carries a parked job's reason is the context block and `--show`, both of
+> which read live and cannot go stale.
+>
+> **D4 IS NOT ONE ENTRY. IT IS TWELVE, AND THAT IS THE FINDING.** The review reported that `log`
+> — the primary corpus — probed as `error` on every question, because `{"days": 14}` fits no
+> signature of `get_log_window(start_date, end_date, …)`. Fixing that one entry would have been
+> the round-2 mistake exactly. A test that **binds every source's fixed arguments against its
+> handler's real signature** found eleven more: `memory`, `archive`, `calendar`, `email`,
+> `intake_queue`, `agent_config` and five outbound feeds. Nearly half the table.
+>
+> The five that needed a real-world argument — a flight number, an origin, a city — led somewhere
+> the plan had not looked. **Probing a live feed is wrong three ways, and the first costs money:**
+> it makes a real third-party call per question, every job, during Inquiry, which § 14 never
+> priced; there is no honest code-written default for its argument, and `find_places` would send
+> the invented string outbound; and *"is there a corpus here"* has no meaning for a source whose
+> answer exists only when asked. So the seven outbound reads are declared `live: True` and **are
+> never called by a probe** — a fifth state, reported as its own thing so it can never read as
+> `no_data`, which would mean "there is nothing there" about a source that answers every time.
+> Availability for a live feed **is** its registration.
+>
+> **D12. Every documented VM command failed with `PersonaError`** unless `METATRON_PERSONA`
+> happened to be in the shell — including the ssh one-liners in C2 above, where a traceback is the
+> least useful possible output. Both scripts now resolve the persona first and say what to pass;
+> every usage example, and the context block's own command, carries `--persona`.
+>
+> **D14b.** `_index_questions` passed the persona into `add_question`'s `question_class` slot, so
+> every indexed question carried `class: "mike"` under the scheduler and the whole write was
+> logged as *"skipped: No persona resolved"* from the board. Keywords now.
+
+> **Corrections recorded deliberately — v3.7, 2026-09-19, after the review's Part 2 re-check.**
+> The fourteen above were confirmed closed and nothing that held was reopened. Three items were
+> left open; all three are fixed, and **two of them are the round-3 shape: a rule that reached one
+> of its two homes.**
+>
+> **N1. The landed brief said `executing`.** The v3.6 fix for D14a writes the brief BEFORE the
+> state moves, because `writer.WRITABLE_STATES` is `{briefed, executing}` and a write after the
+> move is refused. That made the write succeed and left the document recording the state it was
+> written FROM — so a capability that landed had a final brief saying `executing`, and the one
+> document [N13] and any later reader open never said what happened. The fix learned *which state
+> it could be written from* and not *which state to report*. **Now:** `_write_brief(as_state=…)`
+> — each site names the outcome it is about to set, and the brief describes the outcome of the
+> node that wrote it.
+>
+> **N2. The referent block still presented a `build_tick` as the previous exchange.** D3 taught
+> `_corrected_agents()` to skip a tick and a Diarist trace; `tools/turn_referent.context_block()`
+> — the OTHER reader of the same trace file, and the one that goes into every user turn's context
+> — was never told. After a tick with work it opened *"The exchange immediately before this one …
+> This was a scheduled run — the user did not speak in it"*, so a short referring turn resolved
+> against Build's own machinery. Not a phase-4 file; **the tick's trace is phase 4's**, so the
+> fix is.
+>
+> **Now there is ONE definition and both read it.** `turn_referent.is_exchange()` — *a record
+> with a `coordinator` in its pipeline* — plus `last_exchange()`, which scans back to the newest
+> one. The orchestrator's own copy of that scan is deleted. The test is a Coordinator because
+> every real turn runs one and nothing else does: a tick is rooted at `build`, and the Diarist is
+> fire-and-forget on its own thread with its own trace, finished AFTER the turn it followed,
+> which is why it is so often the record on top.
+>
+> **A scheduled session IS an exchange, and that is a second fix inside the first.** The round-1
+> version skipped anything `is_proactive`, so a correction of a specialist a *scheduled* session
+> dispatched fell back to `coordinator` and was lost — the review recorded that as "by design",
+> and it was not. A scheduled session runs the full pipeline; its specialist is exactly what the
+> user's next turn corrects.
+>
+> **N3. A landing-day run count divided by a day that was a tick.** On the day a capability lands
+> the trace file exists **because the tick that landed it wrote one**, so `refresh_run_counts`
+> found "one day" and wrote `actual 0.0 over 1d` — the "it never fires" verdict § 14's own
+> contract forbids inferring from an inability to count, about a capability nothing had yet had a
+> chance to dispatch. **Now two kinds of day do not count:** a day holding only Build's own ticks,
+> and the landing day itself, which is partial and always understates. The window is computed
+> **per capability** from its own landing date, and with no measured day the figure stays `None`.
+
 **1. Job gate** — exists, correct state, budget untripped, attempts remaining.
 
 **2. Path rules — three, in this order, all HARDCODED.**
@@ -949,8 +1166,40 @@ of its rules.** The only way validator and enforcer cannot drift.
 ## 8. Budget, routing, privacy
 
 **Budget — three parts, no multiplier.** A default limit per job; if the N8 estimate exceeds it, the
-job parks at `awaiting_approval` and asks via `tools/confirm.py`; **the run hard-stops the moment the
-limit — default or approved — is exceeded.** A tripwire, not a tolerance band.
+job parks at `awaiting_approval` and asks (see the correction below — **not** via
+`tools/confirm.py`); **the run hard-stops the moment the limit — default or approved — is
+exceeded.** A tripwire, not a tolerance band.
+
+> **Correction recorded deliberately — v3.5, 2026-09-19, before phase 4 was written.**
+>
+> **C2. The over-budget ask does not go through `tools/confirm.py`** (Mike's amendment,
+> 2026-09-19). Three reasons, in order of weight.
+>
+> A confirm card needs a matching entry in `tools/confirm.py`'s `_EXECUTORS` map or
+> `POST /confirm` answers *"Nothing here knows how to carry out …"*. That is `[DB-0815-03]`
+> precisely: from 2026-08-05 to 08-15 the gate refused correctly and **completed nothing**,
+> every approved action expiring unperformed while the user believed it had happened. The
+> `confirm-executors` sweep check exists because of it.
+>
+> **The widening is the real objection.** An executor entry would make *raising Build's own
+> per-job spend limit* a one-tap action in the app — in a design whose hardcoded deny list
+> names `config/modules/build.yaml` for the sole purpose of ensuring Build cannot raise its
+> own ceiling. Approving more money by tap is the same act one layer out.
+>
+> And `tools/confirm.py` is absent from § 10's Modified list, which is stated as the complete
+> file map.
+>
+> **Now, and the location is load-bearing.** The job parks at `awaiting_approval`;
+> **`tools.build.context_block()` surfaces it conversationally**, which is the Build surface
+> § 5 already specifies and needs no new mechanism; and the approval is
+> `core.build.cost.approve_limit()` **run on the VM over ssh**.
+>
+> **Never from the Mac board.** Under ruling 0.1 the ledger lives on the VM, and
+> `scripts/build_board.py` reads it through a **read-only fetch** — a board that could approve
+> would need a write path into the VM's persona tree, which is exactly what the Mac
+> deliberately does not have. `build_board.py`'s usage text carries the ssh command, so it is
+> found in the same place the parked job is seen; a command documented only here would be
+> looked for on the machine the board is running on.
 
 Metering seam: `core.build.cost.record_job_tokens(...)` inside `record_turn_tokens()` at
 [`core/trace.py:278-286`](core/trace.py), a no-op unless a job is bound on the thread. **Prices
@@ -959,8 +1208,13 @@ cannot disagree about what a token costs. A second pricing table is rejected on 
 evidence: `spend_guard.py`'s header records that its docstring said `$70/$150` through two raises and
 a revert.
 
-Enforced **pre-node** in `run_node()`. Mid-node it can only record the breach; a call in flight cannot
-be aborted and this plan does not pretend otherwise. `run_node()` must also call
+Enforced **pre-node AND post-node** in `run_node()` `[v3.6]`. Pre-node refuses to start a node past
+the limit; **post-node parks what the call itself crossed**, since a call in flight cannot be
+aborted. That pair is what makes *"overshoots by at most one node"* true. With only the pre-node
+half the crossing surfaced at whatever next read spend — in practice the Planner's dry-run file
+check — which the planner read as a plan defect and FAILED the job terminally, past
+`awaiting_approval`, the one state that exists to release it. A **dry run is not budget-gated at
+all**: it writes nothing and costs nothing. `run_node()` must also call
 `check_before_session()` itself and map `SpendLimitExceeded` → `blocked`, or on a capped day
 `_spend_gate()` returns *"I've paused myself for now…"* **as the agent's output**, landing verbatim
 inside a Question Set.
@@ -1058,7 +1312,9 @@ real but comes from the hardcoded deny list, which holds wherever the code lives
 
 **Modified (all by ordinary development, deployed by Mike — none by Build):**
 - both routing files — the four Build agents, strict parity, plus the two new read tools on
-  `build_librarian`
+  `build_librarian`, **plus `request_build` on `coordinator`'s `allowed_tools` in both files**
+  (`[v3.5]` C3 below — this grant had no owner until 2026-09-19, and without it the tool is
+  registered and unaskable)
 - `core/orchestrator.py` — `register_tools()` ×3 (`request_build`, `search_conversations`,
   `read_journal_range`), `_block_source` +1 line, `_ALWAYS_CONFIDENTIAL` (the four Build agents'
   own names — tracked underscore identifiers, so the unconditional list is right for *them*),
@@ -1081,7 +1337,25 @@ real but comes from the hardcoded deny list, which holds wherever the code lives
 **No change:** `knowledge_domains.yaml` (Build agents are never Coordinator-dispatched;
 generated agents reach it through seam 4, not by editing it) · `.claude/settings.json` ·
 `.gitignore` and `scripts/metatron-backup.sh` (the overlay's directory is already covered by
-both — § 6) · `deploy.sh`.
+both — § 6) · `deploy.sh` · **`tools/confirm.py`** (`[v3.5]` C2, § 8 — no card, no executor
+entry).
+
+> **Correction recorded deliberately — v3.5, 2026-09-19, before phase 4 was written.**
+>
+> **C3. Nothing in this plan granted `request_build` to the Coordinator.** § 2 states the tool
+> is granted at Coord level and at theme-router level, and the `coordinator.md` bullet above
+> adds the § Tools available line — but the routing bullet named the four Build agents and the
+> Librarian's two read tools and stopped. `allowed_tools` is what filters the schemas an agent
+> is offered, so as written `request_build` would have been **registered and unaskable**: the
+> `c840415` lesson (*"a registered tool that cannot be asked stops looking like an empty
+> one"*) one layer along, and the `time_director` half-wiring in the other direction —
+> instruction present, grant absent.
+>
+> **Now:** the grant is named in the routing bullet above and on § 16's phase 5 line. **Phase
+> 5, not phase 4** (Mike, 2026-09-19): the `coordinator.md` line and the grant must land in the
+> same change, and phase 5 is where both routing files are opened anyway. Phase 4 registers the
+> handler and classifies it; nothing can call it until phase 5, and nothing is deployed until
+> phase 6, so the gap is inert rather than latent.
 
 ---
 
@@ -1173,19 +1447,19 @@ guided session with the steps prepared in advance and Mike executing live.
 |---|---|---|
 | Schemas | `python3 tests/test_build_schemas.py` | Each validator rejects its malformation: a feasibility question before an intent one; a `disposition` of `new` whose evidence does not name the capability checked; empty `disposition_evidence`; zero surface; zero authority at `depth != triage`; judgment row with one option; a `variable_name` already declared; an agent plan missing a registration item; a `surface_map` with an unlisted operation |
 | **The compass rule** | `python3 tests/test_build_spine.py` | The reference transcript's **turn-2 answer fails validation and its turn-4 answer passes.** A real pair, produced before the rule existed — the strongest available evidence that the constraint discriminates rather than merely fires |
-| Job record | `python3 tests/test_build_jobs.py` | ids allocate; rows replay to the right terminal state; truncated line skipped; duplicate fingerprint refused |
+| Job record | `python3 tests/test_build_jobs.py` | ids allocate; rows replay to the right terminal state; truncated line skipped; duplicate fingerprint refused. **`[v3.6]` D7:** `resume_to` rides the status row, survives a replay, and is CLEARED by the next transition that sets none — a stale target would send a second resume to the wrong node |
 | Restart | create job → `kill -9` mid-node → restart → print `states('mike')` | Resumes at `attempt: 2`, no duplicate artifacts |
 | **Manifest privacy** | `python3 tests/test_build_manifest.py` | Greps the manifest for every string value in `profile.yaml`, fails on any hit — **the privacy proof for Inquiry** |
-| Probe honesty | `python3 tests/test_build_probe.py` | Empty journal → `data_available: false, rows: 0`, not an exception |
+| Probe honesty | `python3 tests/test_build_probe.py` | Empty journal → `data_available: false, rows: 0`, not an exception. **`[v3.6]` D4:** EVERY manifest source's fixed arguments are bound against its handler's real signature — the review found `log` carrying `{"days": 14}` against `get_log_window(start_date, end_date)`, and binding them all found **eleven more**, nearly half the table. Separately, a live feed is never CALLED by a probe: the handlers are replaced with one that raises, and all seven return `state: live` instead |
 | **Writer** `[v3]` | `python3 tests/test_build_writer.py` | Every path in a fixture repo's `git ls-files` refused at **all three** ceilings, including one that is *also* under an allow-root; every deny-list path refused; a path outside both allow-roots refused; a record with one routing entry refused; an agent file naming a tool outside its grant refused; every § 6.3 refused grant refused at all ceilings; `revert()` restores byte-identical by sha256 for agent file, record, policy and journal; with `git` unavailable, `apply()` refuses everything. **`[v3.1]` Allowlist complement (Opus finding 2):** for every handler name the live `register_tools()` registers that is not in the read set — `teach_intake`, `apply_crm_proposals`, `merge_contacts` among them — a record granting it is refused **even though no refused list names it**, so the test tracks the surface as it grows. **`[v3.1]` Name collision over three sets (finding 5):** a record named `time_director` — agent file present, no routing entry — is refused, as is one matching a `routing.yaml`-only or `routing_cloud.yaml`-only name. **`[v3.1]` Common-word names (finding 1):** a record named `garden` lands, and `filter_output()` then passes *"I watered the garden this morning"* untouched while still suppressing *"the garden agent's routing.yaml entry"*; a record named `home_care` leaves *"your home-care tasks are up to date"* untouched. **`[v3.2]` The four writer-side review defects (§ 6):** an edit whose path is the job's own undo journal is refused, and a forged journal entry naming a deny-listed path is skipped by `revert()` rather than replayed — asserted by appending one to a real journal and checking the path is still absent afterwards; a `display_name` of `"Mental Wellbeing"`, `"Time Director"`, `"Research"`, `"Logistics"` or `"Pattern Miner"` is refused; `send_email` written as bare prose with no backticks is refused; a record setting `routing.cloud.provider` is refused, as is a `model_ref` present in only one routing file; and `find_places` is refused unless the PLAN's `risks[]` names it — with a risks entry that does not name it also refused, so the check cannot pass on a vague one. **`[v3.3]` Part 2 (§ 6):** a second record displaying a landed record's display name is refused, as is one whose display resolves to another record's NAME (`Garden` beside a capability named `garden`); `Mental  Wellbeing`, `Time  Director` and `MENTAL  WELLBEING` are refused as whitespace/case look-alikes of a reserved name; and `Undo.jsonl`, `UNDO.JSONL` and `Undo.JSONL` are all refused with the journal left byte-identical |
 | **Overlay seams** `[v3]` | `python3 tests/test_build_overlay.py` | A fixture record under a fixture persona: `load_agent` returns the overlay file only when no tracked file of that name exists; `resolve_model` returns the `model_ref` agent's live model and the record's `allowed_tools`; a tracked name in a record is ignored; consequence and domain map see the record; a malformed record is logged and skipped with every tracked agent still loading. **`[v3.1]` Seam 3 (finding 3):** the assembled Coordinator **system prompt**'s valid-name sentence contains the overlay display name exactly once inside the existing closed list, § Specialist directory carries the entry, no separate `## Additional specialists` block exists anywhere in the prompt, and `coordinator.md`'s sha256 is unchanged after assembly. **`[v3.1]` `PersonaError` (finding 6):** with no persona bound, `load_overlay()` returns `{}`, `load_agent` of a tracked name still succeeds, and `resolve_model()` of a tracked agent still succeeds — the existing `tests/test_a4_complexity_threading.py` run unchanged is the regression gate. **`[v3.1]` Persona-keyed cache (note 3):** two fixture personas with different overlay records — the domain map served to each carries only its own capability names, in either order of first call. **`[v3.2]` The two seam-side review defects (§ 6):** a hand-written record displaying `"Mental Wellbeing"` — bypassing the writer, which refuses it — adds NO duplicate to the assembled prompt's valid-name line and does not enter the name map, so schema and seam agree independently; and a record that sets its own `provider` is served the tracked agent's provider by `resolve_model()`, not its own. **`[v3.3]` Part 2 (§ 6):** two hand-placed records sharing a display name put that string into the assembled prompt's valid-name line exactly ONCE and leave one entry in the name map, so the closed list can never carry a duplicate whatever reached the overlay. **`[v3.4]` Part 3 (§ 6):** a hand-placed record displaying `Mental  Wellbeing`, `Mental & Wellbeing`, `Mental and Wellbeing`, `  Mental Wellbeing  `, `MENTAL WELLBEING` or `Time  Director` is surfaced by NEITHER half of seam 3 and leaves the assembled Coordinator prompt **byte-identical** to the no-overlay baseline — asserted against the baseline rather than by string absence, because the padded form strips to a string already in the closed list as the tracked entry |
 | **"Same checks" claim** `[v3]` | `qa_sweep.sh --verbose` vs `core.build.verify.run_all()`, diff the name sets with `:overlay` stripped | **`[v3.1]` Two equalities, not one (finding 4):** verify's `SHARED_CHECKS` names must equal the sweep's set **exactly** — the ten plus `build-registration`; verify's remaining names must equal its declared `ADDED_CHECKS` exactly (`knowledge-domains`, `capability-tests`, `action-provenance`); a name in neither fails. **Proves** it rather than asserting it, over a subset that cannot drift. Second assertion: on a tree with an overlay present, `qa_sweep.sh` reports **zero** overlay files (it cannot see them) and `run_all()`'s overlay pass reports each one |
-| **Run ledger** `[v3.1]` | after run 1 lands: `python3 scripts/build_board.py --run-cost` | The ledger's `landed` row for `home_care` carries one run line — `execution_mode`, `latency_budget_ms`, expected dispatches/day written by N8 from the trigger's observed frequency, and the analytics rollup's actual dispatch count once a day has passed; the board shows **1 of 4** leaf capabilities under the Coordinator against the tier's due condition (finding 7, § 14, § 16). A landed capability with no run line fails `check_build_registration.py` |
+| **Run ledger** `[v3.1]` | after run 1 lands: `python3 scripts/build_board.py --persona mike --run-cost` | The ledger's `landed` row for `home_care` carries one run line — `execution_mode`, `latency_budget_ms`, expected dispatches/day written by N8 from the trigger's observed frequency — **`[v3.6]` D9: `None` until something can actually count a trigger.** The first version returned the Coordinator's turns per day as a proxy, which is the same figure for every capability regardless of what filed it, and `0.0` on a fresh persona — the "it never fires" verdict its own contract forbids inferring from an inability to count. Phase 4 has no trigger signature; the figure is owed to whatever phase gives a trigger an identity, and the ACTUAL count is measured from day one — and the actual dispatch count once a day has passed — counted from the TRACE FILES, not from the A9 rollup, which counts tool names and never agent names (`[v3.5]` C1, § 14); the board shows **1 of 4** leaf capabilities under the Coordinator against the tier's due condition (finding 7, § 14, § 16). A landed capability with no run line fails `check_build_registration.py`. **`[v3.7]` N3:** neither the LANDING DAY nor a day holding only Build's own ticks counts toward the denominator — the landing day's trace file exists because the tick that landed it wrote one, and dividing by it produced `actual 0.0 over 1d` about a capability nothing had yet had a chance to dispatch. The window is per capability, from its own landing date; with no measured day the figure stays `None` |
 | Constitution | run `constitution.check` on a generated agent with `## Confidentiality` deleted, and on one over `max_lines` | Both must fail. **`[v3.2]` The record-field defect (§ 6):** narration in `coordinator.directory_entry`, a confidential identifier in `unavailable_consequence`, and a provider name in `display_name` must each fail and must each NAME THE FIELD in the defect — the three fields reach a prompt and none was scanned. Plus the charset: `Home/Care`, ``Home`Care``, `Home\nCare`, `Home_Care` and `Home<Care>` refused; `Home Care`, `Work & Vocation` and `Zone 2` accepted. **`[v3.3]` Part 2 (§ 6):** `send_email`, `read_email` and `merge_contacts` in `unavailable_consequence` each fail naming the field — none is on the static list, and all three are live registered tools; and `check_build_registration.py --overlay` exits 1 on a hand-placed record carrying a whitespace look-alike display name and a `model_ref` in neither routing file, which the sweep passed while it called the validator with `tracked_names` alone |
-| Budget | set the limit to `0.01`, run a job | Parks at `awaiting_approval`, never starts N10; ledger spend reconciles against the day's trace |
+| Budget | set the limit to `0.01`, run a job | Parks at `awaiting_approval`, never starts N10; ledger spend reconciles against the day's trace. **`[v3.6]` D2:** a limit crossed DURING a call parks and is never terminal, and `approve_limit` + `resume` genuinely releases it; a dry run is not budget-gated while the real write still is. **D1:** `refuse()` will not touch a landed or mid-pipeline job — asserted by counting `revert()` calls, which must be zero |
 | **Trace contract** | run one job → `python3 tools/metatron_monitor.py` | Renders in The Book with the three agents **nested**. Open The Book — rendering is the criterion, not the JSONL |
 | Latency `[v3]` | run 1's acceptance with timing assertions | Blocking capability stays inside its declared budget; a `deferred` one returns immediately and lands via `context_block` on a later turn |
-| End to end | `request_build(...)` → `tick('mike')` → `build_board.py` → `build_brief.py BLD-...` | A readable, redacted brief with no raw persona values |
+| End to end | `request_build(...)` → `tick('mike')` → `build_board.py --persona mike` → `build_brief.py BLD-... --persona mike` | A readable, redacted brief with no raw persona values. **`[v3.6]`:** **D14a** every brief write happens from a state `writer.WRITABLE_STATES` admits, and on a failed landing the brief is written AFTER the revert that deletes it; **D11** a writer crash fails with its own reason and runs NO sweep; **D3** a Diarist-only or tick trace is skipped when attributing a correction; **D13** the context block names the interview QUESTIONS; **D12** every command it prints binds a persona; **D10** two Build events in one trace are both written while `USER_CORRECTION` still dedupes; **D8** the fourth correction files no second REPAIR ticket; **D9** the expected dispatch figure is `None`, never `0.0`; **D14b** a question indexes with its class; **D14c** the dry-run rejection claims no retry. **`[v3.7]`:** **N1** the landed brief says `landed`, not the state it was written from; **N2** the referent block never presents a `build_tick` as the previous exchange, both readers share `is_exchange()`, and a SCHEDULED session's specialist is attributable |
 | **Landing** `[v3]` | on the VM after run 1: `git status --porcelain` → `git diff --stat` → `./deploy.sh` (Mike) → acceptance again | **`git status` is clean and `git diff` is empty — Build wrote no tracked file; the deploy pulls with no conflict; `home_care` still answers after it.** Build never writes a tracked file; Mike promotes |
 
 ---
@@ -1286,11 +1560,34 @@ capability: each landed `kind: agent` is a specialist dispatched on every matchi
 at that turn's model price, and § 2 makes the count growing the explicit goal. So **the ledger
 carries one run line per landed capability** — `execution_mode`, `latency_budget_ms`, expected
 dispatches/day (code-written at N8 from how often the trigger fired in the traces that filed
-the gap), and the actual dispatch count per day from `tools/analytics.py`'s rollup, which
-already counts dispatch per specialist. Both fields exist already; this is the meter nothing had
+the gap), and the actual dispatch count per day, counted from the trace files `[v3.5]` over
+**measured days only** `[v3.7]` — neither the landing day nor a day holding only Build's own
+ticks counts, because both produce a rate of 0.0 about a capability that has had no chance to
+be dispatched. Both fields exist already; this is the meter nothing had
 wired. **The tier stops being "Later" and becomes due when four leaf capabilities have landed
 under the Coordinator** (Mike, 2026-09-18) — the board reports the count against that figure
 from run 1 onward, and § 16 carries the same condition.
+
+> **Correction recorded deliberately — v3.5, 2026-09-19, before phase 4 was written.**
+>
+> **C1. `tools/analytics.py` does not count dispatch per specialist, and the paragraph above
+> says it does.** `rollup_day()` walks the trace through `_walk_tools()`, which counts TOOL
+> names into `top_tools`. Agent names are in the trace record (`core/trace.py:353` writes
+> `"agent"` on every `AgentRecord`, nested subagents included) and **nothing counts them.** So
+> *"both fields exist already; this is the meter nothing had wired"* was half right:
+> `execution_mode` and `latency_budget_ms` do exist on the record, and the dispatch count
+> existed only as a sentence.
+>
+> **Now:** `core/build/registry.py` counts dispatches from the trace files directly — the same
+> files `rollup_day()` derives from, walking the same nesting, counting agent names instead of
+> tool names. Content-free either way, so nothing about the privacy tier changes.
+>
+> **The A9 rollup is untouched** (Mike, 2026-09-19), and the reason is worth keeping because
+> the additive change looks free. `ROADMAP.md` § A9a gates that schema on a review dated
+> **2026-10-01** whose first instruction is *"do not review this before there is real data"* —
+> the 2026-08-18 baseline is mostly development traffic and tuning against it would bake in the
+> wrong shape. A session that wanted one number would have started that review early, on
+> exactly the traffic the review says not to use.
 
 **Ancillary.** `build/` grows per job (KB, not MB). Rung-2 retry adds at most one call per boundary.
 Dedupe windows exist partly to stop re-paying for work already done. Seam 2 adds one small YAML
@@ -1366,6 +1663,9 @@ Phase 3  writer · the four overlay seams · constitution · verify (+ overlay p
            ← reviewed with a second model; seam 2 is Red and is written, not delegated
 Phase 4  runner · brief · registry · coherence · wiring · correction attribution      [v3]
 Phase 5  the four agent files, written against the reference transcript
+           + BOTH routing files: the four Build agents at strict parity, the two read
+             tools on build_librarian, and request_build on coordinator's allowed_tools
+             — the grant that had no owner until 2026-09-19        [v3.5, C3 in § 10]
 Phase 6  the two needs_tool briefs: search_conversations · read_journal_range         [v3]
            ← Mike's builds; the FAISS reindex is no longer here (finding 8)
    ↳ ./deploy.sh — Mike; phases 1–6 reach the VM as one deploy

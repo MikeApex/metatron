@@ -395,6 +395,31 @@ def _():
     assert after == before, f"duplicate artifacts after restart: {after}"
 
 
+@check("REVIEW D7: resume_to rides the status row and is cleared by the next transition")
+def _():
+    # resume() sent every parked job to `planning`. A job parked at N12 for the
+    # autonomy ceiling came back with every artifact present, skipped every
+    # node, and stalled: N12 runs from `executing` and approve() wants
+    # `briefed`, so no command could move it and the PARKED message's "raise
+    # the flag on the VM to proceed" led nowhere without ledger surgery.
+    reset()
+    job_id = J.create("a gap", trigger="test")["job_id"]
+    J.set_state(job_id, "queued", persona=PERSONA)
+    assert J.get(job_id, PERSONA).get("resume_to") is None
+
+    J.set_state(job_id, "awaiting_approval", resume_to="executing", persona=PERSONA)
+    assert J.get(job_id, PERSONA)["resume_to"] == "executing"
+
+    # A later transition that sets none CLEARS it — a stale target would send a
+    # second resume to the wrong node, which is the failure it prevents.
+    J.set_state(job_id, "executing", persona=PERSONA)
+    assert J.get(job_id, PERSONA)["resume_to"] is None
+
+    # And it survives a replay from disk, like every other ledger field.
+    J.set_state(job_id, "awaiting_approval", resume_to="planning", persona=PERSONA)
+    assert J.states(PERSONA)[job_id]["resume_to"] == "planning"
+
+
 @check("attempts are bounded — the job-level half of the retry product")
 def _():
     reset()

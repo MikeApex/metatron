@@ -872,16 +872,27 @@ def _job_gate(job_id: str, dry_run: bool, persona: str | None) -> str:
                 f"from {sorted(WRITABLE_STATES)}")
     if int(job.get("attempt", 1)) > J.MAX_ATTEMPTS:
         return f"{job_id}: all {J.MAX_ATTEMPTS} attempts used"
-    try:
-        from core.build import cost
-        spend, limit = cost.job_spend(job_id, persona), cost.job_limit(job_id, persona)
-        if spend > limit:
-            return (f"{job_id}: spent ${spend:.2f} against a ${limit:.2f} limit — "
-                    "the limit is a tripwire, not a tolerance band")
-    except Exception:
-        # Metering unavailable is not a licence to write. Same direction as
-        # every other gate here: not knowing counts as a refusal.
-        return f"{job_id}: spend could not be read, so the budget gate cannot pass"
+    # A DRY RUN IS NOT A WRITE, SO IT IS NOT BUDGET-GATED. The Planner calls
+    # apply(dry_run=True) as its own file-path check — the enforcer itself
+    # rather than a copy of its rules — and that check costs nothing and writes
+    # nothing. Gating it on spend made a job that crossed its limit DURING the
+    # Planner call fail terminally: the dry run was refused for budget, the
+    # planner read a job-gate refusal as a plan defect, rung 3 failed the job,
+    # and `awaiting_approval` — the state whose whole purpose is to let Mike
+    # raise the limit — was never reached. A terminal job has nothing for
+    # cost.approve_limit() to release.
+    if not dry_run:
+        try:
+            from core.build import cost
+            spend = cost.job_spend(job_id, persona)
+            limit = cost.job_limit(job_id, persona)
+            if spend > limit:
+                return (f"{job_id}: spent ${spend:.2f} against a ${limit:.2f} limit — "
+                        "the limit is a tripwire, not a tolerance band")
+        except Exception:
+            # Metering unavailable is not a licence to write. Same direction as
+            # every other gate here: not knowing counts as a refusal.
+            return f"{job_id}: spend could not be read, so the budget gate cannot pass"
     return ""
 
 

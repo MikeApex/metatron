@@ -72,6 +72,27 @@ STATES: tuple[str, ...] = (
 
 TERMINAL: frozenset[str] = frozenset({"landed", "failed", "abandoned", "superseded"})
 
+# States where a job is WAITING FOR A HUMAN. The tick walks past every one of
+# them and nothing in Build clears one by itself — that is what makes them
+# gates rather than delays.
+#
+# Here beside STATES rather than in runner.py, for two reasons. It is a property
+# of the state machine, not of the driver: "which states mean a person has to
+# act" is the same question as "what are the states". And tools/build.py's
+# context_block reads it on EVERY user turn through load_recent_context —
+# importing the whole runner (and with it the writer, the registry, settle and
+# the probe) to learn five strings would put the entire Build vertical on the
+# hot path of every ordinary session.
+#
+#   proposed           Mike triages. request_build NEVER auto-queues.
+#   needs_interview    [N6] only the user can answer these questions.
+#   awaiting_approval  over budget, or above the writer's autonomy ceiling.
+#   briefed            [N9] the brief is written and Mike has not approved it.
+#   verifying          [N13] live in the overlay and verified; accept or refuse.
+GATE_STATES: frozenset[str] = frozenset({
+    "proposed", "needs_interview", "awaiting_approval", "briefed", "verifying",
+})
+
 # Ordinary forward progression. Not enforced as a state machine — a node may
 # park a job at needs_interview or awaiting_approval from several points — but
 # recorded so the board can show how far a job got.
@@ -257,6 +278,11 @@ def states(persona: str | None = None) -> dict[str, dict]:
                     job["detail"] = row["detail"]
                 if row.get("attempt") is not None:
                     job["attempt"] = int(row["attempt"])
+                # Carried on the job so resume() can read it, and CLEARED on
+                # any transition that does not set one — a stale resume_to
+                # from an earlier park would send a later resume to the wrong
+                # node, which is the failure it exists to prevent.
+                job["resume_to"] = row.get("resume_to") or None
         elif kind == "flag":
             job["blocked"] = row.get("blocked") or None
         elif kind == "heartbeat":
@@ -446,7 +472,8 @@ def date_prefix() -> str:
 
 
 def set_state(job_id: str, state: str, detail: str = "",
-              attempt: int | None = None, persona: str | None = None) -> dict:
+              attempt: int | None = None, resume_to: str | None = None,
+              persona: str | None = None) -> dict:
     if state not in STATES:
         raise JobError(f"Unknown state {state!r}")
     job = get(job_id, persona)
@@ -464,6 +491,16 @@ def set_state(job_id: str, state: str, detail: str = "",
         row["detail"] = str(detail)
     if attempt is not None:
         row["attempt"] = int(attempt)
+    # WHERE A PARK RETURNS TO. A job parked at `awaiting_approval` has to go
+    # back to the state it was parked FROM, and only the parker knows which
+    # that is: resume() used to send every job to `planning`, so one parked at
+    # N12 (over the autonomy ceiling) came back with every artifact already
+    # present, skipped every node, and stalled — N12 wants `executing` and
+    # approve() wants `briefed`, so neither command could move it and the
+    # PARKED message's "raise the flag on the VM to proceed" led nowhere
+    # without editing the ledger by hand.
+    if resume_to:
+        row["resume_to"] = str(resume_to)
     return append_row(row, persona)
 
 

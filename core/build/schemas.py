@@ -28,6 +28,8 @@ feasibility, which is the structural half, and the half that was being lost.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from datetime import datetime
 from typing import Any
@@ -173,6 +175,26 @@ def _common_header(obj: dict, kind: str, defects: list[str]) -> None:
 
 def now_stamp() -> str:
     return datetime.now().isoformat(timespec="seconds")
+
+
+def artifact_fingerprint(artifact: dict) -> str:
+    """
+    The digest a downstream artifact carries as `upstream_fingerprint`.
+
+    DISTINCT FROM manifest.fingerprint(), which is not a general artifact digest
+    and must not be used as one: it hashes source, capability and policy ids
+    only, so every question set and every ledger would hash IDENTICALLY through
+    it — an upstream_fingerprint that cannot tell two artifacts apart is worse
+    than none, because it looks like provenance.
+
+    The volatile header is excluded so a re-read of the same artifact digests
+    the same: `generated_at` is a clock reading, and the two fingerprint fields
+    are what this is computing.
+    """
+    volatile = {"generated_at", "upstream_fingerprint", "manifest_fingerprint"}
+    material = {k: v for k, v in (artifact or {}).items() if k not in volatile}
+    blob = json.dumps(material, sort_keys=True, ensure_ascii=False, default=str)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
 
 
 # ---------------------------------------------------------------------------
@@ -418,6 +440,14 @@ def _check_dedupe(spine: list, defects: list[str]) -> None:
 # Written by the model and stripped before validation, then re-injected from N3.
 # The Librarian's hardest field is "is this data available?", and a model asked
 # that answers from its impression of what tools exist. Code answers exactly.
+# Header fields whose value only code can know: the job's own id, and two
+# digests over artifacts the model never sees whole. climb(inject=) writes these
+# and refuses anything else, so the hatch cannot widen into a way of supplying
+# an answer the model was asked for and did not give.
+CODE_WRITTEN_HEADER_FIELDS: frozenset[str] = frozenset({
+    "job_id", "manifest_fingerprint", "upstream_fingerprint", "generated_at",
+})
+
 CODE_WRITTEN_LEDGER_FIELDS: tuple[str, ...] = (
     "data_available", "evidence", "condensed_from", "status",
 )
@@ -826,12 +856,25 @@ def quarantine_unclassed_questions(qs: dict) -> tuple[dict, list[str]]:
     return {**qs, "spine": kept, "declined_to_ask": declined}, notes
 
 
-def climb(kind: str, raw: Any, **checks: Any) -> tuple[dict | None, list[str], list[str]]:
+def climb(kind: str, raw: Any, inject: dict | None = None,
+          **checks: Any) -> tuple[dict | None, list[str], list[str]]:
     """
     Run rungs 0 and 1, then validate. Returns (artifact, defects, repair_notes).
 
     A non-empty defect list is what rung 2's retry prompt carries: the rejected
     artifact plus a machine-written list naming each failed constraint.
+
+    `inject` is applied AFTER coercion and BEFORE validation, and exists for one
+    narrow class of field: header values only CODE can know. `job_id`,
+    `manifest_fingerprint` and `upstream_fingerprint` are all required by the
+    validators and none is knowable by the model — asking it to echo a 64-char
+    digest would be the `_AGENT_NAME_MAP` problem again, a closed string the
+    model's own comment records it cannot copy reliably.
+
+    NEVER USE IT FOR AN ANSWER. It writes the same fields code writes anyway; a
+    value injected here is one the model was not asked for, and injecting a
+    value it WAS asked for would be inventing the answer, which is the thing
+    rung 1 exists to refuse.
     """
     notes: list[str] = []
     obj: Any = raw
@@ -846,6 +889,15 @@ def climb(kind: str, raw: Any, **checks: Any) -> tuple[dict | None, list[str], l
     if kind == "question_set" and isinstance(obj, dict):
         obj, class_notes = quarantine_unclassed_questions(obj)
         notes.extend(class_notes)
+
+    if inject and isinstance(obj, dict):
+        for field, value in inject.items():
+            if field not in CODE_WRITTEN_HEADER_FIELDS:
+                raise SchemaError(
+                    f"climb(inject=) refuses {field!r}: it is not a header field "
+                    f"code owns. Allowed: {sorted(CODE_WRITTEN_HEADER_FIELDS)}"
+                )
+            obj[field] = value
 
     validator = {
         "question_set": validate_question_set,

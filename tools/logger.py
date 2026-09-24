@@ -408,6 +408,20 @@ def read_log(log_date: str = "") -> dict:
         return json.load(f)
 
 
+# Event types whose duplicates within one trace are DIFFERENT FACTS, not a
+# double-write, so the same-trace dedup below is skipped for them.
+#
+# The dedup exists because one detected correction has two legitimate writers in
+# the same request ([DB-0810-03]) — the same event twice. Build's events are the
+# opposite shape: each carries its own BLD- job id, so two in a turn are two
+# distinct tickets or two distinct failed landings, and collapsing them drops
+# one entirely. A Coordinator filing two gaps in one turn recorded one; two jobs
+# failing their checks in one tick recorded one, so the second capability's
+# revert had no signal at all — in exactly the turn the redundant record was
+# supposed to earn its keep.
+_NEVER_DEDUPED: frozenset[str] = frozenset({"BUILD_PROPOSED", "BUILD_CHECK_FAILED"})
+
+
 def write_quality_event(
     event_type: str,
     source_agent: str = "",
@@ -501,7 +515,7 @@ def write_quality_event(
         # a call outside any trace (tests, scripts, scheduler functions) is never deduped.
         from core.trace import get_trace
         trace = get_trace()
-        if trace is not None:
+        if trace is not None and event_type not in _NEVER_DEDUPED:
             seen = getattr(trace, "_quality_event_types", None)
             if seen is None:
                 seen = trace._quality_event_types = set()

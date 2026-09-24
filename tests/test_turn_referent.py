@@ -218,6 +218,55 @@ def _run() -> None:
         block = tr.context_block("p")
         check("a long payload is summarised to its object, never pasted into the prompt",
               "xxxx" not in block and "kind=food" in block, block[:200])
+
+        # ------------------------------------------------------------------
+        # The newest RECORD is not always the newest EXCHANGE.
+        #
+        # Two things write their own RequestTrace and are not turns the user
+        # can refer to: a `build_tick`, and the Diarist, which is
+        # fire-and-forget on its own thread and finishes AFTER the turn it
+        # followed — so it is routinely the record on top when the next turn
+        # arrives. Before is_exchange() this block announced whichever of them
+        # had landed last as "the exchange immediately before this one", and a
+        # "undo that" resolved against it.
+        #
+        # The test is a COORDINATOR in the pipeline, and a scheduled session
+        # passes it (asserted above): it runs the full pipeline and the user
+        # can refer to what it did.
+        # ------------------------------------------------------------------
+        traces = root / "traces"
+        shutil.rmtree(traces, ignore_errors=True)
+        traces.mkdir(parents=True, exist_ok=True)
+        now = datetime.now()
+        exchange = {"trace_id": "t1", "ts": now.isoformat(), "persona": "p",
+                    "user_input": "book the table", "synth_response": "Booked.",
+                    "is_proactive": False,
+                    "pipeline": [{"agent": "coordinator", "turns": [], "subagents": [
+                        {"agent": "logistics", "subagents": [], "turns": []}]}]}
+        diarist = {"trace_id": "t2", "ts": now.isoformat(), "persona": "p",
+                   "user_input": "", "synth_response": "", "is_proactive": False,
+                   "pipeline": [{"agent": "diarist", "turns": [], "subagents": []}]}
+        tick = {"trace_id": "t3", "ts": now.isoformat(), "persona": "p",
+                "user_input": "build_tick: 1 job(s)", "synth_response": "",
+                "is_proactive": True,
+                "pipeline": [{"agent": "build", "turns": [], "subagents": [
+                    {"agent": "build_inquiry", "subagents": [], "turns": []}]}]}
+        (traces / f"{now.date().isoformat()}.jsonl").write_text(
+            "\n".join(json.dumps(r) for r in (exchange, diarist, tick)) + "\n")
+
+        check("a build_tick trace is not an exchange", tr.is_exchange(tick) is False)
+        check("a Diarist-only trace is not an exchange",
+              tr.is_exchange(diarist) is False)
+        check("a real turn is an exchange", tr.is_exchange(exchange) is True)
+        check("last_trace returns the newest RECORD",
+              (tr.last_trace("p") or {}).get("trace_id") == "t3")
+        check("last_exchange skips past the tick and the Diarist to the real turn",
+              (tr.last_exchange("p") or {}).get("trace_id") == "t1")
+
+        block = tr.context_block("p")
+        check("the referent block never presents a build_tick as the previous exchange",
+              "book the table" in block and "build_tick" not in block
+              and "scheduled run" not in block, block[:200])
     finally:
         tr.persona_data_dir, tr._pending_and_declined = real_dir, real_ledgers
         shutil.rmtree(tmp, ignore_errors=True)
