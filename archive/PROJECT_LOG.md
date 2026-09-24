@@ -30,6 +30,24 @@ file is the only narrative record, alongside the verbatim transcripts.*
 
 ## Dated history
 
+### 2026-09-24 (headset mode built, reviewed, and then corrected by the hardware) — `static/index.html`, `core/{server,trace,orchestrator}.py`, three new `android/**/*.java`, `AndroidManifest.xml`, `scripts/{check_apk_sync.sh,renew_cert.sh}`, `.gitignore`, `docs/INFRASTRUCTURE.md`, `tests/test_turn_source_marker.py` — `579908e`, `3066d66`, `0b044f9` — **not deployed; the VM still runs the pre-`source` server**
+
+Mike asked for a headset button: press the button on Bluetooth earbuds and talk to Metatron. Planned over five adversarial-review rounds (`f58b75f`), built, reviewed by `/code-review`, then tested on the phone — which corrected six things the reviews could not see.
+
+**The probe deleted a step before it was written.** Step 3 of the plan was Bluetooth SCO mic routing, ~70 lines plus a version split. Two probes on the *existing* APK settled it: a softly-spoken sentence, through a closed door, phone in another room, transcribed verbatim at `max_volume -0.0 dBFS`. The WebView already routes `getUserMedia` to the headset mic, so the step was never written. Mike then raised the right confound — the laptop had Metatron open too — and it was answered from evidence, not reasoning: both `/transcribe` POSTs came from `100.121.216.94`, the phone, with zero from the Mac's `100.70.67.45`.
+
+**What the hardware overturned.** The buds emit play/pause on tap-and-**hold**, and a held key auto-repeats, so one press toggled the mic three times (`getRepeatCount()==0` now). More consequentially, **opening the mic switches the link A2DP → SCO and the button stops emitting a media key entirely** — so the design's headline verb, press-again-to-send, is impossible on this hardware. The silence auto-stop was re-enabled, reversing a deliberate decision: it had been disabled to stop silence-sends-then-press-reopens-the-mic, and that sequence cannot occur when the press never arrives. **The rule was guarding a failure the hardware makes impossible.**
+
+**Three things believed true that were not.** (1) The media-session anchor was built on Web Audio; the Media Session API is driven by media *elements*, so the thing meant to hold the media button was decorative on every platform. (2) `arm()` returned `true` the instant it called `startForegroundService()` — void, asynchronous — so a played tone was taken as evidence the service was alive; it proved only that the request was made. (3) The silence window was widened 2500 → 4000ms on reasoning, with no cut-off turn to point at; Mike reported it as broken, and 2500ms was restored. **A number that is working is not improved by an argument.**
+
+**A merge broke the main path, and only the pre-stage diff caught it.** The parallel Build session split `run_pipeline_session_stream` into a wrapper plus `_run_pipeline_session_stream_inner` after the `source` parameter had landed — leaving `source` read in the inner half and bound in the outer. An unbound name: a `NameError` on **every streaming turn**. `qa_sweep` passed 12/12 (`py_compile` parses, it does not execute) and the feature's own test passed, because it asserted only that *some* call passed `source=`. The test now asserts that every function reading a name also binds it, verified by re-introducing the break.
+
+**Options rejected.** Widening `ALLOWED_ORIGINS` to let `http://localhost` reach the VM — it loosens a control B2 deliberately narrowed, to buy a test convenience; a `tailscale cert` for the Mac removes the cross-origin call instead. Relaunching the Activity from the service after a swipe-away — background activity launches are blocked from API 29 and a foreground service is not an exemption, so swipe-away disarms. Vibration as the cue mechanism — Mike's call: a tone, with vibration kept as an off-by-default setting.
+
+**Unplanned: a total outage, diagnosed and automated out.** The VM's TLS cert expired at 12:23 UTC on 09-19 and every client died at once while the server stayed healthy — 29 days uptime, `NRestarts=0`, a full pipeline turn served twenty minutes earlier. **Every obvious check said healthy, including `curl -k`, because `-k` skips exactly the validation that failed.** `scripts/renew_cert.sh` on a daily timer now renews and restarts **only if the cert changed**: 12 runs over five days, every one a correct no-op.
+
+**Also closed.** `android/app/src/main/java` was un-ignored — `MainActivity.java`'s two bug-bought fixes had been living on one machine with no copy in any push, and this work would have tripled that exposure.
+
 ### 2026-09-24 (Build phase A — `core/build/` rebuilt with salvage, the overlay retired)
 
 Build session on Opus 5, executing phase A of plan v4.11 in a worktree

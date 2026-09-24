@@ -30,6 +30,18 @@ so `--persona mike` raises in any worktree — five minutes, and the only part o
 worktree structurally cannot run. Still owed generally: **three commits and one deploy** —
 `0e154b9` (09-09 invitation wording), the 09-10 `tools/` change, and `12d7dd2` (phase 3).*
 
+*⚠ **Headset mode is built, device-tested and committed (`3066d66`, `0b044f9`); one half owes a
+deploy.** Hold a bud → "I'm here" → speak → silence sends → reply spoken; works screen-off in a
+pocket. **The VM still runs the pre-`source` server**, so turns do not yet record how they
+started — `core/{server,trace,orchestrator}.py` ride the next deploy. Hardware overruled the plan
+twice: the buds emit play/pause on **hold**, and **the button is dead once the mic is open**
+(A2DP → SCO), so silence ends a turn. Barge-in parked; desktop browser `[DB-0919-01]`. Detail:
+`archive/PROJECT_LOG.md` § 2026-09-24 (headset).*
+
+*⚠ **The VM's TLS cert expired 09-19 and took every client down while the server stayed healthy.**
+Renewal is automated and proven (12 no-op runs). **`curl` WITHOUT `-k` is the diagnostic** — every
+other check, `curl -k` included, said healthy. Runbook: `docs/INFRASTRUCTURE.md` § TLS certificate.*
+
 *Standing rule, unpromoted and earned twice: **a test that exercises a seam for real must stub
 every live meter that seam ends in** (a suite once tripped the daily spend stop) — and its
 sibling, found in phase A: **a live gate run in a worktree dirties TRACKED fixture-persona files**

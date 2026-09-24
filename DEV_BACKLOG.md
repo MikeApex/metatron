@@ -107,8 +107,48 @@ back-tagging the rest is `[DB-0815-10]`.
 - **Invitations are sent, but Mike's own calendar shows no guest and no sign anything happened — and it cannot, over CalDAV.** Metatron sends real `METHOD:REQUEST` invitations by email (seven delivered to Iva 2026-09-07, correct payloads, zero bounces, verified in Sent Mail) and the recipient can accept them. What does not work, and cannot be made to work on the current integration: the guest appearing on the event in Google Calendar, Google sending the invitation itself, and an acceptance flowing back onto the event. **Measured, not assumed (2026-09-07):** Google's CalDAV endpoint accepts an `ATTENDEE` line and echoes it back on a read — which looked like success and is why this was proposed as a fix — but the guest never appears in the Google Calendar UI and no invitation is sent. Storing the property and honouring it are different things; only the first was true. Tested on one real event with Mike's own address as the guest, then reverted.
   **The only route to real guest management is the Google Calendar API over OAuth** (`sendUpdates=all`), which replaces the CalDAV write path for events carrying guests. It runs into the wall that reversed the Google Contacts integration on 2026-08-08: under **Testing** publishing status the refresh token expires every 7 days, so it breaks weekly until the app is verified — same account, same GCP project, same constraint. So this is an integration change with an OAuth-verification prerequisite, not a patch.
   **Deferred to Mark 2 by Mike, 2026-09-09** — do not re-propose against the Mark 1 CalDAV path. Interim behaviour is built and deployed: invitations go by email, and `logistics.md` plus `send_calendar_invite`'s return value both state that the calendar will show nothing, so a working send is not reported as a failure. Raised by Mike after reporting invitations as unsent three times.
+- **You cannot interrupt Metatron from the headset — and nobody has checked whether you can.**
+
+Raised by Mike, 2026-09-24: *"The speech is so delayed that barge in isn't really a
+consideration. I'd rather leave it for another day."* Deferred deliberately, not dropped.
+
+**What is built.** `startRecording()` calls `stopSpeaking()` first, so a press while Metatron is
+talking should cut it off and open the mic. It has never been run on the device.
+
+**Why it is not urgent, and what would change that.** A reply arrives tens of seconds after it
+is asked for (`ROADMAP.md` § 5A: the whole reply lands in ~0.6s, after ~30s dominated by
+thinking), so there is very little speaking window to interrupt. **If the thinking budget ever
+drops, this becomes worth having** — that is the trigger to re-rank it, not a date.
+
+**Reason to expect it works:** while Metatron speaks, the link is on A2DP, not SCO — so the
+button is available, unlike the mid-recording case which measurably is not.
+
+**Closes on** one device check: hold the bud during a spoken reply; speech stops, mic opens.
+- **The voice that says "I'm here" when the mic opens is annoying enough to want changing.**
+
+Raised by Mike, 2026-09-24, on the first working device test: *"The voice is annoying, but it
+works for now."* Accepted as shipped, not as finished.
+
+**Why it is a voice at all, so a fix does not just undo the reasoning.** The cue was a tone
+first. Through a Bluetooth headset it arrived as a squelch, because opening the mic moves the
+link to SCO — a NARROWBAND VOICE codec, which mangles short synthetic tones and carries speech
+cleanly. A louder or longer beep fights the channel; speech works with it. Android's stock TTS
+is what makes it annoying, not the decision to speak.
+
+**Options, none tried:** a different TTS voice or pitch/rate on the same engine; a recorded
+one-word clip played on `STREAM_VOICE_CALL`; an earcon designed for narrowband (a two-tone rise
+survives 8 kHz far better than `TONE_PROP_BEEP`); or dropping the cue to vibration only, which
+already exists as an off-by-default setting.
+
+**Constraint any replacement must keep:** it plays BEFORE the recorder starts, on A2DP. Both
+earlier placements sat on a Bluetooth profile transition and arrived "like a cell phone call
+losing signal", and a cue played into an open mic also trips the silence detector's `speechSeen`
+flag — which would send a turn containing only the cue.
+
+`static/index.html` → `cue()` / `cueAndWait()`; `MainActivity.HeadsetBridge.playCue()`.
 
 ---
+
 ## Now
 
 **Ranked — position is priority.** Capped at ~10, so something enters by displacing something.
@@ -563,9 +603,12 @@ with a date.** Nothing new joins this group open-ended.*
   pair cleanly to the MacBook, so Android was made the priority and the browser path deferred
   rather than tested badly.
   **What exists.** `static/index.html` registers `navigator.mediaSession` handlers for
-  `play`/`pause`/`stop` and starts a silent looping `<audio>` element to hold a media session —
-  gated to non-Capacitor platforms deliberately, so it cannot compete with the native
-  `MetatronHeadsetService` on Android. That code has never executed against a real headset.
+  `play`/`pause`/`stop` and starts a silent looping `<audio>` element to hold a media session.
+  **Corrected 2026-09-24, because this entry described it wrongly on both counts:** that anchor
+  was built on Web Audio, which creates no media session at all (the API is driven by media
+  ELEMENTS), so it held nothing on any platform; and it is no longer gated to non-Capacitor,
+  since the native session proved unreliable and a page holding the button beats neither holding
+  it. Both now fixed in `0b044f9`. The browser path has still never run against a real headset.
   **The prerequisite is already done, and is the part that would otherwise be rediscovered.**
   The Mac had no TLS cert, so its server ran HTTP, so `getUserMedia` was blocked outside
   `localhost` — and `localhost` puts the page on a different origin from the API, whose CORS
@@ -1243,6 +1286,15 @@ claim user-facing (its log-write sibling is `[DB-0829-01]`); the two Iva/Eva cor
 evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording — "causing an
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
+
+- **[user corrected a prior turn]** user re-stated a prior turn or correction — user is testing the headset again ("Testing, testing, one, two, three.")  
+  `2026-09-24T14:26:18.888994Z`
+
+- **[user corrected a prior turn]** User said 'This is a headset test' after a prior headset test turn; coordinator routed as a fresh test message rather than conversation maintenance.  
+  `2026-09-24T14:17:06.742570Z`
+
+- **[user corrected a prior turn]** ```  
+  `2026-09-24T14:01:22.672896Z`
 
 - **[a specialist missed a signal it should have caught]** Scheduled check-in triggered a redundant empty response instead of respecting quiet check-in constraint  
   `2026-09-24T13:07:03.239395Z`
