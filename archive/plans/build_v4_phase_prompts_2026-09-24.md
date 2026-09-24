@@ -920,10 +920,21 @@ gcloud compute ssh metatron-vm --zone=us-central1-a --project=metatron-ai-499810
 `Environment=` directive — `show -p Environment` does **not** report `EnvironmentFile=` contents, so a
 marker put in `.env` instead would be invisible to this check and to any later audit.
 
-> **Expect `METATRON_HOST=vm` in both lines alongside the existing
-> `METATRON_PERSONA_STRICT=0 METATRON_PERSONA_FALLBACK=mike`.** A drop-in is applied after the main
-> unit, so it also wins over `.env`; nothing there sets `METATRON_HOST`, so there is no conflict to
-> resolve.
+> **RAN 2026-09-24. Both units now report
+> `Environment=PYTHONUNBUFFERED=1 METATRON_HOST=vm`.** The marker is live. A drop-in is applied
+> after the main unit, so it also wins over `.env`; nothing there sets `METATRON_HOST`, so there was
+> no conflict to resolve.
+
+> **This output also proves `docs/INFRASTRUCTURE.md` § Systemd units is STALE, and it was my source
+> for the expectation above.** That doc's `[Service]` stanza carries
+> `Environment=METATRON_PERSONA_STRICT=0` and `Environment=METATRON_PERSONA_FALLBACK=mike` and no
+> `PYTHONUNBUFFERED`; the live units carry the reverse. **Not a blocker and not new** — those two
+> variables select `core/persona.py`'s *audit mode*, and `core/persona.py:33`'s own docstring says
+> *"Strict is the default. Deployments opt out explicitly, never implicitly."* The machine running
+> strict is the safer state and the intended end of that transition, so the doc documents a
+> migration aid that is over. **But a VM rebuilt from that doc would silently re-enable audit-mode
+> fallback**, which is exactly the fail-open the variable pair exists to make deliberate. Fix it in
+> the same pass as the drop-in line owed below.
 
 **Owed after the marker is confirmed live:** one line in `docs/INFRASTRUCTURE.md` § Systemd units
 recording the drop-in, or a VM rebuild from that doc drops the marker and `file_ticket`'s gate fails
@@ -1009,8 +1020,22 @@ Then one ordinary turn through the app, which also closes phase A's owed **(M)**
    gcloud compute ssh metatron-vm --zone=us-central1-a --project=metatron-ai-499810 \
      --tunnel-through-iap --command 'sudo journalctl -u metatron-scheduler --since "40 min ago" | grep -i build_tick'
    ```
-   Expect a line reporting nothing registered. **Expect no `ModuleNotFoundError`** — that is what the
-   re-point from `core.build.runner.tick` was for.
+   **Three different lines match that grep, so read the prefix, not the presence of a line.**
+   `core/scheduler.py:512` prints each outcome distinctly:
+
+   - `[scheduler] [mike] build_tick: <string>` — **PASS.** The string reports nothing registered,
+     because `config/build/registry.yaml` is empty until run 1 lands.
+   - `[scheduler error] [mike] build_tick: <exception>` — **FAIL.** `fire_function` catches every
+     exception and logs it, so a broken tick produces a line containing `build_tick` and looks like
+     a hit. `ModuleNotFoundError` here is what the re-point from `core.build.runner.tick` was for.
+   - `[scheduler] [mike] skipping build_tick — <reason>` — a gate held it. Should not happen:
+     `respect_quiet_hours: False` is set on the job (`core/scheduler.py:750`), checked because the
+     deploy is running at 22:45, inside quiet hours, which would otherwise have held it and made
+     this probe fail for the wrong reason.
+
+   **No `ModuleNotFoundError`, and no persona error either** — `build_tick()` is called with no
+   arguments inside `with persona_scope(persona)`, so `persona_data_dir(None)` resolves from the
+   thread-local rather than raising under strict mode. Traced, not assumed.
 3. **`request_build` files a ticket from a fixture turn.** Ask the app something no specialist owns
    and that needs a standing judgement over a history — *"when did I last water the fig?"* is the
    recorded shape. Then:
