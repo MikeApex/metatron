@@ -11,10 +11,12 @@ rejected, and four things believed true that were not: `archive/PROJECT_LOG.md` 
 `archive/plans/build_v4_phase_prompts_2026-09-24.md` § Phase E and its four pre-flight gates have
 already been run green, including the one that matters most: **what the VM will pull imports, checked
 against a clean `git archive HEAD` export** rather than the working tree, which can import fine on
-files the VM will never receive. **E carries everything in `b2b1dc7..HEAD`, not Build's commits
-alone** — a catch-up deploy with Build inside it, so if the VM misbehaves afterwards Build is one of
-~30 suspects and the checklist establishes general health *before* the three Build probes. Count the
-range at deploy time; it moved 18 → 31 in one afternoon. **Then F**, the bootstrap walkthrough —
+files the VM will never receive. **E carries everything in `7bca654..HEAD` — 32 commits. The VM is
+at `7bca654`, NOT the `b2b1dc7` the record claimed until 09-24; found by asking the VM, and the
+rollback command was pointing four commits too far back.** A catch-up deploy with Build inside it, so
+if the VM misbehaves afterwards Build is one of ~30 suspects and the checklist establishes general
+health *before* the three Build probes. Count the range at deploy time rather than trusting a
+number here. **Then F**, the bootstrap walkthrough —
 runs 1–3 with Mike executing, written when he asks. Spend ≈ **$75–100** of $65–106, and **the build
 will finish over** — almost entirely phase A's driver needing repair once phase C finally drove it.*
 

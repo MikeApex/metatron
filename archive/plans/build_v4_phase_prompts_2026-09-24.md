@@ -798,12 +798,20 @@ command but not survived its review is not finished.
 `pip install -r requirements.txt`, restarts the scheduler immediately, then drains in-flight SSE
 streams for up to 3 minutes before restarting the server. Mike runs it. No session does.
 
-**This is a catch-up deploy with Build inside it, not a Build deploy.** The VM is at `b2b1dc7`;
-count the range at deploy time — it was 18 when first measured, 31 by the time C started, **34 as
-of `75744e5`**:
+**This is a catch-up deploy with Build inside it, not a Build deploy.**
+
+> **CORRECTED 2026-09-24 by asking the VM instead of the record: the VM is at `7bca654`, NOT
+> `b2b1dc7`.** It is four commits further on — the two calendar-invitation fixes of 09-09/09-10 and
+> their archive commits — deployed on ~2026-09-10 with no fragment recording it. `b2b1dc7` then
+> propagated as "where the VM is" through five `archive/log/` fragments, `SESSION.md` and this file,
+> three of those tonight and by me. **This is `CLAUDE.md` § Infrastructure traps rule 2 — do not
+> record a value with a short half-life — applied to a deploy SHA, and it failed in exactly the
+> shape that rule describes.** Everything below is re-verified against `7bca654`.
+
+The real range is **32 commits**. Count it at deploy time rather than trusting this number:
 
 ```bash
-cd /Users/md-homefolder/Desktop/multi-model-mcp && git rev-list --count b2b1dc7..HEAD
+cd /Users/md-homefolder/Desktop/multi-model-mcp && git rev-list --count 7bca654..HEAD
 ```
 
 **Consequence to hold onto:** if the VM misbehaves afterwards, Build is one of ~30 suspects. The
@@ -888,7 +896,8 @@ why checks 2 and 3 exist above it.
 ### Two rules that do NOT apply this time, checked so they are not carried as worry
 
 - **Rule 3, `daemon-reload` before the deploy:** no `.service` or `.timer` file changed in
-  `b2b1dc7..HEAD`. The cert-renew timer the headset chat added lives on the VM and is not deployed
+  `7bca654..HEAD` (re-checked against the corrected baseline). The cert-renew timer the headset chat
+  added lives on the VM and is not deployed
   from this repo. **Nothing owed.**
 - **`requirements.txt` is unchanged** in the range, so `pip install` is a no-op and no new dependency
   can be missing on the VM.
@@ -941,7 +950,7 @@ recording the drop-in, or a VM rebuild from that doc drops the marker and `file_
 closed on the VM it is meant to permit.
 
 > **This is a unit-file change, so rule 3 DOES apply to it** — unlike the rest of this deploy, where
-> nothing under `b2b1dc7..HEAD` touches a `.service` or `.timer`. Do the `daemon-reload` first.
+> nothing under `7bca654..HEAD` touches a `.service` or `.timer`. Do the `daemon-reload` first.
 
 The matching code half — `file_ticket` also requiring `METATRON_HOST=vm` — is **not written**, and
 should not be until the marker is actually on the units: config before its gate is rule 2 inverted,
@@ -1053,10 +1062,14 @@ Then one ordinary turn through the app, which also closes phase A's owed **(M)**
 
 ```bash
 gcloud compute ssh metatron-vm --zone=us-central1-a --project=metatron-ai-499810 \
-  --tunnel-through-iap --command 'cd ~/multi-model-mcp && git checkout b2b1dc7 && sudo systemctl restart metatron-scheduler metatron-server'
+  --tunnel-through-iap --command 'cd ~/multi-model-mcp && git checkout 7bca654 && sudo systemctl restart metatron-scheduler metatron-server'
 ```
 
-That returns the VM to its pre-deploy commit. **It does not undo `pip install`** — irrelevant here,
+**The target is `7bca654`, and this is where the stale SHA would have done real damage:**
+`git checkout b2b1dc7` — what this line said until it was corrected — would have taken the VM *back*
+past four commits it is already running, reverting the calendar-invitation fixes, during an incident.
+A rollback is the one command nobody re-derives while reading it. That returns the VM to its
+pre-deploy commit. **It does not undo `pip install`** — irrelevant here,
 since `requirements.txt` is unchanged. Do not `git reset --hard` on the VM; the checkout is enough
 and leaves the fetched objects in place for a retry.
 

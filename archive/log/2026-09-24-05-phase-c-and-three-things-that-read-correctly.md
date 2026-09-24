@@ -83,6 +83,20 @@ entirely by phase A's driver needing repair once something finally drove it. Rec
 of the lesson above rather than as an estimating error: nothing cheaper than writing the command
 would have exercised the driver.
 
+**CORRECTION, made the same night, to this fragment's own heading and to the two before it: the VM
+is at `7bca654`, not `b2b1dc7`.** Found by running the first phase-E command and reading the
+`git log` it printed, rather than by reading a record. The VM is four commits further on than every
+fragment tonight claimed — the 09-09/09-10 calendar-invitation fixes and their archive commits,
+deployed ~09-10 with nothing recording it. `b2b1dc7` had been asserted as "where the VM is" since the
+09-18 fragment, where it was already wrong, and tonight's three fragments repeated it. **The damage
+it would have done was specific: the phase-E rollback command said `git checkout b2b1dc7`, which
+during an incident would have reverted four commits the VM already runs.** A rollback is the one
+command nobody re-derives while reading it. `CLAUDE.md` § Infrastructure traps rule 2 — never record
+a value with a short half-life — turns out to govern deploy SHAs too, and failed in precisely the
+shape it describes: written into seven places, none wrong when first written, the live value an
+eighth. The deploy range is **32**, not 34, and the `.service`/`.timer` and `requirements.txt`
+findings were re-checked against the corrected baseline and still hold.
+
 **State.** Phases 0, A, B-Red, B, D and C committed; nothing deployed. Remaining: **F** (bootstrap
 runs 1–3, live walkthrough) and **E** (the deploy, which carries everything in `b2b1dc7..HEAD`, not
 Build's commits alone). E's checklist is written with its four pre-flight gates already run green,
