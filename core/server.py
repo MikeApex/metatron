@@ -1945,6 +1945,91 @@ async def monitor_file(path: str) -> dict:
     return {"path": path, "content": raw, "size_bytes": full.stat().st_size}
 
 
+@app.get("/monitor/tool")
+async def monitor_tool(
+    persona: str | None = None,
+    presence: str | None = None,
+    name: str | None = None,
+    args: str | None = None,
+) -> dict:
+    """
+    The Build read doors — the Mac names, the VM reads, only results cross.
+
+    Plan: archive/plans/build_vertical_plan_2026-09-24.md section 6, ruling 11.
+    The rules, the allowlist and the per-tool schemas are all in
+    `core/build/doors.py`; this endpoint is the socket they sit behind.
+
+        GET /monitor/tool?persona=mike&presence=log
+            the presence check. A SOURCE ID, not arguments: the server runs the
+            fixed, code-chosen call from manifest._SOURCES and returns
+            {state, count, window} with NO CONTENT. The model names a source;
+            code chooses the call.
+
+        GET /monitor/tool?persona=mike&name=read_wisdom&args={"domains":["home"]}
+            a research read. The name must be in the Librarian's read set minus
+            the seven live feeds — no outbound tool sits behind a door — and the
+            arguments are validated server-side against a per-tool schema with
+            caps. Anything outside it is a 400 carrying the schema.
+
+    Auth and reach are the monitor API's, not this endpoint's: `require_auth`
+    gates every path outside the app shell, so a request with no bearer or a bad
+    one never arrives here, and the route is Tailscale-only like every other
+    /monitor route. Persona comes from the QUERY and from nowhere else — the
+    call runs inside `persona_scope()` and no schema admits a `persona`
+    argument, so a door bound to one persona cannot read another's data.
+
+    `core.build.doors` is imported HERE rather than at module level on purpose.
+    It asserts its own safety invariant at import and fails closed; at module
+    level that would stop the server booting, and a wrong Build allowlist must
+    take down the door, not the user's sessions.
+    """
+    from core.build import doors
+    from core.persona import PersonaError, validate_persona_name
+
+    if bool(presence) == bool(name):
+        raise HTTPException(status_code=400, detail={
+            "error": "supply exactly one of ?presence=<source_id> or ?name=<tool>",
+            "reason": "mode",
+        })
+
+    if not persona:
+        raise HTTPException(status_code=400, detail={
+            "error": "persona is required — a door is bound to one persona",
+            "reason": "no_persona",
+        })
+    try:
+        persona_key = validate_persona_name(persona)
+    except PersonaError as exc:
+        raise HTTPException(status_code=400, detail={
+            "error": str(exc), "reason": "bad_persona",
+        })
+
+    if presence:
+        def _run() -> dict:
+            return doors.presence(presence, persona_key)
+    else:
+        try:
+            parsed = json.loads(args) if args else {}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={
+                "error": f"args is not valid JSON: {exc}", "reason": "bad_args",
+            })
+        if not isinstance(parsed, dict):
+            raise HTTPException(status_code=400, detail={
+                "error": "args must be a JSON object", "reason": "bad_args",
+            })
+
+        def _run() -> dict:
+            return doors.research_read(name, parsed, persona_key)
+
+    # Off the event loop: every handler behind a door does blocking file IO, and
+    # search_memory loads an embedding model on first use.
+    try:
+        return await asyncio.to_thread(_run)
+    except doors.DoorRefused as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail)
+
+
 # Serve static assets (CSS, JS if we add them later)
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")

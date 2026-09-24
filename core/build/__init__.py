@@ -51,5 +51,9 @@ Module map:
   the VM's own tick
     tick       the REPAIR counter and the dispatch counts. Nothing else.
 
-`doors.py` (phase B) is the VM-side read endpoint and is not here yet.
+  what the VM serves the Mac (phase B)
+    doors      the read doors: the allowlist, the per-tool schemas and caps,
+               and the presence check's fixed calls. The endpoint is
+               `/monitor/tool` in core/server.py; the Mac client is
+               scripts/vm_read.py.
 """
