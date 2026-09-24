@@ -1,35 +1,54 @@
 """
 core/build/manifest.py — what exists, as IDS. Never as values.
 
-N1. The manifest is what Inquiry is allowed to see of the corpus, and it is the
-privacy boundary for the whole vertical: Inquiry runs before any probe, so
-anything the manifest carries reaches a model that has not yet been told it
-needs it.
+Plan: archive/plans/build_vertical_plan_2026-09-24.md sections 3 (N4), 6.
+
+THE CALL TABLE BELOW IS SALVAGED BY COPY (section 10, finding 8 — it was never
+in probe.py). Every argument repair the D4 round bought is in its comments and
+must survive: `get_log_window`'s start/end window, `search_memory`'s required
+`query`, `read_archive`'s required category, `read_intake_queue`'s domain,
+`read_agent_config`'s `agent_name`, `read_email`'s `count`, and the seven
+`live: True` rows that are deliberately never probed. Losing one of these is
+the exact defect class three review rounds were spent finding: a probe with a
+wrong argument raises TypeError, records `state: error`, and every question
+naming that source reaches the Librarian as "the code could not read it" — with
+the richest source in the system reading as empty.
+
+WHOSE INPUT THIS IS, AND WHY THAT CHANGED. Under v3 the manifest was INQUIRY's
+input and this file was the privacy boundary for the whole vertical. Ruling 5
+moved it: Inquiry now works in a vacuum and never sees this at all — the point
+is to find where existing data is inadequate, which a model shown the corpus
+first cannot do. The manifest is the LIBRARIAN's input, and the Librarian is
+already reading the corpus through the doors.
+
+THE CONTENT-FREE RULE SURVIVES THE MOVE, unchanged and still enforced by
+tests/test_build_manifest.py's grep of every profile value. It is no longer the
+privacy boundary — ruling 10 is — but it is still what makes the manifest safe
+to render into a prompt, and still what makes `_SOURCES` a table of calls rather
+than a table of answers.
 
 THE RULE: the manifest names SOURCES, CAPABILITIES and POLICIES. It never
 carries a value read from any of them. Every description here is a literal
 written in this file — none is drawn from persona data, and none is generated.
-tests/test_build_manifest.py enforces this by grepping the rendered manifest
-for every string value in profile.yaml and failing on any hit.
 
-WHY THIS IS THE RIGHT BOUNDARY. `candidate_sources` on a Question Set is
-validated against `source_ids()`, and probe.py maps an id to a FIXED,
-code-written call. So the model names a source and CODE CHOOSES THE CALL. That
-is the answer to "the probe runs read tools with model-chosen arguments" — it
-does not.
+WHERE THE PRESENCE CHECK RUNS. On the VM, behind
+`GET /monitor/tool?presence=<source_id>` (phase B). It takes a SOURCE ID, not
+arguments: the server runs the fixed call from this table and returns
+{state, count, window}, no content. THE MODEL NAMES A SOURCE AND CODE CHOOSES
+THE CALL — that is the injection answer, and it is why the arguments live here
+as literals rather than anywhere a model can reach.
 
 Three sections, three jobs:
 
-  sources[]       what the probe can resolve, and whether its tool is live.
-                  A source whose handler is not registered is `available:
-                  false`, which is how `status: needs_tool` gets DERIVED rather
-                  than asserted.
+  sources[]       what the presence check can resolve, and whether its tool is
+                  live. A source whose handler is not registered is
+                  `available: false`, which is how a missing-tool finding gets
+                  DERIVED rather than asserted.
   capabilities[]  every specialist that already exists. `disposition: new`
                   must name one of these and say why it does not cover the
                   request, which is what stops `new` being the default answer.
-  policies[]      standing decisions, with their applies_to. settle.py resolves
-                  against these BEFORE touching data, which is the mechanism
-                  behind questions arriving pre-answered.
+  policies[]      standing decisions, with their applies_to. The Librarian
+                  resolves against these when confirming a `triage` depth.
 """
 
 from __future__ import annotations
@@ -44,13 +63,13 @@ _ROOT = Path(__file__).parent.parent.parent
 # ---------------------------------------------------------------------------
 # The source table.
 #
-# `tool` is the registered handler the probe calls. `probe` is the FIXED call
-# probe.py issues — arguments included — so that resolving a source never
-# depends on anything a model wrote.
+# `tool` is the registered handler the presence check calls. `probe` is the
+# FIXED call the door issues — arguments included — so that resolving a source
+# never depends on anything a model wrote.
 #
-# Every entry is inside the read set (plan section 6.3). Adding a row here does
-# not grant anything: the grant allowlist lives in the writer, and a source the
-# writer refuses is still refused however this table reads.
+# Every entry is inside the read set (plan section 6). Adding a row here does
+# not grant anything: the grant allowlist lives in gates.py, and a source the
+# gate refuses is still refused however this table reads.
 #
 # `answers` (OPTIONAL) narrows which SHAPE of question a source can serve. Omit
 # it and the source answers any shape.
@@ -64,9 +83,10 @@ _ROOT = Path(__file__).parent.parent.parent
 # be asked that." Found 2026-09-18 by the worked Inquiry run, which named the
 # journal as a source for an intent question and got no warning at all.
 #
-# This is the same class of collapse the three probe states exist to prevent,
-# one level further in: an UNASKABLE question must not look like an UNANSWERED
-# one, because the first is a missing tool and the second is a missing fact.
+# An UNASKABLE question must not look like an UNANSWERED one: the first is a
+# missing tool and the second is a missing fact. In the inventory those are
+# different verdicts — `absent` against `inadequate` — and this is what tells
+# them apart.
 # ---------------------------------------------------------------------------
 
 _SOURCES: tuple[dict[str, Any], ...] = (
@@ -214,10 +234,10 @@ def _registered_tools() -> set[str]:
 
     This is read from the running system rather than from a list here, so a
     source whose tool has not been built yet reports `available: false` on its
-    own evidence. That is what makes `status: needs_tool` derived rather than
-    asserted — the two section 9 briefs (search_conversations,
-    read_journal_range) are expected to be absent on run 1, and that is the
-    mechanism working, not a failure.
+    own evidence. That is what makes a missing-tool finding derived rather than
+    asserted — the two section 9 tools (search_conversations,
+    read_journal_range) are phase D work and are expected to be absent until
+    then; that is the mechanism working, not a failure.
     """
     try:
         from core.orchestrator import register_tools
@@ -299,11 +319,12 @@ def policies(persona: str | None = None) -> list[dict]:
 
     `applies_to` is a policy's own scope statement, authored with the user at
     build time — not persona data read from the corpus — so it is inside the
-    content-free rule. It is here because settle.py resolves against policies
-    BEFORE touching data, and it cannot do that without knowing what each
-    policy claims to cover.
+    content-free rule. It is here because the Librarian resolves against
+    policies before deciding a question needs data, and it cannot do that
+    without knowing what each policy claims to cover.
 
-    A PersonaError returns [] rather than raising: the manifest's source and
+    Read from config/build/policies/{persona}/ — tracked, in the diff (section 4).
+    Any failure returns [] rather than raising: the manifest's source and
     capability sections are static and useful with no persona bound, and a
     caller that needs policies is one that already resolved a persona.
     """
@@ -356,8 +377,8 @@ def unavailable(persona: str | None = None) -> list[str]:
     """
     Source ids whose tool is not registered — the `needs_tool` candidates.
 
-    Expected to be non-empty on run 1: search_conversations and
-    read_journal_range are section 9 briefs Mike builds on the Mac. The known
-    Librarian gaps are a designed state, not a failure.
+    Expected to be non-empty until phase D: search_conversations and
+    read_journal_range are ordinary development (`/fix`). The known Librarian
+    gaps are a designed state, not a failure.
     """
     return [s["id"] for s in sources() if not s["available"]]

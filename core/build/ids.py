@@ -13,6 +13,11 @@ is the only thing that has to survive, and it is append-only.
 
 This is the same reasoning tools/crm_sweep.py records for proposal state:
 "a status file that disagreed with the ledger would be worse than no status file."
+
+SALVAGED BY COPY (plan v4.11 section 10) — replay-under-lock, no state. The one
+change: the ledger it replays is now the VM's TICKET file, because that is where
+ids are minted. PER PERSONA (cold read 5): two personas can mint the same
+BLD-MMDD-NN on one day, so everything downstream on the Mac is persona-qualified.
 """
 
 from __future__ import annotations
@@ -28,9 +33,9 @@ _ID_RE = re.compile(r"^BLD-(\d{2})(\d{2})-(\d{2})$")
 # An id is allocated in well under a second; this only trips on a stuck holder.
 _LOCK_TIMEOUT = 30
 
-# Two digits of sequence, so 99 jobs in one day. The daily cap is 4
-# (jobs.CAPS["max_jobs_per_day"]), so this is ~25x the ceiling rather than a
-# limit anything can reach in practice.
+# Two digits of sequence, so 99 tickets in one day. The daily cap is 4
+# (tickets.caps()["max_jobs_per_day"]), so this is ~25x the ceiling rather than
+# a limit anything can reach in practice.
 _MAX_PER_DAY = 99
 
 
@@ -39,7 +44,7 @@ class IdError(RuntimeError):
 
 
 def is_job_id(value: str) -> bool:
-    """True for a well-formed BLD id. Does not check that the job exists."""
+    """True for a well-formed BLD id. Does not check that the ticket exists."""
     return bool(_ID_RE.match(str(value or "").strip()))
 
 
@@ -65,15 +70,15 @@ def _lock_for(ledger: Path) -> FileLock:
 
 def next_job_id(persona: str | None = None, when: date | None = None) -> str:
     """
-    Allocate the next id for today, under a lock, by replaying the ledger.
+    Allocate the next id for today, under a lock, by replaying the ticket file.
 
     The lock covers read-and-decide, not just the write, because two processes
     that both read "the highest today is 03" will both return 04 however
     atomically each of them appends.
     """
-    from core.build.jobs import ledger_path, read_rows
+    from core.build.tickets import read_rows, tickets_path
 
-    ledger = ledger_path(persona)
+    ledger = tickets_path(persona)
     with _lock_for(ledger):
         return _next_unlocked(read_rows(persona), when)
 

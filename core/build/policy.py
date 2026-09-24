@@ -18,20 +18,33 @@ Every policy carries a `review_date`, for the same reason every threshold in
 this project does: a number standing in for judgment needs an owner and a
 re-check date.
 
-STORAGE. One file per policy under data/personas/{p}/build/policies/, written
-atomically. Persona-scoped, gitignored, inside the existing backup tar, and
-inside the writer's allow-roots. They enter the capability manifest, so
-settle.py resolves against them before touching data.
+SALVAGED BY COPY (plan v4.11 section 10): the record shape and the resolver are
+unchanged. THE HOME CHANGES, and it changes tier while it does.
+
+STORAGE, under ruling 4: `config/build/policies/{persona}/{id}.yaml` — TRACKED,
+in the diff, committed by Mike with the capability that consults it. A policy is
+a standing decision Build wrote and Mike approved, not runtime state; it is not
+more sensitive than the persona preferences already sitting in tracked agent
+files, and the VM has no writer for it. YAML rather than JSON for the same
+reason everything else in config/ is YAML: Mike reads it in a diff.
+
+*Stated as a decision open to reversal if a policy ever carries content Mike
+would not commit (section 4). The reversal is one path constant.*
+
+Consulted by the Librarian at N4 — the `triage` confirmation, which is the only
+thing that can turn Inquiry's PROPOSED depth into an actual one — and by the
+capability at runtime.
 """
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import tempfile
 from datetime import date
 from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parent.parent.parent
 
 _POLICY_ID_RE = re.compile(r"^[a-z][a-z0-9_]{2,47}$")
 
@@ -40,9 +53,13 @@ class PolicyError(RuntimeError):
     """A policy could not be read or written."""
 
 
+def policies_root() -> Path:
+    return _ROOT / "config" / "build" / "policies"
+
+
 def policies_dir(persona: str | None = None) -> Path:
-    from core.build.jobs import build_dir
-    return build_dir(persona) / "policies"
+    from core.build.jobs import resolve_persona
+    return policies_root() / resolve_persona(persona)
 
 
 def policy_path(policy_id: str, persona: str | None = None) -> Path:
@@ -50,7 +67,7 @@ def policy_path(policy_id: str, persona: str | None = None) -> Path:
         raise PolicyError(
             f"Invalid policy id {policy_id!r} — must match {_POLICY_ID_RE.pattern}"
         )
-    return policies_dir(persona) / f"{policy_id}.json"
+    return policies_dir(persona) / f"{policy_id}.yaml"
 
 
 def list_policies(persona: str | None = None) -> list[dict]:
@@ -62,25 +79,25 @@ def list_policies(persona: str | None = None) -> list[dict]:
     if not directory.is_dir():
         return []
     out: list[dict] = []
-    for path in sorted(directory.glob("*.json")):
-        try:
-            parsed = json.loads(path.read_text(encoding="utf-8"))
-        except (ValueError, OSError):
-            continue
-        if isinstance(parsed, dict) and parsed.get("id"):
+    for path in sorted(directory.glob("*.yaml")):
+        parsed = _read(path)
+        if parsed is not None and parsed.get("id"):
             out.append(parsed)
     return out
 
 
-def read_policy(policy_id: str, persona: str | None = None) -> dict | None:
-    path = policy_path(policy_id, persona)
-    if not path.exists():
-        return None
+def _read(path: Path) -> dict | None:
+    import yaml
     try:
-        parsed = json.loads(path.read_text(encoding="utf-8"))
-    except (ValueError, OSError):
+        parsed = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except Exception:
         return None
     return parsed if isinstance(parsed, dict) else None
+
+
+def read_policy(policy_id: str, persona: str | None = None) -> dict | None:
+    path = policy_path(policy_id, persona)
+    return _read(path) if path.exists() else None
 
 
 def write_policy(policy: dict, job_id: str, persona: str | None = None,
@@ -88,7 +105,8 @@ def write_policy(policy: dict, job_id: str, persona: str | None = None,
     """
     Store a policy record. Validated against the same block the BuildPlan
     validator checks, so a policy cannot be written that a plan could not
-    declare.
+    declare — ONE definition of "is this a valid policy", which is the reason
+    this imports the validator rather than restating it.
     """
     from core.build.schemas import _check_policy
 
@@ -104,17 +122,21 @@ def write_policy(policy: dict, job_id: str, persona: str | None = None,
         "version": int(version),
         "written_at": date.today().isoformat(),
     }
+    import yaml
     path = policy_path(record["id"], persona)
     path.parent.mkdir(parents=True, exist_ok=True)
 
+    # Atomic, but NOT 0600: this is a tracked file in config/, and a mode no
+    # other file there carries would outlive the reason for it.
     fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + ".",
                                     suffix=".tmp")
     os.close(fd)
     tmp = Path(tmp_name)
     try:
-        tmp.write_text(json.dumps(record, indent=2, ensure_ascii=False),
-                       encoding="utf-8")
-        os.chmod(tmp, 0o600)
+        tmp.write_text(
+            yaml.safe_dump(record, sort_keys=False, allow_unicode=True,
+                           default_flow_style=False),
+            encoding="utf-8")
         os.replace(tmp, path)
     except BaseException:
         tmp.unlink(missing_ok=True)

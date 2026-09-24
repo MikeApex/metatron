@@ -81,14 +81,15 @@ ACTION_TOOLS: frozenset[str] = frozenset({
     # silent write. It is bookkeeping about what to SHOW, not a change to the user's own
     # data, so nothing downstream should describe it to the user as something that was done.
     "record_horizon_item",
-    # request_build files a durable row that a scheduler tick later acts on, and
-    # answer_interview_item writes the user's own words into a job's ledger.
-    # Classified as actions on the same reading as record_horizon_item: they
-    # persist a record, and the honest failure direction is over-reporting a
-    # name Mike can query rather than a silent write. Nothing downstream should
-    # describe either to the user as something that was *done* — request_build
-    # explicitly did not build anything.
-    "request_build", "answer_interview_item",
+    # request_build files a durable ticket on the VM. Classified as an action on
+    # the same reading as record_horizon_item: it persists a record, and the
+    # honest failure direction is over-reporting a name Mike can query rather
+    # than a silent write. Nothing downstream should describe it to the user as
+    # something that was *done* — request_build explicitly did not build
+    # anything. (`answer_interview_item` sat beside it until 2026-09-24: the
+    # interview now happens in the build session, in chat, with Mike in front
+    # of it, so there is no tool to classify.)
+    "request_build",
     # Logs, journal, wisdom — the user asks for these directly ("log that")
     "write_log", "write_quality_event",
     "write_journal", "write_archive",

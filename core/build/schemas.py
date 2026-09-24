@@ -5,6 +5,15 @@ QuestionSet, AnswerLedger, BuildPlan. All three carry `schema`, `job_id`, an
 upstream fingerprint and `generated_at`, so any artifact can be traced to the
 one it was derived from.
 
+SALVAGED BY COPY from the v3 package (plan v4.11 section 10). What changed is
+only what ruling 5 and ruling 7 changed: Inquiry works in a VACUUM, so a
+Question Set naming `candidate_sources` or a `manifest_fingerprint` is now a
+DEFECT rather than a requirement — it would mean the model saw the corpus. The
+ledger became an INVENTORY with two verdicts per row. THE COMPASS-RULE ORDERING
+BELOW IS UNCHANGED, DELIBERATELY AND EXACTLY: it is the one piece of this file
+that was validated against a real transcript, and the fixture that validates it
+(tests/test_build_spine.py) is carried across unmodified.
+
 THE COMPASS RULE, AND WHY IT IS POSITION AND NOT A TAG.
 
 The spine is ORDERED, and the order is the design. The reference transcript's
@@ -62,7 +71,43 @@ BLOCKS: tuple[str, ...] = ("design", "behaviour", "neither")
 ANSWERABLE_BY: tuple[str, ...] = ("data", "judgment")
 DATA_KINDS: tuple[str, ...] = ("single_point", "behavioural", "none")
 VARIABLE_SCOPES: tuple[str, ...] = ("all_personas", "this_persona", "query_only")
-ROW_STATUSES: tuple[str, ...] = ("settled", "needs_interview", "needs_tool")
+
+# ---------------------------------------------------------------------------
+# THE TWO VERDICTS PER ROW (ruling 7). They answer different questions and
+# conflating them is the failure the ruling names.
+#
+#   VERDICTS   what the Librarian found FOR THIS PERSONA.
+#   LACKS      what the capability does for a user who HAS NONE OF IT.
+#
+# A `found` row for Mike says nothing about a persona created tomorrow, and a
+# capability built only against what Mike happens to have is a capability that
+# breaks on its second user. `if_user_lacks_it` is the second answer, required
+# on every row the plan marks as a required input.
+# ---------------------------------------------------------------------------
+VERDICTS: tuple[str, ...] = ("found", "inadequate", "ask_user", "external", "absent")
+
+# `degrade:` and `refuse:` carry their how/message after the colon; `ask` and
+# `n/a` stand alone. Checked by prefix so the payload is free text.
+LACKS_BARE: frozenset[str] = frozenset({"ask", "n/a"})
+LACKS_PREFIXED: tuple[str, ...] = ("degrade:", "refuse:")
+
+# What KIND of thing the question is asking for. This is the field the ruling-7
+# rule keys on: a HISTORY is asked for and then accrues, so it may never be a
+# variable; a PROFILE FACT is exactly a variable and must say where it lives.
+ROW_KINDS: tuple[str, ...] = ("history", "profile_fact", "external", "judgment")
+
+EXTERNAL_ACCESS: tuple[str, ...] = ("api", "feed", "web")
+
+# Code-derived from the verdict, never written by the model.
+ROW_STATUSES: tuple[str, ...] = ("settled", "to_ask", "external_pending", "missing")
+
+_STATUS_FOR_VERDICT: dict[str, str] = {
+    "found": "settled",
+    "inadequate": "missing",
+    "ask_user": "to_ask",
+    "external": "external_pending",
+    "absent": "missing",
+}
 
 VARIABLE_TYPES: tuple[str, ...] = (
     "string", "number", "boolean", "enum", "list", "object", "table", "record_set",
@@ -86,10 +131,6 @@ SCHEMA_VERSIONS: dict[str, str] = {
     "question_set": "question_set/1",
     "answer_ledger": "answer_ledger/1",
     "build_plan": "build_plan/1",
-    # Not a model artifact — the writer produces it. It is here because it is
-    # the fourth thing with a schema, and one home for schema strings is worth
-    # more than a tidy separation between model-written and code-written.
-    "overlay_capability": "overlay_capability/1",
 }
 
 # `new` is the disposition a model reaches for by default, because it matches
@@ -201,16 +242,27 @@ def artifact_fingerprint(artifact: dict) -> str:
 # QuestionSet
 # ---------------------------------------------------------------------------
 
+# Fields Inquiry CANNOT have written, because it never saw the corpus (ruling 5).
+# Their PRESENCE is the defect, not their absence: a Question Set carrying one
+# is evidence that something showed the model the manifest, which is exactly
+# what working in a vacuum means it must not have.
+VACUUM_FORBIDDEN: tuple[str, ...] = (
+    "candidate_sources", "manifest_fingerprint", "policies_consulted",
+)
+
+
 def validate_question_set(qs: dict,
-                          manifest_ids: set[str] | None = None,
                           known_capabilities: set[str] | None = None) -> list[str]:
     """
     Return the defect list. Empty means valid.
 
-    `manifest_ids` and `known_capabilities` come from N1. When either is None
-    the check that depends on it is NOT RUN and that is stated in the docstring
-    rather than silently passing: in the live pipeline both are always present,
-    because `manifest_fingerprint` is a required field.
+    `known_capabilities` is the set of tracked specialists — read by CODE from
+    config/agents/*.md, never shown to Inquiry as data. It is what a
+    `disposition: new` claim is checked against. When None that one check is NOT
+    RUN, and that is stated here rather than silently passing.
+
+    `manifest_ids` is GONE as a parameter. It existed to validate
+    `candidate_sources`, and under ruling 5 naming a source is the defect.
     """
     defects: list[str] = []
     if not isinstance(qs, dict):
@@ -235,18 +287,40 @@ def validate_question_set(qs: dict,
             "generalizes_to is empty — a capability that generalises to nothing "
             "is the narrow-tool failure the altitude rule exists to catch"
         )
-    if _is_blank(qs.get("manifest_fingerprint")):
-        defects.append("manifest_fingerprint is missing")
-    for field in ("policies_consulted", "declined_to_ask"):
-        if not isinstance(qs.get(field, []), list):
-            defects.append(f"{field} must be a list")
+
+    proposed = _text(qs.get("proposed_depth")).lower()
+    if proposed and proposed not in DEPTHS:
+        defects.append(
+            f"proposed_depth must be one of {list(DEPTHS)}, got "
+            f"{qs.get('proposed_depth')!r}"
+        )
+
+    # THE VACUUM RULE, ENFORCED RATHER THAN INSTRUCTED (ruling 5). Inquiry sees
+    # the gap and nothing about what data exists, so it cannot name a source, a
+    # manifest digest or a policy it has consulted. A model that filled one of
+    # these invented it — and an invented `candidate_sources` is worse than an
+    # empty one, because the Librarian would read it as a lead.
+    for field in VACUUM_FORBIDDEN:
+        present = qs.get(field)
+        if present in (None, "", [], {}):
+            continue
+        defects.append(
+            f"{field} is present — Inquiry works in a vacuum and has seen no "
+            "manifest, no corpus and no policy, so this field can only have "
+            "been invented (ruling 5)"
+        )
+        if field == "candidate_sources":
+            break
+
+    if not isinstance(qs.get("declined_to_ask", []), list):
+        defects.append("declined_to_ask must be a list")
 
     spine = qs.get("spine")
     if not isinstance(spine, list) or not spine:
         defects.append("spine is empty or not a list")
         return defects
 
-    _check_questions(spine, manifest_ids, defects)
+    _check_questions(spine, defects)
     _check_spine_order(spine, defects)
     _check_required_classes(spine, depth, defects)
     _check_dedupe(spine, defects)
@@ -294,8 +368,7 @@ def _check_disposition(qs: dict, known_capabilities: set[str] | None,
             )
 
 
-def _check_questions(spine: list, manifest_ids: set[str] | None,
-                     defects: list[str]) -> None:
+def _check_questions(spine: list, defects: list[str]) -> None:
     seen_ids: list[int] = []
     for position, question in enumerate(spine, start=1):
         where = f"spine[{position}]"
@@ -327,18 +400,15 @@ def _check_questions(spine: list, manifest_ids: set[str] | None,
         if blocks not in BLOCKS:
             defects.append(f"{where} blocks must be one of {list(BLOCKS)}")
 
-        sources = question.get("candidate_sources", [])
-        if not isinstance(sources, list):
-            defects.append(f"{where} candidate_sources must be a list")
-        elif manifest_ids is not None:
-            allowed = set(manifest_ids) | {"user"}
-            unknown = [s for s in sources if _text(s) not in allowed]
-            if unknown:
-                defects.append(
-                    f"{where} candidate_sources not in the manifest: {unknown} — "
-                    "a source the probe cannot resolve makes data_available a "
-                    "claim rather than evidence"
-                )
+        # PER-QUESTION VACUUM RULE. The set-level check above catches the
+        # header field; this catches the same invention one level down, where
+        # a model that has been told not to name sources tends to put them.
+        if question.get("candidate_sources"):
+            defects.append(
+                f"{where} names candidate_sources — Inquiry has seen no "
+                "manifest, so a named source is a guess the Librarian would "
+                "read as a lead (ruling 5)"
+            )
 
     if seen_ids:
         if len(set(seen_ids)) != len(seen_ids):
@@ -437,35 +507,57 @@ def _check_dedupe(spine: list, defects: list[str]) -> None:
 # AnswerLedger
 # ---------------------------------------------------------------------------
 
-# Written by the model and stripped before validation, then re-injected from N3.
-# The Librarian's hardest field is "is this data available?", and a model asked
-# that answers from its impression of what tools exist. Code answers exactly.
-# Header fields whose value only code can know: the job's own id, and two
-# digests over artifacts the model never sees whole. climb(inject=) writes these
-# and refuses anything else, so the hatch cannot widen into a way of supplying
-# an answer the model was asked for and did not give.
+# Header fields whose value only CODE can know: the job's own id, and the digest
+# over an artifact the model never sees whole. climb(inject=) writes these and
+# refuses anything else, so the hatch cannot widen into a way of supplying an
+# answer the model was asked for and did not give.
 CODE_WRITTEN_HEADER_FIELDS: frozenset[str] = frozenset({
     "job_id", "manifest_fingerprint", "upstream_fingerprint", "generated_at",
 })
 
-CODE_WRITTEN_LEDGER_FIELDS: tuple[str, ...] = (
-    "data_available", "evidence", "condensed_from", "status",
-)
+# `status` is DERIVED FROM `verdict`, never asserted. Two fields that could
+# disagree about the same fact is the class of defect the single-ledger rule
+# exists to close, and a model asked for both will eventually give two answers.
+CODE_WRITTEN_LEDGER_FIELDS: tuple[str, ...] = ("status",)
 
 
 def strip_code_written(row: dict) -> dict:
-    """Drop the fields only N3 may write. Called before validation, always."""
+    """Drop the fields only code may write. Called before validation, always."""
     return {k: v for k, v in row.items() if k not in CODE_WRITTEN_LEDGER_FIELDS}
 
 
+def derive_status(row: dict) -> str:
+    """The code-derived `status` for one ledger row, from its verdict alone."""
+    return _STATUS_FOR_VERDICT.get(_text(row.get("verdict")).lower(), "missing")
+
+
+def apply_derived_status(ledger: dict) -> dict:
+    """`ledger` with every row's `status` rewritten from its verdict."""
+    rows = ledger.get("rows")
+    if not isinstance(rows, list):
+        return ledger
+    out = dict(ledger)
+    out["rows"] = [
+        {**row, "status": derive_status(row)} if isinstance(row, dict) else row
+        for row in rows
+    ]
+    return out
+
+
 def validate_answer_ledger(ledger: dict, question_ids: list[str] | None = None,
-                           declared_variables: set[str] | None = None) -> list[str]:
+                           declared_variables: set[str] | None = None,
+                           required_inputs: set[str] | None = None) -> list[str]:
     """
     Return the defect list. Empty means valid.
 
-    `declared_variables` is read from the LIVE home (read_profile, read_wisdom),
-    never from a Mac copy — a variable name is unique against what is actually
+    `declared_variables` is read from the LIVE home through a read door, never
+    from a Mac copy — a variable name is unique against what is actually
     declared there, not against what a checkout believes is declared.
+
+    `required_inputs` is the set of question ids the plan marks as required.
+    It arrives late, because the plan does not exist at N5: the ledger is
+    validated once without it, and again at N7 with it, which is what makes
+    `if_user_lacks_it` required on exactly the rows that need it.
     """
     defects: list[str] = []
     if not isinstance(ledger, dict):
@@ -478,7 +570,7 @@ def validate_answer_ledger(ledger: dict, question_ids: list[str] | None = None,
         defects.append("rows is empty or not a list")
         return defects
 
-    for field in ("interview_items", "variable_proposals"):
+    for field in ("interview_items", "variable_proposals", "policies_matched"):
         if not isinstance(ledger.get(field, []), list):
             defects.append(f"{field} must be a list")
 
@@ -493,12 +585,15 @@ def validate_answer_ledger(ledger: dict, question_ids: list[str] | None = None,
             defects.append(f"{where} question_id is missing")
         else:
             seen_questions.append(question_id)
-        _check_ledger_row(row, where, declared_variables, defects)
+        _check_ledger_row(row, where, declared_variables, defects, required_inputs)
 
     if question_ids is not None:
         expected, got = set(question_ids), set(seen_questions)
         if expected - got:
-            defects.append(f"no ledger row for questions: {sorted(expected - got)}")
+            defects.append(
+                f"no ledger row for questions: {sorted(expected - got)} — EVERY "
+                "question travels, settled or not (ruling 6); a question with no "
+                "row is one the Planner will never see and never cite")
         if got - expected:
             defects.append(f"ledger rows for unknown questions: {sorted(got - expected)}")
     if len(set(seen_questions)) != len(seen_questions):
@@ -509,7 +604,30 @@ def validate_answer_ledger(ledger: dict, question_ids: list[str] | None = None,
 
 
 def _check_ledger_row(row: dict, where: str, declared_variables: set[str] | None,
-                      defects: list[str]) -> None:
+                      defects: list[str], required_inputs: set[str] | None = None) -> None:
+    """
+    One inventory row. TWO VERDICTS, and the rules that hang off each.
+
+    `required_inputs` is the set of question ids the PLAN marks as required
+    inputs. `if_user_lacks_it` is mandatory on exactly those rows — demanding it
+    everywhere would put a slot in front of a model for rows where the honest
+    answer is "this shaped nothing", and tools/logger.py:411's 93 "None." events
+    are what a slot with no answer produces.
+    """
+    question_id = _text(row.get("question_id"))
+    verdict = _text(row.get("verdict")).lower()
+    if verdict not in VERDICTS:
+        defects.append(
+            f"{where} verdict must be one of {list(VERDICTS)}, got "
+            f"{row.get('verdict')!r} — this is what the Librarian found FOR THIS "
+            "PERSONA, and it is not the same question as what a user lacking it "
+            "gets (ruling 7)"
+        )
+
+    kind = _text(row.get("kind")).lower()
+    if kind not in ROW_KINDS:
+        defects.append(f"{where} kind must be one of {list(ROW_KINDS)}")
+
     answerable_by = _text(row.get("answerable_by")).lower()
     if answerable_by not in ANSWERABLE_BY:
         defects.append(f"{where} answerable_by must be one of {list(ANSWERABLE_BY)}")
@@ -518,17 +636,44 @@ def _check_ledger_row(row: dict, where: str, declared_variables: set[str] | None
     if data_kind not in DATA_KINDS:
         defects.append(f"{where} data_kind must be one of {list(DATA_KINDS)}")
 
-    status = _text(row.get("status")).lower()
-    if status and status not in ROW_STATUSES:
-        defects.append(f"{where} status must be one of {list(ROW_STATUSES)}")
+    _check_inventory(row, where, verdict, defects)
+    _check_lacks(row, where, question_id, required_inputs, defects)
 
-    if answerable_by == "judgment":
+    # A HISTORY MAY NEVER BE A VARIABLE (ruling 7). A history is asked for and
+    # then ACCRUES — the capability logs it turn by turn. Declaring one as a
+    # profile variable freezes a moving quantity into a field somebody has to
+    # remember to update, and nothing ever does.
+    if kind == "history" and (row.get("variable_scope") or row.get("variable_name")):
+        defects.append(
+            f"{where} kind: history declares a variable — a history is asked for "
+            "and then accrues; it is not a variable (ruling 7)"
+        )
+
+    # A PROFILE FACT IS EXACTLY A VARIABLE, so it must say which home.
+    if kind == "profile_fact":
+        if not _text(row.get("variable_scope")):
+            defects.append(
+                f"{where} kind: profile_fact has no variable_scope — a stable "
+                f"fact must name its home, one of {list(VARIABLE_SCOPES)}"
+            )
+        if not _text(row.get("variable_name")):
+            defects.append(f"{where} kind: profile_fact has no variable_name")
+
+    if kind == "external":
+        _check_external(row, where, defects)
+    elif any(row.get(f) for f in ("source_name", "access", "on_failure")):
+        defects.append(
+            f"{where} carries external-row fields but kind is {kind!r} — an "
+            "outbound source is declared by kind, so the two cannot disagree"
+        )
+
+    if answerable_by == "judgment" or kind == "judgment":
         # A judgment with one option is a decision already made, presented as a
         # choice. Two is the floor for the gate to mean anything at runtime.
         options = row.get("decision_options")
         if not isinstance(options, list) or len(options) < 2:
             defects.append(
-                f"{where} answerable_by: judgment requires decision_options with "
+                f"{where} a judgment row requires decision_options with "
                 f"at least 2 entries, got "
                 f"{len(options) if isinstance(options, list) else 'none'}"
             )
@@ -541,14 +686,140 @@ def _check_ledger_row(row: dict, where: str, declared_variables: set[str] | None
                 f"{where} assumption has no falsifier — an assumption nothing "
                 "can disconfirm is not re-checkable at runtime"
             )
-        if not isinstance(row.get("has_what_it_needs"), bool):
-            defects.append(f"{where} has_what_it_needs must be a boolean")
 
     _check_variable_home(row, where, declared_variables, defects)
 
 
+def _check_inventory(row: dict, where: str, verdict: str,
+                     defects: list[str]) -> None:
+    """
+    The inventory block: what exists, in what form, over what period, how
+    complete, how fresh, and WHAT IS MISSING, in words (ruling 5).
+
+    The `gap` field is the one that earns the block. "How complete" as a
+    percentage is a number nobody can act on; "no entries before March, and
+    none at all for weekday mornings" is a finding the Planner can design
+    around. So the gap is prose and it is REQUIRED on every verdict that is
+    not `found` — an `inadequate` row whose gap is empty has recorded a
+    complaint rather than a finding.
+    """
+    inventory = row.get("inventory")
+    if verdict == "absent":
+        # Nothing exists, so there is nothing to inventory. The gap still has
+        # to be stated, and it is stated in the row.
+        if _is_blank(row.get("gap")) and not (
+                isinstance(inventory, dict) and not _is_blank(inventory.get("gap"))):
+            defects.append(
+                f"{where} verdict: absent with no gap — 'nothing is recorded' "
+                "is the finding, and it has to be written down as one")
+        return
+
+    if not isinstance(inventory, dict):
+        defects.append(
+            f"{where} verdict: {verdict} has no inventory block — the verdict is "
+            "the conclusion and the inventory is the evidence for it")
+        return
+
+    for field in ("source", "form"):
+        if _is_blank(inventory.get(field)):
+            defects.append(f"{where} inventory.{field} is empty")
+
+    coverage = inventory.get("coverage")
+    if verdict in {"found", "inadequate"}:
+        if not isinstance(coverage, dict) or _is_blank(coverage.get("from")) \
+                or _is_blank(coverage.get("to")):
+            defects.append(
+                f"{where} inventory.coverage needs from and to — 'it exists' "
+                "without a period is not an inventory")
+        for field in ("completeness", "freshness"):
+            if _is_blank(inventory.get(field)):
+                defects.append(f"{where} inventory.{field} is empty")
+
+    if verdict != "found" and _is_blank(inventory.get("gap")) \
+            and _is_blank(row.get("gap")):
+        defects.append(
+            f"{where} verdict: {verdict} states no gap — what is MISSING, in "
+            "words, is the whole finding; without it the Planner has a "
+            "complaint rather than something to design around")
+
+
+def _check_lacks(row: dict, where: str, question_id: str,
+                 required_inputs: set[str] | None, defects: list[str]) -> None:
+    """The second verdict: what happens for a user who has none of it."""
+    raw = _text(row.get("if_user_lacks_it"))
+    lowered = raw.lower()
+    required = required_inputs is not None and question_id in required_inputs
+
+    if not raw:
+        if required:
+            defects.append(
+                f"{where} is a required input with no if_user_lacks_it — the "
+                "capability has no stated behaviour for a user who lacks it, "
+                "which is the second verdict ruling 7 requires")
+        return
+
+    if lowered in LACKS_BARE:
+        return
+    for prefix in LACKS_PREFIXED:
+        if lowered.startswith(prefix):
+            if len(raw) <= len(prefix):
+                defects.append(
+                    f"{where} if_user_lacks_it is {raw!r} with nothing after the "
+                    "colon — 'degrade' and 'refuse' are only meaningful with the "
+                    "how or the message attached")
+            return
+    defects.append(
+        f"{where} if_user_lacks_it {raw!r} must be one of "
+        f"{sorted(LACKS_BARE)} or start with one of {list(LACKS_PREFIXED)}")
+
+
+def _check_external(row: dict, where: str, defects: list[str]) -> None:
+    """
+    An outbound source states its failure behaviour and its privacy side.
+
+    `carries_personal_context` is the section 0 line drawn at record level: the
+    plan must say which side of it the query sits on BEFORE Mike approves, not
+    after an integration is built. A missing boolean is not "false" — it is a
+    question nobody answered, so it is a defect.
+    """
+    if _is_blank(row.get("source_name")):
+        defects.append(f"{where} external row has no source_name")
+
+    access = _text(row.get("access")).lower()
+    if access and access not in EXTERNAL_ACCESS:
+        defects.append(f"{where} access must be one of {list(EXTERNAL_ACCESS)}")
+
+    if _is_blank(row.get("on_failure")):
+        defects.append(
+            f"{where} external row has no on_failure — an outbound source that "
+            "does not say what happens when it is down has made its own "
+            "availability a silent dependency of the capability")
+
+    if not isinstance(row.get("carries_personal_context"), bool):
+        defects.append(
+            f"{where} carries_personal_context must be a boolean — it decides "
+            "which side of the privacy ruling the outbound query sits on, and "
+            "an unanswered question is not a 'no'")
+
+    if not isinstance(row.get("key_needed"), bool):
+        defects.append(
+            f"{where} key_needed must be a boolean — a key is an (M) item and "
+            "the plan says so before approval, not after")
+
+
 def _check_variable_home(row: dict, where: str, declared_variables: set[str] | None,
                          defects: list[str]) -> None:
+    """
+    Where a declared variable lives, and the ruling-4 consequence of each home.
+
+    SALVAGED. The one rule added in v4: `all_personas` is TWO THINGS, because
+    the template reaches no persona that already exists (finding 10 —
+    tools/profile.py resolves the persona's own file with no template fallback,
+    and config/templates/profile.yaml is read only by new_persona.sh). So the
+    tracked template entry alone leaves `mike` without the field forever. The
+    plan-level half of that rule is in _check_plan_variables(); this is the
+    ledger-level half, which is that the row has to carry the ask path.
+    """
     scope = _text(row.get("variable_scope")).lower()
     name = _text(row.get("variable_name"))
     if not scope and not name:
@@ -567,6 +838,15 @@ def _check_variable_home(row: dict, where: str, declared_variables: set[str] | N
             )
         if _is_blank(row.get("data_home")):
             defects.append(f"{where} declares {name!r} but data_home is empty")
+
+    if scope == "all_personas" and _text(row.get("if_user_lacks_it")).lower() != "ask":
+        defects.append(
+            f"{where} declares an all_personas variable without "
+            "`if_user_lacks_it: ask` — the tracked template entry reaches only "
+            "personas created AFTER it lands, so without the runtime ask path "
+            "every persona that exists today, mike included, never gets the "
+            "field (finding 10)"
+        )
 
     var_type = _text(row.get("variable_type")).lower()
     if var_type:
@@ -589,8 +869,29 @@ def _check_variable_home(row: dict, where: str, declared_variables: set[str] | N
 # BuildPlan
 # ---------------------------------------------------------------------------
 
-def validate_build_plan(plan: dict) -> list[str]:
-    """Return the defect list. Empty means valid."""
+# THE DECISION GATES EVERY PLAN HAS TO CITE (ruling 6). A gate is a place the
+# plan chose one thing over another; a choice with no question behind it was
+# made by the model rather than by the inquiry, and "every question travels" is
+# only true if the travelling is checked at the far end.
+PLAN_GATES: tuple[str, ...] = (
+    "capability", "surface_map", "information_sources", "variables",
+)
+
+
+def validate_build_plan(plan: dict, red_paths: set[str] | None = None,
+                        question_ids: set[str] | None = None) -> list[str]:
+    """
+    Return the defect list. Empty means valid.
+
+    `red_paths` is the Red half of the tier table, resolved from
+    .claude/settings.json at N7. A plan that puts a Red path in the
+    IMPLEMENTER's half of `files[]` fails HERE, before N11 — finding 2: the
+    implementer never touches a Red file, and the cheapest place to establish
+    that is before a subagent is spawned at all.
+
+    `question_ids` is the Question Set's ids. Citations are checked against it
+    so a plan cannot cite a question that was never asked.
+    """
     defects: list[str] = []
     if not isinstance(plan, dict):
         return ["build_plan is not an object"]
@@ -606,7 +907,8 @@ def validate_build_plan(plan: dict) -> list[str]:
     _check_capability(capability, defects)
     _check_surface_map(plan.get("surface_map"), "build_plan", defects)
 
-    for field in ("files", "registration", "tests", "variables", "risks"):
+    for field in ("files", "registration", "tests", "variables", "risks",
+                  "citations", "information_sources", "integrations"):
         if not isinstance(plan.get(field, []), list):
             defects.append(f"{field} must be a list")
 
@@ -619,11 +921,188 @@ def validate_build_plan(plan: dict) -> list[str]:
         defects.append(
             "an agent plan has no registration item — a half-wired agent is "
             "already in the tree today (time_director), which is the class of "
-            "defect one required record exists to end"
+            "defect the registration matrix exists to end"
         )
 
+    _check_citations(plan, question_ids, defects)
+    _check_files(plan, red_paths, defects)
+    _check_information_sources(plan, defects)
+    _check_integrations(plan, defects)
+    _check_plan_variables(plan, defects)
     _check_state_record(plan, defects)
     return defects
+
+
+def _check_citations(plan: dict, question_ids: set[str] | None,
+                     defects: list[str]) -> None:
+    """
+    A citation at every decision gate, naming a question id AND a ledger row.
+
+    This is ruling 6's far end. Inquiry's questions are cheap to write and
+    cheap to ignore; what makes them load-bearing is that the plan cannot
+    declare a capability, a surface, an information source or a variable
+    without pointing at the question that produced it. A plan gate with no
+    citation fails, which is exactly the assertion section 12 names.
+    """
+    citations = plan.get("citations")
+    if not isinstance(citations, list):
+        return                                  # already reported as not-a-list
+
+    cited_gates: set[str] = set()
+    for position, citation in enumerate(citations, start=1):
+        where = f"citations[{position}]"
+        if not isinstance(citation, dict):
+            defects.append(f"{where} is not an object")
+            continue
+        gate = _text(citation.get("gate")).lower()
+        if gate not in PLAN_GATES:
+            defects.append(f"{where} gate {citation.get('gate')!r} is not one of "
+                           f"{list(PLAN_GATES)}")
+        else:
+            cited_gates.add(gate)
+        qid = _text(citation.get("question_id"))
+        if not qid:
+            defects.append(f"{where} cites no question_id")
+        elif question_ids is not None and qid not in question_ids:
+            defects.append(
+                f"{where} cites {qid!r}, which is not in the Question Set — a "
+                "citation to a question nobody asked is worse than none")
+        if _is_blank(citation.get("ledger_row")):
+            defects.append(
+                f"{where} names no ledger_row — a question id alone cites the "
+                "asking; the row is what was FOUND, and that is the evidence")
+
+    present_gates = {g for g in PLAN_GATES if plan.get(g) not in (None, "", [], {})}
+    for gate in sorted(present_gates - cited_gates):
+        defects.append(
+            f"decision gate {gate!r} carries no citation — it was decided by the "
+            "model rather than by the inquiry (ruling 6)")
+
+
+def _check_files(plan: dict, red_paths: set[str] | None,
+                 defects: list[str]) -> None:
+    """
+    `files[]`, and the tier split the implementer's half rests on (finding 2).
+
+    Each entry is `{path, half}` where half is `implementer` or `main_session`.
+    A RED PATH IN THE IMPLEMENTER'S HALF FAILS HERE — before N11, before a
+    subagent exists, which is the cheapest possible place. A Red path in the
+    main session's half is correct and expected: that is where the routing
+    entries and the agent file go.
+    """
+    entries = plan.get("files")
+    if not isinstance(entries, list):
+        return
+    seen: set[str] = set()
+    for position, entry in enumerate(entries, start=1):
+        where = f"files[{position}]"
+        path = _text(entry.get("path") if isinstance(entry, dict) else entry)
+        if not path:
+            defects.append(f"{where} has no path")
+            continue
+        if path in seen:
+            defects.append(f"{where} lists {path!r} twice")
+        seen.add(path)
+        if path.startswith("/") or ".." in path.split("/"):
+            defects.append(
+                f"{where} path {path!r} is not repo-relative — an absolute or "
+                "climbing path escapes every gate that reads the diff")
+        half = _text(entry.get("half") if isinstance(entry, dict) else "").lower()
+        if half not in {"implementer", "main_session"}:
+            defects.append(
+                f"{where} half must be implementer|main_session — the split is "
+                "what keeps every Red file in the session where the harness's "
+                "ask rules prompt (finding 2)")
+            continue
+        if half == "implementer" and red_paths and path in red_paths:
+            defects.append(
+                f"{where} puts the Red path {path!r} in the implementer's half — "
+                "the implementer never touches a Red file; that half is the main "
+                "session's, where each write prompts Mike (finding 2)")
+
+
+def _check_information_sources(plan: dict, defects: list[str]) -> None:
+    """
+    One entry per ledger row the capability READS — and this is the thing that
+    becomes the agent file's "where to look" section.
+
+    It carries `if_user_lacks_it` forward from the ledger row rather than
+    restating it, because the two going out of step is how a capability ends up
+    with a documented degrade path its instructions never mention.
+    """
+    for position, entry in enumerate(plan.get("information_sources") or [], start=1):
+        where = f"information_sources[{position}]"
+        if not isinstance(entry, dict):
+            defects.append(f"{where} is not an object")
+            continue
+        for field in ("row_id", "tool", "if_user_lacks_it"):
+            if _is_blank(entry.get(field)):
+                defects.append(f"{where} {field} is empty")
+        if "arguments" in entry and not isinstance(entry["arguments"], dict):
+            defects.append(f"{where} arguments must be an object")
+
+
+def _check_integrations(plan: dict, defects: list[str]) -> None:
+    """
+    One entry per external row (ruling 5). An outbound source with a key is an
+    (M) item, so the plan says so BEFORE approval, not after.
+    """
+    for position, entry in enumerate(plan.get("integrations") or [], start=1):
+        where = f"integrations[{position}]"
+        if not isinstance(entry, dict):
+            defects.append(f"{where} is not an object")
+            continue
+        if _is_blank(entry.get("source")):
+            defects.append(f"{where} source is empty")
+        if not isinstance(entry.get("key_registration_is_m_item"), bool):
+            defects.append(
+                f"{where} key_registration_is_m_item must be a boolean — an (M) "
+                "item that surfaces after approval is one Mike did not agree to")
+        for field in ("cost_per_call", "cost_per_month"):
+            if entry.get(field) is None:
+                defects.append(
+                    f"{where} {field} is missing — an integration with no priced "
+                    "run cost is a standing charge nobody named (CLAUDE.md Costs)")
+        if _is_blank(entry.get("privacy_tier")):
+            defects.append(
+                f"{where} privacy_tier is empty — the plan must say which side "
+                "of the section 0 line the outbound query sits on")
+
+
+def _check_plan_variables(plan: dict, defects: list[str]) -> None:
+    """
+    The plan half of the `all_personas` rule (finding 10).
+
+    An `all_personas` variable is TWO things: the tracked template entry, in the
+    diff, so future personas start with the field; AND the capability's
+    `if_user_lacks_it: ask` path, which creates it through write_profile on
+    first use for every persona that exists today. A plan declaring the first
+    without the second ships a field `mike` will never have.
+    """
+    template_paths = {
+        _text(e.get("path") if isinstance(e, dict) else e)
+        for e in plan.get("files") or []
+    }
+    for position, variable in enumerate(plan.get("variables") or [], start=1):
+        where = f"variables[{position}]"
+        if not isinstance(variable, dict):
+            defects.append(f"{where} is not an object")
+            continue
+        scope = _text(variable.get("scope")).lower()
+        if scope and scope not in VARIABLE_SCOPES:
+            defects.append(f"{where} scope must be one of {list(VARIABLE_SCOPES)}")
+        if scope != "all_personas":
+            continue
+        if _text(variable.get("if_user_lacks_it")).lower() != "ask":
+            defects.append(
+                f"{where} declares an all_personas variable without "
+                "`if_user_lacks_it: ask` — the template reaches no persona that "
+                "already exists, so mike would never get the field (finding 10)")
+        if not any(p.startswith("config/templates/") for p in template_paths):
+            defects.append(
+                f"{where} declares an all_personas variable but files[] carries "
+                "no config/templates/ entry — the other half of the rule is the "
+                "tracked template entry, so future personas start with it")
 
 
 def _check_capability(capability: dict, defects: list[str]) -> None:
@@ -758,8 +1237,8 @@ def _check_state_record(plan: dict, defects: list[str]) -> None:
 #
 # RUNG 0  STRUCTURAL REPAIR  free
 # RUNG 1  FIELD COERCION     free
-# RUNG 2  TARGETED RETRY     one call, max 1 per node        (core/build/runner.py)
-# RUNG 3  REJECT             -> failed with the defect list  (core/build/runner.py)
+# RUNG 2  TARGETED RETRY     one call, max 1 per node        (core/build/driver.py)
+# RUNG 3  REJECT             -> the job parks with the defects (core/build/driver.py)
 
 def repair_json(raw: str) -> tuple[dict | None, str]:
     """
@@ -893,10 +1372,14 @@ def climb(kind: str, raw: Any, inject: dict | None = None,
     if inject and isinstance(obj, dict):
         for field, value in inject.items():
             if field not in CODE_WRITTEN_HEADER_FIELDS:
-                raise SchemaError(
+                # SchemaError takes (kind, defects). Called with one argument
+                # here until 2026-09-24, so the guard raised TypeError instead
+                # of its own message — the hatch still closed, and the reason it
+                # closed was lost. Found by the test that exercises it.
+                raise SchemaError("climb", [
                     f"climb(inject=) refuses {field!r}: it is not a header field "
                     f"code owns. Allowed: {sorted(CODE_WRITTEN_HEADER_FIELDS)}"
-                )
+                ])
             obj[field] = value
 
     validator = {
@@ -905,357 +1388,3 @@ def climb(kind: str, raw: Any, inject: dict | None = None,
         "build_plan": validate_build_plan,
     }[kind]
     return obj, validator(obj, **checks), notes
-
-
-# ---------------------------------------------------------------------------
-# The overlay capability record — the registration matrix as ONE record
-# ---------------------------------------------------------------------------
-#
-# Registration is not a checklist of edits to tracked files. It is one record,
-# written by the writer into the overlay, that the four load seams read.
-#
-# The live evidence that humans do not complete a checklist reliably is in the
-# tree right now: `config/agents/time_director.md` exists, `_AGENT_NAME_MAP`
-# maps to it, `_UNAVAILABLE_CONSEQUENCE` carries a line for it — and it appears
-# in NEITHER routing file nor the Coordinator's name list. Anything naming it
-# raises at core/router.py:112-117. A half-wired agent is in the tree today.
-# One record with required fields is the answer to that class of defect; a
-# longer checklist is not.
-
-_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-_AGENT_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{2,31}$")
-
-
-# Letters, digits, spaces and an ampersand. Nothing else, because this string is
-# SPLICED INTO A PROMPT by seam 3 — inside a backticked, quoted item in a closed
-# list — so a backtick, a quote or a newline in it rewrites the sentence the
-# Coordinator is reading rather than merely looking odd. Underscores are refused
-# too: a display name is a human string, and one that looks like an identifier
-# invites exactly the confusion between the two names this record separates.
-_DISPLAY_NAME_RE = re.compile(r"^[A-Za-z0-9 &]+$")
-
-
-def validate_overlay_capability(record: dict,
-                                tracked_names: set[str] | None = None,
-                                read_set: set[str] | None = None,
-                                known_domains: set[str] | None = None,
-                                reserved_display: set[str] | None = None,
-                                model_ref_names: set[str] | None = None,
-                                peer_displays: dict[str, str] | None = None) -> list[str]:
-    """
-    Return the defect list for an overlay capability record. Empty means valid.
-
-    `tracked_names` is the union of THREE sets — the agents in routing.yaml,
-    the agents in routing_cloud.yaml, and the stems of config/agents/*.md — and
-    the union is load-bearing rather than belt-and-braces. The routing files
-    alone are not enough: `time_director` and `goals_interview_reference` have
-    agent files and no routing entry, so a record named `time_director` would
-    pass a routing-only check and then be split across the seams — seam 1 loads
-    the TRACKED prose, seam 2 merges the OVERLAY's tools and model. Tracked
-    wins in every seam, so the collision lands a record nothing ever loads
-    whole. It is refused up front instead.
-
-    `read_set` is the writer's hardcoded grant allowlist, passed in rather than
-    imported so there is exactly one home for it (core/build/writer.py). Both
-    routing entries' `allowed_tools` must be identical and both a subset of it.
-
-    Each argument defaults to None meaning "not checked here" — the writer
-    always passes all three, and check_build_registration.py re-asserts the
-    same three-set rule independently.
-    """
-    defects: list[str] = []
-    if not isinstance(record, dict):
-        return ["overlay_capability is not an object"]
-
-    expected = SCHEMA_VERSIONS["overlay_capability"]
-    if _text(record.get("schema")) != expected:
-        defects.append(f"schema must be {expected!r}, got {record.get('schema')!r}")
-
-    from core.build.ids import is_job_id
-    if not is_job_id(_text(record.get("job_id"))):
-        defects.append(f"job_id {record.get('job_id')!r} is not a BLD-MMDD-NN id")
-
-    version = record.get("version")
-    if not isinstance(version, int) or isinstance(version, bool) or version < 1:
-        defects.append("version must be a positive integer")
-    if _is_blank(record.get("generated_at")):
-        defects.append("generated_at is missing")
-
-    name = _text(record.get("name"))
-    if not _AGENT_NAME_RE.match(name):
-        defects.append(f"name {name!r} must match {_AGENT_NAME_RE.pattern}")
-    elif tracked_names is not None and name in tracked_names:
-        defects.append(
-            f"name {name!r} collides with a tracked agent — a record by that "
-            "name would be split across the seams (tracked prose, overlay "
-            "tools) and never loaded whole"
-        )
-
-    display = _text(record.get("display_name"))
-    if not display:
-        defects.append("display_name is empty — it is what the Coordinator copies")
-    elif not _DISPLAY_NAME_RE.match(display):
-        defects.append(
-            f"display_name {display!r} must match {_DISPLAY_NAME_RE.pattern} — it "
-            "is spliced into a quoted item inside the Coordinator's closed "
-            "valid-name list, so punctuation in it rewrites that sentence"
-        )
-    else:
-        defects.extend(_check_display_name(
-            display, _text(record.get("name")), tracked_names, reserved_display,
-            peer_displays))
-
-    if _text(record.get("agent_file")) != f"agents/{name}.md":
-        defects.append(
-            f"agent_file must be 'agents/{name}.md', got "
-            f"{record.get('agent_file')!r} — the record and the file it names "
-            "are loaded by different seams and must not be able to disagree"
-        )
-    if not _SHA256_RE.match(_text(record.get("agent_sha256")).lower()):
-        defects.append("agent_sha256 is not a 64-character hex digest")
-
-    _check_overlay_routing(record, read_set, model_ref_names, defects)
-
-    coordinator = record.get("coordinator")
-    if not isinstance(coordinator, dict):
-        defects.append("coordinator block is missing")
-    else:
-        entry = _text(coordinator.get("directory_entry"))
-        if not entry:
-            defects.append("coordinator.directory_entry is empty")
-        elif display and display not in entry:
-            defects.append(
-                f"coordinator.directory_entry does not name {display!r} — the "
-                "directory entry and the valid-name list are spliced into the "
-                "same prompt and must agree"
-            )
-
-    if _is_blank(record.get("unavailable_consequence")):
-        defects.append(
-            "unavailable_consequence is empty — an area with no entry degrades "
-            "to a bare statement, which is safe but tells the user nothing"
-        )
-
-    _check_overlay_confidential(record, name, defects)
-
-    domains = record.get("knowledge_domains", [])
-    if not isinstance(domains, list):
-        defects.append("knowledge_domains must be a list")
-    elif known_domains is not None:
-        for domain in domains:
-            if _text(domain) not in known_domains:
-                defects.append(
-                    f"knowledge_domains names {domain!r}, which is not a "
-                    "wisdom domain — a capability may join an existing domain, "
-                    "never create one"
-                )
-
-    mode = _text(record.get("execution_mode")).lower()
-    if mode not in EXECUTION_MODES:
-        defects.append(f"execution_mode must be one of {list(EXECUTION_MODES)}")
-    budget = record.get("latency_budget_ms")
-    if not isinstance(budget, (int, float)) or isinstance(budget, bool) or budget <= 0:
-        defects.append("latency_budget_ms must be a positive number")
-
-    return defects
-
-
-def _collapse(text: str) -> str:
-    """
-    The COMPARISON FORM of a display name: internal whitespace collapsed to one
-    space, ends trimmed, case folded by the caller.
-
-    `Mental  Wellbeing` passed every check it should have failed: it satisfies
-    the charset, normalises to `mental__wellbeing` which is not a tracked agent,
-    and lowercases to a string the reserved set does not contain — so it spliced
-    into the closed valid-name list one space away from the real entry, on a
-    model whose own map comment records that it cannot reliably copy that list.
-    Every display-name comparison now runs on this form.
-    """
-    return re.sub(r"\s+", " ", str(text or "")).strip()
-
-
-def _resolve_display(display: str) -> str:
-    """The agent name a display string dispatches to, via the Coordinator's own map."""
-    collapsed = _collapse(display)
-    try:
-        from core.orchestrator import normalize_agent_name
-        return normalize_agent_name(collapsed)
-    except Exception:
-        return collapsed.lower().replace(" & ", "_").replace(" and ", "_") \
-                        .replace(" ", "_")
-
-
-def _check_display_name(display: str, own_name: str,
-                        tracked_names: set[str] | None,
-                        reserved_display: set[str] | None,
-                        peer_displays: dict[str, str] | None) -> list[str]:
-    """
-    Four collisions, in order of severity. Each returns immediately: one clear
-    reason is more useful than four restatements of the same string.
-
-    THE NAME RULE WAS NEVER ENOUGH. `name` was checked against three sets and
-    `display_name` against none — but display_name is the string the model
-    copies and the string seam 3 splices into the closed list, and it resolves
-    to an agent name through the generic fallback whether or not anything
-    registered it.
-
-    The fourth collision is the one the first fix missed: a second GENERATED
-    capability capturing the first one's dispatch. Not tracked shadowing — the
-    same mechanism one layer down, arriving on the second landed capability,
-    which is exactly the bootstrap sequence in plan Section 11.
-    """
-    defects: list[str] = []
-    collapsed = _collapse(display)
-    lowered = collapsed.casefold()
-    resolved = _resolve_display(collapsed)
-
-    if tracked_names and resolved in tracked_names:
-        return [f"display_name {display!r} resolves to tracked agent {resolved!r} "
-                "— the Coordinator would dispatch that agent instead"]
-
-    if reserved_display:
-        reserved = {_collapse(r).casefold() for r in reserved_display}
-        if lowered in reserved or resolved in reserved_display:
-            return [f"display_name {display!r} is already a name the Coordinator "
-                    "knows — it is in the name map or the closed valid-name "
-                    "list, or differs from one only by whitespace or case"]
-
-    for peer_name, peer_display in (peer_displays or {}).items():
-        if peer_name == own_name:
-            continue
-        if _collapse(peer_display).casefold() == lowered:
-            defects.append(
-                f"display_name {display!r} duplicates the display name of "
-                f"overlay capability {peer_name!r} — the closed valid-name list "
-                "would carry the same string twice and the name map would keep "
-                "one winner, chosen by sort order"
-            )
-            return defects
-        if resolved == peer_name:
-            defects.append(
-                f"display_name {display!r} resolves to overlay capability "
-                f"{peer_name!r} — it would capture that capability's dispatch"
-            )
-            return defects
-    return defects
-
-
-def _check_overlay_routing(record: dict, read_set: set[str] | None,
-                           model_ref_names: set[str] | None,
-                           defects: list[str]) -> None:
-    """
-    BOTH entries, one record — parity is a schema property, not a convention.
-
-    v2 demanded routing_local and routing_cloud in the same apply() call; a
-    record missing either entry does not validate and cannot be written at all.
-    The evidence that convention alone does not hold is routing.yaml itself: the
-    2026-07-27 diarist fix landed write_log/write_wisdom in the cloud file and
-    missed the local one, silently losing both under DEPLOYMENT_MODE=local.
-    """
-    routing = record.get("routing")
-    if not isinstance(routing, dict):
-        defects.append("routing block is missing — both entries live in one record")
-        return
-
-    local = routing.get("local")
-    cloud = routing.get("cloud")
-    if not isinstance(local, dict):
-        defects.append("routing.local is missing")
-    if not isinstance(cloud, dict):
-        defects.append("routing.cloud is missing")
-    if not isinstance(local, dict) or not isinstance(cloud, dict):
-        return
-
-    if local.get("local") is not True:
-        defects.append(
-            "routing.local.local must be true — a generated capability is "
-            "Sensitive unless it can demonstrate it never touches persona data"
-        )
-    # PROVIDER IS INHERITED, NEVER DECLARED. `model_ref` existed so a record
-    # could not pin a stale model id — and a record could still pin a PROVIDER,
-    # which seam 2 honoured. That let a record route itself to another vendor
-    # entirely while every field in it looked correct. Both halves now come from
-    # the tracked agent the ref names.
-    if cloud.get("provider") is not None:
-        defects.append(
-            "routing.cloud.provider is set — provider and model are both "
-            "inherited from the agent model_ref names, so that a record cannot "
-            "route itself to a vendor nobody chose for it"
-        )
-
-    # A model id, not a model ref, is the failure this refuses. Ids have a short
-    # half-life here — the reasoning tier moved twice in four days this month —
-    # and a generated record pinning one would strand the capability on a
-    # retired id with nobody editing it. Seam 2 resolves the ref at load time.
-    ref = _text(cloud.get("model_ref"))
-    if not ref:
-        defects.append("routing.cloud.model_ref is empty")
-    elif not _AGENT_NAME_RE.match(ref):
-        defects.append(
-            f"routing.cloud.model_ref {ref!r} is not an agent name — it must "
-            "name a tracked agent whose live model seam 2 resolves, never a "
-            "model id, which goes stale with nobody editing this record"
-        )
-    elif model_ref_names is not None and ref not in model_ref_names:
-        defects.append(
-            f"routing.cloud.model_ref {ref!r} is not in BOTH routing files — a "
-            "ref present in only one resolves under one DEPLOYMENT_MODE and "
-            "vanishes under the other, which is the split the one-record shape "
-            "exists to make impossible"
-        )
-    if cloud.get("model") is not None:
-        defects.append(
-            "routing.cloud.model is set — a record pins a model_ref, never a model"
-        )
-
-    local_tools = local.get("allowed_tools")
-    cloud_tools = cloud.get("allowed_tools")
-    for label, tools in (("local", local_tools), ("cloud", cloud_tools)):
-        if not isinstance(tools, list):
-            defects.append(f"routing.{label}.allowed_tools must be a list")
-    if not isinstance(local_tools, list) or not isinstance(cloud_tools, list):
-        return
-
-    if list(local_tools) != list(cloud_tools):
-        defects.append(
-            "routing.local.allowed_tools and routing.cloud.allowed_tools differ "
-            "— the grant is the same grant whichever file serves it, and a "
-            "split one is the 2026-07-27 diarist defect"
-        )
-    if read_set is not None:
-        outside = sorted({_text(t) for t in local_tools} - read_set)
-        if outside:
-            defects.append(
-                f"allowed_tools names {outside}, outside the read set — a grant "
-                "not on the allowlist is refused whether or not anything names "
-                "it as dangerous"
-            )
-
-
-def _check_overlay_confidential(record: dict, name: str, defects: list[str]) -> None:
-    """
-    confidential_names go to the SENTENCE-GATED list, never the unconditional one.
-
-    _ALWAYS_CONFIDENTIAL is for identifiers "impossible in natural prose", and
-    one substring hit replaces the whole reply with the canned fallback — its
-    matcher joins tokens across up to four punctuation characters or none, so
-    `home_care` there would suppress "your home-care tasks" and a single-word
-    name like `garden` would suppress every reply containing that word.
-    _CONTEXT_SENSITIVE fires only inside a sentence carrying architecture
-    vocabulary, which is exactly the mechanism for a name that is also English.
-
-    The record cannot choose which list it lands on — seam 4 hardcodes that —
-    so what is checked here is only that the names are present and include the
-    capability's own name, which is the one that would otherwise be missed.
-    """
-    names = record.get("confidential_names")
-    if not isinstance(names, list) or not names:
-        defects.append("confidential_names must be a non-empty list")
-        return
-    flat = {_text(n) for n in names}
-    if name and name not in flat:
-        defects.append(
-            f"confidential_names does not include {name!r} — the capability's "
-            "own name is the one the filter must know about"
-        )

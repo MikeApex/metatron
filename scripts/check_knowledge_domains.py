@@ -33,26 +33,9 @@ ROUTING = [
 ]
 
 
-def _overlay_records(overlay: Path) -> list[dict]:
-    found: list[dict] = []
-    for path in sorted((overlay / "capabilities").glob("*.yaml")):
-        try:
-            record = yaml.safe_load(path.read_text(encoding="utf-8"))
-        except Exception:
-            continue
-        if isinstance(record, dict):
-            found.append(record)
-    return found
-
-
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--overlay", default=None,
-                    help="also read a Build overlay tree. Generated capabilities "
-                         "join domains through their record and seam 4, never by "
-                         "editing knowledge_domains.yaml — so without this flag "
-                         "they are invisible here.")
     args = ap.parse_args()
 
     if not MAP_PATH.exists():
@@ -62,24 +45,11 @@ def main() -> int:
     mapping = (yaml.safe_load(MAP_PATH.read_text()) or {}).get("domains") or {}
     findings: list[str] = []
 
-    # The overlay half. A record may JOIN an existing domain and never create
-    # one: a new key here is a subject nothing else reads and no tracked agent
-    # serves. Checked against the same valid_domains set as the tracked map.
-    overlay_agents: set[str] = set()
-    if args.overlay:
-        overlay = Path(args.overlay)
-        if not overlay.is_dir():
-            print(f"No overlay tree at {overlay}")
-            return 2
-        for record in _overlay_records(overlay):
-            name = str(record.get("name") or "")
-            overlay_agents.add(name)
-            for domain in record.get("knowledge_domains") or []:
-                if str(domain) not in set(DOMAINS) | {OVERFLOW_DOMAIN}:
-                    findings.append(
-                        f"overlay capability '{name}' names domain '{domain}', "
-                        "which is not a wisdom domain")
-
+    # The --overlay half was removed 2026-09-24 with the overlay itself (build
+    # plan v4.11 ruling 4). A generated capability now joins a domain by having
+    # its name WRITTEN INTO knowledge_domains.yaml in the diff, so it is an
+    # ordinary line here and the checks below already see it. There is nothing
+    # this script cannot see any more, which is why the exemption below went too.
     valid_domains = set(DOMAINS) | {OVERFLOW_DOMAIN}
     for domain in mapping:
         if domain not in valid_domains:
@@ -96,8 +66,6 @@ def main() -> int:
         agents = set((yaml.safe_load(routing_path.read_text()) or {}).get("agents") or {})
         for domain, named in mapping.items():
             for agent in named or []:
-                if agent in overlay_agents:
-                    continue
                 if agent not in agents:
                     findings.append(
                         f"'{domain}' names agent '{agent}', absent from {routing_path.name}"

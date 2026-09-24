@@ -747,80 +747,50 @@ def load_agent(name: str) -> str:
     """
     Load a sub-agent instruction file from config/agents/{name}.md.
 
-    SEAM 1 of Build's four load seams. A TRACKED file always wins: the overlay
-    is consulted only when config/agents/{name}.md does not exist, so a
-    generated capability can never shadow a tracked agent. The seam fails open
-    — if the overlay cannot be read, this raises exactly as it did before.
+    ONE PLACE AN AGENT FILE CAN COME FROM, again as of 2026-09-24. Build's seam
+    1 consulted an overlay here when the tracked file was absent; Build now
+    WRITES the tracked file (plan v4.11 ruling 4), in the same diff as the
+    capability's code, which Mike reads and commits. A generated agent is loaded
+    by exactly the path a hand-written one is, so there is nothing left to
+    consult and no fallback whose silence could be mistaken for success.
     """
     agent_path = AGENTS_DIR / f"{name}.md"
     if agent_path.exists():
         return agent_path.read_text().strip()
-
-    overlay_path = _overlay_agent_file(name)
-    if overlay_path is not None:
-        return overlay_path.read_text(encoding="utf-8").strip()
-
     raise FileNotFoundError(f"Agent not found: {agent_path}")
 
 
-def _overlay_agent_file(name: str):
-    """
-    The overlay instruction file for `name`, or None. Never raises.
-
-    Swallowing every exception is deliberate here and only here: this runs on
-    the path that loads EVERY agent, tracked ones included, and a broken
-    overlay record must not be able to take down a tracked session. The
-    fail-closed half of Build's design lives in core/build/writer.py and
-    core/build/verify.py, where a refusal costs nothing.
-    """
-    try:
-        from core.build.overlay import agent_file
-        return agent_file(name)
-    except Exception as exc:
-        logger.warning(f"[overlay] agent lookup for {name!r} failed: {exc}")
-        return None
-
-
 # ---------------------------------------------------------------------------
-# SEAM 3 — the Coordinator's valid-name list, rewritten at PROMPT ASSEMBLY
+# The Coordinator's valid-name list is a TRACKED SENTENCE, and nothing rewrites it
 # ---------------------------------------------------------------------------
 #
-# The valid-name list is a CLOSED list in a cached system prompt: "copy these
-# strings exactly, character for character". A generated capability that is not
-# in that sentence is a name the model has been told is invalid.
+# Build's seam 3 spliced generated capability names into that closed list in
+# memory, at prompt assembly, because a generated agent that was not in the
+# sentence was a name the model had been told was invalid. Removed 2026-09-24
+# with the overlay (plan v4.11 ruling 4): the list, the Specialist directory
+# entry and the name map are now EDITED ON DISK, in the main session, in the
+# same diff as the capability. Mike reads the sentence he is shipping.
 #
-# The rejected alternative was injecting the new names as a context block. That
-# would leave the system prompt saying the name was invalid and a context block
-# saying it was — on a model whose own _AGENT_NAME_MAP comment records that it
-# cannot reliably copy even the EXISTING list. Two contradicting instructions to
-# a model already known to fumble this one is not a fallback, it is a coin toss.
-#
-# So the sentence itself is rewritten, in memory, at assembly. THE TRACKED FILE
-# IS NEVER TOUCHED ON DISK — config/agents/coordinator.md keeps its tracked list
-# and its sha256, and tests/test_build_overlay.py asserts exactly that.
-#
-# COST, ACCEPTED BY MIKE 2026-09-18 AND PRICED IN THE PLAN'S Section 14: the
-# system prompt changes once per landing, so the Vertex prompt cache for
-# `coordinator` is created afresh on the first turn after each landing. Once per
-# capability, never per turn, and never for `synthesizer`, whose prompt this
-# does not touch. _pad_for_vertex_cache()'s 4,096-token floor is unaffected
-# because the prompt only ever GROWS here.
+# What that also closes is an Ancillary cost nobody was metering: the seam
+# rewrote the Coordinator's system prompt on every landing, which invalidated
+# its Vertex context cache. The prompt now changes at deploy, when it changes
+# anyway.
 
-# Compiled on first use, not at import: this block sits above the module's
-# `import re as _re`, and a pattern that has to be moved whenever the imports
-# are reordered is a pattern that will one day be moved wrongly.
 # The Coordinator's display-name -> agent-name map.
 #
-# MODULE LEVEL since 2026-09-19, because two other things must read it. The
-# overlay record validator refuses a `display_name` that resolves INTO this map
-# — a record displaying "Mental Wellbeing" would otherwise put a duplicate into
-# the closed valid-name list and point its directory entry at a tracked agent —
-# and seam 3 checks the same thing independently, so schema and seam agree. As a
-# local literal it was readable only by the function using it, so neither check
-# could exist.
+# NOT PART OF THE SEAM, and it very nearly went out with it on 2026-09-24: it
+# was MOVED to module level on 2026-09-19 so that the overlay record validator
+# and seam 3 could both read it, so it sat inside the seam's block and read like
+# seam machinery. It is not — `_dispatch_from_coordinator` has always needed it
+# to turn the display name the Coordinator answers with back into an agent name,
+# and that is true of the tracked roster with no Build in the picture at all.
 #
-# CALLERS TAKE A COPY before merging anything in. Mutating this dict would carry
-# one persona's capability names into the next request on the same process.
+# py_compile accepted its removal. The knowledge-routing regression gate did
+# not, which is the qa_sweep header's own warning happening: a green sweep means
+# nothing statically detectable is broken, never that this works.
+#
+# CALLERS TAKE A COPY before mutating anything. Mutating this dict would carry
+# one request's names into the next handled by the same process.
 _AGENT_NAME_MAP = {
     # Full names
     "mental wellbeing": "mental_wellbeing",
@@ -847,6 +817,7 @@ _AGENT_NAME_MAP = {
     "time": "time_director",
 }
 
+
 def normalize_agent_name(name: str, name_map: dict[str, str] | None = None) -> str:
     """
     A name the Coordinator said -> the agent name to dispatch.
@@ -854,81 +825,14 @@ def normalize_agent_name(name: str, name_map: dict[str, str] | None = None) -> s
     The generic fallback is the half that matters for Build: a display name
     resolves to an agent name whether or not anything registered it, which is
     why a generated `display_name` must be checked against the TRACKED agent
-    names and not merely against this map's keys.
+    names and not merely against this map's keys. core/build/gates.check_names()
+    is the check that does so.
     """
     lowered = str(name or "").lower()
     table = _AGENT_NAME_MAP if name_map is None else name_map
     if lowered in table:
         return table[lowered]
     return lowered.replace(" & ", "_").replace(" and ", "_").replace(" ", "_")
-
-
-_VALID_NAMES_PATTERN = r'(^\*\*Valid `"agent"` values\*\*[^\n]*:\s*\n)([^\n]+)$'
-_DIRECTORY_HEADING = "## Specialist directory"
-
-
-@lru_cache(maxsize=2)
-def _valid_names_re():
-    import re
-    return re.compile(_VALID_NAMES_PATTERN, re.MULTILINE)
-
-
-def _overlay_coordinator_prompt(agent_text: str, persona: str | None = None) -> str:
-    """
-    The Coordinator's instructions with any generated capabilities spliced in.
-
-    Returns the text UNCHANGED when there is no overlay, when it cannot be read,
-    or when the anchors are not found — this seam fails open like the other
-    three, and a Coordinator running on its tracked list is the pre-Build
-    behaviour rather than a broken one.
-    """
-    try:
-        from core.build.overlay import coordinator_additions
-        names, entries = coordinator_additions(persona)
-    except Exception as exc:
-        logger.warning(f"[overlay] coordinator additions failed: {exc}")
-        return agent_text
-    if not names:
-        return agent_text
-
-    text = _splice_valid_names(agent_text, names)
-    return _append_directory_entries(text, entries)
-
-
-def _splice_valid_names(text: str, names: list[str]) -> str:
-    """Append `"Display Name"` to the closed list, inside the same sentence."""
-    match = _valid_names_re().search(text)
-    if not match:
-        logger.warning("[overlay] coordinator valid-name list not found; "
-                       "generated capabilities are NOT in the closed list")
-        return text
-    listing = match.group(2)
-    additions = [f'`"{n}"`' for n in names if f'`"{n}"`' not in listing]
-    if not additions:
-        return text
-    return text[:match.start(2)] + listing.rstrip() + " · " + " · ".join(additions) \
-        + text[match.end(2):]
-
-
-def _append_directory_entries(text: str, entries: list[str]) -> str:
-    """
-    Add each directory entry INSIDE the existing Specialist directory section.
-
-    Deliberately not a new "## Additional specialists" heading: a second
-    directory is a second place to look, and the Coordinator reads one.
-    """
-    if not entries:
-        return text
-    start = text.find(_DIRECTORY_HEADING)
-    if start == -1:
-        logger.warning("[overlay] '%s' not found; directory entries dropped",
-                       _DIRECTORY_HEADING)
-        return text
-    import re
-    nxt = re.search(r'^## ', text[start + len(_DIRECTORY_HEADING):], re.MULTILINE)
-    end = start + len(_DIRECTORY_HEADING) + nxt.start() if nxt else len(text)
-    block = "\n" + "\n\n".join(e.strip() for e in entries) + "\n\n"
-    return text[:end].rstrip() + "\n" + block + text[end:]
 
 
 def _relative_age(days_ago: int) -> str:
@@ -1452,16 +1356,15 @@ def register_tools() -> tuple[list[dict], dict]:
     # of it. Granted to `relationships` alone in both routing files.
     from tools.crm_sweep import apply_crm_proposals, APPLY_CRM_PROPOSALS_SCHEMA
     from tools.horizon import record_horizon_item, RECORD_HORIZON_ITEM_SCHEMA
-    # The Build vertical's whole agent-callable surface — two tools, both
-    # returning in milliseconds. request_build FILES a gap; it never builds
-    # anything in the turn, because a Build run is minutes and dollars and a
-    # name in the valid-agent list would be a lie about what calling it costs.
-    # Neither is granted to anything yet: the grant is `request_build` on
-    # `coordinator`'s allowed_tools in both routing files, and it lands in
-    # phase 5 with the agent files, so the instruction and the grant arrive
-    # together rather than repeating the time_director half-wiring.
-    from tools.build import (request_build, REQUEST_BUILD_SCHEMA,
-                             answer_interview_item, ANSWER_INTERVIEW_ITEM_SCHEMA)
+    # The Build vertical's whole agent-callable surface — ONE tool, returning in
+    # milliseconds. request_build FILES a gap; it never builds anything in the
+    # turn, because a Build run is a session with a person in it and a name in
+    # the valid-agent list would be a lie about what calling it costs.
+    # Not granted to anything yet: the grant is `request_build` on
+    # `coordinator`'s allowed_tools in both routing files, and it lands with the
+    # `coordinator.md` filing-condition line, so the instruction and the grant
+    # arrive together rather than repeating the time_director half-wiring.
+    from tools.build import request_build, REQUEST_BUILD_SCHEMA
 
     schemas = [
         WRITE_LOG_SCHEMA, READ_LOG_SCHEMA,
@@ -1509,7 +1412,7 @@ def register_tools() -> tuple[list[dict], dict]:
         IMPORT_CONTACTS_FILE_SCHEMA,
         APPLY_CRM_PROPOSALS_SCHEMA,
         RECORD_HORIZON_ITEM_SCHEMA,
-        REQUEST_BUILD_SCHEMA, ANSWER_INTERVIEW_ITEM_SCHEMA,
+        REQUEST_BUILD_SCHEMA,
     ]
     handlers = {
         "write_log": write_log,
@@ -1591,7 +1494,6 @@ def register_tools() -> tuple[list[dict], dict]:
         "write_profile": write_profile,
         "read_profile": read_profile,
         "request_build": request_build,
-        "answer_interview_item": answer_interview_item,
     }
 
     return schemas, handlers
@@ -1659,13 +1561,11 @@ _ALWAYS_CONFIDENTIAL = [
     "mental_wellbeing", "physical_health", "work_vocation",
     "learning_growth", "recreation_hobbies", "research_agent",
     "time_director", "pattern_miner", "goals_interviewer",
-    # The four Build agents. THE UNCONDITIONAL LIST IS RIGHT FOR THESE and wrong
-    # for a generated capability's name, which is the distinction seam 4 turns
-    # on: these are tracked underscore identifiers, impossible in natural prose,
-    # so one substring hit is a real leak. A generated name like `home_care` or
-    # `garden` is ordinary English and goes to _CONTEXT_SENSITIVE instead, where
-    # it fires only inside a sentence carrying architecture vocabulary.
-    "build_inquiry", "build_librarian", "build_planner", "build_coherence",
+    # The Build agents are NOT here, and that is deliberate as of 2026-09-24.
+    # They are Claude Code subagent definitions now (plan v4.11 ruling 2), not
+    # runtime agents: no runtime model is ever told their names, so nothing at
+    # runtime can leak one. A term on this list that cannot appear costs a
+    # regex build on every response and protects nothing.
     # Tool names
     "run_subagent", "run_model_conference", "write_log", "read_log",
     "write_journal", "read_journal", "write_archive", "read_archive",
@@ -1690,20 +1590,6 @@ _CONTEXT_SENSITIVE = [
     "relationships", "finance", "logistics", "diarist",
     "coordinator", "synthesizer", "orchestrator",
 ]
-
-def _overlay_confidential() -> list[str]:
-    """
-    Generated capability names, for the SENTENCE-GATED tier. Never raises.
-
-    Returns [] on any failure, which leaves the filter exactly as strong as it
-    was before Build existed — the tracked lists are untouched by this path.
-    """
-    try:
-        from core.build.overlay import confidential_names
-        return confidential_names()
-    except Exception:
-        return []
-
 
 # Vocabulary that, when appearing in the same sentence as a context-sensitive
 # term, signals an architecture leak rather than ordinary prose.
@@ -2229,15 +2115,17 @@ def filter_output(text: str, agent_name: str, user_text: str | None = None) -> s
 
     # Tier 3 — spaced identifiers and common-word agent names, sentence-gated.
     #
-    # SEAM 4. Generated capability names join _CONTEXT_SENSITIVE HERE, at filter
-    # time, and never _ALWAYS_CONFIDENTIAL. That is not a detail: tier 1 matches
-    # a substring however it is punctuated or squashed and replaces the WHOLE
-    # reply with the canned fallback, so `home_care` on that list would suppress
-    # "your home-care tasks are up to date" and a one-word name like `garden`
-    # would suppress every reply containing the word. Tier 3 fires only inside a
-    # sentence carrying architecture vocabulary, which is exactly the mechanism
-    # built for names that are also ordinary English.
-    for term in list(_ALWAYS_CONFIDENTIAL) + list(_CONTEXT_SENSITIVE) + _overlay_confidential():
+    # A GENERATED CAPABILITY'S NAME BELONGS ON _CONTEXT_SENSITIVE, NOT
+    # _ALWAYS_CONFIDENTIAL, and the reason survives the overlay that used to
+    # add it here. Tier 1 matches a substring however it is punctuated or
+    # squashed and replaces the WHOLE reply with the canned fallback — so
+    # `home_care` on that list would suppress "your home-care tasks are up to
+    # date", and a one-word name like `garden` would suppress every reply
+    # containing the word. Tier 3 fires only inside a sentence carrying
+    # architecture vocabulary, which is the mechanism built for names that are
+    # also ordinary English. Build writes the name into _CONTEXT_SENSITIVE in
+    # the diff; nothing is appended at filter time.
+    for term in list(_ALWAYS_CONFIDENTIAL) + list(_CONTEXT_SENSITIVE):
         rx = _term_regex(term, _LOOSE_JOINER)
         for m in rx.finditer(norm):
             start, end = _sentence_bounds(norm, m.start())
@@ -5104,8 +4992,6 @@ def _run_single_agent(agent_name: str, user_input: str,
 
     _trace(f"[AGENT] {agent_name}  provider={provider}  model={model_override}{'  bare=True' if bare else ''}")
     agent = load_agent(agent_name)
-    if agent_name == "coordinator":
-        agent = _overlay_coordinator_prompt(agent, persona)
 
     if bare or agent_name in {"research_agent", "diarist"}:
         # No personal config or context — decontextualized / diagnostic mode.
@@ -5727,17 +5613,12 @@ def _unavailable_notice(agent_name: str) -> str:
     The real exception is not lost; it is logged by the caller and surfaces in
     /monitor/model_errors, which is where it is actionable.
     """
+    # The tracked roster, and the only roster. Build's seam 4 read a generated
+    # capability's consequence out of its overlay record here; that line is now
+    # written into _UNAVAILABLE_CONSEQUENCE itself, in the diff, by the main
+    # session. Still degrades to a bare statement when there is no entry —
+    # never to the agent's name, because the name IS the architecture.
     what = _UNAVAILABLE_CONSEQUENCE.get(agent_name)
-    if not what:
-        # SEAM 4. The literal above is the tracked roster; a generated
-        # capability carries its own consequence in its overlay record. Still
-        # degrades to a bare statement when neither has one — never to the
-        # agent's name, because the name IS the architecture.
-        try:
-            from core.build.overlay import unavailable_consequence
-            what = unavailable_consequence(agent_name) or None
-        except Exception:
-            what = None
     lost = f" to {what}" if what else ""
     return (
         f"[UNAVAILABLE THIS TURN — you could not get{lost}. "
@@ -5808,21 +5689,11 @@ def _dispatch_from_coordinator(
             for _agent in _agents:
                 _agent_domains.setdefault(_agent, []).append(_domain)
 
-    # A LOCAL COPY. The overlay merge below mutates this map, and mutating the
-    # module-level constant would carry one persona's display names into the
-    # next request handled by the same process.
+    # A LOCAL COPY. Nothing mutates it since the overlay merge was removed
+    # (2026-09-24), but the copy is kept: mutating the module-level constant
+    # would carry one request's names into the next handled by the same
+    # process, and that is a cheap guarantee to keep holding.
     name_map = dict(_AGENT_NAME_MAP)
-
-    # SEAM 3, second half. The Coordinator answers with the DISPLAY name it was
-    # shown ("Home Care"); this is what turns that back into the record name.
-    # The generic fallback would get `home_care` right by luck for that example
-    # and wrong for any display name that is not the identifier with spaces.
-    try:
-        from core.build.overlay import name_map_additions
-        for _display, _name in name_map_additions(persona).items():
-            name_map.setdefault(_display, _name)
-    except Exception as _exc:
-        logger.warning(f"[overlay] coordinator name map not extended: {_exc}")
 
     def _normalize_agent(name: str) -> str:
         return normalize_agent_name(name, name_map)

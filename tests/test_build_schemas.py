@@ -1,20 +1,15 @@
 """
 tests/test_build_schemas.py — each validator rejects its own malformation.
 
-The nine rejections named in the plan's verification table, plus the rungs 0
-and 1 of the validation ladder.
+Plan section 12, Schemas row: v3's assertions that survive, plus the six the v4
+rulings added.
 
-The method throughout: start from a VALID artifact, introduce exactly one
-defect, assert that defect is reported. Asserting on a hand-built broken
-artifact proves much less — a validator that rejected everything would pass
-that version of this file.
-
-Standalone runner (no pytest dependency), matching tests/ convention.
+THE METHOD: start from a VALID artifact, introduce EXACTLY ONE defect, assert
+that defect is reported. Asserting on a hand-built broken artifact proves much
+less — a validator that rejected everything would pass that version of this file.
 
 Usage:
     python3 tests/test_build_schemas.py
-
-Exits 0 if every check passes, 1 otherwise.
 """
 
 import sys
@@ -24,456 +19,391 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from core.build import schemas as S  # noqa: E402
+from core.build import schemas as S                      # noqa: E402
+from tests.support import build_fixtures as F            # noqa: E402
+from tests.support.runner import Suite, hit, only        # noqa: E402
 
-_results: list[tuple[str, bool, str]] = []
-
-
-def check(name: str):
-    def wrap(fn):
-        try:
-            fn()
-            _results.append((name, True, ""))
-        except AssertionError as e:
-            _results.append((name, False, f"assertion: {e}"))
-        except Exception as e:
-            _results.append((name, False, f"{type(e).__name__}: {e}"))
-        return fn
-    return wrap
-
-
-def hit(defects: list[str], fragment: str) -> bool:
-    return any(fragment in d for d in defects)
-
-
-MANIFEST = {"log", "journal", "wisdom", "calendar", "weather"}
-CAPABILITIES = {"logistics", "physical_health", "relationships", "diarist"}
-
-# ---------------------------------------------------------------------------
-# Valid baselines. Each test mutates a deepcopy of one of these.
-# ---------------------------------------------------------------------------
-
-def question(qid: str, klass: str, text: str) -> dict:
-    return {
-        "id": qid, "class": klass, "text": text,
-        "why_it_matters": f"because {klass} decides the shape of the answer",
-        "blocks": "design",
-        "expected_answer_shape": "a short statement",
-        "candidate_sources": ["log", "user"],
-        "resolved_by_policy": None,
-    }
-
-
-def valid_question_set() -> dict:
-    return {
-        "schema": "question_set/1",
-        "job_id": "BLD-0918-01",
-        "generated_at": "2026-09-18T10:00:00",
-        "upstream_fingerprint": "abc123",
-        "mode": "construct",
-        "request": "nothing decides whether a household chore is overdue",
-        "depth": "standard",
-        "disposition": "new",
-        "disposition_evidence": (
-            "Checked logistics, which owns actions rather than standing checks, "
-            "and physical_health, which does not read the home domain."
-        ),
-        "generalizes_to": "every recurring home obligation with a last-done date",
-        "manifest_fingerprint": "m-001",
-        "policies_consulted": [],
-        "framing_note": "",
-        "declined_to_ask": [],
-        "spine": [
-            question("q1", "intent", "What is the household trying to keep on top of?"),
-            question("q2", "cost", "What does an unnecessary reminder consume?"),
-            question("q3", "feasibility", "Can the last-done date be read at all?"),
-            question("q4", "surface", "What else operates on an overdue chore?"),
-            question("q5", "authority", "Decide or surface, and what on silence?"),
-        ],
-    }
-
-
-def valid_answer_ledger() -> dict:
-    return {
-        "schema": "answer_ledger/1",
-        "job_id": "BLD-0918-01",
-        "generated_at": "2026-09-18T10:05:00",
-        "upstream_fingerprint": "abc123",
-        "rows": [
-            {
-                "question_id": "q1",
-                "answerable_by": "data",
-                "data_kind": "behavioural",
-                "status": "settled",
-            },
-            {
-                "question_id": "q2",
-                "answerable_by": "judgment",
-                "data_kind": "none",
-                "has_what_it_needs": True,
-                "decision": "warn only past the interval, never on a schedule",
-                "decision_options": ["warn past the interval", "warn on a fixed day"],
-                "assumption": "a reminder before the interval elapses is noise",
-                "assumption_falsifier": "the user acts on a pre-interval reminder twice",
-                "status": "settled",
-            },
-        ],
-        "interview_items": [],
-        "variable_proposals": [],
-        "surface_map": [
-            {"entity": "chore", "operation": op, "status": "in_scope"}
-            for op in S.SURFACE_OPERATIONS
-        ],
-    }
-
-
-def valid_build_plan() -> dict:
-    return {
-        "schema": "build_plan/1",
-        "job_id": "BLD-0918-01",
-        "generated_at": "2026-09-18T10:10:00",
-        "upstream_fingerprint": "abc123",
-        "capability": {
-            "id": "home_care",
-            "kind": "agent",
-            "one_line": "decides whether a recurring home obligation is overdue",
-            "replaces": [],
-            "execution_mode": "blocking",
-            "latency_budget_ms": 8000,
-            "theme": "home",
-            "disposition": "new",
-            "disposition_evidence": "logistics owns actions, not standing checks",
-            "generalizes_to": "every recurring home obligation with a last-done date",
-        },
-        "surface_map": [
-            {"entity": "chore", "operation": op, "status": "in_scope"}
-            for op in S.SURFACE_OPERATIONS
-        ],
-        "files": [],
-        "registration": [{"record": "overlay/capabilities/home_care.yaml"}],
-        "tests": [],
-        "acceptance": {},
-        "variables": [],
-        "state_record": {},
-        "risks": [],
-    }
+suite = Suite("build schemas")
+check = suite.check
 
 
 # ---------------------------------------------------------------------------
-# Sanity: the baselines are actually valid, or every test below is vacuous
+# The baselines are valid. Everything below depends on this.
 # ---------------------------------------------------------------------------
 
-@check("baseline question set validates clean")
+@check("the valid Question Set validates clean")
 def _():
-    defects = S.validate_question_set(
-        valid_question_set(), manifest_ids=MANIFEST, known_capabilities=CAPABILITIES)
+    defects = S.validate_question_set(F.question_set(), F.CAPABILITIES)
     assert not defects, defects
 
 
-@check("baseline answer ledger validates clean")
+@check("the valid Answer Ledger validates clean")
 def _():
     defects = S.validate_answer_ledger(
-        valid_answer_ledger(), question_ids=["q1", "q2"])
+        F.answer_ledger(), question_ids=sorted(F.question_ids()))
     assert not defects, defects
 
 
-@check("baseline build plan validates clean")
+@check("the valid BuildPlan validates clean")
 def _():
-    assert not S.validate_build_plan(valid_build_plan())
-
-
-# ---------------------------------------------------------------------------
-# The nine named rejections
-# ---------------------------------------------------------------------------
-
-@check("rejects a feasibility question before an intent one")
-def _():
-    qs = valid_question_set()
-    qs["spine"] = [
-        question("q1", "feasibility", "Can the last-done date be read at all?"),
-        question("q2", "intent", "What is the household trying to keep on top of?"),
-        question("q3", "surface", "What else operates on an overdue chore?"),
-        question("q4", "authority", "Decide or surface, and what on silence?"),
-    ]
-    defects = S.validate_question_set(qs, manifest_ids=MANIFEST)
-    assert hit(defects, "precedes every intent question"), defects
-
-
-@check("rejects disposition: new whose evidence names no capability checked")
-def _():
-    qs = valid_question_set()
-    qs["disposition_evidence"] = "This is a genuinely novel need with no precedent."
-    defects = S.validate_question_set(
-        qs, manifest_ids=MANIFEST, known_capabilities=CAPABILITIES)
-    assert hit(defects, "names no existing capability"), defects
-
-
-@check("rejects empty disposition_evidence")
-def _():
-    qs = valid_question_set()
-    qs["disposition_evidence"] = ""
-    assert hit(S.validate_question_set(qs, manifest_ids=MANIFEST),
-               "disposition_evidence is empty")
-
-
-@check("rejects evidence that merely restates the request")
-def _():
-    qs = valid_question_set()
-    qs["disposition_evidence"] = "It is what was asked for."
-    assert hit(S.validate_question_set(qs, manifest_ids=MANIFEST),
-               "restates the request")
-
-
-@check("rejects zero surface questions")
-def _():
-    qs = valid_question_set()
-    qs["spine"] = [q for q in qs["spine"] if q["class"] != "surface"]
-    for i, q in enumerate(qs["spine"], start=1):
-        q["id"] = f"q{i}"
-    assert hit(S.validate_question_set(qs, manifest_ids=MANIFEST),
-               "no surface question")
-
-
-@check("rejects zero authority questions at depth != triage")
-def _():
-    qs = valid_question_set()
-    qs["spine"] = [q for q in qs["spine"] if q["class"] != "authority"]
-    for i, q in enumerate(qs["spine"], start=1):
-        q["id"] = f"q{i}"
-    assert hit(S.validate_question_set(qs, manifest_ids=MANIFEST),
-               "no authority question")
-
-
-@check("allows zero authority questions AT depth: triage")
-def _():
-    qs = valid_question_set()
-    qs["depth"] = "triage"
-    qs["spine"] = [
-        question("q1", "intent", "What is the household trying to keep on top of?"),
-        question("q2", "surface", "What else operates on an overdue chore?"),
-    ]
-    defects = S.validate_question_set(
-        qs, manifest_ids=MANIFEST, known_capabilities=CAPABILITIES)
+    defects = S.validate_build_plan(F.build_plan(), red_paths=F.red_paths(),
+                                    question_ids=F.question_ids())
     assert not defects, defects
 
 
-@check("rejects a judgment row with one option")
+# ---------------------------------------------------------------------------
+# QuestionSet — the vacuum rule (ruling 5)
+# ---------------------------------------------------------------------------
+
+@check("a Question Set carrying candidate_sources FAILS")
 def _():
-    ledger = valid_answer_ledger()
-    ledger["rows"][1]["decision_options"] = ["warn past the interval"]
-    assert hit(S.validate_answer_ledger(ledger, question_ids=["q1", "q2"]),
-               "at least 2 entries")
+    qs = F.question_set()
+    qs["spine"][0]["candidate_sources"] = ["log", "user"]
+    defects = S.validate_question_set(qs, F.CAPABILITIES)
+    assert hit(defects, "candidate_sources"), defects
+    assert hit(defects, "has seen no manifest"), (
+        "the defect must say WHY — Inquiry has seen no manifest, so a named "
+        "source is an invention rather than a stray field: " + str(defects))
 
 
-@check("rejects a variable_name already declared in its target home")
+@check("a set-level candidate_sources FAILS too, not only a per-question one")
 def _():
-    ledger = valid_answer_ledger()
-    ledger["rows"][0].update({
-        "variable_name": "plant_watering_threshold",
-        "variable_scope": "this_persona",
-        "data_home": "config/personas/mike/profile.yaml",
-    })
-    defects = S.validate_answer_ledger(
-        ledger, question_ids=["q1", "q2"],
-        declared_variables={"plant_watering_threshold"})
-    assert hit(defects, "is already declared"), defects
+    qs = F.question_set()
+    qs["candidate_sources"] = ["log"]
+    assert hit(S.validate_question_set(qs, F.CAPABILITIES), "candidate_sources")
 
 
-@check("rejects an agent plan missing a registration item")
+@check("a Question Set carrying manifest_fingerprint FAILS")
 def _():
-    plan = valid_build_plan()
+    qs = F.question_set()
+    qs["manifest_fingerprint"] = "deadbeef"
+    assert hit(S.validate_question_set(qs, F.CAPABILITIES), "manifest_fingerprint")
+
+
+@check("an EMPTY retired field is not a defect — absence is the healthy state")
+def _():
+    qs = F.question_set()
+    qs["candidate_sources"] = []
+    qs["policies_consulted"] = []
+    assert not S.validate_question_set(qs, F.CAPABILITIES)
+
+
+@check("`new` with evidence naming no existing capability FAILS")
+def _():
+    qs = F.question_set()
+    qs["disposition_evidence"] = "nothing like this exists"
+    assert hit(S.validate_question_set(qs, F.CAPABILITIES), "restates the request")
+
+
+# ---------------------------------------------------------------------------
+# AnswerLedger — the two verdicts (ruling 7)
+# ---------------------------------------------------------------------------
+
+@check("a `history` row carrying a variable_scope FAILS")
+def _():
+    ledger = F.answer_ledger()
+    ledger["rows"][1]["variable_scope"] = "this_persona"
+    ledger["rows"][1]["variable_name"] = "last_watered"
+    defects = S.validate_answer_ledger(ledger,
+                                       question_ids=sorted(F.question_ids()))
+    assert hit(defects, "history declares a variable"), defects
+    assert hit(defects, "accrues"), (
+        "the defect must say why: a history is asked for and then ACCRUES — "
+        "freezing it into a field is what nobody updates: " + str(defects))
+
+
+@check("a required input with no if_user_lacks_it FAILS")
+def _():
+    ledger = F.answer_ledger()
+    ledger["rows"][1].pop("if_user_lacks_it", None)
+    clean = S.validate_answer_ledger(ledger,
+                                     question_ids=sorted(F.question_ids()))
+    assert not clean, "without required_inputs the rule must not fire at all"
+
+    defects = S.validate_answer_ledger(ledger,
+                                       question_ids=sorted(F.question_ids()),
+                                       required_inputs={"q2"})
+    assert hit(defects, "required input with no if_user_lacks_it"), defects
+
+
+@check("an `external` row without on_failure FAILS")
+def _():
+    ledger = F.answer_ledger()
+    ledger["rows"][1] = F.ledger_row(
+        "q2", kind="external", verdict="external",
+        inventory={"source": "openweather", "form": "external:openweather",
+                   "gap": "no local record of rainfall"},
+        source_name="openweather", access="api", key_needed=True,
+        carries_personal_context=False, per_call_cost=0.0)
+    defects = S.validate_answer_ledger(ledger,
+                                       question_ids=sorted(F.question_ids()))
+    assert hit(defects, "no on_failure"), defects
+
+
+@check("an external row with no carries_personal_context FAILS — not defaults to false")
+def _():
+    ledger = F.answer_ledger()
+    ledger["rows"][1] = F.ledger_row(
+        "q2", kind="external", verdict="external",
+        inventory={"source": "openweather", "form": "external:openweather",
+                   "gap": "no local record of rainfall"},
+        source_name="openweather", access="api", key_needed=True,
+        on_failure="degrade: skip the rainfall check")
+    defects = S.validate_answer_ledger(ledger,
+                                       question_ids=sorted(F.question_ids()))
+    assert hit(defects, "carries_personal_context"), defects
+    assert hit(defects, "not a 'no'"), (
+        "an unanswered privacy question must not read as a negative answer: "
+        + str(defects))
+
+
+@check("a non-`found` verdict stating no gap FAILS")
+def _():
+    ledger = F.answer_ledger()
+    ledger["rows"][2]["inventory"]["gap"] = ""
+    defects = S.validate_answer_ledger(ledger,
+                                       question_ids=sorted(F.question_ids()))
+    assert hit(defects, "states no gap"), defects
+
+
+@check("EVERY question travels — a missing row FAILS, naming the ruling")
+def _():
+    ledger = F.answer_ledger()
+    ledger["rows"] = ledger["rows"][:-1]
+    defects = S.validate_answer_ledger(ledger,
+                                       question_ids=sorted(F.question_ids()))
+    assert hit(defects, "no ledger row for questions"), defects
+    assert hit(defects, "EVERY question travels"), defects
+
+
+@check("status is DERIVED from verdict, never read from the row")
+def _():
+    row = {"verdict": "ask_user", "status": "settled"}
+    assert S.derive_status(row) == "to_ask"
+    ledger = S.apply_derived_status({"rows": [row]})
+    assert ledger["rows"][0]["status"] == "to_ask"
+    assert S.derive_status({"verdict": "external"}) == "external_pending"
+    assert S.derive_status({"verdict": "absent"}) == "missing"
+
+
+@check("a judgment row with one option FAILS — a choice already made")
+def _():
+    ledger = F.answer_ledger()
+    ledger["rows"][0]["decision_options"] = ["a standing commitment"]
+    defects = S.validate_answer_ledger(ledger,
+                                       question_ids=sorted(F.question_ids()))
+    assert hit(defects, "at least 2 entries"), defects
+
+
+@check("an if_user_lacks_it outside the vocabulary FAILS")
+def _():
+    ledger = F.answer_ledger()
+    ledger["rows"][3]["if_user_lacks_it"] = "figure it out"
+    defects = S.validate_answer_ledger(ledger,
+                                       question_ids=sorted(F.question_ids()))
+    assert hit(defects, "if_user_lacks_it"), defects
+
+
+@check("`degrade:` with nothing after the colon FAILS")
+def _():
+    ledger = F.answer_ledger()
+    ledger["rows"][3]["if_user_lacks_it"] = "degrade:"
+    defects = S.validate_answer_ledger(ledger,
+                                       question_ids=sorted(F.question_ids()))
+    assert hit(defects, "nothing after the colon"), defects
+
+
+# ---------------------------------------------------------------------------
+# BuildPlan — citations, the tier split, all_personas
+# ---------------------------------------------------------------------------
+
+@check("a plan gate without a citation FAILS")
+def _():
+    plan = F.build_plan()
+    plan["citations"] = [c for c in plan["citations"] if c["gate"] != "variables"]
+    defects = S.validate_build_plan(plan, red_paths=F.red_paths(),
+                                    question_ids=F.question_ids())
+    assert hit(defects, "'variables' carries no citation"), defects
+    assert hit(defects, "ruling 6"), defects
+
+
+@check("a citation to a question nobody asked FAILS")
+def _():
+    plan = F.build_plan()
+    plan["citations"][0]["question_id"] = "q99"
+    defects = S.validate_build_plan(plan, red_paths=F.red_paths(),
+                                    question_ids=F.question_ids())
+    assert hit(defects, "not in the Question Set"), defects
+
+
+@check("a citation with a question id and no ledger row FAILS")
+def _():
+    plan = F.build_plan()
+    plan["citations"][0].pop("ledger_row")
+    defects = S.validate_build_plan(plan, red_paths=F.red_paths(),
+                                    question_ids=F.question_ids())
+    assert hit(defects, "names no ledger_row"), defects
+
+
+@check("a Red path in the IMPLEMENTER's half FAILS before N11")
+def _():
+    plan = F.build_plan()
+    for entry in plan["files"]:
+        if entry["path"] == "config/modules/routing.yaml":
+            entry["half"] = "implementer"
+    defects = S.validate_build_plan(plan, red_paths=F.red_paths(),
+                                    question_ids=F.question_ids())
+    assert hit(defects, "Red path"), defects
+    assert hit(defects, "implementer never touches"), defects
+
+
+@check("the SAME Red path in the main session's half is correct and passes")
+def _():
+    defects = S.validate_build_plan(F.build_plan(), red_paths=F.red_paths(),
+                                    question_ids=F.question_ids())
+    assert not defects, (
+        "config/modules/routing.yaml is Red AND is in files[] — in the main "
+        "session's half, which is exactly where it belongs: " + str(defects))
+
+
+@check("a plan naming config/constitution.md in the implementer's half FAILS")
+def _():
+    plan = F.build_plan()
+    plan["files"].append({"path": "config/constitution.md", "half": "implementer"})
+    defects = S.validate_build_plan(plan, red_paths=F.red_paths(),
+                                    question_ids=F.question_ids())
+    assert hit(defects, "config/constitution.md"), defects
+
+
+@check("a plan naming .env in the implementer's half FAILS")
+def _():
+    plan = F.build_plan()
+    plan["files"].append({"path": ".env", "half": "implementer"})
+    defects = S.validate_build_plan(plan, red_paths=F.red_paths(),
+                                    question_ids=F.question_ids())
+    assert hit(defects, ".env"), defects
+
+
+@check("a files[] entry with no half FAILS — the split is not optional")
+def _():
+    plan = F.build_plan()
+    plan["files"].append({"path": "tools/extra.py"})
+    defects = S.validate_build_plan(plan, red_paths=F.red_paths(),
+                                    question_ids=F.question_ids())
+    assert hit(defects, "half must be implementer|main_session"), defects
+
+
+@check("an absolute or climbing files[] path FAILS")
+def _():
+    plan = F.build_plan()
+    plan["files"].append({"path": "../outside.py", "half": "implementer"})
+    defects = S.validate_build_plan(plan, red_paths=F.red_paths(),
+                                    question_ids=F.question_ids())
+    assert hit(defects, "not repo-relative"), defects
+
+
+@check("a plan declaring an all_personas variable without an ask path FAILS")
+def _():
+    plan = F.build_plan()
+    plan["variables"] = [{"name": "plant_inventory", "scope": "all_personas",
+                          "home": "config/templates/profile.yaml",
+                          "if_user_lacks_it": "degrade: skip"}]
+    plan["files"].append({"path": "config/templates/profile.yaml",
+                          "half": "implementer"})
+    defects = S.validate_build_plan(plan, red_paths=F.red_paths(),
+                                    question_ids=F.question_ids())
+    assert hit(defects, "without `if_user_lacks_it: ask`"), defects
+    assert hit(defects, "mike would never get the field"), (
+        "the defect must name the consequence — the template reaches only "
+        "personas created after it lands: " + str(defects))
+
+
+@check("an all_personas variable with the ask path and no template file FAILS")
+def _():
+    plan = F.build_plan()
+    plan["variables"] = [{"name": "plant_inventory", "scope": "all_personas",
+                          "home": "config/templates/profile.yaml",
+                          "if_user_lacks_it": "ask"}]
+    defects = S.validate_build_plan(plan, red_paths=F.red_paths(),
+                                    question_ids=F.question_ids())
+    assert hit(defects, "no config/templates/ entry"), defects
+
+
+@check("an all_personas LEDGER row without `if_user_lacks_it: ask` FAILS")
+def _():
+    ledger = F.answer_ledger()
+    ledger["rows"][3]["variable_scope"] = "all_personas"
+    ledger["rows"][3]["if_user_lacks_it"] = "degrade: skip the check"
+    defects = S.validate_answer_ledger(ledger,
+                                       question_ids=sorted(F.question_ids()))
+    assert hit(defects, "all_personas variable without"), defects
+
+
+@check("a surface_map missing an operation FAILS, naming the operation")
+def _():
+    plan = F.build_plan()
+    plan["surface_map"] = [s for s in plan["surface_map"]
+                           if s["operation"] != "dedupe"]
+    defects = S.validate_build_plan(plan, red_paths=F.red_paths(),
+                                    question_ids=F.question_ids())
+    assert hit(defects, "dedupe"), defects
+
+
+@check("an integration with no priced run cost FAILS")
+def _():
+    plan = F.build_plan()
+    plan["integrations"] = [{"source": "openweather",
+                             "key_registration_is_m_item": True,
+                             "privacy_tier": "open"}]
+    defects = S.validate_build_plan(plan, red_paths=F.red_paths(),
+                                    question_ids=F.question_ids())
+    assert hit(defects, "cost_per_call"), defects
+    assert hit(defects, "standing charge nobody named"), defects
+
+
+@check("an agent plan with no registration item FAILS, naming time_director")
+def _():
+    plan = F.build_plan()
     plan["registration"] = []
-    assert hit(S.validate_build_plan(plan), "no registration item")
-
-
-@check("rejects a surface_map with an unlisted operation")
-def _():
-    plan = valid_build_plan()
-    plan["surface_map"] = [e for e in plan["surface_map"]
-                           if e["operation"] not in ("reconcile", "expire")]
-    defects = S.validate_build_plan(plan)
-    assert hit(defects, "surface_map does not list"), defects
-    assert hit(defects, "reconcile"), defects
+    defects = S.validate_build_plan(plan, red_paths=F.red_paths(),
+                                    question_ids=F.question_ids())
+    assert hit(defects, "time_director"), defects
 
 
 # ---------------------------------------------------------------------------
-# Further constraints the plan states as hard
+# The ladder — rungs 0 and 1
 # ---------------------------------------------------------------------------
 
-@check("rejects non-dense question ids")
+@check("climb() coerces an unknown enum DOWNWARD in permissiveness, never upward")
 def _():
-    qs = valid_question_set()
-    qs["spine"][2]["id"] = "q9"
-    assert hit(S.validate_question_set(qs, manifest_ids=MANIFEST), "not dense")
+    qs = F.question_set()
+    qs["disposition"] = "invented"
+    artifact, defects, notes = S.climb("question_set", qs,
+                                       known_capabilities=F.CAPABILITIES)
+    assert artifact["disposition"] == "new", artifact["disposition"]
+    assert any("highest burden of proof" in n for n in notes), notes
 
 
-@check("rejects a candidate_source outside the manifest")
+@check("climb(inject=) refuses a field that is not code-owned")
 def _():
-    qs = valid_question_set()
-    qs["spine"][0]["candidate_sources"] = ["log", "astrology"]
-    assert hit(S.validate_question_set(qs, manifest_ids=MANIFEST),
-               "not in the manifest")
+    try:
+        S.climb("question_set", F.question_set(), inject={"disposition": "extend"})
+    except S.SchemaError as exc:
+        assert "refuses" in str(exc), exc
+        return
+    raise AssertionError("inject= accepted a field the model was asked for")
 
 
-@check("rejects two questions with the same token set")
+@check("a question with an unreadable class is QUARANTINED, not guessed")
 def _():
-    qs = valid_question_set()
-    qs["spine"][3]["text"] = "What is the household trying to keep on top of?"
-    qs["spine"][3]["class"] = "surface"
-    assert hit(S.validate_question_set(qs, manifest_ids=MANIFEST), "duplicates")
-
-
-@check("rejects depth: triage carrying more than three questions")
-def _():
-    qs = valid_question_set()
-    qs["depth"] = "triage"
-    assert hit(S.validate_question_set(qs, manifest_ids=MANIFEST),
-               "at most 3 questions")
-
-
-@check("rejects a judgment row with no falsifier for its assumption")
-def _():
-    ledger = valid_answer_ledger()
-    ledger["rows"][1]["assumption_falsifier"] = ""
-    assert hit(S.validate_answer_ledger(ledger, question_ids=["q1", "q2"]),
-               "no falsifier")
-
-
-@check("rejects a ledger missing a row for a question")
-def _():
-    ledger = valid_answer_ledger()
-    ledger["rows"] = ledger["rows"][:1]
-    assert hit(S.validate_answer_ledger(ledger, question_ids=["q1", "q2"]),
-               "no ledger row for questions")
-
-
-@check("rejects a deferred surface entry with no ticket")
-def _():
-    plan = valid_build_plan()
-    plan["surface_map"][3]["status"] = "deferred"
-    assert hit(S.validate_build_plan(plan), "deferred needs a ticket")
-
-
-@check("rejects a plan writing under data/ with no state_record")
-def _():
-    plan = valid_build_plan()
-    plan["files"] = [{"path": "data/personas/mike/home/chores.json", "mode": "write"}]
-    assert hit(S.validate_build_plan(plan), "state_record is missing")
-
-
-@check("rejects kind: policy with no policy block")
-def _():
-    plan = valid_build_plan()
-    plan["capability"]["kind"] = "policy"
-    assert hit(S.validate_build_plan(plan), "requires a policy block")
-
-
-@check("rejects a policy with no review_date")
-def _():
-    plan = valid_build_plan()
-    plan["capability"]["kind"] = "policy"
-    plan["policy"] = {
-        "id": "weekend_business_correspondence", "domain": "work",
-        "applies_to": "business senders", "standing_commitments": [],
-        "automatic_yes": [], "automatic_no": ["raise at the weekend"],
-        "default_on_silence": "Monday morning", "review_date": "",
-        "authored_with_user": True,
-    }
-    assert hit(S.validate_build_plan(plan), "policy.review_date is empty")
-
-
-@check("rejects a non-positive latency budget")
-def _():
-    plan = valid_build_plan()
-    plan["capability"]["latency_budget_ms"] = 0
-    assert hit(S.validate_build_plan(plan), "latency_budget_ms must be a positive")
-
-
-# ---------------------------------------------------------------------------
-# The validation ladder — rungs 0 and 1
-# ---------------------------------------------------------------------------
-
-@check("rung 0 recovers a fenced, comma-trailing payload")
-def _():
-    raw = '```json\n{"schema": "question_set/1", "mode": "construct",}\n```'
-    parsed, how = S.repair_json(raw)
-    assert parsed is not None and parsed["mode"] == "construct", (parsed, how)
-    assert how != "clean", how
-
-
-@check("rung 1 collapses each closed enum toward its SAFE value")
-def _():
-    notes: list[str] = []
-    out = S.coerce_fields({
-        "disposition": "invention",
-        "answerable_by": "lookup",
-        "variable_scope": "everywhere",
-        "execution_mode": "instant",
-    }, notes)
-    assert out["disposition"] == "new", out
-    assert out["answerable_by"] == "judgment", out
-    assert out["variable_scope"] == "query_only", out
-    assert out["execution_mode"] == "deferred", out
-    assert len(notes) == 4, notes
-
-
-@check("rung 1 never coerces a VALUE — only a category")
-def _():
-    out = S.coerce_fields({
-        "decision": "warn only past the interval",
-        "assumption": "a pre-interval reminder is noise",
-        "latency_budget_ms": 8000,
-    })
-    assert out["decision"] == "warn only past the interval", out
-    assert out["latency_budget_ms"] == 8000, out
-
-
-@check("rung 1 quarantines an unclassed question rather than guessing its class")
-def _():
-    qs = valid_question_set()
+    qs = F.question_set()
     qs["spine"][2]["class"] = "vibes"
-    out, notes = S.quarantine_unclassed_questions(qs)
-    assert len(out["spine"]) == 4, out["spine"]
-    assert [q["id"] for q in out["spine"]] == ["q1", "q2", "q3", "q4"], out["spine"]
-    assert len(out["declined_to_ask"]) == 1, out["declined_to_ask"]
-    assert "no safe class exists" in out["declined_to_ask"][0]["reason"]
-    assert notes, notes
+    artifact, defects, notes = S.climb("question_set", qs,
+                                       known_capabilities=F.CAPABILITIES)
+    assert len(artifact["spine"]) == 4, artifact["spine"]
+    assert artifact["declined_to_ask"], "the question must be recorded as not asked"
+    assert [q["id"] for q in artifact["spine"]] == ["q1", "q2", "q3", "q4"], (
+        "remaining ids must be renumbered so the density rule still holds")
 
 
-@check("climb() runs the ladder end to end on a raw string payload")
-def _():
-    import json
-    qs = valid_question_set()
-    qs["execution_mode"] = "instant"           # rung 1 fodder
-    raw = "```json\n" + json.dumps(qs) + ",\n```"
-    artifact, defects, notes = S.climb(
-        "question_set", raw, manifest_ids=MANIFEST, known_capabilities=CAPABILITIES)
-    assert artifact is not None, (defects, notes)
-    assert not defects, defects
-    assert artifact["execution_mode"] == "deferred", artifact["execution_mode"]
-    assert any("rung 0" in n for n in notes), notes
-
-
-@check("climb() returns the defect list when the artifact cannot be rescued")
-def _():
-    import json
-    qs = valid_question_set()
-    qs["spine"] = [
-        question("q1", "feasibility", "Can the last-done date be read at all?"),
-        question("q2", "intent", "What is the household trying to keep on top of?"),
-    ]
-    artifact, defects, _ = S.climb(
-        "question_set", json.dumps(qs), manifest_ids=MANIFEST)
-    assert artifact is not None
-    assert hit(defects, "precedes every intent question"), defects
-
-
-# ---------------------------------------------------------------------------
-
-if __name__ == "__main__":
-    failed = 0
-    for name, ok, detail in _results:
-        print(f"{'PASS' if ok else 'FAIL'}  {name}{'' if ok else '  — ' + detail}")
-        failed += 0 if ok else 1
-    print(f"\n{len(_results) - failed}/{len(_results)} passed")
-    sys.exit(1 if failed else 0)
+suite.exit()

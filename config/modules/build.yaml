@@ -1,56 +1,48 @@
-# config/modules/build.yaml — the Build vertical's autonomy ceiling.
+# config/modules/build.yaml — the two numbers Build reads from config.
 #
-# Plan: archive/plans/build_vertical_plan_2026-09-18.md § 6.4
+# Plan: archive/plans/build_vertical_plan_2026-09-24.md sections 5, 8, 10.
 #
-# THIS FILE IS ON THE WRITER'S HARDCODED DENY LIST. Build may not raise its own
-# ceiling: core/build/writer.py refuses this path at every ceiling, and
-# scripts/check_build_registration.py asserts that the deny list still names it,
-# so a later "simplification" fails the sweep rather than quietly widening the
-# grant. The ceiling is raised only by a human editing a file Build cannot reach.
+# THIS FILE IS ON THE HARDCODED DENY LIST in core/build/gates.py, and
+# scripts/check_build_registration.py asserts that the list still names it. That
+# is the entire reason a cap here is a cap: Build cannot edit this path, so the
+# only hand that raises one is Mike's.
 #
-# A ceiling is not a wall. An edit ABOVE the ceiling is never dropped — it parks
-# as an approval request. That is what makes the ceiling expandable later
-# without the expansion being invisible.
-
-autonomy:
-  # generated_registration — the v1 ceiling: Build may write overlay records,
-  #   policies and (when the flag below allows) overlay agent files. Nothing
-  #   tracked, ever.
-  # amber | red — reserved. Neither is implemented; naming them here records
-  #   that the ceiling is a dial rather than a boolean, which is what stops the
-  #   next widening being written as a special case.
-  ceiling: "generated_registration"
-
-  # v1 default. Raised BY HAND on the VM, by Mike, for the duration of the
-  # bootstrap runs (plan § 11), and lowered again afterwards unless he decides
-  # at the end of § 11 — with three runs of evidence — to leave it raised.
-  #
-  # This is the genuine widening § 13.10 concedes: the harness `ask` on
-  # config/agents/*.md is a control on CLAUDE CODE sessions and was never in
-  # scope for runtime writes. The equivalent control for a runtime write is this
-  # flag plus the writer's path rules, which is why it defaults false.
-  may_create_agent_files: false
-
-agent_construction:
-  # A HARDCODED FLOOR lives in core/build/writer.py. This value may LOWER it,
-  # never raise it — a config that could raise the limit would be a ceiling
-  # Build's own output could argue its way past.
-  #
-  # Why the limit is in code at all: six of six of Mike's 2026-08-21 complaints
-  # were rules already written in synthesizer.md and ignored, while every rule
-  # moved to Python held on first contact. An agent file that grows without
-  # bound is an agent that stops following its own instructions.
-  max_lines: 220
-
-  # Checked by presence of the `## ` heading. `Confidentiality` is the one that
-  # is a security control rather than a style rule: it is the INSTRUCTION-layer
-  # half of the two-layer architecture, and filter_output() is only the
-  # backstop. A generated agent without it narrates its own tooling.
-  required_sections: [Role, Scope, Output format, Confidentiality]
-
-# budget.per_job_usd is DELIBERATELY ABSENT.
+# WHAT IS NO LONGER HERE, AND WHY IT WOULD BE WRONG TO PUT IT BACK.
 #
-# The $2.50 default in core/build/cost.py is a PLACEHOLDER and cost.budget_notice()
-# says so out loud until this key is set. Setting it here to silence the notice
-# before run 1 has measured anything would retire the warning without answering
-# it. The figure comes from what run 1 actually costs (plan § 16 phase 7).
+#   `autonomy.ceiling` and `autonomy.may_create_agent_files` were the v3
+#   overlay's permission dial: Build wrote generated agent files itself, at
+#   runtime, on the VM, unattended — so a flag had to say how far it could go.
+#   Under ruling 4 Build stops at a reviewed diff in a worktree and MIKE COMMITS.
+#   His approval at [N9] and his commit at [N13] are the ceiling, and they are
+#   not a setting. A flag that still said `may_create_agent_files: false` would
+#   describe a permission system that no longer decides anything, which is worse
+#   than no flag — somebody would eventually read it as the control.
+#
+#   `agent_construction.max_lines` and `required_sections` are now the hardcoded
+#   floor in core/build/gates.py (220 lines; Role, Scope, Output format,
+#   Confidentiality). gates.max_agent_lines() will still LOWER itself to a value
+#   set here, never raise — so re-adding the block is possible and only ever
+#   tightens. It is absent because nothing has needed it tighter.
+
+# Filing caps, read by core/build/tickets.py. Both bound what the VM may
+# ACCUMULATE, never what Mike may build — the bound on the Mac side is the
+# session he is sitting in.
+#
+# max_proposed is the one that matters. A full inbox means gap detection is
+# over-firing, and the fix is narrowing the trigger in coordinator.md, not
+# raising this number. Raising it hides the signal the cap exists to give.
+caps:
+  max_proposed: 12
+  max_jobs_per_day: 4
+
+# Ruling 9. A PARAMETER WITH NO CONSUMER, recorded deliberately.
+#
+# Mike starts each build by hand for now. A future poller — one that runs
+# Inquiry alone on the VM when a ticket arrives, without a person present —
+# would be the first thing that needs a per-step spend allowance, and this is
+# the figure it would read. Nothing reads it today.
+#
+# It is written down now rather than when that poller is built, because a
+# spending limit decided at the moment you want to spend is not a limit. Under
+# a dollar per step is Mike's number, set while nothing was asking for it.
+api_allowance_usd_per_step: 1.00

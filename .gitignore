@@ -136,6 +136,24 @@ data/push_subscriptions.json
 data/voices/
 
 # ---------------------------------------------------------------------------
+# Build's job directory — persona-DERIVED, on the Mac, by design.
+#
+# data/build/jobs/<persona>/BLD-…/ holds the answer ledger, which carries
+# VERBATIM INTERVIEW ANSWERS, and the plan and brief derived from them. This is
+# the first persona-derived data the Mac holds deliberately (plan v4.11 ruling
+# 10); the standing rule that persona CONFIG is VM-owned is untouched, because
+# nothing here is loaded by the runtime.
+#
+# data/build/index/ is Build's own FAISS store over every question ever asked.
+# Excluded from the backup too, and rebuildable from the job artifacts above —
+# core/build/index.rebuild() is that path, and it exists from day one rather
+# than being discovered as missing later.
+#
+# scripts/check_build_registration.py asserts this exact line still exists, so
+# removing it fails the sweep rather than quietly making the ledger committable.
+data/build/
+
+# ---------------------------------------------------------------------------
 # REAL USER personas — sensitive tier. Never committed, under any circumstances.
 #
 # `mike` is a real person's logs, journal, health, finances and memory. This is

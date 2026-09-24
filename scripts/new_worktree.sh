@@ -10,6 +10,29 @@
 # Usage:
 #   ./scripts/new_worktree.sh <slug>                  # ../metatron-wt-<slug>
 #   ./scripts/new_worktree.sh <slug> --with-personas  # + synthetic fixtures
+#   ./scripts/new_worktree.sh <slug> --sandbox        # ../metatron-wt-build-<slug>
+#
+# --sandbox IS FOR A BUILD IMPLEMENTER AND NOTHING ELSE, and it differs from an
+# ordinary worktree in exactly two ways, both load-bearing (plan v4.11 § 3 N11):
+#
+#   1. IT LINKS BACK .venv AND NOTHING ELSE. No .env, no vertex-key.json, no
+#      certs/, no .claude/settings.local.json. A worktree is the sandbox a
+#      subagent with Edit and Bash works in, and a link-back is a write path out
+#      of it: `echo x > .env` inside a linked worktree rewrites the MAIN TREE'S
+#      credential file, and `git status` cannot see it because .env is ignored.
+#      Without the link the same write creates a local file that goes nowhere,
+#      and core/build/gates.py's channel (b) hashes it and refuses the job.
+#
+#   2. IT REGISTERS AS metatron-wt-build-<slug>. scripts/hook_subagent_gate.py
+#      sweeps every registered DIRTY worktree at every subagent stop in every
+#      window — so one parked Build sandbox would stall every worker everywhere
+#      until somebody cleaned it up. The gate skips this prefix, because the
+#      Build driver sweeps the sandbox itself at N12 and a parked sandbox is a
+#      job waiting for Mike, not a tree anybody needs to be protected from.
+#
+# The cost of (1), stated because it is real: a --sandbox worktree cannot start
+# the server or make a Vertex call. That is the point — an implementer builds
+# and runs tests, and a tree that could deploy would be one that could deploy.
 #
 # A fresh checkout lacks everything gitignored, which is most of what the runtime
 # needs to start. This symlinks those back to the main tree so `import
@@ -44,6 +67,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 SLUG=""
 WITH_PERSONAS=0
+SANDBOX=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -51,13 +75,17 @@ while [[ $# -gt 0 ]]; do
             WITH_PERSONAS=1
             shift
             ;;
+        --sandbox)
+            SANDBOX=1
+            shift
+            ;;
         -h|--help)
-            echo "usage: $0 <slug> [--with-personas]"
+            echo "usage: $0 <slug> [--with-personas] [--sandbox]"
             exit 0
             ;;
         -*)
             echo "error: unknown option '$1'" >&2
-            echo "usage: $0 <slug> [--with-personas]" >&2
+            echo "usage: $0 <slug> [--with-personas] [--sandbox]" >&2
             exit 1
             ;;
         *)
@@ -72,7 +100,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$SLUG" ]]; then
-    echo "usage: $0 <slug> [--with-personas]" >&2
+    echo "usage: $0 <slug> [--with-personas] [--sandbox]" >&2
     echo "  slug must match ^[a-z0-9][a-z0-9_-]{0,39}\$ — it becomes a directory" >&2
     echo "  name and a branch name." >&2
     exit 1
@@ -87,12 +115,32 @@ if ! [[ "$SLUG" =~ ^[a-z0-9][a-z0-9_-]{0,39}$ ]]; then
     exit 1
 fi
 
-DEST="$(dirname "$ROOT")/metatron-wt-$SLUG"
-BRANCH="wt/$SLUG"
+# A sandbox with persona fixtures would hand a subagent with Bash a copy of
+# every synthetic persona's logs, journal and health data — which is exactly
+# what the no-link-back rule above exists to keep out of it. Refused rather
+# than silently ignored: a flag that does nothing is worse than an error.
+if [[ "$SANDBOX" -eq 1 && "$WITH_PERSONAS" -eq 1 ]]; then
+    echo "error: --sandbox and --with-personas are mutually exclusive." >&2
+    echo "  A Build implementer must not be handed persona data. If a test" >&2
+    echo "  genuinely needs fixtures, it is not implementer work." >&2
+    exit 1
+fi
+
+# THE PREFIX IS THE CONTRACT with hook_subagent_gate.py. Changing it here
+# without changing _dirty_worktrees there re-arms the stall it exists to
+# prevent, silently, in every other window.
+if [[ "$SANDBOX" -eq 1 ]]; then
+    NAME="build-$SLUG"
+else
+    NAME="$SLUG"
+fi
+
+DEST="$(dirname "$ROOT")/metatron-wt-$NAME"
+BRANCH="wt/$NAME"
 
 if [[ -e "$DEST" ]]; then
     echo "error: $DEST already exists." >&2
-    echo "  remove it first:  ./scripts/rm_worktree.sh $SLUG" >&2
+    echo "  remove it first:  ./scripts/rm_worktree.sh $NAME" >&2
     exit 1
 fi
 
@@ -103,7 +151,7 @@ if git -C "$ROOT" show-ref --verify --quiet "refs/heads/$BRANCH"; then
     exit 1
 fi
 
-echo "Creating worktree '$SLUG'"
+echo "Creating worktree '$NAME'"
 echo "  path    $DEST"
 echo "  branch  $BRANCH  (from $(git -C "$ROOT" rev-parse --short HEAD))"
 echo
@@ -139,11 +187,22 @@ link_back() {
 # .env and vertex-key.json are credentials; certs/ is machine-specific TLS.
 # settings.local.json holds machine-specific paths. All four are gitignored, so a
 # fresh checkout has none of them.
+#
+# UNDER --sandbox, .venv IS THE ONLY ONE. See the header: a link-back is a write
+# path out of the sandbox that `git status` cannot see, and the four omitted
+# here are precisely the paths where that would matter.
 link_back ".venv"
-link_back ".env"
-link_back "vertex-key.json"
-link_back "certs"
-link_back ".claude/settings.local.json"
+if [[ "$SANDBOX" -eq 0 ]]; then
+    link_back ".env"
+    link_back "vertex-key.json"
+    link_back "certs"
+    link_back ".claude/settings.local.json"
+else
+    echo "  SKIPPED  .env, vertex-key.json, certs/, .claude/settings.local.json"
+    echo "           (--sandbox: no link-back, so a write to any of these"
+    echo "            creates a local file that goes nowhere and is refused"
+    echo "            by core/build/gates.py channel (b))"
+fi
 
 # .dev_backlog_seen is COPIED, not linked — the one exception above, and the
 # asymmetry is the whole point.
@@ -240,9 +299,15 @@ if [[ -n "$RESIDUE" ]]; then
     echo >&2
 fi
 
-echo "Worktree '$SLUG' ready."
+echo "Worktree '$NAME' ready."
 echo
 echo "  cd $DEST"
 echo "  python3 -c 'import core.orchestrator'    # confirms the links took"
 echo
-echo "When done:  ./scripts/rm_worktree.sh $SLUG"
+if [[ "$SANDBOX" -eq 1 ]]; then
+    echo "  This is a BUILD SANDBOX. hook_subagent_gate.py skips the"
+    echo "  metatron-wt-build- prefix, so a parked sandbox does not stall other"
+    echo "  windows' workers — the Build driver sweeps this tree itself at N12."
+    echo
+fi
+echo "When done:  ./scripts/rm_worktree.sh $NAME"

@@ -221,23 +221,20 @@ def _scheduler_prompts(path: Path, layer: str) -> list[Rule]:
     return out
 
 
-def collect(persona: str | None, overlay: Path | None = None) -> list[Rule]:
+def collect(persona: str | None) -> list[Rule]:
     """
-    Every rule, by layer. With `overlay`, generated agent files are read TOO.
+    Every rule, by layer.
 
-    Added rather than substituted: the whole question this script asks is
-    whether a rule has more than one home, and a generated capability's rules
-    can collide with a tracked agent's exactly as a persona file's can. Reading
-    the overlay alone would make the only interesting comparison impossible.
+    The `overlay` parameter was removed 2026-09-24 with the overlay itself
+    (build plan v4.11 ruling 4). A generated capability's instruction file is
+    now an ordinary `config/agents/*.md`, so the glob below already reads it —
+    and the question this script asks, whether a rule has more than one home,
+    is answered over the whole roster again without a flag.
     """
     rules: list[Rule] = []
 
     for f in sorted((ROOT / "config" / "agents").glob("*.md")):
         rules += _bold_rules(f, "agent")
-
-    if overlay is not None:
-        for f in sorted((overlay / "agents").glob("*.md")):
-            rules += _bold_rules(f, "agent")
 
     names = [persona] if persona else [
         p.stem for p in sorted((ROOT / "config" / "personas").glob("*.md"))
@@ -320,16 +317,9 @@ def main() -> int:
                     help="near-duplicate overlap score, 0-1 (default 0.25)")
     ap.add_argument("--near-only", action="store_true", help="skip the class pass")
     ap.add_argument("--classes-only", action="store_true", help="skip the near-duplicate pass")
-    ap.add_argument("--overlay", default=None,
-                    help="also read generated agent files from a Build overlay tree")
     args = ap.parse_args()
 
-    overlay = Path(args.overlay) if args.overlay else None
-    if overlay is not None and not overlay.is_dir():
-        print(f"No overlay tree at {overlay}", file=sys.stderr)
-        return 2
-
-    rules = collect(args.persona, overlay)
+    rules = collect(args.persona)
     if not rules:
         print("No rules found — wrong directory?", file=sys.stderr)
         return 0

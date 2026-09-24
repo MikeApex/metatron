@@ -159,16 +159,29 @@ run_check "claude-md-claims" "$PY" scripts/check_claude_md_claims.py
 # session simplifying `--git-common-dir` back out.
 run_check "deploy-lock" bash scripts/check_deploy_lock.sh
 
-# --- 11. Build's landing invariants (the 11th CHECK; 1b is why sections stop at 9)
-# Build writes no tracked file; it lands an OVERLAY that four seams read. That
-# guarantee rests on things a later edit could quietly remove -- the writer's
-# hardcoded deny list naming core/build/** and config/modules/build.yaml, the
-# .gitignore line that already covers the overlay, and the grant allowlist
-# matching the live register_tools(). This asserts them, and validates every
-# overlay record natively: no other check in this sweep can SEE an overlay file,
-# because the greps above go through `git ls-files` and the check scripts glob
-# config/agents/*.md.
+# --- 11. Build's registration invariants (the 11th CHECK; 1b is why sections stop at 9)
+# Build lands ORDINARY TRACKED FILES that Mike commits. What that guarantee
+# rests on is things a later edit could quietly remove -- the hardcoded deny list
+# in core/build/gates.py naming core/build/** and config/modules/build.yaml, the
+# .gitignore line covering the job directory, and above all the WIRING: a landed
+# capability in both routing files, in the Coordinator's closed list and its
+# directory, with a knowledge domain that resolves and a run line that meters it.
+# `time_director` is the standing evidence that a checklist needs a check.
+#
+# Wiring is asserted for `landed` rows only. A `staged` row is the implementer's,
+# written in a sandbox worktree that by design holds no wiring -- so this same
+# script passes there and fails in a main tree that is missing some.
 run_check "build-registration" "$PY" scripts/check_build_registration.py
+
+# --- 12. Every scheduled function job resolves ------------------------------
+# _DEFAULT_JOBS names each maintenance job by a DOTTED STRING, and
+# fire_function() resolves it at fire time inside a try. A job whose module was
+# renamed or deleted therefore does not crash anything -- it silently stops
+# happening, every thirty minutes, until somebody reads the scheduler log.
+# py_compile cannot see it (a string is a valid string) and grep cannot either.
+# Imports each module and looks the attribute up; never CALLS one, because
+# several of these write files and a sweep with side effects is not a sweep.
+run_check "scheduler-functions-resolve" "$PY" scripts/check_scheduler_functions.py
 
 # --- Report ------------------------------------------------------------------
 echo

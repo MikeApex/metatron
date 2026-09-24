@@ -1,279 +1,267 @@
 """
-core/build/registry.py — what Build has actually shipped, and what it costs to run.
+core/build/registry.py — the TRACKED state. config/build/registry.yaml.
 
-THE SHIPPED THING IS THE CAPABILITY, NOT THE FACTORY. Every other meter in this
-package measures the BUILD: tokens per node, dollars per job, the tripwire. Those
-end when the job does. A landed `kind: agent` is a specialist dispatched on every
-matching turn, forever, at that turn's model price — and plan section 2 makes the
-count growing the explicit goal. So the registry carries a RUN LINE per landed
-capability, and scripts/check_build_registration.py fails a `landed` row without
-one: a capability whose standing cost nothing meters is the shape of cost this
-project's own rules say to name at the moment the parameter is chosen.
+Plan: archive/plans/build_vertical_plan_2026-09-24.md sections 4, 5.
 
-THE DISPATCH COUNT COMES FROM THE TRACE FILES, NOT FROM tools/analytics.py.
-Plan section 14 said the A9 rollup "already counts dispatch per specialist" and it does
-not: rollup_day() walks the trace through _walk_tools(), which counts TOOL names
-into `top_tools`. Agent names are written on every AgentRecord (core/trace.py:353),
-nested subagents included, and nothing counts them. Counting them here reads the
-same files the rollup derives from and leaves A9's schema alone — that schema is
-gated on a review dated 2026-10-01 whose first instruction is "do not review this
-before there is real data", and adding a field for one number would have started
-that review early on exactly the development traffic it says not to use.
-(Correction v3.5 C1, plan section 14.)
+ONE ROW PER CAPABILITY, COMMITTED WITH IT. That is the whole reason this file
+is tracked rather than persona-scoped state: the capability and the fact that it
+exists arrive on the VM in the same deploy, so nothing can ever be running that
+the registry does not know about, and nothing can be in the registry that is not
+deployed. Every disagreement the two-state-homes risk (section 13.8) names is
+closed by that one property.
 
-Content-free, like everything else that counts: agent names, counts and dates. No
-question text, no response text, no user content of any kind ever reaches a row.
+TWO STATUSES, AND THE SPLIT IS LOAD-BEARING (cold read 2).
 
-APPEND-ONLY, REPLAYED — the same shape as jobs.py and for the same reason. There
-is no status file. `capabilities()` replays the rows and the last write per
-capability wins, so a re-landing after a REPAIR is a new row rather than an edit,
-and the version history is the file.
+  staged   written by the IMPLEMENTER, in the sandbox worktree, at N11.
+  landed   flipped by the MAIN SESSION at N13, once the Red half is in the tree.
 
-docs/BUILD_REGISTRY.md is generated FROM this file, on the Mac, by
-scripts/build_board.py --registry, and Mike commits it (ruling 0.2 — a tracked
-file cannot be Build-written). It carries ids, kinds, names, versions and dates:
-zero persona content.
+`scripts/check_build_registration.py` asserts routing parity, the Coordinator
+directory entry, the agent file and the knowledge domain ONLY FOR `landed`
+ROWS. That is how ONE script passes in a sandbox that by design holds no wiring
+and fails in a main tree that is missing some. Without the split the same script
+would have to be either too weak for the main tree or impossible in the sandbox.
 
-Plan: archive/plans/build_vertical_plan_2026-09-18.md section 5, section 14
+THE RUN LINE IS NOT DECORATION. The shipped thing is the capability, not the
+factory: a landed agent is dispatched on every matching turn, forever, at that
+turn's model price. A landed row with no run line is a capability whose standing
+cost nothing meters, which is precisely the class CLAUDE.md § Costs calls
+"Unseen". `expected` and `actual` start None and are filled from the traces.
+
+YAML, not JSONL, and tracked, so Mike reads it in the same diff as the code.
 """
 
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from collections import Counter
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
-from core.build.jobs import registry_path
-from core.persona import persona_data_dir
+_ROOT = Path(__file__).resolve().parent.parent.parent
 
-# How many days back `dispatch_counts()` reads when nothing narrower is asked
-# for. Seven because the run line's job is to answer "is this thing actually
-# being used", and one day of traces cannot distinguish a quiet Tuesday from a
-# capability nothing routes to.
+REGISTRY_PATH = _ROOT / "config" / "build" / "registry.yaml"
+
+STATUSES: tuple[str, ...] = ("staged", "landed", "abandoned", "retired")
+
+# Rows whose wiring must exist in the tree. `staged` is deliberately absent.
+WIRED_STATUSES: frozenset[str] = frozenset({"landed"})
+
 DEFAULT_WINDOW_DAYS = 7
 
-# The tier's due condition (Mike, 2026-09-18): four leaf capabilities landed
-# under the Coordinator. Carried here as well as in the plan because the board
-# reports the count against it from run 1 onward, and a figure read off a plan
-# is a figure that goes stale the session after the plan moves.
+# The tier review is due at four LEAF capabilities — four things the Coordinator
+# must choose between before a second routing layer earns its latency.
 TIER_DUE_AT = 4
 
 
 class RegistryError(RuntimeError):
-    """A registry row could not be written."""
+    """The registry could not be read or written."""
 
 
 # ---------------------------------------------------------------------------
-# Writing
+# IO
 # ---------------------------------------------------------------------------
 
-def _append(row: dict, persona: str | None = None) -> dict:
+def _load(path: Path | None = None) -> dict:
+    import yaml
+    target = path or REGISTRY_PATH
+    if not target.exists():
+        return {"schema": "build_registry/1", "capabilities": []}
+    try:
+        parsed = yaml.safe_load(target.read_text(encoding="utf-8")) or {}
+    except Exception as exc:
+        raise RegistryError(f"{target}: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise RegistryError(f"{target}: not a mapping")
+    parsed.setdefault("capabilities", [])
+    return parsed
+
+
+def rows(path: Path | None = None) -> list[dict]:
+    """Every capability row. Order is the file's order, which is landing order."""
+    return [r for r in _load(path).get("capabilities") or [] if isinstance(r, dict)]
+
+
+def row_for(name: str, path: Path | None = None) -> dict | None:
+    for row in rows(path):
+        if str(row.get("name")) == str(name):
+            return row
+    return None
+
+
+def rows_by_ticket(path: Path | None = None) -> dict[str, tuple[str, str]]:
     """
-    One row, appended atomically enough. Copies jobs.append_row's discipline:
-    a single open/write/close under the default line-buffering, 0o600, parent
-    created. The registry is small and written once per landing, so there is no
-    lock here and none is needed — two landings cannot be in flight at once
-    (max_open_jobs bounds work in flight, and N12 is single-threaded per tick).
+    ticket id -> (status, timestamp). What tickets.duplicate_of() deduplicates
+    against, and the only thing the VM reads from this file.
     """
-    path = registry_path(persona)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    row = {"at": datetime.now().isoformat(timespec="seconds"), **row}
-    with open(path, "a", encoding="utf-8") as handle:
-        handle.write(json.dumps(row, ensure_ascii=False) + "\n")
-    os.chmod(path, 0o600)
+    out: dict[str, tuple[str, str]] = {}
+    for row in rows(path):
+        ticket = str(row.get("ticket") or "")
+        if ticket:
+            out[ticket] = (str(row.get("status") or ""), str(row.get("at") or ""))
+    return out
+
+
+def write(document: dict, path: Path | None = None) -> Path:
+    """
+    Write the whole document. TRACKED, so no atomic dance and no 0600: this is
+    a file Mike reads in a diff, and a mode nobody else in config/ carries would
+    be noise that outlives the reason for it.
+    """
+    import yaml
+    target = path or REGISTRY_PATH
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        yaml.safe_dump(document, sort_keys=False, allow_unicode=True,
+                       default_flow_style=False),
+        encoding="utf-8")
+    return target
+
+
+def upsert(row: dict, path: Path | None = None) -> dict:
+    """
+    Insert or replace one capability row by name.
+
+    REPLACE, not append. The VM's ticket file is append-only because it is a
+    log; this is STATE, it is tracked, and a second row for the same capability
+    would show up in Mike's diff as a duplicate he has to reason about.
+    """
+    name = str(row.get("name") or "")
+    if not name:
+        raise RegistryError("a registry row needs a name")
+    status = str(row.get("status") or "")
+    if status not in STATUSES:
+        raise RegistryError(f"status must be one of {list(STATUSES)}, got {status!r}")
+
+    document = _load(path)
+    existing = document.get("capabilities") or []
+    replaced = False
+    out = []
+    for current in existing:
+        if isinstance(current, dict) and str(current.get("name")) == name:
+            out.append(row)
+            replaced = True
+        else:
+            out.append(current)
+    if not replaced:
+        out.append(row)
+    document["capabilities"] = out
+    write(document, path)
     return row
 
 
-def read_rows(persona: str | None = None) -> list[dict]:
+def new_row(name: str, kind: str, ticket: str, job_id: str, persona: str,
+            execution_mode: str, latency_budget_ms: int,
+            status: str = "staged", version: int = 1) -> dict:
     """
-    Every well-formed row in written order. A torn line is skipped, not fatal —
-    jobs.py's reason carries over verbatim: one bad write during a crash must
-    not take every other capability down with it.
+    A fresh row, with the run line present and EMPTY.
+
+    `expected` and `actual` are None from the start rather than absent. An
+    absent key reads as "this row predates the run line"; an explicit None reads
+    as "nothing has been counted yet", which is the true statement and the one
+    check_build_registration.py can assert.
     """
-    path = registry_path(persona)
-    if not path.exists():
-        return []
-    rows: list[dict] = []
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return []
-    for line in text.splitlines():
-        line = line.strip()
-        if not line.startswith("{"):
-            continue
-        try:
-            row = json.loads(line)
-        except ValueError:
-            continue
-        if isinstance(row, dict):
-            rows.append(row)
-    return rows
-
-
-def record_landing(job_id: str, plan: dict, files: list[str],
-                   persona: str | None = None,
-                   dispatches_expected_per_day: float | None = None) -> dict:
-    """
-    Register a landed capability. Called by N14, after verification passed.
-
-    The run line is built HERE rather than by the caller, so a landing cannot
-    happen without one: check_build_registration.py asserts a `landed` row
-    carries `run.execution_mode`, and the only way to be sure that assertion
-    never fires is for the same function to write both.
-
-    `dispatches_expected_per_day` is N8's figure, derived in code from how often
-    the trigger fired in the traces that filed the gap. None means N8 could not
-    tell — recorded as None rather than as 0, because "we could not count" and
-    "it never fires" are different facts and the second is a verdict.
-    """
-    capability = (plan or {}).get("capability") or {}
-    cap_id = str(capability.get("id") or "").strip()
-    if not cap_id:
-        raise RegistryError(
-            f"{job_id}: the plan has no capability.id, so nothing can be "
-            "registered under a name — refusing rather than inventing one"
-        )
-
-    mode = str(capability.get("execution_mode") or "").strip()
-    budget = capability.get("latency_budget_ms")
-    if not mode or not isinstance(budget, (int, float)):
-        raise RegistryError(
-            f"{job_id}: capability {cap_id!r} has no execution_mode or no "
-            "latency_budget_ms — the run line cannot be written, and a landed "
-            "row without one is a capability whose standing cost is unmetered"
-        )
-
-    return _append({
-        "row_type": "capability",
-        "state": "landed",
-        "capability": cap_id,
+    return {
+        "name": name,
+        "kind": kind,
+        "ticket": ticket,
         "job_id": job_id,
-        "kind": str(capability.get("kind") or ""),
-        "disposition": str(capability.get("disposition") or ""),
-        "theme": str(capability.get("theme") or ""),
-        "one_line": str(capability.get("one_line") or ""),
-        "version": next_version(cap_id, persona),
-        "files": sorted(str(f) for f in (files or [])),
-        "replaces": [str(r) for r in (capability.get("replaces") or [])],
-        # THE COHERENCE PASS'S ONLY VIEW OF WHAT A CAPABILITY CLAIMS. Without
-        # it `_surface_of()` found nothing on the registry row and nothing on
-        # the overlay record — which has no such field — so the corpus carried
-        # `surface: []` for every capability and the OVERLAP detector could
-        # never fire. Section 13.7's own falsifiable example, *"both claim
-        # `create` on `plant_watering`"*, was the one comparison the pass was
-        # structurally unable to make.
-        #
-        # Triples only: entity, operation, status. The `reason` is model prose
-        # about a gap the user filed, and this row is read by render_markdown()
-        # into a TRACKED file — so it stays out, the same rule that keeps
-        # `one_line` out of the markdown.
-        "surface_map": _surface_triples(plan),
-        # THE RUN LINE. `dispatches_actual_per_day` is deliberately absent at
-        # landing — no day has passed, and writing 0 would read as "nothing
-        # routes to it" on the one day that cannot possibly show a dispatch.
-        # refresh_run_counts() fills it once a day has closed.
+        "persona": persona,
+        "version": int(version),
+        "status": status,
+        "at": date.today().isoformat(),
+        "acceptance": None,
         "run": {
-            "execution_mode": mode,
-            "latency_budget_ms": int(budget),
-            "dispatches_expected_per_day": dispatches_expected_per_day,
+            "execution_mode": execution_mode,
+            "latency_budget_ms": int(latency_budget_ms),
+            "dispatches_expected_per_day": None,
             "dispatches_actual_per_day": None,
             "counted_over_days": None,
             "counted_at": None,
         },
-    }, persona)
+    }
 
 
-def _surface_triples(plan: dict) -> list[dict]:
-    """The comparable part of a plan's surface map — no free text."""
-    out = []
-    for item in (plan or {}).get("surface_map") or []:
-        if isinstance(item, dict) and item.get("entity") and item.get("operation"):
-            out.append({"entity": str(item["entity"]),
-                        "operation": str(item["operation"]),
-                        "status": str(item.get("status") or "")})
-    return out
-
-
-def record_retirement(cap_id: str, job_id: str, reason: str,
-                      persona: str | None = None) -> dict:
+def mark_landed(name: str, path: Path | None = None) -> dict:
     """
-    A capability that was reverted, superseded or promoted out of the overlay.
+    `staged` -> `landed`. THE MAIN SESSION'S CALL, at N13, and only there.
 
-    Appended, never an edit to the landing row: the landing happened, and a
-    registry that rewrote history could not answer "what was live on the day
-    that trace was written".
+    This is the moment the registration checker starts asserting wiring for
+    this capability — so it must not happen until the Red half is in the same
+    tree, which is exactly what N13 is.
     """
-    return _append({
-        "row_type": "capability",
-        "state": "retired",
-        "capability": str(cap_id),
-        "job_id": str(job_id),
-        "reason": str(reason or "")[:200],
-    }, persona)
+    row = row_for(name, path)
+    if row is None:
+        raise RegistryError(f"no registry row for {name!r}")
+    if row.get("status") not in {"staged", "landed"}:
+        raise RegistryError(
+            f"{name} is {row.get('status')!r} — only a staged row lands")
+    updated = {**row, "status": "landed", "at": date.today().isoformat()}
+    return upsert(updated, path)
 
 
-def next_version(cap_id: str, persona: str | None = None) -> int:
-    """1 for a first landing, n+1 for a re-landing after a REPAIR."""
-    seen = [r for r in read_rows(persona)
-            if r.get("capability") == cap_id and r.get("state") == "landed"]
-    return len(seen) + 1
+def mark_abandoned(ticket: str, reason: str, persona: str,
+                   path: Path | None = None) -> dict:
+    """
+    A ticket Mike closed without building. Carries the reason, because an
+    abandoned row with no reason is indistinguishable from a lost one.
+    """
+    return upsert({
+        "name": f"abandoned_{ticket.lower().replace('-', '_')}",
+        "kind": "none",
+        "ticket": ticket,
+        "job_id": ticket,
+        "persona": persona,
+        "version": 0,
+        "status": "abandoned",
+        "at": date.today().isoformat(),
+        "reason": str(reason or "").strip() or "no reason recorded",
+        "acceptance": None,
+        "run": None,
+    }, path)
 
 
 # ---------------------------------------------------------------------------
-# Reading
+# Reading the set
 # ---------------------------------------------------------------------------
 
-def capabilities(persona: str | None = None,
-                 live_only: bool = True) -> dict[str, dict]:
-    """
-    Capability name -> its latest row. Replayed, newest write wins.
-
-    `live_only` drops anything whose latest row is a retirement — which is what
-    the board, the coherence corpus and the tier count all want. Pass False to
-    see the whole history's endpoints.
-    """
-    latest: dict[str, dict] = {}
-    for row in read_rows(persona):
-        if row.get("row_type") != "capability":
-            continue
-        name = str(row.get("capability") or "")
-        if name:
-            latest[name] = row
-    if live_only:
-        latest = {k: v for k, v in latest.items() if v.get("state") == "landed"}
-    return latest
+def capabilities(path: Path | None = None,
+                 statuses: frozenset[str] = WIRED_STATUSES) -> dict[str, dict]:
+    """Live capability rows by name. `landed` only, unless asked otherwise."""
+    return {str(r["name"]): r for r in rows(path)
+            if str(r.get("status")) in statuses and r.get("name")}
 
 
-def leaf_count(persona: str | None = None) -> int:
-    """
-    Landed `kind: agent` capabilities registered directly under the Coordinator.
-
-    This is the number the tier's due condition is read against. A capability
-    with a `theme` is registered under a theme router and is NOT a leaf under
-    Coord, so it does not count toward it — which is the whole point of the
-    condition: four things hanging off Coord is when the routing decision starts
-    scaling with capability count.
-    """
-    return sum(1 for row in capabilities(persona).values()
-               if row.get("kind") == "agent" and not row.get("theme"))
+def capability_names(path: Path | None = None) -> set[str]:
+    return set(capabilities(path))
 
 
-def tier_status(persona: str | None = None) -> dict:
-    """{'leaves': n, 'due_at': 4, 'due': bool} — what the board prints."""
-    leaves = leaf_count(persona)
-    return {"leaves": leaves, "due_at": TIER_DUE_AT, "due": leaves >= TIER_DUE_AT}
+def leaf_count(path: Path | None = None) -> int:
+    """Landed capabilities the Coordinator must choose between."""
+    return sum(1 for r in capabilities(path).values()
+               if str(r.get("kind")) in {"agent", "tool"})
+
+
+def tier_status(path: Path | None = None) -> dict:
+    count = leaf_count(path)
+    return {"leaves": count, "due_at": TIER_DUE_AT, "due": count >= TIER_DUE_AT}
+
+
+def next_version(name: str, path: Path | None = None) -> int:
+    row = row_for(name, path)
+    return int(row.get("version", 0)) + 1 if row else 1
 
 
 # ---------------------------------------------------------------------------
 # Dispatch counting — from the traces, not from the A9 rollup
 # ---------------------------------------------------------------------------
+#
+# SALVAGED IN BEHAVIOUR from the v3 registry: the walk, the two kinds of day
+# that do not count, and the None-not-zero rule are unchanged, because all three
+# were bought by a real wrong number on the board.
 
 def _trace_files(persona: str | None, days: int) -> list[Path]:
+    from core.persona import persona_data_dir
     directory = persona_data_dir(persona) / "traces"
     if not directory.is_dir():
         return []
@@ -312,11 +300,6 @@ def dispatch_counts(persona: str | None = None,
                     after: str = "") -> tuple[Counter, int]:
     """
     (agent name -> dispatches, MEASURED days) over the window.
-
-    Counts AGENT names, which no other counter in this repo does. Measured days
-    is returned rather than assumed: a window of 7 across a VM stopped for four
-    of them is a 3-day sample, and dividing by 7 would report a capability as
-    less used than it is.
 
     TWO KINDS OF DAY DO NOT COUNT, and both were inflating the denominator into
     a figure of 0.0 that read as "nothing routes to it":
@@ -360,20 +343,19 @@ def dispatch_counts(persona: str | None = None,
 
 
 def refresh_run_counts(persona: str | None = None,
-                       days: int = DEFAULT_WINDOW_DAYS) -> str:
+                       days: int = DEFAULT_WINDOW_DAYS,
+                       path: Path | None = None) -> str:
     """
-    Fill `dispatches_actual_per_day` on every live capability from the traces.
+    Fill `dispatches_actual_per_day` on every landed capability from the traces.
 
-    Appends one refreshed row per capability rather than editing the landing
-    row, keeping the file append-only. Idempotent in the sense that matters: two
-    runs on the same day produce two rows with the same figure, and the replay
-    reads the later one.
+    Rewrites the row in place — the registry is tracked state, not a log, and
+    an append would show Mike a second row for the same capability.
 
-    Silent no-op when there is nothing landed — before the first landing there
-    is nothing to count, and a refresh that wrote rows about an empty system
-    would make the file's first entries meaningless.
+    Silent no-op when nothing has landed: before the first landing there is
+    nothing to count, and a refresh that wrote rows about an empty system would
+    make the file's first entries meaningless.
     """
-    live = capabilities(persona)
+    live = capabilities(path)
     if not live:
         return "registry: nothing landed — no run counts to refresh"
 
@@ -385,18 +367,16 @@ def refresh_run_counts(persona: str | None = None,
         # a partial day whose trace file often holds only Build's own tick — in
         # its denominator, which is how `actual 0.0 over 1d` was written about a
         # capability nothing had yet had a chance to dispatch.
-        landed_on = str(row.get("at", ""))[:10]
-        counts, measured = dispatch_counts(persona, days, after=landed_on)
+        counts, measured = dispatch_counts(persona, days,
+                                           after=str(row.get("at", ""))[:10])
         if measured == 0:
             skipped += 1
-            continue                    # leave `None` — not counted yet
+            continue                    # leave None — not counted yet
         run = dict(row.get("run") or {})
         run["dispatches_actual_per_day"] = round(counts.get(name, 0) / measured, 3)
         run["counted_over_days"] = measured
         run["counted_at"] = stamp
-        updated = {k: v for k, v in row.items() if k != "at"}
-        updated["run"] = run
-        _append(updated, persona)
+        upsert({**row, "run": run}, path)
         refreshed += 1
 
     if not refreshed:
@@ -407,69 +387,40 @@ def refresh_run_counts(persona: str | None = None,
 
 
 # ---------------------------------------------------------------------------
-# The tracked board — generated on the Mac, committed by Mike
+# The tracked board
 # ---------------------------------------------------------------------------
 
-def render_markdown(persona: str | None = None) -> str:
-    """
-    docs/BUILD_REGISTRY.md's body. Ids, kinds, names, versions, dates.
-
-    ZERO PERSONA CONTENT, and that is a hard property rather than a tidiness
-    one: this is the only Build artifact that becomes a TRACKED file, so
-    anything user-derived here would be committed to git, and the overlay's
-    whole reason for living under data/personas/ is that generated capability
-    text is Sensitive-tier. `one_line` is excluded for the same reason — it is
-    model-written prose about a gap the user filed.
-    """
-    live = capabilities(persona)
-    status = tier_status(persona)
+def render_markdown(path: Path | None = None) -> str:
+    """docs/BUILD_REGISTRY.md, generated. One table, no prose beyond the header."""
     lines = [
-        "# Build registry — what Build has landed",
+        "# Build registry — what Build has made",
         "",
-        "*Generated by `python3 scripts/build_board.py --registry`. Do not edit by hand.*",
+        "*Generated from `config/build/registry.yaml`. Do not edit by hand — the",
+        "sweep rewrites it.*",
         "",
-        "Ids, kinds, versions and dates only — no capability descriptions, no",
-        "persona content. The descriptions live in the per-persona registry on the",
-        "VM, which is gitignored because generated capability text is Sensitive-tier.",
-        "",
-        f"**Leaf capabilities under the Coordinator: {status['leaves']} of "
-        f"{status['due_at']}.** The tier "
-        + ("is DUE." if status["due"] else "becomes due at the fourth."),
-        "",
-    ]
-    if not live:
-        lines.append("Nothing has landed yet.")
-        return "\n".join(lines) + "\n"
-
-    lines += [
-        "| Capability | Kind | Disposition | Theme | v | Mode | Budget | Landed |",
+        "| Capability | Kind | Status | v | Ticket | Landed | Acceptance | Run |",
         "|---|---|---|---|---|---|---|---|",
     ]
-    for name, row in sorted(live.items()):
+    for row in rows(path):
         run = row.get("run") or {}
+        actual = run.get("dispatches_actual_per_day")
+        run_cell = (f"{run.get('execution_mode', '?')}, "
+                    f"{'not counted' if actual is None else f'{actual}/day'}"
+                    ) if run else "—"
         lines.append(
-            f"| `{name}` | {row.get('kind', '')} | {row.get('disposition', '')} "
-            f"| {row.get('theme') or '—'} | {row.get('version', '')} "
-            f"| {run.get('execution_mode', '')} "
-            f"| {run.get('latency_budget_ms', '')}ms "
-            f"| {str(row.get('at', ''))[:10]} |"
-        )
+            f"| `{row.get('name', '?')}` | {row.get('kind', '?')} "
+            f"| {row.get('status', '?')} | {row.get('version', '?')} "
+            f"| {row.get('ticket', '?')} | {row.get('at', '?')} "
+            f"| {row.get('acceptance') or '—'} | {run_cell} |")
+    if len(lines) == 7:
+        lines.append("| *(nothing yet)* | | | | | | | |")
     return "\n".join(lines) + "\n"
 
 
-def write_markdown(target: Path | str, persona: str | None = None) -> str:
-    """Write docs/BUILD_REGISTRY.md. Mac-side; Mike commits it."""
-    path = Path(target)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    body = render_markdown(persona)
-    fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + ".",
-                                    suffix=".tmp")
-    os.close(fd)
-    tmp = Path(tmp_name)
-    try:
-        tmp.write_text(body, encoding="utf-8")
-        os.replace(tmp, path)
-    except BaseException:
-        tmp.unlink(missing_ok=True)
-        raise
-    return f"wrote {path} ({len(body.splitlines())} lines)"
+def write_markdown(target: Path | str | None = None,
+                   path: Path | None = None) -> str:
+    out = Path(target) if target else (_ROOT / "docs" / "BUILD_REGISTRY.md")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    text = render_markdown(path)
+    out.write_text(text, encoding="utf-8")
+    return text

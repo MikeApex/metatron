@@ -62,6 +62,12 @@ MAX_DETAIL_CHARS = 4000
 # session tree.
 MAX_TREES = 4
 
+# Build implementer sandboxes, created by `new_worktree.sh --sandbox`. Skipped
+# by _dirty_worktrees -- see its docstring for why, and note that the prefix is
+# a CONTRACT with that script: changing it in one place and not the other
+# re-arms a global subagent stall, silently.
+BUILD_SANDBOX_PREFIX = "metatron-wt-build-"
+
 
 def _candidate_roots(payload: dict) -> list[tuple[str, Path]]:
     """Trees this gate might sweep, best first. See the module docstring."""
@@ -108,6 +114,17 @@ def _dirty_worktrees(root: Path) -> list[Path]:
     block message names the tree and tells the worker to say so, which is the
     same stance the sweep already takes on pre-existing failures. Bounded by
     MAX_TREES so a pile of stale worktrees cannot blow the hook's timeout.
+
+    ONE PREFIX IS SKIPPED: `metatron-wt-build-`, the Build implementer's sandbox
+    (`new_worktree.sh --sandbox`). That known limit is the reason. A Build
+    sandbox is DIRTY BY DESIGN for the whole life of a job and PARKED whenever a
+    gate refuses — so without this skip, one parked Build job would stall every
+    subagent stop in every other window on this machine until somebody noticed
+    and cleaned it up. Nothing is unguarded by the skip: the Build driver runs
+    the sweep over its own sandbox itself at N12, and refuses on a red. The
+    trade is deliberate — a tree with a named owner who is already sweeping it,
+    against a global stall with no owner at all (plan v4.11 section 10,
+    cold read 6).
     """
     try:
         listing = subprocess.run(
@@ -128,6 +145,8 @@ def _dirty_worktrees(root: Path) -> list[Path]:
         except OSError:
             continue
         if path == root or not (path / "scripts" / "qa_sweep.sh").is_file():
+            continue
+        if path.name.startswith(BUILD_SANDBOX_PREFIX):
             continue
         try:
             status = subprocess.run(

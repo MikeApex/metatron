@@ -43,10 +43,18 @@ failure that is not about the compass rule and would flatter the test.
 
 ---
 
-<!-- fixture: manifest_ids -->
-```json
-["crm", "calendar", "correspondence", "diaries", "biographies", "gift_log", "contact_list", "weather", "travel"]
-```
+**Three fields were REMOVED on 2026-09-24, by plan v4.11 ruling 5.** Inquiry now works in a
+vacuum: it sees the gap and nothing about what data exists, because the point is to find where
+existing data is inadequate, and a model shown the corpus first cannot do that. So
+`candidate_sources`, `manifest_fingerprint` and `policies_consulted` are no longer fields Inquiry
+may write — their PRESENCE is now a validation defect — and the `manifest_ids` block that existed
+only to validate `candidate_sources` went with them.
+
+**The spine is byte-identical.** Every question, its text, its class and above all its POSITION is
+exactly what the 2026-09-17 transcript produced. The removal touches only fields the model would
+now never be asked for; it cannot change which turn passes, because nothing removed is read by the
+ordering rule. That is the whole reason this pair survived the rebuild: the compass rule was never
+about where the data was.
 
 ---
 
@@ -65,8 +73,6 @@ Feasibility second, no question about what the boss is for, no altitude answer.
   "request": "Mary Higgins has invited the boss to John's birthday barbecue this Sunday in Bethesda, MD. RSVP.",
   "depth": "standard",
   "generalizes_to": "ensuring whichever answer goes out on an invitation is the one he would have chosen with full information",
-  "manifest_fingerprint": "rsvp-fixture-manifest",
-  "policies_consulted": [],
   "framing_note": "An RSVP is trivial to send and expensive to send wrongly.",
   "declined_to_ask": [],
   "spine": [
@@ -77,7 +83,6 @@ Feasibility second, no question about what the boss is for, no altitude answer.
       "why_it_matters": "August 22 2026 is a Saturday; Sunday is the 23rd. Blocking the wrong day either misses the party or holds a day for nothing.",
       "blocks": "design",
       "expected_answer_shape": "a single resolved calendar date",
-      "candidate_sources": ["calendar", "user"],
       "resolved_by_policy": null,
       "source_quote": "Is the date and day resolved? If not, resolve before anything else."
     },
@@ -88,7 +93,6 @@ Feasibility second, no question about what the boss is for, no altitude answer.
       "why_it_matters": "If clearly not, the work moves straight to the quality of the decline.",
       "blocks": "design",
       "expected_answer_shape": "yes/no plus door-to-door travel time",
-      "candidate_sources": ["calendar", "travel"],
       "resolved_by_policy": null,
       "source_quote": "Is he physically able to be in Bethesda at 3pm on the correct day? If clearly not, move straight to the quality of the decline."
     },
@@ -99,7 +103,6 @@ Feasibility second, no question about what the boss is for, no altitude answer.
       "why_it_matters": "Nothing on it, low-value items, or high-value items each give a different answer.",
       "blocks": "design",
       "expected_answer_shape": "a tier, and what it displaces",
-      "candidate_sources": ["crm", "calendar", "correspondence"],
       "resolved_by_policy": null,
       "source_quote": "Does the relationship tier justify displacing what is already on the calendar?"
     },
@@ -110,7 +113,6 @@ Feasibility second, no question about what the boss is for, no altitude answer.
       "why_it_matters": "A counterparty in a live negotiation, a journalist, or someone he has wanted to meet for a year each flips the decision.",
       "blocks": "behaviour",
       "expected_answer_shape": "a list of likely attendees with flags",
-      "candidate_sources": ["crm", "contact_list", "biographies"],
       "resolved_by_policy": null,
       "source_quote": "Are there second-order reasons to attend (someone in the room) or to avoid (someone in the room, an optics or conflict issue)?"
     },
@@ -121,7 +123,6 @@ Feasibility second, no question about what the boss is for, no altitude answer.
       "why_it_matters": "The choice is not binary; there are at least five outcomes.",
       "blocks": "design",
       "expected_answer_shape": "one of the five framed options",
-      "candidate_sources": ["crm", "diaries"],
       "resolved_by_policy": null,
       "source_quote": "Does a short appearance capture most of the value at a fraction of the cost?"
     },
@@ -132,7 +133,6 @@ Feasibility second, no question about what the boss is for, no altitude answer.
       "why_it_matters": "Day one has the file but not the earned authority; a stated default means silence still produces an outcome.",
       "blocks": "behaviour",
       "expected_answer_shape": "decide/surface, plus the default and its deadline",
-      "candidate_sources": ["diaries", "user"],
       "resolved_by_policy": null,
       "source_quote": "Is this a decision I can make, or one I must surface?"
     }
@@ -169,8 +169,6 @@ Intent first, feasibility sixth, and the deliverable reclassified as a standing 
   "disposition": "policy",
   "disposition_evidence": "The first-day deliverable is not an RSVP but the beginning of a standing allocation policy: what he is protecting this year, what the weekend budget is, which relationships are being invested in and which are on maintenance, what the automatic yeses and noes are, and where discretion ends. It retires the whole class of bespoke per-invitation analysis performed under time pressure.",
   "generalizes_to": "every social and semi-social invitation competing for a scarce weekend inventory, decided at the margin against a standing allocation policy rather than one at a time",
-  "manifest_fingerprint": "rsvp-fixture-manifest",
-  "policies_consulted": [],
   "framing_note": "Absence of a blocker is not a reason to attend. A yes must be affirmatively purchased.",
   "declined_to_ask": [],
   "spine": [
@@ -181,7 +179,6 @@ Intent first, feasibility sixth, and the deliverable reclassified as a standing 
       "why_it_matters": "Explicitly stated intentions are the highest-quality signal available. Those statements are instructions.",
       "blocks": "design",
       "expected_answer_shape": "a named season, plus stated wants and don't-wants",
-      "candidate_sources": ["diaries", "correspondence", "biographies"],
       "resolved_by_policy": null,
       "source_quote": "What is he trying to do with this period of his life, and what has he said he wants more and less of?"
     },
@@ -192,7 +189,6 @@ Intent first, feasibility sixth, and the deliverable reclassified as a standing 
       "why_it_matters": "Neutral is not a pass. Neutral competing against a scarce resource is a soft no.",
       "blocks": "design",
       "expected_answer_shape": "serves / works against / neutral, with the reason",
-      "candidate_sources": ["diaries", "crm"],
       "resolved_by_policy": null,
       "source_quote": "Does this serve that, work against it, or is it neutral? Neutral is not a pass. Neutral competing against a scarce resource is a soft no."
     },
@@ -203,7 +199,6 @@ Intent first, feasibility sixth, and the deliverable reclassified as a standing 
       "why_it_matters": "Empty calendar space is frequently the most valuable thing on the calendar; the base rate and the marginal value at that rate are what decide, not whether the slot is free.",
       "blocks": "design",
       "expected_answer_shape": "the alternative use, the month's committed count, and the marginal value",
-      "candidate_sources": ["calendar", "diaries"],
       "resolved_by_policy": null,
       "source_quote": "What is the counterfactual use of this specific block, including deliberate emptiness, and what has already been committed this month?"
     },
@@ -214,7 +209,6 @@ Intent first, feasibility sixth, and the deliverable reclassified as a standing 
       "why_it_matters": "The downside of missing a closing window is unrecoverable; the downside of attending is a wasted afternoon. Most events are not that, and treating everything as irreplaceable means attending everything.",
       "blocks": "design",
       "expected_answer_shape": "yes/no, and which door is closing",
-      "candidate_sources": ["crm", "biographies", "correspondence"],
       "resolved_by_policy": null,
       "source_quote": "Is there an asymmetry or closing window that overrides the ordinary calculus?"
     },
@@ -225,7 +219,6 @@ Intent first, feasibility sixth, and the deliverable reclassified as a standing 
       "why_it_matters": "Relationships are slopes, not points. Missing one party in a warm relationship costs almost nothing; missing one in a relationship quietly fading for three years may be the moment it ends.",
       "blocks": "design",
       "expected_answer_shape": "a five-year contact trend, and the cost of one absence against it",
-      "candidate_sources": ["crm", "correspondence", "gift_log"],
       "resolved_by_policy": null,
       "source_quote": "What does this relationship's trajectory look like, and what does one absence do to it?"
     },
@@ -236,7 +229,6 @@ Intent first, feasibility sixth, and the deliverable reclassified as a standing 
       "why_it_matters": "Feasibility is fourth in the amended order, not first. It qualifies a decision already reasoned, rather than making it.",
       "blocks": "design",
       "expected_answer_shape": "yes/no, door-to-door cost, and what it displaces on Saturday and Monday",
-      "candidate_sources": ["calendar", "travel", "weather"],
       "resolved_by_policy": null,
       "source_quote": "Only now: is it feasible, and at what cost to the days around it?"
     },
@@ -247,7 +239,6 @@ Intent first, feasibility sixth, and the deliverable reclassified as a standing 
       "why_it_matters": "Attending enters a reciprocity loop — future invitations, a hosting expectation, an implied availability — and an annual fixture makes the decision a standing commitment rather than a one-time choice.",
       "blocks": "behaviour",
       "expected_answer_shape": "the reciprocity obligations created, and whether this recurs annually",
-      "candidate_sources": ["crm", "calendar", "gift_log"],
       "resolved_by_policy": null,
       "source_quote": "Every yes creates obligations that outlive it. Attending puts us into a reciprocity loop: future invitations, a hosting expectation, an implied availability. [...] Know the annual shape. Some of these recur. If John's birthday is an annual fixture, the decision is really a policy about a standing commitment, not a one-time choice."
     },
@@ -258,7 +249,6 @@ Intent first, feasibility sixth, and the deliverable reclassified as a standing 
       "why_it_matters": "A short appearance, sending family without him, a call to John on the day, or a dinner in September may be worth more to everyone than three hours at a barbecue.",
       "blocks": "design",
       "expected_answer_shape": "the cheapest option that keeps most of the value",
-      "candidate_sources": ["crm", "diaries"],
       "resolved_by_policy": null,
       "source_quote": "What is the minimum-cost version that captures most of the value? Short appearance, sending family without him, a call to John on the day, a dinner in September that's worth more to everyone than three hours at a barbecue."
     },
@@ -269,7 +259,6 @@ Intent first, feasibility sixth, and the deliverable reclassified as a standing 
       "why_it_matters": "The answer should be a nearly automatic output of a framework already built with him. Where discretion ends is part of that framework, and a stated default means silence still produces an outcome.",
       "blocks": "behaviour",
       "expected_answer_shape": "the precedent, plus the default and its deadline",
-      "candidate_sources": ["diaries", "user"],
       "resolved_by_policy": null,
       "source_quote": "Does this set a precedent I want to set?"
     }

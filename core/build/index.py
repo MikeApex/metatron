@@ -14,11 +14,16 @@ repo, so the mistake would be permanent.
 
 Same encoder (all-MiniLM-L6-v2, 384 dims), separate store, separate lock.
 
-NOT BACKED UP, DELIBERATELY. scripts/metatron-backup.sh excludes *.faiss, and
-this index is fully rebuildable from the job artifacts — every question in it
-came from a question_set.json that IS backed up. `rebuild()` is that path, and
-it exists from day one rather than being discovered as missing later, which is
-core/memory.py's actual defect.
+SALVAGED BY COPY (plan v4.11 section 10). RELOCATED TO THE MAC: the store is
+`data/build/index/<persona>/`, beside the job directories it is rebuilt from,
+because Build now runs where development runs (ruling 1) and the VM never sees
+a question.
+
+NOT BACKED UP, DELIBERATELY, and on the Mac that is a stronger statement than
+it was on the VM. This index is fully rebuildable from the job artifacts —
+every question in it came from a question_set.json sitting one directory up.
+`rebuild()` is that path, and it exists from day one rather than being
+discovered as missing later, which is core/memory.py's actual defect.
 
 DEGRADES TO ABSENT. sentence-transformers and faiss are heavy optional
 imports. Every function here returns an empty result rather than raising when
@@ -60,8 +65,8 @@ def _get_faiss():
 
 
 def index_dir(persona: str | None = None) -> Path:
-    from core.build.jobs import build_dir
-    return build_dir(persona) / "index"
+    from core.build.jobs import index_root, resolve_persona
+    return index_root() / resolve_persona(persona)
 
 
 def _index_path(persona: str | None = None) -> Path:
@@ -269,7 +274,7 @@ def rebuild(persona: str | None = None) -> dict:
     every write skews similarity toward heavily-edited entries — because a
     rebuild starts from one record per question.
     """
-    from core.build.jobs import jobs_dir
+    from core.build.jobs import persona_dir
     from core.build.policy import list_policies
 
     if not available():
@@ -280,7 +285,7 @@ def rebuild(persona: str | None = None) -> dict:
     metadata: list[dict] = []
     seen: set[tuple[str, str]] = set()
 
-    root = jobs_dir(persona)
+    root = persona_dir(persona)
     if root.is_dir():
         for path in sorted(root.glob("*/question_set.json")):
             try:

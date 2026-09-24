@@ -1,288 +1,246 @@
 #!/usr/bin/env python3
 """
-The Build board — every job, what it is waiting for, and what it has cost.
+The Build board — what is filed, what is in flight, and what each capability costs.
 
-WHERE THIS RUNS, AND WHY IT MATTERS. Under ruling 0.1 all of Build runs on the
-VM: every node, the writer, verification, the ledger and this board's data. The
-Mac holds development, this script and build_brief.py as READ-ONLY views, and
-the needs_tool builds Mike does by ordinary development.
+Plan: archive/plans/build_vertical_plan_2026-09-24.md section 5.
 
-So the commands split by machine, and the split is not cosmetic:
+WHAT THIS IS NO LONGER. Under v3 all of Build ran on the VM, so this script had
+a write half — `--queue`, `--approve`, `--accept`, `--refuse`, `--resume` — that
+had to be run over ssh or it would cheerfully report "no such job" about a job
+that existed perfectly well on the other machine. Every one of those was a
+command to move VM STATE.
 
-  READ ANYWHERE     --list --show --costs --run-cost --coherence --registry
-  WRITE ON THE VM   --queue --approve --accept --refuse --resume --tick
+Ruling 1 removes the whole category: Build runs on the Mac, in a session Mike is
+sitting in, and `/build` is how a job moves. THE SESSION IS THE STATE. What is
+left here is a READ VIEW joining three sources, plus one write that is not a
+state change at all:
 
-A write command run on the Mac acts on the MAC'S build tree, which is empty.
-It will not error — it will cheerfully report "no such job" about a job that
-exists perfectly well on the VM. Run the write half over ssh.
+    --tickets    the VM's inbox, FETCHED read-only over the existing monitor
+                 route. No write path from the Mac to the VM exists or is added.
+    --jobs       the job directories on this machine
+    --registry   the tracked registry, and docs/BUILD_REGISTRY.md from it
+    --run-cost   what each landed capability costs, standing, per day
+    --abandon    writes an `abandoned` row into the WORKING TREE for Mike to
+                 commit. A decision recorded in a tracked file, not a state
+                 transition on another machine.
 
-RAISING A JOB'S SPEND LIMIT IS NOT A BOARD COMMAND AT ALL, deliberately
-(correction v3.5 C2). An over-budget job parks at `awaiting_approval` and the
-approval is:
+THE ONE NUMBER THAT HAS TO BE ON THIS BOARD, and the reason finding 7 exists: a
+ticket Mike decided on the Mac stays OPEN on the VM until the next deploy
+carries its registry row. Those tickets are not gaps still waiting — they are
+already answered — and a board that showed them in the open count would read as
+a backlog that never shrinks. `N decided, awaiting deploy` is printed beside the
+open count so the lag is visible rather than inferred.
 
-    ssh <vm> 'cd ~/metatron && METATRON_PERSONA=mike python3 -c "from core.build \
-        import cost; cost.approve_limit(\"BLD-MMDD-NN\", 5.00)"'
-    ssh <vm> 'cd ~/metatron && python3 scripts/build_board.py --persona mike \
-        --resume BLD-MMDD-NN'
-
-Two acts, not one, and neither is a tap. A confirm card would need an executor
-entry and would make raising Build's own spend limit a one-tap action, in a
-design whose hardcoded deny list exists precisely so Build cannot raise its own
-ceiling.
-
-WHAT RETIRES THIS (.claude/rules/deploy.md's standing rule on new machinery). It
-retires nothing today — it is the BOOTSTRAP surface, and plan section 5 says so:
-Mike uses two surfaces, and this one is "the primary interface during
-bootstrap". The build that retires it is `tools.build.context_block()` growing
-into the whole of how Build is worked conversationally. Until a gate can be
-cleared without a terminal, this is how they are cleared; the read commands
-survive it regardless, because a board is a legitimate read view.
-
-Zero model tokens except --coherence, which runs one advisory pass.
-
-EVERY COMMAND NEEDS A PERSONA — `--persona mike`, or `METATRON_PERSONA` in the
-shell. Without one the first path call raises and you get a traceback, which
-over ssh is the least useful output available. The examples below all carry it.
+Zero model tokens. Stdlib plus PyYAML.
 
 Usage:
-    python3 scripts/build_board.py --persona mike                  # the board
-    python3 scripts/build_board.py --persona mike --show BLD-0919-01
-    python3 scripts/build_board.py --persona mike --costs
-    python3 scripts/build_board.py --persona mike --run-cost       # tier + run lines
-    python3 scripts/build_board.py --persona mike --coherence      # one pass
-    python3 scripts/build_board.py --persona mike --registry       # docs/BUILD_REGISTRY.md
-    python3 scripts/build_board.py --persona mike --queue BLD-0919-01    # VM
-    python3 scripts/build_board.py --persona mike --approve BLD-0919-01  # VM — [N9]
-    python3 scripts/build_board.py --persona mike --accept BLD-0919-01   # VM — [N13]
-    python3 scripts/build_board.py --persona mike --refuse BLD-0919-01   # VM — reverts
-    python3 scripts/build_board.py --persona mike --resume BLD-0919-01   # VM — after approve_limit
-    python3 scripts/build_board.py --persona mike --tick           # VM — one tick now
+    python3 scripts/build_board.py --persona mike
+    python3 scripts/build_board.py --persona mike --tickets
+    python3 scripts/build_board.py --persona mike --jobs
+    python3 scripts/build_board.py --persona mike --registry
+    python3 scripts/build_board.py --persona mike --run-cost
+    python3 scripts/build_board.py --persona mike --abandon BLD-0924-01 "not worth it"
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import sys
+import urllib.error
+import urllib.parse
+import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from core.build import cost                    # noqa: E402
-from core.build import jobs as J               # noqa: E402
-from core.build import registry as R           # noqa: E402
+DEFAULT_SERVER = "https://metatron-vm.tail0acc5d.ts.net:8001"
 
-# What a state is waiting for, in the terms the person reading this cares about.
-# A state name alone makes the reader translate; this is the translation.
-_WAITING_FOR = {
-    "proposed": "your triage — nothing starts until you queue it",
-    "needs_interview": "answers only you can give",
-    "awaiting_approval": "a raised spend limit, or a raised ceiling",
-    "briefed": "you to read the brief and approve [N9]",
-    "verifying": "you to accept or refuse it [N13] — it is already live",
-}
+# Short, like sync_dev_backlog's. The VM being stopped is an ordinary state on
+# this project, and a board that hangs for thirty seconds to tell you so is a
+# board nobody runs.
+TIMEOUT_SECONDS = 5
 
 
-def board(persona: str | None = None) -> str:
-    states = J.states(persona)
-    notice = cost.budget_notice(persona=persona)
-    lines: list[str] = []
-
-    # The placeholder notice leads, because it is a warning about a number that
-    # governs everything below it, and it self-clears the moment a real figure
-    # is configured — so it can never become a header anyone learns to skip.
-    if notice:
-        lines += [notice, ""]
-
-    if not states:
-        return "\n".join(lines + ["No Build jobs."])
-
-    open_jobs = {k: v for k, v in states.items() if v["state"] not in J.TERMINAL}
-    done = {k: v for k, v in states.items() if v["state"] in J.TERMINAL}
-
-    lines.append(f"BUILD BOARD — {len(open_jobs)} open, {len(done)} closed")
-    lines.append("")
-    for job_id, job in sorted(open_jobs.items()):
-        spend = cost.job_spend(job_id, persona)
-        limit = cost.job_limit(job_id, persona)
-        flag = f"  @blocked: {job['blocked']}" if job.get("blocked") else ""
-        lines.append(f"  {job_id}  {job['state']:<18} "
-                     f"attempt {job.get('attempt', 1)}  ${spend:.4f}/${limit:.2f}")
-        lines.append(f"      {str(job.get('gap', ''))[:100]}")
-        waiting = _WAITING_FOR.get(job["state"])
-        if waiting:
-            lines.append(f"      waiting for: {waiting}")
-        if flag:
-            lines.append(f"    {flag}")
-    if done:
-        lines.append("")
-        lines.append("closed:")
-        for job_id, job in sorted(done.items()):
-            lines.append(f"  {job_id}  {job['state']:<12} "
-                         f"{str(job.get('detail', ''))[:70]}")
-
-    status = R.tier_status(persona)
-    lines += ["",
-              f"leaf capabilities under the Coordinator: {status['leaves']} of "
-              f"{status['due_at']}"
-              + ("  — THE TIER IS DUE" if status["due"] else "")]
-    return "\n".join(lines)
+def _auth_header() -> dict:
+    """The same locally-minted bearer sync_dev_backlog.py uses. {} on failure."""
+    try:
+        from core.auth import bearer_header
+        return bearer_header(ttl_seconds=300)
+    except Exception:
+        return {}
 
 
-def show(job_id: str, persona: str | None = None) -> str:
-    job = J.get(job_id, persona)
-    if job is None:
-        return (f"{job_id}: no such job. If you are on the Mac, the ledger lives "
-                f"on the VM — this board reads only what is local.")
-    lines = [f"{job_id}  [{job['state']}]  attempt {job.get('attempt', 1)}",
-             f"  mode:      {job.get('mode')}",
-             f"  gap:       {job.get('gap')}",
-             f"  trigger:   {job.get('trigger')}",
-             f"  depth:     {job.get('depth')}"]
-    if job.get("blocked"):
-        lines.append(f"  @blocked:  {job['blocked']}")
-    if job.get("detail"):
-        lines.append(f"  last:      {job['detail']}")
-
-    directory = J.job_dir(job_id, persona)
-    if directory.is_dir():
-        artifacts = sorted(p.name for p in directory.iterdir())
-        lines.append(f"  artifacts: {', '.join(artifacts) or '(none)'}")
-
-    tokens = cost.job_tokens(job_id, persona)
-    lines.append(f"  spend:     ${tokens['usd']:.4f} over {tokens['calls']} call(s) "
-                 f"({tokens['tokens_in']} in / {tokens['tokens_out']} out)")
-    waiting = _WAITING_FOR.get(job["state"])
-    if waiting:
-        lines.append(f"  waiting:   {waiting}")
-    return "\n".join(lines)
-
-
-def costs(persona: str | None = None) -> str:
-    day = cost.day_total(persona)
-    lines = [f"Build spend today: ${day['usd']:.4f} over {day['calls']} call(s) "
-             f"across {day['jobs']} job(s)", ""]
-    for job_id, job in sorted(J.states(persona).items()):
-        tokens = cost.job_tokens(job_id, persona)
-        if tokens["calls"]:
-            lines.append(f"  {job_id}  ${tokens['usd']:.4f}  "
-                         f"{tokens['calls']} call(s)  [{job['state']}]")
-    notice = cost.budget_notice(persona=persona)
-    if notice:
-        lines += ["", notice]
-    return "\n".join(lines)
-
-
-def run_cost(persona: str | None = None) -> str:
+def fetch_tickets(server: str, persona: str) -> tuple[list[dict], str]:
     """
-    THE PRODUCT, NOT THE FACTORY. What each landed capability costs to keep.
+    (rows, note). READ-ONLY, over the existing /monitor/file route.
 
-    Everything else in this script meters the BUILD, which ends. A landed agent
-    is dispatched on every matching turn, forever, at that turn's model price.
+    An unreachable VM returns ([], reason) rather than raising: the VM is
+    stopped most of the time on this project, and every other half of this
+    board is local and still worth printing.
     """
-    live = R.capabilities(persona)
-    status = R.tier_status(persona)
-    lines = [f"RUN LINES — {len(live)} live capability(ies)", ""]
+    path = f"data/personas/{persona}/build/tickets.jsonl"
+    url = f"{server.rstrip('/')}/monitor/file?{urllib.parse.urlencode({'path': path})}"
+    try:
+        req = urllib.request.Request(url, headers=_auth_header())
+        with urllib.request.urlopen(req, timeout=TIMEOUT_SECONDS) as resp:
+            payload = json.loads(resp.read().decode("utf-8", errors="replace"))
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        return [], f"the VM did not answer ({type(exc).__name__}) — local halves only"
+
+    content = payload.get("content", "")
+    if not isinstance(content, str):
+        return [], "the monitor route returned no content"
+
+    rows = []
+    for line in content.splitlines():
+        line = line.strip().rstrip(",")
+        if not line.startswith("{"):
+            continue
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(row, dict) and row.get("job_id"):
+            rows.append(row)
+    return rows, ""
+
+
+# ---------------------------------------------------------------------------
+# Views
+# ---------------------------------------------------------------------------
+
+def show_tickets(rows: list[dict], note: str) -> None:
+    from core.build import tickets as T
+
+    print("## Tickets — the VM's inbox\n")
+    if note:
+        print(f"  ({note})\n")
+    if not rows:
+        print("  nothing filed.\n")
+        return
+
+    ids = [str(r["job_id"]) for r in rows]
+    decided = set(T.decided_awaiting_deploy(ids))
+    for row in rows:
+        job_id = str(row["job_id"])
+        mark = "decided, awaiting deploy" if job_id in decided else "open"
+        mode = row.get("mode", "construct")
+        print(f"  {job_id}  [{mark}]"
+              + ("  (repair)" if mode == "repair" else "")
+              + f"\n      {str(row.get('gap') or '')[:140]}")
+    open_count = len(ids) - len(decided)
+    print(f"\n  {open_count} open"
+          + (f", {len(decided)} decided, awaiting deploy" if decided else "")
+          + ".\n")
+    if decided:
+        print("  A decided ticket stays open on the VM until the deploy that")
+        print("  carries its registry row. It is answered, not waiting.\n")
+
+
+def show_jobs(persona: str) -> None:
+    from core.build import driver as D
+    from core.build import jobs as J
+
+    print("## Jobs — on this machine\n")
+    ids = J.known_jobs(persona)
+    if not ids:
+        print("  no job directories yet.\n")
+        return
+    for job_id in ids:
+        step = D.next_step(job_id, persona)
+        where = (f"waiting at {step.node} — {step.detail}" if step.is_gate
+                 else f"next: {step.node}"
+                 + (f" (attempt {step.attempt})" if step.attempt > 1 else ""))
+        attempts = len(J.attempts(job_id, persona))
+        print(f"  {job_id}  {where}\n      {attempts} node attempt(s) recorded")
+    print()
+
+
+def show_registry() -> None:
+    from core.build import registry as R
+    print(R.render_markdown())
+
+
+def show_run_cost() -> None:
+    from core.build import registry as R
+
+    print("## Run cost — what each landed capability costs, standing\n")
+    live = R.capabilities()
     if not live:
-        lines.append("  nothing has landed yet")
+        print("  nothing landed.\n")
+        return
     for name, row in sorted(live.items()):
         run = row.get("run") or {}
         actual = run.get("dispatches_actual_per_day")
-        expected = run.get("dispatches_expected_per_day")
-        lines.append(
-            f"  {name:<24} v{row.get('version')}  {run.get('execution_mode', '?'):<10} "
-            f"budget {run.get('latency_budget_ms', '?')}ms")
-        lines.append(
-            f"      dispatches/day  expected "
-            f"{'—' if expected is None else expected}  "
-            f"actual {'not counted yet' if actual is None else actual}"
-            + (f"  (over {run['counted_over_days']}d to {run['counted_at']})"
-               if run.get("counted_over_days") else ""))
-    lines += ["",
-              f"  {status['leaves']} of {status['due_at']} leaf capabilities under "
-              f"the Coordinator"
-              + ("  — THE TIER IS DUE" if status["due"]
-                 else "; the tier becomes due at the fourth")]
-    return "\n".join(lines)
+        measured = run.get("counted_over_days")
+        rate = ("not counted yet" if actual is None
+                else f"{actual}/day over {measured}d")
+        print(f"  {name}  {run.get('execution_mode', '?')}, "
+              f"budget {run.get('latency_budget_ms', '?')}ms — {rate}")
+
+    status = R.tier_status()
+    print(f"\n  {status['leaves']} leaf capability(ies); the tier review is due "
+          f"at {status['due_at']}"
+          + (" — DUE NOW." if status["due"] else ".") + "\n")
+    print("  `not counted yet` is not zero. A capability that landed today has")
+    print("  no full day of use behind it, and writing 0.0 would report it as")
+    print("  unused rather than unmeasured.\n")
 
 
-def _resolve_persona(explicit: str | None) -> str | None:
+def abandon(job_id: str, reason: str, persona: str) -> int:
     """
-    The persona to read, or None after printing how to supply one.
+    Record Mike's decision not to build a ticket. WRITES THE WORKING TREE ONLY.
 
-    A named error beats a traceback: every command in this script reads a
-    persona tree, and the ones documented for the VM are run over ssh where a
-    stack trace is the least useful possible output.
+    The row lands in config/build/registry.yaml for Mike to read in a diff and
+    commit. Nothing reaches the VM until he deploys — which is exactly the lag
+    the board prints, and the reason `abandoned` is the one status that counts
+    against max_proposed while it waits.
     """
-    from core.persona import PersonaError, resolve_persona
-    try:
-        return resolve_persona(explicit)
-    except PersonaError:
-        print("No persona is bound. Pass --persona mike, or export "
-              "METATRON_PERSONA=mike in the shell first.\n"
-              "  python3 scripts/build_board.py --persona mike")
-        return None
+    from core.build import registry as R
+    if not reason.strip():
+        print("An abandoned row with no reason is indistinguishable from a lost "
+              "one. Say why.", file=sys.stderr)
+        return 1
+    row = R.mark_abandoned(job_id, reason, persona)
+    print(f"Wrote an `abandoned` row for {job_id} into "
+          f"{R.REGISTRY_PATH.relative_to(ROOT)}.\n")
+    print(f"  reason: {row['reason']}\n")
+    print("  Nothing has reached the VM. Commit it, and the ticket closes on")
+    print("  the next deploy — until then it still counts toward max_proposed.")
+    return 0
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    # THE PERSONA IS RESOLVED BEFORE ANYTHING ELSE RUNS, and the failure says
-    # what to do. Every command here reads a persona tree, so with no
-    # --persona and no METATRON_PERSONA in the shell the first path call
-    # raised PersonaError and printed a traceback — the documented VM
-    # one-liners included, which is where it is least recoverable.
-    ap.add_argument("--persona", default=None,
-                    help="whose Build tree to read (or export METATRON_PERSONA)")
-    ap.add_argument("--show", metavar="JOB_ID")
-    ap.add_argument("--costs", action="store_true")
-    ap.add_argument("--run-cost", action="store_true")
-    ap.add_argument("--coherence", action="store_true")
+    ap.add_argument("--persona", default="mike")
+    ap.add_argument("--server", default=DEFAULT_SERVER)
+    ap.add_argument("--tickets", action="store_true")
+    ap.add_argument("--jobs", action="store_true")
     ap.add_argument("--registry", action="store_true",
-                    help="write docs/BUILD_REGISTRY.md (Mac; Mike commits it)")
-    ap.add_argument("--refresh-counts", action="store_true",
-                    help="VM: recount dispatches from the traces")
-    for command in ("queue", "approve", "accept", "refuse", "resume"):
-        ap.add_argument(f"--{command}", metavar="JOB_ID",
-                        help=f"VM only — {command} a job")
-    ap.add_argument("--tick", action="store_true", help="VM only — run one tick now")
+                    help="print the registry, and rewrite docs/BUILD_REGISTRY.md")
+    ap.add_argument("--run-cost", action="store_true")
+    ap.add_argument("--abandon", nargs=2, metavar=("BLD-MMDD-NN", "REASON"))
     args = ap.parse_args()
 
-    persona = _resolve_persona(args.persona)
-    if persona is None:
-        return 2
+    if args.abandon:
+        return abandon(args.abandon[0], args.abandon[1], args.persona)
 
-    if args.show:
-        print(show(args.show, persona))
-        return 0
-    if args.costs:
-        print(costs(persona))
-        return 0
-    if args.run_cost:
-        print(run_cost(persona))
-        return 0
+    chosen = args.tickets or args.jobs or args.registry or args.run_cost
+    if args.tickets or not chosen:
+        rows, note = fetch_tickets(args.server, args.persona)
+        show_tickets(rows, note)
+    if args.jobs or not chosen:
+        show_jobs(args.persona)
+    if args.run_cost or not chosen:
+        show_run_cost()
     if args.registry:
-        print(R.write_markdown(ROOT / "docs" / "BUILD_REGISTRY.md", persona))
-        return 0
-    if args.refresh_counts:
-        print(R.refresh_run_counts(persona))
-        return 0
-    if args.coherence:
-        from core.build import coherence
-        print(coherence.render(coherence.review(persona)))
-        return 0
-
-    from core.build import runner
-    for command in ("queue", "approve", "accept", "refuse", "resume"):
-        job_id = getattr(args, command)
-        if job_id:
-            print(getattr(runner, command)(job_id, persona))
-            return 0
-    if args.tick:
-        print(runner.tick(persona))
-        return 0
-
-    print(board(persona))
+        from core.build import registry as R
+        show_registry()
+        R.write_markdown()
+        print(f"(rewrote docs/BUILD_REGISTRY.md)")
     return 0
 
 

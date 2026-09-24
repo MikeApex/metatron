@@ -19,6 +19,11 @@ quietly be relaxed to make the agent work. The ordering constraint is the one
 piece of this design most likely to be softened under delivery pressure, so it
 gets its evidence first.
 
+SALVAGED UNCHANGED through the v4 rebuild (plan v4.11 section 10). The one edit
+was to stop passing `manifest_ids`, a parameter that existed to validate
+`candidate_sources` — a field ruling 5 retired. Every assertion below, and every
+position in the fixture's two spines, is what it was on 2026-09-17.
+
 THE FIXTURE IS REQUIRED, NEVER OPTIONAL. If it is missing this test FAILS
 rather than skipping. A skipping test is precisely how a compass rule gets
 quietly relaxed, which is the failure mode this file exists to prevent.
@@ -73,14 +78,13 @@ def _load_fixture() -> dict:
         )
     raw = FIXTURE.read_text(encoding="utf-8")
     blocks = {name: json.loads(body) for name, body in _BLOCK_RE.findall(raw)}
-    for required in ("turn2", "turn4", "manifest_ids"):
+    for required in ("turn2", "turn4"):
         if required not in blocks:
             raise KeyError(f"fixture block {required!r} not found in {FIXTURE}")
     return blocks
 
 
 FIX = _load_fixture()
-MANIFEST = set(FIX["manifest_ids"])
 TURN2, TURN4 = FIX["turn2"], FIX["turn4"]
 
 
@@ -90,7 +94,7 @@ TURN2, TURN4 = FIX["turn2"], FIX["turn4"]
 
 @check("turn 2 (the filter) FAILS validation")
 def _():
-    defects = validate_question_set(TURN2, manifest_ids=MANIFEST)
+    defects = validate_question_set(TURN2)
     assert defects, (
         "turn 2 validated clean — the rule does not discriminate. This is the "
         "single most important assertion in the Build test suite."
@@ -99,7 +103,7 @@ def _():
 
 @check("turn 4 (the compass) PASSES validation")
 def _():
-    defects = validate_question_set(TURN4, manifest_ids=MANIFEST)
+    defects = validate_question_set(TURN4)
     assert not defects, (
         "turn 4 should validate clean; defects: " + "; ".join(defects)
     )
@@ -115,13 +119,13 @@ def _():
 
 @check("turn 2 fails on spine order — feasibility (class 5) precedes cost (class 3)")
 def _():
-    defects = validate_question_set(TURN2, manifest_ids=MANIFEST)
+    defects = validate_question_set(TURN2)
     assert any("not ordered by class index" in d for d in defects), defects
 
 
 @check("turn 2 fails on feasibility-before-intent, named as the inversion it is")
 def _():
-    defects = validate_question_set(TURN2, manifest_ids=MANIFEST)
+    defects = validate_question_set(TURN2)
     hit = [d for d in defects if "precedes every intent question" in d]
     assert hit, defects
     assert "empty capacity" in hit[0], (
@@ -132,13 +136,13 @@ def _():
 
 @check("turn 2 fails on having no intent question at all")
 def _():
-    defects = validate_question_set(TURN2, manifest_ids=MANIFEST)
+    defects = validate_question_set(TURN2)
     assert any("no intent question" in d for d in defects), defects
 
 
 @check("turn 2 fails on the missing altitude answer")
 def _():
-    defects = validate_question_set(TURN2, manifest_ids=MANIFEST)
+    defects = validate_question_set(TURN2)
     assert any("disposition must be one of" in d for d in defects), defects
     assert any("disposition_evidence is empty" in d for d in defects), defects
 
@@ -155,7 +159,7 @@ def _():
             "judgement over a stated intent."
         ),
     }
-    defects = validate_question_set(patched, manifest_ids=MANIFEST)
+    defects = validate_question_set(patched)
     assert any("not ordered by class index" in d for d in defects), defects
     assert any("no intent question" in d for d in defects), defects
 
@@ -175,7 +179,7 @@ def _():
         reordered[position - 1] = question
 
     defects = validate_question_set(
-        {**TURN4, "spine": reordered}, manifest_ids=MANIFEST)
+        {**TURN4, "spine": reordered})
     assert any("precedes every intent question" in d for d in defects), (
         "moving feasibility to the front of a passing set must fail it — "
         "otherwise position is not actually being checked: " + str(defects))
@@ -205,7 +209,7 @@ def _():
         question["id"] = f"q{position}"
         spine[position - 1] = question
 
-    defects = validate_question_set({**TURN4, "spine": spine}, manifest_ids=MANIFEST)
+    defects = validate_question_set({**TURN4, "spine": spine})
     assert len(defects) == 1, f"expected exactly one defect, got {defects}"
     assert "no surface question" in defects[0], defects
 
