@@ -2,6 +2,13 @@ package com.mike.metatron;
 
 import android.Manifest;
 import android.content.Intent;
+import android.media.AudioManager;
+import android.media.ToneGenerator;
+import android.os.Bundle;
+import android.speech.tts.TextToSpeech;
+import android.speech.tts.UtteranceProgressListener;
+
+import java.util.Locale;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.webkit.JavascriptInterface;
@@ -15,6 +22,13 @@ import com.getcapacitor.BridgeWebChromeClient;
 
 public class MainActivity extends BridgeActivity {
     private static final int STARTUP_PERMISSION_REQUEST = 1;
+
+    // Spoken headset cues. A short synthetic beep arrives through SCO as a squelch —
+    // SCO is a NARROWBAND VOICE codec, built to carry speech and poor at anything else,
+    // so the channel mangles exactly the kind of sound a tone is. Speech is what it is
+    // designed for, which is why the cue is a voice rather than a louder beep.
+    private TextToSpeech tts;
+    private volatile boolean ttsReady = false;
 
     @Override
     public void onCreate(android.os.Bundle savedInstanceState) {
@@ -53,7 +67,33 @@ public class MainActivity extends BridgeActivity {
         // remote content.
         getBridge().getWebView().addJavascriptInterface(new HeadsetBridge(), "Metatron");
 
+        // Initialised here because init is asynchronous and the first cue must not be
+        // the one that waits for it.
+        tts = new TextToSpeech(this, status -> {
+            ttsReady = (status == TextToSpeech.SUCCESS);
+            if (ttsReady) {
+                tts.setLanguage(Locale.UK);
+                tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+                    @Override public void onStart(String id) {}
+                    @Override public void onError(String id) { cueFinished(); }
+                    @Override public void onDone(String id) { cueFinished(); }
+                });
+            }
+        });
+
         requestStartupPermissions();
+    }
+
+    /**
+     * Tell the page the cue has finished speaking.
+     *
+     * The page waits for this before it starts the recorder, so the cue cannot be
+     * captured by the microphone it is announcing. Without that ordering a bled-in
+     * "I'm here" would set the silence detector's speechSeen flag, and a turn in which
+     * the user said nothing would send itself carrying only the cue.
+     */
+    private void cueFinished() {
+        BridgeHolder.evaluate("window.__metatronCueDone && window.__metatronCueDone()", null);
     }
 
     /**
@@ -87,6 +127,11 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onDestroy() {
+        if (tts != null) {
+            try { tts.stop(); tts.shutdown(); } catch (Exception ignored) {}
+            tts = null;
+            ttsReady = false;
+        }
         // The service must never outlive the page that armed it.
         //
         // The dangerous direction is not the obvious one. If the Activity is destroyed
@@ -137,6 +182,103 @@ public class MainActivity extends BridgeActivity {
                 startService(intent);
             }
             return true;
+        }
+
+        /**
+         * Sound a headset cue on the stream the user is actually listening to.
+         *
+         * This exists because the page cannot do it. Web Audio plays on the MEDIA
+         * stream, and the instant the mic opens Android moves a Bluetooth headset from
+         * A2DP to SCO (call mode), which does not carry the media stream — so the
+         * mic-open cue, the one that says "speak now", is inaudible on a headset every
+         * single time. Measured 2026-09-24: the only sign the mic had opened was the
+         * SCO hiss. STREAM_VOICE_CALL is the stream SCO does carry.
+         *
+         * The stream is chosen per call rather than fixed: when no headset is in call
+         * mode, VOICE_CALL routes to the earpiece, which is far too quiet for a phone
+         * in a pocket, so the media stream is right in that case.
+         */
+        @JavascriptInterface
+        public void playCue(String kind) {
+            AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
+            boolean scoActive = false;
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    android.media.AudioDeviceInfo dev = am.getCommunicationDevice();
+                    scoActive = dev != null
+                            && dev.getType() == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO;
+                } else {
+                    scoActive = am.isBluetoothScoOn();
+                }
+            } catch (Exception ignored) {
+            }
+
+            int stream = scoActive ? AudioManager.STREAM_VOICE_CALL : AudioManager.STREAM_MUSIC;
+
+            int tone;
+            int ms;
+            if ("sent".equals(kind)) {
+                tone = ToneGenerator.TONE_PROP_ACK;   // two quick pips — turn sent
+                ms = 200;
+            } else if ("timeout".equals(kind)) {
+                tone = ToneGenerator.TONE_SUP_ERROR;  // distinct low buzz — discarded
+                ms = 350;
+            } else {
+                tone = ToneGenerator.TONE_PROP_BEEP;  // single beep — mic is live
+                ms = 150;
+            }
+
+            String phrase;
+            if ("sent".equals(kind)) {
+                phrase = "Got it";
+            } else if ("timeout".equals(kind)) {
+                phrase = "Cancelled";
+            } else {
+                phrase = "I'm here";
+            }
+
+            if (ttsReady) {
+                Bundle params = new Bundle();
+                params.putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, stream);
+                int r = tts.speak(phrase, TextToSpeech.QUEUE_FLUSH, params, "metatron-cue");
+                if (r == TextToSpeech.SUCCESS) return;
+            }
+
+            // Fallback: the engine is missing or still initialising. A mangled beep is
+            // better than no cue at all, and the page's timeout releases it either way.
+            ToneGenerator tg = null;
+            try {
+                tg = new ToneGenerator(stream, 90);
+                tg.startTone(tone, ms);
+                final ToneGenerator finalTg = tg;
+                getBridge().getWebView().postDelayed(() -> {
+                    try { finalTg.release(); } catch (Exception ignored) {}
+                    cueFinished();
+                }, ms + 150);
+            } catch (Exception e) {
+                if (tg != null) { try { tg.release(); } catch (Exception ignored) {} }
+                cueFinished();
+            }
+        }
+
+        /**
+         * When this APK was installed, so the page can prove which build is running.
+         *
+         * Sideloading publishes a COPY of the APK to a staging directory, and a rebuild
+         * does not update that copy — so "reinstall and retest" can silently retest the
+         * previous build. On 2026-09-24 that wasted a round of cue debugging. Reading
+         * lastUpdateTime needs no build-time stamping and cannot drift from reality.
+         */
+        @JavascriptInterface
+        public String buildStamp() {
+            try {
+                long t = getPackageManager()
+                        .getPackageInfo(getPackageName(), 0).lastUpdateTime;
+                return new java.text.SimpleDateFormat("d MMM HH:mm:ss", Locale.UK)
+                        .format(new java.util.Date(t));
+            } catch (Exception e) {
+                return "unknown";
+            }
         }
 
         @JavascriptInterface

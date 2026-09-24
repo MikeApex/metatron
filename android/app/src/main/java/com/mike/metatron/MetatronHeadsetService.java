@@ -58,7 +58,23 @@ public class MetatronHeadsetService extends Service {
             return START_NOT_STICKY;
         }
 
-        startForegroundCompat();
+        // Report the outcome to the page instead of failing where nobody can see it.
+        //
+        // arm() returns true the moment it calls startForegroundService(), which is void
+        // and starts this service ASYNCHRONOUSLY — so anything that goes wrong in here
+        // happens after the page has already decided it succeeded, played its tone and lit
+        // the toggle. On 2026-09-24 that produced armed-looking UI with no notification and
+        // no running service, and the tone was read as evidence it had worked.
+        try {
+            startForegroundCompat();
+            BridgeHolder.evaluate(
+                    "window.__metatronServiceReady && window.__metatronServiceReady(true)", null);
+        } catch (Exception e) {
+            BridgeHolder.evaluate(
+                    "window.__metatronServiceReady && window.__metatronServiceReady(false)", null);
+            stopSelf();
+            return START_NOT_STICKY;
+        }
 
         // START_NOT_STICKY, and this is load-bearing rather than a default worth leaving
         // alone. The default is START_STICKY, under which a process killed for memory has
@@ -114,10 +130,22 @@ public class MetatronHeadsetService extends Service {
             @Override
             public boolean onMediaButtonEvent(Intent mediaButtonIntent) {
                 KeyEvent event = mediaButtonIntent.getParcelableExtra(Intent.EXTRA_KEY_EVENT);
-                // Act on the down edge only. Bluetooth stacks deliver down and up as two
-                // events; the page debounces as well, but not sending the second one is
-                // cheaper than relying on that alone.
-                if (event != null && event.getAction() == KeyEvent.ACTION_DOWN) {
+                // Act on the FIRST down edge only, and that is two guards, not one.
+                //
+                // getAction()==ACTION_DOWN drops the matching up event: Bluetooth stacks
+                // deliver one press as a down/up pair, and the page debounces too, but not
+                // sending the second is cheaper than relying on that alone.
+                //
+                // getRepeatCount()==0 is what makes a HELD button usable, and it is the
+                // guard this device actually needs. The JLab Go Air Sport emits play/pause
+                // on tap-and-hold rather than on a tap (measured 2026-09-24), and a held
+                // key auto-repeats: Android keeps delivering ACTION_DOWN with a rising
+                // repeat count for as long as it is held. Without this, a 1.5s hold toggles
+                // the mic open, closed and open again, and the 400ms debounce in the page
+                // cannot help because the repeats are spaced further apart than that.
+                if (event != null
+                        && event.getAction() == KeyEvent.ACTION_DOWN
+                        && event.getRepeatCount() == 0) {
                     press();
                 }
                 return true;

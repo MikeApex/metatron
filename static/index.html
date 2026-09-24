@@ -331,6 +331,12 @@
       -webkit-user-select: none;
     }
     .alert-check input { width: 16px; height: 16px; accent-color: #1e3a5f; }
+    #build-stamp {
+      margin-top: 8px;
+      font-size: 11px;
+      color: #555;
+      text-align: right;
+    }
     #alert-note { font-size: 11px; color: #444; line-height: 1.4; }
 
     @keyframes pulse {
@@ -742,7 +748,11 @@
       <label class="alert-check"><input type="checkbox" id="alert-sound"> Sound</label>
       <label class="alert-check"><input type="checkbox" id="alert-vibrate"> Vibrate</label>
     </div>
+    <div class="alert-row">
+      <label class="alert-check"><input type="checkbox" id="headset-vibrate"> Vibrate on headset cues</label>
+    </div>
     <div id="alert-note"></div>
+    <div id="build-stamp"></div>
   </div>
   <div id="grant-wrap" style="text-align:center;display:none">
     <button id="grant-btn" style="background:#333;border:1px solid #555;border-radius:20px;color:#aaa;font-size:13px;padding:8px 20px;cursor:pointer">Grant mic permission</button>
@@ -1860,6 +1870,23 @@
   // press into a two-minute Whisper job plus, on pocket noise rather than silence,
   // a full pipeline turn: the most expensive outcome available here, from the
   // cheapest possible mistake. A turn the user never ended is not one to send.
+  // Silence ends an armed turn, because on this hardware the button cannot.
+  //
+  // This REVERSES the original design, on measured evidence (2026-09-24). Auto-stop was
+  // disabled while armed to prevent one specific failure: silence sends the turn, then
+  // the user's own send-press REOPENS the mic into pocket noise and fires a second turn.
+  // That failure cannot occur on a Bluetooth headset, because opening the mic switches
+  // the link from A2DP to HFP/SCO and the bud's button stops emitting a media key
+  // altogether — measured on JLab Go Air Sport: the first hold opens the mic, the second
+  // produces no tone and no event at all. The press that would have reopened the mic
+  // never arrives, so the conflict the rule guarded against does not exist.
+  //
+  // SAME 2500ms as the on-screen path, deliberately. A first attempt widened this to
+  // 4000ms on the theory that an armed turn begins with a tone and the user would be
+  // mid-thought when it sounded. That was reasoning, not evidence — Mike had been using
+  // 2.5s daily and reported it ending "perfectly fine", and the widened window read as
+  // the feature being broken. Do not raise it again without a turn that actually got
+  // cut off to point at.
   const HEADSET_MAX_RECORD_MS = 120000;
   let maxRecordTimer = null;
   let discardRecording = false;   // set by the cap; read in mediaRecorder.onstop
@@ -1908,6 +1935,27 @@
     // start. Set here and cleared on every exit path below.
     micIntent = true;
 
+    // Speak the cue BEFORE asking for the mic, not after.
+    //
+    // Both earlier placements put it on a Bluetooth profile TRANSITION, and that is
+    // what mangled it — measured 2026-09-24, the cue arrived "like a cell phone call
+    // losing signal". Opening the mic moves the link A2DP → SCO, and audio played
+    // while that is negotiating is chopped. Here the link is still on A2DP, stable and
+    // high quality, and the cue is instant rather than waiting a second for SCO to
+    // settle.
+    //
+    // Waiting for it to finish also keeps the spoken cue out of the recording, since
+    // the mic is not open yet — a bled-in "I'm here" would trip the silence detector's
+    // speechSeen flag and send a turn containing only the cue.
+    //
+    // The cost is a short gap between the cue ending and the mic going live, while SCO
+    // comes up. Accepted: people pause after a prompt, and the alternative is a cue
+    // that cannot be understood.
+    if (headsetMode) {
+      await cueAndWait('micOpen', TONE_MIC_OPEN, BUZZ_MIC_OPEN);
+      if (!headsetMode) { micIntent = false; return; }   // disarmed while speaking
+    }
+
     let stream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -1943,9 +1991,18 @@
         discardRecording = false;
         audioChunks = [];
         setStatus('Mic timed out — discarded', '#666');
-        playTone(TONE_TIMEOUT);
+        cue('timeout', TONE_TIMEOUT, BUZZ_TIMEOUT);
         return;
       }
+
+      // Sounded here rather than at the press, so a turn ended by silence announces
+      // itself identically to one ended by a button — on this hardware silence is the
+      // usual way a turn ends, and an unannounced send is indistinguishable from a
+      // dead mic when the screen is dark.
+      // Delayed for the same reason the mic-open cue moved: stopping the recorder
+      // releases SCO, and speaking during that hand-back is the other half of the
+      // "losing signal" symptom. By the time this fires the link is A2DP again.
+      if (headsetMode) setTimeout(() => cue('sent', TONE_SENT, BUZZ_SENT), 700);
 
       if (audioChunks.length === 0) { setStatus('No audio captured', '#666'); return; }
 
@@ -1981,12 +2038,6 @@
 
     mediaRecorder.start();
 
-    // Sounded here, not at the press: everything above this line can take time
-    // (the permission prompt, getUserMedia, later the Bluetooth profile switch),
-    // and a "speak now" tone before the mic is live costs the first words of
-    // every turn — invisibly, because the transcript just starts mid-sentence.
-    if (headsetMode) playTone(TONE_MIC_OPEN);
-
     // While armed, the press is the only thing that sends (see HEADSET_MAX_RECORD_MS).
     // The cap is the backstop for a second press that never arrives.
     if (headsetMode) {
@@ -1998,8 +2049,9 @@
     }
 
     // Silence detection: stop automatically after SILENCE_MS of quiet post-speech.
-    // Skipped entirely while armed — see HEADSET_MAX_RECORD_MS.
-    if (headsetMode) return;
+    // Runs while armed too — see the note beside HEADSET_MAX_RECORD_MS for why that
+    // reverses the rule an earlier version of this file carried.
+    const quietMs = SILENCE_MS;
     try {
       audioCtx = new AudioContext();
       analyser = audioCtx.createAnalyser();
@@ -2016,7 +2068,7 @@
           speechSeen = true;
           if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
         } else if (speechSeen && !silenceTimer) {
-          silenceTimer = setTimeout(() => { if (isRecording) stopRecording(); }, SILENCE_MS);
+          silenceTimer = setTimeout(() => { if (isRecording) stopRecording(); }, quietMs);
         }
       }, 150);
     } catch {}
@@ -2118,27 +2170,66 @@
                     window.Capacitor.isNativePlatform()); } catch { return false; }
   }
 
-  // A page with no active media session receives no media keys. In a browser this
-  // silent loop is what holds one. NOT started under Capacitor: there the native
-  // MediaSession in MetatronHeadsetService owns the button, and two sessions in one
-  // app competing for the same press is not something to leave to chance.
+  // A page with no active media session receives no media keys. This silent loop is
+  // what holds one.
+  //
+  // It MUST be an <audio> element, not Web Audio. The first version used
+  // ctx.createBufferSource(), which is inaudible and loops fine but creates no media
+  // session at all — the Media Session API is driven by media ELEMENTS, so the anchor
+  // was decorative on every platform and the page never owned the button it was
+  // supposed to be holding. Found 2026-09-24 while chasing why a second press vanished.
+  //
+  // No longer gated to non-Capacitor either. It was withheld on Android to avoid
+  // competing with the native session in MetatronHeadsetService — but the native
+  // session is not reliably up (no notification appears even with notifications
+  // granted), and a page that holds the button is strictly better than neither holding
+  // it. If both end up live, the 400ms debounce in __metatronHeadsetButton absorbs the
+  // double delivery, which is the cheaper failure.
   let headsetAnchor = null;
+
+  // Built at runtime rather than shipped as an asset: no file in the APK, no fetch, and
+  // no long base64 literal in this file. A one-second all-zero PCM WAV; the header is
+  // written by hand because the sample data is already silence by default.
+  function silentWavUrl() {
+    const rate = 8000, frames = rate;              // 1s, mono, 16-bit
+    const buf = new ArrayBuffer(44 + frames * 2);
+    const v = new DataView(buf);
+    const tag = (off, str) => {
+      for (let i = 0; i < str.length; i++) v.setUint8(off + i, str.charCodeAt(i));
+    };
+    tag(0, 'RIFF');  v.setUint32(4, 36 + frames * 2, true);  tag(8, 'WAVE');
+    tag(12, 'fmt '); v.setUint32(16, 16, true);
+    v.setUint16(20, 1, true);                      // PCM
+    v.setUint16(22, 1, true);                      // mono
+    v.setUint32(24, rate, true);
+    v.setUint32(28, rate * 2, true);               // byte rate
+    v.setUint16(32, 2, true);                      // block align
+    v.setUint16(34, 16, true);                     // bits per sample
+    tag(36, 'data'); v.setUint32(40, frames * 2, true);
+    return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+  }
+
   function startAnchor() {
-    if (isNative() || headsetAnchor) return;
+    if (headsetAnchor) return;
     try {
-      const ctx = audioCtxShared;
-      if (!ctx) return;
-      const buf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);  // 1s of silence
-      const src = ctx.createBufferSource();
-      src.buffer = buf; src.loop = true;
-      src.connect(ctx.destination);
-      src.start(0);
-      headsetAnchor = src;
+      const a = new Audio(silentWavUrl());
+      a.loop = true;
+      // Deliberately not 0 and not muted. A muted or zero-volume element is exactly the
+      // kind of thing a platform may decline to treat as playback — and playback is the
+      // whole reason this exists. Inaudible is achieved by the samples being silence.
+      a.volume = 0.0001;
+      a.play().catch(() => {});
+      headsetAnchor = a;
     } catch {}
   }
+
   function stopAnchor() {
     if (!headsetAnchor) return;
-    try { headsetAnchor.stop(); } catch {}
+    try {
+      headsetAnchor.pause();
+      if (headsetAnchor.src) URL.revokeObjectURL(headsetAnchor.src);
+      headsetAnchor.src = '';
+    } catch {}
     headsetAnchor = null;
   }
 
@@ -2183,6 +2274,17 @@
     // this is silent, nothing else in headset mode will be audible either, and
     // finding that out at arming time is the whole point of making it a tap.
     playTone(TONE_ARMED);
+
+    // If the service never reports back, say so rather than showing an armed toggle over
+    // nothing. Checked on a timer because the failure is silence, not an error.
+    if (isNative()) {
+      serviceReady = false;
+      setTimeout(() => {
+        if (headsetMode && !serviceReady) {
+          setStatus('Headset works while the app is open only', '#a80');
+        }
+      }, 4000);
+    }
   }
 
   function disarmHeadsetMode() {
@@ -2229,8 +2331,7 @@
     if (micBtn.disabled) return true;
 
     if (isRecording) {
-      playTone(TONE_SENT);
-      stopRecording();
+      stopRecording();   // the tone is sounded in onstop, which silence also reaches
     } else {
       // No tone here. startRecording() awaits getUserMedia — and, once Bluetooth
       // SCO routing lands, a profile switch of up to a second — so a tone fired
@@ -2239,6 +2340,19 @@
       startRecording();
     }
     return true;
+  };
+
+  // Called by the service once startForeground has actually succeeded — or failed.
+  //
+  // Without this the page cannot tell a running service from one that died on startup:
+  // arm() returns as soon as startForegroundService() is called, so the tone and the lit
+  // toggle mean only "the request was made". Background operation is the half that needs
+  // the service; the button still works while the app is open, via the media session the
+  // page holds itself, so a failure here is a reduced feature rather than none.
+  let serviceReady = false;
+  window.__metatronServiceReady = function (ok) {
+    serviceReady = !!ok;
+    if (!ok) setStatus('Headset works while the app is open only', '#a80');
   };
 
   // Called by the service when the notification's Stop action is used, so the page
@@ -2292,6 +2406,77 @@
   const TONE_MIC_OPEN = [523.25];       // C5  — mic is live, speak now
   const TONE_SENT     = [783.99];       // G5  — turn sent, Metatron is thinking
   const TONE_TIMEOUT  = [329.63];       // E4  — mic capped and DISCARDED, nothing sent
+
+  // Vibration patterns paired with the tones above, and NOT a redundant nicety.
+  //
+  // The mic-open cue is inaudible on a Bluetooth headset, always. Opening the mic
+  // switches the link from A2DP to SCO (call mode), and Web Audio plays on the MEDIA
+  // stream, which is not routed to the headset while SCO holds it — so the tone is
+  // played into a channel the ears are not connected to. Measured 2026-09-24: the only
+  // sign the mic had opened was the SCO hiss.
+  //
+  // Vibration is routed by the phone, not the headset, so it is unaffected by the
+  // profile switch — and the phone is in a pocket for this feature, which is exactly
+  // where a vibration is easiest to feel. The tones stay for the browser path and for
+  // the cues that land after SCO releases.
+  const BUZZ_MIC_OPEN = [60];            // one short  — mic is live, speak now
+  const BUZZ_SENT     = [40, 80, 40];    // two short  — turn sent
+  const BUZZ_TIMEOUT  = [200];           // one long   — capped and discarded
+
+  // Off by default, and a setting rather than the mechanism: Mike's call, 2026-09-24 —
+  // the cue should be a tone, with vibration available for anyone who wants it.
+  let headsetVibrate = localStorage.getItem('metatron_headset_vibrate') === 'on';
+
+  function buzz(pattern) {
+    if (!headsetVibrate) return;
+    try { if (navigator.vibrate) navigator.vibrate(pattern); } catch {}
+  }
+
+  // One call per headset event, because the right mechanism differs by platform.
+  //
+  // On Android the tone MUST come from native code: Web Audio plays on the media
+  // stream, and SCO (call mode, engaged the moment the mic opens) does not carry it,
+  // so a Web Audio cue is inaudible on a headset exactly when it matters. playCue()
+  // picks STREAM_VOICE_CALL when a headset is in call mode and the media stream
+  // otherwise. In a browser there is no bridge, and playTone is all there is.
+  // Resolved by the native side when the spoken cue has finished.
+  let cueDoneResolve = null;
+  window.__metatronCueDone = function () {
+    if (cueDoneResolve) { const r = cueDoneResolve; cueDoneResolve = null; r(); }
+  };
+
+  // Sound the cue and wait for it to finish. The waiting is the point, not politeness:
+  // the mic-open cue is SPOKEN, and speech played into an already-open mic is exactly
+  // what the transcriber is tuned to catch. A bled-in "I'm here" would also set the
+  // silence detector's speechSeen flag, so a turn in which the user said nothing would
+  // send itself carrying only the cue. Starting the recorder after the cue removes the
+  // possibility rather than relying on the headset's echo cancellation to hide it.
+  function cueAndWait(kind, freqs, pattern) {
+    cue(kind, freqs, pattern);
+    if (!isNative()) return Promise.resolve();
+    return new Promise((resolve) => {
+      cueDoneResolve = resolve;
+      // Never block the mic on a callback that may not come — a missing TTS engine or a
+      // killed utterance must cost a short pause, not the turn.
+      setTimeout(() => {
+        if (cueDoneResolve) { cueDoneResolve = null; resolve(); }
+      }, 2500);
+    });
+  }
+
+  function cue(kind, freqs, pattern) {
+    let native = false;
+    if (isNative()) {
+      try {
+        if (window.Metatron && window.Metatron.playCue) {
+          window.Metatron.playCue(kind);
+          native = true;
+        }
+      } catch {}
+    }
+    if (!native) playTone(freqs);
+    buzz(pattern);
+  }
 
   function playTone(freqs) {
     if (!audioCtxShared) return;
@@ -2376,7 +2561,28 @@
     renderAlertControls();
   });
 
+  {
+    const hv = document.getElementById('headset-vibrate');
+    hv.checked = headsetVibrate;
+    hv.addEventListener('change', (e) => {
+      headsetVibrate = e.target.checked;
+      localStorage.setItem('metatron_headset_vibrate', headsetVibrate ? 'on' : 'off');
+      // Preview it, same reasoning as the alert switches above: a setting you cannot
+      // test without staging a whole turn is a setting that gets left alone.
+      if (headsetVibrate) { try { navigator.vibrate && navigator.vibrate(BUZZ_MIC_OPEN); } catch {} }
+    });
+  }
+
   renderAlertControls();
+
+  // Shown so "did that reinstall actually take?" is answerable by looking, not by
+  // trusting the sideload steps were followed in the right order.
+  {
+    const el = document.getElementById('build-stamp');
+    let stamp = '';
+    try { if (window.Metatron && window.Metatron.buildStamp) stamp = window.Metatron.buildStamp(); } catch {}
+    el.textContent = stamp ? ('Installed ' + stamp) : '';
+  }
 
   // --- Location [DB-0815-12] ---
   //
