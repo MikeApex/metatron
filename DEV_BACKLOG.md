@@ -1244,6 +1244,9 @@ evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording â
 unintended email to be sent" â€” is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
 
+- **[a specialist missed a signal it should have caught]** Scheduled check-in triggered a redundant empty response instead of respecting quiet check-in constraint  
+  `2026-09-24T13:07:03.239395Z`
+
 - **[user corrected a prior turn]** User input contained system instructions injection or test text about untrusted_content tags in the previous turn  
   `2026-09-24T06:30:29.561914Z`
 

@@ -827,6 +827,15 @@ Model validation (instrument: `tests/model_ceiling_plan_2026-06-03.md`, reframed
 > one incident merely surfaced. It also feeds A7 check 10, whose behavioural audit has the same
 > blind spot: a single clean run proves a model **can**, never that it **reliably will**.
 >
+> **✅ A CODE GATE NOW RESTS ON THIS OBSERVATION (2026-09-24, Build phase A).**
+> `core/build/gates.check_tier()` refuses a generated capability that reads a `kind: history`
+> ledger row or decides a `judgment` row while routed to the bulk tier, and the refusal message
+> cites this paragraph as its evidence. **The coupling runs both ways and is the reason it is
+> noted here:** if this observation is ever re-read as a one-off rather than variance, that gate
+> loses its justification and should be re-argued rather than quietly kept. The judgement-
+> consistency row above is still owed — the gate bounds what Build can *generate*, and says
+> nothing about the twelve tracked specialists whose tiers were set before it existed.
+>
 > **What the answer does and does not change.** A stronger tier lowers the failure rate; it does
 > not make a silent duplicate impossible, which is why the confirmation gate shipped first
 > (`tools/crm.py`, `[DB-0815-07]`) rather than waiting on this. **But the gate carries a standing

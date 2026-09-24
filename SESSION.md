@@ -1,43 +1,40 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-09-24 (**Build v4 — Build moves into Claude Code, plan reviewed clean by two
-models**). Build is development, not execution (Mike): it runs in Claude Code on the Mac on the
+*Updated: 2026-09-24 (**Build v4 phase A — `core/build/` rebuilt with salvage, the overlay
+retired**). Build is development, not execution (Mike): it runs in Claude Code on the Mac on the
 subscription, Mike starts each build, approves the plan, commits and deploys; Vertex serves only
-execution. Plan: `archive/plans/build_vertical_plan_2026-09-24.md` **v4.11**, superseding v3.7
-and the 09-17 v2 entirely — thirteen rulings in § 0, ten review rounds (Opus ×7, cold Fable ×3)
-to a clean pass, both review files beside it. `core/build/` is **rebuilt with salvage**, the
-overlay retired. Model rule changed generally: **plan in Opus, review in Fable, build in Opus**
-(`docs/WORKFLOW.md`). Reasoning, options rejected and what the reviews overturned:
-`archive/PROJECT_LOG.md` § 2026-09-24.*
+execution. Plan: `archive/plans/build_vertical_plan_2026-09-24.md` **v4.11** — it owns the
+thirteen § 0 rulings, the sequencing (§ 16: 0, A, B, B-Red, D, C, E, F), the cost ($65–106) and
+the kept/changed/deleted list (§ 10). **Phase 0 committed at `505b254`; phase A is built and
+green and is waiting to be landed** — handoff at
+`archive/handoffs/2026-09-24-build-phase-A.md` (tracked), the 1.1 MB patch beside it
+**deliberately untracked** because it is redundant the moment the phase commits; the worktree
+`../metatron-wt-v4a-package` is the other copy and is left in place. Reasoning, options rejected and what three tests found that the
+plan had not: `archive/PROJECT_LOG.md` § 2026-09-24 (phase A).*
 
-*⚠ **Phase 4 is UNCOMMITTED in this tree, by instruction** — `core/build/{runner,brief,registry,
-coherence}.py`, `tools/build.py`, `scripts/build_{board,brief}.py`, four test files, edits to
-`core/{actions,orchestrator,scheduler,build/jobs,build/schemas}.py` + `scripts/sync_dev_backlog.py`,
-**the plan's v3.5–v3.7 corrections, and all three review rounds' fixes** (`manifest`, `probe`,
-`writer`, `logger`, `turn_referent` among them) — so a fresh clone still reads the plan at v3.4
-until Mike commits. **`tools/turn_referent.py` is not a phase-4 file and changes every ordinary
-user turn** — the referent block now skips a tick and a Diarist trace; it ships WITH phase 4. **The same tree carries the headset-mode chat's uncommitted changes** (`.gitignore`,
-`android/**`, `scripts/{check_apk_sync.sh,renew_cert.sh}`, `tests/test_turn_source_marker.py`,
-`DEV_BACKLOG.md`); `git diff` each file before staging. The close-out (this file + the log) went
-offsite on its own.*
+***Next, and it is a commit rather than a build.*** ***Land phase A:*** apply the patch to the
+main tree, `git diff` it — **including `core/orchestrator.py` and `core/trace.py`, where the
+headset chat also has committed lines** — and make one commit. The patch excludes
+`core/{router,scheduler}.py`, which are Mike's Red half and already sit uncommitted in the main
+tree. **Until that commit the main tree is half-landed:** `core/scheduler.py` names
+`core.build.tick.build_tick` and that module is not there yet, so the REPAIR counter is dark
+locally. The VM is unaffected (still `b2b1dc7`). Verified against the current HEAD `3066d66`,
+not just its own base: both halves applied to a scratch worktree gave 12/12 sweep, 236 build
+checks and three regression gates green. **Then phase B** — the read door on `core/server.py`,
+`probe.py` behind it, `scripts/vm_read.py`, auth, tests ($8–12, Opus 5). Nothing deploys until
+phase E, which sends 0, A, B, B-Red and D to the VM together.*
 
-*⚠ **A test suite wrote into two live meters and tripped the daily spend stop** — fixed, and
-`(M)`: **`rm data/personas/mike/traces/2026-09-19.jsonl` on the Mac**, 112 fake records, all of
-them this session's. The path is Denied so nothing here can touch it. The spend file was moved
-aside and local sessions are unblocked. Rule now in the suite: **a test that exercises a seam for
-real must stub every live meter that seam ends in.**
+*(M) **owed after the phase-A commit, in the main tree: one pipeline turn on `--persona mike`.**
+Phase A ran that gate as `danny_park` because `config/personas/mike*` is gitignored and VM-only,
+so `--persona mike` raises in any worktree — five minutes, and the only part of the phase a
+worktree structurally cannot run. Still owed generally: **three commits and one deploy** —
+`0e154b9` (09-09 invitation wording), the 09-10 `tools/` change, and `12d7dd2` (phase 3).*
 
-***Next: Build v4 phase 0 — Mike commits the phase-4 tree as the record, then the coordinating
-window*** (paste `archive/plans/build_v4_walkthrough_prompt_2026-09-24.md` into a new Opus 5
-window, effort xhigh). It writes the per-phase prompts (0, A, B, B-Red, D, C, E, F) for separate
-windows. **The two v3 build windows are abandoned** — capture their transcripts, then close. Still
-owed: **three commits and one deploy** — `0e154b9` (09-09 invitation wording), the 09-10 `tools/`
-change, and `12d7dd2` (phase 3); the VM is at `b2b1dc7`. v4 phases 0–D deploy together at E.*
-
-*Also ready to build, separately: **the headset-button plan** (Opus 5) — cleared by
-`/adversarial-review`'s first live use, third `verify` round clean. Hand the build chat the plan
-(`~/.claude/plans/for-the-metatron-app-modular-meerkat.md`) and
-`archive/plans/adversarial_review_for-the-metatron-app-modular-meerkat_2026-09-19.md` together.*
+*Standing rule, unpromoted and earned twice: **a test that exercises a seam for real must stub
+every live meter that seam ends in** (a suite once tripped the daily spend stop) — and its
+sibling, found in phase A: **a live gate run in a worktree dirties TRACKED fixture-persona files**
+(`data/personas/danny_park/{context.json,memory/*}`; `.gitignore` does not untrack what was
+committed before the rule). Both are invisible to `qa_sweep`; revert before generating a patch.*
 
 ## ⛔ Do not re-open — settled, with its evidence elsewhere
 
@@ -64,8 +61,8 @@ Thread expiry owes **one observation, not a deploy** — birthdates surviving Me
 rewording in `context_audit.jsonl` (`[DB-0814-02]`). B4's max-chain-depth needs the 3-round limit
 in code first (`[DB-0804-02]`). Mike's 09-07 auto-invite rule sits untriaged in the Inbox.
 
-**Ceilings owed:** `CLAUDE.md` 300/300 · `.claude/rules/deploy.md` 131/100. This file's own count
-is deliberately not written here, because restating it changes it.
+**Ceilings owed:** `.claude/rules/deploy.md` 131/100 (`CLAUDE.md` is at 300/300 — at it, not
+over). This file's own count is deliberately not written here, because restating it changes it.
 
 > **This file is replaced, not appended to.** Each session rewrites the paragraph above and
 > updates the state below; the detail goes to [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md).
@@ -121,14 +118,20 @@ one-case-not-a-suite caveat. This line is the status, not the record.
 **A9 — built and deployed 2026-08-18; `@waiting` on real use, review `2026-10-01`.** Spec, the
 five provisional parts and the date: [ROADMAP.md](ROADMAP.md) § A9a, the single home.
 
-**BUILD — the vertical that constructs capabilities. v4.11, 2026-09-24, reviewed clean; phase 0
-next.** Plan: [archive/plans/build_vertical_plan_2026-09-24.md](archive/plans/build_vertical_plan_2026-09-24.md)
-— it owns the rulings, the sequencing (§ 16: 0, A, B, B-Red, D, C, E, F), the cost ($65–106) and
-the kept/changed/deleted list for phases 1–4 (§ 10); this line is the status, not the record.
-Built under v3 and still in the tree, uncommitted: `core/build/` (19 modules), `tools/build.py`,
-`scripts/build_{board,brief}.py`, twelve suites — phase 0 commits them as the record, phase A
-salvages what § 10 names and deletes the rest. Nothing deploys until E. The coordinating-window
-prompt: [archive/plans/build_v4_walkthrough_prompt_2026-09-24.md](archive/plans/build_v4_walkthrough_prompt_2026-09-24.md).
+**BUILD — the vertical that constructs capabilities. v4.11; phase 0 committed, phase A built and
+awaiting its commit, phase B next.** Plan:
+[archive/plans/build_vertical_plan_2026-09-24.md](archive/plans/build_vertical_plan_2026-09-24.md)
+— it owns the rulings, the sequencing, the cost and the kept/changed/deleted list; this line is
+the status, not the record. **What exists now:** `core/build/` is 17 files (16 modules +
+`__init__`), 236 checks across eleven suites, sweep check 12
+(`scheduler-functions-resolve`), a rewritten `check_build_registration.py`, `--sandbox` on
+`new_worktree.sh`, and six content gates — the sixth being the **tier gate**, which refuses a
+capability doing standing judgement over a history on the bulk tier (§ D2's measured variance;
+`core/build/gates.py` carries the reasoning and the deliberately-unbuilt local-mode half).
+The old 19-module package, its four load seams and eight suites are deleted. Landing
+instructions and what is still owed: the handoff paragraph at the top of this file. The
+coordinating-window prompt:
+[archive/plans/build_v4_walkthrough_prompt_2026-09-24.md](archive/plans/build_v4_walkthrough_prompt_2026-09-24.md).
 
 ---
 
