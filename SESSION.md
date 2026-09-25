@@ -11,12 +11,11 @@ rejected, and four things believed true that were not: `archive/PROJECT_LOG.md` 
 `archive/plans/build_v4_phase_prompts_2026-09-24.md` § Phase E and its four pre-flight gates have
 already been run green, including the one that matters most: **what the VM will pull imports, checked
 against a clean `git archive HEAD` export** rather than the working tree, which can import fine on
-files the VM will never receive. **E carries everything in `7bca654..HEAD` — 32 commits. The VM is
-at `7bca654`, NOT the `b2b1dc7` the record claimed until 09-24; found by asking the VM, and the
-rollback command was pointing four commits too far back.** A catch-up deploy with Build inside it, so
-if the VM misbehaves afterwards Build is one of ~30 suspects and the checklist establishes general
-health *before* the three Build probes. Count the range at deploy time rather than trusting a
-number here. **Then F**, the bootstrap walkthrough —
+files the VM will never receive. **E carries `7bca654..HEAD` — ~32 commits; the VM is at `7bca654`,
+established by asking it** (why the record said otherwise: `archive/PROJECT_LOG.md` § 2026-09-24).
+Count the range at deploy time rather than trusting a number here. A catch-up deploy with Build
+inside it, so if the VM misbehaves afterwards Build is one of ~30 suspects and the checklist
+establishes general health *before* the three Build probes. **Then F**, the bootstrap walkthrough —
 runs 1–3 with Mike executing, written when he asks. Spend ≈ **$75–100** of $65–106, and **the build
 will finish over** — almost entirely phase A's driver needing repair once phase C finally drove it.*
 
@@ -26,28 +25,24 @@ three instances, and what each cost: `archive/PROJECT_LOG.md` § 2026-09-24, fif
 
 ***The graph is four layers now** (Mike, 2026-09-24): Coord → ~12 category agents, which route and
 no longer do → tier-3 agent → Synthesizer. Build exists to construct the tier-3 agents; the category
-files are emptied by hand at rollout. v3.7 § 2 specified this as "the tier", deferred to four leaf
-capabilities — **the trigger and the guard were brought forward**: `request_build` is granted to the
-eight personal specialists in both routing files, and `tools/subagent.py` is depth-aware
-(`MAX_SUBAGENT_DEPTH = 2`). `run_subagent` is **not** granted yet, and the eight hold the tool with
-no filing instruction until rollout — the 16 **class-3** (granted-but-never-named) advisories in
-`check_agent_tools.py` are that marker. Class 2 is *named*-but-not-granted and is empty; phase D
-caught this window mislabelling it.*
+files are emptied by hand at rollout. **The trigger and the guard are already in:** `request_build`
+granted to the eight personal specialists in both routing files, `tools/subagent.py` depth-aware
+(`MAX_SUBAGENT_DEPTH = 2`). `run_subagent` is **not** granted, and the eight hold the tool with no
+filing instruction until rollout — the 16 **class-3** advisories in `check_agent_tools.py` are that
+marker. What v3.7 deferred and what phase D corrected: `archive/PROJECT_LOG.md` § 2026-09-24.*
 
 *(M) **owed at phase E, not before: one pipeline turn on `--persona mike`, on the VM.**
-`config/personas/mike*` is VM-only, so that turn cannot run on the Mac in **any** tree — phase A's
-handoff said otherwise and was wrong. The `danny_park` substitute passed against the landed main
-tree. Also riding E: `0e154b9`, the 09-10 `tools/` change, and `12d7dd2`.*
+`config/personas/mike*` is VM-only, so that turn cannot run on the Mac in **any** tree; the
+`danny_park` substitute passed against landed main. Also riding E: `0e154b9`, `12d7dd2`.*
 
-*⚠ **Headset mode is built, device-tested and committed** (`3066d66`, `0b044f9`) — **finished work,
-so the detail moved to `archive/PROJECT_LOG.md` § 2026-09-24 (headset)**, which holds the two places
-the hardware overruled the plan. What is still live: **the VM runs the pre-`source` server**, so
-turns do not yet record how they started; `core/{server,trace,orchestrator}.py` ride E's deploy.
-Barge-in parked; desktop browser `[DB-0919-01]`.*
+*⚠ **Headset mode is built, device-tested and committed** (`3066d66`, `0b044f9`) — finished work,
+detail in `archive/PROJECT_LOG.md` § 2026-09-24 (headset). Still live: **the VM runs the
+pre-`source` server**, so turns do not record how they started;
+`core/{server,trace,orchestrator}.py` ride E's deploy. Barge-in parked; browser `[DB-0919-01]`.*
 
-*⚠ **A TLS cert expiry takes every client down while the server reads healthy** — `curl` WITHOUT
-`-k` is the only check that sees it. Renewal now automated and proven. Runbook:
-`docs/INFRASTRUCTURE.md` § TLS certificate.*
+*⚠ **Vertex starts storing every prompt prefix at rest for 24h on 2026-10-15** — conversation history
+included — unless the opt-out lands. Mike ruled 09-25: decline it. Google's command cannot run yet
+(`retentionConfig` is absent from the live API), so it is a dated chore: `[DB-0925-01]`, due 10-08.*
 
 *Standing rules, each earned twice and both invisible to `qa_sweep`: **a test that exercises a seam
 for real must stub every live meter it ends in**, and **a live gate run dirties TRACKED
@@ -137,17 +132,12 @@ five provisional parts and the date: [ROADMAP.md](ROADMAP.md) § A9a, the single
 deployed.** Plan:
 [archive/plans/build_vertical_plan_2026-09-24.md](archive/plans/build_vertical_plan_2026-09-24.md)
 — it owns the rulings, the sequencing, the cost and the kept/changed/deleted list; this line is
-the status, not the record. **What exists now:** `core/build/` is 17 files (16 modules +
-`__init__`), 236 checks across eleven suites, sweep check 12 (`scheduler-functions-resolve`), a
-rewritten `check_build_registration.py`, `--sandbox` on `new_worktree.sh`, six content gates —
-the sixth being the **tier gate**, refusing a capability that makes a standing judgement over a
-history on the bulk tier — the trigger (`request_build` on the Coordinator and the eight category
-agents, filing condition by request shape in `coordinator.md`), **the read doors** (one persona-bound
-endpoint on `core/server.py`, `core/build/doors.py`, `scripts/vm_read.py`, the seven live feeds
-refused outright), and **`/build` with its five subagent definitions**, the command taking every step
-from `core/build/driver.py` so it can hand out none the driver refuses. **398 checks across fourteen
-suites.** The old 19-module package, its four load seams and eight suites are deleted. Per-phase
-prompts, now including E's deploy checklist:
+the status, not the record. **Live surface:** `core/build/` (17 files), **398 checks across fourteen
+suites**, six content gates including the **tier gate** — which refuses a capability making a
+standing judgement over a history on the bulk tier — the read doors, and `/build` taking every step
+from `core/build/driver.py` so it can hand out none the driver refuses. **What each phase landed, in
+detail, and the deleted 19-module package: `archive/PROJECT_LOG.md` § 2026-09-24** (five entries) —
+moved out of here 09-25 at the ceiling. Per-phase prompts, including E's deploy checklist:
 [archive/plans/build_v4_phase_prompts_2026-09-24.md](archive/plans/build_v4_phase_prompts_2026-09-24.md).
 
 ---
