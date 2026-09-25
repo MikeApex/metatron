@@ -7,17 +7,16 @@ approves the plan, commits and deploys; Vertex serves only execution. Plan:
 sequencing (§ 16), the cost ($65–106) and the kept/changed/deleted list (§ 10). Reasoning, options
 rejected, and four things believed true that were not: `archive/PROJECT_LOG.md` § 2026-09-24, third.*
 
-***Next: phase E, the deploy — every build phase is now committed.*** Its checklist is written in
-`archive/plans/build_v4_phase_prompts_2026-09-24.md` § Phase E and its four pre-flight gates have
-already been run green, including the one that matters most: **what the VM will pull imports, checked
-against a clean `git archive HEAD` export** rather than the working tree, which can import fine on
-files the VM will never receive. **E carries `7bca654..HEAD` — ~32 commits; the VM is at `7bca654`,
-established by asking it** (why the record said otherwise: `archive/PROJECT_LOG.md` § 2026-09-24).
-Count the range at deploy time rather than trusting a number here. A catch-up deploy with Build
-inside it, so if the VM misbehaves afterwards Build is one of ~30 suspects and the checklist
-establishes general health *before* the three Build probes. **Then F**, the bootstrap walkthrough —
-runs 1–3 with Mike executing, written when he asks. Spend ≈ **$75–100** of $65–106, and **the build
-will finish over** — almost entirely phase A's driver needing repair once phase C finally drove it.*
+***Phase E is DEPLOYED — the VM ran `7bca654` → `4f0a6c3` on 09-25, 33 commits, 130 files. Build is
+live.*** Six probes pass: read door answering five real sources with the live feeds refusing,
+`build_tick` resolving, the `--persona mike` turn (**closes A's (M)**), the host marker as a systemd
+drop-in, and `request_build`'s plumbing end to end (`BLD-0925-01` plus its `BUILD_PROPOSED` record).
+**The seventh fails and it is the vertical's premise:** asked a shape-2 gap — *"when did I last water
+the fig?"*, a last-done date nothing performs — the Coordinator answers from context and files
+nothing. `4f0a6c3` moved the trigger into the procedure it executes; **deployed, asked again, still no
+ticket, so placement was not the cause.** Next is measurement, not more wording — see the BUILD line
+under `## Current state`. **Then F**, the bootstrap walkthrough, written when Mike asks. Spend
+≈ **$75–100** of $65–106; the Coordinator work is outside § 14 altogether.*
 
 ***Earned three times in one session, and the reason Build cost what it did:* a thing that reads
 correctly and has never been run is not known to work — reading it harder will not find it.** The
@@ -31,14 +30,9 @@ granted to the eight personal specialists in both routing files, `tools/subagent
 filing instruction until rollout — the 16 **class-3** advisories in `check_agent_tools.py` are that
 marker. What v3.7 deferred and what phase D corrected: `archive/PROJECT_LOG.md` § 2026-09-24.*
 
-*(M) **owed at phase E, not before: one pipeline turn on `--persona mike`, on the VM.**
-`config/personas/mike*` is VM-only, so that turn cannot run on the Mac in **any** tree; the
-`danny_park` substitute passed against landed main. Also riding E: `0e154b9`, `12d7dd2`.*
-
-*⚠ **Headset mode is built, device-tested and committed** (`3066d66`, `0b044f9`) — finished work,
-detail in `archive/PROJECT_LOG.md` § 2026-09-24 (headset). Still live: **the VM runs the
-pre-`source` server**, so turns do not record how they started;
-`core/{server,trace,orchestrator}.py` ride E's deploy. Barge-in parked; browser `[DB-0919-01]`.*
+*Headset mode is built, device-tested, committed and **deployed 09-25** — turns now record whether
+they began in the UI or from a headset press. Barge-in parked; browser `[DB-0919-01]`. Detail:
+`archive/PROJECT_LOG.md` § 2026-09-24 (headset).*
 
 *⚠ **Vertex starts storing every prompt prefix at rest for 24h on 2026-10-15** — conversation history
 included — unless the opt-out lands. Mike ruled 09-25: decline it. Google's command cannot run yet
@@ -127,9 +121,14 @@ owns the per-item detail and the standing evidence.**
 **A9 — built and deployed 2026-08-18; `@waiting` on real use, review `2026-10-01`.** Spec, the
 five provisional parts and the date: [ROADMAP.md](ROADMAP.md) § A9a, the single home.
 
-**BUILD — the vertical that constructs capabilities. v4.12; every phase committed
-(`505b254`, `760c260`, `224e5d4`, `7c48ade`, `a3bf3e1`, `9339c82`, `52bb929`); E and F left, nothing
-deployed.** Plan:
+**BUILD — the vertical that constructs capabilities. v4.12; every phase committed and E DEPLOYED
+09-25 (`505b254` … `4f0a6c3`); F left.** **The open defect is judgement, not machinery:** the
+Coordinator will not file a shape-2 gap, proven twice on the live VM, and moving the instruction into
+its procedure did not change it. **The next step is a measurement, not a prompt** —
+`tests/run_b1_redteam.py` already runs live through `run_pipeline_session()`, so a `--suite
+build_trigger` with must-file and must-not-file halves is the fixture
+`config/modules/routing_cloud.yaml:66` claims exists and never did. Full account:
+`archive/PROJECT_LOG.md` § 2026-09-25, second.** Plan:
 [archive/plans/build_vertical_plan_2026-09-24.md](archive/plans/build_vertical_plan_2026-09-24.md)
 — it owns the rulings, the sequencing, the cost and the kept/changed/deleted list; this line is
 the status, not the record. **Live surface:** `core/build/` (17 files), **398 checks across fourteen
