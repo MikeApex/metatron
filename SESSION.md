@@ -14,9 +14,12 @@ drop-in, and `request_build`'s plumbing end to end (`BLD-0925-01` plus its `BUIL
 **The seventh fails and it is the vertical's premise:** asked a shape-2 gap — *"when did I last water
 the fig?"*, a last-done date nothing performs — the Coordinator answers from context and files
 nothing. `4f0a6c3` moved the trigger into the procedure it executes; **deployed, asked again, still no
-ticket, so placement was not the cause.** Next is measurement, not more wording — see the BUILD line
-under `## Current state`. **Then F**, the bootstrap walkthrough, written when Mike asks. Spend
-≈ **$75–100** of $65–106; the Coordinator work is outside § 14 altogether.*
+ticket, so placement was not the cause. It **correctly refuses** when it holds nothing, though — asked
+about orchids it had no record of it asked what to track (Mike, 09-25), so the defect is narrow: it
+over-reaches only where a partial history exists.** ***Next: phase F1, bootstrap run 1 `home_care`*** —
+prompt in `…build_v4_phase_prompts_2026-09-24.md` § Phase F1, scoped to run 1 alone because a first
+end-to-end run finds defects, and going ahead **without** § 12's under-filing fixture on Mike's call,
+which it records rather than skips. Spend ≈ **$75–100** of $65–106; the rest is outside § 14.*
 
 ***Earned three times in one session, and the reason Build cost what it did:* a thing that reads
 correctly and has never been run is not known to work — reading it harder will not find it.** The

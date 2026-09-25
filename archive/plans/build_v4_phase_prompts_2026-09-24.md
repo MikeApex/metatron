@@ -1119,8 +1119,188 @@ and leaves the fetched objects in place for a retry.
 
 ---
 
-## Phase F
+## Phase F1 — bootstrap run 1, `home_care`, with Mike present throughout
 
-Pending. Bootstrap runs 1–3 as one live walkthrough with Mike executing — run 1 `home_care`, run 2
-the induced REPAIR, run 3 the weekend-correspondence policy, each acceptance on Mike's data and on a
-fixture persona. **Written once C has been reviewed clean**, per the coordinating brief.
+> **Scoped to run 1 alone, deliberately.** § 14 budgets F as "runs 1–3 as one walkthrough", and
+> that is still the plan. But run 1 is the first end-to-end execution of the graph, and this build's
+> one repeated lesson is that a first execution finds defects — phase C's review found ten, eight
+> inside `core/build/`, on a package that had shipped 236 green checks that afternoon. A prompt that
+> assumed run 1 succeeds would have the window carrying a broken driver into run 2. **Runs 2 and 3
+> get their own prompt once run 1 lands clean.**
+
+---
+
+Model: Opus 5, effort xhigh. The five subagents declare their own models in their frontmatter
+(plan § 7) — you do not choose them. Fable appears only through `/adversarial-review`.
+
+Run `/metatron-code` first, in full, before anything else.
+
+You are on **Mikes-MacBook-Air**. The repository is `/Users/md-homefolder/Desktop/multi-model-mcp`.
+Every command below states its machine and its full path. Mike is at the keyboard for this whole
+session — this is a walkthrough, not a delegated build.
+
+### What this is
+
+Build's first real capability. `home_care` — household upkeep, which no specialist owns — built
+config-only over read tools that already exist (plan § 11). You drive `/build` from the ticket to a
+landed, deployed, accepted capability. **The command is not the runner: `core/build/driver.py` is**
+(§ 7). Ask the driver for the next step, run what it names, hand the result back, repeat. You cannot
+hand out a step the driver refuses, and you should not try.
+
+### Before you start — four facts about the tree and the VM, each already established
+
+1. **The VM is at `4f0a6c3` and everything Build needs is deployed** — `core/build/`, the read
+   doors, `build_tick` in the scheduler, the `request_build` grant, `METATRON_HOST=vm` on both
+   systemd units as a drop-in. Phase E closed 2026-09-25: `archive/PROJECT_LOG.md` § 2026-09-25,
+   second.
+2. **`config/build/registry.yaml` is empty.** No capability is registered, so `build_tick` returns
+   "nothing registered" every 30 minutes and the dedupe/refusal paths in
+   `core/build/registry.py` have never had a row to refuse against. Run 1 writes the first one.
+3. **There is no plain `ssh` to the VM.** The VPC has had no public SSH ingress since 2026-07-31.
+   Every remote command is:
+   ```bash
+   gcloud compute ssh metatron-vm --zone=us-central1-a --project=metatron-ai-499810 \
+     --tunnel-through-iap --command '<the remote command>'
+   ```
+   The VM's checkout is `/home/md-homefolder/multi-model-mcp`. Do not shorten the invocation into a
+   shell variable — zsh does not word-split an unquoted expansion.
+4. **`request_build`'s plumbing is proven and its judgement is not.** `BLD-0925-01` filed correctly
+   from a direct call on a fixture persona, with its `BUILD_PROPOSED` quality event. But asked *"when
+   did I last water the fig?"* on the live VM the Coordinator answered from context and filed nothing
+   — twice, before and after `4f0a6c3` moved the filing rule into the procedure it executes. Asked
+   *"which of my orchids needs fertilizing this week?"* it correctly said it had nothing on file and
+   asked what to track. **The defect is narrow: it refuses correctly when it holds nothing, and
+   over-reaches when it holds something partial.**
+
+### Step 1 — the trigger, and it is the first thing you do
+
+**Ask Mike to put a real `home_care` question to the live app** at
+`https://metatron-vm.tail0acc5d.ts.net:8001`, persona `mike`. It must be a question where **data
+exists** — a household task with a history in his logs, so the Coordinator has partial material and
+the shape-2 case is live. Not an orchid-style question about something with no record, which it
+already handles correctly by asking.
+
+Then, on **Mikes-MacBook-Air**:
+
+```bash
+gcloud compute ssh metatron-vm --zone=us-central1-a --project=metatron-ai-499810 \
+  --tunnel-through-iap --command 'tail -3 /home/md-homefolder/multi-model-mcp/data/personas/mike/build/tickets.jsonl'
+```
+
+**If a ticket at `proposed` appears, § 12's Trigger row is closed and run 1 starts from a real
+trigger.** Record the question that worked, verbatim — it is the first known-good should-file case
+and it belongs in the fixture the plan still owes.
+
+**If nothing files, hand-file the ticket and say so in the handoff.** Do not treat this as a
+blocker; Mike has decided run 1 proceeds either way. What you must not do is let it pass silently:
+
+```bash
+gcloud compute ssh metatron-vm --zone=us-central1-a --project=metatron-ai-499810 \
+  --tunnel-through-iap --command 'cd /home/md-homefolder/multi-model-mcp && .venv/bin/python -c "
+from core.persona import persona_scope
+with persona_scope(\"mike\"):
+    from tools.build import request_build
+    print(request_build(gap=\"<the gap, in one sentence>\", trigger=\"phase F1 hand-filed, Coordinator did not file\", mode=\"construct\", capability_hint=\"home_care\"))
+"'
+```
+
+A hand-filed ticket means **two § 12 rows stay open**, and the handoff must name them: the Trigger
+row, and the first arrow of the End-to-end row (*"`request_build` on the VM → …"*).
+
+### Step 2 — run the graph
+
+On **Mikes-MacBook-Air**, in `/Users/md-homefolder/Desktop/multi-model-mcp`:
+
+```
+/build --persona mike BLD-MMDD-NN
+```
+
+The driver decides everything after that. Notes that are not in the command file:
+
+- **Do not create a worktree by hand.** `/build`'s sandbox is the driver's; `./scripts/new_worktree.sh`
+  is for ordinary phase work and not for this.
+- **The Red half of `files[]` is yours, in the main tree, at N13** — never the implementer's
+  (§ 3 N11). The implementer is Amber and Green only and the driver will refuse otherwise.
+- **The bounds are the driver's, from durable artifact counts, not yours** (§ 8): one rung-2 retry
+  per node, one review send-back, one N12 return. If a node parks, report the park and stop. Do not
+  re-run it to get past it.
+- **If the Planner finds code work, N11 does it** — it is no longer deferred (§ 11).
+
+### Step 3 — the two gates that are Mike's, and nothing else is
+
+Per § 11, *"Mike's approval at [N9] and his commit at [N13] are the ceiling."*
+
+- **N9, approve the plan.** Hand him the table and the brief. Do not summarise them into a
+  recommendation; the brief is the artifact he reads.
+- **N13, the commit.** You apply the patch and write the Red half. **You never run `git commit`,
+  `git push` or `./deploy.sh`.** Print the staging manifest the driver produces and hand it over.
+  Before he stages, `git diff` every file in it — two windows run against this tree, and rule 4 of
+  `.claude/rules/deploy.md` is about lines inside a file you staged by name. **Re-diff after anyone
+  touches a staged file, including a worker correcting its own content** — that is not in the rule
+  file and it cost a near-miss on 09-24.
+
+Then the deploy, which is Mike's: gate 5 first (the intersection of the VM's untracked files with
+the incoming range — it aborted phase E's first attempt), then `./deploy.sh`. **The rollback target
+is now `4f0a6c3`, not `b2b1dc7`.** Both commands are in § Phase E above; use them from there rather
+than retyping.
+
+### Step 4 — § 12's End-to-end row, quoted in full, because this run is what closes it
+
+> | End to end | `request_build` on the VM → `/build BLD-…` → approve → patch → Red half → one commit → deploy → acceptance | run 1 lands as tracked files from one tree; the wiring gate ran green in the main tree before the manifest was printed; the single `git diff` before the commit shows exactly `files[]`, both halves; the commit guard's branch (WARN or BLOCK) on patch-applied files is recorded; The Book renders the capability's dispatch; acceptance passes on `mike` and on the fixture persona, where the "ask" branch fires |
+
+Every clause is an assertion to report on individually. In particular:
+
+- **"the wiring gate ran green in the main tree before the manifest was printed"** — the order is the
+  assertion, not just the outcome.
+- **"the commit guard's branch (WARN or BLOCK) … is recorded"** — `scripts/hook_commit_guard.py`
+  fires at stage time and blocks the *first* writer, not the sweeper. Whichever branch it takes,
+  write down which.
+- **"acceptance passes on `mike` and on the fixture persona, where the 'ask' branch fires"** — two
+  personas, and on the fixture the capability must *ask* rather than invent, because the fixture has
+  no data. A capability that answers confidently on an empty persona tree is a FAIL.
+
+And § 12's Trigger row, which step 1 either closed or left open:
+
+> | Trigger | `python3 scripts/check_agent_tools.py --agent coordinator`; then a fixture Coordinator turn on a request nothing routes | `request_build` named and granted, neither class flagged; the turn ends in a `request_build` call with a non-null gap and a ticket at `proposed` in that persona's file (cold read 3) |
+
+### What this run does NOT close, and must not be reported as closing
+
+- **§ 12's Under-filing row.** `tests/fixtures/build_trigger_requests.yaml` does not exist. The plan
+  puts it before run 1; Mike has chosen to proceed without it, and that is recorded rather than
+  quietly skipped. It is also asserted as existing by a comment in
+  `config/modules/routing_cloud.yaml:66`, which is wrong and known to be wrong.
+- **The eight personal specialists hold `request_build` with no filing instruction** — 16 class-3
+  advisories in `check_agent_tools.py`. Expected until the four-layer rollout; not a run-1 defect.
+- **`docs/INFRASTRUCTURE.md` § Systemd units is stale** and owes a line recording the
+  `METATRON_HOST=vm` drop-in.
+
+### Standing rules
+
+- Run what you changed. `py_compile` parses; `bash scripts/qa_sweep.sh` parses. Neither executes.
+- **Never `git commit`, `git push` or `./deploy.sh`.** Mike does all three.
+- Red files (`config/agents/*.md`, `config/modules/routing*.yaml`,
+  `core/{router,persona,scheduler,spend_guard}.py`) are the main session's and prompt on Edit — use
+  `Edit`, never `sed`, because `ask` is honoured for Edit rules and ignored for Bash ones.
+- Denied: `config/constitution.md`, `config/personas/mike*`, `data/personas/**`, `.env`,
+  `vertex-key.json`, `./deploy.sh`.
+- No `#` comment lines in anything you hand Mike to paste — `interactive_comments` is unset in his
+  shell, so `#` runs as a command.
+
+### The handoff
+
+```bash
+python3 ~/.claude/tools/archive_chats.py
+```
+
+then write `archive/handoffs/2026-09-25-build-phase-F1.md`: what the driver did at each node, which
+§ 12 clauses closed and which did not, the verbatim question that triggered the ticket (or the fact
+that none did), every park with its reason, and the capability's registry row. Leave the sandbox
+worktree in place. **Do not archive the session out** — this window is a worker; the coordinating
+window closes the record.
+
+### Cost
+
+§ 14 budgets **$10–20 for all three runs**. Run 1 alone should land at **$5–10** — it is the longest
+of the three because the graph has never run end to end, and the Inquiry, Librarian and Planner
+nodes are each one Opus call on a real gap. If it passes $15 before N13, stop and report: that is
+the signal that a node is being re-entered rather than progressing.
