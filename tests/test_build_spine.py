@@ -140,26 +140,13 @@ def _():
     assert any("no intent question" in d for d in defects), defects
 
 
-@check("turn 2 fails on the missing altitude answer")
+@check("turn 2's ordering grounds are independent — no single fix rescues it")
 def _():
-    defects = validate_question_set(TURN2)
-    assert any("disposition must be one of" in d for d in defects), defects
-    assert any("disposition_evidence is empty" in d for d in defects), defects
-
-
-@check("turn 2's three grounds are independent — no single fix rescues it")
-def _():
-    # Give turn 2 the altitude answer it lacked. The spine is untouched, so the
-    # ordering failures must survive: they are what the critique was about.
-    patched = {
-        **TURN2,
-        "disposition": "new",
-        "disposition_evidence": (
-            "Checked the calendar and the crm; neither performs an allocation "
-            "judgement over a stated intent."
-        ),
-    }
-    defects = validate_question_set(patched)
+    # The altitude answer left the Question Set on 2026-09-26 (it moved to the
+    # PLANNER, which holds the tools to check it). What the reference transcript
+    # was actually about is the ORDERING, and that is untouched: turn 2 must
+    # still fail on both grounds with nothing else changed.
+    defects = validate_question_set({**TURN2})
     assert any("not ordered by class index" in d for d in defects), defects
     assert any("no intent question" in d for d in defects), defects
 

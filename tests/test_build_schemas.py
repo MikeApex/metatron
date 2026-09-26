@@ -88,11 +88,14 @@ def _():
     assert not S.validate_question_set(qs, F.CAPABILITIES)
 
 
-@check("`new` with evidence naming no existing capability FAILS")
+@check("a PLAN whose disposition_evidence restates the request FAILS")
 def _():
-    qs = F.question_set()
-    qs["disposition_evidence"] = "nothing like this exists"
-    assert hit(S.validate_question_set(qs, F.CAPABILITIES), "restates the request")
+    # The guard moved here from the Question Set on 2026-09-26 with the claim
+    # itself: the Planner holds Read/Grep and the registry, so it is the stage
+    # that can name what it actually checked.
+    plan = F.build_plan()
+    plan["capability"]["disposition_evidence"] = "nothing like this exists"
+    assert hit(S.validate_build_plan(plan), "restates the request")
 
 
 # ---------------------------------------------------------------------------
@@ -376,18 +379,18 @@ def _():
 
 @check("climb() coerces an unknown enum DOWNWARD in permissiveness, never upward")
 def _():
-    qs = F.question_set()
-    qs["disposition"] = "invented"
-    artifact, defects, notes = S.climb("question_set", qs,
-                                       known_capabilities=F.CAPABILITIES)
-    assert artifact["disposition"] == "new", artifact["disposition"]
-    assert any("highest burden of proof" in n for n in notes), notes
+    plan = F.build_plan()
+    plan["capability"]["execution_mode"] = "invented"
+    artifact, defects, notes = S.climb("build_plan", plan)
+    assert artifact["capability"]["execution_mode"] == "deferred", artifact
+    assert any("never blocks a turn" in n for n in notes), notes
 
 
 @check("climb(inject=) refuses a field that is not code-owned")
 def _():
     try:
-        S.climb("question_set", F.question_set(), inject={"disposition": "extend"})
+        S.climb("question_set", F.question_set(),
+                inject={"generalizes_to": "anything at all"})
     except S.SchemaError as exc:
         assert "refuses" in str(exc), exc
         return

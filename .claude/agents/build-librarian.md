@@ -72,7 +72,7 @@ it in one row's gap field.
 
 ## Depth — confirm or override
 
-The Question Set carries a `proposed_depth`. `triage` holds **only** if a standing
+The Question Set carries a `depth`. `triage` holds **only** if a standing
 policy in the manifest genuinely covers this class of request; name the policy in
 `policies_matched[]`. Otherwise the job runs at `standard`, and you say so.
 

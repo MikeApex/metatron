@@ -256,14 +256,26 @@ def validate_question_set(qs: dict,
     """
     Return the defect list. Empty means valid.
 
-    `known_capabilities` is the set of tracked specialists — read by CODE from
-    config/agents/*.md, never shown to Inquiry as data. It is what a
-    `disposition: new` claim is checked against. When None that one check is NOT
-    RUN, and that is stated here rather than silently passing.
-
     `manifest_ids` is GONE as a parameter. It existed to validate
     `candidate_sources`, and under ruling 5 naming a source is the defect.
+
+    `known_capabilities` IS ACCEPTED AND NO LONGER CONSULTED (2026-09-26, Mike).
+    It existed to check a `disposition: new` claim against the real specialist
+    list — and that check was the root cause of the Time Director invention on
+    the first live run. Inquiry holds no tools and sees no manifest, so the file
+    required it to name a member of a list it was never shown; with the raw
+    material for a name in reach it produced one, wrongly, and the guard passed
+    it because `capability_names()` counts a retired unrouted agent file as an
+    existing capability. The altitude answer has not left Build: the PLANNER's
+    `capability.disposition` / `disposition_evidence` carry it (validated at
+    `_check_plan_capability`), and the Planner holds Read/Grep and the registry,
+    so it is the stage that can answer it honestly.
+
+    The parameter is kept rather than removed so `driver.land` and the `/build`
+    command keep working unchanged; a caller passing it is not wrong, it is just
+    no longer load-bearing here.
     """
+    _ = known_capabilities
     defects: list[str] = []
     if not isinstance(qs, dict):
         return ["question_set is not an object"]
@@ -280,19 +292,10 @@ def validate_question_set(qs: dict,
     if depth not in DEPTHS:
         defects.append(f"depth must be one of {list(DEPTHS)}, got {qs.get('depth')!r}")
 
-    _check_disposition(qs, known_capabilities, defects)
-
     if _is_blank(qs.get("generalizes_to")):
         defects.append(
             "generalizes_to is empty — a capability that generalises to nothing "
             "is the narrow-tool failure the altitude rule exists to catch"
-        )
-
-    proposed = _text(qs.get("proposed_depth")).lower()
-    if proposed and proposed not in DEPTHS:
-        defects.append(
-            f"proposed_depth must be one of {list(DEPTHS)}, got "
-            f"{qs.get('proposed_depth')!r}"
         )
 
     # THE VACUUM RULE, ENFORCED RATHER THAN INSTRUCTED (ruling 5). Inquiry sees
@@ -332,40 +335,6 @@ def validate_question_set(qs: dict,
             "standard run that has not admitted it"
         )
     return defects
-
-
-def _check_disposition(qs: dict, known_capabilities: set[str] | None,
-                       defects: list[str]) -> None:
-    disposition = _text(qs.get("disposition")).lower()
-    if disposition not in DISPOSITIONS:
-        defects.append(
-            f"disposition must be one of {list(DISPOSITIONS)}, got "
-            f"{qs.get('disposition')!r} — the altitude answer is mandatory"
-        )
-    evidence = _text(qs.get("disposition_evidence"))
-    if _is_blank(evidence):
-        defects.append("disposition_evidence is empty")
-        return
-
-    lowered = evidence.lower()
-    for phrase in _EVIDENCE_BOILERPLATE:
-        if phrase in lowered:
-            defects.append(
-                f"disposition_evidence restates the request ({phrase!r}) rather "
-                "than naming what was checked"
-            )
-            break
-
-    if disposition == "new" and known_capabilities is not None:
-        # `new` carries the highest burden of proof: it must name the existing
-        # capability that was checked and say why it does not cover this.
-        named = {c for c in known_capabilities if c and c.lower() in lowered}
-        if not named:
-            defects.append(
-                "disposition: new — disposition_evidence names no existing "
-                "capability that was checked. `new` is the disposition a model "
-                "reaches for by default; it carries the highest burden of proof."
-            )
 
 
 def _check_questions(spine: list, defects: list[str]) -> None:
@@ -1278,8 +1247,22 @@ def _check_capability(capability: dict, defects: list[str]) -> None:
         defects.append(f"capability.kind must be one of {list(KINDS)}")
     if _text(capability.get("disposition")).lower() not in DISPOSITIONS:
         defects.append(f"capability.disposition must be one of {list(DISPOSITIONS)}")
-    if _is_blank(capability.get("disposition_evidence")):
+    evidence = _text(capability.get("disposition_evidence"))
+    if _is_blank(evidence):
         defects.append("capability.disposition_evidence is empty")
+    else:
+        # MOVED HERE FROM THE QUESTION-SET CHECK, 2026-09-26. Evidence that
+        # merely restates the request is the characteristic non-answer, and the
+        # guard belongs beside the claim: the Planner holds Read/Grep and the
+        # registry, so it is the stage that can name what it actually checked.
+        lowered = evidence.lower()
+        for phrase in _EVIDENCE_BOILERPLATE:
+            if phrase in lowered:
+                defects.append(
+                    f"capability.disposition_evidence restates the request "
+                    f"({phrase!r}) rather than naming what was checked"
+                )
+                break
     if _is_blank(capability.get("one_line")):
         defects.append("capability.one_line is empty")
     if _is_blank(capability.get("generalizes_to")):
@@ -1419,8 +1402,6 @@ def repair_json(raw: str) -> tuple[dict | None, str]:
 # The safe value is always the one that is LEAST permissive — it forces more
 # scrutiny, never less.
 _COERCIONS: tuple[tuple[str, tuple[str, ...], str, str], ...] = (
-    ("disposition", DISPOSITIONS, "new",
-     "new carries the highest burden of proof"),
     ("answerable_by", ANSWERABLE_BY, "judgment",
      "judgment forces has_what_it_needs and a falsifier"),
     ("variable_scope", VARIABLE_SCOPES, "query_only",

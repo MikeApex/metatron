@@ -1,0 +1,15 @@
+schema: build_registry/1
+capabilities:
+- name: abandoned_bld_0926_01
+  kind: none
+  ticket: BLD-0926-01
+  job_id: BLD-0926-01
+  persona: mike
+  version: 0
+  status: abandoned
+  at: '2026-09-26'
+  reason: 'Mis-specified at filing: gap was written as the whole of household upkeep.
+    Superseded by a narrowly-scoped plant-watering ticket the same day (Mike, phase
+    F1). Nothing was built against it.'
+  acceptance: null
+  run: null

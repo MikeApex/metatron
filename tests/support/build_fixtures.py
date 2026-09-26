@@ -41,11 +41,6 @@ def question_set() -> dict:
         "mode": "construct",
         "request": "nothing tracks when the plants were last watered",
         "depth": "standard",
-        "proposed_depth": "standard",
-        "disposition": "new",
-        "disposition_evidence": (
-            "logistics owns errands and appointments and performs no standing "
-            "judgement over a history, so it cannot answer a last-done date"),
         "generalizes_to": "any recurring household task with a cadence",
         "declined_to_ask": [],
         "spine": [
