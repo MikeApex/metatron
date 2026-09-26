@@ -1,29 +1,34 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-09-24 (**Build v4 — phases 0, A and B-Red committed**). Build is development, not
-execution (Mike): it runs in Claude Code on the Mac on the subscription, Mike starts each build,
-approves the plan, commits and deploys; Vertex serves only execution. Plan:
-`archive/plans/build_vertical_plan_2026-09-24.md` **v4.11** — it owns the thirteen § 0 rulings, the
-sequencing (§ 16), the cost ($65–106) and the kept/changed/deleted list (§ 10). Reasoning, options
-rejected, and four things believed true that were not: `archive/PROJECT_LOG.md` § 2026-09-24, third.*
+*Updated: 2026-09-26. Build is development, not execution (Mike): it runs in Claude Code on the Mac
+on the subscription, Mike starts each build, approves the plan, commits and deploys; Vertex serves
+only execution. Plan: `archive/plans/build_vertical_plan_2026-09-24.md` **v4.12** — it owns the
+rulings, the sequencing (§ 16), the cost ($65–106) and the kept/changed/deleted list (§ 10).
+**Phase E is deployed and Build is live** (VM at `0c49e4e`); what each phase landed is in
+`archive/PROJECT_LOG.md` § 2026-09-24 and § 2026-09-25.*
 
-***Phase E is DEPLOYED — the VM ran `7bca654` → `4f0a6c3` on 09-25, 33 commits, 130 files. Build is
-live.*** Six probes pass: read door answering five real sources with the live feeds refusing,
-`build_tick` resolving, the `--persona mike` turn (**closes A's (M)**), the host marker as a systemd
-drop-in, and `request_build`'s plumbing end to end (`BLD-0925-01` plus its `BUILD_PROPOSED` record).
-**The seventh fails and it is the vertical's premise:** asked a shape-2 gap — *"when did I last water
-the fig?"*, a last-done date nothing performs — the Coordinator answers from context and files
-nothing. `4f0a6c3` moved the trigger into the procedure it executes; **deployed, asked again, still no
-ticket, so placement was not the cause. It **correctly refuses** when it holds nothing, though — asked
-about orchids it had no record of it asked what to track (Mike, 09-25), so the defect is narrow: it
-over-reaches only where a partial history exists.** ***Next: phase F1, bootstrap run 1 `home_care`*** —
-prompt in `…build_v4_phase_prompts_2026-09-24.md` § Phase F1, scoped to run 1 alone because a first
-end-to-end run finds defects, and going ahead **without** § 12's under-filing fixture on Mike's call,
-which it records rather than skips. Spend ≈ **$75–100** of $65–106; the rest is outside § 14.*
+***Phase F1 run 1 is STOPPED after its first stage, deliberately, with two defects found — which is
+what a first end-to-end run is for.*** Live job `BLD-0926-02`, **`plant_watering`** not the
+`home_care` of § 11 (that is the shape of a *category* agent; this is a tier-3 leaf). The trigger was
+hand-filed and no live Coordinator turn was attempted (Mike's call), so § 12's Trigger row keeps its
+second half open and no verbatim should-file case exists. **Defect 1: Inquiry named a RETIRED agent
+as the existing owner of cadence prompting — because the agent file required it to name an existing
+specialist while giving it no tools and no manifest.** The injected `CLAUDE.md`/`MEMORY.md` supplied
+the raw material; the field created the demand, and the guard would have passed it anyway.
+**Defect 2: there is no path back from an artifact that validates cleanly but is wrong** — the one
+retry fires only on validation defects, and position is derived from artifacts on disk.
+***Next: `claude update` to ≥ 2.1.271, restart, then bench test 2.*** Prompt, the four things it must
+check, and the deferred spine decision: `archive/plans/inquiry_rewrite_2026-09-26.md`. Run 1's own
+record: `archive/handoffs/2026-09-26-build-phase-F1.md`.*
 
-***Earned three times in one session, and the reason Build cost what it did:* a thing that reads
-correctly and has never been run is not known to work — reading it harder will not find it.** The
-three instances, and what each cost: `archive/PROJECT_LOG.md` § 2026-09-24, fifth.*
+***Inquiry is rewritten and the vacuum is sealed structurally, pending a version bump.** An
+experienced executive assistant on their first day, reasoning with no data in hand (Mike's framing).
+The altitude answer did not leave Build — it left the one stage that cannot answer it; the Planner
+already carries it and holds the tools to check it. **`omitClaudeMd: true` needs Claude Code
+≥ 2.1.271 and is SILENTLY IGNORED below it**, which is the one way bench test 2 could measure nothing
+while appearing to pass. Bench test 1 proved better instructions stop the *invention* and cannot stop
+the *knowledge*: 0 defects, but six questions still quoted the project's files and it called the
+employer "he" from a prompt carrying no name. 153 → 141 lines; chunks 3–5 uncompressed.*
 
 ***The graph is four layers now** (Mike, 2026-09-24): Coord → ~12 category agents, which route and
 no longer do → tier-3 agent → Synthesizer. Build exists to construct the tier-3 agents; the category
@@ -32,10 +37,6 @@ granted to the eight personal specialists in both routing files, `tools/subagent
 (`MAX_SUBAGENT_DEPTH = 2`). `run_subagent` is **not** granted, and the eight hold the tool with no
 filing instruction until rollout — the 16 **class-3** advisories in `check_agent_tools.py` are that
 marker. What v3.7 deferred and what phase D corrected: `archive/PROJECT_LOG.md` § 2026-09-24.*
-
-*Headset mode is built, device-tested, committed and **deployed 09-25** — turns now record whether
-they began in the UI or from a headset press. Barge-in parked; browser `[DB-0919-01]`. Detail:
-`archive/PROJECT_LOG.md` § 2026-09-24 (headset).*
 
 *⚠ **Vertex starts storing every prompt prefix at rest for 24h on 2026-10-15** — conversation history
 included — unless the opt-out lands. Mike ruled 09-25: decline it. Google's command cannot run yet
@@ -124,23 +125,19 @@ owns the per-item detail and the standing evidence.**
 **A9 — built and deployed 2026-08-18; `@waiting` on real use, review `2026-10-01`.** Spec, the
 five provisional parts and the date: [ROADMAP.md](ROADMAP.md) § A9a, the single home.
 
-**BUILD — the vertical that constructs capabilities. v4.12; every phase committed and E DEPLOYED
-09-25 (`505b254` … `4f0a6c3`); F left.** **The open defect is judgement, not machinery:** the
-Coordinator will not file a shape-2 gap, proven twice on the live VM, and moving the instruction into
-its procedure did not change it. **The next step is a measurement, not a prompt** —
-`tests/run_b1_redteam.py` already runs live through `run_pipeline_session()`, so a `--suite
-build_trigger` with must-file and must-not-file halves is the fixture
-`config/modules/routing_cloud.yaml:66` claims exists and never did. Full account:
-`archive/PROJECT_LOG.md` § 2026-09-25, second.** Plan:
-[archive/plans/build_vertical_plan_2026-09-24.md](archive/plans/build_vertical_plan_2026-09-24.md)
-— it owns the rulings, the sequencing, the cost and the kept/changed/deleted list; this line is
-the status, not the record. **Live surface:** `core/build/` (17 files), **398 checks across fourteen
-suites**, six content gates including the **tier gate** — which refuses a capability making a
-standing judgement over a history on the bulk tier — the read doors, and `/build` taking every step
-from `core/build/driver.py` so it can hand out none the driver refuses. **What each phase landed, in
-detail, and the deleted 19-module package: `archive/PROJECT_LOG.md` § 2026-09-24** (five entries) —
-moved out of here 09-25 at the ceiling. Per-phase prompts, including E's deploy checklist:
-[archive/plans/build_v4_phase_prompts_2026-09-24.md](archive/plans/build_v4_phase_prompts_2026-09-24.md).
+**BUILD — the vertical that constructs capabilities. v4.12; every phase committed, E deployed 09-25,
+F1 run 1 started and stopped.** **The defect is not what it was thought to be:** *"the Coordinator
+will not file a shape-2 gap"* is incompletely diagnosed — a daily `plant_watering_check` job and
+Logistics' catch-all directory entry both already claim the class, so two config files conflict
+(`archive/PROJECT_LOG.md` § 2026-09-26). The under-filing fixture
+`config/modules/routing_cloud.yaml:66` asserts exists **still does not exist**. **Live surface:**
+`core/build/` (17 files), **353 checks across fourteen suites**, six content gates including the
+**tier gate** — which refuses a capability making a standing judgement over a history on the bulk
+tier — the read doors, and `/build` taking every step from `core/build/driver.py` so it can hand out
+none the driver refuses. Plan:
+[build_vertical_plan_2026-09-24.md](archive/plans/build_vertical_plan_2026-09-24.md) — rulings,
+sequencing, cost, kept/changed/deleted. Per-phase prompts, including E's deploy checklist:
+[build_v4_phase_prompts_2026-09-24.md](archive/plans/build_v4_phase_prompts_2026-09-24.md).
 
 ---
 

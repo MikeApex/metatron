@@ -1332,6 +1332,18 @@ evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording �
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
 
+- **[a capability gap was filed]** BLD-0926-02 (construct): The user asked to be reminded when the plants at home need watering, and nothing does that.  
+  `2026-09-26T10:29:37.096822Z`
+
+- **[a capability gap was filed]** BLD-0926-01 (construct): Household upkeep has no purpose-built owner: nothing records which recurring home tasks exist, when each was last done, or which are due now, so a question about when a plant was last watered is answered by improvising from recent context, which has given wrong last-done dates repeatedly.  
+  `2026-09-26T10:22:33.311104Z`
+
+- **[user corrected a prior turn]** [if this message corrects a prior error — brief description; omit if not applicable]  
+  `2026-09-26T06:07:44.071907Z`
+
+- **[THINKING_CAP_HIT]** thinking hit the 4096-token budget (reported 4113, turn 1). The 2026-08-27 probe found no replies above 3,930 — a cap hit means the distribution moved or a reply was clipped; check its quality.  
+  `2026-09-25T18:06:42.639053Z`
+
 - **[a specialist missed a signal it should have caught]** User asked what's on for this weekend, but coordinator failed to route to Logistics to fetch scheduled weekend events.  
   `2026-09-25T15:21:22.799164Z`
 
