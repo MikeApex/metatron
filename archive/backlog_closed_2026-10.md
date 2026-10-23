@@ -8,6 +8,63 @@ the previous file is [`backlog_closed_2026-09.md`](backlog_closed_2026-09.md).
 
 ---
 
+## ✅ [DB-0902-02] Two inbox jobs gave contradictory answers about the same inbox — one of them no longer exists — closed 2026-10-23
+
+**The change:** there is one model inbox job, not two. Mike's housekeeping message of 2026-10-23
+deleted `check_inbox_recurring` (the Coordinator/pipeline job, *"summarize any relevant logistics
+details"*), which was the half of the 08-30 contradiction that reported "no new messages";
+`check_inbox_6h` (Logistics, direct) stays. The built half of this item — the empty-queue answer
+that states its reason instead of reading as "the inbox is empty" (`54073b6`, deployed and
+VM-verified 2026-09-03) — is untouched and live.
+
+**Why the deletion happened, which is the evidence it was the right one:** the 2026-10-23 audit of
+live traces (09-20 → 10-23) found both jobs running every 6h over the same mail and **both minting
+obligations, producing twin records** (tax e-file forms, 10-09 11:42 and 17:43). The pipeline job
+was the costlier (~140k tokens a run, ~$2.8/month at `spend_guard.yaml` list rates). The task ledger
+(`27c570f`) also refuses a second task from the same intake message by source id, so a twin cannot
+recur even if a second job is ever added. Record: `archive/PROJECT_LOG.md` § 2026-10-23, third.
+
+**The `@waiting` condition below can no longer be met as written** — it named the pipeline job,
+which is gone. Confirmation that the deletion landed is item 1 of
+`archive/handoffs/2026-10-24-task-ledger-post-deploy-prompt.md`. Whether `check_inbox_6h` is itself
+now redundant with the intake sweep is that handoff's decision 6b, not a reason to keep this open.
+
+### The item as filed
+
+- **12. [DB-0902-02] The two inbox jobs disagree about the same inbox.** 08-30 14:45:03
+  (pipeline, *"summarize any relevant logistics details"*) reported **"no new messages"**;
+  14:45:29 (direct, *"any actionable items or urgent messages"*) found the Bupa dental
+  reminder, the Jimmy Carr booking and the GCP budget alert in the same minute. One of the two
+  paths is not reading what the other reads (intake queue vs raw inbox is the obvious suspect —
+  intake went live 08-29 13:54). Same-minute contradiction, so timing does not explain it.
+  Related but not identical: `[DB-0822-09]`'s failed surfacing half — fixing that without this
+  would surface from a channel that sometimes sees nothing.
+  @kind: bug
+  **✅ BUILT, deployed and VM-verified 2026-09-03 (session ⑥, `54073b6`).** The suspect named
+  above was right and the mechanism was not: the queue was **never filled, not drained**.
+  `read_intake_queue` does advance a cursor on read, but the cursors file has **never had a
+  `logistics` key**. The real cause is that **24 of 25 records in the live intake store carry
+  `domain: null` and `category: "unclear"`** — the extractor was off behind `[DB-0820-03]`'s
+  eval gate (that item closed 09-05 and the extractor is now parked permanently), the persona
+  had zero `rules:`, and `unclear` maps to a null domain. So the queue
+  returns zero for **every** domain, permanently, whatever is in the inbox. Nothing in the old
+  return value said so, and `"(nothing new for this domain)"` reads as "the inbox is empty".
+  The empty answer now states its reason (computed from config and the store) and explicitly
+  forbids the sentence Mike heard. `tests/test_intake_queue_empty.py`, 10 checks.
+  **Note the coupling: what fills the queue is classification, and that is now partly answered.**
+  `[DB-0820-03]` closed 2026-09-05 (`archive/backlog_closed_2026-09.md`) — six taught `rules:`
+  took the labelled corpus from 1/33 to 11/33 classified, and the two Prudential rules are the
+  first records in the store to carry a non-null domain (`finance`). So the queue can now carry
+  something; the remaining 22/33 stay `unclear` with a null domain until `[DB-0905-01]`'s
+  research gate exists. This fix stops it lying about being empty; it does not fill it.
+  **Diagnosis returned on `[DB-0822-09]`: the surfacing miss is NOT this split** — both 09-02
+  runs called `read_email(count=15)`, the same source. See that item.
+  @waiting: 2026-09-10 — close on one live pipeline inbox job that no longer reports "no new
+  messages" while the inbox has unread mail
+  *raised by Mike 2026-09-02 (Red session ④) from the drain read; traces 08-30 14:45 · built 2026-09-03 (session ⑥)*
+
+---
+
 ## ✅ [DB-0925-01] Vertex was storing conversation history at rest — durable default declined, now in memory only — closed 2026-10-23
 
 **The change:** implicit-cache prefixes (conversation history and personal context) are held in

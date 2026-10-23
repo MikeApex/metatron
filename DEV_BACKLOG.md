@@ -339,38 +339,6 @@ standing rule distrusts.*
   not a week; recorded as encouraging, not as the confirm.*
   *raised by Mike 2026-09-02 (Red session ④) from the drain read; evidence in the quality log · Green half built 2026-09-03 (session ⑥)*
 
-- **12. [DB-0902-02] The two inbox jobs disagree about the same inbox.** 08-30 14:45:03
-  (pipeline, *"summarize any relevant logistics details"*) reported **"no new messages"**;
-  14:45:29 (direct, *"any actionable items or urgent messages"*) found the Bupa dental
-  reminder, the Jimmy Carr booking and the GCP budget alert in the same minute. One of the two
-  paths is not reading what the other reads (intake queue vs raw inbox is the obvious suspect —
-  intake went live 08-29 13:54). Same-minute contradiction, so timing does not explain it.
-  Related but not identical: `[DB-0822-09]`'s failed surfacing half — fixing that without this
-  would surface from a channel that sometimes sees nothing.
-  @kind: bug
-  **✅ BUILT, deployed and VM-verified 2026-09-03 (session ⑥, `54073b6`).** The suspect named
-  above was right and the mechanism was not: the queue was **never filled, not drained**.
-  `read_intake_queue` does advance a cursor on read, but the cursors file has **never had a
-  `logistics` key**. The real cause is that **24 of 25 records in the live intake store carry
-  `domain: null` and `category: "unclear"`** — the extractor was off behind `[DB-0820-03]`'s
-  eval gate (that item closed 09-05 and the extractor is now parked permanently), the persona
-  had zero `rules:`, and `unclear` maps to a null domain. So the queue
-  returns zero for **every** domain, permanently, whatever is in the inbox. Nothing in the old
-  return value said so, and `"(nothing new for this domain)"` reads as "the inbox is empty".
-  The empty answer now states its reason (computed from config and the store) and explicitly
-  forbids the sentence Mike heard. `tests/test_intake_queue_empty.py`, 10 checks.
-  **Note the coupling: what fills the queue is classification, and that is now partly answered.**
-  `[DB-0820-03]` closed 2026-09-05 (`archive/backlog_closed_2026-09.md`) — six taught `rules:`
-  took the labelled corpus from 1/33 to 11/33 classified, and the two Prudential rules are the
-  first records in the store to carry a non-null domain (`finance`). So the queue can now carry
-  something; the remaining 22/33 stay `unclear` with a null domain until `[DB-0905-01]`'s
-  research gate exists. This fix stops it lying about being empty; it does not fill it.
-  **Diagnosis returned on `[DB-0822-09]`: the surfacing miss is NOT this split** — both 09-02
-  runs called `read_email(count=15)`, the same source. See that item.
-  @waiting: 2026-09-10 — close on one live pipeline inbox job that no longer reports "no new
-  messages" while the inbox has unread mail
-  *raised by Mike 2026-09-02 (Red session ④) from the drain read; traces 08-30 14:45 · built 2026-09-03 (session ⑥)*
-
 ## Later
 
 **Three groups, and the group is the useful fact about an item.** *Decisions* are blocked on a
@@ -1293,6 +1261,9 @@ claim user-facing (its log-write sibling is `[DB-0829-01]`); the two Iva/Eva cor
 evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording — "causing an
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
+
+- **[user corrected a prior turn]** User corrected Franklin virtues instruction issue and provided specific housekeeping updates for obligations and scheduled jobs.  
+  `2026-10-23T21:14:58.616884Z`
 
 - **[user corrected a prior turn]** User noted that the Franklin virtues were previously asked to be removed from the evening close routine and confirmed their removal.  
   `2026-10-23T19:49:50.737911Z`

@@ -1,42 +1,24 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-10-23. **VM at `1243cd4`, everything committed is deployed.** Today was a
-separate track from Build: the app keeps every message until its reply arrives, the on-screen mic
-holds recordings until Send, and misheard names reach the Coordinator as `[Name note]`s, never
-rewritten (`archive/PROJECT_LOG.md` § 2026-10-23). **Open:** a "Benny" (friend) contact may be a
-phantom from the 10-15 mishearing (Mike to check); the per-user Whisper vocabulary is built but
-OFF, because measured it was slower and mixed.
+*Updated: 2026-10-23. **VM at `1243cd4`; the task ledger (`27c570f`) is committed and Mike deploys
+it after this close-out.** One record of what the user has to do — deadlines, habits, every-N-days,
+waiting-on-someone — that every reminder path consults, with completion by conversation, a ✓ Today
+tap and correspondence suggestions; measured need: 16 items re-raised after done, ~85 stale raises
+in a month (`archive/PROJECT_LOG.md` § 2026-10-23, third). **Next session:
+`archive/handoffs/2026-10-24-task-ledger-post-deploy-prompt.md`** — deploy check, APK rebuild (the
+button needs it), the recurring-tasks setup prompt, live checks, two decisions. Earlier today,
+separately: the app keeps every message until its reply arrives, voice notes wait for Send,
+misheard names reach the Coordinator as notes. **Open from that:** a "Benny" contact may be a
+phantom from the 10-15 mishearing (Mike to check); per-user Whisper vocabulary built but OFF.
 
-The Build state below is unchanged since 09-26. Build is development, not execution (Mike): it
-runs in Claude Code on the Mac on the subscription, Mike starts each build, approves the plan,
-commits and deploys; Vertex serves only execution. Plan:
-`archive/plans/build_vertical_plan_2026-09-24.md` **v4.12** — it owns the rulings, the sequencing
-(§ 16), the cost ($65–106) and the kept/changed/deleted list (§ 10). **Phase E is deployed and
-Build is live**; what each phase landed is in `archive/PROJECT_LOG.md` § 2026-09-24 and
-§ 2026-09-25.*
-
-***Phase F1 run 1 is STOPPED after its first stage, deliberately, with two defects found — which is
-what a first end-to-end run is for.*** Live job `BLD-0926-02`, **`plant_watering`** not the
-`home_care` of § 11 (that is the shape of a *category* agent; this is a tier-3 leaf). The trigger was
-hand-filed and no live Coordinator turn was attempted (Mike's call), so § 12's Trigger row keeps its
-second half open and no verbatim should-file case exists. **Defect 1: Inquiry named a RETIRED agent
-as the existing owner of cadence prompting — because the agent file required it to name an existing
-specialist while giving it no tools and no manifest.** The injected `CLAUDE.md`/`MEMORY.md` supplied
-the raw material; the field created the demand, and the guard would have passed it anyway.
-**Defect 2: there is no path back from an artifact that validates cleanly but is wrong** — the one
-retry fires only on validation defects, and position is derived from artifacts on disk.
-***Next: `claude update` to ≥ 2.1.271, restart, then bench test 2.*** Prompt, the four things it must
-check, and the deferred spine decision: `archive/plans/inquiry_rewrite_2026-09-26.md`. Run 1's own
-record: `archive/handoffs/2026-09-26-build-phase-F1.md`.*
-
-***Inquiry is rewritten and the vacuum is sealed structurally, pending a version bump.** An
-experienced executive assistant on their first day, reasoning with no data in hand (Mike's framing).
-The altitude answer did not leave Build — it left the one stage that cannot answer it; the Planner
-already carries it and holds the tools to check it. **`omitClaudeMd: true` needs Claude Code
-≥ 2.1.271 and is SILENTLY IGNORED below it**, which is the one way bench test 2 could measure nothing
-while appearing to pass. Bench test 1 proved better instructions stop the *invention* and cannot stop
-the *knowledge*: 0 defects, but six questions still quoted the project's files and it called the
-employer "he" from a prompt carrying no name. 153 → 141 lines; chunks 3–5 uncompressed.*
+*Build is unchanged since 09-26 — development, not execution (Mike): Claude Code on the Mac, Mike
+starts, approves, commits and deploys. Plan `archive/plans/build_vertical_plan_2026-09-24.md`
+**v4.12**; Phase E deployed. **F1 run 1 stopped after its first stage with two defects** (Inquiry
+named a retired agent because its file demanded an owner; no path back from an artifact that
+validates but is wrong) — full record `archive/PROJECT_LOG.md` § 2026-09-26 and
+`archive/handoffs/2026-09-26-build-phase-F1.md`. **Next: `claude update` to ≥ 2.1.271, restart,
+bench test 2** (`archive/plans/inquiry_rewrite_2026-09-26.md`). **`omitClaudeMd: true` is SILENTLY
+IGNORED below 2.1.271** — the one way bench test 2 could measure nothing while appearing to pass.*
 
 *Vertex implicit-cache retention is **`EPHEMERAL`** (set and read back 2026-10-23; the durable
 default had been live since 10-15). Check it by reading `cacheConfig` — no meter reports it:
@@ -122,6 +104,14 @@ and 12 SKIPPED, A8 CANCELLED (Mike, 09-02 — both fold into Mark 2; `ROADMAP.md
 as live and Mike updates that manually — do not start it). Left: B1b's calendar, web-page and
 CardDAV rows (gated on Track E), A5b/A5c, `[DB-0804-02]`. **[ROADMAP.md](ROADMAP.md) § Track A/B
 owns the per-item detail and the standing evidence.**
+
+**TASK LEDGER — built and committed 2026-10-23 (`27c570f`), deploy pending.** `tools/obligations.py`
+is now the single to-do store (`tasks.yaml`; `obligations.yaml` imported once, never written);
+`open_task`/`update_task`/`list_tasks` replaced the four obligation tools. Owed: post-deploy
+verification + APK rebuild + setup prompt (handoff above), and **the medication safety flag's home
+(Mike's call — plan § 9)**. The plant-watering reminder Build's F1 run 1 targeted is now a ledger
+interval task; Build itself is untouched. Plan + Fable review:
+[task_ledger_plan_2026-10-23.md](archive/plans/task_ledger_plan_2026-10-23.md).
 
 **A9 — built and deployed 2026-08-18; `@waiting` on real use, review `2026-10-01`.** Spec, the
 five provisional parts and the date: [ROADMAP.md](ROADMAP.md) § A9a, the single home.
