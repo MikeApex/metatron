@@ -75,20 +75,8 @@ back-tagging the rest is `[DB-0815-10]`.
 > against `git log` before promoting anything from here.
 *(empty — last triaged 2026-09-05; evidence in `archive/backlog_closed_2026-09.md`)*
 
-- **[needs building]** User requested three improvements while walking to Greenwich DLR: (1) App UI timestamp change to reflect date and time of the last message sent; (2) Background hourly scheduling daemon that checks for schedule updates, recalculates the day  
-  `2026-10-22T09:09:02.693907Z`
-
 - **[needs building]** User shared an external calendar with diamond.mike.mt@gmail.com containing Manny's school Cultural Day and cookie baking events. The system currently only accesses the primary Google calendar and cannot detect or sync secondary or shared calendars. Capability to discover and sync secondary/shared calendars needs building.  
   `2026-10-20T15:03:11.394760Z`
-
-- **[needs building]** Web app offline message draft persistence: typing and sending a message while disconnected erases the input and loses it. Needs local draft caching and an offline retry queue so messages can be resent once reconnected.  
-  `2026-10-19T10:18:27.469395Z`
-
-- **[needs building]** Batch audio reflection intake: support capturing intermittent audio notes throughout the day without submitting immediately, followed by batch submission. When processed, entries should be structured distinctly by entry/timestamp, or grouped by subject if captured in rapid succession, avoiding collapse into a single synthesized narrative.  
-  `2026-10-15T20:10:00.578167Z`
-
-- **[needs building]** User specified requirements for audio reflection workflow: ability to capture intermittent audio thoughts throughout the day locally without immediate submission, then submit them together as a batch.  
-  `2026-10-15T17:25:13.786914Z`
 
 - **[needs building]** User requested ability to integrate a dedicated voice recorder and upload long-form daily audio reflection files containing complex reflections across the day for processing and synthesis.  
   `2026-10-15T17:16:45.863222Z`
@@ -466,51 +454,6 @@ the condition has not arrived, push the date rather than closing the item.
   **Not verifiable by a glance at the pricing page** — that page's context-cache-storage table had
   no 3.7 Flash row at all while the SKU catalogue published one. The export is the source of truth.
   Feeds `[DB-0901-02]`, which owns the New Year's Day switch for both ids.
-
-- **[DB-0925-01] From 15 October, every Vertex request's prompt prefix — conversation history and
-  personal context — is stored at rest for up to 24h by default. Today it is in memory only.
-  Decline it.** `due: 2026-10-08` · `@kind: chore`
-  @waiting: Google shipping the `retentionConfig` field on the `CacheConfig` resource — absent when
-  checked 2026-09-25, ships with GA on 10-15.
-  **Google's notice, 2026-09-25:** Durable Caching goes GA on **2026-10-15** and is enabled by
-  default for projects with implicit caching on, across Gemini 3.x Pro/Flash and every model
-  launched after. Cached data encrypted, project-partitioned, retained **up to 24h**, never used
-  for training. `metatron-ai-499810` named as in scope. Mike's decision the same day:
-  **opt out to `EPHEMERAL`** — the opt-out preserves today's behaviour, so accepting is the change.
-  **Run on the MacBook** (ADC already works; `/opt/homebrew/bin/gcloud`):
-  `curl -s -X PATCH -H "Authorization: Bearer $(gcloud auth application-default print-access-token)"
-  -H "Content-Type: application/json"
-  "https://aiplatform.googleapis.com/v1/projects/metatron-ai-499810/cacheConfig"
-  -d '{"name":"projects/metatron-ai-499810/cacheConfig","disableCache":false,"retentionConfig":{"retentionType":"EPHEMERAL"}}'`
-  — keeps implicit caching **on**, volatile memory only. Then GET the same URL and confirm
-  `retentionConfig.retentionType` reads `EPHEMERAL`: a config that silently did not take is the
-  failure mode, and only a read sees it.
-  **Two faults in the command as Google emailed it, both fatal as pasted.** The JSON payload sits
-  inside double quotes with unescaped double quotes within it, so the shell collapses it; and the
-  host is `${LOCATION_ID}-aiplatform.googleapis.com`, while we run `GOOGLE_CLOUD_LOCATION=global`
-  and the global host is what answers.
-  **2026-09-25 probe — it cannot be run yet, and that is why this is on a clock.** `retentionConfig`
-  does not exist on the live API: the published discovery schema for **both** `v1` and `v1beta1`
-  lists exactly `name` and `disableCache`, and the PATCH is rejected identically on the global host
-  and on `us-central1` / `us-east4` / `europe-west4`. Two things the probe did settle: **the
-  credential can write this resource** — a `disableCache: false` PATCH returned a completed
-  operation — and **state is unchanged**, still `{"name": "projects/211460608583/cacheConfig"}`, no
-  `disableCache`, no retention type pinned, i.e. in scope for the default flip.
-  **If the field still is not there by 2026-10-14, that is a decision for Mike, not an automatic
-  fallback.** `disableCache: true` works today and closes the window outright, but it kills the
-  implicit-cache discount (~$1–2/mo at current volume) and is broader than what he approved. The
-  window it buys is ≤24h of prefixes at rest with a vendor already holding his mail and calendar,
-  which is why pre-emptively paying for it was not recommended.
-  **Closing this owes two doc lines, and the first is the reason the item matters beyond a dollar.**
-  `archive/security/zdr_terms_evidence_2026-08-20.md` Finding 4 carries a row quoting Google that
-  this cache is *"in-memory only … does not violate zero data retention"* — **that row goes false
-  on 10-15 unless the opt-out lands**, and it is evidence the § Section 0 basis rests on. Also
-  `docs/INFRASTRUCTURE.md` § Vertex AI credentials: record the date, the retention type and the
-  default declined, so no session re-derives this from a vendor email.
-  **Not a deploy.** GCP-side project config; nothing in the repo changes and `./deploy.sh` is not
-  involved. Explicit caching (`cachedContents`, what `_get_or_create_vertex_cache` manages) is
-  unaffected either way — it stores system prompt and tool schemas, never user content, which is
-  exactly the distinction 10-15 removes.
 
 - **[DB-0901-02] Gemini 3.7 Flash doubles in price on New Year's Day, and only one of the two
   places we price it will notice.** `due: 2026-12-15` · `@kind: chore`

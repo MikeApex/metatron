@@ -79,7 +79,7 @@ this deployment:
 | Request-response logging (BigQuery) | Off by default; keep off for ZDR | Not enabled anywhere in repo | None |
 | Interactions API (`store=true` default) | Set `store=false` for ZDR | **Not used** — orchestrator calls `generateContent` via the genai SDK | None |
 | Gemini Live API session resumption | Off by default | Not used | None |
-| In-memory data caching (`cacheConfig`) | 24h TTL, in-memory only, project-isolated — "does not violate zero data retention" | Enabled (default) | None needed |
+| In-memory data caching (`cacheConfig`) | 24h TTL, in-memory only, project-isolated — "does not violate zero data retention" *(true when written; **expired 2026-10-15**, when Google made durable at-rest storage the default)* | Enabled. **Found `DURABLE` on 2026-10-23**, so prefixes were likely at rest ≤24h from 10-15 to 10-23; **set to `EPHEMERAL` 2026-10-23** and read back — in-memory again `[DB-0925-01]` | None, while `retentionType` reads `EPHEMERAL` |
 
 ## Finding 5 — the `cacheConfig` question from the handoff is resolved
 

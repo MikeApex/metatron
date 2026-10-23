@@ -38,9 +38,9 @@ while appearing to pass. Bench test 1 proved better instructions stop the *inven
 the *knowledge*: 0 defects, but six questions still quoted the project's files and it called the
 employer "he" from a prompt carrying no name. 153 → 141 lines; chunks 3–5 uncompressed.*
 
-*⚠ **Vertex starts storing every prompt prefix at rest for 24h on 2026-10-15** — conversation history
-included — unless the opt-out lands. Mike ruled 09-25: decline it. Google's command cannot run yet
-(`retentionConfig` is absent from the live API), so it is a dated chore: `[DB-0925-01]`, due 10-08.*
+*Vertex implicit-cache retention is **`EPHEMERAL`** (set and read back 2026-10-23; the durable
+default had been live since 10-15). Check it by reading `cacheConfig` — no meter reports it:
+`docs/INFRASTRUCTURE.md` § Vertex AI credentials.*
 
 *Standing rules, each earned twice and both invisible to `qa_sweep`: **a test that exercises a seam
 for real must stub every live meter it ends in**, and **a live gate run dirties TRACKED
