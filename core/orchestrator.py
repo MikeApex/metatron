@@ -743,6 +743,39 @@ def _handle_user_correction(coord_output: str, persona: str | None = None) -> No
             logger.warning(f"[PIPELINE] USER_CORRECTION log failed: {e}")
 
 
+def _name_note(user_input: str, persona: str | None, is_proactive: bool) -> str:
+    """
+    `[Name note: …]` lines for the Coordinator: names in this message that are not the
+    user's contacts, with a past correction or a sound-alike contact beside them.
+    Plan: archive/plans/heard_names_plan_2026-10-23.md.
+
+    A note, never a rewrite — the user's words reach every agent exactly as said, so a
+    genuinely new person can still be introduced. User turns only: a scheduled prompt is
+    not something the user said. Any failure is no note, never a failed turn.
+    """
+    if is_proactive:
+        return ""
+    try:
+        from tools.heard_names import name_notes
+        return name_notes(user_input, persona)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[PIPELINE] name note skipped: {e}")
+        return ""
+
+
+def _handle_misheard(coord_output: str, persona: str | None, is_proactive: bool,
+                     user_input: str = "") -> None:
+    """Record the Coordinator's `MISHEARD:` pairs, the way USER_CORRECTION is logged above —
+    but only pairs the user's own message names (tools/heard_names.py says why)."""
+    if is_proactive:
+        return
+    try:
+        from tools.heard_names import handle_coordinator_output
+        handle_coordinator_output(coord_output, persona, user_input)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[PIPELINE] MISHEARD handling failed: {e}")
+
+
 def load_agent(name: str) -> str:
     """
     Load a sub-agent instruction file from config/agents/{name}.md.
@@ -6179,9 +6212,10 @@ def run_pipeline_session(user_input: str,
         # Kept identical to the streaming twin below — a feature wired into only one
         # of the two is live in tests and dead in production, or the reverse.
         attach_note = attachments_mod.describe_for_prompt(attachments or [])
+        name_note = _name_note(user_input, persona, is_proactive)
         coord_input = (
-            f"{proactive_prefix}{receipt_line}{user_input}{attach_note}\n\n---\n\n[Pre-loaded context]\n{coord_context}"
-            if coord_context else f"{proactive_prefix}{receipt_line}{user_input}{attach_note}"
+            f"{proactive_prefix}{receipt_line}{user_input}{attach_note}{name_note}\n\n---\n\n[Pre-loaded context]\n{coord_context}"
+            if coord_context else f"{proactive_prefix}{receipt_line}{user_input}{attach_note}{name_note}"
         )
 
         # Pass 1: Coordinator — single-pass routing directive assembly
@@ -6200,6 +6234,7 @@ def run_pipeline_session(user_input: str,
 
         # Handle any USER_CORRECTION flag in Coordinator output
         _handle_user_correction(coord_output, persona)
+        _handle_misheard(coord_output, persona, is_proactive, user_input)
 
         # Fetch the standing knowledge the Coordinator selected, before dispatch — the
         # specialists that read those subjects get them appended to their directives.
@@ -6401,14 +6436,16 @@ def _run_pipeline_session_stream_inner(
     # Names the files and states that their contents are data, never instructions —
     # the <untrusted_content> boundary applied to bytes, which cannot carry tags.
     attach_note = attachments_mod.describe_for_prompt(attachments or [])
+    name_note = _name_note(user_input, persona, is_proactive)
     coord_input = (
-        f"{proactive_prefix}{receipt_line}{user_input}{attach_note}\n\n---\n\n[Pre-loaded context]\n{coord_context}"
-        if coord_context else f"{proactive_prefix}{receipt_line}{user_input}{attach_note}"
+        f"{proactive_prefix}{receipt_line}{user_input}{attach_note}{name_note}\n\n---\n\n[Pre-loaded context]\n{coord_context}"
+        if coord_context else f"{proactive_prefix}{receipt_line}{user_input}{attach_note}{name_note}"
     )
     coord_output = _run_single_agent("coordinator", coord_input, persona=persona, provider=provider,
                                      attachments=attachments, history=_coord_history(history))
     _trace(f"[PIPELINE] coordinator  done  ({len(coord_output)} chars) → dispatching specialists")
     _handle_user_correction(coord_output, persona)
+    _handle_misheard(coord_output, persona, is_proactive, user_input)
     # Knowledge fetch mirrors run_pipeline_session() exactly. THIS IS THE PATH THAT MATTERS:
     # the server streams, so a feature wired only into the non-streaming function is live in
     # tests and dead in production. Any change to the knowledge wiring changes both.

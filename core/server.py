@@ -1538,7 +1538,8 @@ def _transcribe_blocking(audio_bytes: bytes, persona: str | None = None) -> dict
         raise HTTPException(status_code=422, detail="Recording contained no audio")
 
     from core.voice_pipeline import correct_known_addresses, transcribe as _transcribe
-    transcript = _transcribe(audio_array)
+    # The persona selects whose contacts' names Whisper is primed with, when that is on.
+    transcript = _transcribe(audio_array, persona)
 
     if persona and transcript:
         # Snap a mis-transcribed dictated email address to the closest known

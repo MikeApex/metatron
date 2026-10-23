@@ -90,6 +90,13 @@ WHISPER_VAD_SPEECH_PAD_MS = int(os.getenv("METATRON_WHISPER_VAD_SPEECH_PAD_MS", 
 # it costs accuracy on short utterances, which is most of what voice sends, and the
 # auto-detect-vs-toggle choice is Mike's, not a default to bake in silently.
 WHISPER_LANGUAGE = os.getenv("METATRON_WHISPER_LANGUAGE", "en")
+# Per-user name vocabulary: "off" | "hotwords" | "prompt". OFF until measured on real
+# recordings (archive/plans/heard_names_plan_2026-10-23.md). Both bias decoding toward the
+# user's contacts' names through the same previous-text slot; the difference is that
+# `hotwords` is re-injected for every 30s window while `initial_prompt` conditions only the
+# first, and `initial_prompt` is the known repetition trigger on short clips with base.en.
+# Contacts only — never a stored correction (tools/heard_names.vocabulary says why).
+WHISPER_NAME_BIAS = os.getenv("METATRON_WHISPER_NAMES", "off").strip().lower()
 SAMPLE_RATE = 16000              # Whisper expects 16kHz
 
 # Kokoro TTS settings.
@@ -176,8 +183,31 @@ def record_until_silence(
     return np.concatenate(audio_chunks, axis=0).flatten()
 
 
-def transcribe(audio: np.ndarray) -> str:
-    """Transcribe audio array to text using faster-whisper."""
+def _name_bias_kwargs(persona: str | None, mode: str) -> dict:
+    """faster-whisper kwargs that prime this user's contacts' names, or {}."""
+    if not persona or mode not in ("hotwords", "prompt"):
+        return {}
+    try:
+        from tools.heard_names import vocabulary
+        names = vocabulary(persona)
+    except Exception as e:  # noqa: BLE001 — a missing vocabulary is an unbiased decode
+        print(f"[transcribe] name vocabulary skipped: {e}")
+        return {}
+    if not names:
+        return {}
+    if mode == "hotwords":
+        return {"hotwords": " ".join(names)}
+    return {"initial_prompt": "Names: " + ", ".join(names) + "."}
+
+
+def transcribe(audio: np.ndarray, persona: str | None = None,
+               name_bias: str | None = None) -> str:
+    """
+    Transcribe audio array to text using faster-whisper.
+
+    `name_bias` overrides METATRON_WHISPER_NAMES for one call — it exists so the three
+    modes can be measured side by side on the same recording.
+    """
     if len(audio) == 0:
         return ""
 
@@ -191,6 +221,7 @@ def transcribe(audio: np.ndarray) -> str:
             "threshold": WHISPER_VAD_THRESHOLD,
             "speech_pad_ms": WHISPER_VAD_SPEECH_PAD_MS,
         } if WHISPER_VAD else None,
+        **_name_bias_kwargs(persona, name_bias or WHISPER_NAME_BIAS),
     )
     return " ".join(seg.text.strip() for seg in segments).strip()
 
