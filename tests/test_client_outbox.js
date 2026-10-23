@@ -430,6 +430,21 @@ await check('a recording the server keeps failing on stops being re-uploaded, an
   assert(h.peek().snippets[0].state === 'ready', 'the tap did not retry it');
 });
 
+await check('a message sent into a dead connection says it is waiting, not sending', () => {
+  // Mike's phone check 2, 2026-10-23: airplane mode, Send, kill, reopen — "Sending…" throughout.
+  const h = makeHarness();
+  h.connect();
+  h.sandbox.navigator = { onLine: false };   // airplane mode; the socket still reads OPEN
+  h.sandbox.queueMessage('hello');
+  assert(h.sends().length === 0, 'sent into a connection the device says is offline');
+  assert(h.conversation.textContent.includes('Waiting for connection'), 'queued message not labelled waiting');
+  h.sandbox.navigator = { onLine: true };
+  const h2 = makeHarness();                   // the reopened app, holding an in-flight message
+  h2.store.set('metatron_outbox_mike', JSON.stringify([{ id: 'x', input: 'hi', state: 'sent', sends: 1, writtenAt: Date.now(), attachments: [] }]));
+  h2.sandbox.loadOutbox();
+  assert(h2.conversation.textContent.includes('Waiting for connection'), `reopened app says: ${h2.conversation.textContent}`);
+});
+
 await check('a batch is one paragraph per recording, each stamped with when it was recorded', () => {
   const h = makeHarness();
   const t0 = Date.parse('2026-10-23T09:00:00Z');

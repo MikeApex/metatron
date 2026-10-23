@@ -1974,7 +1974,13 @@
   // the outbox; now also by a transcription completing.
   let historySocket = null;
 
-  function canSend() { return socketUsable() && ws === historySocket; }
+  // The device's own offline flag first: in airplane mode a WebView's socket can still
+  // read OPEN for most of a minute, and a send into it is a send into nothing. Seen on
+  // the phone 2026-10-23 as "Sending…" under a message that could not possibly go.
+  function canSend() {
+    const online = typeof navigator === 'undefined' || navigator.onLine !== false;
+    return online && socketUsable() && ws === historySocket;
+  }
 
   function outboxKey() { return 'metatron_outbox_' + currentPersona; }
 
@@ -2000,7 +2006,10 @@
     if (e.state === 'failed') return { text: 'Not delivered', action: 'Retry' };
     if (e.state === 'held') return { text: 'Not sent', action: 'Send' };
     if (e.state === 'accepted') return { text: '' };
-    if (e.state === 'sent') return { text: 'Sending…' };
+    // 'sent' means it went into a socket — not that the socket was alive. A message
+    // that went into a dead one, or that was left in flight when the app closed, is
+    // waiting for the connection like any other.
+    if (e.state === 'sent') return { text: canSend() ? 'Sending…' : 'Waiting for connection' };
     return { text: canSend() ? 'Sending…' : 'Waiting for connection' };
   }
 
