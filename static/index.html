@@ -77,6 +77,9 @@
     .message.user {
       background: #1e3a5f;
       border-bottom-right-radius: 4px;
+      /* A batch of recordings goes as one paragraph per recording; without this the
+         breaks between them collapse and the stamps run together. */
+      white-space: pre-wrap;
     }
 
     .message.assistant {
@@ -149,6 +152,70 @@
       font-size: 11px;
       color: #555;
     }
+
+    /* Delivery state of a message still in the outbox. Absent once its reply lands. */
+    .msg-status {
+      font-size: 11px;
+      color: #a08350;
+    }
+    .msg-status:empty { display: none; }
+    .msg-action {
+      margin-left: 8px;
+      color: #8ab;
+      cursor: pointer;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .msg-action:active { color: #bdf; }
+
+    /* Recordings held until Send. Capped and scrollable so a day's worth of
+       snippets cannot push the conversation off the screen. */
+    #voice-tray {
+      display: none;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 30vh;
+      overflow-y: auto;
+    }
+    #voice-tray.shown { display: flex; }
+    .snippet {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      background: #141414;
+      border: 1px solid #262626;
+      border-radius: 10px;
+      padding: 6px 10px;
+      font-size: 13px;
+      line-height: 1.4;
+      color: #bbb;
+    }
+    /* Not `.working`: that is the reply shimmer, which makes its text transparent. */
+    .snippet.in-progress { color: #777; font-style: italic; }
+    .snippet.failed { border-color: #7f1d1d; color: #b98; }
+    .snippet-time {
+      flex: 0 0 auto;
+      font-size: 11px;
+      color: #555;
+      padding-top: 2px;
+    }
+    .snippet-text {
+      flex: 1;
+      overflow-wrap: anywhere;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .snippet .chip-x {
+      flex: 0 0 auto;
+      cursor: pointer;
+      color: #666;
+      font-size: 14px;
+      line-height: 1;
+      padding: 2px;
+    }
+    .snippet .chip-x:active { color: #aaa; }
 
     footer {
       padding: 16px 20px;
@@ -762,6 +829,7 @@
   </div>
 
   <div id="text-input">
+    <div id="voice-tray"></div>
     <div id="attach-strip"></div>
     <div id="compose-row">
       <button id="attach-btn" title="Attach a photo or document">📎</button>
@@ -880,6 +948,19 @@
     chip.style.display = '';
     requestMicPermission();
     initPush();
+    // A switch mid-reply would otherwise leave the old persona's reply bubble open,
+    // and an open bubble holds every queued message of the new one: flushOutbox
+    // waits for it, and the old socket's `done` is ignored as superseded.
+    if (ownBubble) {
+      stopWorking(ownBubble);
+      ownBubble = null; ownAccumulated = ''; ownExchangeId = null;
+      setLoading(false);
+    }
+    if (ws) { const old = ws; ws = null; try { old.close(); } catch (e) {} }
+    // Before the socket, so what was left unsent is on screen even with no connection.
+    restoreDraft();
+    loadOutbox();
+    loadSnippets();
     connectWebSocket(persona);
   }
 
@@ -959,9 +1040,14 @@
 
   // --- Conversation history display ---
 
+  // Date as well as time on every message: a conversation that runs for days read as
+  // one undifferentiated stream when only the time was shown. Weekday, day, month and
+  // time in the device's own locale; the year only once it is not this one.
   function formatTime(ts) {
     const d = ts ? new Date(ts) : new Date();
-    return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    const opts = { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' };
+    if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
+    return d.toLocaleString([], opts);
   }
 
   // ts is optional and only known for messages replayed from the server
@@ -1539,15 +1625,33 @@
         break;
 
       case 'history': {
+        // Only an authenticated socket gets a history frame. Until this one has, a
+        // send would be read by the server as a failed auth frame — and sign the
+        // user out.
+        historySocket = ws;
         renderHistory(msg.messages);
         if (msg.last_id) lastSeenId = msg.last_id;
+        // The server is answering again, so whatever was held for a connection can go:
+        // recordings waiting to be transcribed, then messages waiting to be sent.
+        retryWaitingSnippets();
+        flushOutbox();
+        break;
+      }
+
+      case 'accepted': {
+        // The server has the message. Not yet answered — the outbox keeps it until the
+        // reply arrives — but it is no longer in a socket that may have been dead.
+        markAccepted(msg.exchange_id);
         break;
       }
 
       case 'stream_start': {
         // Another device started sending — render their user bubble + empty assistant bubble.
         // A proactive exchange has no user turn: Metatron opened it.
-        if (!shownIds.has(msg.exchange_id)) {
+        // An id in this device's outbox is ours, whichever socket the server saw it on:
+        // at the very start of a turn its stream_start can reach a new socket before
+        // that socket has read its history, and must not be drawn as a second device's.
+        if (!shownIds.has(msg.exchange_id) && !outboxEntry(msg.exchange_id)) {
           if (!msg.proactive) addMessage('user', msg.user, null, msg.attachments);
           const bubble = addMessage('assistant', '');
           startWorking(bubble);
@@ -1565,20 +1669,33 @@
         // have carried it) and let the ordinary own-exchange path below take over —
         // including the 'done' branch, which is what speaks it.
         if (!ownBubble && msg.exchange_id === orphanedOwnId) {
-          if (ownInput) addMessage('user', ownInput);
-          ownBubble = addMessage('assistant', '');
+          const entry = outboxEntry(msg.exchange_id);
+          if (entry) {
+            // Still in the outbox, so its user bubble is already on screen.
+            renderOutboxEntry(entry);
+            openOwnBubble(entry);
+          } else {
+            if (ownInput) addMessage('user', ownInput);
+            ownBubble = addMessage('assistant', '');
+          }
           ownExchangeId = msg.exchange_id;
           ownAccumulated = '';
           setLoading(true);
         }
-        if (shownIds.has(msg.exchange_id)) {
-          // Own exchange: update streaming bubble
+        // Keyed on the CURRENT exchange, not on "one of ours" (shownIds). With the outbox
+        // two of this device's exchanges can be live at once — an earlier one still
+        // finishing on the server after its socket died, while a later one holds the
+        // bubble — and a frame of the earlier one must not be written into the later
+        // one's reply. Its text arrives with its stored row (applyCatchupRow).
+        if (msg.exchange_id === ownExchangeId) {
           if (ownBubble) {
             stopWorking(ownBubble);
             ownAccumulated += msg.text;
             ownBubble.textContent = ownAccumulated + '▍';
             scrollToBottom();
           }
+        } else if (shownIds.has(msg.exchange_id)) {
+          // An earlier exchange of ours, superseded on screen: nothing to draw into.
         } else {
           // Foreign exchange: update their bubble
           const fb = foreignBubbles.get(msg.exchange_id);
@@ -1593,7 +1710,7 @@
       }
 
       case 'done': {
-        if (shownIds.has(msg.exchange_id)) {
+        if (msg.exchange_id === ownExchangeId) {
           // Own exchange complete — finalize and speak
           if (ownBubble) {
             stopWorking(ownBubble);
@@ -1606,6 +1723,11 @@
           if (msg.exchange_id === orphanedOwnId) orphanedOwnId = null;
           setLoading(false);
           maybeAlert(false);
+          confirmDelivered(msg.exchange_id);
+          flushOutbox();
+        } else if (shownIds.has(msg.exchange_id)) {
+          // An earlier exchange of ours (see 'chunk'). Left in the outbox: the stored
+          // row broadcast next carries its text and draws it under its own message.
         } else {
           // Foreign exchange complete — finalize (no TTS)
           const fb = foreignBubbles.get(msg.exchange_id);
@@ -1629,13 +1751,17 @@
         // lost, because this handler nulls the bubble: the user saw a refusal in place
         // of a correct answer.
         const replacement = (typeof msg.text === 'string' && msg.text) ? msg.text : null;
-        if (shownIds.has(msg.exchange_id)) {
+        if (msg.exchange_id === ownExchangeId) {
           if (ownBubble) {
             stopWorking(ownBubble);
             ownBubble.textContent = replacement || "I can't help with that right now.";
             ownBubble = null; ownAccumulated = ''; ownExchangeId = null;
           }
           setLoading(false);
+          confirmDelivered(msg.exchange_id);
+          flushOutbox();
+        } else if (shownIds.has(msg.exchange_id)) {
+          confirmDelivered(msg.exchange_id);   // answered, by the filter; never resent
         } else {
           const fb = foreignBubbles.get(msg.exchange_id);
           if (fb) { stopWorking(fb.bubble); fb.bubble.textContent = replacement || '...'; foreignBubbles.delete(msg.exchange_id); }
@@ -1661,13 +1787,17 @@
       }
 
       case 'error': {
-        if (shownIds.has(msg.exchange_id)) {
+        if (msg.exchange_id === ownExchangeId) {
           if (ownBubble) {
             stopWorking(ownBubble);
             ownBubble.textContent = 'Error: ' + (msg.text || 'unknown error');
             ownBubble = null; ownAccumulated = ''; ownExchangeId = null;
           }
           setLoading(false);
+          failDelivery(msg.exchange_id);
+          flushOutbox();
+        } else if (shownIds.has(msg.exchange_id)) {
+          failDelivery(msg.exchange_id);
         } else {
           const fb = foreignBubbles.get(msg.exchange_id);
           if (fb) { stopWorking(fb.bubble); fb.bubble.textContent = '[Error]'; foreignBubbles.delete(msg.exchange_id); }
@@ -1683,6 +1813,25 @@
   // conversation; that is renderHistory's job alone, for the one case (a fresh
   // connection's initial load) where wiping and rebuilding is actually correct.
   function applyCatchupRow(row, live = false) {
+    // A resend that reached the server after the turn had sent its `done` but before
+    // it was saved is acknowledged and gets no chunks; this broadcast row is the reply.
+    const finishesOwn = ownBubble && row.exchange_id === ownExchangeId;
+    if (finishesOwn) {
+      stopWorking(ownBubble);
+      ownBubble.textContent = row.assistant;
+      speakResponse(row.assistant);
+      ownBubble = null; ownAccumulated = ''; ownExchangeId = null;
+      setLoading(false);
+    } else if (outboxEntry(row.exchange_id) && outboxRows.has(row.exchange_id)) {
+      // An earlier message of ours, answered after a later one took the reply bubble:
+      // its socket died mid-turn and the turn finished anyway. The reply goes under it.
+      const r = outboxRows.get(row.exchange_id);
+      if (r.row.isConnected) r.row.after(addMessage('assistant', row.assistant, row.ts).parentNode);
+      speakIfOrphaned(row);
+    }
+    confirmDelivered(row.exchange_id);
+    // After the confirm, or the next send would be this same message again.
+    if (finishesOwn) flushOutbox();
     if (!shownIds.has(row.exchange_id)) {
       if (!row.proactive) addMessage('user', row.user, row.ts, row.attachments);
       addMessage('assistant', row.assistant, row.ts);
@@ -1735,8 +1884,13 @@
       // socket came back, so this rebuild is what delivers it. The text always
       // came back this way; what never happened was saying it out loud.
       speakIfOrphaned(msg);
+      // Answered while this device was away: delivered, so not resent.
+      confirmDelivered(msg.exchange_id);
     }
     evictOldest(shownIds, 100);
+    // The wipe above detached every outbox bubble; what is still owed goes back below
+    // the history it follows.
+    renderOutbox();
     // Force: on load the newest exchange must be the one in view, whatever the
     // scroll position happened to be. Double rAF so the browser has laid the
     // messages out before scrollHeight is read.
@@ -1754,7 +1908,7 @@
     const provider = providerSelect.value;
     const agent = agentSelect.value;
     if (agent === 'coordinator') {
-      sendViaWebSocket(input, provider);
+      queueMessage(input);
     } else {
       // The single-agent debug path posts to /session, which takes no files. Say so
       // rather than dropping them silently — this branch is only reachable from the
@@ -1769,24 +1923,214 @@
     }
   }
 
-  function sendViaWebSocket(input, provider) {
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-      addMessage('system', 'Not connected — reconnecting...');
-      return;
+  // --- Outbox ---
+  //
+  // A message is kept on this device from the moment Send is pressed until its reply
+  // arrives. Before this, a message sent into a dead connection was drawn, cleared from
+  // the composer, and lost: "Not connected" was the only trace, and the words had to be
+  // typed again. Android makes that the common case, not the rare one — a WebView
+  // frozen in the background comes back holding a socket that still reads OPEN and
+  // swallows whatever is sent into it.
+  //
+  // Delivered means ANSWERED: a `done` or `retract` for the exchange, or its row in
+  // history. `accepted` only says the server has it. Until then the entry stays in
+  // localStorage and is resent after a reconnect. The server answers a resend from the
+  // original run rather than starting a second one (core/server.py, _inflight_exchanges)
+  // — without that, every reconnect would pay for a duplicate turn that nobody sees.
+  //
+  // Three limits keep a resend from becoming a cost of its own:
+  //  - an ERROR is never retried automatically. A message that fails the same way every
+  //    time would otherwise be paid for on every reconnect, indefinitely.
+  //  - after OUTBOX_MAX_AUTO_SENDS unanswered sends it waits for a tap. That is the turn
+  //    that takes the server down with it.
+  //  - a message older than OUTBOX_AUTO_SEND_MS waits for a tap (Mike, 2026-10-23). The
+  //    pipeline stamps a turn with when it ARRIVES, so an hour-old "remind me in ten
+  //    minutes" would count from arrival, into a conversation that has moved on.
+  //    Headset turns are exempt — see sendAutoSnippet.
+  //
+  // One message at a time, in order: the server answers one turn per socket at a time,
+  // and this page has a single in-flight bubble.
+
+  const OUTBOX_AUTO_SEND_MS = 15 * 60 * 1000;
+  const OUTBOX_MAX_AUTO_SENDS = 3;
+  // `accepted` comes back within a round trip. Its absence means the send went into a
+  // socket that only looked open, and waiting for the 45s staleness check to notice is
+  // most of a minute with the message stuck.
+  const OUTBOX_ACCEPT_TIMEOUT_MS = 8000;
+  // Only armed once this server has been seen to send `accepted`. A server from before
+  // the outbox never does, and forcing reconnects against it would resend into a server
+  // that has no guard against running a message twice.
+  const SERVER_ACKS_KEY = 'metatron_server_acks';
+
+  // {id, input, attachments, provider, source, writtenAt, sends, state, auto, recordedAt}
+  // state: queued | sent | accepted | failed | held
+  let outbox = [];
+  const outboxRows = new Map();      // exchange id → {row, bubble, status}
+  let acceptTimer = null;
+  let acceptTimerId = null;
+  // The socket whose history frame has arrived. A socket is OPEN before it has
+  // authenticated, and the server reads a `send` in that gap as a failed auth frame
+  // and closes with auth_failed, which signs the user out. Reachable by a tap before
+  // the outbox; now also by a transcription completing.
+  let historySocket = null;
+
+  function canSend() { return socketUsable() && ws === historySocket; }
+
+  function outboxKey() { return 'metatron_outbox_' + currentPersona; }
+
+  function saveOutbox() {
+    try { localStorage.setItem(outboxKey(), JSON.stringify(outbox)); } catch {}
+  }
+
+  function loadOutbox() {
+    for (const r of outboxRows.values()) r.row.remove();
+    outboxRows.clear();
+    try { outbox = JSON.parse(localStorage.getItem(outboxKey()) || '[]'); } catch { outbox = []; }
+    if (!Array.isArray(outbox)) outbox = [];
+    renderOutbox();
+  }
+
+  function outboxEntry(id) { return outbox.find(e => e.id === id); }
+
+  // Kept as a separate expression so the trace marker reads one way everywhere: the
+  // origin is fixed when the message is composed, not when a reconnect resends it.
+  function turnSource() { return headsetMode ? 'headset' : 'ui'; }
+
+  function statusFor(e) {
+    if (e.state === 'failed') return { text: 'Not delivered', action: 'Retry' };
+    if (e.state === 'held') return { text: 'Not sent', action: 'Send' };
+    if (e.state === 'accepted') return { text: '' };
+    if (e.state === 'sent') return { text: 'Sending…' };
+    return { text: canSend() ? 'Sending…' : 'Waiting for connection' };
+  }
+
+  function renderOutboxEntry(e) {
+    let r = outboxRows.get(e.id);
+    if (!r || !r.row.isConnected) {
+      const bubble = addMessage('user', e.input, e.writtenAt, e.attachments);
+      const row = bubble.parentNode;
+      const status = document.createElement('span');
+      status.className = 'msg-status';
+      row.querySelector('.msg-meta').appendChild(status);
+      r = { row, bubble, status };
+      outboxRows.set(e.id, r);
     }
-    const exchangeId = crypto.randomUUID();
-    evictOldest(shownIds, 100);
-    shownIds.add(exchangeId);
+    const st = statusFor(e);
+    r.status.textContent = st.text;
+    if (st.action) {
+      const act = document.createElement('span');
+      act.className = 'msg-action';
+      act.textContent = st.action;
+      act.addEventListener('click', () => releaseEntry(e.id));
+      const del = document.createElement('span');
+      del.className = 'msg-action';
+      del.textContent = 'Delete';
+      del.addEventListener('click', () => deleteEntry(e.id));
+      r.status.appendChild(act);
+      r.status.appendChild(del);
+    }
+  }
 
-    // Taken before the strip is cleared, and drawn into this device's own bubble
-    // from the same list the server is told about.
-    const sent = readyAttachments();
+  function renderOutbox() {
+    for (const e of outbox) renderOutboxEntry(e);
+  }
 
-    addMessage('user', input, null, sent);
-    clearAttachments();
+  function dropRow(id) {
+    const r = outboxRows.get(id);
+    if (r) { r.status.remove(); outboxRows.delete(id); }
+  }
+
+  function clearAcceptTimer(id) {
+    if (acceptTimer && (id === undefined || acceptTimerId === id)) {
+      clearTimeout(acceptTimer);
+      acceptTimer = null; acceptTimerId = null;
+    }
+  }
+
+  // The reply arrived. The bubble stays; only its delivery state goes.
+  function confirmDelivered(id) {
+    const i = outbox.findIndex(e => e.id === id);
+    if (i < 0) return;
+    outbox.splice(i, 1);
+    saveOutbox();
+    clearAcceptTimer(id);
+    const r = outboxRows.get(id);
+    if (r) r.status.remove();
+    outboxRows.delete(id);
+  }
+
+  function markAccepted(id) {
+    try { localStorage.setItem(SERVER_ACKS_KEY, 'on'); } catch {}
+    clearAcceptTimer(id);
+    const e = outboxEntry(id);
+    if (!e || e.state !== 'sent') return;
+    e.state = 'accepted';
+    saveOutbox();
+    renderOutboxEntry(e);
+  }
+
+  function failDelivery(id) {
+    clearAcceptTimer(id);
+    const e = outboxEntry(id);
+    if (!e) return;
+    e.state = 'failed';
+    saveOutbox();
+    renderOutboxEntry(e);
+  }
+
+  // Retry / Send now: the user's tap overrides the age limit and resets the count.
+  function releaseEntry(id) {
+    const e = outboxEntry(id);
+    if (!e) return;
+    e.state = 'queued';
+    e.sends = 0;
+    e.releasedAt = Date.now();
+    saveOutbox();
+    renderOutboxEntry(e);
+    flushOutbox();
+  }
+
+  function deleteEntry(id) {
+    const i = outbox.findIndex(e => e.id === id);
+    if (i < 0) return;
+    outbox.splice(i, 1);
+    saveOutbox();
+    const r = outboxRows.get(id);
+    if (r) r.row.remove();
+    outboxRows.delete(id);
+  }
+
+  // The assistant bubble for an outbox entry goes directly under that entry's own
+  // bubble — with two messages queued, the end of the conversation is the wrong place.
+  function openOwnBubble(e) {
     ownBubble = addMessage('assistant', '');
-    ownExchangeId = exchangeId;   // so onclose knows which reply was orphaned
-    ownInput = input;             // and so a re-adopted bubble can be rebuilt
+    const r = outboxRows.get(e.id);
+    const reply = ownBubble.parentNode;
+    if (r && r.row.isConnected && r.row.nextSibling !== reply) r.row.after(reply);
+  }
+
+  // A headset recording that waited — for a connection, or for a transcription slot —
+  // carries the time it was spoken, so the model is not left reading it as said now.
+  function stampIfLate(e) {
+    if (!e.recordedAt || e.stamped) return;
+    if (Date.now() - e.recordedAt < SNIPPET_STAMP_AFTER_MS) return;
+    e.input = `[${formatTime(e.recordedAt)}] ${e.input}`;
+    e.stamped = true;
+    const r = outboxRows.get(e.id);
+    if (r) r.bubble.textContent = e.input;
+  }
+
+  function transmit(e) {
+    e.sends = (e.sends || 0) + 1;
+    e.state = 'sent';
+    if (e.auto) stampIfLate(e);
+    saveOutbox();
+    evictOldest(shownIds, 100);
+    shownIds.add(e.id);
+    renderOutboxEntry(e);
+    openOwnBubble(e);
+    ownExchangeId = e.id;     // so onclose knows which reply was orphaned
+    ownInput = e.input;       // and so a re-adopted bubble can be rebuilt
     // A new turn supersedes any older one still owed. Without this, a reply that
     // never arrived stays queued and gets spoken on top of the one being asked for.
     orphanedOwnId = null;
@@ -1796,17 +2140,366 @@
 
     ws.send(JSON.stringify({
       type: 'send',
-      exchange_id: exchangeId,
-      input,
+      exchange_id: e.id,
+      input: e.input,
       agent: 'coordinator',
-      provider: provider || null,
-      attachments: sent.map(a => a.id),
+      provider: e.provider || null,
+      attachments: (e.attachments || []).map(a => a.id),
       // Recorded so a stray pocket press is distinguishable from a deliberate
       // question in the trace. It cannot be worked out afterwards, and a headset
-      // press is the one turn origin that can happen by accident.
-      source: headsetMode ? 'headset' : 'ui',
+      // press is the one turn origin that can happen by accident. Fixed at compose
+      // time (turnSource), so a resend reports how the message was made.
+      source: e.source,
     }));
+
+    if (localStorage.getItem(SERVER_ACKS_KEY) === 'on') {
+      clearAcceptTimer();
+      acceptTimerId = e.id;
+      acceptTimer = setTimeout(() => {
+        acceptTimer = null; acceptTimerId = null;
+        const still = outboxEntry(e.id);
+        if (!still || still.state !== 'sent') return;
+        // Treat the socket as the corpse it is. ensureConnected closes it, onclose
+        // releases the bubble, and the reconnect's history frame resends this.
+        lastMessageAt = 0;
+        ensureConnected();
+      }, OUTBOX_ACCEPT_TIMEOUT_MS);
+    }
   }
+
+  // Send the oldest message still owed, if nothing else is in flight.
+  function flushOutbox() {
+    if (!currentPersona || ownBubble || !canSend()) { renderOutbox(); return; }
+    const now = Date.now();
+    for (const e of outbox) {
+      if (e.state === 'failed' || e.state === 'held') continue;
+      const tooOld = !e.auto && now - (e.releasedAt || e.writtenAt) > OUTBOX_AUTO_SEND_MS;
+      if (tooOld || (e.sends || 0) >= OUTBOX_MAX_AUTO_SENDS) {
+        e.state = 'held';
+        saveOutbox();
+        renderOutboxEntry(e);
+        continue;
+      }
+      transmit(e);
+      return;
+    }
+  }
+
+  // opts.auto: a headset turn — sent without a tap, carrying no attachments (a photo
+  // in the strip belongs to the on-screen batch being put together, not to a press).
+  function queueMessage(input, opts = {}) {
+    const e = {
+      id: crypto.randomUUID(),
+      input,
+      attachments: opts.auto ? [] : readyAttachments(),
+      provider: providerSelect.value || null,
+      source: opts.source || turnSource(),
+      writtenAt: Date.now(),
+      sends: 0,
+      state: 'queued',
+      auto: !!opts.auto,
+      recordedAt: opts.recordedAt || null,
+    };
+    outbox.push(e);
+    saveOutbox();
+    if (!opts.auto) clearAttachments();
+    renderOutboxEntry(e);
+    flushOutbox();
+  }
+
+  window.addEventListener('offline', renderOutbox);
+  window.addEventListener('online', renderOutbox);
+  // --- end outbox ---
+
+  // --- Voice tray ---
+  //
+  // The on-screen mic no longer sends by itself. Each recording becomes a snippet here,
+  // showing what was heard, with a ✕ to delete it; Send takes them all as one message,
+  // together with anything typed and attached. Mike's ask (2026-10-15): capture thoughts
+  // through the day "without submitting immediately", sent as a batch, kept "distinct by
+  // entry/time". So a batch goes one paragraph per snippet, each stamped with when it was
+  // RECORDED (Mike, 2026-10-23) — the pipeline otherwise sees only when it arrived.
+  //
+  // Headset mode is the exception (Mike, 2026-10-23): with the screen dark there is
+  // nothing to press, so a headset recording sends itself once it is transcribed — and
+  // one that cannot be transcribed yet waits here and still sends itself later, rather
+  // than vanishing with an error nobody could see.
+  //
+  // Snippets survive closing the app: text in localStorage, and audio that is not yet
+  // transcribed in IndexedDB. Audio is deleted the moment its transcript exists, so the
+  // only audio ever held on the phone is audio that could not reach the server.
+
+  // A single snippet sent within this long of being recorded goes exactly as a voice
+  // message always has, unstamped — its time is the time it arrives.
+  const SNIPPET_STAMP_AFTER_MS = 2 * 60 * 1000;
+  // /transcribe answers 503 while it is busy with someone else's recording.
+  const TRANSCRIBE_BUSY_RETRY_MS = 3000;
+  const TRANSCRIBE_BUSY_MAX_TRIES = 20;
+  // A failure with the socket still up — a 5xx, a WebView fetch failing on its own —
+  // gets no reconnect to retry it, so it is retried on this clock as well.
+  const TRANSCRIBE_WAITING_RETRY_MS = 30000;
+  let waitingRetryTimer = null;
+  // A server error, unlike a lost connection, costs the VM something each time: the
+  // clip is uploaded and may be decoded and run through Whisper again, holding the one
+  // transcription slot. So it is retried this many times and then waits for a tap,
+  // with its audio kept. Without a cap, a server that always fails would be fed the
+  // same recording every 30s from every open tab, and no meter would show it.
+  const TRANSCRIBE_SERVER_MAX_TRIES = 5;
+
+  // {key, recordedAt, text, state, auto, source, error}
+  // state: pending | transcribing | waiting (no connection) | ready | failed
+  let snippets = [];
+  const snippetAudio = new Map();   // key → Blob, so a transcription need not read storage
+  let transcribing = false;
+  let busyTries = 0;
+
+  function snippetsKey() { return 'metatron_snippets_' + currentPersona; }
+
+  function saveSnippets() {
+    try { localStorage.setItem(snippetsKey(), JSON.stringify(snippets)); } catch {}
+  }
+
+  // IndexedDB, because a Blob cannot go into localStorage and a minute of audio is too
+  // large to base64 into it. Every failure here degrades to memory only: the snippet
+  // still works, it just would not survive the app being closed.
+  let audioDbPromise = null;
+  function audioDb() {
+    if (!audioDbPromise) {
+      audioDbPromise = new Promise((resolve, reject) => {
+        if (!window.indexedDB) { reject(new Error('no indexedDB')); return; }
+        const req = indexedDB.open('metatron-audio', 1);
+        req.onupgradeneeded = () => req.result.createObjectStore('clips');
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+    return audioDbPromise;
+  }
+
+  async function audioStore(mode, op) {
+    const db = await audioDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('clips', mode);
+      const req = op(tx.objectStore('clips'));
+      tx.oncomplete = () => resolve(req ? req.result : undefined);
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  function audioKey(key) { return currentPersona + ':' + key; }
+
+  function dropAudio(key) {
+    snippetAudio.delete(key);
+    audioStore('readwrite', s => s.delete(audioKey(key))).catch(() => {});
+  }
+
+  async function snippetBlob(key) {
+    if (snippetAudio.has(key)) return snippetAudio.get(key);
+    try {
+      const blob = await audioStore('readonly', s => s.get(audioKey(key)));
+      if (blob) snippetAudio.set(key, blob);
+      return blob || null;
+    } catch { return null; }
+  }
+
+  // Audio whose snippet is gone — a crash between the two deletes — is removed at load,
+  // so nothing accumulates on the phone that no screen shows.
+  async function sweepAudio() {
+    try {
+      const prefix = currentPersona + ':';
+      const live = new Set(snippets.map(sn => audioKey(sn.key)));
+      const keys = await audioStore('readonly', s => s.getAllKeys());
+      for (const k of keys || []) {
+        if (typeof k === 'string' && k.startsWith(prefix) && !live.has(k)) {
+          audioStore('readwrite', s => s.delete(k)).catch(() => {});
+        }
+      }
+    } catch {}
+  }
+
+  function loadSnippets() {
+    snippetAudio.clear();
+    try { snippets = JSON.parse(localStorage.getItem(snippetsKey()) || '[]'); } catch { snippets = []; }
+    if (!Array.isArray(snippets)) snippets = [];
+    // A transcription the app was closed in the middle of starts again.
+    for (const sn of snippets) if (sn.state === 'transcribing') sn.state = 'pending';
+    renderTray();
+    sweepAudio();
+    pumpTranscription();
+  }
+
+  function snippetLabel(sn) {
+    const tail = sn.auto ? ' — sends by itself' : '';
+    if (sn.state === 'ready') return sn.text;
+    if (sn.state === 'failed') return sn.error || 'Could not be transcribed';
+    if (sn.state === 'waiting') return 'Not transcribed yet — will retry' + tail;
+    return 'Transcribing…' + tail;
+  }
+
+  function renderTray() {
+    const tray = document.getElementById('voice-tray');
+    tray.innerHTML = '';
+    tray.classList.toggle('shown', snippets.length > 0);
+    for (const sn of snippets) {
+      const row = document.createElement('div');
+      row.className = 'snippet'
+        + (sn.state === 'failed' ? ' failed' : sn.state === 'ready' ? '' : ' in-progress');
+      const time = document.createElement('span');
+      time.className = 'snippet-time';
+      time.textContent = formatTime(sn.recordedAt);
+      const text = document.createElement('span');
+      text.className = 'snippet-text';
+      text.textContent = snippetLabel(sn);
+      if (sn.state === 'failed' && sn.retryable) {
+        text.style.cursor = 'pointer';
+        text.addEventListener('click', () => {
+          sn.state = 'pending'; sn.serverFails = 0; sn.retryable = false;
+          saveSnippets(); renderTray(); pumpTranscription();
+        });
+      }
+      const x = document.createElement('span');
+      x.className = 'chip-x';
+      x.textContent = '✕';
+      x.title = 'Delete this recording';
+      x.addEventListener('click', () => removeSnippet(sn));
+      row.append(time, text, x);
+      tray.appendChild(row);
+    }
+    // What Send will carry: a recording that failed stays visible but goes nowhere.
+    const n = snippets.filter(sn => !sn.auto && sn.state !== 'failed').length;
+    sendBtn.textContent = n ? `Send · ${n} recording${n === 1 ? '' : 's'}` : 'Send';
+  }
+
+  function removeSnippet(sn) {
+    snippets = snippets.filter(x => x !== sn);
+    dropAudio(sn.key);
+    saveSnippets();
+    renderTray();
+  }
+
+  function addSnippet(blob, recordedAt, auto, source) {
+    const sn = {
+      key: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      recordedAt: recordedAt || Date.now(),
+      text: null,
+      state: 'pending',
+      auto: !!auto,
+      source,
+    };
+    snippets.push(sn);
+    snippetAudio.set(sn.key, blob);
+    saveSnippets();
+    audioStore('readwrite', s => s.put(blob, audioKey(sn.key))).catch(() => {});
+    renderTray();
+    pumpTranscription();
+  }
+
+  // One outcome per kind of failure, because each needs a different next step: busy is
+  // retried shortly, offline waits for the connection, unreadable stops.
+  async function transcribeBlob(blob) {
+    const fd = new FormData();
+    fd.append('audio', blob, `${Date.now()}.webm`);
+    const url = '/transcribe' + (currentPersona ? '?persona=' + encodeURIComponent(currentPersona) : '');
+    let res;
+    try { res = await authFetch(url, { method: 'POST', body: fd }); }
+    catch { return { kind: 'offline' }; }
+    if (res.status === 503) return { kind: 'busy' };
+    if (res.status === 422) return { kind: 'unreadable' };
+    if (!res.ok) return { kind: 'server' };
+    let transcript = '';
+    try { transcript = (await res.json()).transcript || ''; } catch { return { kind: 'offline' }; }
+    const text = transcript.trim();
+    return text ? { kind: 'text', text } : { kind: 'empty' };
+  }
+
+  // One recording at a time, oldest first: /transcribe holds one job and refuses a second.
+  async function pumpTranscription() {
+    if (transcribing || !currentPersona) return;
+    const sn = snippets.find(x => x.state === 'pending');
+    if (!sn) return;
+    transcribing = true;
+    sn.state = 'transcribing';
+    renderTray();
+    const blob = await snippetBlob(sn.key);
+    const outcome = blob ? await transcribeBlob(blob) : { kind: 'lost' };
+    transcribing = false;
+    if (!snippets.includes(sn)) { pumpTranscription(); return; }   // deleted meanwhile
+
+    if (outcome.kind === 'busy' && ++busyTries <= TRANSCRIBE_BUSY_MAX_TRIES) {
+      sn.state = 'pending';
+      saveSnippets();
+      renderTray();
+      setTimeout(pumpTranscription, TRANSCRIBE_BUSY_RETRY_MS);
+      return;
+    }
+    busyTries = 0;
+    if (outcome.kind === 'text') {
+      sn.text = outcome.text;
+      sn.state = 'ready';
+      dropAudio(sn.key);
+      if (sn.auto) { sendAutoSnippet(sn); }
+    } else if (outcome.kind === 'empty') {
+      removeSnippet(sn);
+      setStatus('No speech detected', '#666');
+    } else if (outcome.kind === 'unreadable') {
+      sn.state = 'failed';
+      sn.error = "Couldn't make out that recording";
+      dropAudio(sn.key);
+    } else if (outcome.kind === 'lost') {
+      sn.state = 'failed';
+      sn.error = 'That recording was lost';
+    } else if (outcome.kind === 'server'
+               && (sn.serverFails = (sn.serverFails || 0) + 1) >= TRANSCRIBE_SERVER_MAX_TRIES) {
+      sn.state = 'failed';
+      sn.error = "Couldn't be transcribed — tap to try again";
+      sn.retryable = true;
+    } else {
+      // Offline, a server error, or busy past the limit. Whatever is queued behind it
+      // would meet the same failure, so it all waits together and is said to — a
+      // snippet labelled "Transcribing…" with no request in flight is a lie.
+      sn.state = 'waiting';
+      for (const other of snippets) if (other.state === 'pending') other.state = 'waiting';
+      if (!waitingRetryTimer) {
+        waitingRetryTimer = setTimeout(retryWaitingSnippets, TRANSCRIBE_WAITING_RETRY_MS);
+      }
+    }
+    saveSnippets();
+    renderTray();
+    if (sn.state !== 'waiting') pumpTranscription();
+  }
+
+  function retryWaitingSnippets() {
+    if (waitingRetryTimer) { clearTimeout(waitingRetryTimer); waitingRetryTimer = null; }
+    let any = false;
+    for (const sn of snippets) if (sn.state === 'waiting') { sn.state = 'pending'; any = true; }
+    if (any) { saveSnippets(); renderTray(); }
+    pumpTranscription();
+  }
+
+  // A headset recording, transcribed: out of the tray and into the outbox as its own
+  // message, exactly as a headset turn always went. Not subject to the outbox's age
+  // limit — Mike heard the "sent" cue and believes it went — but stamped with when it
+  // was said if it is going late (stampIfLate).
+  function sendAutoSnippet(sn) {
+    snippets = snippets.filter(x => x !== sn);
+    saveSnippets();
+    renderTray();
+    showTranscript(sn.text);
+    queueMessage(sn.text, { auto: true, recordedAt: sn.recordedAt, source: sn.source });
+  }
+
+  // The tray's snippets plus anything typed, as the one message Send will queue.
+  function composeBatch(ready, typed) {
+    if (!ready.length) return typed;
+    const stamp = ready.length > 1
+      || Date.now() - ready[0].recordedAt >= SNIPPET_STAMP_AFTER_MS;
+    const parts = ready.map(sn => stamp ? `[${formatTime(sn.recordedAt)}] ${sn.text}` : sn.text);
+    if (typed) parts.push(typed);
+    return parts.join('\n\n');
+  }
+
+  window.addEventListener('online', retryWaitingSnippets);
+  // --- end voice tray ---
 
   async function sendBlocking(input, agent, provider) {
     try {
@@ -1834,6 +2527,9 @@
 
   function setLoading(on) {
     sendBtn.disabled = on;
+    // The mic stays usable while a reply is on its way — recording the next thought
+    // during the wait is what the tray is for — so a live recording keeps its label.
+    if (isRecording) return;
     if (on) {
       micBtn.classList.add('loading');
       micBtn.textContent = 'Thinking...';
@@ -1844,6 +2540,9 @@
       setStatus('Ready', '#555');
     }
   }
+
+  // The mic's resting label once a recording ends: whatever setLoading would show now.
+  function renderMicIdle() { setLoading(!!ownBubble); }
 
   // --- STT via server-side Whisper (audio never leaves this device → Mac over Tailscale) ---
 
@@ -1890,6 +2589,7 @@
   const HEADSET_MAX_RECORD_MS = 120000;
   let maxRecordTimer = null;
   let discardRecording = false;   // set by the cap; read in mediaRecorder.onstop
+  let recordStartedAt = 0;        // stamps the snippet: when it was said, not when sent
   // Declared here, beside the recording code that reads it, rather than in the
   // headset block far below: startRecording() runs before that block's `let` would
   // otherwise be initialised on some paths, and a temporal-dead-zone throw inside
@@ -1968,6 +2668,7 @@
 
     audioChunks = [];
     isRecording = true;
+    micBtn.classList.remove('loading');
     micBtn.classList.add('listening');
     micBtn.textContent = 'Tap to Stop';
     setStatus('Recording...', '#4a7');
@@ -1976,13 +2677,13 @@
     mediaRecorder = new MediaRecorder(stream);
     mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
 
-    mediaRecorder.onstop = async () => {
+    mediaRecorder.onstop = () => {
       stream.getTracks().forEach(t => t.stop());
       stopSilenceDetection();
       isRecording = false;
       micIntent = false;   // recording is over; replies may speak again
       micBtn.classList.remove('listening');
-      micBtn.textContent = 'Tap to Speak';
+      renderMicIdle();
 
       // The 120s cap fired. Drop the audio without transcribing it — no /transcribe
       // request, no pipeline turn, no Whisper job. The tone is the only report,
@@ -2008,35 +2709,13 @@
 
       const blob = new Blob(audioChunks, { type: 'audio/webm' });
       audioChunks = [];
-
-      setStatus('Transcribing...', '#888');
-      micBtn.classList.add('loading');
-      micBtn.disabled = true;
-
-      try {
-        const fd = new FormData();
-        fd.append('audio', blob, `${Date.now()}.webm`);
-        const url = '/transcribe' + (currentPersona ? '?persona=' + encodeURIComponent(currentPersona) : '');
-        const res = await authFetch(url, { method: 'POST', body: fd });
-        if (!res.ok) throw new Error((await res.json()).detail || 'Transcription failed');
-        const { transcript: text } = await res.json();
-        showTranscript(text);
-        micBtn.classList.remove('loading');
-        micBtn.disabled = false;
-        if (text.trim()) {
-          sendToServer(text.trim());
-        } else {
-          setStatus('No speech detected', '#666');
-        }
-      } catch (e) {
-        setStatus('Error: ' + (e.message || 'unknown'), '#a44');
-        micBtn.classList.remove('loading');
-        micBtn.disabled = false;
-        // leave status visible — do not reset
-      }
+      // On screen the recording waits in the tray for Send. A headset recording is sent
+      // by itself once transcribed: with the screen dark there is nothing to press.
+      addSnippet(blob, recordStartedAt, headsetMode, headsetMode ? 'headset' : 'ui');
     };
 
     mediaRecorder.start();
+    recordStartedAt = Date.now();
 
     // While armed, the press is the only thing that sends (see HEADSET_MAX_RECORD_MS).
     // The cap is the backstop for a second press that never arrives.
@@ -2324,11 +3003,9 @@
     if (now - lastHeadsetPress < 400) return true;
     lastHeadsetPress = now;
 
-    // A transcription is in flight. /transcribe runs behind a single-slot
-    // semaphore that returns 503 rather than queueing, so an overlapping press
-    // has to be dropped here — sending it would just produce an error. Dropped
-    // deliberately by a live page, so still handled.
-    if (micBtn.disabled) return true;
+    // A press while an earlier recording is still being transcribed is fine now:
+    // recordings queue in the tray and go to /transcribe one at a time (pumpTranscription),
+    // so the single-slot semaphore there never sees the overlap.
 
     if (isRecording) {
       stopRecording();   // the tone is sounded in onstop, which silence also reaches
@@ -2909,13 +3586,42 @@
 
   function submitText() {
     const text = textField.value.trim();
+    const ready = snippets.filter(sn => !sn.auto && sn.state === 'ready');
     // A photograph with no words is a complete message — "look at this" is implied
     // by the act of attaching it.
-    if (!text && !readyAttachments().length) return;
+    if (!text && !ready.length && !readyAttachments().length) return;
     if (uploadsPending()) { setStatus('Still attaching…', '#888'); return; }
+    // The whole batch or nothing: sending the ready half would split one message in two,
+    // with the rest arriving later as a reply to an answer that has not happened yet.
+    const unready = snippets.filter(sn => !sn.auto && (sn.state === 'pending'
+      || sn.state === 'transcribing' || sn.state === 'waiting')).length;
+    if (unready) {
+      setStatus(unready === 1 ? 'A recording is not transcribed yet'
+                              : `${unready} recordings are not transcribed yet`, '#888');
+      return;
+    }
+    const input = composeBatch(ready, text);
     textField.value = '';
-    sendToServer(text);
+    saveDraft();
+    snippets = snippets.filter(sn => !ready.includes(sn));
+    saveSnippets();
+    renderTray();
+    sendToServer(input);
   }
+
+  // What is typed but not yet sent survives the app being closed — Android kills a
+  // backgrounded WebView without warning, and a half-written message went with it.
+  function draftKey() { return 'metatron_draft_' + currentPersona; }
+  function saveDraft() {
+    try {
+      if (textField.value) localStorage.setItem(draftKey(), textField.value);
+      else localStorage.removeItem(draftKey());
+    } catch {}
+  }
+  function restoreDraft() {
+    try { textField.value = localStorage.getItem(draftKey()) || ''; } catch {}
+  }
+  textField.addEventListener('input', saveDraft);
 
   sendBtn.addEventListener('click', submitText);
   textField.addEventListener('keydown', (e) => {

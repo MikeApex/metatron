@@ -439,6 +439,20 @@ async def _catchup_since(persona: str, since_id: int) -> list[dict]:
     return [_row_with_attachments(r) for r in rows]
 
 
+async def _get_exchange(persona: str, exchange_id: str) -> dict | None:
+    """The stored exchange with this id, or None if it was never completed."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT id, exchange_id, user, assistant, ts, attachments, "
+            "COALESCE(proactive,0) AS proactive FROM exchanges "
+            "WHERE persona=? AND exchange_id=?",
+            (persona, exchange_id),
+        ) as cursor:
+            row = await cursor.fetchone()
+    return _row_with_attachments(row) if row else None
+
+
 async def _save_exchange(persona: str, exchange_id: str, user: str, assistant: str,
                          proactive: bool = False,
                          attachments: list[dict] | None = None) -> int:
@@ -758,6 +772,23 @@ async def session_stream(req: SessionRequest):
     return StreamingResponse(sse_generator(), media_type="text/event-stream")
 
 
+# A `send` is answered at most once per exchange_id. The client keeps every message
+# until its reply arrives and resends what is unconfirmed after a reconnect — that is
+# what stops a message typed into a dead connection from vanishing. Without this guard
+# each resend would run the whole pipeline again (a median ~26k input tokens) and the
+# second reply would be dropped by _save_exchange's INSERT OR IGNORE, so the duplicate
+# would be paid for and never seen.
+#
+# Memory only, deliberately. A turn in flight dies with the process, so after a restart
+# a resend SHOULD run; nothing here needs to outlive the server that created it.
+_inflight_exchanges: set[tuple[str, str]] = set()
+# A retracted reply is never saved, so the table cannot answer for it — and re-running
+# a filtered turn because its retract was lost in a dropped socket would be re-rolling
+# against the output filter. Bounded; the oldest are forgotten first.
+_retracted_exchanges: dict[tuple[str, str], dict] = {}
+_RETRACTED_KEEP = 200
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -> None:
     """
@@ -769,9 +800,11 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
       {type: "send", exchange_id, input, provider, attachments}  — submit a prompt.
           `attachments` is a list of ids returned by POST /upload; files themselves
           never travel over this socket. Unknown ids are dropped, not rejected.
+          Idempotent on exchange_id: a resend is acknowledged, never run twice.
       {type: "catchup", since_id}                   — fetch missed exchanges on reconnect
 
     Server → client message types:
+      {type: "accepted", exchange_id}                — the send was received (sender only)
       {type: "history", messages, last_id}           — initial full history on connect (wipes and rebuilds)
       {type: "catchup", messages, last_id}           — delta since_id response (appends only — DB-0809-06)
       {type: "stream_start", exchange_id, user, attachments}  — foreign exchange starting (not this device)
@@ -830,6 +863,10 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                 return
 
     hb_task = asyncio.create_task(_heartbeat())
+    # Every exchange this socket has claimed in _inflight_exchanges. A socket that dies
+    # between claiming a message and finishing it releases the claim on the way out,
+    # so the message can still run when the client resends it.
+    claimed: set[tuple[str, str]] = set()
 
     try:
         while True:
@@ -847,6 +884,43 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                 # complete instruction when a photograph is attached to it.
                 if not user_input and not attached:
                     continue
+
+                # Claimed before the first await below, so two sockets resending the
+                # same message at once cannot both get past this check.
+                inflight_key = (persona_key, exchange_id)
+                if inflight_key in _inflight_exchanges:
+                    # Still running for a socket that has since died. Its chunks are
+                    # broadcast to every other socket, this one included, so the
+                    # acknowledgement is all this socket needs.
+                    await websocket.send_json({"type": "accepted", "exchange_id": exchange_id})
+                    continue
+                _inflight_exchanges.add(inflight_key)
+                claimed.add(inflight_key)
+                if inflight_key in _retracted_exchanges:
+                    _inflight_exchanges.discard(inflight_key)
+                    claimed.discard(inflight_key)
+                    await websocket.send_json({"type": "accepted", "exchange_id": exchange_id})
+                    await websocket.send_json(_retracted_exchanges[inflight_key])
+                    continue
+                stored = await _get_exchange(persona_key, exchange_id)
+                if stored:
+                    # Answered already; the reply was lost on the way back. Replayed as
+                    # one chunk and a done, the frames the client already handles.
+                    _inflight_exchanges.discard(inflight_key)
+                    claimed.discard(inflight_key)
+                    await websocket.send_json({"type": "accepted", "exchange_id": exchange_id})
+                    await websocket.send_json({"type": "chunk", "exchange_id": exchange_id,
+                                               "text": stored["assistant"]})
+                    await websocket.send_json({"type": "done", "exchange_id": exchange_id})
+                    continue
+                # Not allowed to stop the turn. Another socket may already have been told
+                # this id is in flight and be waiting on its broadcast; a dead sender is
+                # tolerated the same way _send_to_sender tolerates one mid-turn.
+                try:
+                    await websocket.send_json({"type": "accepted", "exchange_id": exchange_id})
+                except Exception:
+                    pass
+
                 provider = data.get("provider") or None
                 # Scheduler-initiated exchanges are flagged so traces record that
                 # Metatron opened the conversation rather than the user.
@@ -968,6 +1042,9 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                         retract_payload = {"type": "retract", "exchange_id": exchange_id}
                         if retract_text:
                             retract_payload["text"] = retract_text
+                        _retracted_exchanges[inflight_key] = retract_payload
+                        while len(_retracted_exchanges) > _RETRACTED_KEEP:
+                            del _retracted_exchanges[next(iter(_retracted_exchanges))]
                         await _send_to_sender(retract_payload)
                         await manager.broadcast(persona_key, retract_payload, exclude=websocket)
                     elif not errored:
@@ -993,6 +1070,8 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                 finally:
                     with _active_lock:
                         _active_streams -= 1
+                    _inflight_exchanges.discard(inflight_key)
+                    claimed.discard(inflight_key)
 
             elif msg_type == "catchup":
                 # Deliberately a distinct type from the initial "history" load below.
@@ -1015,6 +1094,7 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
         pass
     finally:
         hb_task.cancel()
+        _inflight_exchanges.difference_update(claimed)
         manager.disconnect(websocket, persona_key)
 
 
