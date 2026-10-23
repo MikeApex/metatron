@@ -1,11 +1,19 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-09-26. Build is development, not execution (Mike): it runs in Claude Code on the Mac
-on the subscription, Mike starts each build, approves the plan, commits and deploys; Vertex serves
-only execution. Plan: `archive/plans/build_vertical_plan_2026-09-24.md` **v4.12** — it owns the
-rulings, the sequencing (§ 16), the cost ($65–106) and the kept/changed/deleted list (§ 10).
-**Phase E is deployed and Build is live** (VM at `0c49e4e`); what each phase landed is in
-`archive/PROJECT_LOG.md` § 2026-09-24 and § 2026-09-25.*
+*Updated: 2026-10-23. **VM at `1243cd4`, everything committed is deployed.** Today was a
+separate track from Build: the app keeps every message until its reply arrives, the on-screen mic
+holds recordings until Send, and misheard names reach the Coordinator as `[Name note]`s, never
+rewritten (`archive/PROJECT_LOG.md` § 2026-10-23). **Open:** a "Benny" (friend) contact may be a
+phantom from the 10-15 mishearing (Mike to check); the per-user Whisper vocabulary is built but
+OFF, because measured it was slower and mixed.
+
+The Build state below is unchanged since 09-26. Build is development, not execution (Mike): it
+runs in Claude Code on the Mac on the subscription, Mike starts each build, approves the plan,
+commits and deploys; Vertex serves only execution. Plan:
+`archive/plans/build_vertical_plan_2026-09-24.md` **v4.12** — it owns the rulings, the sequencing
+(§ 16), the cost ($65–106) and the kept/changed/deleted list (§ 10). **Phase E is deployed and
+Build is live**; what each phase landed is in `archive/PROJECT_LOG.md` § 2026-09-24 and
+§ 2026-09-25.*
 
 ***Phase F1 run 1 is STOPPED after its first stage, deliberately, with two defects found — which is
 what a first end-to-end run is for.*** Live job `BLD-0926-02`, **`plant_watering`** not the
@@ -29,14 +37,6 @@ already carries it and holds the tools to check it. **`omitClaudeMd: true` needs
 while appearing to pass. Bench test 1 proved better instructions stop the *invention* and cannot stop
 the *knowledge*: 0 defects, but six questions still quoted the project's files and it called the
 employer "he" from a prompt carrying no name. 153 → 141 lines; chunks 3–5 uncompressed.*
-
-***The graph is four layers now** (Mike, 2026-09-24): Coord → ~12 category agents, which route and
-no longer do → tier-3 agent → Synthesizer. Build exists to construct the tier-3 agents; the category
-files are emptied by hand at rollout. **The trigger and the guard are already in:** `request_build`
-granted to the eight personal specialists in both routing files, `tools/subagent.py` depth-aware
-(`MAX_SUBAGENT_DEPTH = 2`). `run_subagent` is **not** granted, and the eight hold the tool with no
-filing instruction until rollout — the 16 **class-3** advisories in `check_agent_tools.py` are that
-marker. What v3.7 deferred and what phase D corrected: `archive/PROJECT_LOG.md` § 2026-09-24.*
 
 *⚠ **Vertex starts storing every prompt prefix at rest for 24h on 2026-10-15** — conversation history
 included — unless the opt-out lands. Mike ruled 09-25: decline it. Google's command cannot run yet
@@ -64,6 +64,7 @@ the homes each paragraph was already pointing at.
 | **No off-machine backup** — Mike declined a date twice. A recorded acceptance of a named risk, not an unfiled worry; **do not re-raise** | this line is the record. `VERTEX_CACHE_DISABLED` ON on the Mac since 09-05 (net **+$0.94**/14d) |
 | **Two items closed 09-05 as "skip, no backlog item"** — the calendar occurrence-vs-series gap, and the 2:44 check-in's conduct. **Do not file them** | `archive/log/2026-09-05-06-horizon-gate-and-two-guards-that-lied.md` |
 | **Items closed 09-05 are not to be re-raised** | `archive/backlog_closed_2026-09.md`, their only home |
+| **The graph is four layers** (Mike, 09-24): Coord → ~12 category agents, which route only → tier-3 agent → Synthesizer. `request_build` granted to the eight, `run_subagent` not; the 16 class-3 advisories are the rollout marker | `archive/PROJECT_LOG.md` § 2026-09-24 |
 
 **Open, each owned by its id — the sync's `⚠ due:` line is the live list, not this file.**
 Batched invitations, unbuilt. Thread expiry `[DB-0814-02]`, owes one observation not a deploy.
@@ -112,7 +113,7 @@ which model runs which kind of session** (plan in Opus, review in Fable, build i
 ### Built
 **The Phase 5 catalogue moved out on 2026-09-18 — it was finished work, and a primer holds state.**
 What exists: [CODEBASE_INDEX.md](CODEBASE_INDEX.md). When and why each piece was built:
-[archive/PROJECT_LOG.md](archive/PROJECT_LOG.md). Everything through 2026-09-03 is deployed.
+[archive/PROJECT_LOG.md](archive/PROJECT_LOG.md). Everything committed is deployed (VM `1243cd4`).
 
 ### In progress / next
 
