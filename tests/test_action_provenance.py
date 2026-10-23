@@ -110,7 +110,7 @@ def _():
 @check("the Kathaleen shape: lookups alone report NONE")
 def _():
     block = action_provenance_block(_trace_with([("search_contacts", True),
-                                                 ("list_obligations", True)]))
+                                                 ("list_tasks", True)]))
     assert "NONE" in block, block
     assert "search_contacts" not in block, "a read reached the ACTIONS line"
 

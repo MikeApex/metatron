@@ -1011,7 +1011,8 @@ def _audit_path() -> Path:
 
 
 def _append_audit(added: list[str], removed: list[str], expired: list[str],
-                  open_count: int, reworded: list[str] | None = None) -> None:
+                  open_count: int, reworded: list[str] | None = None,
+                  closed_task: list[str] | None = None) -> None:
     """
     Append one line describing what this write did to the open threads.
 
@@ -1028,6 +1029,10 @@ def _append_audit(added: list[str], removed: list[str], expired: list[str],
     original birthdate. Separate for the same reason `removed` and `expired` are separate — the
     whole value of this file is that categories are not folded together.
 
+    `closed_task` (2026-10-23) is a fifth, on the same principle: threads dropped because they
+    named a task the ledger records as closed. Not folded into `removed`, which means "the model
+    stopped sending it" — this one is code acting on an exact link.
+
     Never raises. An audit line that could break a context write would be worse than no
     audit line — the tracker is on the response path.
     """
@@ -1039,6 +1044,7 @@ def _append_audit(added: list[str], removed: list[str], expired: list[str],
             "removed": removed,
             "expired": expired,
             "reworded": reworded or [],
+            "closed_task": closed_task or [],
             "open_count": open_count,
         }
         with open(path, "a") as f:
@@ -1363,6 +1369,28 @@ def write_context_tracker(
         if not _is_archived(_text_of(item)) or _user_engages_thread(_text_of(item), user_text)
     ]
 
+    # Task ledger (archive/plans/task_ledger_plan_2026-10-23.md § 5 row 3): a thread that
+    # names a task by its id, where that task is now done, dismissed or moot, is dropped
+    # here and logged as `closed_task` — a LINKED copy is the one case code acts on. A thread
+    # that merely sounds like a closed task is left alone; load_recent_context annotates it
+    # instead, because a word match can be wrong and a silent removal would hide something.
+    closed_task_drops: list[str] = []
+    try:
+        from tools.obligations import consult as _ledger_consult, consult_index as _ledger_index
+        _closed = [e for e in _ledger_index() if e["terminal"]]
+    except Exception as exc:  # noqa: BLE001 — the tracker is on the response path
+        logger.warning(f"[context_tracker] task ledger unavailable: {exc}")
+        _closed = []
+    if _closed:
+        _kept = []
+        for item in filtered_incoming:
+            hit = _ledger_consult(_text_of(item), _closed)
+            if hit and hit["linked"]:
+                closed_task_drops.append(_text_of(item))
+                continue
+            _kept.append(item)
+        filtered_incoming = _kept
+
     stamped_open_threads = _merge_open_threads(filtered_incoming, still_eligible, user_text)
 
     expired_open_threads = prior_expired_open_threads
@@ -1414,10 +1442,11 @@ def write_context_tracker(
     )
     _append_audit(
         added=sorted(_after - _before),
-        removed=sorted(_before - _after - set(_expired_now)),
+        removed=sorted(_before - _after - set(_expired_now) - set(closed_task_drops)),
         expired=_expired_now,
         open_count=len(stamped_open_threads),
         reworded=_reworded,
+        closed_task=sorted(set(closed_task_drops)),
     )
 
     msg = f"Context tracker updated ({path})"

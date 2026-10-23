@@ -17,7 +17,7 @@ sources incident (core/orchestrator.py `SOURCES (N retrieved)` /
 Two design points that are load-bearing:
 
 1. **Actions are not tool calls.** A line listing `search_contacts` and
-   `list_obligations` would repeat the `is_grounded()` mistake documented at
+   `list_tasks` would repeat the `is_grounded()` mistake documented at
    core/trace.py:107-118 — an agent that called `write_log` is *active*, not
    grounded, and an agent that read the calendar has not changed it. Reads are
    excluded here, in one place, so no agent file has to know the difference.
@@ -70,7 +70,9 @@ ACTION_TOOLS: frozenset[str] = frozenset({
     # tools above were added to close.
     "apply_crm_proposals",
     # Commitments and scheduled jobs
-    "open_obligation", "close_obligation", "reopen_obligation",
+    # The task ledger (2026-10-23; replaced open/close/reopen_obligation). update_task covers
+    # done, dismissed, reschedule and note — every one changes the record.
+    "open_task", "update_task",
     "write_schedule", "delete_schedule",
     # A taught intake rule permanently changes what mail the user sees — a standing
     # config write behind the confirm gate, and unambiguously an action.
@@ -135,7 +137,7 @@ READ_TOOLS: frozenset[str] = frozenset({
     "get_weather", "get_environmental_snapshot", "get_pollen_forecast",
     "get_tfl_status", "get_flight_status", "get_travel_time",
     "get_regional_transit_info", "find_places",
-    "list_schedules", "list_obligations",
+    "list_schedules", "list_tasks",
     "fetch_url", "read_email",
     # fetch_rendered is fetch_url with a headless browser for JS-heavy pages — it reads
     # the outside world and changes nothing. Added 2026-08-18 alongside the two above.

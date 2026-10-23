@@ -78,7 +78,7 @@ agents:
     # standing fact — and it is the fallback for turns the Coordinator's KNOWLEDGE_TO_LOAD did
     # not predict. Without the read grant the pre-fetch is the ONLY path to the store and a
     # mid-conversation turn toward a subject has no way to reach it.
-    allowed_tools: [run_subagent, run_model_conference, write_persona, write_profile, read_profile, write_config, write_wishes, read_wishes, generate_emergency_card, write_quality_event, write_schedule, list_schedules, delete_schedule, update_goal, open_obligation, close_obligation, reopen_obligation, list_obligations, read_wisdom, write_wisdom, teach_intake, record_wisdom_response]
+    allowed_tools: [run_subagent, run_model_conference, write_persona, write_profile, read_profile, write_config, write_wishes, read_wishes, generate_emergency_card, write_quality_event, write_schedule, list_schedules, delete_schedule, update_goal, open_task, update_task, list_tasks, read_wisdom, write_wisdom, teach_intake, record_wisdom_response]
 
   # ── Data and analysis ────────────────────────────────────────────────────────
 
@@ -285,7 +285,7 @@ agents:
     # granted (cluster 2) — observations route through the Diarist; the journal line in
     # finance.md was rewritten in the same pass.
     # request_build granted 2026-09-24 — reasoning on mental_wellbeing above.
-    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, read_archive, write_archive, read_goals, open_obligation, close_obligation, reopen_obligation, list_obligations, search_memory, read_wisdom, read_intake_queue, request_build]
+    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, read_archive, write_archive, read_goals, open_task, update_task, list_tasks, search_memory, read_wisdom, read_intake_queue, request_build]
 
   learning_growth:
     provider: gemini
@@ -333,7 +333,7 @@ agents:
     # gate and the CRM recipient allowlist — is enforced in Python for both agents and is
     # untouched. Relationships keeps its grant for person-centred conversations.
     # request_build granted 2026-09-24 — reasoning on mental_wellbeing above.
-    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, update_calendar_event, delete_calendar_event, check_calendar_conflicts, send_calendar_invite, get_weather, get_environmental_snapshot, get_tfl_status, get_flight_status, get_travel_time, get_regional_transit_info, find_places, read_profile, write_profile, write_schedule, list_schedules, delete_schedule, fetch_url, fetch_rendered, read_email, read_agent_config, write_agent_config, search_memory, read_archive, write_archive, open_obligation, close_obligation, reopen_obligation, list_obligations, read_intake_queue, record_horizon_item, request_build]
+    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, update_calendar_event, delete_calendar_event, check_calendar_conflicts, send_calendar_invite, get_weather, get_environmental_snapshot, get_tfl_status, get_flight_status, get_travel_time, get_regional_transit_info, find_places, read_profile, write_profile, write_schedule, list_schedules, delete_schedule, fetch_url, fetch_rendered, read_email, read_agent_config, write_agent_config, search_memory, read_archive, write_archive, open_task, update_task, list_tasks, read_intake_queue, record_horizon_item, request_build]
     # update_calendar_event, delete_calendar_event, check_calendar_conflicts added
     # 2026-08-05 — required to act on what the calendar-conflict build detects:
     # Logistics could previously only create events, never move, correct, or

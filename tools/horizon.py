@@ -190,6 +190,7 @@ def record(items: list, persona: str | None = None) -> dict:
 
     persona = resolve_persona(persona)
     now = datetime.now().isoformat(timespec="seconds")
+    closed_tasks = [e for e in _ledger_index(persona) if e["terminal"]]
     with _LOCK:
         data = _read(persona)
         for item in items:
@@ -199,6 +200,12 @@ def record(items: list, persona: str | None = None) -> dict:
             if _is_past(item):
                 # Not counted as new: there is nothing to tell the user about a date that
                 # has gone by, and filing it would only give it two offers it cannot use.
+                tally["known"] += 1
+                continue
+            if _is_todo(item) and _ledger_hit(item, closed_tasks):
+                # The task ledger already records this one done (plan § 5 row 5): the
+                # 10-22 inbox scan re-read the clinic's email and re-filed intake forms
+                # submitted two days earlier. Counted as known, never filed.
                 tally["known"] += 1
                 continue
             key = item_key(item)
@@ -266,8 +273,37 @@ def _due_now(item: dict, today: date | None = None) -> bool:
     return False
 
 
+# --- The task ledger's view of a finding (plan § 5 row 5) ----------------------------------
+# Only to-do-shaped findings consult it. An EVENT is not a task even when a task is about it:
+# booking Manny's swim class being done says nothing about the class itself, which still
+# happens and is still worth knowing about. A deadline or an errand IS the to-do, so one the
+# ledger already carries — open (the Tasks block shows it) or closed — is not raised twice.
+_TODO_KINDS = {"deadline", "errand", ""}
+
+
+def _is_todo(item: dict) -> bool:
+    return str(item.get("kind") or "").strip().lower() in _TODO_KINDS
+
+
+def _ledger_index(persona: str | None) -> list[dict]:
+    try:
+        from tools.obligations import consult_index
+        return consult_index(persona)
+    except Exception as exc:  # noqa: BLE001 — a ledger fault must not cost a finding
+        logger.warning("[horizon] task ledger unavailable: %s", exc)
+        return []
+
+
+def _ledger_hit(item: dict, index: list[dict]) -> dict | None:
+    if not index:
+        return None
+    from tools.obligations import consult
+    text = " ".join(str(item.get(k) or "") for k in ("title", "detail"))
+    return consult(text, index)
+
+
 def _undelivered(data: dict, today: date | None = None,
-                 gate: bool = True) -> list[tuple[str, dict]]:
+                 gate: bool = True, ledger: list[dict] | None = None) -> list[tuple[str, dict]]:
     rows = []
     for key, row in data.items():
         if row.get("delivered_at"):
@@ -276,6 +312,8 @@ def _undelivered(data: dict, today: date | None = None,
             continue
         item = row.get("item") or {}
         if _is_past(item, today):
+            continue
+        if ledger and _is_todo(item) and _ledger_hit(item, ledger):
             continue
         if gate and not _due_now(item, today):
             continue
@@ -304,9 +342,10 @@ def context_block(persona: str | None = None) -> str:
     """
     try:
         persona = resolve_persona(persona)
+        ledger = _ledger_index(persona)
         with _LOCK:
             data = _read(persona)
-            rows = _undelivered(data)
+            rows = _undelivered(data, ledger=ledger)
             if rows and _charge_offers(data, [key for key, _ in rows]):
                 _write(data, persona)
         if not rows:
@@ -520,7 +559,7 @@ def mark_engaged(user_text: str | None, persona: str | None = None) -> int:
 # A tool call is structured by construction. It cannot be quietly replaced by prose, its
 # arguments cannot be malformed and silently ignored, and a refusal is visible. That is
 # already this codebase's answer wherever a relay must not be lost — `write_quality_event`,
-# `open_obligation` — and it is what `.claude/rules/agent-files.md` means by a named tool
+# `open_task` — and it is what `.claude/rules/agent-files.md` means by a named tool
 # being a specification rather than a suggestion.
 #
 # The prose parser in core/orchestrator.py is kept as a second channel rather than removed:

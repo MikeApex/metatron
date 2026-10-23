@@ -35,7 +35,8 @@ EVIDENCE SPLIT BY CHECKABILITY (Mike's design, point 1)
 Two structured outcomes join deterministically, in code, no model call:
   - a calendar event occurred (tools/caldav.py, matched by title against the
     intention text)
-  - an obligation was closed (tools/obligations.py, matched by `what`)
+  - an obligation was closed (tools/obligations.py, matched by `what`) — since the task
+    ledger, also a recorded completion of a recurring task (`accountability_items`)
 Anything that cannot be resolved this way — no structured match found in the
 window — is free-text territory and goes through the nightly judgment gate
 (`run_judgment_gate`, 05:45, `config/agents/accountability_judge.md`, bare
@@ -562,9 +563,13 @@ def _fetch_calendar_events(persona: str, intentions: list[dict], as_of: date) ->
 
 
 def _fetch_obligations(persona: str, *, root: Path = ROOT) -> list[dict]:
-    from tools.obligations import _load as _load_obligations
+    # The task ledger in the shape this join has always read (`what`, `status: closed`,
+    # `closed_at`) — done one-offs, and since 2026-10-23 each recorded completion of a
+    # recurring task too, so "go to the gym tomorrow" resolves here in code instead of
+    # reaching the judgment gate (archive/plans/task_ledger_plan_2026-10-23.md § 7).
+    from tools.obligations import accountability_items
     try:
-        return _load_obligations(persona)
+        return accountability_items(persona)
     except Exception:
         return []
 

@@ -705,6 +705,74 @@
       letter-spacing: 0.06em;
     }
     #persona-chip:active { color: #666; }
+
+    /* Today's tasks (task ledger, 2026-10-23). The toggle sits in the header, not beside the
+       mic: the control row is already four round buttons wide on a phone. */
+    .header-right { display: flex; align-items: center; gap: 8px; }
+    #tasks-toggle {
+      font-size: 11px;
+      color: #8a8a8a;
+      background: #141414;
+      cursor: pointer;
+      padding: 3px 10px;
+      border: 1px solid #262626;
+      border-radius: 10px;
+      letter-spacing: 0.06em;
+    }
+    #tasks-toggle.has-items { color: #cfe3cf; border-color: #2f4a2f; }
+    #tasks-panel {
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 45vh;
+      overflow-y: auto;
+      background: #101410;
+      border-bottom: 1px solid #1f2a1f;
+      padding: 12px 16px;
+    }
+    #tasks-panel.shown { display: flex; }
+    .task-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .task-text { flex: 1; min-width: 0; }
+    .task-what { font-size: 14px; color: #dde6dd; overflow-wrap: anywhere; }
+    .task-label { font-size: 12px; color: #7d8a7d; overflow-wrap: anywhere; }
+    .task-actions { display: flex; gap: 6px; flex: 0 0 auto; }
+    .task-btn {
+      padding: 7px 12px;
+      border-radius: 16px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid #333;
+      background: #1a1a1a;
+      color: #aaa;
+    }
+    .task-btn.task-done { background: #234023; border-color: #2f5a2f; color: #e8f2e8; }
+    .task-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .task-empty { font-size: 13px; color: #5d6a5d; }
+    /* A close suggested by an arriving message. Its own bar, never the approval bar above —
+       see the comment where it is wired. */
+    #task-proposal-bar {
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+      background: #0f1a12;
+      border: 1px solid #2f5a3a;
+      border-radius: 12px;
+      padding: 12px 14px;
+    }
+    #task-proposal-bar.shown { display: flex; }
+    #task-proposal-text {
+      font-size: 14px; color: #d4e6d8; line-height: 1.5; white-space: pre-wrap;
+      overflow-wrap: anywhere; max-height: 9em; overflow-y: auto;
+    }
+    #task-proposal-actions { display: flex; gap: 8px; }
+    #task-proposal-actions button {
+      flex: 1; padding: 10px; border-radius: 20px; font-size: 14px; font-weight: 600;
+      cursor: pointer; border: 1px solid #333;
+    }
+    #task-proposal-no  { background: #1a1a1a; color: #999; }
+    #task-proposal-yes { background: #2f5a3a; color: #fff; border-color: #2f5a3a; }
+    #task-proposal-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
   </style>
 </head>
 <body>
@@ -748,8 +816,15 @@
 
 <header>
   <span>Life Manager</span>
-  <span id="persona-chip" style="display:none"></span>
+  <span class="header-right">
+    <button id="tasks-toggle" title="Today's tasks">✓ Today</button>
+    <span id="persona-chip" style="display:none"></span>
+  </span>
 </header>
+
+<!-- Today's tasks. What the task ledger says is outstanding, with a tap to record it done,
+     skipped or dropped. Recorded by the server from the tap — the model is not in the path. -->
+<div id="tasks-panel"><div id="tasks-list"></div></div>
 
 <div id="conversation">
   <div class="message system">Session started. Tap the mic or type to begin.</div>
@@ -775,6 +850,16 @@
     <div id="confirm-actions">
       <button id="confirm-no">Not now</button>
       <button id="confirm-yes">Approve</button>
+    </div>
+  </div>
+
+  <!-- A task close suggested by an arriving message. Separate from the approval bar so a
+       tap here can only ever answer the suggestion it was drawn for. -->
+  <div id="task-proposal-bar">
+    <div id="task-proposal-text"></div>
+    <div id="task-proposal-actions">
+      <button id="task-proposal-no">Not now</button>
+      <button id="task-proposal-yes">Mark done</button>
     </div>
   </div>
 
@@ -3533,6 +3618,8 @@
       document.getElementById('confirm-text').textContent = item.description;
       document.getElementById('confirm-yes').disabled = false;
       bar.classList.add('shown');
+      // A real approval always takes the footer; a task suggestion waits behind it.
+      document.getElementById('task-proposal-bar').classList.remove('shown');
     } catch (e) { /* offline or signed out — the poll retries */ }
   }
 
@@ -3592,6 +3679,172 @@
   });
 
   setInterval(refreshPending, 5000);
+
+  // --- Today's tasks, and closes suggested by correspondence (task ledger, 2026-10-23) ---
+  //
+  // Both are the user's own act, recorded by the server out of band — the principle of the
+  // approval bar above, deliberately NOT its bar. Its Approve button posts whatever
+  // `pendingToken` holds at the moment of the click, so sharing it would let a card that
+  // arrived between two polls be approved by a tap meant for "mark done" — an irreversible
+  // send approved by accident. Every button below carries the id it was drawn for, captured
+  // when it was drawn, and the suggestion bar hides whenever an approval is showing.
+  let tasksOpen = false;
+
+  function renderTasks(items) {
+    const btn = document.getElementById('tasks-toggle');
+    btn.textContent = items.length ? `✓ Today (${items.length})` : '✓ Today';
+    btn.classList.toggle('has-items', items.length > 0);
+    const list = document.getElementById('tasks-list');
+    list.innerHTML = '';
+    if (!items.length) {
+      const empty = document.createElement('div');
+      empty.className = 'task-empty';
+      empty.textContent = 'Nothing outstanding today.';
+      list.appendChild(empty);
+      return;
+    }
+    const labels = { done: 'Done', skipped: 'Skip', dismissed: 'Drop' };
+    for (const item of items) {
+      const row = document.createElement('div');
+      row.className = 'task-row';
+      const text = document.createElement('div');
+      text.className = 'task-text';
+      const what = document.createElement('div');
+      what.className = 'task-what';
+      what.textContent = item.what;
+      const label = document.createElement('div');
+      label.className = 'task-label';
+      label.textContent = item.label || '';
+      text.append(what, label);
+      const acts = document.createElement('div');
+      acts.className = 'task-actions';
+      const taskId = item.task_id;
+      for (const action of (item.actions || ['done'])) {
+        const b = document.createElement('button');
+        b.className = 'task-btn task-' + action;
+        b.textContent = labels[action] || action;
+        b.addEventListener('click', () => actOnTask(taskId, action, row));
+        acts.appendChild(b);
+      }
+      row.append(text, acts);
+      list.appendChild(row);
+    }
+  }
+
+  async function refreshTasks() {
+    if (!currentPersona || !authToken) return;
+    try {
+      const res = await authFetch('/tasks/today?persona=' + encodeURIComponent(currentPersona));
+      if (!res.ok) return;
+      const { items } = await res.json();
+      renderTasks(items || []);
+    } catch (e) { /* offline or signed out — the next open retries */ }
+  }
+
+  async function failureDetail(res) {
+    try { return ((await res.json()).detail || '').toString().slice(0, 140); } catch (e) { return ''; }
+  }
+
+  async function actOnTask(taskId, action, row) {
+    const buttons = row.querySelectorAll('button');
+    buttons.forEach(b => { b.disabled = true; });
+    try {
+      const res = await authFetch('/tasks/act', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task_id: taskId, action, persona: currentPersona }),
+      });
+      // A refused close stays on screen as a failure — never reported as done.
+      if (!res.ok) {
+        setStatus((await failureDetail(res)) || 'Could not record that', '#a44');
+        buttons.forEach(b => { b.disabled = false; });
+        return;
+      }
+      row.remove();
+      refreshTasks();
+    } catch (e) {
+      setStatus('Could not record that', '#a44');
+      buttons.forEach(b => { b.disabled = false; });
+    }
+  }
+
+  document.getElementById('tasks-toggle').addEventListener('click', () => {
+    tasksOpen = !tasksOpen;
+    document.getElementById('tasks-panel').classList.toggle('shown', tasksOpen);
+    if (tasksOpen) refreshTasks();
+  });
+
+  function renderProposal(p) {
+    const bar = document.getElementById('task-proposal-bar');
+    if (bar.dataset.proposalId === p.proposal_id && bar.classList.contains('shown')) return;
+    bar.dataset.proposalId = p.proposal_id;
+    const when = (p.received || '').slice(0, 10);
+    document.getElementById('task-proposal-text').textContent =
+      `Mark "${p.what}" done?\n\nAn email${p.sender ? ' from ' + p.sender : ''}` +
+      `${when ? ' on ' + when : ''}: "${p.subject || '(no subject)'}"`;
+    // Fresh buttons per suggestion, so no handler drawn for an earlier one survives.
+    const oldYes = document.getElementById('task-proposal-yes');
+    const oldNo = document.getElementById('task-proposal-no');
+    const yes = oldYes.cloneNode(true);
+    const no = oldNo.cloneNode(true);
+    oldYes.replaceWith(yes);
+    oldNo.replaceWith(no);
+    yes.disabled = false;
+    no.disabled = false;
+    const pid = p.proposal_id;
+    yes.addEventListener('click', () => answerProposal(pid, true, yes, no));
+    no.addEventListener('click', () => answerProposal(pid, false, yes, no));
+    bar.classList.add('shown');
+  }
+
+  async function refreshProposal() {
+    const bar = document.getElementById('task-proposal-bar');
+    const approvalShowing = () => document.getElementById('confirm-bar').classList.contains('shown');
+    if (!currentPersona || !authToken || approvalShowing()) { bar.classList.remove('shown'); return; }
+    try {
+      const res = await authFetch('/tasks/proposals?persona=' + encodeURIComponent(currentPersona));
+      if (!res.ok) return;
+      const { proposals } = await res.json();
+      if (approvalShowing() || !proposals || !proposals.length) {
+        bar.classList.remove('shown');
+        delete bar.dataset.proposalId;
+        return;
+      }
+      renderProposal(proposals[0]);
+    } catch (e) { /* offline — the next poll retries */ }
+  }
+
+  async function answerProposal(pid, accept, yes, no) {
+    yes.disabled = true;
+    no.disabled = true;
+    try {
+      const res = await authFetch(accept ? '/tasks/act' : '/tasks/proposals/decline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ proposal_id: pid, persona: currentPersona }),
+      });
+      if (!res.ok) {
+        setStatus((await failureDetail(res)) || 'Could not record that', '#a44');
+        yes.disabled = false;
+        no.disabled = false;
+        return;
+      }
+      const bar = document.getElementById('task-proposal-bar');
+      bar.classList.remove('shown');
+      delete bar.dataset.proposalId;
+      if (tasksOpen) refreshTasks();
+      refreshProposal();
+    } catch (e) {
+      setStatus('Could not record that', '#a44');
+      yes.disabled = false;
+      no.disabled = false;
+    }
+  }
+
+  // Suggestions are rare and nothing about them is urgent, so a slow poll; the badge on the
+  // Today button refreshes on the same cadence and whenever the panel is opened.
+  setInterval(() => { refreshProposal(); refreshTasks(); }, 30000);
+  setTimeout(() => { refreshProposal(); refreshTasks(); }, 3000);
 
   function submitText() {
     const text = textField.value.trim();

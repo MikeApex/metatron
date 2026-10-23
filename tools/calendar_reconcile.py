@@ -222,10 +222,24 @@ def find_unreferenced_events(persona: str | None = None) -> list[dict]:
         except Exception:
             obligation_tokens = set()
 
+    # The task ledger (archive/plans/task_ledger_plan_2026-10-23.md § 5 row 6): "did X
+    # happen?" is already answered when the ledger records X done. Skipped when the event is
+    # linked to a closed task by uid, or its title matches a task the user reported done on or
+    # after the event's day. Not for a merely related closed task — "booking the physio" being
+    # done says nothing about whether the appointment happened.
+    try:
+        from tools.obligations import consult as _ledger_consult, consult_index
+        ledger = [e for e in consult_index(resolved) if e["terminal"]]
+    except Exception:
+        ledger = []
+    ledger_uids = {e["calendar_uid"] for e in ledger if e.get("calendar_uid")}
+
     out: list[dict] = []
     for ev in raw.get("events", []):
         title = str(ev.get("title") or "").strip()
         if not title:
+            continue
+        if ledger and str(ev.get("uid") or "") in ledger_uids:
             continue
         if str(ev.get("status") or "").upper() == "CANCELLED":
             continue
@@ -257,6 +271,10 @@ def find_unreferenced_events(persona: str | None = None) -> list[dict]:
         matched = {t for t in checked if t in record}
         if matched:
             continue
+        if ledger:
+            hit = _ledger_consult(title, [e for e in ledger if e["status"] == "done"])
+            if hit and hit["entry"].get("closed_on") and hit["entry"]["closed_on"] >= start.date():
+                continue
 
         out.append({
             "uid": str(ev.get("uid") or ""),

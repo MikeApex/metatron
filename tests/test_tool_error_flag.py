@@ -44,8 +44,8 @@ def flags_failed(result: str) -> bool:
 
 FAILURES = [
     ("crm.read_contact", "Error: no contact found with id 'nope-1234'"),
-    ("obligations.close_obligation", "error: no obligation with id 'nope-1234'"),
-    ("obligations.open_obligation", "error: `what` is required — nothing was opened."),
+    ("obligations.update_task", "error: no task with id 'nope-1234'"),
+    ("obligations.open_task", "error: `what` is required — a task with no description cannot be closed later"),
     ("crm.write_contact", "Error: provide either contact_id or name."),
     ("wishes.write_wishes", "Error: 'holidays' is not a valid section."),
     ("leading whitespace", "  Error: something went wrong"),

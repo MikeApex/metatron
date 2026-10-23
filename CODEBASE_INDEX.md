@@ -248,7 +248,7 @@ this table covered before this refresh).
 | [tools/regional_transit.py](tools/regional_transit.py) | `get_regional_transit_info` |
 | [tools/places.py](tools/places.py) | `find_places`, `geocode_place_name` |
 | [tools/schedule.py](tools/schedule.py) | `write_schedule`, `list_schedules`, `delete_schedule` — agent-written recurring/one-off jobs, kept in a separate file from the user's `scheduler.yaml` |
-| [tools/obligations.py](tools/obligations.py) | `open_obligation`, `close_obligation`, `reopen_obligation`, `list_obligations` |
+| [tools/obligations.py](tools/obligations.py) | The task ledger: `open_task`, `update_task`, `list_tasks` (registered); `context_block`/`completion_hints`/`note_raised` and the consult helpers called directly by `core/orchestrator.py` and the stores that copy to-dos; `sweep` fires nightly as `daily_task_sweep`; `match_envelope` is called by `tools/intake.sweep`; store `tasks.yaml` + `task_history.jsonl`. Plan: [archive/plans/task_ledger_plan_2026-10-23.md](archive/plans/task_ledger_plan_2026-10-23.md) |
 | [tools/web.py](tools/web.py) | `fetch_url`, `fetch_rendered` — SSRF-guarded fetch + headless-rendered fetch with memory-pressure deprioritization |
 | [tools/contacts_import.py](tools/contacts_import.py) | `import_contacts_file`, `import_google_contacts` — vCard/CSV import and Google Contacts import; calls `tools/google_contacts.py` |
 | [tools/mail.py](tools/mail.py) | `read_email`, `send_email`, `send_calendar_invite`, `search_correspondence` — IMAP read-only + confirmation-gated send |

@@ -315,6 +315,16 @@ def read_calendar(start_date: str, end_date: str) -> dict:
         "security_note": UNTRUSTED_CONTENT_INSTRUCTION,
         "events": wrap_untrusted(rendered, source=f"calendar {host}".strip()),
     }
+    # What the task ledger records about these entries, by uid (plan § 5 row 2): written by
+    # code from the ledger, so it sits OUTSIDE the untrusted wrapper — it is not calendar
+    # text. A deadline entry that is done says so here, series occurrences included.
+    try:
+        from tools.obligations import calendar_ledger_notes
+        notes = calendar_ledger_notes(events)
+        if notes:
+            result["task_ledger"] = notes
+    except Exception:
+        pass
     if markers:
         # Recorded, never blocked: a legitimate invite may well say "disregard my last
         # message". The value is that an attempt leaves a trace instead of passing
@@ -554,6 +564,18 @@ def write_calendar_event(
         "end": end,
         "url": event_url,
     }
+    # The task ledger's calendar link (archive/plans/task_ledger_plan_2026-10-23.md § 5 row 2).
+    # An all-day, non-repeating entry whose title and date EXACTLY name an open deadline is
+    # linked to it, so closing the task marks this entry ✓ and moving it moves this. Exact or
+    # nothing: a merely similar event, once linked, would be retitled by code.
+    if all_day and not recurrence:
+        try:
+            from tools.obligations import link_calendar_exact
+            linked = link_calendar_exact(title, str(start)[:10], event_uid)
+            if linked:
+                result["task_linked"] = linked
+        except Exception:
+            pass
     if attendees:
         result["attendees_recorded"] = attendees
         result["invitations_sent"] = False

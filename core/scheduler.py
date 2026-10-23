@@ -695,6 +695,24 @@ _DEFAULT_JOBS: dict[str, dict] = {
         "notification": False,
         "respect_quiet_hours": False,   # silent; pre-dawn on purpose
     },
+    # The task ledger's nightly persistence (archive/plans/task_ledger_plan_2026-10-23.md):
+    # ended habit periods recorded to task_history.jsonl as done / missed / skipped, event-bound
+    # one-offs marked moot once their date passes, stale correspondence suggestions expired,
+    # yesterday's raise stamps cleared. Token-free and silent — sweep() returns a plain string.
+    # 00:15 so "missed at midnight" is recorded within minutes of midnight; what the Tasks block
+    # shows never depends on this having run (derivation is pure), so a night the VM sleeps
+    # costs nothing but a later record, and the next run catches up.
+    # `respect_quiet_hours: False` is load-bearing, not tidiness: 00:15 is inside the default
+    # quiet window and fire_function SKIPS a gated job rather than deferring it, so without the
+    # flag this would never run and task_history.jsonl would stay empty with no error anywhere.
+    "daily_task_sweep": {
+        "enabled": True,
+        "time": "00:15",
+        "days": "daily",
+        "function": "tools.obligations.sweep",
+        "notification": False,
+        "respect_quiet_hours": False,   # silent; must run inside quiet hours — see above
+    },
     # Inbound intake (tools/intake.py): read new messages, classify, queue per domain.
     # Notifies nothing, ever — sweep() returns a plain string, so fire_function's notify
     # path is never taken; what reaches the user rides the morning brief via

@@ -30,8 +30,18 @@ So: fixed timing goes to `write_calendar_event`. Conditions go here.
 Tracking is free; waking up is not. Twenty obligations each polling themselves
 daily would be ~$15/month and twenty interruptions. The intended shape is a small
 number of sweeps that read *all* tracked obligations at once, with individual
-obligations living as data (`write_agent_config`). Cost then stays flat whether
-five things are tracked or five hundred — which is what the caps below enforce.
+obligations living as data. Cost then stays flat whether five things are tracked
+or five hundred — which is what the caps below enforce.
+
+**That data is the task ledger (`tools/obligations.py`), since 2026-10-23** — not
+`write_agent_config`, which this paragraph used to name. A recurring thing the user
+has to do (water the plants every three days, gym three times a week, a bill each
+month) is an `open_task` habit or interval: code records each completion and stops
+asking when it is done. The live `plant_watering_check` job is what the other shape
+costs — a prompt with "last watered Aug 4" frozen into it, firing daily, raised 27
+times in a month after the plants had been watered. So a recurring job is answered
+with a pointer to the ledger (never a refusal: the one-off `at=` reminder is the
+only timed push this system has, and nothing here touches it).
 """
 
 from __future__ import annotations
@@ -223,8 +233,16 @@ def write_schedule(
     when_str = (f"once at {entry['at']}" if entry["one_off"]
                 else f"every {entry['interval_minutes']} minutes")
     verb = "Replaced" if replacing else "Scheduled"
+    # Keyed on the arguments, not on the prompt's wording: a recurring job is the shape that
+    # nagged; a one-off `at=` reminder is the only timed push there is and is never questioned.
+    ledger_note = ""
+    if not entry["one_off"]:
+        ledger_note = (" Note: if this tracks whether something gets done — watering, a bill, "
+                       "a habit — it belongs in the task ledger instead (open_task, kind habit "
+                       "or interval), where each completion is recorded and it stops asking once "
+                       "done. A recurring job fires regardless of what the user has done.")
     return (f"{verb} '{key}' — {when_str}, runs {agent}, "
-            f"notification {notification}.{disturb_note}")
+            f"notification {notification}.{disturb_note}{ledger_note}")
 
 
 def list_schedules() -> str:
@@ -284,17 +302,22 @@ WRITE_SCHEDULE_SCHEMA = {
     "description": (
         "Create a recurring or one-off scheduled job that wakes an agent to check "
         "something.\n\n"
-        "Use this ONLY when something must be judged at the time — 'every 2 days "
-        "check whether it has rained and raise watering only if dry', 'weekly, "
-        "check whether exercise logging has gone quiet'. Each wake-up runs a full "
-        "session, so it costs real money and real time.\n\n"
+        "Use this ONLY when something must be judged at the time and is not a "
+        "single thing the user has to do — 'weekly, check whether exercise logging "
+        "has gone quiet'. Each wake-up runs a full session, so it costs real money "
+        "and real time.\n\n"
+        "Something the user has to do, once or repeatedly (water the plants every "
+        "3 days, gym 3 times a week, a monthly bill), is a task: open_task. Its "
+        "completions are recorded and it stops asking once done; a job does not.\n\n"
+        "A one-off reminder at a set time ('remind me at 10:00 to call the bank') "
+        "is still a job here — use `at`.\n\n"
         "Do NOT use this for anything with a fixed time and no judgement involved. "
         "'Pay the credit card on the 15th' and 'dentist at 2pm' are calendar "
         "entries — use write_calendar_event, which costs nothing to run and shows "
         "up in the user's own calendar.\n\n"
-        "Do NOT create one job per tracked obligation. Store obligations with "
-        "write_agent_config and let a single sweep read them all; twenty "
-        "self-polling jobs cost twenty sessions a day.\n\n"
+        "Do NOT create one job per tracked obligation. Tracked obligations live "
+        "in the task ledger (open_task), which every session already reads; "
+        "twenty self-polling jobs cost twenty sessions a day.\n\n"
         "Limits: 6 recurring agent-created jobs, minimum 6h interval, 10 "
         "concurrent user-facing reminders. Hitting a limit means something must "
         "be dropped — that is deliberate."

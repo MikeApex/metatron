@@ -107,7 +107,7 @@ check("...and writes no event", not events)
 
 print("\nwrite-family classification:")
 for name in ["write_log", "write_persona", "update_goal", "merge_contacts",
-             "close_obligation", "send_email", "delete_calendar_event"]:
+             "update_task", "send_email", "delete_calendar_event"]:
     check(f"{name} counts as a write", orch._is_write_tool(name))
 for name in ["read_log", "get_weather", "search_memory", "list_contacts",
              "check_calendar_conflicts"]:

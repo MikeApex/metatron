@@ -165,13 +165,13 @@ def _run() -> None:
               "merge_contacts" in block and "c_88" in block and "completed" in block, block)
 
         _write_trace(root, ts=datetime.now(), user_input="what did I eat today",
-                     tool_calls=[{"name": "list_obligations", "args": {}, "ok": True},
+                     tool_calls=[{"name": "list_tasks", "args": {}, "ok": True},
                                  {"name": "search_memory", "args": {"query": "food"},
                                   "ok": True}])
         block = tr.context_block("p")
         check("reads are not reported as the action — pointing the referent at a lookup "
               "is the mistake core/trace.py:107 documents for is_grounded()",
-              "search_memory" not in block and "list_obligations" not in block
+              "search_memory" not in block and "list_tasks" not in block
               and "nothing — no action was taken" in block, block)
 
         _write_trace(root, ts=datetime.now(), user_input="send it",

@@ -61,6 +61,11 @@ _WORLD_AFFECTING = {
     "write_calendar_event", "update_calendar_event", "delete_calendar_event",
     "write_schedule", "delete_schedule",
     "open_obligation", "close_obligation", "reopen_obligation",
+    # The task ledger's names (2026-10-23). The v1 names above stay as historical labels —
+    # old traces carry them, and this is a rename with the same meaning, not a definition
+    # change, so ROADMAP § A9a item 1's re-derivation is not triggered (the spend_guard.yaml
+    # precedent for retired model ids).
+    "open_task", "update_task",
     "import_contacts_file",
 }
 
@@ -176,6 +181,14 @@ def rollup_day(day: str, persona: str) -> dict | None:
         acct = {"intentions_stated": 0, "intentions_resolved_fulfilled": 0,
                 "intentions_resolved_unfulfilled": 0, "intentions_resolved_indeterminate": 0}
 
+    # Task ledger adherence (archive/plans/task_ledger_plan_2026-10-23.md § 7) — counts only,
+    # re-derivable at any time from task_history.jsonl. Same never-crash discipline as above.
+    try:
+        from tools.obligations import daily_task_counts
+        task_counts = daily_task_counts(day, persona)
+    except Exception:
+        task_counts = {}
+
     return {
         # --- cohort anchor: the fields that cannot be reconstructed later ---
         "date": day,
@@ -205,6 +218,10 @@ def rollup_day(day: str, persona: str) -> dict | None:
         "intentions_resolved_fulfilled": acct["intentions_resolved_fulfilled"],
         "intentions_resolved_unfulfilled": acct["intentions_resolved_unfulfilled"],
         "intentions_resolved_indeterminate": acct["intentions_resolved_indeterminate"],
+        # --- task ledger adherence: counts only, re-derivable from task_history.jsonl ---
+        **{k: int(task_counts.get(k, 0)) for k in (
+            "tasks_done", "tasks_missed", "tasks_skipped", "tasks_dismissed", "tasks_moot",
+            "habit_target", "habit_done", "deadlines_met", "deadlines_late")},
         # --- cost: gross margin, not performance telemetry ---
         "tokens_in": tokens_in,
         "tokens_out": tokens_out,

@@ -151,8 +151,11 @@ _SOURCES: tuple[dict[str, Any], ...] = (
     {"id": "schedules", "tool": "list_schedules", "kind": "single_point",
      "description": "scheduled prompts and their cadence",
      "probe": {}},
-    {"id": "obligations", "tool": "list_obligations", "kind": "single_point",
-     "description": "open obligations and what is due",
+    # The task ledger since 2026-10-23 — the id stays "obligations" so filed ledgers that
+    # cite it still resolve; the tool moved with the rename, or this source would read
+    # `available: False` with nothing failing.
+    {"id": "obligations", "tool": "list_tasks", "kind": "single_point",
+     "description": "the task ledger: one-offs, recurring tasks, what is due and recently closed",
      "probe": {}},
     {"id": "contacts", "tool": "list_contacts", "kind": "single_point",
      "description": "the CRM — who the user knows",

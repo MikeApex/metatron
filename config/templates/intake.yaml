@@ -222,7 +222,7 @@ digest:
 #     category: bill_statement
 #
 # `note` is free text and is never parsed. It exists so a rule six months old can still
-# be argued with -- the same standard close_obligation applies to its evidence.
+# be argued with -- the same standard update_task applies to its evidence.
 
 rules: []
 

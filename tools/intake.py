@@ -1180,6 +1180,17 @@ def sweep(persona: str | None = None) -> str:
         if important:
             row["important"] = True
         _append_record(row, persona)
+        # Correspondence evidence for the task ledger (archive/plans/
+        # task_ledger_plan_2026-10-23.md § 6.3): a message answering an open deadline or
+        # waiting task parks a proposed close the user approves with a tap. Code, no model.
+        # A message carrying injection markers is never evidence of anything; ids only cross.
+        if not markers:
+            try:
+                from tools.obligations import match_envelope
+                match_envelope(env.id, env.thread_id, env.sender_address, env.sender_display,
+                               env.subject, env.received, result.category, persona=persona)
+            except Exception as exc:  # noqa: BLE001 — one task fault must not cost the sweep
+                logger.warning(f"[intake] task evidence check failed: {exc}")
         # The ledger learns only from decisions Python is confident in. Learning from
         # its own `unclear` default would teach it that everything unfamiliar is
         # unfamiliar, and learning from the extractor is deferred to Phase 3 so a

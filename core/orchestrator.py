@@ -1115,6 +1115,22 @@ def load_recent_context(persona: str | None = None, days: int = 5) -> str:
     except Exception as e:
         logger.warning(f"[context] ambient load failed: {e}")
 
+    # The task ledger, asked about every to-do copy below (archive/plans/
+    # task_ledger_plan_2026-10-23.md § 5). A thread or a day-log list entry that names a task
+    # — by id, or by two of its identifying words — carries a note saying what the ledger
+    # records: "done 10-15", "tracked as task …". Annotated, never removed: the copy stays
+    # visible, so a wrong match costs a question rather than hiding a commitment. Built once
+    # here; empty (and free) for a persona with no tasks.
+    try:
+        from tools.obligations import annotate as _ledger_annotate, \
+            annotate_log_entry as _ledger_annotate_log, consult_index as _ledger_index
+        _ledger = _ledger_index(persona)
+    except PersonaError:
+        raise
+    except Exception as e:
+        logger.warning(f"[context] task ledger consult unavailable: {e}")
+        _ledger = []
+
     # Context tracker (mid-term: open threads, patterns, follow-ups)
     if tracker_path.exists():
         try:
@@ -1131,6 +1147,8 @@ def load_recent_context(persona: str | None = None, days: int = 5) -> str:
                     )
                     for t in tracker["open_threads"]
                 ]
+                if _ledger:
+                    thread_texts = [_ledger_annotate(x, _ledger) for x in thread_texts]
                 lines.append("**Open threads:** " + " | ".join(thread_texts))
                 for t in tracker["open_threads"]:
                     if isinstance(t, dict) and t.get("added"):
@@ -1138,7 +1156,10 @@ def load_recent_context(persona: str | None = None, days: int = 5) -> str:
             if tracker.get("patterns"):
                 lines.append("**Patterns noted:** " + " | ".join(tracker["patterns"]))
             if tracker.get("follow_ups"):
-                lines.append("**Follow up on:** " + " | ".join(tracker["follow_ups"]))
+                follow_ups = [str(f) for f in tracker["follow_ups"]]
+                if _ledger:
+                    follow_ups = [_ledger_annotate(f, _ledger) for f in follow_ups]
+                lines.append("**Follow up on:** " + " | ".join(follow_ups))
             sections.append("\n".join(lines))
         except Exception:
             pass
@@ -1152,6 +1173,8 @@ def load_recent_context(persona: str | None = None, days: int = 5) -> str:
         if log_path.exists():
             try:
                 entry = _json.loads(log_path.read_text())
+                if _ledger:
+                    entry = _ledger_annotate_log(entry, _ledger)
                 # [DB-0822-06] The date alone is not age. A log line reads as current state
                 # unless something says when it was written, which is how "Day 3 of a 5-day
                 # hiatus" written on the 18th was still being read as true on the 21st.
@@ -1364,10 +1387,11 @@ def register_tools() -> tuple[list[dict], dict]:
     # Commitments that outlive a session. Data, not scheduler jobs — tools/schedule.py
     # § "Why obligations are not jobs" settled that, and tools/obligations.py is the store
     # that position assumed and nobody had written.
+    # Since 2026-10-23 that store is the task ledger (archive/plans/
+    # task_ledger_plan_2026-10-23.md); its three tools replaced the four obligation tools.
     from tools.obligations import (
-        open_obligation, close_obligation, reopen_obligation, list_obligations,
-        OPEN_OBLIGATION_SCHEMA, CLOSE_OBLIGATION_SCHEMA,
-        REOPEN_OBLIGATION_SCHEMA, LIST_OBLIGATIONS_SCHEMA,
+        open_task, update_task, list_tasks,
+        OPEN_TASK_SCHEMA, UPDATE_TASK_SCHEMA, LIST_TASKS_SCHEMA,
     )
     # External-content tools. Both return their payload wrapped by tools/untrusted.py —
     # a web page and an email body are written by strangers.
@@ -1430,8 +1454,7 @@ def register_tools() -> tuple[list[dict], dict]:
         GET_TONE_SHAPE_SCHEMA,
         WRITE_AGENT_CONFIG_SCHEMA, READ_AGENT_CONFIG_SCHEMA,
         WRITE_WISHES_SCHEMA, READ_WISHES_SCHEMA, GENERATE_EMERGENCY_CARD_SCHEMA,
-        OPEN_OBLIGATION_SCHEMA, CLOSE_OBLIGATION_SCHEMA,
-        REOPEN_OBLIGATION_SCHEMA, LIST_OBLIGATIONS_SCHEMA,
+        OPEN_TASK_SCHEMA, UPDATE_TASK_SCHEMA, LIST_TASKS_SCHEMA,
         READ_INTAKE_QUEUE_SCHEMA, TEACH_INTAKE_SCHEMA,
         READ_CALENDAR_SCHEMA, WRITE_CALENDAR_EVENT_SCHEMA,
         UPDATE_CALENDAR_EVENT_SCHEMA, DELETE_CALENDAR_EVENT_SCHEMA,
@@ -1522,10 +1545,9 @@ def register_tools() -> tuple[list[dict], dict]:
         "write_schedule": write_schedule,
         "list_schedules": list_schedules,
         "delete_schedule": delete_schedule,
-        "open_obligation": open_obligation,
-        "close_obligation": close_obligation,
-        "reopen_obligation": reopen_obligation,
-        "list_obligations": list_obligations,
+        "open_task": open_task,
+        "update_task": update_task,
+        "list_tasks": list_tasks,
         "read_intake_queue": read_intake_queue,
         "teach_intake": teach_intake,
         "write_quality_event": write_quality_event,
@@ -6113,6 +6135,61 @@ def _close_turn_bookkeeping(visible: str, user_input: str, is_proactive: bool,
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"[horizon] turn bookkeeping not updated: {exc}")
 
+    # Task ledger raise-once (archive/plans/task_ledger_plan_2026-10-23.md § 4.3): the Now
+    # items this reply mentioned are stamped, so later scheduled turns today hold them back
+    # instead of re-raising them — the rule synthesizer.md states and plant watering broke 27
+    # times. Stamped on every turn that delivered a reply, user turns included: a thing the
+    # user has just heard about has been raised, whoever started the exchange.
+    try:
+        from tools.obligations import note_raised
+        note_raised(visible)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[tasks] raise stamp not recorded: {exc}")
+
+
+def _bind_turn_kind(kind: str | None, persona: str | None) -> None:
+    """
+    Write the session kind into this thread's turn, for code that renders context without it.
+
+    The task ledger's block is built inside load_recent_context(persona), which has no `kind`,
+    and it must know two things only the kind answers: is this a scheduled turn (hold back
+    what was already raised today), and is it a review that repeats things on purpose (the
+    evening close, or any session `carries_weekly_review()` accepts — the review rides a
+    morning brief, so the kind alone would miss it). Both twins resolve `kind` before the
+    Coordinator runs, so this lands before every context load of the turn; fan-out workers
+    adopt the same dict by reference (tools/turn_context.py).
+    """
+    try:
+        turn = _turn.current()
+        if turn is not None:
+            turn["kind"] = kind
+            turn["weekly_review"] = bool(kind and carries_weekly_review(kind, persona))
+    except Exception as exc:  # noqa: BLE001 — a missing kind only means nothing is held back
+        logger.warning(f"[tasks] turn kind not bound: {exc}")
+
+
+def _task_hint_block(user_input: str, is_proactive: bool, history: list[dict] | None,
+                     persona: str | None) -> str:
+    """The task ledger's possible-completion note for the Synthesizer — user turns only.
+
+    A scheduler directive is the system talking to itself; it reports nothing done. The
+    previous assistant message is passed so a bare "yes, done" can be read against what that
+    reply raised.
+    """
+    if is_proactive:
+        return ""
+    prev = None
+    for msg in reversed(history or []):
+        if isinstance(msg, dict) and msg.get("role") == "assistant":
+            prev = msg.get("content") if isinstance(msg.get("content"), str) else None
+            break
+    try:
+        from tools.obligations import completion_hints
+        return completion_hints(user_input, prev_assistant=prev, persona=persona)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[tasks] completion hint failed: {exc}")
+        return ""
+
 
 def _frame_proactive(user_input: str, is_proactive: bool) -> tuple[str, str]:
     """
@@ -6205,6 +6282,7 @@ def run_pipeline_session(user_input: str,
         # _scheduled_focus_block(). Empty on every user-typed turn. Computed here, before the
         # Coordinator runs, so both twins stamp the run at the same point.
         kind = session_kind(user_input, persona)
+        _bind_turn_kind(kind, persona)
         focus_block = _scheduled_focus_block(kind)
 
         # Pre-load Pattern Miner insights (the one context source not in the system prompt).
@@ -6273,12 +6351,14 @@ def run_pipeline_session(user_input: str,
         # [DB-0822-09] Built HERE, after the sign-off veto above: a finding must not be
         # charged an offer on a turn where the Synthesizer never runs.
         horizon_text = _horizon_block(persona, session=kind)
+        task_hint = _task_hint_block(user_input, is_proactive, history, persona)
         synthesizer_input = (
             f"{proactive_prefix}{receipt_line}{synth_label}:\n{user_input}{attach_note}\n\n"
             f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"
             + (f"\n\n{know_text}" if know_text else "")
             + (f"\n\nSPECIALIST OUTPUTS:\n{spec_text}" if spec_text else "")
             + (f"\n\n{horizon_text}" if horizon_text else "")
+            + (f"\n\n{task_hint}" if task_hint else "")
             + (f"\n\n{focus_block}" if focus_block else "")
             + f"\n\n{_action_block()}"
         )
@@ -6432,6 +6512,7 @@ def _run_pipeline_session_stream_inner(
     # focus directive computed for it. Keyed on the user's own turn — see the note at the
     # load_config() call below for why the Synthesizer package cannot be used for this.
     kind = session_kind(user_input, persona)
+    _bind_turn_kind(kind, persona)
     focus_block = _scheduled_focus_block(kind)
     # Names the files and states that their contents are data, never instructions —
     # the <untrusted_content> boundary applied to bytes, which cannot carry tags.
@@ -6478,12 +6559,15 @@ def _run_pipeline_session_stream_inner(
     know_text = _knowledge_block(knowledge)
     # [DB-0822-09] After the sign-off veto, as in the non-streaming twin above.
     horizon_text = _horizon_block(persona, session=kind)
+    # Kept identical to the non-streaming twin — see _task_hint_block().
+    task_hint = _task_hint_block(user_input, is_proactive, history, persona)
     synthesizer_input = (
         f"{proactive_prefix}{receipt_line}{synth_label}:\n{user_input}{attach_note}\n\n"
         f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"
         + (f"\n\n{know_text}" if know_text else "")
         + (f"\n\nSPECIALIST OUTPUTS:\n{spec_text}" if spec_text else "")
         + (f"\n\n{horizon_text}" if horizon_text else "")
+        + (f"\n\n{task_hint}" if task_hint else "")
         + (f"\n\n{focus_block}" if focus_block else "")
         + f"\n\n{_action_block()}"
     )

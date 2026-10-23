@@ -1305,6 +1305,108 @@ async def location_ping(req: LocationPing) -> dict:
         raise HTTPException(status_code=500, detail="Could not record the location.")
 
 
+# --- The task ledger's two taps (archive/plans/task_ledger_plan_2026-10-23.md § 6) ----------
+#
+# The Today panel lists what is outstanding and records a tap as done / skipped / dismissed;
+# the proposal bar offers a close that an arriving message suggested. Both are the user's own
+# act, recorded out of band — the model is not in the path. Like /location, neither writes a
+# conversation row nor broadcasts: the head layer learns of a tap from the Tasks block on its
+# next turn, which is where it reads task state anyway.
+#
+# Proposals deliberately do NOT go through tools/confirm.py. A card raised outside a turn is
+# misattributed by the pending-receipt diff both pipeline twins take at turn start, and a
+# confirm description is written into the conversation and re-rendered to the model — which
+# would carry an email's attacker-written subject into the head-layer prompt. The subject and
+# sender are joined here, at request time, for the user's eyes only.
+
+class TaskActRequest(BaseModel):
+    task_id: str = ""
+    action: str = "done"
+    proposal_id: str | None = None
+    persona: str | None = None
+
+
+class ProposalDeclineRequest(BaseModel):
+    proposal_id: str
+    persona: str | None = None
+
+
+def _task_call(persona: str, fn, *args, **kwargs):
+    """Run a ledger call on a worker thread with the persona bound inside it — identity is
+    thread-local and fail-closed, the same reasoning as `_approve_and_execute`."""
+    from core.persona import persona_scope
+    with persona_scope(persona):
+        return fn(*args, **kwargs)
+
+
+def _task_result(message: str) -> dict:
+    """An `error:` result from the ledger is a failure the app must show as one — a rejected
+    close reported as done is the exact failure tools/confirm.py was built to prevent."""
+    if isinstance(message, str) and message.lstrip().lower().startswith("error"):
+        raise HTTPException(status_code=400, detail=message)
+    return {"status": "ok", "message": message}
+
+
+@app.get("/tasks/today")
+async def tasks_today(persona: str | None = None) -> dict:
+    """What is outstanding today, for the Today panel."""
+    from tools.obligations import today_items
+    items = await asyncio.to_thread(_task_call, persona or DEFAULT_PERSONA, today_items)
+    return {"items": items}
+
+
+@app.post("/tasks/act")
+async def tasks_act(req: TaskActRequest) -> dict:
+    """A tap: done / skipped / dismissed on a task, or accepting a correspondence proposal."""
+    from tools.obligations import act_from_app, resolve_proposal
+    persona_key = req.persona or DEFAULT_PERSONA
+    if req.proposal_id:
+        result = await asyncio.to_thread(_task_call, persona_key, resolve_proposal,
+                                         req.proposal_id, True)
+    else:
+        result = await asyncio.to_thread(_task_call, persona_key, act_from_app,
+                                         req.task_id, req.action)
+    return _task_result(result)
+
+
+def _proposals_for_display() -> list[dict]:
+    from tools.intake import read_records
+    from tools.obligations import pending_proposals
+    props = pending_proposals()
+    if not props:
+        return []
+    wanted = {p["envelope_id"] for p in props}
+    records = {r.get("id"): r for r in read_records() if r.get("id") in wanted}
+    out = []
+    for p in props:
+        rec = records.get(p["envelope_id"]) or {}
+        out.append({
+            "proposal_id": p["proposal_id"], "task_id": p["task_id"], "what": p["what"],
+            # Shown to the user only. Never stored on the task, never sent to a model.
+            "sender": str(rec.get("sender_display") or rec.get("sender") or "")[:120],
+            "subject": str(rec.get("subject") or "")[:200],
+            "received": str(rec.get("received") or p.get("received") or "")[:25],
+        })
+    return out
+
+
+@app.get("/tasks/proposals")
+async def tasks_proposals(persona: str | None = None) -> dict:
+    """Pending correspondence proposals, oldest first. Read-only: no side effect, no card."""
+    items = await asyncio.to_thread(_task_call, persona or DEFAULT_PERSONA,
+                                    _proposals_for_display)
+    return {"proposals": items}
+
+
+@app.post("/tasks/proposals/decline")
+async def tasks_proposal_decline(req: ProposalDeclineRequest) -> dict:
+    """"Not now": the task stays open and that message is never offered again for it."""
+    from tools.obligations import resolve_proposal
+    result = await asyncio.to_thread(_task_call, req.persona or DEFAULT_PERSONA,
+                                     resolve_proposal, req.proposal_id, False)
+    return _task_result(result)
+
+
 @app.get("/health")
 async def health() -> dict:
     return {"status": "ok"}
