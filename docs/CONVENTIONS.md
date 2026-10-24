@@ -61,6 +61,13 @@ $1.00, proceed and report the actual cost afterward. This is independent of `spe
 going to be expensive before the first call goes out. A suite denominated in real dollars is a
 decision, not a default.
 
+**The decision is also enforced at script start (2026-10-24).** Every script under `tests/`
+that calls a live model or service opens its `__main__` block with
+`require_live()` from `tests/support/live_gate.py`: started non-interactively — an agent's
+shell, a loop over `tests/` — it exits 2 unless `METATRON_LIVE=1` is set; from a terminal,
+nothing changes. **A new live script adds the same two lines**, passing any offline flag it
+has (`--dry-run`). Why: a session looping over calendar tests started a live model probe.
+
 ### Three different quantities are called "tokens" — never compare across them
 
 Learned 2026-08-13 during the §10b throughput work, and promoted here from `SESSION.md` on

@@ -390,4 +390,6 @@ def _score(fixtures: list[dict], args) -> int:
 
 
 if __name__ == "__main__":
+    from support.live_gate import require_live  # spends money: see that file
+    require_live()
     sys.exit(main())

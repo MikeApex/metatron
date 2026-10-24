@@ -164,6 +164,8 @@ def main(persona: str) -> int:
 
 
 if __name__ == "__main__":
+    from support.live_gate import require_live  # spends money: see that file
+    require_live()
     who = sys.argv[1] if len(sys.argv) > 1 else "mike"
     with persona_scope(who):
         sys.exit(main(who))
