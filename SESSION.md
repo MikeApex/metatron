@@ -1,21 +1,19 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-10-24. **VM at `1d32c4c`** (deployed; includes the task ledger `27c570f`). **Calendar: Metatron now reads every calendar the account exposes** — Metatron, the
-account's own, UK holidays, "Shared with Mike" — and an event on two calendars shows once, the
-Metatron copy winning, other values kept as `discrepancies`. Only `read_calendar` and the
-write-time conflict check widen; unattended jobs stay on the Metatron calendar. Which calendars
-are read is set at Google's syncselect page; `discover_calendars: false` in `caldav.yaml` is the
-kill switch (`archive/PROJECT_LOG.md` § 2026-10-24). **Owed:** Mike's live check ("what's on my
-calendar the week of 9 Nov?" — John Ball once, shared events present); the two old Metatron copies
-(John Ball, Jimmy Carr) show twice in Google Calendar — left as they are (Mike, 10-24). Live test
-scripts now refuse non-interactive starts without `METATRON_LIVE=1` (`a70ead7`). **Repeating events now land on their real dates** (`bbc741b`, deployed, Mike's live check passed): each
-series row carries `occurs_in_range`; one row per series, edits still act on the whole series. **Replies no longer hang or come
-back blank** (`1d824a9`): 75 s Synthesizer timeout, one per-round retry, 4-round cap, 150 s soft
-deadline, a forced final reply. Vertex stalls are its shared capacity, not our account. **Task
-ledger verified live**; a model may close a task only when the user's words name it (`4f88d19`).
-Record: `archive/PROJECT_LOG.md` § 2026-10-24, fourth. **Next: `archive/handoffs/2026-10-25-ritual-pause-and-ledger-followups-prompt.md`** — a user-requestable pause for check-in rituals (the Franklin review kept returning: no tool could change it), plus verifying 10-24's ledger additions. Still open from 10-23: the "Benny" contact may be a phantom (Mike to check). **Models
-re-checked 10-24: nothing newer than 3.8 Flash; no default changes (Mike).** The bill confirms 3.8
-Flash at 50% off; the promotion's end date is unknown — `[DB-0901-02]`, due 12-15.*
+*Updated: 2026-10-24. **VM at `1d32c4c`; `45739a2` committed, not yet deployed.** **The day
+planner's Stage A** (`45739a2`): a plan for the day kept by code — every calendar, travel both ways,
+meals, tasks by priority, the user's own time protected — shown in the Today panel's new **Plan**
+section; Synth does not read it yet (all its switches off in `config/modules/day_plan.yaml`).
+**Owed now: Mike deploys and sideloads the rebuilt APK, then watches the panel for ONE ordinary
+day** (Mike chose this over several days): events at the right times, travel to and home from
+located ones, nothing duplicated or invented. **Then Stage B**, one Red session with Mike:
+`archive/handoffs/2026-10-24-day-planner-stage-b-prompt.md` (every Red edit drafted). Record:
+`archive/PROJECT_LOG.md` § 2026-10-24, fifth. Also next, in its own window:
+`archive/handoffs/2026-10-25-ritual-pause-and-ledger-followups-prompt.md` — it edits the same Red
+files as Stage B, so whichever lands second re-applies against current text. **Still owed from
+earlier today:** Mike's calendar live check (week of 9 Nov — John Ball once, shared events
+present); the "Benny" contact may be a phantom. 3.8 Flash's half-price end date is unknown —
+`[DB-0901-02]`, due 12-15.*
 
 *Build is unchanged since 09-26 — development, not execution (Mike): Claude Code on the Mac, Mike
 starts, approves, commits and deploys. Plan `archive/plans/build_vertical_plan_2026-09-24.md`
@@ -101,7 +99,8 @@ which model runs which kind of session** (plan in Opus, review in Fable, build i
 ### Built
 **The Phase 5 catalogue moved out on 2026-09-18 — it was finished work, and a primer holds state.**
 What exists: [CODEBASE_INDEX.md](CODEBASE_INDEX.md). When and why each piece was built:
-[archive/PROJECT_LOG.md](archive/PROJECT_LOG.md). Everything committed is deployed (VM `1d32c4c`).
+[archive/PROJECT_LOG.md](archive/PROJECT_LOG.md). Everything committed is deployed (VM `1d32c4c`)
+except the day planner's Stage A, `45739a2`.
 
 ### In progress / next
 
@@ -111,15 +110,18 @@ as live and Mike updates that manually — do not start it). Left: B1b's calenda
 CardDAV rows (gated on Track E), A5b/A5c, `[DB-0804-02]`. **[ROADMAP.md](ROADMAP.md) § Track A/B
 owns the per-item detail and the standing evidence.**
 
-**TASK LEDGER — live and verified 2026-10-24.** `tools/obligations.py` is the single to-do store
-(`tasks.yaml`); recurring tasks are set up (gym 3×/wk, stretching 2×/day, plants every 3 days,
-monthly bills). Live checks all pass. Added the same day: waking-day ✓ Today, "Done, but…",
-Drop with a reason, task durations (stated/estimated), the close gate, and `write_log` refusing
-guessed completions. The medication safety flag is in `ROADMAP.md` § 0 clause 8; `check_inbox_6h` is a dated
-backlog check (10-31). **Not built:** the user-adjustable day boundary (plan § 6.4); editing
-a day-log entry in conversation does not exist. Plans:
-[task_ledger_plan_2026-10-23.md](archive/plans/task_ledger_plan_2026-10-23.md),
+**TASK LEDGER — live and verified 2026-10-24; finished work, recorded in `archive/PROJECT_LOG.md`
+§ 2026-10-24, fourth and fifth.** Plans: [task_ledger_plan_2026-10-23.md](archive/plans/task_ledger_plan_2026-10-23.md),
 [reply_latency_plan_2026-10-24.md](archive/plans/reply_latency_plan_2026-10-24.md).
+
+**DAY PLANNER — Stage A committed 2026-10-24 (`45739a2`), deploy + APK owed.** Synth runs the
+user's day from a plan code keeps current. Stage A: the engine, ledger fields (goal link,
+priority, stakes, zone — hidden until Stage B), day shape, the Plan section, nudge mode, all
+Synth-facing switches off. Stage B (one Red session): agent file, routing, Synth/Coordinator/
+interviewer lines, scheduler jobs, day-shape walkthrough, then the flags — nudges a day later.
+**Open decision D1 (Mike):** the APK has no push, so nudges arrive only while the app is alive;
+recommendation native notifications as Stage C. Plan:
+[day_planner_plan_2026-10-24.md](archive/plans/day_planner_plan_2026-10-24.md).
 
 **A9 — built and deployed 2026-08-18; `@waiting` on real use, review `2026-10-01`.** Spec, the
 five provisional parts and the date: [ROADMAP.md](ROADMAP.md) § A9a, the single home.

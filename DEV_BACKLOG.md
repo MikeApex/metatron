@@ -1257,6 +1257,12 @@ evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording â
 unintended email to be sent" â€” is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
 
+- **[a capability gap was filed]** BLD-1024-03 (construct): Plan, coordinate, book, and track a multi-party trip including visa applications, stakeholder sign-offs, and flight/hotel bookings with advance timeline management.  
+  `2026-10-24T16:13:53.255047Z`
+
+- **[user corrected a prior turn]** User corrected task deferral and expanded scope: 'Hold it for Monday, but expand it into a general search for a Founder's Associate role.'  
+  `2026-10-24T16:03:39.757519Z`
+
 - **[user corrected a prior turn]** User corrected previous false completion of finance tasks (Chase and Rowan); requested daily log update to correct state and confirmation that ledger tasks remain open.  
   `2026-10-24T14:32:36.400934Z`
 
