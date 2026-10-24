@@ -856,7 +856,12 @@ def _view(t: dict, today: date, lead_days: int = _LEAD_DAYS) -> dict:
     first = max(ps, start) if start else ps
     preferred = [d for d in (t.get("on_days") or []) if d in _WEEKDAYS] if every == "week" else []
     today_wd = _WEEKDAYS[today.weekday()]
-    at_risk = remaining >= days_left
+    # The first period, when the task started part-way through it, is excluded from adherence
+    # (the sweep marks it `partial`), so it must not nag either: a 3x-a-week quota set up on a
+    # Saturday read "needed today to stay on target" (2026-10-24).
+    partial = bool(start and start > ps)
+    at_risk = remaining >= days_left and not partial
+    planned = False
     notes: list[str] = []
     if preferred:
         elapsed = sum(1 for i in range((today - first).days)
@@ -879,7 +884,9 @@ def _view(t: dict, today: date, lead_days: int = _LEAD_DAYS) -> dict:
     if notes:
         text += "; " + "; ".join(notes)
     v.update(state="due_today" if actionable else "later", actionable=actionable,
-             sort=(3, what.lower()), text=text)
+             sort=(3, what.lower()), text=text,
+             # For the app's waking-day list (today_items), which is narrower than Now.
+             quota={"planned": planned, "at_risk": at_risk, "partial": partial})
     return v
 
 
@@ -1027,15 +1034,40 @@ def _evidence_arg(evidence) -> str:
     return (evidence or "").strip()
 
 
+def _done_with_followup(task_id: str, evidence: str | None, followup: str | None,
+                        on_date: str | None) -> str:
+    """Done, but with a loose end (Mike, 2026-10-24: the Thanksgiving invitation was done
+    "unsatisfactorily so", with no contact details to send it to — neither done nor dropped).
+    The task closes as done, and the loose end becomes a task of its own, so it is tracked
+    rather than buried in a note. `source_id` points back at the closed task."""
+    loose = (followup or "").strip()
+    if not loose:
+        return ("error: `followup` is required — what is still left to do, in a few words. "
+                "Nothing was written.")
+    tid = _split_id(task_id)
+    t = _find([_norm(x) for x in _load()], tid)
+    if t is None:
+        return f"error: no task with id {task_id!r}"
+    closed = update_task(task_id, "done", evidence=evidence, on_date=on_date)
+    if closed.startswith("error") or " was already " in closed:
+        return closed
+    opened = open_task(loose, kind="deadline", domain=t.get("domain"), source_id=tid,
+                       note=f"Loose end from {tid} ({t.get('what', '')})")
+    return f"{closed}\nLoose end tracked: {opened}"
+
+
 def update_task(task_id: str, action: str, evidence: str | None = None,
                 new_due: str | None = None, note: str | None = None,
-                on_date: str | None = None) -> str:
-    """Record what happened to a tracked task — done, skipped, dismissed, reopen,
-    reschedule, or a new note."""
+                on_date: str | None = None, followup: str | None = None) -> str:
+    """Record what happened to a tracked task — done, done with a loose end, skipped,
+    dismissed, reopen, reschedule, or a new note."""
     action = (action or "").strip().lower()
-    actions = ("done", "skipped", "dismissed", "reopen", "reschedule", "note")
+    actions = ("done", "done_with_followup", "skipped", "dismissed", "reopen", "reschedule",
+               "note")
     if action not in actions:
         return f"error: `action` must be one of {', '.join(actions)}, not {action!r}"
+    if action == "done_with_followup":
+        return _done_with_followup(task_id, evidence, followup, on_date)
     evidence = _evidence_arg(evidence)
     if action in ("done", "skipped", "dismissed", "reopen") and not evidence:
         return ("error: `evidence` is required — quote what the user said that shows this. "
@@ -1207,13 +1239,36 @@ def _state_line(t: dict, today: date) -> str:
         state, v["text"][len(t.get("what", "")):].lstrip(" —") or state)
 
 
-def list_tasks(include_closed: bool = False) -> str:
-    """List tracked tasks with ids and state."""
+_HORIZON_DAYS = {"today": 0, "week": 7, "month": 31}
+
+
+def _within_horizon(t: dict, today: date, days: int) -> bool:
+    """For list_tasks(horizon=...): what is actionable now, plus anything dated inside the
+    window. Habits are always included past "today" — they recur through any window."""
+    v = _view(t, today)
+    if days == 0:
+        return v["actionable"] and _on_todays_list(t, v)
+    if v["actionable"] or t.get("kind") == "habit":
+        return True
+    field = {"deadline": "due", "waiting": "check_back"}.get(t.get("kind"))
+    when = _d(t.get(field)) if field else (_interval_due(t, today) if t.get("kind") == "interval"
+                                           else None)
+    return bool(when and (when - today).days <= days)
+
+
+def list_tasks(include_closed: bool = False, horizon: str | None = None) -> str:
+    """List tracked tasks with ids and state — all of them, or one horizon (today / week /
+    month) when the user asks for a view of a span ("what's on this week")."""
     tasks = [_norm(t) for t in _load()]
     if not tasks:
         return "no tasks tracked"
     today = _today()
     open_items = [t for t in tasks if t.get("status") == "open"]
+    span = (horizon or "").strip().lower()
+    if span:
+        if span not in _HORIZON_DAYS:
+            return f"error: `horizon` must be one of {', '.join(_HORIZON_DAYS)}, not {horizon!r}"
+        open_items = [t for t in open_items if _within_horizon(t, today, _HORIZON_DAYS[span])]
     lines = [f"{len(open_items)} open:"] if open_items else ["nothing open"]
     for t in sorted(open_items, key=lambda t: _view(t, today)["sort"]):
         v = _view(t, today)
@@ -1682,28 +1737,55 @@ def match_envelope(envelope_id: str, thread_id: str = "", sender_address: str = 
     return added
 
 
-def act_from_app(task_id: str, action: str, persona: str | None = None) -> str:
-    """A tap in the app's Today panel. The evidence is the tap itself — the user's own act."""
+def act_from_app(task_id: str, action: str, persona: str | None = None,
+                 reason: str | None = None, followup: str | None = None) -> str:
+    """A tap in the app's Today panel. The evidence is the tap itself — the user's own act —
+    plus the reason, when the app sent one. An app from before reasons existed sends none and
+    still works: "marked in the app" alone is the record, as it was."""
     action = (action or "").strip().lower()
-    if action not in ("done", "skipped", "dismissed"):
+    if action not in ("done", "skipped", "dismissed", "done_with_followup"):
         return f"error: unsupported action {action!r}"
-    return update_task(task_id, action, evidence="marked in the app")
+    why = (reason or "").strip()
+    evidence = "marked in the app" + (f": {why}" if why else "")
+    return update_task(task_id, action, evidence=evidence, followup=followup)
+
+
+def _on_todays_list(t: dict, v: dict) -> bool:
+    """The waking day, and nothing more (Mike, 2026-10-24: "I don't want more than a daily view
+    unless otherwise asked for"). Narrower than the head layer's Now, which keeps its two-day
+    lead for the evening close: overdue, due today, daily habits, intervals that are due, waiting
+    items at check-back — and a weekly or monthly quota only on one of its planned days or when
+    today is its last chance. Undated one-offs and quotas on ordinary days stay out; the longer
+    view is list_tasks(horizon=...) in conversation."""
+    state = v["state"]
+    if state in ("overdue", "waiting_due"):
+        return True
+    if state != "due_today":
+        return False          # upcoming, and undated or vague one-offs ("open")
+    if t.get("kind") != "habit" or (t.get("every") or "day") == "day":
+        return True
+    q = v.get("quota") or {}
+    return bool(q.get("planned") or q.get("at_risk"))
 
 
 def today_items(persona: str | None = None, as_of: date | None = None) -> list[dict]:
-    """The Now list for the app's Today panel: occurrence id, the task's words, its state."""
+    """The Now list for the app's Today panel: occurrence id, the task's words, its state.
+
+    Minus `upcoming`. The two-day lead belongs to the head layer (the evening close has to see
+    tomorrow); in a list headed "Today" a deadline moved to Monday read as a reschedule that had
+    not landed (Mike, 2026-10-24)."""
     today = as_of or _today()
     out = []
     for t in _load(persona):
         t = _norm(t)
         v = _view(t, today)
-        if not v["actionable"]:
+        if not v["actionable"] or not _on_todays_list(t, v):
             continue
         out.append({"task_id": t["id"], "occurrence": v["occ"], "kind": t["kind"],
                     "what": t["what"], "label": v["text"][len(t["what"]):].lstrip(" —"),
                     "state": v["state"], "sort": list(v["sort"]),
                     "actions": (["done", "skipped"] if t["kind"] in ("habit", "interval")
-                                else ["done", "dismissed"])})
+                                else ["done", "done_with_followup", "dismissed"])})
     out.sort(key=lambda i: i["sort"])
     for i in out:
         i.pop("sort", None)
@@ -2240,7 +2322,9 @@ UPDATE_TASK_SCHEMA = {
         "Record what happened to a tracked task. done — the user says it is done: quote their "
         "words as evidence, and do it the moment you hear it rather than waiting to be told "
         "twice. skipped — the user chose not to do this occurrence of a recurring task. "
-        "dismissed — stop tracking it altogether. reopen — a close you recorded was wrong. "
+        "done_with_followup — done, but with a loose end (followup); the loose end is opened "
+        "as its own task. dismissed — stop tracking it altogether; evidence is the user's "
+        "reason. reopen — a close you recorded was wrong. "
         "reschedule — a new date (new_due), keeping the history. note — replace the note. "
         "For a recurring task, done and skipped apply to the current occurrence, or to "
         "on_date if the user said it was another day."
@@ -2252,10 +2336,15 @@ UPDATE_TASK_SCHEMA = {
                         "description": "The id shown under Tasks, e.g. ob_261023_a1b2c3 or "
                                        "ob_261023_a1b2c3@2026-W43."},
             "action": {"type": "string",
-                       "enum": ["done", "skipped", "dismissed", "reopen", "reschedule", "note"]},
+                       "enum": ["done", "done_with_followup", "skipped", "dismissed", "reopen",
+                                "reschedule", "note"]},
             "evidence": {"type": "string",
                          "description": "The user's words that show this. Required for done, "
-                                        "skipped, dismissed and reopen."},
+                                        "done_with_followup, skipped, dismissed and reopen — "
+                                        "for dismissed, the reason it is being dropped."},
+            "followup": {"type": "string",
+                         "description": "done_with_followup: what is still left to do, in a few "
+                                        "words. It becomes a task of its own."},
             "new_due": {"type": "string", "description": "reschedule: the new YYYY-MM-DD."},
             "note": {"type": "string", "description": "note: the replacement text."},
             "on_date": {"type": "string",
@@ -2270,14 +2359,18 @@ LIST_TASKS_SCHEMA = {
     "name": "list_tasks",
     "description": (
         "List tracked tasks with ids and state. What matters today is already in your context "
-        "under Tasks — call this only for ids not shown there, upcoming items, or closed "
-        "history."
+        "under Tasks — call this only for ids not shown there, a longer view the user asks for "
+        "(horizon), or closed history."
     ),
     "input_schema": {
         "type": "object",
         "properties": {
             "include_closed": {"type": "boolean",
                                "description": "Include closed tasks and their evidence."},
+            "horizon": {"type": "string", "enum": ["today", "week", "month"],
+                        "description": "Only what falls in this span — when the user asks "
+                                       "what's on today, this week or this month. Omit for "
+                                       "everything open."},
         },
         "required": [],
     },

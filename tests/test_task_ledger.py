@@ -463,10 +463,90 @@ def _():
     b = _id(O.open_task("Stretching", kind="habit", every="day"))
     items = {i["task_id"]: i for i in O.today_items()}
     assert set(items) == {a, b}, items
-    assert items[a]["actions"] == ["done", "dismissed"] and items[b]["actions"] == ["done", "skipped"]
+    assert items[a]["actions"] == ["done", "done_with_followup", "dismissed"] and items[b]["actions"] == ["done", "skipped"]
     assert O.act_from_app(a, "done").startswith(f"{a} done")
     assert _task(a)["evidence"] == "marked in the app"
     assert O.act_from_app(a, "delete").startswith("error:")
+
+
+@check("the Today panel leaves out what is merely upcoming; the Tasks block still carries it")
+def _():
+    _fresh("tap_upcoming")
+    _at(2026, 10, 24)
+    s = _id(O.open_task("Review Schwab Treasury maturities", kind="deadline", due="2026-10-26"))
+    t = _id(O.open_task("Post babysitter job", kind="deadline", due="2026-10-24"))
+    assert {i["task_id"] for i in O.today_items()} == {t}
+    assert s in O.context_block(), "the head layer keeps the two-day lead"
+
+
+@check("done with a loose end closes the task and opens the loose end as its own task")
+def _():
+    # The Thanksgiving case: done, but no contact details to send the invitation to.
+    _fresh("followup")
+    _at(2026, 10, 24)
+    a = _id(O.open_task("Plan Thanksgiving invitation for Aisha", kind="deadline",
+                        due="2026-10-23", domain="logistics"))
+    assert O.update_task(a, "done_with_followup", evidence="planned it").startswith("error:"), \
+        "a loose end has to be named"
+    out = O.update_task(a, "done_with_followup", evidence="the invite is written",
+                        followup="Get Aisha's contact details")
+    assert out.startswith(f"{a} done") and "Loose end tracked" in out, out
+    assert _task(a)["status"] == "done"
+    loose = [t for t in O._load() if t.get("source_id") == a]
+    assert len(loose) == 1 and loose[0]["what"] == "Get Aisha's contact details", loose
+    assert loose[0]["status"] == "open" and loose[0].get("domain") == "logistics"
+    again = O.update_task(a, "done_with_followup", evidence="x", followup="y")
+    assert "already" in again and len([t for t in O._load() if t.get("source_id") == a]) == 1
+
+
+@check("an app drop carries its reason; the shipped app, which sends none, still works")
+def _():
+    _fresh("app_reason")
+    _at(2026, 10, 24)
+    a = _id(O.open_task("Post babysitter job", kind="deadline", due="2026-10-23"))
+    b = _id(O.open_task("Book plumber", kind="deadline", due="2026-10-24"))
+    assert O.act_from_app(a, "dismissed", reason="hired through a friend").startswith(f"{a} dismissed")
+    assert _task(a)["evidence"] == "marked in the app: hired through a friend"
+    assert O.act_from_app(b, "dismissed").startswith(f"{b} dismissed")
+    assert _task(b)["evidence"] == "marked in the app"
+    c = _id(O.open_task("Send invites", kind="deadline", due="2026-10-24"))
+    assert "Loose end tracked" in O.act_from_app(c, "done_with_followup", followup="Chase RSVPs")
+
+
+@check("list_tasks answers a span when asked: today, this week, this month")
+def _():
+    _fresh("horizon")
+    _at(2026, 10, 24)
+    soon = _id(O.open_task("Review Schwab maturities", kind="deadline", due="2026-10-26"))
+    later = _id(O.open_task("Renew passport", kind="deadline", due="2026-11-20"))
+    now = _id(O.open_task("Post babysitter job", kind="deadline", due="2026-10-23"))
+    today = O.list_tasks(horizon="today")
+    assert now in today and soon not in today and later not in today, today
+    week = O.list_tasks(horizon="week")
+    assert soon in week and later not in week, week
+    assert later in O.list_tasks(horizon="month") and later in O.list_tasks()
+    assert O.list_tasks(horizon="year").startswith("error:")
+
+
+@check("the Today panel is the waking day: Mike's nine-row Saturday list becomes two")
+def _():
+    # The list Mike pasted on Saturday 2026-10-24 ("This is overwhelming"), rebuilt.
+    _fresh("waking_day")
+    _at(2026, 10, 24)
+    job = _id(O.open_task("Post hybrid programmer/babysitter job", kind="deadline", due="2026-10-23"))
+    _id(O.open_task("Review Schwab Treasury maturities", kind="deadline", due="2026-10-26"))
+    stretch = _id(O.open_task("Stretching", kind="habit", every="day", times=2))
+    gym = _id(O.open_task("Gym", kind="habit", every="week", times=3, on_days=["mon", "wed", "fri"]))
+    _id(O.open_task("Pay Chase credit card bill", kind="habit", every="month", times=1))
+    _id(O.open_task("Weekly grocery shop", kind="habit", every="week", times=1))
+    _id(O.open_task("Check status on TfL refund", kind="deadline"))
+    plants = _id(O.open_task("Water the plants", kind="interval", interval_days=3,
+                             last_done="2026-10-23"))
+    assert {i["task_id"] for i in O.today_items()} == {job, stretch}
+    assert "needed today" not in O.context_block(), "a partial first week does not nag"
+    _at(2026, 10, 26)   # Monday: a planned gym day, the plants due, Schwab due
+    ids = {i["task_id"] for i in O.today_items()}
+    assert {gym, plants, stretch, job} <= ids and len(ids) == 5, ids
 
 
 # --- Adherence, counts, Accountability -------------------------------------------------------

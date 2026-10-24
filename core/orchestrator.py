@@ -3257,7 +3257,11 @@ def _get_vertex_native_client():
         if not project:
             return None
         location = _vertex_location()
-        _vertex_native_client = genai.Client(vertexai=True, project=project, location=location)
+        from google.genai import types as _gtypes
+        # A default for every agent on the native path; the Synthesizer overrides it per request.
+        _vertex_native_client = genai.Client(
+            vertexai=True, project=project, location=location,
+            http_options=_gtypes.HttpOptions(timeout=_DEFAULT_CALL_TIMEOUT_S * 1000))
         _start_vertex_cache_sweep(_vertex_native_client)
     return _vertex_native_client
 
@@ -3825,12 +3829,14 @@ def run_session_gemini_grounded(system_prompt: str, user_input: str,
     project = os.environ.get("GOOGLE_CLOUD_PROJECT")
     location = _vertex_location()
     if project:
-        client = genai.Client(vertexai=True, project=project, location=location)
+        client = genai.Client(vertexai=True, project=project, location=location,
+                              http_options=types.HttpOptions(timeout=_DEFAULT_CALL_TIMEOUT_S * 1000))
     else:
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
             raise EnvironmentError("GEMINI_API_KEY or GOOGLE_CLOUD_PROJECT must be set.")
-        client = genai.Client(api_key=api_key)
+        client = genai.Client(api_key=api_key,
+                              http_options=types.HttpOptions(timeout=_DEFAULT_CALL_TIMEOUT_S * 1000))
 
     model_name = model or GEMINI_PRO_MODEL
     # Vertex AI does not accept the "models/" prefix — strip it if present.
@@ -4123,6 +4129,63 @@ def _gemini_user_parts(types, user_input: str, attachments: list[dict] | None) -
 # not a config edit.
 _SYNTH_THINKING_BUDGET = 4096
 
+# Reply-path limits (archive/plans/reply_latency_plan_2026-10-24.md § 3). Until these existed
+# no model call anywhere had a timeout: on 2026-10-24 one Synthesizer call waited 586 s and the
+# reply never arrived, and a turn that spent all eight rounds on tool calls came back blank.
+#
+# 75 s is the P99 of the month's single-round calls (692 calls, 09-25 → 10-24: P50 6 s, P95 37 s,
+# P99 73 s) — Mike: "set the timeout to the P99 of calls, so we don't interrupt calls that are
+# just longer than average". Applied per request to the Synthesizer only. google-genai also
+# sends it as X-Server-Timeout, so it bounds the call server-side, not just each read gap.
+# Re-measure when the reasoning model changes.
+_SYNTH_CALL_TIMEOUT_MS = 75_000
+# Everyone else: a ceiling above every call observed in the month (max 175 s), so no long
+# scheduled job loses its tail. It exists only so that nothing can wait forever.
+_DEFAULT_CALL_TIMEOUT_S = 300
+# From 8. With redundant re-reads gone a real turn needs 1–2 rounds, and hitting the cap now
+# ends in a reply (_final_reply_round), never in silence.
+_SYNTH_MAX_ROUNDS = 4
+# One retry of a round that failed on capacity before producing anything — Google's guidance
+# for Dynamic Shared Quota 429s is retry with backoff (the 429 reflects shared load, not a
+# limit on this project).
+_CAPACITY_RETRY_PAUSE_S = 2.0
+# Set on the bound turn by run_pipeline_session_stream, counted from when the message arrived:
+# past it no new Synthesizer round starts and the turn answers from what it has. 150 s is the
+# P99 of a whole Synthesizer step (105 s) plus margin; scheduled sessions (evening close, the
+# weekly review) are legitimately longer. A hard ceiling that abandons a running turn was
+# designed and withdrawn in review (plan § 3.1): with no per-persona lock, an abandoned turn
+# keeps writing into the next one.
+_TURN_SOFT_DEADLINE_KEY = "soft_deadline"
+_USER_SOFT_DEADLINE_S = 150
+_SCHEDULED_SOFT_DEADLINE_S = 240
+
+_FINAL_REPLY_PROMPT = ("Your tool budget for this turn is spent. Reply to the user now, from "
+                       "what has been done so far. Do not call tools.")
+_NO_REPLY_LINE = ("I did what I could on that, but couldn't finish the reply — ask me again "
+                  "if you need the details.")
+_CUT_REPLY_LINE = ("\n\n(I lost the connection partway through — ask me to finish if you "
+                   "need the rest.)")
+
+
+def _is_capacity_error(exc: BaseException) -> bool:
+    """A failure that says "the serving side is busy or slow", where one retry is the right
+    answer and a fallback to the uncached compat path (same Vertex pool) is not: timeouts,
+    429 / 503 / 504, and a connection dropped mid-read. Matched by type name and status so it
+    covers google-genai (httpx underneath) and the openai SDK without importing either here."""
+    code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+    if code in (429, 503, 504):
+        return True
+    names = {c.__name__ for c in type(exc).__mro__}
+    return bool(names & {"TimeoutException", "ReadTimeout", "ConnectTimeout", "WriteTimeout",
+                         "PoolTimeout", "RemoteProtocolError", "ReadError",
+                         "APITimeoutError", "RateLimitError", "TimeoutError"})
+
+
+def _past_soft_deadline() -> bool:
+    turn = _turn.current() or {}
+    deadline = turn.get(_TURN_SOFT_DEADLINE_KEY)
+    return bool(deadline) and time.monotonic() >= deadline
+
 
 def _note_thinking_cap_hit(thinking_budget: int | None, thinking_tokens: int,
                            turn_num: int) -> None:
@@ -4324,9 +4387,18 @@ def _run_gemini_native_stream(client, model_name: str,
                               max_iterations: int = 8,
                               cached_content: str | None = None,
                               attachments: list[dict] | None = None,
-                              thinking_budget: int | None = None) -> Iterator[str]:
+                              thinking_budget: int | None = None,
+                              call_timeout_ms: int | None = None) -> Iterator[str]:
     """
     Streaming sibling of _run_gemini_native_loop — Option A of the 2026-08-18 caching fix.
+
+    **It always ends with something said, and never re-runs a tool** (2026-10-24, reply
+    latency plan § 3). A round that fails on capacity before producing anything is retried
+    once; one that fails after showing text keeps the text and adds _CUT_REPLY_LINE; a turn
+    that runs out of rounds, or reaches the turn's soft deadline, gets one tools-off final
+    round (_final_reply_round) and, failing that, _NO_REPLY_LINE. It raises only when nothing
+    has been dispatched or shown and the error is not capacity — the one case where the
+    caller's compat fallback cannot repeat a side effect.
 
     Yields text as it arrives while keeping `cached_content`, which is the combination
     the interactive path could not previously have: it streamed by opting out of the
@@ -4360,12 +4432,19 @@ def _run_gemini_native_stream(client, model_name: str,
         {"thinking_config": types.ThinkingConfig(thinking_budget=thinking_budget)}
         if thinking_budget is not None else {}
     )
+    # Per request, so only this call carries the Synthesizer's P99 timeout; the shared client's
+    # default (_DEFAULT_CALL_TIMEOUT_S) covers every other agent.
+    _timeout_kwarg = (
+        {"http_options": types.HttpOptions(timeout=call_timeout_ms)}
+        if call_timeout_ms else {}
+    )
     if cached_content:
         # Tools and system_instruction are baked into the cache — must not repeat them.
         config = types.GenerateContentConfig(
             cached_content=cached_content,
             max_output_tokens=4096,
             **_think_kwarg,
+            **_timeout_kwarg,
         )
     else:
         config = types.GenerateContentConfig(
@@ -4373,6 +4452,7 @@ def _run_gemini_native_stream(client, model_name: str,
             max_output_tokens=4096,
             **({"tools": gemini_tools} if gemini_tools else {}),
             **_think_kwarg,
+            **_timeout_kwarg,
         )
 
     contents: list = []
@@ -4384,8 +4464,18 @@ def _run_gemini_native_stream(client, model_name: str,
 
     cumulative_input_tokens = 0
     result = ""
+    emitted = False       # any text shown to the user, in any round
+    dispatched = False    # any tool run, in any round — "nothing emitted" is not "nothing done"
+
+    def _finish(text: str) -> None:
+        if history is not None:
+            history.append({"role": "user", "content": user_input})
+            history.append({"role": "assistant", "content": text})
 
     for turn_num in range(1, max_iterations + 1):
+        if turn_num > 1 and _past_soft_deadline():
+            logger.warning(f"[reply_limits] soft deadline reached before round {turn_num}")
+            break
         _trace(f"[API] gemini-native-stream/{model_name}  turn={turn_num}  streaming...")
 
         function_calls = []
@@ -4393,23 +4483,55 @@ def _run_gemini_native_stream(client, model_name: str,
         text_parts: list[str] = []
         usage = None
 
-        for chunk in client.models.generate_content_stream(
-            model=model_name, contents=contents, config=config,
-        ):
-            if getattr(chunk, "usage_metadata", None):
-                usage = chunk.usage_metadata
-            if not chunk.candidates:
-                continue
-            cand_content = chunk.candidates[0].content
-            if cand_content is None or not cand_content.parts:
-                continue
-            for part in cand_content.parts:
-                if getattr(part, "function_call", None):
-                    function_calls.append(part.function_call)
-                    fc_parts.append(part)   # keep the ORIGINAL part — it carries the signature
-                elif getattr(part, "text", None):
-                    text_parts.append(part.text)
-                    yield part.text
+        attempt = 0
+        while True:
+            got_part = False
+            try:
+                for chunk in client.models.generate_content_stream(
+                    model=model_name, contents=contents, config=config,
+                ):
+                    if getattr(chunk, "usage_metadata", None):
+                        usage = chunk.usage_metadata
+                    if not chunk.candidates:
+                        continue
+                    cand_content = chunk.candidates[0].content
+                    if cand_content is None or not cand_content.parts:
+                        continue
+                    for part in cand_content.parts:
+                        if getattr(part, "function_call", None):
+                            got_part = True
+                            function_calls.append(part.function_call)
+                            fc_parts.append(part)   # keep the ORIGINAL part — it carries the signature
+                        elif getattr(part, "text", None):
+                            got_part = True
+                            emitted = True
+                            text_parts.append(part.text)
+                            yield part.text
+                break
+            except Exception as e:
+                capacity = _is_capacity_error(e)
+                if capacity and not got_part and attempt == 0:
+                    attempt += 1
+                    logger.warning(f"[reply_limits] round {turn_num} capacity failure ({e}) — "
+                                   f"retrying once in {_CAPACITY_RETRY_PAUSE_S:.0f}s")
+                    time.sleep(_CAPACITY_RETRY_PAUSE_S)
+                    usage = None
+                    continue
+                if not capacity and not emitted and not dispatched:
+                    raise   # nothing done yet: the caller's compat fallback is safe
+                from core.router import log_model_error
+                log_model_error(_tr.get_current_agent() or "unknown", "gemini-native-stream",
+                                model_name, f"round {turn_num} failed, turn ended: {e}")
+                shown = result + "".join(text_parts)
+                if text_parts:
+                    yield _CUT_REPLY_LINE
+                    _finish(shown + _CUT_REPLY_LINE)
+                elif shown:
+                    _finish(shown)
+                else:
+                    yield _NO_REPLY_LINE
+                    _finish(_NO_REPLY_LINE)
+                return
 
         if usage is not None:
             input_tokens = getattr(usage, "prompt_token_count", 0) or 0
@@ -4433,9 +4555,11 @@ def _run_gemini_native_stream(client, model_name: str,
             result = "".join(text_parts)
 
         if not function_calls:
-            if history is not None:
-                history.append({"role": "user", "content": user_input})
-                history.append({"role": "assistant", "content": result})
+            if not result:
+                # A round that returned neither text nor a call — the blank-reply shape.
+                yield _NO_REPLY_LINE
+                result = _NO_REPLY_LINE
+            _finish(result)
             return
 
         # Rebuild the assistant turn: original function-call parts (signatures intact),
@@ -4443,6 +4567,7 @@ def _run_gemini_native_stream(client, model_name: str,
         model_parts = ([types.Part(text="".join(text_parts))] if text_parts else []) + fc_parts
         contents.append(types.Content(role="model", parts=model_parts))
 
+        dispatched = True
         result_parts = []
         parallel_calls = []
         for fc in function_calls:
@@ -4488,9 +4613,47 @@ def _run_gemini_native_stream(client, model_name: str,
 
         contents.append(types.Content(role="user", parts=result_parts))
 
-    if history is not None:
-        history.append({"role": "user", "content": user_input})
-        history.append({"role": "assistant", "content": result})
+    # Out of rounds, or past the turn's soft deadline, and the last round asked for tools. On
+    # 2026-10-24 this fell through with nothing said: a blank reply after 9 minutes.
+    final = "" if result else _final_reply_round(client, model_name, contents, config, types)
+    if final:
+        yield final
+        result = final
+    elif not result:
+        yield _NO_REPLY_LINE
+        result = _NO_REPLY_LINE
+    _finish(result)
+
+
+def _final_reply_round(client, model_name: str, contents: list, config, types) -> str:
+    """One last round that may only speak. Tools cannot be switched off on a cached request
+    (they are baked into the cache), so the instruction carries it and any call the model
+    returns anyway is ignored, not run. No retry: if this fails, the caller says
+    _NO_REPLY_LINE. Returns the text, or ""."""
+    ask = types.Part(text=_FINAL_REPLY_PROMPT)
+    if contents and contents[-1].role == "user":
+        # The tool results are the last user turn; the instruction rides in it rather than
+        # forming a second consecutive user turn.
+        contents = contents[:-1] + [types.Content(role="user",
+                                                  parts=list(contents[-1].parts or []) + [ask])]
+    else:
+        contents = contents + [types.Content(role="user", parts=[ask])]
+    out: list[str] = []
+    try:
+        for chunk in client.models.generate_content_stream(
+            model=model_name, contents=contents, config=config,
+        ):
+            if not chunk.candidates or chunk.candidates[0].content is None:
+                continue
+            for part in chunk.candidates[0].content.parts or []:
+                if getattr(part, "text", None) and not getattr(part, "function_call", None):
+                    out.append(part.text)
+    except Exception as e:
+        logger.warning(f"[reply_limits] final reply round failed: {e}")
+        return ""
+    logger.warning("[reply_limits] turn ended on tool calls — final reply round "
+                   + ("answered" if out else "returned nothing"))
+    return "".join(out).strip()
 
 
 def run_session_gemini_cached_stream(system_prompt: str, user_input: str,
@@ -4542,6 +4705,10 @@ def run_session_gemini_cached_stream(system_prompt: str, user_input: str,
             history=history, cached_content=cached_content_name,
             attachments=attachments,
             thinking_budget=thinking_budget,
+            # This entry point is the Synthesizer's alone (see the call site in the stream
+            # pipeline), so its limits are applied here rather than threaded through callers.
+            max_iterations=_SYNTH_MAX_ROUNDS,
+            call_timeout_ms=_SYNTH_CALL_TIMEOUT_MS,
         ):
             emitted = True
             yield chunk
@@ -4586,7 +4753,7 @@ def _openai_compat_loop(system_prompt: str, user_input: str,
     # agent was granted, so they double as the permission set — no separate
     # lookup, and no way for the two to drift apart.
     _allowed_names = {s['name'] for s in tool_schemas} if tool_schemas else set()
-    client = openai.OpenAI(api_key=api_key, base_url=base_url or None)
+    client = openai.OpenAI(api_key=api_key, base_url=base_url or None, timeout=_DEFAULT_CALL_TIMEOUT_S)
     oai_tools = _to_openai_tools(tool_schemas)
     messages = [{"role": "system", "content": system_prompt}]
     if history:
@@ -4704,7 +4871,10 @@ def _openai_compat_stream(
     # agent was granted, so they double as the permission set — no separate
     # lookup, and no way for the two to drift apart.
     _allowed_names = {s['name'] for s in tool_schemas} if tool_schemas else set()
-    client = openai.OpenAI(api_key=api_key, base_url=base_url or None)
+    # Only the Synthesizer runs this loop at runtime (see the note above), so it carries the
+    # Synthesizer's P99 timeout, and max_retries=0 because the round-level retry below owns it.
+    client = openai.OpenAI(api_key=api_key, base_url=base_url or None,
+                           timeout=_SYNTH_CALL_TIMEOUT_MS / 1000, max_retries=0)
     oai_tools = _to_openai_tools(tool_schemas)
     messages = [{"role": "system", "content": system_prompt}]
     if history:
@@ -4793,6 +4963,8 @@ def _openai_compat_stream(
                           "continue and give your answer."),
         })
 
+    _compat_emitted = False      # see _run_gemini_native_stream: shown vs done are tracked apart
+    _compat_dispatched = False
     for turn_num in range(1, max_iterations + 1):
         _trace(f"[API] {base_url or 'openai'}/{model}  turn={turn_num}  streaming...")
         token_kwarg = "max_completion_tokens" if model.startswith("o") else "max_tokens"
@@ -4800,17 +4972,51 @@ def _openai_compat_stream(
         # Snapshot messages before this turn so we can replay blocking if tool calls appear.
         messages_snapshot = list(messages)
 
+        if turn_num > 1 and _past_soft_deadline():
+            logger.warning(f"[reply_limits] soft deadline reached before compat round {turn_num}")
+            break
+
         try:
-            stream = client.chat.completions.create(
-                model=model,
-                **{token_kwarg: 4096},
-                **({"tools": oai_tools} if oai_tools else {}),
-                messages=messages,
-                stream=True,
-                stream_options={"include_usage": True},
-                **({"extra_body": extra_body} if extra_body else {}),
-            )
+            try:
+                stream = client.chat.completions.create(
+                    model=model,
+                    **{token_kwarg: 4096},
+                    **({"tools": oai_tools} if oai_tools else {}),
+                    messages=messages,
+                    stream=True,
+                    stream_options={"include_usage": True},
+                    **({"extra_body": extra_body} if extra_body else {}),
+                )
+            except Exception as _first_exc:
+                # Same rule as the native stream: one retry of a round that failed on capacity
+                # before producing anything. Nothing of this round has run or been shown.
+                if not _is_capacity_error(_first_exc):
+                    raise
+                logger.warning(f"[reply_limits] compat round {turn_num} capacity failure "
+                               f"({_first_exc}) — retrying once")
+                time.sleep(_CAPACITY_RETRY_PAUSE_S)
+                stream = client.chat.completions.create(
+                    model=model,
+                    **{token_kwarg: 4096},
+                    **({"tools": oai_tools} if oai_tools else {}),
+                    messages=messages,
+                    stream=True,
+                    stream_options={"include_usage": True},
+                    **({"extra_body": extra_body} if extra_body else {}),
+                )
         except Exception as _api_exc:
+            if _compat_dispatched or _compat_emitted or _is_capacity_error(_api_exc):
+                # Past the point where the caller could safely re-run the turn: end it here.
+                _log_api_failure("openai_compat_stream", model, _api_exc, turn=turn_num,
+                                 extra="turn ended with a fixed line")
+                if _compat_emitted:
+                    yield _CUT_REPLY_LINE
+                else:
+                    yield _NO_REPLY_LINE
+                if history is not None:
+                    history.append({"role": "user", "content": user_input_display or user_input})
+                    history.append({"role": "assistant", "content": _NO_REPLY_LINE})
+                return
             # msgs= is the index base for the "position N" Vertex quotes in a
             # thought_signature 400, matching _openai_compat_loop. unsigned= is the
             # DB-0810-12 ledger: if Vertex's position matches one of these entries,
@@ -4869,6 +5075,7 @@ def _openai_compat_stream(
                     _usage_recorded = True
 
             if delta.content:
+                _compat_emitted = True
                 text_parts.append(delta.content)
                 yield delta.content
 
@@ -4887,6 +5094,9 @@ def _openai_compat_stream(
 
         if finish_reason != "tool_calls" or not tool_calls_raw:
             result = "".join(text_parts)
+            if not result and not _compat_emitted:
+                yield _NO_REPLY_LINE
+                result = _NO_REPLY_LINE
             if history is not None:
                 history.append({"role": "user", "content": user_input_display or user_input})
                 history.append({"role": "assistant", "content": result})
@@ -4952,6 +5162,7 @@ def _openai_compat_stream(
                                len(messages), turn_num,
                                [tc.function.name for tc in _signed.tool_calls])
             _ran: list[str] = []
+            _compat_dispatched = True
             for tc in _signed.tool_calls:
                 inputs = json.loads(tc.function.arguments)
                 dispatch_tool(tc.function.name, inputs, tool_handlers, _turn_num=turn_num, _allowed=_allowed_names)
@@ -4984,6 +5195,7 @@ def _openai_compat_stream(
                 messages.append({"role": "assistant", "content": "".join(text_parts) or None,
                                  "tool_calls": reconstructed})
             _ran = []
+            _compat_dispatched = True
             for tc in reconstructed:
                 inputs = json.loads(tc["function"]["arguments"])
                 dispatch_tool(tc["function"]["name"], inputs, tool_handlers, _turn_num=turn_num, _allowed=_allowed_names)
@@ -4993,10 +5205,25 @@ def _openai_compat_stream(
             if _unsignable:
                 _record_unsignable_turn("".join(text_parts), _ran)
 
-    # Fallback: max iterations reached
+    # Out of rounds or past the soft deadline. Ended here with nothing said until 2026-10-24.
+    # One tools-off round: unlike the cached native path, tools CAN be withheld here.
+    _final = ""
+    try:
+        _resp = client.chat.completions.create(
+            model=model,
+            **{token_kwarg: 4096},
+            messages=messages + [{"role": "user", "content": _FINAL_REPLY_PROMPT}],
+            stream=False,
+            **({"extra_body": extra_body} if extra_body else {}),
+        )
+        _final = (_resp.choices[0].message.content or "").strip()
+    except Exception as _final_exc:
+        logger.warning(f"[reply_limits] compat final reply round failed: {_final_exc}")
+    _final = _final or _NO_REPLY_LINE
+    yield _final
     if history is not None:
         history.append({"role": "user", "content": user_input_display or user_input})
-        history.append({"role": "assistant", "content": ""})
+        history.append({"role": "assistant", "content": _final})
 
 
 # Head-layer agents receive full config + recent context.
@@ -6456,7 +6683,17 @@ def run_pipeline_session_stream(
     """
     with persona_scope(resolve_persona(persona)) as bound, _turn.turn_scope(
         user_turn=has_real_user_turn(user_input, is_proactive, attachments)
-    ):
+    ) as turn:
+        # Counted from when the message arrived, not from here: the queue ahead of the pipeline
+        # is part of what the user waits through.
+        _waited = 0.0
+        if received_at is not None:
+            try:
+                _waited = max(0.0, time.time() - received_at.timestamp())
+            except (TypeError, ValueError, OverflowError):
+                _waited = 0.0
+        turn[_TURN_SOFT_DEADLINE_KEY] = time.monotonic() - _waited + (
+            _SCHEDULED_SOFT_DEADLINE_S if is_proactive else _USER_SOFT_DEADLINE_S)
         yield from _run_pipeline_session_stream_inner(
             user_input, persona=bound, provider=provider, history=history,
             is_proactive=is_proactive, received_at=received_at,

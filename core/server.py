@@ -1324,6 +1324,10 @@ class TaskActRequest(BaseModel):
     action: str = "done"
     proposal_id: str | None = None
     persona: str | None = None
+    # Optional so the shipped app, which sends neither, keeps working until the APK that
+    # asks for them is installed (reply latency plan § 6.3).
+    reason: str | None = None
+    followup: str | None = None
 
 
 class ProposalDeclineRequest(BaseModel):
@@ -1348,10 +1352,16 @@ def _task_result(message: str) -> dict:
 
 
 @app.get("/tasks/today")
-async def tasks_today(persona: str | None = None) -> dict:
-    """What is outstanding today, for the Today panel."""
+async def tasks_today(persona: str | None = None, followup: int = 0) -> dict:
+    """What is outstanding today, for the Today panel.
+
+    `followup=1` is sent only by an app that can ask for the loose end; an older APK would draw
+    the raw action name as a button and post it without one, so it is not offered there."""
     from tools.obligations import today_items
     items = await asyncio.to_thread(_task_call, persona or DEFAULT_PERSONA, today_items)
+    if not followup:
+        for item in items:
+            item["actions"] = [a for a in item.get("actions", []) if a != "done_with_followup"]
     return {"items": items}
 
 
@@ -1365,7 +1375,8 @@ async def tasks_act(req: TaskActRequest) -> dict:
                                          req.proposal_id, True)
     else:
         result = await asyncio.to_thread(_task_call, persona_key, act_from_app,
-                                         req.task_id, req.action)
+                                         req.task_id, req.action,
+                                         reason=req.reason, followup=req.followup)
     return _task_result(result)
 
 

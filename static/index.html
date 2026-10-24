@@ -731,7 +731,8 @@
       padding: 12px 16px;
     }
     #tasks-panel.shown { display: flex; }
-    .task-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .task-row { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+                flex-wrap: wrap; }   /* three buttons, or a field, may not fit beside the text */
     .task-text { flex: 1; min-width: 0; }
     .task-what { font-size: 14px; color: #dde6dd; overflow-wrap: anywhere; }
     .task-label { font-size: 12px; color: #7d8a7d; overflow-wrap: anywhere; }
@@ -748,6 +749,11 @@
     }
     .task-btn.task-done { background: #234023; border-color: #2f5a2f; color: #e8f2e8; }
     .task-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .task-input {
+      flex: 1 1 160px; min-width: 0; padding: 7px 10px; border-radius: 16px;
+      border: 1px solid #2f5a2f; background: #0d110d; color: #dde6dd; font-size: 13px;
+    }
+    .task-actions:has(.task-input) { flex: 1 1 100%; }
     .task-empty { font-size: 13px; color: #5d6a5d; }
     /* A close suggested by an arriving message. Its own bar, never the approval bar above —
        see the comment where it is wired. */
@@ -3703,7 +3709,7 @@
       list.appendChild(empty);
       return;
     }
-    const labels = { done: 'Done', skipped: 'Skip', dismissed: 'Drop' };
+    const labels = { done: 'Done', done_with_followup: 'Done, but…', skipped: 'Skip', dismissed: 'Drop' };
     for (const item of items) {
       const row = document.createElement('div');
       row.className = 'task-row';
@@ -3723,7 +3729,9 @@
         const b = document.createElement('button');
         b.className = 'task-btn task-' + action;
         b.textContent = labels[action] || action;
-        b.addEventListener('click', () => actOnTask(taskId, action, row));
+        b.addEventListener('click', () => (ASKS[action]
+          ? askThenAct(taskId, action, row, acts)
+          : actOnTask(taskId, action, row)));
         acts.appendChild(b);
       }
       row.append(text, acts);
@@ -3731,10 +3739,46 @@
     }
   }
 
+  // "Done, but…" names the loose end, which becomes a task of its own; "Drop" gives a reason.
+  // Both open a one-line field in the row instead of acting on the tap.
+  const ASKS = {
+    done_with_followup: { field: 'followup', placeholder: 'What is still left to do?', required: true },
+    dismissed: { field: 'reason', placeholder: 'Why drop it? (optional)', required: false },
+  };
+  let taskEditing = false;   // the 30 s refresh redraws the list, which would wipe a half-typed line
+
+  function askThenAct(taskId, action, row, acts) {
+    const spec = ASKS[action];
+    taskEditing = true;
+    const saved = Array.from(acts.childNodes);
+    acts.innerHTML = '';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'task-input';
+    input.placeholder = spec.placeholder;
+    const ok = document.createElement('button');
+    ok.className = 'task-btn task-' + action;
+    ok.textContent = 'Save';
+    const cancel = document.createElement('button');
+    cancel.className = 'task-btn';
+    cancel.textContent = 'Cancel';
+    const restore = () => { acts.innerHTML = ''; saved.forEach(n => acts.appendChild(n)); taskEditing = false; };
+    cancel.addEventListener('click', restore);
+    ok.addEventListener('click', () => {
+      const value = input.value.trim();
+      if (spec.required && !value) { input.focus(); return; }
+      taskEditing = false;
+      actOnTask(taskId, action, row, value ? { [spec.field]: value } : {});
+    });
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') ok.click(); });
+    acts.append(input, ok, cancel);
+    input.focus();
+  }
+
   async function refreshTasks() {
-    if (!currentPersona || !authToken) return;
+    if (!currentPersona || !authToken || taskEditing) return;
     try {
-      const res = await authFetch('/tasks/today?persona=' + encodeURIComponent(currentPersona));
+      const res = await authFetch('/tasks/today?followup=1&persona=' + encodeURIComponent(currentPersona));
       if (!res.ok) return;
       const { items } = await res.json();
       renderTasks(items || []);
@@ -3745,14 +3789,14 @@
     try { return ((await res.json()).detail || '').toString().slice(0, 140); } catch (e) { return ''; }
   }
 
-  async function actOnTask(taskId, action, row) {
+  async function actOnTask(taskId, action, row, extra) {
     const buttons = row.querySelectorAll('button');
     buttons.forEach(b => { b.disabled = true; });
     try {
       const res = await authFetch('/tasks/act', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task_id: taskId, action, persona: currentPersona }),
+        body: JSON.stringify({ task_id: taskId, action, persona: currentPersona, ...(extra || {}) }),
       });
       // A refused close stays on screen as a failure — never reported as done.
       if (!res.ok) {
