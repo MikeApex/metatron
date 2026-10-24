@@ -925,6 +925,10 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                 # Scheduler-initiated exchanges are flagged so traces record that
                 # Metatron opened the conversation rather than the user.
                 proactive = bool(data.get("proactive"))
+                # A day-plan nudge (tools/day_plan.py nudge_tick): the Synthesizer decides whether
+                # to speak at all, so nothing reaches any device until it has — no stream_start,
+                # no chunk broadcast — and a reply of exactly [HOLD] is recorded nowhere.
+                nudge = proactive and bool(data.get("nudge"))
                 source = normalise_turn_source(data.get("source"))
                 # Files the user sent in an earlier turn and is now pointing back at.
                 # These go to the model but not to the client or the exchange row:
@@ -942,15 +946,16 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                 history = _session_history.setdefault(persona_key, [])
 
                 # Notify other devices that a new exchange is starting
-                await manager.broadcast(persona_key, {
-                    "type": "stream_start",
-                    "exchange_id": exchange_id,
-                    "user": user_input,
-                    # Clients must not render the prompt of a proactive exchange as
-                    # something the user said — Metatron opened this one.
-                    "proactive": proactive,
-                    "attachments": _public_attachments(attached),
-                }, exclude=websocket)
+                if not nudge:
+                    await manager.broadcast(persona_key, {
+                        "type": "stream_start",
+                        "exchange_id": exchange_id,
+                        "user": user_input,
+                        # Clients must not render the prompt of a proactive exchange as
+                        # something the user said — Metatron opened this one.
+                        "proactive": proactive,
+                        "attachments": _public_attachments(attached),
+                    }, exclude=websocket)
 
                 loop = asyncio.get_running_loop()
                 queue: asyncio.Queue = asyncio.Queue()
@@ -965,7 +970,7 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                             user_input, persona=persona_orch, provider=provider,
                             history=history, is_proactive=proactive,
                             received_at=received_at, attachments=pipeline_attachments,
-                            source=source,
+                            source=source, nudge=nudge,
                         ):
                             asyncio.run_coroutine_threadsafe(queue.put(chunk), loop).result()
                     except NotImplementedError:
@@ -1031,7 +1036,8 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                             accumulated.append(item)
                             chunk_payload = {"type": "chunk", "exchange_id": exchange_id, "text": item}
                             await _send_to_sender(chunk_payload)
-                            await manager.broadcast(persona_key, chunk_payload, exclude=websocket)
+                            if not nudge:
+                                await manager.broadcast(persona_key, chunk_payload, exclude=websocket)
 
                     await asyncio.wrap_future(producer)
 
@@ -1047,6 +1053,14 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                             del _retracted_exchanges[next(iter(_retracted_exchanges))]
                         await _send_to_sender(retract_payload)
                         await manager.broadcast(persona_key, retract_payload, exclude=websocket)
+                    elif nudge and "".join(accumulated).strip() == "[HOLD]":
+                        # Held: the Synthesizer chose not to speak. No row, no log line, no
+                        # broadcast, and the held turn leaves the session history it never
+                        # belonged in (the pipeline appended it like any turn).
+                        if (len(history) >= 2 and history[-1].get("role") == "assistant"
+                                and str(history[-1].get("content") or "").strip() == "[HOLD]"):
+                            del history[-2:]
+                        await _send_to_sender({"type": "held", "exchange_id": exchange_id})
                     elif not errored:
                         full_response = "".join(accumulated)
                         done_payload = {"type": "done", "exchange_id": exchange_id}
@@ -1066,6 +1080,10 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                             "assistant": full_response,
                             "ts": datetime.utcnow().isoformat() + "Z",
                             "attachments": _public_attachments(attached),
+                            # Without this, a device that missed stream_start — and every
+                            # device on a nudge, which sends none — renders a scheduler
+                            # prompt as something the user said (index.html applyCatchupRow).
+                            "proactive": proactive,
                         }, exclude=websocket)
                 finally:
                     with _active_lock:
@@ -1365,6 +1383,35 @@ async def tasks_today(persona: str | None = None, followup: int = 0) -> dict:
     return {"items": items}
 
 
+@app.get("/plan/today")
+async def plan_today(persona: str | None = None) -> dict:
+    """The day plan, for the Today panel while it is being tested (archive/plans/
+    day_planner_plan_2026-10-24.md § 9). `{}` when `show_in_app` is off — the move to
+    "Synth only" is that flag, no client change. Polled with /tasks/today; it renders the stored
+    plan after the gate's check and never waits on the calendar (a stale snapshot starts a
+    background refresh, so the next poll has it)."""
+    from tools.day_plan import today_view
+    try:
+        return await asyncio.to_thread(_task_call, persona or DEFAULT_PERSONA, today_view)
+    except Exception:  # noqa: BLE001 — the panel shows tasks without a plan, never an error
+        logger.warning("[day_plan] /plan/today failed", exc_info=True)
+        return {}
+
+
+@app.get("/settings/location")
+async def settings_location(persona: str | None = None) -> dict:
+    """The persona's answer to "send your place with messages?" from the first interview:
+    true, false, or null when never asked. The app uses it only to set a default it has not
+    stored — a stored local choice always wins, and anything but true leaves it off
+    (plan § 8.2; tests/test_location_onsend_default.js)."""
+    from tools.day_shape import location_sharing
+    try:
+        value = await asyncio.to_thread(_task_call, persona or DEFAULT_PERSONA, location_sharing)
+    except Exception:  # noqa: BLE001
+        value = None
+    return {"on_send": value}
+
+
 @app.post("/tasks/act")
 async def tasks_act(req: TaskActRequest) -> dict:
     """A tap: done / skipped / dismissed on a task, or accepting a correspondence proposal."""
@@ -1386,10 +1433,20 @@ def _proposals_for_display() -> list[dict]:
     props = pending_proposals()
     if not props:
         return []
-    wanted = {p["envelope_id"] for p in props}
-    records = {r.get("id"): r for r in read_records() if r.get("id") in wanted}
+    # Intake records are read for correspondence proposals only; a location proposal carries its
+    # own basis ("You were at the gym at 18:05"), written by code, never by a stranger.
+    wanted = {p["envelope_id"] for p in props
+              if p.get("source", "correspondence") == "correspondence" and p.get("envelope_id")}
+    records = ({r.get("id"): r for r in read_records() if r.get("id") in wanted}
+               if wanted else {})
     out = []
     for p in props:
+        if p.get("source") == "location":
+            out.append({"proposal_id": p["proposal_id"], "task_id": p["task_id"],
+                        "what": p["what"], "source": "location",
+                        "basis": str(p.get("basis") or "")[:120],
+                        "received": str(p.get("created") or "")[:25]})
+            continue
         rec = records.get(p["envelope_id"]) or {}
         out.append({
             "proposal_id": p["proposal_id"], "task_id": p["task_id"], "what": p["what"],

@@ -1,0 +1,36 @@
+# config/modules/day_shape.yaml — how a day is shaped for EVERY user (the design layer).
+#
+# The day planner (tools/day_plan.py) builds each day around these. They are design, not one
+# person's preference (Mike, 2026-10-24, Q4: meals, breaks, buffers and wind-down are the agent
+# layer; the user's own hours are per-persona, in data/personas/{p}/day_shape.yaml, set with
+# set_day_shape). Read by tools/day_shape.py. Plan: archive/plans/day_planner_plan_2026-10-24.md
+# § 4.2.
+#
+# Times are HH:MM local. "wake+90" means 90 minutes after the user's wake time.
+
+meals:
+  breakfast: {earliest: "wake", latest: "wake+90", minutes: 15}
+  lunch: {earliest: "12:00", latest: "14:00", minutes: 30}
+  dinner: {earliest: "18:00", latest: "20:30", minutes: 45}
+
+# After this many minutes of task blocks back to back, a short break goes in. Comfort breaks are
+# this rule — there is no separate block type for them.
+break_after_minutes: 90
+break_minutes: 10
+
+# Between two task blocks.
+transition_minutes: 5
+
+# Before any departure, on top of the travel time itself.
+departure_buffer_minutes: 10
+
+# No work or deadline blocks this close to bed. Habits may still sit here (stretching, reading).
+wind_down_minutes: 60
+
+# How the user gets around when nothing says otherwise.
+travel_mode: transit
+
+# Used only when the user has stated no wake/bed and the persona's scheduler.yaml has no quiet
+# hours to read them from.
+fallback_wake: "07:00"
+fallback_bed: "23:00"

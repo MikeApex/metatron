@@ -1112,6 +1112,7 @@ def write_calendar_event(
             evidence["overlaps"] = conflict_result["overlaps"]
         if evidence:
             result["conflict_check"] = {"status": "ok", "evidence": evidence}
+    _note_plan_write()
     return result
 
 
@@ -1279,7 +1280,20 @@ def update_calendar_event(
             evidence["overlaps"] = conflict_result["overlaps"]
         if evidence:
             result["conflict_check"] = {"status": "ok", "evidence": evidence}
+    _note_plan_write()
     return result
+
+
+def _note_plan_write() -> None:
+    """Tell the day planner the calendar just changed (archive/plans/day_planner_plan_2026-10-24.md
+    § 5.1 rule 2): the reply in progress re-fetches inside its 3 s box, so "my 3pm got
+    cancelled" is repaired in the same reply, and the next tick refreshes. Never raises — a
+    calendar write must not fail because the planner could not be told."""
+    try:
+        from tools.day_plan import note_calendar_write
+        note_calendar_write()
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def delete_calendar_event(uid: str) -> dict:
@@ -1309,6 +1323,7 @@ def delete_calendar_event(uid: str) -> dict:
     except requests.RequestException as e:
         return {"error": f"Failed to delete calendar event: {e}{_auth_hint(e)}"}
 
+    _note_plan_write()
     return {"success": True, "uid": uid}
 
 

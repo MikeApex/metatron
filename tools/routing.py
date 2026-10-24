@@ -50,6 +50,28 @@ def _google_endpoint(place: str) -> dict:
     return {"address": place}
 
 
+def _utc_rfc3339(dt: datetime) -> str:
+    """`arrive_by` as the RFC3339 UTC instant the Routes API wants.
+
+    Callers pass the user's wall-clock time, naive ("2026-10-24T16:15"). This used to be
+    formatted with a literal `Z` as though it were already UTC — an hour wrong for transit
+    whenever the UK is on BST (found 2026-10-24, building the day planner, which asks for
+    arrive-by routes on every located appointment). A naive time is now read in the persona's
+    own timezone — the clock the models are shown (tools/ambient) — and converted."""
+    from datetime import timezone
+    if dt.tzinfo is None:
+        tz = None
+        try:
+            from zoneinfo import ZoneInfo
+            from tools.ambient import _get_timezone
+            name = _get_timezone()
+            tz = ZoneInfo(name) if name else None
+        except Exception:  # noqa: BLE001 — no persona timezone: the host's local time
+            tz = None
+        dt = dt.replace(tzinfo=tz) if tz else dt.astimezone()
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def get_travel_time(origin: str, destination: str, mode: str = "transit", arrive_by: str = "") -> dict:
     """
     Real travel time and route between two places — not a stub, an actual computed route.
@@ -99,7 +121,7 @@ def get_travel_time(origin: str, destination: str, mode: str = "transit", arrive
         try:
             dt = datetime.fromisoformat(arrive_by)
             if google_mode == "TRANSIT":
-                body["arrivalTime"] = dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+                body["arrivalTime"] = _utc_rfc3339(dt)
         except ValueError:
             pass
 

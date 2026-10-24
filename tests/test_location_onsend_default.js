@@ -224,6 +224,56 @@ check('a device with no geolocation at all does not throw on send', async () => 
   if (h.posted.length !== 0) throw new Error('posted without geolocation');
 });
 
+// --- the interview's answer (day planner plan § 8.2, 2026-10-24) -----------------------
+// Mike, F1: location on by default for new users, as an opt-OUT asked in the first interview.
+// The server reports the persona's answer; the app adopts it only when nothing is stored, and
+// only an explicit true turns it on. The 08-28 property — no default arrived at by accident —
+// is what these pin.
+
+function serverSays(h, body, ok = true) {
+  h.sandbox.authFetch = async (p) => {
+    h.posted.push({ path: p, body: null });
+    if (body instanceof Error) throw body;
+    return { ok, json: async () => body };
+  };
+}
+
+check('a fresh install adopts the interview\'s yes — and only then sends with messages', async () => {
+  const h = makeHarness({ position: FIX });
+  serverSays(h, { on_send: true });
+  await h.sandbox.adoptServerLocationDefault();
+  if (h.store.get('metatron_location_onsend') !== 'on') throw new Error('the yes was not adopted');
+  if (!h.element('loc-onsend').checked) throw new Error('the switch did not render on');
+});
+
+check('never asked, a no, an error or an odd value all leave a fresh install off', async () => {
+  for (const [label, body, ok] of [['null', { on_send: null }, true], ['false', { on_send: false }, true],
+                                   ['string', { on_send: 'true' }, true], ['http error', {}, false],
+                                   ['throws', new Error('offline'), true]]) {
+    const h = makeHarness({ position: FIX });
+    serverSays(h, body, ok);
+    await h.sandbox.adoptServerLocationDefault();
+    if (h.store.has('metatron_location_onsend')) throw new Error(`${label}: wrote the setting`);
+    if (h.element('loc-onsend').checked) throw new Error(`${label}: rendered on`);
+  }
+});
+
+check('a stored choice always wins over the server — off stays off, and nothing is even asked', async () => {
+  const h = makeHarness({ stored: 'off', position: FIX });
+  serverSays(h, { on_send: true });
+  await h.sandbox.adoptServerLocationDefault();
+  if (h.store.get('metatron_location_onsend') !== 'off') throw new Error('the server overrode off');
+  if (h.posted.length !== 0) throw new Error('asked the server despite a stored choice');
+});
+
+check('the server is asked once per load, not on every refresh', async () => {
+  const h = makeHarness({ position: FIX });
+  serverSays(h, { on_send: null });
+  await h.sandbox.adoptServerLocationDefault();
+  await h.sandbox.adoptServerLocationDefault();
+  if (h.posted.length !== 1) throw new Error(`asked ${h.posted.length} times`);
+});
+
 // --- nothing runs on its own ------------------------------------------------------------
 
 check('the section starts no timer and no position watcher', async () => {

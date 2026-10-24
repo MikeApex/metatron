@@ -220,8 +220,9 @@ def rollup_day(day: str, persona: str) -> dict | None:
         "intentions_resolved_indeterminate": acct["intentions_resolved_indeterminate"],
         # --- task ledger adherence: counts only, re-derivable from task_history.jsonl ---
         **{k: int(task_counts.get(k, 0)) for k in (
-            "tasks_done", "tasks_missed", "tasks_skipped", "tasks_dismissed", "tasks_moot",
-            "habit_target", "habit_done", "deadlines_met", "deadlines_late")},
+            "tasks_done", "tasks_missed", "tasks_unconfirmed", "tasks_skipped",
+            "tasks_dismissed", "tasks_moot", "habit_target", "habit_done", "deadlines_met",
+            "deadlines_late")},
         # --- cost: gross margin, not performance telemetry ---
         "tokens_in": tokens_in,
         "tokens_out": tokens_out,

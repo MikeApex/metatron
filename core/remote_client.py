@@ -285,7 +285,7 @@ def run_interactive_remote(persona: str, server: str | None = None,
 
 
 async def _send_one(persona: str, text: str, server: str, provider: str | None,
-                    insecure: bool, timeout: float) -> str:
+                    insecure: bool, timeout: float, nudge: bool = False) -> str:
     import websockets
 
     url = _ws_url(server, persona)
@@ -296,6 +296,9 @@ async def _send_one(persona: str, text: str, server: str, provider: str | None,
         await ws.send(json.dumps({
             "type": "send", "exchange_id": xid, "input": text,
             "provider": provider, "proactive": True,
+            # A day-plan nudge (tools/day_plan.py): the server buffers it, skips the
+            # Coordinator, and records and broadcasts it only if the Synthesizer speaks.
+            **({"nudge": True} if nudge else {}),
         }))
         parts: list[str] = []
         while True:
@@ -307,7 +310,7 @@ async def _send_one(persona: str, text: str, server: str, provider: str | None,
                 parts.append(msg.get("text", ""))
             elif kind == "done":
                 return "".join(parts)
-            elif kind == "retract":
+            elif kind in ("retract", "held"):
                 return ""
             elif kind == "error":
                 raise RuntimeError(msg.get("text", "server reported an error"))
@@ -319,7 +322,7 @@ async def _send_one(persona: str, text: str, server: str, provider: str | None,
 
 def send_one(persona: str, text: str, server: str | None = None,
              provider: str | None = None, insecure: bool = True,
-             timeout: float = 600.0) -> str:
+             timeout: float = 600.0, nudge: bool = False) -> str:
     """
     Send one message through the server and return the response.
 
@@ -334,5 +337,6 @@ def send_one(persona: str, text: str, server: str | None = None,
     silent fallback recreates exactly that invisibility.
     """
     return asyncio.run(
-        _send_one(persona, text, server or DEFAULT_SERVER, provider, insecure, timeout)
+        _send_one(persona, text, server or DEFAULT_SERVER, provider, insecure, timeout,
+                  nudge=nudge)
     )

@@ -415,6 +415,10 @@ def _synth_conditional_sections(kind: str | None, package_text: str) -> str:
         (kind is not None, "synthesizer_scheduled_sessions.md"),
         # Baseline-interview conduct: a specialist flagged an empty domain baseline.
         ("BASELINE_INCOMPLETE" in (package_text or ""), "synthesizer_onboarding.md"),
+        # Day-plan conduct: whenever the plan block is in the package (archive/plans/
+        # day_planner_plan_2026-10-24.md § 6.2) — which happens only while the planner's
+        # `synth_reads_plan` flag is on. Keyed on the block's own marker so the two cannot drift.
+        (_DAY_PLAN_MARKER in (package_text or ""), "synthesizer_day_plan.md"),
     ]
     for fired, filename in triggers:
         if not fired:
@@ -436,6 +440,8 @@ _QUIET_CHECKIN_DIRECTIVE = (
 )
 
 _SCHEDULED_FOCUS_HEADER = "SCHEDULED RUN — FOCUS FOR THIS RUN"
+
+_FIXED_SESSION_KINDS = frozenset({"morning_brief", "evening_close"})
 
 _RITUAL_OWNERSHIP_LINE = (
     "This is the `{kind}` run. Any ritual it owns is in your context above; if none is, this "
@@ -483,7 +489,10 @@ def _scheduled_focus_block(kind: str | None) -> str:
         logger.warning(f"[scheduled_focus] asked-state unavailable: {exc}")
         return "\n".join(lines)
 
-    if state.get("nothing_new"):
+    # Never on the morning brief or the evening close (day planner plan § 7.2, review R1-2):
+    # they are the fixed points the module calls "not interruptible", and one shared "last
+    # scheduled run" stamp let a quiet check-in an hour earlier turn either into a light one.
+    if state.get("nothing_new") and kind not in _FIXED_SESSION_KINDS:
         hours = state.get("hours_since")
         since = f" ({hours}h ago)" if hours is not None else ""
         lines += ["", _QUIET_CHECKIN_DIRECTIVE.format(since=since)]
@@ -1304,8 +1313,12 @@ def register_tools() -> tuple[list[dict], dict]:
     from tools.logger import write_log, read_log, WRITE_LOG_SCHEMA, READ_LOG_SCHEMA, write_quality_event, WRITE_QUALITY_EVENT_SCHEMA
     from tools.goals import (
         read_goals, write_goals, update_goal,
-        READ_GOALS_SCHEMA, WRITE_GOALS_SCHEMA, UPDATE_GOAL_SCHEMA,
+        WRITE_GOALS_SCHEMA, goal_schemas,
     )
+    # Built per call, not imported as constants: update_goal's `essential` is exposed only while
+    # the day planner's `ledger_fields` flag is on (archive/plans/day_planner_plan_2026-10-24.md
+    # § 4.1, review R1-1). Off, these are the constants, unchanged.
+    READ_GOALS_SCHEMA, UPDATE_GOAL_SCHEMA = goal_schemas()
     from tools.config_writer import write_config, WRITE_CONFIG_SCHEMA
     from tools.diarist import (
         write_journal, read_journal, WRITE_JOURNAL_SCHEMA, READ_JOURNAL_SCHEMA,
@@ -1390,9 +1403,16 @@ def register_tools() -> tuple[list[dict], dict]:
     # Since 2026-10-23 that store is the task ledger (archive/plans/
     # task_ledger_plan_2026-10-23.md); its three tools replaced the four obligation tools.
     from tools.obligations import (
-        open_task, update_task, list_tasks,
-        OPEN_TASK_SCHEMA, UPDATE_TASK_SCHEMA, LIST_TASKS_SCHEMA,
+        open_task, update_task, list_tasks, task_schemas,
     )
+    # Same per-call build, same flag: the day planner's task actions and fields reach a model only
+    # once its conduct exists (day planner plan § 4.1, R1-1).
+    OPEN_TASK_SCHEMA, UPDATE_TASK_SCHEMA, LIST_TASKS_SCHEMA = task_schemas()
+    # The day planner's two tools (archive/plans/day_planner_plan_2026-10-24.md § 6.4).
+    # Registered from Stage A, granted to no agent until Stage B — an ungranted schema is
+    # filtered out of every prompt by the allowlist.
+    from tools.day_shape import set_day_shape, SET_DAY_SHAPE_SCHEMA
+    from tools.day_plan import request_replan, REQUEST_REPLAN_SCHEMA
     # External-content tools. Both return their payload wrapped by tools/untrusted.py —
     # a web page and an email body are written by strangers.
     from tools.web import fetch_url, FETCH_URL_SCHEMA, fetch_rendered, FETCH_RENDERED_SCHEMA
@@ -1455,6 +1475,7 @@ def register_tools() -> tuple[list[dict], dict]:
         WRITE_AGENT_CONFIG_SCHEMA, READ_AGENT_CONFIG_SCHEMA,
         WRITE_WISHES_SCHEMA, READ_WISHES_SCHEMA, GENERATE_EMERGENCY_CARD_SCHEMA,
         OPEN_TASK_SCHEMA, UPDATE_TASK_SCHEMA, LIST_TASKS_SCHEMA,
+        SET_DAY_SHAPE_SCHEMA, REQUEST_REPLAN_SCHEMA,
         READ_INTAKE_QUEUE_SCHEMA, TEACH_INTAKE_SCHEMA,
         READ_CALENDAR_SCHEMA, WRITE_CALENDAR_EVENT_SCHEMA,
         UPDATE_CALENDAR_EVENT_SCHEMA, DELETE_CALENDAR_EVENT_SCHEMA,
@@ -1548,6 +1569,8 @@ def register_tools() -> tuple[list[dict], dict]:
         "open_task": open_task,
         "update_task": update_task,
         "list_tasks": list_tasks,
+        "set_day_shape": set_day_shape,
+        "request_replan": request_replan,
         "read_intake_queue": read_intake_queue,
         "teach_intake": teach_intake,
         "write_quality_event": write_quality_event,
@@ -5834,6 +5857,64 @@ def _horizon_block(persona: str | None = None, session: str | None = None) -> st
         return ""
 
 
+# The day planner's block (tools/day_plan.py render_block) opens with this; the conduct module
+# is injected on it (see _synth_conditional_sections).
+_DAY_PLAN_MARKER = "TODAY'S PLAN — kept by code"
+
+# A day-plan nudge skips the Coordinator (Mike, F9 (a)): there is nothing to route — the plan
+# already holds what the Synthesizer needs. This stands in for the routing package.
+_NUDGE_PACKAGE = (
+    "ORIGINAL_MESSAGE: (none — a day-plan wake; the user has not spoken)\n"
+    "RESOLVED_INTENT: decide whether anything in TODAY'S PLAN that is due now is worth saying\n"
+    "COMPLEXITY: quick\n"
+    "USER_STATE: unknown\n"
+    "SPECIALISTS_TO_CALL: []"
+)
+
+_SCHEDULE_IMPACT_RE = _re.compile(r"^\s*SCHEDULE_IMPACT:\s*(none|minor|major)\b[\s—–:-]*(.*)$",
+                                  _re.IGNORECASE | _re.MULTILINE)
+
+
+def _day_plan_block(persona: str | None, kind: str | None, is_proactive: bool) -> str:
+    """The whole day, for the Synthesizer — only while the planner's `synth_reads_plan` flag is
+    on. Built after the specialists have written, so a calendar change made this turn is
+    repaired in the same reply (Q10). Never waits on the calendar or the plan lock
+    (tools/day_plan.py, rules 1-3). Fails to "" — a plan that cannot be built costs the turn
+    its plan, never its reply."""
+    try:
+        from tools import day_plan as D
+        from tools.day_plan_config import flag
+        if not flag("synth_reads_plan"):
+            return ""
+        with persona_scope(resolve_persona(persona)):
+            plan = D.current(persona, reason="turn", for_reply=True)
+            if not plan:
+                return ""
+            offer = None if is_proactive else D.rhythm_offer(persona, mark=True)
+            tomorrow = D.tomorrow_draft(persona) if kind == "evening_close" else None
+            gaps = D.allocation_gaps(persona) if carries_weekly_review(kind, persona) else None
+            return D.render_block(plan, kind=kind, heads_up=D.pending_heads_up(persona),
+                                  offer_rhythm=offer, allocation_gaps=gaps, tomorrow=tomorrow)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[day_plan] block failed: {exc}")
+        return ""
+
+
+def _handle_schedule_impact(coord_output: str, persona: str | None, is_proactive: bool) -> None:
+    """The Coordinator's SCHEDULE_IMPACT line (day planner plan § 6.5). A no-op until
+    coordinator.md emits it (Stage B). Only the user's own turn changes their day."""
+    if is_proactive or not coord_output:
+        return
+    m = _SCHEDULE_IMPACT_RE.search(coord_output)
+    if not m or m.group(1).lower() == "none":
+        return
+    try:
+        from tools.day_plan import note_schedule_impact
+        note_schedule_impact(m.group(1).lower(), m.group(2).strip(), persona)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[day_plan] schedule impact not recorded: {exc}")
+
+
 def has_real_user_turn(user_input: str,
                        is_proactive: bool,
                        attachments: list[dict] | None = None) -> bool:
@@ -6463,7 +6544,8 @@ def run_pipeline_session(user_input: str,
                          history: list[dict] | None = None,
                          received_at: datetime | None = None,
                          is_proactive: bool = False,
-                         attachments: list[dict] | None = None) -> str:
+                         attachments: list[dict] | None = None,
+                         nudge: bool = False) -> str:
     """
     Run the two-pass Coordinator → Synthesizer pipeline.
 
@@ -6508,9 +6590,11 @@ def run_pipeline_session(user_input: str,
         # [DB-0809-02] Which scheduled job this is, and what it may say — see
         # _scheduled_focus_block(). Empty on every user-typed turn. Computed here, before the
         # Coordinator runs, so both twins stamp the run at the same point.
-        kind = session_kind(user_input, persona)
+        # A day-plan nudge binds no scheduled-run kind (review R1-2): stamping the one shared
+        # "last scheduled run" slot would make the next brief or close read "nothing new".
+        kind = None if nudge else session_kind(user_input, persona)
         _bind_turn_kind(kind, persona)
-        focus_block = _scheduled_focus_block(kind)
+        focus_block = "" if nudge else _scheduled_focus_block(kind)
 
         # Pre-load Pattern Miner insights (the one context source not in the system prompt).
         coord_context = _load_coordinator_context(persona)
@@ -6523,9 +6607,10 @@ def run_pipeline_session(user_input: str,
             if coord_context else f"{proactive_prefix}{receipt_line}{user_input}{attach_note}{name_note}"
         )
 
-        # Pass 1: Coordinator — single-pass routing directive assembly
+        # Pass 1: Coordinator — single-pass routing directive assembly. Skipped on a day-plan
+        # nudge (F9 (a)), which has nothing to route.
         _trace("[PIPELINE] coordinator  starting")
-        coord_output = _run_single_agent(
+        coord_output = _NUDGE_PACKAGE if nudge else _run_single_agent(
             "coordinator", coord_input, persona=persona, provider=provider,
             attachments=attachments, history=_coord_history(history),
         )
@@ -6540,14 +6625,15 @@ def run_pipeline_session(user_input: str,
         # Handle any USER_CORRECTION flag in Coordinator output
         _handle_user_correction(coord_output, persona)
         _handle_misheard(coord_output, persona, is_proactive, user_input)
+        _handle_schedule_impact(coord_output, persona, is_proactive)
 
         # Fetch the standing knowledge the Coordinator selected, before dispatch — the
         # specialists that read those subjects get them appended to their directives.
-        knowledge = _resolve_knowledge(coord_output, persona=persona)
+        knowledge = {} if nudge else _resolve_knowledge(coord_output, persona=persona)
 
         # Dispatch specialists from Python based on Coordinator's SPECIALISTS_TO_CALL
         _trace("[PIPELINE] dispatching specialists")
-        specialist_outputs = _dispatch_from_coordinator(
+        specialist_outputs = {} if nudge else _dispatch_from_coordinator(
             coord_output, persona=persona, provider=provider, knowledge=knowledge,
             user_turn=has_real_user_turn(user_input, is_proactive, attachments),
         )
@@ -6578,6 +6664,8 @@ def run_pipeline_session(user_input: str,
         # [DB-0822-09] Built HERE, after the sign-off veto above: a finding must not be
         # charged an offer on a turn where the Synthesizer never runs.
         horizon_text = _horizon_block(persona, session=kind)
+        # Mirrors the streaming twin: after the specialists, so this turn's writes are in it.
+        plan_text = _day_plan_block(persona, kind, is_proactive)
         task_hint = _task_hint_block(user_input, is_proactive, history, persona)
         synthesizer_input = (
             f"{proactive_prefix}{receipt_line}{synth_label}:\n{user_input}{attach_note}\n\n"
@@ -6585,6 +6673,7 @@ def run_pipeline_session(user_input: str,
             + (f"\n\n{know_text}" if know_text else "")
             + (f"\n\nSPECIALIST OUTPUTS:\n{spec_text}" if spec_text else "")
             + (f"\n\n{horizon_text}" if horizon_text else "")
+            + (f"\n\n{plan_text}" if plan_text else "")
             + (f"\n\n{task_hint}" if task_hint else "")
             + (f"\n\n{focus_block}" if focus_block else "")
             + f"\n\n{_action_block()}"
@@ -6667,6 +6756,7 @@ def run_pipeline_session_stream(
     received_at: datetime | None = None,
     attachments: list[dict] | None = None,
     source: str = "ui",
+    nudge: bool = False,
 ) -> Iterator[str]:
     """
     Streaming variant of run_pipeline_session().
@@ -6709,7 +6799,7 @@ def run_pipeline_session_stream(
         yield from _run_pipeline_session_stream_inner(
             user_input, persona=bound, provider=provider, history=history,
             is_proactive=is_proactive, received_at=received_at,
-            attachments=attachments, source=source,
+            attachments=attachments, source=source, nudge=nudge,
         )
 
 
@@ -6722,6 +6812,7 @@ def _run_pipeline_session_stream_inner(
     received_at: datetime | None = None,
     attachments: list[dict] | None = None,
     source: str = "ui",
+    nudge: bool = False,
 ) -> Iterator[str]:
     """
     Pass 1 (Coordinator): runs blocking, identical to run_pipeline_session().
@@ -6760,9 +6851,10 @@ def _run_pipeline_session_stream_inner(
     # [DB-0809-02] Mirrors the non-streaming twin: which scheduled job this is, and the
     # focus directive computed for it. Keyed on the user's own turn — see the note at the
     # load_config() call below for why the Synthesizer package cannot be used for this.
-    kind = session_kind(user_input, persona)
+    # A day-plan nudge binds no scheduled-run kind — see the non-streaming twin (review R1-2).
+    kind = None if nudge else session_kind(user_input, persona)
     _bind_turn_kind(kind, persona)
-    focus_block = _scheduled_focus_block(kind)
+    focus_block = "" if nudge else _scheduled_focus_block(kind)
     # Names the files and states that their contents are data, never instructions —
     # the <untrusted_content> boundary applied to bytes, which cannot carry tags.
     attach_note = attachments_mod.describe_for_prompt(attachments or [])
@@ -6771,16 +6863,19 @@ def _run_pipeline_session_stream_inner(
         f"{proactive_prefix}{receipt_line}{user_input}{attach_note}{name_note}\n\n---\n\n[Pre-loaded context]\n{coord_context}"
         if coord_context else f"{proactive_prefix}{receipt_line}{user_input}{attach_note}{name_note}"
     )
-    coord_output = _run_single_agent("coordinator", coord_input, persona=persona, provider=provider,
-                                     attachments=attachments, history=_coord_history(history))
+    # Skipped on a day-plan nudge (F9 (a)) — mirrors the non-streaming twin.
+    coord_output = _NUDGE_PACKAGE if nudge else _run_single_agent(
+        "coordinator", coord_input, persona=persona, provider=provider,
+        attachments=attachments, history=_coord_history(history))
     _trace(f"[PIPELINE] coordinator  done  ({len(coord_output)} chars) → dispatching specialists")
     _handle_user_correction(coord_output, persona)
     _handle_misheard(coord_output, persona, is_proactive, user_input)
+    _handle_schedule_impact(coord_output, persona, is_proactive)
     # Knowledge fetch mirrors run_pipeline_session() exactly. THIS IS THE PATH THAT MATTERS:
     # the server streams, so a feature wired only into the non-streaming function is live in
     # tests and dead in production. Any change to the knowledge wiring changes both.
-    knowledge = _resolve_knowledge(coord_output, persona=persona)
-    specialist_outputs = _dispatch_from_coordinator(
+    knowledge = {} if nudge else _resolve_knowledge(coord_output, persona=persona)
+    specialist_outputs = {} if nudge else _dispatch_from_coordinator(
         coord_output, persona=persona, provider=provider, knowledge=knowledge,
         user_turn=has_real_user_turn(user_input, is_proactive, attachments),
     )
@@ -6808,6 +6903,9 @@ def _run_pipeline_session_stream_inner(
     know_text = _knowledge_block(knowledge)
     # [DB-0822-09] After the sign-off veto, as in the non-streaming twin above.
     horizon_text = _horizon_block(persona, session=kind)
+    # The day plan — after the specialists, so this turn's calendar writes are repaired in the
+    # same reply (Q10). Kept identical to the non-streaming twin.
+    plan_text = _day_plan_block(persona, kind, is_proactive)
     # Kept identical to the non-streaming twin — see _task_hint_block().
     task_hint = _task_hint_block(user_input, is_proactive, history, persona)
     synthesizer_input = (
@@ -6816,6 +6914,7 @@ def _run_pipeline_session_stream_inner(
         + (f"\n\n{know_text}" if know_text else "")
         + (f"\n\nSPECIALIST OUTPUTS:\n{spec_text}" if spec_text else "")
         + (f"\n\n{horizon_text}" if horizon_text else "")
+        + (f"\n\n{plan_text}" if plan_text else "")
         + (f"\n\n{task_hint}" if task_hint else "")
         + (f"\n\n{focus_block}" if focus_block else "")
         + f"\n\n{_action_block()}"
@@ -7022,6 +7121,12 @@ def _run_pipeline_session_stream_inner(
         # and the canned fallback must not be translated by a model call that could itself
         # leak, which is why this branch returns before the translation step below.
         yield "[RETRACT]"
+    elif nudge and _final.strip() == "[HOLD]":
+        # A held nudge is a signal to the server, never text: it must not be translated, and
+        # for a persona whose reply was withheld for translation it has not been streamed yet.
+        if not _stream_to_client:
+            yield "[HOLD]"
+        yield "[DONE]"
     elif _final != filtered:
         # A confirmation was raised during this turn and the reply had to be amended —
         # see enforce_pending_receipt(). On the streaming path the original text is
@@ -7060,7 +7165,7 @@ def run_session(agent_name: str, user_input: str,
                 model_override: str | None = None,
                 complexity: str | None = None,
                 history: list[dict] | None = None,
-                bare: bool = False) -> str:
+                bare: bool = False, proactive: bool = False) -> str:
     """
     Run a single conversation session.
 
@@ -7075,6 +7180,9 @@ def run_session(agent_name: str, user_input: str,
                         When None, the router resolves the provider from routing.yaml.
         model_override: Explicit model ID, overrides both router and provider default.
         history:        Mutable list of prior turn dicts. Updated in-place each turn.
+        proactive:      The system started this, not the user — a background job such as the
+                        day planner's reshuffle. Traced as proactive so A9 does not count it as
+                        a user session (tools/analytics.py counts every non-proactive trace).
     """
     with persona_scope(resolve_persona(persona)) as bound:
         if agent_name == "coordinator":
@@ -7094,7 +7202,7 @@ def run_session(agent_name: str, user_input: str,
         # coordinator→specialist nesting the Book renders.
         _owns_trace = _tr.get_trace() is None
         if _owns_trace:
-            _tr.start_request_trace(user_input, bound)
+            _tr.start_request_trace(user_input, bound, is_proactive=proactive)
             # Gate here for the same reason: an owned trace means nothing upstream
             # ran _spend_gate(). Scheduled sessions previously bypassed the daily
             # stop entirely — the pipeline entry points were its only callers.

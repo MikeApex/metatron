@@ -73,6 +73,8 @@ ACTION_TOOLS: frozenset[str] = frozenset({
     # The task ledger (2026-10-23; replaced open/close/reopen_obligation). update_task covers
     # done, dismissed, reschedule and note — every one changes the record.
     "open_task", "update_task",
+    # The day planner (2026-10-24): the user's stated day shape, and a request to rework today.
+    "set_day_shape", "request_replan",
     "write_schedule", "delete_schedule",
     # A taught intake rule permanently changes what mail the user sees — a standing
     # config write behind the confirm gate, and unambiguously an action.

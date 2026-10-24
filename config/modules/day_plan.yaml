@@ -1,0 +1,67 @@
+# config/modules/day_plan.yaml — the day planner's switches and tuning knobs.
+#
+# Plan: archive/plans/day_planner_plan_2026-10-24.md. Read by tools/day_plan_config.py, which
+# re-reads this file whenever it changes on disk, so a flag flip needs no restart.
+#
+# STAGE A (built 2026-10-24) ships with only `build` and `show_in_app` on. Everything a model
+# would see — new tool actions, the plan block, its conduct module — stays off until the one Red
+# session (Stage B) reviews the conduct text and flips the rest. Deployed in this state, nothing
+# Synth sees or does changes (plan § 10).
+
+flags:
+  # Build and keep the day's plan (code only until reshuffle_model is on).
+  build: true
+  # Show the plan in the app's Today panel — the testing view (Mike, Q1: "for now while we're
+  # building/testing, to move to (a) when done"). Turning this off is the move to (a).
+  show_in_app: true
+  # Expose the ledger's new task actions and fields (link_goal, set_priority, set_stakes,
+  # set_zone, day_starts) and update_goal's `essential` in the schemas models see. Off in Stage A
+  # on purpose (review R1-1): a schema's description is in the prompt of every agent granted it.
+  ledger_fields: false
+  # Put the plan block in the Synthesizer's package and inject its conduct module.
+  synth_reads_plan: false
+  # F10: non-essential habits end a period `unconfirmed` (not `missed`), and missable deadlines
+  # past their date show as `lapsed`, not overdue.
+  unconfirmed_rule: false
+  # Refine the code plan with the day_planner model on reshuffle (needs the Stage B agent file).
+  reshuffle_model: false
+  # Wake Synth at plan-marked nudge and check points (needs the Stage B scheduler job).
+  nudges: false
+  # The plan's empty-day check-ins replace the jobs listed in `replaces_jobs`.
+  owns_checkins: false
+
+replaces_jobs: [companion_checkin]
+
+# Score weights (plan § 5.2). Baseline is the explicit priority, else the linked goal.
+score:
+  priority: {high: 30, normal: 20, low: 10}
+  goal: {essential: 30, linked: 20, none: 15}
+  vital: {overdue: 40, due_today: 30, due_tomorrow: 15, in_lead: 5}
+  missable: {due_today: 10, lapsed: 0}
+  habit: {planned_day: 10, at_risk: 15, daily: 10}
+  interval_due: 15
+  medication: 50
+  # A score move at least this large between builds is a change in what matters — a reshuffle.
+  reshuffle_delta: 10
+
+limits:
+  # Model reshuffles at least this many minutes apart unless forced, and at most this many a day.
+  reshuffle_gap_minutes: 15
+  reshuffles_per_day: 12
+  # Google Routes is billed per request and no spend meter sees it (plan § 12).
+  travel_lookups_per_day: 60
+  travel_assumed_minutes: 30
+  # The calendar snapshot is refreshed in the background once older than this.
+  snapshot_max_age_minutes: 10
+  # The one synchronous fetch — after Metatron wrote the calendar this turn — gives up after this.
+  calendar_fetch_timeout_seconds: 3
+  # Blocks starting this soon keep their slot unless their fixed anchor moved.
+  frozen_minutes: 20
+  # A task with no recorded length is placed at this, flagged "length unknown".
+  default_task_minutes: 30
+  # A reshuffle worker that has not returned in this long is superseded.
+  reshuffle_stale_seconds: 180
+  # The reply path waits at most this long for the plan lock, then renders without writing.
+  reply_lock_ms: 200
+  log_retention_days: 90
+  plan_retention_days: 3

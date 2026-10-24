@@ -36,8 +36,10 @@ def _body(fn_name: str) -> str:
 twins = [_body("run_pipeline_session"), _body("_run_pipeline_session_stream_inner")]
 for label, body in zip(("non-streaming", "streaming"), twins):
     check(f"{label} twin binds the session kind right after resolving it",
-          re.search(r"kind = session_kind\(user_input, persona\)\n\s+_bind_turn_kind\(kind, persona\)",
-                    body) is not None)
+          # `None if nudge else` (2026-10-24): a day-plan nudge binds no scheduled-run kind —
+          # archive/plans/day_planner_plan_2026-10-24.md § 7.2. Still bound right after resolving.
+          re.search(r"kind = (?:None if nudge else )?session_kind\(user_input, persona\)\n"
+                    r"\s+_bind_turn_kind\(kind, persona\)", body) is not None)
     check(f"{label} twin builds the task hint and puts it in the Synthesizer input",
           "task_hint = _task_hint_block(user_input, is_proactive, history, persona)" in body
           and '+ (f"\\n\\n{task_hint}" if task_hint else "")' in body)

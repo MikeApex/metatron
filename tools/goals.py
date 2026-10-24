@@ -82,7 +82,7 @@ _ID_PREFIX = {"quarterly": "q", "weekly": "w", "daily": "d"}
 # reason is the part worth capturing, and asking the user to repeat it in a
 # formal interview later is how it gets lost.
 _EDITABLE = ("title", "private_why", "shareable_what", "status", "due",
-             "parent_goal", "context")
+             "parent_goal", "context", "essential")
 
 
 def _next_id(goals: list, horizon: str) -> str:
@@ -109,6 +109,7 @@ def update_goal(
     due: str = "",
     parent_goal: str = "",
     context: str = "",
+    essential: bool | str | None = None,
 ) -> str:
     """
     Add, edit, complete or remove a single goal.
@@ -140,6 +141,15 @@ def update_goal(
         ("shareable_what", shareable_what), ("status", status), ("due", due),
         ("parent_goal", parent_goal), ("context", context),
     ) if str(v).strip()}
+    # `essential` — "survived trade-off forcing": the goals the day planner protects time for
+    # (archive/plans/day_planner_plan_2026-10-24.md § 4.1). Only write_goals could set it before,
+    # so the Synthesizer could not mediate goal importance (Mike, F4). A real bool is stored,
+    # never the string a model may send.
+    if essential is not None and str(essential).strip() != "":
+        ess = str(essential).strip().lower()
+        if ess not in ("true", "false"):
+            return "Error: essential must be true or false."
+        fields["essential"] = ess == "true"
 
     if action == "add":
         if horizon not in HORIZONS:
@@ -270,3 +280,24 @@ WRITE_GOALS_SCHEMA = {
         "required": ["content"],
     },
 }
+
+
+def goal_schemas() -> tuple[dict, dict]:
+    """(read_goals, update_goal) as models should see them. `essential` is added only when the
+    day planner's `ledger_fields` flag is on (review R1-1); off, the constants are returned as
+    they have always been."""
+    try:
+        from tools.day_plan_config import flag
+        exposed = flag("ledger_fields")
+    except Exception:  # noqa: BLE001
+        exposed = False
+    if not exposed:
+        return READ_GOALS_SCHEMA, UPDATE_GOAL_SCHEMA
+    import copy
+    upd = copy.deepcopy(UPDATE_GOAL_SCHEMA)
+    upd["input_schema"]["properties"]["essential"] = {
+        "type": "boolean",
+        "description": "True for a goal that must not slip — one the user has said matters "
+                       "more than the rest. Its tasks are protected when the day is planned.",
+    }
+    return READ_GOALS_SCHEMA, upd

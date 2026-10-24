@@ -198,8 +198,72 @@ def _now() -> datetime:
         return datetime.now()
 
 
+# THE DAY BOUNDARY (archive/plans/reply_latency_plan_2026-10-24.md § 6.4; built by the day
+# planner, archive/plans/day_planner_plan_2026-10-24.md § 4.1). A user whose day runs past
+# midnight sets `day_starts` ("04:00"); every date in this module is then the date of
+# `dt - day_starts`, so 01:30 still belongs to yesterday — the habit is not "missed at midnight"
+# while they are still up. It is NOT a shift of the clock: stamps stay true local time, and only
+# the question "which day is this?" goes through `_ledger_day`. Default "00:00" — identical to the
+# behaviour before it existed. Stored in tasks.yaml under `settings`, set by
+# update_task(task_id="settings", action="day_starts", note="04:00").
+_DAY_STARTS_MAX = (6, 0)
+_DAY_STARTS_CACHE: dict = {"key": None, "value": timedelta(0)}
+
+
+def _parse_hhmm(raw) -> tuple[int, int] | None:
+    m = re.fullmatch(r"\s*(\d{1,2}):(\d{2})\s*", str(raw or ""))
+    if not m:
+        return None
+    hh, mm = int(m.group(1)), int(m.group(2))
+    if hh > 23 or mm > 59:
+        return None
+    return hh, mm
+
+
+def _day_starts(persona: str | None = None) -> timedelta:
+    """The persona's day boundary as an offset from midnight. Never raises: an unreadable store
+    or a malformed value is midnight, which is the old behaviour."""
+    try:
+        path = _store_path(persona)
+        key = (str(path), path.stat().st_mtime_ns)
+    except Exception:  # noqa: BLE001 — no store, or no persona bound: midnight, as before
+        return timedelta(0)
+    if _DAY_STARTS_CACHE["key"] == key:
+        return _DAY_STARTS_CACHE["value"]
+    value = timedelta(0)
+    try:
+        doc = yaml.safe_load(path.read_text()) or {}
+        hm = _parse_hhmm(((doc.get("settings") or {}) if isinstance(doc, dict) else {})
+                         .get("day_starts"))
+        if hm and hm <= _DAY_STARTS_MAX:
+            value = timedelta(hours=hm[0], minutes=hm[1])
+    except Exception:  # noqa: BLE001
+        value = timedelta(0)
+    _DAY_STARTS_CACHE.update(key=key, value=value)
+    return value
+
+
+def _ledger_day(dt: datetime, persona: str | None = None) -> date:
+    """Which ledger day the moment `dt` belongs to."""
+    return (dt - _day_starts(persona)).date()
+
+
+def _stamp_day(stamp, persona: str | None = None) -> date | None:
+    """The ledger day of a stored stamp. A date-only value is that date; a full stamp goes
+    through the boundary, so a close recorded at 01:30 counts for the day the user was still in."""
+    if isinstance(stamp, datetime):
+        return _ledger_day(stamp.replace(tzinfo=None), persona)
+    raw = str(stamp or "").strip()
+    if len(raw) > 10:
+        try:
+            return _ledger_day(datetime.fromisoformat(raw).replace(tzinfo=None), persona)
+        except ValueError:
+            pass
+    return _d(raw)
+
+
 def _today() -> date:
-    return _now().date()
+    return _ledger_day(_now())
 
 
 def _stamp() -> str:
@@ -473,7 +537,7 @@ def _append_history(rows: list[dict], persona: str | None = None) -> int:
 
 
 def _one_off_row(t: dict, state: str) -> dict:
-    closed_on = str(t.get("closed_at") or _stamp())[:10]
+    closed_on = (_stamp_day(t.get("closed_at")) or _today()).isoformat()
     due = _d(t.get("due"))
     row = {"key": f"{t['id']}@{closed_on}", "task_id": t["id"], "kind": t.get("kind"),
            "occurrence": t["id"], "state": state, "closed_on": closed_on,
@@ -667,7 +731,7 @@ def _recent_close_match(tasks: list[dict], what: str, today: date) -> dict | Non
     for t in tasks:
         if t.get("status") not in _TERMINAL or t.get("kind") not in _ONE_OFF:
             continue
-        closed = _d(t.get("closed_at"))
+        closed = _stamp_day(t.get("closed_at"))
         if not closed or (today - closed).days > _RECLOSE_WINDOW_DAYS:
             continue
         if _same_commitment(t.get("what", ""), what) or _tokens_match(new, _task_tokens(t["what"])):
@@ -681,7 +745,7 @@ def _source_duplicate(tasks: list[dict], source_id: str, today: date) -> dict | 
             continue
         if t.get("status") == "open":
             return t
-        closed = _d(t.get("closed_at"))
+        closed = _stamp_day(t.get("closed_at"))
         if closed and (today - closed).days <= _SOURCE_WINDOW_DAYS:
             return t
     return None
@@ -826,6 +890,12 @@ def _view_core(t: dict, today: date, lead_days: int = _LEAD_DAYS) -> dict:
             # A vague due on a legacy row. Any stated urgency outranks none.
             v.update(state="open", actionable=True, sort=(5, 1, raw_due.lower()),
                      text=f"{what} — due {raw_due}")
+        elif due < today and _unconfirmed_rule() and not is_essential(t):
+            # F10 (Mike, 2026-10-24): a non-essential deadline past its date is never raised as
+            # overdue. It stays open — "overdue until done or dismissed" (ledger decision 4) now
+            # governs essential deadlines — and the planner may still place it, low.
+            v.update(state="lapsed", sort=(8, due.isoformat()),
+                     text=f"{what} — past its date ({due.isoformat()}), unconfirmed")
         elif due < today:
             v.update(state="overdue", actionable=True, sort=(0, due.isoformat()),
                      text=f"{what} — overdue since {due.isoformat()}")
@@ -898,13 +968,16 @@ def _view_core(t: dict, today: date, lead_days: int = _LEAD_DAYS) -> dict:
     # (the sweep marks it `partial`), so it must not nag either: a 3x-a-week quota set up on a
     # Saturday read "needed today to stay on target" (2026-10-24).
     partial = bool(start and start > ps)
-    at_risk = remaining >= days_left and not partial
+    # F10: a non-essential quota triggers no make-ups — no "missed day can be made up", no
+    # "needed today to stay on target". Its planned days still show; nothing chases the rest.
+    no_makeup = _unconfirmed_rule() and not is_essential(t)
+    at_risk = remaining >= days_left and not partial and not no_makeup
     planned = False
     notes: list[str] = []
     if preferred:
         elapsed = sum(1 for i in range((today - first).days)
                       if _WEEKDAYS[(first + timedelta(days=i)).weekday()] in preferred)
-        behind = done < min(elapsed, target)
+        behind = done < min(elapsed, target) and not no_makeup
         planned = today_wd in preferred
         actionable = planned or behind or at_risk
         if planned:
@@ -931,7 +1004,7 @@ def _view_core(t: dict, today: date, lead_days: int = _LEAD_DAYS) -> dict:
 def _raised_today(t: dict, occ: str, today: date) -> str | None:
     """When this occurrence was raised today, as HH:MM, or None."""
     stamp = str((t.get("raised") or {}).get(occ) or "")
-    if stamp[:10] == today.isoformat():
+    if stamp and _stamp_day(stamp) == today:
         return stamp[11:16] or "earlier"
     return None
 
@@ -966,7 +1039,10 @@ def open_task(what: str, kind: str = "deadline", due: str | None = None,
               check_back: str | None = None, domain: str | None = None,
               note: str | None = None, source_id: str | None = None,
               calendar_uid: str | None = None, new_instance: bool = False,
-              minutes: int | None = None, minutes_source: str | None = None) -> str:
+              minutes: int | None = None, minutes_source: str | None = None,
+              goal_id: str | None = None, priority: str | None = None,
+              priority_source: str | None = None, stakes: str | None = None,
+              stakes_source: str | None = None, zone: str | None = None) -> str:
     """Record something the user has to do, or is waiting on, so it is tracked until done."""
     what = (what or "").strip()
     if not what:
@@ -1028,6 +1104,15 @@ def open_task(what: str, kind: str = "deadline", due: str | None = None,
         entry["source_id"] = str(source_id).strip()
     if calendar_uid:
         entry["calendar_uid"] = str(calendar_uid).strip()
+    if not _ledger_fields():
+        # Not in the schema while the flag is off; a model that guesses one changes nothing.
+        goal_id = priority = stakes = zone = None
+    plan, err = _plan_fields(kind, goal_id=goal_id or None, priority=priority or None,
+                             priority_source=priority_source, stakes=stakes or None,
+                             stakes_source=stakes_source, zone=zone or None)
+    if err:
+        return err
+    entry.update({k: v for k, v in plan.items() if v is not None})
     if minutes is not None:
         dur, err = _minutes_arg(minutes, minutes_source)
         if err:
@@ -1100,6 +1185,216 @@ def _set_minutes(task_id: str, minutes, source) -> str:
     return _with_store(None, apply)
 
 
+# --- What the day planner reads off a task (archive/plans/day_planner_plan_2026-10-24.md § 4.1) --
+# Priority and deadline stakes live HERE, on the task, so there is one place to read them (Mike:
+# "perhaps having them in one place with the task ledger makes sense"). Each carries whose number
+# it is, exactly as `minutes` does: the user's word ("stated") is never replaced by a model's
+# inference. The schema parts that let a model set them are hidden behind the `ledger_fields`
+# flag until the Synthesizer's conduct for them exists (review R1-1) — see task_schemas().
+
+_PLAN_ACTIONS = ("link_goal", "set_priority", "set_stakes", "set_zone", "day_starts")
+_PRIORITIES = ("high", "normal", "low")
+_STAKES = ("vital", "missable")
+_FIELD_SOURCES = ("stated", "inferred")
+
+# Medication is essential whatever else is true (Mike, F10: "medication always essential"). A
+# model is ALSO told to mark it, but a safety property resting only on a model remembering to is
+# the 2026-08-04 lesson (a flag no test exercised was structurally unfireable). This net errs
+# toward essential: a false positive costs one completion check, a false negative a missed dose
+# recorded as merely "unconfirmed".
+_MEDICATION_RE = re.compile(
+    r"\b(medications?|medicines?|meds|pills?|tablets?|capsules?|doses?|dosage|inhalers?|"
+    r"insulin|prescriptions?|antibiotics?|injections?|eye ?drops)\b", re.IGNORECASE)
+
+_GOAL_CACHE: dict = {"key": None, "index": {}}
+
+
+def _goal_index() -> dict[str, dict]:
+    """The persona's goals by id, across horizons. Empty on any failure — a goal that cannot be
+    read makes nothing essential, and the deadline and medication rules still apply."""
+    try:
+        from tools.goals import _goals_path
+        path = _goals_path()
+        key = (str(path), path.stat().st_mtime_ns)
+    except Exception:  # noqa: BLE001
+        return {}
+    if _GOAL_CACHE["key"] == key:
+        return _GOAL_CACHE["index"]
+    index: dict[str, dict] = {}
+    try:
+        doc = yaml.safe_load(path.read_text()) or {}
+        for horizon in ("quarterly", "weekly", "daily"):
+            for g in doc.get(horizon) or []:
+                if isinstance(g, dict) and g.get("id"):
+                    index[str(g["id"])] = g
+    except Exception:  # noqa: BLE001
+        index = {}
+    _GOAL_CACHE.update(key=key, index=index)
+    return index
+
+
+def _goal_hash(goal: dict) -> str:
+    return hashlib.sha256(json.dumps(goal, sort_keys=True, default=str).encode()).hexdigest()[:12]
+
+
+def is_essential(t: dict, goals: dict[str, dict] | None = None) -> bool:
+    """F10: essential = medication, OR explicitly high priority, OR serving an essential goal, OR a
+    deadline whose stakes are not known to be missable (unknown stakes count as vital — a missed
+    tax deadline costs more than a lost evening). Derived on every read, never stored."""
+    if _MEDICATION_RE.search(f"{t.get('what', '')} {t.get('note', '')}"):
+        return True
+    if t.get("priority") == "high":
+        return True
+    gid = t.get("goal_id")
+    if gid:
+        g = (goals if goals is not None else _goal_index()).get(str(gid))
+        if g and g.get("essential") is True:
+            return True
+    return t.get("kind") == "deadline" and t.get("stakes") != "missable"
+
+
+def _ledger_fields() -> bool:
+    try:
+        from tools.day_plan_config import flag
+        return flag("ledger_fields")
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _unconfirmed_rule() -> bool:
+    try:
+        from tools.day_plan_config import flag
+        return flag("unconfirmed_rule")
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _from_user_or_direct() -> bool:
+    """The user's own turn, or a direct call with no bound turn. A scheduled run — the system
+    talking to itself — may not change a setting the user owns (the close gate's rule)."""
+    turn = _turn_info()
+    return not turn or bool(turn.get("user_turn"))
+
+
+def _set_day_starts(task_id: str, value) -> str:
+    if _split_id(task_id) != "settings":
+        return 'error: day_starts is a setting — call it with task_id="settings". Nothing was written.'
+    if not _from_user_or_direct():
+        return ("error: not recorded — the user's day boundary changes only on their own word, "
+                "and this turn has nothing from them. Nothing was changed.")
+    hm = _parse_hhmm(value)
+    if not hm or hm > _DAY_STARTS_MAX:
+        return ("error: day_starts takes a time between 00:00 and 06:00 in HH:MM form — the hour "
+                "the user's day really ends. Nothing was written.")
+    text = f"{hm[0]:02d}:{hm[1]:02d}"
+
+    def apply(doc: dict) -> str:
+        settings = doc.setdefault("settings", {})
+        old = settings.get("day_starts") or "00:00"
+        settings["day_starts"] = text
+        settings.setdefault("history", []).append(
+            {"day_starts": text, "was": old, "at": _stamp()})
+        settings["history"] = settings["history"][-20:]
+        if text == "00:00":
+            return "the user's day now ends at midnight again"
+        return f"the user's day now runs {text}–{text}: before {text} it is still the previous day"
+    return _with_store(None, apply)
+
+
+def _source_arg(name: str, value) -> tuple[str | None, str | None]:
+    src = (value or "inferred").strip().lower()
+    if src not in _FIELD_SOURCES:
+        return None, (f"error: `{name}` must be one of {', '.join(_FIELD_SOURCES)}, not "
+                      f"{value!r}. Nothing was written.")
+    return src, None
+
+
+def _plan_fields(kind: str, goal_id=None, priority=None, priority_source=None, stakes=None,
+                 stakes_source=None, zone=None) -> tuple[dict, str | None]:
+    """Validate the planner's fields. Returns (fields to set, error). An empty string for
+    `goal_id` or `zone` clears it."""
+    out: dict = {}
+    if goal_id is not None:
+        gid = str(goal_id).strip()
+        if gid:
+            goal = _goal_index().get(gid)
+            if goal is None:
+                known = ", ".join(sorted(_goal_index())) or "none on file"
+                return {}, (f"error: no goal with id {gid!r} (goals on file: {known}). "
+                            f"Nothing was written.")
+            out["goal_id"] = gid
+            out["goal_hash"] = _goal_hash(goal)
+        else:
+            out["goal_id"] = None
+    if priority is not None:
+        p = str(priority).strip().lower()
+        if p not in _PRIORITIES:
+            return {}, (f"error: `priority` must be one of {', '.join(_PRIORITIES)}, not "
+                        f"{priority!r}. Nothing was written.")
+        src, err = _source_arg("priority_source", priority_source)
+        if err:
+            return {}, err
+        out.update(priority=p, priority_source=src)
+    if stakes is not None:
+        if kind != "deadline":
+            return {}, "error: `stakes` applies to a deadline only. Nothing was written."
+        st = str(stakes).strip().lower()
+        if st not in _STAKES:
+            return {}, (f"error: `stakes` must be one of {', '.join(_STAKES)}, not {stakes!r}. "
+                        f"Nothing was written.")
+        src, err = _source_arg("stakes_source", stakes_source)
+        if err:
+            return {}, err
+        out.update(stakes=st, stakes_source=src)
+    if zone is not None:
+        z = str(zone).strip().lower()
+        if z:
+            try:
+                from tools.location import load_zones
+                names = {str(zz.get("name") or "").strip().lower() for zz in load_zones()}
+            except Exception:  # noqa: BLE001
+                names = set()
+            if z not in names:
+                known = ", ".join(sorted(n for n in names if n)) or "none named yet"
+                return {}, (f"error: no zone named {z!r} (zones: {known}). Nothing was written.")
+            out["zone"] = z
+        else:
+            out["zone"] = None
+    return out, None
+
+
+def _set_plan_field(task_id: str, action: str, **kw) -> str:
+    wanted = {"link_goal": "goal_id", "set_priority": "priority", "set_stakes": "stakes",
+              "set_zone": "zone"}[action]
+    if kw.get(wanted) is None:
+        return f"error: `{wanted}` is required for {action}. Nothing was written."
+    tid = _split_id(task_id)
+    only = {k: v for k, v in kw.items() if k in (wanted, f"{wanted}_source")}
+
+    def apply(doc: dict) -> str:
+        t = _find(doc["tasks"], tid)
+        if t is None:
+            return f"error: no task with id {task_id!r}"
+        fields, err = _plan_fields(t.get("kind", "deadline"), **only)
+        if err:
+            return err
+        src_key = f"{wanted}_source"
+        if (src_key in fields and t.get(src_key) == "stated"
+                and fields.get(src_key) == "inferred"):
+            return (f"{tid} keeps the user's own {wanted}, {t.get(wanted)!r} — an inference does "
+                    f"not replace it")
+        for k, v in fields.items():
+            if v is None:
+                t.pop(k, None)
+                if k == "goal_id":
+                    t.pop("goal_hash", None)
+            else:
+                t[k] = v
+        state = f"set to {t.get(wanted)!r}" if t.get(wanted) else "cleared"
+        return f"{tid} {wanted} {state}: {_summarise(t)}"
+    return _with_store(None, apply)
+
+
 def _done_with_followup(task_id: str, evidence: str | None, followup: str | None,
                         on_date: str | None) -> str:
     """Done, but with a loose end (Mike, 2026-10-24: the Thanksgiving invitation was done
@@ -1125,18 +1420,30 @@ def _done_with_followup(task_id: str, evidence: str | None, followup: str | None
 def update_task(task_id: str, action: str, evidence: str | None = None,
                 new_due: str | None = None, note: str | None = None,
                 on_date: str | None = None, followup: str | None = None,
-                minutes: int | None = None, minutes_source: str | None = None) -> str:
+                minutes: int | None = None, minutes_source: str | None = None,
+                goal_id: str | None = None, priority: str | None = None,
+                priority_source: str | None = None, stakes: str | None = None,
+                stakes_source: str | None = None, zone: str | None = None) -> str:
     """Record what happened to a tracked task — done, done with a loose end, skipped,
     dismissed, reopen, reschedule, or a new note."""
     action = (action or "").strip().lower()
+    # The planner's actions exist only while `ledger_fields` is on (review R1-1; Fable diff
+    # review S-8): off, they are neither offered in the schema nor named in this error, nor
+    # accepted — a model cannot reach them by guessing.
     actions = ("done", "done_with_followup", "skipped", "dismissed", "reopen", "reschedule",
-               "note", "set_minutes")
+               "note", "set_minutes") + (_PLAN_ACTIONS if _ledger_fields() else ())
     if action not in actions:
         return f"error: `action` must be one of {', '.join(actions)}, not {action!r}"
     if action == "done_with_followup":
         return _done_with_followup(task_id, evidence, followup, on_date)
     if action == "set_minutes":
         return _set_minutes(task_id, minutes, minutes_source)
+    if action == "day_starts":
+        return _set_day_starts(task_id, note if note else evidence)
+    if action in _PLAN_ACTIONS:
+        return _set_plan_field(task_id, action, goal_id=goal_id, priority=priority,
+                               priority_source=priority_source, stakes=stakes,
+                               stakes_source=stakes_source, zone=zone)
     evidence = _evidence_arg(evidence)
     if action in ("done", "skipped", "dismissed", "reopen") and not evidence:
         return ("error: `evidence` is required — quote what the user said that shows this. "
@@ -1408,7 +1715,7 @@ def _recently_closed(tasks: list[dict], today: date) -> list[str]:
     for t in tasks:
         if t.get("status") not in _TERMINAL or t.get("kind") not in _ONE_OFF:
             continue
-        closed = _d(t.get("closed_at"))
+        closed = _stamp_day(t.get("closed_at"))
         if not closed or (today - closed).days > _RECENT_DAYS or closed > today:
             continue
         status = t["status"]
@@ -1495,12 +1802,14 @@ def context_block(persona: str | None = None, as_of: date | None = None) -> str:
     pending = [t for t in tasks if t.get("status") == "open"
                and any(p.get("status") == "pending" for p in t.get("proposals") or [])]
     later = {"deadlines further out": 0, "waiting on others": 0, "not yet eligible": 0,
-             "recurring, not due today": 0}
+             "recurring, not due today": 0, "past their date, unconfirmed": 0}
     for t, v in views:
         if t.get("status") != "open" or v["actionable"]:
             continue
         if v["state"] == "dormant":
             later["not yet eligible"] += 1
+        elif v["state"] == "lapsed":
+            later["past their date, unconfirmed"] += 1
         elif t["kind"] == "waiting":
             later["waiting on others"] += 1
         elif t["kind"] == "deadline" and v["state"] == "later":
@@ -1514,6 +1823,11 @@ def context_block(persona: str | None = None, as_of: date | None = None) -> str:
     if not (shown or hidden or recent or pending or later_text):
         return ""
     lines = ["## Tasks", _BLOCK_HEADER]
+    boundary = _day_starts(persona)
+    if boundary:
+        hhmm = f"{boundary.seconds // 3600:02d}:{(boundary.seconds // 60) % 60:02d}"
+        lines.append(f"The user's day runs {hhmm}–{hhmm}: before {hhmm} it is still the "
+                     f"previous day, and \"today\" here means that day.")
     if shown or hidden:
         lines.append("**Now**")
         lines.extend(shown)
@@ -1731,7 +2045,7 @@ def note_raised(reply_text: str, persona: str | None = None, as_of: date | None 
             if not _tokens_match(rtoks, _task_tokens(t["what"]), single_ok=True):
                 continue
             raised = {k: val for k, val in (t.get("raised") or {}).items()
-                      if str(val)[:10] == today.isoformat()}
+                      if _stamp_day(val) == today}
             if v["occ"] not in raised:
                 raised[v["occ"]] = _stamp()
                 stamped["n"] += 1
@@ -1755,29 +2069,63 @@ def note_raised(reply_text: str, persona: str | None = None, as_of: date | None 
 # here, never written to the conversation, and never put in front of a model.
 
 _CORRESPONDENCE_EVIDENCE = "correspondence evidence, approved in the app"
+# Location evidence (the day planner, archive/plans/day_planner_plan_2026-10-24.md § 5.9): the
+# user's phone reported arriving at the place a task gets done, during its planned time. It says
+# they were THERE — never for how long — so it only ever offers a close; the tap closes it.
+_LOCATION_EVIDENCE = "location evidence, approved in the app"
+_PROPOSAL_SOURCES = ("correspondence", "location")
+_LOCATION_PROPOSAL_TTL_DAYS = 2
 
 
-def add_proposal(task_id: str, envelope_id: str, basis: str, received: str = "",
-                 persona: str | None = None) -> bool:
-    """Park a proposed close on an open task. False if one for that message already exists."""
+def add_proposal(task_id: str, envelope_id: str = "", basis: str = "", received: str = "",
+                 persona: str | None = None, source: str = "correspondence",
+                 key: str | None = None, on_date: str | None = None) -> bool:
+    """Park a proposed close on an open task. False if one for that evidence already exists.
+
+    `source` "correspondence" (the original shape): one-offs only, keyed by the message's
+    envelope id. "location" (review R1-5): any open task but a `waiting` one, a habit or interval
+    occurrence included — `task_id` may carry `@period` and `on_date` says which day — keyed by
+    `key` ("gym@2026-10-26"), so one arrival offers one card."""
     tid = _split_id(task_id)
+    source = source if source in _PROPOSAL_SOURCES else "correspondence"
     added = {"ok": False}
 
     def apply(doc: dict) -> None:
         t = _find(doc["tasks"], tid)
-        if t is None or t.get("status") != "open" or t.get("kind") not in _ONE_OFF:
+        if t is None or t.get("status") != "open":
+            return
+        if source == "correspondence" and t.get("kind") not in _ONE_OFF:
+            return
+        if source == "location" and (t.get("kind") == "waiting" or not key):
             return
         props = t.setdefault("proposals", [])
-        if any(p.get("envelope_id") == envelope_id for p in props):
-            return
-        pid = "pr_" + hashlib.sha256(f"{tid}|{envelope_id}".encode()).hexdigest()[:10]
-        props.append({"proposal_id": pid, "envelope_id": envelope_id, "basis": basis,
-                      "received": str(received or "")[:25], "created": _stamp(),
-                      "status": "pending"})
+        if source == "correspondence":
+            if any(p.get("envelope_id") == envelope_id for p in props):
+                return
+            pid = "pr_" + hashlib.sha256(f"{tid}|{envelope_id}".encode()).hexdigest()[:10]
+            props.append({"proposal_id": pid, "envelope_id": envelope_id, "basis": basis,
+                          "received": str(received or "")[:25], "created": _stamp(),
+                          "status": "pending"})
+        else:
+            if any(p.get("source") == "location" and p.get("key") == key for p in props):
+                return
+            pid = "pr_" + hashlib.sha256(f"{tid}|location|{key}".encode()).hexdigest()[:10]
+            props.append({"proposal_id": pid, "source": "location", "key": key,
+                          "occurrence": str(task_id).strip(), "on_date": on_date,
+                          "basis": str(basis or "")[:120], "created": _stamp(),
+                          "status": "pending"})
         added["ok"] = True
 
     _with_store(persona, apply)
     return added["ok"]
+
+
+def has_proposal(task_id: str, key: str, persona: str | None = None) -> bool:
+    """Is a location proposal for this evidence already parked (pending or answered)?"""
+    tid = _split_id(task_id)
+    t = _find([_norm(x) for x in _load(persona)], tid)
+    return bool(t and any(p.get("source") == "location" and p.get("key") == key
+                          for p in t.get("proposals") or []))
 
 
 def pending_proposals(persona: str | None = None) -> list[dict]:
@@ -1792,7 +2140,8 @@ def pending_proposals(persona: str | None = None) -> list[dict]:
                 out.append({"proposal_id": p.get("proposal_id"), "task_id": t["id"],
                             "what": t["what"], "envelope_id": p.get("envelope_id"),
                             "basis": p.get("basis"), "received": p.get("received"),
-                            "created": p.get("created")})
+                            "created": p.get("created"),
+                            "source": p.get("source") or "correspondence"})
     out.sort(key=lambda p: str(p.get("created") or ""))
     return out
 
@@ -1800,7 +2149,7 @@ def pending_proposals(persona: str | None = None) -> list[dict]:
 def resolve_proposal(proposal_id: str, accept: bool, persona: str | None = None) -> str:
     """The user's tap on a proposal. Accept closes the task with content-free evidence;
     decline means that message is never offered again for that task."""
-    target = {"task": None}
+    target: dict = {"task": None, "prop": None}
 
     def find(doc: dict) -> str:
         for t in doc["tasks"]:
@@ -1811,15 +2160,23 @@ def resolve_proposal(proposal_id: str, accept: bool, persona: str | None = None)
                     p["status"] = "accepted" if accept else "declined"
                     p["resolved_at"] = _stamp()
                     target["task"] = t["id"]
+                    target["prop"] = dict(p)
                     return "ok"
         return "error: no such suggestion"
 
     result = _with_store(persona, find)
     if not result.startswith("ok"):
         return result
+    prop = target["prop"] or {}
     if not accept:
-        return f"{target['task']} left open; that message will not be offered again"
+        what = "that arrival" if prop.get("source") == "location" else "that message"
+        return f"{target['task']} left open; {what} will not be offered again"
     with _user_act():   # the user's tap on the card — never gated by a turn's words
+        if prop.get("source") == "location":
+            # The occurrence the evidence was for — a habit's period, on the day of the arrival.
+            return update_task(prop.get("occurrence") or target["task"], "done",
+                               evidence=f"{_LOCATION_EVIDENCE} ({proposal_id})",
+                               on_date=prop.get("on_date"))
         return update_task(target["task"], "done",
                            evidence=f"{_CORRESPONDENCE_EVIDENCE} ({proposal_id})")
 
@@ -1972,6 +2329,7 @@ def _finalize_periods(t: dict, today: date, doc: dict) -> int:
         return 0
     every = t.get("every") if t.get("every") in _EVERY else "day"
     target = _habit_target(t)
+    unconfirmed_ok = _unconfirmed_rule() and not is_essential(t)
     start = _start(t) or today
     swept = _d(t.get("swept_through"))
     yesterday = today - timedelta(days=1)
@@ -1990,7 +2348,15 @@ def _finalize_periods(t: dict, today: date, doc: dict) -> int:
             break
         occ = occs.get(pk) or {}
         done = int(occ.get("done") or 0)
-        state = "skipped" if occ.get("skipped") else ("done" if done >= target else "missed")
+        if occ.get("skipped"):
+            state = "skipped"
+        elif done >= target:
+            state = "done"
+        elif unconfirmed_ok:
+            # F10: nobody was asked about a non-essential habit, so "missed" would be a guess.
+            state = "unconfirmed"
+        else:
+            state = "missed"
         row = {"key": f"{t['id']}@{pk}", "task_id": t["id"], "kind": "habit",
                "occurrence": f"{t['id']}@{pk}", "state": state,
                "period_start": ps.isoformat(), "period_end": pe.isoformat(),
@@ -2034,13 +2400,16 @@ def sweep(persona: str | None = None, as_of: date | None = None) -> str:
                     t["evidence"] = f"its date ({moot.isoformat()}) passed"
                     doc.setdefault("_history", []).append(_one_off_row(t, "moot"))
                     counts["moot"] += 1
+            loc_cutoff = today - timedelta(days=_LOCATION_PROPOSAL_TTL_DAYS)
             for p in t.get("proposals") or []:
                 created = _d(p.get("created"))
-                if p.get("status") == "pending" and created and created < cutoff:
+                # A location card is about one day's arrival; it goes stale in two.
+                limit = loc_cutoff if p.get("source") == "location" else cutoff
+                if p.get("status") == "pending" and created and created < limit:
                     p["status"] = "expired"
                     counts["expired"] += 1
             raised = {k: v for k, v in (t.get("raised") or {}).items()
-                      if str(v)[:10] == today.isoformat()}
+                      if _stamp_day(v) == today}
             if raised:
                 t["raised"] = raised
             else:
@@ -2067,7 +2436,8 @@ def adherence(persona: str | None = None, days: int = 30, as_of: date | None = N
             continue
         s = per.setdefault(r.get("task_id"), {
             "task_id": r.get("task_id"), "kind": r.get("kind"), "what": names.get(r.get("task_id"), "?"),
-            "periods": 0, "met": 0, "missed": 0, "skipped": 0, "partial": 0, "target": 0,
+            "periods": 0, "met": 0, "missed": 0, "unconfirmed": 0, "skipped": 0, "partial": 0,
+            "target": 0,
             "completed": 0, "done": 0, "late": 0, "dismissed": 0, "moot": 0, "rescheduled": 0})
         state = r.get("state")
         if r.get("kind") == "habit":
@@ -2081,7 +2451,10 @@ def adherence(persona: str | None = None, days: int = 30, as_of: date | None = N
             s["periods"] += 1
             s["target"] += target
             s["completed"] += min(int(r.get("done") or 0), target)
-            s["met" if state == "done" else "missed"] += 1
+            # An unconfirmed period counts against the rate exactly as a missed one does — the
+            # rate must not improve by not asking — and is reported under its own name.
+            s["met" if state == "done" else (
+                "unconfirmed" if state == "unconfirmed" else "missed")] += 1
         else:
             if state in s:
                 s[state] += 1
@@ -2100,7 +2473,8 @@ def adherence(persona: str | None = None, days: int = 30, as_of: date | None = N
 def daily_task_counts(day: str, persona: str | None = None) -> dict:
     """Content-free counts for ONE day, for tools/analytics.py's A9 row. Counts only — no task
     words, no ids. Re-derivable at any time from task_history.jsonl."""
-    out = {"tasks_done": 0, "tasks_missed": 0, "tasks_skipped": 0, "tasks_dismissed": 0,
+    out = {"tasks_done": 0, "tasks_missed": 0, "tasks_unconfirmed": 0, "tasks_skipped": 0,
+           "tasks_dismissed": 0,
            "tasks_moot": 0, "habit_target": 0, "habit_done": 0, "deadlines_met": 0,
            "deadlines_late": 0}
     for r in _history_rows(persona):
@@ -2113,7 +2487,8 @@ def daily_task_counts(day: str, persona: str | None = None) -> dict:
             target = int(r.get("target") or 0)
             out["habit_target"] += target
             out["habit_done"] += min(int(r.get("done") or 0), target)
-            out["tasks_done" if r.get("state") == "done" else "tasks_missed"] += 1
+            out["tasks_done" if r.get("state") == "done" else (
+                "tasks_unconfirmed" if r.get("state") == "unconfirmed" else "tasks_missed")] += 1
             continue
         if r.get("closed_on") != day:
             continue
@@ -2140,8 +2515,11 @@ def accountability_items(persona: str | None = None) -> list[dict]:
         t = _norm(t)
         if t.get("kind") in _ONE_OFF:
             if t.get("status") == "done":
-                out.append({"what": t["what"], "status": "closed",
-                            "closed_at": t.get("closed_at")})
+                closed_at = t.get("closed_at")
+                if _day_starts() and _stamp_day(closed_at):
+                    # Past-midnight closes join the intention of the day the user was still in.
+                    closed_at = f"{_stamp_day(closed_at).isoformat()}T12:00:00"
+                out.append({"what": t["what"], "status": "closed", "closed_at": closed_at})
             continue
         dates = [str(c.get("on") or c.get("at") or "")[:10]
                  for c in (t.get("completions") or []) + (t.get("recent_completions") or [])]
@@ -2195,7 +2573,7 @@ def consult_index(persona: str | None = None, as_of: date | None = None) -> list
         t = _norm(t)
         status = t.get("status")
         if status in _TERMINAL:
-            closed = _d(t.get("closed_at"))
+            closed = _stamp_day(t.get("closed_at"))
             if not closed or (today - closed).days > _CONSULT_WINDOW_DAYS:
                 continue
             phrase = ("no longer relevant" if status == "moot"
@@ -2206,7 +2584,7 @@ def consult_index(persona: str | None = None, as_of: date | None = None) -> list
             continue
         out.append({"id": t["id"], "what": t["what"], "kind": t["kind"],
                     "tokens": _task_tokens(t["what"]), "terminal": status in _TERMINAL,
-                    "status": status, "closed_on": _d(t.get("closed_at")), "phrase": phrase,
+                    "status": status, "closed_on": _stamp_day(t.get("closed_at")), "phrase": phrase,
                     "calendar_uid": t.get("calendar_uid")})
     return out
 
@@ -2603,6 +2981,63 @@ LIST_TASKS_SCHEMA = {
         "required": [],
     },
 }
+
+
+# --- The schemas a model sees ---------------------------------------------------------------
+# The three constants above are what every agent granted these tools has seen since the ledger
+# landed, and with `ledger_fields` off they are returned UNCHANGED — tests pin that byte for byte
+# (review R1-1). With it on, the day planner's actions and fields are added. register_tools()
+# calls this on every agent call, so a flip is live on the next session.
+
+import copy as _copy  # noqa: E402
+
+_PLAN_FIELD_PROPS = {
+    "goal_id": {"type": "string",
+                "description": "The id of the goal this serves (q1, w2, d3 — the ids in the goals "
+                               "you hold). What it is for sets how much it matters; empty "
+                               "string unlinks it."},
+    "priority": {"type": "string", "enum": list(_PRIORITIES),
+                 "description": "How much this matters beyond its deadline. Leave unset to take "
+                                "it from the goal it serves."},
+    "priority_source": {"type": "string", "enum": list(_FIELD_SOURCES),
+                        "description": "stated — the user said so; inferred — your judgement. "
+                                       "Default inferred; a stated value is never replaced by "
+                                       "an inferred one."},
+    "stakes": {"type": "string", "enum": list(_STAKES),
+               "description": "deadline only: vital — missing it has real consequences (taxes, "
+                              "a bill, a legal date); missable — it can slip in favour of the "
+                              "user's day. Unset counts as vital."},
+    "stakes_source": {"type": "string", "enum": list(_FIELD_SOURCES),
+                      "description": "stated or inferred, as for priority_source."},
+    "zone": {"type": "string",
+             "description": "A named place where this gets done (\"gym\"), from the zones on "
+                            "file — lets arriving there count as a sign it happened. Empty "
+                            "string clears it."},
+}
+
+
+def task_schemas() -> tuple[dict, dict, dict]:
+    """(open_task, update_task, list_tasks) schemas as models should see them right now."""
+    try:
+        from tools.day_plan_config import flag
+        exposed = flag("ledger_fields")
+    except Exception:  # noqa: BLE001
+        exposed = False
+    if not exposed:
+        return OPEN_TASK_SCHEMA, UPDATE_TASK_SCHEMA, LIST_TASKS_SCHEMA
+    open_s = _copy.deepcopy(OPEN_TASK_SCHEMA)
+    open_s["input_schema"]["properties"].update(_copy.deepcopy(_PLAN_FIELD_PROPS))
+    upd = _copy.deepcopy(UPDATE_TASK_SCHEMA)
+    upd["description"] += (
+        " link_goal / set_priority / set_stakes / set_zone — record what it serves, how much it "
+        "matters, whether its deadline is vital or missable, where it gets done (goal_id, "
+        "priority, stakes, zone, each with its _source). day_starts — when the user's day "
+        "really ends (task_id \"settings\", the time in note, e.g. \"02:00\"); only on their "
+        "own word.")
+    upd["input_schema"]["properties"]["action"]["enum"] = (
+        list(upd["input_schema"]["properties"]["action"]["enum"]) + list(_PLAN_ACTIONS))
+    upd["input_schema"]["properties"].update(_copy.deepcopy(_PLAN_FIELD_PROPS))
+    return open_s, upd, LIST_TASKS_SCHEMA
 
 
 if __name__ == "__main__":  # manual: python3 -m tools.obligations <persona> [--report [days]]

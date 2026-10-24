@@ -755,6 +755,18 @@
     }
     .task-actions:has(.task-input) { flex: 1 1 100%; }
     .task-empty { font-size: 13px; color: #5d6a5d; }
+    /* The day plan (tools/day_plan.py), shown here only while it is being tested — the
+       server's show_in_app flag decides, so moving it to "Synth only" needs no APK. */
+    #plan-list { display: none; flex-direction: column; gap: 3px;
+                 padding-bottom: 8px; border-bottom: 1px solid #1f2a1f; }
+    #plan-list.shown { display: flex; }
+    .plan-head { font-size: 11px; letter-spacing: 0.06em; color: #5d6a5d; text-transform: uppercase; }
+    .plan-row { display: flex; gap: 10px; font-size: 12px; color: #9aa69a; }
+    .plan-row.past { opacity: 0.5; }
+    .plan-row.now { color: #e8f2e8; font-weight: 600; }
+    .plan-time { flex: 0 0 42px; color: #6f7a6f; font-variant-numeric: tabular-nums; }
+    .plan-title { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+    .plan-note { font-size: 11px; color: #6f7a6f; }
     /* A close suggested by an arriving message. Its own bar, never the approval bar above —
        see the comment where it is wired. */
     #task-proposal-bar {
@@ -830,7 +842,7 @@
 
 <!-- Today's tasks. What the task ledger says is outstanding, with a tap to record it done,
      skipped or dropped. Recorded by the server from the tap — the model is not in the path. -->
-<div id="tasks-panel"><div id="tasks-list"></div></div>
+<div id="tasks-panel"><div id="plan-list"></div><div id="tasks-list"></div></div>
 
 <div id="conversation">
   <div class="message system">Session started. Tap the mic or type to begin.</div>
@@ -3462,6 +3474,29 @@
     }
   }
 
+  // A new user's answer from the first interview ("send your place with messages?" — asked,
+  // framed toward yes: Mike, 2026-10-24, F1). Adopted once, after sign-in, and ONLY when
+  // nothing is stored: a stored choice, either way, always wins. Only an explicit `true` turns
+  // it on — null (never asked), false, an error or any odd value leaves it off, so the
+  // 2026-08-28 property holds: no default can be arrived at by accident. The user's interview
+  // answer is the act. tests/test_location_onsend_default.js runs this code too.
+  let locDefaultAsked = false;
+  async function adoptServerLocationDefault() {
+    if (locDefaultAsked) return;
+    locDefaultAsked = true;
+    if (localStorage.getItem(LOC_ONSEND_KEY) !== null) return;
+    try {
+      const res = await authFetch('/settings/location?persona=' + encodeURIComponent(currentPersona));
+      if (!res || !res.ok) return;
+      const body = await res.json();
+      if (body && body.on_send === true && localStorage.getItem(LOC_ONSEND_KEY) === null) {
+        locOnSend = true;
+        localStorage.setItem(LOC_ONSEND_KEY, 'on');
+        renderLocControls();
+      }
+    } catch (e) { /* stays off */ }
+  }
+
   document.getElementById('loc-toggle').addEventListener('click', () => {
     document.getElementById('loc-settings').classList.toggle('shown');
   });
@@ -3777,12 +3812,68 @@
 
   async function refreshTasks() {
     if (!currentPersona || !authToken || taskEditing) return;
+    adoptServerLocationDefault();
     try {
       const res = await authFetch('/tasks/today?followup=1&persona=' + encodeURIComponent(currentPersona));
       if (!res.ok) return;
       const { items } = await res.json();
       renderTasks(items || []);
     } catch (e) { /* offline or signed out — the next open retries */ }
+    if (tasksOpen) refreshPlan();
+  }
+
+  // The day plan, read-only. Polled only while the panel is open: the server's answer is the
+  // stored plan after a cheap check, and a stale calendar is refreshed behind it, so the next
+  // poll has it (archive/plans/day_planner_plan_2026-10-24.md § 9).
+  async function refreshPlan() {
+    try {
+      const res = await authFetch('/plan/today?persona=' + encodeURIComponent(currentPersona));
+      if (!res.ok) return;
+      renderPlan(await res.json());
+    } catch (e) { /* the tasks still show */ }
+  }
+
+  function renderPlan(view) {
+    const box = document.getElementById('plan-list');
+    box.innerHTML = '';
+    if (!view || !Array.isArray(view.blocks)) { box.classList.remove('shown'); return; }
+    box.classList.add('shown');
+    const head = document.createElement('div');
+    head.className = 'plan-head';
+    head.textContent = 'Plan';
+    box.appendChild(head);
+    if (!view.calendar_read) {
+      const n = document.createElement('div');
+      n.className = 'plan-note';
+      n.textContent = 'Reading your calendar…';
+      box.appendChild(n);
+    }
+    for (const b of view.blocks) {
+      const row = document.createElement('div');
+      row.className = 'plan-row' + (b.past ? ' past' : '') + (b.now ? ' now' : '');
+      const t = document.createElement('span');
+      t.className = 'plan-time';
+      t.textContent = b.start || '';
+      const title = document.createElement('span');
+      title.className = 'plan-title';
+      const mark = b.status === 'done' ? ' ✓' : b.status === 'skipped' ? ' (skipped)'
+        : (b.status === 'no word yet' || b.status === 'unconfirmed') ? ` — ${b.status}` : '';
+      title.textContent = (b.title || '') + mark;
+      row.append(t, title);
+      box.appendChild(row);
+    }
+    if (view.unplaced && view.unplaced.length) {
+      const n = document.createElement('div');
+      n.className = 'plan-note';
+      n.textContent = 'Not placed: ' + view.unplaced.join('; ');
+      box.appendChild(n);
+    }
+    for (const note of (view.notes || [])) {
+      const n = document.createElement('div');
+      n.className = 'plan-note';
+      n.textContent = note;
+      box.appendChild(n);
+    }
   }
 
   async function failureDetail(res) {
@@ -3823,9 +3914,12 @@
     if (bar.dataset.proposalId === p.proposal_id && bar.classList.contains('shown')) return;
     bar.dataset.proposalId = p.proposal_id;
     const when = (p.received || '').slice(0, 10);
-    document.getElementById('task-proposal-text').textContent =
-      `Mark "${p.what}" done?\n\nAn email${p.sender ? ' from ' + p.sender : ''}` +
-      `${when ? ' on ' + when : ''}: "${p.subject || '(no subject)'}"`;
+    // A location card says only where the phone reported the user — never how long (the
+    // day planner, plan § 5.9). Its basis is written by code; an email's subject is a stranger's.
+    document.getElementById('task-proposal-text').textContent = p.source === 'location'
+      ? `Mark "${p.what}" done?\n\n${p.basis || 'You were where this gets done.'}`
+      : `Mark "${p.what}" done?\n\nAn email${p.sender ? ' from ' + p.sender : ''}` +
+        `${when ? ' on ' + when : ''}: "${p.subject || '(no subject)'}"`;
     // Fresh buttons per suggestion, so no handler drawn for an earlier one survives.
     const oldYes = document.getElementById('task-proposal-yes');
     const oldNo = document.getElementById('task-proposal-no');
