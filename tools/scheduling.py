@@ -85,16 +85,38 @@ def _shared_significant_tokens(a: str, b: str) -> list[str]:
 
 
 def _parse_dt(value: str) -> datetime | None:
-    """Parse an ISO datetime or date string. Returns None on failure."""
+    """Parse an ISO datetime or date string. Returns None on failure.
+
+    Always naive local time. A UTC-stamped value (an invite, typically) arrives
+    timezone-aware, and comparing it with the naive proposed time raised TypeError
+    out of every write in that window instead of returning a check result."""
     if not value:
         return None
     try:
-        return datetime.fromisoformat(value)
+        dt = datetime.fromisoformat(value)
     except ValueError:
         try:
-            return datetime.fromisoformat(value + "T00:00:00")
+            dt = datetime.fromisoformat(value + "T00:00:00")
         except ValueError:
             return None
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(_local_zone()).replace(tzinfo=None)
+    return dt
+
+
+def _local_zone():
+    from zoneinfo import ZoneInfo
+    from tools.caldav import _load_config
+    try:
+        return ZoneInfo(str(_load_config().get("timezone") or "UTC"))
+    except Exception:
+        return ZoneInfo("UTC")
+
+
+def _is_all_day(ev: dict) -> bool:
+    """All-day events come back from the calendar as midnight with no clock time."""
+    start = ev.get("start", "")
+    return "T" not in start or start.endswith("T00:00:00") and (ev.get("end", "") or "").endswith("T00:00:00")
 
 
 def _overlaps(a_start: datetime, a_end: datetime, b_start: datetime, b_end: datetime) -> bool:
@@ -153,18 +175,32 @@ def _compute_conflicts(
     query_start = (start_dt - timedelta(days=_DEFAULT_CANDIDATE_WINDOW_DAYS)).date().isoformat()
     query_end = (end_dt + timedelta(days=_DEFAULT_CANDIDATE_WINDOW_DAYS)).date().isoformat()
 
-    raw = _query_events(query_start, query_end)
+    # Every calendar the account can see (2026-10-24): being busy on a shared calendar
+    # is real evidence. But a read-only event is never grounds to refuse a write — the
+    # refusal points the agent at update_calendar_event, which cannot reach it — and an
+    # all-day entry on someone else's calendar (a bank holiday, their trip) is not a
+    # clash with every timed event that day. "Read-only" and "someone else's" differ:
+    # invitations on the account's own calendar are read-only here and still the user's.
+    raw = _query_events(query_start, query_end, calendars="all")
     if "error" in raw:
         return {"check_error": raw["error"]}
 
-    events = [e for e in raw["events"] if e.get("uid") != exclude_uid]
+    events = [e for e in raw["events"] if e.get("uid") != exclude_uid
+              and not (e.get("shared") and _is_all_day(e))]
 
     norm_title = _normalize_title(title)
     overlaps = []
     exact_duplicate = None
+    existing_elsewhere = []
     near_duplicate_candidates = []
     recurring_series_match = []
     location_transition_flags = []
+
+    def _where(ev: dict) -> dict:
+        if not ev.get("read_only"):
+            return {}
+        return {"calendars": ev.get("calendars", []), "read_only": True,
+                **({"shared": True} if ev.get("shared") else {})}
 
     for ev in events:
         ev_start = _parse_dt(ev.get("start", ""))
@@ -179,11 +215,18 @@ def _compute_conflicts(
         if is_overlap:
             overlaps.append({
                 "uid": ev["uid"], "title": ev["title"], "start": ev["start"], "end": ev["end"],
-                "location": ev.get("location", ""),
+                "location": ev.get("location", ""), **_where(ev),
             })
-            if (exact_duplicate is None and _normalize_title(ev.get("title", "")) == norm_title
+            if (_normalize_title(ev.get("title", "")) == norm_title
                     and norm_title and ev_start == start_dt and ev_end == end_dt):
-                exact_duplicate = {"uid": ev["uid"], "title": ev["title"], "start": ev["start"], "end": ev["end"]}
+                match = {"uid": ev["uid"], "title": ev["title"], "start": ev["start"], "end": ev["end"]}
+                if ev.get("read_only"):
+                    existing_elsewhere.append({**match, **_where(ev), "note": (
+                        "Already on a calendar this system can read but not edit. Writing it "
+                        "adds a second entry: the user's calendar app will show both, even "
+                        "though this system reads them as one. Usually it need not be added.")})
+                elif exact_duplicate is None:
+                    exact_duplicate = match
 
         # Near-duplicate candidates: close in time (overlap, or within a 2-hour
         # window of the proposed start) AND similar in title, sharing an
@@ -197,7 +240,7 @@ def _compute_conflicts(
             near_duplicate_candidates.append({
                 "uid": ev["uid"], "title": ev["title"], "start": ev["start"], "end": ev["end"],
                 "title_similarity": round(sim, 2), "shared_attendees": shared_attendees,
-                "shared_words": shared_tokens,
+                "shared_words": shared_tokens, **_where(ev),
             })
 
         # Recurring-series match: an existing RRULE event whose title matches
@@ -216,10 +259,13 @@ def _compute_conflicts(
             })
 
     # Location-transition tightness: only meaningful against the immediately
-    # adjacent event on the same day, not every event in the window.
+    # adjacent event on the same day, not every event in the window. Events only on
+    # someone else's calendar are left out: their being somewhere is not the user
+    # having to travel there, and each flag here costs a routed lookup.
     if location:
         same_day = sorted(
-            (e for e in events if _parse_dt(e.get("start", "")) and _parse_dt(e.get("start", "")).date() == start_dt.date()),
+            (e for e in events if not e.get("shared")
+             and _parse_dt(e.get("start", "")) and _parse_dt(e.get("start", "")).date() == start_dt.date()),
             key=lambda e: e["start"],
         )
         for ev in same_day:
@@ -269,7 +315,8 @@ def _compute_conflicts(
                 location_transition_flags.append(flag)
 
     day_digest = sorted(
-        [{"uid": e["uid"], "title": e["title"], "start": e["start"], "end": e["end"], "location": e.get("location", "")}
+        [{"uid": e["uid"], "title": e["title"], "start": e["start"], "end": e["end"], "location": e.get("location", ""),
+          **_where(e)}
          for e in events
          if _parse_dt(e.get("start", "")) and _parse_dt(e.get("start", "")).date() in (start_dt.date(), end_dt.date())],
         key=lambda e: e["start"],
@@ -285,6 +332,11 @@ def _compute_conflicts(
     return {
         "overlaps": overlaps,
         "exact_duplicate": exact_duplicate,
+        "existing_elsewhere": existing_elsewhere,
+        # A check missing a calendar must say so — a clean result here is otherwise
+        # indistinguishable from a complete one.
+        "calendars_not_checked": raw.get("calendars_failed", []) + (
+            [raw["discovery"]] if raw.get("discovery") not in (None, "ok", "off") else []),
         "near_duplicate_candidates": sorted(near_duplicate_candidates, key=lambda c: -c["title_similarity"])[:5],
         "recurring_series_match": recurring_series_match,
         "location_transition_flags": location_transition_flags,

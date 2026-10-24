@@ -16,10 +16,16 @@ Implemented 2026-08-04; this docstring described it as a to-do from 2026-08-03, 
 which the calendar was live in production unwrapped.
 """
 
+import logging
+import re
+import time
 import uuid
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import unquote, urljoin, urlparse
+from zoneinfo import ZoneInfo
 
 import requests
 import yaml
@@ -29,6 +35,7 @@ from tools.untrusted import (UNTRUSTED_CONTENT_INSTRUCTION, contains_injection_m
                              wrap_untrusted)
 
 _ROOT = Path(__file__).parent.parent
+logger = logging.getLogger(__name__)
 
 # `attendees` is a local label, not an invitation. It is written as the custom
 # property X-ATTENDEE-NAMES — names, not addresses — and no standard ATTENDEE
@@ -45,6 +52,20 @@ _ATTENDEES_ARE_LABELS_ONLY = (
     "and nothing will appear in their calendar. Do not tell the user that anyone "
     "has been invited. To genuinely invite them, use send_calendar_invite — that sends a "
     "real invitation they can accept, and needs the user's approval first."
+)
+
+# Returned with every read_calendar result, for the same reason as the note above:
+# the return value is what is read back at answer time.
+_MULTI_CALENDAR_NOTE = (
+    "Events come from every calendar the user's account can see. An event that sits on "
+    "more than one calendar is shown once; `calendars` lists where it appears. Events "
+    "with read_only true cannot be changed or deleted by this system — that includes "
+    "invitations on the user's own account calendar, which are still the user's. Events "
+    "with shared true sit only on a calendar someone else shares with the user: they may "
+    "be other people's commitments rather than the user's own. Where copies of one event "
+    "disagree, `discrepancies` holds the other "
+    "values — mention a disagreement that matters (a different start time) rather than "
+    "picking one silently."
 )
 
 
@@ -93,8 +114,20 @@ def _auth_hint(e: Exception) -> str:
     return _credential_remedy() if status in (401, 403) else ""
 
 
-def _parse_ical_dt(val: str) -> str:
-    """Parse iCalendar datetime string to ISO 8601. Returns val unchanged on failure."""
+def _parse_ical_dt(val: str, tzid: str = "", target_tz: str = "", utc_to_local: bool = False) -> str:
+    """Parse iCalendar datetime string to ISO 8601. Returns val unchanged on failure.
+
+    A TZID-qualified time is converted into `target_tz` (the persona's timezone) and
+    emitted naive, so a time already in that zone comes out exactly as it always did.
+    Until 2026-10-24 the TZID was discarded and a "22:00 Europe/Budapest" read as 22:00
+    local — harmless while every event came from this system's own writes, which all
+    carry the persona's zone, and wrong the moment another person's calendar is read.
+
+    A UTC ("Z") value stays timezone-aware unless `utc_to_local` is set: the
+    single-calendar read has always returned it that way, and its callers are left
+    exactly as they were. The multi-calendar read sets it, because mixing aware and
+    naive values makes interval comparison raise.
+    """
     if not val:
         return ""
     utc = val.endswith("Z")
@@ -102,16 +135,31 @@ def _parse_ical_dt(val: str) -> str:
     for fmt in ("%Y%m%dT%H%M%S", "%Y%m%d"):
         try:
             dt = datetime.strptime(clean, fmt)
-            if utc:
-                dt = dt.replace(tzinfo=timezone.utc)
-            return dt.isoformat()
         except ValueError:
             continue
+        if fmt == "%Y%m%d":
+            return dt.isoformat()
+        try:
+            target = ZoneInfo(target_tz) if target_tz else None
+            if utc:
+                dt = dt.replace(tzinfo=timezone.utc)
+                if utc_to_local and target:
+                    dt = dt.astimezone(target).replace(tzinfo=None)
+            elif tzid and target and tzid != target_tz:
+                dt = dt.replace(tzinfo=ZoneInfo(tzid)).astimezone(target).replace(tzinfo=None)
+        except Exception:  # an unknown TZID (e.g. a Windows zone name) is left as written
+            pass
+        return dt.isoformat()
     return val
 
 
 def _parse_ical_events(ical_text: str) -> list[dict]:
-    """Extract VEVENT blocks from iCalendar text and return as list of raw dicts."""
+    """Extract VEVENT blocks from iCalendar text and return as list of raw dicts.
+
+    Lines inside a nested component (VALARM) are skipped: an alarm's own DESCRIPTION
+    ("This is an event reminder") used to overwrite the event's. Property parameters
+    are kept under "_params" so a TZID survives to _format_event.
+    """
     lines = ical_text.replace("\r\n", "\n").replace("\r", "\n").splitlines()
 
     # Unfold continuation lines (RFC 5545: lines starting with space/tab continue previous)
@@ -124,33 +172,50 @@ def _parse_ical_events(ical_text: str) -> list[dict]:
 
     events = []
     in_event = False
-    current: dict[str, str] = {}
+    nested = 0
+    current: dict = {}
 
     for line in unfolded:
         if line == "BEGIN:VEVENT":
             in_event = True
-            current = {}
+            nested = 0
+            current = {"_params": {}}
         elif line == "END:VEVENT":
             if in_event:
                 events.append(current)
             in_event = False
             current = {}
-        elif in_event and ":" in line:
+        elif in_event and line.startswith("BEGIN:"):
+            nested += 1
+        elif in_event and nested and line.startswith("END:"):
+            nested -= 1
+        elif in_event and not nested and ":" in line:
             key, _, value = line.partition(":")
-            base_key = key.split(";")[0].strip()  # strip TZID= and other params
+            parts = key.split(";")
+            base_key = parts[0].strip()
             current[base_key] = value.strip()
+            current["_params"][base_key] = {
+                p.split("=", 1)[0].upper(): p.split("=", 1)[1].strip('"')
+                for p in parts[1:] if "=" in p
+            }
 
     return events
 
 
-def _format_event(raw: dict) -> dict:
+def _format_event(raw: dict, target_tz: str = "", utc_to_local: bool = False) -> dict:
     """Normalize a raw VEVENT dict to a clean structured form."""
     attendee_field = raw.get("X-ATTENDEE-NAMES", "")
+    params = raw.get("_params") or {}
+
+    def _dt(key: str) -> str:
+        return _parse_ical_dt(raw.get(key, ""), (params.get(key) or {}).get("TZID", ""),
+                              target_tz, utc_to_local)
+
     return {
         "uid": raw.get("UID", ""),
         "title": raw.get("SUMMARY", ""),
-        "start": _parse_ical_dt(raw.get("DTSTART", "")),
-        "end": _parse_ical_dt(raw.get("DTEND", "")),
+        "start": _dt("DTSTART"),
+        "end": _dt("DTEND"),
         "description": raw.get("DESCRIPTION", "").replace("\\n", "\n").replace("\\,", ",").replace("\\;", ";"),
         "location": raw.get("LOCATION", ""),
         "status": raw.get("STATUS", ""),
@@ -160,7 +225,291 @@ def _format_event(raw: dict) -> dict:
     }
 
 
-def _query_events(start_date: str, end_date: str, persona: str | None = None) -> dict:
+def _report_raw(calendar_url: str, auth: tuple, start_date: str, end_date: str) -> list[dict]:
+    """One CalDAV REPORT against one collection. Raises on transport or parse failure."""
+    start_dt = datetime.fromisoformat(start_date + "T00:00:00").strftime("%Y%m%dT%H%M%SZ")
+    end_dt = datetime.fromisoformat(end_date + "T23:59:59").strftime("%Y%m%dT%H%M%SZ")
+    body = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">'
+        "<d:prop><d:getetag/><c:calendar-data/></d:prop>"
+        "<c:filter>"
+        '<c:comp-filter name="VCALENDAR">'
+        '<c:comp-filter name="VEVENT">'
+        f'<c:time-range start="{start_dt}" end="{end_dt}"/>'
+        "</c:comp-filter>"
+        "</c:comp-filter>"
+        "</c:filter>"
+        "</c:calendar-query>"
+    )
+    response = requests.request(
+        "REPORT",
+        calendar_url,
+        data=body.encode("utf-8"),
+        headers={
+            "Content-Type": "application/xml; charset=utf-8",
+            "Depth": "1",
+        },
+        auth=auth,
+        timeout=15,
+    )
+    response.raise_for_status()
+    root = ET.fromstring(response.text)
+    raws = []
+    for response_el in root.findall(".//{DAV:}response"):
+        cal_data_el = response_el.find(
+            ".//{urn:ietf:params:xml:ns:caldav}calendar-data"
+        )
+        if cal_data_el is not None and cal_data_el.text:
+            raws.extend(_parse_ical_events(cal_data_el.text))
+    return raws
+
+
+# --- Every calendar the account can see (2026-10-24) -------------------------
+#
+# Until this date the system read exactly one collection, `calendar_url`, so a
+# calendar shared with the account was invisible however it was shared. Which
+# calendars a Google account exposes over CalDAV is set by the user at
+# calendar.google.com/calendar/syncselect — that page, not this file, is the
+# include/exclude control. `extra_calendars:` adds collections discovery misses;
+# `discover_calendars: false` turns discovery off from config, without a deploy.
+#
+# Only `read_calendar` and the write-time conflict check (tools/scheduling.py) ask
+# for "all". Every unattended job — reconcile, travel watch, accountability,
+# location, the duplicate audit, the task ledger's calendar link — keeps reading
+# the configured calendar alone, so none of them starts asking about, alerting on
+# or scoring against events that belong to someone else, and their uid-keyed
+# seen-sets keep the inputs they were built on. Widening any of them is a decision,
+# not a default.
+#
+# "Writable" means the configured calendar_url and nothing else. Google reports a
+# write privilege even on its holidays calendar, so the server's privilege set is
+# not trusted for this.
+
+_DISCOVERY_TTL_SECONDS = 600  # in-process only: dies with the process, costs nothing to hold
+_discovery_cache: dict[tuple, tuple[float, list[dict], str]] = {}
+
+_DAV = "{DAV:}"
+_CALDAV_NS = "{urn:ietf:params:xml:ns:caldav}"
+
+
+def _collection_key(url: str) -> str:
+    """Comparable identity of a collection: decoded path, no trailing slash."""
+    return unquote(urlparse(url).path).rstrip("/")
+
+
+def _propfind(url: str, auth: tuple, props: str, depth: str) -> ET.Element:
+    body = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">'
+        f"<d:prop>{props}</d:prop></d:propfind>"
+    )
+    response = requests.request(
+        "PROPFIND", url, data=body.encode("utf-8"), auth=auth, timeout=15,
+        headers={"Content-Type": "application/xml; charset=utf-8", "Depth": depth},
+    )
+    response.raise_for_status()
+    return ET.fromstring(response.text)
+
+
+def _first_href(root: ET.Element, prop: str) -> str:
+    el = root.find(f".//{prop}/{_DAV}href")
+    return (el.text or "").strip() if el is not None else ""
+
+
+def _discover_calendars(cfg: dict, auth: tuple) -> tuple[list[dict], str]:
+    """
+    RFC 6764/4791 discovery: principal → calendar-home-set → Depth 1 listing.
+
+    The principal is asked for at the configured collection first, then at the
+    usual server roots — Google answers only at /calendar/dav/ (probed live
+    2026-10-24; the collection itself and /.well-known/caldav return nothing).
+    Returns ([{"url", "name"}], status) where status is "ok" or the reason it failed.
+    """
+    calendar_url = str(cfg.get("calendar_url", "")).strip()
+    cache_key = (calendar_url, auth[0])
+    hit = _discovery_cache.get(cache_key)
+    if hit and time.monotonic() - hit[0] < _DISCOVERY_TTL_SECONDS:
+        return hit[1], hit[2]
+
+    calendars: list[dict] = []
+    status = "ok"
+    try:
+        principal = ""
+        for start in (calendar_url, urljoin(calendar_url, "/.well-known/caldav"),
+                      urljoin(calendar_url, "/calendar/dav/"), urljoin(calendar_url, "/")):
+            try:
+                principal = _first_href(
+                    _propfind(start, auth, "<d:current-user-principal/>", "0"),
+                    f"{_DAV}current-user-principal")
+            except Exception:
+                principal = ""
+            if principal:
+                break
+        if not principal:
+            raise RuntimeError("no current-user-principal at the calendar or the server root")
+        home = _first_href(
+            _propfind(urljoin(calendar_url, principal), auth, "<c:calendar-home-set/>", "0"),
+            f"{_CALDAV_NS}calendar-home-set")
+        if not home:
+            raise RuntimeError("principal has no calendar-home-set")
+        listing = _propfind(urljoin(calendar_url, home), auth,
+                            "<d:displayname/><d:resourcetype/>", "1")
+        for resp in listing.findall(f"{_DAV}response"):
+            href_el = resp.find(f"{_DAV}href")
+            if href_el is None or not (href_el.text or "").strip():
+                continue
+            if resp.find(f".//{_DAV}resourcetype/{_CALDAV_NS}calendar") is None:
+                continue
+            name_el = resp.find(f".//{_DAV}displayname")
+            calendars.append({
+                "url": urljoin(calendar_url, href_el.text.strip()),
+                "name": (name_el.text or "").strip() if name_el is not None else "",
+            })
+    except Exception as exc:  # noqa: BLE001 — any failure degrades to the configured calendar
+        # Not cached: one transient failure must not hide the other calendars for ten minutes.
+        logger.warning("[caldav] calendar discovery failed, reading the configured calendar only: %s", exc)
+        return [], f"discovery failed: {exc}"
+
+    _discovery_cache[cache_key] = (time.monotonic(), calendars, status)
+    return calendars, status
+
+
+def _calendar_set(cfg: dict, auth: tuple) -> tuple[list[dict], str]:
+    """The writable calendar first, then everything discovered or listed, deduped."""
+    calendar_url = str(cfg.get("calendar_url", "")).strip()
+    if cfg.get("discover_calendars", True) is False:
+        discovered, status = [], "off"
+    else:
+        discovered, status = _discover_calendars(cfg, auth)
+    own_key = _collection_key(calendar_url)
+    own_name = next((c["name"] for c in discovered
+                     if _collection_key(c["url"]) == own_key and c["name"]), "") or "Main calendar"
+    result = [{"url": calendar_url, "name": own_name, "writable": True, "mine": True}]
+    seen = {own_key}
+    # The account's own calendar (on Google, the collection named after the login) is
+    # where invitations to the user land. It is not edited here, but it is the user's:
+    # "read-only" and "someone else's" are different things.
+    account = (auth[0] or "").lower()
+    extras = []
+    for entry in cfg.get("extra_calendars") or []:
+        entry = str(entry).strip()
+        if not entry:
+            continue
+        # A bare Google calendar ID is accepted as well as a full collection URL.
+        url = entry if "://" in entry else f"https://www.google.com/calendar/dav/{entry}/events/"
+        extras.append({"url": url, "name": ""})
+    for cal in discovered + extras:
+        key = _collection_key(cal["url"])
+        if key in seen:
+            continue
+        seen.add(key)
+        name = cal["name"] or unquote(key.rstrip("/").split("/")[-2] if key.endswith("/events")
+                                      else key.rsplit("/", 1)[-1])
+        mine = bool(account) and account in [seg.lower() for seg in key.split("/")]
+        result.append({"url": cal["url"], "name": name, "writable": False, "mine": mine})
+    return result, status
+
+
+def _merge_title(title: str) -> str:
+    return " ".join(re.sub(r"[^\w]+", " ", (title or "").lower()).split())
+
+
+def _as_local(value: str) -> datetime | None:
+    try:
+        dt = datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return None
+    return dt.replace(tzinfo=None) if dt.tzinfo else dt
+
+
+def _span(ev: dict) -> tuple[datetime, datetime] | None:
+    start = _as_local(ev.get("start", ""))
+    if start is None:
+        return None
+    end = _as_local(ev.get("end", "")) or start
+    if end <= start:
+        end = start + (timedelta(days=1) if ev["_all_day"] else timedelta(minutes=1))
+    return start, end
+
+
+def _same_event(a: dict, b: dict) -> bool:
+    """Same (UID, RECURRENCE-ID) — or, for one-offs only, equal titles over overlapping time."""
+    if a["uid"] and a["uid"] == b["uid"] and a["_recurrence_id"] == b["_recurrence_id"]:
+        return True
+    if a["recurrence"] or b["recurrence"] or a["_recurrence_id"] or b["_recurrence_id"]:
+        return False
+    if not a["_mtitle"] or a["_mtitle"] != b["_mtitle"] or a["_all_day"] != b["_all_day"]:
+        return False
+    sa, sb = _span(a), _span(b)
+    return bool(sa and sb and sa[0] < sb[1] and sa[1] > sb[0])
+
+
+def _merge_group(group: list[dict]) -> dict:
+    """
+    One event out of copies on different calendars. The copy on the writable
+    calendar wins every field (Mike, 2026-10-24: edits only ever land there, so any
+    other winner would show a moved event at its old time). With no writable copy,
+    the most recently modified copy wins. Where copies disagree, the losing values
+    are listed under `discrepancies` with the calendar they came from — evidence for
+    the agent to mention, never silently dropped.
+    """
+    writable = [e for e in group if e["_writable"]]
+    winner = writable[0] if writable else max(
+        group, key=lambda e: (e["_last_modified"], -e["_order"]))
+    # The uid must not move between runs, so it does not follow the field winner.
+    uid_source = writable[0] if writable else min(group, key=lambda e: e["_order"])
+    merged = {k: v for k, v in winner.items() if not k.startswith("_")}
+    merged["uid"] = uid_source["uid"]
+    merged["attendees"] = list(merged.get("attendees") or [])
+
+    discrepancies: dict[str, list] = {}
+    for other in group:
+        if other is winner:
+            continue
+        for field in ("title", "start", "end", "location", "status"):
+            ov, wv = other.get(field) or "", winner.get(field) or ""
+            if ov and wv and ov != wv:
+                discrepancies.setdefault(field, []).append({"value": ov, "calendar": other["_calendar"]})
+        if not merged.get("location") and other.get("location"):
+            merged["location"] = other["location"]
+        od = (other.get("description") or "").strip()
+        if od and od not in (merged.get("description") or ""):
+            merged["description"] = ((merged.get("description") or "").strip() + "\n\n" + od).strip()
+        for name in other.get("attendees") or []:
+            if name not in merged["attendees"]:
+                merged["attendees"].append(name)
+        if not merged.get("recurrence") and other.get("recurrence"):
+            merged["recurrence"] = other["recurrence"]
+    merged["calendars"] = [e["_calendar"] for e in sorted(group, key=lambda e: e["_order"])]
+    merged["read_only"] = not writable
+    merged["shared"] = not any(e["_mine"] for e in group)
+    if discrepancies:
+        merged["discrepancies"] = discrepancies
+    return merged
+
+
+def _merge_across_calendars(events: list[dict]) -> list[dict]:
+    """
+    Group copies of the same event that sit on different calendars. Never merges two
+    events from the same calendar — duplicates within one calendar are
+    tools/calendar_audit.py's to find, and may be deliberate.
+    """
+    groups: list[list[dict]] = []
+    for ev in sorted(events, key=lambda e: (e["_order"], e.get("start", ""), e["uid"])):
+        for group in groups:
+            if any(m["_order"] == ev["_order"] for m in group):
+                continue
+            if any(_same_event(m, ev) for m in group):
+                group.append(ev)
+                break
+        else:
+            groups.append([ev])
+    return [_merge_group(g) for g in groups]
+
+
+def _query_events(start_date: str, end_date: str, persona: str | None = None,
+                  calendars: str = "own") -> dict:
     """
     Raw CalDAV REPORT query, returning unwrapped structured events.
 
@@ -171,7 +520,15 @@ def _query_events(start_date: str, end_date: str, persona: str | None = None) ->
     applies here). Keeping the REPORT-request/parse logic in one place means
     scheduling.py never re-implements CalDAV querying independently.
 
-    Returns {"events": [...]} on success, {"error": "..."} on failure.
+    `calendars="own"` (the default) reads the configured calendar only — what every
+    caller got before 2026-10-24. `calendars="all"` reads every calendar the account
+    exposes and merges the copies of one event into one; each event then also carries
+    `calendars`, `read_only`, `shared` and, where copies disagree, `discrepancies`. See the
+    block comment above _discover_calendars for who asks for which, and why.
+
+    Returns {"events": [...]} on success, {"error": "..."} on failure. Only the
+    configured calendar failing is an error; another calendar failing is reported
+    under `calendars_failed`.
     """
     cfg = _load_config(persona)
     if not cfg.get("enabled"):
@@ -187,60 +544,81 @@ def _query_events(start_date: str, end_date: str, persona: str | None = None) ->
         return {"error": "calendar_url not set in this persona's caldav.yaml."}
 
     try:
-        start_dt = datetime.fromisoformat(start_date + "T00:00:00").strftime("%Y%m%dT%H%M%SZ")
-        end_dt = datetime.fromisoformat(end_date + "T23:59:59").strftime("%Y%m%dT%H%M%SZ")
+        datetime.fromisoformat(start_date + "T00:00:00")
+        datetime.fromisoformat(end_date + "T23:59:59")
     except ValueError as e:
         return {"error": f"Invalid date format (expected YYYY-MM-DD): {e}"}
 
-    body = (
-        '<?xml version="1.0" encoding="UTF-8"?>'
-        '<c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">'
-        "<d:prop><d:getetag/><c:calendar-data/></d:prop>"
-        "<c:filter>"
-        '<c:comp-filter name="VCALENDAR">'
-        '<c:comp-filter name="VEVENT">'
-        f'<c:time-range start="{start_dt}" end="{end_dt}"/>'
-        "</c:comp-filter>"
-        "</c:comp-filter>"
-        "</c:filter>"
-        "</c:calendar-query>"
-    )
-
     auth_cfg = cfg.get("auth", {})
     auth = (auth_cfg.get("username", ""), auth_cfg.get("password", ""))
+    target_tz = str(cfg.get("timezone", "") or "")
 
+    if calendars != "all":
+        try:
+            raws = _report_raw(calendar_url, auth, start_date, end_date)
+        except requests.RequestException as e:
+            return {"error": f"CalDAV request failed: {e}{_auth_hint(e)}"}
+        except ET.ParseError as e:
+            return {"error": f"Failed to parse CalDAV response: {e}"}
+        events = [_format_event(raw, target_tz) for raw in raws]
+        events.sort(key=lambda e: e.get("start", ""))
+        return {"events": events, "calendar_url": calendar_url}
+
+    cal_set, discovery = _calendar_set(cfg, auth)
+    with ThreadPoolExecutor(max_workers=min(6, len(cal_set))) as pool:
+        futures = [pool.submit(_report_raw, c["url"], auth, start_date, end_date) for c in cal_set]
+        outcomes = []
+        for fut in futures:
+            try:
+                outcomes.append((fut.result(), None))
+            except Exception as exc:  # noqa: BLE001
+                outcomes.append((None, exc))
+
+    own_raws, own_err = outcomes[0]
+    if own_err is not None:
+        if isinstance(own_err, ET.ParseError):
+            return {"error": f"Failed to parse CalDAV response: {own_err}"}
+        return {"error": f"CalDAV request failed: {own_err}{_auth_hint(own_err)}"}
+
+    events, read, failed = [], [], []
+    for order, (cal, (raws, err)) in enumerate(zip(cal_set, outcomes)):
+        if err is not None:
+            failed.append(cal["name"])
+            logger.warning("[caldav] calendar %r unreadable, skipped: %s", cal["name"], err)
+            continue
+        read.append(cal["name"])
+        for raw in raws:
+            ev = _format_event(raw, target_tz, utc_to_local=True)
+            ev.update({
+                "_order": order,
+                "_calendar": cal["name"],
+                "_writable": cal["writable"],
+                "_mine": cal["mine"],
+                "_recurrence_id": raw.get("RECURRENCE-ID", ""),
+                "_last_modified": raw.get("LAST-MODIFIED", ""),
+                "_all_day": (raw.get("_params", {}).get("DTSTART") or {}).get("VALUE") == "DATE"
+                            or len(raw.get("DTSTART", "")) == 8,
+                "_mtitle": _merge_title(raw.get("SUMMARY", "")),
+            })
+            events.append(ev)
+
+    merged = _merge_across_calendars(events)
+    merged.sort(key=lambda e: e.get("start", ""))
+    return {"events": merged, "calendar_url": calendar_url, "calendars_read": read,
+            "calendars_failed": failed, "discovery": discovery}
+
+
+def _read_only_home(uid: str, cfg: dict, auth: tuple) -> str:
+    """Name of the non-writable calendar holding `uid`, or "" — only asked after a 404."""
     try:
-        response = requests.request(
-            "REPORT",
-            calendar_url,
-            data=body.encode("utf-8"),
-            headers={
-                "Content-Type": "application/xml; charset=utf-8",
-                "Depth": "1",
-            },
-            auth=auth,
-            timeout=15,
-        )
-        response.raise_for_status()
-    except requests.RequestException as e:
-        return {"error": f"CalDAV request failed: {e}{_auth_hint(e)}"}
-
-    try:
-        root = ET.fromstring(response.text)
-    except ET.ParseError as e:
-        return {"error": f"Failed to parse CalDAV response: {e}"}
-
-    events = []
-    for response_el in root.findall(".//{DAV:}response"):
-        cal_data_el = response_el.find(
-            ".//{urn:ietf:params:xml:ns:caldav}calendar-data"
-        )
-        if cal_data_el is not None and cal_data_el.text:
-            for raw in _parse_ical_events(cal_data_el.text):
-                events.append(_format_event(raw))
-
-    events.sort(key=lambda e: e.get("start", ""))
-    return {"events": events, "calendar_url": calendar_url}
+        cal_set, _ = _calendar_set(cfg, auth)
+        for cal in cal_set[1:]:
+            response = requests.get(cal["url"].rstrip("/") + "/" + uid + ".ics", auth=auth, timeout=15)
+            if response.status_code == 200 and "BEGIN:VEVENT" in response.text:
+                return cal["name"]
+    except Exception:  # noqa: BLE001 — falls back to the plain "not found"
+        pass
+    return ""
 
 
 def _get_event_by_uid(uid: str, persona: str | None = None) -> dict:
@@ -259,6 +637,14 @@ def _get_event_by_uid(uid: str, persona: str | None = None) -> dict:
     try:
         response = requests.get(event_url, auth=auth, timeout=15)
         if response.status_code == 404:
+            elsewhere = _read_only_home(uid, cfg, auth)
+            if elsewhere:
+                # The name is set by whoever owns that calendar — wrapped, as on the read path.
+                return {"error": (
+                    "That event is on a calendar this system can read but does not edit "
+                    "(named under `calendar`). Nothing was changed. It can only be changed "
+                    "in that calendar itself."),
+                    "calendar": wrap_untrusted(elsewhere, source="calendar list")}
             return {"error": f"No event found with uid '{uid}'."}
         response.raise_for_status()
     except requests.RequestException as e:
@@ -268,7 +654,7 @@ def _get_event_by_uid(uid: str, persona: str | None = None) -> dict:
     if not raw_events:
         return {"error": f"Event '{uid}' returned no parseable VEVENT."}
 
-    event = _format_event(raw_events[0])
+    event = _format_event(raw_events[0], str(cfg.get("timezone", "") or ""))
     event["_event_url"] = event_url
     return event
 
@@ -285,7 +671,7 @@ def read_calendar(start_date: str, end_date: str) -> dict:
         Dict with "events" list and "count". Each event has: uid, title,
         start, end, description, location, status, recurrence, attendees.
     """
-    raw = _query_events(start_date, end_date)
+    raw = _query_events(start_date, end_date, calendars="all")
     if "error" in raw:
         return raw
 
@@ -314,7 +700,16 @@ def read_calendar(start_date: str, end_date: str) -> dict:
         "range": {"start": start_date, "end": end_date},
         "security_note": UNTRUSTED_CONTENT_INSTRUCTION,
         "events": wrap_untrusted(rendered, source=f"calendar {host}".strip()),
+        "calendar_note": _MULTI_CALENDAR_NOTE,
     }
+    # Calendar names are set by whoever owns each calendar, so they travel wrapped too.
+    # A calendar that could not be read is said out loud: an empty day on it is unknown,
+    # not free.
+    sources = {"read": raw.get("calendars_read", []), "unreadable": raw.get("calendars_failed", [])}
+    if raw.get("discovery") not in (None, "ok", "off"):
+        sources["discovery"] = raw["discovery"]
+    result["calendar_sources"] = wrap_untrusted(_json.dumps(sources, ensure_ascii=False),
+                                                source="calendar list")
     # What the task ledger records about these entries, by uid (plan § 5 row 2): written by
     # code from the ledger, so it sits OUTSIDE the untrusted wrapper — it is not calendar
     # text. A deadline entry that is done says so here, series occurrences included.
@@ -802,8 +1197,11 @@ def delete_calendar_event(uid: str) -> dict:
 READ_CALENDAR_SCHEMA = {
     "name": "read_calendar",
     "description": (
-        "Read calendar events between two dates from the user's CalDAV calendar. "
-        "Returns a list of events with title, start, end, description, and location. "
+        "Read calendar events between two dates from every calendar the user's account "
+        "can see, including calendars shared with them. Returns a list of events with "
+        "title, start, end, description, location, the calendars each appears on, and "
+        "whether it is read_only (on a calendar this system cannot edit). An event on "
+        "several calendars appears once. "
         "Requires CalDAV to be configured and enabled in this persona's caldav.yaml."
     ),
     "input_schema": {
