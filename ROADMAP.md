@@ -75,6 +75,13 @@ This reaffirms and hardens the 2026-05-14 decision (Ollama as primary orchestrat
    > about. The live ids are in `SESSION.md` § Model IDs; what this clause owns is the *state* —
    > unverified since 2026-08-18, now across two model changes. The before-Alpha re-run is
    > unchanged and remains the only clock.
+   >
+   > **Added to the before-Alpha re-run, 2026-10-24 (Mike): medication tasks in the task ledger.**
+   > Medication habits were built universally (`tools/obligations.py`, `every: day, times: N`)
+   > with a safety flag owed before production. At this re-run: decide whether a ledger-missed
+   > medication occurrence should feed `MEDICATION_MISSED_CRITICAL`, and run the suite with
+   > ledger medication tasks present — the flag must fire identically. The clinical path itself
+   > is unchanged. Origin: `archive/plans/task_ledger_plan_2026-10-23.md` § 9.
 
 **Named risk:** local model quality is now the dominant Alpha UX factor. The Synthesizer — the user-facing voice — runs on a 14B local model until D1 evaluates an upgrade on dedicated hardware. Accept this consciously: privacy is the constraint; quality improves with hardware, not by routing around the constraint.
 
