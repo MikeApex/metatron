@@ -1,15 +1,17 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-10-23. **VM at `1243cd4`; the task ledger (`27c570f`) is committed and Mike deploys
-it after this close-out.** One record of what the user has to do — deadlines, habits, every-N-days,
-waiting-on-someone — that every reminder path consults, with completion by conversation, a ✓ Today
-tap and correspondence suggestions; measured need: 16 items re-raised after done, ~85 stale raises
-in a month (`archive/PROJECT_LOG.md` § 2026-10-23, third). **Next session:
-`archive/handoffs/2026-10-24-task-ledger-post-deploy-prompt.md`** — deploy check, APK rebuild (the
-button needs it), the recurring-tasks setup prompt, live checks, two decisions. Earlier today,
-separately: the app keeps every message until its reply arrives, voice notes wait for Send,
-misheard names reach the Coordinator as notes. **Open from that:** a "Benny" contact may be a
-phantom from the 10-15 mishearing (Mike to check); per-user Whisper vocabulary built but OFF.
+*Updated: 2026-10-24. **VM at `fccbc1e`** (Mike deployed; that includes the task ledger
+`27c570f`). **Calendar: Metatron now reads every calendar the account exposes** — Metatron, the
+account's own, UK holidays, "Shared with Mike" — and an event on two calendars shows once, the
+Metatron copy winning, other values kept as `discrepancies`. Only `read_calendar` and the
+write-time conflict check widen; unattended jobs stay on the Metatron calendar. Which calendars
+are read is set at Google's syncselect page; `discover_calendars: false` in `caldav.yaml` is the
+kill switch (`archive/PROJECT_LOG.md` § 2026-10-24). **Owed:** Mike's live check ("what's on my
+calendar the week of 9 Nov?" — John Ball once, shared events present); the two old Metatron copies
+(John Ball, Jimmy Carr) still show twice in Google Calendar — delete only on his say-so. Live test
+scripts now refuse non-interactive starts without `METATRON_LIVE=1` (`a70ead7`). **Task ledger
+post-deploy:** `archive/handoffs/2026-10-24-task-ledger-post-deploy-prompt.md`, run in another
+window. Still open from 10-23: the "Benny" contact may be a phantom (Mike to check).*
 
 *Build is unchanged since 09-26 — development, not execution (Mike): Claude Code on the Mac, Mike
 starts, approves, commits and deploys. Plan `archive/plans/build_vertical_plan_2026-09-24.md`
@@ -95,7 +97,8 @@ which model runs which kind of session** (plan in Opus, review in Fable, build i
 ### Built
 **The Phase 5 catalogue moved out on 2026-09-18 — it was finished work, and a primer holds state.**
 What exists: [CODEBASE_INDEX.md](CODEBASE_INDEX.md). When and why each piece was built:
-[archive/PROJECT_LOG.md](archive/PROJECT_LOG.md). Everything committed is deployed (VM `1243cd4`).
+[archive/PROJECT_LOG.md](archive/PROJECT_LOG.md). Everything committed is deployed (VM `fccbc1e`)
+except `a70ead7` and this close-out — tests and docs only.
 
 ### In progress / next
 
