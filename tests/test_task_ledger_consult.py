@@ -79,6 +79,23 @@ def _():
     assert O.annotate("Plan Thanksgiving with Aisha", idx) == "Plan Thanksgiving with Aisha"
 
 
+@check("a later dated event is not a stale copy of a finished task")
+def _():
+    # Live 2026-10-24: "Meridian Primary School Visit (Nov 3, 2026)" was marked as the closed
+    # task "Arrange school visits" — arranging was done; the visit itself was still ahead.
+    _reset()
+    t = _id(O.open_task("Arrange school visits", kind="deadline"))
+    O.update_task(t, "done", evidence="all three booked")
+    idx = O.consult_index()
+    for later in ("Meridian Primary School Visit (Nov 3, 2026)",
+                  "School visit at John Ball on 12 November",
+                  "school visits 2099-01-15"):
+        assert O.annotate(later, idx) == later, later
+    assert f"[looks like task {t}" in O.annotate("Arrange the school visits", idx)
+    assert f"[looks like task {t}" in O.annotate("School visits — booked Jan 3, 2020", idx)
+    assert f"[task {t}:" in O.annotate(f"Meridian visit Nov 3 ({t})", idx), "an id still links"
+
+
 @check("load_recent_context: stale threads and day-log lists carry the ledger's note")
 def _():
     from core.orchestrator import load_recent_context

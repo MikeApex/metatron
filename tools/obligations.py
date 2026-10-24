@@ -2041,6 +2041,43 @@ def consult_index(persona: str | None = None, as_of: date | None = None) -> list
     return out
 
 
+_MONTHS = {m: i for i, m in enumerate(
+    ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"), 1)}
+_ISO_DATE_RE = re.compile(r"\b(20\d\d)-(\d\d)-(\d\d)\b")
+_MONTH_DAY_RE = re.compile(r"\b([A-Za-z]{3})[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(20\d\d))?\b")
+_DAY_MONTH_RE = re.compile(r"\b(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3})[a-z]*\.?(?:,?\s+(20\d\d))?\b")
+
+
+def _dates_after_closure_filter(text: str):
+    """The dates a copy names — ISO, "Nov 3, 2026", "3 November" — as a test: does any fall
+    after a given close? A yearless date takes the close's year, rolled forward if that puts
+    it more than half a year before the close."""
+    found: list[tuple[int | None, int, int]] = []
+    for y, m, d in _ISO_DATE_RE.findall(text or ""):
+        found.append((int(y), int(m), int(d)))
+    for mon, d, y in _MONTH_DAY_RE.findall(text or ""):
+        if mon.lower() in _MONTHS:
+            found.append((int(y) if y else None, _MONTHS[mon.lower()], int(d)))
+    for d, mon, y in _DAY_MONTH_RE.findall(text or ""):
+        if mon.lower() in _MONTHS:
+            found.append((int(y) if y else None, _MONTHS[mon.lower()], int(d)))
+
+    def later(closed_on: date | None) -> bool:
+        if not closed_on or not found:
+            return False
+        for y, m, d in found:
+            try:
+                when = date(y or closed_on.year, m, d)
+                if y is None and (closed_on - when).days > 182:
+                    when = date(closed_on.year + 1, m, d)
+            except ValueError:
+                continue
+            if when > closed_on:
+                return True
+        return False
+    return later
+
+
 def consult(text: str, index: list[dict]) -> dict | None:
     """Is this copy about a tracked task? {"entry": ..., "linked": bool}, or None."""
     if not text or not index:
@@ -2051,8 +2088,14 @@ def consult(text: str, index: list[dict]) -> dict | None:
             if e["id"] in ids:
                 return {"entry": e, "linked": True}
     toks = _task_tokens(text)
+    later = _dates_after_closure_filter(text)
     best = None
     for e in index:
+        if e["terminal"] and later(e.get("closed_on")):
+            # A copy naming a date after the close is a later event, not a stale copy: on
+            # 2026-10-24 "Meridian Primary School Visit (Nov 3, 2026)" matched the task
+            # "Arrange school visits", done 10-20, and was marked not outstanding.
+            continue
         if _tokens_match(toks, e["tokens"]):
             shared = len(toks & e["tokens"])
             if best is None or shared > best[0]:
