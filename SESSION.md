@@ -8,7 +8,8 @@ are read is set at Google's syncselect page; `discover_calendars: false` in `cal
 kill switch (`archive/PROJECT_LOG.md` § 2026-10-24). **Owed:** Mike's live check ("what's on my
 calendar the week of 9 Nov?" — John Ball once, shared events present); the two old Metatron copies
 (John Ball, Jimmy Carr) show twice in Google Calendar — left as they are (Mike, 10-24). Live test
-scripts now refuse non-interactive starts without `METATRON_LIVE=1` (`a70ead7`). **Task ledger
+scripts now refuse non-interactive starts without `METATRON_LIVE=1` (`a70ead7`). **Repeating events now land on their real dates** (`bbc741b`, owes `./deploy.sh`): each
+series row carries `occurs_in_range`; one row per series, edits still act on the whole series. **Task ledger
 post-deploy:** `archive/handoffs/2026-10-24-task-ledger-post-deploy-prompt.md`, run in another
 window. Still open from 10-23: the "Benny" contact may be a phantom (Mike to check).*
 
