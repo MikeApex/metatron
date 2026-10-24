@@ -754,7 +754,44 @@ def _completion_dates(occ: dict) -> list[date]:
     return out
 
 
+# How long a task takes, so the scheduling build-out can place it in a day (Mike, 2026-10-24:
+# "Tasks should have a time amount or inferred/estimated time, so that the scheduling can work
+# with them effectively"). `minutes_source` says whose number it is: "stated" by the user, or
+# "estimated" by a model until the user corrects it — a guess must never read as a fact.
+_MINUTES_SOURCES = ("stated", "estimated")
+_MAX_TASK_MINUTES = 24 * 60
+
+
+def _minutes_arg(minutes, source) -> tuple[dict, str | None]:
+    try:
+        n = int(round(float(minutes)))
+    except (TypeError, ValueError):
+        return {}, "error: `minutes` must be a number of minutes. Nothing was written."
+    if not 1 <= n <= _MAX_TASK_MINUTES:
+        return {}, f"error: `minutes` must be between 1 and {_MAX_TASK_MINUTES}. Nothing was written."
+    src = (source or "estimated").strip().lower()
+    if src not in _MINUTES_SOURCES:
+        return {}, (f"error: `minutes_source` must be one of {', '.join(_MINUTES_SOURCES)}, not "
+                    f"{source!r}. Nothing was written.")
+    return {"minutes": n, "minutes_source": src}, None
+
+
+def _minutes_suffix(t: dict) -> str:
+    n = t.get("minutes")
+    if not n:
+        return ""
+    return f" (~{n} min" + (", estimated)" if t.get("minutes_source") != "stated" else ")")
+
+
 def _view(t: dict, today: date, lead_days: int = _LEAD_DAYS) -> dict:
+    """What this task is today, with its length appended when one is known."""
+    v = _view_core(t, today, lead_days)
+    if t.get("status", "open") == "open" and t.get("minutes"):
+        v["text"] = v["text"] + _minutes_suffix(t)
+    return v
+
+
+def _view_core(t: dict, today: date, lead_days: int = _LEAD_DAYS) -> dict:
     """
     What this task is today. Pure: computed from the record and the date, nothing stored, so
     the block is right even on a day the sweep never ran.
@@ -927,7 +964,8 @@ def open_task(what: str, kind: str = "deadline", due: str | None = None,
               waiting_on: str | None = None, expect_from: str | None = None,
               check_back: str | None = None, domain: str | None = None,
               note: str | None = None, source_id: str | None = None,
-              calendar_uid: str | None = None, new_instance: bool = False) -> str:
+              calendar_uid: str | None = None, new_instance: bool = False,
+              minutes: int | None = None, minutes_source: str | None = None) -> str:
     """Record something the user has to do, or is waiting on, so it is tracked until done."""
     what = (what or "").strip()
     if not what:
@@ -989,6 +1027,11 @@ def open_task(what: str, kind: str = "deadline", due: str | None = None,
         entry["source_id"] = str(source_id).strip()
     if calendar_uid:
         entry["calendar_uid"] = str(calendar_uid).strip()
+    if minutes is not None:
+        dur, err = _minutes_arg(minutes, minutes_source)
+        if err:
+            return err
+        entry.update(dur)
 
     def apply(doc: dict) -> str:
         tasks = doc["tasks"]
@@ -1034,6 +1077,28 @@ def _evidence_arg(evidence) -> str:
     return (evidence or "").strip()
 
 
+def _set_minutes(task_id: str, minutes, source) -> str:
+    """Record or correct how long a task takes. A stated length is never overwritten by an
+    estimate — the user's number outranks a model's guess."""
+    if minutes is None:
+        return "error: `minutes` is required for set_minutes. Nothing was written."
+    dur, err = _minutes_arg(minutes, source)
+    if err:
+        return err
+    tid = _split_id(task_id)
+
+    def apply(doc: dict) -> str:
+        t = _find(doc["tasks"], tid)
+        if t is None:
+            return f"error: no task with id {task_id!r}"
+        if t.get("minutes_source") == "stated" and dur["minutes_source"] == "estimated":
+            return (f"{tid} keeps the user's own figure, {t.get('minutes')} min — an estimate "
+                    f"does not replace it")
+        t.update(dur)
+        return f"{tid} takes ~{dur['minutes']} min ({dur['minutes_source']}): {_summarise(t)}"
+    return _with_store(None, apply)
+
+
 def _done_with_followup(task_id: str, evidence: str | None, followup: str | None,
                         on_date: str | None) -> str:
     """Done, but with a loose end (Mike, 2026-10-24: the Thanksgiving invitation was done
@@ -1058,16 +1123,19 @@ def _done_with_followup(task_id: str, evidence: str | None, followup: str | None
 
 def update_task(task_id: str, action: str, evidence: str | None = None,
                 new_due: str | None = None, note: str | None = None,
-                on_date: str | None = None, followup: str | None = None) -> str:
+                on_date: str | None = None, followup: str | None = None,
+                minutes: int | None = None, minutes_source: str | None = None) -> str:
     """Record what happened to a tracked task — done, done with a loose end, skipped,
     dismissed, reopen, reschedule, or a new note."""
     action = (action or "").strip().lower()
     actions = ("done", "done_with_followup", "skipped", "dismissed", "reopen", "reschedule",
-               "note")
+               "note", "set_minutes")
     if action not in actions:
         return f"error: `action` must be one of {', '.join(actions)}, not {action!r}"
     if action == "done_with_followup":
         return _done_with_followup(task_id, evidence, followup, on_date)
+    if action == "set_minutes":
+        return _set_minutes(task_id, minutes, minutes_source)
     evidence = _evidence_arg(evidence)
     if action in ("done", "skipped", "dismissed", "reopen") and not evidence:
         return ("error: `evidence` is required — quote what the user said that shows this. "
@@ -2329,6 +2397,14 @@ OPEN_TASK_SCHEMA = {
                                        "made up later in the week."},
             "interval_days": {"type": "integer",
                               "description": "interval: every how many days."},
+            "minutes": {"type": "integer",
+                        "description": "How long it takes, in minutes — what lets it be "
+                                       "placed in a day. The user's figure if they gave one; "
+                                       "otherwise your estimate, with minutes_source "
+                                       "'estimated'."},
+            "minutes_source": {"type": "string", "enum": list(_MINUTES_SOURCES),
+                               "description": "stated — the user said it; estimated — your "
+                                              "guess. Default estimated."},
             "last_done": {"type": "string",
                           "description": "interval: YYYY-MM-DD it was last done, if the user "
                                          "said."},
@@ -2366,7 +2442,8 @@ UPDATE_TASK_SCHEMA = {
         "words as evidence, and do it the moment you hear it rather than waiting to be told "
         "twice. skipped — the user chose not to do this occurrence of a recurring task. "
         "done_with_followup — done, but with a loose end (followup); the loose end is opened "
-        "as its own task. dismissed — stop tracking it altogether; evidence is the user's "
+        "as its own task. set_minutes — how long it takes (minutes, minutes_source). "
+        "dismissed — stop tracking it altogether; evidence is the user's "
         "reason. reopen — a close you recorded was wrong. "
         "reschedule — a new date (new_due), keeping the history. note — replace the note. "
         "For a recurring task, done and skipped apply to the current occurrence, or to "
@@ -2380,11 +2457,17 @@ UPDATE_TASK_SCHEMA = {
                                        "ob_261023_a1b2c3@2026-W43."},
             "action": {"type": "string",
                        "enum": ["done", "done_with_followup", "skipped", "dismissed", "reopen",
-                                "reschedule", "note"]},
+                                "reschedule", "note", "set_minutes"]},
             "evidence": {"type": "string",
                          "description": "The user's words that show this. Required for done, "
                                         "done_with_followup, skipped, dismissed and reopen — "
                                         "for dismissed, the reason it is being dropped."},
+            "minutes": {"type": "integer",
+                        "description": "set_minutes: how long the task takes, in minutes."},
+            "minutes_source": {"type": "string", "enum": list(_MINUTES_SOURCES),
+                               "description": "set_minutes: stated (the user said) or "
+                                              "estimated (your guess). A stated figure is not "
+                                              "replaced by an estimate."},
             "followup": {"type": "string",
                          "description": "done_with_followup: what is still left to do, in a few "
                                         "words. It becomes a task of its own."},

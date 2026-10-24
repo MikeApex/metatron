@@ -513,6 +513,27 @@ def _():
     assert "Loose end tracked" in O.act_from_app(c, "done_with_followup", followup="Chase RSVPs")
 
 
+@check("a task carries how long it takes, stated or estimated, and shows it where it is listed")
+def _():
+    _fresh("minutes")
+    _at(2026, 10, 24)
+    gym = _id(O.open_task("Gym", kind="habit", every="day", minutes=60, minutes_source="stated"))
+    tidy = _id(O.open_task("Tidy the garage", kind="deadline", due="2026-10-24", minutes=90))
+    assert _task(tidy)["minutes_source"] == "estimated", "an unlabelled figure is a guess"
+    block = O.context_block()
+    assert "(~60 min)" in block and "(~90 min, estimated)" in block, block
+    labels = {i["task_id"]: i["label"] for i in O.today_items()}
+    assert labels[gym].endswith("(~60 min)"), labels
+    # the user's figure outranks a model's guess; a stated correction replaces an estimate
+    assert "keeps the user's own figure" in O.update_task(gym, "set_minutes", minutes=30)
+    assert _task(gym)["minutes"] == 60
+    assert O.update_task(tidy, "set_minutes", minutes=45, minutes_source="stated").startswith(tidy)
+    assert _task(tidy)["minutes"] == 45 and _task(tidy)["minutes_source"] == "stated"
+    for bad in (dict(minutes=0), dict(minutes="soon"), dict(minutes=10, minutes_source="vibes")):
+        assert O.open_task("Bad", kind="deadline", **bad).startswith("error:"), bad
+    assert O.update_task(tidy, "set_minutes").startswith("error:")
+
+
 @check("list_tasks answers a span when asked: today, this week, this month")
 def _():
     _fresh("horizon")
