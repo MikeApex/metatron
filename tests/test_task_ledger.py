@@ -534,6 +534,102 @@ def _():
     assert O.update_task(tidy, "set_minutes").startswith("error:")
 
 
+def _in_turn(text: str, prev: str = "", user_turn: bool = True):
+    """Bind a pipeline turn the way run_pipeline_session_stream does, gate on."""
+    from tools import turn_context as T
+    cm = T.turn_scope(user_turn=user_turn)
+    turn = cm.__enter__()
+    turn.update(close_gate=True, user_text=text if user_turn else "", prev_assistant=prev)
+    return cm
+
+
+@check("the close gate: a model may close only what the user's words name (live check 4d)")
+def _():
+    _fresh("gate")
+    _at(2026, 10, 24)
+    schwab = _id(O.open_task("Review and allocate Charles Schwab Treasury note maturities",
+                             kind="deadline", due="2026-10-26", domain="finance"))
+    chase = _id(O.open_task("Pay Chase credit card bill", kind="habit", every="month",
+                            domain="finance"))
+    rowan = _id(O.open_task("Rowan monthly payroll transfer", kind="habit", every="month",
+                            domain="finance"))
+    plants = _id(O.open_task("Water indoor and garden plants", kind="interval",
+                             interval_days=3, last_done="2026-10-21"))
+    run = _id(O.open_task("Run 5k three times a week", kind="habit", every="week", times=3))
+    food = _id(O.open_task("Buy plant food", kind="deadline", due="2026-10-30"))
+
+    # The 15:01 message, verbatim: the plants close; the finance close is refused, with the
+    # candidates named so the model can ask.
+    cm = _in_turn("It's raining today, so consider the plants watered. I sorted the finance stuff.")
+    try:
+        r = O.update_task(schwab, "done", evidence="I sorted the finance stuff.")
+        assert r.startswith("error: not recorded") and "Ask the user which" in r, r
+        assert "Pay Chase credit card bill" in r, r
+        assert _task(schwab)["status"] == "open"
+        assert O.update_task(plants, "done", evidence="raining").startswith(plants)
+        # "plants watered" names "Water … plants" better than "Buy plant food"
+        assert O.update_task(food, "done", evidence="x").startswith("error:")
+    finally:
+        cm.__exit__(None, None, None)
+
+    for text, target, ok in (
+        ("paid the Chase bill", chase, True),
+        ("went for a run this morning", run, True),
+        ("I still haven't paid Chase", chase, False),
+        ("remind me to do the Rowan transfer", rowan, False),
+    ):
+        _fresh("gate_" + text[:8].replace(" ", "_"))
+        _at(2026, 10, 24)
+        a = _id(O.open_task("Pay Chase credit card bill", kind="deadline", due="2026-10-24"))
+        b = _id(O.open_task("Rowan monthly payroll transfer", kind="deadline", due="2026-10-24"))
+        c = _id(O.open_task("Run 5k three times a week", kind="habit", every="week", times=3))
+        tid = {chase: a, rowan: b, run: c}[target]
+        cm = _in_turn(text)
+        try:
+            r = O.update_task(tid, "done", evidence=text)
+        finally:
+            cm.__exit__(None, None, None)
+        assert r.startswith("error:") != ok, (text, r)
+
+    # a tie refuses both; "yes, both" after a reply that raised two closes both
+    _fresh("gate_tie")
+    _at(2026, 10, 24)
+    d1 = _id(O.open_task("Pay Chase card statement", kind="deadline", due="2026-10-24"))
+    d2 = _id(O.open_task("Claim Chase rewards", kind="deadline", due="2026-10-24"))
+    cm = _in_turn("did the Chase thing")
+    try:
+        r = O.update_task(d1, "done", evidence="did the Chase thing")
+        assert r.startswith("error:") and "more than one" in r, r
+    finally:
+        cm.__exit__(None, None, None)
+    cm = _in_turn("yes, both", prev="Did you pay the Chase card statement and claim the Chase rewards?")
+    try:
+        assert O.update_task(d1, "done", evidence="yes, both").startswith(d1)
+        assert O.update_task(d2, "done", evidence="yes, both").startswith(d2)
+    finally:
+        cm.__exit__(None, None, None)
+
+
+@check("the close gate: scheduled turns cannot close; a tap or an approved card always can")
+def _():
+    _fresh("gate_sched")
+    _at(2026, 10, 24)
+    a = _id(O.open_task("Pay Chase credit card bill", kind="deadline", due="2026-10-24"))
+    b = _id(O.open_task("Post babysitter job", kind="deadline", due="2026-10-24"))
+    cm = _in_turn("Quiet check-in", user_turn=False)
+    try:
+        r = O.update_task(a, "done", evidence="the plan says so")
+        assert r.startswith("error: not recorded") and "nothing from the user" in r, r
+        # a tap during a bound turn (a leaked turn on a worker thread) is the user's act
+        assert O.act_from_app(b, "done").startswith(b)
+        # the non-closing actions are not gated
+        assert O.update_task(a, "reschedule", new_due="2026-10-30", evidence="moved").startswith(a)
+    finally:
+        cm.__exit__(None, None, None)
+    # no bound turn (the app endpoint, the CLI): ungated, as before
+    assert O.update_task(a, "done", evidence="paid").startswith(a)
+
+
 @check("list_tasks answers a span when asked: today, this week, this month")
 def _():
     _fresh("horizon")

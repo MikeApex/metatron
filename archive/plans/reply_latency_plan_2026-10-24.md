@@ -252,3 +252,59 @@ the exchange's save; R15 an abandoned turn races the next one (no per-persona lo
 scheduler would record the holding line as the session's reply; R17 the deploy drain kills the
 producer after a follow-up was promised. **Resolution: the hard ceiling is withdrawn (§ 3.1); a
 soft deadline inside the pipeline replaces it.** § 3.2–3.6, § 6, § 8 AGREE.
+
+---
+
+## 12. Addendum (2026-10-24, live check 4d): a completion must be named by the user's words
+
+**The failure, live 15:01.** Mike: *"It's raining today, so consider the plants watered. I sorted
+the finance stuff."* Four finance tasks were open (Schwab review, Chase bill, Rowan payroll, TfL
+refund). The Synthesizer called `update_task(ob_260915_50a247 /*Schwab*/, "done", evidence="I
+sorted the finance stuff.")`, then asked about two of the others. No TASK NOTE fired — "finance"
+and "stuff" name no task — so the "ask when you can't tell" rule rested on the model alone, and
+the Finance specialist had just logged "Schwab Treasury note maturities sorted and allocated" as
+fact. Mike reverted the close by hand.
+
+**Proposal — a code veto on closes, not a code interpreter of language.** The model still decides
+what the words mean; code checks that a close it makes has a textual link to what the user said.
+
+1. **Turn carries the words.** Both pipeline twins write `user_text` and `prev_assistant` (the
+   last assistant message in `history`) onto the bound turn (`tools/turn_context`), next to
+   `soft_deadline`. Parallel workers already adopt the turn, so specialists see it too.
+2. **Gate in `update_task`** for `done`, `done_with_followup`, `skipped` and `dismissed`, applied
+   only when a turn is bound (model calls inside a pipeline). The app tap (`act_from_app`) and an
+   approved correspondence card (`resolve_proposal`) run with no bound turn and are not gated —
+   they are the user's own act.
+   - **Scheduled (non-user) turn:** refused. Plan § 3 of the ledger: only the user's words, a tap
+     or an approved card move a task to done; a scheduler prompt is the system talking to itself.
+   - **User turn:** the target must be *named*: (a) the user's text word-matches it
+     (`_tokens_match(..., single_ok=True)` — the hint's matcher, on the whole message), or (b)
+     the message is a short affirmative/answer and the previous reply named the task (the hint's
+     `confirm` basis), or (c) the user's text contains the task id or its full `what`.
+   - **Ambiguity:** if the clause that names the target also names another open task equally (same
+     shared tokens), the close is refused — "the Chase thing" with two Chase tasks open.
+   - **Refusal text** (an `error:` result, so `test_tool_error_flag`'s convention holds and the
+     model sees it): *"error: not recorded — the user's words don't name this task. Ask them which
+     they mean (open: A, B, C), then record the one they confirm."* — listing up to four actionable
+     tasks in the target's domain, or overall.
+3. **Cost of the trade, stated:** a paraphrase with no shared word ("hit the gym" vs "Workout
+   session") is refused and becomes a question. A wrong close is silent and persistent; a question
+   costs seconds. If paraphrase refusals bite in use, the fallback is a bulk-tier model check
+   (~$0.001, +2–3 s per close) — not built unless Mike chooses it.
+4. **Tests** from the real phrasings: "I sorted the finance stuff" closes nothing; "paid the Chase
+   bill" closes Chase; "consider the plants watered" closes plants; "yes, done" after a reply that
+   raised one task closes it; a scheduled turn's close is refused; the app tap and a proposal
+   accept still close; a specialist's close in a worker thread is gated the same way.
+
+Files: `tools/obligations.py`, `core/orchestrator.py` (both twins write the two fields), tests.
+Amber. Not touched: agent files (the error text carries the instruction).
+
+### 12a. Review (Fable 5.1): verdict CODE GATE — three findings, all accepted; § 12.2 revised
+
+| # | Finding | Revision |
+|---|---|---|
+| G1 | The ≥2-token matcher refuses the most common close — a daily habit reported in three words ("went for a run" vs "Run 5k three times a week") — and the ambiguity clause refused "yes, both" | **Named = one shared identifying token** in a qualifying clause (not the ≥2 rule), plus every task the hint's `confirm` basis admits (1–2 raised in the previous reply), so "yes, both" closes both. Ambiguity is narrowed to its real case: the shared tokens that name the target name another open task **equally** ("the Chase thing" with two Chase tasks) → refused. Residual, stated: a pure synonym ("took my meds" vs "Take medication") is refused and becomes one question |
+| G2 | The gate ignored the hint's own clause/negation filtering, so "I still haven't paid Chase" would pass a close | The naming must occur in a clause with **no negation** (the hint's `_CLAUSE_SPLIT_RE` + `_NEGATION_RE`); a completion marker is not required (the model judges that part) |
+| G3 | Exemption inferred from an absent thread-local is fragile (a leaked `adopt`, a future caller) | **Opt-in, not inferred:** the gate applies only when the bound turn carries `close_gate` (written by the two pipeline twins alongside `user_text`/`prev_assistant`). The app tap and an approved card additionally run inside an explicit user-act scope in `act_from_app` / `resolve_proposal`, which wins over any turn — so a leaked turn can never gate a tap. Scheduled turns: the twins write `close_gate` with no user text, so a model close there is refused |
+
+`_done_with_followup` is gated once (inside the `done` path) — confirmed not a defect.

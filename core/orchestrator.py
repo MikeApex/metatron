@@ -6694,6 +6694,18 @@ def run_pipeline_session_stream(
                 _waited = 0.0
         turn[_TURN_SOFT_DEADLINE_KEY] = time.monotonic() - _waited + (
             _SCHEDULED_SOFT_DEADLINE_S if is_proactive else _USER_SOFT_DEADLINE_S)
+        # The task ledger's close gate (archive/plans/reply_latency_plan_2026-10-24.md § 12):
+        # a model may mark a task done only when the user's own words name it. Opt-in here, so
+        # nothing outside a pipeline turn is gated by accident. A scheduled turn carries no
+        # user words, so a close attempted on one is refused.
+        turn["close_gate"] = True
+        turn["user_text"] = "" if is_proactive else (user_input or "")
+        _prev = None
+        for _m in reversed(history or []):
+            if isinstance(_m, dict) and _m.get("role") == "assistant":
+                _prev = _m.get("content") if isinstance(_m.get("content"), str) else None
+                break
+        turn["prev_assistant"] = _prev or ""
         yield from _run_pipeline_session_stream_inner(
             user_input, persona=bound, provider=provider, history=history,
             is_proactive=is_proactive, received_at=received_at,

@@ -105,6 +105,7 @@ import os
 import re
 import shutil
 import threading
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -1223,6 +1224,10 @@ def update_task(task_id: str, action: str, evidence: str | None = None,
             return (f"{tid} was already {status} at {t.get('closed_at', 'unknown')} — "
                     f"nothing to do, and no second record made.")
 
+        refusal = _close_refusal(t, doc["tasks"], today)
+        if refusal:
+            return refusal
+
         if action == "dismissed" or (action == "skipped" and kind in _ONE_OFF):
             # Skipping a one-off is deciding not to do it — the same as dismissing it.
             if kind == "habit":
@@ -1530,6 +1535,101 @@ def context_block(persona: str | None = None, as_of: date | None = None) -> str:
     return "\n".join(lines)
 
 
+# --- The close gate -------------------------------------------------------------------------
+# Live 2026-10-24, check 4d: "I sorted the finance stuff" closed the Schwab review — one of four
+# open finance tasks, none of them named. The model still decides what the words mean; this is
+# a veto on the write: a close made inside a pipeline turn must be NAMED by the user's words.
+# Plan: archive/plans/reply_latency_plan_2026-10-24.md § 12–12a (Fable 5.1: code gate, not a
+# model check — a second model opinion is the same failure class with an extra meter).
+
+_USER_ACT = threading.local()
+
+
+@contextmanager
+def _user_act():
+    """The user's own act — a tap, an approved card. Outranks any bound turn, so a turn leaked
+    onto a worker thread can never gate a tap."""
+    prev = getattr(_USER_ACT, "on", False)
+    _USER_ACT.on = True
+    try:
+        yield
+    finally:
+        _USER_ACT.on = prev
+
+
+def _gate_tokens(text: str, stop: frozenset) -> frozenset:
+    return frozenset(_task_tokens(text) - stop)
+
+
+def _named_by(t: dict, text: str, prev: str, others: list[dict], stop: frozenset,
+              today: date) -> tuple[bool, str]:
+    """(named, why-not). Named: the task's id or whole wording appears; or a non-negated clause
+    shares an identifying token with it AND no other open task is named as well or better by
+    that clause; or the message is a short affirmative and the previous reply raised it."""
+    low = (text or "").lower()
+    if t["id"] in low or (t.get("what") or "").strip().lower() in low:
+        return True, ""
+    ttoks = _gate_tokens(t.get("what", ""), stop)
+    tie = False
+    for clause in _CLAUSE_SPLIT_RE.split(low):
+        clause = (clause or "").strip()
+        if not clause or _NEGATION_RE.search(clause):
+            continue
+        ctoks = _gate_tokens(clause, stop)
+        shared = ctoks & ttoks
+        if not shared:
+            continue
+        rivals = [o for o in others if ctoks & _gate_tokens(o.get("what", ""), stop)]
+        if any(len(ctoks & _gate_tokens(o.get("what", ""), stop)) > len(shared) for o in rivals):
+            continue                       # the clause names something else better
+        if any(ctoks & _gate_tokens(o.get("what", ""), stop) == shared for o in rivals):
+            tie = True                     # "booked the dentist" with two dentist tasks open
+            continue
+        return True, ""
+    if (prev and _AFFIRM_RE.match(text or "") and len((text or "").split()) <= 12
+            and not _NEGATION_RE.search(low)):
+        ptoks = _task_tokens(prev)
+        raised = [o for o in others + [t] if _view(o, today)["actionable"]
+                  and _tokens_match(ptoks, _task_tokens(o["what"]), single_ok=True)]
+        if 1 <= len(raised) <= 2 and any(o is t for o in raised):
+            return True, ""
+    return False, ("they could mean more than one task" if tie
+                   else "their words don't name this task")
+
+
+def _close_refusal(t: dict, tasks: list[dict], today: date) -> str | None:
+    """None if this close may proceed; otherwise the `error:` the model sees."""
+    if getattr(_USER_ACT, "on", False):
+        return None
+    turn = _turn_info()
+    if not turn or not turn.get("close_gate"):
+        return None
+    text = turn.get("user_text") or ""
+    if not text.strip() or not turn.get("user_turn"):
+        return ("error: not recorded — only the user's own words, a tap in the app, or an "
+                "approved suggestion can mark a task done, and this turn has nothing from the "
+                "user. Nothing was changed.")
+    others = [o for o in tasks if o is not t and (o.get("status") or "open") == "open"]
+    domains = {str(o.get("domain") or "").strip().lower() for o in tasks if o.get("domain")}
+    stop = _task_tokens(" ".join(sorted(domains))) if domains else frozenset()
+    ok, why = _named_by(t, text, turn.get("prev_assistant") or "", others, stop, today)
+    if ok:
+        return None
+    ctoks = _gate_tokens(text, stop)
+    pool = [o for o in others + [t] if _view(o, today)["actionable"]]
+    # "the finance stuff": the category the user named is the list to ask from.
+    said = _task_tokens(text) & stop
+    in_named_domain = [o for o in pool if o.get("domain")
+                       and _task_tokens(str(o["domain"])) & said]
+    near = [o for o in pool if ctoks & _gate_tokens(o.get("what", ""), stop)]
+    same_domain = [o for o in pool if o.get("domain") and o.get("domain") == t.get("domain")]
+    listed = (in_named_domain or near or same_domain or pool)[:4]
+    names = "; ".join(o["what"] for o in listed)
+    return (f"error: not recorded — {why}. Ask the user which they mean"
+            + (f" (open: {names})" if names else "")
+            + ", then record the one they confirm. Nothing was changed.")
+
+
 # --- The possible-completion hint ------------------------------------------------------------
 # Mike's "explicit asks from Synth for ambiguous items": code notices that a user turn may
 # report a task done and names the id; the model decides, and asks when it cannot tell.
@@ -1719,8 +1819,9 @@ def resolve_proposal(proposal_id: str, accept: bool, persona: str | None = None)
         return result
     if not accept:
         return f"{target['task']} left open; that message will not be offered again"
-    return update_task(target["task"], "done",
-                       evidence=f"{_CORRESPONDENCE_EVIDENCE} ({proposal_id})")
+    with _user_act():   # the user's tap on the card — never gated by a turn's words
+        return update_task(target["task"], "done",
+                           evidence=f"{_CORRESPONDENCE_EVIDENCE} ({proposal_id})")
 
 
 # What an arriving message must carry for its SUBJECT alone to suggest a close: two of the
@@ -1815,7 +1916,8 @@ def act_from_app(task_id: str, action: str, persona: str | None = None,
         return f"error: unsupported action {action!r}"
     why = (reason or "").strip()
     evidence = "marked in the app" + (f": {why}" if why else "")
-    return update_task(task_id, action, evidence=evidence, followup=followup)
+    with _user_act():
+        return update_task(task_id, action, evidence=evidence, followup=followup)
 
 
 def _on_todays_list(t: dict, v: dict) -> bool:
