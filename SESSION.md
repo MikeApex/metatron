@@ -13,7 +13,7 @@ series row carries `occurs_in_range`; one row per series, edits still act on the
 back blank** (`1d824a9`): 75 s Synthesizer timeout, one per-round retry, 4-round cap, 150 s soft
 deadline, a forced final reply. Vertex stalls are its shared capacity, not our account. **Task
 ledger verified live**; a model may close a task only when the user's words name it (`4f88d19`).
-Record: `archive/PROJECT_LOG.md` § 2026-10-24, fourth. Still open from 10-23: the "Benny" contact may be a phantom (Mike to check). **Models
+Record: `archive/PROJECT_LOG.md` § 2026-10-24, fourth. **Next: `archive/handoffs/2026-10-25-ritual-pause-and-ledger-followups-prompt.md`** — a user-requestable pause for check-in rituals (the Franklin review kept returning: no tool could change it), plus verifying 10-24's ledger additions. Still open from 10-23: the "Benny" contact may be a phantom (Mike to check). **Models
 re-checked 10-24: nothing newer than 3.8 Flash; no default changes (Mike).** The bill confirms 3.8
 Flash at 50% off; the promotion's end date is unknown — `[DB-0901-02]`, due 12-15.*
 
@@ -115,9 +115,8 @@ owns the per-item detail and the standing evidence.**
 (`tasks.yaml`); recurring tasks are set up (gym 3×/wk, stretching 2×/day, plants every 3 days,
 monthly bills). Live checks all pass. Added the same day: waking-day ✓ Today, "Done, but…",
 Drop with a reason, task durations (stated/estimated), the close gate, and `write_log` refusing
-guessed completions. **Owed decisions (Mike):** the medication safety flag's home (recommended:
-a line in `ROADMAP.md` § 0 clause 8's before-Alpha note) and whether `check_inbox_6h` goes
-(recommended: watch a week). **Not built:** the user-adjustable day boundary (plan § 6.4); editing
+guessed completions. The medication safety flag is in `ROADMAP.md` § 0 clause 8; `check_inbox_6h` is a dated
+backlog check (10-31). **Not built:** the user-adjustable day boundary (plan § 6.4); editing
 a day-log entry in conversation does not exist. Plans:
 [task_ledger_plan_2026-10-23.md](archive/plans/task_ledger_plan_2026-10-23.md),
 [reply_latency_plan_2026-10-24.md](archive/plans/reply_latency_plan_2026-10-24.md).

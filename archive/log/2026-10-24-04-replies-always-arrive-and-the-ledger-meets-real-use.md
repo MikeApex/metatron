@@ -38,3 +38,14 @@ tools — today's compat fallback had that latent defect, now gated on "nothing 
 **Believed true and wasn't:** "Vertex got slower since 10-23" (the agent's first read) — the
 median didn't move, the tail did. "Change (a) is deployed" — it was uncommitted, and `deploy.sh`
 ships git. Mike's decisions: fallback = retry only; thinking-budget test = its own session.
+
+**Late additions, same session (`75ad88b`):** the medication safety flag now sits in `ROADMAP.md`
+§ 0 clause 8's before-Alpha note; `check_inbox_6h` became a dated backlog check (10-31). The
+Franklin virtue review that kept returning is an **ability** gap, not adherence — the ritual file
+is injected every evening close and no tool can change it; Mike declined pausing it by hand for
+now and asked for a user-requestable pause with limited scope (pause/resume only, the user's words
+only). Drafted as untracked `tools/rituals.py`, not wired; carried to
+`archive/handoffs/2026-10-25-ritual-pause-and-ledger-followups-prompt.md`. Mike ruled that editing
+a day-log entry in conversation should not exist for users; he corrected today's false "Schwab
+sorted" log line himself (Claude's VM write was blocked by the auto-mode remote-write guard).
+
