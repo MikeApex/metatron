@@ -75,6 +75,9 @@ back-tagging the rest is `[DB-0815-10]`.
 > against `git log` before promoting anything from here.
 *(empty — last triaged 2026-09-05; evidence in `archive/backlog_closed_2026-09.md`)*
 
+- **[instruction change]** User requested that tasks rescheduled for a future date (specifically ob_260915_50a247 deferred to Monday 2026-10-26) should be removed from the active/outstanding tasks view and not treated or surfaced as outstanding until their due date arrives.  
+  `2026-10-24T10:56:58.155907Z`
+
 - **[needs building]** User shared an external calendar with diamond.mike.mt@gmail.com containing Manny's school Cultural Day and cookie baking events. The system currently only accesses the primary Google calendar and cannot detect or sync secondary or shared calendars. Capability to discover and sync secondary/shared calendars needs building.  
   `2026-10-20T15:03:11.394760Z`
 
@@ -155,7 +158,6 @@ flag — which would send a turn containing only the cue.
 - **[needs building] Dictated messages sometimes arrive cut off, and the rest of what was said is lost.** Two this month: 2026-10-22 10:09 ends *"…so it should look for phonetic"* (Mike's own app-change request; the rest never arrived), and 2026-10-15 11:54 ends mid-word *"…Greenwich and Black"*. **Evidence, checked 2026-10-23:** both were dictated, and the transcript the VM saved for each recording (`data/audio/2026-10-22/10-07-59.json`, `data/audio/2026-10-15/11-53-14.json`) ends at the same word. So the text was lost at capture or transcription, not later in the pipeline. **Cause not established.** A mid-word cut points away from the 2.5s silence stop and towards the end of the audio being lost, but that is an inference. **Mitigated, not fixed:** since `54222c0` the on-screen mic shows each recording's text in the voice tray before Send, so a cut-off snippet is visible and can be re-recorded. Headset turns still send unseen. **Closes on:** one cut-off reported from daily use, plus whether Mike had paused or was mid-word. The standing note in `startRecording()` forbids widening the silence window without such a turn to point at. Raised by Claude Code, 2026-10-23, from Mike's conversation logs (not by Mike).
 
 ---
-
 ## Now
 
 **Ranked — position is priority.** Capped at ~10, so something enters by displacing something.
@@ -359,7 +361,12 @@ the condition has not arrived, push the date rather than closing the item.
 
 - **[DB-0901-01] The fleet can sit on a deprecated model for weeks without anyone noticing, so
   check weekly whether Google has shipped something newer we can actually call.**
-  `due: 2026-09-11` · `@kind: chore`
+  `due: 2026-10-31` · `@kind: chore`
+  **2026-10-24 run: nothing newer callable on `global`** — 23 ids considered (walk includes
+  3.9–3.12 and 4.x Flash/Flash-Lite), none in catalogue or SKUs. Prompted by a reported "3.8 Flash
+  release", which is the model the fleet already runs (adopted 09-04). Six weeks overdue before
+  this run — the weekly date had not been pushed since 09-04. **Mike, 10-24: no default changes** —
+  moving the bulk tier to 3.8 Flash was priced (+~$14/mo on promo, +~$37/mo after) and declined.
   **⚠ CADENCE CHANGED MONTHLY → WEEKLY, 2026-09-04 (Mike).** The 09-04 run is why: 3.8 Flash
   `404`'d on 09-01 and answered a live call three days later, so the monthly date would have left
   a same-price, better-scoring model unadopted for up to 27 days. **Weekly is affordable because
@@ -402,33 +409,12 @@ the condition has not arrived, push the date rather than closing the item.
   **Deliberately not a scheduler job** (Mike, 2026-09-01) — the scheduler runs the product, and
   this is a development concern whose only actionable outcome is a developer's Red-tier edit.
 
-- **[DB-0904-02] We are guessing what 3.8 Flash actually costs, and the bill is the only thing
-  that can tell us.** `due: 2026-09-12` · `@kind: chore`
-  **The gap.** `config/modules/spend_guard.yaml` prices `gemini-3.8-flash` at $0.75/$3.75 —
-  Google's launch announcement says 3.8 ships at 3.7's price, and 3.8's billing SKUs sit in the
-  same band ($1.50/$7.50 list, identical to 3.7's SKUs). But the SKU catalogue publishes **list**
-  rates and does not express the introductory discount, and **3.8's introductory END DATE was not
-  reachable from this machine** — the blog would carry it and `WebFetch` is Denied here. The
-  `from: "2027-01-01"` block on the 3.8 entry is **copied from 3.7, not confirmed for 3.8**.
-  **What closes it.** A day or two of real 3.8 traffic, then read the actual effective rate out of
-  the BigQuery billing export (live, 62,764 rows as of 09-04) and compare against the guard's own
-  `data/diagnostics/spend_<date>.json`. That settles the current rate empirically. If the two
-  disagree, the guard is wrong and the entry moves.
-  **Why it matters in the wrong direction.** The rates entered are the *cheap* ones, so an error
-  here makes the guard **under-report**, which is the unsafe direction — the caps stop biting
-  before they should. Pinning the list rates instead was considered and rejected: that
-  over-reports 2x today, and a spurious hard-cap trip on this project is an **outage**, not a
-  cost event (`docs/INFRASTRUCTURE.md` § Billing protection).
-  **Not verifiable by a glance at the pricing page** — that page's context-cache-storage table had
-  no 3.7 Flash row at all while the SKU catalogue published one. The export is the source of truth.
-  Feeds `[DB-0901-02]`, which owns the New Year's Day switch for both ids.
-
 - **[DB-0901-02] Gemini 3.7 Flash doubles in price on New Year's Day, and only one of the two
   places we price it will notice.** `due: 2026-12-15` · `@kind: chore`
   **⚠ RE-SCOPED 2026-09-04: this is now about 3.8 Flash, which is what the fleet actually runs.**
   3.7 Flash was replaced across all six reasoning slots on 09-04. 3.8 ships at the same rates and
   its `from: "2027-01-01"` block was copied from 3.7 — **but 3.8's introductory end date is
-  unconfirmed** (see `[DB-0904-02]`). If that item lands a different date, the `from:` key here
+  unconfirmed** — `[DB-0904-02]` closed 2026-10-24 confirming the *current* 50% promotion from the bill, but the billing export carries no end date (`archive/backlog_closed_2026-10.md`). If Google announces a different end date, the `from:` key here
   and in Chorus must move to it. Everything below applies to **both** ids: 3.7 stays in the
   pricing table for historical reconciliation, so both entries need the same treatment.
   **What changes on 2027-01-01:** 3.7 **and 3.8** Flash input $0.75 → **$1.50**, output
@@ -1262,6 +1248,36 @@ evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording �
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
 
+- **[user corrected a prior turn]** User corrected prior turn: Schwab Treasury note review was incorrectly closed and must be reopened; left everything else untouched.  
+  `2026-10-24T14:05:53.410291Z`
+
+- **[user corrected a prior turn]** user corrected a repeated turn by stating the actual message text verbatim as a correction, but the previous turn was a successful calendar lookup.  
+  `2026-10-24T13:23:08.600725Z`
+
+- **[user corrected a prior turn]** user repeated verbatim the calendar question from the previous turn due to a duplicate request or pipeline retry  
+  `2026-10-24T13:19:32.672112Z`
+
+- **[a specialist missed a signal it should have caught]** user asked calendar question for week of Nov 9, coordinator routed to Logistics and Mental Wellbeing without remembering Logistics owns calendar queries directly or checking schedule data stores  
+  `2026-10-24T12:41:26.817069Z`
+
+- **[a capability gap was filed]** BLD-1024-02 (construct): Automated habit tracker and recurring task manager for gym (MWF), twice-daily stretching, 3-day plant watering with weather/season rules, and monthly bill/obligation inventory into tracked tasks.  
+  `2026-10-24T11:06:09.331571Z`
+
+- **[a specialist missed a signal it should have caught]** Coordinator misrouted package; missing Logistics for Crossharbor DLR venue check and missing Finance/Logistics for TfL refund details request.  
+  `2026-10-24T10:55:24.244358Z`
+
+- **[a capability gap was filed]** BLD-1024-01 (construct): Find and suggest local pubs suitable for a meeting near a specific location  
+  `2026-10-24T10:45:15.196372Z`
+
+- **[user corrected a prior turn]** User asked for details on TfL refund task (ob_261013_843d68) and requested alternate pubs near Crossharbor DLR for Tuesday meeting with Rowan Hand, and noted Schwab task should be removed from outstanding display until Monday.  
+  `2026-10-24T10:45:11.210713Z`
+
+- **[a specialist missed a signal it should have caught]** Routed user message to Coordinator instead of Synthesizer on the previous turn's scheduled prompt, causing a routing miss.  
+  `2026-10-24T10:22:38.182883Z`
+
+- **[a specialist missed a signal it should have caught]** Scheduled prompt for anticipatory logistics arrived, but the user's explicit question from the prior turn about the Schwab Treasury notes ($6,000) remains unresolved and needs answering before opening a new thread.  
+  `2026-10-24T09:00:18.420914Z`
+
 - **[user corrected a prior turn]** User corrected Franklin virtues instruction issue and provided specific housekeeping updates for obligations and scheduled jobs.  
   `2026-10-23T21:14:58.616884Z`
 
@@ -1556,8 +1572,8 @@ entry is a symptom, never a diagnosis.)*
 - **[user corrected a prior turn]** ```  
   `2026-09-25T06:30:20.812316Z`
 
-- **[a specialist missed a signal it should have caught]** User sent a quiet check-in response ('Quiet check-in — raise it only if something matters right now.'), but the coordinator package failed to handle the scheduled morning prompt trigger correctly or missed routing it.  ×2  
-  `2026-10-02T06:30:16.289040Z`
+- ⚠ **[a specialist missed a signal it should have caught]** The scheduled prompt 'Quiet check-in — raise it only if something matters right now.' misrouted because it evaluated as user speech instead of an internal quiet check-in, causing a routing miss where Mental Wellbeing and Physical Health should have been consulted for the scheduled session.  ×3  
+  `2026-10-24T09:56:26.287320Z`
 
 - **[a specialist missed a signal it should have caught]** Coordinator emitted natural response directly instead of routing package for synthesizer in quiet check-in.  
   `2026-09-24T19:39:08.196992Z`

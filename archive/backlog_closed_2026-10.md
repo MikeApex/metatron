@@ -8,6 +8,26 @@ the previous file is [`backlog_closed_2026-09.md`](backlog_closed_2026-09.md).
 
 ---
 
+## ✅ [DB-0904-02] We were guessing what 3.8 Flash actually costs — the bill now says — closed 2026-10-24
+
+**The evidence:** BigQuery billing export, 2026-09-04 → 10-24, every `Gemini 3.8 Flash` SKU. Gross
+list rates per 1M: input **$1.50**, output **$7.50**, cache read **$0.15**, cache storage **$1.00**/hour.
+Every SKU carries a `DISCOUNT` credit named **"Gemini 3.8 Flash Price Promotion - 50% off"**, so the
+effective rates are **$0.75 / $3.75 / $0.075** — exactly what `spend_guard.yaml` enters. The guard is
+right on the three per-token rates. Totals: $44.98 gross, $22.49 credited, **$22.49 net over 50
+days (~$0.45/day)**.
+
+**One figure is off, in the safe direction.** The promotion also halves **cache storage**, to a net
+$0.50/hour. The guard has $1.00, so it over-reports storage 2x (~$1 over the period). Left as it is
+on purpose: it is conservative now, and it is correct the day the promotion ends. The yaml comment
+saying storage "does NOT double in 2027" is wrong about the net rate. The *list* rate stays flat,
+but the net rate goes $0.50 → $1.00.
+
+**What this did not settle: the promotion's end date.** The billing export does not carry one, and
+`WebFetch` is still Denied. The `from: "2027-01-01"` block is still copied from 3.7.
+`[DB-0901-02]` (`due: 2026-12-15`) owns that date. The bill will show the change as the credit
+disappearing, and you can check it with the same query.
+
 ## ✅ [DB-0902-02] Two inbox jobs gave contradictory answers about the same inbox — one of them no longer exists — closed 2026-10-23
 
 **The change:** there is one model inbox job, not two. Mike's housekeeping message of 2026-10-23

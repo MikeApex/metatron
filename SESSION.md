@@ -11,7 +11,9 @@ calendar the week of 9 Nov?" — John Ball once, shared events present); the two
 scripts now refuse non-interactive starts without `METATRON_LIVE=1` (`a70ead7`). **Repeating events now land on their real dates** (`bbc741b`, deployed, Mike's live check passed): each
 series row carries `occurs_in_range`; one row per series, edits still act on the whole series. **Task ledger
 post-deploy:** `archive/handoffs/2026-10-24-task-ledger-post-deploy-prompt.md`, run in another
-window. Still open from 10-23: the "Benny" contact may be a phantom (Mike to check).*
+window. Still open from 10-23: the "Benny" contact may be a phantom (Mike to check). **Models
+re-checked 10-24: nothing newer than 3.8 Flash; no default changes (Mike).** The bill confirms 3.8
+Flash at 50% off; the promotion's end date is unknown — `[DB-0901-02]`, due 12-15.*
 
 *Build is unchanged since 09-26 — development, not execution (Mike): Claude Code on the Mac, Mike
 starts, approves, commits and deploys. Plan `archive/plans/build_vertical_plan_2026-09-24.md`
