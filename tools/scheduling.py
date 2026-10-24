@@ -113,6 +113,24 @@ def _local_zone():
         return ZoneInfo("UTC")
 
 
+def _instances(ev: dict) -> list[dict]:
+    """One copy of the event per occurrence in the window; the row itself if it does not repeat.
+
+    A series with no occurrence in the window yields nothing. A series whose dates could
+    not be worked out (`occurrences_unknown`) keeps its row as before."""
+    if "occurs_in_range" not in ev:
+        return [ev]
+    start, end = _parse_dt(ev.get("start", "")), _parse_dt(ev.get("end", ""))
+    duration = (end - start) if start and end and end > start else timedelta(0)
+    out = []
+    for occ in ev["occurs_in_range"]:
+        when = _parse_dt(occ)
+        if when is not None:
+            out.append({**ev, "start": when.isoformat(), "end": (when + duration).isoformat(),
+                        "occurrence_start": occ})
+    return out
+
+
 def _is_all_day(ev: dict) -> bool:
     """All-day events come back from the calendar as midnight with no clock time."""
     start = ev.get("start", "")
@@ -187,6 +205,10 @@ def _compute_conflicts(
 
     events = [e for e in raw["events"] if e.get("uid") != exclude_uid
               and not (e.get("shared") and _is_all_day(e))]
+    # A repeating event arrives as one row dated at its FIRST occurrence, with the dates
+    # it falls on in this window under `occurs_in_range` (tools/caldav.py). Every check
+    # below runs once per occurrence, so a series is seen on the day it actually happens.
+    instances = [inst for e in events for inst in _instances(e)]
 
     norm_title = _normalize_title(title)
     overlaps = []
@@ -197,12 +219,15 @@ def _compute_conflicts(
     location_transition_flags = []
 
     def _where(ev: dict) -> dict:
+        tags = {"occurrence_start": ev["occurrence_start"], "repeating": True} \
+            if ev.get("occurrence_start") else {}
         if not ev.get("read_only"):
-            return {}
-        return {"calendars": ev.get("calendars", []), "read_only": True,
+            return tags
+        return {**tags, "calendars": ev.get("calendars", []), "read_only": True,
                 **({"shared": True} if ev.get("shared") else {})}
 
-    for ev in events:
+    seen_series: set[str] = set()
+    for ev in instances:
         ev_start = _parse_dt(ev.get("start", ""))
         ev_end = _parse_dt(ev.get("end", ""))
         if ev_start is None or ev_end is None:
@@ -219,7 +244,9 @@ def _compute_conflicts(
             })
             if (_normalize_title(ev.get("title", "")) == norm_title
                     and norm_title and ev_start == start_dt and ev_end == end_dt):
-                match = {"uid": ev["uid"], "title": ev["title"], "start": ev["start"], "end": ev["end"]}
+                match = {"uid": ev["uid"], "title": ev["title"], "start": ev["start"], "end": ev["end"],
+                         **({"occurrence_start": ev["occurrence_start"], "repeating": True}
+                            if ev.get("occurrence_start") else {})}
                 if ev.get("read_only"):
                     existing_elsewhere.append({**match, **_where(ev), "note": (
                         "Already on a calendar this system can read but not edit. Writing it "
@@ -248,7 +275,8 @@ def _compute_conflicts(
         # window. fits_cadence is a loose heuristic (same weekday + time of day
         # within 15 minutes) — evidence for the agent to reason from, not a
         # classification it should trust blindly.
-        if ev.get("recurrence") and sim >= _TITLE_SIMILARITY_THRESHOLD:
+        if ev.get("recurrence") and sim >= _TITLE_SIMILARITY_THRESHOLD and ev["uid"] not in seen_series:
+            seen_series.add(ev["uid"])
             fits_cadence = (
                 ev_start.weekday() == start_dt.weekday()
                 and abs((ev_start.hour * 60 + ev_start.minute) - (start_dt.hour * 60 + start_dt.minute)) <= 15
@@ -264,7 +292,7 @@ def _compute_conflicts(
     # having to travel there, and each flag here costs a routed lookup.
     if location:
         same_day = sorted(
-            (e for e in events if not e.get("shared")
+            (e for e in instances if not e.get("shared")
              and _parse_dt(e.get("start", "")) and _parse_dt(e.get("start", "")).date() == start_dt.date()),
             key=lambda e: e["start"],
         )
@@ -292,7 +320,7 @@ def _compute_conflicts(
                 travel_origin, travel_destination, arrive_by = location, ev["location"], ev_start
             if gap is not None:
                 flag = {
-                    "adjacent_event_uid": ev["uid"], "adjacent_title": ev["title"],
+                    "adjacent_event_uid": ev["uid"], "adjacent_title": ev["title"], **_where(ev),
                     "gap_minutes": round(gap, 1), "locations": [location, ev["location"]],
                 }
                 # Real routed duration, not the flag's own gap re-stated. Best-effort:
@@ -317,7 +345,7 @@ def _compute_conflicts(
     day_digest = sorted(
         [{"uid": e["uid"], "title": e["title"], "start": e["start"], "end": e["end"], "location": e.get("location", ""),
           **_where(e)}
-         for e in events
+         for e in instances
          if _parse_dt(e.get("start", "")) and _parse_dt(e.get("start", "")).date() in (start_dt.date(), end_dt.date())],
         key=lambda e: e["start"],
     )

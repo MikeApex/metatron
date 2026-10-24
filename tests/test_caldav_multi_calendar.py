@@ -387,5 +387,169 @@ class ConflictCheck(Base):
         self.assertEqual(out["location_transition_flags"], [])
 
 
+def _series(uid, summary, start, end, rrule, tz="Europe/London", extra=()):
+    return _vevent(uid, summary, start, end, tz=tz, extra=[f"RRULE:{rrule}", *extra])
+
+
+# The real series of the week of 9 Nov 2026 (probed live 2026-10-24), plus the edge cases
+# a series can carry. Google sends each as its master: DTSTART is the FIRST occurrence.
+SERIES = {
+    "metatron": [
+        _series("karate@ai-life-manager", "Karate for Manny", "20260914T183000", "20260914T193000",
+                "FREQ=WEEKLY"),
+        _series("swim@ai-life-manager", "Manny's swim class", "20260918T100000", "20260918T110000",
+                "FREQ=WEEKLY;BYDAY=FR"),
+        _series("cc@ai-life-manager", "Credit card payment due", "20260815", "20260816",
+                "FREQ=MONTHLY;BYMONTHDAY=15", tz="DATE"),
+        _series("review@ai-life-manager", "Review Manny's school week", "20260816", "20260817",
+                "FREQ=WEEKLY;BYDAY=SU", tz="DATE"),
+        _series("budapest@ai-life-manager", "Call with Budapest", "20260917T200000", "20260917T203000",
+                "FREQ=WEEKLY;BYDAY=TH", tz="Europe/Budapest"),
+        _series("until-z@ai-life-manager", "Course", "20261101T080000", "20261101T090000",
+                "FREQ=DAILY;UNTIL=20261111T000000Z"),
+        _series("until-date@ai-life-manager", "Course B", "20261101T070000", "20261101T073000",
+                "FREQ=DAILY;UNTIL=20261110"),
+        _series("bogus@ai-life-manager", "Mystery", "20261101T080000", "20261101T090000", "FREQ=BOGUS"),
+        _series("skipped@ai-life-manager", "Piano", "20260917T160000", "20260917T170000",
+                "FREQ=WEEKLY;BYDAY=TH", extra=["EXDATE;TZID=Europe/London:20261112T160000"]),
+        _series("moved@ai-life-manager", "Tutor", "20260914T170000", "20260914T180000", "FREQ=WEEKLY"),
+        _vevent("moved@ai-life-manager", "Tutor", "20261110T170000", "20261110T180000",
+                extra=["RECURRENCE-ID;TZID=Europe/London:20261109T170000"]),
+    ],
+    "primary": [],
+    "holidays": [],
+    "shared": [
+        _series("gan@google.com", "Gan", "20250914T090000", "20250914T130000", "FREQ=WEEKLY;BYDAY=SU"),
+        _series("karate@ai-life-manager", "Karate for Manny", "20260914T183000", "20260914T193000",
+                "FREQ=WEEKLY"),
+    ],
+}
+
+
+class RepeatingEvents(Base):
+    def setUp(self):
+        p = mock.patch.dict(CALENDARS, SERIES)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def occurs(self, title, start="2026-11-09", end="2026-11-15"):
+        out = caldav._query_events(start, end, calendars="all")
+        rows = [e for e in out["events"] if e["title"] == title and "occurs_in_range" in e
+                or e["title"] == title and e.get("occurrences_unknown")]
+        self.assertEqual(len(rows), 1, rows)
+        return rows[0]
+
+    def test_the_weeks_real_series_fall_on_their_real_dates(self):
+        self.server()
+        self.assertEqual(self.occurs("Karate for Manny")["occurs_in_range"], ["2026-11-09T18:30:00"])
+        self.assertEqual(self.occurs("Manny's swim class")["occurs_in_range"], ["2026-11-13T10:00:00"])
+        self.assertEqual(self.occurs("Gan")["occurs_in_range"], ["2026-11-15T09:00:00"])
+
+    def test_series_keeps_one_row_and_its_series_uid(self):
+        self.server()
+        row = self.occurs("Gan")
+        self.assertEqual(row["uid"], "gan@google.com")
+        self.assertEqual(row["start"], "2025-09-14T09:00:00")  # the master, as before
+
+    def test_all_day_series_get_dates_not_a_silent_fallback(self):
+        self.server()
+        self.assertEqual(self.occurs("Credit card payment due")["occurs_in_range"], ["2026-11-15T00:00:00"])
+        self.assertEqual(self.occurs("Review Manny's school week")["occurs_in_range"], ["2026-11-15T00:00:00"])
+
+    def test_foreign_zone_series_keeps_its_wall_clock_across_dst(self):
+        self.server()
+        # 20:00 Budapest: 19:00 London in September (CEST/BST) and still 19:00 in November (CET/GMT).
+        self.assertEqual(self.occurs("Call with Budapest")["occurs_in_range"], ["2026-11-12T19:00:00"])
+
+    def test_until_in_utc_and_as_a_date(self):
+        self.server()
+        self.assertEqual(self.occurs("Course")["occurs_in_range"],
+                         ["2026-11-09T08:00:00", "2026-11-10T08:00:00"])
+        self.assertEqual(self.occurs("Course B")["occurs_in_range"],
+                         ["2026-11-09T07:00:00", "2026-11-10T07:00:00"])
+
+    def test_skipped_date_is_left_out(self):
+        self.server()
+        self.assertEqual(self.occurs("Piano")["occurs_in_range"], [])
+
+    def test_moved_occurrence_shows_once_at_its_new_time(self):
+        self.server()
+        out = caldav._query_events("2026-11-09", "2026-11-15", calendars="all")
+        tutor = [e for e in out["events"] if e["title"] == "Tutor"]
+        master = [e for e in tutor if "occurs_in_range" in e][0]
+        self.assertNotIn("2026-11-09T17:00:00", master["occurs_in_range"])
+        self.assertIn("2026-11-10T17:00:00", [e["start"] for e in tutor])
+
+    def test_date_only_exclusion_on_a_timed_series(self):
+        self.server()
+        CALENDARS["metatron"] = [_series("x1@x", "Choir", "20260917T160000", "20260917T170000",
+                                         "FREQ=WEEKLY;BYDAY=TH", extra=["EXDATE;VALUE=DATE:20261112"])]
+        self.assertEqual(self.occurs("Choir")["occurs_in_range"], [])
+
+    def test_unreadable_exclusion_or_move_marks_dates_unknown(self):
+        self.server()
+        CALENDARS["metatron"] = [
+            _series("x2@x", "Chess", "20260917T160000", "20260917T170000", "FREQ=WEEKLY;BYDAY=TH",
+                    extra=["EXDATE;TZID=Not/AZone:20261112T160000"]),
+            _series("x3@x", "Drama", "20260914T170000", "20260914T180000", "FREQ=WEEKLY"),
+            _vevent("x3@x", "Drama", "20261110T170000", "20261110T180000",
+                    extra=["RECURRENCE-ID;TZID=Not/AZone:20261109T170000"]),
+        ]
+        self.assertTrue(self.occurs("Chess")["occurrences_unknown"])
+        self.assertTrue(self.occurs("Drama")["occurrences_unknown"])
+
+    def test_unreadable_rule_is_marked_not_guessed(self):
+        self.server()
+        row = self.occurs("Mystery")
+        self.assertTrue(row["occurrences_unknown"])
+        self.assertNotIn("occurs_in_range", row)
+
+    def test_same_series_on_two_calendars_is_one_row(self):
+        self.server()
+        row = self.occurs("Karate for Manny")
+        self.assertEqual(row["calendars"], ["Metatron", "Shared with Mike"])
+
+    def test_long_range_is_capped_and_says_so(self):
+        self.server()
+        CALENDARS["metatron"] = [_series("daily@x", "Vitamins", "20260101T080000", "20260101T080500",
+                                         "FREQ=DAILY")]
+        row = self.occurs("Vitamins", "2026-11-01", "2027-03-01")
+        self.assertEqual(len(row["occurs_in_range"]), caldav._OCCURRENCE_CAP)
+        self.assertTrue(row["occurs_in_range_truncated"])
+
+    def test_own_mode_is_untouched(self):
+        self.server()
+        out = caldav._query_events("2026-11-09", "2026-11-15")
+        self.assertFalse([e for e in out["events"] if "occurs_in_range" in e or "occurrences_unknown" in e])
+
+    def conflicts(self, **kw):
+        with mock.patch.object(scheduling, "search_contacts", return_value="[]"), \
+             mock.patch.object(scheduling, "get_travel_time", return_value={"journeys": []}):
+            return scheduling._compute_conflicts(**kw)
+
+    def test_conflict_check_sees_the_occurrence_on_its_day(self):
+        self.server()
+        out = self.conflicts(start="2026-11-09T18:45:00", end="2026-11-09T19:15:00", title="Call")
+        karate = [o for o in out["overlaps"] if o["title"] == "Karate for Manny"]
+        self.assertEqual(len(karate), 1)
+        self.assertEqual(karate[0]["occurrence_start"], "2026-11-09T18:30:00")
+        self.assertIn("Karate for Manny", [d["title"] for d in out["day_digest"]])
+
+    def test_duplicate_of_a_series_occurrence_still_refused(self):
+        self.server()
+        out = self.conflicts(start="2026-11-09T18:30:00", end="2026-11-09T19:30:00",
+                             title="Karate for Manny")
+        self.assertEqual(out["exact_duplicate"]["uid"], "karate@ai-life-manager")
+        self.assertEqual(len(out["recurring_series_match"]), 1)
+
+    def test_occurrence_enters_the_travel_check(self):
+        self.server()
+        CALENDARS["metatron"] = [_series("gym@x", "Gym", "20260914T170000", "20260914T180000",
+                                         "FREQ=WEEKLY", extra=["LOCATION:Gym"])]
+        out = self.conflicts(start="2026-11-09T18:10:00", end="2026-11-09T19:00:00",
+                             title="Dinner", location="Restaurant")
+        self.assertEqual(out["location_transition_flags"][0]["adjacent_title"], "Gym")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

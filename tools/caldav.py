@@ -65,7 +65,11 @@ _MULTI_CALENDAR_NOTE = (
     "be other people's commitments rather than the user's own. Where copies of one event "
     "disagree, `discrepancies` holds the other "
     "values — mention a disagreement that matters (a different start time) rather than "
-    "picking one silently."
+    "picking one silently. A repeating event is listed once, at its FIRST occurrence: "
+    "`occurs_in_range` gives the dates it actually falls on inside the requested range — "
+    "use those, not its `start`. An empty list means it does not occur in the range. "
+    "`occurrences_unknown` means the dates could not be worked out; read `recurrence`. "
+    "Changing or deleting a repeating event changes the whole series."
 )
 
 
@@ -198,6 +202,10 @@ def _parse_ical_events(ical_text: str) -> list[dict]:
                 p.split("=", 1)[0].upper(): p.split("=", 1)[1].strip('"')
                 for p in parts[1:] if "=" in p
             }
+            if base_key == "EXDATE":  # may repeat, and each line may list several dates
+                tzid = current["_params"]["EXDATE"].get("TZID", "")
+                current.setdefault("_exdates", []).extend(
+                    (tzid, v.strip()) for v in value.split(",") if v.strip())
 
     return events
 
@@ -411,6 +419,95 @@ def _calendar_set(cfg: dict, auth: tuple) -> tuple[list[dict], str]:
     return result, status
 
 
+# --- Where a repeating event actually falls (2026-10-24) ----------------------
+#
+# Google returns a series as its master VEVENT — DTSTART is the FIRST occurrence ("Gan",
+# 14 Sept 2025) plus an RRULE — and ignores CalDAV's <c:expand>, probed live. So a
+# question about one week got rows dated months earlier, and the model left all eight
+# of that week's repeating items out of its answer. Code works out the dates.
+#
+# A series stays ONE row with its series uid: listing each occurrence as its own row
+# would hand the agent many rows sharing one uid, and update/delete act on the whole
+# series (the occurrence-vs-series gap Mike ruled "skip" on 2026-09-05). Only the dates
+# are added, as `occurs_in_range`. Rescheduled occurrences (sibling VEVENTs carrying a
+# RECURRENCE-ID) stay their own rows, as they always were; their original dates are
+# left out of the list.
+
+_OCCURRENCE_CAP = 60  # per series per read: dates only, so a DAILY series over a year stays small
+
+
+def _aware(value: str, tzid: str, default_zone: ZoneInfo) -> datetime | None:
+    """An iCalendar date or date-time as an aware datetime, in its own zone."""
+    value = (value or "").strip()
+    try:
+        if len(value) == 8:
+            return datetime.strptime(value, "%Y%m%d").replace(tzinfo=default_zone)
+        if value.endswith("Z"):
+            return datetime.strptime(value[:-1], "%Y%m%dT%H%M%S").replace(tzinfo=timezone.utc)
+        zone = ZoneInfo(tzid) if tzid else default_zone
+        return datetime.strptime(value, "%Y%m%dT%H%M%S").replace(tzinfo=zone)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _utc_until(rrule: str, zone) -> str:
+    """dateutil refuses an UNTIL without Z once DTSTART is aware; restate it in UTC."""
+    def fix(m: re.Match) -> str:
+        val = m.group(1)
+        if val.endswith("Z"):
+            return m.group(0)
+        if len(val) == 8:  # a date: the whole of that day still counts
+            local = datetime.strptime(val, "%Y%m%d").replace(tzinfo=zone) + timedelta(days=1, seconds=-1)
+        else:
+            local = datetime.strptime(val, "%Y%m%dT%H%M%S").replace(tzinfo=zone)
+        return "UNTIL=" + local.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return re.sub(r"UNTIL=([0-9TZ]+)", fix, rrule)
+
+
+def _occurrences_in_range(raw: dict, persona_zone: ZoneInfo, win_start: datetime,
+                          win_end: datetime, moved: set[datetime]) -> tuple[list[str], bool]:
+    """
+    Local start times of a series' occurrences that overlap [win_start, win_end), with
+    EXDATEs and rescheduled originals (`moved`) removed. Raises on anything it cannot
+    read — the caller marks the row `occurrences_unknown` rather than guessing.
+    """
+    from dateutil.rrule import rrulestr
+
+    params = raw.get("_params") or {}
+    dtstart = _aware(raw["DTSTART"], (params.get("DTSTART") or {}).get("TZID", ""), persona_zone)
+    if dtstart is None:
+        raise ValueError("unreadable DTSTART")
+    all_day = len(raw["DTSTART"].strip()) == 8
+    dtend = _aware(raw.get("DTEND", ""), (params.get("DTEND") or {}).get("TZID", ""), persona_zone)
+    duration = (dtend - dtstart) if dtend and dtend > dtstart else (
+        timedelta(days=1) if all_day else timedelta(0))
+    rule = rrulestr(_utc_until(raw["RRULE"], dtstart.tzinfo), dtstart=dtstart)
+    if None in moved:
+        raise ValueError("unreadable RECURRENCE-ID on a rescheduled occurrence")
+    excluded = set(moved)
+    excluded_days = set()  # a date-only EXDATE on a timed series removes that whole day
+    for tzid, value in raw.get("_exdates") or []:
+        ex = _aware(value, tzid, persona_zone)
+        if ex is None:  # an exclusion we cannot read makes every date suspect
+            raise ValueError(f"unreadable EXDATE {value!r}")
+        if len(value.strip()) == 8 and not all_day:
+            excluded_days.add(ex.date())
+        excluded.add(ex)
+
+    starts: list[str] = []
+    for occ in rule.xafter(win_start - duration, inc=True):
+        if occ >= win_end:
+            break
+        if occ + duration <= win_start and duration:
+            continue
+        if occ in excluded or occ.astimezone(dtstart.tzinfo).date() in excluded_days:
+            continue
+        if len(starts) == _OCCURRENCE_CAP:
+            return starts, True
+        starts.append(occ.astimezone(persona_zone).replace(tzinfo=None).isoformat())
+    return starts, False
+
+
 def _merge_title(title: str) -> str:
     return " ".join(re.sub(r"[^\w]+", " ", (title or "").lower()).split())
 
@@ -580,6 +677,13 @@ def _query_events(start_date: str, end_date: str, persona: str | None = None,
             return {"error": f"Failed to parse CalDAV response: {own_err}"}
         return {"error": f"CalDAV request failed: {own_err}{_auth_hint(own_err)}"}
 
+    try:
+        persona_zone = ZoneInfo(target_tz or "UTC")
+    except Exception:  # noqa: BLE001
+        persona_zone = ZoneInfo("UTC")
+    win_start = datetime.fromisoformat(start_date).replace(tzinfo=persona_zone)
+    win_end = datetime.fromisoformat(end_date).replace(tzinfo=persona_zone) + timedelta(days=1)
+
     events, read, failed = [], [], []
     for order, (cal, (raws, err)) in enumerate(zip(cal_set, outcomes)):
         if err is not None:
@@ -587,8 +691,26 @@ def _query_events(start_date: str, end_date: str, persona: str | None = None,
             logger.warning("[caldav] calendar %r unreadable, skipped: %s", cal["name"], err)
             continue
         read.append(cal["name"])
+        moved: dict[str, set] = {}
+        for raw in raws:
+            if raw.get("RECURRENCE-ID"):
+                rid = _aware(raw["RECURRENCE-ID"],
+                             (raw.get("_params", {}).get("RECURRENCE-ID") or {}).get("TZID", ""),
+                             persona_zone)
+                # An unreadable RECURRENCE-ID: the series' own dates can no longer be trusted.
+                moved.setdefault(raw.get("UID", ""), set()).add(rid)
         for raw in raws:
             ev = _format_event(raw, target_tz, utc_to_local=True)
+            if raw.get("RRULE") and not raw.get("RECURRENCE-ID"):
+                try:
+                    dates, truncated = _occurrences_in_range(
+                        raw, persona_zone, win_start, win_end, moved.get(raw.get("UID", ""), set()))
+                    ev["occurs_in_range"] = dates
+                    if truncated:
+                        ev["occurs_in_range_truncated"] = True
+                except Exception as exc:  # noqa: BLE001 — say so rather than guess
+                    logger.info("[caldav] could not expand %r: %s", raw.get("SUMMARY", ""), exc)
+                    ev["occurrences_unknown"] = True
             ev.update({
                 "_order": order,
                 "_calendar": cal["name"],
