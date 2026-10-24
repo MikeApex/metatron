@@ -1,6 +1,6 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-10-24. **VM at `723bbda`** (deployed; includes the task ledger `27c570f`). **Calendar: Metatron now reads every calendar the account exposes** — Metatron, the
+*Updated: 2026-10-24. **VM at `1d32c4c`** (deployed; includes the task ledger `27c570f`). **Calendar: Metatron now reads every calendar the account exposes** — Metatron, the
 account's own, UK holidays, "Shared with Mike" — and an event on two calendars shows once, the
 Metatron copy winning, other values kept as `discrepancies`. Only `read_calendar` and the
 write-time conflict check widen; unattended jobs stay on the Metatron calendar. Which calendars
@@ -9,9 +9,11 @@ kill switch (`archive/PROJECT_LOG.md` § 2026-10-24). **Owed:** Mike's live chec
 calendar the week of 9 Nov?" — John Ball once, shared events present); the two old Metatron copies
 (John Ball, Jimmy Carr) show twice in Google Calendar — left as they are (Mike, 10-24). Live test
 scripts now refuse non-interactive starts without `METATRON_LIVE=1` (`a70ead7`). **Repeating events now land on their real dates** (`bbc741b`, deployed, Mike's live check passed): each
-series row carries `occurs_in_range`; one row per series, edits still act on the whole series. **Task ledger
-post-deploy:** `archive/handoffs/2026-10-24-task-ledger-post-deploy-prompt.md`, run in another
-window. Still open from 10-23: the "Benny" contact may be a phantom (Mike to check). **Models
+series row carries `occurs_in_range`; one row per series, edits still act on the whole series. **Replies no longer hang or come
+back blank** (`1d824a9`): 75 s Synthesizer timeout, one per-round retry, 4-round cap, 150 s soft
+deadline, a forced final reply. Vertex stalls are its shared capacity, not our account. **Task
+ledger verified live**; a model may close a task only when the user's words name it (`4f88d19`).
+Record: `archive/PROJECT_LOG.md` § 2026-10-24, fourth. Still open from 10-23: the "Benny" contact may be a phantom (Mike to check). **Models
 re-checked 10-24: nothing newer than 3.8 Flash; no default changes (Mike).** The bill confirms 3.8
 Flash at 50% off; the promotion's end date is unknown — `[DB-0901-02]`, due 12-15.*
 
@@ -99,7 +101,7 @@ which model runs which kind of session** (plan in Opus, review in Fable, build i
 ### Built
 **The Phase 5 catalogue moved out on 2026-09-18 — it was finished work, and a primer holds state.**
 What exists: [CODEBASE_INDEX.md](CODEBASE_INDEX.md). When and why each piece was built:
-[archive/PROJECT_LOG.md](archive/PROJECT_LOG.md). Everything committed is deployed (VM `723bbda`).
+[archive/PROJECT_LOG.md](archive/PROJECT_LOG.md). Everything committed is deployed (VM `1d32c4c`).
 
 ### In progress / next
 
@@ -109,13 +111,16 @@ as live and Mike updates that manually — do not start it). Left: B1b's calenda
 CardDAV rows (gated on Track E), A5b/A5c, `[DB-0804-02]`. **[ROADMAP.md](ROADMAP.md) § Track A/B
 owns the per-item detail and the standing evidence.**
 
-**TASK LEDGER — built and committed 2026-10-23 (`27c570f`), deploy pending.** `tools/obligations.py`
-is now the single to-do store (`tasks.yaml`; `obligations.yaml` imported once, never written);
-`open_task`/`update_task`/`list_tasks` replaced the four obligation tools. Owed: post-deploy
-verification + APK rebuild + setup prompt (handoff above), and **the medication safety flag's home
-(Mike's call — plan § 9)**. The plant-watering reminder Build's F1 run 1 targeted is now a ledger
-interval task; Build itself is untouched. Plan + Fable review:
-[task_ledger_plan_2026-10-23.md](archive/plans/task_ledger_plan_2026-10-23.md).
+**TASK LEDGER — live and verified 2026-10-24.** `tools/obligations.py` is the single to-do store
+(`tasks.yaml`); recurring tasks are set up (gym 3×/wk, stretching 2×/day, plants every 3 days,
+monthly bills). Live checks all pass. Added the same day: waking-day ✓ Today, "Done, but…",
+Drop with a reason, task durations (stated/estimated), the close gate, and `write_log` refusing
+guessed completions. **Owed decisions (Mike):** the medication safety flag's home (recommended:
+a line in `ROADMAP.md` § 0 clause 8's before-Alpha note) and whether `check_inbox_6h` goes
+(recommended: watch a week). **Not built:** the user-adjustable day boundary (plan § 6.4); editing
+a day-log entry in conversation does not exist. Plans:
+[task_ledger_plan_2026-10-23.md](archive/plans/task_ledger_plan_2026-10-23.md),
+[reply_latency_plan_2026-10-24.md](archive/plans/reply_latency_plan_2026-10-24.md).
 
 **A9 — built and deployed 2026-08-18; `@waiting` on real use, review `2026-10-01`.** Spec, the
 five provisional parts and the date: [ROADMAP.md](ROADMAP.md) § A9a, the single home.
