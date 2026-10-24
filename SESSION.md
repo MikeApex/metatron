@@ -1,6 +1,6 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-10-24. **VM at `3515373`** (deployed; includes the task ledger `27c570f`). **Calendar: Metatron now reads every calendar the account exposes** — Metatron, the
+*Updated: 2026-10-24. **VM at `723bbda`** (deployed; includes the task ledger `27c570f`). **Calendar: Metatron now reads every calendar the account exposes** — Metatron, the
 account's own, UK holidays, "Shared with Mike" — and an event on two calendars shows once, the
 Metatron copy winning, other values kept as `discrepancies`. Only `read_calendar` and the
 write-time conflict check widen; unattended jobs stay on the Metatron calendar. Which calendars
@@ -8,7 +8,7 @@ are read is set at Google's syncselect page; `discover_calendars: false` in `cal
 kill switch (`archive/PROJECT_LOG.md` § 2026-10-24). **Owed:** Mike's live check ("what's on my
 calendar the week of 9 Nov?" — John Ball once, shared events present); the two old Metatron copies
 (John Ball, Jimmy Carr) show twice in Google Calendar — left as they are (Mike, 10-24). Live test
-scripts now refuse non-interactive starts without `METATRON_LIVE=1` (`a70ead7`). **Repeating events now land on their real dates** (`bbc741b`, owes `./deploy.sh`): each
+scripts now refuse non-interactive starts without `METATRON_LIVE=1` (`a70ead7`). **Repeating events now land on their real dates** (`bbc741b`, deployed, Mike's live check passed): each
 series row carries `occurs_in_range`; one row per series, edits still act on the whole series. **Task ledger
 post-deploy:** `archive/handoffs/2026-10-24-task-ledger-post-deploy-prompt.md`, run in another
 window. Still open from 10-23: the "Benny" contact may be a phantom (Mike to check).*
@@ -97,7 +97,7 @@ which model runs which kind of session** (plan in Opus, review in Fable, build i
 ### Built
 **The Phase 5 catalogue moved out on 2026-09-18 — it was finished work, and a primer holds state.**
 What exists: [CODEBASE_INDEX.md](CODEBASE_INDEX.md). When and why each piece was built:
-[archive/PROJECT_LOG.md](archive/PROJECT_LOG.md). Everything committed is deployed (VM `3515373`).
+[archive/PROJECT_LOG.md](archive/PROJECT_LOG.md). Everything committed is deployed (VM `723bbda`).
 
 ### In progress / next
 

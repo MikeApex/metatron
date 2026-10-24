@@ -30,7 +30,7 @@ file is the only narrative record, alongside the verbatim transcripts.*
 
 ## Dated history
 
-### 2026-10-24, second (repeating events on the days they actually happen) — `bbc741b` — **committed; owes `./deploy.sh`**
+### 2026-10-24, second (repeating events on the days they actually happen) — `bbc741b` — **deployed by Mike; live check passed**
 
 **Found by Mike's live check of the multi-calendar build (`fccbc1e`, deployed `3515373`).** Asked
 for the week of 9 Nov, Metatron got John Ball right (merged, once) and **left out all eight of that
@@ -60,6 +60,11 @@ travel check** (Fable's second-round catch: those had still selected by master d
 local — unreadable EXDATE/RECURRENCE-ID was silently skipped, now marks the row unknown). 42 tests,
 13 of the new ones failing on the deployed code first. Live in-memory run on the VM: all eight real
 series land on the right dates; a Mon 18:45 booking now overlaps Karate.
+
+**Live check after deploy (Mike):** the week of 9 Nov came back with every series on its day —
+Karate Mon, Carmit and swim Fri, Gan and credit-card Sun — beside the one-offs. Trash (Sun 19:00)
+and the school-week review (Sun, all-day) were in the data but left out by the model, read as
+chores; left as is unless Mike wants chores in week summaries (a Synthesizer/Logistics wording call).
 
 ### 2026-10-24 (every calendar on the account, one event per event — and a live probe started by accident) — `fccbc1e` deployed by Mike, `a70ead7` (tests only) + this close-out
 
