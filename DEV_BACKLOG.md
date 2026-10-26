@@ -1283,6 +1283,9 @@ evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording â
 unintended email to be sent" â€” is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
 
+- **[a specialist missed a signal it should have caught]** The previous exchange failed to complete properly, leading to an incomplete assistant response that asked the user to ask again.  
+  `2026-10-26T19:17:33.779066Z`
+
 - **[a specialist missed a signal it should have caught]** Repeated system failure to complete response on scheduled quiet check-in, causing truncated output.  
   `2026-10-26T18:38:32.926955Z`
 

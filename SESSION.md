@@ -1,7 +1,9 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-10-26, second. **VM at `1a32687` — everything committed is deployed** (the
-`24d5c24` silent-mic APK: sideload if not yet done, log § 2026-10-26). **The day planner's round
+*Updated: 2026-10-26, third. **VM at `de60881`, all deployed.** Replies no longer come back cut,
+blank or leaking internal text (thinking and reply shared a 4,096 ceiling; now 8,192; **the 3.8-flash
+thinking budget is not enforced**) — day-after check `[DB-1026-01]`, due 10-29; log § 10-26, third.
+(Silent-mic APK `24d5c24`: sideload if not yet done.) **The day planner's round
 2** (`8d5993a` + three fixes): watch day 1 failed four of five checks, so the plan was rebuilt
 around a dynamic per-user day shape (activity windows, routines, meals, a calendar roster, event
 rules — universal; Mike's answers are data), event triage (shared-calendar events become
@@ -95,7 +97,7 @@ which model runs which kind of session** (plan in Opus, review in Fable, build i
 ### Built
 **The Phase 5 catalogue moved out on 2026-09-18 — it was finished work, and a primer holds state.**
 What exists: [CODEBASE_INDEX.md](CODEBASE_INDEX.md). When and why each piece was built:
-[archive/PROJECT_LOG.md](archive/PROJECT_LOG.md). Everything committed is deployed (VM `1a32687`).
+[archive/PROJECT_LOG.md](archive/PROJECT_LOG.md). Everything committed is deployed (VM `de60881`).
 
 ### In progress / next
 

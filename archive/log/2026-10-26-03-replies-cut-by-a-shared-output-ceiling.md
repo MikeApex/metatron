@@ -1,4 +1,6 @@
-### 2026-10-26, third (replies cut short, blank or leaking internal text — thinking and reply shared one 4,096-token ceiling) — `core/orchestrator.py`, `core/trace.py`, `tests/test_native_stream_limits.py` — **uncommitted; Mike commits and deploys**
+### 2026-10-26, third (replies cut short, blank or leaking internal text — thinking and reply shared one 4,096-token ceiling) — `core/orchestrator.py`, `core/trace.py`, `tests/test_native_stream_limits.py` — `de60881` — **committed, pushed, deployed by Mike in-session**
+
+**Outgoing handoff carried:** day-planner watch day 2 then Stage B, and the ritual-pause handoff — both unchanged; this session touched neither.
 
 **The report (Mike):** "I did what I could on that, but couldn't finish the reply" at 18:22 and on
 other recent turns, plus messages that read like Metatron's internal text.
