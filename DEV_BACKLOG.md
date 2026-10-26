@@ -1257,6 +1257,42 @@ evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording �
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
 
+- **[user corrected a prior turn]** User corrected a misheard name or location: Wavelength Spool -> Wavelengths Pool  
+  `2026-10-26T09:53:38.175143Z`
+
+- **[user corrected a prior turn]** The previous turn outputted raw unexecuted system text/garbage due to a system glitch or malformed prompt injection, corrupting the morning session opening.  
+  `2026-10-26T08:08:37.986601Z`
+
+- **[a specialist missed a signal it should have caught]** Scheduled session input received with no user message; handled via evening close sequence.  
+  `2026-10-25T20:00:03.649134Z`
+
+- **[a specialist missed a signal it should have caught]** Coordinated scheduled quiet check-in with no user speech input.  
+  `2026-10-25T16:34:38.901629Z`
+
+- **[user corrected a prior turn]** User corrected user-facing model behavior regarding daily focus previewing, and previous turn draft to Nopadon Don was explicitly declined by the user.  
+  `2026-10-25T13:33:53.589208Z`
+
+- **[already applied by the tool]** User instructed that daytime focus remain strictly on the current day, with tomorrow's schedule and events withheld until the evening close. Self-applied by updating Interaction Preferences in persona config.  
+  `2026-10-25T12:27:13.871978Z`
+
+- **[user corrected a prior turn]** User corrected user-facing model behaviour regarding previewing tomorrow's events prematurely during the morning.  
+  `2026-10-25T12:26:34.794831Z`
+
+- **[user corrected a prior turn]** User corrected system behavior regarding previewing tomorrow's events in morning messages ('address the fact that you're presenting things for tomorrow's events today. I'd really like everything to be focused on today, and that should be an overall user default to focus on the day, not preview tomorrow until the evening close').  
+  `2026-10-25T12:03:14.781582Z`
+
+- **[user corrected a prior turn]** User corrected misheard word 'homeless' to hummus in previous turn.  
+  `2026-10-25T08:48:15.200491Z`
+
+- **[user corrected a prior turn]** User corrected misheard word 'row and' to 'Rowan' for Rowan's monthly payroll transfer.  
+  `2026-10-25T08:39:09.175426Z`
+
+- **[user corrected a prior turn]** User corrected name 'Rosen Crown Pub' which was misheard or conflated with 'Rowan' by contact matcher note; corrected form is Rosen Crown Pub.  
+  `2026-10-25T08:35:25.070956Z`
+
+- **[a specialist missed a signal it should have caught]** Scheduled prompt arrived with instructions that failed or were interrupted, causing a prompt loop or broken scheduled response  
+  `2026-10-24T19:57:37.236809Z`
+
 - **[a capability gap was filed]** BLD-1024-03 (construct): Plan, coordinate, book, and track a multi-party trip including visa applications, stakeholder sign-offs, and flight/hotel bookings with advance timeline management.  
   `2026-10-24T16:13:53.255047Z`
 
@@ -1290,8 +1326,8 @@ entry is a symptom, never a diagnosis.)*
 - **[user corrected a prior turn]** User asked for details on TfL refund task (ob_261013_843d68) and requested alternate pubs near Crossharbor DLR for Tuesday meeting with Rowan Hand, and noted Schwab task should be removed from outstanding display until Monday.  
   `2026-10-24T10:45:11.210713Z`
 
-- **[a specialist missed a signal it should have caught]** Routed user message to Coordinator instead of Synthesizer on the previous turn's scheduled prompt, causing a routing miss.  
-  `2026-10-24T10:22:38.182883Z`
+- **[a specialist missed a signal it should have caught]** Coordinator incorrectly routed a scheduled prompt (Manny's school check-in) directly to output instead of packaging it for the Synthesizer.  ×2  
+  `2026-10-25T16:00:21.505387Z`
 
 - **[a specialist missed a signal it should have caught]** Scheduled prompt for anticipatory logistics arrived, but the user's explicit question from the prior turn about the Schwab Treasury notes ($6,000) remains unresolved and needs answering before opening a new thread.  
   `2026-10-24T09:00:18.420914Z`
@@ -1590,8 +1626,8 @@ entry is a symptom, never a diagnosis.)*
 - **[user corrected a prior turn]** ```  
   `2026-09-25T06:30:20.812316Z`
 
-- ⚠ **[a specialist missed a signal it should have caught]** The scheduled prompt 'Quiet check-in — raise it only if something matters right now.' misrouted because it evaluated as user speech instead of an internal quiet check-in, causing a routing miss where Mental Wellbeing and Physical Health should have been consulted for the scheduled session.  ×3  
-  `2026-10-24T09:56:26.287320Z`
+- ⚠ **[a specialist missed a signal it should have caught]** Routed scheduled session input 'Quiet check-in — raise it only if something matters right now.' to Mental Wellbeing and Physical Health, missing the requirement to check for unlogged evening food during day-close.  ×4  
+  `2026-10-25T20:36:23.508442Z`
 
 - **[a specialist missed a signal it should have caught]** Coordinator emitted natural response directly instead of routing package for synthesizer in quiet check-in.  
   `2026-09-24T19:39:08.196992Z`
