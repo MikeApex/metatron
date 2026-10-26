@@ -201,6 +201,56 @@ def _():
     assert out == O._NO_REPLY_LINE, out
 
 
+@check("the output ceiling leaves reply room above the thinking budget (the ceiling is still shared)")
+def _():
+    # 09-17 → 10-26: thinking + reply = 4,092 at a shared 4,096 ceiling left ~160 tokens to say
+    # anything, and some turns nothing at all.
+    _reset()
+    seen = []
+    client = _FakeClient([lambda: [_Chunk([_text("ok")])]])
+    real = client.models.generate_content_stream
+    client.models.generate_content_stream = lambda model, contents, config: (
+        seen.append(config) or real(model, contents, config))
+    _run(client, thinking_budget=O._SYNTH_THINKING_BUDGET)
+    assert seen[0].max_output_tokens == O._SYNTH_THINKING_BUDGET + O._REPLY_OUTPUT_TOKENS, \
+        seen[0].max_output_tokens
+    assert O._max_output_tokens(None) == O._REPLY_OUTPUT_TOKENS
+
+
+@check("the forced reply's instruction is its own user turn, never merged into the tool results")
+def _():
+    # A merged turn (function responses + text) is refused by Vertex with a 400 — probed
+    # 2026-10-26 — which turned every round-cap exit into the fixed line.
+    _reset()
+    seen = []
+    rounds = [lambda: [_Chunk([_call("probe_tool")])]] * O._SYNTH_MAX_ROUNDS
+    client = _FakeClient(rounds + [lambda: [_Chunk([_text("Done.")])]])
+    real = client.models.generate_content_stream
+    client.models.generate_content_stream = lambda model, contents, config: (
+        seen.append(list(contents)) or real(model, contents, config))
+    out, _ = _run(client)
+    last, prev = seen[-1][-1], seen[-1][-2]
+    assert out == "Done.", out
+    assert last.role == "user" and [p.text for p in last.parts] == [O._FINAL_REPLY_PROMPT]
+    assert prev.role == "user" and all(p.function_response for p in prev.parts), prev.parts
+
+
+@check("a cut-reply event fires at the hard ceiling, not at the overshot thinking budget")
+def _():
+    events = []
+    import tools.logger as L
+    real = L.write_quality_event
+    L.write_quality_event = lambda kind, **k: events.append(kind)
+    try:
+        b = O._SYNTH_THINKING_BUDGET
+        O._note_thinking_cap_hit(b, 5673, 485, 1)          # overshoot, reply whole: silent
+        assert events == [], events
+        O._note_thinking_cap_hit(b, O._max_output_tokens(b) - 300, 290, 1)  # at the ceiling
+        assert events == ["THINKING_CAP_HIT"], events
+    finally:
+        L.write_quality_event = real
+
+
 @check("capacity errors are told apart from the rest")
 def _():
     assert O._is_capacity_error(_Capacity("x"))

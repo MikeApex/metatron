@@ -3347,6 +3347,11 @@ def _pad_for_vertex_cache(system_prompt: str) -> str:
 # the read saving without shrinking storage — re-run this table before assuming the
 # window survives. Rates and the 2027 step live in config/modules/spend_guard.yaml.
 _VERTEX_CACHE_TTL_MINUTES = 10
+# A create runs on the user's turn, before the Synthesizer speaks. Bounded only by the 300 s
+# client default, one hung for 301 s on 2026-10-26 and took the whole 150 s soft deadline with
+# it, so the reply never came. Past this the turn runs uncached (the existing fallback) — that
+# call bills its prefix at the full input rate, which is the whole cost of giving up.
+_CACHE_CREATE_TIMEOUT_MS = 30_000
 # Refresh only when this much or less is left — so a median burst needs zero
 # refresh calls, and a sustained one needs at most one per five minutes.
 _VERTEX_CACHE_REFRESH_MARGIN_MINUTES = 5
@@ -3638,6 +3643,7 @@ def _get_or_create_vertex_cache(
                 system_instruction=_pad_for_vertex_cache(system_prompt),
                 expire_time=expires_at,
                 display_name=_vertex_cache_owner(),
+                http_options=types.HttpOptions(timeout=_CACHE_CREATE_TIMEOUT_MS),
                 **({"tools": gemini_tools} if gemini_tools else {}),
             )
             cache = client.caches.create(model=model_name, config=cache_config)
@@ -4142,15 +4148,36 @@ def _gemini_user_parts(types, user_input: str, attachments: list[dict] | None) -
 
 # Thinking cap for the Synthesizer — insurance, not economy ([DB-0827-02], decided
 # 2026-08-27). The probe (archive/plans/synthesizer_thinking_probe_2026-08-27.md)
-# measured 105 live replies: max observed thinking was 3,930 tokens with no tail
-# above it, so 4096 clips nothing today and costs quality nothing. What it buys is
-# a bound: before this, no thinking_config existed anywhere in the codebase and
-# max_output_tokens does NOT limit thinking on Gemini — a regression toward
-# runaway thinking would have billed silently at $12/M. Do not lower this for
-# cost; the probe measured the whole exposure at ~$0.26/day. A latency-motivated
-# cap (1,024–1,536) would touch 60–85% of replies and is a quality experiment,
-# not a config edit.
+# measured 105 live replies with max thinking 3,930 — later shown to be the shared
+# output ceiling, not the model's range (see _REPLY_OUTPUT_TOKENS). Before this, no
+# thinking_config existed anywhere in the codebase. Do not lower this for cost; the
+# probe put the whole exposure at ~$0.26/day, measured UNDER that ceiling — with it
+# lifted, per-round thinking can run to ~2× that. A
+# latency-motivated cap (1,024–1,536) would touch 60–85% of replies and is a
+# quality experiment, not a config edit.
+# **On gemini-3.8-flash this is a target, not a bound** (probed 2026-10-26: budget 1,024
+# thought 2,664; budget 4,096 with room thought 5,673). The hard bound is max_output_tokens.
 _SYNTH_THINKING_BUDGET = 4096
+
+# Visible reply room, ON TOP of the thinking budget. **Thinking and the reply share one
+# max_output_tokens ceiling on Gemini 3.x** — the probe's "3,930 max, no tail" was that
+# ceiling, not the model's range: 09-17 → 10-26, every capped Synthesizer round read
+# thinking + output = 4,092 ± 5 at max_output_tokens=4096 (~1 round in 4, up to 9 a day).
+# The reply was left ~160 tokens: cut mid-sentence, a [CONTEXT] block cut so the tracker
+# never updated, thinking or prompt text emitted as the reply, or nothing at all
+# (_NO_REPLY_LINE). Output is billed as produced, so the headroom costs only what is said.
+# Not 2,048: the budget overruns (above), and a probe at budget 4,096 used 6,158 in total.
+# Ceiling 8,192 bounds a runaway round at ~$0.03 (3.8-flash output $3.75/M).
+_REPLY_OUTPUT_TOKENS = 4096
+
+
+def _max_output_tokens(thinking_budget: int | None) -> int:
+    return _REPLY_OUTPUT_TOKENS + (thinking_budget or 0)
+
+
+def _finish_name(reason) -> str:
+    """A google-genai FinishReason as a plain string for the trace ("" when absent)."""
+    return "" if reason is None else str(getattr(reason, "name", reason))
 
 # Reply-path limits (archive/plans/reply_latency_plan_2026-10-24.md § 3). Until these existed
 # no model call anywhere had a timeout: on 2026-10-24 one Synthesizer call waited 586 s and the
@@ -4211,17 +4238,19 @@ def _past_soft_deadline() -> bool:
 
 
 def _note_thinking_cap_hit(thinking_budget: int | None, thinking_tokens: int,
-                           turn_num: int) -> None:
+                           output_tokens: int, turn_num: int) -> None:
     """
-    Record a quality event when a reply's thinking lands at the cap.
+    Record a quality event when a reply was cut at the output ceiling.
 
-    The probe said the tail does not exist — so a cap hit is exactly the case
-    worth a record: either the distribution moved or a pathological reply was
-    clipped, and both deserve a human look. The 64-token margin exists because a
-    clipped run reports a count at or just under the budget, not exactly on it.
-    Never raises: a telemetry write must not take down a live reply.
+    Keyed on the HARD ceiling (thinking + output), not the thinking budget: on
+    gemini-3.8-flash the budget is a target the model overshoots (probed 2026-10-26),
+    so a budget-keyed event would fire on replies that were never cut. Before that
+    date this keyed on the budget and never fired — the shared 4,096 ceiling stopped
+    thinking at ~3,930. The 64-token margin covers counts reported just under the
+    ceiling. Never raises: a telemetry write must not take down a live reply.
     """
-    if not thinking_budget or thinking_tokens < thinking_budget - 64:
+    ceiling = _max_output_tokens(thinking_budget)
+    if not thinking_budget or thinking_tokens + output_tokens < ceiling - 64:
         return
     try:
         from tools.logger import write_quality_event
@@ -4230,13 +4259,13 @@ def _note_thinking_cap_hit(thinking_budget: int | None, thinking_tokens: int,
         write_quality_event(
             "THINKING_CAP_HIT",
             source_agent=agent,
-            detail=(f"thinking hit the {thinking_budget}-token budget "
-                    f"(reported {thinking_tokens}, turn {turn_num}). The 2026-08-27 "
-                    f"probe found no replies above 3,930 — a cap hit means the "
-                    f"distribution moved or a reply was clipped; check its quality."),
+            detail=(f"reply cut at the {ceiling}-token output ceiling (thinking "
+                    f"{thinking_tokens} + reply {output_tokens}, turn {turn_num}). "
+                    f"Thinking overshoots its {thinking_budget} budget on this model; "
+                    f"check whether the reply arrived whole."),
         )
-        logger.warning(f"[thinking_cap] {agent} hit budget={thinking_budget} "
-                       f"reported={thinking_tokens} turn={turn_num}")
+        logger.warning(f"[thinking_cap] {agent} cut at ceiling={ceiling} "
+                       f"thinking={thinking_tokens} output={output_tokens} turn={turn_num}")
     except Exception:
         logger.warning("[thinking_cap] failed to record cap-hit quality event", exc_info=True)
 
@@ -4281,13 +4310,13 @@ def _run_gemini_native_loop(client, model_name: str,
         # Tools and system_instruction are baked into the cache — must not repeat them here.
         config = types.GenerateContentConfig(
             cached_content=cached_content,
-            max_output_tokens=4096,
+            max_output_tokens=_max_output_tokens(thinking_budget),
             **_think_kwarg,
         )
     else:
         config = types.GenerateContentConfig(
             system_instruction=system_prompt,
-            max_output_tokens=4096,
+            max_output_tokens=_max_output_tokens(thinking_budget),
             **_tools_kwarg,
             **_think_kwarg,
         )
@@ -4314,7 +4343,7 @@ def _run_gemini_native_loop(client, model_name: str,
             input_tokens = getattr(response.usage_metadata, "prompt_token_count", 0) or 0
             output_tokens = getattr(response.usage_metadata, "candidates_token_count", 0) or 0
             thinking_tokens = _thinking_tokens_gemini(response.usage_metadata)
-            _note_thinking_cap_hit(thinking_budget, thinking_tokens, turn_num)
+            _note_thinking_cap_hit(thinking_budget, thinking_tokens, output_tokens, turn_num)
             cache_read = getattr(response.usage_metadata, "cached_content_token_count", 0) or 0
             cumulative_input_tokens += input_tokens
             _cache_suffix = f" cache_read={cache_read}" if cache_read else ""
@@ -4338,7 +4367,8 @@ def _run_gemini_native_loop(client, model_name: str,
 
         if hasattr(response, "usage_metadata") and response.usage_metadata:
             _tr.record_turn_tokens(_tr.get_current_agent(), turn_num, input_tokens, output_tokens, thinking_tokens,
-                                   output_text="\n".join(text_parts), cached_tokens=cache_read)
+                                   output_text="\n".join(text_parts), cached_tokens=cache_read,
+                                   finish_reason=_finish_name(response.candidates[0].finish_reason))
 
         # Capture text even when tool calls are also present — Gemini can emit text
         # and function_call in the same response. Without this, the user-facing text
@@ -4465,14 +4495,14 @@ def _run_gemini_native_stream(client, model_name: str,
         # Tools and system_instruction are baked into the cache — must not repeat them.
         config = types.GenerateContentConfig(
             cached_content=cached_content,
-            max_output_tokens=4096,
+            max_output_tokens=_max_output_tokens(thinking_budget),
             **_think_kwarg,
             **_timeout_kwarg,
         )
     else:
         config = types.GenerateContentConfig(
             system_instruction=system_prompt,
-            max_output_tokens=4096,
+            max_output_tokens=_max_output_tokens(thinking_budget),
             **({"tools": gemini_tools} if gemini_tools else {}),
             **_think_kwarg,
             **_timeout_kwarg,
@@ -4505,6 +4535,7 @@ def _run_gemini_native_stream(client, model_name: str,
         fc_parts: list = []
         text_parts: list[str] = []
         usage = None
+        finish = None
 
         attempt = 0
         while True:
@@ -4517,6 +4548,7 @@ def _run_gemini_native_stream(client, model_name: str,
                         usage = chunk.usage_metadata
                     if not chunk.candidates:
                         continue
+                    finish = getattr(chunk.candidates[0], "finish_reason", None) or finish
                     cand_content = chunk.candidates[0].content
                     if cand_content is None or not cand_content.parts:
                         continue
@@ -4539,6 +4571,7 @@ def _run_gemini_native_stream(client, model_name: str,
                                    f"retrying once in {_CAPACITY_RETRY_PAUSE_S:.0f}s")
                     time.sleep(_CAPACITY_RETRY_PAUSE_S)
                     usage = None
+                    finish = None
                     continue
                 if not capacity and not emitted and not dispatched:
                     raise   # nothing done yet: the caller's compat fallback is safe
@@ -4560,7 +4593,7 @@ def _run_gemini_native_stream(client, model_name: str,
             input_tokens = getattr(usage, "prompt_token_count", 0) or 0
             output_tokens = getattr(usage, "candidates_token_count", 0) or 0
             thinking_tokens = _thinking_tokens_gemini(usage)
-            _note_thinking_cap_hit(thinking_budget, thinking_tokens, turn_num)
+            _note_thinking_cap_hit(thinking_budget, thinking_tokens, output_tokens, turn_num)
             cache_read = getattr(usage, "cached_content_token_count", 0) or 0
             cumulative_input_tokens += input_tokens
             _cache_suffix = f" cache_read={cache_read}" if cache_read else ""
@@ -4572,7 +4605,7 @@ def _run_gemini_native_stream(client, model_name: str,
                 _trace(f"[TOKEN] turn={turn_num} input={input_tokens} cumulative={cumulative_input_tokens}{_cache_suffix}")
             _tr.record_turn_tokens(_tr.get_current_agent(), turn_num, input_tokens, output_tokens,
                                    thinking_tokens, output_text="".join(text_parts),
-                                   cached_tokens=cache_read)
+                                   cached_tokens=cache_read, finish_reason=_finish_name(finish))
 
         if text_parts:
             result = "".join(text_parts)
@@ -4653,14 +4686,11 @@ def _final_reply_round(client, model_name: str, contents: list, config, types) -
     (they are baked into the cache), so the instruction carries it and any call the model
     returns anyway is ignored, not run. No retry: if this fails, the caller says
     _NO_REPLY_LINE. Returns the text, or ""."""
-    ask = types.Part(text=_FINAL_REPLY_PROMPT)
-    if contents and contents[-1].role == "user":
-        # The tool results are the last user turn; the instruction rides in it rather than
-        # forming a second consecutive user turn.
-        contents = contents[:-1] + [types.Content(role="user",
-                                                  parts=list(contents[-1].parts or []) + [ask])]
-    else:
-        contents = contents + [types.Content(role="user", parts=[ask])]
+    # Its own user turn, never merged into the tool-results turn: Vertex rejects a turn mixing
+    # function responses with text as "Requests ending with a model turn are not supported"
+    # (probed 2026-10-26 on gemini-3.8-flash — merged 400s, a separate user turn answers). Until
+    # then every round-cap or soft-deadline exit ended in _NO_REPLY_LINE.
+    contents = contents + [types.Content(role="user", parts=[types.Part(text=_FINAL_REPLY_PROMPT)])]
     out: list[str] = []
     try:
         for chunk in client.models.generate_content_stream(

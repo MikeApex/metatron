@@ -68,6 +68,9 @@ class TurnRecord:
     cached_tokens: int = 0
     output_text: str = ""
     thinking_text: str = ""
+    # Why the provider stopped (e.g. STOP, MAX_TOKENS). Empty where a path does not report
+    # it. Absent until 2026-10-26, which hid a month of replies cut at the output ceiling.
+    finish_reason: str = ""
     tool_calls: list[ToolCallRecord] = field(default_factory=list)
 
 
@@ -270,10 +273,11 @@ def record_turn_tokens(rec: AgentRecord | None, turn_num: int,
                        input_tokens: int, output_tokens: int,
                        thinking_tokens: int = 0,
                        output_text: str = "", thinking_text: str = "",
-                       cached_tokens: int = 0) -> None:
+                       cached_tokens: int = 0, finish_reason: str = "") -> None:
     if rec is None:
         return
     tr = rec.ensure_turn(turn_num)
+    tr.finish_reason = finish_reason
     tr.input_tokens = input_tokens
     tr.output_tokens = output_tokens
     tr.thinking_tokens = thinking_tokens
@@ -367,6 +371,7 @@ def _agent_to_dict(a: AgentRecord) -> dict:
                 "cached_tokens": tr.cached_tokens,
                 "output_text": tr.output_text,
                 "thinking_text": tr.thinking_text,
+                "finish_reason": tr.finish_reason,
                 "tool_calls": [
                     {
                         "name": tc.name,

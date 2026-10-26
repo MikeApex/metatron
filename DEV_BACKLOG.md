@@ -75,6 +75,9 @@ back-tagging the rest is `[DB-0815-10]`.
 > against `git log` before promoting anything from here.
 *(empty — last triaged 2026-09-05; evidence in `archive/backlog_closed_2026-09.md`)*
 
+- **[instruction change]** User requested daily prompt/logging cadence: record step count, sleep, and diet every day, including checking in on meals and snacks 2-3 times per day.  
+  `2026-10-26T13:44:51.823161Z`
+
 - **[instruction change]** User requested that tasks rescheduled for a future date (specifically ob_260915_50a247 deferred to Monday 2026-10-26) should be removed from the active/outstanding tasks view and not treated or surfaced as outstanding until their due date arrives.  
   `2026-10-24T10:56:58.155907Z`
 
@@ -166,7 +169,6 @@ flag — which would send a turn containing only the cue.
 - **Check 2026-10-31: is the `check_inbox_6h` Logistics job redundant? If so, delete it.** Kept on 10-23 when its twin was deleted; `logistics.md` already says standing triage is the intake sweep's job. It costs ~67 runs a month at ~96k tokens each on the bulk tier, and on 10-24 one 73 s run overlapped a user turn. Watch a week of task creation from mail: if every task it files also arrives through the intake queue, delete it (Mike approves, as a schedule change). Mike asked for this item, 2026-10-24.
 
 ---
-
 ## Now
 
 **Ranked — position is priority.** Capped at ~10, so something enters by displacing something.
@@ -564,6 +566,30 @@ with a date.** Nothing new joins this group open-ended.*
   *filed 2026-08-14 by Mike · timestamp half closed 2026-08-15 · measured 2026-09-03 · ruling
   2026-09-05, build dispatched*
   `due: 2026-09-12`
+
+- **[DB-1026-01] Replies came back cut short, blank ("couldn't finish the reply") or leaking
+  internal text — the fix needs one day of real use to confirm.** Thinking and reply shared one
+  4,096-token output ceiling, which cut about one final reply in five. Separately, the fallback
+  "just reply" step always returned a 400. Fixed: an 8,192 ceiling, the fallback instruction sent
+  as its own turn, cache creation capped at 30 s, and `finish_reason` recorded on every native
+  turn. Record: `archive/log/2026-10-26-03-replies-cut-by-a-shared-output-ceiling.md`.
+  @waiting: `./deploy.sh` (Mike), then one ordinary day of use
+  **Check (VM traces + conversations for the day after deploy):**
+  1. **No Synthesizer turn with `finish_reason` `MAX_TOKENS`.**
+  2. **No reply that opens mid-sentence, or with `{` or `[CONTEXT]`.**
+  3. **No `_NO_REPLY_LINE` unless a timeout or 5xx explains it in the journal.** Also: no
+     `[reply_limits] final reply round failed` lines.
+  4. **Thinking stays within the new ceiling.** Note the spread of Synthesizer `thinking_tokens`,
+     and any `THINKING_CAP_HIT` events — the budget is not enforced, so this measures it.
+  5. **Count the Synthesizer's 75 s timeouts.** Count `[reply_limits] round N capacity
+     failure` (ReadTimeout) per day, and the P99 single-round latency, against the week before.
+     Longer thinking moves the tail toward the 75 s limit, which was set when the old ceiling was
+     in place.
+  **Pass** = 1–3 clean and 5 not clearly worse, so close. **Fail** = any of 1–3, so reopen with
+  the turn. 5 alone failing re-measures `_SYNTH_CALL_TIMEOUT_MS`.
+  @kind: bug
+  *filed 2026-10-26 by Mike*
+  `due: 2026-10-29`
 
 ### Unbuilt — real capability that does not exist
 
@@ -1256,6 +1282,24 @@ claim user-facing (its log-write sibling is `[DB-0829-01]`); the two Iva/Eva cor
 evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording — "causing an
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
+
+- **[a specialist missed a signal it should have caught]** Repeated system failure to complete response on scheduled quiet check-in, causing truncated output.  
+  `2026-10-26T18:38:32.926955Z`
+
+- **[user corrected a prior turn]** Previous turn USER_CORRECTION detail was raw character 'U' instead of a proper description of what was corrected.  
+  `2026-10-26T18:22:42.518840Z`
+
+- **[user corrected a prior turn]** User corrected a prior incomplete response and added new items (insurance decision by Nov 15, mover claims tomorrow, side salad at lunch)  
+  `2026-10-26T16:36:34.666881Z`
+
+- **[user corrected a prior turn]** User corrected the spelling of the grocery order to Tesco (initially transcribed or mentioned as T-E-C-T-E-S-C-O).  
+  `2026-10-26T16:16:07.907574Z`
+
+- **[user corrected a prior turn]** User corrected the system after a prior turn where the agent asked an unnecessary priority question when the user wanted a note made instead.  
+  `2026-10-26T13:43:16.271194Z`
+
+- **[a specialist missed a signal it should have caught]** Coordinator omitted specialist routing for a scheduled morning check-in that required domain data lookup and task tracking.  
+  `2026-10-26T12:16:06.982428Z`
 
 - **[user corrected a prior turn]** User corrected a misheard name or location: Wavelength Spool -> Wavelengths Pool  
   `2026-10-26T09:53:38.175143Z`
