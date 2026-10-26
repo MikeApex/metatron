@@ -2506,6 +2506,22 @@
     pumpTranscription();
   }
 
+  // A recording that failed before it could be sent. Kept in the tray, with no audio,
+  // so the failure is seen rather than vanishing; the ✕ clears it.
+  function addFailedSnippet(recordedAt, error) {
+    snippets.push({
+      key: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      recordedAt: recordedAt || Date.now(),
+      text: null,
+      state: 'failed',
+      auto: false,
+      source: 'ui',
+      error,
+    });
+    saveSnippets();
+    renderTray();
+  }
+
   // One outcome per kind of failure, because each needs a different next step: busy is
   // retried shortly, offline waits for the connection, unreadable stops.
   async function transcribeBlob(blob) {
@@ -2671,6 +2687,19 @@
   const SILENCE_MS = 2500;
   const SILENCE_RMS = 0.04;  // 0–1 normalised; tune up if triggering on background noise
 
+  // A microphone that delivers nothing at all. Android does this without an error when
+  // mic access is blocked at the system level or another app holds the mic: the stream
+  // opens and records digital silence (measured 2026-10-26: -91 dB, every phone clip
+  // for a day). Whisper then returns nothing, and the recording vanished as "No speech
+  // detected" — indistinguishable from the app doing nothing. A real mic in a quiet room
+  // still reads well above this from its own noise floor; only a dead stream sits under it.
+  // Judged only on samples taken while the AudioContext was running, and only once there
+  // are enough of them: a suspended context also reads zero, and that is not the mic.
+  const MIC_DEAD_RMS = 0.01;
+  const MIC_DEAD_MIN_SAMPLES = 5;   // × the 150ms poll
+  let micPeakRms = 0;
+  let micSamples = 0;
+
   // Headset mode replaces the silence auto-stop with a hard cap, because the two
   // cannot coexist: with the screen dark, silence would send the turn and the
   // user's own "now send it" press would then REOPEN the mic into pocket noise,
@@ -2808,6 +2837,19 @@
         return;
       }
 
+      // The mic delivered silence the whole time. Not sent: there is nothing for Whisper
+      // to hear, and an empty transcript would delete the recording without a trace.
+      // It stays in the tray as a failure, and an armed headset hears the timeout tone
+      // in place of "sent", because the screen is presumed dark.
+      if (micSamples >= MIC_DEAD_MIN_SAMPLES && micPeakRms < MIC_DEAD_RMS) {
+        audioChunks = [];
+        addFailedSnippet(recordStartedAt,
+          'The microphone picked up nothing — check microphone access, or close any app using the mic');
+        setStatus('Microphone picked up nothing', '#a44');
+        if (headsetMode) setTimeout(() => cue('timeout', TONE_TIMEOUT, BUZZ_TIMEOUT), 700);
+        return;
+      }
+
       // Sounded here rather than at the press, so a turn ended by silence announces
       // itself identically to one ended by a button — on this hardware silence is the
       // usual way a turn ends, and an unannounced send is indistinguishable from a
@@ -2828,6 +2870,8 @@
 
     mediaRecorder.start();
     recordStartedAt = Date.now();
+    micPeakRms = 0;
+    micSamples = 0;
 
     // While armed, the press is the only thing that sends (see HEADSET_MAX_RECORD_MS).
     // The cap is the backstop for a second press that never arrives.
@@ -2855,6 +2899,10 @@
         if (!isRecording) return;
         analyser.getByteFrequencyData(buf);
         const rms = Math.sqrt(buf.reduce((s, v) => s + v * v, 0) / buf.length) / 255;
+        if (audioCtx && audioCtx.state === 'running') {
+          micSamples++;
+          if (rms > micPeakRms) micPeakRms = rms;
+        }
         if (rms > SILENCE_RMS) {
           speechSeen = true;
           if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
