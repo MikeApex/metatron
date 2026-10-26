@@ -1,20 +1,18 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-10-26, fifth. **VM at `4e16f3c`, all deployed.** **A routine the user asks to drop now stays dropped** (`4e16f3c`): Mike's Franklin virtue review is paused until a one-time check-back on 2027-01-26 — **day-after check 10-27:** no catch-up in the 07:30 brief, no virtue list at 20:00; log § 10-26, fifth. Replies no longer come back cut,
-blank or leaking internal text (thinking and reply shared a 4,096 ceiling; now 8,192; **the 3.8-flash
-thinking budget is not enforced**) — day-after check `[DB-1026-01]`, due 10-29; log § 10-26, third.
-(Silent-mic APK `24d5c24`: sideload if not yet done.) **The day planner's round
-2** (`8d5993a` + three fixes): watch day 1 failed four of five checks, so the plan was rebuilt
-around a dynamic per-user day shape (activity windows, routines, meals, a calendar roster, event
-rules — universal; Mike's answers are data), event triage (shared-calendar events become
-questions) and today-only tasks; an essential task now never expires. Fable-reviewed; **Mike's
-baseline is set on the VM.** **Next:
+*Updated: 2026-10-26, sixth. **VM at `e5b895c`, all deployed.** **"Over and out" no longer drops
+what the message asked** (`e5b895c`): the Synthesizer is skipped only for a bare sign-off; a
+request, an answer, a question, a reported completion or more than 8 words runs it, with a
+one-line reply. **Live check owed:** Mike's next real "…, over and out" request gets a one-line
+confirmation and is done (log § 10-26, sixth). **Virtue review paused** to 2027-01-26 (`4e16f3c`)
+— day-after check 10-27: no catch-up at 07:30, no virtues at 20:00. Replies no longer cut or blank
+(8,192 ceiling; the thinking budget is a target, not a cap) — `[DB-1026-01]`, due 10-29.
+(Silent-mic APK `24d5c24`: sideload if not yet done.) **Next:
 `archive/handoffs/2026-10-27-day-planner-watch-2-and-stage-b-prompt.md`** — watch day 2 (Tue
-10-27), then Stage B with Mike, plus the chat's open items (the boys' school hours first).
-Record: `archive/PROJECT_LOG.md` § 2026-10-26, second. **Stage B now lands second on both
-routing files and `synthesizer.md` — keep the `pause_routine` grants and line.** Still open from
-`archive/handoffs/2026-10-25-ritual-pause-and-ledger-followups-prompt.md`: items 2–4 (10-24
-follow-ups); item 1 is done. **Still owed:** Mike's calendar live check
+10-27), then Stage B with Mike; its § 4 adds task durations (never asked — 0 of 59 stated) and
+records that the gym habit is retired and the Sunday trash event is 19:00–19:10. **Stage B lands
+second on both routing files and `synthesizer.md` — keep the `pause_routine` grants and line.**
+The 10-25 ritual-pause handoff is fully consumed. **Still owed:** Mike's calendar live check
 (week of 9 Nov — John Ball once, shared events present); the "Benny" contact may be a phantom
 (new evidence he is real: continuation prompt § 3.6); `[DB-0901-02]`, due 12-15.*
 
@@ -89,7 +87,7 @@ which model runs which kind of session** (plan in Opus, review in Fable, build i
 ### Built
 **The Phase 5 catalogue moved out on 2026-09-18 — it was finished work, and a primer holds state.**
 What exists: [CODEBASE_INDEX.md](CODEBASE_INDEX.md). When and why each piece was built:
-[archive/PROJECT_LOG.md](archive/PROJECT_LOG.md). Everything committed is deployed (VM `de60881`).
+[archive/PROJECT_LOG.md](archive/PROJECT_LOG.md). Everything committed is deployed (VM `e5b895c`).
 
 ### In progress / next
 
@@ -105,7 +103,8 @@ priority, stakes, zone, activity, monthly days — hidden until Stage B); the dy
 (`tools/day_shape.py`, design defaults in `config/modules/day_shape.yaml`, setup command); event
 triage; the Plan section; nudge mode; every Synth-facing switch off. Stage B (one Red session):
 agent file, routing, `answer_event` registration + grants, Synth/Coordinator/interviewer lines,
-scheduler jobs, then the flags — nudges a day later. **Open decision D1 (Mike):** the APK has no
+scheduler jobs, then the flags — nudges a day later; plus task durations made a code-raised ask
+(handoff § 4, Mike 10-26). **Open decision D1 (Mike):** the APK has no
 push, so nudges arrive only while the app is alive; recommendation native notifications as Stage
 C. Plan: [day_planner_plan_2026-10-24.md](archive/plans/day_planner_plan_2026-10-24.md) — § 18 is
 round 2.
