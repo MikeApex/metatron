@@ -371,6 +371,15 @@ def _gates_block(job_name: str, job_cfg: dict, cfg: dict, persona: str) -> str |
         return "not an active day"
     if not job_cfg.get("enabled", True):
         return "disabled"
+    # A check-in the user paused in conversation (tools/routines.py, 2026-10-26). Read on every
+    # fire, so a pause or resume takes effect on the next tick with no reload. Only the user's
+    # own user-facing check-ins can be paused, so this never holds Metatron's machinery.
+    try:
+        from tools.routines import paused_checkins
+        if job_name in paused_checkins(persona):
+            return "paused by the user"
+    except Exception as exc:
+        _log_error("routine_pause", str(exc), persona)
     # Quiet hours are opt-OUT, not opt-in (2026-08-15). They were opt-in until a
     # session fired at 00:11 on 2026-08-12 and opened with a four-item briefing —
     # the gate ran and passed, because that job simply never set the flag. Any job

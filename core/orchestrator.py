@@ -482,6 +482,16 @@ def _scheduled_focus_block(kind: str | None) -> str:
     if not kind:
         return ""
     lines = [_SCHEDULED_FOCUS_HEADER, "", _RITUAL_OWNERSHIP_LINE.format(kind=kind)]
+    # Routines the user paused, and any check-back now due (tools/routines.py). On every
+    # scheduled run, not only the owner's: the morning catch-up rule and earlier days' logs
+    # would otherwise bring a paused evening ritual back at breakfast.
+    try:
+        from tools.routines import focus_lines
+        paused_lines = focus_lines(kind)
+        if paused_lines:
+            lines += [""] + paused_lines
+    except Exception as exc:
+        logger.warning(f"[routines] focus lines unavailable: {exc}")
     try:
         from tools.context_tracker import note_scheduled_run
         state = note_scheduled_run(kind)
@@ -519,7 +529,8 @@ def _scheduled_focus_block(kind: str | None) -> str:
     return "\n".join(lines)
 
 
-def _owned_rituals(config_dir: Path, kind: str | None) -> list[tuple[str, str]]:
+def _owned_rituals(config_dir: Path, kind: str | None,
+                   paused: frozenset[str] = frozenset()) -> list[tuple[str, str]]:
     """
     The ritual sections this session owns, as (heading, text). Empty for every session that
     owns none — which is every user-typed turn and every scheduled job but one.
@@ -539,6 +550,9 @@ def _owned_rituals(config_dir: Path, kind: str | None) -> list[tuple[str, str]]:
     The rituals still live in config/personas/{p}/ rather than config/agents/synthesizer.md,
     because the content belongs to one user and that file is loaded by every persona
     (.claude/rules/agent-files.md § One Home Per Rule Class).
+
+    `paused` holds the file stems the user has paused (tools/routines.py, 2026-10-26): a paused
+    ritual is not injected at all, so there is nothing for the model to recite.
     """
     if not kind:
         return []
@@ -549,7 +563,7 @@ def _owned_rituals(config_dir: Path, kind: str | None) -> list[tuple[str, str]]:
         return []
     for path in paths:
         owner = path.name[: -len("_ritual.md")]
-        if not (kind == owner or kind.startswith(f"{owner}_")):
+        if not (kind == owner or kind.startswith(f"{owner}_")) or path.stem in paused:
             continue
         text = path.read_text().strip()
         if text:
@@ -627,7 +641,14 @@ def load_config(persona: str | None = None, kind: str | None = None) -> str:
     # [DB-0809-02] Generalised 2026-08-28 from evening_ritual.md alone to every `*_ritual.md`
     # in the persona's config, each owned by the schedule its filename names — see
     # `_owned_rituals()`. A scheduled job does not continue a ritual that is not its own.
-    for label, text in _owned_rituals(config_dir, kind):
+    paused: frozenset[str] = frozenset()
+    if kind:
+        try:
+            from tools.routines import paused_routines
+            paused = paused_routines(resolved)
+        except Exception as exc:
+            logger.warning(f"[routines] pause state unavailable: {exc}")
+    for label, text in _owned_rituals(config_dir, kind, paused):
         sections.append(_titled(label, text))
 
     profile = load_profile(persona=resolved)
@@ -1412,6 +1433,11 @@ def register_tools() -> tuple[list[dict], dict]:
     # Registered from Stage A, granted to no agent until Stage B — an ungranted schema is
     # filtered out of every prompt by the allowlist.
     from tools.day_shape import set_day_shape, SET_DAY_SHAPE_SCHEMA
+    # Pause/resume for the user's own routines (archive/plans/routine_pause_plan_2026-10-26.md).
+    from tools.routines import (
+        pause_routine, resume_routine, list_routines,
+        PAUSE_ROUTINE_SCHEMA, RESUME_ROUTINE_SCHEMA, LIST_ROUTINES_SCHEMA,
+    )
     from tools.day_plan import request_replan, REQUEST_REPLAN_SCHEMA
     # External-content tools. Both return their payload wrapped by tools/untrusted.py —
     # a web page and an email body are written by strangers.
@@ -1476,6 +1502,7 @@ def register_tools() -> tuple[list[dict], dict]:
         WRITE_WISHES_SCHEMA, READ_WISHES_SCHEMA, GENERATE_EMERGENCY_CARD_SCHEMA,
         OPEN_TASK_SCHEMA, UPDATE_TASK_SCHEMA, LIST_TASKS_SCHEMA,
         SET_DAY_SHAPE_SCHEMA, REQUEST_REPLAN_SCHEMA,
+        PAUSE_ROUTINE_SCHEMA, RESUME_ROUTINE_SCHEMA, LIST_ROUTINES_SCHEMA,
         READ_INTAKE_QUEUE_SCHEMA, TEACH_INTAKE_SCHEMA,
         READ_CALENDAR_SCHEMA, WRITE_CALENDAR_EVENT_SCHEMA,
         UPDATE_CALENDAR_EVENT_SCHEMA, DELETE_CALENDAR_EVENT_SCHEMA,
@@ -1571,6 +1598,9 @@ def register_tools() -> tuple[list[dict], dict]:
         "list_tasks": list_tasks,
         "set_day_shape": set_day_shape,
         "request_replan": request_replan,
+        "pause_routine": pause_routine,
+        "resume_routine": resume_routine,
+        "list_routines": list_routines,
         "read_intake_queue": read_intake_queue,
         "teach_intake": teach_intake,
         "write_quality_event": write_quality_event,
@@ -6425,6 +6455,19 @@ def check_false_action_claims(response: str,
     return claims
 
 
+def _stamp_routine_revisits(kind: str | None, visible: str, filtered: str) -> None:
+    """
+    Spend a paused routine's one check-back question (tools/routines.py) — only when the
+    reply carrying it reached the user. Called after filter_output() on both twins: a reply
+    the filter suppressed differs from `visible`, and the user never saw the question.
+    """
+    try:
+        from tools.routines import mark_revisits_raised
+        mark_revisits_raised(kind, delivered=bool(visible.strip()) and filtered == visible)
+    except Exception as exc:
+        logger.warning(f"[routines] revisit not stamped: {exc}")
+
+
 def _close_turn_bookkeeping(visible: str, user_input: str, is_proactive: bool,
                             kind: str | None) -> None:
     """
@@ -6738,6 +6781,7 @@ def run_pipeline_session(user_input: str,
         # so letting it grant exemptions would let the system unlock its own filter.
         filtered = filter_output(visible, "synthesizer",
                                  user_text=None if is_proactive else user_input)
+        _stamp_routine_revisits(kind, visible, filtered)
         # After the confidentiality filter, not before: a suppressed reply has already
         # lost its text, and the pending line still needs to reach the user.
         filtered = enforce_pending_receipt(
@@ -7136,6 +7180,7 @@ def _run_pipeline_session_stream_inner(
     # check are different outcomes with different delivery rules, so they are tracked
     # separately rather than both inferred from `filtered != visible`.
     _suppressed = filtered != visible
+    _stamp_routine_revisits(kind, visible, filtered)
     _final = filtered if _suppressed else enforce_pending_receipt(
         filtered, _pending_raised_since(_pending_before, persona))
     if history is not None:

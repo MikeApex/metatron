@@ -52,7 +52,7 @@ agents:
   synthesizer:
     local: true
     # read_wisdom + write_wisdom granted 2026-08-15 — see routing_cloud.yaml. Kept in parity.
-    allowed_tools: [run_subagent, run_model_conference, write_persona, write_profile, read_profile, write_config, write_wishes, read_wishes, generate_emergency_card, write_quality_event, write_schedule, list_schedules, delete_schedule, update_goal, open_task, update_task, list_tasks, read_wisdom, write_wisdom, teach_intake, record_wisdom_response]
+    allowed_tools: [run_subagent, run_model_conference, write_persona, write_profile, read_profile, write_config, write_wishes, read_wishes, generate_emergency_card, write_quality_event, write_schedule, list_schedules, delete_schedule, update_goal, open_task, update_task, list_tasks, read_wisdom, write_wisdom, teach_intake, record_wisdom_response, pause_routine, resume_routine, list_routines]
 
   # ── Data and analysis (local: reads/writes personal logs) ───────────────────
 

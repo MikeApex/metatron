@@ -75,6 +75,8 @@ ACTION_TOOLS: frozenset[str] = frozenset({
     "open_task", "update_task",
     # The day planner (2026-10-24): the user's stated day shape, and a request to rework today.
     "set_day_shape", "request_replan",
+    # Routine pause (2026-10-26): what runs in the user's check-ins changes until resumed.
+    "pause_routine", "resume_routine",
     "write_schedule", "delete_schedule",
     # A taught intake rule permanently changes what mail the user sees — a standing
     # config write behind the confirm gate, and unambiguously an action.
@@ -129,6 +131,7 @@ READ_TOOLS: frozenset[str] = frozenset({
     # unlike read_intake_queue below, it leaves no presentation state behind.
     "search_conversations",
     "get_log_window", "read_recent_insights",
+    "list_routines",
     "read_baseline_periods", "get_baseline_context",
     "shuffled_null_score", "score_against_anchors",
     "run_subagent", "run_model_conference",
