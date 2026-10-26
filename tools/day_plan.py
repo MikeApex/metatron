@@ -1369,6 +1369,16 @@ def _classify(prev: dict | None, day: date, now: datetime, cands: list[dict], ev
     return mode, reasons
 
 
+def _doses_done(ref: str | None) -> int:
+    """How many times a habit occurrence is recorded done (a dose habit's count)."""
+    tid, _, period = str(ref or "").partition("@")
+    O = _O()
+    t = next((O._norm(x) for x in O._load() if x.get("id") == tid), None)
+    if not t or t.get("kind") != "habit" or not period:
+        return 0
+    return int(((t.get("occurrences") or {}).get(period) or {}).get("done") or 0)
+
+
 def _ref_done(ref: str | None, copy: int = 0) -> bool:
     return _status_of(ref, copy) in ("done", "skipped", "closed")
 
@@ -1468,12 +1478,17 @@ def _build(day: date, persona: str, mode: str, reasons: list[str], prev: dict | 
     # A dose block's `copy` is its place in the day's order of that ref's blocks — the i-th
     # block is done once i+1 doses are recorded. Anything else is one task: copy 0.
     multi = {c["ref"] for c in cands if c.get("multi")}
+    # Doses recorded with no block of today's plan behind them (done before the plan placed one)
+    # come first in the count — or the dose still to do read as done (found live 2026-10-26: the
+    # second stretch showed ✓ because the first was recorded off-plan).
+    offset = {ref: max(0, _doses_done(ref) - sum(1 for b in history if b.get("ref") == ref))
+              for ref in multi}
     order: dict[str, int] = {}
     for b in blocks:
         if b["kind"] == "task":
             if b.get("ref") in multi:
-                b["copy"] = order.get(b["ref"], 0)
-                order[b["ref"]] = b["copy"] + 1
+                b["copy"] = offset.get(b["ref"], 0) + order.get(b["ref"], 0)
+                order[b["ref"]] = order.get(b["ref"], 0) + 1
             else:
                 b["copy"] = 0
     plan = {

@@ -460,6 +460,20 @@ def _():
     assert plan2["trigger"] == "repair" and not _kind(plan2, "task")[0].get("condition"), plan2["reasons"]
 
 
+@check("a dose recorded before the plan placed it does not make the dose still to do read as done")
+def _():
+    d, ids = _ready("dose_offset")
+    _CLOCK["now"] = datetime(2026, 10, 27, 11, 0)
+    assert O.update_task(f"{ids['stretch']}@2026-10-27", "done",
+                         evidence="did my stretches this morning").startswith(ids["stretch"])
+    plan = D.current(_PERSONA)
+    left = [b for b in _kind(plan, "task") if b["task_id"] == ids["stretch"] and not b.get("history")]
+    assert len(left) == 1, left
+    assert D._status_of(left[0]["ref"], left[0]["copy"]) == "open", left[0]
+    row = next(r for r in D.today_view(_PERSONA)["blocks"] if r["title"] == "Stretching")
+    assert row["status"] != "done", row
+
+
 # --- the panel ------------------------------------------------------------------------------
 
 @check("the panel reads as the user: a hold asks, a duty names itself, someone else's says so")
