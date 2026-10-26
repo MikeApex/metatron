@@ -872,10 +872,17 @@ def _main(argv: list[str]) -> int:
                     print(f"calendar discovery {status} — not applying a roster built on it")
                     return 1
             written, errors = apply_baseline(doc, cals, dry_run=a.dry_run)
+            # Found in Mike's first run (2026-10-26): a refused apply printed its plan exactly as
+            # a successful one prints what it wrote. A refusal now says so first and last.
+            refused = bool(errors) and not a.dry_run
+            if refused:
+                print("NOT APPLIED — nothing was written. Fix the errors below and run it again.")
             for line in written:
-                print(("  would write " if a.dry_run else "  ") + line)
+                print(("  would write " if a.dry_run or refused else "  ") + line)
             for e in errors:
                 print(f"  ERROR {e}")
+            if refused:
+                print("NOT APPLIED — nothing was written.")
             return 1 if errors else 0
         day = date.fromisoformat(a.arg) if a.arg else date.today()
         print(json.dumps(shape_for(day), indent=1, default=str))
