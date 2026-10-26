@@ -1068,3 +1068,8 @@ Tailscale remains on the VM for developer access. This item removes it from the 
 **Track F — Phase 7 Multi-User Architecture**, and **Section 4 — Agent Enhancement Backlogs**
 live only in the full plan. Read them there before starting work in those areas; do not
 reconstruct them from memory or from this file's omissions.
+
+**Track C additions since the static plan:** WhatsApp legal checks L4–L8 (third parties' data,
+WhatsApp/Meta terms and trademark, the clean-room licence record, app-store permissions, Vertex at
+scale) — `archive/plans/whatsapp_input_plan_2026-10-26.md` § 8a (Mike, 2026-10-26). A Phase 6B
+legal brief must include them.

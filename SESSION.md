@@ -17,15 +17,6 @@ files as Stage B; whichever lands second re-applies. **Still owed:** Mike's cale
 (week of 9 Nov — John Ball once, shared events present); the "Benny" contact may be a phantom
 (new evidence he is real: continuation prompt § 3.6); `[DB-0901-02]`, due 12-15.*
 
-*Build is unchanged since 09-26 — development, not execution (Mike): Claude Code on the Mac, Mike
-starts, approves, commits and deploys. Plan `archive/plans/build_vertical_plan_2026-09-24.md`
-**v4.12**; Phase E deployed. **F1 run 1 stopped after its first stage with two defects** (Inquiry
-named a retired agent because its file demanded an owner; no path back from an artifact that
-validates but is wrong) — full record `archive/PROJECT_LOG.md` § 2026-09-26 and
-`archive/handoffs/2026-09-26-build-phase-F1.md`. **Next: `claude update` to ≥ 2.1.271, restart,
-bench test 2** (`archive/plans/inquiry_rewrite_2026-09-26.md`). **`omitClaudeMd: true` is SILENTLY
-IGNORED below 2.1.271** — the one way bench test 2 could measure nothing while appearing to pass.*
-
 *Standing rules, each earned twice and both invisible to `qa_sweep`: **a test that exercises a seam
 for real must stub every live meter it ends in**, and **a live gate run dirties TRACKED
 fixture-persona files** (`data/personas/danny_park/…`) — `git checkout HEAD --` them before
@@ -122,6 +113,11 @@ push, so nudges arrive only while the app is alive; recommendation native notifi
 C. Plan: [day_planner_plan_2026-10-24.md](archive/plans/day_planner_plan_2026-10-24.md) — § 18 is
 round 2.
 
+**WHATSAPP INPUT — approved 10-26; Phase 0a done; next 0b + phone probes in a FRESH session**
+(`archive/handoffs/2026-10-26-whatsapp-phase-0b-clean-room-and-probes-prompt.md` — the clean room:
+never open the 10-26 WhatsApp transcripts, which hold GPL source). Then LM → second-user build →
+Phases 1–3 ([plan](archive/plans/whatsapp_input_plan_2026-10-26.md)). Mike owes: delete the `/private/tmp` reference copy.
+
 **A9 — built and deployed 2026-08-18; `@waiting` on real use, review `2026-10-01`.** Spec, the
 five provisional parts and the date: [ROADMAP.md](ROADMAP.md) § A9a, the single home.
 
@@ -138,6 +134,11 @@ none the driver refuses. Plan:
 [build_vertical_plan_2026-09-24.md](archive/plans/build_vertical_plan_2026-09-24.md) — rulings,
 sequencing, cost, kept/changed/deleted. Per-phase prompts, including E's deploy checklist:
 [build_v4_phase_prompts_2026-09-24.md](archive/plans/build_v4_phase_prompts_2026-09-24.md).
+*Unchanged since 09-26; development, not execution (Mike): he starts, approves, commits, deploys.*
+F1 run 1's two defects (Inquiry named a retired agent; no path back from an artifact that validates
+but is wrong): `archive/handoffs/2026-09-26-build-phase-F1.md`. **Next: `claude update` to ≥
+2.1.271, restart, bench test 2** (`archive/plans/inquiry_rewrite_2026-09-26.md`) — **`omitClaudeMd:
+true` is SILENTLY IGNORED below 2.1.271**, the one way bench test 2 could measure nothing.
 
 ---
 

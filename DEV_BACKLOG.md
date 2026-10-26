@@ -1283,6 +1283,9 @@ evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording â
 unintended email to be sent" â€” is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
 
+- **[user corrected a prior turn]** The previous turn attempted to update task ob_261024_6694f8@2026-W44 with action 'dismissed', which failed because the task ID format requires a base ID or proper weekly instance targeting.  
+  `2026-10-26T22:05:17.944184Z`
+
 - **[a specialist missed a signal it should have caught]** The previous exchange failed to complete properly, leading to an incomplete assistant response that asked the user to ask again.  
   `2026-10-26T19:17:33.779066Z`
 

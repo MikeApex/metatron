@@ -1,0 +1,119 @@
+{
+  "keys": {
+    "A": "9de660821140559a74163eb3aebcafd51da643b81ac9910f2f4f80d39813bb8c",
+    "B": "c4df1ac76fc0b4bbba06f6e43897de54c373b5e49841d9b1d49d337f1923f218"
+  },
+  "vectors": {
+    "v01_standard.crypt15": {
+      "ok": true,
+      "sha256": "eac8c03184bdf0fbbd801c65dc8351af8be7b3efc54df922763ef13433894279",
+      "counts": {
+        "message": 60,
+        "chat": 2,
+        "jid": 4,
+        "jid_map": 1
+      },
+      "key": "A"
+    },
+    "v02_standard_large.crypt15": {
+      "ok": true,
+      "sha256": "68a390dfeb7b47e1a3b09f3da0252901a7a7eae9d44c136e2dda8fdcee51e517",
+      "counts": {
+        "message": 6000,
+        "chat": 2,
+        "jid": 4,
+        "jid_map": 1
+      },
+      "key": "A"
+    },
+    "v03_uncompressed.crypt15": {
+      "ok": true,
+      "sha256": "eac8c03184bdf0fbbd801c65dc8351af8be7b3efc54df922763ef13433894279",
+      "counts": {
+        "message": 60,
+        "chat": 2,
+        "jid": 4,
+        "jid_map": 1
+      },
+      "key": "A"
+    },
+    "v04_no_trailer.crypt15": {
+      "ok": true,
+      "sha256": "eac8c03184bdf0fbbd801c65dc8351af8be7b3efc54df922763ef13433894279",
+      "counts": {
+        "message": 60,
+        "chat": 2,
+        "jid": 4,
+        "jid_map": 1
+      },
+      "key": "A"
+    },
+    "v05_older_header.crypt15": {
+      "ok": true,
+      "sha256": "eac8c03184bdf0fbbd801c65dc8351af8be7b3efc54df922763ef13433894279",
+      "counts": {
+        "message": 60,
+        "chat": 2,
+        "jid": 4,
+        "jid_map": 1
+      },
+      "key": "A"
+    },
+    "v06_no_feature_flag_byte.crypt15": {
+      "ok": true,
+      "sha256": "eac8c03184bdf0fbbd801c65dc8351af8be7b3efc54df922763ef13433894279",
+      "counts": {
+        "message": 60,
+        "chat": 2,
+        "jid": 4,
+        "jid_map": 1
+      },
+      "key": "A"
+    },
+    "v01_standard.crypt15#wrong_key": {
+      "ok": false,
+      "error": "wrong_key",
+      "key": "B",
+      "file": "v01_standard.crypt15"
+    },
+    "r01_tag_flipped.crypt15": {
+      "ok": false,
+      "error": "integrity",
+      "key": "A"
+    },
+    "r02_ciphertext_flipped.crypt15": {
+      "ok": false,
+      "error": "integrity",
+      "key": "A"
+    },
+    "r03_md5_trailer_flipped.crypt15": {
+      "ok": false,
+      "error": "integrity",
+      "key": "A"
+    },
+    "r04_truncated_half.crypt15": {
+      "ok": false,
+      "error": "truncated",
+      "key": "A",
+      "also_acceptable": [
+        "integrity"
+      ]
+    },
+    "r05_crypt14.crypt14": {
+      "ok": false,
+      "error": "crypt14_end_to_end_off",
+      "key": "A"
+    },
+    "r06_unknown_format.crypt15": {
+      "ok": false,
+      "error": "unknown_format",
+      "key": "A"
+    },
+    "r07_zip_payload.crypt15": {
+      "ok": false,
+      "error": "not_a_message_database",
+      "key": "A"
+    }
+  },
+  "note": "Synthetic data only. Keys A and B are throwaway test keys generated 2026-10-26 for these files and protect nothing real. Produced in clean-room session 1 by running the reference encryptor; see archive/plans/whatsapp_backup_format_2026-10-26.md section 9."
+}
