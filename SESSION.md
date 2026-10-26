@@ -1,6 +1,7 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-10-24. **VM at `1d32c4c`; `45739a2` committed, not yet deployed.** **The day
+*Updated: 2026-10-26. **VM at `1d32c4c`; `45739a2`, `24d5c24` (a silent-mic recording now says so
+in the tray, log § 2026-10-26) committed, not deployed.** **The day
 planner's Stage A** (`45739a2`): a plan for the day kept by code — every calendar, travel both ways,
 meals, tasks by priority, the user's own time protected — shown in the Today panel's new **Plan**
 section; Synth does not read it yet (all its switches off in `config/modules/day_plan.yaml`).
@@ -100,7 +101,7 @@ which model runs which kind of session** (plan in Opus, review in Fable, build i
 **The Phase 5 catalogue moved out on 2026-09-18 — it was finished work, and a primer holds state.**
 What exists: [CODEBASE_INDEX.md](CODEBASE_INDEX.md). When and why each piece was built:
 [archive/PROJECT_LOG.md](archive/PROJECT_LOG.md). Everything committed is deployed (VM `1d32c4c`)
-except the day planner's Stage A, `45739a2`.
+except `45739a2` and `24d5c24`.
 
 ### In progress / next
 
