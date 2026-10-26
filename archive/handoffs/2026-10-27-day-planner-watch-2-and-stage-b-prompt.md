@@ -97,7 +97,12 @@ push as Stage C once a week of plan-reading is trusted.
    calendar.google.com/calendar/syncselect for that account, and re-run setup with
    `"Main": mine` (it will appear as a new calendar and be left out until then).
 3. **"Take out the trash" is a one-hour event on the Metatron calendar** — it holds 19:00–20:00
-   and turns dinner into a question. Recommend Mike shortens it to 10 minutes.
+   and turns dinner into a question. **Mike asked for this on 10-26 at 11:43** ("only takes about
+   10 minutes… somewhere around 7 p.m. You may have to change the calendar entries"); the reply
+   was one of the cut-short ones (`de60881`) and the length was never changed. The series
+   (`0def9afe-…@ai-life-manager`, weekly Sunday 19:00) was to be set to 19:00–19:10 on 10-26 by a
+   Mike-run VM command (the auto-mode guard blocks Claude's VM writes) — **check the series end is
+   19:10 before treating Sunday dinner as a question.**
 4. **The weekly grocery habit is off the plan in its first, partial week** — the Today list's rule
    (a part-week does not nag). Mike did not object; confirm it reads right once a full week starts.
 5. **The false "set" claim (10-25 08:35)** — the reply said the Chase and Rowan windows were set
@@ -109,5 +114,34 @@ push as Stage C once a week of plan-reading is trusted.
    on 10-26 — suggesting Benny is real. Put it to Mike; do not act on it.
 7. **Family mode** (code working out duties from who is home) is a planned future feature —
    recorded in memory and plan § 18.2; nothing to do now.
+
+## 4. Folded into Stage B (Mike, 2026-10-26): task durations are never asked
+
+**The need is unmet.** Task durations shipped 10-24 (`e5f3dad`, at Mike's request) so the planner
+can place each task in the day. Read on the VM 10-26: **0 of 59 tasks carry a duration Mike
+stated**; 2 carry estimates (both opened 10-26). In ~21 user turns over three days Metatron asked
+**zero times** — including the 10-26 21:30 conversation about the gym. Every untimed task is placed
+at the planner's `default_task_minutes` (30). The only mechanism is one instruction-only clause in
+`synthesizer.md` § Tools ("ask once in passing"), and it is not firing.
+
+In Stage B:
+1. **Mike gives the durations in one message** (stretching, weekly groceries, plants, the Chase
+   bill, Rowan's transfer; gym is retired — see below) → each recorded with `set_minutes` as
+   `stated`. Check `tasks.yaml` afterwards.
+2. **Make the ask code-raised, not instruction-only** — the project's pattern for a rule that
+   does not hold by instruction (cf. the TASK NOTE). Recommended: when the plan block shows a task
+   with no `minutes`, it names that task once with "no duration on file — ask once, in passing",
+   stamped per task so it is never asked twice; it lands with Stage B's plan block and
+   `synthesizer_day_plan.md`. Stage B decides the exact home. Test: an untimed task on today's
+   plan produces one ask; the answer is recorded `stated`; no second ask.
+
+**Gym:** Mike retired the gym habit for now on 10-26 21:34 (he will choose a new count when he
+picks it up). That message ended "over and out", the sign-off shortcut skipped the Synthesizer, and
+the retirement was lost — fixed in code the same night (a sign-off that carries a request now runs
+the Synthesizer; `core/orchestrator.py` both twins, `tests/test_signoff.py`). The task itself was to
+be dismissed by a Mike-run VM command — **check `ob_261024_6694f8` is `dismissed` before watch
+check 1 expects or flags any exercise block.** That fix touched the pipeline twins in
+`core/orchestrator.py` near the Synthesizer input build, not `register_tools()`; Stage B's Amber
+lines there do not overlap it.
 
 Close with `/archive`. Anything that did not pass is a backlog item with the evidence that failed.

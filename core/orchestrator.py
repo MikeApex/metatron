@@ -6270,7 +6270,8 @@ _PROACTIVE_FRAME = (
 # not sign off, chatty when you did) to a decision that needs none. The
 # Coordinator and specialists still run — a sign-off ends the conversation, not
 # the work (the diary write, the calendar entry still land). Only the Pro-tier
-# Synthesizer pass is skipped, unless a specialist raised a safety flag, in which
+# Synthesizer pass is skipped — since 2026-10-26 only for a BARE sign-off, see
+# _signoff_has_content() below — unless a specialist raised a safety flag, in which
 # case the veto below forces the normal path. The veto is code, not instruction,
 # per CLAUDE.md: a mishandled clinical flag is a hard fail regardless of how the
 # turn was classified.
@@ -6339,16 +6340,93 @@ def _is_signoff(user_text: str) -> bool:
     return total <= 2
 
 
-def _signoff_skip(spec_text: str, user_input: str, is_proactive: bool) -> bool:
-    """The full skip decision: user sign-off, real turn, and no safety flag raised."""
+# A sign-off that carries something runs the Synthesizer (2026-10-26). "A sign-off ends the
+# conversation, not the work" above stopped holding when the task ledger (2026-10-23) made the
+# Synthesizer the agent that records a task change from the user's words: skipping it drops
+# whatever the message asked. Live 2026-10-26 22:05 — "the programmer job to tomorrow, the gym
+# thing we're going to retire it for now … over and out" got the ack and neither change; 10-19
+# ("set one for the middle of March") and 10-21 (a list to remember) went the same way. Of the
+# six real sign-offs since 08-27, the three bare ones were 1-8 words and the three that carried
+# something were 39-52. Mike, 2026-10-26: "Synth shouldn't skip when there's something active
+# requested, even with over and out."
+#
+# So the skip is narrow and fails toward running. The ledger's completion note, a question in
+# the message, a question in Metatron's previous reply (the user may be answering it — the shape
+# of the 10-26 failure), more than 8 words, or a request, answer or time word each send the turn
+# through the Synthesizer, which is told by _signoff_note() to act and answer in one line. A
+# wrong run costs one short reply; a wrong skip loses what the user asked. 8 is the longest bare
+# sign-off on record; the shortest that carried something was 39 (Fable review, 2026-10-26).
+_SIGNOFF_MAX_WORDS = 8
+# The voice tray's per-snippet stamp — not something the user said. Its format is the device
+# locale's ("[Mon, Oct 26 at 9:34 PM]", "[Mon 26 Oct, 21:34]"), so it is matched by its clock time.
+_VOICE_STAMP_RE = _re.compile(r"\[[^\]\n]{3,40}?\d{1,2}[:.]\d{2}[^\]\n]{0,8}\]")
+_SIGNOFF_REQUEST_RE = _re.compile(
+    r"\b(please|can you|could you|would you|will you|remind|remember|don'?t forget|make sure|"
+    r"add|move|put|set|book|cancel|change|schedule|reschedule|send|email|text|call|ring|tell|"
+    r"retire|drop|delete|remove|mark|log|note|record|update|push|pause|resume|skip|stop|"
+    r"order|buy|pay|plan|check|find|look up|shift|switch|postpone|bring|wake|forget|scrap|"
+    r"ignore|keep|make|instead|"
+    # an answer to something Metatron proposed
+    r"yes|yeah|yep|go ahead|do it|do that|confirmed|"
+    # a time is almost always a scheduling instruction
+    r"today|tonight|tomorrow|weekend|next week|monday|tuesday|wednesday|thursday|friday|"
+    r"saturday|sunday)\b")
+
+
+def _last_assistant_text(history: list[dict] | None) -> str:
+    """The previous assistant message in `history`, or ""."""
+    for msg in reversed(history or []):
+        if isinstance(msg, dict) and msg.get("role") == "assistant":
+            return msg.get("content") if isinstance(msg.get("content"), str) else ""
+    return ""
+
+
+def _signoff_has_content(user_input: str, task_hint: str = "",
+                         prev_assistant: str = "") -> bool:
+    """Does a message ending in "over and out" ask, answer or report anything before it?"""
+    if task_hint or "?" in (prev_assistant or ""):
+        return True
+    text = _VOICE_STAMP_RE.sub(" ", user_input or "").lower()
+    if "?" in text:
+        return True
+    words = _re.findall(r"[a-z&']+", text)[:-3]   # the last three are the sign-off itself
+    if len(words) > _SIGNOFF_MAX_WORDS:
+        return True
+    return bool(_SIGNOFF_REQUEST_RE.search(" ".join(words)))
+
+
+def _signoff_skip(spec_text: str, user_input: str, is_proactive: bool,
+                  task_hint: str = "", history: list[dict] | None = None) -> bool:
+    """The full skip decision: a bare user sign-off, no safety flag raised, nothing asked.
+
+    `task_hint` is the ledger's completion note for this turn (_task_hint_block): when it
+    fired, the user's words may close a task, and only the Synthesizer records that.
+    `history` supplies Metatron's previous reply: if it asked something, this may be the answer.
+    """
     if is_proactive or not _is_signoff(user_input):
         return False
     if any(tok in spec_text for tok in _SIGNOFF_FLAG_TOKENS):
         logger.warning("[signoff] safety flag present in specialist output — "
                        "sign-off overridden, Synthesizer runs")
         return False
+    if _signoff_has_content(user_input, task_hint, _last_assistant_text(history)):
+        _trace("[PIPELINE] sign-off with a request or report — synthesizer runs, one-line reply")
+        return False
     _trace("[PIPELINE] sign-off detected — synthesizer skipped")
     return True
+
+
+def _signoff_note(spec_text: str, user_input: str, is_proactive: bool) -> str:
+    """The Synthesizer's instruction when a sign-off did not skip it because the message
+    carried something. Empty when a safety flag is present — that turn runs as normal."""
+    if is_proactive or not _is_signoff(user_input):
+        return ""
+    if any(tok in spec_text for tok in _SIGNOFF_FLAG_TOKENS):
+        return ""
+    return ("SIGN-OFF: the user ended this message with \"over and out\" — they are done for "
+            "now. Do everything the message asks or reports, then reply in one short line "
+            "confirming what was done. Ask a question only if something they asked cannot be "
+            "done without one. Raise nothing new.")
 
 
 # [DB-0815-11] The system claims actions it never took. Third confirmed instance
@@ -6720,15 +6798,20 @@ def run_pipeline_session(user_input: str,
             if "dispatched (async)" not in output
         )
 
-        # User signed off ("over and out") and nothing pressing came back from the
-        # specialists: the work is done, rest without the Pro-tier Synthesizer pass.
-        if _signoff_skip(spec_text, user_input, is_proactive):
+        # Read-only, and built before the sign-off decision: a completion note means the
+        # user's words may close a task, which only the Synthesizer records.
+        task_hint = _task_hint_block(user_input, is_proactive, history, persona)
+
+        # User signed off ("over and out") with nothing asked or reported, and nothing
+        # pressing came back from the specialists: rest without the Synthesizer pass.
+        if _signoff_skip(spec_text, user_input, is_proactive, task_hint, history):
             if history is not None:
                 history.append({"role": "user", "content": user_input})
                 history.append({"role": "assistant", "content": _SIGNOFF_ACK})
                 del history[:-10]
             _tr.finish_request_trace(_SIGNOFF_ACK)
             return _SIGNOFF_ACK
+        signoff_note = _signoff_note(spec_text, user_input, is_proactive)
 
         # Pass 2: Synthesizer — integration and user-facing response.
         # The ACTIONS block goes last, closest to the response, and is always
@@ -6739,7 +6822,6 @@ def run_pipeline_session(user_input: str,
         horizon_text = _horizon_block(persona, session=kind)
         # Mirrors the streaming twin: after the specialists, so this turn's writes are in it.
         plan_text = _day_plan_block(persona, kind, is_proactive)
-        task_hint = _task_hint_block(user_input, is_proactive, history, persona)
         synthesizer_input = (
             f"{proactive_prefix}{receipt_line}{synth_label}:\n{user_input}{attach_note}\n\n"
             f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"
@@ -6748,6 +6830,7 @@ def run_pipeline_session(user_input: str,
             + (f"\n\n{horizon_text}" if horizon_text else "")
             + (f"\n\n{plan_text}" if plan_text else "")
             + (f"\n\n{task_hint}" if task_hint else "")
+            + (f"\n\n{signoff_note}" if signoff_note else "")
             + (f"\n\n{focus_block}" if focus_block else "")
             + f"\n\n{_action_block()}"
         )
@@ -6960,8 +7043,11 @@ def _run_pipeline_session_stream_inner(
         for agent, output in specialist_outputs.items()
         if "dispatched (async)" not in output
     )
+    # Kept identical to the non-streaming twin — see _task_hint_block(). Built before the
+    # sign-off decision, which reads it.
+    task_hint = _task_hint_block(user_input, is_proactive, history, persona)
     # Sign-off skip — mirrors the non-streaming branch above; same veto, same ack.
-    if _signoff_skip(spec_text, user_input, is_proactive):
+    if _signoff_skip(spec_text, user_input, is_proactive, task_hint, history):
         if history is not None:
             history.append({"role": "user", "content": user_input})
             history.append({"role": "assistant", "content": _SIGNOFF_ACK})
@@ -6970,6 +7056,7 @@ def _run_pipeline_session_stream_inner(
         yield "[DONE]"
         _tr.finish_request_trace(_SIGNOFF_ACK)
         return
+    signoff_note = _signoff_note(spec_text, user_input, is_proactive)
 
     _trace("[PIPELINE] synthesizer  streaming")
 
@@ -6980,8 +7067,6 @@ def _run_pipeline_session_stream_inner(
     # The day plan — after the specialists, so this turn's calendar writes are repaired in the
     # same reply (Q10). Kept identical to the non-streaming twin.
     plan_text = _day_plan_block(persona, kind, is_proactive)
-    # Kept identical to the non-streaming twin — see _task_hint_block().
-    task_hint = _task_hint_block(user_input, is_proactive, history, persona)
     synthesizer_input = (
         f"{proactive_prefix}{receipt_line}{synth_label}:\n{user_input}{attach_note}\n\n"
         f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"
@@ -6990,6 +7075,7 @@ def _run_pipeline_session_stream_inner(
         + (f"\n\n{horizon_text}" if horizon_text else "")
         + (f"\n\n{plan_text}" if plan_text else "")
         + (f"\n\n{task_hint}" if task_hint else "")
+        + (f"\n\n{signoff_note}" if signoff_note else "")
         + (f"\n\n{focus_block}" if focus_block else "")
         + f"\n\n{_action_block()}"
     )

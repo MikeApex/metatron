@@ -178,3 +178,19 @@ APK sideloaded, 4/4 phone checks passed — `archive/log/2026-10-23-01-client-ou
 
 **Not closed with them:** the 10-15 *long-form recorder file upload* (held — `/transcribe` runs
 one job at a time; needs chunked background transcription).
+
+---
+
+## ✅ Check 2026-10-25: the nightly task sweep records yesterday's habits — closed 2026-10-26
+
+Passed, read on the VM 2026-10-26 (`data/personas/mike/task_history.jsonl`, 11 rows):
+
+- **10-24's daily habit:** `ob_261024_df33e1@2026-10-24` (Stretching) — `done`, 2 of 2, `partial: false`.
+- **The gym week:** `ob_261024_6694f8@2026-W43` (10-19 → 10-25) — `missed`, 0 of 3, `partial: true`,
+  so the week the ledger started part-way through is marked partial, as designed. The weekly grocery
+  habit's W43 row reads the same way.
+- **Repeat runs append nothing:** the 10-25 and 10-26 sweeps have both run since, and every row's
+  `key` is unique — no second row for any 10-24 occurrence.
+
+Origin: the task-ledger post-deploy session, 2026-10-24 (the launch prompt Mike ran asked for each
+time-gated check to leave with a date).
