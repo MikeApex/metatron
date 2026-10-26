@@ -167,8 +167,10 @@ flag — which would send a turn containing only the cue.
 - **A measured session on the Synthesizer's thinking budget — the largest latency lever left on an ordinary reply.** Replies often spend ~3.9k of the 4,096-token budget thinking (~25–30 s before the first word). A/B a lower cap on real prompts for quality before changing anything; `_SYNTH_THINKING_BUDGET`'s comment explains why it is not a cost knob. Mike agreed it is its own session (2026-10-24). (reply-latency plan § 4.4)
 - **Check 2026-10-31: are Vertex reply stalls still happening?** Count `[reply_limits]` capacity retries in the server journal since 10-24 and the share of Synthesizer calls over 60 s. If the tail is still ~2.5%+, decide option (b) of `archive/plans/reply_latency_plan_2026-10-24.md` § 7 — fall back to the bulk-tier Vertex model on a second stall (stays on Vertex terms; lower reply quality). Mike ruled retry-only for now (2026-10-24). (task-ledger post-deploy session, 2026-10-24; the launch prompt Mike ran asked for each time-gated check to leave with a date)
 - **Check 2026-10-31: is the `check_inbox_6h` Logistics job redundant? If so, delete it.** Kept on 10-23 when its twin was deleted; `logistics.md` already says standing triage is the intake sweep's job. It costs ~67 runs a month at ~96k tokens each on the bulk tier, and on 10-24 one 73 s run overlapped a user turn. Watch a week of task creation from mail: if every task it files also arrives through the intake queue, delete it (Mike approves, as a schedule change). Mike asked for this item, 2026-10-24.
+- **The Franklin virtue review kept coming back to the evening close after Mike asked to drop it — now paused; one day of real use owed to confirm it stays gone (due 2026-10-28).** Built and deployed `4e16f3c`: user-requestable pause for rituals and the user's own check-ins (`tools/routines.py`). Live 2026-10-26 22:33: Mike's request produced `pause_routine("evening_ritual", revisit="2027-01-26")` and the VM store `data/personas/mike/routine_pauses.yaml` is correct. **Closes on:** the 2026-10-27 07:30 morning brief offers no virtue catch-up, and the 2026-10-27 20:00 evening close carries no virtue list (read both replies in `data/personas/mike/traces/2026-10-27.jsonl`). Either one present → reopen with the reply text. The 2027-01-26 check-back is not this item. Raised by Claude Code, 2026-10-26, as the confirmation step for a fix Mike requested.
 
 ---
+
 ## Now
 
 **Ranked — position is priority.** Capped at ~10, so something enters by displacing something.
@@ -1282,6 +1284,12 @@ claim user-facing (its log-write sibling is `[DB-0829-01]`); the two Iva/Eva cor
 evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording — "causing an
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
+
+- **[already applied by the tool]** Paused the evening Franklin 13-point virtue review routine (evening_ritual) for three months with a revisit set for 2027-01-26 per Mike's instruction.  
+  `2026-10-26T22:34:23.393525Z`
+
+- **[user corrected a prior turn]** User corrected prior Franklin virtue review reference by explicitly asking to pause the review for three months.  
+  `2026-10-26T22:32:38.857976Z`
 
 - **[user corrected a prior turn]** The previous turn attempted to update task ob_261024_6694f8@2026-W44 with action 'dismissed', which failed because the task ID format requires a base ID or proper weekly instance targeting.  
   `2026-10-26T22:05:17.944184Z`

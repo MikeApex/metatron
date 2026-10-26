@@ -1,6 +1,6 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-10-26, third. **VM at `de60881`, all deployed.** Replies no longer come back cut,
+*Updated: 2026-10-26, fifth. **VM at `4e16f3c`, all deployed.** **A routine the user asks to drop now stays dropped** (`4e16f3c`): Mike's Franklin virtue review is paused until a one-time check-back on 2027-01-26 — **day-after check 10-27:** no catch-up in the 07:30 brief, no virtue list at 20:00; log § 10-26, fifth. Replies no longer come back cut,
 blank or leaking internal text (thinking and reply shared a 4,096 ceiling; now 8,192; **the 3.8-flash
 thinking budget is not enforced**) — day-after check `[DB-1026-01]`, due 10-29; log § 10-26, third.
 (Silent-mic APK `24d5c24`: sideload if not yet done.) **The day planner's round
@@ -11,9 +11,10 @@ questions) and today-only tasks; an essential task now never expires. Fable-revi
 baseline is set on the VM.** **Next:
 `archive/handoffs/2026-10-27-day-planner-watch-2-and-stage-b-prompt.md`** — watch day 2 (Tue
 10-27), then Stage B with Mike, plus the chat's open items (the boys' school hours first).
-Record: `archive/PROJECT_LOG.md` § 2026-10-26, second. Also next, own window: the ritual-pause
-handoff (`archive/handoffs/2026-10-25-ritual-pause-and-ledger-followups-prompt.md`) — same Red
-files as Stage B; whichever lands second re-applies. **Still owed:** Mike's calendar live check
+Record: `archive/PROJECT_LOG.md` § 2026-10-26, second. **Stage B now lands second on both
+routing files and `synthesizer.md` — keep the `pause_routine` grants and line.** Still open from
+`archive/handoffs/2026-10-25-ritual-pause-and-ledger-followups-prompt.md`: items 2–4 (10-24
+follow-ups); item 1 is done. **Still owed:** Mike's calendar live check
 (week of 9 Nov — John Ball once, shared events present); the "Benny" contact may be a phantom
 (new evidence he is real: continuation prompt § 3.6); `[DB-0901-02]`, due 12-15.*
 
@@ -97,10 +98,6 @@ and 12 SKIPPED, A8 CANCELLED (Mike, 09-02 — both fold into Mark 2; `ROADMAP.md
 as live and Mike updates that manually — do not start it). Left: B1b's calendar, web-page and
 CardDAV rows (gated on Track E), A5b/A5c, `[DB-0804-02]`. **[ROADMAP.md](ROADMAP.md) § Track A/B
 owns the per-item detail and the standing evidence.**
-
-**TASK LEDGER — live and verified 2026-10-24; finished work, recorded in `archive/PROJECT_LOG.md`
-§ 2026-10-24, fourth and fifth.** Plans: [task_ledger_plan_2026-10-23.md](archive/plans/task_ledger_plan_2026-10-23.md),
-[reply_latency_plan_2026-10-24.md](archive/plans/reply_latency_plan_2026-10-24.md).
 
 **DAY PLANNER — Stage A + round 2 deployed 2026-10-26; watch day 2, then Stage B, owed.** Synth
 runs the user's day from a plan code keeps current. Built: the engine; ledger fields (goal link,
