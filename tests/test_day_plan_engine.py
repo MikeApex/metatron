@@ -608,7 +608,8 @@ def _():
     assert len(_CALLS["send"]) == 2, _CALLS["send"]
 
 
-@check("N1: an unconfirmed essential task is placed again at most once, and checked once — a morning of ticks wakes three times")
+@check("N1, as Mike ruled 2026-10-26: an unconfirmed essential task stays on the plan all morning "
+       "— shown once, at its latest time — and wakes twice: one nudge, one check")
 def _():
     d, tid = _one_task_day("n1", what="File the VAT return", kind="deadline", due="2026-10-26",
                            minutes=30, minutes_source="stated")
@@ -623,9 +624,13 @@ def _():
         D.nudge_tick()
     plan = D.current(_PERSONA)
     blocks = [b for b in _blocks(plan, "task") if b["task_id"] == tid]
-    assert len(blocks) <= 2, [b["start"] for b in blocks]
+    # Still on the plan at noon — it has not expired.
+    assert any(not b.get("history") and b["end"] > "2026-10-26T12:00" for b in blocks), \
+        [b["start"] for b in blocks]
+    shown = [r for r in D.today_view(_PERSONA)["blocks"] if r["title"] == "File the VAT return"]
+    assert len(shown) == 1 and not shown[0]["past"], shown          # no trail of past rows
     kinds = [("check" if "check:" in c["text"] else "nudge") for c in _CALLS["send"]]
-    assert kinds.count("check") == 1 and len(kinds) <= 3, kinds
+    assert kinds.count("check") == 1 and kinds.count("nudge") == 1, kinds
 
 
 @check("S-2: a twice-daily medicine keeps its second dose after the first is recorded, and never plans a third")

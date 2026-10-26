@@ -956,6 +956,13 @@ answered from the ledger.
     personal tasks that are not computer oriented can happen with the kids. Anything that requires
     electronic devices or heavy concentration are out. Errands can usually be done with the kids."
     Stretching may happen in family time.
+11. **An essential task does not expire** (Mike, 2026-10-26, after Schwab and the job post vanished
+    from the rest of the day): "should not expire after one re-placement. Metatron should check
+    whether they were done and keep them on or work with user to decide to remove them." It is
+    moved to the next time it fits every time its time passes unconfirmed; the wakes Fable verify
+    N1 bounded are bounded instead at one start nudge and one check per task a day, and the panel
+    shows it once, at its latest time. The Synthesizer asks once whether it happened, and if not
+    whether to keep it, move it or drop it (`synthesizer_day_plan.md`).
 
 ### 18.3 The variable model (replaces § 4.2's per-user field list)
 

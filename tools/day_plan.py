@@ -1266,7 +1266,9 @@ def _suggestions(blocks: list[dict]) -> list[dict]:
         key = (b.get("ref"), b.get("copy", 0))
         if b["kind"] == "task" and b.get("essential"):
             if key in checked:
-                b = {**b, "_no_check": True}
+                # Moved after its time passed unconfirmed: it stays on the plan, quietly — the
+                # first block's nudge and check were the day's two wakes for it.
+                b = {**b, "_no_check": True, "_no_nudge": True}
             checked.add(key)
         if b.get("history"):
             # An ended essential block still owes its check (Fable diff review S-1) — the tick's
@@ -1282,6 +1284,8 @@ def _suggestions(blocks: list[dict]) -> list[dict]:
                         "ref": b.get("ref"), "title": b["title"],
                         "why": f"leave now — {b['travel']['minutes']} min by {b['travel']['mode']}"})
         elif b["kind"] == "task" and (b.get("essential") or b.get("displaced_protected")):
+            if b.get("_no_nudge"):
+                continue
             out.append({"id": f"nudge:{b['ref']}#{b.get('copy', 0)}@{s:%H%M}", "kind": "nudge",
                         "at": _iso(s), "ref": b["ref"], "copy": b.get("copy", 0),
                         "title": b["title"],
@@ -1459,10 +1463,13 @@ def _build(day: date, persona: str, mode: str, reasons: list[str], prev: dict | 
         elif prog:
             more = 0
         elif hist:
-            # At most ONE more chance a day (Fable verify N1: with no limit, an unconfirmed
-            # essential task was placed again every time its block ended — eight blocks and
-            # eight wakes by noon, the "bogged down with notifications" Mike ruled out in F2).
-            more = 1 if (c["essential"] and not _ref_done(c["ref"]) and len(hist) == 1) else 0
+            # An essential task stays on the plan until it is done or the user drops it (Mike,
+            # 2026-10-26: "should not expire after one re-placement. Metatron should check whether
+            # they were done and keep them on or work with user to decide to remove them"). What
+            # Fable verify N1 found — eight blocks and eight wakes by noon — is bounded where the
+            # wakes are made instead: one start nudge and one check per task a day
+            # (_suggestions), and one past row per task on the panel (_listed).
+            more = 1 if (c["essential"] and not _ref_done(c["ref"])) else 0
         else:
             more = c["copies"]
         if more > 0:
@@ -1744,7 +1751,17 @@ def _task_status_text(b: dict, now: datetime) -> str:
 
 
 def _listed(plan: dict) -> list[dict]:
-    return [b for b in plan.get("blocks") or [] if b["kind"] not in ("protected", "wind_down")]
+    """The blocks a reader sees. A task moved after its time passed unconfirmed shows once — at
+    its latest time — not as a trail of "no word yet" rows."""
+    blocks = [b for b in plan.get("blocks") or [] if b["kind"] not in ("protected", "wind_down")]
+    latest: dict[tuple, str] = {}
+    for b in blocks:
+        if b["kind"] == "task":
+            k = (b.get("ref"), b.get("copy", 0))
+            latest[k] = max(latest.get(k, ""), b["start"])
+    return [b for b in blocks if not (b["kind"] == "task" and b.get("history")
+                                      and b["start"] < latest[(b.get("ref"), b.get("copy", 0))]
+                                      and _status_of(b.get("ref"), b.get("copy", 0)) == "open")]
 
 
 def render_block(plan: dict | None, kind: str | None = None, due_now: list[dict] | None = None,
