@@ -895,3 +895,229 @@ checked against the code before it was accepted; every one held.
 | V2-N1 | The background refresh thread would start with no persona bound (identity is thread-local, fail-closed) and die silently, leaving Stage A calendar-less | Every spawned thread binds `persona_scope` first, through one `_spawn_bound` helper; failures logged to `log.jsonl`; the test asserts the snapshot lands, not merely that a refresh started (§ 5.1) |
 
 ### Verify 3 — 2026-10-24: V2-N1 closed; no new findings. **Review resolved — 12 findings across three rounds, all closed.**
+
+---
+
+## 18. Stage A, watch day 1 (2026-10-25) — what failed, and the round-2 design
+
+*Status: **BUILT 2026-10-26** (Mike: "Run the plan past a Fable review … then proceed"; review and
+verify in § 18.7, build notes in § 18.8). Owed: commit, deploy (Mike), the setup command with
+Mike's baseline (Mike, guided), one watch weekday. No APK rebuild — the panel renders the new rows
+as it renders the old ones. Evidence for § 18.1: the live `plan_2026-10-25.json`, `state.json`,
+`log.jsonl`, the ledger and the 10-25 traces, read from the VM.*
+
+### 18.1 What the watch found
+
+| Mike's check | Result | Cause |
+|---|---|---|
+| Real events at the right times | partly | Every calendar read as the user's own. A promotion ("Happy Hour") and a family-calendar event ("Iva to vote") blocked 09:00–12:15 as his commitments. `tools/caldav.py` returns each event's `calendars` and `shared`; `_normalise` drops both |
+| Leave for / home from | untested — and would have failed 10-26 | No event on 10-25 carried a place. "Lunch with Victoria" (West India Quay) matched `ignore_titles` "lunch" by prefix, became `own`, and own blocks are excluded from travel (`_skeleton` takes `kind == "event"` only) |
+| Meals in the gaps | lunch dropped | 12:00–14:00 was covered by family events → a "no room for lunch" note; never asked |
+| Today's tasks, sensibly | failed | `_candidates` takes the head layer's `actionable` — the two-day lead, undated one-offs, a monthly quota on an ordinary day — not `_on_todays_list`, the rule Mike set for the Today list on 10-24. Hence Schwab and the job post (due Monday), the Chase bill (monthly), the TfL check (undated) |
+| Nothing duplicated or invented | pass | — |
+
+"Not placed" also carried the second Stretching (no room once false commitments had taken the
+morning), lunch, and the undated TfL task. Bed was 22:00, read from quiet hours.
+
+**Not the planner, found on the way.** At 08:35 on 10-25 the reply said the Chase bill "is set to
+surface between the 10th and 15th", and Rowan's payroll between the 1st and 5th. Nothing was
+written: a monthly habit has no day-of-month field, and `update_task` has no action that changes a
+habit's days — while its own reschedule error tells the model to "change its days".
+
+**Why Mike's correction did not move the panel:** the ledger already said Monday; the planner's lead
+window put the two tasks on Sunday; and in Stage A the Synthesizer cannot see the plan, so it
+answered from the ledger.
+
+### 18.2 Mike's rulings (2026-10-25 and 10-26)
+
+1. **A dated task is *for* its date** — "these are FOR Monday, or at least for working hours".
+   Never pulled earlier.
+2. **Events get one of four answers** (accepted): *there*; *needs me* (a duty — childcare, a
+   drop-off); *someone else's*; *noise*. Resolved most specific first — a stored answer, a
+   standing rule, the calendar's role, else a question (order corrected by review F3; Mike accepted
+   the four sources, the order is the review's). **Code working out duties itself — who is home,
+   schools, ages — is a future Family-mode feature**: deferred, not rejected, and not built here.
+3. **D1:** every calendar defaults to the user's; a calendar that appears later is asked about
+   before the plan uses it — its events are not planned until it has a role (review F5).
+4. **Health outranks noise** — "the second stretching should likely fit … Happy Hour is just a sales
+   promotion. This is the judgment line."
+5. A social event over a mealtime (the Lottie playdate) is **asked about as the meal**.
+6. **Baselines are per-user variables over universal defaults, and dynamic.** No assumed
+   weekday/weekend split; no single "working hours" — strong or preferred hours per kind of
+   activity: admin, busy work, focus, creativity, entertainment, family time and the like.
+7. 1am was anomalous: plan from baselines, not from last night.
+8. **D2:** set Mike's baseline now (not in Stage B). **D3:** the monthly window now.
+9. **Built for every user, not for Mike** (2026-10-26: "Confirm we are building to accommodate
+   answers to these questions from other users"). Nothing in code names Mike's hours, calendars,
+   people or rules: the structures and their defaults are universal (config), and his answers are
+   one persona's data. Any user's answers to the same questions fit the same sections — through
+   the setup command now, and through the first interview and `set_day_shape` in Stage B.
+10. **What may share family time** (Mike, 2026-10-26, stated "as a rule"): "light household and
+    personal tasks that are not computer oriented can happen with the kids. Anything that requires
+    electronic devices or heavy concentration are out. Errands can usually be done with the kids."
+    Stretching may happen in family time.
+
+### 18.3 The variable model (replaces § 4.2's per-user field list)
+
+Every entry is scoped to a set of days — any of mon…sun, or `all` — never a weekday/weekend pair.
+Universal defaults live in `config/modules/day_shape.yaml` (design layer, every user); the user's
+entries in `data/personas/{p}/day_shape.yaml` override them section by section.
+
+| Section | Entry | Universal default |
+|---|---|---|
+| `day` | `{days, wake, bed}` | 07:00 / 23:00 (quiet hours until stated, as now) |
+| `windows` | `{activity, days, from, to, strength, allows?, condition?}` — `protected`: only meals, that activity and what `allows` matches, unless the user notes otherwise for a day; `strong`: that activity goes only here; `preferred`: tried first. `condition` is the user's words for when the window holds ("when I'm free from childcare") — a block placed in it shows the condition as a question on its row (review F8) | none |
+| `routines` | `{what, days, from, to, place?, covers?}` — a standing block on no calendar. A place gets travel both ways; `covers: lunch` stands in for the meal. Only an event triaged *there*, or a *needs_me* duty, overlapping it replaces it that day — context, noise and "?" rows never do (review F7) | none |
+| `meals` | `{name, days, at, latest?, minutes, when?}` — a target, how late it may slide, and a condition for a conditional meal | as now: breakfast within 90 min of waking, lunch 12:00–14:00, dinner 18:00–20:30 |
+| `calendars` | `{collection id: {name, role: mine \| family \| feed}}` — keyed by the calendar's collection id, never its display name, which can change or fall back to "Main calendar" when discovery fails (verify N1); the name is a label. `mine` → *there*; `family` → a question unless an answer or rule settles it; `feed` → *noise*. **The writable calendar (`calendar_url`) is always `mine`**, roster or not. An event on several calendars takes its most-owned role (any `mine` copy makes it the user's) | before setup (no roster): every calendar `mine`. After setup: a calendar not in the roster is *new* — its events are not planned, one note names it and asks (D1, review F5) — **but only on a poll where discovery succeeded**; a failed discovery classes nothing new (N1) |
+| `day_overrides` | `{date, what: window condition \| family time \| …, holds: yes \| no, evidence}` — one day's exception to a standing entry ("I'm free of childcare today", "working tonight"). Expires with its day (verify F8) | none. **Read in round 2; written in Stage B** by `set_day_shape` with a `date` — round 2 shows the condition as a question and nothing can answer it yet |
+| `event_rules` | `{match: [words], answer: there \| needs_me \| someone_else \| noise, duty?, load?: full \| partial}` | none |
+| `children_home` | windows when anyone in the user's care is home and awake; a childcare duty blocks only inside them | none — a childcare duty blocks the whole event |
+| `travel_mode`, `location_sharing` | unchanged | transit; asked at the interview |
+
+**Activities** are a universal vocabulary in config, extensible: `focus`, `creative`, `admin`
+(finance, key business decisions), `busy` (shallow work), `errands`, `household`, `personal`,
+`health`, `family`, `social`, `entertainment`, `rest`. **Every task has one**: stated on the task — a
+new ledger field `activity`, exposed with the other planner fields behind `ledger_fields` — else
+derived from its domain by a config table (finance → admin, work → focus, logistics → admin,
+physical_health → health, none → personal).
+
+**Each activity carries two attributes in config — `device` (needs a screen) and `concentration`
+(`heavy` | `light`)** — and a `protected` window admits, besides meals and its own activity, the
+activities its `allows` filter matches. The universal default for a `family` window is Mike's rule
+(ruling 10): `allows: {device: false, concentration: light}` — so `household`, `personal`, `health`
+and `errands` may share it; `focus`, `creative`, `admin` and `busy` may not. A user may override the
+filter per window, or a task may override its attributes (a phone call that needs concentration).
+So "protected" means *kept clear of what does not fit there*, not *empty*.
+
+**Per-event answers** live in `data/personas/{p}/day_plan/event_answers.json` as two maps
+(review F1 — every occurrence of a series shares its uid): `series: {uid: answer}` and
+`occurrences: {"uid@start": answer}`, each answer `{answer, duty, load, at, evidence}`. Lookup reads
+the occurrence first, then the series. Written in Stage B by a new tool, `answer_event`, on the
+user's word only. Questions are asked in one line at the morning brief (today) or the evening close
+(tomorrow), never as a separate nudge. When three answers about distinct events agree, the plan
+block offers a standing rule as a proposal — never applied on inference (Q4/F7).
+
+**An unanswered family event holds its time for family-compatible activities only** (review F6):
+it is shown as a "?" row and treated, for placement, as a protected window with the family `allows`
+filter — so if it turns out to be childcare, no screen work or heavy concentration was planned over
+it, and if not, little was lost. Neither false commitments (10-25) nor false free time.
+
+### 18.4 Mike's baseline (interview, 2026-10-26 — written on the VM by the setup command)
+
+- **day**: all days — wake 07:00, bed 23:00.
+- **windows**: `family` protected, all days, 07:00–10:00 and 17:30–20:30 ("unless otherwise noted"),
+  with the universal family filter (stretching, chores, errands fit; screens and heavy work do not);
+  `focus`, `creative`, `admin` preferred all days 10:00–15:00 and strong 10:00–17:30 ("some days
+  extend to late afternoon"). On sat and sun the same two windows carry `condition: "when I'm free
+  from childcare"` (review F8), so weekend work rows read as a question until Stage B's weekend
+  morning brief settles it.
+- **routine**: lunch with Iva, mon–fri 12:00–13:00, Canary Wharf, covers lunch, travel both ways
+  ("right now").
+- **meals**: breakfast 08:30; lunch 12:00, may slide to 15:00 on high-productivity days; a
+  meal-level snack 16:00–17:00 when lunch ended by 13:30; dinner 19:00.
+- **calendars**: Main → mine; Shared with Mike → family (Iva and Mike are its only authors). Any
+  other calendar the account sees is listed by the setup command for a role.
+- **event_rules**: GMAT, GRE → there; admissions → needs_me, childcare; Gan → there ("me with both
+  boys"). The rest "as cases arise".
+- **children_home**: childcare applies "only if the boys aren't at their respective schools and not
+  asleep" — **the windows are an open question to Mike**; until answered, a childcare duty blocks
+  the whole event.
+- **Calibration, 10-25**: Iva voting → needs_me, childcare; Lottie playdate → there, partial (an
+  hour of work got done during it); a GMAT session → there. **These are the test fixture's expected
+  answers, not stored data** (review F6) — round 2 has no answer writer; Stage B's `answer_event`
+  is the first.
+
+### 18.5 Round-2 work — Stage A, Amber and Green; nothing Red; no APK rebuild
+
+| # | Work | Files |
+|---|---|---|
+| R2-1 | The variable model, its validator and universal defaults. No persona has a `day_shape.yaml` yet, so the old flat fields are read as entries rather than migrated | `tools/day_shape.py`, `config/modules/day_shape.yaml` |
+| R2-2 | Setup command: lists every calendar the account sees with its role, then applies a baseline file entry by entry through the same validator, evidence "stated by the user in setup" | `tools/day_shape.py` (`python3 -m tools.day_shape`) |
+| R2-3 | Candidates = `_on_todays_list`: dated tasks on their date; undated never; weekly and monthly quotas on a planned day or their last chance | `tools/day_plan.py` |
+| R2-4 | Placement by activity: a protected window admits only what its `allows` filter matches (an essential item that does not match may still take one when nothing else fits — displaced and said aloud, § 5.4); strong = only there; preferred first. Activity attributes and the domain → activity table in config | `tools/day_plan.py`, `config/modules/day_plan.yaml`, `config/modules/day_shape.yaml` |
+| R2-5 | Event triage — stored answer → rule → calendar role → question (review F3). *there* blocks and gets travel; *needs_me* places a duty block (clipped to `children_home` when known); *partial* shows without closing the time to tasks; *someone_else* is one context line; *noise* is hidden; an unanswered family event is a "?" row holding its time for family-compatible tasks (F6); a calendar new since setup is not planned, and one note asks about it (F5) — only when discovery succeeded (N1). The snapshot keeps each event's calendar ids and names; `tools/caldav.py` adds `calendar_ids` beside `calendars` on merged events (additive — no existing reader changes) | `tools/day_plan.py`, `tools/caldav.py` |
+| R2-6 | Routines as fixed blocks with travel both ways; replaced only by a *there* event or a *needs_me* duty (F7) | `tools/day_plan.py` |
+| R2-7 | An event with a place, or titled "with <someone>", is an appointment (travel) that also covers an overlapping meal; `ignore_titles` makes an own block on an exact title only | `tools/day_plan.py` |
+| R2-8 | Meals: target time, slide to `latest`, the conditional snack; a meal with no gap, or under a social event, becomes an ask row at its time — never a "not placed" note | `tools/day_plan.py` |
+| R2-9 | "Not placed" holds only essential items due today or overdue that did not fit | `tools/day_plan.py` |
+| R2-10 | D3: monthly habits take day-of-month `on_days` (10–15 → planned the 10th to the 15th, due by the 15th). **Past its last day undone, a windowed habit is `overdue`** — actionable and on the Today list until the period ends — and counts as a deadline for essentiality (stakes, default vital), so "Not placed" carries it (review F4). `update_task(action="set_days")` for any habit, **behind `ledger_fields` with the other planner fields** — the flag-off pin stays byte-identical — and refused on a turn with no words from the user, as `set_day_shape` is (review F9; the "exposed now" exception is withdrawn). The reschedule error stops naming an action that does not exist while the flag is off. Chase and Rowan's windows are recorded once Stage B turns the flag on; until then R2-3 keeps the Chase bill off October's plan (its first period is partial) | `tools/obligations.py`, tests |
+| R2-11 | Stage B drafts revised: `set_day_shape` takes a section and an entry, and a `date` for a one-day override (F8); `answer_event` (new, a Red grant); conduct for the one-line ask, the weekend-condition question and rule proposals; `activity` and `set_days` behind `ledger_fields`; `day_planner.md` and its payload carry each protected window's `allows` filter and the "?" holds (F2) | `archive/handoffs/2026-10-24-day-planner-stage-b-prompt.md` |
+| R2-13 | **The validator, in the same change** (review F2): V2 becomes "every timed event is accounted for at its time in its triaged form — a block (*there*, own, duty), a context row, a "?" row, or recorded as hidden noise"; V6 becomes "a task in a protected window or a "?" hold matches its `allows` filter, or is essential and marked displaced". The gate's "a repair displaced an essential item" reads the same flag | `tools/day_plan.py`, tests |
+| R2-12 | Tests: a synthetic fixture with 10-25's shape — overlapping family events, a promotion, a weekday routine, a located "Lunch with …", a twice-daily habit, tasks due tomorrow, an undated one, a monthly bill — to an expected plan; one check per R2 rule; existing suites green | `tests/` |
+
+**Acceptance for round 2** (replaces § 11.2's first pass): Mike runs setup, then watches one
+ordinary weekday — a located appointment and the lunch routine with travel, family time clear of
+screens and heavy work, admin in the daytime, nothing that is not today's, and every unknown family
+event shown as a question with its time held from screen work (not a block, not free time — F6).
+
+### 18.6 Cost
+
+- **Build**: ~3–5M Opus 5.5 tokens on the subscription. A Fable 5.1 review of this section first,
+  ~0.5M: the variable model is what the interview, the Synthesizer's tool and every future user's
+  baseline rest on, and a wrong shape is a data migration later.
+- **Run**: $0 — code only. Stage B's questions ride the brief and close that already run.
+- **Ancillary / unseen**: the weekday lunch routine adds two Google Routes lookups a day (cached by
+  hour, inside the 60-a-day cap). The spend guard does not see Routes (§ 12).
+- **Mike**: a deploy, setup (~5 min), one watch day.
+
+### 18.7 Review — Fable, medium, 2026-10-26: nine findings (4 structural, 5 local), all accepted
+
+Report verbatim: `archive/plans/adversarial_review_day_planner_plan_2026-10-26.md`. F2's two code
+claims were checked by hand (`validate` V6 `:920-923`, V2 `:896-905`) before acceptance.
+
+| # | Finding | Resolution |
+|---|---|---|
+| F1 | One uid slot cannot hold a this-occurrence answer beside a series answer | Two maps, `series` and `occurrences` (`uid@start`), occurrence read first (§ 18.3) |
+| F2 | The validator rejects stretching in family time, hidden noise and "?" rows | R2-13: V2 and V6 rewritten in the same change; Stage B contract carries the filters (R2-11) |
+| F3 | With role first, no rule can fire on the user's own calendar | Most specific first: answer → rule → role → question; each role's answer stated (§ 18.2, § 18.3) |
+| F4 | A windowed monthly habit has no overdue state and vanishes after its last day | Overdue past the last window day, through the period end; counts as a deadline for essentiality (R2-10) |
+| F5 | A new calendar's events were used before the user was asked, against D1 | Not planned until it has a role; one note asks (§ 18.3, R2-5) |
+| F6 | Unanswered family events became false free time; calibration answers had no home | "?" rows hold their time for family-compatible tasks; calibration is fixture data (§ 18.3, § 18.4, acceptance) |
+| F7 | Any overlapping event could displace the lunch routine | Only *there* events and *needs_me* duties replace a routine (R2-6) |
+| F8 | Weekend work windows ignored "when I'm free from childcare" | Windows take a `condition`, shown as a question on the rows placed in them (§ 18.3, § 18.4) |
+| F9 | Exposing `set_days` now broke the R1-1 pin and ungated a model write | Behind `ledger_fields`, user-turn gated; exception withdrawn (R2-10) |
+
+**Verify, 2026-10-26: F1–F7 and F9 CLOSED with code anchors; F8 PARTIAL; one new local, N1; no new
+structural.** Appended verbatim to the review file.
+
+| # | Finding | Resolution |
+|---|---|---|
+| F8 (partial) | The weekend condition became a question no tool could record the answer to | `day_overrides` — one day's exception, read by round 2, written in Stage B by `set_day_shape` with a `date` (§ 18.3, R2-11) |
+| N1 | A roster keyed by display name turns a discovery failure or a rename into a blank day | Keyed by collection id; the writable calendar is always `mine`; nothing is classed new on a poll whose discovery failed (§ 18.3, R2-5) |
+
+Not sent for a second verify: both resolutions are local and stated against the code the reviewer
+anchored them to. The build's tests carry them (a discovery-failure poll; a renamed calendar; an
+override on a conditional window).
+
+### 18.8 Build notes — 2026-10-26 (Opus 5.5)
+
+**Tests:** `tests/test_day_plan_round2.py`, 24 checks (every R2 item, F1–F9, N1, the validator's
+V2/V6, setup, the writers); the existing suites unchanged and green — engine 36, ledger 15, wiring
+19 (three example sentences added to the filter check), task ledger 62, provenance 10, scheduler
+gates 23; `qa_sweep` 12/12. Flag-off schemas still byte-identical.
+
+**Replayed against real data** (the VM's 10-25 and 10-26 calendar and the live ledger, in a scratch
+directory, with Mike's baseline): 10-25 shows no Monday tasks, no Chase bill, no TfL check, both
+stretches in family time, the three shared events as questions, lunch asked against the playdate;
+10-26 places Schwab and the job post in the daytime admin window, travel to and from Lunch with
+Victoria (which replaces the Iva lunch routine that day), and asks about dinner under Karate.
+
+**Changed by the replay, beyond the reviewed plan — stated so they are not read as reviewed:**
+1. **`solo` — a third activity attribute, and `exercise`.** "Gym workout session" (domain
+   physical_health → light, screen-free) was planned into family time at 07:00. The family filter
+   now also requires `solo: false`; `activity_words` in `config/modules/day_shape.yaml` (gym,
+   workout, swim …) mark exercise from the title when the task states no activity. A net, not
+   the definition — a stated `activity` wins.
+2. A meal under an unanswered event is asked against the event it sits most inside (the playdate,
+   not the vote ending 15 minutes into lunch); a meal under a hard event is worded for any event
+   ("covers it — eat during it, or when?"), since a GMAT session is not a lunch.
+3. CalDAV TEXT escaping is undone in locations ("The Ledger Building\, West India Quay").
+4. **`answer_event` is built and tested but not registered** — `register_tools()` is shared with
+   the ritual-pause session, so registration lands in Stage B with the grant (handoff § B).
+5. The ledger's `activity` field (§ 18.3) is in: `open_task(activity=)`, `set_activity`, both
+   behind `ledger_fields`.
+
+**Seen, not changed:** "Take out the trash" is a one-hour event Metatron wrote on its own calendar;
+it holds 19:00–20:00 and turns dinner into a question. Not a planner defect — the event is an
+hour long. Raised with Mike.

@@ -161,7 +161,12 @@ def _():
     text = (Path(__file__).parent.parent / "config" / "modules" / "synthesizer_day_plan.md").read_text()
     examples = ["Time to head to physio — about 25 minutes on the Tube.",
                 "I'll rework the rest of your afternoon around that.",
-                "This eats into your evening because the return is due tomorrow."]
+                "This eats into your evening because the return is due tomorrow.",
+                # Round 2 (plan § 18): the one-line ask, the meal question, the rule offer.
+                "Your partner's out voting at ten — are you on the kids?",
+                "during the playdate — is that also lunch?",
+                "You've had the kids every time your partner's been out at a weekend — shall I "
+                "assume that from now on?"]
     for ex in examples:
         assert ex in text, ex
         assert ORC.filter_output(ex, "synthesizer") == ex, ex

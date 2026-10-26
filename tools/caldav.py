@@ -579,6 +579,7 @@ def _merge_group(group: list[dict]) -> dict:
         if not merged.get("recurrence") and other.get("recurrence"):
             merged["recurrence"] = other["recurrence"]
     merged["calendars"] = [e["_calendar"] for e in sorted(group, key=lambda e: e["_order"])]
+    merged["calendar_ids"] = [e["_calendar_id"] for e in sorted(group, key=lambda e: e["_order"])]
     merged["read_only"] = not writable
     merged["shared"] = not any(e["_mine"] for e in group)
     if discrepancies:
@@ -714,6 +715,9 @@ def _query_events(start_date: str, end_date: str, persona: str | None = None,
             ev.update({
                 "_order": order,
                 "_calendar": cal["name"],
+                # The collection, not its display name — a name can change, or fall back to
+                # "Main calendar" when discovery fails; the day planner's roster keys on this.
+                "_calendar_id": _collection_key(cal["url"]),
                 "_writable": cal["writable"],
                 "_mine": cal["mine"],
                 "_recurrence_id": raw.get("RECURRENCE-ID", ""),

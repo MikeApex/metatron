@@ -580,7 +580,9 @@ def _summarise(it: dict) -> str:
     kind = it.get("kind")
     if kind == "habit":
         times = _habit_target(it)
-        days = ",".join(it.get("on_days") or [])
+        mdays = _month_window(it)
+        days = (f"the {_ordinal(mdays[0])} to the {_ordinal(mdays[-1])}" if mdays
+                else ",".join(str(d) for d in it.get("on_days") or []))
         bits.append(f"{times}× per {it.get('every', 'day')}" + (f" ({days})" if days else ""))
     elif kind == "interval":
         bits.append(f"every {it.get('interval_days')} days")
@@ -799,6 +801,28 @@ def _when(d: date, today: date) -> str:
     return f"{d.isoformat()} ({_WEEKDAYS[d.weekday()].capitalize()})"
 
 
+def _month_window(t: dict) -> list[int]:
+    """A monthly habit's days of the month (the Chase bill: 10–15), sorted, or [] (Mike,
+    2026-10-25: "needs to be paid by the 15th and normally I don't want to deal with it until about
+    the 10th"). Planned from the first, due by the last, overdue after it (plan § 18, R2-10)."""
+    if t.get("every") != "month":
+        return []
+    out = set()
+    for d in t.get("on_days") or []:
+        try:
+            n = int(d)
+        except (TypeError, ValueError):
+            continue
+        if 1 <= n <= 31:
+            out.add(n)
+    return sorted(out)
+
+
+def _ordinal(n: int) -> str:
+    suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
 def _habit_target(t: dict) -> int:
     times = t.get("times")
     try:
@@ -960,6 +984,9 @@ def _view_core(t: dict, today: date, lead_days: int = _LEAD_DAYS) -> dict:
         label = f"{what} — today" if target == 1 else f"{what} — {done} of {target} today"
         v.update(state="due_today", actionable=True, sort=(3, what.lower()), text=label)
         return v
+    mdays = _month_window(t)
+    if mdays:
+        return _view_month_window(v, t, today, what, mdays, done, target, ps, pe, start)
     days_left = (pe - today).days + 1
     first = max(ps, start) if start else ps
     preferred = [d for d in (t.get("on_days") or []) if d in _WEEKDAYS] if every == "week" else []
@@ -1001,6 +1028,41 @@ def _view_core(t: dict, today: date, lead_days: int = _LEAD_DAYS) -> dict:
     return v
 
 
+def _view_month_window(v: dict, t: dict, today: date, what: str, mdays: list[int], done: int,
+                       target: int, ps: date, pe: date, start: date | None) -> dict:
+    """A monthly habit with days of the month: nothing before its first day, planned on every day
+    of the window, OVERDUE after its last until the month ends (review F4 — without this the Chase
+    bill vanished from the 16th). A month the habit was set up after its window had closed owes
+    nothing, so it does not nag (the partial-period rule)."""
+    n_days = (pe - ps).days + 1
+    window = sorted({min(d, n_days) for d in mdays})
+    opens, by = ps.replace(day=window[0]), ps.replace(day=window[-1])
+    span = f"the {_ordinal(window[0])} to the {_ordinal(window[-1])}"
+    late_start = bool(start and start > by)
+    if late_start or today < opens:
+        v.update(state="later", sort=(8, opens.isoformat()),
+                 text=f"{what} — {span} each month" + ("; this month's window had closed when it "
+                                                       "was set up" if late_start else ""),
+                 quota={"planned": False, "at_risk": False, "partial": late_start})
+        return v
+    if today > by:
+        v.update(state="overdue", actionable=True, sort=(0, by.isoformat()),
+                 text=f"{what} — due by the {_ordinal(window[-1])}, nothing recorded this month",
+                 quota={"planned": False, "at_risk": False, "partial": False})
+        return v
+    left = (by - today).days + 1
+    at_risk = (target - done) >= left
+    text = f"{what} — {done} of {target} this month, {span}"
+    if left == 1:
+        text += "; due today"
+    elif at_risk:
+        text += "; needed today to stay on target"
+    v.update(state="due_today", actionable=True, sort=(1 if left == 1 else 3, what.lower()),
+             text=text, quota={"planned": True, "at_risk": at_risk,
+                               "partial": bool(start and start > ps)})
+    return v
+
+
 def _raised_today(t: dict, occ: str, today: date) -> str | None:
     """When this occurrence was raised today, as HH:MM, or None."""
     stamp = str((t.get("raised") or {}).get(occ) or "")
@@ -1015,11 +1077,32 @@ def _split_id(task_id: str) -> str:
     return (task_id or "").strip().strip("`").split("@", 1)[0]
 
 
-def _clean_days(on_days) -> tuple[list[str], str | None]:
+def _clean_monthdays(parts: list) -> tuple[list[int], str | None]:
+    """Days of the month: 10, "15", "10-15", "10th". Sorted, unique, 1–31."""
+    out: set[int] = set()
+    for raw in parts:
+        text = re.sub(r"(st|nd|rd|th)\b", "", str(raw).strip().lower())
+        bits = text.split("-")
+        try:
+            lo, hi = (int(bits[0]), int(bits[-1])) if len(bits) in (1, 2) else (0, 0)
+        except ValueError:
+            lo = hi = 0
+        if not (1 <= lo <= hi <= 31):
+            return [], (f"error: a monthly habit's `on_days` are days of the month (\"10\", "
+                        f"\"10-15\"), not {raw!r}. Nothing was written.")
+        out.update(range(lo, hi + 1))
+    return sorted(out), None
+
+
+def _clean_days(on_days, every: str | None = None) -> tuple[list, str | None]:
     if not on_days:
         return [], None
-    if isinstance(on_days, str):
-        on_days = [p for p in re.split(r"[,\s/]+", on_days) if p]
+    if isinstance(on_days, (str, int)):
+        on_days = [p for p in re.split(r"[,\s/]+", str(on_days)) if p]
+    if every == "month" and _ledger_fields():
+        # Days of the month are a planner field (review F9): off, a monthly habit's days are
+        # refused exactly as before, so nothing a model guesses changes the ledger.
+        return _clean_monthdays(on_days)
     out = []
     for raw in on_days:
         d = str(raw).strip().lower()[:3]
@@ -1042,7 +1125,8 @@ def open_task(what: str, kind: str = "deadline", due: str | None = None,
               minutes: int | None = None, minutes_source: str | None = None,
               goal_id: str | None = None, priority: str | None = None,
               priority_source: str | None = None, stakes: str | None = None,
-              stakes_source: str | None = None, zone: str | None = None) -> str:
+              stakes_source: str | None = None, zone: str | None = None,
+              activity: str | None = None) -> str:
     """Record something the user has to do, or is waiting on, so it is tracked until done."""
     what = (what or "").strip()
     if not what:
@@ -1060,7 +1144,7 @@ def open_task(what: str, kind: str = "deadline", due: str | None = None,
             return err
         if iso:
             dates[name] = iso
-    days, err = _clean_days(on_days)
+    days, err = _clean_days(on_days, (every or "").strip().lower() if kind == "habit" else None)
     if err:
         return err
 
@@ -1076,7 +1160,7 @@ def open_task(what: str, kind: str = "deadline", due: str | None = None,
                 entry["times"] = max(1, int(times))
             except (TypeError, ValueError):
                 return "error: `times` must be a whole number. Nothing was written."
-        if days and every == "week":
+        if days and every in ("week", "month"):
             entry["on_days"] = days
     elif kind == "interval":
         try:
@@ -1106,10 +1190,12 @@ def open_task(what: str, kind: str = "deadline", due: str | None = None,
         entry["calendar_uid"] = str(calendar_uid).strip()
     if not _ledger_fields():
         # Not in the schema while the flag is off; a model that guesses one changes nothing.
-        goal_id = priority = stakes = zone = None
+        goal_id = priority = stakes = zone = activity = None
     plan, err = _plan_fields(kind, goal_id=goal_id or None, priority=priority or None,
                              priority_source=priority_source, stakes=stakes or None,
-                             stakes_source=stakes_source, zone=zone or None)
+                             stakes_source=stakes_source, zone=zone or None,
+                             activity=activity or None,
+                             windowed=bool(_month_window(entry)))
     if err:
         return err
     entry.update({k: v for k, v in plan.items() if v is not None})
@@ -1192,7 +1278,8 @@ def _set_minutes(task_id: str, minutes, source) -> str:
 # inference. The schema parts that let a model set them are hidden behind the `ledger_fields`
 # flag until the Synthesizer's conduct for them exists (review R1-1) — see task_schemas().
 
-_PLAN_ACTIONS = ("link_goal", "set_priority", "set_stakes", "set_zone", "day_starts")
+_PLAN_ACTIONS = ("link_goal", "set_priority", "set_stakes", "set_zone", "day_starts", "set_days",
+                 "set_activity")
 _PRIORITIES = ("high", "normal", "low")
 _STAKES = ("vital", "missable")
 _FIELD_SOURCES = ("stated", "inferred")
@@ -1250,7 +1337,10 @@ def is_essential(t: dict, goals: dict[str, dict] | None = None) -> bool:
         g = (goals if goals is not None else _goal_index()).get(str(gid))
         if g and g.get("essential") is True:
             return True
-    return t.get("kind") == "deadline" and t.get("stakes") != "missable"
+    # A monthly habit with a window is a recurring deadline — a bill due by the 15th — so its
+    # stakes count exactly as a deadline's do (review F4).
+    return ((t.get("kind") == "deadline" or bool(_month_window(t)))
+            and t.get("stakes") != "missable")
 
 
 def _ledger_fields() -> bool:
@@ -1310,10 +1400,25 @@ def _source_arg(name: str, value) -> tuple[str | None, str | None]:
 
 
 def _plan_fields(kind: str, goal_id=None, priority=None, priority_source=None, stakes=None,
-                 stakes_source=None, zone=None) -> tuple[dict, str | None]:
+                 stakes_source=None, zone=None, windowed: bool = False,
+                 activity=None) -> tuple[dict, str | None]:
     """Validate the planner's fields. Returns (fields to set, error). An empty string for
-    `goal_id` or `zone` clears it."""
+    `goal_id`, `zone` or `activity` clears it."""
     out: dict = {}
+    if activity is not None:
+        act = str(activity).strip().lower()
+        if act:
+            try:
+                from tools.day_shape import design
+                known = list((design().get("activities") or {}))
+            except Exception:  # noqa: BLE001
+                known = []
+            if act not in known:
+                return {}, (f"error: `activity` must be one of {', '.join(known)}, not "
+                            f"{activity!r}. Nothing was written.")
+            out["activity"] = act
+        else:
+            out["activity"] = None
     if goal_id is not None:
         gid = str(goal_id).strip()
         if gid:
@@ -1336,8 +1441,9 @@ def _plan_fields(kind: str, goal_id=None, priority=None, priority_source=None, s
             return {}, err
         out.update(priority=p, priority_source=src)
     if stakes is not None:
-        if kind != "deadline":
-            return {}, "error: `stakes` applies to a deadline only. Nothing was written."
+        if kind != "deadline" and not windowed:
+            return {}, ("error: `stakes` applies to a deadline, or a monthly habit with days of "
+                        "the month, only. Nothing was written.")
         st = str(stakes).strip().lower()
         if st not in _STAKES:
             return {}, (f"error: `stakes` must be one of {', '.join(_STAKES)}, not {stakes!r}. "
@@ -1363,9 +1469,44 @@ def _plan_fields(kind: str, goal_id=None, priority=None, priority_source=None, s
     return out, None
 
 
+def _set_days(task_id: str, on_days, evidence: str | None) -> str:
+    """A habit's days — weekdays for a weekly one, days of the month for a monthly one. On the
+    user's own word only, quoted (review F9: a write that changes when a habit is planned is the
+    user's, like the day boundary and the shape of their day). Empty clears them."""
+    if not _from_user_or_direct():
+        return ("error: not recorded — a habit's days change only on the user's own word, and "
+                "this turn has nothing from them. Nothing was changed.")
+    evidence = _evidence_arg(evidence)
+    if not evidence:
+        return "error: `evidence` is required — quote what the user said. Nothing was written."
+    tid = _split_id(task_id)
+
+    def apply(doc: dict) -> str:
+        t = _find(doc["tasks"], tid)
+        if t is None:
+            return f"error: no task with id {task_id!r}"
+        every = t.get("every")
+        if t.get("kind") != "habit" or every not in ("week", "month"):
+            return ("error: set_days applies to a weekly or monthly habit only. Nothing was "
+                    "written.")
+        clear = on_days in (None, "", []) or str(on_days).strip().lower() == "none"
+        days, err = ([], None) if clear else _clean_days(on_days, every)
+        if err:
+            return err
+        old = t.get("on_days")
+        if days:
+            t["on_days"] = days
+        else:
+            t.pop("on_days", None)
+        t.setdefault("history", []).append({"event": "days_set", "at": _stamp(), "from": old,
+                                            "to": days or None, "evidence": evidence[:200]})
+        return f"{tid} days {'set' if days else 'cleared'}: {_summarise(t)}"
+    return _with_store(None, apply)
+
+
 def _set_plan_field(task_id: str, action: str, **kw) -> str:
     wanted = {"link_goal": "goal_id", "set_priority": "priority", "set_stakes": "stakes",
-              "set_zone": "zone"}[action]
+              "set_zone": "zone", "set_activity": "activity"}[action]
     if kw.get(wanted) is None:
         return f"error: `{wanted}` is required for {action}. Nothing was written."
     tid = _split_id(task_id)
@@ -1375,7 +1516,8 @@ def _set_plan_field(task_id: str, action: str, **kw) -> str:
         t = _find(doc["tasks"], tid)
         if t is None:
             return f"error: no task with id {task_id!r}"
-        fields, err = _plan_fields(t.get("kind", "deadline"), **only)
+        fields, err = _plan_fields(t.get("kind", "deadline"), windowed=bool(_month_window(t)),
+                                   **only)
         if err:
             return err
         src_key = f"{wanted}_source"
@@ -1423,7 +1565,8 @@ def update_task(task_id: str, action: str, evidence: str | None = None,
                 minutes: int | None = None, minutes_source: str | None = None,
                 goal_id: str | None = None, priority: str | None = None,
                 priority_source: str | None = None, stakes: str | None = None,
-                stakes_source: str | None = None, zone: str | None = None) -> str:
+                stakes_source: str | None = None, zone: str | None = None,
+                on_days=None, activity: str | None = None) -> str:
     """Record what happened to a tracked task — done, done with a loose end, skipped,
     dismissed, reopen, reschedule, or a new note."""
     action = (action or "").strip().lower()
@@ -1440,10 +1583,12 @@ def update_task(task_id: str, action: str, evidence: str | None = None,
         return _set_minutes(task_id, minutes, minutes_source)
     if action == "day_starts":
         return _set_day_starts(task_id, note if note else evidence)
+    if action == "set_days":
+        return _set_days(task_id, on_days, evidence)
     if action in _PLAN_ACTIONS:
         return _set_plan_field(task_id, action, goal_id=goal_id, priority=priority,
                                priority_source=priority_source, stakes=stakes,
-                               stakes_source=stakes_source, zone=zone)
+                               stakes_source=stakes_source, zone=zone, activity=activity)
     evidence = _evidence_arg(evidence)
     if action in ("done", "skipped", "dismissed", "reopen") and not evidence:
         return ("error: `evidence` is required — quote what the user said that shows this. "
@@ -1478,7 +1623,12 @@ def update_task(task_id: str, action: str, evidence: str | None = None,
             if not due_iso:
                 return "error: `new_due` (YYYY-MM-DD) is required to reschedule"
             if kind == "habit":
-                return "error: a habit has no single date to move — dismiss it or change its days"
+                # Name only what exists (review F9): set_days is offered with the planner's
+                # fields, and until then the way to new days is a new habit.
+                return ("error: a habit has no single date to move — change its days with "
+                        "set_days" if _ledger_fields() else
+                        "error: a habit has no single date to move — dismiss it and open it "
+                        "again with the days the user wants")
             field = {"deadline": "due", "waiting": "check_back", "interval": "next_due"}[kind]
             old = t.get(field) or (_interval_due(t, today).isoformat() if kind == "interval" else None)
             hist.append({"event": "rescheduled", "at": _stamp(), "from": old, "to": due_iso,
@@ -3004,15 +3154,31 @@ _PLAN_FIELD_PROPS = {
                                        "Default inferred; a stated value is never replaced by "
                                        "an inferred one."},
     "stakes": {"type": "string", "enum": list(_STAKES),
-               "description": "deadline only: vital — missing it has real consequences (taxes, "
-                              "a bill, a legal date); missable — it can slip in favour of the "
-                              "user's day. Unset counts as vital."},
+               "description": "a deadline, or a monthly habit with days of the month: vital — "
+                              "missing it has real consequences (taxes, a bill, a legal date); "
+                              "missable — it can slip in favour of the user's day. Unset counts "
+                              "as vital."},
     "stakes_source": {"type": "string", "enum": list(_FIELD_SOURCES),
                       "description": "stated or inferred, as for priority_source."},
     "zone": {"type": "string",
              "description": "A named place where this gets done (\"gym\"), from the zones on "
                             "file — lets arriving there count as a sign it happened. Empty "
                             "string clears it."},
+    "activity": {"type": "string",
+                 "description": "What kind of thing it is — focus, creative, admin, busy, errands, "
+                                "household, personal, health, exercise, family, social, "
+                                "entertainment, rest. Decides when in the day it can go (admin and "
+                                "focused work stay out of family time). Empty string clears it."},
+}
+
+# Replaces the shipped `on_days` while the planner's fields are on: a monthly habit can then take
+# days of the month (plan § 18, R2-10).
+_ON_DAYS_PROP = {
+    "type": "array", "items": {"type": "string"},
+    "description": "habit, weekly: preferred weekdays (mon … sun) — a missed one can be made up "
+                   "later in the week. habit, monthly: the days of the month it belongs in — "
+                   "[\"10-15\"] for a bill the user deals with from the 10th and must pay by the "
+                   "15th. Planned from the first, due by the last, overdue after it.",
 }
 
 
@@ -3027,16 +3193,20 @@ def task_schemas() -> tuple[dict, dict, dict]:
         return OPEN_TASK_SCHEMA, UPDATE_TASK_SCHEMA, LIST_TASKS_SCHEMA
     open_s = _copy.deepcopy(OPEN_TASK_SCHEMA)
     open_s["input_schema"]["properties"].update(_copy.deepcopy(_PLAN_FIELD_PROPS))
+    open_s["input_schema"]["properties"]["on_days"] = _copy.deepcopy(_ON_DAYS_PROP)
     upd = _copy.deepcopy(UPDATE_TASK_SCHEMA)
     upd["description"] += (
-        " link_goal / set_priority / set_stakes / set_zone — record what it serves, how much it "
-        "matters, whether its deadline is vital or missable, where it gets done (goal_id, "
-        "priority, stakes, zone, each with its _source). day_starts — when the user's day "
+        " link_goal / set_priority / set_stakes / set_zone / set_activity — record what it serves, "
+        "how much it matters, whether its deadline is vital or missable, where it gets done, what "
+        "kind of thing it is (goal_id, priority, stakes, zone, activity; the first three with "
+        "their _source). day_starts — when the user's day "
         "really ends (task_id \"settings\", the time in note, e.g. \"02:00\"); only on their "
-        "own word.")
+        "own word. set_days — a weekly or monthly habit's days (on_days), only on their own "
+        "word, quoted in evidence.")
     upd["input_schema"]["properties"]["action"]["enum"] = (
         list(upd["input_schema"]["properties"]["action"]["enum"]) + list(_PLAN_ACTIONS))
     upd["input_schema"]["properties"].update(_copy.deepcopy(_PLAN_FIELD_PROPS))
+    upd["input_schema"]["properties"]["on_days"] = _copy.deepcopy(_ON_DAYS_PROP)
     return open_s, upd, LIST_TASKS_SCHEMA
 
 

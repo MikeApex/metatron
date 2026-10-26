@@ -238,6 +238,8 @@ _REFRESH_LOCK = threading.Lock()
 # A meeting link is not a place anyone travels to.
 _ONLINE_RE = re.compile(r"https?://|zoom|teams\.microsoft|meet\.google|webex|whereby|"
                         r"microsoft teams|google meet|\bonline\b|\bvirtual\b", re.IGNORECASE)
+# "Lunch with Victoria" is an appointment with someone, not the user's own lunch break (R2-7).
+_WITH_RE = re.compile(r"\bwith\s+\S", re.IGNORECASE)
 
 
 def _ignore_titles() -> list[str]:
@@ -269,18 +271,26 @@ def _normalise(events: list[dict]) -> list[dict]:
                 end = start + timedelta(minutes=30)
             title = str(inst.get("title") or "").strip()
             low = title.lower()
-            own = next((w for w in own_words if w and (low == w or low.startswith(w + " ")
-                                                       or w in low.split(" — ")[0])), None)
             all_day = _is_all_day(inst) or (start.time() == time(0, 0)
                                             and end - start >= timedelta(hours=23))
-            loc = str(inst.get("location") or "").strip()
+            # iCalendar TEXT escapes commas and semicolons ("The Ledger Building\, West India
+            # Quay"); a route lookup wants the address as written.
+            loc = re.sub(r"\\([,;\\])", r"\1", str(inst.get("location") or "")).replace("\\n", ", ").strip()
+            place = loc if loc and not _ONLINE_RE.search(loc) else ""
+            # The user's own block only on its plain title — never one with a place or another
+            # person in it (R2-7: "Lunch with Victoria" was read as a lunch break and got no travel).
+            own = None if (place or _WITH_RE.search(title)) else next(
+                (w for w in own_words if w and (low == w or low.startswith(w + " ")
+                                                or low.startswith(w + " — "))), None)
             out.append({
                 "uid": str(inst.get("uid") or ""),
                 "key": f"{inst.get('uid')}@{start.isoformat()}",
                 "title": title, "start": start.isoformat(), "end": end.isoformat(),
-                "location": loc if loc and not _ONLINE_RE.search(loc) else "",
-                "all_day": bool(all_day), "own": own,
+                "location": place, "all_day": bool(all_day), "own": own,
                 "read_only": bool(inst.get("read_only")),
+                # Which calendars it is on, by collection id and by name (R2-5, review N1).
+                "calendars": [str(c) for c in inst.get("calendars") or []],
+                "calendar_ids": [str(c) for c in inst.get("calendar_ids") or []],
             })
     out.sort(key=lambda e: e["start"])
     return out
@@ -295,7 +305,9 @@ def _fetch(day: date, persona: str | None) -> dict:
                         persona=persona, calendars="all")
     if not isinstance(raw, dict) or raw.get("error"):
         return {"error": str((raw or {}).get("error") or "no response")[:200]}
-    return {"events": _normalise(raw.get("events") or [])}
+    # Whether every calendar was looked for: only then can one be "new since setup" (review N1).
+    return {"events": _normalise(raw.get("events") or []),
+            "discovery": str(raw.get("discovery") or "ok")[:80]}
 
 
 def refresh_snapshot(persona: str | None = None) -> dict:
@@ -311,7 +323,7 @@ def refresh_snapshot(persona: str | None = None) -> dict:
             snap.update(error=got["error"], failed_at=_now().isoformat(timespec="seconds"))
         else:
             snap = {"fetched_at": _now().isoformat(timespec="seconds"), "day": day.isoformat(),
-                    "events": got["events"]}
+                    "events": got["events"], "discovery": got.get("discovery", "ok")}
         state["snapshot"] = snap
         state.pop("calendar_dirty", None)
         _write_json(_state_path(persona), state)
@@ -513,6 +525,16 @@ def _score(t: dict, v: dict, today: date, goals: dict, w: dict) -> int:
             dyn += int(table.get("due_tomorrow", 0))
         elif due:
             dyn += int(table.get("in_lead", 0))
+    elif kind == "habit" and O._month_window(t):
+        # A monthly habit with days of the month is a recurring deadline (review F4): overdue
+        # after its last day, due on it.
+        table = w.get("vital" if t.get("stakes") != "missable" else "missable") or {}
+        if state == "overdue":
+            dyn += int(table.get("overdue", 0))
+        elif state == "due_today" and v.get("sort", (9,))[0] == 1:
+            dyn += int(table.get("due_today", 0))
+        else:
+            dyn += int((w.get("habit") or {}).get("planned_day", 0))
     elif kind == "habit":
         hw = w.get("habit") or {}
         q = v.get("quota") or {}
@@ -530,20 +552,29 @@ def _score(t: dict, v: dict, today: date, goals: dict, w: dict) -> int:
 
 
 def _candidates(today: date, persona: str | None) -> list[dict]:
-    """What may be placed today: the ledger's actionable occurrences, plus lapsed one-offs (which
-    the planner may still place, low). Never `waiting` — someone else's move."""
+    """What may be placed today: what the user's Today list shows — overdue, due today, today's
+    habits, a weekly or monthly quota on a planned day or its last chance — plus lapsed one-offs
+    (placed low). Never `waiting` — someone else's move.
+
+    The Today list's own rule, `_on_todays_list`, and not the head layer's wider Now (round 2,
+    R2-3): on 10-25 the two-day lead put two tasks due Monday on Sunday's plan, and undated ones
+    beside them. Mike: "these are FOR Monday … Metatron should focus attention on the present."
+    One definition of today for the list and the plan, so they cannot disagree."""
+    from tools.day_shape import activity_of, shape_for
     O = _O()
     goals = O._goal_index()
     w = _cfg().score_weights()
     default_minutes = int(_limit("default_task_minutes") or 30)
+    shape = shape_for(today, persona)
     out = []
     for raw in O._load(persona):
         t = O._norm(raw)
         if t.get("status") != "open" or t.get("kind") == "waiting":
             continue
         v = O._view(t, today)
-        if not (v.get("actionable") or v.get("state") == "lapsed"):
+        if not ((v.get("actionable") and O._on_todays_list(t, v)) or v.get("state") == "lapsed"):
             continue
+        activity, attrs = activity_of(t, shape)
         target = O._habit_target(t) if t.get("kind") == "habit" else 1
         copies = 1
         if t.get("kind") == "habit" and (t.get("every") or "day") == "day":
@@ -557,8 +588,12 @@ def _candidates(today: date, persona: str | None) -> list[dict]:
             "minutes": int(t.get("minutes") or default_minutes),
             "length_known": bool(t.get("minutes")),
             "essential": O.is_essential(t, goals), "stakes": t.get("stakes"),
-            "vital": t.get("kind") == "deadline" and t.get("stakes") != "missable",
+            "vital": ((t.get("kind") == "deadline" or bool(O._month_window(t)))
+                      and t.get("stakes") != "missable"),
             "due": t.get("due"), "zone": t.get("zone"), "copies": copies,
+            # What kind of activity it is, and what that needs (plan § 18.3): where it may go.
+            "activity": activity, "device": bool(attrs.get("device")),
+            "heavy": attrs.get("concentration") == "heavy", "attrs": attrs,
             # A daily habit done more than once a day (a medicine twice a day): each dose is its
             # own block, and `copies` is how many are still unrecorded (review S-2).
             "multi": t.get("kind") == "habit" and (t.get("every") or "day") == "day" and target > 1,
@@ -566,7 +601,7 @@ def _candidates(today: date, persona: str | None) -> list[dict]:
             "score": score,
             "digest": _digest(t.get("status"), v.get("state"), v.get("text"), t.get("due"),
                               t.get("minutes"), t.get("priority"), t.get("stakes"),
-                              t.get("goal_id"), t.get("zone")),
+                              t.get("goal_id"), t.get("zone"), activity),
         })
     out.sort(key=lambda c: (-c["score"], str(c.get("due") or "9999"), c["minutes"]))
     return out
@@ -617,20 +652,123 @@ def _windows_of(blocks: list[dict], kind: str) -> list[tuple[datetime, datetime]
     return [(_dt(b["start"]), _dt(b["end"])) for b in blocks if b["kind"] == kind]
 
 
-# --- the skeleton (plan § 5.3) ---------------------------------------------------------------
+# --- what an event means for the user (plan § 18.3, R2-5) ------------------------------------
+
+_EVENT_ANSWERS = ("there", "needs_me", "someone_else", "noise")
+_MEAL_WORDS = {"breakfast": ("breakfast", "brunch"), "lunch": ("lunch", "brunch"),
+               "dinner": ("dinner", "supper")}
+
+
+def _answers_path(persona: str | None = None) -> Path:
+    return _dir(persona) / "event_answers.json"
+
+
+def _event_answers(persona: str | None = None) -> dict:
+    """The user's answers about events: `occurrences` keyed uid@start and `series` keyed uid —
+    two maps, because every occurrence of a series shares its uid (review F1). Read in round 2;
+    written by `answer_event` once Stage B grants it."""
+    data = _read_json(_answers_path(persona), {})
+    return data if isinstance(data, dict) else {}
+
+
+def _discovery_ok(persona: str | None = None) -> bool:
+    snap = _load_state(persona).get("snapshot") or {}
+    return str(snap.get("discovery") or "ok") == "ok"
+
+
+def _rule_matches(rule: dict, title: str) -> bool:
+    low = title.lower()
+    return any(re.search(r"\b" + re.escape(str(w).lower()) + r"\b", low)
+               for w in rule.get("match") or [])
+
+
+def _calendar_role(e: dict, shape: dict, discovery_ok: bool) -> str:
+    """mine / family / feed / new. The calendar Metatron writes is always the user's; with no
+    roster yet, every calendar is (D1). A calendar the roster has never seen is new — but only on
+    a poll whose discovery succeeded, or one PROPFIND hiccup would blank the day (review N1).
+    An event on several calendars takes its most-owned role."""
+    if not e.get("read_only", False):
+        return "mine"
+    roster = shape.get("calendars") or {}
+    if not roster:
+        return "mine"
+    ids = e.get("calendar_ids") or []
+    roles = [roster[i]["role"] for i in ids if i in roster]
+    if not roles:
+        return "new" if (ids and discovery_ok) else "mine"
+    return next(r for r in ("mine", "family", "feed") if r in roles)
+
+
+def _triage(e: dict, shape: dict, answers: dict, discovery_ok: bool) -> dict:
+    """there / needs_me / someone_else / noise — or `ask` (not known yet) or `new` (its calendar
+    is new). Most specific first (review F3): the user's answer about this occurrence, then about
+    the series, then a standing rule, then the calendar's role."""
+    for store, key in (("occurrences", e["key"]), ("series", e["uid"])):
+        a = (answers.get(store) or {}).get(key)
+        if isinstance(a, dict) and a.get("answer") in _EVENT_ANSWERS:
+            return {"answer": a["answer"], "duty": a.get("duty"), "load": a.get("load") or "full",
+                    "source": "answer"}
+    for rule in shape.get("event_rules") or []:
+        if _rule_matches(rule, e["title"]):
+            return {"answer": rule["answer"], "duty": rule.get("duty"),
+                    "load": rule.get("load") or "full", "source": "rule"}
+    role = _calendar_role(e, shape, discovery_ok)
+    return {"answer": {"mine": "there", "family": "ask", "feed": "noise", "new": "new"}[role],
+            "load": "full", "source": "calendar"}
+
+
+def _is_protected(b: dict) -> bool:
+    """A region that keeps out what does not fit: a protected window, an unanswered family event
+    held for family-compatible tasks (F6), a duty that is family time (childcare)."""
+    return b["kind"] in ("protected", "hold") or (b["kind"] == "duty" and bool(b.get("activities")))
+
+
+def _is_hard(b: dict) -> bool:
+    """A block that closes its time to tasks and meals."""
+    k = b["kind"]
+    if k in ("event", "own"):
+        return not b.get("partial")
+    if k == "duty":
+        return not b.get("activities")
+    return k in ("travel", "meal", "task", "break", "routine")
+
+
+def _clip(s: datetime, e: datetime, spans: list[tuple[datetime, datetime]]) -> list[tuple]:
+    out = []
+    for a, b in spans:
+        lo, hi = max(s, a), min(e, b)
+        if lo < hi:
+            out.append((lo, hi))
+    return out
+
+
+# --- the skeleton (plan § 5.3, § 18) ---------------------------------------------------------
 
 def _skeleton(day: date, shape: dict, events: list[dict], persona: str | None,
-              allow_lookup: bool, plan_start: datetime | None = None
-              ) -> tuple[list[dict], list[str], list[tuple[datetime, datetime]]]:
-    """Fixed events, travel, wind-down, protected time and meals for ledger day `day`.
-    Returns (blocks, notes, focus windows). A meal whose window has closed by `plan_start` is
-    not placed — the plan does not claim a lunch nobody recorded (Q8: no assumptions)."""
-    from tools.day_shape import anchor, window_for
+              allow_lookup: bool, plan_start: datetime | None = None,
+              answers: dict | None = None, discovery_ok: bool = True
+              ) -> tuple[list[dict], list[str], dict]:
+    """Events as their triage says, routines, travel, wind-down, protected windows and meals for
+    ledger day `day`. Returns (blocks, notes, extra) — extra carries the event keys deliberately
+    not shown (`hidden`: noise, a calendar's own focus block) and held back (`held_back`, by
+    calendar: a calendar new since setup), so the validator can account for every event, and any
+    windows the calendar itself supplied. A meal whose window has closed by `plan_start` is not
+    placed — the plan does not claim a lunch nobody recorded (Q8: no assumptions)."""
+    from tools.day_shape import OWN_TIME, anchor, window_for
     wake_dt, bed_dt = window_for(day, shape=shape)
     blocks: list[dict] = []
     notes: list[str] = []
-    focus: list[tuple[datetime, datetime]] = []
-    covered: set[str] = set()
+    extra: dict = {"hidden": [], "held_back": {}, "windows": []}
+    covered: dict[str, datetime] = {}         # meal → when what stands in for it ends
+    answers = answers or {}
+    family_allows = (shape.get("window_allows") or {}).get("family")
+    duties = shape.get("duties") or {}
+
+    def span(a: time, b: time) -> tuple[datetime, datetime]:
+        s, e = anchor(day, a, shape["wake"]), anchor(day, b, shape["wake"])
+        return s, (e if e > s else e + timedelta(days=1))
+
+    children = [span(a, b) for a, b in shape.get("children_home") or []]
 
     for e in events:
         s, en = _dt(e["start"]), _dt(e["end"])
@@ -638,23 +776,80 @@ def _skeleton(day: date, shape: dict, events: list[dict], persona: str | None,
             continue
         own = e.get("own")
         if own == "focus time":
-            focus.append((s, en))
+            extra["windows"].append({"activities": ["focus"], "start": s, "end": en,
+                                     "strength": "preferred", "condition": None})
+            extra["hidden"].append(e["key"])
             continue
-        if own in ("breakfast", "lunch", "dinner"):
-            covered.add(own)
-        blocks.append({"id": f"event:{e['key']}", "kind": "own" if own else "event",
-                       "ref": e["uid"], "key": e["key"], "title": e["title"],
-                       "start": _iso(s), "end": _iso(en), "location": e.get("location") or ""})
+        tri = _triage(e, shape, answers, discovery_ok)
+        ans = tri["answer"]
+        base = {"ref": e["uid"], "key": e["key"], "title": e["title"], "start": _iso(s),
+                "end": _iso(en), "location": e.get("location") or "",
+                "calendar": (e.get("calendars") or [""])[0], "triage": tri["source"]}
+        if ans == "noise":
+            extra["hidden"].append(e["key"])
+            continue
+        if ans == "new":
+            extra["held_back"].setdefault(base["calendar"] or "a new calendar", []).append(e["key"])
+            continue
+        if ans == "someone_else":
+            blocks.append({**base, "id": f"context:{e['key']}", "kind": "context"})
+            continue
+        if ans == "ask":
+            # Not known yet whether it needs the user: its time is held for what may share family
+            # time, so no screen work or heavy concentration lands on what may be childcare —
+            # neither a false commitment nor false free time (review F6).
+            blocks.append({**base, "id": f"hold:{e['key']}", "kind": "hold",
+                           "activities": ["family"], "allows": family_allows})
+            continue
+        if ans == "needs_me":
+            duty = str(tri.get("duty") or "needed").strip().lower()
+            as_family = (duties.get(duty) or {}).get("as") == "family"
+            spans = _clip(s, en, children) if (as_family and children) else [(s, en)]
+            if not spans:
+                blocks.append({**base, "id": f"context:{e['key']}", "kind": "context",
+                               "note": f"no {duty} needed then"})
+                continue
+            for a, b in spans:
+                blk = {**base, "id": f"duty:{e['key']}@{a:%H%M}", "kind": "duty", "duty": duty,
+                       "start": _iso(a), "end": _iso(b)}
+                if as_family:
+                    blk.update(activities=["family"], allows=family_allows)
+                blocks.append(blk)
+            continue
+        blk = {**base, "id": f"event:{e['key']}", "kind": "own" if own else "event"}
+        if tri.get("load") == "partial":
+            blk["partial"] = True
+        blocks.append(blk)
+        low = e["title"].lower()
+        for meal, words in _MEAL_WORDS.items():
+            if own == meal or any(w in low for w in words):
+                covered[meal] = max(covered.get(meal, en), en)
 
-    # Travel: from wherever the user was last expected to be, to each located event — and home
-    # again after one when nothing located follows within two hours (plan § 5.3; Fable diff
-    # review S-5: without the way back, a task could start the minute physio ended).
+    # Routines: a standing block on no calendar. Only something the user is at — a *there*
+    # event or a duty — takes its place that day (review F7).
+    for r in shape.get("routines") or []:
+        s, en = span(r["start"], r["end"])
+        if en <= wake_dt or s >= bed_dt:
+            continue
+        if any(b["kind"] in ("event", "own", "duty") and _dt(b["start"]) < en and s < _dt(b["end"])
+               for b in blocks):
+            continue
+        rid = re.sub(r"[^a-z0-9]+", "-", r["what"].lower()).strip("-") or "routine"
+        blocks.append({"id": f"routine:{rid}", "kind": "routine", "ref": f"routine:{rid}",
+                       "key": f"routine:{rid}@{_iso(s)}", "title": r["what"], "start": _iso(s),
+                       "end": _iso(en), "location": r.get("place") or ""})
+        if r.get("covers"):
+            covered[r["covers"]] = max(covered.get(r["covers"], en), en)
+
+    # Travel: from wherever the user was last expected to be, to each located event or routine —
+    # and home again after one when nothing located follows within two hours (plan § 5.3; Fable
+    # diff review S-5: without the way back, a task could start the minute physio ended).
     origin, _name = _start_point(persona, day)
     home = _zone_coords("home", persona)
     prev = origin
     buf = int(shape["departure_buffer_minutes"])
-    located = sorted((b for b in blocks if b["kind"] == "event" and (b.get("location") or "").strip()),
-                     key=lambda b: b["start"])
+    located = sorted((b for b in blocks if b["kind"] in ("event", "routine")
+                      and (b.get("location") or "").strip()), key=lambda b: b["start"])
     for i, b in enumerate(located):
         loc = b["location"].strip()
         if prev and prev.strip().lower() != loc.lower():
@@ -687,60 +882,105 @@ def _skeleton(day: date, shape: dict, events: list[dict], persona: str | None,
     blocks.append({"id": "wind_down", "kind": "wind_down", "title": "wind down",
                    "start": _iso(bed_dt - timedelta(minutes=wd)), "end": _iso(bed_dt)})
 
-    for a, b in shape["personal"]:
-        s = anchor(day, a, shape["wake"])
-        en = anchor(day, b, shape["wake"])
-        if en <= s:
-            en += timedelta(days=1)
-        blocks.append({"id": f"protected:{a.strftime('%H%M')}", "kind": "protected",
-                       "title": "the user's own time", "start": _iso(s), "end": _iso(en)})
-    for a, b in shape["focus"]:
-        s, en = anchor(day, a, shape["wake"]), anchor(day, b, shape["wake"])
-        focus.append((s, en if en > s else en + timedelta(days=1)))
+    # Protected windows: kept clear of what does not fit there, not kept empty (ruling 10).
+    for w in shape.get("windows") or []:
+        if w["strength"] != "protected":
+            continue
+        s, en = span(w["start"], w["end"])
+        name = w["activities"][0]
+        blocks.append({"id": f"protected:{name}:{w['start'].strftime('%H%M')}", "kind": "protected",
+                       "title": "the user's own time" if name == OWN_TIME else f"{name} time",
+                       "start": _iso(s), "end": _iso(en), "activities": list(w["activities"]),
+                       "allows": w.get("allows")})
 
-    # Meals: in the largest free stretch of each window, around its middle.
+    # Meals: at their stated time, sliding later within their range, else earlier; with no stated
+    # time, in the largest free stretch around the middle of the window. A regular meal is never
+    # dropped without a word (Mike, 10-25): with no gap it becomes a question at its time.
     grid = _Grid(wake_dt, bed_dt)
     for b in blocks:
-        if b["kind"] in ("event", "own", "travel"):
+        if _is_hard(b):
             grid.mark(_dt(b["start"]), _dt(b["end"]), grid.busy)
+    # Where a meal lands inside an event that may itself be the meal — one not yet answered, or
+    # one the user is only partly at (the playdate: "that should be asked of the user") — it asks.
+    soft = [b for b in blocks if b["kind"] == "hold" or (b["kind"] == "event" and b.get("partial"))]
+    meal_end = dict(covered)
     for m in shape["meals"]:
-        if m["name"] in covered:
+        name = m["name"]
+        if name in covered:
             continue
+        minutes = int(m["minutes"])
+        if m.get("when"):
+            first = meal_end.get(m["when"]["meal"])
+            ends_by = datetime.combine(day, time.fromisoformat(m["when"]["ends_by"]))
+            if first is None or first > ends_by:
+                continue
         lo, hi = anchor(day, m["earliest"], shape["wake"]), anchor(day, m["latest"], shape["wake"])
         if hi <= lo:
             hi += timedelta(days=1)
+        target = anchor(day, m["target"], shape["wake"]) if m.get("target") else None
         if plan_start is not None:
-            if hi <= plan_start + timedelta(minutes=int(m["minutes"])):
+            if hi <= plan_start + timedelta(minutes=minutes):
                 continue
             lo = max(lo, plan_start)
-        n = max(1, int(m["minutes"]) // _SLOT)
+            if target is not None and target < plan_start:
+                target = _round_up(plan_start)
+        n = max(1, minutes // _SLOT)
         a, z = max(0, grid.idx(lo)), min(grid.n, grid.idx(hi))
-        runs, i = [], a
-        while i < z:
-            if grid.busy[i]:
-                i += 1
-                continue
-            j = i
-            while j < z and not grid.busy[j]:
-                j += 1
-            if j - i >= n:
-                runs.append((i, j))
-            i = j
-        if not runs:
-            notes.append(f"no room for {m['name']}")
+
+        def free(i: int) -> bool:
+            return a <= i and i + n <= z and not any(grid.busy[k] for k in range(i, i + n))
+
+        start_i = None
+        if target is not None:
+            t_i = grid.idx(_round_up(target))
+            start_i = next((i for i in list(range(t_i, z - n + 1)) + list(range(t_i - 1, a - 1, -1))
+                            if free(i)), None)
+        else:
+            runs, i = [], a
+            while i < z:
+                if grid.busy[i]:
+                    i += 1
+                    continue
+                j = i
+                while j < z and not grid.busy[j]:
+                    j += 1
+                if j - i >= n:
+                    runs.append((i, j))
+                i = j
+            if runs:
+                i, j = max(runs, key=lambda r: r[1] - r[0])
+                start_i = min(max(i, (a + z) // 2 - n // 2), j - n)
+        if start_i is None:
+            when = _round_up(target or lo + (hi - lo) / 2)
+            cover = next((b for b in blocks if _is_hard(b) and b["kind"] != "travel"
+                          and _dt(b["start"]) <= when < _dt(b["end"])), None)
+            # Worded for any event: a picnic may be lunch, a GMAT session is not.
+            why = (f"{cover['title']} covers it — eat during it, or when?" if cover
+                   else f"no gap between {lo:%H:%M} and {hi:%H:%M} — when?")
+            blocks.append({"id": f"ask:meal:{name}", "kind": "ask", "title": name, "ask": why,
+                           "start": _iso(when), "end": _iso(when + timedelta(minutes=minutes))})
             continue
-        i, j = max(runs, key=lambda r: r[1] - r[0])
-        mid = (a + z) // 2 - n // 2
-        start_i = min(max(i, mid), j - n)
         s = grid.at(start_i)
-        e = s + timedelta(minutes=int(m["minutes"]))
+        e = s + timedelta(minutes=minutes)
         grid.mark(s, e, grid.busy)
-        blocks.append({"id": f"meal:{m['name']}", "kind": "meal", "title": m["name"],
-                       "start": _iso(s), "end": _iso(e)})
-    return blocks, notes, focus
+        blk = {"id": f"meal:{name}", "kind": "meal", "title": name, "start": _iso(s), "end": _iso(e)}
+        # The event the meal sits most inside — the playdate spanning lunch, not the vote that
+        # ends a quarter of an hour into it.
+        under = max((b for b in soft if _dt(b["start"]) < e and s < _dt(b["end"])),
+                    key=lambda b: min(e, _dt(b["end"])) - max(s, _dt(b["start"])), default=None)
+        if under:
+            blk["ask"] = f"during {under['title']} — is that also {name}?"
+        blocks.append(blk)
+        meal_end[name] = e
+
+    for cal, keys in extra["held_back"].items():
+        notes.insert(0, f"New calendar “{cal}” ({len(keys)} event{'s' if len(keys) != 1 else ''} "
+                        f"today) — not planned until the user says what it is: theirs, family, "
+                        f"or a feed")
+    return blocks, notes, extra
 
 
-# --- the fill (plan § 5.4) -------------------------------------------------------------------
+# --- the fill (plan § 5.4, § 18) -------------------------------------------------------------
 
 def _may_protect(c: dict) -> bool:
     """The life-quality rule: a missable item never takes the user's protected time; an essential
@@ -749,21 +989,72 @@ def _may_protect(c: dict) -> bool:
 
 
 def _fill(cands: list[dict], blocks: list[dict], shape: dict, plan_start: datetime,
-          bed_dt: datetime, focus: list, keep: list[dict], day: date
+          bed_dt: datetime, extra_windows: list[dict] | None, keep: list[dict], day: date
           ) -> tuple[list[dict], list[dict]]:
+    """Each task into its kind of time (plan § 18.3): a protected region admits only what its
+    filter matches; a strong window is the only place its activity goes; a preferred one is tried
+    first; time belonging to another activity, or under a partly-attended event, is used last."""
+    from tools.day_shape import admits, anchor
     grid = _Grid(plan_start, bed_dt)
     for b in blocks:
-        if b["kind"] in _HARD and _dt(b["end"]) > plan_start:
+        if _is_hard(b) and _dt(b["end"]) > plan_start:
             grid.mark(_dt(b["start"]), _dt(b["end"]), grid.busy)
-    protected = grid.mask(_windows_of(blocks, "protected"))
+    regions = [(grid.mask([(_dt(b["start"]), _dt(b["end"]))]), b.get("activities") or [],
+                b.get("allows")) for b in blocks if _is_protected(b)]
+    any_region = [any(r[0][k] for r in regions) for k in range(grid.n)]
     wind = grid.mask(_windows_of(blocks, "wind_down"))
-    focus_m = grid.mask(focus)
-    work = None
-    if shape.get("work"):
-        from tools.day_shape import anchor
-        ws = anchor(day, shape["work"][0], shape["wake"])
-        we = anchor(day, shape["work"][1], shape["wake"])
-        work = grid.mask([(ws, we if we > ws else we + timedelta(days=1))])
+    partial = grid.mask([(_dt(b["start"]), _dt(b["end"])) for b in blocks
+                         if b["kind"] == "event" and b.get("partial")])
+    excludes = set(shape.get("wind_down_excludes") or [])
+
+    wins = []
+    for w in list(shape.get("windows") or []) + list(extra_windows or []):
+        if w["strength"] == "protected":
+            continue
+        s, e = w["start"], w["end"]
+        s = s if isinstance(s, datetime) else anchor(day, s, shape["wake"])
+        e = e if isinstance(e, datetime) else anchor(day, e, shape["wake"])
+        if e <= s:
+            e += timedelta(days=1)
+        wins.append({**w, "s": s, "e": e, "mask": grid.mask([(s, e)])})
+
+    def union(masks: list[list[bool]]) -> list[bool] | None:
+        if not masks:
+            return None
+        return [any(m[k] for m in masks) for k in range(grid.n)]
+
+    def both(a: list[bool] | None, b: list[bool] | None) -> list[bool] | None:
+        if a is None or b is None:
+            return a if b is None else b
+        return [x and y for x, y in zip(a, b)]
+
+    profiles: dict[tuple, dict] = {}
+
+    def profile(c: dict) -> dict:
+        attrs = c.get("attrs") or {"device": c["device"],
+                                   "concentration": "heavy" if c["heavy"] else "light"}
+        key = (c["activity"], json.dumps(attrs, sort_keys=True))
+        if key not in profiles:
+            rej = [False] * grid.n
+            for mask, acts, allows in regions:
+                if c["activity"] in acts or admits(allows, attrs):
+                    continue
+                for k in range(grid.n):
+                    if mask[k]:
+                        rej[k] = True
+            mine = [w for w in wins if c["activity"] in w["activities"]]
+            pref = union([w["mask"] for w in mine if w["strength"] == "preferred"])
+            strong = union([w["mask"] for w in mine if w["strength"] == "strong"])
+            other = union([w["mask"] for w in wins if c["activity"] not in w["activities"]])
+            avoid = union([m for m in (other, partial) if m is not None])
+            tiers = []
+            if pref is not None:
+                tiers.append((both(pref, strong), avoid))
+            tiers += [(strong, avoid), (strong, partial), (strong, None)]
+            profiles[key] = {"rej": rej, "tiers": tiers, "strong": strong,
+                             "conds": [w for w in mine if w.get("condition")]}
+        return profiles[key]
+
     trans = max(0, int(shape["transition_minutes"]) // _SLOT)
     brk = max(1, int(shape["break_minutes"]) // _SLOT)
     brk_after = max(1, int(shape["break_after_minutes"]) // _SLOT)
@@ -785,7 +1076,7 @@ def _fill(cands: list[dict], blocks: list[dict], shape: dict, plan_start: dateti
             run += 1 if grid.task_run[k] else 0
             k -= 1
         room = (j + brk <= grid.n
-                and not any(grid.busy[g] or protected[g] for g in range(j, j + brk)))
+                and not any(grid.busy[g] or any_region[g] for g in range(j, j + brk)))
         if run >= brk_after and room:
             # Only where the time is free (Fable diff review S-3: a break once landed on a
             # meeting). A meeting straight after the run is itself the pause.
@@ -797,10 +1088,13 @@ def _fill(cands: list[dict], blocks: list[dict], shape: dict, plan_start: dateti
         else:
             for g in range(j, min(grid.n, j + trans)):
                 grid.task_gap[g] = True
+        cond = next((w["condition"] for w in profile(c)["conds"] if w["s"] < e and s < w["e"]), None)
         placed.append({"id": f"task:{c['ref']}@{s:%H%M}", "kind": "task", "ref": c["ref"],
                        "task_id": c["task_id"], "title": c["what"], "start": _iso(s),
                        "end": _iso(e), "essential": c["essential"], "score": c["score"],
                        "length_known": c["length_known"], "copy": copy,
+                       "activity": c["activity"],
+                       **({"condition": cond} if cond else {}),
                        **({"displaced_protected": True} if displaced else {})})
         counts[c["ref"]] = counts.get(c["ref"], 0) + 1
 
@@ -808,12 +1102,13 @@ def _fill(cands: list[dict], blocks: list[dict], shape: dict, plan_start: dateti
                  avoid: list | None) -> bool:
         if i + n > grid.n:
             return False
+        rej = profile(c)["rej"]
         for k in range(i, i + n):
             if grid.busy[k] or grid.task_gap[k]:
                 return False
-            if protected[k] and not allow_protected:
+            if rej[k] and not allow_protected:
                 return False
-            if wind[k] and (c["kind"] == "deadline" or c["domain"] == "work"):
+            if wind[k] and (c["kind"] == "deadline" or c["activity"] in excludes):
                 return False
             if need is not None and not need[k]:
                 return False
@@ -838,6 +1133,7 @@ def _fill(cands: list[dict], blocks: list[dict], shape: dict, plan_start: dateti
 
     for c in cands:
         n = max(1, -(-c["minutes"] // _SLOT))
+        prof = profile(c)
         while counts.get(c["ref"], 0) < c["copies"]:
             copy = counts.get(c["ref"], 0)
             min_i = 0
@@ -845,12 +1141,9 @@ def _fill(cands: list[dict], blocks: list[dict], shape: dict, plan_start: dateti
             if earlier and c.get("multi"):
                 # Another dose later in the day: at least three hours after the last one.
                 min_i = max(0, grid.idx(max(earlier) + timedelta(hours=3)))
-            tiers = []
-            if focus and c["minutes"] >= 45:
-                tiers.append((focus_m, None))
-            if work is not None:
-                tiers.append((work, None) if c["domain"] == "work" else (None, work))
-            tiers.append((None, None))
+            tiers = list(prof["tiers"])
+            if prof["strong"] is not None and c["essential"]:
+                tiers.append((None, None))      # outside its strong window, before protected time
             spot = None
             for need, avoid in tiers:
                 spot = next((i for i in range(min_i, grid.n)
@@ -861,7 +1154,7 @@ def _fill(cands: list[dict], blocks: list[dict], shape: dict, plan_start: dateti
             if spot is None and _may_protect(c):
                 spot = next((i for i in range(min_i, grid.n)
                              if free_run(i, n, c, True, None, None)), None)
-                displaced = spot is not None and any(protected[k] for k in range(spot, spot + n))
+                displaced = spot is not None and any(prof["rej"][k] for k in range(spot, spot + n))
             if spot is None:
                 unplaced.append({"ref": c["ref"], "title": c["what"],
                                  "reason": "no room" if grid.n else "outside waking hours",
@@ -882,10 +1175,13 @@ def validate(plan: dict, events: list[dict], cands: list[dict], plan_start: date
     ref_ok = {c["ref"] for c in cands}
     by_ref = {c["ref"]: c for c in cands}
     live = [b for b in blocks if not b.get("history")]
-    solid = [b for b in live if b["kind"] in ("task", "meal", "break", "travel", "event", "own")]
+    solid = [b for b in live if _is_hard(b)]
     for i, a in enumerate(solid):
         for b in solid[i + 1:]:
-            if {a["kind"], b["kind"]} <= {"event", "own"} or "travel" in (a["kind"], b["kind"]):
+            # Commitments may overlap each other — the calendar is the user's; the plan only
+            # never puts its own blocks on top of them.
+            if {a["kind"], b["kind"]} <= {"event", "own", "routine", "duty"} \
+                    or "travel" in (a["kind"], b["kind"]):
                 continue
             # A block already under way is the user's present (Fable verify N2): an event moved
             # onto it is an interruption to note, not a plan to reject.
@@ -893,16 +1189,27 @@ def validate(plan: dict, events: list[dict], cands: list[dict], plan_start: date
                 continue
             if _dt(a["start"]) < _dt(b["end"]) and _dt(b["start"]) < _dt(a["end"]):
                 fails.append(f"V1: {a['id']} overlaps {b['id']}")
-    have = {b.get("key"): b for b in blocks if b["kind"] in ("event", "own")}
+    # V2 (R2-13): every timed event is accounted for, at its time, in its triaged form — a block
+    # (there, own, a duty), a context row, a "?" hold, or deliberately not shown (noise, a
+    # calendar's focus block, a calendar new since setup).
+    have: dict = {}
+    for b in blocks:
+        if b["kind"] in ("event", "own", "context", "hold", "duty") and b.get("key"):
+            have.setdefault(b["key"], b)
+    unshown = set(plan.get("hidden") or []) | {
+        k for keys in (plan.get("held_back") or {}).values() for k in keys}
     for e in events:
         s, en = _dt(e["start"]), _dt(e["end"])
-        if e.get("all_day") or e.get("own") == "focus time" or not s or en <= wake_dt or s >= bed_dt:
+        if e.get("all_day") or not s or en <= wake_dt or s >= bed_dt or e["key"] in unshown:
             continue
         b = have.get(e["key"])
         if b is None:
             fails.append(f"V2: event {e['key']} missing")
-        elif b["start"] != _iso(s) or b["end"] != _iso(en):
+        elif b["kind"] != "duty" and (b["start"] != _iso(s) or b["end"] != _iso(en)):
             fails.append(f"V2: event {e['key']} moved")
+    from tools.day_shape import admits
+    regions = [(_dt(b["start"]), _dt(b["end"]), b.get("activities") or [], b.get("allows"))
+               for b in blocks if _is_protected(b)]
     seen: dict[str, int] = {}
     for b in live:
         if b["kind"] != "task":
@@ -917,10 +1224,15 @@ def validate(plan: dict, events: list[dict], cands: list[dict], plan_start: date
             fails.append(f"V4: {b['ref']} shorter than its {c['minutes']} min")
         if (not under_way and s < plan_start - timedelta(minutes=1)) or s < wake_dt or en > bed_dt:
             fails.append(f"V5: {b['ref']} outside the waking window or in the past")
-        if not c["essential"]:
-            for p in _windows_of(blocks, "protected"):
-                if s < p[1] and p[0] < en:
-                    fails.append(f"V6: missable {b['ref']} in protected time")
+        # V6 (R2-13): protected time admits what fits there — its own activity and what its
+        # filter matches; anything else only when essential and nothing else fitted.
+        attrs = c.get("attrs") or {"device": c.get("device", False),
+                                   "concentration": "heavy" if c.get("heavy") else "light"}
+        for p0, p1, acts, allows in regions:
+            if s < p1 and p0 < en and not (c.get("activity") in acts or admits(allows, attrs)) \
+                    and not c["essential"]:
+                fails.append(f"V6: {b['ref']} in protected time it does not fit")
+                break
         seen[b["ref"]] = seen.get(b["ref"], 0) + 1
         if seen[b["ref"]] > max(c["copies"], 1):
             fails.append(f"V9: {b['ref']} placed {seen[b['ref']]} times")
@@ -1030,12 +1342,15 @@ def _classify(prev: dict | None, day: date, now: datetime, cands: list[dict], ev
         mode, reasons = "repair", reasons + ["calendar changed"]
     if (prev.get("digests") or {}).get("shape") != shape_digest:
         mode, reasons = "repair", reasons + ["day shape changed"]
+    if (prev.get("digests") or {}).get("answers") != _digest(_event_answers()):
+        mode, reasons = "repair", reasons + ["an event was answered"]
     if (prev.get("digests") or {}).get("zone") != zone:
         mode, reasons = "repair", reasons + ["place changed"]
     built = _dt(prev.get("built_at")) or now
     passed_ids = set(prev.get("passed") or [])
     for b in prev.get("blocks") or []:
-        if b.get("history") or b["kind"] not in ("task", "event", "travel", "meal"):
+        if b.get("history") or b["kind"] not in ("task", "event", "travel", "meal", "routine",
+                                                 "duty"):
             continue
         s, e = _dt(b["start"]), _dt(b["end"])
         if built < s <= now or built < e <= now:
@@ -1089,7 +1404,9 @@ def _build(day: date, persona: str, mode: str, reasons: list[str], prev: dict | 
     shape = shape_for(day, persona)
     wake_dt, bed_dt = window_for(day, shape=shape)
     plan_start = wake_dt if draft else max(_round_up(now), wake_dt)
-    skeleton, notes, focus = _skeleton(day, shape, events, persona, allow_lookup, plan_start)
+    answers = _event_answers(persona)
+    skeleton, notes, extra = _skeleton(day, shape, events, persona, allow_lookup, plan_start,
+                                       answers=answers, discovery_ok=_discovery_ok(persona))
 
     history, inprog, keep = [], [], []
     passed = set(prev.get("passed") or []) if prev else set()
@@ -1141,7 +1458,12 @@ def _build(day: date, persona: str, mode: str, reasons: list[str], prev: dict | 
         if more > 0:
             placeable.append({**c, "copies": more, "prior": [b["start"] for b in hist + prog]})
     placed, unplaced = _fill(placeable, skeleton + history + inprog, shape, plan_start, bed_dt,
-                             focus, keep, day)
+                             extra["windows"], keep, day)
+    # "Not placed" is for what needs a decision today (R2-9): an essential item that did not
+    # fit. A non-essential leftover — a second stretching with no room — drops quietly; the log
+    # and a model reshuffle still see it.
+    dropped = [u["ref"] for u in unplaced if not u.get("essential")]
+    unplaced = [u for u in unplaced if u.get("essential")]
     blocks = sorted(skeleton + history + inprog + placed, key=lambda b: (b["start"], b["kind"]))
     # A dose block's `copy` is its place in the day's order of that ref's blocks — the i-th
     # block is done once i+1 doses are recorded. Anything else is one task: copy 0.
@@ -1160,15 +1482,20 @@ def _build(day: date, persona: str, mode: str, reasons: list[str], prev: dict | 
         "reasons": reasons[:5],
         "window": {"wake": _iso(wake_dt), "bed": _iso(bed_dt),
                    "wake_source": shape["wake_source"], "bed_source": shape["bed_source"]},
-        "blocks": blocks, "unplaced": unplaced, "notes": notes, "passed": sorted(passed),
+        "blocks": blocks, "unplaced": unplaced, "dropped": dropped, "notes": notes,
+        "passed": sorted(passed),
+        # Event keys deliberately not shown, so the validator can account for every event.
+        "hidden": extra["hidden"], "held_back": extra["held_back"],
         "digests": {"tasks": {c["ref"]: [c["digest"], c["score"]] for c in cands},
                     "events": _event_digests(events, day),
-                    "shape": shape_digest_fn(persona), "zone": _zone_now(persona)},
+                    "shape": shape_digest_fn(persona), "zone": _zone_now(persona),
+                    "answers": _digest(answers)},
     }
     for b in inprog:
         s0, e0 = _dt(b["start"]), _dt(b["end"])
         for x in skeleton:
-            if x["kind"] in ("event", "own") and _dt(x["start"]) < e0 and s0 < _dt(x["end"]):
+            if _is_hard(x) and x["kind"] in ("event", "own", "routine", "duty") \
+                    and _dt(x["start"]) < e0 and s0 < _dt(x["end"]):
                 notes.append(f"{x['title']} now overlaps {b['title']}, already under way")
     plan["suggestions"] = _suggestions(blocks)
     # Location evidence answers a check only once its "Mark done?" card exists — the two ship
@@ -1332,9 +1659,23 @@ def _hm(value) -> str:
 
 
 def _label(b: dict) -> str:
+    """A block as the Synthesizer reads it."""
     k = b["kind"]
     if k == "event":
-        return f"{b['title']} (calendar)"
+        return f"{b['title']} (calendar{', partly attending' if b.get('partial') else ''})"
+    if k == "routine":
+        return f"{b['title']} (routine)"
+    if k == "duty":
+        return f"{b.get('duty', 'needed')} — {b['title']} (the user is needed)"
+    if k == "hold":
+        return (f"? {b['title']} `{b.get('key')}` — on the {b.get('calendar') or 'shared'} "
+                f"calendar; not yet known whether it needs the user — ask once, record the answer "
+                f"with answer_event (time held from screen and heavy work)")
+    if k == "context":
+        return f"{b['title']} — someone else's, nothing for the user" + (
+            f" ({b['note']})" if b.get("note") else "")
+    if k in ("meal", "ask") and b.get("ask"):
+        return f"{b['title']} — {b['ask']}"
     if k == "travel":
         tr = b.get("travel") or {}
         est = ", estimated" if tr.get("estimated") else ""
@@ -1348,10 +1689,30 @@ def _label(b: dict) -> str:
             bits.append("essential")
         if b.get("displaced_protected"):
             bits.append("takes the user's own time — say so")
+        if b.get("condition"):
+            bits.append(f"only {b['condition']} — ask")
         if not b.get("length_known", True):
             bits.append("length unknown")
         return " — ".join(bits)
     return b["title"]
+
+
+def _panel_title(b: dict) -> str:
+    """A block as the user reads it in the Today panel (the testing view, Q1)."""
+    k = b["kind"]
+    if k == "hold":
+        return f"{b['title']} — anything needed from you?"
+    if k == "context":
+        return f"{b['title']} (not yours)"
+    if k == "duty":
+        return f"{b.get('duty', 'needed')}: {b['title']}"
+    if k in ("meal", "ask") and b.get("ask"):
+        return f"{b['title']} — {b['ask']}"
+    if k == "task":
+        return b["title"] + (f" ({b['condition']}?)" if b.get("condition") else "")
+    if k in ("event", "own", "routine"):
+        return b["title"]
+    return _label(b)
 
 
 def _task_status_text(b: dict, now: datetime) -> str:
@@ -1412,10 +1773,11 @@ def render_block(plan: dict | None, kind: str | None = None, due_now: list[dict]
         out.append("Next: " + " → ".join(nxt))
     if later:
         out.append("Later: " + " · ".join(later))
-    own = [f"{_hm(b['start'])}–{_hm(b['end'])}" for b in plan.get("blocks") or []
+    own = [f"{b['title']} {_hm(b['start'])}–{_hm(b['end'])}" for b in plan.get("blocks") or []
            if b["kind"] == "protected" and _dt(b["end"]) > now]
     if own:
-        out.append("The user's own time (protected): " + ", ".join(own))
+        out.append("Protected — only what fits there (family time: light tasks with no screen): "
+                   + ", ".join(own))
     if plan.get("unplaced"):
         out.append("Not placed: " + "; ".join(
             f"{u['title']} ({u['reason']})" for u in plan["unplaced"][:5]))
@@ -1423,6 +1785,10 @@ def render_block(plan: dict | None, kind: str | None = None, due_now: list[dict]
         # What the build could not resolve — no room for a meal, no starting point for travel,
         # a meeting moved onto something under way (Fable verify N2). Shown, never acted on.
         out.append("Notes: " + "; ".join(plan["notes"][:3]))
+    proposals = rule_proposals()
+    if proposals:
+        out.append("Standing answers the user's own answers suggest — offer ONE, once; record it "
+                   "with set_day_shape(event_rules) only on their yes: " + "; ".join(proposals[:2]))
     soon = [x for x in plan.get("suggestions") or []
             if now - timedelta(minutes=5) <= _dt(x["at"]) <= now + timedelta(hours=3)]
     if soon:
@@ -1474,7 +1840,7 @@ def today_view(persona: str | None = None) -> dict:
             if st == "open" and _dt(b["end"]) <= now:
                 st = "no word yet" if b.get("essential") else "unconfirmed"
         rows.append({"start": _hm(b["start"]), "end": _hm(b["end"]), "kind": b["kind"],
-                     "title": _label(b).replace(f" — `{b.get('ref')}`", "").replace(f"`{b.get('ref')}`", ""),
+                     "title": _panel_title(b).replace(f" — `{b.get('ref')}`", "").replace(f"`{b.get('ref')}`", ""),
                      "status": st, "past": _dt(b["end"]) <= now,
                      "now": _dt(b["start"]) <= now < _dt(b["end"])})
     return {"day": plan["day"], "built_at": plan.get("built_at"), "blocks": rows,
@@ -1690,11 +2056,17 @@ def _extract_json(raw: str) -> dict | None:
 
 def _payload(plan: dict, cands: list[dict], now: datetime, state: dict) -> dict:
     from tools.untrusted import wrap_untrusted
+    # Protected windows and "?" holds carry what they admit (R2-11): the model may place only a
+    # task whose activity is theirs or matches the filter there, as the validator checks.
     fixed = [{"start": b["start"], "end": b["end"], "kind": b["kind"],
-              "title": wrap_untrusted(b["title"], source="calendar") if b["kind"] in ("event", "own")
-              else b["title"]}
+              "title": wrap_untrusted(b["title"], source="calendar")
+              if b["kind"] in ("event", "own", "hold", "duty") else b["title"],
+              **({"admits": {"activities": b.get("activities") or [], "filter": b.get("allows")}}
+                 if _is_protected(b) else {}),
+              **({"partly": True} if b.get("partial") else {})}
              for b in plan["blocks"] if b["kind"] in ("event", "own", "travel", "meal", "protected",
-                                                    "wind_down") and _dt(b["end"]) > now]
+                                                    "wind_down", "routine", "duty", "hold")
+             and _dt(b["end"]) > now]
     try:
         from tools.ambient import _get_timezone
         tz = _get_timezone() or ""
@@ -1705,7 +2077,8 @@ def _payload(plan: dict, cands: list[dict], now: datetime, state: dict) -> dict:
         "today": plan["day"], "now": _iso(now), "timezone": tz, "window": plan["window"],
         "fixed": fixed,
         "candidates": [{k: c.get(k) for k in ("ref", "what", "minutes", "score", "essential",
-                                               "stakes", "due", "domain", "goal", "copies")}
+                                               "stakes", "due", "domain", "goal", "copies",
+                                               "activity", "device", "heavy")}
                        for c in cands],
         "current_plan": [{"ref": b["ref"], "start": b["start"], "end": b["end"]}
                          for b in plan["blocks"] if b["kind"] == "task" and not b.get("history")],
@@ -1802,9 +2175,13 @@ def _reshuffle_worker(persona: str, gen: int, payload: dict) -> None:
         conflicts = invented + sum(1 for k in keep if (k["ref"], k["start"]) not in kept_at)
         for ref, why in dropped.items():
             if ref in refs and ref not in placed_refs:
-                plan["unplaced"].append({"ref": ref, "title": next(
-                    (c["what"] for c in cands if c["ref"] == ref), ref),
-                    "reason": why or "left out", "essential": False, "vital": False})
+                c = next((x for x in cands if x["ref"] == ref), {})
+                if c.get("essential"):
+                    plan["unplaced"].append({"ref": ref, "title": c.get("what", ref),
+                                             "reason": why or "left out", "essential": True,
+                                             "vital": bool(c.get("vital"))})
+                else:
+                    plan.setdefault("dropped", []).append(ref)       # R2-9: no "Not placed" row
         plan["failures"] = validate(plan, events, cands, max(_round_up(now), _dt(plan["window"]["wake"])))
         # V3 applies to the model's own reply: a ref it invented rejects the whole refinement,
         # and so does a reply most of whose placements did not fit the current day.
@@ -2037,6 +2414,116 @@ def pending_heads_up(persona: str | None = None) -> bool:
 
 
 # --- tools ------------------------------------------------------------------------------------
+
+def answer_event(event: str, answer: str, evidence: str = "", scope: str = "series",
+                 duty: str | None = None, load: str | None = None) -> str:
+    """Record what a calendar event means for the user, on their word (plan § 18.3): there,
+    needs_me (with the duty — childcare, a lift), someone_else, or noise. `scope` "series" covers
+    every occurrence of a repeating event; "this_one" only the one named (review F1). Built in
+    round 2, granted in Stage B."""
+    answer = str(answer or "").strip().lower()
+    if answer not in _EVENT_ANSWERS:
+        return f"error: `answer` must be one of {', '.join(_EVENT_ANSWERS)}. Nothing was written."
+    scope = str(scope or "series").strip().lower()
+    if scope not in ("series", "this_one"):
+        return "error: `scope` is series or this_one. Nothing was written."
+    try:
+        from tools.turn_context import current as _turn
+        turn = _turn()
+    except Exception:  # noqa: BLE001
+        turn = None
+    if turn is not None and not turn.get("user_turn"):
+        return ("error: not recorded — what an event means for the user changes only on their "
+                "own word, and this turn has nothing from them. Nothing was changed.")
+    evidence = str(evidence or "").strip()
+    if not evidence:
+        return "error: `evidence` is required — quote what the user said. Nothing was written."
+    key = str(event or "").strip()
+    persona = resolve_persona(None)
+    state = _load_state(persona)
+    known = {e["key"]: e for e in (state.get("snapshot") or {}).get("events") or []}
+    ev = known.get(key) or next((e for e in known.values() if e["uid"] == key), None)
+    if ev is None:
+        return (f"error: no event {key!r} in today's or tomorrow's calendar — use the id the plan "
+                f"shows in backticks. Nothing was written.")
+    rec = {"answer": answer, "at": _now().isoformat(timespec="seconds"),
+           "evidence": evidence[:200], "title": ev["title"][:120]}
+    if duty and answer == "needs_me":
+        rec["duty"] = str(duty).strip().lower()[:40]
+    if load in ("full", "partial"):
+        rec["load"] = load
+    with _locked(persona):
+        data = _event_answers(persona)
+        store = data.setdefault("occurrences" if scope == "this_one" else "series", {})
+        store[ev["key"] if scope == "this_one" else ev["uid"]] = rec
+        _write_json(_answers_path(persona), data)
+    _log("event_answered", persona, answer=answer, scope=scope)
+    what = {"there": "the user is there", "needs_me": f"the user is needed ({rec.get('duty', 'help')})",
+            "someone_else": "someone else's, nothing for the user", "noise": "not shown"}[answer]
+    return (f"recorded: {ev['title']} — {what}"
+            f"{', every time' if scope == 'series' else ', this once'}. The plan follows.")
+
+
+ANSWER_EVENT_SCHEMA = {
+    "name": "answer_event",
+    "description": (
+        "Record what one of the user's calendar events means for them, when THEY say it: there "
+        "(they attend), needs_me (it puts a duty on them — childcare while their partner is out, "
+        "a lift), someone_else (another person's, nothing for them), or noise (a promotion, not "
+        "for them). Their day is planned around it from then on. Only on their own word — quote "
+        "it as evidence. `event` is the id the plan shows in backticks."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "event": {"type": "string", "description": "The event id from the plan."},
+            "answer": {"type": "string", "enum": list(_EVENT_ANSWERS)},
+            "duty": {"type": "string", "description": "needs_me only: what — childcare, a lift."},
+            "load": {"type": "string", "enum": ["full", "partial"],
+                     "description": "there only: partial when they are only partly taken up "
+                                    "(a playdate where they still got an hour of work done)."},
+            "scope": {"type": "string", "enum": ["series", "this_one"],
+                      "description": "series (default): every occurrence; this_one: only this one."},
+            "evidence": {"type": "string", "description": "The user's words that say it."},
+        },
+        "required": ["event", "answer", "evidence"],
+    },
+}
+
+
+_STOP = {"the", "and", "for", "with", "from", "into", "over", "time", "tbc", "day", "week"}
+
+
+def rule_proposals(persona: str | None = None) -> list[str]:
+    """When three answers about DIFFERENT events agree and their titles share a word, a standing
+    rule is offered — as a proposal for the user, never applied on inference (Q4/F7)."""
+    data = _event_answers(persona)
+    groups: dict[tuple, list[str]] = {}
+    for store in ("series", "occurrences"):
+        for key, rec in (data.get(store) or {}).items():
+            if isinstance(rec, dict) and rec.get("title"):
+                uid = key.rsplit("@", 1)[0] if store == "occurrences" else key
+                g = groups.setdefault((rec.get("answer"), rec.get("duty") or ""), [])
+                if uid not in [u for u, _ in g]:
+                    g.append((uid, rec["title"]))
+    try:
+        from tools.day_shape import read_shape
+        ruled = {str(w).lower() for r in read_shape(persona).get("event_rules") or []
+                 if isinstance(r, dict) for w in r.get("match") or []}
+    except Exception:  # noqa: BLE001
+        ruled = set()
+    out = []
+    for (answer, duty), items in groups.items():
+        if len(items) < 3:
+            continue
+        words = [set(w for w in re.findall(r"[a-z][a-z']{2,}", t.lower()) if w not in _STOP)
+                 for _, t in items]
+        common = sorted(set.intersection(*words) - ruled)
+        if common:
+            out.append(f"events with “{common[0]}” → {answer}{f' ({duty})' if duty else ''} "
+                       f"(answered so {len(items)} times)")
+    return out
+
 
 def request_replan(reason: str = "") -> str:
     """Synth's tool for the extraordinary case: ask for the rest of today to be reworked."""

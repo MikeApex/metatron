@@ -34,3 +34,69 @@ travel_mode: transit
 # hours to read them from.
 fallback_wake: "07:00"
 fallback_bed: "23:00"
+
+# --- Kinds of activity (plan § 18.3) ------------------------------------------------------------
+# Every task is one of these: stated on the task, else taken from its domain below. The user's
+# windows say when each kind goes — protected, strong (only there) or preferred (there first) —
+# so nothing here assumes a weekday/weekend split or one block of "working hours" (Mike,
+# 2026-10-26: "Users will have strong or preferred hours for admin, busy work, high focus work,
+# creativity, entertainment, family time, and the like").
+#
+# `device` — needs a screen. `concentration` — heavy or light. `solo` — done away from the
+# family (the gym), unlike an errand the children can come along on. A protected window admits
+# meals, its own activity, and whatever its `allows` filter matches.
+activities:
+  focus:         {device: true,  concentration: heavy}
+  creative:      {device: true,  concentration: heavy}
+  admin:         {device: true,  concentration: heavy}   # finance, key business decisions
+  busy:          {device: true,  concentration: light}   # shallow work
+  entertainment: {device: true,  concentration: light}
+  errands:       {device: false, concentration: light}
+  household:     {device: false, concentration: light}
+  personal:      {device: false, concentration: light}
+  health:        {device: false, concentration: light}
+  exercise:      {device: false, concentration: light, solo: true}
+  family:        {device: false, concentration: light}
+  social:        {device: false, concentration: light}
+  rest:          {device: false, concentration: light}
+
+# A task with no stated activity and no domain below.
+default_activity: personal
+
+# Words in a task's title that say what kind of activity it is when the task itself does not —
+# checked before its domain. A net, not the definition: an `activity` stated on the task always
+# wins (Stage B's conduct sets it). Found replaying 2026-10-26: "Gym workout session" read as
+# light health and was planned into family time at 07:00.
+activity_words:
+  exercise: [gym, workout, run, running, swim, swimming, cycling, yoga class, spin class,
+             pilates class, football training]
+
+domain_activity:
+  finance: admin
+  business: admin
+  logistics: admin
+  work: focus
+  career: focus
+  learning: focus
+  physical_health: health
+  health: health
+  household: household
+  home: household
+  relationships: social
+  social: social
+  recreation: entertainment
+
+# What a protected window of each activity admits when the user has not said. Family time (Mike,
+# 2026-10-26, "as a rule"): "light household and personal tasks that are not computer oriented
+# can happen with the kids. Anything that requires electronic devices or heavy concentration are
+# out. Errands can usually be done with the kids."
+window_allows:
+  family: {device: false, concentration: light, solo: false}
+
+# A duty an event puts on the user (a calendar event answered "needs me"). `as: family` makes it
+# family time — what may share family time may share it; any other duty closes the time.
+duties:
+  childcare: {as: family}
+
+# Never in wind-down, besides deadlines.
+wind_down_excludes: [focus, creative, admin, busy]
