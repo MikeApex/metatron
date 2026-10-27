@@ -21,19 +21,24 @@ the trace or it is invisible.
 § 14 D1, and the 2026-10-27 entry in `archive/PROJECT_LOG.md`. Confirm the second-user build is on
 `main` and read `core/push.py` and `core/scheduler.py:_notify_push` as that build left them.
 
-## 0. First — the model reshuffle is cutting itself off (decide before anything else)
+## 0. First — the model reshuffle: works at 16,384, now a cost and latency question
 
-On 10-27 both live day_planner reshuffles came back unparseable at ~7,800 thinking + output =
-8,188 against the 8,192 ceiling (`_WIDE_OUTPUT_AGENTS`, `core/orchestrator.py`). The code plan
-stands, so no user harm, but each attempt costs ~$0.03 for nothing. Check `log.jsonl` for
-`"event": "reshuffle"` outcomes since then. Options, recommendation first:
-1. **A thinking cap on the plain (OpenAI-compat) path** — `extra_body` with Google's thinking
-   config, or `reasoning_effort`. Unverified on Vertex compat: one paid probe (a few cents, Mike
-   runs `METATRON_LIVE=1`) with the smoke test before trusting it. 3.8 Flash overshoots a budget
-   (1,024 → 2,664 measured 10-26), so pair any cap with the ceiling.
-2. Ceiling 16,384 — likely works; doubles the worst-case cost and pushes latency toward 90 s.
-3. `reshuffle_model: false` — the smoke test showed 0–2 moves over the code plan.
-Re-run `tests/run_day_plan_smoke.py --runs 3` after any change: pass = all parseable, churn ≤ 3.
+History, 10-27: cut off at 4,096 (smoke 3/3 unparseable) → 8,192 (`5252661`; smoke passed, then
+both live reshuffles cut at ~8,188) → **16,384 (`08ee9d0`, Mike's call): smoke 3/3 parseable and
+valid, thinking 9,927 / 11,557 / 13,225, latency 80 / 203 / 69 s, churn 0 / 4 / 0** (run 2 failed
+the ≤ 3 churn rule — an equally valid arrangement from the same seed; live reshuffles seed from the
+previous result). In every run the model fitted mover claims, the essential the code plan had left
+"not placed", by moving lower items — the one thing the code fill cannot do. ~$0.04–0.05 a call;
+~$0.20–0.40/day at 4–8 calls, a little over plan § 12.
+
+Check first: `log.jsonl` `"event": "reshuffle"` outcomes since 10-27 — any `unparseable` means a
+day ran past 16,384. Then, Mike's call, recommendation first:
+1. **Keep as is** if outcomes are clean (Mike's choice on 10-27).
+2. **Try a thinking cap** (~6,000) on the plain (OpenAI-compat) path — `extra_body` with Google's
+   thinking config, or `reasoning_effort`; unverified on Vertex compat, one paid probe with the
+   smoke test (`--runs 3`; pass = parseable, churn ≤ 3, and it still fits what the code plan could
+   not). 3.8 Flash overshoots a budget (1,024 → 2,664 measured 10-26): keep the 16,384 ceiling.
+3. `reshuffle_model: false` — loses the rearrangement above.
 
 ## 1. Stage C — native push with the app closed (D1 option b)
 
