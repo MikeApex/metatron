@@ -474,6 +474,26 @@ def _():
     assert cands[repot]["essential"], cands[repot]
 
 
+@check("a kept slot outside the task's only-here hours is released: admin kept at 21:30 moves "
+       "into the 10:00–17:30 window on the next rebuild")
+def _():
+    _fresh("keep_strong")
+    _EVENTS["v"] = []
+    look = O.open_task("Look up swim lessons for the kids", kind="deadline", due="2026-10-27",
+                       minutes=15, minutes_source="stated").split()[1]
+    day = date(2026, 10, 27)
+    c = next(x for x in D._candidates(day, _PERSONA) if x["task_id"] == look)
+    assert c["activity"] == "admin", c["activity"]
+    prev = {"day": day.isoformat(), "blocks": [
+        {"id": f"task:{c['ref']}@2130", "kind": "task", "ref": c["ref"], "task_id": look,
+         "title": c["what"], "start": "2026-10-27T21:30", "end": "2026-10-27T21:45",
+         "essential": True, "score": c["score"], "length_known": True, "copy": 0}]}
+    plan = D._build(day, _PERSONA, "repair", ["time moved"], prev, datetime(2026, 10, 27, 11, 0),
+                    [], [c], allow_lookup=False)
+    blk = [b for b in _kind(plan, "task") if b["task_id"] == look]
+    assert blk and "10:00" <= _hm(blk[0]["start"]) < "17:30", blk
+
+
 @check("length ask: code names one untimed task at a time, each once ever, at most two a day; "
        "a timed task is never named; the plan block carries the line")
 def _():

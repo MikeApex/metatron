@@ -1135,6 +1135,14 @@ def _fill(cands: list[dict], blocks: list[dict], shape: dict, plan_start: dateti
         i, n = grid.idx(s), max(1, -(-c["minutes"] // _SLOT))
         if i < _after_idx(c, grid, day, shape):
             continue
+        # A kept slot must still be the right kind of time: a task whose activity has an
+        # only-here window (strong) is released from a slot outside it, and placed again. Found
+        # live 2026-10-27: "Look up swim lessons" placed at 21:30 while it read as exercise kept
+        # that slot after it became admin, with admin hours free at 16:05.
+        strong = profile(c)["strong"]
+        if strong is not None and not kb.get("displaced_protected") and \
+                not all(strong[k] for k in range(i, min(grid.n, i + max(1, -(-c["minutes"] // _SLOT))))):
+            continue
         if counts.get(c["ref"], 0) < c["copies"] and free_run(i, n, c, kb.get("displaced_protected", False), None, None):
             put(c, i, n, bool(kb.get("displaced_protected")), counts.get(c["ref"], 0))
             placed_starts.setdefault(c["ref"], []).append(s)
