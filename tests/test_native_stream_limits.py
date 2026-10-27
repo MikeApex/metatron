@@ -251,7 +251,7 @@ def _():
         L.write_quality_event = real
 
 
-@check("the plain path: the day planner gets 8,192 output tokens, every other agent 4,096")
+@check("the plain path: the day planner gets 16,384 output tokens, every other agent 4,096")
 def _():
     # Day planner smoke test, 2026-10-27: thinking ~3,930 + ~163 out = the 4,096 ceiling, and
     # every placement JSON was cut mid-line. The request is captured, never sent.
@@ -273,7 +273,7 @@ def _():
     openai.OpenAI = _Client
     O._resolve_gemini_credentials = lambda model=None: ("k", "https://x.googleapis.com", "m")
     try:
-        for agent, want in (("day_planner", 8192), ("logistics", 4096)):
+        for agent, want in (("day_planner", 16384), ("logistics", 4096)):
             sent.clear()
             O.run_session_gemini("sys", "in", [], {},
                                  max_output_tokens=O._WIDE_OUTPUT_AGENTS.get(agent, 4096))

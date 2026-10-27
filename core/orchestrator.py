@@ -4208,7 +4208,10 @@ _REPLY_OUTPUT_TOKENS = 4096
 # against max_tokens 4,096 — every placement JSON cut mid-line. Same ceiling as the
 # Synthesizer's (_REPLY_OUTPUT_TOKENS + its budget); billed only as produced. Specialists stay
 # at 4,096 until a trace shows them hitting it — this path does not yet record their thinking.
-_WIDE_OUTPUT_AGENTS = {"day_planner": 8192}
+# Raised to 16,384 the same day (Mike): on the live day both reshuffles were cut again at
+# ~7,800 thinking + output = 8,188. Worst case ~$0.06 a reshuffle (≤ 12 a day, ~$0.72); typical
+# is what it produces. If it is still cut at 16,384, the answer is a thinking cap, not more room.
+_WIDE_OUTPUT_AGENTS = {"day_planner": 16384}
 
 
 def _max_output_tokens(thinking_budget: int | None) -> int:
