@@ -6,10 +6,14 @@ length and "sometime by" window; the brief and close raise what is salient. Corr
 the task (tool text + a soft near-duplicate refusal). **The model reshuffle works at 16,384** (thinking
 9.9k–13.2k, 1–3 min in the background, ~$0.05 a call) and fits essentials the code plan cannot;
 keep / cap / off is Mike's open call — Stage C prompt § 0.
-**Next: the second-user build** — paste `archive/handoffs/2026-10-27-multi-user-build-prompt.md`
-(plan `archive/plans/multi_user_accounts_plan_2026-10-26.md`, approved, Fable-resolved 22/22; build in
-a worktree). **The server is OOM-killed silently (10-15, 10-22): the Kokoro voice model is the growth**
-(plan § 3.12/§ 4.12) — switch 🔊 off in the Mac web app until the build lands. **Then Stage C + step 2**
+**Second-user build: Stages 0–2 BUILT and Fable-reviewed, NOT merged or deployed** — worktree
+`~/Desktop/metatron-wt-multi-user`, branch `multi-user-build` (`ef24032` Stage 1, `79e42e0` Stage 2).
+**Next: Stage 3 (Red, Mike present)** — paste `archive/handoffs/2026-10-27-multi-user-build-stage-3-prompt.md`
+**from that branch** into a fresh session; it carries everything outstanding (D6 crisis wording, the
+three notice texts to review, records, deploy order, trial checks, Iva walkthrough). **Live units are
+already strict** (`docs/INFRASTRUCTURE.md`'s stanza is stale). **The server is OOM-killed silently
+(10-15, 10-22): the Kokoro voice model is the growth** — keep 🔊 off in the Mac web app until the build
+deploys. **Then Stage C + step 2**
 (`archive/handoffs/2026-10-27-day-planner-stage-c-push-and-step-2-prompt.md` — push with the app
 closed, Mike's D1 = b; § 0 settles the reshuffle first). Not concurrent: same push/server/APK files.
 WhatsApp 0b may run any time. **Still owed:** "over and out" live check; virtue-pause day-after

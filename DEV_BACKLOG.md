@@ -1291,8 +1291,8 @@ evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording �
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
 
-- **[user corrected a prior turn]** User corrected name from Cross Harbor to Crossharbour  
-  `2026-10-27T16:24:12.595811Z`
+- **[user corrected a prior turn]** User corrected name from Crosshatched / Cross Harbor to Crossharbour in previous turns  ×2  
+  `2026-10-27T17:32:59.661300Z`
 
 - **[user corrected a prior turn]** User corrected task duplicate handling and specified billing date windows for Chase and Rowan's payroll transfer, insurance task deduplication, and Marta's dinner hosting details.  
   `2026-10-27T13:19:47.019674Z`
