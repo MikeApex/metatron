@@ -28,7 +28,7 @@ names Mike's sons — "it's Manny, not Benny" primed it to hear a real child as 
 **Found building it:** a kept slot outranked a must-do — a morning nice-to-have held its place and
 a task due today came out "not placed". Fill now re-runs keeping only frozen or ≥-score slots.
 
-**Believed true, wrong, twice:** that 8,192 was enough for the day planner. Smoke run 1 failed
+**Believed true, wrong, twice (then fixed):** that 8,192 was enough for the day planner. Smoke run 1 failed
 3/3 at the plain path's fixed 4,096 (the 10-26 fix widened only the cached path) → `5252661`
 gave it 8,192 → smoke passed 3/3 (churn 0/0/2, thinking 3.1k–6.9k) → **both live reshuffles that
 afternoon came back unparseable at ~7,800 thinking + output = 8,188.** The code plan stands, so
@@ -46,6 +46,15 @@ description and refuses a task sharing two identifying words with an open one (s
 live `answer_event`. **Seen, not fixed:** Logistics, Finance and the Synthesizer wrote the same
 `set_days` in parallel; Finance's was `["10","15"]` (two days) — right only because a correct
 write landed last.
+
+**After the first close-out (`08ee9d0`, `d698019`, `b04989a`, `d1f9017`):** Mike chose more room
+over a thinking cap → day_planner 16,384. Smoke: 3/3 parseable and valid, thinking 9,927 /
+11,557 / 13,225, latency 80 / 203 / 69 s, churn 0 / 4 / 0 (run 2 failed only the churn rule — an
+equally valid arrangement from the same seed). **In every run the model fitted mover claims, the
+essential the code plan had left "not placed", by moving lower items** — the rearrangement the
+code fill cannot make, so the model earns its ~$0.04–0.05 a call (~$0.20–0.40/day, a little over
+plan § 12). Keep-as-is recommended; **Mike had not decided at close.** Backlog: the plants-interval
+check passed and closed; nothing else this session finished.
 
 **Decisions (Mike):** D1 = (b) native push with the app closed → Stage C. Order: second-user
 build next, Stage C after it (lands on per-user push), then step 2. Stage C and the second-user

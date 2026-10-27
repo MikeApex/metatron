@@ -1,10 +1,11 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-10-27. **VM at `e3a85b9`, all deployed.** **Day planner Stage B is live (step 1):**
+*Updated: 2026-10-27. **VM at `08ee9d0`, all deployed.** **Day planner Stage B is live (step 1):**
 the Synthesizer reads today's plan and records event answers, the day's shape, a task's kind,
 length and "sometime by" window; the brief and close raise what is salient. Corrections now update
-the task (tool text + a soft near-duplicate refusal). **Open:** the model reshuffle cuts itself off
-at 8,192 (~7,800 thinking) — code plan stands, ~$0.03 wasted per try; Mike has not said off.
+the task (tool text + a soft near-duplicate refusal). **The model reshuffle works at 16,384** (thinking
+9.9k–13.2k, 1–3 min in the background, ~$0.05 a call) and fits essentials the code plan cannot;
+keep / cap / off is Mike's open call — Stage C prompt § 0.
 **Next: the second-user build** (`archive/plans/multi_user_accounts_plan_2026-10-26.md` — D5 is
 satisfied; build in a worktree), **then Stage C + step 2**
 (`archive/handoffs/2026-10-27-day-planner-stage-c-push-and-step-2-prompt.md` — push with the app
