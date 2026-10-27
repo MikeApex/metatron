@@ -60,14 +60,26 @@ activities:
   social:        {device: false, concentration: light}
   rest:          {device: false, concentration: light}
 
-# A task with no stated activity and no domain below.
-default_activity: personal
+# A task with no stated activity, no word below and no domain below. Screen work, so an unknown
+# task stays out of protected family time — the same direction as an unanswered family event
+# (review F6): plan nothing over protected time that might not fit there. Watch day 2
+# (2026-10-27): "Handle mover claims" had no domain, read as light "personal" work, and was
+# planned into family time three times after the user had said admin waits for school drop-off.
+default_activity: busy
 
 # Words in a task's title that say what kind of activity it is when the task itself does not —
-# checked before its domain. A net, not the definition: an `activity` stated on the task always
-# wins (Stage B's conduct sets it). Found replaying 2026-10-26: "Gym workout session" read as
-# light health and was planned into family time at 07:00.
+# checked before its domain, in this order, first match wins. A net, not the definition: an
+# `activity` stated on the task always wins (Stage B's conduct sets it). Found replaying
+# 2026-10-26: "Gym workout session" read as light health and was planned into family time at
+# 07:00. Admin is checked first so "Look up swim lessons" is a lookup, not a swim (watch day 2);
+# household and errands come before the domain table, which reads every logistics task as admin
+# — repotting plants or hanging hooks with a child is not screen work.
 activity_words:
+  admin: [look up, research, claim, claims, invoice, tax, taxes, bill, email, apply,
+          application, paperwork, form, forms, submit]
+  health: [stretch, stretching, flu shot, vaccine, vaccination]
+  household: [repot, water, plants, hang, hooks, laundry, tidy, clean, cook, cooking]
+  errands: [shopping, groceries, grocery, pharmacy, exchange, collect, pick up, drop off]
   exercise: [gym, workout, run, running, swim, swimming, cycling, yoga class, spin class,
              pilates class, football training]
 

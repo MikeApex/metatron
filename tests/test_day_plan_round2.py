@@ -419,6 +419,33 @@ def _():
     plan = D.current(_PERSONA)
     lunch = next(b for b in _kind(plan, "meal") if b["title"] == "lunch")
     assert "Playdate with Sam" in lunch.get("ask", ""), lunch
+    # Watch day 2: the panel shows that as one question on the event's row, not a second row.
+    rows = D.today_view(_PERSONA)["blocks"]
+    assert not any(r["kind"] == "meal" and r["title"].startswith("lunch") for r in rows), rows
+    play = [r for r in rows if r["title"].startswith("Playdate with Sam")]
+    assert len(play) == 1 and f"is that also lunch ({_hm(lunch['start'])})?" in play[0]["title"], play
+
+
+@check("activity: admin words beat a sport word; household and errand words beat the logistics "
+       "domain; a task with nothing to go on is screen work, kept out of family time")
+def _():
+    d, ids = _ready("activity")
+    shape = DS.shape_for(date(2026, 10, 27))
+    act = lambda what, dom=None: DS.activity_of({"what": what, "domain": dom}, shape)[0]
+    assert act("Look up swim lessons for the kids") == "admin"
+    assert act("Handle mover claims") == "admin"
+    assert act("Swim session") == "exercise"
+    assert act("Repot two basement plants", "logistics") == "household"
+    assert act("Exchange books at the bookshop", "logistics") == "errands"
+    assert act("Post the job listing", "logistics") == "admin"
+    assert act("Stretching") == "health"
+    unknown, attrs = DS.activity_of({"what": "Finalise the migration plan"}, shape)
+    assert unknown == "busy" and attrs.get("device") is True, (unknown, attrs)
+    claims = O.open_task("Handle mover claims", kind="deadline", due="2026-10-27").split()[1]
+    plan = D.current(_PERSONA)
+    assert plan["failures"] == [], plan["failures"]
+    for b in _tasks_by(plan, ids).get(claims, []):
+        assert not ("07:00" <= _hm(b["start"]) < "10:00" or "17:30" <= _hm(b["start"]) < "20:30"), b
 
 
 # --- R2-9, F8 -------------------------------------------------------------------------------

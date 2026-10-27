@@ -970,6 +970,7 @@ def _skeleton(day: date, shape: dict, events: list[dict], persona: str | None,
                     key=lambda b: min(e, _dt(b["end"])) - max(s, _dt(b["start"])), default=None)
         if under:
             blk["ask"] = f"during {under['title']} — is that also {name}?"
+            blk["under"] = under["id"]      # the panel shows the ask on that event's row
         blocks.append(blk)
         meal_end[name] = e
 
@@ -1865,14 +1866,27 @@ def today_view(persona: str | None = None) -> dict:
         return {"blocks": [], "building": True}
     now = _now()
     rows = []
-    for b in _listed(plan):
+    listed = _listed(plan)
+    # A meal asked about inside an event is one question on that event's row, not a second row
+    # (watch day 2: "Marta and kids over for dinner" read as two entries).
+    ids = {b.get("id") for b in listed}
+    folded: dict[str, list[dict]] = {}
+    for b in listed:
+        if b["kind"] == "meal" and b.get("under") in ids:
+            folded.setdefault(b["under"], []).append(b)
+    for b in listed:
+        if b["kind"] == "meal" and b.get("under") in folded:
+            continue
         st = ""
         if b["kind"] == "task":
             st = _status_of(b.get("ref"), b.get("copy", 0))
             if st == "open" and _dt(b["end"]) <= now:
                 st = "no word yet" if b.get("essential") else "unconfirmed"
+        title = _panel_title(b).replace(f" — `{b.get('ref')}`", "").replace(f"`{b.get('ref')}`", "")
+        for meal in folded.get(b.get("id"), []):
+            title += f" · is that also {meal['title']} ({_hm(meal['start'])})?"
         rows.append({"start": _hm(b["start"]), "end": _hm(b["end"]), "kind": b["kind"],
-                     "title": _panel_title(b).replace(f" — `{b.get('ref')}`", "").replace(f"`{b.get('ref')}`", ""),
+                     "title": title,
                      "status": st, "past": _dt(b["end"]) <= now,
                      "now": _dt(b["start"]) <= now < _dt(b["end"])})
     return {"day": plan["day"], "built_at": plan.get("built_at"), "blocks": rows,
