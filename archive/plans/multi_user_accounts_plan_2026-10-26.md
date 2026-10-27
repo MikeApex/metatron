@@ -13,6 +13,27 @@ passwords — recommendation: leave), D14's idle timeout (recommended 10 min).**
 > Stage B's remaining flag flips are config in `config/modules/day_plan.yaml`, which this build does
 > not touch.
 
+> **Build session, 2026-10-27 — Stage 0 results and decisions (Fable-confirmed, one round).**
+> 1. **D14: idle timeout 10 minutes** (Mike).
+> 2. **The live units are already strict** — neither unit nor `.env` sets any persona variable
+>    (Mike, on the VM); `docs/INFRASTRUCTURE.md`'s unit stanza is stale (known since 09-25). So § 3.2's
+>    fallback claim, § 9 risk 1 and Stage 4 step 1's server-unit edit describe a state already gone;
+>    the empty `persona_audit.jsonl` means audit mode is off, not that nothing falls back. Stage 1.4
+>    substitutes a code read of every route lookup that names no persona. **§ 3.3's mirror is worse
+>    than stated:** overlapping scopes leave a stale value, so an unscoped lookup can borrow a persona
+>    nobody is being served — Stage 3.1 removes it.
+> 3. **Nothing reads `data/audio/`.** Recordings moving per-persona would enter the Mac backup:
+>    **Mike — back up `mike`'s and Iva's; later accounts' recordings are excluded** (Stage 1.9).
+> 4. **Template** gains your check-in pacing and Monday week-ahead, **not** the check-in wording
+>    (it restates `synthesizer.md`); an explicit `build_tick: {enabled: false}`, with the template's
+>    "default jobs are not listed" note amended (Mike: as recommended).
+> 5. **CPU wheel exists** (`torch-2.12.0+cpu`, cp311, manylinux_2_28 x86_64). `kokoro` is pinned
+>    nowhere and was hand-installed on the VM — Stage 4 prep records `pip show kokoro torch` first.
+> 6. **Not-connected readers:** four already silent; Stage 1.13 is `tools/caldav.py` +
+>    `tools/day_plan.py`. **Added (Mike: yes):** the day planner skips its reshuffle model call when
+>    there is nothing to arrange (it fires during the D2 hold, which covers session jobs only);
+>    **an optional city on the sign-up form**, written by `approve` (no city = no weather line).
+
 **Reading order:** § 1 (what changes for a user), § 2 (Mike's rulings — binding), § 3 (what the
 survey found — the facts that shape everything after), then § 4 design, § 5 stages.
 

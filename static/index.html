@@ -614,6 +614,12 @@
       justify-content: center;
       z-index: 100;
     }
+    #login-box, #signup-box, #notice-box {
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      width: min(320px, 90vw);
+    }
     #login-box {
       display: flex;
       flex-direction: column;
@@ -630,7 +636,7 @@
     }
     .login-row { display: flex; flex-direction: column; gap: 6px; width: 100%; }
     .login-row label { font-size: 11px; color: #444; text-transform: uppercase; letter-spacing: 0.08em; }
-    .login-row select, .login-row input[type="password"] {
+    .login-row select, .login-row input[type="password"], .login-row input[type="text"] {
       width: 100%;
       background: #1a1a1a;
       border: 1px solid #2a2a2a;
@@ -680,7 +686,20 @@
       text-align: center;
       width: 100%;
     }
-    #login-enter-btn {
+    /* Sign-up (2026-10-27). Same visual language as sign-in; the notice is plain text in
+       a scrolling box so a long one never pushes the button off a phone screen. */
+    .login-link {
+      background: none; border: none; color: #6a8caf; font-size: 13px; cursor: pointer;
+      padding: 4px;
+    }
+    .login-hint { font-size: 12px; color: #555; text-align: center; width: 100%; }
+    #signup-box, #notice-box { display: none; }
+    #notice-text {
+      width: 100%; max-height: 50vh; overflow-y: auto; white-space: pre-wrap;
+      font-size: 14px; line-height: 1.5; color: #ccc; background: #141414;
+      border: 1px solid #2a2a2a; border-radius: 10px; padding: 14px;
+    }
+    #login-enter-btn, #signup-continue-btn, #notice-accept-btn {
       width: 100%;
       height: 52px;
       background: #1e3a5f;
@@ -800,23 +819,9 @@
     <div id="login-icon">𐤌</div>
     <div id="login-title">Metatron</div>
     <div class="login-row">
-      <label>Persona</label>
-      <select id="login-persona-select">
-        <optgroup label="User">
-          <option value="mike">mike</option>
-        </optgroup>
-        <optgroup label="Test personas">
-          <option value="pepys">pepys</option>
-          <option value="danny_park">danny_park</option>
-          <option value="maya_torres">maya_torres</option>
-          <option value="sarah_chen">sarah_chen</option>
-          <option value="arthur_brooks">arthur_brooks</option>
-          <option value="cal_newport">cal_newport</option>
-          <option value="ryan_holiday">ryan_holiday</option>
-          <option value="oliver_burkeman">oliver_burkeman</option>
-          <option value="test_a3">test_a3</option>
-        </optgroup>
-      </select>
+      <label>Username</label>
+      <input id="login-username" type="text" placeholder="username"
+             autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="username">
     </div>
     <div class="login-row">
       <label>Password</label>
@@ -828,7 +833,47 @@
       </div>
     </div>
     <div id="login-error"></div>
-    <button id="login-enter-btn">Enter</button>
+    <button id="login-enter-btn">Sign in</button>
+    <button id="show-signup" class="login-link" type="button">Create an account</button>
+  </div>
+
+  <!-- Sign-up (plan § 4.4, § 4.11). The request is only sent from the notice screen, after
+       "I understand" — the permission it records is the sign-up's own record (D11). -->
+  <div id="signup-box">
+    <div style="font-size:13px;color:#555;letter-spacing:0.2em;text-transform:uppercase">Create an account</div>
+    <div class="login-row">
+      <label>Username</label>
+      <input id="signup-username" type="text" placeholder="lowercase, e.g. iva"
+             autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="username">
+    </div>
+    <div class="login-hint">Lowercase letters, digits and underscores.</div>
+    <div class="login-row">
+      <label>Your name</label>
+      <input id="signup-display" type="text" placeholder="what to call you">
+    </div>
+    <div class="login-row">
+      <label>City <span style="text-transform:none">(optional — for the weather)</span></label>
+      <input id="signup-city" type="text" placeholder="e.g. London">
+    </div>
+    <div class="login-row">
+      <label>Password</label>
+      <input id="signup-password" type="password" placeholder="at least 10 characters"
+             autocomplete="new-password">
+    </div>
+    <div class="login-row">
+      <label>Confirm password</label>
+      <input id="signup-confirm" type="password" autocomplete="new-password">
+    </div>
+    <div id="signup-error" class="login-hint" style="color:#b00020"></div>
+    <button id="signup-continue-btn">Continue</button>
+    <button id="signup-back" class="login-link" type="button">Back to sign in</button>
+  </div>
+
+  <div id="notice-box">
+    <div id="notice-text"></div>
+    <div id="notice-error" class="login-hint" style="color:#b00020"></div>
+    <button id="notice-accept-btn">I understand — continue</button>
+    <button id="notice-back" class="login-link" type="button">Back</button>
   </div>
 </div>
 
@@ -1011,11 +1056,12 @@
 
   function setLoginError(msg) {
     const el = document.getElementById('login-error');
+    el.style.color = '';   // a sign-up confirmation turns it green; an error resets it
     el.textContent = msg || '';
     el.style.display = msg ? '' : 'none';
   }
 
-  async function login(persona, password) {
+  async function login(username, password) {
     setLoginError('');
     const btn = document.getElementById('login-enter-btn');
     btn.disabled = true;
@@ -1024,16 +1070,22 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ password: password || '' }),
+        body: JSON.stringify({ username: username || '', password: password || '' }),
       });
       if (!res.ok) {
-        setLoginError(res.status === 401 ? 'Incorrect password.' : 'Sign-in failed.');
+        // 403 carries the account's own status ("waiting for approval", …) — said by the
+        // server only after a correct password, so it is safe to show as written.
+        let detail = '';
+        try { detail = (await res.json()).detail || ''; } catch (e) {}
+        setLoginError(res.status === 401 ? 'Incorrect username or password.'
+                      : (typeof detail === 'string' && detail) || 'Sign-in failed.');
         return;
       }
       const data = await res.json();
       authToken = data.token;
       localStorage.setItem('metatron_token', authToken);
-      enterApp(persona);
+      // The persona is the one the token is bound to — the server's answer, not the field.
+      enterApp(data.persona || username);
     } catch (e) {
       setLoginError('Cannot reach the server.');
     } finally {
@@ -1042,6 +1094,9 @@
   }
 
   function enterApp(persona) {
+    // A different persona has a different exchange history: the catch-up cursor belongs to
+    // the previous one, and its first catch-up would otherwise ask from the wrong id.
+    if (currentPersona !== persona) lastSeenId = 0;
     currentPersona = persona;
     localStorage.setItem('metatron_persona', persona);
     document.getElementById('login-screen').style.display = 'none';
@@ -1070,13 +1125,105 @@
   function showLogin() {
     document.getElementById('login-screen').style.display = 'flex';
     document.getElementById('persona-chip').style.display = 'none';
+    showLoginPanel('login-box');
   }
 
   function submitLogin() {
-    const persona = document.getElementById('login-persona-select').value;
+    const username = document.getElementById('login-username').value.trim().toLowerCase();
     const password = document.getElementById('login-password').value;
-    if (persona) login(persona, password);
+    if (username) login(username, password);
+    else setLoginError('Enter your username.');
   }
+
+  // --- Sign-up -------------------------------------------------------------------
+  // Three panels inside the login screen; exactly one is visible.
+  function showLoginPanel(id) {
+    for (const p of ['login-box', 'signup-box', 'notice-box']) {
+      document.getElementById(p).style.display = (p === id) ? 'flex' : 'none';
+    }
+  }
+
+  let signupNoticeVersion = null;
+
+  function signupFields() {
+    return {
+      username: document.getElementById('signup-username').value.trim().toLowerCase(),
+      display_name: document.getElementById('signup-display').value.trim(),
+      city: document.getElementById('signup-city').value.trim(),
+      password: document.getElementById('signup-password').value,
+      confirm: document.getElementById('signup-confirm').value,
+    };
+  }
+
+  async function continueSignup() {
+    const err = document.getElementById('signup-error');
+    err.textContent = '';
+    const f = signupFields();
+    if (!/^[a-z0-9][a-z0-9_]{0,39}$/.test(f.username)) {
+      err.textContent = 'Usernames are lowercase letters, digits and underscores.'; return;
+    }
+    if (!f.display_name) { err.textContent = 'Please enter the name to call you by.'; return; }
+    if (f.password.length < 10) { err.textContent = 'Passwords need at least 10 characters.'; return; }
+    if (f.password !== f.confirm) { err.textContent = "The two passwords don't match."; return; }
+    // The notice comes from the server, so the version recorded is the text actually shown.
+    try {
+      const res = await fetch(SERVER + '/auth/notice', { credentials: 'include' });
+      const data = await res.json();
+      signupNoticeVersion = data.text_version;
+      document.getElementById('notice-text').textContent =
+        (data.text || '').replace(/^#+\s*/gm, '').replace(/\*\*/g, '');
+    } catch (e) {
+      err.textContent = 'Cannot reach the server.'; return;
+    }
+    document.getElementById('notice-error').textContent = '';
+    showLoginPanel('notice-box');
+  }
+
+  async function acceptNoticeAndRegister() {
+    const err = document.getElementById('notice-error');
+    const btn = document.getElementById('notice-accept-btn');
+    err.textContent = '';
+    btn.disabled = true;
+    const f = signupFields();
+    try {
+      const res = await fetch(SERVER + '/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          username: f.username, display_name: f.display_name, password: f.password,
+          city: f.city, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || '',
+          consent: { scope: 'base_configuration', text_version: signupNoticeVersion },
+        }),
+      });
+      let data = {};
+      try { data = await res.json(); } catch (e) {}
+      if (!res.ok) {
+        err.textContent = (typeof data.detail === 'string' && data.detail) || 'Sign-up failed.';
+        return;
+      }
+      for (const id of ['signup-password', 'signup-confirm']) document.getElementById(id).value = '';
+      document.getElementById('login-username').value = f.username;
+      showLoginPanel('login-box');
+      setLoginError('');
+      document.getElementById('login-error').style.display = '';
+      document.getElementById('login-error').style.color = '#6a8';
+      document.getElementById('login-error').textContent =
+        data.message || "Request sent. You can sign in once it's approved.";
+    } catch (e) {
+      err.textContent = 'Cannot reach the server.';
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  document.getElementById('show-signup').addEventListener('click', () => {
+    setLoginError(''); showLoginPanel('signup-box');
+  });
+  document.getElementById('signup-back').addEventListener('click', () => showLoginPanel('login-box'));
+  document.getElementById('notice-back').addEventListener('click', () => showLoginPanel('signup-box'));
+  document.getElementById('signup-continue-btn').addEventListener('click', continueSignup);
+  document.getElementById('notice-accept-btn').addEventListener('click', acceptNoticeAndRegister);
 
   // Show/hide the password. Worth having on a phone: the field is typed rarely — the
   // token lasts 30 days — so a typo is both likely and invisible, and the failure it
@@ -4097,7 +4244,8 @@
   // Auto-login if persona saved — must run after all variables and handlers are initialized
   const savedPersona = localStorage.getItem('metatron_persona');
   if (savedPersona) {
-    document.getElementById('login-persona-select').value = savedPersona;
+    // The last username is remembered; the password never is.
+    document.getElementById('login-username').value = savedPersona;
   }
   // Auto-enter only with a token in hand. Without one every call would 401 and bounce
   // straight back here, so the login screen is the honest starting point. The token

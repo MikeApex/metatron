@@ -77,7 +77,10 @@ async def _connect_authed(websockets, url: str, insecure: bool):
 
 
 def _ssl_context(url: str, insecure: bool):
-    if not url.startswith("wss://"):
+    # https:// as well as wss:// since the internal HTTP routes (`post_internal`) share this
+    # TLS handling with the WebSocket client — one place decides how the Tailscale cert is
+    # trusted, so the two paths from the scheduler to the server cannot drift apart.
+    if not url.startswith(("wss://", "https://")):
         return None
     ctx = ssl.create_default_context()
     if insecure:
@@ -340,3 +343,111 @@ def send_one(persona: str, text: str, server: str | None = None,
         _send_one(persona, text, server or DEFAULT_SERVER, provider, insecure, timeout,
                   nudge=nudge)
     )
+
+
+# ---------------------------------------------------------------------------
+# Service-only internal routes — the scheduler's model-free path (plan § 4.12.3)
+# ---------------------------------------------------------------------------
+#
+# WHY these exist. A per-user scheduler that ran a non-coordinator session in-process
+# loaded the embedding model (~0.9 GB) on its first `write_log`, kept it for the life of
+# the process, and — through tools/baselines.py's private copy — could load it twice. Two
+# schedulers would undo the whole memory saving (review M1). So every scheduled session
+# runs on the server, where the model already lives once, and a scheduler process
+# (`METATRON_NO_LOCAL_MODELS=1`) hands its index/search calls to the server too.
+#
+# Same server and TLS handling as `send_one` (DEFAULT_SERVER, `insecure=True` against the
+# Tailscale cert) — deliberately no new address setting: a second one is a second place to
+# go stale. Service token from `core.auth.bearer_header()`: the routes are `/internal/*`,
+# which the server's middleware refuses to any `user`/`admin` token, so the persona must
+# travel in the body and the server binds it per request.
+
+# A scheduled pattern-miner run makes several model calls and tool rounds and has taken
+# minutes; the server holds the HTTP response until the run ends, so this bounds the whole
+# run, not an idle gap. 15 min is ~3x the longest single-agent run we expect and well under
+# the weekly cadence of the jobs that use it. On timeout the server's run is NOT cancelled
+# (uvicorn imposes no request timeout) — its tool writes still land; only the notification
+# text is lost, and the scheduler has already recorded the fire, so it does not retry.
+INTERNAL_SESSION_TIMEOUT_SECONDS = 900.0
+
+
+class InternalCallError(RuntimeError):
+    """A `/internal/*` call that did not return 200. `status` is 0 when nothing answered."""
+
+    def __init__(self, path: str, status: int, detail: str) -> None:
+        self.path = path
+        self.status = status
+        self.detail = detail
+        where = f"HTTP {status}" if status else "no response"
+        super().__init__(f"{path} failed ({where}): {detail}")
+
+
+def post_internal(path: str, body: dict, timeout: float, server: str | None = None,
+                  insecure: bool = True) -> dict:
+    """
+    POST JSON to a service-only `/internal/*` route and return the decoded JSON reply.
+
+    Raises InternalCallError on any non-200 or transport failure — never returns a
+    fallback, because a caller that silently fell back to running locally would load the
+    model this path exists to keep out of the process.
+    """
+    import urllib.error
+    import urllib.request
+
+    from core.auth import bearer_header
+
+    url = f"{(server or DEFAULT_SERVER).rstrip('/')}{path}"
+    # TTL a little past the timeout: the token is checked once, at the start of the
+    # request, but there is no reason to mint one that could expire in a queue.
+    headers = {"Content-Type": "application/json",
+               **bearer_header(ttl_seconds=int(timeout) + 300)}
+    req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"),
+                                 headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout,
+                                    context=_ssl_context(url, insecure)) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+            status = resp.status
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        try:
+            detail = json.loads(detail).get("detail", detail)
+        except (ValueError, AttributeError):
+            pass
+        raise InternalCallError(path, exc.code, str(detail).strip() or str(exc.reason)) from exc
+    except (urllib.error.URLError, OSError) as exc:
+        raise InternalCallError(path, 0, str(exc)) from exc
+    if status != 200:
+        raise InternalCallError(path, status, raw[:500])
+    try:
+        return json.loads(raw)
+    except ValueError as exc:
+        raise InternalCallError(path, status, f"reply was not JSON: {raw[:200]}") from exc
+
+
+def run_internal_session(agent: str, text: str, persona: str, server: str | None = None,
+                         insecure: bool = True,
+                         timeout: float = INTERNAL_SESSION_TIMEOUT_SECONDS) -> str:
+    """
+    Run one scheduled NON-coordinator session (pattern_miner, physical_health, …) on the
+    server and return its response text.
+
+    Replaces the scheduler's in-process `run_session` (plan § 4.12.3 item 1). Not `/session`:
+    that route writes every run to the conversation log, which the nightly CRM sweep reads
+    as things the user said (review M1-N1). `/internal/session` runs
+    `run_session(agent, input, persona=…, proactive=True)` and writes no conversation
+    record — exactly what the in-process run produced. Coordinator sessions still go
+    through `send_one`, because those ARE conversation.
+
+    Raises on failure rather than falling back to in-process, for the reason `send_one`
+    gives and one more: the fallback would load the model into the scheduler.
+    """
+    reply = post_internal(
+        "/internal/session",
+        {"agent": agent, "input": text, "persona": persona, "proactive": True},
+        timeout=timeout, server=server, insecure=insecure,
+    )
+    response = reply.get("response") if isinstance(reply, dict) else None
+    if not isinstance(response, str):
+        raise InternalCallError("/internal/session", 200, "reply carried no 'response' text")
+    return response

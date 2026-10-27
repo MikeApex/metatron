@@ -88,6 +88,8 @@ tabulate==0.10.0
 tenacity==9.1.4
 threadpoolctl==3.6.0
 tokenizers==0.22.2
+# On the VM deploy.sh installs the CPU-only build (2.12.0+cpu) from PyTorch's index first;
+# it satisfies this pin, so no CUDA build is ever pulled back in. See deploy.sh.
 torch==2.12.0
 tqdm==4.67.3
 transformers==5.8.1

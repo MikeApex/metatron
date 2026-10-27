@@ -166,7 +166,12 @@ def main() -> int:
             except Exception as e:
                 warnings.append(f"{name}: scheduler.yaml does not parse — {e}")
                 continue
-            missing = [j for j in tmpl_jobs if j not in have]
+            # An entry with neither `agent` nor `function` is not a job — it overrides a
+            # _DEFAULT_JOBS entry for personas provisioned from the template (build_tick:
+            # {enabled: false}, multi-user build 2026-10-27). Reporting it as missing would
+            # tell mike to turn his own Build tick off.
+            missing = [j for j in tmpl_jobs if j not in have
+                       and ("agent" in (tmpl_jobs[j] or {}) or "function" in (tmpl_jobs[j] or {}))]
             if missing:
                 warnings.append(
                     f"{name}: scheduler.yaml is missing {len(missing)} job(s) present in the "

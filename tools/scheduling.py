@@ -202,6 +202,11 @@ def _compute_conflicts(
     raw = _query_events(query_start, query_end, calendars="all")
     if "error" in raw:
         return {"check_error": raw["error"]}
+    if raw.get("connected") is False:
+        # No calendar connected (multi-user plan § 4.8): there is nothing to clash with, but
+        # "no conflicts" would read as "the slot is clear" — say which it is.
+        return {"check_error": "No calendar is connected for this user, so conflicts "
+                               "cannot be checked."}
 
     events = [e for e in raw["events"] if e.get("uid") != exclude_uid
               and not (e.get("shared") and _is_all_day(e))]

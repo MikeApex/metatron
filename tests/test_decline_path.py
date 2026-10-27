@@ -177,7 +177,10 @@ _client = TestClient(srv.app, base_url="https://testserver")
 
 
 def _login() -> None:
-    _client.post("/auth/login", json={"password": TEST_PASSWORD})
+    # A service token, which names its persona per request — `test_decline` is a scratch
+    # persona with no identity file, so it has no sign-in of its own (multi-user build).
+    from core import auth
+    _client.headers["Authorization"] = f"Bearer {auth.issue_token()}"
 
 
 def _with_temp_db(fn):
@@ -198,6 +201,7 @@ def _with_temp_db(fn):
 def test_decline_endpoint_requires_auth():
     """Same gate as every other endpoint — a tap has to come from a signed-in client."""
     _client.cookies.clear()
+    _client.headers.pop("Authorization", None)
     assert _client.post("/decline", json={"token": "nope"}).status_code == 401
 
 

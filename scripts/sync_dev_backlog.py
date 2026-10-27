@@ -21,6 +21,10 @@ Design constraints, all three deliberate:
 Usage:  python3 scripts/sync_dev_backlog.py [--persona mike] [--server URL]
 """
 
+# Annotations stay unevaluated: the SessionStart hook often runs under the macOS
+# system python3 (3.9), where `dict | None` would fail at import.
+from __future__ import annotations
+
 import argparse
 import json
 import re
@@ -29,7 +33,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 # HTTPS, and the Tailscale hostname rather than the raw IP: the server runs
@@ -175,6 +179,21 @@ INBOX_FRAGMENTS = ROOT / ".claude" / "backlog_inbox"
 # resurfaces the moment it is curated out of Inbox — resolved items would come
 # back forever, and rewording one would duplicate it.
 SEEN = ROOT / ".dev_backlog_seen"
+
+# The memory clause (plan multi_user_accounts § 3.12, D10 a; Stage 1.14). The VM's
+# watchdog (scripts/vm_memory_watch.py, every 5 min) appends OOM kills and low-memory
+# readings to this file; until 2026-10-27 nothing read it, so three OOM kills and ~260
+# low readings a day went unseen. Read whole over /monitor/file — the reason the
+# watchdog's per-process samples go to a separate file rather than this one.
+MEMORY_LOG = "data/system/memory_alerts.jsonl"
+# What this script has already shown from MEMORY_LOG. Under `.claude/`, which is
+# gitignored (`.claude/*`) and already holds this script's other local state
+# (INBOX_FRAGMENTS) — a new root dotfile like SEEN would need a .gitignore line.
+# Holds the newest record timestamp seen and the low-memory days already reported.
+MEMORY_CURSOR = ROOT / ".claude" / "dev_backlog_memory_cursor.json"
+# Reported low days are kept this long, then dropped: records arrive in time order, so
+# a day older than the cursor by more than this can never gain a new record.
+LOW_DAY_MEMORY = 31
 
 # Anchored to line start with its own newlines: the intro prose mentions these
 # headings inline, and a bare substring match finds that first — which would
@@ -330,15 +349,40 @@ def _auth_header() -> dict:
         return {}
 
 
-def fetch_events(server: str, persona: str) -> list[dict]:
-    """Fetch and parse the persona's quality event log. Returns [] on any failure."""
-    path = f"data/personas/{persona}/logs/quality_events.json"
-    url = f"{server.rstrip('/')}/monitor/file?{urllib.parse.urlencode({'path': path})}"
+# Set once a request fails to REACH the server, as opposed to reaching it and being
+# refused. The VM is routinely stopped, and each request to a stopped VM costs the full
+# TIMEOUT_SECONDS — so after the first one finds it down, the later clauses (accounts,
+# memory) skip theirs rather than tripling a session start's wait.
+_UNREACHABLE = False
+
+
+def _get_json(server: str, route: str, params: dict | None = None) -> dict | None:
+    """GET a /monitor route; the decoded JSON object, or None on any failure."""
+    global _UNREACHABLE
+    if _UNREACHABLE:
+        return None
+    url = f"{server.rstrip('/')}{route}"
+    if params:
+        url += f"?{urllib.parse.urlencode(params)}"
     try:
         req = urllib.request.Request(url, headers=_auth_header())
         with urllib.request.urlopen(req, timeout=TIMEOUT_SECONDS) as resp:
             payload = json.loads(resp.read().decode("utf-8", errors="replace"))
-    except (urllib.error.URLError, OSError, ValueError, json.JSONDecodeError):
+    except urllib.error.HTTPError:
+        return None          # reached, refused (401/403/404) — the VM is up
+    except (urllib.error.URLError, OSError):
+        _UNREACHABLE = True  # includes the socket timeout
+        return None
+    except ValueError:       # json.JSONDecodeError is a ValueError
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def fetch_events(server: str, persona: str) -> list[dict]:
+    """Fetch and parse the persona's quality event log. Returns [] on any failure."""
+    path = f"data/personas/{persona}/logs/quality_events.json"
+    payload = _get_json(server, "/monitor/file", {"path": path})
+    if payload is None:
         return []
 
     content = payload.get("content", "")
@@ -378,6 +422,142 @@ def fetch_events(server: str, persona: str) -> list[dict]:
         and e.get("event_type") in WANTED
         and not _is_null_ish(str(e.get("detail", "")))
     ]
+
+
+def pending_accounts(server: str) -> int:
+    """
+    How many sign-ups are waiting for Mike's approval (plan § 4.4, "How Mike hears about a
+    request"). 0 on any failure, so the clause is absent rather than wrong.
+
+    GET /monitor/accounts admits service tokens, like every /monitor route (review L8):
+    this script holds a service token, so an admin-only route would 403 here and the
+    line would never fire. Limit, stated in the plan: Mike sees a request only when a
+    Claude Code session opens.
+    """
+    payload = _get_json(server, "/monitor/accounts")
+    rows = payload.get("accounts") if payload else None
+    if not isinstance(rows, list):
+        return 0
+    return sum(1 for r in rows if isinstance(r, dict) and r.get("status") == "pending")
+
+
+def _parse_ts(value) -> datetime | None:
+    """An ISO timestamp as an aware datetime (naive read as UTC), or None."""
+    try:
+        ts = datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+    return ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
+
+
+def _memory_kind(record: dict) -> str:
+    """
+    "oom_kill", "low_memory", or another/empty kind.
+
+    The watchdog has written a `kind` field since 2026-10-27. The ~7,900 records before
+    that carry none, and their message prefix — fixed strings in vm_memory_watch.check()
+    — is the only marker they have.
+    """
+    kind = record.get("kind")
+    if kind:
+        return str(kind)
+    message = str(record.get("message", ""))
+    if message.startswith("OOM kill"):
+        return "oom_kill"
+    if message.startswith("VM memory low"):
+        return "low_memory"
+    return ""
+
+
+def fetch_memory_records(server: str) -> list[dict] | None:
+    """MEMORY_LOG's records, or None when it could not be read — the cursor is left alone then."""
+    payload = _get_json(server, "/monitor/file", {"path": MEMORY_LOG})
+    content = payload.get("content") if payload else None
+    if not isinstance(content, str):
+        return None
+    records = []
+    for line in content.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            obj = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(obj, dict):
+            records.append(obj)
+    return records
+
+
+def memory_news(records: list[dict], state: dict) -> tuple[list[str], list[str], dict]:
+    """
+    (new OOM-kill dates, new low-memory days, the state to save). Pure, so the
+    once-and-only-once contract is testable without a VM.
+
+    A LOW-MEMORY DAY is a UTC calendar day (the watchdog stamps `ts` in UTC) holding at
+    least one `low_memory` record — one is written per 5-minute run while MemAvailable is
+    under the watchdog's 500 MB line. A day is reported once, the first time a record
+    newer than the cursor lands on it; later readings that day stay silent, which is why
+    the reported days are kept in the state and not just the cursor. Each OOM-kill record
+    is reported once, by its date.
+
+    FIRST RUN (no cursor in the state) reports NOTHING and starts the cursor at the log's
+    end. The log held ~7,900 records when this was written, and its history through
+    2026-10-27 — three OOM kills, low almost every day since 08-18 — is already read and
+    written up in plan § 3.12. Replaying even the last week would reprint the 10-22 kill
+    and a week of low days that are known, before the § 4.12 fix has had a chance to
+    change anything; what this clause is for is what happens after it. `"cursor": null`
+    is a real state — initialised against an empty log — and means "everything is new".
+    """
+    stamped = [(ts, r) for r in records if (ts := _parse_ts(r.get("ts"))) is not None]
+    newest = max((ts for ts, _ in stamped), default=None)
+
+    if "cursor" not in state:
+        return [], [], {"cursor": newest.isoformat() if newest else None, "low_days": []}
+
+    cursor = _parse_ts(state["cursor"]) if state["cursor"] else None
+    reported = {str(d) for d in state.get("low_days") or []}
+    fresh = [(ts, r) for ts, r in stamped if cursor is None or ts > cursor]
+
+    def _day(ts: datetime) -> str:
+        return ts.astimezone(timezone.utc).date().isoformat()
+
+    oom_dates = sorted({_day(ts) for ts, r in fresh if _memory_kind(r) == "oom_kill"})
+    low_days = sorted({_day(ts) for ts, r in fresh if _memory_kind(r) == "low_memory"} - reported)
+
+    latest = max((t for t in (newest, cursor) if t is not None), default=None)
+    keep = reported | set(low_days)
+    if latest is not None:
+        keep_from = (latest.astimezone(timezone.utc).date() - timedelta(days=LOW_DAY_MEMORY)).isoformat()
+        keep = {d for d in keep if d >= keep_from}
+    new_state = {"cursor": latest.isoformat() if latest else None, "low_days": sorted(keep)}
+    return oom_dates, low_days, new_state
+
+
+def memory_clause(oom_dates: list[str], low_days: list[str]) -> str:
+    """` · ⚠ memory: OOM kill 2026-10-22; 2 low-memory days`, or "" when nothing is new."""
+    parts = []
+    if oom_dates:
+        parts.append(f"OOM kill{'s' if len(oom_dates) > 1 else ''} {', '.join(oom_dates)}")
+    if low_days:
+        parts.append(f"{len(low_days)} low-memory day{'s' if len(low_days) != 1 else ''}")
+    return f" · ⚠ memory: {'; '.join(parts)}" if parts else ""
+
+
+def _load_memory_cursor() -> dict:
+    try:
+        state = json.loads(MEMORY_CURSOR.read_text())
+    except (OSError, ValueError):
+        return {}
+    return state if isinstance(state, dict) else {}
+
+
+def _save_memory_cursor(state: dict) -> None:
+    try:
+        MEMORY_CURSOR.parent.mkdir(parents=True, exist_ok=True)
+        MEMORY_CURSOR.write_text(json.dumps(state, indent=2) + "\n")
+    except OSError:
+        pass
 
 
 def vm_status() -> str:
@@ -950,10 +1130,32 @@ def main() -> int:
     if escalated_n:
         machine_clause += f" ({escalated_n} ⚠)"
 
-    if new or not args.quiet or vm_warning:
+    # Two clauses about the VM rather than the backlog, carried here because this line is
+    # the one channel Mike reliably sees (plan multi_user_accounts § 4.4, D10 a). Each is
+    # fenced on its own: a malformed reply or cursor must cost its clause, never the line.
+    accounts_clause = ""
+    try:
+        pending = pending_accounts(args.server)
+        if pending:
+            accounts_clause = (f" · {pending} account{'s' if pending != 1 else ''}"
+                               f" awaiting approval")
+    except Exception:
+        pass
+
+    mem_clause = ""
+    try:
+        records = fetch_memory_records(args.server)
+        if records is not None:
+            oom_dates, low_days, mem_state = memory_news(records, _load_memory_cursor())
+            _save_memory_cursor(mem_state)
+            mem_clause = memory_clause(oom_dates, low_days)
+    except Exception:
+        pass
+
+    if new or not args.quiet or vm_warning or accounts_clause or mem_clause:
         print(f"DEV_BACKLOG.md: {added} new · {inbox} inbox · {now} now · "
               f"{later} later · {workable} workable{parked_clause}"
-              f"{machine_clause}{alert}{due_clause}{vm_warning}")
+              f"{machine_clause}{alert}{due_clause}{accounts_clause}{mem_clause}{vm_warning}")
     return 0
 
 

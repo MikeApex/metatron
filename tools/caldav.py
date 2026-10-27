@@ -73,6 +73,32 @@ _MULTI_CALENDAR_NOTE = (
 )
 
 
+# A persona with no calendar connected — no caldav.yaml, or one with `enabled: false`, which is
+# how scripts/new_persona.sh copies config/templates/caldav.yaml — is NOT a failure (multi-user
+# plan archive/plans/multi_user_accounts_plan_2026-10-26.md § 4.8, Stage 1.13). It used to read
+# as `{"error": "CalDAV is not enabled…"}`, so the day planner stored a standing calendar error
+# and re-fetched on every tick, and every scheduled reader saw a failure that was really "nothing
+# here". READ paths now return `{"events": [], "connected": False}`; every consumer branches on
+# `"error" in raw` and otherwise iterates `events`, so it reads as nothing to do without change.
+# WRITE paths keep their error: an agent asked to put something in a calendar the user does not
+# have must be told it failed. A CONFIGURED calendar that fails is still an error, unchanged.
+def _not_connected() -> dict:
+    """A fresh dict each time — callers own what they are handed, and some reshape it."""
+    return {"events": [], "connected": False}
+
+
+# What read_calendar says instead of an event list when nothing is connected. Deliberately not
+# `count: 0, events: []`: an empty list reads as a free day, and "you have nothing on" would be a
+# claim about a calendar nobody can see. Same reasoning as the notes above — the return value is
+# what is read back at answer time.
+_NOT_CONNECTED_NOTE = (
+    "No calendar is connected for this user, so there are no calendar entries to read. "
+    "This is NOT an empty day: what the user has on is unknown. Do not tell the user they "
+    "are free or have nothing scheduled. If their schedule matters to the answer, say that "
+    "no calendar is connected."
+)
+
+
 def _config_path(persona: str | None = None) -> Path:
     """Per-persona. Each persona has its own calendar and its own credentials."""
     return persona_config_dir(persona) / "caldav.yaml"
@@ -626,16 +652,14 @@ def _query_events(start_date: str, end_date: str, persona: str | None = None,
 
     Returns {"events": [...]} on success, {"error": "..."} on failure. Only the
     configured calendar failing is an error; another calendar failing is reported
-    under `calendars_failed`.
+    under `calendars_failed`. A persona with no calendar connected (no caldav.yaml,
+    or `enabled: false`) gets {"events": [], "connected": False} — not an error;
+    see _not_connected(). `enabled: true` with no calendar_url is a broken
+    configuration, not an absent one, and stays an error.
     """
     cfg = _load_config(persona)
     if not cfg.get("enabled"):
-        return {
-            "error": (
-                "CalDAV is not enabled. Set enabled: true and configure "
-                "calendar_url and auth in this persona's caldav.yaml."
-            )
-        }
+        return _not_connected()
 
     calendar_url = cfg.get("calendar_url", "").strip()
     if not calendar_url:
@@ -800,6 +824,11 @@ def read_calendar(start_date: str, end_date: str) -> dict:
     raw = _query_events(start_date, end_date, calendars="all")
     if "error" in raw:
         return raw
+    if raw.get("connected") is False:
+        # Neither an error (nothing failed — the user has no calendar here) nor an empty day
+        # (that would read as "nothing on"). An explicit not-connected answer, no event list.
+        return {"connected": False, "range": {"start": start_date, "end": end_date},
+                "calendar_note": _NOT_CONNECTED_NOTE}
 
     events = raw["events"]
 
@@ -914,8 +943,10 @@ def write_calendar_event(
     if not cfg.get("enabled"):
         return {
             "error": (
-                "CalDAV is not enabled. Set enabled: true and configure "
-                "calendar_url and auth in this persona's caldav.yaml."
+                # Plain words, no setup steps: an agent repeats what a tool says, and the
+                # user connects a calendar in the app, never by editing a config file.
+                "No calendar is connected for this user, so nothing was written. They can "
+                "connect one in the app's Connections settings."
             )
         }
 
@@ -1561,6 +1592,12 @@ def find_event_for_invite(uid: str = "", title: str = "", date: str = "") -> dic
     day = _query_events(date, date)
     if "error" in day:
         return day
+    if day.get("connected") is False:
+        # This resolves an event so an invitation can be SENT — a write path in effect. Without
+        # this it would answer "No event matching … Events that day: none", which reads as the
+        # user's day being empty rather than as there being no calendar to look in.
+        return {"error": "No calendar is connected for this user, so there is no event "
+                         "to send an invitation for. Nothing was sent."}
     events = day.get("events") or []
     needle = title.strip().lower()
     matches = [e for e in events

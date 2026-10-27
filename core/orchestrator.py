@@ -3401,11 +3401,21 @@ def _vertex_cache_owner() -> str:
     Deliberately carries NO PID: a PID-keyed identity means a restarted process
     matches nothing it created, which is precisely the orphan the ownership tag
     exists to let a later process reap.
+
+    A scheduler's owner also names its persona (2026-10-27): there is one scheduler
+    per user now, and with a shared `metatron:{host}:scheduler` label a starting
+    scheduler's sweep could delete a sibling's near-expiry caches — one metered
+    re-creation each (plan § 3.8, § 4.6). Taken from the process's own `--persona`
+    argument, which is fixed for its life, rather than from per-call identity.
     """
     import socket
     host = socket.gethostname().split(".")[0]
     stem = Path(sys.argv[0]).stem if sys.argv and sys.argv[0] else ""
     role = stem if stem in ("server", "scheduler") else "dev"
+    if role == "scheduler" and "--persona" in sys.argv[:-1]:
+        persona = sys.argv[sys.argv.index("--persona") + 1]
+        if _re.fullmatch(r"[a-z0-9][a-z0-9_]{0,39}", persona):
+            role = f"scheduler:{persona}"
     return f"metatron:{host}:{role}"
 
 

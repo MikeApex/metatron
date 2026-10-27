@@ -15,12 +15,25 @@ WHAT IT ALERTS ON
   3. Swap absent — a standing condition, reported once per boot, because with no
      swap the kernel has no soft failure mode available to it at all.
 
-WHERE THE ALERT GOES, and why more than one place: the case being detected is
-"the server may be dying", so a channel that depends on the server is exactly the
-channel that fails when it matters.
+WHERE THE ALERT GOES, and why none of it depends on the server: the case being
+detected is "the server may be dying", so a channel that depends on the server is
+exactly the channel that fails when it matters.
   - stdout/stderr → journald (survives anything; `journalctl -u metatron-memory-watch`)
-  - data/system/memory_alerts.jsonl → durable, greppable, survives a restart
-  - the server's push endpoint → best-effort only, skipped silently if unreachable
+  - data/system/memory_alerts.jsonl → durable, greppable, survives a restart — and,
+    since 2026-10-27, READ: scripts/sync_dev_backlog.py puts any new OOM kill and any
+    new low-memory day in the session-start line (plan multi_user_accounts § 3.12, D10 a)
+
+There used to be a third: a POST to http://127.0.0.1:8001/push on an OOM kill. No such
+route exists and the server serves https, so it never once delivered — removed
+2026-10-27 (plan Stage 1.14). The APK has no push either; the session-start line is
+the channel that works.
+
+WHAT IT RECORDS EVERY RUN, alerting or not (plan Stage 1.14): the resident memory of
+the server, of each per-user scheduler (with its persona), and of the voice helper
+when one is alive — one line per run in data/system/memory_samples.jsonl. The
+diagnosis (§ 3.12) found the server climbing for days after a restart until the
+kernel killed it; the alert log only ever said *that* memory was low, never *who*
+held it. This is the growth curve § 6.3a's week of measurement reads.
 
 Run it from a systemd timer. Install both units with --install-units.
 """
@@ -32,17 +45,28 @@ import os
 import re
 import subprocess
 import sys
-import urllib.error
-import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 STATE_PATH = ROOT / "data" / "system" / "memory_watch_state.json"
 ALERT_LOG = ROOT / "data" / "system" / "memory_alerts.jsonl"
+# Per-process samples go to their OWN file, not ALERT_LOG, because ALERT_LOG is now read
+# whole over /monitor/file at every session start (sync_dev_backlog.py, 3 s timeout) and a
+# sample every 5 minutes would grow it by ~288 lines a day forever — the session-start
+# memory clause would slow and then silently time out. Standing cost of this file: one
+# line of ~150-250 bytes per run, so ~50-70 KB a day, ~20-25 MB a year of VM disk.
+# Nothing rotates or deletes it and no meter reports it; it is read by hand (§ 6.3a).
+SAMPLE_LOG = ROOT / "data" / "system" / "memory_samples.jsonl"
+PROC_ROOT = Path("/proc")
 
 THRESHOLD_WARN_MB = 500     # below this, a Chromium render or a Whisper spike is a coin flip
-SERVER_URL = "http://127.0.0.1:8001"
+
+# The processes worth a line each, matched on the script a Python interpreter is running
+# (path form, as the systemd units launch them, or `-m` module form). `tts_worker` is the
+# voice helper split out of the server by plan § 4.12.2 — it comes and goes on demand, so
+# its absence from a sample is normal.
+WATCHED = ("server", "scheduler", "tts_worker")
 
 
 def _meminfo() -> dict[str, int]:
@@ -97,11 +121,104 @@ def _boot_id() -> str:
         return "unknown"
 
 
-def _emit(level: str, message: str, detail: dict) -> None:
-    """Write the alert everywhere it can go. Never raises."""
+def _script_role(argv: list[str]) -> str | None:
+    """
+    Which WATCHED process `argv` is, or None.
+
+    Only a Python interpreter's *script* argument counts — the first non-flag argument,
+    or the module after `-m` — so `grep core/server.py`, or a `journalctl` whose
+    arguments mention it, is never mistaken for the server.
+    """
+    if not argv or not Path(argv[0]).name.startswith("python"):
+        return None
+    args = iter(argv[1:])
+    for arg in args:
+        if arg == "-m":
+            module = next(args, "")
+            target = module.split(".")
+            if len(target) == 2 and target[0] == "core" and target[1] in WATCHED:
+                return target[1]
+            return None
+        if arg.startswith("-"):
+            continue
+        for name in WATCHED:
+            if arg == f"core/{name}.py" or arg.endswith(f"/core/{name}.py"):
+                return name
+        return None
+    return None
+
+
+def _persona_arg(argv: list[str]) -> str | None:
+    """The `--persona` value from a command line, in either spelling."""
+    for i, arg in enumerate(argv):
+        if arg == "--persona" and i + 1 < len(argv):
+            return argv[i + 1]
+        if arg.startswith("--persona="):
+            return arg.split("=", 1)[1]
+    return None
+
+
+def _process_rss() -> list[dict]:
+    """
+    Resident memory of each watched process, from /proc — no psutil, which the VM's
+    system Python does not have and this script must not need.
+
+    A scheduler carries its persona: there is one per user after the multi-user build
+    (`metatron-scheduler@<name>`), and a scheduler with NO persona is the split-history
+    hazard (CLAUDE.md infrastructure trap 5), so `persona: null` is worth seeing too.
+    Processes that vanish mid-read, kernel threads and zombies are skipped.
+    """
+    procs: list[dict] = []
+    try:
+        entries = [p for p in PROC_ROOT.iterdir() if p.name.isdigit()]
+    except OSError:
+        return procs
+    for entry in entries:
+        try:
+            argv = [a for a in (entry / "cmdline").read_bytes().decode(errors="replace").split("\0") if a]
+            role = _script_role(argv)
+            if role is None:
+                continue
+            rss_kb = None
+            for line in (entry / "status").read_text().splitlines():
+                if line.startswith("VmRSS:"):
+                    rss_kb = int(line.split()[1])
+                    break
+        except (OSError, ValueError, IndexError):
+            continue
+        if rss_kb is None:
+            continue
+        row = {"role": role, "pid": int(entry.name), "rss_mb": rss_kb // 1024}
+        if role == "scheduler":
+            row["persona"] = _persona_arg(argv)
+        procs.append(row)
+    procs.sort(key=lambda r: (r["role"], r.get("persona") or "", r["pid"]))
+    return procs
+
+
+def _record_sample(avail: int, procs: list[dict]) -> None:
+    """One compact line per run into SAMPLE_LOG. Never raises — a sample is not an alert."""
+    sample = {"ts": datetime.now(timezone.utc).isoformat(), "available_mb": avail, "procs": procs}
+    try:
+        SAMPLE_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with SAMPLE_LOG.open("a") as fh:
+            fh.write(json.dumps(sample, separators=(",", ":")) + "\n")
+    except OSError:
+        pass
+
+
+def _emit(level: str, kind: str, message: str, detail: dict) -> None:
+    """
+    Write the alert everywhere it can go. Never raises.
+
+    `kind` (oom_kill / low_memory / no_swap) was added 2026-10-27 so the session-start
+    reader keys on a field rather than on message prose; the ~7,900 records written
+    before it carry none, and that reader falls back to the message for those.
+    """
     event = {
         "ts": datetime.now(timezone.utc).isoformat(),
         "level": level,
+        "kind": kind,
         "message": message,
         **detail,
     }
@@ -112,17 +229,6 @@ def _emit(level: str, message: str, detail: dict) -> None:
             fh.write(json.dumps(event) + "\n")
     except OSError:
         pass
-    if level == "critical":
-        try:
-            req = urllib.request.Request(
-                f"{SERVER_URL}/push",
-                data=json.dumps({"message": message}).encode(),
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            urllib.request.urlopen(req, timeout=5).read()
-        except (urllib.error.URLError, OSError, ValueError):
-            pass  # server down is the expected case here, not an error
 
 
 def check() -> int:
@@ -143,19 +249,21 @@ def check() -> int:
     detail = {"available_mb": avail, "total_mb": total, "swap_mb": swap, "oom_kills": kills}
     alerted = False
 
+    _record_sample(avail, _process_rss())
+
     if kills > prev_kills:
-        _emit("critical",
+        _emit("critical", "oom_kill",
               f"OOM kill on the VM: {kills - prev_kills} new (the kernel killed a process "
               f"outright; check `journalctl -k | grep -i 'out of memory'`)", detail)
         alerted = True
 
     if avail < THRESHOLD_WARN_MB:
-        _emit("warning",
+        _emit("warning", "low_memory",
               f"VM memory low: {avail}MB available of {total}MB", detail)
         alerted = True
 
     if swap == 0 and not state.get("warned_no_swap_boot") == boot:
-        _emit("warning",
+        _emit("warning", "no_swap",
               "VM has no swap configured — the kernel has no soft failure mode; "
               "run scripts/vm_add_swap.sh", detail)
         state["warned_no_swap_boot"] = boot

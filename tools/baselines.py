@@ -36,17 +36,16 @@ from core.persona import persona_data_dir
 
 _ROOT = Path(__file__).parent.parent
 
-# Lazy-loaded embedding model — same as core/memory.py (all-MiniLM-L6-v2, 384-dim).
+# Embedding model — the SAME object core/memory.py holds (all-MiniLM-L6-v2, 384-dim).
 # Do not introduce a second embedding model.
-_model = None
-
-
+#
+# This module used to keep its own `_model` singleton: same name, same weights, a second
+# ~0.9 GB copy in any process that ran both a memory write and a pattern-miner pass (review
+# M1). One loader per process now (plan § 4.12.3 item 3), which also means a
+# METATRON_NO_LOCAL_MODELS process raises here instead of loading.
 def _get_model():
-    global _model
-    if _model is None:
-        from sentence_transformers import SentenceTransformer
-        _model = SentenceTransformer("all-MiniLM-L6-v2")
-    return _model
+    from core.memory import _get_model as _shared_model
+    return _shared_model()
 
 
 def _embed(text: str) -> list[float]:

@@ -26,8 +26,27 @@ os.environ["METATRON_AUTH_PASSWORD"] = TEST_PASSWORD
 
 from fastapi.testclient import TestClient  # noqa: E402
 
+import asyncio  # noqa: E402
+import tempfile  # noqa: E402
+
 from core import auth  # noqa: E402
+from core import server  # noqa: E402
 from core.server import app  # noqa: E402
+
+# An authenticated socket loads its persona's history, so it needs a database — a
+# throwaway one, never the real conversation store.
+_tmp = tempfile.TemporaryDirectory()
+_DB = Path(_tmp.name) / "metatron.db"
+
+
+def _own_db() -> None:
+    """Point the server at THIS file's DB when a test runs, not at import: other suites
+    rebind server.DB_PATH at import too, and in one pytest run the last import wins."""
+    server.DB_PATH = _DB
+    asyncio.run(server._init_db())
+
+
+_own_db()
 
 # No `with` — that would run the lifespan handler, which warms Whisper and Kokoro.
 # The auth gate is middleware and needs neither.
@@ -38,8 +57,13 @@ from core.server import app  # noqa: E402
 client = TestClient(app, base_url="https://testserver")
 
 
-def _login(password: str = TEST_PASSWORD):
-    return client.post("/auth/login", json={"password": password})
+# A tracked synthetic persona with an identity file — the admin password opens any such
+# persona that is not an account (plan § 4.1). Since 2026-10-27 login names its user.
+PERSONA = "danny_park"
+
+
+def _login(password: str = TEST_PASSWORD, username: str = PERSONA):
+    return client.post("/auth/login", json={"username": username, "password": password})
 
 
 # --- the guard itself ------------------------------------------------------
@@ -113,8 +137,17 @@ def test_cookie_grants_access():
 def test_tampered_token_rejected():
     token = auth.issue_token()
     payload, _, sig = token.rpartition(".")
-    forged = f"{int(payload) + 86400}.{sig}"   # extend the expiry, keep the signature
+    head, _, exp = payload.rpartition(".")
+    forged = f"{head}.{int(exp) + 86400}.{sig}"   # extend the expiry, keep the signature
     assert not auth.verify_token(forged)
+
+
+def test_v1_token_rejected():
+    """Tokens from before 2026-10-27 named nobody; they are refused after the deploy."""
+    import hmac as _hmac, hashlib as _hashlib
+    exp = str(int(time.time()) + 3600)
+    sig = _hmac.new(auth._signing_key(), exp.encode(), _hashlib.sha256).hexdigest()
+    assert not auth.verify_token(f"{exp}.{sig}")
 
 
 def test_expired_token_rejected():
@@ -155,10 +188,20 @@ def test_websocket_rejection_closes_the_socket():
 
 
 def test_websocket_with_valid_token_authenticates():
+    """A service token (the scheduler's) names its persona in the URL."""
+    _own_db()
     token = auth.issue_token()
-    with client.websocket_connect("/ws") as ws:
+    with client.websocket_connect(f"/ws?persona={PERSONA}") as ws:
         ws.send_json({"type": "auth", "token": token})
-        assert ws.receive_json()["type"] == "auth_ok"
+        reply = ws.receive_json()
+        assert reply["type"] == "auth_ok" and reply["persona"] == PERSONA
+
+
+def test_websocket_service_token_without_persona_refused():
+    """No default persona: a service socket that names nobody is closed, not served as Mike."""
+    with client.websocket_connect("/ws") as ws:
+        ws.send_json({"type": "auth", "token": auth.issue_token()})
+        assert ws.receive_json()["type"] == "auth_failed"
 
 
 def test_websocket_with_bad_token_is_closed():

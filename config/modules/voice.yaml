@@ -1,0 +1,35 @@
+# config/modules/voice.yaml — the spoken-reply (Kokoro) helper process.
+#
+# The server no longer loads Kokoro. On the first spoken reply it starts a helper process
+# (core/tts_worker.py) that loads Kokoro and synthesises; later replies reuse it; after a quiet
+# spell it exits and every byte it held goes back to the system. Why: Kokoro in the server grew
+# its memory ~115 MB per reply until the kernel OOM-killed the server on a 4 GB VM.
+# Plan: archive/plans/multi_user_accounts_plan_2026-10-26.md § 3.12 (diagnosis), § 4.12.2 (design).
+# Read by core/tts_worker.py; a missing file or key falls back to the defaults written there.
+
+# How long the helper stays loaded after its last spoken reply before it exits.
+#
+# THIS IS A COST PARAMETER (plan § 4.12.2, chosen with its figure — Mike, 2026-10-27):
+#   - while warm the helper holds ~1.5 GB of RAM (measured, 2026-10-27) — RAM, not money, on a VM
+#     whose price does not change with use, but it is the headroom a second user needs;
+#   - after it expires, the next spoken reply waits a ~10 s cold start (~7 s import + ~3 s
+#     pipeline), longer when the machine is busy.
+# Longer buys fewer cold starts at the price of holding 1.5 GB longer. 10 minutes keeps a spoken
+# conversation warm; a single spoken reply costs 10 minutes of 1.5 GB.
+# What deletes it: this timer; a server restart (death signal); a crash (the next spoken reply
+# starts a fresh one). Meter: the memory watchdog's per-process RSS records — the helper appears
+# as its own process.
+helper_idle_timeout_minutes: 10
+
+# Longest a WARM helper may take over one reply before the server gives up, kills it and returns
+# an error for that reply (the next reply starts a fresh helper). Not a cost parameter — a hang
+# bound: /tts has no client-side timeout and runs on a single worker, so without this a wedged
+# helper would hold every queued spoken reply forever. Synthesis of a typical reply is ~3 s, a
+# long one (~160 words) well under 30 s on the VM's 2 vCPUs; 60 s is 2x the worst plausible
+# legitimate case.
+request_timeout_seconds: 60
+
+# Added to the bound above for the reply that STARTS the helper, which also pays the cold start:
+# ~10 s on a quiet machine, but several times that under the memory pressure this helper exists
+# to relieve (loading 1.5 GB of weights while swapping). 60 + 60 = 120 s for a cold reply.
+cold_start_extra_seconds: 60
