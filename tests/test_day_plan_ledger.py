@@ -51,6 +51,11 @@ def _fresh(name: str) -> Path:
     return d
 
 
+# Stage A as shipped — every planner flag off — independent of what config/modules/day_plan.yaml
+# says today (its flags were flipped on 2026-10-27; "no override" would now read them).
+_SHIPPED: dict = {"flags": {}}
+
+
 def _flags(**on):
     C._OVERRIDE = {"flags": {"ledger_fields": True, **on}}
 
@@ -67,7 +72,7 @@ def check(name: str):
         except Exception as exc:  # noqa: BLE001
             _results.append((name, False, f"{type(exc).__name__}: {exc}"))
         finally:
-            C._OVERRIDE = None
+            C._OVERRIDE = _SHIPPED
         return fn
     return deco
 
@@ -266,7 +271,7 @@ def _():
     block = O.context_block()
     assert "past their date, unconfirmed" in block and "Buy a birthday card" not in block, block
     assert _task(card)["status"] == "open"     # stays open; only not raised
-    C._OVERRIDE = None
+    C._OVERRIDE = _SHIPPED
     assert O._view(_task(card), O._today())["state"] == "overdue"   # flag off: as before
 
 
@@ -281,7 +286,7 @@ def _():
     v = O._view(_task(gym), O._today())
     assert "made up" not in v["text"] and "stay on target" not in v["text"], v
     assert v["actionable"]     # Friday is still a planned day
-    C._OVERRIDE = None
+    C._OVERRIDE = _SHIPPED
     v = O._view(_task(gym), O._today())
     assert "made up" in v["text"] or "stay on target" in v["text"], v
 
@@ -291,7 +296,7 @@ def _():
 @check("flag OFF: the schemas models see are byte-identical to the shipped constants")
 def _():
     _fresh("schemas_off")
-    C._OVERRIDE = None
+    C._OVERRIDE = _SHIPPED
     o, u, l = O.task_schemas()
     assert (_h(o), _h(u), _h(l)) == ("0a096897e6448300", "426bcfc2d90b424d",
                                      "fc306ac3d96fa5e1"), (_h(o), _h(u), _h(l))
@@ -316,7 +321,7 @@ def _():
 @check("flag OFF: the hidden actions are refused and unnamed, and guessed fields write nothing (S-8)")
 def _():
     _fresh("hidden_off")
-    C._OVERRIDE = None
+    C._OVERRIDE = _SHIPPED
     msg = O.update_task("settings", "day_starts", note="03:00")
     allowed = msg.split(", not ")[0]
     assert msg.startswith("error: `action`") and "day_starts" not in allowed \

@@ -19,6 +19,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import tools.obligations as O  # noqa: E402
+import tools.day_plan_config as C  # noqa: E402
+
+# This suite is the ledger as shipped before the day planner: pin the planner's switches off so
+# a flip in config/modules/day_plan.yaml does not change what it asserts. The switched-on
+# behaviour (unconfirmed, not missed; the planner's fields) is tests/test_day_plan_ledger.py.
+C._OVERRIDE = {"flags": {"ledger_fields": False, "unconfirmed_rule": False}}
 import tools.turn_context as TC  # noqa: E402
 
 _results: list[tuple[str, bool, str]] = []

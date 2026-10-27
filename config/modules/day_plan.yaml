@@ -7,6 +7,10 @@
 # would see — new tool actions, the plan block, its conduct module — stays off until the one Red
 # session (Stage B) reviews the conduct text and flips the rest. Deployed in this state, nothing
 # Synth sees or does changes (plan § 10).
+#
+# STAGE B, step 1 (2026-10-27, after the smoke test passed 3/3): ledger_fields, synth_reads_plan,
+# unconfirmed_rule and reshuffle_model on. nudges and owns_checkins wait for Stage C (push with
+# the app closed — Mike's D1) and a day of plan-reading that looks right.
 
 flags:
   # Build and keep the day's plan (code only until reshuffle_model is on).
@@ -17,14 +21,14 @@ flags:
   # Expose the ledger's new task actions and fields (link_goal, set_priority, set_stakes,
   # set_zone, day_starts) and update_goal's `essential` in the schemas models see. Off in Stage A
   # on purpose (review R1-1): a schema's description is in the prompt of every agent granted it.
-  ledger_fields: false
+  ledger_fields: true
   # Put the plan block in the Synthesizer's package and inject its conduct module.
-  synth_reads_plan: false
+  synth_reads_plan: true
   # F10: non-essential habits end a period `unconfirmed` (not `missed`), and missable deadlines
   # past their date show as `lapsed`, not overdue.
-  unconfirmed_rule: false
+  unconfirmed_rule: true
   # Refine the code plan with the day_planner model on reshuffle (needs the Stage B agent file).
-  reshuffle_model: false
+  reshuffle_model: true
   # Wake Synth at plan-marked nudge and check points (needs the Stage B scheduler job).
   nudges: false
   # The plan's empty-day check-ins replace the jobs listed in `replaces_jobs`.
