@@ -93,6 +93,27 @@ _V1 = """obligations:
 """
 
 
+@check("a correction filed as a new task is refused with the open one's id; a separate task "
+       "sharing one word is not; new_instance files a genuinely separate one")
+def _():
+    _fresh("near_dup")
+    water = O.open_task("Water indoor and garden plants", kind="interval", interval_days=3).split()[1]
+    claims = O.open_task("Handle mover claims", kind="deadline", due="2026-10-27").split()[1]
+    out = O.open_task("Water plants and consider repotting", kind="deadline", due="2026-10-27")
+    assert out.startswith("this looks like") and water in out and "update_task" in out, out
+    out = O.open_task("Mover claims admin", kind="deadline")
+    assert claims in out and "Nothing was written" in out, out
+    assert O.open_task("Repot two basement plants", kind="deadline").startswith("task "), "one shared word"
+    out = O.open_task("Water plants and consider repotting", kind="deadline", new_instance=True)
+    assert out.startswith("task "), out
+    assert sum(1 for t in O._load(None) if t["status"] == "open") == 4
+    # A loose end the user typed is filed even when it shares words with an open task.
+    post = O.open_task("Post the job listing", kind="deadline").split()[1]
+    out = O.update_task(post, "done_with_followup", evidence="posted it",
+                        followup="Water the garden plants after the post goes up")
+    assert "Loose end tracked: task " in out, out
+
+
 @check("v1 import keeps ids, maps closed→done, moves a vague due into the note")
 def _():
     d = _fresh("import")

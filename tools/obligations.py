@@ -728,6 +728,15 @@ def _open_duplicate(tasks: list[dict], what: str) -> dict | None:
     return None
 
 
+def _open_near(tasks: list[dict], what: str) -> dict | None:
+    """An open task sharing two identifying words with `what` (_tokens_match)."""
+    new = _task_tokens(what)
+    for t in tasks:
+        if t.get("status") == "open" and _tokens_match(new, _task_tokens(t.get("what", ""))):
+            return t
+    return None
+
+
 def _recent_close_match(tasks: list[dict], what: str, today: date) -> dict | None:
     new = _task_tokens(what)
     for t in tasks:
@@ -1229,6 +1238,19 @@ def open_task(what: str, kind: str = "deadline", due: str | None = None,
         if dup:
             return (f"already open as {dup['id']}: {_summarise(dup)}. "
                     f"Not filed twice — update or close that one instead.")
+        if not new_instance:
+            # Two identifying words shared with an open task — the shape of a correction filed
+            # as a new task (2026-10-27: "Mover claims admin" beside "Handle mover claims",
+            # "Water plants and consider repotting" beside "Water indoor and garden plants").
+            # Softer than the guard above: a genuinely separate task goes through on
+            # new_instance. Not for a task opened from a known source (a loose end typed into
+            # "Done, but…", an intake item): that one was asked for deliberately.
+            near = None if source_id else _open_near(tasks, what)
+            if near:
+                return (f"this looks like {near['id']}, already open: {_summarise(near)}. "
+                        f"Nothing was written. If the user is correcting or adding to that "
+                        f"task, use update_task on {near['id']}; if this is genuinely a "
+                        f"separate task, call again with new_instance=true.")
         if kind in _ONE_OFF and not new_instance:
             prior = _recent_close_match(tasks, what, today)
             if prior:
@@ -3283,6 +3305,14 @@ def task_schemas() -> tuple[dict, dict, dict]:
     open_s = _copy.deepcopy(OPEN_TASK_SCHEMA)
     open_s["input_schema"]["properties"].update(_copy.deepcopy(_PLAN_FIELD_PROPS))
     open_s["input_schema"]["properties"]["on_days"] = _copy.deepcopy(_ON_DAYS_PROP)
+    # Corrections change the task they are about (Mike, 2026-10-27). In the tool's own words, so
+    # every agent that writes tasks reads it — on 10-27 Logistics did the writing, and twice
+    # opened a second task beside the one the user was correcting; the rule had lived only in the
+    # Synthesizer's day-plan conduct, which Logistics never sees.
+    open_s["description"] += (
+        " When the user is correcting or adding detail to a task that is already open — a new "
+        "time, kind, length, or 'I'll do it later' — that is update_task on the existing one, "
+        "never a second task beside it; their Tasks section shows the ids.")
     # A span ("sometime next week") is recordable now: due is its last day, with flexible.
     open_s["input_schema"]["properties"]["due"]["description"] = (
         "deadline: YYYY-MM-DD. For a span (\"sometime next week\", \"by Friday\") the last day "
@@ -3298,6 +3328,11 @@ def task_schemas() -> tuple[dict, dict, dict]:
         "own word. set_days — a weekly or monthly habit's days (on_days), only on their own "
         "word, quoted in evidence. set_window — a one-off that can happen any day up to new_due "
         "(\"sometime next week\"), optionally not before `after` (HH:MM).")
+    upd["description"] += (
+        " A correction to an open task — its kind (set_activity), length (set_minutes), date "
+        "(reschedule) or span (set_window) — is made here, on that task, never by opening a new "
+        "one. A monthly bill's or transfer's days ('from the 10th, paid by the 15th') are "
+        "set_days with on_days [\"10-15\"] on the habit itself.")
     upd["input_schema"]["properties"]["action"]["enum"] = (
         list(upd["input_schema"]["properties"]["action"]["enum"]) + list(_PLAN_ACTIONS))
     upd["input_schema"]["properties"].update(_copy.deepcopy(_PLAN_FIELD_PROPS))
