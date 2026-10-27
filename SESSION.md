@@ -1,20 +1,17 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-10-26, sixth. **VM at `e5b895c`, all deployed.** **"Over and out" no longer drops
-what the message asked** (`e5b895c`): the Synthesizer is skipped only for a bare sign-off; a
-request, an answer, a question, a reported completion or more than 8 words runs it, with a
-one-line reply. **Live check owed:** Mike's next real "…, over and out" request gets a one-line
-confirmation and is done (log § 10-26, sixth). **Virtue review paused** to 2027-01-26 (`4e16f3c`)
-— day-after check 10-27: no catch-up at 07:30, no virtues at 20:00. Replies no longer cut or blank
-(8,192 ceiling; the thinking budget is a target, not a cap) — `[DB-1026-01]`, due 10-29.
-(Silent-mic APK `24d5c24`: sideload if not yet done.) **Next:
-`archive/handoffs/2026-10-27-day-planner-watch-2-and-stage-b-prompt.md`** — watch day 2 (Tue
-10-27), then Stage B with Mike; its § 4 adds task durations (never asked — 0 of 59 stated) and
-records that the gym habit is retired and the Sunday trash event is 19:00–19:10. **Stage B lands
-second on both routing files and `synthesizer.md` — keep the `pause_routine` grants and line.**
-The 10-25 ritual-pause handoff is fully consumed. **Still owed:** Mike's calendar live check
-(week of 9 Nov — John Ball once, shared events present); the "Benny" contact may be a phantom
-(new evidence he is real: continuation prompt § 3.6); `[DB-0901-02]`, due 12-15.*
+*Updated: 2026-10-27. **VM at `e3a85b9`, all deployed.** **Day planner Stage B is live (step 1):**
+the Synthesizer reads today's plan and records event answers, the day's shape, a task's kind,
+length and "sometime by" window; the brief and close raise what is salient. Corrections now update
+the task (tool text + a soft near-duplicate refusal). **Open:** the model reshuffle cuts itself off
+at 8,192 (~7,800 thinking) — code plan stands, ~$0.03 wasted per try; Mike has not said off.
+**Next: the second-user build** (`archive/plans/multi_user_accounts_plan_2026-10-26.md` — D5 is
+satisfied; build in a worktree), **then Stage C + step 2**
+(`archive/handoffs/2026-10-27-day-planner-stage-c-push-and-step-2-prompt.md` — push with the app
+closed, Mike's D1 = b; § 0 settles the reshuffle first). Not concurrent: same push/server/APK files.
+WhatsApp 0b may run any time. **Still owed:** "over and out" live check; virtue-pause day-after
+check; `[DB-1026-01]` due 10-29; the boys' bedtimes → `children_home`; Mike's calendar live check
+(week of 9 Nov); silent-mic APK `24d5c24` sideload if not done; `[DB-0901-02]`, due 12-15.*
 
 *Standing rules, each earned twice and both invisible to `qa_sweep`: **a test that exercises a seam
 for real must stub every live meter it ends in**, and **a live gate run dirties TRACKED
@@ -97,17 +94,12 @@ as live and Mike updates that manually — do not start it). Left: B1b's calenda
 CardDAV rows (gated on Track E), A5b/A5c, `[DB-0804-02]`. **[ROADMAP.md](ROADMAP.md) § Track A/B
 owns the per-item detail and the standing evidence.**
 
-**DAY PLANNER — Stage A + round 2 deployed 2026-10-26; watch day 2, then Stage B, owed.** Synth
-runs the user's day from a plan code keeps current. Built: the engine; ledger fields (goal link,
-priority, stakes, zone, activity, monthly days — hidden until Stage B); the dynamic day shape
-(`tools/day_shape.py`, design defaults in `config/modules/day_shape.yaml`, setup command); event
-triage; the Plan section; nudge mode; every Synth-facing switch off. Stage B (one Red session):
-agent file, routing, `answer_event` registration + grants, Synth/Coordinator/interviewer lines,
-scheduler jobs, then the flags — nudges a day later; plus task durations made a code-raised ask
-(handoff § 4, Mike 10-26). **Open decision D1 (Mike):** the APK has no
-push, so nudges arrive only while the app is alive; recommendation native notifications as Stage
-C. Plan: [day_planner_plan_2026-10-24.md](archive/plans/day_planner_plan_2026-10-24.md) — § 18 is
-round 2.
+**DAY PLANNER — Stage B live, step 1 (2026-10-27); Stage C + step 2 next after the second user.**
+Synth runs the user's day from a plan code keeps current; on: `build`, `show_in_app`,
+`ledger_fields`, `synth_reads_plan`, `unconfirmed_rule`, `reshuffle_model`. Off until Stage C:
+`nudges`, `owns_checkins`. Stage C = native FCM push with the app closed (D1 b), built on the
+second-user build's per-user push. Plan: [day_planner_plan_2026-10-24.md](archive/plans/day_planner_plan_2026-10-24.md)
+(§ 18 round 2); what Stage B added beyond it and why: `archive/PROJECT_LOG.md` § 2026-10-27.
 
 **WHATSAPP INPUT — approved 10-26; Phase 0a done; next 0b + phone probes in a FRESH session**
 (`archive/handoffs/2026-10-26-whatsapp-phase-0b-clean-room-and-probes-prompt.md` — the clean room:

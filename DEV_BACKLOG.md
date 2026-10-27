@@ -168,6 +168,8 @@ flag — which would send a turn containing only the cue.
 - **Check 2026-10-31: is the `check_inbox_6h` Logistics job redundant? If so, delete it.** Kept on 10-23 when its twin was deleted; `logistics.md` already says standing triage is the intake sweep's job. It costs ~67 runs a month at ~96k tokens each on the bulk tier, and on 10-24 one 73 s run overlapped a user turn. Watch a week of task creation from mail: if every task it files also arrives through the intake queue, delete it (Mike approves, as a schedule change). Mike asked for this item, 2026-10-24.
 - **The Franklin virtue review kept coming back to the evening close after Mike asked to drop it — now paused; one day of real use owed to confirm it stays gone (due 2026-10-28).** Built and deployed `4e16f3c`: user-requestable pause for rituals and the user's own check-ins (`tools/routines.py`). Live 2026-10-26 22:33: Mike's request produced `pause_routine("evening_ritual", revisit="2027-01-26")` and the VM store `data/personas/mike/routine_pauses.yaml` is correct. **Closes on:** the 2026-10-27 07:30 morning brief offers no virtue catch-up, and the 2026-10-27 20:00 evening close carries no virtue list (read both replies in `data/personas/mike/traces/2026-10-27.jsonl`). Either one present → reopen with the reply text. The 2027-01-26 check-back is not this item. Raised by Claude Code, 2026-10-26, as the confirmation step for a fix Mike requested.
 - **A request ending in "over and out" got "Received — talk to you later" and was never carried out — fixed; one real use owed to confirm (due 2026-11-02).** Built and deployed `e5b895c`: the sign-off shortcut now skips the Synthesizer only for a bare sign-off (≤8 words, no question in the message or Metatron's previous reply, no request/answer/time word, no task-completion note); otherwise it runs with a one-line-reply instruction. Origin: 2026-10-26 22:05 (job post to tomorrow, retire the gym — both dropped), also 10-19 and 10-21. **Closes on:** the first real user message after deploy that ends "over and out" and carries a request — its trace shows the Synthesizer ran (not `[PIPELINE] sign-off detected — synthesizer skipped`), the request was acted on, and the reply is one line. Also confirm a bare "over and out" still gets the ack. If none arrives by 11-02, ask Mike to send one. Record: `archive/log/2026-10-26-06-over-and-out-no-longer-drops-requests.md`. Raised by Claude Code, 2026-10-26, as the confirmation step for a fix Mike requested ("Synth shouldn't skip when there's something active requested").
+- **[a calendar event Metatron writes has its place only in the title, and an internal word in it]** Filed with Mike's agreement, 2026-10-27. Event "Benny and user at Canary Wharf" (11:30, Metatron calendar, written 09:58 from Mike's "Benny and I need to be at Canary Wharf by 11:30"): `location` empty, so the day planner planned no "leave for" row; and "user" — internal vocabulary — is now on Mike's real calendar. Also seen the same day: Logistics called `update_calendar_event` with uid `"..."` (a placeholder, 11:49). Fix where events are written (the calendar tools / Logistics conduct): a place the user names goes in `location`; titles use the user's name or none; a check keeps internal words out of event titles. Evidence: `archive/PROJECT_LOG.md` § 2026-10-27.
+- **[a reply says something was set or queued when nothing was written]** Raised by Mike, 2026-10-27 (day-planner watch day 2). Twice now: 10-25 08:35 "the Chase and Rowan windows are set to surface…" and 10-27 09:59 + 10:00 "dinner prep queued for 16:30" — no task, event or setting was written either time. `check_false_action_claims()` (`core/orchestrator.py:6521`) and `_COMPLETION_CLAIM_RES` (`:1964`) recognise "I've added / I've set" and miss "is set to", "queued", "lined up". Fix: widen the phrasings, tested against these two real replies (conversation records 10-25 and 10-27 on the VM). Evidence: `archive/PROJECT_LOG.md` § 2026-10-27.
 
 ---
 
@@ -1285,6 +1287,21 @@ evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording �
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
 
+- **[user corrected a prior turn]** User corrected task duplicate handling and specified billing date windows for Chase and Rowan's payroll transfer, insurance task deduplication, and Marta's dinner hosting details.  
+  `2026-10-27T13:19:47.019674Z`
+
+- **[user corrected a prior turn]** User provided multiple task estimates, scheduling rules, and corrections in a single message following a return from Canary Wharf.  
+  `2026-10-27T13:04:14.346943Z`
+
+- **[user corrected a prior turn]** User corrected name spelling: Carmit is correct, Karmit is the error spelling (reversing previous assistant assumption).  
+  `2026-10-27T10:03:34.691067Z`
+
+- **[user corrected a prior turn]** User corrected Carmit/Karmit spelling error and explained contact merge intent after prior decline  
+  `2026-10-27T10:02:39.978066Z`
+
+- **[user corrected a prior turn]** Coordinator routed morning transit warning for a lunch the user clarified was for Iva alone, and prompted about task timing before school drop-off was complete.  
+  `2026-10-27T09:57:33.740228Z`
+
 - **[already applied by the tool]** Paused the evening Franklin 13-point virtue review routine (evening_ritual) for three months with a revisit set for 2027-01-26 per Mike's instruction.  
   `2026-10-26T22:34:23.393525Z`
 
@@ -2218,8 +2235,8 @@ entry is a symptom, never a diagnosis.)*
 - **[user corrected a prior turn]** missed calling Mental Wellbeing and Physical Health for the day-close session  
   `2026-09-04T19:00:30.776714Z`
 
-- **[a specialist missed a signal it should have caught]** User prompt was a scheduled end-of-day check-in session prompt, not user input. Coordinator correctly routed to Mental Wellbeing and Physical Health per morning/day-close rule.  ×2  
-  `2026-09-16T19:00:30.042679Z`
+- ⚠ **[a specialist missed a signal it should have caught]** Routing miss on scheduled morning brief: Coordinator failed to route to Mental Wellbeing and Physical Health per the scheduled morning brief cross-domain rule.  ×3  
+  `2026-10-27T07:30:11.901469Z`
 
 - **[user corrected a prior turn]** User message repeated a prompt injection warning regarding untrusted content tags, likely stemming from a prior turn interaction or safety boundary check.  
   `2026-09-04T16:07:24.964838Z`
