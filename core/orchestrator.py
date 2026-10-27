@@ -3691,7 +3691,8 @@ def _get_or_create_vertex_cache(
 def run_session_gemini(system_prompt: str, user_input: str,
                        tool_schemas: list[dict], tool_handlers: dict,
                        model: str | None = None,
-                       history: list[dict] | None = None) -> str:
+                       history: list[dict] | None = None,
+                       max_output_tokens: int = 4096) -> str:
     """Agentic loop via Vertex AI OpenAI-compat endpoint (or AI Studio OpenAI-compat).
 
     Uses _openai_compat_loop rather than the native genai SDK to avoid Vertex's
@@ -3703,7 +3704,7 @@ def run_session_gemini(system_prompt: str, user_input: str,
     return _openai_compat_loop(
         system_prompt, user_input, tool_schemas, tool_handlers,
         api_key=api_key, base_url=base_url, model=model_name,
-        history=history,
+        history=history, max_output_tokens=max_output_tokens,
     )
 
 
@@ -4200,6 +4201,14 @@ _SYNTH_THINKING_BUDGET = 4096
 # Not 2,048: the budget overruns (above), and a probe at budget 4,096 used 6,158 in total.
 # Ceiling 8,192 bounds a runaway round at ~$0.03 (3.8-flash output $3.75/M).
 _REPLY_OUTPUT_TOKENS = 4096
+
+
+# Agents on the plain (OpenAI-compat) path whose thinking alone can fill 4,096 tokens. The
+# day planner's Stage B smoke test, 2026-10-27: three runs of 3,928–3,930 thinking + ~163 out
+# against max_tokens 4,096 — every placement JSON cut mid-line. Same ceiling as the
+# Synthesizer's (_REPLY_OUTPUT_TOKENS + its budget); billed only as produced. Specialists stay
+# at 4,096 until a trace shows them hitting it — this path does not yet record their thinking.
+_WIDE_OUTPUT_AGENTS = {"day_planner": 8192}
 
 
 def _max_output_tokens(thinking_budget: int | None) -> int:
@@ -4826,7 +4835,8 @@ def _openai_compat_loop(system_prompt: str, user_input: str,
                          max_iterations: int = 8,
                          extra_body: dict | None = None,
                          history: list[dict] | None = None,
-                         user_input_display: str | None = None) -> str:
+                         user_input_display: str | None = None,
+                         max_output_tokens: int = 4096) -> str:
     """Shared agentic loop for OpenAI-compatible APIs (OpenAI, Ollama, Gemini).
 
     user_input_display: the clean version stored in history (omits control tokens
@@ -4854,7 +4864,7 @@ def _openai_compat_loop(system_prompt: str, user_input: str,
         try:
             response = client.chat.completions.create(
                 model=model,
-                **{token_kwarg: 4096},
+                **{token_kwarg: max_output_tokens},
                 **({"tools": oai_tools} if oai_tools else {}),
                 messages=messages,
                 **({"extra_body": extra_body} if extra_body else {}),
@@ -5470,7 +5480,8 @@ def _run_single_agent(agent_name: str, user_input: str,
                                                    if agent_name == "synthesizer" else None)
             else:
                 result = run_session_gemini(system_prompt, augmented_input, tool_schemas, tool_handlers,
-                                            model=model_override, history=history)
+                                            model=model_override, history=history,
+                                            max_output_tokens=_WIDE_OUTPUT_AGENTS.get(agent_name, 4096))
         else:
             from core.router import log_model_error
             log_model_error(agent_name, provider or "unknown", model_override, f"unrecognised provider '{provider}' — no session started")

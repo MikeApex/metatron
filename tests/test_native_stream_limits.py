@@ -251,6 +251,40 @@ def _():
         L.write_quality_event = real
 
 
+@check("the plain path: the day planner gets 8,192 output tokens, every other agent 4,096")
+def _():
+    # Day planner smoke test, 2026-10-27: thinking ~3,930 + ~163 out = the 4,096 ceiling, and
+    # every placement JSON was cut mid-line. The request is captured, never sent.
+    sent = []
+
+    class _Resp:
+        def __init__(self):
+            msg = type("M", (), {"content": '{"placements": []}', "tool_calls": None})()
+            self.choices = [type("C", (), {"message": msg, "finish_reason": "stop"})()]
+            self.usage = None
+
+    class _Client:
+        def __init__(self, *a, **k):
+            self.chat = type("Ch", (), {"completions": type("Co", (), {
+                "create": staticmethod(lambda **kw: sent.append(kw) or _Resp())})()})()
+
+    import openai
+    real_client, real_creds = openai.OpenAI, O._resolve_gemini_credentials
+    openai.OpenAI = _Client
+    O._resolve_gemini_credentials = lambda model=None: ("k", "https://x.googleapis.com", "m")
+    try:
+        for agent, want in (("day_planner", 8192), ("logistics", 4096)):
+            sent.clear()
+            O.run_session_gemini("sys", "in", [], {},
+                                 max_output_tokens=O._WIDE_OUTPUT_AGENTS.get(agent, 4096))
+            assert sent and sent[0].get("max_tokens") == want, (agent, sent[:1])
+        sent.clear()
+        O.run_session_gemini("sys", "in", [], {})                 # default unchanged
+        assert sent[0].get("max_tokens") == 4096, sent[:1]
+    finally:
+        openai.OpenAI, O._resolve_gemini_credentials = real_client, real_creds
+
+
 @check("capacity errors are told apart from the rest")
 def _():
     assert O._is_capacity_error(_Capacity("x"))
