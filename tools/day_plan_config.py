@@ -49,7 +49,7 @@ _DEFAULTS: dict = {
         "reshuffle_gap_minutes": 15, "reshuffles_per_day": 12, "travel_lookups_per_day": 60,
         "travel_assumed_minutes": 30, "snapshot_max_age_minutes": 10,
         "calendar_fetch_timeout_seconds": 3, "frozen_minutes": 20, "default_task_minutes": 30,
-        "reshuffle_stale_seconds": 180, "reply_lock_ms": 200, "log_retention_days": 90,
+        "reshuffle_stale_seconds": 180, "reply_lock_ms": 200, "length_asks_per_day": 2, "log_retention_days": 90,
         "plan_retention_days": 3,
     },
 }

@@ -78,7 +78,7 @@ agents:
     # standing fact — and it is the fallback for turns the Coordinator's KNOWLEDGE_TO_LOAD did
     # not predict. Without the read grant the pre-fetch is the ONLY path to the store and a
     # mid-conversation turn toward a subject has no way to reach it.
-    allowed_tools: [run_subagent, run_model_conference, write_persona, write_profile, read_profile, write_config, write_wishes, read_wishes, generate_emergency_card, write_quality_event, write_schedule, list_schedules, delete_schedule, update_goal, open_task, update_task, list_tasks, read_wisdom, write_wisdom, teach_intake, record_wisdom_response, pause_routine, resume_routine, list_routines]
+    allowed_tools: [run_subagent, run_model_conference, write_persona, write_profile, read_profile, write_config, write_wishes, read_wishes, generate_emergency_card, write_quality_event, write_schedule, list_schedules, delete_schedule, update_goal, open_task, update_task, list_tasks, read_wisdom, write_wisdom, teach_intake, record_wisdom_response, pause_routine, resume_routine, list_routines, set_day_shape, request_replan, answer_event]
 
   # ── Data and analysis ────────────────────────────────────────────────────────
 
@@ -113,6 +113,17 @@ agents:
     # no constitution/goals/profile; with no schemas advertised it cannot emit a tool
     # call. Dispatched nightly by tools.accountability.run_judgment_gate over the
     # post-join leftovers only.
+    allowed_tools: []
+
+  day_planner:
+    provider: gemini
+    model: "models/gemini-3.8-flash"   # judgement over the user's day and history — not the bulk
+                                       # tier (core/build/gates.check_tier's reasoning, ROADMAP § D2)
+    # PRIVACY TIER, stated because this entry is what authorises it: reads task titles, goal titles
+    # and shareable_what (NEVER private_why) and calendar titles — Sensitive tier on the Vertex path,
+    # valid ONLY on the Amendment 2026-08-28 basis (ROADMAP.md § Section 0) and lapsing with it.
+    # Called bare, and never with complexity="quick" (that would route it to Flash-Lite). Empty
+    # grant: it places, it acts on nothing. archive/plans/day_planner_plan_2026-10-24.md § 5.7.
     allowed_tools: []
 
   crm_sweep:
@@ -163,7 +174,7 @@ agents:
     model: "models/gemini-3.8-flash"        # interview quality matters; runs infrequently
     # write_baseline_period granted 2026-08-28 [DB-0810-03]: instructed at
     # goals_interviewer.md:236, never granted.
-    allowed_tools: [read_goals, write_goals, write_config, write_retrospective, create_semantic_anchor, write_aspirational_baseline, update_goal, write_baseline_period]
+    allowed_tools: [read_goals, write_goals, write_config, write_retrospective, create_semantic_anchor, write_aspirational_baseline, update_goal, write_baseline_period, set_day_shape]
 
   # ── Personal specialists ─────────────────────────────────────────────────────
   #

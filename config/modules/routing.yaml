@@ -52,7 +52,7 @@ agents:
   synthesizer:
     local: true
     # read_wisdom + write_wisdom granted 2026-08-15 — see routing_cloud.yaml. Kept in parity.
-    allowed_tools: [run_subagent, run_model_conference, write_persona, write_profile, read_profile, write_config, write_wishes, read_wishes, generate_emergency_card, write_quality_event, write_schedule, list_schedules, delete_schedule, update_goal, open_task, update_task, list_tasks, read_wisdom, write_wisdom, teach_intake, record_wisdom_response, pause_routine, resume_routine, list_routines]
+    allowed_tools: [run_subagent, run_model_conference, write_persona, write_profile, read_profile, write_config, write_wishes, read_wishes, generate_emergency_card, write_quality_event, write_schedule, list_schedules, delete_schedule, update_goal, open_task, update_task, list_tasks, read_wisdom, write_wisdom, teach_intake, record_wisdom_response, pause_routine, resume_routine, list_routines, set_day_shape, request_replan, answer_event]
 
   # ── Data and analysis (local: reads/writes personal logs) ───────────────────
 
@@ -81,6 +81,12 @@ agents:
     # entry is what authorises the Vertex path, and it has no bearing here.
     allowed_tools: []
 
+  day_planner:
+    local: true
+    # Parity with routing_cloud.yaml: bare dispatch, empty grant, Sensitive tier → Ollama only,
+    # fail-closed.
+    allowed_tools: []
+
   crm_sweep:
     local: true
     # Parity with routing_cloud.yaml — see the note there: bare dispatch, empty grant, a
@@ -106,7 +112,7 @@ agents:
   goals_interviewer:
     local: true
     # write_baseline_period granted 2026-08-28 [DB-0810-03] — see routing_cloud.yaml. Parity.
-    allowed_tools: [read_goals, write_goals, write_config, write_retrospective, create_semantic_anchor, write_aspirational_baseline, update_goal, write_baseline_period]
+    allowed_tools: [read_goals, write_goals, write_config, write_retrospective, create_semantic_anchor, write_aspirational_baseline, update_goal, write_baseline_period, set_day_shape]
 
   # ── Personal specialists (local: sensitive — named individuals, health, finance) ─
   #

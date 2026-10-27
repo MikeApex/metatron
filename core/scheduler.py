@@ -307,6 +307,15 @@ def _near_fixed_job_blocks(job_name: str, job_cfg: dict, cfg: dict) -> str | Non
     """
     if "interval_minutes" not in job_cfg or "agent" not in job_cfg:
         return None
+    return near_fixed_session(cfg, datetime.now(), exclude=job_name)
+
+
+def near_fixed_session(cfg: dict, now: datetime, exclude: str | None = None) -> str | None:
+    """The scan behind `_near_fixed_job_blocks`: is `now` within the persona's
+    near-fixed window of an enabled fixed-time session job (other than `exclude`)?
+    Returns the reason, or None. Shared with the day planner's nudges
+    (tools/day_plan._near_fixed, review R1-6) — a nudge due 07:23 with a 07:30
+    morning brief is carried, not woken, for the same reason a check-in is."""
     try:
         window = float(cfg.get("interval_near_fixed_minutes",
                                _NEAR_FIXED_DEFAULT_MINUTES))
@@ -315,9 +324,8 @@ def _near_fixed_job_blocks(job_name: str, job_cfg: dict, cfg: dict) -> str | Non
     if window <= 0:
         return None
 
-    now = datetime.now()
     for other_name, other in (cfg.get("schedules") or {}).items():
-        if other_name == job_name or not isinstance(other, dict):
+        if other_name == exclude or not isinstance(other, dict):
             continue
         # Fixed-time SESSION jobs only.
         if "time" not in other or "agent" not in other:
@@ -427,6 +435,19 @@ def _dispatch(channel: str, title: str, body: str) -> None:
 # Session firing
 # ---------------------------------------------------------------------------
 
+def _day_plan_owns(job_name: str) -> bool:
+    """The day plan's empty-day check-ins replace the jobs named in day_plan.yaml's
+    `replaces_jobs` while `owns_checkins` and `nudges` are both on (archive/plans/
+    day_planner_plan_2026-10-24.md § 7.3). Turning either flag off restores today's
+    behaviour exactly."""
+    try:
+        from tools.day_plan_config import flag, load
+        return (flag("owns_checkins") and flag("nudges")
+                and job_name in (load().get("replaces_jobs") or []))
+    except Exception:  # noqa: BLE001 — the planner's config must never stop a check-in
+        return False
+
+
 def fire_session(job_name: str, agent: str, prompt: str,
                  notification: str, persona: str,
                  job_cfg: dict | None = None) -> None:
@@ -450,6 +471,11 @@ def fire_session(job_name: str, agent: str, prompt: str,
     blocked = _gates_block(job_name, job_cfg, cfg, persona)
     if blocked:
         print(f"[scheduler] [{persona}] skipping {job_name} — {blocked}", flush=True)
+        return
+
+    if _day_plan_owns(job_name):
+        print(f"[scheduler] [{persona}] skipping {job_name} — the day plan owns check-ins",
+              flush=True)
         return
 
     # Session jobs only: don't start a second conversation minutes from a
@@ -737,6 +763,22 @@ _DEFAULT_JOBS: dict[str, dict] = {
         "function": "tools.intake.sweep",
         "notification": False,
         "respect_quiet_hours": False,   # sweep() gates itself; see note above
+    },
+    # The day planner (archive/plans/day_planner_plan_2026-10-24.md § 7.1). Silent: snapshot,
+    # gate, repair, a requested reshuffle (on a worker — never on this loop), tomorrow's draft in
+    # the evening, the ledger sweep on a day change, pruning. Code only but for the reshuffle.
+    "day_plan_refresh": {
+        "enabled": True, "interval_minutes": 5, "days": "daily",
+        "function": "tools.day_plan.refresh_tick", "notification": False,
+        "respect_quiet_hours": False,
+    },
+    # Wakes the Synthesizer for what the plan marks due (it may hold), or — on a day with nothing
+    # left — a check-in after a lag. Returns a notify dict only when the Synthesizer spoke.
+    # Quiet hours are gated INSIDE nudge_tick (intake_sweep precedent), hence the flag below.
+    "day_plan_nudge": {
+        "enabled": True, "interval_minutes": 5, "days": "daily",
+        "function": "tools.day_plan.nudge_tick", "notification": "push",
+        "respect_quiet_hours": False,
     },
     # Build's REPAIR counter (rewritten 2026-09-24, build plan v4.11). Two jobs and
     # nothing else: scan the last 14 days of quality events for a fault recurring

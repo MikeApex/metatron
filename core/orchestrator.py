@@ -1429,16 +1429,16 @@ def register_tools() -> tuple[list[dict], dict]:
     # Same per-call build, same flag: the day planner's task actions and fields reach a model only
     # once its conduct exists (day planner plan § 4.1, R1-1).
     OPEN_TASK_SCHEMA, UPDATE_TASK_SCHEMA, LIST_TASKS_SCHEMA = task_schemas()
-    # The day planner's two tools (archive/plans/day_planner_plan_2026-10-24.md § 6.4).
-    # Registered from Stage A, granted to no agent until Stage B — an ungranted schema is
-    # filtered out of every prompt by the allowlist.
+    # The day planner's three tools (archive/plans/day_planner_plan_2026-10-24.md § 6.4,
+    # § 18.3): set_day_shape and request_replan from Stage A, answer_event from round 2.
+    # Granted in Stage B — synthesizer all three, goals_interviewer set_day_shape.
     from tools.day_shape import set_day_shape, SET_DAY_SHAPE_SCHEMA
     # Pause/resume for the user's own routines (archive/plans/routine_pause_plan_2026-10-26.md).
     from tools.routines import (
         pause_routine, resume_routine, list_routines,
         PAUSE_ROUTINE_SCHEMA, RESUME_ROUTINE_SCHEMA, LIST_ROUTINES_SCHEMA,
     )
-    from tools.day_plan import request_replan, REQUEST_REPLAN_SCHEMA
+    from tools.day_plan import request_replan, REQUEST_REPLAN_SCHEMA, answer_event, ANSWER_EVENT_SCHEMA
     # External-content tools. Both return their payload wrapped by tools/untrusted.py —
     # a web page and an email body are written by strangers.
     from tools.web import fetch_url, FETCH_URL_SCHEMA, fetch_rendered, FETCH_RENDERED_SCHEMA
@@ -1501,7 +1501,7 @@ def register_tools() -> tuple[list[dict], dict]:
         WRITE_AGENT_CONFIG_SCHEMA, READ_AGENT_CONFIG_SCHEMA,
         WRITE_WISHES_SCHEMA, READ_WISHES_SCHEMA, GENERATE_EMERGENCY_CARD_SCHEMA,
         OPEN_TASK_SCHEMA, UPDATE_TASK_SCHEMA, LIST_TASKS_SCHEMA,
-        SET_DAY_SHAPE_SCHEMA, REQUEST_REPLAN_SCHEMA,
+        SET_DAY_SHAPE_SCHEMA, REQUEST_REPLAN_SCHEMA, ANSWER_EVENT_SCHEMA,
         PAUSE_ROUTINE_SCHEMA, RESUME_ROUTINE_SCHEMA, LIST_ROUTINES_SCHEMA,
         READ_INTAKE_QUEUE_SCHEMA, TEACH_INTAKE_SCHEMA,
         READ_CALENDAR_SCHEMA, WRITE_CALENDAR_EVENT_SCHEMA,
@@ -1598,6 +1598,7 @@ def register_tools() -> tuple[list[dict], dict]:
         "list_tasks": list_tasks,
         "set_day_shape": set_day_shape,
         "request_replan": request_replan,
+        "answer_event": answer_event,
         "pause_routine": pause_routine,
         "resume_routine": resume_routine,
         "list_routines": list_routines,
@@ -5951,10 +5952,13 @@ def _day_plan_block(persona: str | None, kind: str | None, is_proactive: bool) -
             if not plan:
                 return ""
             offer = None if is_proactive else D.rhythm_offer(persona, mark=True)
+            # One untimed task, named once ever — on the user's own turns, never on a wake.
+            ask = None if is_proactive else D.length_ask(persona, plan, mark=True)
             tomorrow = D.tomorrow_draft(persona) if kind == "evening_close" else None
             gaps = D.allocation_gaps(persona) if carries_weekly_review(kind, persona) else None
             return D.render_block(plan, kind=kind, heads_up=D.pending_heads_up(persona),
-                                  offer_rhythm=offer, allocation_gaps=gaps, tomorrow=tomorrow)
+                                  offer_rhythm=offer, allocation_gaps=gaps, tomorrow=tomorrow,
+                                  ask_length=ask)
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"[day_plan] block failed: {exc}")
         return ""

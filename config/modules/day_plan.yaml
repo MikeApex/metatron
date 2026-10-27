@@ -63,5 +63,8 @@ limits:
   reshuffle_stale_seconds: 180
   # The reply path waits at most this long for the plan lock, then renders without writing.
   reply_lock_ms: 200
+  # Tasks with no length on file the Synthesizer is asked to ask about, at most, a day — each one
+  # once, ever (code-raised: the instruction alone never fired, 10-24 to 10-26).
+  length_asks_per_day: 2
   log_retention_days: 90
   plan_retention_days: 3

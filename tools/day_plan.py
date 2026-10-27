@@ -572,7 +572,10 @@ def _candidates(today: date, persona: str | None) -> list[dict]:
         if t.get("status") != "open" or t.get("kind") == "waiting":
             continue
         v = O._view(t, today)
-        if not ((v.get("actionable") and O._on_todays_list(t, v)) or v.get("state") == "lapsed"):
+        # "in_window": any day up to its date (Mike, 2026-10-27) — a candidate every day of its
+        # window, placed only where there is room, and a must-do only on its last day.
+        if not ((v.get("actionable") and O._on_todays_list(t, v))
+                or v.get("state") in ("lapsed", "in_window")):
             continue
         activity, attrs = activity_of(t, shape)
         target = O._habit_target(t) if t.get("kind") == "habit" else 1
@@ -587,13 +590,15 @@ def _candidates(today: date, persona: str | None) -> list[dict]:
             "domain": str(t.get("domain") or "").lower(), "state": v.get("state"),
             "minutes": int(t.get("minutes") or default_minutes),
             "length_known": bool(t.get("minutes")),
-            "essential": O.is_essential(t, goals), "stakes": t.get("stakes"),
+            "essential": O.is_essential(t, goals) and v.get("state") != "in_window",
+            "stakes": t.get("stakes"), "after": t.get("after"),
             "vital": ((t.get("kind") == "deadline" or bool(O._month_window(t)))
                       and t.get("stakes") != "missable"),
             "due": t.get("due"), "zone": t.get("zone"), "copies": copies,
             # What kind of activity it is, and what that needs (plan § 18.3): where it may go.
             "activity": activity, "device": bool(attrs.get("device")),
-            "heavy": attrs.get("concentration") == "heavy", "attrs": attrs,
+            "heavy": attrs.get("concentration") == "heavy", "solo": bool(attrs.get("solo")),
+            "attrs": attrs,
             # A daily habit done more than once a day (a medicine twice a day): each dose is its
             # own block, and `copies` is how many are still unrecorded (review S-2).
             "multi": t.get("kind") == "habit" and (t.get("every") or "day") == "day" and target > 1,
@@ -1128,6 +1133,8 @@ def _fill(cands: list[dict], blocks: list[dict], shape: dict, plan_start: dateti
         if s is None or s < plan_start:
             continue
         i, n = grid.idx(s), max(1, -(-c["minutes"] // _SLOT))
+        if i < _after_idx(c, grid, day, shape):
+            continue
         if counts.get(c["ref"], 0) < c["copies"] and free_run(i, n, c, kb.get("displaced_protected", False), None, None):
             put(c, i, n, bool(kb.get("displaced_protected")), counts.get(c["ref"], 0))
             placed_starts.setdefault(c["ref"], []).append(s)
@@ -1137,11 +1144,11 @@ def _fill(cands: list[dict], blocks: list[dict], shape: dict, plan_start: dateti
         prof = profile(c)
         while counts.get(c["ref"], 0) < c["copies"]:
             copy = counts.get(c["ref"], 0)
-            min_i = 0
+            min_i = _after_idx(c, grid, day, shape)
             earlier = [_dt(x) for x in c.get("prior") or []] + placed_starts.get(c["ref"], [])
             if earlier and c.get("multi"):
                 # Another dose later in the day: at least three hours after the last one.
-                min_i = max(0, grid.idx(max(earlier) + timedelta(hours=3)))
+                min_i = max(min_i, grid.idx(max(earlier) + timedelta(hours=3)))
             tiers = list(prof["tiers"])
             if prof["strong"] is not None and c["essential"]:
                 tiers.append((None, None))      # outside its strong window, before protected time
@@ -1164,6 +1171,25 @@ def _fill(cands: list[dict], blocks: list[dict], shape: dict, plan_start: dateti
             put(c, spot, n, displaced, copy)
             placed_starts.setdefault(c["ref"], []).append(grid.at(spot))
     return placed, unplaced
+
+
+def _after_time(c: dict, day: date, shape: dict) -> datetime | None:
+    """The earliest a candidate may start ("after 4 pm"), as a datetime on its ledger day."""
+    if not c.get("after"):
+        return None
+    try:
+        from tools.day_shape import anchor
+        return anchor(day, datetime.strptime(str(c["after"]), "%H:%M").time(), shape["wake"])
+    except (ValueError, KeyError):
+        return None
+
+
+def _after_idx(c: dict, grid, day: date, shape: dict) -> int:
+    at = _after_time(c, day, shape)
+    if not at:
+        return 0
+    i = max(0, grid.idx(at))
+    return i + 1 if grid.at(i) < at else i
 
 
 # --- the validator (plan § 5.5) --------------------------------------------------------------
@@ -1234,6 +1260,14 @@ def validate(plan: dict, events: list[dict], cands: list[dict], plan_start: date
                     and not c["essential"]:
                 fails.append(f"V6: {b['ref']} in protected time it does not fit")
                 break
+        if c.get("after") and not under_way:
+            try:
+                earliest = datetime.combine(date.fromisoformat(plan["day"]),
+                                            datetime.strptime(str(c["after"]), "%H:%M").time())
+                if s < earliest:
+                    fails.append(f"V10: {b['ref']} before its earliest time {c['after']}")
+            except (ValueError, KeyError):
+                pass
         seen[b["ref"]] = seen.get(b["ref"], 0) + 1
         if seen[b["ref"]] > max(c["copies"], 1):
             fails.append(f"V9: {b['ref']} placed {seen[b['ref']]} times")
@@ -1477,6 +1511,24 @@ def _build(day: date, persona: str, mode: str, reasons: list[str], prev: dict | 
             placeable.append({**c, "copies": more, "prior": [b["start"] for b in hist + prog]})
     placed, unplaced = _fill(placeable, skeleton + history + inprog, shape, plan_start, bed_dt,
                              extra["windows"], keep, day)
+    # A kept slot never outranks what matters more (Mike, 2026-10-27: "important things happen
+    # first and don't get bumped in favor of less important things"). Kept placements go in
+    # before anything new, so a nice-to-have placed this morning could leave a task due today
+    # with no room. When an essential item did not fit, fill again keeping only what starts
+    # within the frozen window or matters at least as much; take it if more essentials fit.
+    need = [u for u in unplaced if u.get("essential")]
+    if need and keep:
+        by_ref = {c["ref"]: c for c in placeable}
+        floor = max(by_ref[u["ref"]]["score"] for u in need if u["ref"] in by_ref)
+        frozen_cut = now + timedelta(minutes=int(_limit("frozen_minutes") or 20))
+        slim = [kb for kb in keep if (_dt(kb["start"]) or now) <= frozen_cut
+                or (kb.get("ref") in by_ref and (by_ref[kb["ref"]]["essential"]
+                                                 or by_ref[kb["ref"]]["score"] >= floor))]
+        if len(slim) < len(keep):
+            placed2, unplaced2 = _fill(placeable, skeleton + history + inprog, shape, plan_start,
+                                       bed_dt, extra["windows"], slim, day)
+            if sum(1 for u in unplaced2 if u.get("essential")) < len(need):
+                placed, unplaced = placed2, unplaced2
     # "Not placed" is for what needs a decision today (R2-9): an essential item that did not
     # fit. A non-essential leftover — a second stretching with no room — drops quietly; the log
     # and a model reshuffle still see it.
@@ -1767,7 +1819,8 @@ def _listed(plan: dict) -> list[dict]:
 
 def render_block(plan: dict | None, kind: str | None = None, due_now: list[dict] | None = None,
                  heads_up: bool = False, offer_rhythm: str | None = None,
-                 allocation_gaps: list[dict] | None = None, tomorrow: dict | None = None) -> str:
+                 allocation_gaps: list[dict] | None = None, tomorrow: dict | None = None,
+                 ask_length: str | None = None) -> str:
     """The Synthesizer's view of the whole day (Mike, R2: "the whole day, including
     completed/missed items"). Statuses are read from the ledger now. Target ≤ ~1,000 tokens."""
     if not plan:
@@ -1846,6 +1899,8 @@ def render_block(plan: dict | None, kind: str | None = None, due_now: list[dict]
                        for g in allocation_gaps[:5]))
     if offer_rhythm:
         out.append(offer_rhythm)
+    if ask_length:
+        out.append(ask_length)
     if heads_up:
         out.append("[A fuller rework of the rest of today is under way — if it bears on your "
                    "answer, say so in one line, in everyday words.]")
@@ -1964,6 +2019,37 @@ def rhythm_offer(persona: str | None = None, mark: bool = False) -> str | None:
     if offer and mark:
         _mark_rhythm(persona, today)
     return offer
+
+
+def length_ask(persona: str | None, plan: dict | None, mark: bool = False) -> str | None:
+    """The one task on today's plan whose length nobody has given, named for the Synthesizer to
+    ask about in passing — code-raised, because the instruction alone never fired (10-24 to
+    10-26: 0 of 59 tasks carried a length the user stated, and nothing was asked). Each task is
+    named once, ever; at most `length_asks_per_day` a day. `mark` records it as asked."""
+    if not plan:
+        return None
+    persona = resolve_persona(persona)
+    state = _load_state(persona)
+    asked = state.get("length_asked") or {}
+    today = _today().isoformat()
+    if sum(1 for d in asked.values() if d == today) >= int(_limit("length_asks_per_day") or 2):
+        return None
+    now = _now()
+    pick = next((b for b in sorted(plan.get("blocks") or [], key=lambda b: b["start"])
+                 if b["kind"] == "task" and not b.get("length_known", True)
+                 and not b.get("history") and _dt(b["end"]) > now
+                 and b.get("task_id") and b["task_id"] not in asked), None)
+    if not pick:
+        return None
+    if mark:
+        with _locked(persona, wait_ms=int(_limit("reply_lock_ms") or 200)) as got:
+            if got:
+                st = _load_state(persona)
+                st.setdefault("length_asked", {})[pick["task_id"]] = today
+                _write_json(_state_path(persona), st)
+    return (f"No length on file for {pick['title']} `{pick['task_id']}` — ask once, in passing, "
+            f"how long it usually takes, and record their answer with set_minutes as stated. "
+            f"Ask about no other task's length this turn.")
 
 
 def _mark_rhythm(persona: str, today: date) -> None:
@@ -2124,7 +2210,7 @@ def _payload(plan: dict, cands: list[dict], now: datetime, state: dict) -> dict:
         "fixed": fixed,
         "candidates": [{k: c.get(k) for k in ("ref", "what", "minutes", "score", "essential",
                                                "stakes", "due", "domain", "goal", "copies",
-                                               "activity", "device", "heavy")}
+                                               "activity", "device", "heavy", "solo", "after")}
                        for c in cands],
         "current_plan": [{"ref": b["ref"], "start": b["start"], "end": b["end"]}
                          for b in plan["blocks"] if b["kind"] == "task" and not b.get("history")],
@@ -2324,12 +2410,12 @@ def _idle_minutes(persona: str) -> float | None:
 
 
 def _near_fixed(persona: str) -> str | None:
-    """The fixed-session shield (review R1-6). `near_fixed_session` arrives with Stage B's
-    scheduler change; until then there is no nudge job to shield."""
+    """The fixed-session shield (review R1-6): `core.scheduler.near_fixed_session`, the scan the
+    scheduler's own check-ins yield by, read at the planner's clock."""
     try:
         from core import scheduler as S
         fn = getattr(S, "near_fixed_session", None)
-        return fn(S._load_config(persona), datetime.now()) if fn else None
+        return fn(S._load_config(persona), _now()) if fn else None
     except Exception:  # noqa: BLE001
         return None
 

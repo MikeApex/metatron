@@ -37,6 +37,7 @@ _CLOCK = {"now": datetime(2026, 10, 26, 8, 0)}
 O._now = lambda: _CLOCK["now"]
 A._get_timezone = lambda: "Europe/London"
 _PERSONA = "dp_test"
+_REAL_NEAR_FIXED = D._near_fixed        # captured before any check stubs it
 
 _GOALS = """quarterly:
 - id: q1
@@ -550,6 +551,22 @@ def _():
     D._near_fixed = lambda persona: None
     out = D.nudge_tick()
     assert isinstance(out, dict) and out["notify"] and "physio" in out["body"], out
+
+
+@check("nudge shield, real scan: a nudge due 07:23 with a 07:30 morning brief is carried, not woken")
+def _():
+    from unittest import mock
+    import core.scheduler as S
+    _fresh("shield_real")
+    cfg = {"quiet_hours": {"start": "22:00", "end": "07:00"},
+           "schedules": {"morning_brief": {"enabled": True, "time": "07:30", "days": "daily",
+                                           "agent": "coordinator"}}}
+    with mock.patch.object(S, "_load_config", return_value=cfg):
+        _CLOCK["now"] = datetime(2026, 10, 26, 7, 23)
+        why = _REAL_NEAR_FIXED(_PERSONA)
+        assert why and "morning_brief" in why, why
+        _CLOCK["now"] = datetime(2026, 10, 26, 10, 0)
+        assert _REAL_NEAR_FIXED(_PERSONA) is None
 
 
 @check("empty-day check-in: only with owns_checkins, after 3 h idle, ≤3 a day, today's prompt")

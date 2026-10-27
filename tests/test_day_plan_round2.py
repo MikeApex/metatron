@@ -426,6 +426,97 @@ def _():
     assert len(play) == 1 and f"is that also lunch ({_hm(lunch['start'])})?" in play[0]["title"], play
 
 
+@check("window: 'sometime by' is placed on a day with room, listed only when placed, bumped "
+       "before anything that matters more, a must-do on its last day, never before its 'after'")
+def _():
+    d = _fresh("window")
+    _EVENTS["v"] = []
+    _CLOCK["now"] = datetime(2026, 10, 27, 7, 0)          # Tuesday
+    repot = O.open_task("Repot two basement plants", kind="deadline", due="2026-11-02",
+                        flexible=True, minutes=45, minutes_source="stated").split()[1]
+    flu = O.open_task("Flu shot at the pharmacy with the boy", kind="deadline", due="2026-11-02",
+                      flexible=True, after="16:00", minutes=30).split()[1]
+    hooks = O.open_task("Hang hooks in the boy's room", kind="deadline").split()[1]
+    assert O._view(O._norm(O._find(O._load(None), repot)), date(2026, 10, 27))["state"] == "in_window"
+    D.refresh_snapshot(_PERSONA)
+    plan = D.current(_PERSONA)
+    assert plan["failures"] == [], plan["failures"]
+    by = _tasks_by(plan, {})
+    assert repot in by and not by[repot][0]["essential"], by.get(repot)
+    assert flu in by and _hm(by[flu][0]["start"]) >= "16:00", by.get(flu)
+    listed = {i["task_id"] for i in O.today_items()}
+    assert {repot, flu} <= listed, listed
+    # set_window turns an undated task into a window, on the user's word.
+    out = O.update_task(hooks, "set_window", new_due="2026-11-02", evidence="sometime next week")
+    assert "any day up to 2026-11-02" in out, out
+    # Bumped first: an earlier plan holds the repotting at 08:00; a task due today arrives, and
+    # the day (07:00, breakfast 07:40, wind-down from 09:00) has one 45-minute gap — that one.
+    (d / "day_shape.yaml").write_text('day: [{days: all, wake: "07:00", bed: "10:00"}]\n')
+    must = O.open_task("File the quarterly return", kind="deadline", due="2026-10-27",
+                       domain="finance", minutes=45, minutes_source="stated").split()[1]
+    day = date(2026, 10, 27)
+    cands = [c for c in D._candidates(day, _PERSONA) if c["task_id"] in (repot, must)]
+    rp = next(c for c in cands if c["task_id"] == repot)
+    prev = {"day": day.isoformat(), "blocks": [
+        {"id": f"task:{rp['ref']}@0800", "kind": "task", "ref": rp["ref"], "task_id": repot,
+         "title": rp["what"], "start": "2026-10-27T08:00", "end": "2026-10-27T08:45",
+         "essential": False, "score": rp["score"], "length_known": True, "copy": 0}]}
+    plan = D._build(day, _PERSONA, "repair", ["a task was added"], prev,
+                    datetime(2026, 10, 27, 7, 0), [], cands, allow_lookup=False)
+    placed = {b["task_id"] for b in _kind(plan, "task")}
+    assert must in placed and repot not in placed, (placed, plan["unplaced"])
+    assert plan["unplaced"] == [], plan["unplaced"]          # the window task is not a must-do yet
+    # Its last day: due today, so it is a must-do.
+    _CLOCK["now"] = datetime(2026, 11, 2, 7, 0)
+    v = O._view(O._norm(O._find(O._load(None), repot)), date(2026, 11, 2))
+    assert v["state"] == "due_today", v
+    cands = {c["task_id"]: c for c in D._candidates(date(2026, 11, 2), _PERSONA)}
+    assert cands[repot]["essential"], cands[repot]
+
+
+@check("length ask: code names one untimed task at a time, each once ever, at most two a day; "
+       "a timed task is never named; the plan block carries the line")
+def _():
+    _fresh("length_ask")
+    _EVENTS["v"] = []
+    _CLOCK["now"] = datetime(2026, 10, 27, 10, 0)
+    a = O.open_task("Sort the garage shelves", kind="deadline", due="2026-10-27").split()[1]
+    b = O.open_task("Call the plumber back", kind="deadline", due="2026-10-27").split()[1]
+    c = O.open_task("Wash the car", kind="deadline", due="2026-10-27").split()[1]
+    O.open_task("Write the report", kind="deadline", due="2026-10-27", minutes=60,
+                minutes_source="stated")
+    D.refresh_snapshot(_PERSONA)
+    plan = D.current(_PERSONA)
+    first = D.length_ask(_PERSONA, plan, mark=True)
+    assert first and "set_minutes" in first and "Write the report" not in first, first
+    named = {t for t in (a, b, c) if t in first}
+    assert len(named) == 1, first
+    assert first not in (D.length_ask(_PERSONA, plan) or "")           # never the same one twice
+    second = D.length_ask(_PERSONA, plan, mark=True)
+    assert second and not (named & {t for t in (a, b, c) if t in second}), second
+    assert D.length_ask(_PERSONA, plan, mark=True) is None               # two a day
+    assert "No length on file" in D.render_block(plan, ask_length=first)
+    _CLOCK["now"] = datetime(2026, 10, 28, 10, 0)
+    third = D.length_ask(_PERSONA, plan)
+    assert third is None or not ({t for t in (a, b, c) if t in third} & {t for t in (a, b, c)
+                                                                         if t in first + second}), third
+
+
+@check("window: with ledger_fields off, `flexible` and `after` are neither offered nor recorded")
+def _():
+    _fresh("window_off")
+    C._OVERRIDE = {"flags": {"build": True, "show_in_app": True, "ledger_fields": False}}
+    open_s, upd_s, _l = O.task_schemas()
+    assert "flexible" not in open_s["input_schema"]["properties"]
+    assert "after" not in upd_s["input_schema"]["properties"]
+    tid = O.open_task("Exchange the books", kind="deadline", due="2026-11-02", flexible=True,
+                      after="16:00").split()[1]
+    t = O._find(O._load(None), tid)
+    assert "flexible" not in t and "after" not in t, t
+    assert O.update_task(tid, "set_window", new_due="2026-11-02",
+                         evidence="next week").startswith("error"), "set_window offered while off"
+
+
 @check("activity: admin words beat a sport word; household and errand words beat the logistics "
        "domain; a task with nothing to go on is screen work, kept out of family time")
 def _():

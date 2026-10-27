@@ -264,9 +264,51 @@ def part2() -> None:
           f"(missing: {missing or 'none'})", not missing)
 
 
+def part3() -> None:
+    print("Day planner Stage B — the shared scan and the check-in yield")
+    checkin = CFG["schedules"]["companion_checkin"]
+    # near_fixed_session is the scan _near_fixed_job_blocks always ran: the same answer at
+    # every case part 1 exercises, called directly with a clock rather than through a job.
+    cases = [("07:23", True), ("07:35", True), ("10:24", False), ("19:28", False),
+             ("19:40", True)]
+    for hhmm, near in cases:
+        now = datetime.fromisoformat(f"{FRIDAY}T{hhmm}:00")
+        with mock.patch.object(scheduler, "datetime", _fixed_clock(FRIDAY, hhmm)):
+            via_job = scheduler._near_fixed_job_blocks("companion_checkin", checkin, CFG)
+            direct = scheduler.near_fixed_session(CFG, now, exclude="companion_checkin")
+        check(f"near_fixed_session at {hhmm} gives the old scan's answer ({'near' if near else 'clear'})",
+              bool(via_job) == near and direct == via_job)
+    check("near_fixed_session honours interval_near_fixed_minutes: 0",
+          scheduler.near_fixed_session(dict(CFG, interval_near_fixed_minutes=0),
+                                       datetime.fromisoformat(f"{FRIDAY}T07:23:00")) is None)
+
+    import tools.day_plan_config as C
+    try:
+        for flags, owns in (({"owns_checkins": False, "nudges": True}, False),
+                            ({"owns_checkins": True, "nudges": False}, False),
+                            ({"owns_checkins": True, "nudges": True}, True)):
+            C._OVERRIDE = {"flags": flags, "replaces_jobs": ["companion_checkin"]}
+            check(f"_day_plan_owns with {flags} → {owns}",
+                  scheduler._day_plan_owns("companion_checkin") is owns)
+        check("_day_plan_owns is false for a job not in replaces_jobs",
+              scheduler._day_plan_owns("morning_brief") is False)
+        check("an owned check-in does not fire",
+              not session_fired(FRIDAY, "10:24", "companion_checkin", job_cfg=checkin))
+        C._OVERRIDE = {"flags": {"owns_checkins": False, "nudges": False},
+                       "replaces_jobs": ["companion_checkin"]}
+        check("with the flags off the same check-in fires",
+              session_fired(FRIDAY, "10:24", "companion_checkin", job_cfg=checkin))
+    finally:
+        C._OVERRIDE = None
+    check("day_plan_refresh and day_plan_nudge are default jobs, every 5 minutes",
+          all(scheduler._DEFAULT_JOBS.get(n, {}).get("interval_minutes") == 5
+              for n in ("day_plan_refresh", "day_plan_nudge")))
+
+
 def main() -> int:
     part1()
     part2()
+    part3()
     print()
     failed = [label for ok, label in _results if not ok]
     if failed:

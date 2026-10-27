@@ -925,7 +925,13 @@ def _view_core(t: dict, today: date, lead_days: int = _LEAD_DAYS) -> dict:
                      text=f"{what} — overdue since {due.isoformat()}")
         elif due == today:
             v.update(state="due_today", actionable=True, sort=(1, due.isoformat()),
-                     text=f"{what} — due today")
+                     text=f"{what} — due today" + (f", after {t['after']}" if t.get("after") else ""))
+        elif t.get("flexible"):
+            # Any day up to its date (Mike, 2026-10-27): the planner places it on a day with
+            # room, and it is a must-do only on its last day.
+            v.update(state="in_window", actionable=True, sort=(3, due.isoformat()),
+                     text=f"{what} — any day by {_when(due, today)}"
+                          + (f", after {t['after']}" if t.get("after") else ""))
         elif (due - today).days <= lead_days:
             v.update(state="upcoming", actionable=True, sort=(2, due.isoformat()),
                      text=f"{what} — due {_when(due, today)}")
@@ -1126,7 +1132,8 @@ def open_task(what: str, kind: str = "deadline", due: str | None = None,
               goal_id: str | None = None, priority: str | None = None,
               priority_source: str | None = None, stakes: str | None = None,
               stakes_source: str | None = None, zone: str | None = None,
-              activity: str | None = None) -> str:
+              activity: str | None = None, flexible: bool | None = None,
+              after: str | None = None) -> str:
     """Record something the user has to do, or is waiting on, so it is tracked until done."""
     what = (what or "").strip()
     if not what:
@@ -1199,6 +1206,11 @@ def open_task(what: str, kind: str = "deadline", due: str | None = None,
     if err:
         return err
     entry.update({k: v for k, v in plan.items() if v is not None})
+    if _ledger_fields():
+        win, err = _window_fields(kind, entry.get("due"), flexible, after)
+        if err:
+            return err
+        entry.update(win)
     if minutes is not None:
         dur, err = _minutes_arg(minutes, minutes_source)
         if err:
@@ -1279,7 +1291,7 @@ def _set_minutes(task_id: str, minutes, source) -> str:
 # flag until the Synthesizer's conduct for them exists (review R1-1) — see task_schemas().
 
 _PLAN_ACTIONS = ("link_goal", "set_priority", "set_stakes", "set_zone", "day_starts", "set_days",
-                 "set_activity")
+                 "set_activity", "set_window")
 _PRIORITIES = ("high", "normal", "low")
 _STAKES = ("vital", "missable")
 _FIELD_SOURCES = ("stated", "inferred")
@@ -1397,6 +1409,53 @@ def _source_arg(name: str, value) -> tuple[str | None, str | None]:
         return None, (f"error: `{name}` must be one of {', '.join(_FIELD_SOURCES)}, not "
                       f"{value!r}. Nothing was written.")
     return src, None
+
+
+def _window_fields(kind: str, due: str | None, flexible, after) -> tuple[dict, str | None]:
+    """A one-off the user can do any day up to its date ("sometime next week" — Mike,
+    2026-10-27), and the earliest time of day it can start ("after 4 pm"). `eligible_from` is the
+    window's first day when given; otherwise it opens now. Returns (fields, error)."""
+    out: dict = {}
+    if flexible:
+        if kind != "deadline" or not due:
+            return {}, ("error: `flexible` needs a deadline with `due` — the last day it can "
+                        "happen. Nothing was written.")
+        out["flexible"] = True
+    if after not in (None, ""):
+        try:
+            out["after"] = datetime.strptime(str(after).strip(), "%H:%M").strftime("%H:%M")
+        except ValueError:
+            return {}, f"error: `after` must be HH:MM, not {after!r}. Nothing was written."
+    return out, None
+
+
+def _set_window(task_id: str, new_due: str | None, after: str | None, evidence: str | None) -> str:
+    """update_task(action="set_window"): any day up to `new_due`, optionally not before `after`."""
+    due_iso, err = _iso_arg("new_due", new_due)
+    if err:
+        return err
+    if not due_iso:
+        return ("error: `new_due` (YYYY-MM-DD) is required — the last day it can happen. "
+                "Nothing was written.")
+    win, err = _window_fields("deadline", due_iso, True, after)
+    if err:
+        return err
+    tid = _split_id(task_id)
+
+    def apply(doc: dict) -> str:
+        t = _find(doc["tasks"], tid)
+        if t is None:
+            return f"error: no task with id {task_id!r}"
+        if t.get("kind") != "deadline":
+            return "error: set_window applies to a one-off task. Nothing was written."
+        old = {k: t.get(k) for k in ("due", "flexible", "after")}
+        t["due"] = due_iso
+        t.update(win)
+        t.setdefault("history", []).append({"event": "window_set", "at": _stamp(), "from": old,
+                                            "to": {"due": due_iso, **win},
+                                            "evidence": (evidence or "")[:200]})
+        return f"{tid} any day up to {due_iso}: {_summarise(t)}"
+    return _with_store(None, apply)
 
 
 def _plan_fields(kind: str, goal_id=None, priority=None, priority_source=None, stakes=None,
@@ -1566,7 +1625,7 @@ def update_task(task_id: str, action: str, evidence: str | None = None,
                 goal_id: str | None = None, priority: str | None = None,
                 priority_source: str | None = None, stakes: str | None = None,
                 stakes_source: str | None = None, zone: str | None = None,
-                on_days=None, activity: str | None = None) -> str:
+                on_days=None, activity: str | None = None, after: str | None = None) -> str:
     """Record what happened to a tracked task — done, done with a loose end, skipped,
     dismissed, reopen, reschedule, or a new note."""
     action = (action or "").strip().lower()
@@ -1585,6 +1644,8 @@ def update_task(task_id: str, action: str, evidence: str | None = None,
         return _set_day_starts(task_id, note if note else evidence)
     if action == "set_days":
         return _set_days(task_id, on_days, evidence)
+    if action == "set_window":
+        return _set_window(task_id, new_due, after, evidence)
     if action in _PLAN_ACTIONS:
         return _set_plan_field(task_id, action, goal_id=goal_id, priority=priority,
                                priority_source=priority_source, stakes=stakes,
@@ -2445,6 +2506,16 @@ def _on_todays_list(t: dict, v: dict) -> bool:
     return bool(q.get("planned") or q.get("at_risk"))
 
 
+def _planned_today(persona: str | None, today: date) -> set[str]:
+    """Task ids on today's stored plan — read, never built (the panel poll must not wait)."""
+    try:
+        from tools import day_plan as D
+        plan = D._read_json(D._plan_path(today, persona), None) or {}
+    except Exception:  # noqa: BLE001 — no plan means nothing flexible is listed today
+        return set()
+    return {b.get("task_id") for b in plan.get("blocks") or [] if b.get("kind") == "task"}
+
+
 def today_items(persona: str | None = None, as_of: date | None = None) -> list[dict]:
     """The Now list for the app's Today panel: occurrence id, the task's words, its state.
 
@@ -2453,10 +2524,20 @@ def today_items(persona: str | None = None, as_of: date | None = None) -> list[d
     not landed (Mike, 2026-10-24)."""
     today = as_of or _today()
     out = []
+    planned = None
     for t in _load(persona):
         t = _norm(t)
         v = _view(t, today)
-        if not v["actionable"] or not _on_todays_list(t, v):
+        if not v["actionable"]:
+            continue
+        if v["state"] == "in_window":
+            # Any day up to its date: listed on a day the plan found room for it, so the list
+            # and the plan agree and it is not on the list every day of its window.
+            if planned is None:
+                planned = _planned_today(persona, today)
+            if t["id"] not in planned:
+                continue
+        elif not _on_todays_list(t, v):
             continue
         out.append({"task_id": t["id"], "occurrence": v["occ"], "kind": t["kind"],
                     "what": t["what"], "label": v["text"][len(t["what"]):].lstrip(" —"),
@@ -3169,6 +3250,14 @@ _PLAN_FIELD_PROPS = {
                                 "household, personal, health, exercise, family, social, "
                                 "entertainment, rest. Decides when in the day it can go (admin and "
                                 "focused work stay out of family time). Empty string clears it."},
+    "flexible": {"type": "boolean",
+                 "description": "A one-off that can happen any day up to `due` (\"sometime next "
+                                "week\" — due is the last day of that span; `eligible_from` its "
+                                "first, if it cannot start yet). Planned on a day with room; a "
+                                "must-do only on its last day."},
+    "after": {"type": "string",
+              "description": "HH:MM — the earliest time of day it can start (\"after 4 pm\" is "
+                             "16:00)."},
 }
 
 # Replaces the shipped `on_days` while the planner's fields are on: a monthly habit can then take
@@ -3194,6 +3283,11 @@ def task_schemas() -> tuple[dict, dict, dict]:
     open_s = _copy.deepcopy(OPEN_TASK_SCHEMA)
     open_s["input_schema"]["properties"].update(_copy.deepcopy(_PLAN_FIELD_PROPS))
     open_s["input_schema"]["properties"]["on_days"] = _copy.deepcopy(_ON_DAYS_PROP)
+    # A span ("sometime next week") is recordable now: due is its last day, with flexible.
+    open_s["input_schema"]["properties"]["due"]["description"] = (
+        "deadline: YYYY-MM-DD. For a span (\"sometime next week\", \"by Friday\") the last day "
+        "of it, with flexible. Leave empty only when no day or span was given at all — an "
+        "undated task is never planned into a day.")
     upd = _copy.deepcopy(UPDATE_TASK_SCHEMA)
     upd["description"] += (
         " link_goal / set_priority / set_stakes / set_zone / set_activity — record what it serves, "
@@ -3202,10 +3296,12 @@ def task_schemas() -> tuple[dict, dict, dict]:
         "their _source). day_starts — when the user's day "
         "really ends (task_id \"settings\", the time in note, e.g. \"02:00\"); only on their "
         "own word. set_days — a weekly or monthly habit's days (on_days), only on their own "
-        "word, quoted in evidence.")
+        "word, quoted in evidence. set_window — a one-off that can happen any day up to new_due "
+        "(\"sometime next week\"), optionally not before `after` (HH:MM).")
     upd["input_schema"]["properties"]["action"]["enum"] = (
         list(upd["input_schema"]["properties"]["action"]["enum"]) + list(_PLAN_ACTIONS))
     upd["input_schema"]["properties"].update(_copy.deepcopy(_PLAN_FIELD_PROPS))
+    upd["input_schema"]["properties"].pop("flexible", None)   # set_window implies it
     upd["input_schema"]["properties"]["on_days"] = _copy.deepcopy(_ON_DAYS_PROP)
     return open_s, upd, LIST_TASKS_SCHEMA
 
