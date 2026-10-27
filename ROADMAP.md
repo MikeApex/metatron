@@ -609,6 +609,9 @@ obligation tools landed. 27.9M input tokens against 436K output over those days.
    5). **Multi-user therefore needs either one scheduler unit per persona or a job that iterates
    them** — decide which at the same time as the multi-user transition, since that is also what
    triggers the § Section 0 ruling the consented-telemetry path depends on.
+   **Decided 2026-10-26 (Mike): one scheduler unit per user** (`metatron-scheduler@<persona>`) —
+   `archive/plans/multi_user_accounts_plan_2026-10-26.md` § 4.6. Built with that plan; the § 0
+   amendment for the second user lands in the same build.
 
 **Do not review this before there is real data.** The 2026-08-18 baseline is mostly development
 traffic, and tuning a metric against test sessions would bake in exactly the wrong shape.

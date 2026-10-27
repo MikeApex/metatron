@@ -75,6 +75,12 @@ back-tagging the rest is `[DB-0815-10]`.
 > against `git log` before promoting anything from here.
 *(empty — last triaged 2026-09-05; evidence in `archive/backlog_closed_2026-09.md`)*
 
+- **[instruction change]** User requested that the system double-check and prompt him before scheduling future social engagements with Rowan, noting that pub meetups feel like a poor use of time.  
+  `2026-10-27T16:25:12.246658Z`
+
+- **[needs building]** Mike requested development for two planner/scheduler capabilities: (1) geocoded and route-based logistics to batch errands and call audibles when in a location that coincides with a future task or interest; (2) a goals interface integrated with the scheduler to support habit formation and provide habit-building behavioral recommendations across agents for new goals.  
+  `2026-10-27T14:33:52.228821Z`
+
 - **[instruction change]** User requested daily prompt/logging cadence: record step count, sleep, and diet every day, including checking in on meals and snacks 2-3 times per day.  
   `2026-10-26T13:44:51.823161Z`
 
@@ -171,7 +177,6 @@ flag — which would send a turn containing only the cue.
 - **[a reply says something was set or queued when nothing was written]** Raised by Mike, 2026-10-27 (day-planner watch day 2). Twice now: 10-25 08:35 "the Chase and Rowan windows are set to surface…" and 10-27 09:59 + 10:00 "dinner prep queued for 16:30" — no task, event or setting was written either time. `check_false_action_claims()` (`core/orchestrator.py:6521`) and `_COMPLETION_CLAIM_RES` (`:1964`) recognise "I've added / I've set" and miss "is set to", "queued", "lined up". Fix: widen the phrasings, tested against these two real replies (conversation records 10-25 and 10-27 on the VM). Evidence: `archive/PROJECT_LOG.md` § 2026-10-27.
 
 ---
-
 ## Now
 
 **Ranked — position is priority.** Capped at ~10, so something enters by displacing something.
@@ -1285,6 +1290,9 @@ claim user-facing (its log-write sibling is `[DB-0829-01]`); the two Iva/Eva cor
 evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording — "causing an
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
+
+- **[user corrected a prior turn]** User corrected name from Cross Harbor to Crossharbour  
+  `2026-10-27T16:24:12.595811Z`
 
 - **[user corrected a prior turn]** User corrected task duplicate handling and specified billing date windows for Chase and Rowan's payroll transfer, insurance task deduplication, and Marta's dinner hosting details.  
   `2026-10-27T13:19:47.019674Z`
