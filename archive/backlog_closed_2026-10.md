@@ -194,3 +194,15 @@ Passed, read on the VM 2026-10-26 (`data/personas/mike/task_history.jsonl`, 11 r
 
 Origin: the task-ledger post-deploy session, 2026-10-24 (the launch prompt Mike ran asked for each
 time-gated check to leave with a date).
+
+## ✅ Check 2026-10-27: the plants come back due exactly 3 days after the last watering — closed 2026-10-27
+
+Passed, read on the VM 2026-10-27 from the day plan's own files (`data/personas/mike/day_plan/`):
+watered 10-24 (rain, Mike's word) → the interval task `ob_261024_177765` is on **10-27's** plan
+(`ob_261024_177765@2026-10-27`, 09:20) and on **neither** `plan_2026-10-25.json` nor
+`plan_2026-10-26.json`. The plan's candidates are the Today list's (`_on_todays_list`, round 2), so
+the Today list agrees.
+
+The item as filed: *"Watered (by rain, Mike's word) 10-24 → due 10-27; it must not appear on ✓ Today
+on 10-25 or 10-26."* Origin: the task-ledger post-deploy session, 2026-10-24.
+
