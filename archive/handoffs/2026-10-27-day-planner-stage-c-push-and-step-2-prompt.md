@@ -33,7 +33,7 @@ previous result). In every run the model fitted mover claims, the essential the 
 
 Check first: `log.jsonl` `"event": "reshuffle"` outcomes since 10-27 — any `unparseable` means a
 day ran past 16,384. Then, Mike's call, recommendation first:
-1. **Keep as is** if outcomes are clean (Mike's choice on 10-27).
+1. **Keep as is** if outcomes are clean (recommended 10-27; Mike had not yet decided at close).
 2. **Try a thinking cap** (~6,000) on the plain (OpenAI-compat) path — `extra_body` with Google's
    thinking config, or `reasoning_effort`; unverified on Vertex compat, one paid probe with the
    smoke test (`--runs 3`; pass = parseable, churn ≤ 3, and it still fits what the code plan could
