@@ -119,19 +119,79 @@ def _render(profile: dict, counts: dict) -> str:
     return f"{stamp} " + " | ".join(parts)
 
 
+# ---------------------------------------------------------------------------
+# Her permission (archive/plans/multi_user_accounts_plan_2026-10-26.md § 4.11, D9)
+# ---------------------------------------------------------------------------
+#
+# Learning how she writes to people reads what other people wrote to her, so it runs only
+# while she holds a current `tone_profile` record — given by her, in the app, and
+# withdrawable there (core/consent.py). Enforced here in Python, before the mailbox is
+# read and before any model call, never in a prompt (CLAUDE.md). Fail-closed: a persona
+# with no consent file has no permission, which is every synthetic persona and every new
+# user until she ticks *learn how I write to people*. `mike` holds records citing his own
+# rulings (2026-08-26, 08-28), written on the VM by `scripts/accounts.py seed-consent`.
+
+_NOT_PERMITTED = {
+    "status": "not_permitted",
+    "detail": "Learning how the user writes to people is not switched on for this user. "
+              "Draft in the persona's default style, and do not ask about or mention this.",
+}
+
+
+def _permitted(persona: str | None) -> bool:
+    """Whether `persona` holds a current `tone_profile` record. No persona is no."""
+    from core.consent import is_granted
+
+    if not persona:
+        return False
+    try:
+        return is_granted("tone_profile", persona)
+    except Exception:  # noqa: BLE001 — an unreadable record grants nothing
+        return False
+
+
+def forget_tone_profiles(persona: str) -> int:
+    """
+    Remove every tone profile learned for `persona`. Returns how many contacts had one.
+
+    The second half of withdrawing `tone_profile` (plan § 4.11, review P2): the withdraw
+    route calls `core.consent.withdraw("tone_profile", persona)` and then this, so
+    withdrawal removes what was learned and not just future learning. Deleted, not
+    archived — see `tools.crm.clear_tone_shapes`. Goes through tools/crm.py's own lock and
+    write path so the contact store stays consistent with a concurrent write.
+
+    A profiling run already in flight when she withdraws re-checks the record before it
+    writes; one that slips between that check and its write is still never served,
+    because the CRM's read paths hide `tone_shape` without a current record.
+    """
+    from core.persona import persona_scope
+    from tools.crm import clear_tone_shapes
+
+    with persona_scope(persona):
+        cleared = clear_tone_shapes()
+    logger.info(f"[tone] forgot {cleared} tone profile(s) for {persona}")
+    return cleared
+
+
 def _extract(address: str, contact_id: str, persona: str | None = None) -> dict:
     """
     Sweep the mailbox for this address, distil it, and write the result to the CRM.
 
     Runs on a background thread. Returns a dict for logging and tests; nothing waits on it.
+
+    Refuses without a current `tone_profile` record (plan § 4.11) — checked before the
+    mailbox is read, and again just before the write in case she withdrew mid-run.
     """
     from core.orchestrator import run_session
-    from core.persona import persona_scope
+    from core.persona import current_persona, persona_scope
     from tools.crm import write_contact
     from tools.mail import search_correspondence
     from tools.untrusted import contains_injection_markers
 
     with persona_scope(persona) if persona else contextlib.nullcontext():
+        if not _permitted(persona or current_persona()):
+            return dict(_NOT_PERMITTED)
+
         sample = search_correspondence(address)
         if sample.get("error"):
             return {"status": "error", "detail": sample["error"]}
@@ -179,6 +239,13 @@ def _extract(address: str, contact_id: str, persona: str | None = None) -> dict:
             logger.warning(f"[tone] refusing tone_shape for {contact_id}: markers {markers}")
             return {"status": "blocked", "detail": f"Injection markers in output: {markers}"}
 
+        # Re-checked at the write: the mailbox sweep and model call take seconds, and a
+        # withdrawal in that window must not be undone by a profile landing after the
+        # forget. (A write in the instant between this check and the next line is still
+        # hidden by the CRM's read gate — plan § 4.11, P2.)
+        if not _permitted(persona or current_persona()):
+            return dict(_NOT_PERMITTED)
+
         write_contact(name="", contact_id=contact_id, tone_shape=rendered)
         return {"status": "written", "tone_shape": rendered, "counts": counts}
 
@@ -204,8 +271,14 @@ def get_tone_shape(name: str = "", contact_id: str = "", refresh: bool = False) 
     this returns a `seeding` status — draft on the persona's default style this time and
     the profile will be there next time. Blocking a live conversation for a mailbox sweep
     and a model call, to improve a greeting, is the wrong trade.
+
+    Without a current `tone_profile` record (plan § 4.11) it returns `not_permitted`
+    before reading anything — no contact lookup, no mailbox, no model call.
     """
     from core.persona import current_persona
+
+    if not _permitted(current_persona()):
+        return dict(_NOT_PERMITTED)
 
     record, err = _resolve(name, contact_id)
     if err:

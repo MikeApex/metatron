@@ -788,6 +788,44 @@
     .plan-note { font-size: 11px; color: #6f7a6f; }
     /* A close suggested by an arriving message. Its own bar, never the approval bar above —
        see the comment where it is wired. */
+    /* The first interview's one control (multi-user plan § 4.5, § 4.7): "Finish later" while
+       it runs, "Continue setting up" once paused. Hidden for anyone without an interview. */
+    /* Connections (multi-user plan § 4.10-4.11): her Google account and her permissions. */
+    #conn-toggle { background: none; border: none; color: #555; font-size: 15px; cursor: pointer; }
+    #conn-panel {
+      display: none; position: fixed; inset: 0; z-index: 90; background: rgba(0,0,0,0.85);
+      overflow-y: auto; padding: 24px 12px;
+    }
+    #conn-panel.shown { display: block; }
+    #conn-box {
+      max-width: 460px; margin: 0 auto; background: #121212; border: 1px solid #2a2a2a;
+      border-radius: 14px; padding: 18px; color: #ddd; font-size: 14px; line-height: 1.5;
+    }
+    #conn-box h3 { margin: 14px 0 8px; font-size: 14px; color: #9ab; font-weight: 600; }
+    #conn-box ol { padding-left: 20px; margin: 6px 0; }
+    #conn-box a { color: #7ab; }
+    #conn-box input[type="text"], #conn-box input[type="password"] {
+      width: 100%; box-sizing: border-box; background: #1a1a1a; border: 1px solid #2a2a2a;
+      border-radius: 8px; color: #e8e8e8; padding: 10px; font-size: 14px; margin: 4px 0 8px;
+    }
+    #conn-box button {
+      background: #1e3a5f; border: none; border-radius: 16px; color: #e8e8e8;
+      padding: 8px 14px; font-size: 13px; cursor: pointer; margin: 4px 6px 4px 0;
+    }
+    #conn-box button.quiet { background: #222; color: #aaa; }
+    .conn-text { white-space: pre-wrap; background: #181818; border: 1px solid #262626;
+                 border-radius: 8px; padding: 10px; margin: 6px 0; font-size: 13px; color: #bbb; }
+    #conn-msg { margin: 8px 0; color: #9c9; white-space: pre-wrap; }
+    #conn-msg.bad { color: #d88; }
+
+    #interview-bar { display: none; justify-content: center; padding: 6px 12px 0; }
+    #interview-bar.shown { display: flex; }
+    #interview-chip {
+      background: #1a1a1a; color: #9ab; border: 1px solid #2a3a4a; border-radius: 16px;
+      padding: 6px 14px; font-size: 13px; cursor: pointer;
+    }
+    #interview-chip:disabled { opacity: 0.5; cursor: not-allowed; }
+
     #task-proposal-bar {
       display: none;
       flex-direction: column;
@@ -881,6 +919,7 @@
   <span>Life Manager</span>
   <span class="header-right">
     <button id="tasks-toggle" title="Today's tasks">✓ Today</button>
+    <button id="conn-toggle" title="Connections and permissions">⚙</button>
     <span id="persona-chip" style="display:none"></span>
   </span>
 </header>
@@ -925,6 +964,40 @@
       <button id="task-proposal-yes">Mark done</button>
     </div>
   </div>
+
+  <div id="conn-panel">
+  <div id="conn-box">
+    <h3>Google account</h3>
+    <div id="conn-status"></div>
+    <div id="conn-form" style="display:none">
+      <div>Connect your Gmail and Google Calendar. One Google <em>app password</em> covers both:</div>
+      <ol>
+        <li>Turn on <a href="https://myaccount.google.com/signinoptions/two-step-verification" target="_blank" rel="noopener">2-Step Verification</a>.</li>
+        <li>Create an <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">app password</a> (name it "Metatron").</li>
+        <li>In Gmail, <a href="https://mail.google.com/mail/u/0/#settings/fwdandpop" target="_blank" rel="noopener">turn on IMAP</a>.</li>
+      </ol>
+      <input id="conn-address" type="text" placeholder="you@gmail.com"
+             autocapitalize="none" autocorrect="off" spellcheck="false">
+      <input id="conn-password" type="password" placeholder="app password (16 letters)"
+             autocomplete="off">
+      <button id="conn-continue">Continue</button>
+    </div>
+    <div id="conn-consent" style="display:none">
+      <div class="conn-text" id="conn-read-text"></div>
+      <label><input type="checkbox" id="conn-read-tick"> I agree — read my calendar and mail</label>
+      <div class="conn-text" id="conn-tone-text"></div>
+      <label><input type="checkbox" id="conn-tone-tick"> Yes — learn how I write (optional)</label>
+      <div><button id="conn-connect">Connect</button>
+           <button id="conn-back" class="quiet">Back</button></div>
+    </div>
+    <div id="conn-msg"></div>
+    <h3>Permissions</h3>
+    <div id="consent-list"></div>
+    <div style="margin-top:14px"><button id="conn-close" class="quiet">Close</button></div>
+  </div>
+</div>
+
+<div id="interview-bar"><button id="interview-chip" type="button"></button></div>
 
   <div id="controls">
     <button id="mic-btn">Tap to Speak</button>
@@ -1096,7 +1169,11 @@
   function enterApp(persona) {
     // A different persona has a different exchange history: the catch-up cursor belongs to
     // the previous one, and its first catch-up would otherwise ask from the wrong id.
-    if (currentPersona !== persona) lastSeenId = 0;
+    if (currentPersona !== persona) {
+      lastSeenId = 0;
+      interviewStatus = null;     // the new persona's socket reports its own
+      renderInterviewChip();
+    }
     currentPersona = persona;
     localStorage.setItem('metatron_persona', persona);
     document.getElementById('login-screen').style.display = 'none';
@@ -1865,8 +1942,197 @@
   // catch-up in between. This is the one place that must stay unconditional.
   setInterval(ensureConnected, 20000);
 
+  // --- Connections: her Google account and her permissions (plan § 4.10, § 4.11) --------
+  // The password goes in one HTTPS request to /connections/google and nowhere else — never a
+  // chat message, so it never reaches a model or a conversation log. The two permission
+  // screens are the one place the app names Google, Vertex and the developer's access, on
+  // purpose: that disclosure is the feature (CLAUDE.md § Discretion's own exception).
+  let consentState = {};
+
+  function plainText(md) { return (md || '').replace(/^#+\s*/gm, '').replace(/\*\*/g, ''); }
+
+  function connMsg(text, bad) {
+    const el = document.getElementById('conn-msg');
+    el.textContent = text || '';
+    el.className = bad ? 'bad' : '';
+  }
+
+  async function openConnections() {
+    document.getElementById('conn-panel').classList.add('shown');
+    connMsg('');
+    try {
+      const [c, k] = await Promise.all([
+        authFetch('/connections?persona=' + encodeURIComponent(currentPersona)).then(r => r.json()),
+        authFetch('/consents?persona=' + encodeURIComponent(currentPersona)).then(r => r.json()),
+      ]);
+      consentState = k.consents || {};
+      renderConnection(c.google || {});
+      renderConsents();
+    } catch (e) { connMsg('Cannot reach the server.', true); }
+  }
+
+  function renderConnection(g) {
+    const status = document.getElementById('conn-status');
+    status.innerHTML = '';
+    document.getElementById('conn-consent').style.display = 'none';
+    if (g.connected) {
+      const line = document.createElement('div');
+      const cals = (g.calendars || []).join(', ');
+      line.textContent = 'Connected: ' + (g.address || '') + (cals ? ' — calendars: ' + cals : '')
+        + (g.checked_at ? ' (checked ' + String(g.checked_at).slice(0, 16).replace('T', ' ') + ')' : '');
+      status.append(line);
+      // A connection set up by hand on the server (Mike's) is shown, never managed here.
+      if (!g.managed_in_app) { document.getElementById('conn-form').style.display = 'none'; return; }
+      const btn = document.createElement('button');
+      btn.className = 'quiet'; btn.textContent = 'Disconnect';
+      btn.onclick = async () => {
+        if (!confirm('Disconnect your Google account? The app password is deleted.')) return;
+        await authFetch('/connections/google?persona=' + encodeURIComponent(currentPersona), { method: 'DELETE' });
+        openConnections();
+      };
+      status.append(btn);
+      document.getElementById('conn-form').style.display = 'none';
+    } else {
+      status.textContent = 'Not connected.';
+      document.getElementById('conn-form').style.display = '';
+    }
+  }
+
+  function renderConsents() {
+    const list = document.getElementById('consent-list');
+    list.innerHTML = '';
+    const names = { correspondence_read: 'Read my calendar and mail',
+                    tone_profile: 'Learn how I write to people' };
+    for (const [scope, c] of Object.entries(consentState)) {
+      const row = document.createElement('div');
+      row.textContent = (names[scope] || scope) + ': ' + (c.granted ? 'on' : 'off') + ' ';
+      if (c.granted) {
+        const btn = document.createElement('button');
+        btn.className = 'quiet'; btn.textContent = 'Withdraw';
+        btn.onclick = async () => {
+          const extra = scope === 'correspondence_read' ? ' This also disconnects your Google account.'
+                      : ' What it has learned is deleted.';
+          if (!confirm('Withdraw this permission?' + extra)) return;
+          await authFetch('/consents/' + scope + '?persona=' + encodeURIComponent(currentPersona), { method: 'DELETE' });
+          openConnections();
+        };
+        row.append(btn);
+      }
+      list.append(row);
+    }
+  }
+
+  async function grant(scope) {
+    const c = consentState[scope];
+    if (!c || c.granted) return true;
+    const res = await authFetch('/consents/' + scope, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text_version: c.text_version, persona: currentPersona }),
+    });
+    return res.ok;
+  }
+
+  document.getElementById('conn-toggle').addEventListener('click', openConnections);
+  document.getElementById('conn-close').addEventListener('click', () => {
+    document.getElementById('conn-panel').classList.remove('shown');
+    document.getElementById('conn-password').value = '';
+  });
+  document.getElementById('conn-continue').addEventListener('click', () => {
+    const addr = document.getElementById('conn-address').value.trim();
+    const pw = document.getElementById('conn-password').value.replace(/\s+/g, '');
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(addr)) { connMsg('Enter your Google address.', true); return; }
+    if (pw.length < 16) { connMsg('The app password is the 16-letter code Google shows you.', true); return; }
+    document.getElementById('conn-read-text').textContent = plainText((consentState.correspondence_read || {}).text);
+    document.getElementById('conn-tone-text').textContent = plainText((consentState.tone_profile || {}).text);
+    document.getElementById('conn-read-tick').checked = !!(consentState.correspondence_read || {}).granted;
+    document.getElementById('conn-tone-tick').checked = !!(consentState.tone_profile || {}).granted;
+    document.getElementById('conn-form').style.display = 'none';
+    document.getElementById('conn-consent').style.display = '';
+    connMsg('');
+  });
+  document.getElementById('conn-back').addEventListener('click', () => {
+    document.getElementById('conn-consent').style.display = 'none';
+    document.getElementById('conn-form').style.display = '';
+  });
+  document.getElementById('conn-connect').addEventListener('click', async () => {
+    if (!document.getElementById('conn-read-tick').checked) {
+      connMsg('Connecting needs permission to read your calendar and mail.', true); return;
+    }
+    const btn = document.getElementById('conn-connect');
+    btn.disabled = true;
+    connMsg('Checking with Google…');
+    try {
+      if (!(await grant('correspondence_read'))) { connMsg('Could not record your permission.', true); return; }
+      if (document.getElementById('conn-tone-tick').checked) await grant('tone_profile');
+      const res = await authFetch('/connections/google', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          address: document.getElementById('conn-address').value.trim(),
+          app_password: document.getElementById('conn-password').value.replace(/\s+/g, ''),
+          persona: currentPersona,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      document.getElementById('conn-password').value = '';
+      if (res.ok && data.ok) {
+        connMsg('Connected — found ' + (data.calendars || []).length + ' calendar(s): '
+                + (data.calendars || []).join(', '));
+        openConnections();
+      } else {
+        connMsg((data.remedy || data.detail || 'That did not work.'), true);
+        document.getElementById('conn-consent').style.display = 'none';
+        document.getElementById('conn-form').style.display = '';
+      }
+    } catch (e) {
+      connMsg('Cannot reach the server.', true);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  // --- The first interview's chip -------------------------------------------------
+  // The server says where the interview stands ({type: 'interview', status}) on connect and
+  // after every change, so the chip follows it on every device. No status, no chip.
+  let interviewStatus = null;
+
+  function renderInterviewChip() {
+    const bar = document.getElementById('interview-bar');
+    const chip = document.getElementById('interview-chip');
+    chip.disabled = false;
+    if (interviewStatus === 'active') {
+      chip.textContent = 'Finish later';
+      bar.classList.add('shown');
+    } else if (interviewStatus === 'paused') {
+      chip.textContent = 'Continue setting up';
+      bar.classList.add('shown');
+    } else {
+      bar.classList.remove('shown');
+    }
+  }
+
+  document.getElementById('interview-chip').addEventListener('click', async () => {
+    const chip = document.getElementById('interview-chip');
+    const path = interviewStatus === 'active' ? '/interview/pause'
+               : interviewStatus === 'paused' ? '/interview/resume' : null;
+    if (!path) return;
+    chip.disabled = true;
+    try {
+      const res = await authFetch(path, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ persona: currentPersona }),
+      });
+      if (res.ok) interviewStatus = (await res.json()).status;
+    } catch (e) { /* the next status frame corrects the chip */ }
+    renderInterviewChip();
+  });
+
   function handleWsMessage(msg) {
     switch (msg.type) {
+
+      case 'interview':
+        interviewStatus = msg.status || null;
+        renderInterviewChip();
+        break;
 
       case 'ping':
         // Server heartbeat. lastMessageAt is already updated in onmessage;

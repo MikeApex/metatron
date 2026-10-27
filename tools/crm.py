@@ -1392,6 +1392,89 @@ def write_contact(
     return f"{cid}\n\n" + "\n".join(notes_out) if notes_out else cid
 
 
+# ---------------------------------------------------------------------------
+# Tone profiles are served only under a current permission
+# (archive/plans/multi_user_accounts_plan_2026-10-26.md § 4.11, review P2)
+# ---------------------------------------------------------------------------
+#
+# `tone_shape` is learned from the user's correspondence, which is only permitted while
+# she holds a current `tone_profile` record (core/consent.py). Withdrawing it deletes the
+# stored profiles (`clear_tone_shapes` below), but deletion alone leaves two ways an old
+# profile can come back: one written by a profiling run that was already in flight when
+# she withdrew, and one restored from a merge snapshot by `unmerge_contacts`. So the
+# agent-facing reads — `read_contact`, `list_contacts`, `search_contacts`, the only tools
+# that return a contact record — also omit the field whenever no current record exists.
+# Fail-closed: no bound persona, no consent file, or an unreadable one all read as "not
+# permitted", so every synthetic persona sees no tone_shape at all.
+
+def _tone_profiles_permitted() -> bool:
+    """True only when the persona these contacts belong to holds a current
+    `tone_profile` record. Resolved the way `_crm_path()` resolves, so the check is
+    always against the same persona whose contacts.json is being read."""
+    from core.consent import is_granted
+    from core.persona import current_persona
+
+    persona = current_persona()
+    if not persona:
+        return False
+    try:
+        return is_granted("tone_profile", persona)
+    except Exception:  # noqa: BLE001 — an unreadable record grants nothing
+        return False
+
+
+def _gate_tone_shape(record: dict, permitted: bool) -> dict:
+    """The record as an agent may see it. A copy — the stored record is never touched."""
+    if permitted or "tone_shape" not in record:
+        return record
+    return {k: v for k, v in record.items() if k != "tone_shape"}
+
+
+def clear_tone_shapes() -> int:
+    """
+    Delete `tone_shape` from every contact of the bound persona — live records and the
+    CRM archive alike. Returns how many LIVE contacts had a profile removed (archive
+    copies are scrubbed too but not counted, so the number is "people", not files).
+
+    Called by `tools.tone.forget_tone_profiles()` when she withdraws `tone_profile`.
+    **Deleted, not archived** (plan § 4.11, P2): archive-on-merge preserves a user's data
+    through merges, but a withdrawn permission that leaves an archived copy of what was
+    learned under it has not been withdrawn. That is why the archive files — merged-away
+    records, pre-merge snapshots, reverted and discarded versions — are scrubbed too: an
+    unmerge after she re-grants would otherwise restore a profile learned under the
+    permission she took back. Only the one field is removed; every other archived field
+    is left exactly as it was.
+
+    Not a tool and not in any schema — no model can call it.
+    """
+    cleared = 0
+    with _CRM_LOCK:
+        contacts = _load_contacts()
+        changed = False
+        for contact in contacts:
+            if "tone_shape" in contact:
+                if str(contact.pop("tone_shape") or "").strip():
+                    cleared += 1
+                changed = True
+        if changed:
+            _save_contacts(contacts)
+
+        archive_dir = _crm_archive_dir()
+        if archive_dir.exists():
+            for path in sorted(archive_dir.glob("*.json")):
+                try:
+                    record = json.loads(path.read_text())
+                except (OSError, ValueError):
+                    continue
+                if not isinstance(record, dict) or "tone_shape" not in record:
+                    continue
+                record.pop("tone_shape")
+                with open(path, "w") as f:
+                    json.dump(record, f, indent=2)
+                os.chmod(path, 0o600)
+    return cleared
+
+
 def read_contact(contact_id: str = "", name: str = "") -> str:
     """
     Read a single contact record by ID or name (fuzzy/case-insensitive match).
@@ -1408,16 +1491,18 @@ def read_contact(contact_id: str = "", name: str = "") -> str:
     alone will use that answer if one was given.
     """
     contacts = _load_contacts()
+    # Plan § 4.11 (P2): tone_shape only under a current `tone_profile` record.
+    permitted = _tone_profiles_permitted()
 
     if contact_id:
         if name:
             _record_resolution(name, contact_id, "read_contact")
         for contact in contacts:
             if contact.get("id") == contact_id:
-                return json.dumps(contact, indent=2)
+                return json.dumps(_gate_tone_shape(contact, permitted), indent=2)
         merged = _resolve_merged(contacts, contact_id)
         if merged is not None:
-            result = merged.copy()
+            result = _gate_tone_shape(merged, permitted).copy()
             result["_merged_note"] = (
                 f"'{contact_id}' was merged into this record ('{merged.get('id')}')."
             )
@@ -1432,10 +1517,10 @@ def read_contact(contact_id: str = "", name: str = "") -> str:
             remembered = _apply_resolution(contacts, name, matches)
             if remembered is None:
                 return _ambiguous_match(name, matches, "returned")
-            result = remembered.copy()
+            result = _gate_tone_shape(remembered, permitted).copy()
             result["_resolution_note"] = _resolution_note(name, remembered)
             return json.dumps(result, indent=2)
-        return json.dumps(matches[0], indent=2)
+        return json.dumps(_gate_tone_shape(matches[0], permitted), indent=2)
 
     return "Error: provide either contact_id or name"
 
@@ -1488,7 +1573,9 @@ def list_contacts(
         else:
             results.append(contact)
 
-    return json.dumps(results, indent=2)
+    # Plan § 4.11 (P2): tone_shape only under a current `tone_profile` record.
+    permitted = _tone_profiles_permitted()
+    return json.dumps([_gate_tone_shape(c, permitted) for c in results], indent=2)
 
 
 def _interaction_fingerprint(entry_date: str, summary: str) -> str:
@@ -1715,7 +1802,9 @@ def search_contacts(query: str) -> str:
                     seen_ids.add(target_id)
                     break
 
-    return json.dumps(results, indent=2)
+    # Plan § 4.11 (P2): tone_shape only under a current `tone_profile` record.
+    permitted = _tone_profiles_permitted()
+    return json.dumps([_gate_tone_shape(c, permitted) for c in results], indent=2)
 
 
 def _merge_auto_accept(persona: str | None = None) -> bool:

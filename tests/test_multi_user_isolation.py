@@ -47,8 +47,6 @@ def _own_db() -> None:
     asyncio.run(server._init_db())
 
 
-_own_db()
-accounts.ACCOUNTS_PATH = TMP / "accounts" / "accounts.json"
 
 client = TestClient(server.app, base_url="https://testserver")
 
@@ -64,8 +62,20 @@ def _make_active(name: str, pw: str) -> dict:
     return accounts.update(name, status="active")
 
 
-_make_active(ALICE, ALICE_PW)
-_make_active(BOB, "bob-password-1234")
+_SAVED_ACCOUNTS_PATH = accounts.ACCOUNTS_PATH
+
+
+def setup_module(module=None):
+    """This file's account store and DB, set when its tests start — not at import, where
+    another test file's import would overwrite them in one pytest process."""
+    accounts.ACCOUNTS_PATH = TMP / "accounts" / "accounts.json"
+    _own_db()
+    _make_active(ALICE, ALICE_PW)
+    _make_active(BOB, "bob-password-1234")
+
+
+def teardown_module(module=None):
+    accounts.ACCOUNTS_PATH = _SAVED_ACCOUNTS_PATH
 
 
 def _user_token(name: str) -> str:
@@ -112,6 +122,17 @@ BOUND = {
     ("POST", "/upload"): dict(params={"persona": BOB},
                               files={"file": ("a.txt", b"x", "text/plain")}),
     ("GET", "/attachments/{attachment_id}"): dict(params={"persona": BOB}),
+    # Stage 2 — the interview, her permissions and her Google connection.
+    ("GET", "/interview"): dict(params={"persona": BOB}),
+    ("POST", "/interview/pause"): dict(json={"persona": BOB}),
+    ("POST", "/interview/resume"): dict(json={"persona": BOB}),
+    ("GET", "/consents"): dict(params={"persona": BOB}),
+    ("POST", "/consents/{scope}"): dict(json={"text_version": "v1", "persona": BOB}),
+    ("DELETE", "/consents/{scope}"): dict(params={"persona": BOB}),
+    ("GET", "/connections"): dict(params={"persona": BOB}),
+    ("POST", "/connections/google"): dict(json={"address": "b@gmail.com",
+                                                "app_password": "x", "persona": BOB}),
+    ("DELETE", "/connections/google"): dict(params={"persona": BOB}),
 }
 MONITOR_PREFIX, INTERNAL_PREFIX = "/monitor/", "/internal/"
 
@@ -134,7 +155,7 @@ def test_every_route_is_classified():
 
 
 def _call(method: str, path: str, token: str, **kw):
-    url = path.replace("{attachment_id}", "abc")
+    url = path.replace("{attachment_id}", "abc").replace("{scope}", "tone_profile")
     return client.request(method, url, headers=_h(token), **kw)
 
 
@@ -438,8 +459,8 @@ def test_approve_provisions_create_only_and_is_idempotent():
     assert json.loads((p_data / "interview/state.json").read_text())["status"] == "paused"
 
     # A pending request cannot be disabled (then enabled unprovisioned) — review F2.
-    accounts.register("zz_pend", "P", "pend-password-12", "", CONSENT, path=store)
-    assert _run(box, "disable", "zz_pend").returncode == 1
+    accounts.register("zz_pending_req", "P", "pend-password-12", "", CONSENT, path=store)
+    assert _run(box, "disable", "zz_pending_req").returncode == 1
 
     # Disabled: approve refuses, enable re-admits without touching the persona.
     assert _run(box, "disable", "zz_iva").returncode == 0
@@ -505,6 +526,7 @@ def test_account_persona_files_are_ignored_and_fixtures_stay_tracked():
 
 
 if __name__ == "__main__":
+    setup_module()
     failures = []
     for name, fn in list(globals().items()):
         if name.startswith("test_") and callable(fn):

@@ -77,6 +77,9 @@ ACTION_TOOLS: frozenset[str] = frozenset({
     "set_day_shape", "request_replan", "answer_event",
     # Routine pause (2026-10-26): what runs in the user's check-ins changes until resumed.
     "pause_routine", "resume_routine",
+    # The in-app interview (2026-10-27): pausing or finishing it changes where her next
+    # message goes and whether proactive sessions hold — her state, so an action.
+    "pause_interview", "finish_interview",
     "write_schedule", "delete_schedule",
     # A taught intake rule permanently changes what mail the user sees — a standing
     # config write behind the confirm gate, and unambiguously an action.

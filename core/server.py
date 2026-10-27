@@ -35,8 +35,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import aiosqlite
 import edge_tts
-from fastapi import (FastAPI, File, HTTPException, Request, Response, UploadFile, WebSocket,
-                     WebSocketDisconnect)
+from fastapi import (BackgroundTasks, FastAPI, File, HTTPException, Request, Response,
+                     UploadFile, WebSocket, WebSocketDisconnect)
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
@@ -45,6 +45,7 @@ from pydantic import BaseModel
 
 from core import attachments as attachments_mod
 from core import auth
+from core import interview as interview_mod
 from core import tts_worker
 from core.orchestrator import run_pipeline_session_stream, run_session
 from core.persona import PersonaError, persona_data_dir, persona_scope, validate_persona_name
@@ -530,6 +531,13 @@ async def _init_db() -> None:
             await db.execute("ALTER TABLE exchanges ADD COLUMN attachments TEXT")
         except Exception:
             pass  # column already present
+        # Which conversation an exchange belongs to. NULL is the ordinary pipeline;
+        # 'interview' marks the first interview's turns (multi-user plan § 4.7), so its
+        # whole transcript can be handed back to the interviewer as history.
+        try:
+            await db.execute("ALTER TABLE exchanges ADD COLUMN channel TEXT")
+        except Exception:
+            pass  # column already present
 
         # The index of stored files. The JSON sidecar written beside each file is the
         # human-readable record; this is what makes an id lookup O(1) at send time and
@@ -561,6 +569,30 @@ async def _load_history_from_db(persona: str) -> list[dict]:
     pairs: list[dict] = []
     for row in reversed(rows):
         pairs.append({"role": "user", "content": row["user"]})
+        pairs.append({"role": "assistant", "content": row["assistant"]})
+    return pairs
+
+
+_APP_STARTED_TURN = "(The app started this turn.)"
+
+
+async def _interview_history(persona: str) -> list[dict]:
+    """
+    The whole interview so far as {role, content} pairs — what the interviewer gets as
+    history (plan § 4.7), not the pipeline's five turns. The opening and a resume were
+    started by the app, so their stored user side is empty; the model is shown the prompt
+    that started them instead.
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT user, assistant FROM exchanges WHERE persona=? AND channel='interview' "
+            "ORDER BY id ASC", (persona,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+    pairs: list[dict] = []
+    for row in rows:
+        pairs.append({"role": "user", "content": row["user"] or _APP_STARTED_TURN})
         pairs.append({"role": "assistant", "content": row["assistant"]})
     return pairs
 
@@ -646,16 +678,17 @@ async def _get_exchange(persona: str, exchange_id: str) -> dict | None:
 
 async def _save_exchange(persona: str, exchange_id: str, user: str, assistant: str,
                          proactive: bool = False,
-                         attachments: list[dict] | None = None) -> int:
+                         attachments: list[dict] | None = None,
+                         channel: str | None = None) -> int:
     """Persist a completed exchange. Returns the new row id."""
     ts = datetime.utcnow().isoformat() + "Z"
     meta = json.dumps(_public_attachments(attachments)) if attachments else None
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute(
             "INSERT OR IGNORE INTO exchanges "
-            "(exchange_id, persona, user, assistant, ts, proactive, attachments) "
-            "VALUES (?,?,?,?,?,?,?)",
-            (exchange_id, persona, user, assistant, ts, 1 if proactive else 0, meta),
+            "(exchange_id, persona, user, assistant, ts, proactive, attachments, channel) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (exchange_id, persona, user, assistant, ts, 1 if proactive else 0, meta, channel),
         )
         await db.commit()
         return cursor.lastrowid or 0
@@ -849,12 +882,39 @@ async def _shutdown() -> None:
     tts_worker.shutdown()
 
 
+def _refuse_side_door(request: Request, persona: str, agent: str) -> None:
+    """
+    /session and /session/stream predate accounts and take any agent name. For an account
+    user they are not a way round the app's own rules (Stage 2 review F2): only the ordinary
+    pipeline, and not while her interview is running — that conversation goes through /ws,
+    where it is recorded as the interview. Admin and service callers are unchanged.
+    """
+    if request.state.identity.role != "user":
+        return
+    if agent != "coordinator":
+        raise HTTPException(status_code=403, detail="Not available to this account.")
+    if interview_mod.status(persona) == "active":
+        raise HTTPException(status_code=409, detail="Finish or pause setting up first.")
+
+
+# Background tasks the server starts and nobody awaits. asyncio keeps only a weak reference to
+# a task, so one held nowhere can be collected mid-run (Stage 2 review F5).
+_BG_TASKS: set = set()
+
+
+def _spawn(coro) -> None:
+    task = asyncio.create_task(coro)
+    _BG_TASKS.add(task)
+    task.add_done_callback(_BG_TASKS.discard)
+
+
 @app.post("/session", response_model=SessionResponse)
 async def session(req: SessionRequest, request: Request) -> SessionResponse:
     """Run a single orchestrator turn and return the text response."""
     if not req.input.strip():
         raise HTTPException(status_code=400, detail="Input is empty.")
     persona = request_persona(request, req.persona)
+    _refuse_side_door(request, persona, req.agent)
     try:
         agent = req.agent
         history = _session_history.setdefault(persona, []) if agent == "coordinator" else None
@@ -897,6 +957,7 @@ async def session_stream(req: SessionRequest, request: Request):
         raise HTTPException(status_code=400, detail="Streaming only supported for agent=coordinator.")
 
     persona = request_persona(request, req.persona)
+    _refuse_side_door(request, persona, req.agent)
     history = _session_history.setdefault(persona, [])
 
     async def sse_generator():
@@ -985,6 +1046,207 @@ _retracted_exchanges: dict[tuple[str, str], dict] = {}
 _RETRACTED_KEEP = 200
 
 
+def _after_interview_turn(persona: str, user: str, reply: str) -> None:
+    """Keep the pipeline's short history current, so that once she leaves the interview the
+    pipeline's recent turns include its last ones ("as we were saying…" works)."""
+    history = _session_history.setdefault(persona, [])
+    history.extend([{"role": "user", "content": user or _APP_STARTED_TURN},
+                    {"role": "assistant", "content": reply}])
+    del history[:-10]
+
+
+async def _broadcast_interview_status(persona: str) -> None:
+    """Every device of hers learns the interview's state — the chips follow it."""
+    status = interview_mod.status(persona)
+    if status is not None:
+        await manager.broadcast(persona, {"type": "interview", "status": status})
+
+
+async def _interview_proactive_turn(persona: str, prompt: str, opening: bool = False) -> None:
+    """
+    An interviewer turn the app started — the opening, or picking up after *Continue setting
+    up*. Saved and broadcast as a proactive exchange with an empty user side, so no device
+    renders the prompt as something she said.
+    """
+    loop = asyncio.get_running_loop()
+    try:
+        history = await _interview_history(persona)
+        reply = await loop.run_in_executor(
+            None, interview_mod.run_turn, persona, prompt, history)
+    except Exception:
+        logger.exception(f"[interview] proactive turn failed for {persona}")
+        if opening:
+            # Her next connection claims it again and retries (Stage 2 review F4) — and every
+            # device hears it, or the chip would keep offering "Finish later" (verify).
+            interview_mod.release_start(persona)
+            await _broadcast_interview_status(persona)
+        return
+    exchange_id = f"interview-{uuid.uuid4().hex[:12]}"
+    new_id = await _save_exchange(persona, exchange_id, "", reply, proactive=True,
+                                  channel="interview")
+    _log_conversation("", reply, interview_mod.AGENT, persona, proactive=True)
+    _after_interview_turn(persona, "", reply)
+    await manager.broadcast(persona, {
+        "type": "message", "id": new_id, "exchange_id": exchange_id, "user": "",
+        "assistant": reply, "ts": datetime.utcnow().isoformat() + "Z", "attachments": [],
+        "proactive": True,
+    })
+    await _broadcast_interview_status(persona)
+
+
+class InterviewRequest(BaseModel):
+    persona: str | None = None
+
+
+@app.get("/interview")
+async def interview_status(request: Request, persona: str | None = None) -> dict:
+    """The interview's state for the app's chips. `null` for anyone without an interview."""
+    return {"status": interview_mod.status(request_persona(request, persona))}
+
+
+@app.post("/interview/pause")
+async def interview_pause(req: InterviewRequest, request: Request) -> dict:
+    """*Finish later*: her next message goes to Metatron as usual; nothing is lost."""
+    persona = request_persona(request, req.persona)
+    if not interview_mod.pause(persona):
+        raise HTTPException(status_code=409, detail="There is no active interview to pause.")
+    await _broadcast_interview_status(persona)
+    return {"status": "paused"}
+
+
+@app.post("/interview/resume")
+async def interview_resume(req: InterviewRequest, request: Request,
+                           background: BackgroundTasks) -> dict:
+    """*Continue setting up*: active again, and the interviewer picks up where coverage says
+    things stand — it speaks first, so she is not left wondering what to say."""
+    persona = request_persona(request, req.persona)
+    if not interview_mod.resume(persona):
+        raise HTTPException(status_code=409, detail="There is no paused interview to resume.")
+    await _broadcast_interview_status(persona)
+    # After the response, not a loose task: the chip answers at once, and the turn is owned
+    # by the request's lifecycle rather than left for the loop to drop.
+    background.add_task(_interview_proactive_turn, persona,
+                        "(She has come back to continue setting up. Pick up where things stand.)")
+    return {"status": "active"}
+
+
+# ---------------------------------------------------------------------------
+# Her permissions and her Google connection (plan § 4.10, § 4.11 — D9, Mike 2026-10-27:
+# "She should be notified through the app and provide permission herself.")
+#
+# Every route here is bound to the caller's own persona. The permission records are the
+# enforcement, in Python: Connect refuses without `correspondence_read`, tone profiling
+# refuses without `tone_profile` (tools/tone.py), and withdrawing acts at once.
+# ---------------------------------------------------------------------------
+
+class ConsentGrant(BaseModel):
+    text_version: str
+    persona: str | None = None
+
+
+def _consent_view(persona: str) -> dict:
+    from core import consent
+    out = {}
+    for scope in consent.APP_SCOPES:
+        rec = consent.current(scope, persona)
+        version, text = consent.current_text(scope)
+        out[scope] = {"granted": rec is not None,
+                      "granted_at": rec.get("granted_at") if rec else None,
+                      "text_version": version, "text": text}
+    return out
+
+
+@app.get("/consents")
+async def consents_get(request: Request, persona: str | None = None) -> dict:
+    """Her permissions and the exact text of each — what the Connections panel shows."""
+    persona_key = request_persona(request, persona)
+    return {"consents": await asyncio.to_thread(_consent_view, persona_key)}
+
+
+@app.post("/consents/{scope}")
+async def consents_grant(scope: str, req: ConsentGrant, request: Request) -> dict:
+    """Her tap on a permission screen. The record names the text version she was shown."""
+    from core import consent
+    persona_key = request_persona(request, req.persona)
+    # Her permission is hers to give (D9): a record says SHE tapped, so an admin or service
+    # token — Mike signed in as her persona — cannot write one (Stage 2 review F6). Withdrawing
+    # stays open to every bound caller; refusing a withdrawal could only keep data flowing.
+    if request.state.identity.role != "user":
+        raise HTTPException(status_code=403, detail="Only the account holder can give this.")
+    if scope not in consent.APP_SCOPES:
+        raise HTTPException(status_code=404, detail="No such permission.")
+    if req.text_version != consent.CURRENT_VERSIONS[scope]:
+        raise HTTPException(status_code=409, detail="That notice has changed — please read it again.")
+    rec = await asyncio.to_thread(consent.grant, scope, persona_key, req.text_version)
+    return {"scope": scope, "granted_at": rec["granted_at"]}
+
+
+def _withdraw_blocking(scope: str, persona: str) -> dict:
+    from core import consent
+    withdrew = consent.withdraw(scope, persona)
+    effect: dict = {"withdrawn": withdrew}
+    with persona_scope(persona):
+        if scope == "correspondence_read":
+            # Reading her mail and calendar was what connecting allowed — so it ends here.
+            from core.connections import disconnect_google
+            effect["disconnected"] = bool(disconnect_google(persona))
+        elif scope == "tone_profile":
+            # Review P2: withdrawal removes what was learned, not just future learning.
+            from tools.tone import forget_tone_profiles
+            effect["profiles_removed"] = forget_tone_profiles(persona)
+    return effect
+
+
+@app.delete("/consents/{scope}")
+async def consents_withdraw(scope: str, request: Request, persona: str | None = None) -> dict:
+    from core import consent
+    persona_key = request_persona(request, persona)
+    if scope not in consent.APP_SCOPES:
+        raise HTTPException(status_code=404, detail="No such permission.")
+    return await asyncio.to_thread(_withdraw_blocking, scope, persona_key)
+
+
+class GoogleConnectRequest(BaseModel):
+    address: str
+    app_password: str
+    persona: str | None = None
+
+
+@app.get("/connections")
+async def connections_get(request: Request, persona: str | None = None) -> dict:
+    """Connection status — the address, calendars found and when checked. Never the password."""
+    from core.connections import status
+    persona_key = request_persona(request, persona)
+    return {"google": await asyncio.to_thread(status, persona_key)}
+
+
+@app.post("/connections/google")
+async def connections_google(req: GoogleConnectRequest, request: Request) -> dict:
+    """
+    Test the Google address and app password, and only if both CalDAV and IMAP work, write
+    her calendar and mail settings — the password to credentials.yaml alone (§ 4.10).
+
+    It is an HTTP route, not a chat message, so the password never reaches a model, a
+    conversation log, a trace or a quality event; the app-wide 422 handler never echoes it.
+    """
+    from core import consent
+    from core.connections import connect_google
+    persona_key = request_persona(request, req.persona)
+    if len(req.app_password) > 256 or len(req.address) > 320:
+        raise HTTPException(status_code=400, detail="That doesn't look like a Google address and app password.")
+    if not consent.is_granted("correspondence_read", persona_key):
+        raise HTTPException(status_code=403,
+                            detail="Please read and accept the permission screen first.")
+    return await asyncio.to_thread(connect_google, persona_key, req.address, req.app_password)
+
+
+@app.delete("/connections/google")
+async def connections_google_delete(request: Request, persona: str | None = None) -> dict:
+    from core.connections import disconnect_google
+    persona_key = request_persona(request, persona)
+    return await asyncio.to_thread(disconnect_google, persona_key)
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -> None:
     """
@@ -1058,6 +1320,18 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
     recent = await _get_recent_exchanges(persona_key)
     last_id = recent[-1]["id"] if recent else 0
     await websocket.send_json({"type": "history", "messages": recent, "last_id": last_id})
+
+    # The first interview (plan § 4.7). `status` is None for every persona without a state
+    # file — Mike and the test personas — and nothing below runs for them. A user's FIRST
+    # signed-in connection claims the start atomically (a reconnect cannot start it twice)
+    # and the opening is generated in the background, arriving like any proactive message.
+    istatus = interview_mod.status(persona_key)
+    if istatus is not None:
+        await websocket.send_json({"type": "interview", "status": istatus})
+    if (istatus == "not_started" and identity.role == "user"
+            and interview_mod.claim_start(persona_key)):
+        _spawn(_interview_proactive_turn(persona_key, interview_mod.OPENING_PROMPT,
+                                         opening=True))
 
     async def _heartbeat() -> None:
         while True:
@@ -1160,6 +1434,13 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                 )
                 pipeline_attachments = attached + revived
                 history = _session_history.setdefault(persona_key, [])
+                # While her interview is active her own messages go to the interviewer,
+                # with the whole interview as history — never a proactive turn, which the
+                # scheduler's hold gate keeps away while the interview runs.
+                interview_mode = (not proactive
+                                  and interview_mod.status(persona_key) == "active")
+                interview_history = (await _interview_history(persona_key)
+                                     if interview_mode else None)
 
                 # Notify other devices that a new exchange is starting
                 if not nudge:
@@ -1182,6 +1463,13 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
 
                 def _produce() -> None:
                     try:
+                        if interview_mode:
+                            # Not streamed: one agent, one reply. Filtered and pending-
+                            # receipt-checked inside run_turn before it gets here.
+                            reply = interview_mod.run_turn(persona_orch, user_input,
+                                                           interview_history)
+                            asyncio.run_coroutine_threadsafe(queue.put(reply), loop).result()
+                            return
                         for chunk in run_pipeline_session_stream(
                             user_input, persona=persona_orch, provider=provider,
                             history=history, is_proactive=proactive,
@@ -1284,10 +1572,15 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                         await manager.broadcast(persona_key, done_payload, exclude=websocket)
                         new_id = await _save_exchange(persona_key, exchange_id, user_input,
                                                       full_response, proactive=proactive,
-                                                      attachments=attached)
+                                                      attachments=attached,
+                                                      channel="interview" if interview_mode else None)
                         await _bind_attachments([a["id"] for a in attached], exchange_id)
-                        _log_conversation(user_input, full_response, "coordinator", persona_orch,
-                                          proactive=proactive)
+                        _log_conversation(user_input, full_response,
+                                          interview_mod.AGENT if interview_mode else "coordinator",
+                                          persona_orch, proactive=proactive)
+                        if interview_mode:
+                            _after_interview_turn(persona_key, user_input, full_response)
+                            await _broadcast_interview_status(persona_key)
                         await manager.broadcast(persona_key, {
                             "type": "message",
                             "id": new_id,

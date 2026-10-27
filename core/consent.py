@@ -40,7 +40,12 @@ TEXT_DIR = Path(__file__).parent.parent / "config" / "consent"
 
 # The version the app shows now. Changing a text means adding a new file and bumping this —
 # never editing a shipped one, or a record would point at words its holder never read.
-CURRENT_VERSIONS = {"base_configuration": "v1"}
+CURRENT_VERSIONS = {"base_configuration": "v1", "correspondence_read": "v1",
+                    "tone_profile": "v1"}
+
+# What the app may grant and withdraw through /consents. base_configuration is given at
+# sign-up and lives with the account; contact_enrichment is not built (its build adds it).
+APP_SCOPES = ("correspondence_read", "tone_profile")
 
 
 def current_text(scope: str) -> tuple[str, str]:

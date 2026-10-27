@@ -1433,6 +1433,9 @@ def register_tools() -> tuple[list[dict], dict]:
     # § 18.3): set_day_shape and request_replan from Stage A, answer_event from round 2.
     # Granted in Stage B — synthesizer all three, goals_interviewer set_day_shape.
     from tools.day_shape import set_day_shape, SET_DAY_SHAPE_SCHEMA
+    # The first interview in the app (multi-user plan § 4.7): the interviewer's own two tools.
+    from core.interview import (pause_interview, finish_interview,
+                                PAUSE_INTERVIEW_SCHEMA, FINISH_INTERVIEW_SCHEMA)
     # Pause/resume for the user's own routines (archive/plans/routine_pause_plan_2026-10-26.md).
     from tools.routines import (
         pause_routine, resume_routine, list_routines,
@@ -1502,6 +1505,7 @@ def register_tools() -> tuple[list[dict], dict]:
         WRITE_WISHES_SCHEMA, READ_WISHES_SCHEMA, GENERATE_EMERGENCY_CARD_SCHEMA,
         OPEN_TASK_SCHEMA, UPDATE_TASK_SCHEMA, LIST_TASKS_SCHEMA,
         SET_DAY_SHAPE_SCHEMA, REQUEST_REPLAN_SCHEMA, ANSWER_EVENT_SCHEMA,
+        PAUSE_INTERVIEW_SCHEMA, FINISH_INTERVIEW_SCHEMA,
         PAUSE_ROUTINE_SCHEMA, RESUME_ROUTINE_SCHEMA, LIST_ROUTINES_SCHEMA,
         READ_INTAKE_QUEUE_SCHEMA, TEACH_INTAKE_SCHEMA,
         READ_CALENDAR_SCHEMA, WRITE_CALENDAR_EVENT_SCHEMA,
@@ -1597,6 +1601,8 @@ def register_tools() -> tuple[list[dict], dict]:
         "update_task": update_task,
         "list_tasks": list_tasks,
         "set_day_shape": set_day_shape,
+        "pause_interview": pause_interview,
+        "finish_interview": finish_interview,
         "request_replan": request_replan,
         "answer_event": answer_event,
         "pause_routine": pause_routine,
@@ -1979,6 +1985,39 @@ _COMPLETION_CLAIM_RES = [
 ]
 
 
+# Completion words that mean "done" only for a Tier 1/2 config write — the in-app interview's
+# natural words for a mission or prime directive held behind a card she may never have seen
+# (multi-user plan § 4.7, review L1). Consulted ONLY when write_config is what is pending:
+# "I've written the email — it's waiting for your approval" is the honest reply to a send_email
+# card, and must not be replaced (Stage 2 review F3).
+_CONFIG_CLAIM_RES = [
+    _re.compile(p, _re.IGNORECASE) for p in (
+        # Not "noted": "I've noted you prefer mornings — the mission is waiting for your tap"
+        # is an honest reply on a write_config turn (Stage 2 verify).
+        r"\b(?:i(?:'ve| have)|we(?:'ve| have))\s+(?:now\s+)?(?:recorded|written|captured)\b",
+        r"\b(?:it(?:'s| is)|that(?:'s| is))\s+(?:now\s+)?(?:recorded|written|captured)\b",
+    )
+]
+
+
+# Every action that can raise a confirmation card, in the words the user would use. A new
+# card-raising tool without an entry reads "this change" — vague but never an identifier.
+_PENDING_PLAIN = {
+    "send_email": "sending the email",
+    "send_calendar_invite": "sending the invitation",
+    "write_config": "saving it to your profile",
+    "write_persona": "saving your preference",
+    "write_profile_contact": "updating your contact details",
+    "write_agent_config": "changing a setting",
+    "write_contact": "saving the contact",
+    "merge_contacts": "merging the contacts",
+    "apply_crm_proposals": "updating your contacts",
+    "close_clinical_escalation": "closing that concern",
+    "teach_intake": "changing how your mail is sorted",
+    "add_zone": "saving the place",
+}
+
+
 def _pending_tokens(persona: str | None = None) -> set:
     """Tokens currently awaiting the user's decision. Never raises: a confirmation
     store that cannot be read must not take the session down, and an empty set means
@@ -2032,10 +2071,18 @@ def enforce_pending_receipt(text: str, new_pending: list[dict]) -> str:
         return text
 
     actions = ", ".join(sorted({p.get("action", "an action") for p in new_pending}))
-    waiting = (f"Waiting for your approval in the app before this happens "
-               f"({actions}). Nothing has been changed yet.")
+    # Named in plain words, never by the tool identifier ("write_config"): this line reaches the
+    # user after filter_output has run, and on the in-app interview it is a first-session sight
+    # (Stage 2 verify, 2026-10-27). `actions` stays in the log line below.
+    what = ", ".join(sorted({_PENDING_PLAIN.get(p.get("action", ""), "this change")
+                             for p in new_pending}))
+    waiting = (f"Waiting for your approval in the app before this happens ({what}). "
+               f"Nothing has been changed yet.")
 
-    if any(r.search(text or "") for r in _COMPLETION_CLAIM_RES):
+    claims = list(_COMPLETION_CLAIM_RES)
+    if any(p.get("action") == "write_config" for p in new_pending):
+        claims += _CONFIG_CLAIM_RES
+    if any(r.search(text or "") for r in claims):
         logger.warning(
             "[pending_receipt] response claimed completion while %s awaited approval "
             "— replaced", actions)
@@ -2128,6 +2175,12 @@ def pending_directive_note(directive: str, new_pending: list[dict]) -> tuple[str
     return f"{directive.rstrip()}{note}", asserted
 
 
+# The agents whose words reach the user directly. The Synthesizer always has; the Goals
+# Interviewer does from 2026-10-27, when the first interview moved into the app and stopped
+# passing through the Synthesizer (multi-user plan § 4.7 "Leak control").
+USER_FACING_AGENTS = frozenset({"synthesizer", "goals_interviewer"})
+
+
 def filter_output(text: str, agent_name: str, user_text: str | None = None) -> str:
     """
     Scan final user-facing output for leaked architecture terms.
@@ -2196,7 +2249,7 @@ def filter_output(text: str, agent_name: str, user_text: str | None = None) -> s
     Omitting `user_text` (the default) reproduces the pre-2026-08-18 behaviour
     exactly, so every existing caller and test is unaffected.
     """
-    if agent_name != "synthesizer":
+    if agent_name not in USER_FACING_AGENTS:
         return text
 
     exempt = _user_typed_terms(user_text)
@@ -6165,6 +6218,16 @@ def _dispatch_from_coordinator(
         complexity: str | None = mode if mode in ("quick", "deep") else None
 
         if not agent or not directive:
+            continue
+
+        # The code-only agents (tone_profiler, intake_extractor, …) take input built by code
+        # and are reached only through their own callers. The Coordinator's list is model
+        # output, so a name it writes must not reach one — the same refusal run_subagent makes
+        # (multi-user plan § 4.11, review P4; this second door found in the Stage 2 build).
+        from tools.subagent import CODE_ONLY_AGENTS
+        if agent in CODE_ONLY_AGENTS:
+            logger.warning(f"[PIPELINE] refused Coordinator dispatch to code-only agent {agent}")
+            _trace(f"[PIPELINE] {agent} refused (code-only)")
             continue
 
         # [DB-0822-05] No user speech this session, no journal entry. See the `user_turn`

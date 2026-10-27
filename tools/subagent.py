@@ -14,6 +14,42 @@ from core.persona import current_persona
 
 logger = logging.getLogger(__name__)
 
+# CODE-ONLY AGENTS — reachable from Python, never from another agent
+# (archive/plans/multi_user_accounts_plan_2026-10-26.md § 4.11, review P4).
+#
+# Each of these is built to take input that CODE assembles and to run bare with an empty
+# tool grant (config/modules/routing_cloud.yaml). Their callers reach them through
+# run_session directly — tools/tone.py `_extract`, tools/intake_extract.py,
+# tools/accountability.py, tools/day_plan.py, tools/crm_sweep.py — and those callers hold
+# the checks that make the call legitimate: `tone_profiler` runs only under the user's
+# current `tone_profile` permission (tools/tone.py). run_subagent passes any name through
+# to run_session, so an agent holding it could otherwise call one of these below that
+# check. No config/agents/*.md file names one as a dispatch target, so refusing them here
+# costs no existing route (tests/test_consent_enforcement.py greps for it).
+CODE_ONLY_AGENTS = frozenset({
+    "tone_profiler", "intake_extractor", "accountability_judge", "day_planner", "crm_sweep",
+})
+
+
+def _code_only_refusal(agent_name: str) -> str | None:
+    """The refusal for a code-only agent, or None for any other name.
+
+    The name is normalised the way a file lookup would see it — case, separators, and any
+    path prefix — because core.orchestrator.load_agent() opens config/agents/{name}.md, and
+    on a case-insensitive disk "Tone_Profiler" or "../agents/tone_profiler" would load the
+    same file the exact name is refused for."""
+    norm = os.path.basename(os.path.normpath(str(agent_name or "").strip()))
+    norm = norm.lower().replace("-", "_").replace(" ", "_")
+    if norm.endswith(".md"):
+        norm = norm[:-3]
+    if norm in CODE_ONLY_AGENTS:
+        logger.warning(f"[subagent] refused dispatch of code-only agent {agent_name!r}")
+        return (
+            f"Error: '{agent_name}' cannot be called as a sub-agent — it runs only from "
+            f"the system's own code. Carry on without it."
+        )
+    return None
+
 
 def run_subagent(agent_name: str, message: str, complexity: str = "",
                  fire_and_forget: bool = False) -> str:
@@ -34,6 +70,11 @@ def run_subagent(agent_name: str, message: str, complexity: str = "",
     Coordinator session — including on the fire-and-forget path.
     """
     from core.orchestrator import run_session
+
+    # Before anything else, and before any model call: see CODE_ONLY_AGENTS.
+    refusal = _code_only_refusal(agent_name)
+    if refusal:
+        return refusal
 
     # Recursion guard, DEPTH-AWARE since 2026-09-24 rather than binary.
     #
@@ -117,6 +158,12 @@ def run_model_conference(message: str, models: list[str],
     """
     from core.orchestrator import run_session
     from core.router import _load_routing
+
+    # Same hole as run_subagent: `agent_name` is model-supplied and passed straight to
+    # run_session, so a code-only agent is refused here too (plan § 4.11, P4).
+    refusal = _code_only_refusal(agent_name)
+    if refusal:
+        return refusal
 
     persona = current_persona()
     cfg = _load_routing()
