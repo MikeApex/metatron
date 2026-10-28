@@ -883,6 +883,8 @@ def _():
     out = D.nudge_tick()
     assert isinstance(out, dict) and out["notify"], out
     assert [t["id"] for t in out["tasks"]] == [task_nudge["ref"]], out["tasks"]
+    # The fixture's first task nudge is a daily dose habit: no "tomorrow" — today's dose does not
+    # carry (the deadline case is checked under 'Tomorrow' below).
     assert out["tasks"][0]["remind"] == [30, 60, 180], out["tasks"]
     d, ids = _ready("nudge_travel_tasks")
     _no_gates()
@@ -923,6 +925,29 @@ def _():
     # The options never land after bedtime (23:00 in the fixture shape).
     late = datetime.combine(_CLOCK["now"].date(), datetime.min.time()) + timedelta(hours=22, minutes=15)
     assert D._remind_options(plan, late) == [30], D._remind_options(plan, late)
+
+
+@check("Stage C: 'Tomorrow' — after tomorrow's wake, quiets today's nudges for it; not for a daily habit")
+def _():
+    d, ids = _ready("remind_tomorrow")
+    _no_gates()
+    _flags(nudges=True)
+    plan = D.current(_PERSONA)
+    late = datetime.combine(_CLOCK["now"].date(), datetime.min.time()) + timedelta(hours=22, minutes=40)
+    assert D._remind_options(plan, late, ids["runbook"]) == ["tomorrow"]   # nothing fits tonight
+    O.open_task("Take vitamins", kind="habit", every="day")
+    habit_ref = next((t["id"] for t in O._load() if t.get("what") == "Take vitamins"), None)
+    assert habit_ref and "tomorrow" not in D._remind_options(plan, _CLOCK["now"], habit_ref)
+    msg = D.remind_later(ids["runbook"], persona=_PERSONA, when="tomorrow")
+    assert "tomorrow at 08:00" in msg, msg                        # fixture wake 07:00 + 1 h
+    st = D._load_state(_PERSONA)
+    assert ids["runbook"] in st["deferred"][_CLOCK["now"].date().isoformat()], st
+    nudge = next(s for s in plan["suggestions"] if s.get("ref") == ids["runbook"])
+    _CLOCK["now"] = datetime.fromisoformat(nudge["at"]) + timedelta(minutes=1)
+    _stub_send("SHOULD NOT BE CALLED")
+    out = D.nudge_tick()
+    assert not any(ids["runbook"] in c["text"] or "runbook" in c["text"].lower()
+                   for c in _CALLS["send"]), _CALLS["send"]
 
 
 def main() -> int:

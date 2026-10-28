@@ -2169,7 +2169,8 @@ async def push_message(msg_id: str, request: Request, persona: str | None = None
 
 class RemindRequest(BaseModel):
     task_id: str
-    minutes: int
+    minutes: int = 0
+    when: str | None = None        # "tomorrow"
     persona: str | None = None
 
 
@@ -2178,7 +2179,8 @@ async def tasks_remind(req: RemindRequest, request: Request) -> dict:
     """'Not yet' → 'remind me in …' on a notification: the plan re-raises the task then."""
     from tools.day_plan import remind_later
     persona_key = request_persona(request, req.persona)
-    result = await asyncio.to_thread(remind_later, req.task_id, req.minutes, persona_key)
+    result = await asyncio.to_thread(remind_later, req.task_id, req.minutes, persona_key,
+                                     req.when)
     return _task_result(result)
 
 

@@ -28,6 +28,8 @@ final class PushNotifications {
     static final String ACTION_REMIND = "com.mike.metatron.push.REMIND";
     static final String EXTRA_NID = "nid";
     static final String EXTRA_MINUTES = "minutes";
+    /** EXTRA_MINUTES for the "Tomorrow" button — the server picks the time from the day shape. */
+    static final int TOMORROW = -1;
 
     private PushNotifications() {}
 
@@ -117,8 +119,9 @@ final class PushNotifications {
                 .setOnlyAlertOnce(true)
                 .setAutoCancel(true);
         for (int i = 0; i < Math.min(opts.length(), 3); i++) {
-            int m = opts.optInt(i);
-            b.addAction(action(c, nid, ACTION_REMIND, label(m), m));
+            boolean tomorrow = "tomorrow".equals(opts.optString(i));
+            int m = tomorrow ? TOMORROW : opts.optInt(i);
+            b.addAction(action(c, nid, ACTION_REMIND, tomorrow ? "Tomorrow" : label(m), m));
         }
         post(c, nid, b.build());
         return true;

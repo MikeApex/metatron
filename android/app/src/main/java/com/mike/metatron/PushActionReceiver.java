@@ -62,7 +62,9 @@ public class PushActionReceiver extends BroadcastReceiver {
             String path;
             if (PushNotifications.ACTION_REMIND.equals(act)) {
                 path = "/tasks/remind";
-                body.put("minutes", intent.getIntExtra(PushNotifications.EXTRA_MINUTES, 30));
+                int m = intent.getIntExtra(PushNotifications.EXTRA_MINUTES, 30);
+                if (m == PushNotifications.TOMORROW) body.put("when", "tomorrow");
+                else body.put("minutes", m);
             } else {
                 path = "/tasks/act";
                 body.put("action", PushNotifications.ACTION_DONE.equals(act) ? "done" : "skipped");
