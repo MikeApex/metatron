@@ -155,6 +155,27 @@ def _():
     assert out == {"sent": 0, "errors": ["fcm: ConnectionError"]}, out
 
 
+@check("browser subscriptions: re-sent on every load without piling up; a replacement drops only its own")
+def _():
+    _fresh("web_subs")
+    sub = lambda e: {"endpoint": e, "keys": {"p256dh": "k", "auth": "a"}}
+    P.save_subscription(sub("https://web.push.apple.com/A"), "mike")
+    for _ in range(5):                                    # five page loads, same subscription
+        P.save_subscription(sub("https://web.push.apple.com/A"), "mike")
+    P.save_subscription(sub("https://web.push.apple.com/X"), "iva")
+    assert len(P._load_subscriptions()) == 2, P._load_subscriptions()
+    # The key changed: the browser replaces A with B and says so.
+    P.save_subscription(sub("https://web.push.apple.com/B"), "mike",
+                        replaces="https://web.push.apple.com/A")
+    eps = sorted((s["persona"], s["endpoint"].rsplit("/", 1)[1]) for s in P._load_subscriptions())
+    assert eps == [("iva", "X"), ("mike", "B")], eps
+    # Naming someone else's endpoint as "replaced" removes nothing of theirs.
+    P.save_subscription(sub("https://web.push.apple.com/C"), "mike",
+                        replaces="https://web.push.apple.com/X")
+    assert ("iva", "https://web.push.apple.com/X") in {
+        (s["persona"], s["endpoint"]) for s in P._load_subscriptions()}
+
+
 @check("send_push still refuses a call that names no persona")
 def _():
     _fresh("no_persona")

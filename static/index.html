@@ -4029,18 +4029,27 @@
     const base64 = (publicKey + padding).replace(/-/g, '+').replace(/_/g, '/');
     const raw = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
 
-    // Unsubscribe any existing subscription — key may have rotated
+    // Reuse this browser's subscription unless the server's key really changed. Replacing it on
+    // every page load — the old "key may have rotated" precaution — left one dead endpoint on
+    // the server per load: 35 from one Safari by 2026-10-28, every check-in sent to all of them.
+    // When it does have to be replaced, the server is told which one it replaces.
     const existing = await reg.pushManager.getSubscription();
-    if (existing) await existing.unsubscribe();
-
-    const sub = await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: raw,
-    });
+    let sub = existing, replaces = null;
+    const oldKey = existing && existing.options && existing.options.applicationServerKey;
+    const sameKey = oldKey && new Uint8Array(oldKey).length === raw.length
+      && new Uint8Array(oldKey).every((b, i) => b === raw[i]);
+    if (!existing || !sameKey) {
+      if (existing) { replaces = existing.endpoint; await existing.unsubscribe(); }
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: raw,
+      });
+    }
+    // Sent every time, so a server that lost it (a prune, a restore) has it again.
     await authFetch('/subscribe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(sub.toJSON()),
+      body: JSON.stringify({ ...sub.toJSON(), replaces }),
     });
     return sub;
   }

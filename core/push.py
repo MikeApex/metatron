@@ -79,7 +79,7 @@ def _write_subscriptions(subs: list[dict]) -> None:
         json.dump(subs, f, indent=2)
 
 
-def save_subscription(subscription: dict, persona: str) -> str:
+def save_subscription(subscription: dict, persona: str, replaces: str | None = None) -> str:
     """
     Register a browser push subscription for one persona.
 
@@ -94,6 +94,12 @@ def save_subscription(subscription: dict, persona: str) -> str:
     endpoint = subscription.get("endpoint", "")
     if not endpoint:
         return "Subscription has no endpoint"
+    if replaces and replaces != endpoint:
+        # Only this persona's own entry: an endpoint is not proof of ownership of someone else's.
+        kept = [s for s in subs if not (s.get("endpoint") == replaces and s.get("persona") == persona)]
+        if len(kept) != len(subs):
+            subs = kept
+            _write_subscriptions(subs)
     entry = {**subscription, "persona": persona}
     for i, existing in enumerate(subs):
         if existing.get("endpoint") == endpoint:

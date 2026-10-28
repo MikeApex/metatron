@@ -2109,6 +2109,8 @@ async def active() -> dict:
 class PushSubscription(BaseModel):
     endpoint: str
     keys: dict
+    # The endpoint this browser's new subscription replaces — dropped, so they do not pile up.
+    replaces: str | None = None
 
 
 @app.get("/vapid-public-key")
@@ -2122,7 +2124,9 @@ async def vapid_public_key() -> dict:
 async def subscribe(sub: PushSubscription, request: Request, persona: str | None = None) -> dict:
     """Register this browser's push subscription for the signed-in persona only."""
     from core.push import save_subscription
-    result = save_subscription(sub.dict(), request_persona(request, persona))
+    data = sub.dict()
+    replaces = data.pop("replaces", None)
+    result = save_subscription(data, request_persona(request, persona), replaces=replaces)
     return {"status": result}
 
 
