@@ -436,17 +436,19 @@ def _notify_terminal(title: str, body: str) -> None:
         pass
 
 
-def _notify_push(title: str, body: str, persona: str) -> None:
+def _notify_push(title: str, body: str, persona: str, tasks: list | None = None) -> None:
     # Persona is required end to end: send_push reaches only that persona's devices, so a
-    # check-in can never land on another user's phone (plan § 3.4).
+    # check-in can never land on another user's phone (plan § 3.4). `tasks` puts Done / Not yet
+    # / Skipped on the app's notification (day planner Stage C).
     try:
         from core.push import send_push
-        send_push(title=title, body=body, persona=persona)
+        send_push(title=title, body=body, persona=persona, tasks=tasks)
     except Exception as e:
         _log_error("push_notification", str(e), persona)
 
 
-def _dispatch(channel: str, title: str, body: str, persona: str) -> None:
+def _dispatch(channel: str, title: str, body: str, persona: str,
+              tasks: list | None = None) -> None:
     # The hold is enforced here as well as in the gate, because the gate is by job KIND and
     # this is where anything reaches the user: function jobs (daily_travel_check,
     # day_plan_nudge) push too (Stage 3 review S1).
@@ -456,7 +458,7 @@ def _dispatch(channel: str, title: str, body: str, persona: str) -> None:
     if channel in ("terminal", "both"):
         _notify_terminal(title, body)
     if channel in ("push", "both"):
-        _notify_push(title, body, persona)
+        _notify_push(title, body, persona, tasks)
 
 
 # ---------------------------------------------------------------------------
@@ -635,7 +637,7 @@ def fire_function(job_name: str, fn_path: str, persona: str,
             print(f"[scheduler] [{persona}] {job_name}: "
                   f"{result.get('summary', 'notifying')}", flush=True)
             if body:
-                _dispatch(notification, title, body, persona)
+                _dispatch(notification, title, body, persona, result.get("tasks"))
         else:
             print(f"[scheduler] [{persona}] {job_name}: {result}", flush=True)
     except Exception as e:

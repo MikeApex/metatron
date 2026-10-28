@@ -75,6 +75,11 @@ vertex-key.json
 *.pem
 *.p12
 service-account*.json
+# Firebase (day planner Stage C, 2026-10-28). Named explicitly: android/app/* covers the first
+# only incidentally, and admitting android/app/build.gradle one day would expose it.
+google-services.json
+**/google-services.json
+firebase-adminsdk*.json
 
 # TLS certs — never committed (IP-specific; regenerate with mkcert on each machine)
 # No trailing slash — see the .venv note at the top of this file.
@@ -102,6 +107,9 @@ certs_backup/
 android/*
 !android/app/
 android/app/*
+# Tracked from 2026-10-28 (Mike): it carries the Firebase dependency, hand-written and lost with
+# no diff otherwise. google-services.json beside it stays ignored by name, under CREDENTIALS.
+!android/app/build.gradle
 !android/app/src/
 android/app/src/*
 !android/app/src/main/

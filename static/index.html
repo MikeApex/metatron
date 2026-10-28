@@ -1122,6 +1122,8 @@
   }
 
   function clearAuth() {
+    // Signed out on the phone: its notifications for this account stop.
+    try { window.Metatron && window.Metatron.clearPushAuth && window.Metatron.clearPushAuth(); } catch (e) {}
     authToken = null;
     localStorage.removeItem('metatron_token');
     if (ws) { try { ws.close(); } catch (e) {} }
@@ -4048,6 +4050,14 @@
 
   async function initPush() {
     const wrap = document.getElementById('notif-wrap');
+    // The Android app: the WebView has no Push API, so native code registers with FCM and
+    // shows the notifications, with the app closed too. It needs the server and this sign-in
+    // to fetch a message's text — the ping itself carries only an id (day planner Stage C).
+    if (window.Metatron && window.Metatron.setPushAuth) {
+      try { window.Metatron.setPushAuth(SERVER, authToken || '', currentPersona || ''); } catch (e) {}
+      wrap.innerHTML = '';
+      return;
+    }
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
       wrap.innerHTML = '<span style="color:#333;font-size:11px">push-unsupported</span>';
       return;

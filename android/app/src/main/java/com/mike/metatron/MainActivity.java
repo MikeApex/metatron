@@ -285,5 +285,36 @@ public class MainActivity extends BridgeActivity {
         public void disarm() {
             stopService(new Intent(MainActivity.this, MetatronHeadsetService.class));
         }
+
+        /**
+         * The page hands over the server and its sign-in so native code can fetch a pushed
+         * message's text with the app closed (day planner Stage C), then registers this phone's
+         * FCM token for that sign-in. Called on every app start, so a rotated token or a new
+         * sign-in is picked up without anything else remembering to.
+         */
+        @JavascriptInterface
+        public void setPushAuth(String server, String token, String persona) {
+            final android.content.Context app = getApplicationContext();
+            if (server == null || server.isEmpty() || token == null || token.isEmpty()) return;
+            PushStore.setAuth(app, server, token, persona == null ? "" : persona);
+            try {
+                com.google.firebase.messaging.FirebaseMessaging.getInstance().getToken()
+                        .addOnCompleteListener(task -> {
+                            if (!task.isSuccessful() || task.getResult() == null) return;
+                            PushStore.setFcmToken(app, task.getResult());
+                            new Thread(() -> PushStore.registerToken(app),
+                                       "metatron-fcm-register").start();
+                        });
+            } catch (IllegalStateException e) {
+                // No google-services.json in this build: Firebase never initialised, so there
+                // is no push channel — the app works as before, without it.
+            }
+        }
+
+        @JavascriptInterface
+        public void clearPushAuth() {
+            final android.content.Context app = getApplicationContext();
+            new Thread(() -> PushStore.unregisterAndClear(app), "metatron-fcm-unregister").start();
+        }
     }
 }

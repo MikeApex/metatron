@@ -2487,6 +2487,9 @@ def nudge_tick() -> str | dict:
     if not plan:
         return "nudges: no plan"
     now = _now()
+    reminder = _due_reminders(persona, plan, now)
+    if reminder:
+        return reminder
     day = plan["day"]
     state = _load_state(persona)
     handled = (state.get("handled") or {}).get(day) or {}
@@ -2521,8 +2524,94 @@ def nudge_tick() -> str | dict:
         return "nudges: nothing due"
     _log(what, persona, outcome=outcome, items=len(due))
     if text.strip():
-        return {"notify": True, "title": "Metatron", "body": text, "summary": f"{what} {outcome}"}
+        # The phone offers Done / Not yet / Skipped on each ledger task the wake was about, one at
+        # a time (Mike, 2026-10-28). A travel nudge carries an event, not a task — no buttons.
+        opts = _remind_options(plan, now)
+        tasks = [{"id": x["ref"], "title": x["title"], "remind": opts}
+                 for x in due if x.get("ref") and "copy" in x]
+        return {"notify": True, "title": "Metatron", "body": text, "tasks": tasks,
+                "summary": f"{what} {outcome}"}
     return f"nudges: {what} {outcome}"
+
+
+# --- "Not yet" → "remind me in …" (Stage C, Mike 2026-10-28) ---------------------------------
+
+_REMIND_CHOICES = (30, 60, 180)
+
+
+def _remind_options(plan: dict, now: datetime) -> list[int]:
+    """The durations the notification offers — none that would land after the waking day."""
+    try:
+        bed = _dt((plan.get("window") or {})["bed"])
+    except (KeyError, TypeError, ValueError):
+        return list(_REMIND_CHOICES)
+    return [m for m in _REMIND_CHOICES if now + timedelta(minutes=m) <= bed]
+
+
+def remind_later(task_id: str, minutes: int, persona: str | None = None) -> str:
+    """A tap on "remind me in N" from a notification. The reminder is sent by code when it comes
+    due — the user asked for it, so the model is not asked whether to say it."""
+    persona = resolve_persona(persona)
+    try:
+        minutes = int(minutes)
+    except (TypeError, ValueError):
+        return "error: minutes must be a number"
+    if not 5 <= minutes <= 720:
+        return "error: minutes out of range"
+    from tools.obligations import _find, _load, _split_id
+    ref = (task_id or "").strip()[:120]          # a habit's ref keeps its "@period"
+    with persona_scope(persona):
+        task = _find(_load(persona), _split_id(ref))
+    if not task:
+        return "error: no such task"
+    at = _now() + timedelta(minutes=minutes)
+    with _locked(persona):
+        st = _load_state(persona)
+        rem = [r for r in st.get("reminders") or [] if r.get("task_id") != ref]
+        rem.append({"task_id": ref, "title": str(task.get("what", ""))[:120],
+                    "at": at.isoformat(timespec="seconds")})
+        st["reminders"] = rem
+        _write_json(_state_path(persona), st)
+    _log("remind_requested", persona, minutes=minutes)
+    return f"I'll remind you at {at:%H:%M}."
+
+
+def _due_reminders(persona: str, plan: dict, now: datetime) -> dict | None:
+    """Reminders whose time has come, sent together. One more than 12 hours late is dropped, not
+    sent — a reminder that arrives the next morning reminds of nothing."""
+    with _locked(persona):
+        st = _load_state(persona)
+        rem = st.get("reminders") or []
+        if not rem:
+            return None
+        due, keep = [], []
+        for r in rem:
+            try:
+                at = _dt(r["at"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if at > now:
+                keep.append(r)
+            elif now - at <= timedelta(hours=12):
+                due.append(r)
+        if len(keep) == len(rem):
+            return None
+        st["reminders"] = keep
+        _write_json(_state_path(persona), st)
+    if not due:
+        return None
+    # Done or closed meanwhile (in conversation, or in the Today panel) → nothing to remind of.
+    with persona_scope(persona):
+        due = [r for r in due if not _ref_done(r["task_id"])]
+    _log("reminder", persona, outcome="sent" if due else "closed_meanwhile", items=len(due))
+    if not due:
+        return None
+    opts = _remind_options(plan, now)
+    body = ("Reminder: " + due[0]["title"]) if len(due) == 1 else \
+        "Reminders: " + "; ".join(r["title"] for r in due)
+    return {"notify": True, "title": "Metatron", "body": body,
+            "tasks": [{"id": r["task_id"], "title": r["title"], "remind": opts} for r in due],
+            "summary": f"reminder sent ({len(due)})"}
 
 
 def _mark(persona: str, day: str, items: list[dict], outcome: str) -> None:

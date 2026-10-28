@@ -871,6 +871,60 @@ def _():
     assert "2026-06-01" not in (d / "day_plan" / "log.jsonl").read_text()
 
 
+@check("Stage C: a spoken nudge about a task carries it for the phone's buttons; a travel nudge does not")
+def _():
+    d, ids = _ready("nudge_tasks")
+    _no_gates()
+    _flags(nudges=True)
+    plan = D.current(_PERSONA)
+    task_nudge = next(s for s in plan["suggestions"] if s["kind"] == "nudge" and "copy" in s)
+    _CLOCK["now"] = datetime.fromisoformat(task_nudge["at"]) + timedelta(minutes=1)
+    _stub_send("Time to start the runbook.")
+    out = D.nudge_tick()
+    assert isinstance(out, dict) and out["notify"], out
+    assert [t["id"] for t in out["tasks"]] == [task_nudge["ref"]], out["tasks"]
+    assert out["tasks"][0]["remind"] == [30, 60, 180], out["tasks"]
+    d, ids = _ready("nudge_travel_tasks")
+    _no_gates()
+    _flags(nudges=True)
+    plan = D.current(_PERSONA)
+    travel = next(s for s in plan["suggestions"] if "leave" in s["why"])
+    _CLOCK["now"] = datetime.fromisoformat(travel["at"]) + timedelta(minutes=1)
+    _stub_send("Head to physio now.")
+    out = D.nudge_tick()
+    assert isinstance(out, dict) and out["tasks"] == [], out
+
+
+@check("Stage C: 'remind me in N' — sent by code when due, not if done meanwhile, never past bedtime")
+def _():
+    d, ids = _ready("remind")
+    _no_gates()
+    _flags(nudges=True)
+    plan = D.current(_PERSONA)
+    assert D.remind_later("nope", 30, _PERSONA).startswith("error: no such task")
+    assert D.remind_later(ids["runbook"], 2, _PERSONA).startswith("error: minutes out of range")
+    assert "remind you at" in D.remind_later(ids["runbook"], 30, _PERSONA)
+    _stub_send("SHOULD NOT BE CALLED")
+    _CLOCK["now"] += timedelta(minutes=29)
+    assert not isinstance(D.nudge_tick(), dict) or not D._load_state(_PERSONA).get("reminders")
+    _CALLS["send"].clear()
+    st = D._load_state(_PERSONA)
+    assert st.get("reminders"), "a reminder fired early"
+    _CLOCK["now"] += timedelta(minutes=2)
+    out = D.nudge_tick()
+    assert isinstance(out, dict) and out["body"].startswith("Reminder: "), out
+    assert out["tasks"][0]["id"] == ids["runbook"] and not _CALLS["send"], (out, _CALLS["send"])
+    assert not D._load_state(_PERSONA).get("reminders")           # sent once
+    # Done meanwhile → nothing is sent.
+    D.remind_later(ids["runbook"], 30, _PERSONA)
+    O.update_task(ids["runbook"], "done", evidence="test")
+    _CLOCK["now"] += timedelta(minutes=31)
+    assert not isinstance(D.nudge_tick(), dict) or "Reminder" not in str(D.nudge_tick())
+    # The options never land after bedtime (23:00 in the fixture shape).
+    late = datetime.combine(_CLOCK["now"].date(), datetime.min.time()) + timedelta(hours=22, minutes=15)
+    assert D._remind_options(plan, late) == [30], D._remind_options(plan, late)
+
+
 def main() -> int:
     passed = sum(1 for _, ok, _ in _results if ok)
     for name, ok, detail in _results:

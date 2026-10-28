@@ -39,6 +39,23 @@
             android:stopWithTask="false"
             android:foregroundServiceType="mediaPlayback|microphone" />
 
+        <!-- Day planner Stage C: the VM's FCM ping, received with the app closed. The ping is
+             data-only and carries a message id; this service fetches the text from the VM and
+             shows the notification. Not exported: only Google Play services delivers to it. -->
+        <service
+            android:name=".MetatronMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
+        <!-- Done / Not yet / Skipped and "remind me in …" on those notifications. Not
+             exported: only this app's own PendingIntents reach it. -->
+        <receiver
+            android:name=".PushActionReceiver"
+            android:exported="false" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

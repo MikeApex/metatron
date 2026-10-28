@@ -2130,8 +2130,56 @@ async def subscribe(sub: PushSubscription, request: Request, persona: str | None
 async def push_test(request: Request, persona: str | None = None) -> dict:
     """Dev endpoint — a test push to the signed-in persona's own subscriptions."""
     from core.push import send_push
-    return send_push(title="Life Manager", body="Push notifications are working.",
-                     persona=request_persona(request, persona))
+    return await asyncio.to_thread(send_push, title="Life Manager",
+                                   body="Push notifications are working.",
+                                   persona=request_persona(request, persona))
+
+
+class FcmToken(BaseModel):
+    token: str
+    persona: str | None = None
+
+
+@app.post("/push/fcm/register")
+async def push_fcm_register(req: FcmToken, request: Request) -> dict:
+    """The Android app's FCM token, for the signed-in persona only (day planner Stage C)."""
+    from core.push import save_fcm_token
+    return {"status": await asyncio.to_thread(save_fcm_token, req.token,
+                                              request_persona(request, req.persona))}
+
+
+@app.post("/push/fcm/unregister")
+async def push_fcm_unregister(req: FcmToken, request: Request) -> dict:
+    """Sign-out on the phone: its pings for this persona stop."""
+    from core.push import remove_fcm_token
+    return {"status": await asyncio.to_thread(remove_fcm_token, req.token,
+                                              request_persona(request, req.persona))}
+
+
+@app.get("/push/message/{msg_id}")
+async def push_message(msg_id: str, request: Request, persona: str | None = None) -> dict:
+    """The text behind an FCM ping — the ping itself carries only this id, so the message never
+    travels through Google. Another persona's id reads exactly as an unknown one."""
+    from core.push import fetch_message
+    msg = await asyncio.to_thread(fetch_message, msg_id[:64], request_persona(request, persona))
+    if msg is None:
+        raise HTTPException(status_code=404, detail="No such message.")
+    return msg
+
+
+class RemindRequest(BaseModel):
+    task_id: str
+    minutes: int
+    persona: str | None = None
+
+
+@app.post("/tasks/remind")
+async def tasks_remind(req: RemindRequest, request: Request) -> dict:
+    """'Not yet' → 'remind me in …' on a notification: the plan re-raises the task then."""
+    from tools.day_plan import remind_later
+    persona_key = request_persona(request, req.persona)
+    result = await asyncio.to_thread(remind_later, req.task_id, req.minutes, persona_key)
+    return _task_result(result)
 
 
 def _feedback_blocking(persona: str) -> str:
