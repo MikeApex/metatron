@@ -16,6 +16,10 @@ _ROOT = Path(__file__).parent.parent
 
 ALLOWED_FILES = {"prime_directive.md", "mission.md"}
 
+# What the user reads on the approval card and in the outcome line — never a file name
+# (Mike, 2026-10-28: aspirational names, lightly in Metatron's angelic register).
+USER_NAMES = {"mission.md": "purpose", "prime_directive.md": "guiding star"}
+
 
 def _config_dir() -> Path:
     return persona_config_dir()
@@ -53,7 +57,7 @@ def write_config(filename: str, content: str, confirm_token: str = "") -> str | 
         preview = content if len(content) <= 400 else content[:400] + " […]"
         return request(
             "write_config", args,
-            description=f"Update {filename}:\n\n{preview}",
+            description=f"Save your {USER_NAMES[filename]}:\n\n{preview}",
         )
 
     path = _config_dir() / filename

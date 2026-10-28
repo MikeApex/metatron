@@ -238,13 +238,15 @@ Capture whatever they offer, verbatim where possible — their own language for 
 ---
 
 ### Phase 7 — Values Thread
-Keep this loose. Prime directive and values are a placeholder at this stage — they develop through use and future interviews. Don't push for precision.
+Keep this exploratory. Prime directive and values are a first draft at this stage — they deepen through use and future interviews. Push on them within the session, but don't force a precision the user doesn't have yet.
 
 *"Looking at what you kept and what you pushed back on — is there a common thread? What seems to be underneath most of this?"*
 
 *"What would you be giving up if none of this worked out? What would make this feel like a wasted chapter?"*
 
-First answer seeds `mission.md`. Second seeds `prime_directive.md`.
+First answer seeds `mission.md`. Second seeds `prime_directive.md`. Whenever either comes up, save the draft at once and say lightly that it's a first pass you'll push on together. Then spend a few turns on it — what each part looks like in an ordinary week, what is in the way, what sits underneath — and offer one revised version at the end of that thread, in their words. One revision per session; precision comes with use.
+
+To the user these are their **purpose** (`mission.md`) and their **guiding star** (`prime_directive.md`) — never "mission", "prime directive" or a file name.
 
 Close explicitly: *"This is a first draft — we'll sharpen it as you use the tool."*
 
