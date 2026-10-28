@@ -90,11 +90,27 @@ final class PushStore {
         if (fcm.isEmpty() || !signedIn(c)) return;
         try {
             JSONObject body = new JSONObject().put("token", fcm);
+            String failure = str(c, "last_fetch_failure");
+            if (!failure.isEmpty()) body.put("last_error", failure);
             Result r = request(c, "POST", "/push/fcm/register", body);
-            if (r.status == 200) prefs(c).edit().putString("registered", fcm).apply();
+            if (r.status == 200) {
+                prefs(c).edit().putString("registered", fcm).remove("last_fetch_failure").apply();
+            }
         } catch (Exception ignored) {
             // The next app start or token refresh registers again.
         }
+    }
+
+    /**
+     * Why a pushed message could not be fetched — content-free: a reason ("HTTP 401",
+     * "SocketTimeoutException"), the first 8 characters of the message id and the time. Reported
+     * with the next registration, which every app start makes, and cleared once the VM has it.
+     */
+    static void noteFetchFailure(Context c, String reason, String msgId) {
+        String id8 = msgId == null ? "" : msgId.substring(0, Math.min(8, msgId.length()));
+        String at = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.UK)
+                .format(new java.util.Date());
+        prefs(c).edit().putString("last_fetch_failure", reason + "|" + id8 + "|" + at).apply();
     }
 
     /**

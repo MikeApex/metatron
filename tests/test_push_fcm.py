@@ -176,6 +176,18 @@ def _():
         (s["persona"], s["endpoint"]) for s in P._load_subscriptions()}
 
 
+@check("a phone's fetch-failure report is logged, stripped to short safe tokens")
+def _():
+    _fresh("phone_failure")
+    P.note_phone_failure("mike", "SocketTimeoutException|xrbRZPY-|2026-10-28T15:38:41")
+    P.note_phone_failure("mike", "<script>alert(1)</script>" + "x" * 200 + "|id\nwith\nlines|now")
+    (p1, e1, f1), (p2, e2, f2) = _LOG
+    assert (p1, e1) == ("mike", "fcm_fetch_failed"), _LOG
+    assert f1 == {"reason": "SocketTimeoutException", "id": "xrbRZPY-",
+                  "phone_at": "2026-10-28T15:38:41"}, f1
+    assert "<" not in f2["reason"] and len(f2["reason"]) <= 60 and "\n" not in f2["id"], f2
+
+
 @check("send_push still refuses a call that names no persona")
 def _():
     _fresh("no_persona")

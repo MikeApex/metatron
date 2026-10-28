@@ -33,16 +33,28 @@ public class MetatronMessagingService extends FirebaseMessagingService {
         if (id == null || id.isEmpty()) return;
         int nid = PushNotifications.idFor(id);
         JSONObject msg = null;
+        String reason = "signed out";
         if (PushStore.signedIn(this)) {
-            try {
-                PushStore.Result r = PushStore.request(
-                        this, "GET", "/push/message/" + URLEncoder.encode(id, "UTF-8"), null);
-                if (r.status == 200) msg = r.json();
-            } catch (Exception ignored) {
-                // Falls through to the content-free notification.
+            // Three tries over ~6 s, inside the time Android gives a high-priority message. One
+            // fetch in four never reached the VM on 2026-10-28, cause unknown — a retry heals a
+            // one-off, and the reason is kept so a repeat can be diagnosed.
+            for (int attempt = 0; attempt < 3 && msg == null; attempt++) {
+                if (attempt > 0) {
+                    try { Thread.sleep(2000L * attempt); } catch (InterruptedException e) { break; }
+                }
+                try {
+                    PushStore.Result r = PushStore.request(
+                            this, "GET", "/push/message/" + URLEncoder.encode(id, "UTF-8"), null);
+                    if (r.status == 200) msg = r.json();
+                    else reason = "HTTP " + r.status;
+                    if (r.status == 401 || r.status == 404) break;   // retrying will not help
+                } catch (Exception e) {
+                    reason = e.getClass().getSimpleName();
+                }
             }
         }
         if (msg == null) {
+            PushStore.noteFetchFailure(this, reason, id);
             PushNotifications.showFallback(this, nid);
             return;
         }

@@ -143,8 +143,11 @@ final class PushNotifications {
         Notification.Builder b = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                 ? new Notification.Builder(c, CHANNEL_ID)
                 : new Notification.Builder(c);
+        // Android 7+ hides the time unless asked (Mike, 2026-10-28: "neither with time stamps").
         return b.setSmallIcon(android.R.drawable.ic_popup_reminder)
-                .setCategory(Notification.CATEGORY_REMINDER);
+                .setCategory(Notification.CATEGORY_REMINDER)
+                .setWhen(System.currentTimeMillis())
+                .setShowWhen(true);
     }
 
     private static Notification.Action action(Context c, int nid, String act, String label,

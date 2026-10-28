@@ -33,6 +33,7 @@ from __future__ import annotations
 import fcntl
 import json
 import os
+import re
 import secrets
 import time
 from contextlib import contextmanager
@@ -242,6 +243,21 @@ def _log_delivery(persona: str, event: str, **fields) -> None:
             f.write(json.dumps(rec) + "\n")
     except Exception:
         pass
+
+
+_FAILURE_PART = re.compile(r"[^A-Za-z0-9 _.:\-]")
+
+
+def note_phone_failure(persona: str, report: str) -> None:
+    """The phone's own record of a fetch that never reached the VM — the one place that knows
+    why. Written as `fcm_fetch_failed`; every part is stripped to a safe, short token, since
+    the phone is the author."""
+    reason, _, rest = str(report or "").partition("|")
+    id8, _, at = rest.partition("|")
+    _log_delivery(persona, "fcm_fetch_failed",
+                  reason=_FAILURE_PART.sub("", reason)[:60],
+                  id=_FAILURE_PART.sub("", id8)[:8],
+                  phone_at=_FAILURE_PART.sub("", at)[:19])
 
 
 def save_fcm_token(token: str, persona: str) -> str:

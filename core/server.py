@@ -2142,14 +2142,19 @@ async def push_test(request: Request, persona: str | None = None) -> dict:
 class FcmToken(BaseModel):
     token: str
     persona: str | None = None
+    # "reason|id8|at" — why the phone last failed to fetch a pushed message (content-free).
+    last_error: str | None = None
 
 
 @app.post("/push/fcm/register")
 async def push_fcm_register(req: FcmToken, request: Request) -> dict:
-    """The Android app's FCM token, for the signed-in persona only (day planner Stage C)."""
-    from core.push import save_fcm_token
-    return {"status": await asyncio.to_thread(save_fcm_token, req.token,
-                                              request_persona(request, req.persona))}
+    """The Android app's FCM token, for the signed-in persona only (day planner Stage C). Also
+    carries the phone's last fetch failure, if any, into that persona's push_log.jsonl."""
+    from core.push import note_phone_failure, save_fcm_token
+    persona_key = request_persona(request, req.persona)
+    if req.last_error:
+        await asyncio.to_thread(note_phone_failure, persona_key, req.last_error)
+    return {"status": await asyncio.to_thread(save_fcm_token, req.token, persona_key)}
 
 
 @app.post("/push/fcm/unregister")
