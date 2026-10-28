@@ -56,6 +56,17 @@
             android:name=".PushActionReceiver"
             android:exported="false" />
 
+        <!-- What the Firebase library may tell Google, pinned rather than left to defaults
+             (read from firebase-messaging 25.0.0's MessagingAnalytics, 2026-10-28):
+             - no push token, and so no installation registered with Google, until the page
+               hands over a sign-in (MainActivity.setPushAuth calls getToken explicitly);
+             - no delivery events through the datatransport pipe — off by default, and this
+               keeps it off if a later library flips that default;
+             - no Analytics: the library is not in the APK; this stays true if it ever is. -->
+        <meta-data android:name="firebase_messaging_auto_init_enabled" android:value="false" />
+        <meta-data android:name="delivery_metrics_exported_to_big_query_enabled" android:value="false" />
+        <meta-data android:name="firebase_analytics_collection_deactivated" android:value="true" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
