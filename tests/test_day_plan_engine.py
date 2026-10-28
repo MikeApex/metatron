@@ -441,11 +441,11 @@ def _():
 
 @check("an unparseable, invented-ref or refused model reply leaves the code plan standing")
 def _():
-    for case, fn in (("junk", lambda p: "I think the day looks fine!"),
-                     ("invented", lambda p: json.dumps({"placements": [
+    for case, fn in (("junk", lambda p, **kw: "I think the day looks fine!"),
+                     ("invented", lambda p, **kw: json.dumps({"placements": [
                          {"ref": "ob_999999_ffffff@2026-10-26", "start": "2026-10-26T18:00",
                           "end": "2026-10-26T19:00"}]})),
-                     ("refused", lambda p: (_ for _ in ()).throw(RuntimeError("spend cap")))):
+                     ("refused", lambda p, **kw: (_ for _ in ()).throw(RuntimeError("spend cap")))):
         d, ids, plan = _model_ready(f"model_{case}")
         D._MODEL_CALL = fn
         _run_worker()
@@ -453,6 +453,46 @@ def _():
         assert p["mode"] == "code", (case, p["mode"])
         st = D._load_state(_PERSONA)
         assert not (st.get("reshuffle") or {}).get("inflight"), (case, st.get("reshuffle"))
+
+
+@check("a cut-off reply is retried once with no thinking, judged the same way; a refusal is not retried")
+def _():
+    d, ids, plan = _model_ready("model_retry")
+    gym = next(b for b in _blocks(plan, "task") if b["task_id"] == ids["gym"])
+    calls = []
+
+    def cut_then_ok(payload, thinking_budget=None):
+        calls.append(thinking_budget)
+        if thinking_budget is None:
+            return '{"placements": [{"ref": "' + gym["ref"] + '", "start": "2026-10-26T17'   # cut
+        return json.dumps({"placements": [
+            {"ref": gym["ref"], "start": "2026-10-26T17:30", "end": "2026-10-26T18:30"}]})
+    D._MODEL_CALL = cut_then_ok
+    _run_worker()
+    assert calls == [None, 0], calls
+    p = json.loads((d / "day_plan" / "plan_2026-10-26.json").read_text())
+    assert p["mode"] == "model", p["mode"]
+    rows = [json.loads(x) for x in (d / "day_plan" / "log.jsonl").read_text().splitlines()]
+    last = [r for r in rows if r["event"] == "reshuffle"][-1]
+    assert last["outcome"] == "applied" and last["retried"] is True, last
+    # Both cut → the code plan stands, and the log says the retry ran.
+    d, ids, plan = _model_ready("model_retry_cut")
+    D._MODEL_CALL = lambda payload, thinking_budget=None: '{"placements": [{"ref": '
+    _run_worker()
+    p = json.loads((d / "day_plan" / "plan_2026-10-26.json").read_text())
+    rows = [json.loads(x) for x in (d / "day_plan" / "log.jsonl").read_text().splitlines()]
+    last = [r for r in rows if r["event"] == "reshuffle"][-1]
+    assert p["mode"] == "code" and last["outcome"] == "unparseable_after_retry", (p["mode"], last)
+    # A refused call (spend cap) is never retried.
+    d, ids, plan = _model_ready("model_retry_refused")
+    calls.clear()
+
+    def refuse(payload, thinking_budget=None):
+        calls.append(thinking_budget)
+        raise RuntimeError("spend cap")
+    D._MODEL_CALL = refuse
+    _run_worker()
+    assert calls == [None], calls
 
 
 @check("the JSON extractor takes the first balanced object, nested and with braces in strings")

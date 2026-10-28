@@ -5446,7 +5446,8 @@ def _run_single_agent(agent_name: str, user_input: str,
                       complexity: str | None = None,
                       history: list[dict] | None = None,
                       bare: bool = False,
-                      attachments: list[dict] | None = None) -> str:
+                      attachments: list[dict] | None = None,
+                      thinking_budget: int | None = None) -> str:
     """
     Run one agent pass and return its raw output (no filter applied).
     Used internally by run_session and run_pipeline_session.
@@ -5579,7 +5580,9 @@ def _run_single_agent(agent_name: str, user_input: str,
                 result = run_session_gemini(system_prompt, augmented_input, tool_schemas, tool_handlers,
                                             model=model_override, history=history,
                                             max_output_tokens=_WIDE_OUTPUT_AGENTS.get(agent_name, 4096),
-                                            thinking_budget=_PLAIN_THINKING_CAPS.get(agent_name))
+                                            thinking_budget=thinking_budget
+                                            if thinking_budget is not None
+                                            else _PLAIN_THINKING_CAPS.get(agent_name))
         else:
             from core.router import log_model_error
             log_model_error(agent_name, provider or "unknown", model_override, f"unrecognised provider '{provider}' — no session started")
@@ -7453,7 +7456,8 @@ def run_session(agent_name: str, user_input: str,
                 model_override: str | None = None,
                 complexity: str | None = None,
                 history: list[dict] | None = None,
-                bare: bool = False, proactive: bool = False) -> str:
+                bare: bool = False, proactive: bool = False,
+                thinking_budget: int | None = None) -> str:
     """
     Run a single conversation session.
 
@@ -7471,6 +7475,8 @@ def run_session(agent_name: str, user_input: str,
         proactive:      The system started this, not the user — a background job such as the
                         day planner's reshuffle. Traced as proactive so A9 does not count it as
                         a user session (tools/analytics.py counts every non-proactive trace).
+        thinking_budget: overrides the agent's plain-path cap for this one call — the day
+                        planner's retry after a cut reply asks for 0 (tools/day_plan.py).
     """
     with persona_scope(resolve_persona(persona)) as bound:
         if agent_name == "coordinator":
@@ -7505,7 +7511,7 @@ def run_session(agent_name: str, user_input: str,
                 agent_name, user_input,
                 persona=bound, provider=provider,
                 model_override=model_override, complexity=complexity,
-                history=history, bare=bare,
+                history=history, bare=bare, thinking_budget=thinking_budget,
             )
             # `user_input` is this entry point's own argument — the message being
             # answered. The filter only acts on the Synthesizer at all, and the

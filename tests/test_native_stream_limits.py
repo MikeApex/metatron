@@ -316,6 +316,15 @@ def _():
             assert got == want, (agent, sent[:1])
         assert sent[0].get("max_tokens") == 4096 and "extra_body" not in sent[0], sent[:1]
         assert O._WIDE_OUTPUT_AGENTS["day_planner"] == 16384     # the ceiling is kept
+        # The day planner's retry after a cut reply asks for 0, and 0 is sent — not the cap.
+        sent.clear()
+        O.run_session_gemini("sys", "in", [], {}, max_output_tokens=16384, thinking_budget=0)
+        assert sent[0]["extra_body"]["extra_body"]["google"]["thinking_config"] == {
+            "thinking_budget": 0}, sent[:1]
+        import inspect
+        src = inspect.getsource(O._run_single_agent)
+        assert "if thinking_budget is not None" in src and "_PLAIN_THINKING_CAPS.get(agent_name)" in src
+        assert "thinking_budget=thinking_budget" in inspect.getsource(O.run_session)
     finally:
         openai.OpenAI, O._resolve_gemini_credentials = real_client, real_creds
 

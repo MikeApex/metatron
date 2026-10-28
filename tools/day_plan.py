@@ -2239,16 +2239,17 @@ def _payload(plan: dict, cands: list[dict], now: datetime, state: dict) -> dict:
     }
 
 
-def _call_model(payload: dict, persona: str) -> str:
+def _call_model(payload: dict, persona: str, thinking_budget: int | None = None) -> str:
     if _MODEL_CALL is not None:
-        return _MODEL_CALL(payload)
+        return (_MODEL_CALL(payload) if thinking_budget is None
+                else _MODEL_CALL(payload, thinking_budget=thinking_budget))
     from core.spend_guard import check_before_session
     check_before_session()                    # raises SpendLimitExceeded — caught by the caller
     from core.orchestrator import run_session
     # bare=True gives the agent no clock, so the payload carries today, now and the timezone.
     # NOT complexity="quick": that would route it to the bulk tier (core/router.py).
     return run_session("day_planner", json.dumps(payload, ensure_ascii=False), persona=persona,
-                       bare=True, proactive=True)
+                       bare=True, proactive=True, thinking_budget=thinking_budget)
 
 
 def start_reshuffle(persona: str | None = None) -> bool:
@@ -2307,18 +2308,33 @@ def start_reshuffle(persona: str | None = None) -> bool:
         return True
 
 
+def _placements_ok(result) -> bool:
+    return isinstance(result, dict) and isinstance(result.get("placements"), list)
+
+
 def _reshuffle_worker(persona: str, gen: int, payload: dict) -> None:
     t0 = _time.monotonic()
-    outcome, conflicts = "failed", 0
+    outcome, conflicts, retried = "failed", 0, False
     try:
         try:
             raw = _call_model(payload, persona)
         except Exception as exc:  # noqa: BLE001 — a spend refusal or a dead call: the code plan stands
             raw, outcome = "", f"call_failed:{type(exc).__name__}"
         result = _extract_json(raw)
-        if not isinstance(result, dict) or not isinstance(result.get("placements"), list):
+        if outcome == "failed" and not _placements_ok(result):
+            # Cut off or garbled: one retry with no thinking, so every reshuffle ends with a
+            # complete answer or the code plan (Mike, 2026-10-28). Worst case ~16.4k + ~4k
+            # tokens (~$0.075). Not after a failed call — a spend refusal must stay refused.
+            # The validator below judges it exactly as it judges a full run.
+            retried = True
+            try:
+                raw = _call_model(payload, persona, thinking_budget=0)
+            except Exception as exc:  # noqa: BLE001
+                raw, outcome = "", f"retry_call_failed:{type(exc).__name__}"
+            result = _extract_json(raw)
+        if not _placements_ok(result):
             if outcome == "failed":
-                outcome = "unparseable"
+                outcome = "unparseable" + ("_after_retry" if retried else "")
             return
         day, now = _today(), _now()
         state = _load_state(persona)
@@ -2377,7 +2393,9 @@ def _reshuffle_worker(persona: str, gen: int, payload: dict) -> None:
                         _write_json(_state_path(persona), st)
             except Exception:  # noqa: BLE001
                 pass
-        _log("reshuffle", persona, outcome=outcome, conflicts=conflicts,
+        # `retried` says the outcome came from the thinking-0 retry, so live use can show how
+        # retries fare against full runs.
+        _log("reshuffle", persona, outcome=outcome, conflicts=conflicts, retried=retried,
              ms=int((_time.monotonic() - t0) * 1000))
 
 
