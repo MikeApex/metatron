@@ -75,6 +75,9 @@ back-tagging the rest is `[DB-0815-10]`.
 > against `git log` before promoting anything from here.
 *(empty — last triaged 2026-09-05; evidence in `archive/backlog_closed_2026-09.md`)*
 
+- **[needs building]** Mike requested an automated way to send activity tracker data (steps, active minutes, calories) directly to Metatron without manually capturing and uploading screenshots from his health app.  
+  `2026-10-28T10:19:53.976660Z`
+
 - **[instruction change]** User requested that the system double-check and prompt him before scheduling future social engagements with Rowan, noting that pub meetups feel like a poor use of time.  
   `2026-10-27T16:25:12.246658Z`
 
@@ -177,6 +180,7 @@ flag — which would send a turn containing only the cue.
 - **[a reply says something was set or queued when nothing was written]** Raised by Mike, 2026-10-27 (day-planner watch day 2). Twice now: 10-25 08:35 "the Chase and Rowan windows are set to surface…" and 10-27 09:59 + 10:00 "dinner prep queued for 16:30" — no task, event or setting was written either time. `check_false_action_claims()` (`core/orchestrator.py:6521`) and `_COMPLETION_CLAIM_RES` (`:1964`) recognise "I've added / I've set" and miss "is set to", "queued", "lined up". Fix: widen the phrasings, tested against these two real replies (conversation records 10-25 and 10-27 on the VM). Evidence: `archive/PROJECT_LOG.md` § 2026-10-27.
 - **[bug]** A follow-up Metatron promises ("I'll check back with you at 6:30") is silently deleted if it falls inside quiet hours — it never fires and nothing says so. `core/scheduler.py` `_fire_due_one_offs` removes a due one-off from `schedules.yaml` **before** `fire_session` runs its gates; when a gate then skips it, it is gone. `tools/schedule.py:190-194` exempts only a **user-requested** one-off set inside quiet hours (`respect_quiet_hours: False`), so an **agent-created** one-off due in quiet hours — or a user's one-off if quiet hours change after it was set — is popped and skipped. Other gates (`paused_checkins`, `_day_plan_owns`) match by job name, so a one-off is unlikely to hit them; `_near_fixed_job_blocks` is interval-jobs only. The interview hold already keeps one-offs (Stage 3 review L1, branch `multi-user-build` `6c728ab`) — the fix is the same shape: evaluate the gates before popping and keep a held one-off (or re-time it to the end of quiet hours). Checked against code 2026-10-28; found by the Fable review of Stage 3, filed at Mike's request.  
   `2026-10-28 (Mike, /archive close-out)`
+- **[needs building]** The app has no way to sign out: tapping the name in the top-right only opens the sign-in screen, the previous user's sign-in stays stored, and a failed sign-in as someone else leaves the first person signed in after a refresh (`static/index.html:1328`, `:4519`; the HttpOnly cookie needs a server route to clear it). Mike, 2026-10-28, Stage 5: build it after Stage 5, before or with Stage C's follow-ups. Doesn't affect Iva on her own phone; affects any shared device. Needs an APK rebuild.
 
 ---
 
@@ -1294,6 +1298,30 @@ evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording �
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
 
+- **[a specialist missed a signal it should have caught]** The user did not send a new message; this was a scheduled prompt for a quiet check-in. The system routed it incorrectly as a user input instead of handling it via the coordinator background cycle.  
+  `2026-10-28T15:08:10.355516Z`
+
+- **[THINKING_CAP_HIT]** reply cut at the 8192-token output ceiling (thinking 7861 + reply 323, turn 1). Thinking overshoots its 4096 budget on this model; check whether the reply arrived whole.  
+  `2026-10-28T12:06:44.919034Z`
+
+- **[a capability gap was filed]** BLD-1028-02 (construct): Automated ingestion of fitness tracker and activity metric screenshots into Metatron system logs.  
+  `2026-10-28T10:18:47.960260Z`
+
+- **[already applied by the tool]** User requested that instead of asking how long a task takes, provide an estimate for approval or change. Updated Interaction Preferences in persona config directly.  
+  `2026-10-28T10:03:19.588999Z`
+
+- ⚠ **[user corrected a prior turn]** User corrected system on time estimates: development preference to provide time estimates for approval rather than asking how long something takes  ×3  
+  `2026-10-28T12:05:31.227391Z`
+
+- **[user corrected a prior turn]** User corrected the prior turn by stating 'Whoever you have data for, as far as my tone goes, you can give me multiples.' instead of picking a single contact.  
+  `2026-10-28T09:19:30.567292Z`
+
+- **[user corrected a prior turn]** User asked for a breakdown of communication tone with a contact, but no specific contact name was provided in the message.  
+  `2026-10-28T09:17:54.373925Z`
+
+- **[a capability gap was filed]** BLD-1028-01 (construct): Schedule and track US prescription refill logistics while traveling, coordinating US physician appointment search and international prescription transition.  
+  `2026-10-28T09:13:33.263923Z`
+
 - **[user corrected a prior turn]** User corrected name from Crosshatched / Cross Harbor to Crossharbour in previous turns  ×2  
   `2026-10-27T17:32:59.661300Z`
 
@@ -2092,8 +2120,8 @@ entry is a symptom, never a diagnosis.)*
 - **[user corrected a prior turn]** ```  
   `2026-09-09T16:37:04.540671Z`
 
-- ⚠ **[user corrected a prior turn]** User said 'Quiet check-in — raise it only if something matters right now.' in the previous turn, but the system received a scheduled morning brief prompt ('Good morning. Open with whatever is most time-sensitive today...') which forced a full morning briefing instead of respecting the quiet check-in state.  ×8  
-  `2026-10-19T06:30:09.808493Z`
+- ⚠ **[user corrected a prior turn]** The scheduled prompt was 'Quiet check-in — raise it only if something matters right now.' but the model produced an extensive multi-item morning briefing instead of adhering to the quiet check-in instruction.  ×9  
+  `2026-10-28T08:09:43.757851Z`
 
 - **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Travel to Cheder' (2026-11-08T09:00:00, uid=9f9be746-94ac-4fd4-8f60-f4d16b402972@ai-life-manager) and 'Cheder' (2026-11-08T10:00:00, uid=e80d1e0f-e19a-4fce-901f-c5ae135a3a85@ai-life-manager). title_similarity=0.55, shared_attendees=[], shared_words=['cheder']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
   `2026-09-09T04:35:21.461718Z`

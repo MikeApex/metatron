@@ -1,21 +1,17 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-10-28. **VM at `08ee9d0`, all deployed.** **Day planner Stage B is live (step 1):**
-the Synthesizer reads today's plan and records event answers, the day's shape, a task's kind,
-length and "sometime by" window; the brief and close raise what is salient. Corrections now update
-the task (tool text + a soft near-duplicate refusal). **The model reshuffle works at 16,384** (thinking
-9.9k–13.2k, 1–3 min in the background, ~$0.05 a call) and fits essentials the code plan cannot;
-keep / cap / off is Mike's open call — Stage C prompt § 0.
-**Second-user build: Stages 0–3 BUILT and Fable-verified, NOT merged or deployed** — worktree
-`~/Desktop/metatron-wt-multi-user`, branch `multi-user-build` (`ef24032`, `79e42e0`, Stage 3 `6c728ab`).
-**Next: Stage 4 (deploy) + Stage 5 (verify, then Iva)** — paste
-`archive/handoffs/2026-10-28-multi-user-build-stage-4-prompt.md`; Mike reviews the three permission
-texts first, then merge, push, the scheduler migration (one `metatron-scheduler@<user>` each), APK.
-The branch's `docs/INFRASTRUCTURE.md` now carries the corrected unit texts. **The server is
-OOM-killed silently (10-15, 10-22): the Kokoro voice model is the growth** — keep 🔊 off in the Mac
-web app until the build deploys. **Then Stage C + step 2**
-(`archive/handoffs/2026-10-27-day-planner-stage-c-push-and-step-2-prompt.md` — push with the app
-closed, Mike's D1 = b; § 0 settles the reshuffle first). Not concurrent: same push/server/APK files.
+*Updated: 2026-10-28. **The second-user build is LIVE** (VM `469a575`): per-user accounts with
+in-app sign-up, `metatron-scheduler@<user>` (the old unit retired to `~/retired-units/`), the voice
+model in its own helper (🔊 safe again), CPU-only torch. **Stage 5 is 5 of 7:** checks 1, 3, 4, 5
+and memory M1/M2 pass. **Owed:** (a) after the held deploy, rerun check 2 on a fresh account
+(day-shape saved in the turn it's given; purpose drafted → explored → revised once; the card says
+"Save your purpose"); (b) **10-29: check 6**, the three trial accounts' logs, plus whether
+`trial_2026_10c`'s post-crisis check-in was right; (c) check 7, disable all three; (d) M3, the
+week-long memory watch, to ~11-04. **Then Iva's walkthrough.** Log § 2026-10-28 second.
+**Day planner Stage C is committed on `main` with `c8de0e5`/`ca3173b`, both held for one deploy +
+APK,** run from the Stage C chat; reshuffle thinking 0 (`6a3fd86`). **Next after that: reply
+latency**, `archive/handoffs/2026-10-28-reply-latency-defer-thinking-cache-prompt.md`. Mike's own
+replies take a median of 54 s against the trial's 20–25 s. After Stage 5: a real Sign out in the app.
 WhatsApp 0b may run any time. **Still owed:** "over and out" live check; virtue-pause day-after
 check; `[DB-1026-01]` due 10-29; the boys' bedtimes → `children_home`; Mike's calendar live check
 (week of 9 Nov); silent-mic APK `24d5c24` sideload if not done; `[DB-0901-02]`, due 12-15.*
