@@ -131,9 +131,12 @@ def part_structural() -> None:
     check("each sets the subagent depth beside the trace", not missing)
     if missing:
         print(f"        missing at core/orchestrator.py lines {missing}")
+    # errors="replace": tools/kokoro/venv (gitignored, Mac only) holds a third-party file that is
+    # not UTF-8; the needle is ASCII, so a replaced byte cannot hide a match.
     check("nothing in core/ or tools/ reads the old _SUBAGENT_DEPTH env var",
-          not any("_SUBAGENT_DEPTH\"" in p.read_text() or "'_SUBAGENT_DEPTH'" in p.read_text()
-                  for d in ("core", "tools") for p in (REPO / d).rglob("*.py")))
+          not any("_SUBAGENT_DEPTH\"" in t or "'_SUBAGENT_DEPTH'" in t
+                  for d in ("core", "tools") for p in (REPO / d).rglob("*.py")
+                  for t in (p.read_text(errors="replace"),)))
 
 
 def main() -> int:
