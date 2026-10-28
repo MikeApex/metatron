@@ -285,7 +285,7 @@ def _():
         openai.OpenAI, O._resolve_gemini_credentials = real_client, real_creds
 
 
-@check("the plain path: the day planner's thinking is capped at 6,000, nobody else's is")
+@check("the plain path: the day planner runs with thinking 0, nobody else's is capped")
 def _():
     # 2026-10-28: a live reshuffle ran out at 15,726 thinking + 654 out of 16,384.
     sent = []
@@ -306,7 +306,7 @@ def _():
     openai.OpenAI = _Client
     O._resolve_gemini_credentials = lambda model=None: ("k", "https://x.googleapis.com", "m")
     try:
-        for agent, want in (("day_planner", 6000), ("logistics", None)):
+        for agent, want in (("day_planner", 0), ("logistics", None)):
             sent.clear()
             O.run_session_gemini("sys", "in", [], {},
                                  max_output_tokens=O._WIDE_OUTPUT_AGENTS.get(agent, 4096),

@@ -4301,7 +4301,12 @@ _WIDE_OUTPUT_AGENTS = {"day_planner": 16384}
 # the failure, not just cost. Probe on the VM: 6,000 → 3/3 valid, thinking 3.1k–4.2k, ~28 s;
 # 1,024 → thinking 0, so Vertex compat honours it. The 16,384 ceiling stays: 3.8 Flash overshoots
 # a budget on the native path (1,024 → 2,664, 2026-10-26).
-_PLAIN_THINKING_CAPS = {"day_planner": 6000}
+# Then 0 (Mike, same day), on a head-to-head with one essential the code plan could not place,
+# 3 runs each on the real day: 6,000 fitted it 0/3 (dropped it as "no room", 43–84 s, ~$0.03);
+# 0 fitted it 2/3 (4–9 s, ~$0.005); Flash-Lite 1/3. Thinking made it cautious, not better. Nine
+# runs on one day — judged on live use against the 16,384 week (3 of 6 applied); revert to 6,000
+# if fewer apply or more essentials go unplaced.
+_PLAIN_THINKING_CAPS = {"day_planner": 0}
 
 
 def _max_output_tokens(thinking_budget: int | None) -> int:
