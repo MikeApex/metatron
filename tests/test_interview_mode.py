@@ -256,7 +256,7 @@ def test_pending_write_is_never_reported_as_done():
         NEXT_REPLY.update(text="Tell me about your days.", side_effect=None)
     assert "Waiting for your approval in the app" in reply
     assert "I've recorded your mission" not in reply
-    assert "awaiting her confirmation" in interview.coverage_block("zz_pend")
+    assert "awaiting the user's confirmation" in interview.coverage_block("zz_pend")
     with persona_mod.persona_scope("zz_pend"):
         refusal = interview.finish_interview()
     assert refusal.startswith("Not finished") and interview.status("zz_pend") == "active"
@@ -322,6 +322,32 @@ def test_history_is_trimmed_to_budget_on_whole_pairs():
     kept = interview.trim_history(pairs)
     assert sum(len(m["content"]) for m in kept) <= interview.HISTORY_CHAR_BUDGET
     assert kept[0]["role"] == "user" and kept[-1]["content"] == "a5"
+
+
+def test_server_holds_a_proactive_turn_during_the_interview():
+    """Stage 3 review S1: the server is the backstop for D2 — a proactive turn (the scheduler's
+    service socket) during a held interview is answered `held`, runs nothing, records nothing;
+    once paused, the same turn reaches the pipeline."""
+    _own_db()
+    _new_user("zz_backstop")
+    state = _tmp / "data" / "personas" / "zz_backstop" / "interview" / "state.json"
+    state.write_text(json.dumps({"status": "active"}))
+    calls, pipe = len(CALLS), len(PIPELINE_CALLS)
+    with client.websocket_connect("/ws?persona=zz_backstop") as ws:
+        ws.send_json({"type": "auth", "token": auth.issue_token()})
+        assert ws.receive_json()["type"] == "auth_ok"
+        ws.send_json({"type": "send", "exchange_id": "bk-1", "input": "Morning brief.",
+                      "proactive": True})
+        frames = [f for f in _drain(ws, "held") if f.get("exchange_id") == "bk-1"]
+        assert [f["type"] for f in frames] == ["accepted", "held"], frames
+        assert len(CALLS) == calls and len(PIPELINE_CALLS) == pipe
+        assert asyncio.run(server._get_exchange("zz_backstop", "bk-1")) is None
+
+        state.write_text(json.dumps({"status": "paused"}))
+        ws.send_json({"type": "send", "exchange_id": "bk-2", "input": "Morning brief.",
+                      "proactive": True})
+        _drain(ws, "done")
+        assert len(PIPELINE_CALLS) == pipe + 1
 
 
 if __name__ == "__main__":

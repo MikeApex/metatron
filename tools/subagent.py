@@ -11,6 +11,7 @@ import os
 import threading
 
 from core.persona import current_persona
+from core.trace import get_subagent_depth, set_subagent_depth
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +102,9 @@ def run_subagent(agent_name: str, message: str, complexity: str = "",
     # dispatch parser reading agent output would break check 6 directly, and this
     # relaxation exists precisely so that the safe route is available.
     MAX_SUBAGENT_DEPTH = 2
-    depth = int(os.environ.get("_SUBAGENT_DEPTH", "0"))
+    # Thread-local (core/trace.py), never os.environ: an env value is shared by every
+    # request in the process, so one user's nested call would block another's delegation.
+    depth = get_subagent_depth()
     if depth >= MAX_SUBAGENT_DEPTH:
         return (
             f"Error: run_subagent cannot be called at delegation depth {depth}. "
@@ -122,26 +125,23 @@ def run_subagent(agent_name: str, message: str, complexity: str = "",
         fire_and_forget = True
 
     if fire_and_forget:
-        # Capture env vars needed by the background thread before returning.
-        subagent_env = os.environ.get("_SUBAGENT_DEPTH", "0")
-        def _run() -> None:
-            os.environ["_SUBAGENT_DEPTH"] = str(int(subagent_env) + 1)
+        # Captured on this thread: the background thread starts with no depth of its own.
+        def _run(child_depth: int = depth + 1) -> None:
+            set_subagent_depth(child_depth)
             try:
                 run_session(agent_name, user_input=message, persona=persona,
                             complexity=complexity_hint)
             except Exception as e:
                 logger.warning(f"[fire_and_forget] {agent_name} failed: {e}")
-            finally:
-                os.environ["_SUBAGENT_DEPTH"] = subagent_env
         threading.Thread(target=_run, daemon=True).start()
         return f"{agent_name}: dispatched (async)"
 
-    os.environ["_SUBAGENT_DEPTH"] = str(depth + 1)
+    set_subagent_depth(depth + 1)
     try:
         return run_session(agent_name, user_input=message, persona=persona,
                            complexity=complexity_hint)
     finally:
-        os.environ["_SUBAGENT_DEPTH"] = str(depth)
+        set_subagent_depth(depth)
 
 
 def run_model_conference(message: str, models: list[str],

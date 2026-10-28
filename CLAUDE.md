@@ -235,9 +235,9 @@ the moment you need it and go find it. These do not.
    memory.**
 4. **Relink billing *before* writing an override.** The marker lives in a bucket inside the
    project being disabled, so writing it while billing is off fails `403`.
-5. **`--persona mike` on both systemd units is load-bearing.** Without it the scheduler resolves
-   no persona and writes to the global `data/` tree while the server writes to
-   `data/personas/mike/`, splitting the user's history in two.
+5. **One strict `metatron-scheduler@<persona>` per user, never two** (two fire every job twice; a
+   lock and a `/proc` scan refuse it). **`.env` must never set a persona variable** — it overrides
+   every unit's, making every scheduler one user. Units: `docs/INFRASTRUCTURE.md`.
 6. **Vertex will not create a cache below 4,096 tokens, and fails silently when you cross that
    floor.** The 2026-06-24 token-reduction work shrank the Coordinator/Synthesizer prompts under
    it, so every cache attempt failed and every call ran uncached — for a month, with no error.
@@ -295,6 +295,6 @@ first looked like the whole set. Both are merged here.
 - Scheduler daemon invokes orchestrator sessions; the orchestrator itself is stateless between sessions.
 - FAISS for memory — prevents context window limits from degrading long-term recall.
 - Config files are the product; code is infrastructure. Behaviour changes are config edits.
-- **Sensitive data never reaches shared cloud infrastructure — fail-closed, no fallbacks (binding ruling 2026-06-10).** Head layer and all personal-data specialists run local. Ollama down = hard error, never a cloud call. **Amendment 2026-06-18:** a dedicated VM with verified Zero Data Retention (e.g. Vertex AI ZDR) is acceptable during testing — contractual sequestration is a distinct threat model from shared cloud. North star remains architectural security on private hardware; **the VM path is explicitly temporary.** **Clarification 2026-08-09:** that amendment is the project-wide default for the single-user development phase, not a per-feature exception — new sensitive paths on the ZDR VM (e.g. correspondence-derived tone extraction) need no separate ruling. Fail-closed, the north star and the expiry condition are unchanged, and the clarification additionally lapses if the deployment stops being single-user. Full text: `ROADMAP.md` § Section 0.
+- **Sensitive data never reaches shared cloud infrastructure — fail-closed, no fallbacks (binding ruling 2026-06-10).** Head layer and all personal-data specialists run local. Ollama down = hard error, never a cloud call. **Amendment 2026-06-18:** a dedicated VM with verified Zero Data Retention (e.g. Vertex AI ZDR) is acceptable during testing — contractual sequestration is a distinct threat model from shared cloud. North star remains architectural security on private hardware; **the VM path is explicitly temporary.** **Clarification 2026-08-09:** that amendment is the project-wide default for the single-user development phase, not a per-feature exception — new sensitive paths on the ZDR VM (e.g. correspondence-derived tone extraction) need no separate ruling. Fail-closed, the north star and the expiry condition are unchanged, and the clarification additionally lapses if the deployment stops being single-user. **Amendment 2026-10-26:** extended to a second user on her informed consent, given in the app and recorded per user (`data/personas/{p}/consents.json`) — it lapses for any user without the same record. Full text: `ROADMAP.md` § Section 0.
 - **Archive-on-merge:** data is never deleted — it is moved to archive with a `merged_into` pointer.
 - `age` encryption in Phase 6 — not before real sensitive data accumulates. Until then, file permissions (`600`) are the protection.

@@ -196,36 +196,24 @@ def persona_scope(persona: str) -> Iterator[str]:
     executor thread and specialists fan out across further threads; a
     process-wide variable lets concurrent requests read each other's identity.
 
-    The environment variables are mirrored so that any code not yet converted to
-    resolve_persona() still sees the right persona. Both are restored on exit,
-    including when the block raises.
+    The environment is deliberately NOT written. It used to be mirrored "for
+    code not yet converted to resolve_persona()" — no runtime code reads it any
+    more, and the mirror was a leak: overlapping scopes on two threads left a
+    stale value behind, so an unscoped lookup on a third thread borrowed a
+    persona nobody was serving. With two users that is one person's request
+    served as another. The environment is now only what the process was started
+    with (a scheduler unit's METATRON_PERSONA=%i); the server sets none, so an
+    unscoped lookup there raises.
     """
     validated = validate_persona_name(persona)
 
     prev_thread = getattr(_state, "persona", None)
-    prev_primary = os.environ.get(ENV_PRIMARY)
-    prev_legacy = os.environ.get(ENV_LEGACY)
-
     _state.persona = validated
-    os.environ[ENV_PRIMARY] = validated
-    os.environ[ENV_LEGACY] = validated
 
     try:
         yield validated
     finally:
-        if prev_thread is None:
-            _state.persona = None
-        else:
-            _state.persona = prev_thread
-        _restore_env(ENV_PRIMARY, prev_primary)
-        _restore_env(ENV_LEGACY, prev_legacy)
-
-
-def _restore_env(key: str, previous: str | None) -> None:
-    if previous is None:
-        os.environ.pop(key, None)
-    else:
-        os.environ[key] = previous
+        _state.persona = prev_thread
 
 
 def current_persona() -> str | None:

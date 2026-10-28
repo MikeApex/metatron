@@ -43,23 +43,25 @@ Tiers 1–3 are per-persona; **no root-level fallback** (below). The VM owns the
 `resolve_persona()` checks, in order: an explicit argument, thread-local state (set by
 `persona_scope()`), then `METATRON_PERSONA`. If none resolves it **raises** — it never falls back
 to a shared path. Every entry point must name a persona: `--persona` is required on both
-`core/server.py` and `core/scheduler.py`.
+`core/server.py` (CLI/dev meaning only — each request is bound to its user by its token) and
+`core/scheduler.py`.
 
-Never read the environment variable directly. Call `resolve_persona()`, `persona_data_dir()`,
-`persona_config_dir()` or `persona_md()`.
+Never read the env var directly — call `resolve_persona()`, `persona_{data,config}_dir()`, `persona_md()`.
 
 Identity is thread-local, not process-global, because sessions run on a pooled executor thread
-and specialists fan out across further threads. Anything that spawns a thread must bind the
-persona inside it — see the four boundaries in `core/orchestrator.py` and `tools/subagent.py`. A
+and specialists fan out across further threads; **`persona_scope()` never writes the environment**
+(2026-10-28: overlapping scopes left a stale value another thread could borrow — see its
+docstring). Anything that spawns a thread must bind the persona inside it — see the four boundaries in `core/orchestrator.py` and `tools/subagent.py`. A
 fire-and-forget subagent (the Diarist) outlives its request, so it resolves identity on the
 *calling* thread before the parent scope exits.
 
 Persona names are validated against `^[a-z0-9][a-z0-9_]{0,39}$`. They become filesystem paths and
 arrive from the HTTP request body, so an invalid name is rejected rather than sanitised.
 
-**Adding a persona:** `./scripts/new_persona.sh <name>`, then fill in `profile.yaml` and run the
-Goals Interview. Settings files are gitignored, so copy them to the VM manually — `deploy.sh`
-will not carry them.
+**Adding a user:** they sign up in the app; Mike approves — `scripts/accounts.py approve <name>`,
+**on the VM** (`docs/INFRASTRUCTURE.md` § Accounts). Never provision a real user on the Mac.
+**A test persona:** `./scripts/new_persona.sh <name>`, fill in `profile.yaml`, `git add -f` its files
+(persona files are gitignored by pattern); copy settings to the VM by hand — `deploy.sh` won't.
 
 ---
 
@@ -95,8 +97,7 @@ directly and let the next backup capture it. Never reconstruct it from memory on
 **Checking consistency:** `python scripts/check_personas.py` reports drift between identity files,
 config directories and data directories. Exits non-zero on real breakage.
 
-**Transition note:** `AI_TEST_PERSONA` is a deprecated alias for `METATRON_PERSONA`. It still
-works and warns once.
+**Transition note:** `AI_TEST_PERSONA` is a deprecated alias for `METATRON_PERSONA`; works, warns once.
 
 ---
 

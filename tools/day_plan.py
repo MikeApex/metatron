@@ -2475,6 +2475,11 @@ def nudge_tick() -> str | dict:
     persona = resolve_persona(None)
     if _quiet_now(persona):
         return "nudges: quiet hours"
+    # D2: nothing proactive during a new user's first interview — checked before anything is
+    # marked handled, so what comes due meanwhile is not consumed (Stage 3 review S1).
+    from core.interview import holds_proactive
+    if holds_proactive(persona):
+        return "nudges: holding for the first interview"
     idle = _idle_minutes(persona)
     if idle is not None and idle < 10:
         return "nudges: user is mid-conversation"

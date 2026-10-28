@@ -1415,6 +1415,15 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                 # Scheduler-initiated exchanges are flagged so traces record that
                 # Metatron opened the conversation rather than the user.
                 proactive = bool(data.get("proactive"))
+                # D2 backstop (Stage 3 review S1): no proactive turn opens while a new user's
+                # first interview holds — whichever caller forgot its own check. `held` is
+                # the frame send_one already reads as "nothing to say"; nothing is recorded
+                # or broadcast. The scheduler and nudge_tick check first, so this is quiet.
+                if proactive and interview_mod.holds_proactive(persona_key):
+                    _inflight_exchanges.discard(inflight_key)
+                    claimed.discard(inflight_key)
+                    await websocket.send_json({"type": "held", "exchange_id": exchange_id})
+                    continue
                 # A day-plan nudge (tools/day_plan.py nudge_tick): the Synthesizer decides whether
                 # to speak at all, so nothing reaches any device until it has — no stream_start,
                 # no chunk broadcast — and a reply of exactly [HOLD] is recorded nowhere.

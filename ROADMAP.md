@@ -223,6 +223,30 @@ On that basis:
   basis collapses the moment the deployment stops being single-user, because Mike can gate his
   own data and nobody else's.
 
+**Amendment 2026-10-26 (Mike's ruling) — the basis extends to a second user, Iva, on her own
+informed consent.** Mike's ruling 2 (`archive/plans/multi_user_accounts_plan_2026-10-26.md` § 2):
+*"She is aware of the configuration and will be using incomplete data"* and *"She understands I
+have full access."* **D9 (Mike, 2026-10-27): she is told in the app and gives permission herself**
+— so her consent is evidenced by records, not by this paragraph:
+
+- **At sign-up** she sees, before her request can be sent, that what she tells Metatron is
+  processed by Google's Vertex AI under Google's default terms (no training use; prompt logging
+  only on classifier-flagged traffic, ≤ 90 days), that the product is early and incomplete, and
+  that **Mike, as developer, can read everything she tells it.** Her acceptance is stored in her
+  account entry and copied by `approve` into `data/personas/{p}/consents.json`, with the version
+  of the text she saw (`config/consent/`).
+- **Connecting her mail and calendar** brings their contents — including what other people wrote
+  to her — onto the same path, and needs a separate `correspondence_read` record; tone profiling
+  needs its own `tone_profile` record. **The `tone_profiler` and contact-enrichment clearances
+  above apply to her only while her own record for each is current**, enforced in code
+  (fail-closed: no record, no processing) and withdrawable from the app.
+- **It lapses for any further user who has not given the same informed consent**, recorded the
+  same way. The 08-26/08-28 single-user expiry is otherwise unchanged in meaning: this is consent
+  per person, not a general multi-user clearance. `mike` holds records citing his own rulings of
+  2026-08-26 and 08-28 (`scripts/accounts.py seed-consent`).
+- **Unchanged:** fail-closed routing, the north star, decontextualization for open-tier work.
+  What she gets is not Phase-7-grade isolation — see § Section 3.
+
 **The 2026-06-11 development-testing carve-out is SUPERSEDED (2026-07-28).** It had permitted
 persona data on any cloud model as "test data." After persona unification **nothing at runtime
 distinguishes a synthetic persona from a real one**, so a rule depending on that distinction
@@ -925,6 +949,17 @@ Unlocks: E2 Wishes full build (encryption required); D1 local model upgrade deci
 | **Phase 6A close** | B1–B4 + `tests/security_testing_plan.md` (amended 2026-06-10) fully passes. Earliest possible close is post-E1 (indirect injection checks). | Phase 7 gate |
 | **Phase 6B close** | Legal brief produced and decisions documented | Phase 7 gate |
 | **Phase 7** | Phase 6 close + Phase 6A close + Phase 6B close + user research session | Multi-user deployment |
+
+> **A second test user is admitted AHEAD of the Phase 7 gate — by Mike's ruling (D7,
+> 2026-10-26), and this is not Phase 7.** None of the gate's conditions has been met. Iva gets
+> per-user accounts, every request bound to its user, per-user data trees and a scheduler per
+> user — **isolation at the auth and path layer only**: one OS user, one process, one file tree.
+> Accepted gaps against Track F: **no per-user encryption** (`age` is not built for anyone, so a
+> server compromise exposes both users, as it exposes Mike today); **no identifiability
+> threshold** before cloud dispatch (covered instead by her consent, § Section 0 amendment
+> 2026-10-26); **the user research session is still owed** before Phase 7 — she is its first
+> subject, not its substitute. Approval by Mike is by design, not a gap. Full table:
+> `archive/plans/multi_user_accounts_plan_2026-10-26.md` § 2a.
 
 **Note on parallelism:** Tracks A and B run simultaneously now. Track C is independent of everything — commission it early; it has the longest external lead time. Track B starts against the Phase 5 system but cannot close before E1 (stated honestly: it starts independent, it does not close independent). F0 runs during Phase 6. E3 runs on its own data clock and blocks nothing.
 

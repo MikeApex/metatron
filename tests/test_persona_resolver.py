@@ -190,8 +190,9 @@ def _():
     assert P.current_persona() is None
     with P.persona_scope("mike"):
         assert P.resolve_persona() == "mike"
-        assert os.environ[P.ENV_PRIMARY] == "mike"
-        assert os.environ[P.ENV_LEGACY] == "mike"   # mirror for unconverted code
+        # No env mirror (Stage 3.1): a scope is visible on its own thread only.
+        assert P.ENV_PRIMARY not in os.environ
+        assert P.ENV_LEGACY not in os.environ
     assert P.current_persona() is None
     assert P.ENV_PRIMARY not in os.environ
     assert P.ENV_LEGACY not in os.environ
@@ -216,17 +217,18 @@ def _():
         with P.persona_scope("pepys"):
             assert P.resolve_persona() == "pepys"
         assert P.resolve_persona() == "mike"
-        assert os.environ[P.ENV_PRIMARY] == "mike"
     assert P.current_persona() is None
 
 
-@check("scope preserves a pre-existing env value on exit")
+@check("scope never writes the environment; a unit-set value is left as it was")
 def _():
     _clear_env()
     os.environ[P.ENV_PRIMARY] = "aurelius"
     with P.persona_scope("mike"):
         assert P.resolve_persona() == "mike"
+        assert os.environ[P.ENV_PRIMARY] == "aurelius"
     assert os.environ[P.ENV_PRIMARY] == "aurelius"
+    assert P.resolve_persona() == "aurelius"
     _clear_env()
 
 
@@ -262,6 +264,51 @@ def _():
     _clear_env()
 
 
+@check("an unscoped lookup beside two served users raises, never borrows one (plan 6.1.2)")
+def _():
+    # The leak the mirror caused: A and B are being served on two threads with
+    # overlapping scopes; a third thread with no scope (the /feedback and /tts
+    # shape before Stage 1) must get an error, never A's or B's identity —
+    # checked while both scopes are open AND after they close in an
+    # interleaved order, which is what used to leave a stale value behind.
+    _clear_env()
+    a_in, b_in = threading.Event(), threading.Event()
+    probe_done, a_may_exit = threading.Event(), threading.Event()
+    seen: dict[str, object] = {}
+
+    def serve_a():
+        with P.persona_scope("mike"):
+            a_in.set()
+            b_in.wait(timeout=5)
+            a_may_exit.wait(timeout=5)
+
+    def serve_b():
+        a_in.wait(timeout=5)
+        with P.persona_scope("pepys"):
+            b_in.set()
+            probe_done.wait(timeout=5)
+        a_may_exit.set()                 # B leaves first: the order that left a stale value
+
+    def probe(key: str):
+        try:
+            seen[key] = P.resolve_persona()
+        except P.PersonaError:
+            seen[key] = "raised"
+
+    ta, tb = threading.Thread(target=serve_a), threading.Thread(target=serve_b)
+    ta.start(); tb.start()
+    b_in.wait(timeout=5)
+    t = threading.Thread(target=probe, args=("during",)); t.start(); t.join(timeout=5)
+    probe_done.set()
+    ta.join(timeout=5); tb.join(timeout=5)
+    t = threading.Thread(target=probe, args=("after",)); t.start(); t.join(timeout=5)
+
+    assert seen.get("during") == "raised", seen
+    assert seen.get("after") == "raised", seen
+    assert P.ENV_PRIMARY not in os.environ and P.ENV_LEGACY not in os.environ
+    _clear_env()
+
+
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
@@ -290,9 +337,20 @@ def _():
 
 @check("list_personas finds mike and skips invalid names")
 def _():
-    names = P.list_personas()
-    assert "mike" in names, names
-    assert all(P._VALID_NAME.match(n) for n in names), names
+    # Its own tree: mike's identity file is VM-owned and gitignored, so the repo's
+    # config/personas/ cannot be relied on to hold one (it failed in a worktree and on main).
+    original = P._ROOT
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td) / "config" / "personas"
+        root.mkdir(parents=True)
+        for stem in ("mike", "pepys", "Bad Name", "_leading"):
+            (root / f"{stem}.md").write_text("x")
+        P._ROOT = Path(td)
+        try:
+            names = P.list_personas()
+        finally:
+            P._ROOT = original
+    assert names == ["mike", "pepys"], names
 
 
 # ---------------------------------------------------------------------------

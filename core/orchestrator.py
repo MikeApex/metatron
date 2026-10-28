@@ -2930,6 +2930,7 @@ def run_session_anthropic(system_prompt: str, user_input: str,
 
         if parallel_calls:
             _parent_trace = _tr.get_trace()
+            _parent_depth = _tr.get_subagent_depth()   # thread-local since 2026-10-28
             # [DB-0827-01] Thread-local like the trace, and propagated for the same reason:
             # the decline guard fails closed on a thread with no turn, so a worker without
             # this would suppress a re-proposal the user themselves asked for.
@@ -2939,6 +2940,7 @@ def run_session_anthropic(system_prompt: str, user_input: str,
             def _make_dispatch(name, inputs, handlers, turn):
                 def _worker():
                     _tr.set_trace(_parent_trace)
+                    _tr.set_subagent_depth(_parent_depth)
                     _tr._set_current_agent(_parent_agent)
                     _turn.adopt(_parent_turn)
                     with (persona_scope(_parent_persona) if _parent_persona else nullcontext()):
@@ -3049,6 +3051,7 @@ def _anthropic_stream(
 
         if parallel_calls:
             _parent_trace = _tr.get_trace()
+            _parent_depth = _tr.get_subagent_depth()   # thread-local since 2026-10-28
             # [DB-0827-01] Thread-local like the trace, and propagated for the same reason:
             # the decline guard fails closed on a thread with no turn, so a worker without
             # this would suppress a re-proposal the user themselves asked for.
@@ -3058,6 +3061,7 @@ def _anthropic_stream(
             def _make_dispatch(name, inputs, handlers, turn):
                 def _worker():
                     _tr.set_trace(_parent_trace)
+                    _tr.set_subagent_depth(_parent_depth)
                     _tr._set_current_agent(_parent_agent)
                     _turn.adopt(_parent_turn)
                     with (persona_scope(_parent_persona) if _parent_persona else nullcontext()):
@@ -4501,6 +4505,7 @@ def _run_gemini_native_loop(client, model_name: str,
 
         if parallel_calls:
             _parent_trace = _tr.get_trace()
+            _parent_depth = _tr.get_subagent_depth()   # thread-local since 2026-10-28
             # [DB-0827-01] Thread-local like the trace, and propagated for the same reason:
             # the decline guard fails closed on a thread with no turn, so a worker without
             # this would suppress a re-proposal the user themselves asked for.
@@ -4510,6 +4515,7 @@ def _run_gemini_native_loop(client, model_name: str,
             def _make_gemini_dispatch(fc_name, fc_args, handlers, turn):
                 def _worker():
                     _tr.set_trace(_parent_trace)
+                    _tr.set_subagent_depth(_parent_depth)
                     _tr._set_current_agent(_parent_agent)
                     _turn.adopt(_parent_turn)
                     with (persona_scope(_parent_persona) if _parent_persona else nullcontext()):
@@ -4743,6 +4749,7 @@ def _run_gemini_native_stream(client, model_name: str,
 
         if parallel_calls:
             _parent_trace = _tr.get_trace()
+            _parent_depth = _tr.get_subagent_depth()   # thread-local since 2026-10-28
             # [DB-0827-01] Thread-local like the trace, and propagated for the same reason:
             # the decline guard fails closed on a thread with no turn, so a worker without
             # this would suppress a re-proposal the user themselves asked for.
@@ -4752,6 +4759,7 @@ def _run_gemini_native_stream(client, model_name: str,
             def _make_gemini_dispatch(fc_name, fc_args, handlers, turn):
                 def _worker():
                     _tr.set_trace(_parent_trace)
+                    _tr.set_subagent_depth(_parent_depth)
                     _tr._set_current_agent(_parent_agent)
                     _turn.adopt(_parent_turn)
                     with (persona_scope(_parent_persona) if _parent_persona else nullcontext()):
@@ -6265,12 +6273,14 @@ def _dispatch_from_coordinator(
             # specialists running concurrently. Same pattern as the parallel
             # tool-dispatch sites above.
             _fan_trace = _tr.get_trace()
+            _fan_depth = _tr.get_subagent_depth()
             _fan_agent = _tr.get_current_agent()
             _fan_turn = _turn.current()
 
             def _make_specialist(agent_name, directive, cx):
                 def _worker():
                     _tr.set_trace(_fan_trace)
+                    _tr.set_subagent_depth(_fan_depth)
                     _tr._set_current_agent(_fan_agent)
                     _turn.adopt(_fan_turn)
                     with (persona_scope(_fan_persona) if _fan_persona else nullcontext()):
@@ -6324,7 +6334,9 @@ def _dispatch_from_coordinator(
                     # Instrumentation must never cost the corrected dispatch.
                     pass
 
-            def _bg(a: str = agent, d: str = directive, c: str | None = complexity) -> None:
+            def _bg(a: str = agent, d: str = directive, c: str | None = complexity,
+                    depth: int = _tr.get_subagent_depth()) -> None:
+                _tr.set_subagent_depth(depth)
                 try:
                     run_session(a, user_input=d, persona=persona, complexity=c)
                 except Exception as exc:

@@ -192,6 +192,20 @@ def _set_current_agent(rec: AgentRecord | None) -> None:
     _ctx.current_agent = rec
 
 
+def get_subagent_depth() -> int:
+    """How deep in run_subagent delegation this thread is (0 = a top-level session)."""
+    return getattr(_ctx, "subagent_depth", 0)
+
+
+def set_subagent_depth(depth: int) -> None:
+    """Thread-local, propagated at the same fan-out sites as the trace. It lived in
+    os.environ until 2026-10-28 — process-global, so with two users served at once one
+    request's nested specialist made the other's Coordinator refuse to delegate, and a
+    `finally` reset the other's depth to its own (Stage 3 review S2; the same class of
+    leak as persona_scope's removed env mirror)."""
+    _ctx.subagent_depth = depth
+
+
 # ---------------------------------------------------------------------------
 # Lifecycle
 # ---------------------------------------------------------------------------
@@ -238,11 +252,11 @@ def push_agent(agent: str, provider: str, model: str, context_sections: dict | N
                       parent=get_current_agent())
     t = get_trace()
     if t is not None:
-        depth = int(os.environ.get("_SUBAGENT_DEPTH", "0"))
+        depth = get_subagent_depth()
         with t._lock:
             # `or not t.pipeline`: a depth>0 agent with no parent to nest under
             # was silently dropped from the trace. That is the fire-and-forget
-            # Diarist, which runs on its own thread with _SUBAGENT_DEPTH=1 but
+            # Diarist, which runs on its own thread at subagent depth 1 but
             # owns a fresh trace with an empty pipeline. Root it instead.
             if depth == 0 or not t.pipeline:
                 t.pipeline.append(rec)

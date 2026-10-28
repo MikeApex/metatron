@@ -47,7 +47,7 @@ STATUSES = ("not_started", "active", "paused", "complete")
 HISTORY_CHAR_BUDGET = 240_000
 
 # The prompt for the opening turn. Written by code, never shown to her as something she said.
-OPENING_PROMPT = ("(She has just signed in for the first time and the app has opened straight "
+OPENING_PROMPT = ("(The user has just signed in for the first time and the app has opened straight "
                   "into this conversation. Open the interview.)")
 
 
@@ -168,7 +168,7 @@ def _tier_state(persona: str, filename: str, waiting: set[str]) -> str:
     if text and not text.startswith(_PLACEHOLDER):
         return "written"
     if filename in waiting:
-        return "awaiting her confirmation in the app"
+        return "awaiting the user's confirmation in the app"
     return "not yet"
 
 
@@ -211,8 +211,8 @@ def _baseline_recorded(persona: str) -> bool:
 # identifier through in the reply.
 _SHAPE_SECTIONS = {"day": "when the day starts and ends", "windows": "when each kind of work goes",
                    "meals": "meals", "routines": "routines", "children_home":
-                   "when anyone in her care is home", "travel_mode": "how she gets around",
-                   "location_sharing": "whether she shares her location"}
+                   "when anyone in their care is home", "travel_mode": "how they get around",
+                   "location_sharing": "whether they share their location"}
 
 
 def _calendar_connected(persona: str) -> bool:
@@ -235,7 +235,7 @@ def coverage_block(persona: str) -> str:
         shape = {}
     sections = dict(_SHAPE_SECTIONS)
     if _calendar_connected(persona):
-        sections["calendars"] = "which calendars are hers, shared or to ignore"
+        sections["calendars"] = "which calendars are theirs, shared or to ignore"
     have = [label for key, label in sections.items() if shape.get(key) not in (None, [], {}, "")]
     missing = [label for key, label in sections.items() if label not in have]
     lines = [
@@ -248,8 +248,8 @@ def coverage_block(persona: str) -> str:
         f"missing: {', '.join(missing) or 'nothing'}",
     ]
     if waiting:
-        lines.append("- Something is waiting for her confirmation in the app; tell her plainly "
-                     "it needs her tap before it is saved.")
+        lines.append("- Something is waiting for the user's confirmation in the app; tell them "
+                     "plainly it needs their tap before it is saved.")
     return "\n".join(lines)
 
 
@@ -262,8 +262,8 @@ def pause_interview() -> str:
     from core.persona import resolve_persona
     persona = resolve_persona()
     if pause(persona):
-        return ("Paused. Everything saved so far is kept; she can pick this up from the app's "
-                "'Continue setting up' button whenever she likes.")
+        return ("Paused. Everything saved so far is kept; the user can pick this up from the "
+                "app's 'Continue setting up' button whenever they like.")
     return "There is no active interview to pause."
 
 
@@ -273,25 +273,25 @@ def finish_interview() -> str:
     persona = resolve_persona()
     waiting = pending_config_files(persona)
     if waiting:
-        return ("Not finished: " + " and ".join(sorted(waiting)) + " is still waiting for her "
-                "confirmation in the app. Ask her to approve it (or say she'd rather leave it), "
-                "then finish.")
+        return ("Not finished: " + " and ".join(sorted(waiting)) + " is still waiting for the "
+                "user's confirmation in the app. Ask them to approve it (or say they'd rather "
+                "leave it), then finish.")
     if _transition(persona, ("active", "paused"), "complete", completed_at=_now()):
-        return "Interview complete. From her next message she is talking to Metatron as usual."
+        return "Interview complete. From their next message they are talking to Metatron as usual."
     return "There is no interview in progress to finish."
 
 
 PAUSE_INTERVIEW_SCHEMA = {
     "name": "pause_interview",
     "description": ("Pause this first conversation because the user wants to stop for now. "
-                    "Everything saved is kept and she can resume from the app."),
+                    "Everything saved is kept and they can resume from the app."),
     "input_schema": {"type": "object", "properties": {}, "required": []},
 }
 
 FINISH_INTERVIEW_SCHEMA = {
     "name": "finish_interview",
     "description": ("Finish this first conversation once the first draft is saved and the user "
-                    "agrees it is done. Refused while anything awaits her confirmation."),
+                    "agrees it is done. Refused while anything awaits their confirmation."),
     "input_schema": {"type": "object", "properties": {}, "required": []},
 }
 

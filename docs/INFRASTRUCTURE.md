@@ -21,7 +21,7 @@ you need *at a specific moment*, and this file is that moment's home.
 > **What deliberately did *not* move: the traps.** `CLAUDE.md` keeps a short
 > `Infrastructure traps` block, because those warnings fail *silently* — the
 > external IP that looks removable and is the sole egress path, the Vertex 4,096-
-> token cache floor, `--persona mike` being load-bearing. You only learn you
+> token cache floor, one strict scheduler per user. You only learn you
 > needed them afterwards. Everything here fails *loudly*: you notice the moment
 > you need it, and you come and find it.
 
@@ -31,13 +31,21 @@ History and reasoning live in [archive/PROJECT_LOG.md](../archive/PROJECT_LOG.md
 
 ## systemd unit files (verbatim)
 
-Both services run as user `md-homefolder`, load env from `.env`, and restart
+All services run as user `md-homefolder`, load env from `.env`, and restart
 automatically on crash. Day-to-day commands: § Service management below.
 
-> **`--persona mike` on both units is load-bearing.** Without it the scheduler
-> resolves no persona and every scheduled session writes to the global `data/`
-> tree while the server writes to `data/personas/mike/`, splitting the user's
-> history across two trees (2026-07-28).
+> **One server, and one scheduler per user (2026-10-28, second-user build).** The
+> server serves every user; each request is bound to its user by its token. Each
+> user's scheduler is its own `metatron-scheduler@<persona>` instance, started by
+> `scripts/accounts.py approve` (§ Accounts below) — `mike`'s included. **Every unit
+> is strict: no `METATRON_PERSONA_STRICT=0`, no fallback.** An unscoped persona lookup
+> in the server raises; in a scheduler it resolves to that unit's own persona, never
+> to another user. `.env` must never set `METATRON_PERSONA`, `METATRON_PERSONA_STRICT`,
+> `METATRON_PERSONA_FALLBACK` or `METATRON_NO_LOCAL_MODELS` — `EnvironmentFile=`
+> overrides `Environment=`, so a persona there would make every scheduler that user.
+>
+> *Until 2026-10-28 this section showed `STRICT=0` + `FALLBACK=mike` on both units; the
+> live units had already dropped them (Mike, on the VM, 2026-10-27).*
 
 **`/etc/systemd/system/metatron-server.service`**
 ```ini
@@ -52,34 +60,86 @@ WorkingDirectory=/home/md-homefolder/multi-model-mcp
 ExecStart=/home/md-homefolder/multi-model-mcp/.venv/bin/python core/server.py --persona mike --port 8001
 Restart=always
 RestartSec=5
-Environment=METATRON_PERSONA_STRICT=0
-Environment=METATRON_PERSONA_FALLBACK=mike
+Environment=PYTHONUNBUFFERED=1
 EnvironmentFile=/home/md-homefolder/multi-model-mcp/.env
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-**`/etc/systemd/system/metatron-scheduler.service`**
+Plus a drop-in, `/etc/systemd/system/metatron-server.service.d/host.conf`:
+`[Service]` / `Environment=METATRON_HOST=vm` (2026-09-24 — the host marker the VM-only Build write
+gate is to key on; confirm with `systemctl show metatron-server -p Environment`). A rebuild must
+recreate it. The scheduler's copy is in its unit text below — the old scheduler drop-in
+directory does not apply to `@` instances.
+
+`--persona mike` on the server no longer means "serve unnamed requests as mike" — a request
+that names no user is refused. It remains for CLI and dev use.
+
+**`/etc/systemd/system/metatron-scheduler@.service`** — the source is
+[infra/systemd/metatron-scheduler@.service](../infra/systemd/metatron-scheduler@.service) (its
+comments carry the reasons); install with
+`sudo cp infra/systemd/metatron-scheduler@.service /etc/systemd/system/ && sudo systemctl daemon-reload`.
 ```ini
 [Unit]
-Description=Metatron Scheduler Daemon
+Description=Metatron Scheduler Daemon (%i)
 After=network.target metatron-server.service
 
 [Service]
 Type=simple
 User=md-homefolder
 WorkingDirectory=/home/md-homefolder/multi-model-mcp
-ExecStart=/home/md-homefolder/multi-model-mcp/.venv/bin/python core/scheduler.py --persona mike
+ExecStart=/home/md-homefolder/multi-model-mcp/.venv/bin/python core/scheduler.py --persona %i
 Restart=always
 RestartSec=10
-Environment=METATRON_PERSONA_STRICT=0
-Environment=METATRON_PERSONA_FALLBACK=mike
+Environment=PYTHONUNBUFFERED=1
+Environment=METATRON_HOST=vm
+Environment=METATRON_PERSONA=%i
+Environment=METATRON_NO_LOCAL_MODELS=1
 EnvironmentFile=/home/md-homefolder/multi-model-mcp/.env
 
 [Install]
 WantedBy=multi-user.target
 ```
+
+- **`METATRON_NO_LOCAL_MODELS=1` is in the unit only, never `.env`** — `.env` reaches the server,
+  which must load the models. With it, a scheduler never loads the embedder (~0.9 GB a user):
+  its sessions and memory indexing run on the server (`/internal/session`, `/internal/index`,
+  `/internal/search`), and a path that would load a model raises in the scheduler's log instead.
+- **Two schedulers for one user would fire every job twice.** At start a scheduler takes
+  `data/personas/<p>/logs/scheduler.lock` and scans `/proc` for any other scheduler for `<p>`
+  that does not hold it (the retired single unit never took the lock). Either refusing exits 1
+  with `REFUSING TO START` in the journal; `RestartSec=10` keeps systemd retrying under its start
+  limit, so it comes up on its own once the other process is gone.
+
+**Migration from the single unit (once, Stage 4 of the second-user build).** The order is the
+protection — the retired unit's process has no lock:
+1. Install the template (above); `sudo systemctl daemon-reload`. Then
+   `sudo systemctl restart 'metatron-scheduler@*'; echo $?` must print `0` with no instance
+   loaded — `deploy.sh` runs that line under `set -e`, so a non-zero here would abort the deploy
+   after its `git pull` and before the server restart. If it is not `0`, stop and fix that first.
+2. `./deploy.sh` (it restarts `'metatron-scheduler@*'` — nothing is loaded yet, so no instance).
+   `deploy.sh` no longer restarts the old unit, so **it is still running the pre-lock code** — the
+   exact process the `/proc` scan exists for. Until step 3 its coordinator sessions fail: it mints
+   old-format tokens the restarted server refuses, logged as 401s in
+   `data/personas/mike/logs/scheduler_errors.json` — expected, not a fault to chase. Minutes;
+   keep steps 2–6 together.
+2a. The `/proc` scan, for real: `sudo systemctl start metatron-scheduler@mike`, then
+   `sudo journalctl -u metatron-scheduler@mike -n 5` shows `REFUSING TO START … a scheduler without
+   the instance lock is already running (pid …)`; then `sudo systemctl stop metatron-scheduler@mike`
+   to end its retry loop.
+3. `sudo systemctl disable --now metatron-scheduler`
+4. `mkdir -p ~/retired-units && sudo mv /etc/systemd/system/metatron-scheduler.service /etc/systemd/system/metatron-scheduler.service.d ~/retired-units/ && sudo systemctl daemon-reload`
+   (the `.service.d` drop-in holding `METATRON_HOST=vm` goes with it — the template carries it now)
+   — **retired, not masked**: `mask` refuses while a real unit file occupies the path, and
+   retiring it makes anything still naming the old unit fail "not found" instead of starting a
+   lock-less duplicate.
+5. `ps -eo pid,args | grep '[s]cheduler.py'` — **no** scheduler for `mike`.
+6. `sudo systemctl enable --now metatron-scheduler@mike`; `ps` again — **exactly one**;
+   `systemctl show metatron-scheduler@mike -p Environment` lists `METATRON_HOST=vm`,
+   `METATRON_PERSONA=mike` and `METATRON_NO_LOCAL_MODELS=1`.
+7. Check: `cd ~/multi-model-mcp && .venv/bin/python core/scheduler.py --persona mike` exits 1 on
+   the lock; `sudo systemctl restart metatron-scheduler` reports the unit not found.
 
 ### Scheduler job config — `day:` vs `days:` drive different layers
 
@@ -310,6 +370,10 @@ VAPID_CLAIMS_SUB=mailto:diamond.mike.mt@gmail.com
 
 On Mac for local dev, `OPENAI_API_KEY` is also exported from `~/.zprofile` as a fallback.
 
+**Never in `.env`:** `METATRON_PERSONA`, `METATRON_PERSONA_STRICT`, `METATRON_PERSONA_FALLBACK`,
+`METATRON_NO_LOCAL_MODELS`. They are per-process and belong in a unit — `.env` reaches every
+process, and `EnvironmentFile=` overrides the unit's own `Environment=` (§ systemd unit files).
+
 > **Account convention (2026-08-03):** all `mike` persona integrations — calendar, mail, push — use the purpose-built account **`diamond.mike.mt@gmail.com`**, not the owner's personal address. Recorded in `config/personas/mike/profile.yaml` as `account_email`. Historical archives predating this are left as written.
 
 ---
@@ -364,6 +428,13 @@ cd /tmp/metatron-apk && python3 -m http.server 8888 --bind 100.70.67.45
 
 Phone must have "Install from unknown sources" enabled for the browser, and Tailscale up.
 Installing over an existing build keeps the login — same app ID.
+
+**Signing in (since the second-user build, 2026-10-28):** a typed username and password — no
+persona dropdown. Mike signs in as `mike` (or any test persona) with the existing server
+password; an account user signs in with their own, after creating the account from *Create an
+account* and being approved (§ Accounts). Tokens changed format, so **every device signs in once
+after the deploy that ships this**, and the APK built before it cannot sign in at all until the
+rebuilt one is sideloaded — the web app works throughout.
 
 > **Two deliberate departures from what this said before 2026-09-03, both of which shipped
 > real exposure.** The old steps were `cd ~/Desktop/multi-model-mcp && python3 -m http.server
@@ -480,8 +551,9 @@ Follow this order. Each step depends on the ones before it.
 - Copy `vertex-key.json` to VM: same command pattern
 
 **8. systemd services**
-- Write both unit files (text above) to `/etc/systemd/system/`
-- `sudo systemctl daemon-reload && sudo systemctl enable metatron-server metatron-scheduler && sudo systemctl start metatron-server metatron-scheduler`
+- Write `metatron-server.service` and `metatron-scheduler@.service` (text above) to `/etc/systemd/system/`
+- `sudo systemctl daemon-reload && sudo systemctl enable --now metatron-server metatron-scheduler@mike`
+- Then one `sudo systemctl enable --now metatron-scheduler@<persona>` per active account (`scripts/accounts.py list`)
 - Verify: `curl https://metatron-vm.tail0acc5d.ts.net:8001/health` → `{"status":"ok"}`
 
 **9. Deploy pipeline on Mac**
@@ -506,7 +578,7 @@ Mac (dev)
   │               └── VM pulls via deploy key (read-only SSH)
   └── ./deploy.sh ──► GCP VM (metatron-vm, us-central1-a)
                             │  metatron-server.service (port 8001)
-                            │  metatron-scheduler.service
+                            │  metatron-scheduler@<persona>.service (one per user)
                             ├──► Vertex AI (Gemini 3.1 Pro / Flash-Lite)
                             │      GCP project: metatron-ai-499810
                             └──► Tailscale VPN (IP: 100.64.226.49)
@@ -603,14 +675,36 @@ sudo journalctl -u metatron-cert-renew.service -n 20
 ## Service management
 
 ```bash
-sudo systemctl status metatron-server metatron-scheduler
-sudo systemctl restart metatron-server metatron-scheduler
+sudo systemctl status metatron-server 'metatron-scheduler@*'
+sudo systemctl restart metatron-server 'metatron-scheduler@*'
 sudo journalctl -u metatron-server -f
-sudo journalctl -u metatron-scheduler -f
+sudo journalctl -u metatron-scheduler@mike -f      # one user's scheduler
+sudo journalctl -u 'metatron-scheduler@*' -f       # every user's
 ```
 
-Both units are enabled at boot, so nothing needs restarting after a VM resume.
+All units are enabled at boot, so nothing needs restarting after a VM resume.
 Unit files verbatim: § systemd unit files above.
+
+### Accounts — approving a user
+
+Account changes run **on the VM, over SSH — never over HTTP** (no server route can approve,
+disable or reset anyone). Mike says "approve <name>" in a Claude Code chat; the chat runs:
+
+```bash
+gcloud compute ssh metatron-vm --zone=us-central1-a --project=metatron-ai-499810 \
+  --tunnel-through-iap --command="cd ~/multi-model-mcp && .venv/bin/python scripts/accounts.py approve <name>"
+```
+
+| Command | Does |
+|---|---|
+| `list` | every account and its status, never a hash |
+| `approve <u>` | pending only: creates the persona on the VM, writes `interview/state.json: not_started` (the first interview opens at her first sign-in; proactive sessions hold until it is finished or paused), copies the sign-up permission into `consents.json`, `enable --now metatron-scheduler@<u>`. Create-only and idempotent — re-run it to finish a step that failed |
+| `reject <u>` / `disable <u>` | status changes and her tokens are revoked; `disable` also stops her scheduler. Nothing is deleted |
+| `enable <u>` | re-admits a disabled user; touches nothing in her persona |
+| `reset-password <u>` | prints a one-time temporary password for Mike to pass on |
+| `seed-consent <u> --scopes … --evidence …` | records permissions given outside the app (used once, for `mike`, before the second-user deploy) |
+
+A pending request shows on the session-start backlog line as `· N account(s) awaiting approval`.
 
 ### Counting a runtime signature from the Mac (no SSH session)
 
@@ -621,7 +715,7 @@ by reading code:
 
 ```bash
 gcloud compute ssh metatron-vm --zone=us-central1-a --project=metatron-ai-499810 \
-  --tunnel-through-iap --command="sudo journalctl -u metatron-server -u metatron-scheduler \
+  --tunnel-through-iap --command="sudo journalctl -u metatron-server -u 'metatron-scheduler@*' \
   --since '7 days ago' --no-pager | grep -c 'PATTERN'"
 ```
 
@@ -656,8 +750,10 @@ path entirely.
 | VM git config | `pull.rebase false` |
 
 `./deploy.sh` from the Mac: `git push origin main` → `gcloud compute ssh
-metatron-vm` → `git pull origin main` → `pip install -q -r requirements.txt` →
-`sudo systemctl restart metatron-server metatron-scheduler`.
+metatron-vm` → `git pull origin main` → CPU-only PyTorch from PyTorch's own index, in its own
+step, then any `nvidia-*` packages uninstalled (the VM has no GPU; the CUDA build was 2.7 GB of
+disk and ~169 MB resident) → `pip install -q -r requirements.txt` →
+`sudo systemctl restart 'metatron-scheduler@*'` → drain, then restart `metatron-server`.
 
 `.git/hooks/post-commit` prints a reminder to deploy. It does **not** auto-deploy
 — deployment is always manual.
