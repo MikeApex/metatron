@@ -1886,7 +1886,14 @@ def _normalise_for_filter(text: str) -> str:
 # Scope is deliberately the agent file plus the constitution, and NOT the persona
 # files: those carry the user's own words, and quoting the user back to himself is
 # ordinary, legitimate behaviour. Including them would fire on correct responses.
+#
+# Quoted spans are left out too (2026-10-28). In these files a "…" line is a sample of
+# what the agent should SAY — goals_interviewer.md:91 scripts the interview's opener —
+# so a model saying it as written was suppressed: the second user's first interview
+# opened on the canned fallback. A sample line discloses nothing; the 2026-08-12 leak
+# was unquoted rule prose, which stays covered.
 _INSTRUCTION_NGRAM = 10
+_QUOTED_SAMPLE_RE = _re.compile(r'"[^"\n]*"|“[^”\n]*”')
 
 # Tier 5. A response that opens by announcing its own reasoning, e.g.
 # "**Step-by-Step Reasoning:**", "My thought process:", "Reasoning:", "Analysis:".
@@ -1928,11 +1935,15 @@ def _instruction_ngrams(agent_name: str) -> frozenset:
                ROOT / "config" / "constitution.md"]
     for path in sources:
         try:
-            words = _re.findall(r'[0-9a-z]+', _normalise_for_filter(path.read_text()))
+            text = _normalise_for_filter(path.read_text())
         except OSError:
             continue
-        for i in range(len(words) - _INSTRUCTION_NGRAM + 1):
-            grams.add(tuple(words[i:i + _INSTRUCTION_NGRAM]))
+        # Shingle each stretch between quoted samples on its own, so no n-gram spans a
+        # removed sample and stitches its neighbours together.
+        for segment in _QUOTED_SAMPLE_RE.split(text):
+            words = _re.findall(r'[0-9a-z]+', segment)
+            for i in range(len(words) - _INSTRUCTION_NGRAM + 1):
+                grams.add(tuple(words[i:i + _INSTRUCTION_NGRAM]))
     return frozenset(grams)
 
 

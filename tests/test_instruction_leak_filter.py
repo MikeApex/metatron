@@ -112,6 +112,30 @@ def main() -> int:
                         "no_such_agent_xyz")
           == "A perfectly ordinary sentence about lunch plans today.")
 
+    # --- quoted sample lines are the agent's to say (2026-10-28) -------------
+    # The second user's first interview opened on the canned fallback: the model said
+    # goals_interviewer.md:91's scripted opener as written, and tier 4 matched it
+    # against the file it came from. A "…" line in an agent file is a sample of speech.
+    import re
+    opener = ("I want to get a better sense of your life — what's going on, what you're "
+              "working toward, and what you'd change if you could. No particular order. "
+              "What's on your mind?")
+    check("the interviewer's scripted opener reaches the user",
+          filter_output(opener, "goals_interviewer") == opener)
+    for agent in ("goals_interviewer", "synthesizer"):
+        text = (Path(__file__).parent.parent / "config" / "agents" / f"{agent}.md").read_text()
+        samples = [m.group(1) for m in re.finditer(r'"([^"\n]*)"', text)
+                   if len(re.findall(r"[0-9a-z]+", m.group(1).lower())) >= _INSTRUCTION_NGRAM]
+        blocked = [s for s in samples if filter_output(s, agent) != s]
+        check(f"all {len(samples)} quoted sample lines in {agent}.md pass", not blocked)
+        if blocked:
+            print(f"        first blocked: {blocked[0][:80]!r}")
+    # Rule prose, which is unquoted, is still covered for the interviewer too.
+    rule = ("If the user wants to stop for now, call `pause_interview()` and let them know "
+            "they can pick it up whenever they like")
+    check("the interviewer's unquoted rule prose is still suppressed",
+          filter_output(rule, "goals_interviewer") == _CANNED_FALLBACK)
+
     print()
     failed = [label for ok, label in _results if not ok]
     if failed:
