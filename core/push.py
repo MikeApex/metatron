@@ -299,15 +299,30 @@ def _store(title: str, body: str, persona: str, tasks: list[dict] | None) -> str
 _session = None
 
 
+def _fcm_credentials():
+    """The sender's identity, kept separate from Vertex's on purpose (Mike, 2026-10-28).
+
+    FCM_CREDENTIALS set → that service-account key file, scoped to FCM only. Unset → the VM's
+    default credential (today the Vertex account, granted the FCM sender role in the push-only
+    Firebase project, FCM_PROJECT_ID). Leaving Vertex is then one .env line, not a code change:
+    docs/INFRASTRUCTURE.md § Push notifications (FCM)."""
+    path = os.environ.get("FCM_CREDENTIALS", "").strip()
+    if path:
+        from google.oauth2 import service_account
+        creds = service_account.Credentials.from_service_account_file(path, scopes=[_FCM_SCOPE])
+        return creds, creds.project_id
+    import google.auth
+    return google.auth.default(scopes=[_FCM_SCOPE])
+
+
 def _fcm_post(token: str, data: dict) -> tuple[int, str]:
-    """FCM HTTP v1, authenticated as the VM's own service account (GOOGLE_APPLICATION_CREDENTIALS,
-    granted the FCM sender role — no second key). Data-only and high priority: the app's native
+    """FCM HTTP v1, sent to the push-only Firebase project (FCM_PROJECT_ID) — not the project
+    the VM runs in, so Firebase never touches it. Data-only and high priority: the app's native
     service, not the system tray, decides what is shown."""
     global _session
-    import google.auth
     from google.auth.transport.requests import AuthorizedSession
     if _session is None:
-        creds, project = google.auth.default(scopes=[_FCM_SCOPE])
+        creds, project = _fcm_credentials()
         _session = (AuthorizedSession(creds),
                     os.environ.get("FCM_PROJECT_ID") or project
                     or os.environ.get("GOOGLE_CLOUD_PROJECT", ""))

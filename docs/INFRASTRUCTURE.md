@@ -366,6 +366,10 @@ DEPLOYMENT_MODE=cloud          # loads routing_cloud.yaml (Vertex); omit or set 
 
 # Web Push
 VAPID_CLAIMS_SUB=mailto:diamond.mike.mt@gmail.com
+
+# Android push (FCM) — § Push notifications (FCM)
+FCM_PROJECT_ID=<the push-only Firebase project's id>
+# FCM_CREDENTIALS=/home/md-homefolder/multi-model-mcp/fcm-sender-key.json   # only once off Vertex
 ```
 
 On Mac for local dev, `OPENAI_API_KEY` is also exported from `~/.zprofile` as a fallback.
@@ -377,6 +381,25 @@ process, and `EnvironmentFile=` overrides the unit's own `Environment=` (§ syst
 > **Account convention (2026-08-03):** all `mike` persona integrations — calendar, mail, push — use the purpose-built account **`diamond.mike.mt@gmail.com`**, not the owner's personal address. Recorded in `config/personas/mike/profile.yaml` as `account_email`. Historical archives predating this are left as written.
 
 ---
+
+## Push notifications (FCM)
+
+The Android app is woken by Firebase Cloud Messaging (day planner Stage C, 2026-10-28). The VM
+sends a **data-only ping carrying a random message id and nothing else**; the app fetches the
+text from the VM over Tailscale with its sign-in (`core/push.py`, `GET /push/message/{id}`).
+Sends and the phone's fetches are logged per persona, content-free, in
+`data/personas/{p}/push_log.jsonl` — **the fetch is the delivery signal; no meter reports FCM.**
+
+| Property | Value |
+|---|---|
+| Firebase project | **a separate, push-only project** (`FCM_PROJECT_ID`), free Spark plan, no billing, Analytics off. **Firebase is NOT added to `metatron-ai-499810`, deliberately** — adding Firebase to a project is irreversible short of deleting the project, which here means the VM (Mike, 2026-10-28) |
+| Android app | `com.mike.metatron`, debug-cert SHA-1 `C3:EA:24:BD:61:72:FF:F5:F2:A3:92:CC:BC:A6:A9:3D:68:0B:43:45` (this Mac's `~/.android/debug.keystore`) |
+| `google-services.json` | `android/app/`, gitignored by name; holds the app's API key, restricted to the package + SHA-1 above |
+| Sender identity (now) | the VM's default credential — `metatron-vertex@…` — granted `roles/firebasecloudmessaging.admin` **in the push project** (cross-project grant; no second key) |
+| Sender identity (off Vertex) | `FCM_CREDENTIALS=` a key for a service account inside the push project, FCM role only. Set it **before** retiring the Vertex account or its key — otherwise every send fails (`failed` in `push_log.jsonl`) |
+| What reaches Google | the ping (an id), the push token / installation id, the SDK's version heartbeat. Delivery metrics and Analytics are pinned off in the manifest (`fac4c4c`) |
+| Remove it | delete the push project; the app falls back to "open the app" with no channel; nothing in `metatron-ai-499810` changes |
+
 ---
 
 ## Android app — build and sideload
