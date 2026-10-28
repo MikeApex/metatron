@@ -27,6 +27,7 @@ quiet_hours:
 schedules:
   morning_brief:
     enabled: true
+    weekly_review_on: monday   # week-ahead digest rides Monday's brief
     time: "07:30"
     days: weekdays          # weekdays | daily | weekend
     agent: coordinator
@@ -35,7 +36,15 @@ schedules:
 
   companion_checkin:
     enabled: true
-    interval_minutes: 180
+    # interval_minutes is how often the gates are *evaluated*, not how often a check-in
+    # is sent — the two gates below decide that. Polling costs nothing (local file
+    # reads, no model call), so a short poll means the check-in arrives promptly once
+    # the user has gone quiet, instead of a fixed 3-hour tick that might land
+    # mid-conversation. Carried from Mike's own file into the baseline 2026-10-27
+    # (multi-user build, Stage 0): a design improvement, not a personal preference.
+    interval_minutes: 30
+    quiet_after_user_minutes: 60    # don't interrupt — wait for a lull
+    min_gap_minutes: 180            # and never more than one per 3 hours
     days: daily
     agent: coordinator
     # Deliberately light, and this is the baseline every new persona inherits.
@@ -106,6 +115,14 @@ schedules:
   #
   # To change one for a single persona, define the same key in that persona's
   # scheduler.yaml — persona config wins outright, including `enabled: false`.
+  #
+  # ONE EXCEPTION, listed on purpose (2026-10-27, multi-user build § 4.6): build_tick
+  # is a default job that rewrites the repo-tracked config/build/registry.yaml without a
+  # lock, so it stays on for mike only. Every persona provisioned from this template
+  # turns it off here. When Build capabilities serve other users, that registry write
+  # needs a lock first — then this entry can go.
+  build_tick:
+    enabled: false
 
   # Reads the next 24h of calendar, recognises travel (flight numbers, named TfL
   # lines), and checks each against get_flight_status / get_tfl_status. A function

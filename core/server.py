@@ -35,8 +35,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import aiosqlite
 import edge_tts
-from fastapi import (FastAPI, File, HTTPException, Request, Response, UploadFile, WebSocket,
-                     WebSocketDisconnect)
+from fastapi import (BackgroundTasks, FastAPI, File, HTTPException, Request, Response,
+                     UploadFile, WebSocket, WebSocketDisconnect)
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -44,20 +45,21 @@ from pydantic import BaseModel
 
 from core import attachments as attachments_mod
 from core import auth
+from core import interview as interview_mod
+from core import tts_worker
 from core.orchestrator import run_pipeline_session_stream, run_session
-from core.persona import persona_data_dir
+from core.persona import PersonaError, persona_data_dir, persona_scope, validate_persona_name
 
-KOKORO_VOICE = "af_heart"
-KOKORO_SPEAK = Path(__file__).parent.parent / "tools" / "kokoro" / "speak.py"
-KOKORO_PYTHON = Path(__file__).parent.parent / ".venv" / "bin" / "python"
 EDGE_VOICE = "en-US-JennyNeural"
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Life Manager")
 
-# Read at module import time from env var set before uvicorn.run()
-DEFAULT_PERSONA: str | None = os.environ.get("SERVER_PERSONA") or None
+# There is no default persona. Until 2026-10-27 a request that named nobody was served as
+# whoever `--persona` named (Mike), and the request's own claim decided the rest — fine with
+# one user, and the root of every isolation defect with two (plan § 3.1-3.2). Every route now
+# takes its persona from the caller's token through `bound_persona()`, and nothing else.
 
 DB_PATH = Path(__file__).parent.parent / "data" / "conversations" / "metatron.db"
 
@@ -93,6 +95,23 @@ app.add_middleware(
 STATIC_DIR = Path(__file__).parent.parent / "static"
 
 
+@app.exception_handler(RequestValidationError)
+async def _validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """
+    A malformed request gets the names of the fields that failed — never what was sent.
+
+    FastAPI's default 422 body carries an `input` field holding the submitted value, and
+    for a missing field that is the whole body (plan § 4.10, review C2). Three routes take
+    a password — /auth/login, /auth/register and, from Stage 2, /connections/google — and a
+    default 422 would show it back on screen. App-wide so a route added later is covered.
+    """
+    fields = sorted({".".join(str(x) for x in err.get("loc", ()) if x != "body")
+                     for err in exc.errors()})
+    return JSONResponse(status_code=422,
+                        content={"detail": "Some fields are missing or invalid.",
+                                 "fields": [f for f in fields if f]})
+
+
 @app.middleware("http")
 async def require_auth(request: Request, call_next):
     """
@@ -104,6 +123,11 @@ async def require_auth(request: Request, call_next):
 
     Does NOT cover /ws — Starlette never runs HTTP middleware for a WebSocket
     handshake. That path is gated inside the endpoint; see websocket_endpoint().
+
+    It also decides the two things no route may get wrong by forgetting (plan § 4.3):
+    the caller's identity is put on `request.state.identity` for `bound_persona()`, and
+    The Book (`/monitor/*`) and the server-to-server routes (`/internal/*`) refuse an
+    account user's token outright.
     """
     # CORS preflight carries no credentials by design; let CORSMiddleware answer it.
     if request.method == "OPTIONS" or auth.is_open_path(request.url.path):
@@ -113,33 +137,136 @@ async def require_auth(request: Request, call_next):
         request.headers.get("authorization"),
         request.cookies.get(auth.COOKIE_NAME),
     )
-    if not auth.verify_token(token):
+    identity = auth.decode_token(token)
+    if identity is None:
         return JSONResponse({"detail": "Authentication required."}, status_code=401)
+    path = request.url.path
+    if (path.startswith("/monitor/") or path in _ADMIN_ONLY_PATHS) and not identity.is_admin_or_service:
+        return JSONResponse({"detail": "Not available to this account."}, status_code=403)
+    if path.startswith("/internal/") and identity.role != "service":
+        return JSONResponse({"detail": "Not available to this account."}, status_code=403)
+    request.state.identity = identity
     return await call_next(request)
 
 
+# FastAPI's generated API docs list every route, /internal/* included — Mike's, not hers.
+_ADMIN_ONLY_PATHS = frozenset({"/docs", "/docs/oauth2-redirect", "/redoc", "/openapi.json"})
+
+
+def bound_persona(identity: "auth.Identity", named: str | None) -> str:
+    """
+    The persona a request is for. **The one place this is decided** (plan § 4.3).
+
+    - A `user` or `admin` token is bound to one persona. A request that names a different
+      one is refused (403) — never quietly served as either.
+    - A `service` token is the internal clients' (scheduler, The Book, scripts). It names
+      the persona per request, and one that names none is refused (400): there is no
+      default to fall back to, by design.
+    """
+    named = (named or "").strip() or None
+    if identity.role in ("user", "admin"):
+        if named and named != identity.persona:
+            raise HTTPException(status_code=403, detail="That isn't your account.")
+        return identity.persona
+    if not named:
+        raise HTTPException(status_code=400, detail="This request must name a persona.")
+    try:
+        return validate_persona_name(named)
+    except PersonaError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+def request_persona(request: Request, named: str | None = None) -> str:
+    """`bound_persona()` for an HTTP route — the identity the middleware attached."""
+    return bound_persona(request.state.identity, named)
+
+
 class LoginRequest(BaseModel):
+    username: str = ""
     password: str
+
+
+def _persona_exists(name: str) -> bool:
+    """A persona Mike can sign in as with the admin password: one with an identity file."""
+    from core.persona import persona_md
+    try:
+        return persona_md(name).exists()
+    except PersonaError:
+        return False
+
+
+async def _refuse_login(detail: str = "Incorrect username or password.",
+                        status_code: int = 401):
+    # Awaited here rather than in core.auth so the delay never blocks the event loop.
+    auth.note_login_failure()
+    delay = auth.failure_delay()
+    if delay:
+        await asyncio.sleep(delay)
+    raise HTTPException(status_code=status_code, detail=detail)
+
+
+# A fixed hash for the timing-equaliser in auth_login — never matches anything real.
+_DUMMY_HASH = ("scrypt$16384$8$1$AAAAAAAAAAAAAAAAAAAAAA==$"
+               "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+_MAX_PASSWORD_LENGTH = 256   # scrypt over a multi-MB body is a cheap DoS (review F8)
+
+# Said only after a correct password, so a wrong guess never learns whether a name waits.
+_STATUS_REFUSALS = {
+    "pending": "Your account is waiting for approval.",
+    "rejected": "This request wasn't approved.",
+    "disabled": "This account is switched off.",
+}
 
 
 @app.post("/auth/login")
 async def auth_login(req: LoginRequest, response: Response) -> dict:
     """
-    Exchange the shared password for a session token.
+    Exchange a username and password for a session token bound to that one persona.
+
+    Two kinds of sign-in (plan § 4.1):
+      - an **account** (`core/accounts.py`) with its own password → a `user` token for
+        that account. The admin password never opens an account (D1): Mike reads an
+        account user's history through The Book, but cannot write into it as her.
+      - the **admin password** with the name of an existing persona that is not an
+        account (`mike`, the test personas) → an `admin` token for that persona.
 
     Returns the token in the body *and* sets it as a cookie. Both carry the same value:
     the cookie serves the same-origin browser, the body serves the Android app, which is
     cross-origin and so never receives a SameSite=Lax cookie.
     """
-    if not auth.check_password(req.password):
-        # Awaited here rather than inside check_password so the delay never blocks the
-        # event loop for other requests.
-        delay = auth.failure_delay()
-        if delay:
-            await asyncio.sleep(delay)
-        raise HTTPException(status_code=401, detail="Incorrect password.")
+    username = (req.username or "").strip().lower()
+    if not username or not req.password or len(req.password) > _MAX_PASSWORD_LENGTH:
+        await _refuse_login()
 
-    token = auth.issue_token()
+    from core import accounts as accounts_mod
+    try:
+        account = accounts_mod.get(username)
+    except Exception:
+        logger.exception("[auth] account store unreadable at login")
+        raise HTTPException(status_code=503, detail="Sign-in is unavailable right now.")
+
+    if account is not None:
+        entry = await asyncio.to_thread(accounts_mod.authenticate, username, req.password)
+        if entry is None:
+            await _refuse_login()
+        if entry.get("status") != "active":
+            auth.note_login_success()   # the password was right; this is not a guess
+            raise HTTPException(status_code=403,
+                                detail=_STATUS_REFUSALS.get(entry.get("status"),
+                                                            "This account can't sign in."))
+        token = auth.issue_token(persona=username, role="user",
+                                 cred_version=int(entry.get("cred_version") or 0))
+        role = "user"
+    elif auth.is_admin_password(req.password) and _persona_exists(username):
+        token = auth.issue_token(persona=username, role="admin")
+        role = "admin"
+    else:
+        # Spend the same scrypt an account check would, so a refusal's timing does not
+        # say whether the name is an account (review F4).
+        await asyncio.to_thread(accounts_mod.verify_password, req.password, _DUMMY_HASH)
+        await _refuse_login()
+
+    auth.note_login_success()
     response.set_cookie(
         auth.COOKIE_NAME, token,
         httponly=True,      # unreachable from JS, so an XSS in the PWA cannot lift it
@@ -148,7 +275,72 @@ async def auth_login(req: LoginRequest, response: Response) -> dict:
         max_age=auth.TOKEN_TTL_SECONDS,
         path="/",
     )
-    return {"token": token, "expires_in": auth.TOKEN_TTL_SECONDS}
+    return {"token": token, "expires_in": auth.TOKEN_TTL_SECONDS,
+            "persona": username, "role": role}
+
+
+@app.get("/auth/notice")
+async def auth_notice() -> dict:
+    """The sign-up notice (D11) — open, because it is read before an account exists. The
+    version travels back in the sign-up request, so the record names the text she saw."""
+    from core.consent import current_text
+    version, text = current_text("base_configuration")
+    return {"scope": "base_configuration", "text_version": version, "text": text}
+
+
+class RegisterRequest(BaseModel):
+    username: str
+    display_name: str
+    password: str
+    timezone: str = ""
+    city: str = ""
+    consent: dict = {}
+
+
+# Sign-up is the one open route that writes. Bounded per server process (plan § 4.4):
+# at most 10 attempts an hour, and the same escalating delay as a failed sign-in after a
+# run of refusals. MAX_PENDING in core/accounts.py caps what can be waiting at once.
+_REGISTER_WINDOW_SECONDS = 3600
+_REGISTER_MAX_PER_WINDOW = 10
+_register_attempts: deque = deque()
+_register_failures = 0
+
+
+@app.post("/auth/register")
+async def auth_register(req: RegisterRequest) -> dict:
+    """
+    Ask for an account. Creates a `pending` entry and nothing else — no persona, no
+    token, no scheduler. Mike approves it on the VM (`scripts/accounts.py approve`).
+
+    The request must carry the sign-up permission the app's notice records (D11):
+    `consent: {"scope": "base_configuration", "text_version": "<shown>"}`.
+    """
+    global _register_failures
+    now = datetime.now(timezone.utc).timestamp()
+    while _register_attempts and now - _register_attempts[0] > _REGISTER_WINDOW_SECONDS:
+        _register_attempts.popleft()
+    if len(_register_attempts) >= _REGISTER_MAX_PER_WINDOW:
+        raise HTTPException(status_code=429, detail="Try again later.")
+    _register_attempts.append(now)
+
+    from core import accounts as accounts_mod
+    from core.consent import CURRENT_VERSIONS
+    # The record must name a text she could actually have been shown — the current one.
+    if (req.consent or {}).get("text_version") != CURRENT_VERSIONS["base_configuration"]:
+        req.consent = {}   # register() refuses with the plain "read and accept" message
+    try:
+        await asyncio.to_thread(
+            accounts_mod.register, req.username, req.display_name, req.password,
+            req.timezone, req.consent, req.city)
+    except accounts_mod.AccountError as e:
+        _register_failures += 1
+        if _register_failures > 1:
+            await asyncio.sleep(min(0.25 * (2 ** min(_register_failures - 1, 5)), 5.0))
+        status = {"taken": 409, "limit": 429}.get(e.code, 400)
+        raise HTTPException(status_code=status, detail=str(e))
+    _register_failures = 0
+    return {"status": "pending",
+            "message": "Request sent. You can sign in once it's approved."}
 
 
 # ---------------------------------------------------------------------------
@@ -339,6 +531,13 @@ async def _init_db() -> None:
             await db.execute("ALTER TABLE exchanges ADD COLUMN attachments TEXT")
         except Exception:
             pass  # column already present
+        # Which conversation an exchange belongs to. NULL is the ordinary pipeline;
+        # 'interview' marks the first interview's turns (multi-user plan § 4.7), so its
+        # whole transcript can be handed back to the interviewer as history.
+        try:
+            await db.execute("ALTER TABLE exchanges ADD COLUMN channel TEXT")
+        except Exception:
+            pass  # column already present
 
         # The index of stored files. The JSON sidecar written beside each file is the
         # human-readable record; this is what makes an id lookup O(1) at send time and
@@ -370,6 +569,30 @@ async def _load_history_from_db(persona: str) -> list[dict]:
     pairs: list[dict] = []
     for row in reversed(rows):
         pairs.append({"role": "user", "content": row["user"]})
+        pairs.append({"role": "assistant", "content": row["assistant"]})
+    return pairs
+
+
+_APP_STARTED_TURN = "(The app started this turn.)"
+
+
+async def _interview_history(persona: str) -> list[dict]:
+    """
+    The whole interview so far as {role, content} pairs — what the interviewer gets as
+    history (plan § 4.7), not the pipeline's five turns. The opening and a resume were
+    started by the app, so their stored user side is empty; the model is shown the prompt
+    that started them instead.
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT user, assistant FROM exchanges WHERE persona=? AND channel='interview' "
+            "ORDER BY id ASC", (persona,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+    pairs: list[dict] = []
+    for row in rows:
+        pairs.append({"role": "user", "content": row["user"] or _APP_STARTED_TURN})
         pairs.append({"role": "assistant", "content": row["assistant"]})
     return pairs
 
@@ -455,16 +678,17 @@ async def _get_exchange(persona: str, exchange_id: str) -> dict | None:
 
 async def _save_exchange(persona: str, exchange_id: str, user: str, assistant: str,
                          proactive: bool = False,
-                         attachments: list[dict] | None = None) -> int:
+                         attachments: list[dict] | None = None,
+                         channel: str | None = None) -> int:
     """Persist a completed exchange. Returns the new row id."""
     ts = datetime.utcnow().isoformat() + "Z"
     meta = json.dumps(_public_attachments(attachments)) if attachments else None
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute(
             "INSERT OR IGNORE INTO exchanges "
-            "(exchange_id, persona, user, assistant, ts, proactive, attachments) "
-            "VALUES (?,?,?,?,?,?,?)",
-            (exchange_id, persona, user, assistant, ts, 1 if proactive else 0, meta),
+            "(exchange_id, persona, user, assistant, ts, proactive, attachments, channel) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (exchange_id, persona, user, assistant, ts, 1 if proactive else 0, meta, channel),
         )
         await db.commit()
         return cursor.lastrowid or 0
@@ -632,14 +856,12 @@ async def _startup() -> None:
             from core.voice_pipeline import _get_whisper
             _get_whisper()
 
-        def _load_kokoro() -> None:
-            if _kokoro_available():
-                _get_kokoro()
-
         for name, fn, executor in (
             ("embedding", _load_embedder, _INDEX_EXECUTOR),
             ("whisper", _load_whisper, _STT_EXECUTOR),
-            ("kokoro", _load_kokoro, _TTS_EXECUTOR),
+            # Not Kokoro, on purpose (plan § 4.12.2, D14): the voice model is the server's
+            # memory growth, so it loads only in core/tts_worker.py's helper process, on the
+            # first spoken reply, and leaves with that process after 10 idle minutes.
         ):
             try:
                 t0 = datetime.now()
@@ -653,15 +875,49 @@ async def _startup() -> None:
     asyncio.create_task(_warm())
 
 
+@app.on_event("shutdown")
+async def _shutdown() -> None:
+    # Belt and braces: the helper also exits on its parent-death signal and when its pipe
+    # closes, but a clean stop should not wait on either.
+    tts_worker.shutdown()
+
+
+def _refuse_side_door(request: Request, persona: str, agent: str) -> None:
+    """
+    /session and /session/stream predate accounts and take any agent name. For an account
+    user they are not a way round the app's own rules (Stage 2 review F2): only the ordinary
+    pipeline, and not while her interview is running — that conversation goes through /ws,
+    where it is recorded as the interview. Admin and service callers are unchanged.
+    """
+    if request.state.identity.role != "user":
+        return
+    if agent != "coordinator":
+        raise HTTPException(status_code=403, detail="Not available to this account.")
+    if interview_mod.status(persona) == "active":
+        raise HTTPException(status_code=409, detail="Finish or pause setting up first.")
+
+
+# Background tasks the server starts and nobody awaits. asyncio keeps only a weak reference to
+# a task, so one held nowhere can be collected mid-run (Stage 2 review F5).
+_BG_TASKS: set = set()
+
+
+def _spawn(coro) -> None:
+    task = asyncio.create_task(coro)
+    _BG_TASKS.add(task)
+    task.add_done_callback(_BG_TASKS.discard)
+
+
 @app.post("/session", response_model=SessionResponse)
-async def session(req: SessionRequest) -> SessionResponse:
+async def session(req: SessionRequest, request: Request) -> SessionResponse:
     """Run a single orchestrator turn and return the text response."""
     if not req.input.strip():
         raise HTTPException(status_code=400, detail="Input is empty.")
+    persona = request_persona(request, req.persona)
+    _refuse_side_door(request, persona, req.agent)
     try:
         agent = req.agent
-        persona = req.persona or DEFAULT_PERSONA
-        history = _session_history.setdefault(persona or "__default__", []) if agent == "coordinator" else None
+        history = _session_history.setdefault(persona, []) if agent == "coordinator" else None
         loop = asyncio.get_running_loop()
         response = await loop.run_in_executor(
             None, lambda: run_session(agent, req.input, persona=persona, provider=req.provider, history=history)
@@ -673,7 +929,7 @@ async def session(req: SessionRequest) -> SessionResponse:
 
 
 @app.post("/session/stream")
-async def session_stream(req: SessionRequest):
+async def session_stream(req: SessionRequest, request: Request):
     """
     Streaming variant of /session — Synthesizer output arrives as Server-Sent Events.
 
@@ -700,8 +956,9 @@ async def session_stream(req: SessionRequest):
     if req.agent != "coordinator":
         raise HTTPException(status_code=400, detail="Streaming only supported for agent=coordinator.")
 
-    persona = req.persona or DEFAULT_PERSONA
-    history = _session_history.setdefault(persona or "__default__", [])
+    persona = request_persona(request, req.persona)
+    _refuse_side_door(request, persona, req.agent)
+    history = _session_history.setdefault(persona, [])
 
     async def sse_generator():
         global _active_streams
@@ -789,12 +1046,214 @@ _retracted_exchanges: dict[tuple[str, str], dict] = {}
 _RETRACTED_KEEP = 200
 
 
+def _after_interview_turn(persona: str, user: str, reply: str) -> None:
+    """Keep the pipeline's short history current, so that once she leaves the interview the
+    pipeline's recent turns include its last ones ("as we were saying…" works)."""
+    history = _session_history.setdefault(persona, [])
+    history.extend([{"role": "user", "content": user or _APP_STARTED_TURN},
+                    {"role": "assistant", "content": reply}])
+    del history[:-10]
+
+
+async def _broadcast_interview_status(persona: str) -> None:
+    """Every device of hers learns the interview's state — the chips follow it."""
+    status = interview_mod.status(persona)
+    if status is not None:
+        await manager.broadcast(persona, {"type": "interview", "status": status})
+
+
+async def _interview_proactive_turn(persona: str, prompt: str, opening: bool = False) -> None:
+    """
+    An interviewer turn the app started — the opening, or picking up after *Continue setting
+    up*. Saved and broadcast as a proactive exchange with an empty user side, so no device
+    renders the prompt as something she said.
+    """
+    loop = asyncio.get_running_loop()
+    try:
+        history = await _interview_history(persona)
+        reply = await loop.run_in_executor(
+            None, interview_mod.run_turn, persona, prompt, history)
+    except Exception:
+        logger.exception(f"[interview] proactive turn failed for {persona}")
+        if opening:
+            # Her next connection claims it again and retries (Stage 2 review F4) — and every
+            # device hears it, or the chip would keep offering "Finish later" (verify).
+            interview_mod.release_start(persona)
+            await _broadcast_interview_status(persona)
+        return
+    exchange_id = f"interview-{uuid.uuid4().hex[:12]}"
+    new_id = await _save_exchange(persona, exchange_id, "", reply, proactive=True,
+                                  channel="interview")
+    _log_conversation("", reply, interview_mod.AGENT, persona, proactive=True)
+    _after_interview_turn(persona, "", reply)
+    await manager.broadcast(persona, {
+        "type": "message", "id": new_id, "exchange_id": exchange_id, "user": "",
+        "assistant": reply, "ts": datetime.utcnow().isoformat() + "Z", "attachments": [],
+        "proactive": True,
+    })
+    await _broadcast_interview_status(persona)
+
+
+class InterviewRequest(BaseModel):
+    persona: str | None = None
+
+
+@app.get("/interview")
+async def interview_status(request: Request, persona: str | None = None) -> dict:
+    """The interview's state for the app's chips. `null` for anyone without an interview."""
+    return {"status": interview_mod.status(request_persona(request, persona))}
+
+
+@app.post("/interview/pause")
+async def interview_pause(req: InterviewRequest, request: Request) -> dict:
+    """*Finish later*: her next message goes to Metatron as usual; nothing is lost."""
+    persona = request_persona(request, req.persona)
+    if not interview_mod.pause(persona):
+        raise HTTPException(status_code=409, detail="There is no active interview to pause.")
+    await _broadcast_interview_status(persona)
+    return {"status": "paused"}
+
+
+@app.post("/interview/resume")
+async def interview_resume(req: InterviewRequest, request: Request,
+                           background: BackgroundTasks) -> dict:
+    """*Continue setting up*: active again, and the interviewer picks up where coverage says
+    things stand — it speaks first, so she is not left wondering what to say."""
+    persona = request_persona(request, req.persona)
+    if not interview_mod.resume(persona):
+        raise HTTPException(status_code=409, detail="There is no paused interview to resume.")
+    await _broadcast_interview_status(persona)
+    # After the response, not a loose task: the chip answers at once, and the turn is owned
+    # by the request's lifecycle rather than left for the loop to drop.
+    background.add_task(_interview_proactive_turn, persona,
+                        "(She has come back to continue setting up. Pick up where things stand.)")
+    return {"status": "active"}
+
+
+# ---------------------------------------------------------------------------
+# Her permissions and her Google connection (plan § 4.10, § 4.11 — D9, Mike 2026-10-27:
+# "She should be notified through the app and provide permission herself.")
+#
+# Every route here is bound to the caller's own persona. The permission records are the
+# enforcement, in Python: Connect refuses without `correspondence_read`, tone profiling
+# refuses without `tone_profile` (tools/tone.py), and withdrawing acts at once.
+# ---------------------------------------------------------------------------
+
+class ConsentGrant(BaseModel):
+    text_version: str
+    persona: str | None = None
+
+
+def _consent_view(persona: str) -> dict:
+    from core import consent
+    out = {}
+    for scope in consent.APP_SCOPES:
+        rec = consent.current(scope, persona)
+        version, text = consent.current_text(scope)
+        out[scope] = {"granted": rec is not None,
+                      "granted_at": rec.get("granted_at") if rec else None,
+                      "text_version": version, "text": text}
+    return out
+
+
+@app.get("/consents")
+async def consents_get(request: Request, persona: str | None = None) -> dict:
+    """Her permissions and the exact text of each — what the Connections panel shows."""
+    persona_key = request_persona(request, persona)
+    return {"consents": await asyncio.to_thread(_consent_view, persona_key)}
+
+
+@app.post("/consents/{scope}")
+async def consents_grant(scope: str, req: ConsentGrant, request: Request) -> dict:
+    """Her tap on a permission screen. The record names the text version she was shown."""
+    from core import consent
+    persona_key = request_persona(request, req.persona)
+    # Her permission is hers to give (D9): a record says SHE tapped, so an admin or service
+    # token — Mike signed in as her persona — cannot write one (Stage 2 review F6). Withdrawing
+    # stays open to every bound caller; refusing a withdrawal could only keep data flowing.
+    if request.state.identity.role != "user":
+        raise HTTPException(status_code=403, detail="Only the account holder can give this.")
+    if scope not in consent.APP_SCOPES:
+        raise HTTPException(status_code=404, detail="No such permission.")
+    if req.text_version != consent.CURRENT_VERSIONS[scope]:
+        raise HTTPException(status_code=409, detail="That notice has changed — please read it again.")
+    rec = await asyncio.to_thread(consent.grant, scope, persona_key, req.text_version)
+    return {"scope": scope, "granted_at": rec["granted_at"]}
+
+
+def _withdraw_blocking(scope: str, persona: str) -> dict:
+    from core import consent
+    withdrew = consent.withdraw(scope, persona)
+    effect: dict = {"withdrawn": withdrew}
+    with persona_scope(persona):
+        if scope == "correspondence_read":
+            # Reading her mail and calendar was what connecting allowed — so it ends here.
+            from core.connections import disconnect_google
+            effect["disconnected"] = bool(disconnect_google(persona))
+        elif scope == "tone_profile":
+            # Review P2: withdrawal removes what was learned, not just future learning.
+            from tools.tone import forget_tone_profiles
+            effect["profiles_removed"] = forget_tone_profiles(persona)
+    return effect
+
+
+@app.delete("/consents/{scope}")
+async def consents_withdraw(scope: str, request: Request, persona: str | None = None) -> dict:
+    from core import consent
+    persona_key = request_persona(request, persona)
+    if scope not in consent.APP_SCOPES:
+        raise HTTPException(status_code=404, detail="No such permission.")
+    return await asyncio.to_thread(_withdraw_blocking, scope, persona_key)
+
+
+class GoogleConnectRequest(BaseModel):
+    address: str
+    app_password: str
+    persona: str | None = None
+
+
+@app.get("/connections")
+async def connections_get(request: Request, persona: str | None = None) -> dict:
+    """Connection status — the address, calendars found and when checked. Never the password."""
+    from core.connections import status
+    persona_key = request_persona(request, persona)
+    return {"google": await asyncio.to_thread(status, persona_key)}
+
+
+@app.post("/connections/google")
+async def connections_google(req: GoogleConnectRequest, request: Request) -> dict:
+    """
+    Test the Google address and app password, and only if both CalDAV and IMAP work, write
+    her calendar and mail settings — the password to credentials.yaml alone (§ 4.10).
+
+    It is an HTTP route, not a chat message, so the password never reaches a model, a
+    conversation log, a trace or a quality event; the app-wide 422 handler never echoes it.
+    """
+    from core import consent
+    from core.connections import connect_google
+    persona_key = request_persona(request, req.persona)
+    if len(req.app_password) > 256 or len(req.address) > 320:
+        raise HTTPException(status_code=400, detail="That doesn't look like a Google address and app password.")
+    if not consent.is_granted("correspondence_read", persona_key):
+        raise HTTPException(status_code=403,
+                            detail="Please read and accept the permission screen first.")
+    return await asyncio.to_thread(connect_google, persona_key, req.address, req.app_password)
+
+
+@app.delete("/connections/google")
+async def connections_google_delete(request: Request, persona: str | None = None) -> dict:
+    from core.connections import disconnect_google
+    persona_key = request_persona(request, persona)
+    return await asyncio.to_thread(disconnect_google, persona_key)
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -> None:
     """
     WebSocket endpoint for real-time cross-device conversation sync.
 
-    Query param: ?persona=X  (same values as the HTTP endpoints)
+    Query param: ?persona=X — required for a service token (the scheduler, the terminal
+    client); for a signed-in user it may be omitted, and naming anyone else is refused.
 
     Client → server message types:
       {type: "send", exchange_id, input, provider, attachments}  — submit a prompt.
@@ -816,8 +1275,6 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
       {type: "ping"}                                 — 30-second heartbeat
     """
     global _active_streams
-    persona_orch = persona or DEFAULT_PERSONA
-    persona_key = persona_orch or "__default__"
 
     # --- Authentication ---------------------------------------------------
     # HTTP middleware does not run for a WebSocket handshake, so this endpoint is
@@ -841,11 +1298,21 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
         # a socket that has not authenticated within 10s does not get to linger.
         await websocket.close(code=1008)
         return
-    if opening.get("type") != "auth" or not auth.verify_token(opening.get("token")):
+    identity = auth.decode_token(opening.get("token")) if opening.get("type") == "auth" else None
+    if identity is None:
         await websocket.send_json({"type": "auth_failed"})
         await websocket.close(code=1008)
         return
-    await websocket.send_json({"type": "auth_ok"})
+    # The socket's persona comes from the credential, after it is verified — never from the
+    # URL alone (plan § 3.7). Same rule as every HTTP route: bound_persona().
+    try:
+        persona_key = bound_persona(identity, persona)
+    except HTTPException as e:
+        await websocket.send_json({"type": "auth_failed", "reason": e.detail})
+        await websocket.close(code=1008)
+        return
+    persona_orch = persona_key
+    await websocket.send_json({"type": "auth_ok", "persona": persona_key})
     # ----------------------------------------------------------------------
 
     await manager.connect(websocket, persona_key)
@@ -853,6 +1320,18 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
     recent = await _get_recent_exchanges(persona_key)
     last_id = recent[-1]["id"] if recent else 0
     await websocket.send_json({"type": "history", "messages": recent, "last_id": last_id})
+
+    # The first interview (plan § 4.7). `status` is None for every persona without a state
+    # file — Mike and the test personas — and nothing below runs for them. A user's FIRST
+    # signed-in connection claims the start atomically (a reconnect cannot start it twice)
+    # and the opening is generated in the background, arriving like any proactive message.
+    istatus = interview_mod.status(persona_key)
+    if istatus is not None:
+        await websocket.send_json({"type": "interview", "status": istatus})
+    if (istatus == "not_started" and identity.role == "user"
+            and interview_mod.claim_start(persona_key)):
+        _spawn(_interview_proactive_turn(persona_key, interview_mod.OPENING_PROMPT,
+                                         opening=True))
 
     async def _heartbeat() -> None:
         while True:
@@ -873,6 +1352,17 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
             data = await websocket.receive_json()
             received_at = datetime.now(timezone.utc)
             msg_type = data.get("type")
+            # Revocation reaches an open socket too (review F1): `disable` and a password
+            # reset bump cred_version, and a socket kept alive by heartbeats would otherwise
+            # keep serving the account until it happened to reconnect. The store read is
+            # cached by mtime, so this is a stat per frame.
+            if msg_type in ("send", "catchup") and auth.decode_token(opening.get("token")) is None:
+                try:
+                    await websocket.send_json({"type": "auth_failed"})
+                    await websocket.close(code=1008)
+                except Exception:
+                    pass
+                return
 
             if msg_type == "send":
                 exchange_id = data.get("exchange_id") or str(uuid.uuid4())
@@ -925,6 +1415,15 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                 # Scheduler-initiated exchanges are flagged so traces record that
                 # Metatron opened the conversation rather than the user.
                 proactive = bool(data.get("proactive"))
+                # D2 backstop (Stage 3 review S1): no proactive turn opens while a new user's
+                # first interview holds — whichever caller forgot its own check. `held` is
+                # the frame send_one already reads as "nothing to say"; nothing is recorded
+                # or broadcast. The scheduler and nudge_tick check first, so this is quiet.
+                if proactive and interview_mod.holds_proactive(persona_key):
+                    _inflight_exchanges.discard(inflight_key)
+                    claimed.discard(inflight_key)
+                    await websocket.send_json({"type": "held", "exchange_id": exchange_id})
+                    continue
                 # A day-plan nudge (tools/day_plan.py nudge_tick): the Synthesizer decides whether
                 # to speak at all, so nothing reaches any device until it has — no stream_start,
                 # no chunk broadcast — and a reply of exactly [HOLD] is recorded nowhere.
@@ -944,6 +1443,13 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                 )
                 pipeline_attachments = attached + revived
                 history = _session_history.setdefault(persona_key, [])
+                # While her interview is active her own messages go to the interviewer,
+                # with the whole interview as history — never a proactive turn, which the
+                # scheduler's hold gate keeps away while the interview runs.
+                interview_mode = (not proactive
+                                  and interview_mod.status(persona_key) == "active")
+                interview_history = (await _interview_history(persona_key)
+                                     if interview_mode else None)
 
                 # Notify other devices that a new exchange is starting
                 if not nudge:
@@ -966,6 +1472,13 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
 
                 def _produce() -> None:
                     try:
+                        if interview_mode:
+                            # Not streamed: one agent, one reply. Filtered and pending-
+                            # receipt-checked inside run_turn before it gets here.
+                            reply = interview_mod.run_turn(persona_orch, user_input,
+                                                           interview_history)
+                            asyncio.run_coroutine_threadsafe(queue.put(reply), loop).result()
+                            return
                         for chunk in run_pipeline_session_stream(
                             user_input, persona=persona_orch, provider=provider,
                             history=history, is_proactive=proactive,
@@ -1068,10 +1581,15 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                         await manager.broadcast(persona_key, done_payload, exclude=websocket)
                         new_id = await _save_exchange(persona_key, exchange_id, user_input,
                                                       full_response, proactive=proactive,
-                                                      attachments=attached)
+                                                      attachments=attached,
+                                                      channel="interview" if interview_mode else None)
                         await _bind_attachments([a["id"] for a in attached], exchange_id)
-                        _log_conversation(user_input, full_response, "coordinator", persona_orch,
-                                          proactive=proactive)
+                        _log_conversation(user_input, full_response,
+                                          interview_mod.AGENT if interview_mode else "coordinator",
+                                          persona_orch, proactive=proactive)
+                        if interview_mode:
+                            _after_interview_turn(persona_key, user_input, full_response)
+                            await _broadcast_interview_status(persona_key)
                         await manager.broadcast(persona_key, {
                             "type": "message",
                             "id": new_id,
@@ -1122,11 +1640,10 @@ class ConfirmRequest(BaseModel):
 
 
 @app.get("/pending-confirmations")
-async def pending_confirmations(persona: str | None = None) -> dict:
+async def pending_confirmations(request: Request, persona: str | None = None) -> dict:
     """Actions awaiting the user's approval. The app polls this to render its prompt."""
-    from core.persona import persona_scope
     from tools.confirm import pending
-    with persona_scope(persona or DEFAULT_PERSONA):
+    with persona_scope(request_persona(request, persona)):
         return {"pending": pending()}
 
 
@@ -1147,7 +1664,7 @@ def _approve_and_execute(token: str, persona: str) -> dict | None:
 
 
 @app.post("/confirm")
-async def confirm_action(req: ConfirmRequest) -> dict:
+async def confirm_action(req: ConfirmRequest, request: Request) -> dict:
     """
     Record the user's approval of a pending action — and carry it out.
 
@@ -1170,7 +1687,7 @@ async def confirm_action(req: ConfirmRequest) -> dict:
     Authenticated like every other endpoint, so the tap has to come from a signed-in
     client rather than anything that can reach the port.
     """
-    persona_key = req.persona or DEFAULT_PERSONA
+    persona_key = request_persona(request, req.persona)
     outcome = await asyncio.to_thread(_approve_and_execute, req.token, persona_key)
     if outcome is None:
         raise HTTPException(status_code=404,
@@ -1214,7 +1731,7 @@ def _decline(token: str, persona: str) -> dict | None:
 
 
 @app.post("/decline")
-async def decline_action(req: ConfirmRequest) -> dict:
+async def decline_action(req: ConfirmRequest, request: Request) -> dict:
     """
     Record the user's refusal of a pending action, and stop it being asked again.
 
@@ -1232,7 +1749,7 @@ async def decline_action(req: ConfirmRequest) -> dict:
     the next turn — the conversation is context, so "declined" is at least present, even
     though nothing yet reads the declined ledger itself.
     """
-    persona_key = req.persona or DEFAULT_PERSONA
+    persona_key = request_persona(request, req.persona)
     record = await asyncio.to_thread(_decline, req.token, persona_key)
     if record is None:
         raise HTTPException(status_code=404,
@@ -1282,7 +1799,7 @@ def _record_location(lat: float, lon: float, accuracy: float | None,
 
 
 @app.post("/location")
-async def location_ping(req: LocationPing) -> dict:
+async def location_ping(req: LocationPing, request: Request) -> dict:
     """
     Take one GPS reading from the app and give back the name of the place it is in.
 
@@ -1311,7 +1828,7 @@ async def location_ping(req: LocationPing) -> dict:
     an error — a user who has not written a zones file gets a working endpoint that knows
     nothing, which is the truth.
     """
-    persona_key = req.persona or DEFAULT_PERSONA
+    persona_key = request_persona(request, req.persona)
     try:
         return await asyncio.to_thread(
             _record_location, req.lat, req.lon, req.accuracy, req.ts, persona_key)
@@ -1370,13 +1887,13 @@ def _task_result(message: str) -> dict:
 
 
 @app.get("/tasks/today")
-async def tasks_today(persona: str | None = None, followup: int = 0) -> dict:
+async def tasks_today(request: Request, persona: str | None = None, followup: int = 0) -> dict:
     """What is outstanding today, for the Today panel.
 
     `followup=1` is sent only by an app that can ask for the loose end; an older APK would draw
     the raw action name as a button and post it without one, so it is not offered there."""
     from tools.obligations import today_items
-    items = await asyncio.to_thread(_task_call, persona or DEFAULT_PERSONA, today_items)
+    items = await asyncio.to_thread(_task_call, request_persona(request, persona), today_items)
     if not followup:
         for item in items:
             item["actions"] = [a for a in item.get("actions", []) if a != "done_with_followup"]
@@ -1384,39 +1901,41 @@ async def tasks_today(persona: str | None = None, followup: int = 0) -> dict:
 
 
 @app.get("/plan/today")
-async def plan_today(persona: str | None = None) -> dict:
+async def plan_today(request: Request, persona: str | None = None) -> dict:
     """The day plan, for the Today panel while it is being tested (archive/plans/
     day_planner_plan_2026-10-24.md § 9). `{}` when `show_in_app` is off — the move to
     "Synth only" is that flag, no client change. Polled with /tasks/today; it renders the stored
     plan after the gate's check and never waits on the calendar (a stale snapshot starts a
     background refresh, so the next poll has it)."""
     from tools.day_plan import today_view
+    persona_key = request_persona(request, persona)
     try:
-        return await asyncio.to_thread(_task_call, persona or DEFAULT_PERSONA, today_view)
+        return await asyncio.to_thread(_task_call, persona_key, today_view)
     except Exception:  # noqa: BLE001 — the panel shows tasks without a plan, never an error
         logger.warning("[day_plan] /plan/today failed", exc_info=True)
         return {}
 
 
 @app.get("/settings/location")
-async def settings_location(persona: str | None = None) -> dict:
+async def settings_location(request: Request, persona: str | None = None) -> dict:
     """The persona's answer to "send your place with messages?" from the first interview:
     true, false, or null when never asked. The app uses it only to set a default it has not
     stored — a stored local choice always wins, and anything but true leaves it off
     (plan § 8.2; tests/test_location_onsend_default.js)."""
     from tools.day_shape import location_sharing
+    persona_key = request_persona(request, persona)
     try:
-        value = await asyncio.to_thread(_task_call, persona or DEFAULT_PERSONA, location_sharing)
+        value = await asyncio.to_thread(_task_call, persona_key, location_sharing)
     except Exception:  # noqa: BLE001
         value = None
     return {"on_send": value}
 
 
 @app.post("/tasks/act")
-async def tasks_act(req: TaskActRequest) -> dict:
+async def tasks_act(req: TaskActRequest, request: Request) -> dict:
     """A tap: done / skipped / dismissed on a task, or accepting a correspondence proposal."""
     from tools.obligations import act_from_app, resolve_proposal
-    persona_key = req.persona or DEFAULT_PERSONA
+    persona_key = request_persona(request, req.persona)
     if req.proposal_id:
         result = await asyncio.to_thread(_task_call, persona_key, resolve_proposal,
                                          req.proposal_id, True)
@@ -1459,20 +1978,118 @@ def _proposals_for_display() -> list[dict]:
 
 
 @app.get("/tasks/proposals")
-async def tasks_proposals(persona: str | None = None) -> dict:
+async def tasks_proposals(request: Request, persona: str | None = None) -> dict:
     """Pending correspondence proposals, oldest first. Read-only: no side effect, no card."""
-    items = await asyncio.to_thread(_task_call, persona or DEFAULT_PERSONA,
+    items = await asyncio.to_thread(_task_call, request_persona(request, persona),
                                     _proposals_for_display)
     return {"proposals": items}
 
 
 @app.post("/tasks/proposals/decline")
-async def tasks_proposal_decline(req: ProposalDeclineRequest) -> dict:
+async def tasks_proposal_decline(req: ProposalDeclineRequest, request: Request) -> dict:
     """"Not now": the task stays open and that message is never offered again for it."""
     from tools.obligations import resolve_proposal
-    result = await asyncio.to_thread(_task_call, req.persona or DEFAULT_PERSONA,
+    result = await asyncio.to_thread(_task_call, request_persona(request, req.persona),
                                      resolve_proposal, req.proposal_id, False)
     return _task_result(result)
+
+
+# ---------------------------------------------------------------------------
+# Server-to-server routes — one copy of each model on the VM (plan § 4.12.3)
+#
+# The per-user schedulers run with METATRON_NO_LOCAL_MODELS=1 and never load a model: the
+# embedder (~0.9 GB) would otherwise land in every scheduler after its first weekly review,
+# and two of them would undo the memory the voice helper frees. So their non-coordinator
+# sessions, memory writes and memory searches run HERE, where the models already live.
+# `service` tokens only — the middleware refuses any other role on /internal/*.
+# ---------------------------------------------------------------------------
+
+class InternalSessionRequest(BaseModel):
+    agent: str
+    input: str
+    persona: str | None = None
+    proactive: bool = True
+
+
+@app.post("/internal/session")
+async def internal_session(req: InternalSessionRequest, request: Request) -> dict:
+    """
+    A scheduled single-agent session (the weekly pattern-miner and physical reviews, …),
+    run exactly as the scheduler ran it in-process: `run_session(..., proactive=True)` —
+    traced as scheduled, spend-gated, no history.
+
+    **Writes no conversation record** (review M1-N1): the in-process run never produced one,
+    and the nightly CRM sweep reads every conversation row as something the user said. The
+    coordinator is refused here: its scheduled turns ARE conversation and go over /ws.
+    """
+    persona = request_persona(request, req.persona)
+    if not req.input.strip():
+        raise HTTPException(status_code=400, detail="Input is empty.")
+    if req.agent == "coordinator":
+        raise HTTPException(status_code=400,
+                            detail="Coordinator sessions are conversation — use /ws.")
+    loop = asyncio.get_running_loop()
+    try:
+        # The default pool, not _INDEX_EXECUTOR: a multi-minute review must not hold up
+        # every user's memory writes behind it.
+        response = await loop.run_in_executor(
+            None, lambda: run_session(req.agent, req.input, persona=persona, proactive=True))
+    except Exception as e:
+        logger.exception(f"[internal_session] persona={persona} agent={req.agent}")
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"response": response}
+
+
+class InternalIndexRequest(BaseModel):
+    persona: str | None = None
+    text: str
+    source: str
+    entry_date: str = ""
+
+
+class InternalSearchRequest(BaseModel):
+    persona: str | None = None
+    query: str
+    k: int = 5
+
+
+def _scoped(persona: str, fn, *args):
+    """Run on an executor thread with the persona bound INSIDE it — identity is
+    thread-local and fail-closed, so binding around the executor call binds nothing."""
+    with persona_scope(persona):
+        return fn(*args)
+
+
+@app.post("/internal/index")
+async def internal_index(req: InternalIndexRequest, request: Request) -> dict:
+    """Embed and store one memory entry for a scheduler process that holds no model."""
+    from core import memory
+    persona = request_persona(request, req.persona)
+    if not req.text.strip():
+        return {"ok": True}
+    loop = asyncio.get_running_loop()
+    try:
+        await loop.run_in_executor(_INDEX_EXECUTOR, _scoped, persona, memory.index_entry_local,
+                                   req.text, req.source, req.entry_date)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"ok": True}
+
+
+@app.post("/internal/search")
+async def internal_search(req: InternalSearchRequest, request: Request) -> dict:
+    """Search one persona's memory for a scheduler process that holds no model."""
+    from core import memory
+    persona = request_persona(request, req.persona)
+    if req.k < 1 or req.k > 50:
+        raise HTTPException(status_code=400, detail="k must be between 1 and 50.")
+    loop = asyncio.get_running_loop()
+    try:
+        results = await loop.run_in_executor(_INDEX_EXECUTOR, _scoped, persona,
+                                             memory.search_memory_local, req.query, req.k)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"results": results}
 
 
 @app.get("/health")
@@ -1502,32 +2119,39 @@ async def vapid_public_key() -> dict:
 
 
 @app.post("/subscribe")
-async def subscribe(sub: PushSubscription) -> dict:
-    """Register a browser push subscription from the PWA."""
+async def subscribe(sub: PushSubscription, request: Request, persona: str | None = None) -> dict:
+    """Register this browser's push subscription for the signed-in persona only."""
     from core.push import save_subscription
-    result = save_subscription(sub.dict())
+    result = save_subscription(sub.dict(), request_persona(request, persona))
     return {"status": result}
 
 
 @app.post("/push/test")
-async def push_test() -> dict:
-    """Dev endpoint — send a test push to all registered subscriptions."""
+async def push_test(request: Request, persona: str | None = None) -> dict:
+    """Dev endpoint — a test push to the signed-in persona's own subscriptions."""
     from core.push import send_push
-    result = send_push(title="Life Manager", body="Push notifications are working.")
-    return result
+    return send_push(title="Life Manager", body="Push notifications are working.",
+                     persona=request_persona(request, persona))
+
+
+def _feedback_blocking(persona: str) -> str:
+    from tools.logger import write_quality_event
+    with persona_scope(persona):
+        return write_quality_event(
+            event_type="USER_CORRECTION",
+            source_agent="pwa_tap",
+            detail="User tapped missed-the-mark affordance",
+            session_id=datetime.utcnow().strftime("%Y-%m-%dT%H"),
+        )
 
 
 @app.post("/feedback")
-async def feedback() -> dict:
-    """PWA tap — record a USER_CORRECTION quality event."""
-    from tools.logger import write_quality_event
-    from datetime import datetime
-    result = write_quality_event(
-        event_type="USER_CORRECTION",
-        source_agent="pwa_tap",
-        detail="User tapped missed-the-mark affordance",
-        session_id=datetime.utcnow().strftime("%Y-%m-%dT%H"),
-    )
+async def feedback(request: Request, persona: str | None = None) -> dict:
+    """PWA tap — record a USER_CORRECTION quality event, in the signed-in persona's tree.
+
+    It used to name no persona and resolve whatever identity another thread happened to be
+    serving (plan § 3.3) — a tap could be filed against the wrong person."""
+    result = await asyncio.to_thread(_feedback_blocking, request_persona(request, persona))
     return {"status": result}
 
 
@@ -1554,72 +2178,19 @@ _EDGE_VOICE_BY_LANG = {
 # hardcoded per branch. English maps to the existing default and changes nothing.
 _KOKORO_LANGS = {"en"}
 
-_kokoro_pipeline = None
-_kokoro_lock = threading.Lock()
-
-
-def _kokoro_available() -> bool:
-    try:
-        import kokoro  # noqa: F401
-        return True
-    except Exception:
-        return False
-
-
-def _get_kokoro():
-    """
-    Build the Kokoro pipeline once and keep it.
-
-    It used to run as a subprocess per request, which meant importing kokoro
-    (~7s) and constructing KPipeline (~3s) every single call — about 10s of the
-    measured 15s per request, repeated forever, while actual synthesis was only
-    ~3s. speak.py even caches the pipeline in a module global, but a fresh
-    process each time made that cache useless.
-
-    The subprocess existed because Kokoro once lived in its own venv with
-    conflicting dependencies. It was installed into the main venv on the VM on
-    2026-06-27, so the isolation is obsolete.
-    """
-    global _kokoro_pipeline
-    with _kokoro_lock:
-        if _kokoro_pipeline is None:
-            from kokoro import KPipeline
-            _kokoro_pipeline = KPipeline(lang_code="a")
-        return _kokoro_pipeline
-
-
-def _kokoro_blocking(text: str) -> str:
-    """Synthesise to a wav and return its path. Blocking — never on the loop."""
-    import numpy as _np
-    import soundfile as _sf
-
-    wav_tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-    wav_tmp.close()
-    try:
-        pipeline = _get_kokoro()
-        chunks = [audio for _gs, _ps, audio in pipeline(text, voice=KOKORO_VOICE)]
-        if not chunks:
-            raise RuntimeError("Kokoro produced no audio")
-        _sf.write(wav_tmp.name, _np.concatenate(chunks), 24000)
-        return wav_tmp.name
-    except Exception:
-        # Previously only the mp3 temp file was cleaned up on failure, so every
-        # Kokoro error leaked a wav.
-        Path(wav_tmp.name).unlink(missing_ok=True)
-        raise
-
-
 @app.post("/tts")
-async def tts(req: TTSRequest):
+async def tts(req: TTSRequest, request: Request, persona: str | None = None):
     """
     Generate speech audio — Kokoro af_heart primary, edge-tts fallback.
 
-    Kokoro runs on its own executor. It used to run inline in this async
+    Kokoro runs in its own helper process (core/tts_worker.py) since 2026-10-27, driven from
+    the single TTS executor thread. It used to run inline in this async
     function, freezing the whole server for up to 120s: no HTTP responses, no
     WebSocket pings, nothing.
     """
     if not req.text.strip():
         raise HTTPException(status_code=400, detail="Text is empty.")
+    persona_key = request_persona(request, persona)
 
     # [DB-0810-15] Pick the engine from the persona's response language, not from availability
     # alone. Kokoro is preferred where it can serve the language; where it cannot (Bulgarian) an
@@ -1628,7 +2199,7 @@ async def tts(req: TTSRequest):
     lang_code = ""
     try:
         from core.translate import response_language
-        lang = response_language()
+        lang = response_language(persona_key)
         if lang is not None:
             lang_code = lang[0]
             edge_voice = _EDGE_VOICE_BY_LANG.get(lang_code, EDGE_VOICE)
@@ -1638,9 +2209,11 @@ async def tts(req: TTSRequest):
     kokoro_can_serve = (not lang_code) or lang_code in _KOKORO_LANGS
 
     try:
-        if _kokoro_available() and kokoro_can_serve:
+        # find_spec, never `import kokoro`: importing it here would pull the voice model's
+        # code into the server the helper exists to protect (review M2).
+        if tts_worker.kokoro_installed() and kokoro_can_serve:
             loop = asyncio.get_running_loop()
-            audio_path = await loop.run_in_executor(_TTS_EXECUTOR, _kokoro_blocking, req.text)
+            audio_path = await loop.run_in_executor(_TTS_EXECUTOR, tts_worker.synthesize, req.text)
             media_type = "audio/wav"
         else:
             tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
@@ -1665,7 +2238,7 @@ async def tts(req: TTSRequest):
         raise HTTPException(status_code=500, detail=f"Speech synthesis failed: {e}")
 
 
-def _transcribe_blocking(audio_bytes: bytes, persona: str | None = None) -> dict:
+def _transcribe_blocking(audio_bytes: bytes, persona: str) -> dict:
     """
     ffmpeg decode + Whisper. Blocking — must run off the event loop.
 
@@ -1679,7 +2252,10 @@ def _transcribe_blocking(audio_bytes: bytes, persona: str | None = None) -> dict
     import numpy as _np
 
     ts = datetime.now().strftime("%H-%M-%S")
-    date_dir = Path(__file__).parent.parent / "data" / "audio" / datetime.now().strftime("%Y-%m-%d")
+    # Each persona's recordings in its own tree (plan § 4.3). Mike's older recordings stay
+    # in the global data/audio/ they were written to — nothing reads that folder, and
+    # nothing here deletes them.
+    date_dir = persona_data_dir(persona) / "audio" / datetime.now().strftime("%Y-%m-%d")
     date_dir.mkdir(parents=True, exist_ok=True)
 
     audio_path = date_dir / f"{ts}.webm"
@@ -1733,7 +2309,8 @@ def _transcribe_blocking(audio_bytes: bytes, persona: str | None = None) -> dict
 
 
 @app.post("/transcribe")
-async def transcribe_audio(audio: UploadFile = File(...), persona: str | None = None) -> dict:
+async def transcribe_audio(request: Request, audio: UploadFile = File(...),
+                           persona: str | None = None) -> dict:
     """
     Transcribe a voice recording with Whisper, locally. Audio never leaves this
     machine; the Web Speech API is deliberately not used.
@@ -1742,10 +2319,10 @@ async def transcribe_audio(audio: UploadFile = File(...), persona: str | None = 
     concurrent request rather than queueing it invisibly until the client gives
     up — which previously surfaced as "Failed to fetch".
 
-    `persona` is optional: transcription itself needs no persona, only the
-    known-address correction pass does. Omit it and the raw Whisper output
-    is returned uncorrected, same as before this parameter existed.
+    The recording is filed under the signed-in persona, which also selects whose saved
+    addresses the correction pass snaps to.
     """
+    persona_key = request_persona(request, persona)
     audio_bytes = await audio.read()
     if not audio_bytes:
         raise HTTPException(status_code=422, detail="Empty audio upload")
@@ -1759,12 +2336,13 @@ async def transcribe_audio(audio: UploadFile = File(...), persona: str | None = 
     async with _STT_SEMAPHORE:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
-            _STT_EXECUTOR, _transcribe_blocking, audio_bytes, persona
+            _STT_EXECUTOR, _transcribe_blocking, audio_bytes, persona_key
         )
 
 
 @app.post("/upload")
-async def upload_attachment(file: UploadFile = File(...), persona: str | None = None) -> dict:
+async def upload_attachment(request: Request, file: UploadFile = File(...),
+                            persona: str | None = None) -> dict:
     """
     Store one photo or document for the persona, ready to be sent with a message.
 
@@ -1776,7 +2354,7 @@ async def upload_attachment(file: UploadFile = File(...), persona: str | None = 
     The type is decided by sniffing the bytes, not by the Content-Type the browser
     asserts — see core/attachments.validate().
     """
-    persona_key = persona or DEFAULT_PERSONA or "__default__"
+    persona_key = request_persona(request, persona)
     data = await file.read()
 
     try:
@@ -1801,14 +2379,14 @@ async def upload_attachment(file: UploadFile = File(...), persona: str | None = 
 
 
 @app.get("/attachments/{attachment_id}")
-async def get_attachment(attachment_id: str, persona: str | None = None):
+async def get_attachment(attachment_id: str, request: Request, persona: str | None = None):
     """
     Serve a stored file back to the client that owns it.
 
     The path comes from the database row, never from the URL, so there is no
     traversal surface — an id either resolves to a row for this persona or 404s.
     """
-    persona_key = persona or DEFAULT_PERSONA or "__default__"
+    persona_key = request_persona(request, persona)
     record = await _get_attachment(attachment_id, persona_key)
     if not record:
         raise HTTPException(status_code=404, detail="No such attachment")
@@ -1912,6 +2490,21 @@ def _read_jsonl(path: Path) -> list[dict]:
 async def monitor_personas() -> dict:
     """List all persona identifiers known to the system."""
     return {"personas": _all_personas()}
+
+
+@app.get("/monitor/accounts")
+async def monitor_accounts() -> dict:
+    """
+    Every account and its status — never a password hash (plan § 4.4).
+
+    Admin and service tokens, like every /monitor route: its only caller is
+    scripts/sync_dev_backlog.py, which holds a service token and turns the pending count
+    into the session-start line that tells Mike a request is waiting (review L8).
+    """
+    from core import accounts as accounts_mod
+    rows = await asyncio.to_thread(accounts_mod.list_accounts)
+    keep = ("username", "display_name", "status", "created_at", "decided_at", "decided_by")
+    return {"accounts": [{k: r.get(k) for k in keep} for r in rows]}
 
 
 @app.get("/monitor/conversations")
@@ -2127,6 +2720,9 @@ async def monitor_stream(persona: str | None = None, since: str | None = None):
 
 
 _PROJECT_ROOT = Path(__file__).parent.parent
+# Never served by /monitor/file or /monitor/history: the account store carries password
+# hashes, which /monitor/accounts deliberately leaves out (review F5).
+_UNREADABLE_DATA = ("data/accounts/",)
 
 
 @app.get("/monitor/history")
@@ -2143,6 +2739,8 @@ async def monitor_history(path: str) -> dict:
 
     if not path.startswith("data/") or ".." in path:
         raise HTTPException(status_code=400, detail="Invalid path")
+    if path.startswith(_UNREADABLE_DATA):
+        raise HTTPException(status_code=403, detail="Not readable through The Book.")
 
     full = _PROJECT_ROOT / path
     if not full.exists():
@@ -2177,6 +2775,8 @@ async def monitor_file(path: str) -> dict:
 
     if not path.startswith("data/") or ".." in path or path != Path(path).as_posix():
         raise HTTPException(status_code=400, detail="Invalid path — must be relative data/ path")
+    if path.startswith(_UNREADABLE_DATA):
+        raise HTTPException(status_code=403, detail="Not readable through The Book.")
 
     full = _PROJECT_ROOT / path
     if not full.exists():
@@ -2298,13 +2898,11 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--provider", default="gemini", choices=["anthropic", "openai", "ollama", "gemini"],
                         help="Default provider (can be overridden per request)")
+    # Accepted for the systemd unit's sake and otherwise ignored: since 2026-10-27 every
+    # request's persona comes from its token (bound_persona), never from a server default.
     parser.add_argument("--persona", default=None,
-                        help="Default dev persona for all sessions (e.g. pepys). Omit for real user context.")
+                        help="Ignored — each request's persona comes from its sign-in.")
     args = parser.parse_args()
-
-    if args.persona:
-        os.environ["SERVER_PERSONA"] = args.persona
-        print(f"  Dev persona: {args.persona} (all sessions will use this persona)")
 
     certs_dir = Path(__file__).parent.parent / "certs"
     # Prefer Tailscale cert (.crt/.key) over mkcert (.pem) — Tailscale certs are publicly trusted

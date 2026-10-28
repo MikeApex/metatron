@@ -305,6 +305,13 @@ def _fetch(day: date, persona: str | None) -> dict:
                         persona=persona, calendars="all")
     if not isinstance(raw, dict) or raw.get("error"):
         return {"error": str((raw or {}).get("error") or "no response")[:200]}
+    if raw.get("connected") is False:
+        # No calendar connected (a new user — multi-user plan § 4.8, Stage 1.13): a SUCCESSFUL,
+        # empty read, not a failure. Stored as one, it gets `fetched_at` and so the normal
+        # freshness window; stored as an error it had no `fetched_at`, read as stale on every
+        # tick and re-fetched each time, and carried a calendar error the user cannot act on.
+        # Not "ok" either: `_discovery_ok` must not treat this as a poll that saw every calendar.
+        return {"events": [], "discovery": "not_connected"}
     # Whether every calendar was looked for: only then can one be "new since setup" (review N1).
     return {"events": _normalise(raw.get("events") or []),
             "discovery": str(raw.get("discovery") or "ok")[:80]}
@@ -1842,7 +1849,13 @@ def render_block(plan: dict | None, kind: str | None = None, due_now: list[dict]
         out.append(f"(Waking hours {_hm(w.get('wake'))}–{_hm(w.get('bed'))} are assumed, not "
                    f"stated — ask once, when it fits.)")
     snap = _dt(plan.get("snapshot_at"))
-    if snap is None:
+    if str((_load_state().get("snapshot") or {}).get("discovery") or "") == "not_connected":
+        # A user with no calendar connected (plan § 4.8). Said outright, because the header
+        # above says the plan is kept "from the calendar" — without this line an empty day
+        # reads as a free one, and "nothing on your calendar" would be the wrong answer.
+        out.append("(No calendar is connected — this plan has no events because none can be "
+                   "read, not because the day is free.)")
+    elif snap is None:
         out.append("(The calendar has not been read yet — events may be missing.)")
     elif (now - snap) > timedelta(minutes=float(_limit("snapshot_max_age_minutes") or 10) + 5):
         out.append(f"(Calendar as of {snap:%H:%M}.)")
@@ -2257,6 +2270,20 @@ def start_reshuffle(persona: str | None = None) -> bool:
             started = _dt(inflight.get("started_at"))
             if started and (now - started).total_seconds() < stale_s:
                 return False
+            # Nothing to arrange, no model call (multi-user plan banner item 6; Mike: yes). The
+            # first build of every day classifies as a reshuffle whatever it holds, and the worker
+            # keeps only placements whose ref is a candidate — so with none, the model could only
+            # hand back the code plan, at the price of a call and a daily counter slot. A new user
+            # with no tasks and no calendar would pay that every morning. Checked here, under the
+            # lock and before the marker or the counter is touched; the ledger read is file I/O,
+            # which is what this lock is for. `pending` is cleared so the next tick does not
+            # re-ask; a task added later re-classifies as a reshuffle and sets it again.
+            cands = _candidates(day, persona)
+            if not cands:
+                rs["pending"] = None
+                _write_json(_state_path(persona), st)
+                _log("reshuffle", persona, outcome="skipped_empty", conflicts=0, ms=0)
+                return False
             counters = st.setdefault("counters", {}).setdefault(day.isoformat(), {})
             if int(counters.get("reshuffles", 0)) >= int(_limit("reshuffles_per_day") or 12):
                 rs["pending"] = None
@@ -2275,8 +2302,7 @@ def start_reshuffle(persona: str | None = None) -> bool:
             plan = _read_json(_plan_path(day, persona), None)
         if not plan:
             return False
-        cands = _candidates(day, persona)
-        payload = _payload(plan, cands, now, st)
+        payload = _payload(plan, cands, now, st)     # `cands` as read under the lock above
         _spawn_bound(_reshuffle_worker, persona, gen, payload, name="reshuffle")
         return True
 
@@ -2449,6 +2475,11 @@ def nudge_tick() -> str | dict:
     persona = resolve_persona(None)
     if _quiet_now(persona):
         return "nudges: quiet hours"
+    # D2: nothing proactive during a new user's first interview — checked before anything is
+    # marked handled, so what comes due meanwhile is not consumed (Stage 3 review S1).
+    from core.interview import holds_proactive
+    if holds_proactive(persona):
+        return "nudges: holding for the first interview"
     idle = _idle_minutes(persona)
     if idle is not None and idle < 10:
         return "nudges: user is mid-conversation"

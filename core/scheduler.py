@@ -38,7 +38,9 @@ from core.persona import (
 )
 
 # Quiet hours and job times are personal facts, so the schedule is per-persona.
-# One daemon still serves every persona; it registers each persona's jobs separately.
+# One daemon per persona (`--persona`, required): on the VM each user gets their own
+# `metatron-scheduler@<persona>` unit, and main() refuses to run beside another
+# scheduler for the same persona (_claim_single_instance).
 def _scheduler_config_path(persona: str | None = None):
     return persona_config_dir(persona) / "scheduler.yaml"
 
@@ -398,7 +400,25 @@ def _gates_block(job_name: str, job_cfg: dict, cfg: dict, persona: str) -> str |
     # sets `respect_quiet_hours: false` and says so where it is read.
     if job_cfg.get("respect_quiet_hours", True) and _in_quiet_hours(cfg):
         return "quiet hours"
+    # A new user's first interview (D2, plan § 4.6, review L6): no brief or check-in lands
+    # in an app the user has not opened yet, or cuts across the interview. Session jobs only —
+    # tested as "not a function job", because one-off reminders reach fire_session with no
+    # "agent" key. The state file is the only input; no file (every existing persona,
+    # mike included) never holds.
+    if "function" not in job_cfg and _held_for_interview(persona):
+        return "holding for the first interview"
     return _activity_gate_blocks(job_name, job_cfg, persona)
+
+
+def _held_for_interview(persona: str) -> bool:
+    """The D2 hold (plan § 4.6, review L6): true only while the persona's interview state
+    file says not_started or active. Read at three places — the session gate above,
+    `_dispatch` (a function job's push is DROPPED, not deferred: the job has run and is
+    recorded as fired, so a fixed-time job such as daily_travel_check does not try again
+    that day — Stage 3 review S1), and the one-off loop (a held reminder is kept and fires
+    once the hold lifts, instead of being deleted: review L1)."""
+    import core.interview
+    return core.interview.holds_proactive(persona)
 
 
 # ---------------------------------------------------------------------------
@@ -416,19 +436,27 @@ def _notify_terminal(title: str, body: str) -> None:
         pass
 
 
-def _notify_push(title: str, body: str, persona: str | None = None) -> None:
+def _notify_push(title: str, body: str, persona: str) -> None:
+    # Persona is required end to end: send_push reaches only that persona's devices, so a
+    # check-in can never land on another user's phone (plan § 3.4).
     try:
         from core.push import send_push
-        send_push(title=title, body=body)
+        send_push(title=title, body=body, persona=persona)
     except Exception as e:
         _log_error("push_notification", str(e), persona)
 
 
-def _dispatch(channel: str, title: str, body: str) -> None:
+def _dispatch(channel: str, title: str, body: str, persona: str) -> None:
+    # The hold is enforced here as well as in the gate, because the gate is by job KIND and
+    # this is where anything reaches the user: function jobs (daily_travel_check,
+    # day_plan_nudge) push too (Stage 3 review S1).
+    if _held_for_interview(persona):
+        print(f"[scheduler] [{persona}] dropped '{title}' — first interview", flush=True)
+        return
     if channel in ("terminal", "both"):
         _notify_terminal(title, body)
     if channel in ("push", "both"):
-        _notify_push(title, body)
+        _notify_push(title, body, persona)
 
 
 # ---------------------------------------------------------------------------
@@ -504,11 +532,15 @@ def fire_session(job_name: str, agent: str, prompt: str,
             response = send_one(persona, prompt)
         else:
             # Single-agent jobs (pattern_miner, physical_health) are analysis
-            # runs that write their own outputs; they are not conversation.
-            from core.orchestrator import run_session
-            response = run_session(agent_name=agent, user_input=prompt, persona=persona)
+            # runs that write their own outputs; they are not conversation — so
+            # /internal/session, which writes no conversation record. Run on the
+            # server, never in-process: in-process they loaded the embedder into
+            # this scheduler for life (~0.9 GB per user, plan § 4.12.3). No
+            # in-process fallback, for the same reason.
+            from core.remote_client import run_internal_session
+            response = run_internal_session(agent, prompt, persona)
         title = job_name.replace("_", " ").title()
-        _dispatch(notification, title, response)
+        _dispatch(notification, title, response, persona)
     except Exception as e:
         _log_error(job_name, str(e), persona)
         _notify_terminal(f"[scheduler error] {job_name}", str(e))
@@ -603,7 +635,7 @@ def fire_function(job_name: str, fn_path: str, persona: str,
             print(f"[scheduler] [{persona}] {job_name}: "
                   f"{result.get('summary', 'notifying')}", flush=True)
             if body:
-                _dispatch(notification, title, body)
+                _dispatch(notification, title, body, persona)
         else:
             print(f"[scheduler] [{persona}] {job_name}: {result}", flush=True)
     except Exception as e:
@@ -897,7 +929,10 @@ def _fire_due_one_offs(persona: str) -> None:
         if when <= now:
             due.append((name, job))
 
-    if not due:
+    # A reminder that comes due during the first interview stays in the file and fires once
+    # the hold lifts — popping it and letting the gate skip it would delete it unseen
+    # (Stage 3 review L1).
+    if not due or _held_for_interview(persona):
         return
 
     for name, job in due:
@@ -1054,6 +1089,111 @@ def _register_schedules(persona: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# One scheduler per persona
+# ---------------------------------------------------------------------------
+
+# Two schedulers for one persona fire every job twice — _record_fire and the
+# one-off pop are check-then-write with no lock (plan § 3.8). Two checks, because
+# the lock alone cannot see the pre-lock process (review L5): the old
+# metatron-scheduler.service never takes it, so @mike started beside it would
+# find the lock free. Module-level so tests can point it at a fake tree.
+_PROC = Path("/proc")
+_INSTANCE_LOCK = None   # held open for the life of the process; the OS frees it on exit
+
+
+def _instance_lock_path(persona: str) -> Path:
+    return persona_data_dir(persona) / "logs" / "scheduler.lock"
+
+
+def _is_scheduler_for(argv: list[str], persona: str) -> bool:
+    """True when a command line is `python … core/scheduler.py … --persona <persona>`."""
+    if not argv or not Path(argv[0]).name.startswith("python"):
+        return False
+    script = any(a.endswith("core/scheduler.py") or a == "core.scheduler" for a in argv[1:])
+    if not script:
+        return False
+    for i, arg in enumerate(argv):
+        if arg == "--persona" and i + 1 < len(argv) and argv[i + 1] == persona:
+            return True
+        if arg == f"--persona={persona}":
+            return True
+    return False
+
+
+def _holds_file(pid: str, target: Path) -> bool:
+    """True if process `pid` has `target` open. Unreadable → False, so it counts as a
+    conflict: refusing to start is the safe direction, running twice is not."""
+    try:
+        for fd in (_PROC / pid / "fd").iterdir():
+            try:
+                if Path(os.readlink(fd)) == target:
+                    return True
+            except OSError:
+                continue
+    except OSError:
+        return False
+    return False
+
+
+def _lockless_siblings(persona: str, lock_path: Path) -> list[str]:
+    """Pids of other live schedulers for this persona that do NOT hold the lock file —
+    i.e. a pre-lock process. A new instance that lost the lock race still has the file
+    open while it exits, so it is not counted (and cannot make the winner exit too)."""
+    if not _PROC.is_dir():
+        return []   # no /proc (the Mac in dev): the lock is the only check there
+    own = str(os.getpid())
+    found = []
+    for entry in _PROC.iterdir():
+        if not entry.name.isdigit() or entry.name == own:
+            continue
+        try:
+            raw = (entry / "cmdline").read_bytes()
+        except OSError:
+            continue
+        argv = [a for a in raw.decode("utf-8", "replace").split("\0") if a]
+        if _is_scheduler_for(argv, persona) and not _holds_file(entry.name, lock_path):
+            found.append(entry.name)
+    return found
+
+
+def _claim_single_instance(persona: str) -> None:
+    """Take this persona's scheduler lock and confirm no lock-less scheduler runs for it;
+    exit loudly (status 1) if either check fails. Called before anything is registered."""
+    import fcntl
+    global _INSTANCE_LOCK
+
+    lock_path = _instance_lock_path(persona)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    handle = open(lock_path, "a+")
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.seek(0)
+        holder = handle.read().strip() or "unknown pid"
+        handle.close()
+        print(f"[scheduler] REFUSING TO START for {persona}: another scheduler holds "
+              f"{lock_path} ({holder}). Every job would fire twice. Exiting.",
+              file=sys.stderr, flush=True)
+        sys.exit(1)
+
+    siblings = _lockless_siblings(persona, lock_path.resolve())
+    if siblings:
+        fcntl.flock(handle, fcntl.LOCK_UN)
+        handle.close()
+        print(f"[scheduler] REFUSING TO START for {persona}: a scheduler without the "
+              f"instance lock is already running (pid {', '.join(siblings)}) — most likely "
+              f"the retired metatron-scheduler.service. Stop it first. Exiting.",
+              file=sys.stderr, flush=True)
+        sys.exit(1)
+
+    handle.seek(0)
+    handle.truncate()
+    handle.write(f"pid {os.getpid()}\n")
+    handle.flush()
+    _INSTANCE_LOCK = handle
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -1070,6 +1210,15 @@ def main() -> None:
     args = parser.parse_args()
 
     persona = validate_persona_name(args.persona)
+    # Instance names are typed by hand now (`enable --now metatron-scheduler@<u>`); a typo
+    # must not start a scheduler — and create a data tree — for a user who does not exist
+    # (Stage 3 review L4).
+    from core.persona import persona_md
+    if not persona_md(persona).exists():
+        print(f"[scheduler] REFUSING TO START: no persona {persona!r} "
+              f"({persona_md(persona)} does not exist). Exiting.", file=sys.stderr, flush=True)
+        sys.exit(1)
+    _claim_single_instance(persona)
 
     print("\nLife Manager — Scheduler Daemon")
     print(f"Persona: {persona}")

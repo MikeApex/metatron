@@ -44,11 +44,15 @@ a new source of outage. A hard stop only happens on a real threshold breach.
 
 from __future__ import annotations
 
+import fcntl
 import json
 import logging
+import os
 import socket
+import tempfile
 import threading
 from collections import deque
+from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
 
@@ -167,11 +171,49 @@ def _read_state() -> dict:
 
 
 def _write_state(state: dict) -> None:
+    # Atomic (temp file + rename): check_before_session reads without the lock, and a
+    # torn file parses as a blank day — the stop threshold would read $0 spent.
     try:
         _STATE_DIR.mkdir(parents=True, exist_ok=True)
-        _state_path().write_text(json.dumps(state, indent=2))
+        fd, tmp = tempfile.mkstemp(prefix=".spend.", dir=str(_STATE_DIR))
+        try:
+            with os.fdopen(fd, "w") as f:
+                f.write(json.dumps(state, indent=2))
+            os.replace(tmp, _state_path())
+        except BaseException:
+            Path(tmp).unlink(missing_ok=True)
+            raise
     except Exception as exc:
         logger.warning(f"[spend_guard] could not persist state: {exc}")
+
+
+@contextmanager
+def _state_lock():
+    """The day file's read-modify-write lock: this process's threads AND every other
+    process on the host. The server and each user's scheduler all write the same day
+    file (plan § 3.8); under a thread lock alone two processes interleave and one
+    increment is lost — and a guard that under-counts is read as safety.
+
+    One lock file for every day rather than a sidecar per day file, so nothing
+    accumulates. If the lock file cannot be opened the update proceeds under the thread
+    lock alone — this guard must never become a source of outage."""
+    with _lock:
+        handle = None
+        try:
+            _STATE_DIR.mkdir(parents=True, exist_ok=True)
+            handle = open(_STATE_DIR / "spend.lock", "a")
+            fcntl.flock(handle, fcntl.LOCK_EX)
+        except OSError as exc:
+            logger.warning(f"[spend_guard] no cross-process lock ({exc}) — thread lock only")
+            if handle is not None:
+                handle.close()
+                handle = None
+        try:
+            yield
+        finally:
+            if handle is not None:
+                fcntl.flock(handle, fcntl.LOCK_UN)
+                handle.close()
 
 
 def _normalise_model(model: str) -> str:
@@ -293,7 +335,7 @@ def record_cache_storage(model: str, tokens: int, minutes: float) -> None:
             logger.warning(f"[spend_guard] no cache storage rate for {model!r} — storage not counted")
             return
         cost = (tokens / 1_000_000.0) * rate * (minutes / 60.0)
-        with _lock:
+        with _state_lock():
             state = _read_state()
             if state.get("date") != date.today().isoformat():
                 state = _blank_state()
@@ -326,7 +368,7 @@ def record_tokens(model: str, tokens_in: int, tokens_out: int,
 
     try:
         cost = estimate_usd(model or "default", tokens_in or 0, tokens_out or 0, tokens_cached or 0)
-        with _lock:
+        with _state_lock():
             state = _read_state()
             if state.get("date") != date.today().isoformat():
                 state = _blank_state()

@@ -151,10 +151,24 @@ fi
 
 git pull origin main
 source .venv/bin/activate
+
+# PyTorch without the GPU code (2026-10-27, multi-user plan § 4.12.1, D13). The VM has no
+# GPU, yet the default PyPI torch is the CUDA build: 15 nvidia-* packages, 2.7 GB of disk
+# and ~169 MB resident in the server. The CPU build comes from PyTorch's own index, in its
+# OWN step — never `--extra-index-url` in requirements.txt, which would let that index
+# supply any package it carries a higher version of, not just torch. Idempotent: an
+# installed 2.12.0+cpu satisfies this and the `torch==2.12.0` pin below (PEP 440 ignores
+# the +cpu label), so the requirements install never swaps the CUDA build back in.
+pip install -q --index-url https://download.pytorch.org/whl/cpu torch==2.12.0+cpu
+NVIDIA_PKGS=$(pip list --format=freeze 2>/dev/null | grep -o '^nvidia-[^=]*' || true)
+[ -n "$NVIDIA_PKGS" ] && pip uninstall -q -y $NVIDIA_PKGS
 pip install -q -r requirements.txt
 
-# Scheduler has no active connections — restart immediately.
-sudo systemctl restart metatron-scheduler
+# Schedulers have no active connections — restart immediately. One per user since
+# 2026-10-27 (metatron-scheduler@<persona>, plan § 4.6); the quoted glob restarts every
+# loaded instance. The old single `metatron-scheduler` unit is retired at the migration
+# (its file moved out of /etc/systemd/system), so nothing here can start it again.
+sudo systemctl restart 'metatron-scheduler@*'
 
 # Drain active SSE streams before restarting the server.
 # Waits up to 3 minutes for in-flight pipelines to finish; force-restarts after timeout.

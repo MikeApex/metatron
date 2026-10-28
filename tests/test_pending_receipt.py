@@ -50,7 +50,11 @@ def _run() -> None:
     check("  and no trace of the false claim survives",
           "merged the records" not in out, out[:100])
     check("  and the pending action is named",
-          "merge_contacts" in out, out[:100])
+          "merging the contacts" in out, out[:100])
+    # In plain words, never the tool identifier — the line reaches the user after
+    # filter_output, and is a first-session sight on the in-app interview (2026-10-27).
+    check("  and no tool identifier reaches the user",
+          "merge_contacts" not in out, out[:100])
 
     # --- an honest reply keeps its content -----------------------------------------
     honest = ("I've put that in front of you to confirm. Separately, did you decide on "

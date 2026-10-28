@@ -41,9 +41,10 @@ _results: list[tuple[str, bool, str]] = []
 def _auth() -> dict:
     global _token
     if _token is None:
-        res = _client.post("/auth/login", json={"password": os.environ["METATRON_AUTH_PASSWORD"]})
-        assert res.status_code == 200, res.text
-        _token = res.json()["token"]
+        # A service token: these checks name a persona per request, which since sign-in
+        # became per user (multi-user build, 2026-10-27) only a service token may do.
+        from core import auth
+        _token = auth.issue_token()
     return {"Authorization": f"Bearer {_token}"}
 
 

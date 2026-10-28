@@ -614,6 +614,12 @@
       justify-content: center;
       z-index: 100;
     }
+    #login-box, #signup-box, #notice-box {
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      width: min(320px, 90vw);
+    }
     #login-box {
       display: flex;
       flex-direction: column;
@@ -630,7 +636,7 @@
     }
     .login-row { display: flex; flex-direction: column; gap: 6px; width: 100%; }
     .login-row label { font-size: 11px; color: #444; text-transform: uppercase; letter-spacing: 0.08em; }
-    .login-row select, .login-row input[type="password"] {
+    .login-row select, .login-row input[type="password"], .login-row input[type="text"] {
       width: 100%;
       background: #1a1a1a;
       border: 1px solid #2a2a2a;
@@ -680,7 +686,20 @@
       text-align: center;
       width: 100%;
     }
-    #login-enter-btn {
+    /* Sign-up (2026-10-27). Same visual language as sign-in; the notice is plain text in
+       a scrolling box so a long one never pushes the button off a phone screen. */
+    .login-link {
+      background: none; border: none; color: #6a8caf; font-size: 13px; cursor: pointer;
+      padding: 4px;
+    }
+    .login-hint { font-size: 12px; color: #555; text-align: center; width: 100%; }
+    #signup-box, #notice-box { display: none; }
+    #notice-text {
+      width: 100%; max-height: 50vh; overflow-y: auto; white-space: pre-wrap;
+      font-size: 14px; line-height: 1.5; color: #ccc; background: #141414;
+      border: 1px solid #2a2a2a; border-radius: 10px; padding: 14px;
+    }
+    #login-enter-btn, #signup-continue-btn, #notice-accept-btn {
       width: 100%;
       height: 52px;
       background: #1e3a5f;
@@ -769,6 +788,44 @@
     .plan-note { font-size: 11px; color: #6f7a6f; }
     /* A close suggested by an arriving message. Its own bar, never the approval bar above —
        see the comment where it is wired. */
+    /* The first interview's one control (multi-user plan § 4.5, § 4.7): "Finish later" while
+       it runs, "Continue setting up" once paused. Hidden for anyone without an interview. */
+    /* Connections (multi-user plan § 4.10-4.11): her Google account and her permissions. */
+    #conn-toggle { background: none; border: none; color: #555; font-size: 15px; cursor: pointer; }
+    #conn-panel {
+      display: none; position: fixed; inset: 0; z-index: 90; background: rgba(0,0,0,0.85);
+      overflow-y: auto; padding: 24px 12px;
+    }
+    #conn-panel.shown { display: block; }
+    #conn-box {
+      max-width: 460px; margin: 0 auto; background: #121212; border: 1px solid #2a2a2a;
+      border-radius: 14px; padding: 18px; color: #ddd; font-size: 14px; line-height: 1.5;
+    }
+    #conn-box h3 { margin: 14px 0 8px; font-size: 14px; color: #9ab; font-weight: 600; }
+    #conn-box ol { padding-left: 20px; margin: 6px 0; }
+    #conn-box a { color: #7ab; }
+    #conn-box input[type="text"], #conn-box input[type="password"] {
+      width: 100%; box-sizing: border-box; background: #1a1a1a; border: 1px solid #2a2a2a;
+      border-radius: 8px; color: #e8e8e8; padding: 10px; font-size: 14px; margin: 4px 0 8px;
+    }
+    #conn-box button {
+      background: #1e3a5f; border: none; border-radius: 16px; color: #e8e8e8;
+      padding: 8px 14px; font-size: 13px; cursor: pointer; margin: 4px 6px 4px 0;
+    }
+    #conn-box button.quiet { background: #222; color: #aaa; }
+    .conn-text { white-space: pre-wrap; background: #181818; border: 1px solid #262626;
+                 border-radius: 8px; padding: 10px; margin: 6px 0; font-size: 13px; color: #bbb; }
+    #conn-msg { margin: 8px 0; color: #9c9; white-space: pre-wrap; }
+    #conn-msg.bad { color: #d88; }
+
+    #interview-bar { display: none; justify-content: center; padding: 6px 12px 0; }
+    #interview-bar.shown { display: flex; }
+    #interview-chip {
+      background: #1a1a1a; color: #9ab; border: 1px solid #2a3a4a; border-radius: 16px;
+      padding: 6px 14px; font-size: 13px; cursor: pointer;
+    }
+    #interview-chip:disabled { opacity: 0.5; cursor: not-allowed; }
+
     #task-proposal-bar {
       display: none;
       flex-direction: column;
@@ -800,23 +857,9 @@
     <div id="login-icon">𐤌</div>
     <div id="login-title">Metatron</div>
     <div class="login-row">
-      <label>Persona</label>
-      <select id="login-persona-select">
-        <optgroup label="User">
-          <option value="mike">mike</option>
-        </optgroup>
-        <optgroup label="Test personas">
-          <option value="pepys">pepys</option>
-          <option value="danny_park">danny_park</option>
-          <option value="maya_torres">maya_torres</option>
-          <option value="sarah_chen">sarah_chen</option>
-          <option value="arthur_brooks">arthur_brooks</option>
-          <option value="cal_newport">cal_newport</option>
-          <option value="ryan_holiday">ryan_holiday</option>
-          <option value="oliver_burkeman">oliver_burkeman</option>
-          <option value="test_a3">test_a3</option>
-        </optgroup>
-      </select>
+      <label>Username</label>
+      <input id="login-username" type="text" placeholder="username"
+             autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="username">
     </div>
     <div class="login-row">
       <label>Password</label>
@@ -828,7 +871,47 @@
       </div>
     </div>
     <div id="login-error"></div>
-    <button id="login-enter-btn">Enter</button>
+    <button id="login-enter-btn">Sign in</button>
+    <button id="show-signup" class="login-link" type="button">Create an account</button>
+  </div>
+
+  <!-- Sign-up (plan § 4.4, § 4.11). The request is only sent from the notice screen, after
+       "I understand" — the permission it records is the sign-up's own record (D11). -->
+  <div id="signup-box">
+    <div style="font-size:13px;color:#555;letter-spacing:0.2em;text-transform:uppercase">Create an account</div>
+    <div class="login-row">
+      <label>Username</label>
+      <input id="signup-username" type="text" placeholder="lowercase, e.g. iva"
+             autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="username">
+    </div>
+    <div class="login-hint">Lowercase letters, digits and underscores.</div>
+    <div class="login-row">
+      <label>Your name</label>
+      <input id="signup-display" type="text" placeholder="what to call you">
+    </div>
+    <div class="login-row">
+      <label>City <span style="text-transform:none">(optional — for the weather)</span></label>
+      <input id="signup-city" type="text" placeholder="e.g. London">
+    </div>
+    <div class="login-row">
+      <label>Password</label>
+      <input id="signup-password" type="password" placeholder="at least 10 characters"
+             autocomplete="new-password">
+    </div>
+    <div class="login-row">
+      <label>Confirm password</label>
+      <input id="signup-confirm" type="password" autocomplete="new-password">
+    </div>
+    <div id="signup-error" class="login-hint" style="color:#b00020"></div>
+    <button id="signup-continue-btn">Continue</button>
+    <button id="signup-back" class="login-link" type="button">Back to sign in</button>
+  </div>
+
+  <div id="notice-box">
+    <div id="notice-text"></div>
+    <div id="notice-error" class="login-hint" style="color:#b00020"></div>
+    <button id="notice-accept-btn">I understand — continue</button>
+    <button id="notice-back" class="login-link" type="button">Back</button>
   </div>
 </div>
 
@@ -836,6 +919,7 @@
   <span>Life Manager</span>
   <span class="header-right">
     <button id="tasks-toggle" title="Today's tasks">✓ Today</button>
+    <button id="conn-toggle" title="Connections and permissions">⚙</button>
     <span id="persona-chip" style="display:none"></span>
   </span>
 </header>
@@ -880,6 +964,40 @@
       <button id="task-proposal-yes">Mark done</button>
     </div>
   </div>
+
+  <div id="conn-panel">
+  <div id="conn-box">
+    <h3>Google account</h3>
+    <div id="conn-status"></div>
+    <div id="conn-form" style="display:none">
+      <div>Connect your Gmail and Google Calendar. One Google <em>app password</em> covers both:</div>
+      <ol>
+        <li>Turn on <a href="https://myaccount.google.com/signinoptions/two-step-verification" target="_blank" rel="noopener">2-Step Verification</a>.</li>
+        <li>Create an <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">app password</a> (name it "Metatron").</li>
+        <li>In Gmail, <a href="https://mail.google.com/mail/u/0/#settings/fwdandpop" target="_blank" rel="noopener">turn on IMAP</a>.</li>
+      </ol>
+      <input id="conn-address" type="text" placeholder="you@gmail.com"
+             autocapitalize="none" autocorrect="off" spellcheck="false">
+      <input id="conn-password" type="password" placeholder="app password (16 letters)"
+             autocomplete="off">
+      <button id="conn-continue">Continue</button>
+    </div>
+    <div id="conn-consent" style="display:none">
+      <div class="conn-text" id="conn-read-text"></div>
+      <label><input type="checkbox" id="conn-read-tick"> I agree — read my calendar and mail</label>
+      <div class="conn-text" id="conn-tone-text"></div>
+      <label><input type="checkbox" id="conn-tone-tick"> Yes — learn how I write (optional)</label>
+      <div><button id="conn-connect">Connect</button>
+           <button id="conn-back" class="quiet">Back</button></div>
+    </div>
+    <div id="conn-msg"></div>
+    <h3>Permissions</h3>
+    <div id="consent-list"></div>
+    <div style="margin-top:14px"><button id="conn-close" class="quiet">Close</button></div>
+  </div>
+</div>
+
+<div id="interview-bar"><button id="interview-chip" type="button"></button></div>
 
   <div id="controls">
     <button id="mic-btn">Tap to Speak</button>
@@ -1011,11 +1129,12 @@
 
   function setLoginError(msg) {
     const el = document.getElementById('login-error');
+    el.style.color = '';   // a sign-up confirmation turns it green; an error resets it
     el.textContent = msg || '';
     el.style.display = msg ? '' : 'none';
   }
 
-  async function login(persona, password) {
+  async function login(username, password) {
     setLoginError('');
     const btn = document.getElementById('login-enter-btn');
     btn.disabled = true;
@@ -1024,16 +1143,22 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ password: password || '' }),
+        body: JSON.stringify({ username: username || '', password: password || '' }),
       });
       if (!res.ok) {
-        setLoginError(res.status === 401 ? 'Incorrect password.' : 'Sign-in failed.');
+        // 403 carries the account's own status ("waiting for approval", …) — said by the
+        // server only after a correct password, so it is safe to show as written.
+        let detail = '';
+        try { detail = (await res.json()).detail || ''; } catch (e) {}
+        setLoginError(res.status === 401 ? 'Incorrect username or password.'
+                      : (typeof detail === 'string' && detail) || 'Sign-in failed.');
         return;
       }
       const data = await res.json();
       authToken = data.token;
       localStorage.setItem('metatron_token', authToken);
-      enterApp(persona);
+      // The persona is the one the token is bound to — the server's answer, not the field.
+      enterApp(data.persona || username);
     } catch (e) {
       setLoginError('Cannot reach the server.');
     } finally {
@@ -1042,6 +1167,13 @@
   }
 
   function enterApp(persona) {
+    // A different persona has a different exchange history: the catch-up cursor belongs to
+    // the previous one, and its first catch-up would otherwise ask from the wrong id.
+    if (currentPersona !== persona) {
+      lastSeenId = 0;
+      interviewStatus = null;     // the new persona's socket reports its own
+      renderInterviewChip();
+    }
     currentPersona = persona;
     localStorage.setItem('metatron_persona', persona);
     document.getElementById('login-screen').style.display = 'none';
@@ -1070,13 +1202,105 @@
   function showLogin() {
     document.getElementById('login-screen').style.display = 'flex';
     document.getElementById('persona-chip').style.display = 'none';
+    showLoginPanel('login-box');
   }
 
   function submitLogin() {
-    const persona = document.getElementById('login-persona-select').value;
+    const username = document.getElementById('login-username').value.trim().toLowerCase();
     const password = document.getElementById('login-password').value;
-    if (persona) login(persona, password);
+    if (username) login(username, password);
+    else setLoginError('Enter your username.');
   }
+
+  // --- Sign-up -------------------------------------------------------------------
+  // Three panels inside the login screen; exactly one is visible.
+  function showLoginPanel(id) {
+    for (const p of ['login-box', 'signup-box', 'notice-box']) {
+      document.getElementById(p).style.display = (p === id) ? 'flex' : 'none';
+    }
+  }
+
+  let signupNoticeVersion = null;
+
+  function signupFields() {
+    return {
+      username: document.getElementById('signup-username').value.trim().toLowerCase(),
+      display_name: document.getElementById('signup-display').value.trim(),
+      city: document.getElementById('signup-city').value.trim(),
+      password: document.getElementById('signup-password').value,
+      confirm: document.getElementById('signup-confirm').value,
+    };
+  }
+
+  async function continueSignup() {
+    const err = document.getElementById('signup-error');
+    err.textContent = '';
+    const f = signupFields();
+    if (!/^[a-z0-9][a-z0-9_]{0,39}$/.test(f.username)) {
+      err.textContent = 'Usernames are lowercase letters, digits and underscores.'; return;
+    }
+    if (!f.display_name) { err.textContent = 'Please enter the name to call you by.'; return; }
+    if (f.password.length < 10) { err.textContent = 'Passwords need at least 10 characters.'; return; }
+    if (f.password !== f.confirm) { err.textContent = "The two passwords don't match."; return; }
+    // The notice comes from the server, so the version recorded is the text actually shown.
+    try {
+      const res = await fetch(SERVER + '/auth/notice', { credentials: 'include' });
+      const data = await res.json();
+      signupNoticeVersion = data.text_version;
+      document.getElementById('notice-text').textContent =
+        (data.text || '').replace(/^#+\s*/gm, '').replace(/\*\*/g, '');
+    } catch (e) {
+      err.textContent = 'Cannot reach the server.'; return;
+    }
+    document.getElementById('notice-error').textContent = '';
+    showLoginPanel('notice-box');
+  }
+
+  async function acceptNoticeAndRegister() {
+    const err = document.getElementById('notice-error');
+    const btn = document.getElementById('notice-accept-btn');
+    err.textContent = '';
+    btn.disabled = true;
+    const f = signupFields();
+    try {
+      const res = await fetch(SERVER + '/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          username: f.username, display_name: f.display_name, password: f.password,
+          city: f.city, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || '',
+          consent: { scope: 'base_configuration', text_version: signupNoticeVersion },
+        }),
+      });
+      let data = {};
+      try { data = await res.json(); } catch (e) {}
+      if (!res.ok) {
+        err.textContent = (typeof data.detail === 'string' && data.detail) || 'Sign-up failed.';
+        return;
+      }
+      for (const id of ['signup-password', 'signup-confirm']) document.getElementById(id).value = '';
+      document.getElementById('login-username').value = f.username;
+      showLoginPanel('login-box');
+      setLoginError('');
+      document.getElementById('login-error').style.display = '';
+      document.getElementById('login-error').style.color = '#6a8';
+      document.getElementById('login-error').textContent =
+        data.message || "Request sent. You can sign in once it's approved.";
+    } catch (e) {
+      err.textContent = 'Cannot reach the server.';
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  document.getElementById('show-signup').addEventListener('click', () => {
+    setLoginError(''); showLoginPanel('signup-box');
+  });
+  document.getElementById('signup-back').addEventListener('click', () => showLoginPanel('login-box'));
+  document.getElementById('notice-back').addEventListener('click', () => showLoginPanel('signup-box'));
+  document.getElementById('signup-continue-btn').addEventListener('click', continueSignup);
+  document.getElementById('notice-accept-btn').addEventListener('click', acceptNoticeAndRegister);
 
   // Show/hide the password. Worth having on a phone: the field is typed rarely — the
   // token lasts 30 days — so a typo is both likely and invisible, and the failure it
@@ -1718,8 +1942,197 @@
   // catch-up in between. This is the one place that must stay unconditional.
   setInterval(ensureConnected, 20000);
 
+  // --- Connections: her Google account and her permissions (plan § 4.10, § 4.11) --------
+  // The password goes in one HTTPS request to /connections/google and nowhere else — never a
+  // chat message, so it never reaches a model or a conversation log. The two permission
+  // screens are the one place the app names Google, Vertex and the developer's access, on
+  // purpose: that disclosure is the feature (CLAUDE.md § Discretion's own exception).
+  let consentState = {};
+
+  function plainText(md) { return (md || '').replace(/^#+\s*/gm, '').replace(/\*\*/g, ''); }
+
+  function connMsg(text, bad) {
+    const el = document.getElementById('conn-msg');
+    el.textContent = text || '';
+    el.className = bad ? 'bad' : '';
+  }
+
+  async function openConnections() {
+    document.getElementById('conn-panel').classList.add('shown');
+    connMsg('');
+    try {
+      const [c, k] = await Promise.all([
+        authFetch('/connections?persona=' + encodeURIComponent(currentPersona)).then(r => r.json()),
+        authFetch('/consents?persona=' + encodeURIComponent(currentPersona)).then(r => r.json()),
+      ]);
+      consentState = k.consents || {};
+      renderConnection(c.google || {});
+      renderConsents();
+    } catch (e) { connMsg('Cannot reach the server.', true); }
+  }
+
+  function renderConnection(g) {
+    const status = document.getElementById('conn-status');
+    status.innerHTML = '';
+    document.getElementById('conn-consent').style.display = 'none';
+    if (g.connected) {
+      const line = document.createElement('div');
+      const cals = (g.calendars || []).join(', ');
+      line.textContent = 'Connected: ' + (g.address || '') + (cals ? ' — calendars: ' + cals : '')
+        + (g.checked_at ? ' (checked ' + String(g.checked_at).slice(0, 16).replace('T', ' ') + ')' : '');
+      status.append(line);
+      // A connection set up by hand on the server (Mike's) is shown, never managed here.
+      if (!g.managed_in_app) { document.getElementById('conn-form').style.display = 'none'; return; }
+      const btn = document.createElement('button');
+      btn.className = 'quiet'; btn.textContent = 'Disconnect';
+      btn.onclick = async () => {
+        if (!confirm('Disconnect your Google account? The app password is deleted.')) return;
+        await authFetch('/connections/google?persona=' + encodeURIComponent(currentPersona), { method: 'DELETE' });
+        openConnections();
+      };
+      status.append(btn);
+      document.getElementById('conn-form').style.display = 'none';
+    } else {
+      status.textContent = 'Not connected.';
+      document.getElementById('conn-form').style.display = '';
+    }
+  }
+
+  function renderConsents() {
+    const list = document.getElementById('consent-list');
+    list.innerHTML = '';
+    const names = { correspondence_read: 'Read my calendar and mail',
+                    tone_profile: 'Learn how I write to people' };
+    for (const [scope, c] of Object.entries(consentState)) {
+      const row = document.createElement('div');
+      row.textContent = (names[scope] || scope) + ': ' + (c.granted ? 'on' : 'off') + ' ';
+      if (c.granted) {
+        const btn = document.createElement('button');
+        btn.className = 'quiet'; btn.textContent = 'Withdraw';
+        btn.onclick = async () => {
+          const extra = scope === 'correspondence_read' ? ' This also disconnects your Google account.'
+                      : ' What it has learned is deleted.';
+          if (!confirm('Withdraw this permission?' + extra)) return;
+          await authFetch('/consents/' + scope + '?persona=' + encodeURIComponent(currentPersona), { method: 'DELETE' });
+          openConnections();
+        };
+        row.append(btn);
+      }
+      list.append(row);
+    }
+  }
+
+  async function grant(scope) {
+    const c = consentState[scope];
+    if (!c || c.granted) return true;
+    const res = await authFetch('/consents/' + scope, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text_version: c.text_version, persona: currentPersona }),
+    });
+    return res.ok;
+  }
+
+  document.getElementById('conn-toggle').addEventListener('click', openConnections);
+  document.getElementById('conn-close').addEventListener('click', () => {
+    document.getElementById('conn-panel').classList.remove('shown');
+    document.getElementById('conn-password').value = '';
+  });
+  document.getElementById('conn-continue').addEventListener('click', () => {
+    const addr = document.getElementById('conn-address').value.trim();
+    const pw = document.getElementById('conn-password').value.replace(/\s+/g, '');
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(addr)) { connMsg('Enter your Google address.', true); return; }
+    if (pw.length < 16) { connMsg('The app password is the 16-letter code Google shows you.', true); return; }
+    document.getElementById('conn-read-text').textContent = plainText((consentState.correspondence_read || {}).text);
+    document.getElementById('conn-tone-text').textContent = plainText((consentState.tone_profile || {}).text);
+    document.getElementById('conn-read-tick').checked = !!(consentState.correspondence_read || {}).granted;
+    document.getElementById('conn-tone-tick').checked = !!(consentState.tone_profile || {}).granted;
+    document.getElementById('conn-form').style.display = 'none';
+    document.getElementById('conn-consent').style.display = '';
+    connMsg('');
+  });
+  document.getElementById('conn-back').addEventListener('click', () => {
+    document.getElementById('conn-consent').style.display = 'none';
+    document.getElementById('conn-form').style.display = '';
+  });
+  document.getElementById('conn-connect').addEventListener('click', async () => {
+    if (!document.getElementById('conn-read-tick').checked) {
+      connMsg('Connecting needs permission to read your calendar and mail.', true); return;
+    }
+    const btn = document.getElementById('conn-connect');
+    btn.disabled = true;
+    connMsg('Checking with Google…');
+    try {
+      if (!(await grant('correspondence_read'))) { connMsg('Could not record your permission.', true); return; }
+      if (document.getElementById('conn-tone-tick').checked) await grant('tone_profile');
+      const res = await authFetch('/connections/google', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          address: document.getElementById('conn-address').value.trim(),
+          app_password: document.getElementById('conn-password').value.replace(/\s+/g, ''),
+          persona: currentPersona,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      document.getElementById('conn-password').value = '';
+      if (res.ok && data.ok) {
+        connMsg('Connected — found ' + (data.calendars || []).length + ' calendar(s): '
+                + (data.calendars || []).join(', '));
+        openConnections();
+      } else {
+        connMsg((data.remedy || data.detail || 'That did not work.'), true);
+        document.getElementById('conn-consent').style.display = 'none';
+        document.getElementById('conn-form').style.display = '';
+      }
+    } catch (e) {
+      connMsg('Cannot reach the server.', true);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  // --- The first interview's chip -------------------------------------------------
+  // The server says where the interview stands ({type: 'interview', status}) on connect and
+  // after every change, so the chip follows it on every device. No status, no chip.
+  let interviewStatus = null;
+
+  function renderInterviewChip() {
+    const bar = document.getElementById('interview-bar');
+    const chip = document.getElementById('interview-chip');
+    chip.disabled = false;
+    if (interviewStatus === 'active') {
+      chip.textContent = 'Finish later';
+      bar.classList.add('shown');
+    } else if (interviewStatus === 'paused') {
+      chip.textContent = 'Continue setting up';
+      bar.classList.add('shown');
+    } else {
+      bar.classList.remove('shown');
+    }
+  }
+
+  document.getElementById('interview-chip').addEventListener('click', async () => {
+    const chip = document.getElementById('interview-chip');
+    const path = interviewStatus === 'active' ? '/interview/pause'
+               : interviewStatus === 'paused' ? '/interview/resume' : null;
+    if (!path) return;
+    chip.disabled = true;
+    try {
+      const res = await authFetch(path, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ persona: currentPersona }),
+      });
+      if (res.ok) interviewStatus = (await res.json()).status;
+    } catch (e) { /* the next status frame corrects the chip */ }
+    renderInterviewChip();
+  });
+
   function handleWsMessage(msg) {
     switch (msg.type) {
+
+      case 'interview':
+        interviewStatus = msg.status || null;
+        renderInterviewChip();
+        break;
 
       case 'ping':
         // Server heartbeat. lastMessageAt is already updated in onmessage;
@@ -4097,7 +4510,8 @@
   // Auto-login if persona saved — must run after all variables and handlers are initialized
   const savedPersona = localStorage.getItem('metatron_persona');
   if (savedPersona) {
-    document.getElementById('login-persona-select').value = savedPersona;
+    // The last username is remembered; the password never is.
+    document.getElementById('login-username').value = savedPersona;
   }
   // Auto-enter only with a token in hand. Without one every call would 401 and bounce
   // straight back here, so the login screen is the honest starting point. The token

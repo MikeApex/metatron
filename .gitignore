@@ -206,6 +206,24 @@ config/personas/*/caldav.yaml
 # before overwriting. Tier 1-2 content — sensitive, never committable.
 config/personas/*/*.bak
 
+# Account personas (2026-10-27, multi-user build § 4.10 1a). `approve` and the Connections
+# panel create these on the VM for every account; until now only `mike` was covered by
+# name, so a second user's identity file, Tier 1-3 files and Google credential were
+# untracked-but-stageable — one `git add -A` during a hand-driven recovery from history.
+# Already-tracked synthetic persona files stay tracked (git ignores only untracked paths);
+# a NEW synthetic persona now needs `git add -f`, the right default, since an untracked
+# persona file is presumed real.
+config/personas/*.md
+config/personas/*/credentials.yaml
+config/personas/*/email.yaml
+config/personas/*/intake.yaml
+config/personas/*/prime_directive.md
+config/personas/*/mission.md
+config/personas/*/goals.yaml
+
+# The account store — password hashes and who asked for an account. VM-only.
+data/accounts/
+
 # Pre-reset data archives — user data, never committed
 data/_pre_reset_*/
 

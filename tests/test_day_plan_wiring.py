@@ -186,7 +186,8 @@ def _server_case(reply_chunks: list[str]):
     async def _none(*a, **k):
         return None
 
-    async def _save(persona, xid, user, assistant, proactive=False, attachments=None):
+    async def _save(persona, xid, user, assistant, proactive=False, attachments=None,
+                    channel=None):
         saves.append({"assistant": assistant, "proactive": proactive})
         return 1
 

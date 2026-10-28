@@ -1,16 +1,23 @@
 """
 core/push.py — Web Push notification delivery.
 
-Sends push notifications to all registered PWA subscriptions.
+Sends push notifications to one persona's registered PWA subscriptions.
 Uses VAPID authentication; keys are stored in .env and never
 leave the machine.
 
 Subscriptions are stored in data/push_subscriptions.json.
 This file is local-only and not committed to git.
 
+**Every subscription belongs to one persona (2026-10-27).** Until the second user the
+list had no owner and `send_push` went to all of it — so once a second person's browser
+subscribed, every one of Mike's check-ins, with its text, would have arrived on her
+device (archive/plans/multi_user_accounts_plan_2026-10-26.md § 3.4). `persona` is now
+required on both ends. Entries written before this carry no owner and were all Mike's;
+they are read as `mike` and stamped so on the next write.
+
 Usage (from scheduler or any other module):
     from core.push import send_push
-    send_push(title="Morning Brief", body="Here's your day...")
+    send_push(title="Morning Brief", body="Here's your day...", persona="mike")
 """
 
 from __future__ import annotations
@@ -27,49 +34,74 @@ _ROOT = Path(__file__).parent.parent
 _SUBSCRIPTIONS_FILE = _ROOT / "data" / "push_subscriptions.json"
 
 
+# Subscriptions registered before they carried an owner were all Mike's — he was the only
+# user. Reading them as his is the migration; nothing else needs to run.
+_LEGACY_OWNER = "mike"
+
+
 def _load_subscriptions() -> list[dict]:
     if not _SUBSCRIPTIONS_FILE.exists():
         return []
     try:
         with open(_SUBSCRIPTIONS_FILE) as f:
-            return json.load(f)
+            subs = json.load(f)
     except Exception:
         return []
+    for sub in subs:
+        sub.setdefault("persona", _LEGACY_OWNER)
+    return subs
 
 
-def save_subscription(subscription: dict) -> str:
-    """
-    Register a browser push subscription.
-
-    Called by the FastAPI /subscribe endpoint when the PWA registers.
-    Deduplicates by endpoint URL.
-    """
+def _write_subscriptions(subs: list[dict]) -> None:
     _SUBSCRIPTIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    subs = _load_subscriptions()
-
-    endpoint = subscription.get("endpoint", "")
-    existing_endpoints = [s.get("endpoint") for s in subs]
-
-    if endpoint and endpoint not in existing_endpoints:
-        subs.append(subscription)
-        with open(_SUBSCRIPTIONS_FILE, "w") as f:
-            json.dump(subs, f, indent=2)
-        return f"Subscription registered ({len(subs)} total)"
-    return "Subscription already registered"
+    with open(_SUBSCRIPTIONS_FILE, "w") as f:
+        json.dump(subs, f, indent=2)
 
 
-def send_push(title: str, body: str, urgency: str = "normal") -> dict:
+def save_subscription(subscription: dict, persona: str) -> str:
     """
-    Send a push notification to all registered subscriptions.
+    Register a browser push subscription for one persona.
+
+    Called by the FastAPI /subscribe endpoint, which passes the persona bound to the
+    caller's token — never one the request names. Deduplicates by endpoint URL; a device
+    that re-subscribes after a different user signed in on it moves to that user, so a
+    shared browser never keeps receiving the previous user's notifications.
+    """
+    if not persona:
+        raise ValueError("a push subscription must belong to a persona")
+    subs = _load_subscriptions()
+    endpoint = subscription.get("endpoint", "")
+    if not endpoint:
+        return "Subscription has no endpoint"
+    entry = {**subscription, "persona": persona}
+    for i, existing in enumerate(subs):
+        if existing.get("endpoint") == endpoint:
+            if existing.get("persona") == persona:
+                return "Subscription already registered"
+            subs[i] = entry
+            _write_subscriptions(subs)
+            return "Subscription moved to this account"
+    subs.append(entry)
+    _write_subscriptions(subs)
+    return f"Subscription registered ({sum(1 for s in subs if s['persona'] == persona)} for this account)"
+
+
+def send_push(title: str, body: str, urgency: str = "normal", *, persona: str) -> dict:
+    """
+    Send a push notification to one persona's subscriptions, and nobody else's.
 
     Args:
         title:   Notification title shown on the device.
         body:    Notification body text.
         urgency: "very-low" | "low" | "normal" | "high" (default "normal")
+        persona: whose devices receive it. Required, with no default, so a caller that
+                 forgets cannot fall back to broadcasting.
 
     Returns:
         Dict with 'sent' count and any 'errors'.
     """
+    if not persona:
+        raise ValueError("send_push needs the persona whose devices should receive it")
     from pywebpush import webpush, WebPushException
     from cryptography.hazmat.primitives.serialization import (
         load_pem_private_key, Encoding, PrivateFormat, NoEncryption,
@@ -90,7 +122,8 @@ def send_push(title: str, body: str, urgency: str = "normal") -> dict:
     except Exception as e:
         return {"sent": 0, "errors": [f"VAPID key parse error: {e}"]}
 
-    subs = _load_subscriptions()
+    all_subs = _load_subscriptions()
+    subs = [s for s in all_subs if s.get("persona") == persona]
     if not subs:
         return {"sent": 0, "errors": ["No registered subscriptions"]}
 
@@ -102,7 +135,8 @@ def send_push(title: str, body: str, urgency: str = "normal") -> dict:
     for sub in subs:
         try:
             webpush(
-                subscription_info=sub,
+                # Only what the push service needs — the owner field is ours.
+                subscription_info={"endpoint": sub.get("endpoint"), "keys": sub.get("keys", {})},
                 data=payload,
                 vapid_private_key=vapid_key,
                 vapid_claims={"sub": claims_sub},
@@ -120,9 +154,7 @@ def send_push(title: str, body: str, urgency: str = "normal") -> dict:
 
     # Remove stale subscriptions
     if stale:
-        active = [s for s in subs if s.get("endpoint") not in stale]
-        with open(_SUBSCRIPTIONS_FILE, "w") as f:
-            json.dump(active, f, indent=2)
+        _write_subscriptions([s for s in all_subs if s.get("endpoint") not in stale])
 
     return {"sent": sent, "errors": errors}
 

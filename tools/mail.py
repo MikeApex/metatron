@@ -40,6 +40,7 @@ from pathlib import Path
 
 import yaml
 
+from core.connections import apply_credentials, credentials_path
 from core.persona import persona_config_dir
 from tools.untrusted import (UNTRUSTED_CONTENT_INSTRUCTION, contains_injection_markers,
                              wrap_untrusted)
@@ -67,10 +68,17 @@ def _config_path(persona: str | None = None):
 
 
 def _load_config(persona: str | None = None) -> dict:
+    """
+    The persona's email.yaml, with the app password from credentials.yaml merged in when one
+    exists beside it. The single loader every mail password read goes through — read, send,
+    correspondence sampling, and tools/intake_email.py, which imports it (plan
+    archive/plans/multi_user_accounts_plan_2026-10-26.md § 4.10, review C1). Mike's inline
+    password, with no credentials.yaml, loads exactly as before.
+    """
     path = _config_path(persona)
     if not path.exists():
         return {}
-    return yaml.safe_load(path.read_text()) or {}
+    return apply_credentials(yaml.safe_load(path.read_text()) or {}, path.parent)
 
 
 # Appended to every authentication failure on this path — read and send alike.
@@ -91,16 +99,92 @@ def _safe_config_path(persona: str | None = None) -> str:
         return "this persona's email.yaml"
 
 
-def _credential_remedy(persona: str | None = None) -> str:
+def _connected_in_app(persona: str | None = None) -> bool:
+    """True when this persona's password lives in credentials.yaml (connected in the app)."""
+    try:
+        return credentials_path(_config_path(persona).parent).exists()
+    except Exception:
+        return False
+
+
+def _credential_remedy(persona: str | None = None, in_app: bool | None = None) -> str:
+    # Step (2) names wherever the password actually lives — see tools/caldav.py's twin. For a
+    # user who connected in the app (plan § 4.10) that is the Connections panel, not a file on
+    # a server she cannot reach. `in_app=None` reads it from the persona.
+    if in_app is None:
+        in_app = _connected_in_app(persona)
+    if in_app:
+        step_two = ("(2) enter it in the app's Connections panel (Disconnect, then Connect with "
+                    "the new app password). Step 1 alone changes nothing here.")
+    else:
+        step_two = (f"(2) write that value into the auth.password line of "
+                    f"{_safe_config_path(persona)} on the machine running this system. Step 1 "
+                    f"alone changes nothing here. No restart is needed afterwards — this file "
+                    f"is re-read on every call.")
     return (
-        f" Note that changing the Google account password revokes every app-specific "
-        f"password with it. Fixing this takes TWO steps, and the second is the one "
-        f"usually missed: (1) generate a new app-specific password in the Google "
-        f"account, then (2) write that value into the auth.password line of "
-        f"{_safe_config_path(persona)} on the machine running this system. Step 1 alone "
-        f"changes nothing here. No restart is needed afterwards — this file is "
-        f"re-read on every call."
+        " Note that changing the Google account password revokes every app-specific "
+        "password with it. Fixing this takes TWO steps, and the second is the one "
+        "usually missed: (1) generate a new app-specific password in the Google "
+        "account, then " + step_two
     )
+
+
+# What a refused IMAP login usually means on Gmail — shared by read_email and the in-app
+# connection test, which reaches this point only after the same app password passed the
+# calendar test, so "IMAP is off" is then the likelier half.
+IMAP_LOGIN_HINT = (
+    "For Gmail this is usually either IMAP not enabled in the account settings, or an "
+    "ordinary account password used where an app-specific password is required."
+)
+
+
+class _ConnectFailed(Exception):
+    """The IMAP server could not be reached at all — as opposed to refusing the login."""
+
+
+def _imap_login(host: str, username: str, password: str):
+    """
+    Open an IMAP-over-SSL connection and log in; the caller logs out.
+
+    Raises _ConnectFailed when the server cannot be reached, imaplib.IMAP4.error when the login
+    is refused (the connection is closed first). Shared by read_email, search_correspondence and
+    probe_imap_login so the connection test logs in exactly the way the tools do.
+    """
+    try:
+        conn = imaplib.IMAP4_SSL(host, timeout=TIMEOUT_SECONDS)
+    except Exception as e:
+        raise _ConnectFailed(str(e)) from e
+    try:
+        conn.login(username, password)
+    except BaseException:
+        try:
+            conn.logout()
+        except Exception:
+            pass
+        raise
+    return conn
+
+
+def probe_imap_login(username: str, password: str, host: str = "imap.gmail.com") -> dict:
+    """
+    The connection test's mail half (plan § 4.10): a REAL IMAP login with credentials that are
+    not saved anywhere, then logout. Reads nothing, writes nothing, logs nothing — the caller
+    (core/connections.py) owns what is said and scrubs it.
+
+    Returns {"ok": True} or {"ok": False, "auth": bool, "error": str} — `auth` true when the
+    server refused the login, false when it could not be reached.
+    """
+    try:
+        conn = _imap_login(host, username, password)
+    except _ConnectFailed as e:
+        return {"ok": False, "auth": False, "error": f"Could not connect to {host}: {e}"}
+    except imaplib.IMAP4.error as e:
+        return {"ok": False, "auth": True, "error": f"IMAP login rejected for {username}: {e}"}
+    try:
+        conn.logout()
+    except Exception:
+        pass
+    return {"ok": True}
 
 
 # The provisioning template doubles as the default source. A template is copied once, at
@@ -238,21 +322,14 @@ def read_email(count: int = 10, unread_only: bool = False, folder: str = "INBOX"
         count = 10
 
     try:
-        conn = imaplib.IMAP4_SSL(host, timeout=TIMEOUT_SECONDS)
-    except Exception as e:
+        conn = _imap_login(host, username, password)
+    except _ConnectFailed as e:
         return {"error": f"Could not connect to {host}: {e}"}
+    except imaplib.IMAP4.error as e:
+        return {"error": (f"IMAP login rejected for {username}: {e}. " + IMAP_LOGIN_HINT
+                          + _credential_remedy())}
 
     try:
-        try:
-            conn.login(username, password)
-        except imaplib.IMAP4.error as e:
-            return {"error": (
-                f"IMAP login rejected for {username}: {e}. For Gmail this is usually "
-                f"either IMAP not enabled in the account settings, or an ordinary "
-                f"account password used where an app-specific password is required."
-                + _credential_remedy()
-            )}
-
         # readonly=True: SELECT rather than EXAMINE semantics, so nothing is flagged.
         status, _ = conn.select(_imap_quote(folder), readonly=True)
         if status != "OK":
@@ -516,17 +593,14 @@ def search_correspondence(address: str, char_budget: int = _CORR_CHAR_BUDGET) ->
         return {"error": "No address given."}
 
     try:
-        conn = imaplib.IMAP4_SSL(host, timeout=TIMEOUT_SECONDS)
-    except Exception as e:
+        conn = _imap_login(host, username, password)
+    except _ConnectFailed as e:
         return {"error": f"Could not connect to {host}: {e}"}
+    except imaplib.IMAP4.error as e:
+        return {"error": f"IMAP login rejected for {username}: {e}"
+                         + _credential_remedy()}
 
     try:
-        try:
-            conn.login(username, password)
-        except imaplib.IMAP4.error as e:
-            return {"error": f"IMAP login rejected for {username}: {e}"
-                             + _credential_remedy()}
-
         sent = _sent_folder(cfg, conn)
         received = _sample_direction(conn, "INBOX", "FROM", address)
         written = _sample_direction(conn, sent, "TO", address) if sent else []

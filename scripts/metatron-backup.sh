@@ -72,15 +72,34 @@ fi
 #   data/baselines/    — cold-start semantic anchors; regenerating them costs
 #                        a full Goals Interview.
 #
+#   data/accounts/     — the account store (2026-10-27): who may sign in, their
+#                        status and password hashes. Without it a VM rebuild would
+#                        keep every user's data and delete every account (review L4).
+#
 # Deliberately excluded: .faiss indexes (rebuildable from the journals we do
-# take, and large), __pycache__, .venv, tools/kokoro.
+# take, and large), __pycache__, .venv, tools/kokoro, and:
+#   */credentials.yaml — an account user's Google app password (plan § 4.10, review
+#                        C1). It lives only on the VM, by design: this archive is
+#                        plaintext on Mike's Mac, and copying another person's
+#                        credential here would outlive her *Disconnect* by a month.
+#                        After a VM rebuild she reconnects in the app.
+#   data/personas/<p>/audio/ for every persona NOT in AUDIO_BACKUP_PERSONAS — raw
+#                        voice recordings. Mike's ruling 2026-10-27: his and Iva's are
+#                        backed up; later accounts' recordings are not. The transcripts
+#                        are in their conversation history either way.
+AUDIO_BACKUP_PERSONAS="mike iva"
 log "Pulling data from $VM ..."
 if ! "$GCLOUD" compute ssh "$VM" --zone="$ZONE" --project="$PROJECT" --tunnel-through-iap \
-        --command "cd ~/$REMOTE_ROOT && tar -czf - \
+        --command "cd ~/$REMOTE_ROOT && AUDIO_EXCLUDES=\$(for d in data/personas/*/audio; do \
+                p=\${d#data/personas/}; p=\${p%/audio}; \
+                [[ ' $AUDIO_BACKUP_PERSONAS ' == *\" \$p \"* ]] || printf -- '--exclude=%s ' \"\$d\"; \
+            done) && ACCOUNTS_DIR=\$([ -d data/accounts ] && echo data/accounts || true) && tar -czf - \
             --exclude='*/__pycache__' \
             --exclude='*.pyc' \
             --exclude='*.faiss' \
-            data/personas config/personas data/baselines \
+            --exclude='*/credentials.yaml' \
+            \$AUDIO_EXCLUDES \
+            data/personas config/personas data/baselines \$ACCOUNTS_DIR \
             data/conversations/metatron.db 2>/dev/null" \
         > "$OUTFILE" 2>"$ERRLOG"; then
     rm -f "$OUTFILE"

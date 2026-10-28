@@ -28,6 +28,24 @@ WebSocket auth does not live here — see `core/server.py`. `@app.middleware("ht
 never runs for a WebSocket handshake, so that path is gated explicitly at the endpoint
 with a first-frame handshake rather than a query parameter. A `?token=` would put the
 secret in URLs, and therefore in access logs and browser history.
+
+**Tokens carry who they are for (v2, 2026-10-27).** Until then a token was
+`<expiry>.<hmac>` and named nobody: whoever held one could ask for any persona, which was
+harmless with one user and is the whole problem with two
+(archive/plans/multi_user_accounts_plan_2026-10-26.md § 3.1, § 4.1, § 4.3). Now:
+
+    v2.<persona | *>.<role>.<cred_version>.<expiry>.<hmac>
+
+  - `user`    — an account user (`core/accounts.py`). Bound to that one persona; verified
+                against the account store on every request, so disabling the account or
+                resetting its password (both bump `cred_version`) revokes it at once.
+  - `admin`   — Mike, signed in with METATRON_AUTH_PASSWORD as `mike` or a test persona.
+                Bound to that persona, plus The Book's `/monitor/*` for everyone.
+  - `service` — minted locally by internal clients (the scheduler, deploy.sh, The Book,
+                the sync and read scripts). Names its persona per request; `*` here.
+
+v1 tokens are refused. The signing key is unchanged, so rotating the admin password still
+revokes every token of every kind.
 """
 
 # Lazy annotations, so `str | None` does not evaluate at import time. This module is
@@ -98,7 +116,12 @@ TOKEN_TTL_SECONDS = int(os.environ.get("METATRON_AUTH_TTL_SECONDS", 30 * 24 * 36
 # Note what is NOT here: /health. A liveness probe that reports the server is up is a
 # small disclosure, but it is also the single most useful endpoint to an unauthenticated
 # scanner, and deploy.sh is the only thing that calls it — it can carry a token.
-OPEN_PATHS = frozenset({"/", "/sw.js", "/auth/login", "/favicon.ico"})
+#
+# /auth/register is open because the person signing up has no credential yet. What it can
+# do is bounded in core/server.py: create one `pending` entry, rate-limited, never a token.
+# /auth/notice is the sign-up notice text — it must be readable before the account exists.
+OPEN_PATHS = frozenset({"/", "/sw.js", "/auth/login", "/auth/register", "/auth/notice",
+                        "/favicon.ico"})
 OPEN_PREFIXES = ("/static/",)
 
 
@@ -149,29 +172,103 @@ def _sign(payload: str) -> str:
     return hmac.new(_signing_key(), payload.encode(), hashlib.sha256).hexdigest()
 
 
-def issue_token(ttl_seconds: int | None = None) -> str:
-    """Mint a signed token of the form `<expiry-epoch>.<hmac>`."""
-    exp = int(time.time()) + (ttl_seconds or TOKEN_TTL_SECONDS)
-    payload = str(exp)
+ROLES = ("user", "admin", "service")
+_store_warned: str | None = None
+_ANY_PERSONA = "*"
+
+
+class Identity:
+    """
+    Who a verified token belongs to. `persona` is None for a service token, which names
+    its persona per request instead.
+    """
+    __slots__ = ("persona", "role", "cred_version")
+
+    def __init__(self, persona: str | None, role: str, cred_version: int = 0) -> None:
+        self.persona = persona
+        self.role = role
+        self.cred_version = cred_version
+
+    @property
+    def is_admin_or_service(self) -> bool:
+        return self.role in ("admin", "service")
+
+    def __repr__(self) -> str:   # never the token, only what it decoded to
+        return f"Identity(persona={self.persona!r}, role={self.role!r})"
+
+
+def issue_token(ttl_seconds: int | None = None, *, persona: str | None = None,
+                role: str = "service", cred_version: int = 0) -> str:
+    """
+    Mint a signed v2 token. With no arguments this is a service token — the form every
+    internal client uses. `user` and `admin` tokens are minted only by /auth/login.
+    """
+    if role not in ROLES:
+        raise ValueError(f"unknown role {role!r}")
+    if role in ("user", "admin") and not persona:
+        raise ValueError(f"a {role} token must be bound to a persona")
+    bound = _ANY_PERSONA if role == "service" else persona
+    # ttl_seconds=0 would mean "already expired"; only None takes the default.
+    exp = int(time.time()) + (TOKEN_TTL_SECONDS if ttl_seconds is None else ttl_seconds)
+    payload = f"v2.{bound}.{role}.{int(cred_version)}.{exp}"
     return f"{payload}.{_sign(payload)}"
 
 
-def verify_token(token: str | None) -> bool:
-    """True if the token is well-formed, correctly signed, and unexpired."""
-    if not token or "." not in token:
-        return False
+def decode_token(token: str | None) -> Identity | None:
+    """
+    The Identity a token belongs to, or None if it is not a valid, current v2 token.
+
+    A `user` token is also checked against the account store: unknown, not `active`, or
+    an older `cred_version` than the account now has → None. That lookup is the only
+    place this module touches `core.accounts`, and it is lazy, so minting and verifying
+    service tokens never import it (see the interpreter note at the top of this file).
+    """
+    if not token or not token.startswith("v2."):
+        return None
     payload, _, signature = token.rpartition(".")
     try:
         expected = _sign(payload)
     except AuthNotConfigured:
-        return False
+        return None
     # compare_digest, not ==, so a wrong signature costs the same time as a right one.
     if not hmac.compare_digest(signature, expected):
-        return False
+        return None
+    parts = payload.split(".")
+    if len(parts) != 5:
+        return None
+    _v, persona, role, cred, exp = parts
     try:
-        return int(payload) > int(time.time())
+        if int(exp) <= int(time.time()):
+            return None
+        cred_version = int(cred)
     except ValueError:
-        return False
+        return None
+    if role not in ROLES:
+        return None
+    if role == "service":
+        return Identity(None, "service", 0) if persona == _ANY_PERSONA else None
+    if persona == _ANY_PERSONA:
+        return None
+    if role == "user":
+        from core import accounts
+        try:
+            entry = accounts.get(persona)
+        except Exception as e:
+            # Fail closed, and say so once per broken state rather than on every request.
+            global _store_warned
+            if _store_warned != str(e):
+                _store_warned = str(e)
+                logger.error(f"[auth] account store unreadable — refusing user tokens: {e}")
+            return None
+        if (not entry or entry.get("status") != "active"
+                or int(entry.get("cred_version") or 0) != cred_version):
+            return None
+    return Identity(persona, role, cred_version)
+
+
+def verify_token(token: str | None) -> bool:
+    """True if the token is a valid, current v2 token of any role."""
+    return decode_token(token) is not None
 
 
 # Brute-force blunting. A generated 32-byte password is not guessable in any practical
@@ -182,23 +279,37 @@ _failed_attempts = 0
 _MAX_DELAY_SECONDS = 5.0
 
 
+def is_admin_password(supplied: str | None) -> bool:
+    """Constant-time check of the admin password. Records nothing — see note_login_*."""
+    pw = _password()
+    if not pw or not supplied:
+        return False
+    return hmac.compare_digest(supplied, pw)
+
+
+def note_login_failure() -> None:
+    """Count a failed sign-in — admin or account, the same counter and the same delay."""
+    global _failed_attempts
+    _failed_attempts += 1
+    logger.warning(f"[auth] failed login attempt ({_failed_attempts} since last success)")
+
+
+def note_login_success() -> None:
+    global _failed_attempts
+    _failed_attempts = 0
+
+
 def check_password(supplied: str | None) -> bool:
     """
-    Constant-time password check, with an escalating delay on repeated failure.
+    Constant-time admin-password check, with an escalating delay on repeated failure.
 
     The delay is applied by the caller awaiting it — see /auth/login — so it never
     blocks the event loop here.
     """
-    global _failed_attempts
-    pw = _password()
-    if not pw or not supplied:
-        _failed_attempts += 1
-        return False
-    if hmac.compare_digest(supplied, pw):
-        _failed_attempts = 0
+    if is_admin_password(supplied):
+        note_login_success()
         return True
-    _failed_attempts += 1
-    logger.warning(f"[auth] failed login attempt ({_failed_attempts} since last success)")
+    note_login_failure()
     return False
 
 
@@ -217,8 +328,12 @@ def client_token(ttl_seconds: int = 3600) -> str:
     `.env` — and the signing key is derived from it, so a token minted here verifies on
     the VM without a round trip. Short-lived by default: nothing internal needs the
     30-day life the phone gets.
+
+    Always a `service` token: it names no persona, so the request must name one, and it
+    may read The Book. It never touches the account store, which is what keeps it safe
+    to call from the 3.9 system Python the hook and deploy.sh use.
     """
-    return issue_token(ttl_seconds)
+    return issue_token(ttl_seconds, role="service")
 
 
 def bearer_header(ttl_seconds: int = 3600) -> dict:

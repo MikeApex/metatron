@@ -10,6 +10,11 @@ Persona-scoped: data/personas/{persona}/memory/
 Public API:
   index_entry(text, source, entry_date)  — embed and store one entry
   search_memory(query, k)                — return k most relevant past entries
+
+In a process with METATRON_NO_LOCAL_MODELS=1 (the per-user schedulers) both are handed to
+the server over `/internal/index` and `/internal/search`, and `_get_model()` refuses to load
+— the model lives once on the VM, in the server (plan § 4.12.3). The server's routes call
+`index_entry_local` / `search_memory_local`.
 """
 
 from __future__ import annotations
@@ -36,9 +41,47 @@ _LOCK_TIMEOUT = 30  # seconds; an embed + write is sub-second, so this only trip
 _model = None
 _faiss = None
 
+# Set by the per-user scheduler units (plan § 4.12.3, review M1). The embedding model costs
+# ~0.9 GB resident once loaded and is kept for the life of the process; a scheduler that
+# loaded it on its first `write_log` would carry it until the next deploy, and one per user
+# undoes the memory budget the whole VM was sized on. In such a process the model must live
+# only in the server: index and search are handed to it, and anything else that reaches
+# for the model fails loudly.
+NO_LOCAL_MODELS_ENV = "METATRON_NO_LOCAL_MODELS"
+
+# Indexing is best-effort and nothing waits on it (it runs on core/background.py's pool).
+# The server embeds in ~150-200 ms; the one slow case is a request landing while the
+# server's startup warm-up is loading the embedder on the same single-worker executor.
+# Past this, the entry is dropped with a warning — the same outcome as a full local queue.
+_REMOTE_INDEX_TIMEOUT_SECONDS = 15.0
+# A search sits inside a running session's tool call, so it is worth waiting longer for —
+# but it is one index read and one query embedding, so a minute would mean something wrong.
+_REMOTE_SEARCH_TIMEOUT_SECONDS = 30.0
+
+
+def models_disabled_here() -> bool:
+    """True in a process told never to load a model (`METATRON_NO_LOCAL_MODELS=1`)."""
+    return os.environ.get(NO_LOCAL_MODELS_ENV, "").strip().lower() in ("1", "true", "yes")
+
 
 def _get_model():
+    """
+    The one embedding model in this process — shared by memory, tools/wisdom.py and
+    tools/baselines.py, so there is never a second copy.
+
+    Raises in a `METATRON_NO_LOCAL_MODELS` process instead of loading. index_entry and
+    search_memory never get here in such a process (they delegate first); anything that
+    does is a path nobody routed to the server, and it should fail visibly in the scheduler
+    log rather than quietly cost 900 MB (plan § 4.12.3 item 2).
+    """
     global _model
+    if models_disabled_here():
+        raise RuntimeError(
+            f"{NO_LOCAL_MODELS_ENV} is set: this process must not load the embedding model "
+            f"({_MODEL_NAME}). Route the work to the server (/internal/index, "
+            f"/internal/search, /internal/session) — see "
+            f"archive/plans/multi_user_accounts_plan_2026-10-26.md § 4.12.3."
+        )
     if _model is None:
         from sentence_transformers import SentenceTransformer
         _model = SentenceTransformer(_MODEL_NAME)
@@ -214,6 +257,26 @@ def index_entry(text: str, source: str, entry_date: str = "") -> None:
     if not entry_date:
         entry_date = date.today().isoformat()
 
+    if models_disabled_here():
+        _index_entry_remote(text, source, entry_date)
+        return
+
+    index_entry_local(text, source, entry_date)
+
+
+def index_entry_local(text: str, source: str, entry_date: str = "") -> None:
+    """
+    Embed and store one entry IN THIS PROCESS. The server's `/internal/index` route calls
+    this directly, never `index_entry` — so a server misconfigured with
+    METATRON_NO_LOCAL_MODELS raises in `_get_model()` instead of calling itself over HTTP.
+    Call it inside the persona's scope. The remote caller sends `entry_date` already
+    resolved, so "today" is the caller's day, not the moment the server got to it.
+    """
+    if not text or not text.strip():
+        return
+    if not entry_date:
+        entry_date = date.today().isoformat()
+
     # Embed outside the lock — it is the slow part (model inference) and touches no shared file.
     vec = _embed(text)
 
@@ -242,6 +305,16 @@ def search_memory(query: str, k: int = 5) -> list[dict]:
         List of dicts with 'text', 'source', 'date', and 'score' keys,
         sorted by relevance descending. Empty list if index has no entries.
     """
+    if models_disabled_here():
+        return _search_memory_remote(query, k)
+    return search_memory_local(query, k)
+
+
+def search_memory_local(query: str, k: int = 5) -> list[dict]:
+    """
+    search_memory IN THIS PROCESS — what the server's `/internal/search` route calls, for
+    the same no-self-call reason as index_entry_local.
+    """
     # Reads take the lock too. Atomic renames make a torn *file* impossible, but the two files
     # are still written in sequence, and _load_index's desync repair must not run concurrently
     # with a writer or it would "repair" a pair that was mid-update and about to be consistent.
@@ -263,4 +336,46 @@ def search_memory(query: str, k: int = 5) -> list[dict]:
         entry["score"] = float(score)
         results.append(entry)
 
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Delegation to the server — a METATRON_NO_LOCAL_MODELS process (plan § 4.12.3 item 2)
+# ---------------------------------------------------------------------------
+#
+# Delegated at index_entry / search_memory rather than at _embed: the request and reply are
+# then plain text and plain result dicts, not 384-float vectors, and the scheduler never
+# opens the persona's FAISS files at all — the server is their only writer, which also
+# retires the cross-process race _memory_lock() was built for, for this pair of processes.
+#
+# The persona travels explicitly. It is resolved HERE, on the calling thread — the
+# background worker inside tools/logger.py's persona_scope, or the session thread for a
+# search — because the server binds a service request's persona from the body and has no
+# other way to know it. Fail-closed: a PersonaError raises before anything is sent.
+
+def _index_entry_remote(text: str, source: str, entry_date: str) -> None:
+    from core.persona import resolve_persona
+    from core.remote_client import post_internal
+
+    persona = resolve_persona()
+    post_internal(
+        "/internal/index",
+        {"persona": persona, "text": text, "source": source, "entry_date": entry_date},
+        timeout=_REMOTE_INDEX_TIMEOUT_SECONDS,
+    )
+
+
+def _search_memory_remote(query: str, k: int) -> list[dict]:
+    from core.persona import resolve_persona
+    from core.remote_client import InternalCallError, post_internal
+
+    persona = resolve_persona()
+    reply = post_internal(
+        "/internal/search",
+        {"persona": persona, "query": query, "k": int(k)},
+        timeout=_REMOTE_SEARCH_TIMEOUT_SECONDS,
+    )
+    results = reply.get("results") if isinstance(reply, dict) else None
+    if not isinstance(results, list):
+        raise InternalCallError("/internal/search", 200, "reply carried no 'results' list")
     return results

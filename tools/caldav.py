@@ -30,6 +30,7 @@ from zoneinfo import ZoneInfo
 import requests
 import yaml
 
+from core.connections import apply_credentials, credentials_path
 from core.persona import persona_config_dir
 from tools.untrusted import (UNTRUSTED_CONTENT_INSTRUCTION, contains_injection_markers,
                              wrap_untrusted)
@@ -73,16 +74,50 @@ _MULTI_CALENDAR_NOTE = (
 )
 
 
+# A persona with no calendar connected — no caldav.yaml, or one with `enabled: false`, which is
+# how scripts/new_persona.sh copies config/templates/caldav.yaml — is NOT a failure (multi-user
+# plan archive/plans/multi_user_accounts_plan_2026-10-26.md § 4.8, Stage 1.13). It used to read
+# as `{"error": "CalDAV is not enabled…"}`, so the day planner stored a standing calendar error
+# and re-fetched on every tick, and every scheduled reader saw a failure that was really "nothing
+# here". READ paths now return `{"events": [], "connected": False}`; every consumer branches on
+# `"error" in raw` and otherwise iterates `events`, so it reads as nothing to do without change.
+# WRITE paths keep their error: an agent asked to put something in a calendar the user does not
+# have must be told it failed. A CONFIGURED calendar that fails is still an error, unchanged.
+def _not_connected() -> dict:
+    """A fresh dict each time — callers own what they are handed, and some reshape it."""
+    return {"events": [], "connected": False}
+
+
+# What read_calendar says instead of an event list when nothing is connected. Deliberately not
+# `count: 0, events: []`: an empty list reads as a free day, and "you have nothing on" would be a
+# claim about a calendar nobody can see. Same reasoning as the notes above — the return value is
+# what is read back at answer time.
+_NOT_CONNECTED_NOTE = (
+    "No calendar is connected for this user, so there are no calendar entries to read. "
+    "This is NOT an empty day: what the user has on is unknown. Do not tell the user they "
+    "are free or have nothing scheduled. If their schedule matters to the answer, say that "
+    "no calendar is connected."
+)
+
+
 def _config_path(persona: str | None = None) -> Path:
     """Per-persona. Each persona has its own calendar and its own credentials."""
     return persona_config_dir(persona) / "caldav.yaml"
 
 
 def _load_config(persona: str | None = None) -> dict:
+    """
+    The persona's caldav.yaml, with the app password from credentials.yaml merged in when one
+    exists beside it. This is the single loader every CalDAV password read goes through (plan
+    archive/plans/multi_user_accounts_plan_2026-10-26.md § 4.10, review C1), so the merge here
+    reaches every read and write path without touching them. An account user who connected in
+    the app has `auth.password: ""` here and her password only in credentials.yaml, which the
+    backups skip; Mike's inline password, with no credentials.yaml, loads exactly as before.
+    """
     path = _config_path(persona)
     if not path.exists():
         return {}
-    return yaml.safe_load(path.read_text()) or {}
+    return apply_credentials(yaml.safe_load(path.read_text()) or {}, path.parent)
 
 
 # Appended to CalDAV failures that are actually authentication failures (401/403).
@@ -100,15 +135,35 @@ def _safe_config_path(persona: str | None = None) -> str:
         return "this persona's caldav.yaml"
 
 
-def _credential_remedy(persona: str | None = None) -> str:
+def _connected_in_app(persona: str | None = None) -> bool:
+    """True when this persona's password lives in credentials.yaml (connected in the app)."""
+    try:
+        return credentials_path(_config_path(persona).parent).exists()
+    except Exception:
+        return False
+
+
+def _credential_remedy(persona: str | None = None, in_app: bool | None = None) -> str:
+    # Step (2) names wherever the password actually lives. For a user who connected in the
+    # app (plan § 4.10) that is the Connections panel — telling her to edit a file on a server
+    # she cannot reach is the [DB-0910-01] failure again, one layer over. `in_app=None` reads
+    # it from the persona; core/connections.py passes True for a connect that has not saved yet.
+    if in_app is None:
+        in_app = _connected_in_app(persona)
+    if in_app:
+        step_two = ("(2) enter it in the app's Connections panel (Disconnect, then Connect with "
+                    "the new app password). Step 1 alone changes nothing here.")
+    else:
+        step_two = (f"(2) write that value into the auth.password line of "
+                    f"{_safe_config_path(persona)} on the machine running this system. Step 1 "
+                    f"alone changes nothing here. No restart is needed afterwards — this file "
+                    f"is re-read on every call.")
     return (
-        f" A 401 here almost always means the app-specific password has been revoked, "
-        f"which happens automatically whenever the Google account password changes. "
-        f"Fixing this takes TWO steps, and the second is the one usually missed: "
-        f"(1) generate a new app-specific password in the Google account, then "
-        f"(2) write that value into the auth.password line of {_safe_config_path(persona)} "
-        f"on the machine running this system. Step 1 alone changes nothing here. "
-        f"No restart is needed afterwards — this file is re-read on every call."
+        " A 401 here almost always means the app-specific password has been revoked, "
+        "which happens automatically whenever the Google account password changes. "
+        "Fixing this takes TWO steps, and the second is the one usually missed: "
+        "(1) generate a new app-specific password in the Google account, then "
+        + step_two
     )
 
 
@@ -340,40 +395,9 @@ def _discover_calendars(cfg: dict, auth: tuple) -> tuple[list[dict], str]:
     if hit and time.monotonic() - hit[0] < _DISCOVERY_TTL_SECONDS:
         return hit[1], hit[2]
 
-    calendars: list[dict] = []
     status = "ok"
     try:
-        principal = ""
-        for start in (calendar_url, urljoin(calendar_url, "/.well-known/caldav"),
-                      urljoin(calendar_url, "/calendar/dav/"), urljoin(calendar_url, "/")):
-            try:
-                principal = _first_href(
-                    _propfind(start, auth, "<d:current-user-principal/>", "0"),
-                    f"{_DAV}current-user-principal")
-            except Exception:
-                principal = ""
-            if principal:
-                break
-        if not principal:
-            raise RuntimeError("no current-user-principal at the calendar or the server root")
-        home = _first_href(
-            _propfind(urljoin(calendar_url, principal), auth, "<c:calendar-home-set/>", "0"),
-            f"{_CALDAV_NS}calendar-home-set")
-        if not home:
-            raise RuntimeError("principal has no calendar-home-set")
-        listing = _propfind(urljoin(calendar_url, home), auth,
-                            "<d:displayname/><d:resourcetype/>", "1")
-        for resp in listing.findall(f"{_DAV}response"):
-            href_el = resp.find(f"{_DAV}href")
-            if href_el is None or not (href_el.text or "").strip():
-                continue
-            if resp.find(f".//{_DAV}resourcetype/{_CALDAV_NS}calendar") is None:
-                continue
-            name_el = resp.find(f".//{_DAV}displayname")
-            calendars.append({
-                "url": urljoin(calendar_url, href_el.text.strip()),
-                "name": (name_el.text or "").strip() if name_el is not None else "",
-            })
+        calendars = _discover_uncached(calendar_url, auth)
     except Exception as exc:  # noqa: BLE001 — any failure degrades to the configured calendar
         # Not cached: one transient failure must not hide the other calendars for ten minutes.
         logger.warning("[caldav] calendar discovery failed, reading the configured calendar only: %s", exc)
@@ -381,6 +405,98 @@ def _discover_calendars(cfg: dict, auth: tuple) -> tuple[list[dict], str]:
 
     _discovery_cache[cache_key] = (time.monotonic(), calendars, status)
     return calendars, status
+
+
+def _is_auth_failure(exc: Exception) -> bool:
+    return getattr(getattr(exc, "response", None), "status_code", None) in (401, 403)
+
+
+def _discover_uncached(calendar_url: str, auth: tuple) -> list[dict]:
+    """
+    The discovery walk itself — no cache, no logging, RAISES on failure.
+
+    Split out of _discover_calendars (2026-10-27) so the in-app connection test
+    (probe_google_calendar, plan § 4.10) runs the very same walk with credentials that are
+    not in any config yet. It must bypass the cache: the cache is keyed on url + username, not
+    the password, so a cached success would pass a wrong password without asking Google.
+
+    If no principal is found and any probe was refused 401/403, that refusal is raised rather
+    than "no current-user-principal": a wrong app password is the one failure a user can fix,
+    and the connection test has to be able to tell it apart from an unreachable server.
+    """
+    principal = ""
+    refused: Exception | None = None
+    for start in (calendar_url, urljoin(calendar_url, "/.well-known/caldav"),
+                  urljoin(calendar_url, "/calendar/dav/"), urljoin(calendar_url, "/")):
+        try:
+            principal = _first_href(
+                _propfind(start, auth, "<d:current-user-principal/>", "0"),
+                f"{_DAV}current-user-principal")
+        except Exception as exc:  # noqa: BLE001 — try the next start point
+            principal = ""
+            if refused is None and _is_auth_failure(exc):
+                refused = exc
+        if principal:
+            break
+    if not principal:
+        if refused is not None:
+            raise refused
+        raise RuntimeError("no current-user-principal at the calendar or the server root")
+    home = _first_href(
+        _propfind(urljoin(calendar_url, principal), auth, "<c:calendar-home-set/>", "0"),
+        f"{_CALDAV_NS}calendar-home-set")
+    if not home:
+        raise RuntimeError("principal has no calendar-home-set")
+    listing = _propfind(urljoin(calendar_url, home), auth,
+                        "<d:displayname/><d:resourcetype/>", "1")
+    calendars: list[dict] = []
+    for resp in listing.findall(f"{_DAV}response"):
+        href_el = resp.find(f"{_DAV}href")
+        if href_el is None or not (href_el.text or "").strip():
+            continue
+        if resp.find(f".//{_DAV}resourcetype/{_CALDAV_NS}calendar") is None:
+            continue
+        name_el = resp.find(f".//{_DAV}displayname")
+        calendars.append({
+            "url": urljoin(calendar_url, href_el.text.strip()),
+            "name": (name_el.text or "").strip() if name_el is not None else "",
+        })
+    return calendars
+
+
+def google_calendar_url(address: str) -> str:
+    """
+    The primary calendar of a Google account on the LEGACY CalDAV endpoint.
+
+    config/templates/caldav.yaml: `https://www.google.com/calendar/dav/{CALENDAR_ID}/events`,
+    NOT apidata.googleusercontent.com/caldav/v2/ — that one requires OAuth 2.0 and 401s on
+    app passwords (verified 2026-08-03). A primary calendar's ID is the account address.
+    """
+    return f"https://www.google.com/calendar/dav/{address}/events"
+
+
+def probe_google_calendar(address: str, app_password: str) -> dict:
+    """
+    The connection test's calendar half (plan § 4.10): a REAL discovery walk against Google
+    for an address + app password that are not saved anywhere. Writes nothing, caches nothing,
+    logs nothing — the caller (core/connections.py) owns what is said and scrubs it.
+
+    Returns {"ok": True, "calendar_url": str, "calendars": [display names]} or
+    {"ok": False, "auth": bool, "error": str} — `auth` true when Google refused the credentials.
+    """
+    calendar_url = google_calendar_url(address)
+    try:
+        found = _discover_uncached(calendar_url, (address, app_password))
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "auth": _is_auth_failure(exc), "error": str(exc)}
+    names = []
+    for cal in found:
+        key = _collection_key(cal["url"])
+        name = cal["name"] or unquote(key.rstrip("/").split("/")[-2] if key.endswith("/events")
+                                      else key.rsplit("/", 1)[-1])
+        if name and name not in names:
+            names.append(name)
+    return {"ok": True, "calendar_url": calendar_url, "calendars": names}
 
 
 def _calendar_set(cfg: dict, auth: tuple) -> tuple[list[dict], str]:
@@ -626,16 +742,14 @@ def _query_events(start_date: str, end_date: str, persona: str | None = None,
 
     Returns {"events": [...]} on success, {"error": "..."} on failure. Only the
     configured calendar failing is an error; another calendar failing is reported
-    under `calendars_failed`.
+    under `calendars_failed`. A persona with no calendar connected (no caldav.yaml,
+    or `enabled: false`) gets {"events": [], "connected": False} — not an error;
+    see _not_connected(). `enabled: true` with no calendar_url is a broken
+    configuration, not an absent one, and stays an error.
     """
     cfg = _load_config(persona)
     if not cfg.get("enabled"):
-        return {
-            "error": (
-                "CalDAV is not enabled. Set enabled: true and configure "
-                "calendar_url and auth in this persona's caldav.yaml."
-            )
-        }
+        return _not_connected()
 
     calendar_url = cfg.get("calendar_url", "").strip()
     if not calendar_url:
@@ -800,6 +914,11 @@ def read_calendar(start_date: str, end_date: str) -> dict:
     raw = _query_events(start_date, end_date, calendars="all")
     if "error" in raw:
         return raw
+    if raw.get("connected") is False:
+        # Neither an error (nothing failed — the user has no calendar here) nor an empty day
+        # (that would read as "nothing on"). An explicit not-connected answer, no event list.
+        return {"connected": False, "range": {"start": start_date, "end": end_date},
+                "calendar_note": _NOT_CONNECTED_NOTE}
 
     events = raw["events"]
 
@@ -914,8 +1033,10 @@ def write_calendar_event(
     if not cfg.get("enabled"):
         return {
             "error": (
-                "CalDAV is not enabled. Set enabled: true and configure "
-                "calendar_url and auth in this persona's caldav.yaml."
+                # Plain words, no setup steps: an agent repeats what a tool says, and the
+                # user connects a calendar in the app, never by editing a config file.
+                "No calendar is connected for this user, so nothing was written. They can "
+                "connect one in the app's Connections settings."
             )
         }
 
@@ -1561,6 +1682,12 @@ def find_event_for_invite(uid: str = "", title: str = "", date: str = "") -> dic
     day = _query_events(date, date)
     if "error" in day:
         return day
+    if day.get("connected") is False:
+        # This resolves an event so an invitation can be SENT — a write path in effect. Without
+        # this it would answer "No event matching … Events that day: none", which reads as the
+        # user's day being empty rather than as there being no calendar to look in.
+        return {"error": "No calendar is connected for this user, so there is no event "
+                         "to send an invitation for. Nothing was sent."}
     events = day.get("events") or []
     needle = title.strip().lower()
     matches = [e for e in events

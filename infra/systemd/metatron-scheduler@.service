@@ -1,0 +1,44 @@
+# /etc/systemd/system/metatron-scheduler@.service — one scheduler per user.
+#
+#   sudo systemctl enable --now metatron-scheduler@<persona>    (scripts/accounts.py approve does this)
+#   journalctl -u metatron-scheduler@<persona>
+#
+# Replaces metatron-scheduler.service (one daemon for mike), which is retired, not masked —
+# docs/INFRASTRUCTURE.md § systemd unit files has the migration. Plan:
+# archive/plans/multi_user_accounts_plan_2026-10-26.md § 4.6.
+#
+# - Strict, no fallback: this process serves exactly %i, so an unscoped lookup resolves to
+#   %i or raises — never to another user.
+# - METATRON_NO_LOCAL_MODELS=1 keeps every model out of this process (plan § 4.12.3): sessions
+#   and memory indexing go to the server. HERE ONLY, never in .env — .env reaches the server,
+#   which must load them.
+# - .env must never set METATRON_PERSONA (or the two variables above): EnvironmentFile=
+#   overrides Environment=, so it would silently make every user's scheduler that persona.
+# - A second instance for %i, or the retired unit's lock-less process, makes this exit 1
+#   (core/scheduler.py _claim_single_instance). RestartSec=10 keeps systemd retrying under its
+#   start limit, so it comes up on its own once the other process is gone — and says why in
+#   the journal every time until then.
+# - PYTHONUNBUFFERED and METATRON_HOST=vm carry over from the retired unit, where the marker
+#   was a drop-in (metatron-scheduler.service.d/host.conf, 2026-09-24). That directory does NOT
+#   apply to metatron-scheduler@ instances, so the marker lives in this file now — the
+#   VM-only Build write gate is to key on it (archive/plans/build_v4_phase_prompts_2026-09-24.md).
+
+[Unit]
+Description=Metatron Scheduler Daemon (%i)
+After=network.target metatron-server.service
+
+[Service]
+Type=simple
+User=md-homefolder
+WorkingDirectory=/home/md-homefolder/multi-model-mcp
+ExecStart=/home/md-homefolder/multi-model-mcp/.venv/bin/python core/scheduler.py --persona %i
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+Environment=METATRON_HOST=vm
+Environment=METATRON_PERSONA=%i
+Environment=METATRON_NO_LOCAL_MODELS=1
+EnvironmentFile=/home/md-homefolder/multi-model-mcp/.env
+
+[Install]
+WantedBy=multi-user.target
