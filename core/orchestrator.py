@@ -3759,19 +3759,24 @@ def run_session_gemini(system_prompt: str, user_input: str,
                        tool_schemas: list[dict], tool_handlers: dict,
                        model: str | None = None,
                        history: list[dict] | None = None,
-                       max_output_tokens: int = 4096) -> str:
+                       max_output_tokens: int = 4096,
+                       thinking_budget: int | None = None) -> str:
     """Agentic loop via Vertex AI OpenAI-compat endpoint (or AI Studio OpenAI-compat).
 
     Uses _openai_compat_loop rather than the native genai SDK to avoid Vertex's
     thought_signature bug: when the model makes parallel function calls, the native SDK
     only assigns a thought_signature to the first Part, and Vertex rejects the multi-turn
     request. The thought_signature workaround lives in _openai_compat_loop.
+
+    thinking_budget: Google's thinking_config, carried in the compat body's nested extra_body.
     """
     api_key, base_url, model_name = _resolve_gemini_credentials(model)
+    extra_body = ({"extra_body": {"google": {"thinking_config": {
+        "thinking_budget": thinking_budget}}}} if thinking_budget is not None else None)
     return _openai_compat_loop(
         system_prompt, user_input, tool_schemas, tool_handlers,
         api_key=api_key, base_url=base_url, model=model_name,
-        history=history, max_output_tokens=max_output_tokens,
+        history=history, max_output_tokens=max_output_tokens, extra_body=extra_body,
     )
 
 
@@ -4279,6 +4284,13 @@ _REPLY_OUTPUT_TOKENS = 4096
 # ~7,800 thinking + output = 8,188. Worst case ~$0.06 a reshuffle (≤ 12 a day, ~$0.72); typical
 # is what it produces. If it is still cut at 16,384, the answer is a thinking cap, not more room.
 _WIDE_OUTPUT_AGENTS = {"day_planner": 16384}
+
+# It was (Mike, 2026-10-28): 1 of 6 live reshuffles at 16,384 still ran out — 15,726 thinking +
+# 654 out — and the two longest-thinking runs were the reject and the cut-off, so the cap targets
+# the failure, not just cost. Probe on the VM: 6,000 → 3/3 valid, thinking 3.1k–4.2k, ~28 s;
+# 1,024 → thinking 0, so Vertex compat honours it. The 16,384 ceiling stays: 3.8 Flash overshoots
+# a budget on the native path (1,024 → 2,664, 2026-10-26).
+_PLAIN_THINKING_CAPS = {"day_planner": 6000}
 
 
 def _max_output_tokens(thinking_budget: int | None) -> int:
@@ -5555,7 +5567,8 @@ def _run_single_agent(agent_name: str, user_input: str,
             else:
                 result = run_session_gemini(system_prompt, augmented_input, tool_schemas, tool_handlers,
                                             model=model_override, history=history,
-                                            max_output_tokens=_WIDE_OUTPUT_AGENTS.get(agent_name, 4096))
+                                            max_output_tokens=_WIDE_OUTPUT_AGENTS.get(agent_name, 4096),
+                                            thinking_budget=_PLAIN_THINKING_CAPS.get(agent_name))
         else:
             from core.router import log_model_error
             log_model_error(agent_name, provider or "unknown", model_override, f"unrecognised provider '{provider}' — no session started")

@@ -285,6 +285,41 @@ def _():
         openai.OpenAI, O._resolve_gemini_credentials = real_client, real_creds
 
 
+@check("the plain path: the day planner's thinking is capped at 6,000, nobody else's is")
+def _():
+    # 2026-10-28: a live reshuffle ran out at 15,726 thinking + 654 out of 16,384.
+    sent = []
+
+    class _Resp:
+        def __init__(self):
+            msg = type("M", (), {"content": '{"placements": []}', "tool_calls": None})()
+            self.choices = [type("C", (), {"message": msg, "finish_reason": "stop"})()]
+            self.usage = None
+
+    class _Client:
+        def __init__(self, *a, **k):
+            self.chat = type("Ch", (), {"completions": type("Co", (), {
+                "create": staticmethod(lambda **kw: sent.append(kw) or _Resp())})()})()
+
+    import openai
+    real_client, real_creds = openai.OpenAI, O._resolve_gemini_credentials
+    openai.OpenAI = _Client
+    O._resolve_gemini_credentials = lambda model=None: ("k", "https://x.googleapis.com", "m")
+    try:
+        for agent, want in (("day_planner", 6000), ("logistics", None)):
+            sent.clear()
+            O.run_session_gemini("sys", "in", [], {},
+                                 max_output_tokens=O._WIDE_OUTPUT_AGENTS.get(agent, 4096),
+                                 thinking_budget=O._PLAIN_THINKING_CAPS.get(agent))
+            got = (((sent[0].get("extra_body") or {}).get("extra_body") or {}).get("google") or {}
+                   ).get("thinking_config", {}).get("thinking_budget")
+            assert got == want, (agent, sent[:1])
+        assert sent[0].get("max_tokens") == 4096 and "extra_body" not in sent[0], sent[:1]
+        assert O._WIDE_OUTPUT_AGENTS["day_planner"] == 16384     # the ceiling is kept
+    finally:
+        openai.OpenAI, O._resolve_gemini_credentials = real_client, real_creds
+
+
 @check("capacity errors are told apart from the rest")
 def _():
     assert O._is_capacity_error(_Capacity("x"))
