@@ -1103,6 +1103,43 @@ half (b) is now part of the Pro-routing decision. Evidence and trail:
   *filed 2026-08-08 · Step 1 closed 2026-08-27 from live traces (session: coordinator-slim
   rehydration → token audit); design options folded in from Mike's same-day review*
 
+- **[DB-1029-20] Anyone who got code running on the VM could control the whole Google Cloud
+  project — delete the VM, change billing — not just Metatron.** The VM runs as the default compute
+  service account (`211460608583-compute@developer.gserviceaccount.com`), which holds
+  `roles/editor` and `roles/billing.projectManager` on `metatron-ai-499810` (read 2026-10-29). A
+  flaw in the app, a malicious attachment or a prompt-injected tool call that reached a shell
+  would inherit both — and a billing change here is an outage, not a cost (CLAUDE.md trap 3).
+  Weightier now that a second person's data is on the VM. **Shape:** a dedicated service account
+  with only what the VM uses — Vertex AI user, log writing, the FCM sender role in `metatron-push`
+  (already granted there separately, `474873c`), and whatever the billing guard genuinely needs —
+  attached in place of the default one; **read the billing guard and every Google API call the VM
+  makes before removing anything**, since a missing role fails at the moment the call is needed.
+  Changing the VM's service account needs the VM stopped, so it is a planned window with Mike.
+  Same session, 2026-10-29: the two open `default`-network rules (`default-allow-ssh`,
+  `default-allow-rdp`, `0.0.0.0/0`) were deleted — inert for this VM, which is on `metatron-net`
+  with only IAP SSH inbound. Raised by Mike's question "what's to stop anyone tunneling in?"
+  **The rest of the same review — Mike's own steps on the Mac, each a few minutes (M):**
+  1. **The SSH key has no passphrase** (`~/.ssh/google_compute_engine`, modern OpenSSH format,
+     read 2026-10-29), so a copy of that one file is half of what it takes to get in. Set four
+     random words (or 12+ random characters), never reused:
+     `ssh-keygen -p -a 100 -f ~/.ssh/google_compute_engine && ssh-add --apple-use-keychain ~/.ssh/google_compute_engine`
+     — the keychain keeps `deploy.sh` prompt-free.
+  2. **Time Machine backs up both halves** — `~/.ssh` and the gcloud sign-in token in
+     `~/.config/gcloud` (`tmutil isexcluded`: both Included). The token cannot take a passphrase,
+     so the disk's encryption is its only protection: confirm System Settings → General → Time
+     Machine shows the disk as Encrypted. If not, this is the bigger fix of the set, and it also
+     covers D12's tarballs (`archive/plans/multi_user_accounts_plan_2026-10-26.md` § 9).
+  3. **Confirm 2-step verification is on for `diamond.mike@gmail.com`** — as the project's only
+     Owner it is the master key: signed in as it, anyone can add an SSH key and tunnel in. Not
+     checkable from here.
+  4. **Write down the lost-device drill** where Mike will find it without the Mac: sign the Mac
+     out at myaccount.google.com → Security → Your devices (kills the gcloud token), and remove the
+     key in Cloud Console → Compute Engine → Metadata → SSH Keys. Both doors closed in minutes.
+  Already true, verified 2026-10-29: FileVault on; the VM accepts one SSH key (project metadata);
+  only Mike's user holds Owner.
+  @kind: feature
+  *filed by Mike's instruction 2026-10-29 (Stage 5 close-out session)*
+
 ---
 
 ## Machine log

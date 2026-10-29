@@ -1,24 +1,22 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-10-29. **Day planner Stage C is live and step 2 is on** (VM `3d3524a`, APK
-sideloaded 10-29): nudges reach the phone with the app closed, and the plan's check-ins replace the
-fixed one. **Step 2's five live checks: `[DB-1029-01]`, due 10-31, one read-only command.** About
-half the pings since 10-28 fell back to a textless "You have a message"; the new APK reports why.
-**Second user: Stage 5 is 5 of 7.** Next is
-`archive/handoffs/2026-10-29-multi-user-stage-5-close-and-iva-prompt.md`: check 6 (due 10-29),
-check 2 on a fresh account, disable the trial accounts, then **Mike purges them himself**. The new
-`accounts.py purge` (`fe5847b`) is committed but not deployed; it needs a deploy first. **Then
-Iva's walkthrough.** M3 memory watch runs to ~11-04. Log § 2026-10-29 second.
-**Next after that: reply latency**, `archive/handoffs/2026-10-28-reply-latency-defer-thinking-cache-prompt.md`.
-After Stage 5: a real Sign out in the app. WhatsApp 0b may run any time. **Deployed 10-29
-(VM `976c85e`):** task `defer`, the empty-day check-in asking what's
-going on, false "set/queued" claims logged, and quiet hours keeping follow-ups plus an approval
-card for a reminder asked inside them — `97f9f09`…`9e57655`, each a dated closes-on check in
-`DEV_BACKLOG.md` (due 11-12). `[DB-0910-02]`: the Logistics path still traces a calendar 401 as
-`ok`. `reopen` now undoes a deferral (`9e57655`). Next for the backlog: `archive/handoffs/2026-10-30-backlog-overdue-checks-triage-and-deep-prompt.md` — overdue checks, triage of 10 Inbox entries, then `/backlog deep` after 11-05 (log § 2026-10-29 third). **Still owed:** the
-boys' school hours and bedtimes → `children_home` (Mike, in the app); "over and out" live check;
-virtue-pause day-after check; `[DB-1026-01]` due 10-29; Mike's calendar live check (week of 9 Nov);
-silent-mic APK `24d5c24` sideload if not done; `[DB-0901-02]`, due 12-15.*
+*Updated: 2026-10-29. **Second user: Stage 5 is closed** (7 of 7; trial accounts deleted by
+Mike). **Next: Iva's onboarding this weekend:**
+`archive/handoffs/2026-10-29-iva-account-walkthrough-prompt.md` (APK rebuild first, then account
+linking in full). **M3, the memory week, restarts on her approval day.** Scheduled sessions no
+longer raise clinical flags (Mike: curtailed until the agent rewrite). VM `ebfe50b`; `0b143a9` and
+this archive await a deploy. **Then: capture-fidelity planning**
+(`archive/handoffs/2026-10-29-capture-fidelity-plan-prompt.md`, Mike: build sooner), reply latency
+(`archive/handoffs/2026-10-28-reply-latency-defer-thinking-cache-prompt.md`), and a real Sign out.
+Security hardening is `[DB-1029-20]`. Log § 2026-10-29 fourth. **Day planner:** step 2 is on, and
+its five live checks are `[DB-1029-01]`, due 10-31. About half the pings since 10-28 fell back to
+a textless "You have a message"; the new APK reports why. **Backlog:** task `defer`, the empty-day
+check-in, logged false "set/queued" claims and quiet-hours follow-ups are deployed, each with a
+dated check in `DEV_BACKLOG.md` (due 11-12). Next pass:
+`archive/handoffs/2026-10-30-backlog-overdue-checks-triage-and-deep-prompt.md` (log § 2026-10-29
+third). WhatsApp 0b may run any time. **Still owed:** the boys' school hours and bedtimes →
+`children_home` (Mike, in the app); the "over and out" live check; the virtue-pause day-after
+check; `[DB-1026-01]`; Mike's calendar live check (week of 9 Nov); `[DB-0901-02]`, due 12-15.*
 
 *Standing rules, each earned twice and both invisible to `qa_sweep`: **a test that exercises a seam
 for real must stub every live meter it ends in**, and **a live gate run dirties TRACKED
@@ -91,7 +89,7 @@ which model runs which kind of session** (plan in Opus, review in Fable, build i
 ### Built
 **The Phase 5 catalogue moved out on 2026-09-18 — it was finished work, and a primer holds state.**
 What exists: [CODEBASE_INDEX.md](CODEBASE_INDEX.md). When and why each piece was built:
-[archive/PROJECT_LOG.md](archive/PROJECT_LOG.md). Everything committed is deployed (VM `e5b895c`).
+[archive/PROJECT_LOG.md](archive/PROJECT_LOG.md). VM at `ebfe50b` (10-29); commits after it await a deploy.
 
 ### In progress / next
 
