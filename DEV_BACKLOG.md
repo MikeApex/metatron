@@ -524,6 +524,33 @@ with a date.** Nothing new joins this group open-ended.*
   *filed 2026-10-26 by Mike*
   `due: 2026-10-29`
 
+- **[DB-1029-01] The day plan now decides when Metatron nudges and checks in — five live checks
+  owed, and some notifications still arrive as a textless "You have a message".** Step 2 turned
+  on `nudges` and `owns_checkins` (`3d3524a`, deployed 2026-10-29 10:49): leave-now and
+  essential-task nudges reach the phone with Done / Not yet / Skipped, and the fixed
+  `companion_checkin` yields to the plan's empty-day check-ins. Separately, **5 of 11 pings from
+  10-28 15:30 to 10-29 10:01 fell back** (the phone woke but never fetched the text, so it showed
+  the generic notice); all were on the APK before `32115b6`, which retries three times and reports
+  why a fetch failed. Record: `archive/log/` § 2026-10-29.
+  @waiting: two ordinary days of use after the 10-29 deploy
+  **Check — one read-only command on the VM, which prints PASS / FAIL / NOT SEEN YET for each**
+  (the script is on `main` from 10-29 and reaches the VM with the next `./deploy.sh`):
+  `cd ~/multi-model-mcp && .venv/bin/python scripts/check_day_plan_step2.py --persona mike --since 2026-10-29T10:50`
+  1. A leave-now nudge arrives with its text (fetched, not a fallback).
+  2. A nudge the model holds (`[HOLD]`) leaves no conversation row.
+  3. No fixed `companion_checkin` fires; the scheduler logs it as owned.
+  4. After three idle hours on an empty stretch, a check-in arrives.
+  5. Nothing is sent between 22:00 and 07:00.
+  Plus its delivery line: pings sent / fetched / fell back, with the phone's own reasons.
+  **Pass** = 1–5 PASS, and fallbacks rare with a stated reason, so close and delete the script.
+  **Fail** on 1–5 = reopen step 2 with the evidence (either switch off restores the fixed
+  check-ins exactly). **Fallbacks persisting** with a reason = a delivery item of its own,
+  shaped by that reason. NOT SEEN YET past the due date = push the date once, then ask Mike
+  whether that situation happens in his days at all.
+  @kind: feature
+  *filed 2026-10-29 by Mike*
+  `due: 2026-10-31`
+
 ### Unbuilt — real capability that does not exist
 
 - **[DB-0919-01] Pressing the headset button works on the phone but has never been tried on

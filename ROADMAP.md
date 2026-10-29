@@ -822,6 +822,9 @@ Test (from `tests/phase6_testing_plan.md`):
 - Power off dedicated machine; power on. Pass: all services (scheduler, server) restart automatically; no data loss; no manual intervention required.
 - Run Diarist and Pattern Miner sessions. Pass: both route to local LLM; `routing_fallbacks.json` shows zero cloud calls for sensitive agents.
 - Android app: complete a voice session end-to-end (STT → pipeline → TTS) and receive a scheduled push notification.
+  *(The push half works on the sideloaded APK since 2026-10-29 — native FCM with the app closed,
+  day planner Stage C; it still rides Tailscale, so the Play-track half is open. Delivery is
+  being measured under `[DB-1029-01]`.)*
 
 (Key-recovery test moved to D2 — keys do not exist until D2 creates them.)
 

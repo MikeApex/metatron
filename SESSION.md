@@ -1,20 +1,19 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-10-28. **The second-user build is LIVE** (VM `469a575`): per-user accounts with
-in-app sign-up, `metatron-scheduler@<user>` (the old unit retired to `~/retired-units/`), the voice
-model in its own helper (🔊 safe again), CPU-only torch. **Stage 5 is 5 of 7:** checks 1, 3, 4, 5
-and memory M1/M2 pass. **Owed:** (a) after the held deploy, rerun check 2 on a fresh account
-(day-shape saved in the turn it's given; purpose drafted → explored → revised once; the card says
-"Save your purpose"); (b) **10-29: check 6**, the three trial accounts' logs, plus whether
-`trial_2026_10c`'s post-crisis check-in was right; (c) check 7, disable all three; (d) M3, the
-week-long memory watch, to ~11-04. **Then Iva's walkthrough.** Log § 2026-10-28 second.
-**Day planner Stage C is committed on `main` with `c8de0e5`/`ca3173b`, both held for one deploy +
-APK,** run from the Stage C chat; reshuffle thinking 0 (`6a3fd86`). **Next after that: reply
-latency**, `archive/handoffs/2026-10-28-reply-latency-defer-thinking-cache-prompt.md`. Mike's own
-replies take a median of 54 s against the trial's 20–25 s. After Stage 5: a real Sign out in the app.
-WhatsApp 0b may run any time. **Still owed:** "over and out" live check; virtue-pause day-after
-check; `[DB-1026-01]` due 10-29; the boys' bedtimes → `children_home`; Mike's calendar live check
-(week of 9 Nov); silent-mic APK `24d5c24` sideload if not done; `[DB-0901-02]`, due 12-15.*
+*Updated: 2026-10-29. **Day planner Stage C is live and step 2 is on** (VM `3d3524a`, APK
+sideloaded 10-29): nudges reach the phone with the app closed, and the plan's check-ins replace the
+fixed one. **Step 2's five live checks: `[DB-1029-01]`, due 10-31, one read-only command.** About
+half the pings since 10-28 fell back to a textless "You have a message"; the new APK reports why.
+**Second user: Stage 5 is 5 of 7.** Next is
+`archive/handoffs/2026-10-29-multi-user-stage-5-close-and-iva-prompt.md`: check 6 (due 10-29),
+check 2 on a fresh account, disable the trial accounts, then **Mike purges them himself**. The new
+`accounts.py purge` (`fe5847b`) is committed but not deployed; it needs a deploy first. **Then
+Iva's walkthrough.** M3 memory watch runs to ~11-04. Log § 2026-10-29 second.
+**Next after that: reply latency**, `archive/handoffs/2026-10-28-reply-latency-defer-thinking-cache-prompt.md`.
+After Stage 5: a real Sign out in the app. WhatsApp 0b may run any time. **Still owed:** the
+boys' school hours and bedtimes → `children_home` (Mike, in the app); "over and out" live check;
+virtue-pause day-after check; `[DB-1026-01]` due 10-29; Mike's calendar live check (week of 9 Nov);
+silent-mic APK `24d5c24` sideload if not done; `[DB-0901-02]`, due 12-15.*
 
 *Standing rules, each earned twice and both invisible to `qa_sweep`: **a test that exercises a seam
 for real must stub every live meter it ends in**, and **a live gate run dirties TRACKED
@@ -97,12 +96,12 @@ as live and Mike updates that manually — do not start it). Left: B1b's calenda
 CardDAV rows (gated on Track E), A5b/A5c, `[DB-0804-02]`. **[ROADMAP.md](ROADMAP.md) § Track A/B
 owns the per-item detail and the standing evidence.**
 
-**DAY PLANNER — Stage B live, step 1 (2026-10-27); Stage C + step 2 next after the second user.**
-Synth runs the user's day from a plan code keeps current; on: `build`, `show_in_app`,
-`ledger_fields`, `synth_reads_plan`, `unconfirmed_rule`, `reshuffle_model`. Off until Stage C:
-`nudges`, `owns_checkins`. Stage C = native FCM push with the app closed (D1 b), built on the
-second-user build's per-user push. Plan: [day_planner_plan_2026-10-24.md](archive/plans/day_planner_plan_2026-10-24.md)
-(§ 18 round 2); what Stage B added beyond it and why: `archive/PROJECT_LOG.md` § 2026-10-27.
+**DAY PLANNER — every switch on (2026-10-29); live checks owed, `[DB-1029-01]`.** Synth runs the
+user's day from a plan code keeps current. Stage C delivers it as native FCM push with the app
+closed (D1 b), through a separate Firebase project `metatron-push`, with Done / Not yet / Skipped
+on each task. Step 2 turned on `nudges` and `owns_checkins`; either off restores the fixed
+check-ins exactly. Reshuffle thinking is 0. Plan: [day_planner_plan_2026-10-24.md](archive/plans/day_planner_plan_2026-10-24.md)
+(§ 18 round 2); Stage B: `archive/PROJECT_LOG.md` § 2026-10-27; Stage C and step 2: § 2026-10-29.
 
 **WHATSAPP INPUT — approved 10-26; Phase 0a done; next 0b + phone probes in a FRESH session**
 (`archive/handoffs/2026-10-26-whatsapp-phase-0b-clean-room-and-probes-prompt.md` — the clean room:
