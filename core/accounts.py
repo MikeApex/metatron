@@ -352,6 +352,28 @@ def update(username: str, by: str = "mike", path: Path | None = None, **changes)
     return public_view(entry)
 
 
+def remove(username: str, path: Path | None = None) -> bool:
+    """
+    Delete one entry — the store's only deletion, and only of a `disabled` account. Called by
+    `scripts/accounts.py purge` as its last step, after everything the account owned is gone;
+    every other decision changes a status and keeps the entry (archive rule). False when there
+    is no such entry, so a re-run purge finishes cleanly.
+    """
+    path = path or ACCOUNTS_PATH
+    name = (username or "").strip().lower()
+    with _locked(path):
+        data = _read(path)
+        entry = data["accounts"].get(name)
+        if entry is None:
+            return False
+        if entry.get("status") != "disabled":
+            raise AccountError("not_disabled", f"{name} is {entry.get('status')}; only a "
+                                               "disabled account can be removed.")
+        del data["accounts"][name]
+        _write(path, data)
+    return True
+
+
 def generate_temporary_password() -> str:
     """A password Mike reads out once (D3). Long enough to clear MIN_PASSWORD_LENGTH."""
     return secrets.token_urlsafe(12)

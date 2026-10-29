@@ -8,6 +8,7 @@ Plan: archive/plans/multi_user_accounts_plan_2026-10-26.md § 4.4.
     .venv/bin/python scripts/accounts.py approve iva
     .venv/bin/python scripts/accounts.py reject <u> | disable <u> | enable <u>
     .venv/bin/python scripts/accounts.py reset-password <u>
+    .venv/bin/python scripts/accounts.py purge <u>     # Mike at a terminal ONLY — see cmd_purge
     .venv/bin/python scripts/accounts.py seed-consent mike --scopes correspondence_read,tone_profile \\
         --evidence "Mike's rulings 2026-08-26, 2026-08-28"
 
@@ -35,6 +36,8 @@ import json
 import os
 import re
 import shlex
+import shutil
+import sqlite3
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -44,7 +47,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from core import accounts, consent  # noqa: E402
-from core.persona import persona_data_dir  # noqa: E402
+from core.persona import persona_data_dir, validate_persona_name  # noqa: E402
 
 UNIT = "metatron-scheduler@{}"
 
@@ -214,6 +217,109 @@ def cmd_reset_password(args) -> int:
     return 0
 
 
+CONVERSATION_DB = ROOT / "data" / "conversations" / "metatron.db"
+PURGE_LOG = ROOT / "data" / "accounts" / "purge_log.jsonl"
+
+
+def _at_a_terminal() -> bool:
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def _inside(path: Path, parent: Path) -> bool:
+    try:
+        return path.resolve().parent == parent.resolve()
+    except OSError:
+        return False
+
+
+def cmd_purge(args) -> int:
+    """
+    Delete an account and everything it owns — the one deletion of a user's data (Mike,
+    2026-10-29: "there must be a human approval before an account's information is deleted").
+
+    Three gates, each refusing before anything is touched: the account must already be
+    `disabled` (two separate acts, never one); the command must be run by a person at a
+    terminal — Claude Code's shell, a scheduler or a pipe is not one; and the username must be
+    typed back. `.claude/settings.json` also denies Claude Code any command naming it. No
+    route, tool or job reaches this: it exists only here.
+
+    Order: the scheduler stops first (so nothing writes while files go), the account entry is
+    removed last — a run that fails part-way leaves a disabled account `purge` finishes.
+    """
+    u = (args.username or "").strip().lower()
+    entry = accounts.get(u)
+    if u in accounts.RESERVED:
+        print(f"{u} can never be purged.", file=sys.stderr)
+        return 1
+    if entry is None:
+        print(f"No account named {u!r}.", file=sys.stderr)
+        return 1
+    if entry.get("status") != "disabled":
+        print(f"{u} is {entry.get('status')}; `disable` it first — purge takes disabled "
+              "accounts only.", file=sys.stderr)
+        return 1
+    if not _at_a_terminal():
+        print("purge must be run by a person at a terminal (ssh into the VM and run it there). "
+              "Nothing was deleted.", file=sys.stderr)
+        return 1
+    validate_persona_name(u)
+    data_dir = ROOT / "data" / "personas" / u
+    cfg_dir = ROOT / "config" / "personas" / u
+    cfg_md = ROOT / "config" / "personas" / f"{u}.md"
+    for p, parent in ((data_dir, ROOT / "data" / "personas"),
+                      (cfg_dir, ROOT / "config" / "personas"),
+                      (cfg_md, ROOT / "config" / "personas")):
+        if p.exists() and not _inside(p, parent):
+            print(f"{p} does not resolve inside {parent}; refusing.", file=sys.stderr)
+            return 1
+
+    print(f"This permanently deletes {u} ({entry.get('display_name')}):")
+    for p in (data_dir, cfg_dir, cfg_md):
+        print(f"  {'delete' if p.exists() else 'absent'}  {p.relative_to(ROOT)}")
+    print(f"  delete  {u}'s conversation rows, push subscriptions, phone tokens, account entry")
+    print("  Copies in the Mac backups remain until they rotate out.")
+    try:
+        typed = input(f"Type {u} to delete it, anything else to stop: ").strip()
+    except EOFError:
+        typed = ""
+    if typed != u:
+        print("Stopped. Nothing was deleted.")
+        return 1
+
+    if not args.no_scheduler:
+        if not _systemctl("disable", "--now", UNIT.format(u)):
+            print("The scheduler did not stop; nothing was deleted.", file=sys.stderr)
+            return 1
+        _say(f"systemctl disable --now {UNIT.format(u)}", "done")
+    from core import push
+    _say(f"push: {push.forget_persona(u)}", "removed")
+    rows = 0
+    if CONVERSATION_DB.exists():
+        with sqlite3.connect(CONVERSATION_DB) as db:
+            for table in ("exchanges", "attachments"):
+                try:
+                    rows += db.execute(f"DELETE FROM {table} WHERE persona = ?", (u,)).rowcount
+                except sqlite3.OperationalError:
+                    pass   # a table that does not exist yet holds nothing of hers
+    _say(f"conversation rows: {rows}", "removed")
+    for d in (data_dir, cfg_dir):
+        if d.exists():
+            shutil.rmtree(d)
+            _say(str(d.relative_to(ROOT)), "removed")
+    if cfg_md.exists():
+        cfg_md.unlink()
+        _say(str(cfg_md.relative_to(ROOT)), "removed")
+    accounts.remove(u)
+    _say("account entry", "removed")
+    # Content-free: who and when, so a deletion is never silent.
+    PURGE_LOG.parent.mkdir(parents=True, exist_ok=True)
+    with open(PURGE_LOG, "a") as f:
+        f.write(json.dumps({"at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                            "username": u, "conversation_rows": rows}) + "\n")
+    print(f"{u} purged.")
+    return 0
+
+
 def cmd_seed_consent(args) -> int:
     scopes = [s.strip() for s in args.scopes.split(",") if s.strip()]
     for scope in scopes:
@@ -238,6 +344,12 @@ def main() -> int:
     p.add_argument("username")
     p.add_argument("--note", default="")
     p.set_defaults(fn=cmd_reject)
+    p = sub.add_parser("purge", help="delete a disabled account and everything it owns — "
+                                       "a person at a terminal only")
+    p.add_argument("username")
+    p.add_argument("--no-scheduler", action="store_true",
+                   help="skip systemctl (tests, or a host without the unit)")
+    p.set_defaults(fn=cmd_purge)
     p = sub.add_parser("reset-password")
     p.add_argument("username")
     p.set_defaults(fn=cmd_reset_password)

@@ -29,7 +29,10 @@
       "against Edit and reachable by Write. Removed rather than kept as belt-and-braces,",
       "because a rule that does not match is indistinguishable from one that does until",
       "someone tests it. Verified by running: a deny of Edit(./probe_target.txt) refused a",
-      "Write to that path, and the file was untouched. Do NOT re-add Write(path) rules."
+      "Write to that path, and the file was untouched. Do NOT re-add Write(path) rules.",
+      "Bash(*accounts.py purge*) (Mike, 2026-10-29): deleting an account is a person at a",
+      "terminal, never Claude Code. The script also refuses without a TTY and a typed-back",
+      "name; this is the layer that holds even if a session fakes a terminal over ssh -tt."
     ],
     "deny": [
       "Read(./.env)",
@@ -61,6 +64,7 @@
       "Bash(bash ./deploy.sh *)",
       "Bash(sh ./deploy.sh)",
       "Bash(sh ./deploy.sh *)",
+      "Bash(*accounts.py purge*)",
       "Artifact",
       "WebFetch",
       "WebSearch"

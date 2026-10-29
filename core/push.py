@@ -286,6 +286,29 @@ def remove_fcm_token(token: str, persona: str) -> str:
     return "Not registered"
 
 
+def forget_persona(persona: str) -> dict:
+    """Account purge (`scripts/accounts.py purge`): every browser subscription, phone token and
+    unfetched message this persona owns. Returns what was removed, as counts."""
+    if not persona:
+        raise ValueError("forget_persona needs a persona")
+    with _locked():
+        subs = _load_subscriptions()
+        kept_subs = [s for s in subs if s.get("persona") != persona]
+        if len(kept_subs) != len(subs):
+            _write_subscriptions(kept_subs)
+        tokens = _read_json(_FCM_TOKENS_FILE, [])
+        kept_tokens = [t for t in tokens if t.get("persona") != persona]
+        if len(kept_tokens) != len(tokens):
+            _write_json(_FCM_TOKENS_FILE, kept_tokens)
+        outbox = _read_json(_OUTBOX_FILE, {})
+        kept_outbox = {k: v for k, v in outbox.items() if v.get("persona") != persona}
+        if len(kept_outbox) != len(outbox):
+            _write_json(_OUTBOX_FILE, kept_outbox)
+    return {"subscriptions": len(subs) - len(kept_subs),
+            "phone_tokens": len(tokens) - len(kept_tokens),
+            "unfetched_messages": len(outbox) - len(kept_outbox)}
+
+
 def fetch_message(msg_id: str, persona: str) -> dict | None:
     """The text behind a ping, for the persona it was sent to and nobody else. None when the id
     is unknown, expired or someone else's — the three are deliberately indistinguishable."""
