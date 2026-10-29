@@ -258,3 +258,20 @@ by `update_task(task_id="settings", action="day_starts")` (`:1665`, validated 00
 **The first live use is the confirmation:** Mike says when his day starts, `tasks.yaml`
 `settings.day_starts` holds it, and a habit ticked at 01:30 counts for the day before. Closed
 by Mike, 2026-10-29 (`/backlog attack`).
+
+## ✅ The school calendar Mike shared was invisible to Metatron (Inbox, 2026-10-20) — closed 2026-10-29
+
+Fixed by `fccbc1e` (2026-10-24): reads now cover every calendar the account exposes over CalDAV,
+not just the Metatron calendar, and a copy of one event on two calendars shows once. Evidence it
+is live: the VM's `data/personas/mike/day_plan/plan_2026-10-27.json` contains events from the
+"Shared with Mike" calendar (e.g. "Marta and kids over for dinner"). Found by `/backlog attack`
+2026-10-29. Closed under Mike's instruction to remove items already fixed by other work.
+
+## ✅ Calendar invitations to Iva "not dispatched" (two Inbox entries, 2026-09-07) — closed 2026-10-29
+
+Superseded. Invitations go out as real `METHOD:REQUEST` emails: seven were delivered to Iva on
+2026-09-07, and the sends were checked in Sent Mail. `0e154b9` (09-09) stopped a sent invitation
+from reading as a failure. What these entries really wanted (the guest showing on Google
+Calendar, and acceptance flowing back) is the CalDAV limit recorded in the Inbox entry
+"Invitations are sent, but Mike's own calendar shows no guest…". Mike deferred that to Mark 2 on
+2026-09-09, and it stays open there. Closed 2026-10-29 as duplicates (`/backlog attack`).

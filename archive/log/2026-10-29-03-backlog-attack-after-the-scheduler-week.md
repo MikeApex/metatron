@@ -91,3 +91,14 @@ read every outstanding-list surface); the claims worker 95.3k against ~65k; the 
 83.2k against ~50k. All three ran over; the build medians in `worker_ledger` are too low for
 items that have to survey every caller.
 
+**Close of session.** Mike chose (b): `9e57655` lets `reopen` bring a deferred task back early,
+restoring whatever `eligible_from` held before (`tests/test_task_defer.py` 10/10; the new
+check fails without the fix). Three more Inbox entries closed as already fixed by other work:
+- **Shared calendar invisible:** fixed by `fccbc1e` (10-24, every calendar read). Live
+  evidence is the "Shared with Mike" events in the 10-27 plan.
+- **Iva's invitations "not dispatched", two entries:** they are sent by email. The
+  Google-side remainder is the Mark 2 item.
+
+Inbox 33 → 27 over the session. **Not deployed:** everything after `da3d221`
+(`97f9f09`…`9e57655`).
+

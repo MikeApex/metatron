@@ -89,9 +89,6 @@ back-tagging the rest is `[DB-0815-10]`.
 
 - **Built 2026-10-29: "don't show me this until Monday" now hides a task until that day** (Mike, 2026-10-24; separate `defer` action ruled 2026-10-29). `66b637c` (`update_task` action `defer`, `tools/obligations.py`; `tests/test_task_defer.py` 9/9) + `8231a86` (one line each in `synthesizer.md` and `logistics.md`). Due date unchanged; refused for habits and past a deadline's own date. **Closes on:** one live turn — "don't show me X until <day>" — after which X is gone from the Today panel and returns on that day. `due: 2026-11-12`. Open question put to Mike: should `reopen` bring a deferred task back early (no undo today).
 
-- **[needs building]** User shared an external calendar with diamond.mike.mt@gmail.com containing Manny's school Cultural Day and cookie baking events. The system currently only accesses the primary Google calendar and cannot detect or sync secondary or shared calendars. Capability to discover and sync secondary/shared calendars needs building.  
-  `2026-10-20T15:03:11.394760Z`
-
 - **[needs building]** User requested ability to integrate a dedicated voice recorder and upload long-form daily audio reflection files containing complex reflections across the day for processing and synthesis.  
   `2026-10-15T17:16:45.863222Z`
 
@@ -103,12 +100,6 @@ back-tagging the rest is `[DB-0815-10]`.
 
 - **[instruction change]** User requested that venue recommendations rigorously verify live operating hours and closure status via Google Maps/Places before recommending, prompted by Arôme Bakery being recommended while closed on a Tuesday afternoon.  
   `2026-09-08T14:27:53.140047Z`
-
-- **[needs building]** Outbound calendar invitation dispatch to attendee email addresses (iva.stod@gmail.com) did not execute despite user updating capabilities.  
-  `2026-09-07T11:14:56.321966Z`
-
-- **[needs building]** Mike attempted to test dispatching calendar invitations to Iva's personal email address (iva.stod@gmail.com) for external events over the next two weeks after adjusting capabilities, but outbound calendar invitation dispatch remains unavailable/unimplemented.  ×2  
-  `2026-09-07T11:11:25.158518Z`
 
 - **[instruction change]** CRM contact updates must preserve existing email addresses across different categories (work/personal) rather than overwriting them unless explicitly instructed to remove or replace.  
   `2026-09-07T10:19:58.980779Z`

@@ -123,6 +123,17 @@ read every outstanding-list surface); the claims worker 95.3k against ~65k; the 
 83.2k against ~50k. All three ran over; the build medians in `worker_ledger` are too low for
 items that have to survey every caller.
 
+**Close of session.** Mike chose (b): `9e57655` lets `reopen` bring a deferred task back early,
+restoring whatever `eligible_from` held before (`tests/test_task_defer.py` 10/10; the new
+check fails without the fix). Three more Inbox entries closed as already fixed by other work:
+- **Shared calendar invisible:** fixed by `fccbc1e` (10-24, every calendar read). Live
+  evidence is the "Shared with Mike" events in the 10-27 plan.
+- **Iva's invitations "not dispatched", two entries:** they are sent by email. The
+  Google-side remainder is the Mark 2 item.
+
+Inbox 33 → 27 over the session. **Not deployed:** everything after `da3d221`
+(`97f9f09`…`9e57655`).
+
 ### 2026-10-29, second (day planner Stage C live on the phone, step 2 switched on, and deleting an account now needs Mike at a terminal) — one session across two chats (10-28 `cc3393e6`, resumed 10-29) — `a52b8ab`, `ec63e40`, `c8e6f7f`, `898f55c`, `6a3fd86`, `fac4c4c`, `474873c`, `86fa646`, `32115b6`, `3d3524a`, `d91a25f`, `fe5847b`, `9a9e73a` — **through `3d3524a` deployed by Mike (10-28 15:30 and 10-29 10:49) and the APK sideloaded; `d91a25f`, `fe5847b`, `9a9e73a` committed, not deployed**
 
 **Incoming handoff:** `archive/handoffs/2026-10-27-day-planner-stage-c-push-and-step-2-prompt.md`,
