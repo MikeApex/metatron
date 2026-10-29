@@ -494,14 +494,27 @@ def _strip_quoted(body: str) -> str:
     mail, which is the fastest way to produce a tone profile that is a blend of two people
     and reads like neither.
     """
+    raw = body.splitlines()
     lines = []
-    for ln in body.splitlines():
+    for i, ln in enumerate(raw):
         s = ln.lstrip()
         if s.startswith(">"):
             continue
-        if re.match(r"^On .{0,80}\bwrote:\s*$", s):
+        if re.match(r"^On .{0,200}\bwrote:\s*$", s):
+            break
+        # Gmail wraps a long attribution onto two lines: "On Tue, 8 Sep 2026 at 10:02, Iva
+        # Diamond <…>" / "wrote:". Widened 2026-10-29 with the three shapes below, when the
+        # user's own inbox copies joined the sample (Mike: no quoted or forwarded passages).
+        nxt = raw[i + 1].strip() if i + 1 < len(raw) else ""
+        if s.startswith("On ") and re.match(r"^.{0,120}\bwrote:\s*$", nxt):
             break
         if re.match(r"^-{2,}\s*(Original Message|Forwarded message)", s, re.I):
+            break
+        if re.match(r"^Begin forwarded message:", s, re.I) or re.match(r"^_{10,}\s*$", s):
+            break
+        # Outlook's reply header: a From: line followed within four lines by Sent:/Date:.
+        if re.match(r"^From:\s*\S", s, re.I) and any(
+                re.match(r"^\s*(Sent|Date):\s*\S", r, re.I) for r in raw[i + 1:i + 5]):
             break
         lines.append(ln)
     return "\n".join(lines).strip()
@@ -522,8 +535,9 @@ def _head_and_tail(body: str) -> str:
     return f"{body[:_CORR_HEAD_CHARS].strip()}\n[…]\n{body[-_CORR_TAIL_CHARS:].strip()}"
 
 
-def _fetch_bodies(conn, ids: list[bytes]) -> list[str]:
-    """Batch-fetch and trim message bodies. BODY.PEEK so nothing is marked read."""
+def _fetch_bodies(conn, ids: list[bytes], keep=None) -> list[str]:
+    """Batch-fetch and trim message bodies. BODY.PEEK so nothing is marked read.
+    `keep(msg) -> bool`, when given, drops a message before its body is read."""
     out: list[str] = []
     for i in range(0, len(ids), _FETCH_CHUNK):
         chunk = b",".join(ids[i:i + _FETCH_CHUNK]).decode()
@@ -540,21 +554,25 @@ def _fetch_bodies(conn, ids: list[bytes]) -> list[str]:
                 msg = email.message_from_bytes(item[1], policy=email.policy.default)
             except Exception:
                 continue
+            if keep is not None and not keep(msg):
+                continue
             trimmed = _head_and_tail(_strip_quoted(_body_text(msg)))
             if trimmed:
                 out.append(trimmed)
     return out
 
 
-def _sample_direction(conn, folder: str, criterion: str, address: str) -> list[str]:
-    """Run the tiered sample in one mailbox. `criterion` is FROM or TO."""
+def _sample_direction(conn, folder: str, criterion: str, address: str,
+                      extra: tuple = (), keep=None) -> list[str]:
+    """Run the tiered sample in one mailbox. `criterion` is FROM or TO; `extra` adds
+    search terms (ANDed); `keep` filters fetched messages (see _fetch_bodies)."""
     if conn.select(_imap_quote(folder), readonly=True)[0] != "OK":
         return []
 
     picked: list[bytes] = []
     for _label, start, end, cap in _TIERS:
-        terms = [criterion, f'"{address}"', "BEFORE", _imap_date(start)] if start else \
-                [criterion, f'"{address}"']
+        base = [criterion, f'"{address}"', *extra]
+        terms = base + ["BEFORE", _imap_date(start)] if start else list(base)
         if end is not None:
             terms += ["SINCE", _imap_date(end)]
         try:
@@ -566,7 +584,46 @@ def _sample_direction(conn, folder: str, criterion: str, address: str) -> list[s
         ids = data[0].split()
         picked.extend(ids[-cap:])          # newest within the tier
 
-    return _fetch_bodies(conn, picked)
+    return _fetch_bodies(conn, picked, keep)
+
+
+def _own_copies(conn, address: str, account: str) -> list[str]:
+    """
+    The user's own mail to this contact that sits in the connected INBOX — a copy BCC'd or
+    forwarded in from their everyday address. Mike's question, 2026-10-29: the connected
+    account is purpose-built and nearly empty, and its Sent folder holds almost nothing he
+    wrote, so the profiler never had his voice to learn from.
+
+    THE GATE IS THE SAME AS tools/intake_forward.py's, for the same reason: a From: header
+    is trivially forged, and text accepted here is profiled as the USER's own voice — the
+    voice later drafts are written in. A copy counts only when the receiving server's
+    topmost Authentication-Results verifies it came from that own address's domain
+    (`_authenticates_as`). One that fails is dropped, never guessed at.
+    Quoted and forwarded passages are removed by _strip_quoted() in _fetch_bodies().
+    """
+    from tools.intake_email import _auth_results
+    from tools.intake_forward import _authenticates_as, _trusted_authserv
+    try:
+        from tools.intake import load_config as _intake_cfg
+        intake_cfg = _intake_cfg()
+    except Exception:
+        intake_cfg = {}
+    trusted = _trusted_authserv(intake_cfg)
+    own = set(_own_addresses())
+    try:
+        from tools.intake_forward import own_addresses as _forward_own
+        own |= _forward_own(intake_cfg)
+    except Exception:
+        pass
+    own.discard(address)
+    own.discard((account or "").strip().lower())
+
+    out: list[str] = []
+    for addr in sorted(a for a in own if a and "@" in a):
+        out += _sample_direction(
+            conn, "INBOX", "FROM", addr, extra=("TO", f'"{address}"'),
+            keep=lambda m, a=addr: _authenticates_as(a, _auth_results(m), trusted))
+    return out
 
 
 def search_correspondence(address: str, char_budget: int = _CORR_CHAR_BUDGET) -> dict:
@@ -604,6 +661,8 @@ def search_correspondence(address: str, char_budget: int = _CORR_CHAR_BUDGET) ->
         sent = _sent_folder(cfg, conn)
         received = _sample_direction(conn, "INBOX", "FROM", address)
         written = _sample_direction(conn, sent, "TO", address) if sent else []
+        copies = _own_copies(conn, address, username)
+        written += [c for c in copies if c not in written]
     finally:
         for close in (conn.close, conn.logout):
             try:
@@ -632,7 +691,8 @@ def search_correspondence(address: str, char_budget: int = _CORR_CHAR_BUDGET) ->
         "address": address,
         "sent_folder_found": sent is not None,
         "sent_folder": sent,
-        "counts": {"written_by_user": len(written), "received": len(received),
+        "counts": {"written_by_user": len(written), "own_inbox_copies": len(copies),
+                   "received": len(received),
                    "sampled": len(merged), "chars": used},
         "security_note": UNTRUSTED_CONTENT_INSTRUCTION,
         "correspondence": wrap_untrusted(rendered, source=f"mail history with {address}"),
