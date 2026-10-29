@@ -174,29 +174,25 @@ def write_schedule(
         entry["interval_minutes"] = interval
         entry["one_off"] = False
 
-    # Overnight permission (2026-08-15, Mike's rule). Quiet hours are opt-out in
-    # `fire_session`, so without this a one-off the user explicitly asked for at
-    # 06:00 would be held until 07:00 — the system deciding it knows better than
-    # the person who set the alarm. The permission is granted automatically, and
-    # only on the signal that actually distinguishes the two cases: who asked.
-    #
-    # A user-requested one-off firing inside quiet hours carries the permission.
-    # An agent-invented job never does — an agent that decides overnight is the
-    # right moment for its own idea is the failure this whole gate exists to
-    # prevent. Recurring jobs are excluded regardless of who asked: an interval
-    # job has no single fire time to consent to, it crosses every night by
-    # construction, and a blanket exemption is not a permission.
-    disturb_note = ""
+    # Overnight permission. 2026-08-15 (Mike): a one-off the user asked for at 06:00
+    # must not be held until 07:00 — but an agent-invented job never wakes anyone.
+    # 2026-10-29 (Mike): the permission is no longer granted automatically. The user
+    # confirms it on a card that says the time is inside their own quiet hours;
+    # without that tap the reminder still comes, when quiet hours end — the one-off
+    # loop in core/scheduler.py holds it rather than deleting it. Only the card's
+    # approval (allow_in_quiet_hours, server-side) sets `respect_quiet_hours: false`.
+    # Recurring jobs never qualify: an interval job has no single fire time to
+    # consent to, and a blanket exemption is not a permission.
+    quiet_window = None
     if entry.get("one_off") and created_by == "user":
         try:
             from core.scheduler import _load_config, time_in_quiet_hours
-            if time_in_quiet_hours(_load_config(), when.time()):
-                entry["respect_quiet_hours"] = False
-                disturb_note = (" It falls inside quiet hours and is set to "
-                                "wake you, because you asked for that time.")
+            cfg = _load_config()
+            if time_in_quiet_hours(cfg, when.time()):
+                quiet_window = cfg.get("quiet_hours") or {}
         except Exception:
-            # Never let a permission *widening* fail the write. Without the flag
-            # the job is held until morning, which is the safe direction.
+            # Never let the overnight question fail the write. Without the flag the
+            # job waits until quiet hours end, which is the safe direction.
             pass
 
     data = _load()
@@ -230,7 +226,27 @@ def write_schedule(
     data[key] = entry
     _save(data)
 
-    when_str = (f"once at {entry['at']}" if entry["one_off"]
+    # Raised after the save: the approval edits this entry, so it must exist first.
+    disturb_note = ""
+    if quiet_window is not None:
+        start, end = quiet_window.get("start", ""), quiet_window.get("end", "")
+        at_hm = entry["at"][11:16]
+        disturb_note = (f" {at_hm} is inside the user's own quiet hours ({start}–{end}), so "
+                        f"as set it comes when they end, at {end}.")
+        try:
+            from tools import confirm
+            card = confirm.request(
+                "allow_quiet_hours", {"name": key, "at": entry["at"]},
+                f"Wake you at {at_hm}? That's inside your quiet hours ({start}–{end}). "
+                f"Approve and the reminder comes at {at_hm}; otherwise it waits until {end}.")
+            if card.get("status") == "PENDING_CONFIRMATION":
+                disturb_note += (f" A card in the app asks them to approve {at_hm}. Tell them "
+                                 "they would be interrupting their own quiet hours, and that "
+                                 "the reminder is set either way.")
+        except Exception:
+            pass
+
+    when_str =(f"once at {entry['at']}" if entry["one_off"]
                 else f"every {entry['interval_minutes']} minutes")
     verb = "Replaced" if replacing else "Scheduled"
     # Keyed on the arguments, not on the prompt's wording: a recurring job is the shape that
@@ -243,6 +259,27 @@ def write_schedule(
                        "done. A recurring job fires regardless of what the user has done.")
     return (f"{verb} '{key}' — {when_str}, runs {agent}, "
             f"notification {notification}.{disturb_note}{ledger_note}")
+
+
+def allow_in_quiet_hours(name: str, at: str, confirm_token: str = "") -> str:
+    """
+    Let one user-requested reminder fire inside quiet hours — the approval half of the
+    card `write_schedule` raises (2026-10-29, Mike). Called only by `tools/confirm.execute()`
+    from `POST /confirm`; no model holds this tool. The args are the job's name and its
+    fire time, so an approval cannot be spent on a reminder that has since moved.
+    """
+    from tools import confirm
+    ok, why = confirm.consume(confirm_token, "allow_quiet_hours", {"name": name, "at": at})
+    if not ok:
+        return f"Error: {why}"
+    data = _load()
+    job = data.get(name)
+    if not isinstance(job, dict) or job.get("at") != at:
+        return "Error: that reminder has been changed or has already fired — nothing was changed."
+    job["respect_quiet_hours"] = False
+    job["quiet_hours_approved_at"] = datetime.now().isoformat(timespec="seconds")
+    _save(data)
+    return f"The reminder will come at {at[11:16]}, inside your quiet hours, as you approved."
 
 
 def list_schedules() -> str:

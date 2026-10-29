@@ -937,6 +937,17 @@ def _fire_due_one_offs(persona: str) -> None:
     if not due or _held_for_interview(persona):
         return
 
+    # Same rule for quiet hours (2026-10-29, Mike): a follow-up that comes due overnight
+    # stays in the file and fires when quiet hours end. It used to be popped here and then
+    # skipped by fire_session's gate — "I'll check back at 6:30" deleted unseen. Only the
+    # quiet-hours gate is mirrored: "disabled" or "not an active day" would hold a one-off
+    # forever. A job carrying `respect_quiet_hours: false` (the user approved the card
+    # write_schedule raised) is not held.
+    if _in_quiet_hours(_load_config(persona)):
+        due = [(n, j) for n, j in due if not j.get("respect_quiet_hours", True)]
+        if not due:
+            return
+
     for name, job in due:
         data.pop(name, None)
     try:

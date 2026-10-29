@@ -114,30 +114,102 @@ def main() -> int:
     check("an agent-invented 06:00 job is held until morning",
           not fired_at("06:00", "irrelevant_name", job_cfg=agent_idea))
 
-    # --- the permission is granted at write time ----------------------------
+    # --- the permission is asked for at write time, never assumed (2026-10-29) -----
     from datetime import datetime as _dt, timedelta as _td
     from unittest.mock import patch as _patch
+    import tools.confirm as confirm_tool
     import tools.schedule as sched_tool
 
-    def _write(at_time: str, created_by: str) -> dict:
-        """Write a one-off at tomorrow's `at_time` and return the stored entry."""
+    def _write(at_time: str, created_by: str) -> tuple[dict, list, str]:
+        """Write a one-off at tomorrow's `at_time`; return (stored entry, cards raised,
+        the tool's reply)."""
         when = (_dt.now() + _td(days=1)).replace(
             hour=int(at_time[:2]), minute=int(at_time[3:]), second=0, microsecond=0)
         stored: dict = {}
+        cards: list = []
+
+        def _card(action, args, description, persona=None):
+            cards.append((action, args, description))
+            return {"status": "PENDING_CONFIRMATION", "confirm_token": "t"}
+
         with _patch.object(sched_tool, "_load", return_value={}), \
              _patch.object(sched_tool, "_save", side_effect=lambda d: stored.update(d)), \
-             _patch.object(scheduler, "_load_config", return_value=CFG):
-            sched_tool.write_schedule(
+             _patch.object(scheduler, "_load_config", return_value=CFG), \
+             _patch.object(confirm_tool, "request", side_effect=_card):
+            reply = sched_tool.write_schedule(
                 name="probe", prompt="wake up", at=when.isoformat(timespec="seconds"),
                 created_by=created_by)
-        return next(iter(stored.values())) if stored else {}
+        return (next(iter(stored.values())) if stored else {}), cards, reply
 
-    check("a user-asked 06:00 one-off is written with the permission",
-          _write("06:00", "user").get("respect_quiet_hours") is False)
-    check("an agent-created 06:00 one-off is NOT given the permission",
-          "respect_quiet_hours" not in _write("06:00", "agent"))
-    check("a user-asked 14:00 one-off needs no permission",
-          "respect_quiet_hours" not in _write("14:00", "user"))
+    entry, cards, reply = _write("06:00", "user")
+    check("a user-asked 06:00 one-off is NOT given the permission unasked",
+          "respect_quiet_hours" not in entry)
+    check("…a card asks for it, naming the time and the quiet hours",
+          len(cards) == 1 and cards[0][0] == "allow_quiet_hours"
+          and cards[0][1] == {"name": "probe", "at": entry.get("at")}
+          and "06:00" in cards[0][2] and "22:00–07:00" in cards[0][2])
+    check("…and the reply says it interrupts their own quiet hours, and is set either way",
+          "own quiet hours" in reply and "set either way" in reply)
+    entry, cards, _ = _write("06:00", "agent")
+    check("an agent-created 06:00 one-off raises no card and gets no permission",
+          not cards and "respect_quiet_hours" not in entry)
+    entry, cards, _ = _write("14:00", "user")
+    check("a user-asked 14:00 one-off needs no card",
+          not cards and "respect_quiet_hours" not in entry)
+
+    # --- the approval sets the permission on exactly that job --------------------
+    job_at = "2026-11-01T06:00:00"
+    store = {"probe": {"one_off": True, "at": job_at, "created_by": "user"}}
+    saved: dict = {}
+    with _patch.object(sched_tool, "_load", return_value=store), \
+         _patch.object(sched_tool, "_save", side_effect=lambda d: saved.update(d)), \
+         _patch.object(confirm_tool, "consume", return_value=(True, "approved")):
+        out = sched_tool.allow_in_quiet_hours("probe", job_at, confirm_token="t")
+    check("approving the card lets that reminder fire inside quiet hours",
+          saved.get("probe", {}).get("respect_quiet_hours") is False and "06:00" in out)
+    with _patch.object(sched_tool, "_load", return_value={"probe": {"at": "2026-11-01T06:30:00"}}), \
+         _patch.object(sched_tool, "_save") as no_save, \
+         _patch.object(confirm_tool, "consume", return_value=(True, "approved")):
+        out = sched_tool.allow_in_quiet_hours("probe", job_at, confirm_token="t")
+    check("an approval for a reminder that has since moved changes nothing",
+          out.startswith("Error") and not no_save.called)
+    check("the approval is registered with the server-side executor",
+          confirm_tool._EXECUTORS.get("allow_quiet_hours")
+          == ("tools.schedule", "allow_in_quiet_hours"))
+
+    # --- a one-off due in quiet hours is kept, not deleted (2026-10-29) ----------
+    import tempfile
+    import yaml as _yaml
+
+    def _tick(in_quiet: bool, jobs: dict) -> tuple[list, dict]:
+        """Run the one-off loop once; return (names fired, what is left in the file)."""
+        fired: list = []
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "schedules.yaml"
+            path.write_text(_yaml.dump(jobs))
+            with _patch.object(scheduler, "_agent_schedules_path", return_value=path), \
+                 _patch.object(scheduler, "_held_for_interview", return_value=False), \
+                 _patch.object(scheduler, "_load_config", return_value=CFG), \
+                 _patch.object(scheduler, "_in_quiet_hours", return_value=in_quiet), \
+                 _patch.object(scheduler, "fire_session",
+                               side_effect=lambda name, *a, **k: fired.append(name)):
+                scheduler._fire_due_one_offs("probe_persona")
+            left = _yaml.safe_load(path.read_text()) or {}
+        return fired, left
+
+    past = (_dt.now() - _td(minutes=5)).isoformat(timespec="seconds")
+    followup = {"enabled": True, "one_off": True, "at": past, "agent": "coordinator",
+                "created_by": "agent"}
+    fired, left = _tick(True, {"check_back": dict(followup)})
+    check("a follow-up due inside quiet hours is not fired…", fired == [])
+    check("…and is still in the file, not deleted", "check_back" in left)
+    fired, left = _tick(False, {"check_back": dict(followup)})
+    check("once quiet hours end it fires and is removed",
+          fired == ["check_back"] and "check_back" not in left)
+    approved = dict(followup, created_by="user", respect_quiet_hours=False)
+    fired, left = _tick(True, {"alarm": approved, "check_back": dict(followup)})
+    check("an approved reminder fires inside quiet hours; the held one stays",
+          fired == ["alarm"] and "check_back" in left and "alarm" not in left)
 
     print()
     failed = [label for ok, label in _results if not ok]

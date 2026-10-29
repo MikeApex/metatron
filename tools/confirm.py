@@ -486,6 +486,10 @@ _EXECUTORS: dict[str, tuple[str, str]] = {
     # so without this entry an approved close would land as "nothing here knows how to
     # carry that out".
     "close_clinical_escalation": ("tools.escalation", "close_clinical_escalation"),
+    # A reminder the user asked for at a time inside their own quiet hours (2026-10-29,
+    # Mike). Raised by code in write_schedule, never by a model; the approval lets that
+    # one job wake them. Unapproved, it still comes — when quiet hours end.
+    "allow_quiet_hours":     ("tools.schedule",      "allow_in_quiet_hours"),
 }
 
 
