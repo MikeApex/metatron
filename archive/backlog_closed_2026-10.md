@@ -206,3 +206,30 @@ the Today list agrees.
 The item as filed: *"Watered (by rain, Mike's word) 10-24 → due 10-27; it must not appear on ✓ Today
 on 10-25 or 10-26."* Origin: the task-ledger post-deploy session, 2026-10-24.
 
+
+## ✅ [DB-0829-01] The log recorded an email as sent while it was still waiting for approval — closed 2026-10-29
+
+Passed on a real gated-then-declined send, read on the VM 2026-10-29. On 2026-10-25, 11:05/12:02,
+Mike asked for a thank-you email to Nopadon Wongpakdee. `send_email` returned
+`PENDING_CONFIRMATION`, and Mike declined it at 12:03 (`declined_confirmations.json`). The
+fire-and-forget Diarist's directive (trace `2026-10-25T12:03:22`) carried the system-generated
+*"has NOT happened … record it as proposed and awaiting the user's approval"* block. It logged
+*"noted proposed email to Nopadon Wongpakdee awaiting user approval"*. `logs/2026-10-25.json`
+contains no record of an email being sent.
+
+**Not exercised:** the user-facing half ("the reply carries only the waiting line"). The reply to
+that turn was the stall fallback (*"couldn't finish the reply"*), so the reply made no false
+claim but never showed the waiting line either. That half is covered by
+`tests/test_pending_action_record.py`. Built `54073b6` (2026-09-03). Filed 2026-08-29 at Mike's
+instruction. Closed by Mike, 2026-10-29 (`/backlog verify`).
+
+## ✅ [DB-0822-06] It told Mike stale day-counts ("day three of your hiatus") — closed 2026-10-29
+
+Closed on evidence that the fix runs, without the exact confirm it was waiting for. `derived_facts()`
+(`core/orchestrator.py:990`, built `54073b6`) is live and its arithmetic is correct. On
+2026-09-08 the block reached real prompts (traces 07:30 and 09:52). It corrected *"33 days
+since…"* (written 09-06) to 35, and *"35 days since…"* (written 09-07) to 36. **No reply ever
+read a count back**, so the `@waiting: 2026-09-10` condition (a live run reading a dated count
+back correctly) never occurred. Nobody has reported the symptom since 2026-09-02. Closed by Mike,
+2026-10-29 (`/backlog verify`). **Reopen if a reply states a stale count again.** The
+age-annotation and intraday halves (`cbd5ca3`, `4cc9e3e`) shipped earlier and are unchanged.

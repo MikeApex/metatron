@@ -202,69 +202,6 @@ standing rule distrusts.*
 *One survivor of the 2026-08-21 trace-measured block — its two siblings closed on live evidence
 2026-09-02 (`archive/backlog_closed_2026-09.md`).*
 
-- **3. [DB-0822-06] It tells Mike his own training day, and got it wrong four ways in one day.**
-  Across 08-21 the same hiatus was called *five-day, five-day, day three, day three, **day four**,
-  five-day, day three, day three*. **Root cause is a derived count written into a log and re-read
-  as fact:** `physical_health` wrote `"Day 3 of 5-day exercise hiatus"` into the health log, and
-  later runs read the stored number instead of recomputing it from the dates.
-  **Same class, same fix:** the *Metatron sprint* surfaced in 5 of 9 runs days after it ended —
-  written state carried forward with no age-out. Mike: *"Metatron sprint aged out days ago. It
-  shouldn't be a topic of conversation."*
-  **Fix:** compute derived counts at read time and never store them; give log-carried topics an
-  age-out. Both are `tools/` + `core/`, no agent file involved.
-  *Measured 2026-08-21; the offending write is visible in the 10:24 trace's `write_log` args.*
-  *Fourth instance 2026-08-27: the 10:00 anticipation run told Mike the Teams link was "still
-  missing" three hours after the 07:14 run declared it resolved — same carried-state mechanism.*
-  **Half built 2026-08-27** (`cbd5ca3`, merged): carried state now shows its age — open threads
-  read "(logged 9 days ago)", log lines carry age beside date. Annotation, not filtering.
-  `tests/test_context_age_annotation.py`. **Both remaining halves resolved 2026-08-27 (second
-  attack run, merged `4cc9e3e`):** the **intraday half is built** — `write_log` now stamps each
-  field's write time in a `_written_at` sidecar (additive; legacy files render unchanged, no
-  migration) and today's log renders per-field with hour-granular ages
-  (`tests/test_log_field_timestamps.py`, 32 checks). The **derived-count half was
-  STALE-PREMISED as filed:** no code-computed count reaches a model — `expired_open_threads` is
-  popped before the read (`tools/context_tracker.py:406`), and intake/obligation counts are
-  computed at assembly time; the only stale counts are model-authored free text, which the
-  per-field stamps now date. A code-computed "derived facts" line was considered and deliberately
-  not built — revisit only if a dated count still gets misread after deploy.
-  @kind: bug
-  **⚠ Fresh reproduction across three live days, post-deploy — the narrow confirm passed and the
-  item still cannot close (Red session ④, 2026-09-02).** The confirm half held: Prudential,
-  resolved, was raised zero times on 08-29 (7-of-9 the week before), and the 09-01 Apex deferral
-  + plants-watered updates were respected by every later run that day. But the headline failure
-  reproduced: the five-day exercise hiatus **ended 2026-08-23** (Mike's own journal entry), yet
-  08-30 10:48 said *"day three of your scheduled exercise hiatus"*, 08-31 11:21 said it was
-  *"officially over"* (a week late), and 09-02 08:07 said it *"officially wraps up today"* —
-  three different wrong states, spanning the 09-01 model migration, so it is the carried-state
-  mechanism, not the model. The age annotations are live and the model repeats the stale state
-  anyway — the "revisit only if a dated count still gets misread after deploy" condition above
-  has now fired. The deliberately-unbuilt code-computed derived-facts line is back on the table.
-  @waiting: superseded — the confirm arrived and was outweighed by the reproduction above
-  **Merged in 2026-09-02 (Mike's disposition):** the two 08-28/29 Inbox reports of
-  already-given information and suggestions repeating — same carried-state mechanism, now three
-  independent reports of one fault. (Their suggest-at-impossible-times half filed separately as
-  `[DB-0902-03]`.)
-  **✅ The derived-count half is now BUILT, deployed and VM-verified (session ⑥, 2026-09-03,
-  `54073b6`)** — the half retired on 08-27 whose own re-open condition fired.
-  `derived_facts()` recomputes counts by subtraction from the date each line was written, on
-  the principle that **a count is only ever a claim about a date**. Validated against reality:
-  *"Day 3"* written 2026-08-21 puts day 1 at 08-19 and a 5-day period ending **2026-08-23** —
-  exactly the date Mike's journal records the hiatus ending — and the 08-22 entry derives the
-  same start and end independently. Run against the four real log files carrying such counts,
-  all four periods are correctly reported as ended. Deliberately narrow: two forms only
-  (`day N of an M-day X`, `N days since X`), both pure arithmetic over a stored date; nothing
-  needing a judgement about whether a thing is still true, which is the filtering this item has
-  twice declined. Lands in `augmented_input`, not the cached system prompt, so the Vertex
-  prefix cache is undisturbed; returns "" when nothing parses. `tests/test_derived_facts.py`,
-  15 checks.
-  @waiting: 2026-09-10 — close on one live run reading a dated count back correctly. Note the
-  four stale counts age out of the 5-day log window on 2026-09-04, so the confirm needs either
-  a run before then or a fresh dated count.
-  *filed 2026-08-22 by Mike · age-out half built 2026-08-27 (session-hygiene worker) · intraday
-  half built + derived-count half retired 2026-08-27 (orchestrator-context worker) · reproduction
-  on live traces 2026-09-02 (Red session ④) · Inbox repeat-info reports merged in 2026-09-02 ·
-  derived-count half built 2026-09-03 (session ⑥)*
-
 - **4. [DB-0910-02] It named a lecture as today's confirmed commitment while the calendar was
   refusing to answer, and said nothing about the gap.** Live 2026-09-10 07:30, the proactive
   morning session (exchange `001`, `mike`). `logistics` called `read_calendar` and got CalDAV
@@ -293,45 +230,27 @@ standing rule distrusts.*
 
 ### Green/Amber — a second block, found after the first pass
 
-- **10. [DB-0829-01] The log recorded an email as sent while it was still waiting for approval —
-  and it was then declined.** Live 2026-08-29, during the confirm-drain session, watched end to
-  end: Mike asked for an email to Iva Diamond at 13:00; `send_email` correctly raised the
-  confirm gate (nothing was sent — verified in `pending_confirmations.json` and by the absence
-  of any `POST /confirm`); the model's streamed *"That's sent to Iva"* was correctly amended by
-  `enforce_pending_receipt()` — **but in the same exchange the Coordinator dispatched a log
-  write recording "user sent an email to Iva Diamond to coordinate a call for next week"**
-  (trace `2026-08-29T13:00:12`, the dispatch turn's `user_input` states it as fact). Mike then
-  declined the send at 13:05. So the user-facing text was corrected and the durable record was
-  not: the day log carries an event that never happened, which later runs read back as fact —
-  the same carried-state poison mechanism as `[DB-0822-06]`, one layer earlier (written from a
-  *claimed* action rather than a stale one). The 13:07 turn logged the reconsideration, so the
-  record is partially self-corrected this time; nothing guarantees that.
-  **Shape of the fix, not a decision:** the receipt enforcer knows the action is pending — the
-  same signal should gate (or reword) any same-turn log/journal dispatch describing the gated
-  action as done; a declined action should never survive in the log as performed.
-  **Adjacent, same event:** the actions logger recorded `send_email — completed` for the
-  merely-gated call (`journalctl` 13:00:18) — "completed" should not describe a pending action.
-  @kind: bug
-  **✅ BUILT, deployed and VM-verified 2026-09-03 (session ⑥, `54073b6`) — and the filed
-  premise above is corrected by the trace.** The `relationships` specialist that watched the
-  gate fire logged it **correctly** (*"Initiated outreach... Pending user approval in the
-  app."*). The false record came from the **fire-and-forget Diarist**, dispatched at 13:00:12
-  — 1.6s into the turn and **before** the blocking specialist called `send_email` — so nothing
-  it saw could contradict the Coordinator's optimistic directive. Three fixes: fire-and-forget
-  now starts after the blocking specialists return (the confirmation store is authoritative
-  by then) and its directive gains a system-generated PENDING block; `core/actions.py` gained
-  a third outcome, since a gated call is neither completed nor failed and was being reported
-  `send_email — completed` to the Synthesizer *and* the journal; and `_COMPLETION_CLAIM_RES`
-  now catches the live *"That's sent to Iva."*, which matched none of the four patterns — so
-  the user saw the false claim and its correction stacked, not the correction alone. That half
-  was recorded above as working. `tests/test_pending_action_record.py`, 13 checks, 9 failing
-  on HEAD first.
-  @waiting: 2026-09-10 — close on one live gated-then-declined action on the VM: the reply
-  must carry only the waiting line, and the day log must not say the thing was done
-  *filed 2026-08-29 at Mike's instruction, from the live confirm-drain exchange · built 2026-09-03 (session ⑥)*
-
-- **11. [DB-0902-01] ROUTING_MISS events now record successes, so the miss log is filling with
-  non-misses.** Since the 09-01 fleet migration, the Coordinator files quality events whose
+- **11. [DB-0902-01] The routing-miss log is mostly the Coordinator flagging its own scheduled
+  prompts, so real misses are buried.** *Rescoped by Mike 2026-10-29 (`/backlog verify`).* Read
+  live that day: **114 of the 145 `ROUTING_MISS` events since 09-04** are about a scheduler-opened
+  session, e.g. *"User message was a scheduled quiet check"*, *"scheduled session prompt treated as
+  user input"*, *"no user message was present"*. This is the same fault as the recurring machine-log
+  signature (*"user message was a scheduled quiet check"* ×10). Real misses are still in there
+  (*"user gave a contact name and phone number… routed to no specialists"*, 09-08 12:38) and are
+  hard to see.
+  **Open question, and it decides the fix:** is the Coordinator *mishandling* scheduled prompts
+  (a real routing fault the events correctly report), or handling them correctly and *misfiling*
+  them (noise)? `core/orchestrator.py:6396` already tells it that a scheduled prompt *"is not the
+  user speaking"*. Read a sample of these sessions' traces before choosing a code guard or a
+  `coordinator.md` change.
+  **Closes on:** a week of `quality_events.json` in which scheduler-opened sessions produce no
+  `ROUTING_MISS` unless a specialist was genuinely missed.
+  **Deliberately not chased:** about 15–25 events since 09-04 still just describe routing that
+  worked, in phrasings `asserts_routing_success()` misses (*"correctly routed"*, *"handled
+  appropriately"*). That is about 15% of the noise. Widen the guard only if it is still significant
+  once the scheduled-prompt class is gone.
+  *Original scope (09-02), kept for the reasoning trail:* ROUTING_MISS events record successes.
+  Since the 09-01 fleet migration, the Coordinator files quality events whose
   detail describes correct behaviour — *"Coordinator handled morning session prompt
   successfully"*, *"Routed inbox check and logistics task appropriately"*, *"Coordinator test
   run check"* — under `ROUTING_MISS`. 5 instances 09-01 → 09-02 in
@@ -359,9 +278,8 @@ standing rule distrusts.*
   `ROUTING_MISS` beside the `USER_CORRECTION` rule it mirrors, and says the thing the code
   guard cannot: routing that worked is not an event and there is no slot to fill. Cache-safe
   — the file grew, so it moves away from the 4,096-token Vertex floor, not toward it.
-  @waiting: 2026-09-12 — close when a week of `quality_events.json` carries no ROUTING_MISS
-  describing routing that worked. Both halves are now in place; the guard catches the
-  self-contradicting ones, the definition should stop the merely-descriptive five.
+  *Former close condition (`@waiting: 2026-09-12`, a week with no ROUTING_MISS describing routing
+  that worked): never met. Replaced by the rescope above.*
   *Early signal 2026-09-03, post-deploy: three live sessions that afternoon produced no
   ROUTING_MISS at all — the only quality event was a genuine USER_CORRECTION. One afternoon,
   not a week; recorded as encouraging, not as the confirm.*
@@ -1298,6 +1216,15 @@ evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording �
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
 
+- **[a specialist missed a signal it should have caught]** User message was a scheduled quiet check, session_id: 2026-10-29  
+  `2026-10-29T10:00:28.754762Z`
+
+- **[THINKING_CAP_HIT]** reply cut at the 8192-token output ceiling (thinking 7865 + reply 323, turn 1). Thinking overshoots its 4096 budget on this model; check whether the reply arrived whole.  
+  `2026-10-28T18:34:53.750563Z`
+
+- **[user corrected a prior turn]** The assistant simulated a conversation loop in previous turns instead of waiting for user input, outputting assistant messages on the user's behalf.  
+  `2026-10-28T18:00:30.907304Z`
+
 - **[a specialist missed a signal it should have caught]** The user did not send a new message; this was a scheduled prompt for a quiet check-in. The system routed it incorrectly as a user input instead of handling it via the coordinator background cycle.  
   `2026-10-28T15:08:10.355516Z`
 
@@ -1739,8 +1666,8 @@ entry is a symptom, never a diagnosis.)*
 - **[user corrected a prior turn]** ```  
   `2026-09-25T06:30:20.812316Z`
 
-- ⚠ **[a specialist missed a signal it should have caught]** Routed scheduled session input 'Quiet check-in — raise it only if something matters right now.' to Mental Wellbeing and Physical Health, missing the requirement to check for unlogged evening food during day-close.  ×4  
-  `2026-10-25T20:36:23.508442Z`
+- ⚠ **[a specialist missed a signal it should have caught]** Coordinated day-close check-in triggered by scheduled prompt; routed to Diarist, Mental Wellbeing, and Physical Health for the evening wrap-up.  ×5  
+  `2026-10-28T20:00:11.057352Z`
 
 - **[a specialist missed a signal it should have caught]** Coordinator emitted natural response directly instead of routing package for synthesizer in quiet check-in.  
   `2026-09-24T19:39:08.196992Z`
@@ -2120,8 +2047,8 @@ entry is a symptom, never a diagnosis.)*
 - **[user corrected a prior turn]** ```  
   `2026-09-09T16:37:04.540671Z`
 
-- ⚠ **[user corrected a prior turn]** The scheduled prompt was 'Quiet check-in — raise it only if something matters right now.' but the model produced an extensive multi-item morning briefing instead of adhering to the quiet check-in instruction.  ×9  
-  `2026-10-28T08:09:43.757851Z`
+- ⚠ **[user corrected a prior turn]** User message was a scheduled quiet check-in, but the model produced an unsolicited morning briefing instead of adhering to the quiet check-in constraint.  ×10  
+  `2026-10-29T08:11:15.347065Z`
 
 - **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Travel to Cheder' (2026-11-08T09:00:00, uid=9f9be746-94ac-4fd4-8f60-f4d16b402972@ai-life-manager) and 'Cheder' (2026-11-08T10:00:00, uid=e80d1e0f-e19a-4fce-901f-c5ae135a3a85@ai-life-manager). title_similarity=0.55, shared_attendees=[], shared_words=['cheder']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
   `2026-09-09T04:35:21.461718Z`
