@@ -75,6 +75,9 @@ back-tagging the rest is `[DB-0815-10]`.
 > against `git log` before promoting anything from here.
 *(empty — last triaged 2026-09-05; evidence in `archive/backlog_closed_2026-09.md`)*
 
+- **[needs building]** User requested automated meal and snack logging three times daily unless reported first. Requires automated background meal-logging capability; currently logging relies on user reporting or check-in prompts.  
+  `2026-10-29T15:08:26.272213Z`
+
 - **Built 2026-10-29: "don't show me this until Monday" now hides a task until that day** (Mike, 2026-10-24; separate `defer` action ruled 2026-10-29). `66b637c` (`update_task` action `defer`, `tools/obligations.py`; `tests/test_task_defer.py` 9/9) + `8231a86` (one line each in `synthesizer.md` and `logistics.md`). Due date unchanged; refused for habits and past a deadline's own date. **Closes on:** one live turn — "don't show me X until <day>" — after which X is gone from the Today panel and returns on that day. `due: 2026-11-12`. Open question put to Mike: should `reopen` bring a deferred task back early (no undo today).
 
 - **Fixed 2026-10-29: the empty-day check-in said "nothing urgent requires your attention" instead of asking what's going on** (Mike, 2026-09-05). Cause: the live `companion_checkin` prompt ("raise it only if something matters right now") is now sent only on a day with nothing planned. `226a0c2` appends "nothing is planned — ask what's going on" in `tools/day_plan.py`; the existing rule in `synthesizer_scheduled_sessions.md:7` was left as the single home. **Closes on:** the next empty-day check-in reply on the VM asks a question rather than reporting nothing. `due: 2026-11-12`.
@@ -82,58 +85,15 @@ back-tagging the rest is `[DB-0815-10]`.
   **The only route to real guest management is the Google Calendar API over OAuth** (`sendUpdates=all`), which replaces the CalDAV write path for events carrying guests. It runs into the wall that reversed the Google Contacts integration on 2026-08-08: under **Testing** publishing status the refresh token expires every 7 days, so it breaks weekly until the app is verified — same account, same GCP project, same constraint. So this is an integration change with an OAuth-verification prerequisite, not a patch.
   **The standing rule it serves (Mike, 2026-09-07):** invite Iva to every scheduled external event (work, Manny, concerts, social), never reminders or Metatron check-ins — held as wisdom `invite_iva_to_external_events`; its Inbox entry closed 2026-10-29.
   **Deferred to Mark 2 by Mike, 2026-09-09** — do not re-propose against the Mark 1 CalDAV path. Interim behaviour is built and deployed: invitations go by email, and `logistics.md` plus `send_calendar_invite`'s return value both state that the calendar will show nothing, so a working send is not reported as a failure. Raised by Mike after reporting invitations as unsent three times.
-- **You cannot interrupt Metatron from the headset — and nobody has checked whether you can.**
-
-Raised by Mike, 2026-09-24: *"The speech is so delayed that barge in isn't really a
-consideration. I'd rather leave it for another day."* Deferred deliberately, not dropped.
-
-**What is built.** `startRecording()` calls `stopSpeaking()` first, so a press while Metatron is
-talking should cut it off and open the mic. It has never been run on the device.
-
-**Why it is not urgent, and what would change that.** A reply arrives tens of seconds after it
-is asked for (`ROADMAP.md` § 5A: the whole reply lands in ~0.6s, after ~30s dominated by
-thinking), so there is very little speaking window to interrupt. **If the thinking budget ever
-drops, this becomes worth having** — that is the trigger to re-rank it, not a date.
-
-**Reason to expect it works:** while Metatron speaks, the link is on A2DP, not SCO — so the
-button is available, unlike the mid-recording case which measurably is not.
-
-**Closes on** one device check: hold the bud during a spoken reply; speech stops, mic opens.
-- **The voice that says "I'm here" when the mic opens is annoying enough to want changing.**
-
-Raised by Mike, 2026-09-24, on the first working device test: *"The voice is annoying, but it
-works for now."* Accepted as shipped, not as finished.
-
-**Why it is a voice at all, so a fix does not just undo the reasoning.** The cue was a tone
-first. Through a Bluetooth headset it arrived as a squelch, because opening the mic moves the
-link to SCO — a NARROWBAND VOICE codec, which mangles short synthetic tones and carries speech
-cleanly. A louder or longer beep fights the channel; speech works with it. Android's stock TTS
-is what makes it annoying, not the decision to speak.
-
-**Options, none tried:** a different TTS voice or pitch/rate on the same engine; a recorded
-one-word clip played on `STREAM_VOICE_CALL`; an earcon designed for narrowband (a two-tone rise
-survives 8 kHz far better than `TONE_PROP_BEEP`); or dropping the cue to vibration only, which
-already exists as an off-by-default setting.
-
-**Constraint any replacement must keep:** it plays BEFORE the recorder starts, on A2DP. Both
-earlier placements sat on a Bluetooth profile transition and arrived "like a cell phone call
-losing signal", and a cue played into an open mic also trips the silence detector's `speechSeen`
-flag — which would send a turn containing only the cue.
-
-`static/index.html` → `cue()` / `cueAndWait()`; `MainActivity.HeadsetBridge.playCue()`.
-- **[needs building] Dictated messages sometimes arrive cut off, and the rest of what was said is lost.** Two this month: 2026-10-22 10:09 ends *"…so it should look for phonetic"* (Mike's own app-change request; the rest never arrived), and 2026-10-15 11:54 ends mid-word *"…Greenwich and Black"*. **Evidence, checked 2026-10-23:** both were dictated, and the transcript the VM saved for each recording (`data/audio/2026-10-22/10-07-59.json`, `data/audio/2026-10-15/11-53-14.json`) ends at the same word. So the text was lost at capture or transcription, not later in the pipeline. **Cause not established.** A mid-word cut points away from the 2.5s silence stop and towards the end of the audio being lost, but that is an inference. **Mitigated, not fixed:** since `54222c0` the on-screen mic shows each recording's text in the voice tray before Send, so a cut-off snippet is visible and can be re-recorded. Headset turns still send unseen. **Closes on:** one cut-off reported from daily use, plus whether Mike had paused or was mid-word. The standing note in `startRecording()` forbids widening the silence window without such a turn to point at. Raised by Claude Code, 2026-10-23, from Mike's conversation logs (not by Mike).
 - **Check by 2026-11-07: a correspondence suggestion fires.** Needs a real email answering an open `waiting`/`deadline` task — the TfL contactless refund (ref 24626231) is now the likeliest (the S.A.R. e-file closed 10-23). Pass: the suggestion bar shows it; **Mark done** closes it with evidence "correspondence evidence, approved in the app"; nothing from the email's subject reaches any context section. If nothing has arrived by 11-07, re-scope rather than extend. (task-ledger post-deploy session, 2026-10-24; the launch prompt Mike ran asked for each time-gated check to leave with a date)
 - **Check 2026-11-02: a full week of gym adherence reads right.** On the VM: `python3 -m tools.obligations mike --report` shows gym as completions/target for the week of 10-26, with the partial week of 10-19 excluded. (task-ledger post-deploy session, 2026-10-24; the launch prompt Mike ran asked for each time-gated check to leave with a date)
 - **Check 2026-10-31: are Vertex reply stalls still happening?** Count `[reply_limits]` capacity retries in the server journal since 10-24 and the share of Synthesizer calls over 60 s. If the tail is still ~2.5%+, decide option (b) of `archive/plans/reply_latency_plan_2026-10-24.md` § 7 — fall back to the bulk-tier Vertex model on a second stall (stays on Vertex terms; lower reply quality). Mike ruled retry-only for now (2026-10-24). (task-ledger post-deploy session, 2026-10-24; the launch prompt Mike ran asked for each time-gated check to leave with a date)
 - **Check 2026-10-31: is the `check_inbox_6h` Logistics job redundant? If so, delete it.** Kept on 10-23 when its twin was deleted; `logistics.md` already says standing triage is the intake sweep's job. It costs ~67 runs a month at ~96k tokens each on the bulk tier, and on 10-24 one 73 s run overlapped a user turn. Watch a week of task creation from mail: if every task it files also arrives through the intake queue, delete it (Mike approves, as a schedule change). Mike asked for this item, 2026-10-24. **⚠ Read 2026-10-29: the check cannot be answered from the ledger as written** — all 24 tasks created since 10-24 carry `created_by: None` in the VM's `tasks.yaml`, so a mail-filed task is indistinguishable from an intake-filed one. On 10-31 read this job's own `open_task`/`update_task` calls in its traces instead.
 - **A request ending in "over and out" got "Received — talk to you later" and was never carried out — fixed; one real use owed to confirm (due 2026-11-02).** Built and deployed `e5b895c`: the sign-off shortcut now skips the Synthesizer only for a bare sign-off (≤8 words, no question in the message or Metatron's previous reply, no request/answer/time word, no task-completion note); otherwise it runs with a one-line-reply instruction. Origin: 2026-10-26 22:05 (job post to tomorrow, retire the gym — both dropped), also 10-19 and 10-21. **Closes on:** the first real user message after deploy that ends "over and out" and carries a request — its trace shows the Synthesizer ran (not `[PIPELINE] sign-off detected — synthesizer skipped`), the request was acted on, and the reply is one line. Also confirm a bare "over and out" still gets the ack. If none arrives by 11-02, ask Mike to send one. Record: `archive/log/2026-10-26-06-over-and-out-no-longer-drops-requests.md`. Raised by Claude Code, 2026-10-26, as the confirmation step for a fix Mike requested ("Synth shouldn't skip when there's something active requested").
-- **[a calendar event Metatron writes has its place only in the title, and an internal word in it]** Filed with Mike's agreement, 2026-10-27. Event "Benny and user at Canary Wharf" (11:30, Metatron calendar, written 09:58 from Mike's "Benny and I need to be at Canary Wharf by 11:30"): `location` empty, so the day planner planned no "leave for" row; and "user" — internal vocabulary — is now on Mike's real calendar. Also seen the same day: Logistics called `update_calendar_event` with uid `"..."` (a placeholder, 11:49). Fix where events are written (the calendar tools / Logistics conduct): a place the user names goes in `location`; titles use the user's name or none; a check keeps internal words out of event titles. Evidence: `archive/PROJECT_LOG.md` § 2026-10-27.
 - **Built 2026-10-29: a reply saying something is "set to surface", "queued" or "lined up" when nothing was written is now logged** (Mike, 2026-10-27). `24b4cb0` (`core/orchestrator.py`, `tests/test_false_claim_phrasings.py` 31/31, 13 failing on the old code). Log-only; a claim matched by a row in today's plan (title word + start time) is not flagged. **Closes on:** a week of `FALSE_ACTION_CLAIM` events on the VM with no plan-backed false flags, or the next real such reply logged. `due: 2026-11-12`.
 - **Built 2026-10-29: a follow-up due in quiet hours is kept and fires when they end; a reminder the user asks for inside them raises an approval card** (Mike's ruling 2026-10-29: fires in quiet hours only if the user approves; the reply notes they are interrupting their own quiet hours). `97f9f09` + `02b1e5b` (Fable review: the card no longer makes the reply say nothing was set; no one-tick loss at the quiet-hours boundary). `core/scheduler.py`, `tools/schedule.py`, `tools/confirm.py`, `core/orchestrator.py`; `tests/test_scheduler_quiet_hours.py`. **Closes on:** either one agent follow-up held overnight and firing after quiet hours end (scheduler journal: no `skipping … quiet hours` for a one-off), or one quiet-hours card approved and the reminder firing at its time. `due: 2026-11-12`.
-- **[needs building]** The app has no way to sign out: tapping the name in the top-right only opens the sign-in screen, the previous user's sign-in stays stored, and a failed sign-in as someone else leaves the first person signed in after a refresh (`static/index.html:1328`, `:4519`; the HttpOnly cookie needs a server route to clear it). Mike, 2026-10-28, Stage 5: build it after Stage 5, before or with Stage C's follow-ups. Doesn't affect Iva on her own phone; affects any shared device. Needs an APK rebuild.
 
 ---
-
 ## Now
 
 **Ranked — position is priority.** Capped at ~10, so something enters by displacing something.
@@ -387,6 +347,20 @@ standing rule distrusts.*
   not a week; recorded as encouraging, not as the confirm.*
   *raised by Mike 2026-09-02 (Red session ④) from the drain read; evidence in the quality log · Green half built 2026-09-03 (session ⑥)*
 
+- **9. [DB-1029-10] A calendar event Metatron writes puts the place in the title, not the
+  location, and calls Mike "user" on his real calendar.** Filed with Mike's agreement, 2026-10-27. Event "Benny and user at Canary Wharf" (11:30, Metatron calendar, written 09:58 from Mike's "Benny and I need to be at Canary Wharf by 11:30"): `location` empty, so the day planner planned no "leave for" row; and "user" — internal vocabulary — is now on Mike's real calendar. Also seen the same day: Logistics called `update_calendar_event` with uid `"..."` (a placeholder, 11:49). Fix where events are written (the calendar tools / Logistics conduct): a place the user names goes in `location`; titles use the user's name or none; a check keeps internal words out of event titles. Evidence: `archive/PROJECT_LOG.md` § 2026-10-27.
+  **Re-checked 2026-10-29:** nothing in `tools/caldav.py` or `logistics.md` yet keeps a named place
+  out of the title or internal words out of event text.
+  @kind: bug
+  *filed 2026-10-27 with Mike's agreement · triaged to Now rank 9 by Mike 2026-10-29*
+
+- **10. [DB-1029-11] The app has no way to sign out.** Tapping the name in the top-right only opens the sign-in screen, the previous user's sign-in stays stored, and a failed sign-in as someone else leaves the first person signed in after a refresh (`static/index.html:1328`, `:4519`; the HttpOnly cookie needs a server route to clear it). Mike, 2026-10-28, Stage 5: build it after Stage 5, before or with Stage C's follow-ups. Doesn't affect Iva on her own phone; affects any shared device. Needs an APK rebuild.
+  **Re-checked 2026-10-29:** still none — `core/server.py` has `/push/fcm/unregister` (stops a
+  phone's pings) but no route that clears the sign-in cookie. Stage 5 closed 2026-10-29, which was
+  Mike's condition for building it.
+  @kind: feature
+  *raised by Mike 2026-10-28 · triaged to Now rank 10 by Mike 2026-10-29*
+
 ## Later
 
 **Three groups, and the group is the useful fact about an item.** *Decisions* are blocked on a
@@ -581,6 +555,54 @@ with a date.** Nothing new joins this group open-ended.*
   `due: 2026-10-31`
 
 ### Unbuilt — real capability that does not exist
+
+- **[DB-1029-12] You cannot interrupt Metatron from the headset — and nobody has checked whether
+  you can.** Raised by Mike, 2026-09-24: *"The speech is so delayed that barge in isn't really a
+consideration. I'd rather leave it for another day."* Deferred deliberately, not dropped.
+
+**What is built.** `startRecording()` calls `stopSpeaking()` first, so a press while Metatron is
+talking should cut it off and open the mic. It has never been run on the device.
+
+**Why it is not urgent, and what would change that.** A reply arrives tens of seconds after it
+is asked for (`ROADMAP.md` § 5A: the whole reply lands in ~0.6s, after ~30s dominated by
+thinking), so there is very little speaking window to interrupt. **If the thinking budget ever
+drops, this becomes worth having** — that is the trigger to re-rank it, not a date.
+
+**Reason to expect it works:** while Metatron speaks, the link is on A2DP, not SCO — so the
+button is available, unlike the mid-recording case which measurably is not.
+
+**Closes on** one device check: hold the bud during a spoken reply; speech stops, mic opens.
+  @kind: feature
+  *raised by Mike 2026-09-24, deferred by him · triaged to Later 2026-10-29*
+
+- **[DB-1029-13] The voice that says "I'm here" when the mic opens is annoying enough to want
+  changing.** Raised by Mike, 2026-09-24, on the first working device test: *"The voice is annoying, but it
+works for now."* Accepted as shipped, not as finished.
+
+**Why it is a voice at all, so a fix does not just undo the reasoning.** The cue was a tone
+first. Through a Bluetooth headset it arrived as a squelch, because opening the mic moves the
+link to SCO — a NARROWBAND VOICE codec, which mangles short synthetic tones and carries speech
+cleanly. A louder or longer beep fights the channel; speech works with it. Android's stock TTS
+is what makes it annoying, not the decision to speak.
+
+**Options, none tried:** a different TTS voice or pitch/rate on the same engine; a recorded
+one-word clip played on `STREAM_VOICE_CALL`; an earcon designed for narrowband (a two-tone rise
+survives 8 kHz far better than `TONE_PROP_BEEP`); or dropping the cue to vibration only, which
+already exists as an off-by-default setting.
+
+**Constraint any replacement must keep:** it plays BEFORE the recorder starts, on A2DP. Both
+earlier placements sat on a Bluetooth profile transition and arrived "like a cell phone call
+losing signal", and a cue played into an open mic also trips the silence detector's `speechSeen`
+flag — which would send a turn containing only the cue.
+
+`static/index.html` → `cue()` / `cueAndWait()`; `MainActivity.HeadsetBridge.playCue()`.
+  @kind: feature
+  *raised by Mike 2026-09-24, accepted as shipped by him · triaged to Later 2026-10-29*
+
+- **[DB-1029-14] Dictated messages sometimes arrive cut off, and the rest of what was said is
+  lost.** Two this month: 2026-10-22 10:09 ends *"…so it should look for phonetic"* (Mike's own app-change request; the rest never arrived), and 2026-10-15 11:54 ends mid-word *"…Greenwich and Black"*. **Evidence, checked 2026-10-23:** both were dictated, and the transcript the VM saved for each recording (`data/audio/2026-10-22/10-07-59.json`, `data/audio/2026-10-15/11-53-14.json`) ends at the same word. So the text was lost at capture or transcription, not later in the pipeline. **Cause not established.** A mid-word cut points away from the 2.5s silence stop and towards the end of the audio being lost, but that is an inference. **Mitigated, not fixed:** since `54222c0` the on-screen mic shows each recording's text in the voice tray before Send, so a cut-off snippet is visible and can be re-recorded. Headset turns still send unseen. **Closes on:** one cut-off reported from daily use, plus whether Mike had paused or was mid-word. The standing note in `startRecording()` forbids widening the silence window without such a turn to point at. Raised by Claude Code, 2026-10-23, from Mike's conversation logs (not by Mike).
+  @kind: bug
+  *raised by Claude Code 2026-10-23 · triaged to Later 2026-10-29*
 
 - **[DB-1029-05] Activity-tracker numbers (steps, active minutes, calories) have to be
   screenshotted in by hand.** Mike, 2026-10-28 10:16, sending yesterday's numbers: *"Development
@@ -1332,6 +1354,9 @@ claim user-facing (its log-write sibling is `[DB-0829-01]`); the two Iva/Eva cor
 evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording — "causing an
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
+
+- **[user corrected a prior turn]** User provided explicit instruction about meal logging frequency ('Log my meals and snacks each day, three times per day, unless I tell you about them first') and financial responsibility ('Payment is handled by Iva').  
+  `2026-10-29T15:06:36.218055Z`
 
 - **[a specialist missed a signal it should have caught]** User message was a scheduled quiet check, session_id: 2026-10-29  
   `2026-10-29T10:00:28.754762Z`
