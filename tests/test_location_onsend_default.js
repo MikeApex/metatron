@@ -30,6 +30,9 @@ const path = require('path');
 const vm = require('vm');
 
 const HTML = path.join(__dirname, '..', 'static', 'index.html');
+// The choice is per user since 2026-10-29; the harness is signed in as 'mike'.
+const KEY = 'metatron_location_onsend_mike';
+const LEGACY = 'metatron_location_onsend';
 const START = '// --- Location [DB-0815-12] ---';
 const END = '// --- end location ---';
 
@@ -58,12 +61,14 @@ function check(name, fn) {
 // --- a fake browser: storage, DOM, geolocation, and the auth-wrapped fetch -------------
 
 function makeHarness(opts = {}) {
-  const { stored = null, position = null, geolocation = true, refused = false } = opts;
+  const { stored = null, position = null, geolocation = true, refused = false,
+          legacy = null, persona = 'mike' } = opts;
   const helps = [];                    // showPermissionHelp calls
   const notes = [];                    // addMessage('system', …) calls
 
   const store = new Map();
-  if (stored !== null) store.set('metatron_location_onsend', stored);
+  if (stored !== null) store.set(KEY, stored);
+  if (legacy !== null) store.set(LEGACY, legacy);
 
   const posted = [];
   const elements = new Map();
@@ -90,7 +95,7 @@ function makeHarness(opts = {}) {
   const sandbox = {
     console, JSON, Promise, Date, Error,
     setTimeout, clearTimeout,
-    currentPersona: 'mike',
+    currentPersona: persona,
     localStorage: {
       getItem: (k) => (store.has(k) ? store.get(k) : null),
       setItem: (k, v) => store.set(k, String(v)),
@@ -173,7 +178,7 @@ check('only an explicit "on" enables it', async () => {
 check('ticking the switch persists it, and sends on the next message', async () => {
   const h = makeHarness({ position: FIX });
   h.fire('loc-onsend', 'change', { target: { checked: true } });
-  if (h.store.get('metatron_location_onsend') !== 'on') throw new Error('not persisted');
+  if (h.store.get(KEY) !== 'on') throw new Error('not persisted');
   h.sandbox.maybeSendLocationWithMessage();
   await h.settle();
   if (h.posted.length !== 1) throw new Error(`posted ${h.posted.length}, expected 1`);
@@ -182,7 +187,7 @@ check('ticking the switch persists it, and sends on the next message', async () 
 check('unticking it persists off and stops the pings', async () => {
   const h = makeHarness({ stored: 'on', position: FIX });
   h.fire('loc-onsend', 'change', { target: { checked: false } });
-  if (h.store.get('metatron_location_onsend') !== 'off') throw new Error('not persisted as off');
+  if (h.store.get(KEY) !== 'off') throw new Error('not persisted as off');
   h.sandbox.maybeSendLocationWithMessage();
   await h.settle();
   if (h.posted.length !== 0) throw new Error('still sending after being switched off');
@@ -208,7 +213,7 @@ check('the button shares one reading without switching the recurring mode on', a
   h.fire('loc-share-btn', 'click');
   await h.settle();
   if (h.posted.length !== 1) throw new Error(`button posted ${h.posted.length}, expected 1`);
-  if (h.store.has('metatron_location_onsend')) throw new Error('the button wrote the setting');
+  if (h.store.has(KEY)) throw new Error('the button wrote the setting');
   h.sandbox.maybeSendLocationWithMessage();
   await h.settle();
   if (h.posted.length !== 1) throw new Error('the button left on-message pings enabled');
@@ -249,7 +254,7 @@ check('a fresh install adopts the interview\'s yes — and only then sends with 
   const h = makeHarness({ position: FIX });
   serverSays(h, { on_send: true });
   await h.sandbox.adoptServerLocationDefault();
-  if (h.store.get('metatron_location_onsend') !== 'on') throw new Error('the yes was not adopted');
+  if (h.store.get(KEY) !== 'on') throw new Error('the yes was not adopted');
   if (!h.element('loc-onsend').checked) throw new Error('the switch did not render on');
 });
 
@@ -260,7 +265,7 @@ check('never asked, a no, an error or an odd value all leave a fresh install off
     const h = makeHarness({ position: FIX });
     serverSays(h, body, ok);
     await h.sandbox.adoptServerLocationDefault();
-    if (h.store.has('metatron_location_onsend')) throw new Error(`${label}: wrote the setting`);
+    if (h.store.has(KEY)) throw new Error(`${label}: wrote the setting`);
     if (h.element('loc-onsend').checked) throw new Error(`${label}: rendered on`);
   }
 });
@@ -269,7 +274,7 @@ check('a stored choice always wins over the server — off stays off, and nothin
   const h = makeHarness({ stored: 'off', position: FIX });
   serverSays(h, { on_send: true });
   await h.sandbox.adoptServerLocationDefault();
-  if (h.store.get('metatron_location_onsend') !== 'off') throw new Error('the server overrode off');
+  if (h.store.get(KEY) !== 'off') throw new Error('the server overrode off');
   if (h.posted.length !== 0) throw new Error('asked the server despite a stored choice');
 });
 
@@ -293,7 +298,7 @@ check('a yes given after the first ask is adopted on the next interview turn, wi
   serverSays(h, { on_send: true });
   h.sandbox.recheckLocationAfterInterviewTurn();         // the interview reply that recorded yes
   await h.settle();
-  if (h.store.get('metatron_location_onsend') !== 'on') throw new Error('the later yes was not adopted');
+  if (h.store.get(KEY) !== 'on') throw new Error('the later yes was not adopted');
   if (!h.notes.some(([role, text]) => role === 'system' && /will ask to share your location/.test(text))) {
     throw new Error('no note telling the user the device will ask');
   }
@@ -305,7 +310,7 @@ check('an interview turn asks nothing when a choice is already stored', async ()
   h.sandbox.recheckLocationAfterInterviewTurn();
   await h.settle();
   if (h.posted.length !== 0) throw new Error('asked the server despite a stored choice');
-  if (h.store.get('metatron_location_onsend') !== 'off') throw new Error('the server overrode off');
+  if (h.store.get(KEY) !== 'off') throw new Error('the server overrode off');
 });
 
 check('a refused permission on send says how to allow it', async () => {
@@ -321,6 +326,41 @@ check('a failed fix that is not a refusal stays silent on send', async () => {
   h.sandbox.maybeSendLocationWithMessage();
   await h.settle();
   if (h.helps.length !== 0) throw new Error('help shown for a non-refusal');
+});
+
+// --- per user, not per browser (2026-10-29) ---------------------------------------------
+// One browser-wide key let one person's choice decide another's on a shared device, and kept
+// trial_1029's interview yes from ever taking. The old key moves once to whoever is signed in.
+
+check('an old browser-wide choice moves to the signed-in user, once', async () => {
+  const h = makeHarness({ legacy: 'on', position: FIX });
+  if (h.store.get(KEY) !== 'on') throw new Error('the old choice did not move to mike');
+  if (h.store.has(LEGACY)) throw new Error('the old browser-wide key was left behind');
+  if (!h.element('loc-onsend').checked) throw new Error('mike lost his on');
+});
+
+check('another user on the same browser does not inherit the choice', async () => {
+  const h = makeHarness({ stored: 'off', position: FIX });
+  h.sandbox.currentPersona = 'trial_1029';
+  h.sandbox.loadLocationChoice();
+  serverSays(h, { on_send: true });
+  await h.sandbox.adoptServerLocationDefault();
+  if (h.store.get('metatron_location_onsend_trial_1029') !== 'on') {
+    throw new Error("trial_1029's yes was blocked by mike's stored off");
+  }
+  if (h.store.get(KEY) !== 'off') throw new Error("mike's own choice was changed");
+});
+
+check('signing back in restores that user\'s own choice and stops the other\'s pings', async () => {
+  const h = makeHarness({ stored: 'off', position: FIX });
+  h.store.set('metatron_location_onsend_trial_1029', 'on');
+  h.sandbox.currentPersona = 'trial_1029';
+  h.sandbox.loadLocationChoice();
+  h.sandbox.currentPersona = 'mike';
+  h.sandbox.loadLocationChoice();
+  h.sandbox.maybeSendLocationWithMessage();
+  await h.settle();
+  if (h.posted.length !== 0) throw new Error("mike's off was overridden by the previous user's on");
 });
 
 // --- nothing runs on its own ------------------------------------------------------------

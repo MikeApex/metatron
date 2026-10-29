@@ -1181,6 +1181,7 @@
     }
     currentPersona = persona;
     localStorage.setItem('metatron_persona', persona);
+    if (typeof loadLocationChoice === 'function') loadLocationChoice();
     document.getElementById('login-screen').style.display = 'none';
     setLoginError('');
     const chip = document.getElementById('persona-chip');
@@ -3913,9 +3914,29 @@
   // place and throws it away. That is why this is fire-and-forget and why a failure is
   // silent for the on-send path: the message is the thing the user asked for, and it must
   // not wait on, or be lost to, a GPS fix.
+  // The choice is PER USER (2026-10-29). It was one key per browser, so on a shared device one
+  // person's choice silently applied to everyone signed in there — and a stored choice wins over
+  // the server, so trial_1029's interview yes never took on a browser that already held one.
+  // Sharing location is a per-person consent; the outbox, drafts and recordings were already
+  // per user. The old browser-wide key is moved, once, to whoever is signed in when it is first
+  // read — on Mike's own devices, him — and then deleted.
   const LOC_ONSEND_KEY = 'metatron_location_onsend';
+  function locKey() { return LOC_ONSEND_KEY + '_' + (currentPersona || ''); }
+  function readLocChoice() {
+    const key = locKey();
+    let v = localStorage.getItem(key);
+    if (v === null && currentPersona) {
+      const legacy = localStorage.getItem(LOC_ONSEND_KEY);
+      if (legacy !== null) {
+        localStorage.setItem(key, legacy);
+        localStorage.removeItem(LOC_ONSEND_KEY);
+        v = legacy;
+      }
+    }
+    return v;
+  }
 
-  let locOnSend = localStorage.getItem(LOC_ONSEND_KEY) === 'on';
+  let locOnSend = readLocChoice() === 'on';
 
   // Long enough for a cold fix outdoors, short enough that the button does not look
   // hung. A cached fix up to a minute old is accepted: the zones this resolves to are
@@ -4009,14 +4030,14 @@
   async function adoptServerLocationDefault() {
     if (locDefaultAsked) return;
     locDefaultAsked = true;
-    if (localStorage.getItem(LOC_ONSEND_KEY) !== null) return;
+    if (readLocChoice() !== null) return;
     try {
       const res = await authFetch('/settings/location?persona=' + encodeURIComponent(currentPersona));
       if (!res || !res.ok) return;
       const body = await res.json();
-      if (body && body.on_send === true && localStorage.getItem(LOC_ONSEND_KEY) === null) {
+      if (body && body.on_send === true && readLocChoice() === null) {
         locOnSend = true;
-        localStorage.setItem(LOC_ONSEND_KEY, 'on');
+        localStorage.setItem(locKey(), 'on');
         renderLocControls();
         // The yes was given in conversation; the device still has to be asked. Say so, or the
         // permission prompt arrives unexplained on the next send (2026-10-29: it was given and
@@ -4034,9 +4055,16 @@
   // so each interview reply re-arms it for one more ask. An ordinary session still asks once
   // per load; nothing here polls.
   function recheckLocationAfterInterviewTurn() {
-    if (localStorage.getItem(LOC_ONSEND_KEY) !== null) return;
+    if (readLocChoice() !== null) return;
     locDefaultAsked = false;
     adoptServerLocationDefault();
+  }
+
+  // Every sign-in: the person now signed in has their own choice, and their own one ask.
+  function loadLocationChoice() {
+    locOnSend = readLocChoice() === 'on';
+    locDefaultAsked = false;
+    renderLocControls();
   }
 
   document.getElementById('loc-toggle').addEventListener('click', () => {
@@ -4045,7 +4073,7 @@
 
   document.getElementById('loc-onsend').addEventListener('change', (e) => {
     locOnSend = e.target.checked;
-    localStorage.setItem(LOC_ONSEND_KEY, locOnSend ? 'on' : 'off');
+    localStorage.setItem(locKey(), locOnSend ? 'on' : 'off');
     renderLocControls();
   });
 
