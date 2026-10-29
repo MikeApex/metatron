@@ -622,6 +622,9 @@ def _():
     out = D.nudge_tick()
     assert isinstance(out, dict), out
     assert _CALLS["send"][-1]["nudge"] is False             # today's check-in, full pipeline
+    sent = _CALLS["send"][-1]["text"]                       # fixed prompt kept (session_kind
+    assert sent.startswith(D._checkin_prompt(_PERSONA)), sent   # matches on it), empty day named
+    assert "ask what's going on" in sent, sent
     assert D.nudge_tick() == "nudges: nothing due"           # < 3 h since the last
     D._idle_minutes = lambda persona: 60.0
     _CLOCK["now"] += timedelta(hours=4)

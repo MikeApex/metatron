@@ -2486,6 +2486,10 @@ def _near_fixed(persona: str) -> str | None:
         return None
 
 
+_EMPTY_DAY_CHECKIN = (" Nothing is planned for the rest of today. Do not tell the user nothing "
+                      "needs their attention — ask what's going on with them.")
+
+
 def _checkin_prompt(persona: str) -> str:
     try:
         from core.scheduler import _load_config
@@ -2546,7 +2550,12 @@ def nudge_tick() -> str | dict:
         _mark(persona, day, due, outcome)
     elif _flag("owns_checkins") and _empty_day(plan, now) and _checkin_due(state, day, now, idle):
         from core.remote_client import send_one
-        text = send_one(persona, _checkin_prompt(persona))
+        # The fixed job's prompt is kept verbatim — session_kind() matches on it to load the
+        # scheduled-session conduct — but it was written for a check-in that fired all day
+        # ("raise it only if something matters"). This one fires only on an empty day, where
+        # that reads as "say nothing matters", and it did: "nothing urgent requires your
+        # attention right now" (Mike, 2026-09-05; still live 10-29). So the empty day is named.
+        text = send_one(persona, _checkin_prompt(persona) + _EMPTY_DAY_CHECKIN)
         outcome, what = ("sent" if text.strip() else "empty"), "checkin"
         with _locked(persona):
             st = _load_state(persona)
