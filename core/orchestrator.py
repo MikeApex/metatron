@@ -6588,6 +6588,36 @@ _PERSISTENCE_CLAIM_PATTERNS = [
     r"\bthat(?:'s|’s| is| has been) (?:now )?(?:logged|recorded|saved|on file)\b",
 ]
 
+_SCHEDULING_CLAIM_PATTERNS = [
+    # Set / queued / lined up (Mike, raised 2026-10-27, ruled 2026-10-29). Live replies with
+    # nothing written behind them: "the Chase and Rowan windows are set to surface…" (10-25)
+    # and "dinner prep queued for 16:30" (10-27). Added HERE, to the log-only set, and not to
+    # _COMPLETION_CLAIM_RES — that set REPLACES a reply in enforce_pending_receipt().
+    #
+    # "set to" counts only before a verb the system would perform (surface, remind, nudge…):
+    # "the meeting is set to start at 3" is a calendar fact, not a claim. "set for" is left
+    # out for the same reason ("the dentist is set for 3pm") — except after "reminder".
+    r"\b(?:is|are|'s|’s|'re|’re|been|I(?:'ve|’ve| have)) (?:now |all )?set (?:up )?to "
+    r"(?:surface|resurface|remind|nudge|ping|alert|notify|prompt|trigger|fire|pop up|"
+    r"go off|come up|show up|check in)\b",
+    r"\bI(?:'ve|’ve| have) set (?:it|that|this|them|you up) (?:up )?to "
+    r"(?:surface|resurface|remind|nudge|ping|alert|notify|prompt|come up|show up|check in)\b",
+    r"\bI(?:'ve|’ve| have) set (?:up )?(?:a|the|your|another) reminders?\b",
+    r"\breminders? (?:is|are|'s|’s|'re|’re|has been|have been) (?:now |all )?set\b",
+    # "queued" is never ordinary prose here; "queue" the noun ("a queue at the pharmacy") and
+    # the offer ("shall I queue…") do not match.
+    r"\bqueued (?:up )?(?:for|at|to)\b",
+    r"\b(?:is|are|'s|’s|'re|’re|been|I(?:'ve|’ve| have)) (?:now |all )?queued\b",
+    # "lined up" only with a first-person, it/that, or singular "is … for" subject: "you have
+    # three calls lined up" and "your meetings are lined up" describe the user's day.
+    r"\bI(?:'ve|’ve| have) (?:got )?(?:\w+ ){0,3}lined up\b",
+    r"\b(?:it|that|this)(?:'s|’s| is) (?:now |all )?lined up\b",
+    r"\bis (?:now |all )?lined up for\b",
+]
+# Only these can be backed by a plan row (below); "I've logged it" cannot, so a persistence
+# claim never reads the day planner.
+_PERSISTENCE_CLAIM_PATTERNS += _SCHEDULING_CLAIM_PATTERNS
+
 # A tool call that actually persists something. Prefix-matched because the naming
 # convention is consistent and a new writer should be covered the day it is registered,
 # not the day someone remembers to extend a list.
@@ -6638,6 +6668,79 @@ def _trace_tool_names(trace: object | None = None) -> set[str]:
     return names
 
 
+# A claim that today's plan backs is not false (Mike's ruling, 2026-10-29). Since the day
+# planner landed, code schedules tasks and reminders with no write tool on the trace, so
+# "X queued for 16:30" can be true. Plain matching, and its limits are deliberate:
+#   * a row backs a claim only if a content word of its TITLE is in the claim, AND — when the
+#     claim names a time — the row starts at that time. A time alone is not enough: on
+#     2026-10-27 the plan's 16:30 row was "Return trip from Crossharbour" and the claim was
+#     dinner prep, so a time-only match would have exempted the very incident.
+#   * words are compared as written: "cook dinner" backs "dinner prep" (shared "dinner"), a
+#     synonym ("supper") backs nothing. Only start times count, to the minute.
+#   * a plan that cannot be read means nothing is backed — the check is log-only, so the
+#     fallback costs a quality-log line, never a word to the user.
+_CLAIM_TIME_RE = _re.compile(r"\b(\d{1,2})(?::(\d{2}))?\s*([ap])\.?m\b|\b(\d{1,2}):(\d{2})\b",
+                             _re.IGNORECASE)
+_CLAIM_STOPWORDS = frozenset({
+    "with", "from", "your", "this", "that", "them", "they", "then", "than", "time", "today",
+    "tonight", "into", "onto", "home", "travel", "user", "user's", "own",
+    "queued", "lined", "set", "reminder", "remind", "surface", "after", "before", "about",
+})
+# Not rows a reply would describe as something it set up.
+_CLAIM_SKIP_KINDS = frozenset({"protected", "wind_down"})
+
+
+def _claim_times(text: str) -> set[str]:
+    """Every clock time a sentence names, as HH:MM (24h)."""
+    out: set[str] = set()
+    for m in _CLAIM_TIME_RE.finditer(text or ""):
+        if m.group(3):
+            h, mi = int(m.group(1)) % 12, int(m.group(2) or 0)
+            h += 12 if m.group(3).lower() == "p" else 0
+        else:
+            h, mi = int(m.group(4)), int(m.group(5))
+        if h < 24 and mi < 60:
+            out.add(f"{h:02d}:{mi:02d}")
+    return out
+
+
+def _claim_words(text: str) -> set[str]:
+    return {w for w in _re.findall(r"[a-z][a-z']{3,}", (text or "").lower())
+            if w not in _CLAIM_STOPWORDS}
+
+
+def _plan_rows_today() -> list[tuple[str, str]]:
+    """(title, HH:MM start) for today's plan rows and pending reminders; [] when unreadable.
+
+    Read through day_plan.current(for_reply=True) — the planner's own public reader, which
+    never fetches the calendar synchronously and never waits on the lock. Reminders have no
+    public reader, so the planner's state is read directly and only read."""
+    rows: list[tuple[str, str]] = []
+    try:
+        import tools.day_plan as _dp
+        plan = _dp.current(for_reply=True) or {}
+        for b in plan.get("blocks") or []:
+            if b.get("kind") in _CLAIM_SKIP_KINDS:
+                continue
+            rows.append((str(b.get("title") or ""), str(b.get("start") or "")[11:16]))
+        for r in _dp._load_state().get("reminders") or []:
+            rows.append((str(r.get("title") or ""), str(r.get("at") or "")[11:16]))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[PIPELINE] day plan unreadable for the action-claim check: {exc}")
+        return []
+    return rows
+
+
+def _row_backs_claim(claim: str, rows: list[tuple[str, str]]) -> bool:
+    words, times = _claim_words(claim), _claim_times(claim)
+    for title, start in rows:
+        if not (_claim_words(title) & words):
+            continue
+        if not times or start in times:
+            return True
+    return False
+
+
 def check_false_action_claims(response: str,
                               tool_names: set[str] | None = None) -> list[str]:
     """
@@ -6645,6 +6748,7 @@ def check_false_action_claims(response: str,
 
     Returns the claims that were flagged, so callers and tests can see the decision. The
     response itself is never touched — see the note above `_PERSISTENCE_CLAIM_PATTERNS`.
+    A claim a row in today's plan backs is not flagged — see the note above `_plan_rows_today`.
 
     Known residual: the Diarist runs fire-and-forget on a daemon thread with no trace of its
     own, so a claim that only the journal satisfies can still be flagged. That is a wrong
@@ -6656,6 +6760,13 @@ def check_false_action_claims(response: str,
     names = _trace_tool_names() if tool_names is None else tool_names
     if any(_is_write_tool(n) for n in names):
         return []
+    scheduling = [c for c in claims
+                  if any(_re.search(p, c, _re.IGNORECASE) for p in _SCHEDULING_CLAIM_PATTERNS)]
+    rows = _plan_rows_today() if scheduling else []
+    if rows:
+        claims = [c for c in claims if c not in scheduling or not _row_backs_claim(c, rows)]
+        if not claims:
+            return []
     for claim in claims:
         try:
             from tools.logger import write_quality_event
