@@ -31,7 +31,7 @@ const vm = require('vm');
 
 const HTML = path.join(__dirname, '..', 'static', 'index.html');
 // The choice is per user since 2026-10-29; the harness is signed in as 'mike'.
-const KEY = 'metatron_location_onsend_mike';
+const KEY = 'metatron_loc_choice_mike';
 const LEGACY = 'metatron_location_onsend';
 const START = '// --- Location [DB-0815-12] ---';
 const END = '// --- end location ---';
@@ -330,13 +330,16 @@ check('a failed fix that is not a refusal stays silent on send', async () => {
 
 // --- per user, not per browser (2026-10-29) ---------------------------------------------
 // One browser-wide key let one person's choice decide another's on a shared device, and kept
-// trial_1029's interview yes from ever taking. The old key moves once to whoever is signed in.
+// trial_1029's interview yes from ever taking. The old value is dropped, never moved: moving it
+// handed it to whoever signed in first after the deploy. Each user's own server answer decides.
 
-check('an old browser-wide choice moves to the signed-in user, once', async () => {
-  const h = makeHarness({ legacy: 'on', position: FIX });
-  if (h.store.get(KEY) !== 'on') throw new Error('the old choice did not move to mike');
+check('an old browser-wide choice is dropped, and the user\'s own answer decides', async () => {
+  const h = makeHarness({ legacy: 'off', position: FIX });
   if (h.store.has(LEGACY)) throw new Error('the old browser-wide key was left behind');
-  if (!h.element('loc-onsend').checked) throw new Error('mike lost his on');
+  if (h.store.has(KEY)) throw new Error('the old value was moved to the signed-in user');
+  serverSays(h, { on_send: true });
+  await h.sandbox.adoptServerLocationDefault();
+  if (h.store.get(KEY) !== 'on') throw new Error("the user's own yes was not adopted");
 });
 
 check('another user on the same browser does not inherit the choice', async () => {
@@ -345,7 +348,7 @@ check('another user on the same browser does not inherit the choice', async () =
   h.sandbox.loadLocationChoice();
   serverSays(h, { on_send: true });
   await h.sandbox.adoptServerLocationDefault();
-  if (h.store.get('metatron_location_onsend_trial_1029') !== 'on') {
+  if (h.store.get('metatron_loc_choice_trial_1029') !== 'on') {
     throw new Error("trial_1029's yes was blocked by mike's stored off");
   }
   if (h.store.get(KEY) !== 'off') throw new Error("mike's own choice was changed");
@@ -353,7 +356,7 @@ check('another user on the same browser does not inherit the choice', async () =
 
 check('signing back in restores that user\'s own choice and stops the other\'s pings', async () => {
   const h = makeHarness({ stored: 'off', position: FIX });
-  h.store.set('metatron_location_onsend_trial_1029', 'on');
+  h.store.set('metatron_loc_choice_trial_1029', 'on');
   h.sandbox.currentPersona = 'trial_1029';
   h.sandbox.loadLocationChoice();
   h.sandbox.currentPersona = 'mike';

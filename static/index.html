@@ -1422,9 +1422,18 @@
     if (permissionHelpShown.has(kind) || !PERMISSION_NAMES[kind]) return;
     permissionHelpShown.add(kind);
     const [name, setting] = PERMISSION_NAMES[kind];
+    // Safari keeps site permissions in its Settings, not behind an icon by the address (Mike,
+    // 2026-10-29: "I couldn't find that setting"). No browser lets a private window turn
+    // notifications on, so a refusal there is not something a setting can undo.
+    const ua = navigator.userAgent || '';
+    const safari = /Safari\//.test(ua) && !/Chrome|Chromium|CriOS|Edg|Firefox|FxiOS/.test(ua);
+    const privateNote = kind === 'notifications'
+      ? ' Notifications cannot be turned on in a private window.' : '';
     addMessage('system', window.Metatron
       ? `Metatron can't use ${name}. To allow it, open your phone's Settings, then Apps, Metatron, Permissions, ${setting}, and choose Allow.`
-      : `Your browser is blocking ${name} for Metatron. To allow it, tap the icon beside the web address, set ${setting} to Allow, then reload the page.`);
+      : safari
+        ? `Safari is blocking ${name} for Metatron. To allow it, open the Safari menu, choose Settings, then Websites, then ${setting}, set this site to Allow, and reload the page.${privateNote}`
+        : `Your browser is blocking ${name} for Metatron. To allow it, click the icon beside the web address, set ${setting} to Allow, then reload the page.${privateNote}`);
   }
 
   function addMessage(role, text, ts, attachments) {
@@ -3918,22 +3927,16 @@
   // person's choice silently applied to everyone signed in there — and a stored choice wins over
   // the server, so trial_1029's interview yes never took on a browser that already held one.
   // Sharing location is a per-person consent; the outbox, drafts and recordings were already
-  // per user. The old browser-wide key is moved, once, to whoever is signed in when it is first
-  // read — on Mike's own devices, him — and then deleted.
-  const LOC_ONSEND_KEY = 'metatron_location_onsend';
-  function locKey() { return LOC_ONSEND_KEY + '_' + (currentPersona || ''); }
+  // per user. The old browser-wide value is DROPPED, not moved: moving it handed it to whoever
+  // signed in first after the deploy, which on Mike's Mac was trial_1029, and every user's own
+  // answer is on the server anyway (`mike` and trial_1029 both on). The key name changed with
+  // that correction, so a value moved by the short-lived first version is not read either.
+  const LOC_ONSEND_KEY = 'metatron_location_onsend';          // old: one per browser, dropped
+  const LOC_CHOICE_PREFIX = 'metatron_loc_choice_';
+  function locKey() { return LOC_CHOICE_PREFIX + (currentPersona || ''); }
   function readLocChoice() {
-    const key = locKey();
-    let v = localStorage.getItem(key);
-    if (v === null && currentPersona) {
-      const legacy = localStorage.getItem(LOC_ONSEND_KEY);
-      if (legacy !== null) {
-        localStorage.setItem(key, legacy);
-        localStorage.removeItem(LOC_ONSEND_KEY);
-        v = legacy;
-      }
-    }
-    return v;
+    localStorage.removeItem(LOC_ONSEND_KEY);
+    return currentPersona ? localStorage.getItem(locKey()) : null;
   }
 
   let locOnSend = readLocChoice() === 'on';
