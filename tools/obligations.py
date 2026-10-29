@@ -1312,8 +1312,12 @@ def _set_minutes(task_id: str, minutes, source) -> str:
 # inference. The schema parts that let a model set them are hidden behind the `ledger_fields`
 # flag until the Synthesizer's conduct for them exists (review R1-1) — see task_schemas().
 
+# `defer` rides with these although it is not the planner's: the shipped schemas are pinned byte
+# for byte while `ledger_fields` is off (tests/test_day_plan_ledger.py), so an action added to
+# them would be a change to what every flag-off agent sees. Off, a deferred task still stays
+# dormant — `_view` reads `eligible_from` whatever the flag says — so a rollback hides nothing.
 _PLAN_ACTIONS = ("link_goal", "set_priority", "set_stakes", "set_zone", "day_starts", "set_days",
-                 "set_activity", "set_window")
+                 "set_activity", "set_window", "defer")
 _PRIORITIES = ("high", "normal", "low")
 _STAKES = ("vital", "missable")
 _FIELD_SOURCES = ("stated", "inferred")
@@ -1478,6 +1482,69 @@ def _set_window(task_id: str, new_due: str | None, after: str | None, evidence: 
                                             "evidence": (evidence or "")[:200]})
         return f"{tid} any day up to {due_iso}: {_summarise(t)}"
     return _with_store(None, apply)
+
+
+def _defer(task_id: str, until: str | None, evidence: str | None) -> str:
+    """update_task(action="defer"): not outstanding until `until` (Mike, 2026-10-24, ruled
+    10-29: "don't show me this until Monday"). A separate action from reschedule because hiding
+    a task and moving its date are different requests — a reschedule that also hid would
+    swallow a deadline's lead-time warning. It sets `eligible_from`, so the task is `dormant`
+    until that day in every view that reads `_view`: no parallel field for a surface to miss.
+
+    Refused where hiding would hide a miss: past a deadline's own date or an interval's next
+    due (reschedule moves those), and for a habit, whose periods the sweep would record as
+    missed while it was out of sight."""
+    until_iso, err = _iso_arg("new_due", until)
+    if err:
+        return err
+    if not until_iso:
+        return ("error: `new_due` (YYYY-MM-DD) is required — the day it should come back. "
+                "Nothing was written.")
+    evidence = _evidence_arg(evidence)
+    if not evidence:
+        return ("error: `evidence` is required — quote what the user said that asks for this. "
+                "A task hidden with no record of why cannot be checked. Nothing was written.")
+    tid = _split_id(task_id)
+
+    def apply(doc: dict) -> str:
+        t = _find(doc["tasks"], tid)
+        if t is None:
+            return f"error: no task with id {task_id!r}"
+        today = _today()
+        when = _d(until_iso)
+        if when <= today:
+            return (f"error: defer needs a day after today, not {until_iso} — the task is "
+                    f"already showing. Nothing was written.")
+        status, kind = t.get("status", "open"), t.get("kind", "deadline")
+        if status != "open":
+            return f"error: {tid} is {status}, not open — there is nothing to defer."
+        if kind == "habit":
+            return ("error: a habit cannot be deferred — its days would be recorded as missed "
+                    "while it was hidden. Record the days the user is skipping with skipped, or "
+                    "dismiss it. Nothing was written.")
+        due = _d(t.get("due")) if kind == "deadline" else (
+            _interval_due(t, today) if kind == "interval" else None)
+        if due and when > due:
+            return (f"error: {tid} is due {due.isoformat()}; deferring it to {until_iso} would "
+                    f"hide it until after its own date. If the date itself has moved, "
+                    f"reschedule it first; otherwise defer to {due.isoformat()} at the latest. "
+                    f"Nothing was written.")
+        t.setdefault("history", []).append({"event": "deferred", "at": _stamp(),
+                                            "from": t.get("eligible_from"), "until": until_iso,
+                                            "reason": evidence[:200]})
+        t["eligible_from"] = until_iso
+        return (f"{tid} deferred until {until_iso} — not outstanding before then: "
+                f"{_summarise(t)}")
+    return _with_store(None, apply)
+
+
+def _deferred_until(t: dict) -> str | None:
+    """The day a deferred task comes back, when its `eligible_from` was set by defer."""
+    until = t.get("eligible_from")
+    for h in reversed(t.get("history") or []):
+        if h.get("event") == "deferred":
+            return until if h.get("until") == until else None
+    return None
 
 
 def _plan_fields(kind: str, goal_id=None, priority=None, priority_source=None, stakes=None,
@@ -1668,6 +1735,8 @@ def update_task(task_id: str, action: str, evidence: str | None = None,
         return _set_days(task_id, on_days, evidence)
     if action == "set_window":
         return _set_window(task_id, new_due, after, evidence)
+    if action == "defer":
+        return _defer(task_id, new_due, evidence)
     if action in _PLAN_ACTIONS:
         return _set_plan_field(task_id, action, goal_id=goal_id, priority=priority,
                                priority_source=priority_source, stakes=stakes,
@@ -1847,6 +1916,8 @@ def _state_line(t: dict, today: date) -> str:
         closed = str(t.get("closed_at") or "?")[:10]
         ev = str(t.get("evidence") or "")[:80]
         return f"{t.get('status')} {closed}" + (f" — {ev}" if ev else "")
+    if state == "dormant" and _deferred_until(t):
+        return f"deferred until {_deferred_until(t)} — not outstanding before then"
     return {"dormant": f"not yet eligible (from {t.get('eligible_from') or t.get('start')})",
             "moot": f"moot since {t.get('moot_after')} (recorded at the next sweep)"}.get(
         state, v["text"][len(t.get("what", "")):].lstrip(" —") or state)
@@ -2832,7 +2903,11 @@ def consult_index(persona: str | None = None, as_of: date | None = None) -> list
             phrase = ("no longer relevant" if status == "moot"
                       else f"{status} {closed.isoformat()}")
         elif status == "open":
-            phrase = None
+            # A deferred task's copies elsewhere (a thread, a day log) must not read as
+            # outstanding before its day: the user asked not to see it until then.
+            until = _deferred_until(t)
+            phrase = (f"deferred until {until}" if until and _view(t, today)["state"] == "dormant"
+                      else None)
         else:
             continue
         out.append({"id": t["id"], "what": t["what"], "kind": t["kind"],
@@ -2911,6 +2986,8 @@ def annotation(hit: dict) -> str:
             return f"[task {e['id']}: {e['phrase']} — not outstanding]"
         return (f"[looks like task {e['id']}, {e['phrase']} — not outstanding unless this is "
                 f"something else]")
+    if e.get("phrase"):
+        return f"[tracked as task {e['id']}, {e['phrase']} — not outstanding before then]"
     return f"[tracked as task {e['id']}]"
 
 
@@ -3327,7 +3404,12 @@ def task_schemas() -> tuple[dict, dict, dict]:
         "really ends (task_id \"settings\", the time in note, e.g. \"02:00\"); only on their "
         "own word. set_days — a weekly or monthly habit's days (on_days), only on their own "
         "word, quoted in evidence. set_window — a one-off that can happen any day up to new_due "
-        "(\"sometime next week\"), optionally not before `after` (HH:MM).")
+        "(\"sometime next week\"), optionally not before `after` (HH:MM). defer — the user does "
+        "not want to see it until a later day (\"don't show me this until Monday\"): new_due is "
+        "the day it comes back, evidence their words; until then it is out of Tasks, the Today "
+        "list and the day plan, and its date does not move. reschedule is for when the date "
+        "itself moves (\"it's now due Monday\"). Not for a habit, and never past a deadline's "
+        "own date — reschedule that first.")
     upd["description"] += (
         " A correction to an open task — its kind (set_activity), length (set_minutes), date "
         "(reschedule) or span (set_window) — is made here, on that task, never by opening a new "
@@ -3338,6 +3420,9 @@ def task_schemas() -> tuple[dict, dict, dict]:
     upd["input_schema"]["properties"].update(_copy.deepcopy(_PLAN_FIELD_PROPS))
     upd["input_schema"]["properties"].pop("flexible", None)   # set_window implies it
     upd["input_schema"]["properties"]["on_days"] = _copy.deepcopy(_ON_DAYS_PROP)
+    upd["input_schema"]["properties"]["new_due"]["description"] = (
+        "reschedule: the new YYYY-MM-DD. set_window: the last day it can happen. defer: the day "
+        "it comes back (after today, no later than its due date).")
     return open_s, upd, LIST_TASKS_SCHEMA
 
 
