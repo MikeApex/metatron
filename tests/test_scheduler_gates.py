@@ -98,6 +98,19 @@ def session_fired(day: str, hhmm: str, job: str, cfg: dict | None = None,
 
 
 def part1() -> None:
+    # These checks are about the fixed check-in itself, so the day plan must not own it — pinned
+    # off, never read from the live switch file (step 2 turned it on 2026-10-29 and seven of
+    # them read the correct skip as a failure). part3 tests the owned case explicitly.
+    import tools.day_plan_config as C
+    C._OVERRIDE = {"flags": {"owns_checkins": False, "nudges": False},
+                   "replaces_jobs": ["companion_checkin"]}
+    try:
+        _collision_checks()
+    finally:
+        C._OVERRIDE = None
+
+
+def _collision_checks() -> None:
     print("Collision suppression — [DB-0822-07]")
     checkin = CFG["schedules"]["companion_checkin"]
 

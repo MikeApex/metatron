@@ -62,6 +62,7 @@ def fired_at(clock: str, job: str, cfg: dict | None = None,
          mock.patch.object(scheduler, "_record_fire"), \
          mock.patch.object(scheduler, "_dispatch"), \
          mock.patch.object(scheduler, "datetime", _Now), \
+         mock.patch.object(scheduler, "_day_plan_owns", return_value=False), \
          mock.patch("core.remote_client.send_one",
                     side_effect=lambda *a, **k: ran.append("fired") or "ok"):
         scheduler.fire_session(job, "coordinator", "prompt", "push", "danny_park",

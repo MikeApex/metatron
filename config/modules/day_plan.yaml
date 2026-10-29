@@ -11,6 +11,10 @@
 # STAGE B, step 1 (2026-10-27, after the smoke test passed 3/3): ledger_fields, synth_reads_plan,
 # unconfirmed_rule and reshuffle_model on. nudges and owns_checkins wait for Stage C (push with
 # the app closed — Mike's D1) and a day of plan-reading that looks right.
+#
+# STEP 2 (2026-10-29, Mike): nudges and owns_checkins on, after Stage C went live (VM 32115b6).
+# Mike's live check-in job is `companion_checkin`, read on the VM the same day — replaces_jobs
+# is unchanged. Turning either flag off restores the fixed check-ins exactly.
 
 flags:
   # Build and keep the day's plan (code only until reshuffle_model is on).
@@ -30,9 +34,9 @@ flags:
   # Refine the code plan with the day_planner model on reshuffle (needs the Stage B agent file).
   reshuffle_model: true
   # Wake Synth at plan-marked nudge and check points (needs the Stage B scheduler job).
-  nudges: false
+  nudges: true
   # The plan's empty-day check-ins replace the jobs listed in `replaces_jobs`.
-  owns_checkins: false
+  owns_checkins: true
 
 replaces_jobs: [companion_checkin]
 
