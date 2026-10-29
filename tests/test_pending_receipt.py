@@ -106,6 +106,25 @@ def _run() -> None:
     check("an unreadable confirmation store yields no pending and does not raise",
           isinstance(ORC._pending_tokens("no_such_persona_at_all"), set))
 
+    # --- a reply that already sends the user to the card (2026-10-29) ----------------
+    # trial_1029's purpose draft asked for the tap itself and then got the waiting line too.
+    CONFIG = [{"token": "t2", "action": "write_config",
+               "description": "Save your purpose:\n\n...", "expires_at": 0}]
+    for asks in ("These are waiting in the app for your approval—take a look and tap to "
+                 "confirm them when you're ready.",
+                 "Tap the card in the app to save it.",
+                 "I've put it up for you to approve in the app."):
+        out = ORC.enforce_pending_receipt(asks, CONFIG)
+        check(f"a reply that asks for the tap gets no second line: {asks[:30]!r}",
+              out == asks, out[:160])
+    forgot = "That's a strong place to start. What does an ordinary week look like?"
+    out = ORC.enforce_pending_receipt(forgot, CONFIG)
+    check("a reply that forgot the card still gets the line",
+          out.endswith("Waiting for your approval in the app before saving it to your "
+                       "profile. Nothing has changed yet."), out[-140:])
+    check("the line reads as a sentence, without the old '(…)' aside",
+          "before this happens" not in out and "(" not in out, out[-140:])
+
 
 def main() -> int:
     _run()

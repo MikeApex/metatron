@@ -2103,8 +2103,7 @@ def enforce_pending_receipt(text: str, new_pending: list[dict]) -> str:
     # (Stage 2 verify, 2026-10-27). `actions` stays in the log line below.
     what = ", ".join(sorted({_PENDING_PLAIN.get(p.get("action", ""), "this change")
                              for p in new_pending}))
-    waiting = (f"Waiting for your approval in the app before this happens ({what}). "
-               f"Nothing has been changed yet.")
+    waiting = f"Waiting for your approval in the app before {what}. Nothing has changed yet."
 
     claims = list(_COMPLETION_CLAIM_RES)
     if any(p.get("action") == "write_config" for p in new_pending):
@@ -2125,7 +2124,21 @@ def enforce_pending_receipt(text: str, new_pending: list[dict]) -> str:
             pass
         return waiting
 
+    # A reply that already sends the user to the card needs no second telling: trial_1029's
+    # purpose draft said "waiting in the app for your approval — tap to confirm" and then got
+    # this line as well (2026-10-29). The line is for the reply that forgot.
+    if text and _ASKS_FOR_APPROVAL_RE.search(text):
+        return text
     return f"{text.rstrip()}\n\n{waiting}" if text and text.strip() else waiting
+
+
+# The reply itself points the user at the approval: "approve"/"tap" near "app"/"card", either
+# order, within one sentence.
+_ASKS_FOR_APPROVAL_RE = _re.compile(
+    r"\b(?:approv\w*|tap\w*)\b[^.?!\n]{0,80}\b(?:app|card)\b"
+    r"|\b(?:in|on)\s+the\s+(?:app|card)\b[^.?!\n]{0,60}\b(?:approv\w*|tap\w*|confirm\w*)\b",
+    _re.IGNORECASE,
+)
 
 
 # Words a write-only agent would use to record each gated action as having happened.

@@ -1696,7 +1696,9 @@ async def confirm_action(req: ConfirmRequest, request: Request) -> dict:
     # The description's first line names the action in the user's own terms — it is what
     # they read on the approval card, so echoing it is what makes the outcome legible.
     headline = (outcome.get("description") or "").strip().splitlines()
-    headline = headline[0] if headline else "the action you approved"
+    # The card's first line is written to introduce a preview ("Save your purpose:"); on its
+    # own the colon reads as text cut off (2026-10-29).
+    headline = (headline[0].rstrip().rstrip(":").rstrip() if headline else "") or "the action you approved"
     if outcome.get("status") == "executed":
         line = f"✅ Done — {headline}"
     else:
