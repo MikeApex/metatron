@@ -10,13 +10,15 @@ this archive await a deploy. **Then: capture-fidelity planning**
 (`archive/handoffs/2026-10-28-reply-latency-defer-thinking-cache-prompt.md`), and a real Sign out.
 Security hardening is `[DB-1029-20]`. Log § 2026-10-29 fourth. **Day planner:** step 2 is on, and
 its five live checks are `[DB-1029-01]`, due 10-31. About half the pings since 10-28 fell back to
-a textless "You have a message"; the new APK reports why. **Backlog:** task `defer`, the empty-day
-check-in, logged false "set/queued" claims and quiet-hours follow-ups are deployed, each with a
-dated check in `DEV_BACKLOG.md` (due 11-12). Next pass:
-`archive/handoffs/2026-10-30-backlog-overdue-checks-triage-and-deep-prompt.md` (log § 2026-10-29
-third). WhatsApp 0b may run any time. **Still owed:** the boys' school hours and bedtimes →
-`children_home` (Mike, in the app); the "over and out" live check; the virtue-pause day-after
-check; `[DB-1026-01]`; Mike's calendar live check (week of 9 Nov); `[DB-0901-02]`, due 12-15.*
+a textless "You have a message"; the new APK reports why. **Backlog:** overdue checks and the
+Inbox triage are done (log § 2026-10-29 fifth). **Nine fixes are committed but not deployed:**
+`1c0e7d2`…`ff765d3`, from CRM detail loss to habit done-words. **Mike owes `./deploy.sh`**, and
+the meals habit in the app ("log meals and snacks, 3 a day — breakfast, lunch, dinner, snack
+count"). Each fix has a dated closes-on check in `DEV_BACKLOG.md` (due 11-12). **`/backlog deep`
+runs on or after 11-05**, after the routing-miss recount (step 3 of the 10-30 prompt). Reply
+latency now also carries the low-latency mode `[DB-1029-09]`. WhatsApp 0b may run any time.
+**Still owed:** the boys' school hours and bedtimes → `children_home` (Mike, in the app); the
+"over and out" live check; Mike's calendar live check (week of 9 Nov); `[DB-0901-02]`, due 12-15.*
 
 *Standing rules, each earned twice and both invisible to `qa_sweep`: **a test that exercises a seam
 for real must stub every live meter it ends in**, and **a live gate run dirties TRACKED

@@ -86,6 +86,21 @@ Find what makes `cached=0` happen (expiry, a prefix change, cache creation cappe
 10-26) and how often it happens in the last month. Fix it if it's cheap. Persisting things
 between calls is a cost decision: see the global `CLAUDE.md` § Costs on cache lifetime.
 
+## 4. Folded in on 2026-10-29 (Mike: "tie all this together") — `[DB-1029-09]`
+
+This prompt is now the single home for reply latency. `DEV_BACKLOG.md` `[DB-1029-09]` points here.
+- **The goal, in Mike's words (2026-09-12):** a **low-latency back-and-forth mode** "to rapidly go back
+  and forth to knock out backlogs of data gathering or for free form thinking and diary writing". The
+  trial accounts' 3–15 s Goals Interviewer turns are the reference speed. Say in the plan whether
+  §§ 1–3 reach it for ordinary turns, or whether a distinct mode (lighter pipeline for capture
+  turns: Diarist plus a short acknowledgement, no specialist fan-out) is also needed. Recommend one.
+- **The thinking tail, measured 2026-10-29** on 52 Synthesizer turns since 10-26: median 2,115,
+  p90 6,439, max 7,865 against the 8,192 ceiling; one round cut at `MAX_TOKENS`. `d3f610b` now
+  replaces a cut reply with a speak-only round at thinking 1,024 — **that round is extra latency on
+  exactly the turns that already thought longest.** § 2's A/B should report how often it fires.
+- **The Inbox's thinking-budget item is merged into § 2** (Mike agreed 10-24 it is its own session;
+  reply-latency plan § 4.4). Nothing else to carry from it.
+
 ## Constraints
 
 - **Not concurrent with the held deploy.** `main` carries Stage C and the second-user Stage 5

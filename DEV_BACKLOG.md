@@ -75,41 +75,12 @@ back-tagging the rest is `[DB-0815-10]`.
 > against `git log` before promoting anything from here.
 *(empty — last triaged 2026-09-05; evidence in `archive/backlog_closed_2026-09.md`)*
 
-- **[needs building]** Mike requested an automated way to send activity tracker data (steps, active minutes, calories) directly to Metatron without manually capturing and uploading screenshots from his health app.  
-  `2026-10-28T10:19:53.976660Z`
-
-- **[instruction change]** User requested that the system double-check and prompt him before scheduling future social engagements with Rowan, noting that pub meetups feel like a poor use of time.  
-  `2026-10-27T16:25:12.246658Z`
-
-- **[needs building]** Mike requested development for two planner/scheduler capabilities: (1) geocoded and route-based logistics to batch errands and call audibles when in a location that coincides with a future task or interest; (2) a goals interface integrated with the scheduler to support habit formation and provide habit-building behavioral recommendations across agents for new goals.  
-  `2026-10-27T14:33:52.228821Z`
-
-- **[instruction change]** User requested daily prompt/logging cadence: record step count, sleep, and diet every day, including checking in on meals and snacks 2-3 times per day.  
-  `2026-10-26T13:44:51.823161Z`
-
 - **Built 2026-10-29: "don't show me this until Monday" now hides a task until that day** (Mike, 2026-10-24; separate `defer` action ruled 2026-10-29). `66b637c` (`update_task` action `defer`, `tools/obligations.py`; `tests/test_task_defer.py` 9/9) + `8231a86` (one line each in `synthesizer.md` and `logistics.md`). Due date unchanged; refused for habits and past a deadline's own date. **Closes on:** one live turn — "don't show me X until <day>" — after which X is gone from the Today panel and returns on that day. `due: 2026-11-12`. Open question put to Mike: should `reopen` bring a deferred task back early (no undo today).
-
-- **[needs building]** User requested ability to integrate a dedicated voice recorder and upload long-form daily audio reflection files containing complex reflections across the day for processing and synthesis.  
-  `2026-10-15T17:16:45.863222Z`
-
-- **[needs building]** Mike requested development of a low-latency conversation mode in Metatron to rapidly go back and forth to clear data-gathering backlogs, engage in free-form thinking, and record diary entries.  
-  `2026-09-12T13:07:47.809857Z`
-
-- **[instruction change]** User instructed that Duross and other business matters should wait for Monday as a standing rule, rather than being raised over the weekend. Prompted by surfacing a Prudential secure email on Saturday morning.  
-  `2026-09-12T08:53:29.873836Z`
-
-- **[instruction change]** User requested that venue recommendations rigorously verify live operating hours and closure status via Google Maps/Places before recommending, prompted by Arôme Bakery being recommended while closed on a Tuesday afternoon.  
-  `2026-09-08T14:27:53.140047Z`
-
-- **[instruction change]** CRM contact updates must preserve existing email addresses across different categories (work/personal) rather than overwriting them unless explicitly instructed to remove or replace.  
-  `2026-09-07T10:19:58.980779Z`
-
-- **[instruction change]** Mike requested a standing rule to automatically invite Iva (iva.diamond@bp.com) as an attendee to all scheduled external calendar events (work, Manny, concerts, social engagements) going forward, strictly excluding personal reminders and internal assistant check-ins.  
-  `2026-09-07T09:50:44.500999Z`
 
 - **Fixed 2026-10-29: the empty-day check-in said "nothing urgent requires your attention" instead of asking what's going on** (Mike, 2026-09-05). Cause: the live `companion_checkin` prompt ("raise it only if something matters right now") is now sent only on a day with nothing planned. `226a0c2` appends "nothing is planned — ask what's going on" in `tools/day_plan.py`; the existing rule in `synthesizer_scheduled_sessions.md:7` was left as the single home. **Closes on:** the next empty-day check-in reply on the VM asks a question rather than reporting nothing. `due: 2026-11-12`.
 - **Invitations are sent, but Mike's own calendar shows no guest and no sign anything happened — and it cannot, over CalDAV.** Metatron sends real `METHOD:REQUEST` invitations by email (seven delivered to Iva 2026-09-07, correct payloads, zero bounces, verified in Sent Mail) and the recipient can accept them. What does not work, and cannot be made to work on the current integration: the guest appearing on the event in Google Calendar, Google sending the invitation itself, and an acceptance flowing back onto the event. **Measured, not assumed (2026-09-07):** Google's CalDAV endpoint accepts an `ATTENDEE` line and echoes it back on a read — which looked like success and is why this was proposed as a fix — but the guest never appears in the Google Calendar UI and no invitation is sent. Storing the property and honouring it are different things; only the first was true. Tested on one real event with Mike's own address as the guest, then reverted.
   **The only route to real guest management is the Google Calendar API over OAuth** (`sendUpdates=all`), which replaces the CalDAV write path for events carrying guests. It runs into the wall that reversed the Google Contacts integration on 2026-08-08: under **Testing** publishing status the refresh token expires every 7 days, so it breaks weekly until the app is verified — same account, same GCP project, same constraint. So this is an integration change with an OAuth-verification prerequisite, not a patch.
+  **The standing rule it serves (Mike, 2026-09-07):** invite Iva to every scheduled external event (work, Manny, concerts, social), never reminders or Metatron check-ins — held as wisdom `invite_iva_to_external_events`; its Inbox entry closed 2026-10-29.
   **Deferred to Mark 2 by Mike, 2026-09-09** — do not re-propose against the Mark 1 CalDAV path. Interim behaviour is built and deployed: invitations go by email, and `logistics.md` plus `send_calendar_invite`'s return value both state that the calendar will show nothing, so a working send is not reported as a failure. Raised by Mike after reporting invitations as unsent three times.
 - **You cannot interrupt Metatron from the headset — and nobody has checked whether you can.**
 
@@ -153,10 +124,8 @@ flag — which would send a turn containing only the cue.
 - **[needs building] Dictated messages sometimes arrive cut off, and the rest of what was said is lost.** Two this month: 2026-10-22 10:09 ends *"…so it should look for phonetic"* (Mike's own app-change request; the rest never arrived), and 2026-10-15 11:54 ends mid-word *"…Greenwich and Black"*. **Evidence, checked 2026-10-23:** both were dictated, and the transcript the VM saved for each recording (`data/audio/2026-10-22/10-07-59.json`, `data/audio/2026-10-15/11-53-14.json`) ends at the same word. So the text was lost at capture or transcription, not later in the pipeline. **Cause not established.** A mid-word cut points away from the 2.5s silence stop and towards the end of the audio being lost, but that is an inference. **Mitigated, not fixed:** since `54222c0` the on-screen mic shows each recording's text in the voice tray before Send, so a cut-off snippet is visible and can be re-recorded. Headset turns still send unseen. **Closes on:** one cut-off reported from daily use, plus whether Mike had paused or was mid-word. The standing note in `startRecording()` forbids widening the silence window without such a turn to point at. Raised by Claude Code, 2026-10-23, from Mike's conversation logs (not by Mike).
 - **Check by 2026-11-07: a correspondence suggestion fires.** Needs a real email answering an open `waiting`/`deadline` task — the TfL contactless refund (ref 24626231) is now the likeliest (the S.A.R. e-file closed 10-23). Pass: the suggestion bar shows it; **Mark done** closes it with evidence "correspondence evidence, approved in the app"; nothing from the email's subject reaches any context section. If nothing has arrived by 11-07, re-scope rather than extend. (task-ledger post-deploy session, 2026-10-24; the launch prompt Mike ran asked for each time-gated check to leave with a date)
 - **Check 2026-11-02: a full week of gym adherence reads right.** On the VM: `python3 -m tools.obligations mike --report` shows gym as completions/target for the week of 10-26, with the partial week of 10-19 excluded. (task-ledger post-deploy session, 2026-10-24; the launch prompt Mike ran asked for each time-gated check to leave with a date)
-- **A measured session on the Synthesizer's thinking budget — the largest latency lever left on an ordinary reply.** **Premise corrected 2026-10-26:** the "~3.9k of the 4,096-token budget" figure was the shared 4,096 output ceiling cutting thinking off, not the budget (`archive/PROJECT_LOG.md` § 2026-10-26, third), and the budget is a target, not a cap — in the live probe a 1,024 budget thought 2,664 tokens and a 4,096 budget thought 5,673. So a lower budget cannot *bound* the wait. It may still *shorten* it, since the lower target thought about half as much. **The question is now:** does a lower target shorten time-to-first-word on real prompts without hurting reply quality? A/B before changing anything; `_SYNTH_THINKING_BUDGET`'s comment explains why it is not a cost knob. **Sequence:** after `[DB-1026-01]` (due 10-29 — it already measures the thinking spread and the 75 s timeout tail since the ceiling doubled) and after day-planner Stage B, which adds the plan block to every Synthesizer prompt; measuring before that measures a prompt about to change. Not behind the second-user or WhatsApp builds. Mike agreed it is its own session (2026-10-24). (reply-latency plan § 4.4)
 - **Check 2026-10-31: are Vertex reply stalls still happening?** Count `[reply_limits]` capacity retries in the server journal since 10-24 and the share of Synthesizer calls over 60 s. If the tail is still ~2.5%+, decide option (b) of `archive/plans/reply_latency_plan_2026-10-24.md` § 7 — fall back to the bulk-tier Vertex model on a second stall (stays on Vertex terms; lower reply quality). Mike ruled retry-only for now (2026-10-24). (task-ledger post-deploy session, 2026-10-24; the launch prompt Mike ran asked for each time-gated check to leave with a date)
-- **Check 2026-10-31: is the `check_inbox_6h` Logistics job redundant? If so, delete it.** Kept on 10-23 when its twin was deleted; `logistics.md` already says standing triage is the intake sweep's job. It costs ~67 runs a month at ~96k tokens each on the bulk tier, and on 10-24 one 73 s run overlapped a user turn. Watch a week of task creation from mail: if every task it files also arrives through the intake queue, delete it (Mike approves, as a schedule change). Mike asked for this item, 2026-10-24.
-- **The Franklin virtue review kept coming back to the evening close after Mike asked to drop it — now paused; one day of real use owed to confirm it stays gone (due 2026-10-28).** Built and deployed `4e16f3c`: user-requestable pause for rituals and the user's own check-ins (`tools/routines.py`). Live 2026-10-26 22:33: Mike's request produced `pause_routine("evening_ritual", revisit="2027-01-26")` and the VM store `data/personas/mike/routine_pauses.yaml` is correct. **Closes on:** the 2026-10-27 07:30 morning brief offers no virtue catch-up, and the 2026-10-27 20:00 evening close carries no virtue list (read both replies in `data/personas/mike/traces/2026-10-27.jsonl`). Either one present → reopen with the reply text. The 2027-01-26 check-back is not this item. Raised by Claude Code, 2026-10-26, as the confirmation step for a fix Mike requested.
+- **Check 2026-10-31: is the `check_inbox_6h` Logistics job redundant? If so, delete it.** Kept on 10-23 when its twin was deleted; `logistics.md` already says standing triage is the intake sweep's job. It costs ~67 runs a month at ~96k tokens each on the bulk tier, and on 10-24 one 73 s run overlapped a user turn. Watch a week of task creation from mail: if every task it files also arrives through the intake queue, delete it (Mike approves, as a schedule change). Mike asked for this item, 2026-10-24. **⚠ Read 2026-10-29: the check cannot be answered from the ledger as written** — all 24 tasks created since 10-24 carry `created_by: None` in the VM's `tasks.yaml`, so a mail-filed task is indistinguishable from an intake-filed one. On 10-31 read this job's own `open_task`/`update_task` calls in its traces instead.
 - **A request ending in "over and out" got "Received — talk to you later" and was never carried out — fixed; one real use owed to confirm (due 2026-11-02).** Built and deployed `e5b895c`: the sign-off shortcut now skips the Synthesizer only for a bare sign-off (≤8 words, no question in the message or Metatron's previous reply, no request/answer/time word, no task-completion note); otherwise it runs with a one-line-reply instruction. Origin: 2026-10-26 22:05 (job post to tomorrow, retire the gym — both dropped), also 10-19 and 10-21. **Closes on:** the first real user message after deploy that ends "over and out" and carries a request — its trace shows the Synthesizer ran (not `[PIPELINE] sign-off detected — synthesizer skipped`), the request was acted on, and the reply is one line. Also confirm a bare "over and out" still gets the ack. If none arrives by 11-02, ask Mike to send one. Record: `archive/log/2026-10-26-06-over-and-out-no-longer-drops-requests.md`. Raised by Claude Code, 2026-10-26, as the confirmation step for a fix Mike requested ("Synth shouldn't skip when there's something active requested").
 - **[a calendar event Metatron writes has its place only in the title, and an internal word in it]** Filed with Mike's agreement, 2026-10-27. Event "Benny and user at Canary Wharf" (11:30, Metatron calendar, written 09:58 from Mike's "Benny and I need to be at Canary Wharf by 11:30"): `location` empty, so the day planner planned no "leave for" row; and "user" — internal vocabulary — is now on Mike's real calendar. Also seen the same day: Logistics called `update_calendar_event` with uid `"..."` (a placeholder, 11:49). Fix where events are written (the calendar tools / Logistics conduct): a place the user names goes in `location`; titles use the user's name or none; a check keeps internal words out of event titles. Evidence: `archive/PROJECT_LOG.md` § 2026-10-27.
 - **Built 2026-10-29: a reply saying something is "set to surface", "queued" or "lined up" when nothing was written is now logged** (Mike, 2026-10-27). `24b4cb0` (`core/orchestrator.py`, `tests/test_false_claim_phrasings.py` 31/31, 13 failing on the old code). Log-only; a claim matched by a row in today's plan (title word + start time) is not flagged. **Closes on:** a week of `FALSE_ACTION_CLAIM` events on the VM with no plan-backed false flags, or the next real such reply logged. `due: 2026-11-12`.
@@ -183,7 +152,50 @@ standing rule distrusts.*
 *One survivor of the 2026-08-21 trace-measured block — its two siblings closed on live evidence
 2026-09-02 (`archive/backlog_closed_2026-09.md`).*
 
-- **4. [DB-0910-02] When the calendar fails on the Logistics path, a remembered event can still be
+- **1. [DB-1029-02] Updating a contact's details can erase the rest of them, and a contact can
+  hold only one email.** Mike, 2026-09-07 11:20: *"You should have preserved both email addresses
+  in the CRM."* Metatron replied that both were preserved; they were not stored as two addresses.
+  **Checked 2026-10-29:** `write_contact` replaces `contact_info` wholesale on update
+  (`tools/crm.py:1246`, `contact[field] = value` for every collection field), so a write carrying
+  only `{"email": …}` drops the stored phone, address and social handles. The schema offers one
+  `email` string (`tools/crm.py:2267`). Iva's VM record shows the workaround the model reached for:
+  her work address filed under `contact_info.social.work_email`. **Data-loss risk, so it enters
+  `## Now` regardless of reporter — and Mike raised it.**
+  **✅ Built 2026-10-29 (`1c0e7d2`, not yet deployed):** `contact_info` merges per key on update;
+  a new email becomes primary and the old one moves to `other_emails`, which is sendable
+  (`tools/mail.py` `_known_recipients`). `tests/test_crm_contact_info_merge.py` 8/8, 6 failing on
+  the old code. **Closes on:** one live update after deploy that adds a detail and keeps the
+  others — e.g. Iva's work address restored from `social.work_email` into `other_emails`.
+  `due: 2026-11-12`
+  @kind: bug
+  *raised by Mike 2026-09-07 (Inbox) · triaged to Now rank 1 by Mike 2026-10-29*
+
+- **2. [DB-1026-01] Replies came back cut short, blank or leaking internal text — REOPENED
+  2026-10-29: a reply made of the model's own prompt text reached Mike.** The 10-26 fix (8,192
+  ceiling, fallback turn, `finish_reason` recorded; `de60881`, deployed) was checked on 52
+  Synthesizer turns since 10-26 21:30. **Check 1 and 2 fail:** 10-28 18:35, a scheduled quiet
+  check-in thought 7,865 tokens, ended `MAX_TOKENS`, and the 323 tokens it did emit were a
+  fragment of its prompt — *"@2026-10-27` Water indoor and garden plants … Wait, look at:
+  "ALREADY ASKED AND STILL UNANSWERED — DO NOT ASK THESE AGAIN: …"* — stored as the reply in
+  `conversations/2026-10-28.jsonl`. Two `THINKING_CAP_HIT` events that day. **Check 3 passes:**
+  both "couldn't finish" replies (10-27 13:04, 10-28 15:08) follow a 75 s read timeout in the
+  journal, on Synthesizer runs of 112 s and 174 s. **Check 4:** thinking median 2,115, p90 6,439,
+  max 7,865 — the ceiling is reached in the tail. **Check 5:** 4 read timeouts since the fix, each
+  retried once.
+  **✅ Built 2026-10-29 (`d3f610b`, Fable-reviewed, not yet deployed):** a streamed round ending
+  `MAX_TOKENS` with no tool call is replaced by the speak-only final round (thinking target 1,024;
+  its own cut text refused) and withdrawn on screen via `[RETRACT_WITH]`. Also fixed: that branch
+  raised `TypeError` for an untranslated persona, and the scheduler's client dropped a retract's
+  replacement text. `tests/test_reply_cut_max_tokens.py` 6/6. **Not covered:** the pipeline's
+  sentinel intercept has no stub harness (reviewed, not test-run); the non-streaming
+  Coordinator/specialist path is left alone. **Closes on:** after deploy, a journal line
+  `[reply_limits] round N cut at MAX_TOKENS — replaced` with the conversation row holding the
+  replacement, or a week with no `MAX_TOKENS` reply delivered. `due: 2026-11-12`
+  The thinking spread itself belongs to the reply-latency build `[DB-1029-09]`.
+  @kind: bug
+  *filed 2026-10-26 by Mike · reopened 2026-10-29 on the 10-28 18:35 reply (Now rank 2, Mike)*
+
+- **3. [DB-0910-02] When the calendar fails on the Logistics path, a remembered event can still be
   stated as today's confirmed commitment — the day-plan half is fixed (`f10ba3d`), Logistics still
   sees a 401 as success.** *Original title:* it named a lecture as today's confirmed commitment
   while the calendar was refusing to answer, and said nothing about the gap. Live 2026-09-10 07:30, the proactive
@@ -217,10 +229,91 @@ standing rule distrusts.*
   `_TOOL_ERROR_PREFIX_RE` (`:1918`) catches it. The `[TOOL FAILURES …]` marker never fires,
   and the trace records `ok: true`. Fix: treat a dict result carrying an `error` key as a
   failure, in one place. Amber; check `.claude/rules/orchestrator.md` for the A8 claim first.
-  **Closes on:** that fix, plus one live failed read whose trace shows "Calendar could not be read"
-  in the plan block.
+  **✅ Logistics half built 2026-10-29 (`8678891`, not yet deployed):** `dispatch_tool` marks a
+  `{"error": …}` result not ok and `_failed_tool_calls` reads the flag, so the Synthesizer's
+  tool-failure marker now fires on it — for all 18 tools that use the shape.
+  `tests/test_tool_error_dict.py` 6/6, 2 failing on the old code.
+  **Closes on:** one live failed read after deploy whose trace shows `ok: false` on `read_calendar`
+  and "Calendar could not be read" in the plan block. `due: 2026-11-12`
   *raised by Mike 2026-09-10 from the exchange-001 troubleshoot; trace evidence at
   `data/personas/mike/traces/2026-09-10.jsonl` 07:30:16, logistics turns 1-5*
+
+- **4. [DB-1029-03] Daily logging of steps, sleep and meals — the midday meal check-ins never
+  happen.** Mike, 2026-10-26 12:32: *"Let's begin getting into regular logging of step counts,
+  sleep and diet … every day, and as far as meals and snacks go roughly two, three times a day you
+  check in with me on what I've eaten."* **Checked 2026-10-29 (VM traces):** partly met. The
+  07:30 morning brief asks for sleep and steps (10-27, 10-28), and the 20:00 close asks about lunch
+  and dinner (10-28). Nothing asks about meals or snacks during the day, and since 10-29 the day
+  planner checks in only on an empty stretch. `tasks.yaml` holds no habit for any of the three.
+  The reply at the time said it "needs a change on my side" and nothing was stored — see
+  `[DB-1029-04]`. **Mike's ruling 2026-10-29:** a daily habit, and an unprompted report counts so
+  he is not asked. **✅ Built (`ff765d3`, not yet deployed):** a habit may carry `done_words`; a
+  clause with one is hinted as completing it while today's occurrence is due
+  (`tests/test_habit_done_words.py` 6/6).
+  @waiting: Mike creates the habit in the app — "make a habit: log meals and snacks, 3 times a day — breakfast, lunch, dinner, snack count"
+  **Closes on:** a day where an unprompted meal report records a completion and no meal nudge
+  follows it. `due: 2026-11-12`
+  @kind: feature
+  *raised by Mike 2026-10-26 (Inbox) · triaged to Now rank 4 by Mike 2026-10-29*
+
+- **5. [DB-0902-03] Suggestions arrive when they cannot be acted on — a closed venue, a shop at
+  9:30 PM, a question already deferred.** Three reports from Mike: 08-28 20:28 (a shop errand
+  suggested at 9:30 PM with no check of opening hours), 08-29 06:01 (re-asking tasks he had said
+  "later" to), and **09-08 15:27, merged here 2026-10-29:** *"Arôme cafe is closed. Should be
+  visible in my Google Maps or Places. You should have caught that."* Only the one fact was kept
+  (wisdom `arome_bakery_closed_tuesdays`), not the rule. The deferral half overlaps the built
+  decline/re-propose guard, which covers *confirmations*, not suggestions, and task `defer`
+  (`66b637c`, 10-29). The capability: **before a suggestion is raised, check it is currently
+  actionable** — live opening hours, an earlier deferral, time of day. (The repeat-information half
+  of the 08-28/29 reports was merged into `[DB-0822-06]`.)
+  **✅ Opening-hours half built 2026-10-29 (`5abfe11`, not yet deployed):** `find_places(at=…)`
+  returns `open_at_time` from the week's opening periods; Logistics and Recreation must pass it for
+  a later-time suggestion, drop a closed result, and check a venue known by name the same way. The
+  hours fields are a higher Places SKU, requested only with `at` — **read that price on the Places
+  pricing page**, it was not checkable from this machine. `tests/test_places_open_at.py` 14/14.
+  **Still open:** the deferral and time-of-day halves. **Closes (hours half) on:** a live venue
+  suggestion for a later time whose trace shows `find_places` called with `at`.
+  @kind: feature
+  *filed 2026-09-02 from the 08-28/29 Inbox pair · 09-08 venue entry merged and promoted to Now
+  rank 5 by Mike 2026-10-29*
+
+- **6. [DB-1029-04] When Mike states a standing rule, Metatron saves it and then tells him it
+  can't.** Mike, 2026-10-27 16:23: *"Double check me next time I have a social engagement scheduled
+  with Rowan."* Reply: *"that's noted — it needs a change on my side, outside our conversation."*
+  **The trace shows the opposite (checked 2026-10-29):** the Synthesizer called `write_wisdom`
+  (`rowan_social_scheduling`, relationships, `stated`) and Relationships wrote
+  `rowan_social_preference` to its own config — both on the VM now. Same pattern on 09-12
+  (Duross: wisdom written, reply said "needs a change") and 09-08 (venue hours). So Mike reads
+  the rule as lost and repeats it, and each instance also files a dev-request Inbox entry.
+  **Cause:** the VM-owned `config/personas/mike/self_development.md` defines route 2 ("needs a
+  change on your side") as *"anything about your judgement, priorities, what you notice, or when
+  you raise things"* — which swallows every standing rule the wisdom store can hold, so the model
+  saves it (route 1) and narrates route 2. **✅ Fixed 2026-10-29, two layers (Mike: users should
+  generally be able to do this):** `synthesizer.md` now says a standing rule is standing knowledge,
+  write it and say it is saved, never also "needs changing" (`fe3d609`, not yet deployed); the VM's
+  `self_development.md` route 1 now covers storable rules and route 2 forbids the contradiction
+  (edited on the VM with Mike's lift; backup `.bak-2026-10-29`; live). **Closes on:** the next
+  standing rule Mike states gets "saved", not "needs a change", and no `instruction change` Inbox
+  entry. **Still open after it:** whether a stored person-specific rule is *consulted* when
+  Logistics next schedules with Rowan. `due: 2026-11-12`
+  @kind: bug
+  *raised by Mike 2026-10-27 (Inbox) · diagnosed 2026-10-29 at his instruction*
+
+- **7. [DB-1029-09] Mike's replies take about a minute; the trial accounts answer in 3–25 s —
+  one build chat ties all the latency work together.** Mike's own messages: median 54 s, p90 142 s
+  (96 turns, 10-04 → 10-28); the second user's trial accounts got ordinary replies in 20–25 s
+  and Goals Interviewer turns in 3–15 s. Merged here 2026-10-29 at Mike's instruction:
+  (a) the 2026-10-28 ruling, *"pushing off anything that the response doesn't require is a no
+  brainer"*; (b) **a low-latency back-and-forth mode** to clear data-gathering backlogs, think
+  freely and dictate diary entries (Mike, 2026-09-12 14:07); (c) **the measured thinking-budget
+  A/B** — the budget is a target, not a cap (a 1,024 budget thought 2,664 tokens; a 4,096 budget
+  5,673), so the question is whether a lower target shortens time-to-first-word without hurting
+  replies (Mike agreed 10-24 it is its own session; reply-latency plan § 4.4); (d) the thinking
+  tail `[DB-1026-01]` measured on 10-29 (p90 6,439 of an 8,192 ceiling).
+  **Runs as a separate build chat, not through `/backlog`:**
+  `archive/handoffs/2026-10-28-reply-latency-defer-thinking-cache-prompt.md`.
+  @kind: feature
+  *raised by Mike 2026-09-12 and 2026-10-28 · merged and promoted to Now by Mike 2026-10-29*
 
 ### Red — judgement work, not automatable
 
@@ -228,7 +321,7 @@ standing rule distrusts.*
 
 ### Green/Amber — a second block, found after the first pass
 
-- **11. [DB-0902-01] The routing-miss log is mostly the Coordinator flagging its own scheduled
+- **8. [DB-0902-01] The routing-miss log is mostly the Coordinator flagging its own scheduled
   prompts, so real misses are buried.** *Rescoped by Mike 2026-10-29 (`/backlog verify`).* Read
   live that day: **114 of the 145 `ROUTING_MISS` events since 09-04** are about a scheduler-opened
   session, e.g. *"User message was a scheduled quiet check"*, *"scheduled session prompt treated as
@@ -444,94 +537,21 @@ with a date.** Nothing new joins this group open-ended.*
   **Blocked on data, not effort:** `diamond.mike.mt@gmail.com` holds 1 sent message and 6 inbox
   messages, so no contact has enough real correspondence to test against.
   @kind: chore
-  @waiting: a contact with real back-and-forth in that mailbox, then `get_tone_shape(refresh=true)`.
+  @waiting: deploy of `ac82eec`, then a contact with BCC'd copies, then `get_tone_shape(refresh=true)`.
   **Pass:** `sent_folder_found: true`, both counts non-zero, a `tone_shape` a human recognises.
   **Fail loudly on:** any life event, date or third-party name in the profile.
   *filed 2026-08-10 by Mike · due pushed 09-01 → 10-01 at the 09-03 verify pass: the blocker is
   a mailbox with no real correspondence, which no amount of effort changes — pushed, not closed,
   per the standing due-date rule*
-  `due: 2026-10-01`
-
-- **[DB-0814-02] Old conversation threads now expire — but neither signal that keeps one alive has
-  been measured.** Shipped and deployed (`37b0b03`, `eb01025`, `5cf0a5e`): threads auto-drop 7 days
-  after their `added` date, archived to `expired_open_threads` rather than deleted. **Grace keys on
-  the *user* engaging a thread**, not on the Synthesizer resending it — the Synthesizer rewrites the
-  whole list every response, so its resending something says nothing. *(The first version keyed on
-  exactly that and its tests passed because they modelled "resent" but never "resent by a caller that
-  resends everything".)*
-  **Two thresholds are reasoned, not measured:** word-overlap grace false-positives on short generic
-  threads ("call the dentist" vs "call mom later" scores 0.5 against a 0.34 bar), and material-change
-  grace rides on exact-text non-match, so **one changed character per turn defeats it**.
-  **⚠ The stated close method does not work — checked live 2026-08-15.** `context.json` is
-  overwritten in place (no write history), `expired_open_threads` cannot be non-empty before
-  ~2026-08-22, and `write_context_tracker` does not appear in traces at all. **Give it a data source
-  before dispatching anyone**: cheapest is an append-only audit line per write. **Do not dispatch a
-  worker on the measurement half until one exists** — one was scoped at 150–190k and would have spent
-  it discovering the above.
-  *Checked live 2026-08-27: `expired_open_threads` is **still 0** after 12 days with 4 threads
-  open — either grace legitimately keeps everything alive or expiry silently never fires, and
-  nothing can distinguish them yet.*
-  **✅ Data source built 2026-08-27** (`17142c0`, merged): every context-tracker write appends one
-  line to `context_audit.jsonl` beside `context.json` (600), with `added`/`removed`/`expired` as
-  separate fields — folding the last two together is what would hide a dead expiry again.
-  `tests/test_context_audit_line.py`. Measurement follows once it has run a few days deployed.
-  **⚠ MEASURED 2026-09-03 (the read this item was waiting for), and the answer is "expiry is
-  structurally dead", not "grace works":** 111 audited writes, **0 expiries**;
-  `expired_open_threads` still 0 after 20 days. The discriminating evidence: all four live
-  open threads carry `added: 2026-09-03` — including the mover's-claim thread, which appears
-  verbatim in the 09-02 20:41 conversation. The exact-text match that preserves a thread's
-  birthdate is defeated by the Synthesizer's rewording (the one-changed-character weakness this
-  item already recorded), so `added` refreshes on rewrite and **a rephrased thread can never
-  age**. The fix is a thread-identity decision — fuzzy matching is the semantic-guessing
-  class `[DB-0827-07]` was closed to keep out, so this is a fork for Mike, not a quiet build.
-  **✅ Ruling given 2026-09-05 (Mike, in session, on the due date):** a rewording by **Metatron
-  itself** (the Synthesizer's routine re-statement) must **preserve** the thread's original
-  `added` date; a rewording driven by **user conversation or flagging** refreshes it. This is
-  the grace design's own principle — the user engaging is the signal, the Synthesizer resending
-  is noise — applied to identity. Build dispatched same day to an Opus worker.
-  **✅ BUILT and MERGED same day (`a4b64b5`, merge `33dd624`) — NOT yet deployed.** Identity is
-  a bounded anchor-token key (stopwords + a short generic-action/time list dropped, light
-  stemming, digits kept; same thread = identical sets or ≥2 shared anchors — a **count**, not a
-  ratio, because a ratio loosens exactly on the short generic threads where the recorded false
-  positive lives). The dentist/mom pair stays two threads, asserted directly. Wrong-direction
-  choice is explicit: over-merge, because the older birthdate winning means an early expiry
-  into a recoverable archive, while under-merge is the immortal-thread disease itself. The
-  audit line gained a fourth field `reworded` (additive; nothing folded). One old test asserted
-  the bug ("reworded thread appears fresh") and was inverted with the reasoning kept, not
-  deleted. 16 new checks + expiry + audit suites pass post-merge in the main tree; a
-  before/after probe shows a daily-reworded thread expiring where on HEAD it sat permanently
-  one day old. Known stale wording left in place (out of manifest): `core/translate.py`'s
-  header still says exact-text matching.
-  @waiting: `./deploy.sh` (Mike), then the live confirm — a Synthesizer-reworded thread keeping
-  its birthdate in `context_audit.jsonl` within days, and first real expiries by ~09-15
-  @kind: bug
-  *filed 2026-08-14 by Mike · timestamp half closed 2026-08-15 · measured 2026-09-03 · ruling
-  2026-09-05, build dispatched*
-  `due: 2026-09-12`
-
-- **[DB-1026-01] Replies came back cut short, blank ("couldn't finish the reply") or leaking
-  internal text — the fix needs one day of real use to confirm.** Thinking and reply shared one
-  4,096-token output ceiling, which cut about one final reply in five. Separately, the fallback
-  "just reply" step always returned a 400. Fixed: an 8,192 ceiling, the fallback instruction sent
-  as its own turn, cache creation capped at 30 s, and `finish_reason` recorded on every native
-  turn. Record: `archive/log/2026-10-26-03-replies-cut-by-a-shared-output-ceiling.md`.
-  @waiting: `./deploy.sh` (Mike), then one ordinary day of use
-  **Check (VM traces + conversations for the day after deploy):**
-  1. **No Synthesizer turn with `finish_reason` `MAX_TOKENS`.**
-  2. **No reply that opens mid-sentence, or with `{` or `[CONTEXT]`.**
-  3. **No `_NO_REPLY_LINE` unless a timeout or 5xx explains it in the journal.** Also: no
-     `[reply_limits] final reply round failed` lines.
-  4. **Thinking stays within the new ceiling.** Note the spread of Synthesizer `thinking_tokens`,
-     and any `THINKING_CAP_HIT` events — the budget is not enforced, so this measures it.
-  5. **Count the Synthesizer's 75 s timeouts.** Count `[reply_limits] round N capacity
-     failure` (ReadTimeout) per day, and the P99 single-round latency, against the week before.
-     Longer thinking moves the tail toward the 75 s limit, which was set when the old ceiling was
-     in place.
-  **Pass** = 1–3 clean and 5 not clearly worse, so close. **Fail** = any of 1–3, so reopen with
-  the turn. 5 alone failing re-measures `_SYNTH_CALL_TIMEOUT_MS`.
-  @kind: bug
-  *filed 2026-10-26 by Mike*
-  `due: 2026-10-29`
+  **Read 2026-10-29: still 0 contacts with a tone shape on the VM.** Mike asked whether copies of
+  his own mail in the inbox were used — they were not. **✅ Built (`ac82eec`, not yet deployed):**
+  INBOX mail from his own addresses TO the contact now counts as his writing, only when the topmost
+  `Authentication-Results` verifies it (the intake's self-forward gate), with quoted and forwarded
+  passages stripped (Gmail two-line, Apple, Outlook shapes added; `tests/test_tone_own_copies.py`
+  11/11). **Closes on:** after deploy, `get_tone_shape(refresh=true)` for a contact Mike has BCC'd
+  copies to returns `own_inbox_copies` > 0 and a shape a human recognises, with no third-party name
+  or life event in it.
+  `due: 2026-11-15`
 
 - **[DB-1029-01] The day plan now decides when Metatron nudges and checks in — five live checks
   owed, and some notifications still arrive as a textless "You have a message".** Step 2 turned
@@ -561,6 +581,38 @@ with a date.** Nothing new joins this group open-ended.*
   `due: 2026-10-31`
 
 ### Unbuilt — real capability that does not exist
+
+- **[DB-1029-05] Activity-tracker numbers (steps, active minutes, calories) have to be
+  screenshotted in by hand.** Mike, 2026-10-28 10:16, sending yesterday's numbers: *"Development
+  note is I'd like to find a way to send these to Metatron automatically."* Nothing reads a health
+  source today. Likely shape: Android Health Connect read in the APK, posted to the server — an APK
+  rebuild and a new permission. Pairs with the daily-logging item `[DB-1029-03]`.
+  @kind: feature
+  *raised by Mike 2026-10-28 (Inbox) · triaged to Later by Mike 2026-10-29*
+
+- **[DB-1029-06] Errands are not batched by place, and nothing notices when Mike is near
+  something on his list.** Mike, 2026-10-27 12:13: *"geocoded and route-based logistics for the
+  daily planner to batch errands and also to be able to call audibles when we're in a particular
+  location that coincides with a future task or interest."* Adjacent: the route called "well
+  covered" without known locations `[DB-0902-06]`, and the what-to-do-now surfacing the
+  Accountability Index feeds. Needs task locations and a current location — neither exists.
+  @kind: feature
+  *raised by Mike 2026-10-27 (Inbox) · triaged to Later by Mike 2026-10-29*
+
+- **[DB-1029-07] A new goal gets no help forming the habit behind it.** Mike, 2026-10-27, same
+  message: *"creating the goals interface with the scheduler, especially when it comes to habit
+  forming … a habit-forming behavioural tool for a different agent to access that will make
+  recommendations for what to do to develop the habit."* Habits exist in the ledger
+  (`tools/obligations.py`, `every:`/`times:`); nothing links one to a goal or advises on building it.
+  @kind: feature
+  *raised by Mike 2026-10-27 (Inbox) · triaged to Later by Mike 2026-10-29*
+
+- **[DB-1029-08] A long reflection recorded across the day cannot be uploaded as one audio
+  file.** Mike, 2026-10-15 18:16: *"a voice recorder that will integrate with you. I want to upload
+  longer reflections as a single audio file that might be complex over the course of a day."* Only
+  live dictation exists; nothing ingests a long recording, chunks it, or synthesises it.
+  @kind: feature
+  *raised by Mike 2026-10-15 (Inbox) · triaged to Later by Mike 2026-10-29*
 
 - **[DB-0919-01] Pressing the headset button works on the phone but has never been tried on
   the laptop, so the desktop half of headset mode is written and unproven.** `@kind: feature`
@@ -712,17 +764,6 @@ with a date.** Nothing new joins this group open-ended.*
   *filed 2026-09-05 at the rules-teaching walkthrough, on Mike's explicit go-ahead; supersedes
   the teach-rules half of the closed `[DB-0820-03]`*
 
-- **[DB-0902-03] Suggestions arrive at times they cannot be acted on, and re-ask what was already
-  deferred.** Mike, twice (08-28 20:28, 08-29 06:01): a shop errand suggested at 9:30 PM with no
-  check of opening hours; questions re-asked about tasks he had already said "later" to. The
-  deferral-respect half overlaps the built decline/re-propose guard but that guard covers
-  *confirmations*, not suggestions. The new capability: **before a suggestion is raised, check it
-  is currently actionable** — opening hours, an earlier deferral, time of day. (The
-  repeat-information half of the same two reports was merged into `[DB-0822-06]` — same
-  carried-state mechanism.)
-  @kind: feature
-  *filed 2026-09-02 from the 08-28/29 Inbox pair, disposition Mike's (capstone review)*
-
 - **[DB-0902-04] A complex multi-step goal is swallowed silently instead of interviewed.** Mike
   (08-28): dropping "the mover's claim" or "taxes" just records a line — no follow-up questions,
   no breakdown, so the pieces surface later as friction. Wanted: a short goals-interview-style
@@ -801,24 +842,27 @@ with a date.** Nothing new joins this group open-ended.*
   model judging the ceremony not worth it; watch the next Sunday with open items. Mike's 09-01
   *"fun coding tonight"* intention was captured (`write_log` recorded stated intention) and
   becomes the first real leftover when its window closes.
-  @waiting: one 05:45 run judging a real leftover (a verdicts.jsonl row — the 09-01 intention
-  matures ~09-03/04) and one Sunday retrospective voicing the counts. Audit `[DB-0828-01]`
-  `due: 2026-09-07` then samples the verdicts.
+  **Read 2026-10-29 — the gate runs, but nearly everything it judges comes back
+  "indeterminate".** 14 rows in the VM's `verdicts.jsonl` (last 10-27 05:45): 13 indeterminate,
+  1 fulfilled. The audit `[DB-0828-01]` ran in the same session and closed; its two causes are this
+  item's open work:
+  1. **The Diarist logs requests made *to Metatron* as the user's intentions** ("requested an inbox
+     check", "remove Franklin virtues from the evening close", "report offline web app bug") —
+     unjudgeable by construction. Fix in `config/agents/diarist.md` (Red).
+  2. **An intention that is also a ledger task skips the join.** "Post a hybrid programmer/babysitter
+     job next week" was judged from free text while `ob_261015_cc2ba1` sat open in `tasks.yaml`.
+     Fix in `tools/accountability.py`: match an intention to a task and take the ledger's answer.
+  **Sunday half still unmet:** on 10-25 `weekly_state.json` records the summary as delivered at
+  08:35, but no reply that day voiced the counts.
+  **✅ Both built 2026-10-29, not yet deployed:** the join (`b051201`, Fable-reviewed — strict
+  match, not-yet-due and deferred tasks stay indeterminate, waiting tasks excluded;
+  `tests/test_accountability.py` 17/17) and the Diarist rule (`49d14d7`, Red, Mike approved).
+  @waiting: deploy, then one Sunday retrospective voicing the counts and a 05:45 run whose new rows
+  are fewer "indeterminate"
+  `due: 2026-11-15`
   *raised by Mike 2026-08-26 mid-session · triaged out of Inbox 2026-08-27 · design decided
   2026-08-28 · code half built 2026-08-28 · deployed + rulings 2026-08-28 · gate + list shape
   built 2026-08-29 session ③*
-
-- **[DB-0828-01] Audit the Accountability Index's judgments once it has ten days of data — are
-  things characterized as they should be?** Mike's instruction 2026-08-28, filed with the
-  `[DB-0827-09]` design. Review a sample of `fulfilled` / `unfulfilled` / `indeterminate`
-  verdicts against the underlying entries: indeterminate especially (is the gate dumping hard
-  cases there?), plus spot-checks that fulfilled/unfulfilled verdicts hold. Exit: a short
-  report; miscategorization patterns go back into the judgment gate's instruction or the join
-  code.
-  @kind: chore
-  `due: 2026-09-07` — the index deployed 2026-08-28; date set per this item's own rule
-  (deploy + 10)
-  *filed 2026-08-28 at Mike's instruction, alongside the index design · dated at deploy*
 
 - **[DB-0827-03] The CRM sweep is BUILT, DEPLOYED and ENABLED — it now owes only its first live
   morning digest as the confirm.** Built 2026-08-29 (session ④, `f75a338`/`89cfbcb`; deployed by

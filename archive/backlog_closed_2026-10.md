@@ -275,3 +275,51 @@ from reading as a failure. What these entries really wanted (the guest showing o
 Calendar, and acceptance flowing back) is the CalDAV limit recorded in the Inbox entry
 "Invitations are sent, but Mike's own calendar shows no guest…". Mike deferred that to Mark 2 on
 2026-09-09, and it stays open there. Closed 2026-10-29 as duplicates (`/backlog attack`).
+
+## ✅ The Franklin virtue review kept coming back after Mike dropped it (Inbox, due 2026-10-28) — closed 2026-10-29
+
+The pause held. Read on the VM in `data/personas/mike/traces/2026-10-27.jsonl` and `2026-10-28.jsonl`:
+the 07:30 morning briefs and the 20:00 evening closes on both days mention no virtue, Franklin or
+virtue catch-up (the 10-27 close asks about the evening and the plants; the 10-28 close about meals
+and tomorrow). Pause built in `4e16f3c` (`tools/routines.py`), deployed. The 2027-01-26 check-back
+is a separate thing. Closed by Mike, 2026-10-29 (`/backlog`, overdue checks).
+
+## ✅ [DB-0814-02] Old threads expire, but the signals keeping one alive were unmeasured — closed 2026-10-29
+
+Measured, and the failure it guarded against is not occurring. VM `data/personas/mike/context_audit.jsonl`
+since 2026-08-27: **790 audited writes, 989 threads added, 986 removed, 198 rewordings recognised
+(the `a4b64b5` identity key, deployed), 0 expiries.** The five threads open on 10-29 are 0–2 days
+old and each names a ledger task (`ob_…`). The Synthesizer retires threads itself within days,
+so nothing has lived long enough to reach the 7-day cutoff. **Stated so nobody reads this as
+"expiry is proven":** `_OPEN_THREAD_EXPIRY_DAYS` has never fired in production; it is an untested
+backstop. Closed by Mike, 2026-10-29.
+
+## ✅ [DB-0828-01] Audit the Accountability Index's judgements — closed 2026-10-29
+
+Audit done in-session against all 14 rows of the VM's `accountability/verdicts.jsonl` (last
+written 2026-10-27 05:45). **13 indeterminate, 1 fulfilled, 0 unfulfilled.** Two causes, both
+moved into `[DB-0827-09]` as its open work:
+1. **Requests made to Metatron are logged as the user's intentions** and cannot be judged:
+   "requested an inbox check for logistics details", "inquired about weekend plans", "remove
+   Franklin virtues from the evening close", "report offline web app message-loss bug", "set a
+   reminder for mid-March 2027…". At least 5 of 14.
+2. **An intention that is also a ledger task goes to the free-text judge, not the join.** "Post a
+   hybrid programmer/babysitter job next week" (10-15) was judged indeterminate while task
+   `ob_261015_cc2ba1` sat open and rescheduled in `tasks.yaml` — the ledger knew the answer.
+Closed by Mike, 2026-10-29.
+
+## ✅ "Business matters wait until Monday" as a standing rule (Inbox, 2026-09-12) — closed 2026-10-29
+
+Already held. The Synthesizer wrote it in the same turn (trace 2026-09-12 09:51:55, `write_wisdom`
+→ `business_matters_weekend_rule`, domain `work`, provenance `stated`), and it is on the VM in
+`data/personas/mike/wisdom/wisdom.json`. Applied since: Work & Vocation's config carries
+`next_action: "resume search on Monday per weekend rule"`. The Inbox entry exists only because the
+same reply also logged a dev request — the reporting defect now tracked as `[DB-1029-04]`.
+Closed by Mike, 2026-10-29.
+
+## ✅ Invite Iva to all external calendar events (Inbox, 2026-09-07) — closed 2026-10-29
+
+The rule is held as wisdom (`invite_iva_to_external_events`, VM `wisdom.json`, added 2026-09-07),
+and invitations go out by email. What the rule cannot do — the guest showing on Google Calendar —
+is the Mark 2 entry "Invitations are sent, but Mike's own calendar shows no guest…", which now
+carries a line naming this standing rule. Closed by Mike, 2026-10-29.
