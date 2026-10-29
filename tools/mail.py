@@ -686,9 +686,13 @@ def _known_recipients() -> dict:
     except (OSError, ValueError):
         contacts = []         # no contact store yet is normal
     for c in contacts:
-        email = ((c.get("contact_info") or {}).get("email") or "").strip().lower()
-        if email:
-            allowed[email] = c.get("name") or c.get("id") or email
+        info = c.get("contact_info") or {}
+        # other_emails since 2026-10-29 [DB-1029-02]: a preserved second address is the
+        # same person, so it is as sendable as the primary.
+        for email in [info.get("email")] + list(info.get("other_emails") or []):
+            email = str(email or "").strip().lower()
+            if email:
+                allowed[email] = c.get("name") or c.get("id") or email
     return allowed
 
 

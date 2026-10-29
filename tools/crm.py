@@ -850,6 +850,55 @@ def _source_phrase(mark: dict) -> str:
     return f"{phrase} ({recorded})" if recorded else phrase
 
 
+def _merge_contact_info(stored: dict | None, incoming: dict) -> dict:
+    """
+    An update's `contact_info` laid over what is stored, key by key — never a replacement.
+
+    [DB-1029-02] Until 2026-10-29 an update replaced the whole dict, so a write carrying only
+    an email silently dropped the stored phone, address and social handles. Live 2026-09-07
+    Mike corrected Iva's address to her personal one and then asked for both to be kept;
+    the work address was already gone, and the reply said both were preserved.
+
+    - `social` merges per platform.
+    - A new `email` becomes primary and the previous one moves to `other_emails`: an address
+      in another category is preserved unless the user says to drop it (Mike, 09-07).
+    - `other_emails`, when supplied, is taken as the whole list — that is how an address is
+      dropped. The primary is never listed in it.
+    - An explicit `{}` still clears the field; the caller handles that before calling this.
+    """
+    merged = dict(stored or {})
+    for key, value in incoming.items():
+        if key in ("email", "other_emails", "social"):
+            continue
+        if value not in (None, ""):
+            merged[key] = value
+
+    social = incoming.get("social")
+    if isinstance(social, dict):
+        merged["social"] = {**(merged.get("social") or {}), **social}
+
+    others = [str(e).strip() for e in (merged.get("other_emails") or []) if str(e).strip()]
+    if "other_emails" in incoming:
+        others = [str(e).strip() for e in (incoming.get("other_emails") or []) if str(e).strip()]
+    old = str(merged.get("email") or "").strip()
+    new = str(incoming.get("email") or "").strip()
+    if new:
+        if old and old.casefold() != new.casefold():
+            others.append(old)
+        merged["email"] = new
+    primary = str(merged.get("email") or "").casefold()
+    seen, kept = set(), []
+    for e in others:
+        if e.casefold() != primary and e.casefold() not in seen:
+            seen.add(e.casefold())
+            kept.append(e)
+    if kept:
+        merged["other_emails"] = kept
+    else:
+        merged.pop("other_emails", None)
+    return merged
+
+
 def _apply_verified_marks(contact: dict, contact_info: dict | None,
                           source: str, today: str) -> None:
     """
@@ -1247,8 +1296,11 @@ def write_contact(
                         if value:
                             contact[field] = value
                     for field, value in _collection_fields:
-                        if value is not None:
-                            contact[field] = value
+                        if value is None:
+                            continue
+                        if field == "contact_info" and value:
+                            value = _merge_contact_info(contact.get("contact_info"), value)
+                        contact[field] = value
                     _apply_verified_marks(contact, contact_info, _verified_source, today)
                     contact["updated"] = today
                     _save_contacts(contacts)
@@ -2262,9 +2314,21 @@ WRITE_CONTACT_SCHEMA = {
             },
             "contact_info": {
                 "type": "object",
-                "description": "Structured contact details.",
+                "description": (
+                    "Structured contact details. On an update, send only what changes — "
+                    "stored keys you leave out are kept. A new email becomes the primary "
+                    "and the previous one is kept in other_emails."
+                ),
                 "properties": {
-                    "email": {"type": "string"},
+                    "email": {"type": "string", "description": "Primary email."},
+                    "other_emails": {
+                        "type": "array", "items": {"type": "string"},
+                        "description": (
+                            "Further addresses for this person (e.g. work vs personal). "
+                            "Supplying it replaces the list — send it only to drop an "
+                            "address the user asked to remove."
+                        ),
+                    },
                     "phone": {"type": "string"},
                     "address": {"type": "string"},
                     "social": {
