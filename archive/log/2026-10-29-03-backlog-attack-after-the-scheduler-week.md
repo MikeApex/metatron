@@ -102,3 +102,12 @@ check fails without the fix). Three more Inbox entries closed as already fixed b
 Inbox 33 → 27 over the session. **Not deployed:** everything after `da3d221`
 (`97f9f09`…`9e57655`).
 
+**Deployed by Mike after the close-out.** VM, GitHub and the Mac are all at `976c85e`;
+the server and `metatron-scheduler@mike` are active, and `allow_in_quiet_hours` is present on
+the VM. The deploy pushed the parallel session's `8dcb290` too, by Mike's action, not this
+session's. **Outgoing handoff:**
+`archive/handoffs/2026-10-30-backlog-overdue-checks-triage-and-deep-prompt.md` (Opus):
+1. overdue checks on the VM;
+2. triage of the 10 untriaged Inbox entries;
+3. as a carry-on, `/backlog deep` of `## Later`, gated on the 11-05 routing-miss re-count.
+

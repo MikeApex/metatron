@@ -134,6 +134,15 @@ check fails without the fix). Three more Inbox entries closed as already fixed b
 Inbox 33 → 27 over the session. **Not deployed:** everything after `da3d221`
 (`97f9f09`…`9e57655`).
 
+**Deployed by Mike after the close-out.** VM, GitHub and the Mac are all at `976c85e`;
+the server and `metatron-scheduler@mike` are active, and `allow_in_quiet_hours` is present on
+the VM. The deploy pushed the parallel session's `8dcb290` too, by Mike's action, not this
+session's. **Outgoing handoff:**
+`archive/handoffs/2026-10-30-backlog-overdue-checks-triage-and-deep-prompt.md` (Opus):
+1. overdue checks on the VM;
+2. triage of the 10 untriaged Inbox entries;
+3. as a carry-on, `/backlog deep` of `## Later`, gated on the 11-05 routing-miss re-count.
+
 ### 2026-10-29, second (day planner Stage C live on the phone, step 2 switched on, and deleting an account now needs Mike at a terminal) — one session across two chats (10-28 `cc3393e6`, resumed 10-29) — `a52b8ab`, `ec63e40`, `c8e6f7f`, `898f55c`, `6a3fd86`, `fac4c4c`, `474873c`, `86fa646`, `32115b6`, `3d3524a`, `d91a25f`, `fe5847b`, `9a9e73a` — **through `3d3524a` deployed by Mike (10-28 15:30 and 10-29 10:49) and the APK sideloaded; `d91a25f`, `fe5847b`, `9a9e73a` committed, not deployed**
 
 **Incoming handoff:** `archive/handoffs/2026-10-27-day-planner-stage-c-push-and-step-2-prompt.md`,

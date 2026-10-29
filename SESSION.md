@@ -10,12 +10,12 @@ check 2 on a fresh account, disable the trial accounts, then **Mike purges them 
 `accounts.py purge` (`fe5847b`) is committed but not deployed; it needs a deploy first. **Then
 Iva's walkthrough.** M3 memory watch runs to ~11-04. Log § 2026-10-29 second.
 **Next after that: reply latency**, `archive/handoffs/2026-10-28-reply-latency-defer-thinking-cache-prompt.md`.
-After Stage 5: a real Sign out in the app. WhatsApp 0b may run any time. **Held for the
-next deploy (10-29, after `da3d221`):** task `defer`, the empty-day check-in asking what's
+After Stage 5: a real Sign out in the app. WhatsApp 0b may run any time. **Deployed 10-29
+(VM `976c85e`):** task `defer`, the empty-day check-in asking what's
 going on, false "set/queued" claims logged, and quiet hours keeping follow-ups plus an approval
 card for a reminder asked inside them — `97f9f09`…`9e57655`, each a dated closes-on check in
 `DEV_BACKLOG.md` (due 11-12). `[DB-0910-02]`: the Logistics path still traces a calendar 401 as
-`ok`. `reopen` now undoes a deferral (`9e57655`). Next for the backlog: triage the 10 untriaged Inbox entries (6 from before 10-24) (log § 2026-10-29 third). **Still owed:** the
+`ok`. `reopen` now undoes a deferral (`9e57655`). Next for the backlog: `archive/handoffs/2026-10-30-backlog-overdue-checks-triage-and-deep-prompt.md` — overdue checks, triage of 10 Inbox entries, then `/backlog deep` after 11-05 (log § 2026-10-29 third). **Still owed:** the
 boys' school hours and bedtimes → `children_home` (Mike, in the app); "over and out" live check;
 virtue-pause day-after check; `[DB-1026-01]` due 10-29; Mike's calendar live check (week of 9 Nov);
 silent-mic APK `24d5c24` sideload if not done; `[DB-0901-02]`, due 12-15.*
