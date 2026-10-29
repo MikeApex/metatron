@@ -81,6 +81,48 @@ filed separately.
 3. Widen the false-claim phrases and skip the ones the plan backs.
 4. Rank the deleted-follow-up bug in ## Now at #1.
 
+**Second half, same session: Mike ruled on the four decisions and they were built** —
+`97f9f09`, `226a0c2`, `24b4cb0`, `66b637c`, `8231a86`, `02b1e5b`. Each is **committed but not
+yet deployed**; Mike deployed `da3d221` mid-session.
+1. **A task can be deferred** (`66b637c`, an Opus worker). It's a separate `defer` action,
+   because hiding a task and moving its date are different requests. It uses the existing
+   `eligible_from`/dormant state, and every outstanding view already honoured that state
+   except the thread and day-log annotations, which are now fixed. It's refused for habits
+   (the nightly sweep would count the hidden days as missed) and refused past a deadline's
+   own date, rather than warning, because a warning lands in a tool result the user never
+   sees. `8231a86` adds one line each to `synthesizer.md` and `logistics.md`. **Open for
+   Mike:** `reopen` doesn't bring a deferred task back early.
+2. **The check-in wording: the planned fix was wrong, and the real cause was the live
+   prompt.** `synthesizer_scheduled_sessions.md:7` has said "when there is genuinely
+   nothing, say so in a line and ask what's on" since 08-27, so a rule in `synthesizer.md`
+   would have been a second copy. The VM's `companion_checkin` prompt, *"raise it only if
+   something matters right now"*, is now sent only on an empty day. `226a0c2` keeps that
+   prompt verbatim, because `session_kind()` matches on it, and appends "nothing is
+   planned — ask what's going on". That's an Amber change, not the Red one that was
+   approved, and Mike was told.
+3. **False "set/queued/lined up" claims** (`24b4cb0`, an Opus worker). The new phrasings
+   went into the log-only pattern set, not `_COMPLETION_CLAIM_RES`, which rewrites replies.
+   A plan row exempts a claim only on a shared title word plus a matching start time. A time
+   alone would have exempted the 10-27 incident itself, since its 16:30 row was a return
+   trip. The check reuses the plan read that replies already make on every turn, so it adds
+   no new cost.
+4. **Quiet hours** (`97f9f09`, Red, built here). Mike's ruling: a reminder he asks for
+   inside quiet hours fires there only if he approves a card that says so; otherwise it, and
+   any agent follow-up, waits until quiet hours end. This reverses the 2026-08-15 automatic
+   permission. **A Fable review found that the card broke the reply** (`02b1e5b`): the
+   pending-receipt machinery assumes every card gates the whole action, so "that's
+   scheduled" was replaced with "nothing has been changed yet", and the Diarist was told
+   the reminder wasn't set. Cards in `_PENDING_INFORMATIONAL` are now excluded. Three
+   smaller review fixes went in with it:
+   - a one-tick window at 22:00 where a follow-up could still be lost;
+   - a card headline that read as a question;
+   - the decision that a follow-up is due "while awake" is now made once, in the loop.
+
+**Worker costs, estimate vs actual:** the defer worker used 119.0k tokens against ~65k (it
+read every outstanding-list surface); the claims worker 95.3k against ~65k; the Fable review
+83.2k against ~50k. All three ran over; the build medians in `worker_ledger` are too low for
+items that have to survey every caller.
+
 ### 2026-10-29, second (day planner Stage C live on the phone, step 2 switched on, and deleting an account now needs Mike at a terminal) — one session across two chats (10-28 `cc3393e6`, resumed 10-29) — `a52b8ab`, `ec63e40`, `c8e6f7f`, `898f55c`, `6a3fd86`, `fac4c4c`, `474873c`, `86fa646`, `32115b6`, `3d3524a`, `d91a25f`, `fe5847b`, `9a9e73a` — **through `3d3524a` deployed by Mike (10-28 15:30 and 10-29 10:49) and the APK sideloaded; `d91a25f`, `fe5847b`, `9a9e73a` committed, not deployed**
 
 **Incoming handoff:** `archive/handoffs/2026-10-27-day-planner-stage-c-push-and-step-2-prompt.md`,
