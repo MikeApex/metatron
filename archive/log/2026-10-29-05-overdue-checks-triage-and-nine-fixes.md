@@ -48,3 +48,18 @@ in the inbox, with quotes stripped (`ac82eec`). Habit `done_words` (`ff765d3`; t
 **Outgoing handoff:** deploy, then the dated closes-on checks (11-12). `/backlog deep` from 11-05,
 after the routing-miss recount. Reply latency runs from its own prompt.
 
+**Addendum, same session (after the close-out `4637dfb`).** Mike deployed (VM `4637dfb`). His
+15:06 meals request was saved as a wisdom note, not opened as a habit, so `[DB-1029-03]` still
+waits on a habit being created. That is the same class of fault as the rule replies: a request
+that needs a task got filed as a fact. Five more Inbox entries were triaged (`49a0c53`): the
+calendar-event title fault `[DB-1029-10]` and Sign out `[DB-1029-11]` went to Now; headset
+barge-in, the mic cue and cut-off dictation went to Later. **Mike's ruling: Now holds work, not
+confirmations.** The cap stays at 10. Nine built-and-waiting items moved to Later's "Done and
+deployed" group with their dates: five from Now, plus four Inbox check entries now numbered
+`DB-1029-15`…`18`. The forwarded-mail trail `[DB-0902-05]` was promoted to Now 6. *Rejected:*
+expanding Now, because the cap bounds workload and a confirmation isn't workload. **Correction
+noted to Mike:** today's log shows a `verify` and an `attack`, not a `deep`, so most of Later is
+unverified. Mike runs `/backlog deep` next. Then the attack prompt
+`archive/handoffs/2026-10-30-backlog-attack-signout-calendar-text-forward-trail-prompt.md` (Now
+4–6: Sign out, calendar event text, forwarding trail; Opus; ~350–450k).
+

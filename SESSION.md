@@ -11,11 +11,13 @@ this archive await a deploy. **Then: capture-fidelity planning**
 Security hardening is `[DB-1029-20]`. Log § 2026-10-29 fourth. **Day planner:** step 2 is on, and
 its five live checks are `[DB-1029-01]`, due 10-31. About half the pings since 10-28 fell back to
 a textless "You have a message"; the new APK reports why. **Backlog:** overdue checks and the
-Inbox triage are done (log § 2026-10-29 fifth). **Nine fixes are committed but not deployed:**
-`1c0e7d2`…`ff765d3`, from CRM detail loss to habit done-words. **Mike owes `./deploy.sh`**, and
-the meals habit in the app ("log meals and snacks, 3 a day — breakfast, lunch, dinner, snack
-count"). Each fix has a dated closes-on check in `DEV_BACKLOG.md` (due 11-12). **`/backlog deep`
-runs on or after 11-05**, after the routing-miss recount (step 3 of the 10-30 prompt). Reply
+Inbox triage are done (log § 2026-10-29 fifth). Nine fixes deployed (VM `4637dfb`),
+each with a dated closes-on check (due 11-12). **The meals habit still doesn't exist**: Mike's
+15:06 request was saved as wisdom, not a habit. He re-asks as "open a daily habit…". `## Now`
+now holds work only (built items wait in Later's "Done and deployed"). **Next: Mike runs
+`/backlog deep`, then
+`archive/handoffs/2026-10-30-backlog-attack-signout-calendar-text-forward-trail-prompt.md`**
+(Now 4–6, Amber, Opus). Reply
 latency now also carries the low-latency mode `[DB-1029-09]`. WhatsApp 0b may run any time.
 **Still owed:** the boys' school hours and bedtimes → `children_home` (Mike, in the app); the
 "over and out" live check; Mike's calendar live check (week of 9 Nov); `[DB-0901-02]`, due 12-15.*
