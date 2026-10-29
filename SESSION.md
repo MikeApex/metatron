@@ -15,7 +15,7 @@ next deploy (10-29, after `da3d221`):** task `defer`, the empty-day check-in ask
 going on, false "set/queued" claims logged, and quiet hours keeping follow-ups plus an approval
 card for a reminder asked inside them — `97f9f09`…`9e57655`, each a dated closes-on check in
 `DEV_BACKLOG.md` (due 11-12). `[DB-0910-02]`: the Logistics path still traces a calendar 401 as
-`ok`. `reopen` now undoes a deferral (`9e57655`). Next for the backlog: a `/backlog verify` of the 13 untriaged Inbox entries from before 10-24 (log § 2026-10-29 third). **Still owed:** the
+`ok`. `reopen` now undoes a deferral (`9e57655`). Next for the backlog: triage the 10 untriaged Inbox entries (6 from before 10-24) (log § 2026-10-29 third). **Still owed:** the
 boys' school hours and bedtimes → `children_home` (Mike, in the app); "over and out" live check;
 virtue-pause day-after check; `[DB-1026-01]` due 10-29; Mike's calendar live check (week of 9 Nov);
 silent-mic APK `24d5c24` sideload if not done; `[DB-0901-02]`, due 12-15.*
