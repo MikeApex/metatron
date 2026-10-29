@@ -313,7 +313,12 @@ async def _send_one(persona: str, text: str, server: str, provider: str | None,
                 parts.append(msg.get("text", ""))
             elif kind == "done":
                 return "".join(parts)
-            elif kind in ("retract", "held"):
+            elif kind == "retract":
+                # A plain filter suppression carries no text; a replaced reply (an amended
+                # receipt, or one cut at MAX_TOKENS [DB-1026-01]) carries its replacement,
+                # which is the reply this scheduled session actually produced.
+                return msg.get("text", "")
+            elif kind == "held":
                 return ""
             elif kind == "error":
                 raise RuntimeError(msg.get("text", "server reported an error"))

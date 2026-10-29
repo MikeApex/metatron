@@ -4332,6 +4332,17 @@ _WIDE_OUTPUT_AGENTS = {"day_planner": 16384}
 _PLAIN_THINKING_CAPS = {"day_planner": 0}
 
 
+# [DB-1026-01] A reply round that ends MAX_TOKENS with no tool call did not finish: its text
+# is whatever the model emitted when the ceiling cut it. Live 2026-10-28 18:35 a scheduled
+# check-in thought 7,865 of 8,192 and the 323 tokens left were a fragment of its own prompt
+# ("ALREADY ASKED AND STILL UNANSWERED — DO NOT ASK THESE AGAIN…"), delivered as the reply.
+# Such a round is replaced by _final_reply_round(); on the streaming path the text already
+# shown is withdrawn through the sentinel below, which run_pipeline_session_stream turns into
+# [RETRACT_WITH]. The sentinel never reaches a client: the pipeline intercepts it first.
+_FINAL_ROUND_THINKING_BUDGET = 1024
+_REPLACE_REPLY_SENTINEL = "\x00[REPLACE_REPLY]\x00"
+
+
 def _max_output_tokens(thinking_budget: int | None) -> int:
     return _REPLY_OUTPUT_TOKENS + (thinking_budget or 0)
 
@@ -4774,6 +4785,16 @@ def _run_gemini_native_stream(client, model_name: str,
             result = "".join(text_parts)
 
         if not function_calls:
+            if text_parts and _finish_name(finish) == "MAX_TOKENS":
+                # Cut by the ceiling: what was streamed is a fragment. Replace it.
+                # The fragment is NOT appended to contents: it may be prompt text, and the
+                # final round's own user turn after this one is the shape probed on 10-26.
+                logger.warning(f"[reply_limits] round {turn_num} cut at MAX_TOKENS — replaced")
+                final = _final_reply_round(client, model_name, contents, config, types) \
+                    or _NO_REPLY_LINE
+                yield _REPLACE_REPLY_SENTINEL + final
+                _finish(final)
+                return
             if not result:
                 # A round that returned neither text nor a call — the blank-reply shape.
                 yield _NO_REPLY_LINE
@@ -4856,20 +4877,35 @@ def _final_reply_round(client, model_name: str, contents: list, config, types) -
     # (probed 2026-10-26 on gemini-3.8-flash — merged 400s, a separate user turn answers). Until
     # then every round-cap or soft-deadline exit ended in _NO_REPLY_LINE.
     contents = contents + [types.Content(role="user", parts=[types.Part(text=_FINAL_REPLY_PROMPT)])]
+    # [DB-1026-01] A smaller thinking target than the round that led here: this round is
+    # often reached BECAUSE thinking ran to the ceiling, and on the same config it can run
+    # out again. Thinking rides the request, not the cache, so this cannot split a cache
+    # entry. 1,024 rather than 0 — 0 is proven on the compat path only (day planner).
+    try:
+        config = config.model_copy(update={"thinking_config": types.ThinkingConfig(
+            thinking_budget=_FINAL_ROUND_THINKING_BUDGET)})
+    except Exception:   # a stub or older SDK config — keep the caller's
+        pass
     out: list[str] = []
+    finish = None
     try:
         for chunk in client.models.generate_content_stream(
             model=model_name, contents=contents, config=config,
         ):
             if not chunk.candidates or chunk.candidates[0].content is None:
                 continue
+            finish = getattr(chunk.candidates[0], "finish_reason", None) or finish
             for part in chunk.candidates[0].content.parts or []:
                 if getattr(part, "text", None) and not getattr(part, "function_call", None):
                     out.append(part.text)
     except Exception as e:
         logger.warning(f"[reply_limits] final reply round failed: {e}")
         return ""
-    logger.warning("[reply_limits] turn ended on tool calls — final reply round "
+    if _finish_name(finish) == "MAX_TOKENS":
+        # Its own text would be a fragment too; the caller says _NO_REPLY_LINE instead.
+        logger.warning("[reply_limits] final reply round also hit MAX_TOKENS — discarded")
+        return ""
+    logger.warning("[reply_limits] final reply round "
                    + ("answered" if out else "returned nothing"))
     return "".join(out).strip()
 
@@ -7540,8 +7576,20 @@ def _run_pipeline_session_stream_inner(
     buffer: list[str] = []
     pending: str = ""          # buffered but not yet yielded (delimiter lookahead window)
     context_started: bool = False
+    retracted: bool = False    # the provider withdrew what it streamed — see below
 
     for chunk in gen:
+        if isinstance(chunk, str) and chunk.startswith(_REPLACE_REPLY_SENTINEL):
+            # [DB-1026-01] The round was cut at MAX_TOKENS: what streamed is a fragment and
+            # the provider has replaced it. Intercepted BEFORE buffering, so the sentinel never
+            # reaches the client and the replacement alone becomes `complete` — everything
+            # downstream (context block, false-claim check, filter, receipt, history) then
+            # runs on it unchanged. Nothing streams after this; delivery is [RETRACT_WITH].
+            buffer = [chunk[len(_REPLACE_REPLY_SENTINEL):]]
+            pending = ""
+            context_started = True
+            retracted = True
+            continue
         buffer.append(chunk)
         if not context_started:
             pending += chunk
@@ -7609,7 +7657,11 @@ def _run_pipeline_session_stream_inner(
         if not _stream_to_client:
             yield "[HOLD]"
         yield "[DONE]"
-    elif _final != filtered:
+    elif _final != filtered or (retracted and _stream_to_client):
+        # Also reached when the provider replaced a reply cut at MAX_TOKENS (`retracted`):
+        # the fragment is on screen and must be withdrawn the same way. A translated persona
+        # was shown nothing, so the ordinary delivery below is already right for them.
+        #
         # A confirmation was raised during this turn and the reply had to be amended —
         # see enforce_pending_receipt(). On the streaming path the original text is
         # already on the user's screen, so the amendment cannot be appended: what was
@@ -7623,9 +7675,15 @@ def _run_pipeline_session_stream_inner(
         # correct answer to a legitimate request. A refusal is the worst possible
         # rendering of this particular message, which exists to tell the user their
         # action is still waiting on them.
-        code, name = _out_lang
-        from core.translate import translate
-        yield f"[RETRACT_WITH]{translate(_final, code, name)}"
+        #
+        # `_out_lang` is None for an untranslated persona — the usual case, Mike's included —
+        # and unpacking it raised TypeError here, which the server turned into [ERROR]
+        # (found by the Fable review, 2026-10-29). Translate only when a language is set.
+        if _out_lang:
+            from core.translate import translate
+            yield f"[RETRACT_WITH]{translate(_final, *_out_lang)}"
+        else:
+            yield f"[RETRACT_WITH]{_final}"
         yield "[DONE]"
     else:
         if not _stream_to_client:
