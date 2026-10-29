@@ -1892,8 +1892,15 @@ def _normalise_for_filter(text: str) -> str:
 # so a model saying it as written was suppressed: the second user's first interview
 # opened on the canned fallback. A sample line discloses nothing; the 2026-08-12 leak
 # was unquoted rule prose, which stays covered.
+#
+# Questions are left out for the same reason (2026-10-29). goals_interviewer.md lists the
+# questions it should ask as unquoted bullets ("- When does your day usually start, and when
+# do you go to sleep?"), and the model asking one nearly as written was suppressed: trial_1029's
+# answer about layoffs got the canned fallback. A question in an instruction file is a sample
+# of speech; rule prose is statements, and the 2026-08-12 leak was statements.
 _INSTRUCTION_NGRAM = 10
 _QUOTED_SAMPLE_RE = _re.compile(r'"[^"\n]*"|“[^”\n]*”')
+_QUESTION_SAMPLE_RE = _re.compile(r'[^.!?:;\n]*\?')
 
 # Tier 5. A response that opens by announcing its own reasoning, e.g.
 # "**Step-by-Step Reasoning:**", "My thought process:", "Reasoning:", "Analysis:".
@@ -1938,12 +1945,13 @@ def _instruction_ngrams(agent_name: str) -> frozenset:
             text = _normalise_for_filter(path.read_text())
         except OSError:
             continue
-        # Shingle each stretch between quoted samples on its own, so no n-gram spans a
-        # removed sample and stitches its neighbours together.
-        for segment in _QUOTED_SAMPLE_RE.split(text):
-            words = _re.findall(r'[0-9a-z]+', segment)
-            for i in range(len(words) - _INSTRUCTION_NGRAM + 1):
-                grams.add(tuple(words[i:i + _INSTRUCTION_NGRAM]))
+        # Shingle each stretch between quoted samples and questions on its own, so no n-gram
+        # spans a removed sample and stitches its neighbours together.
+        for quoted_gap in _QUOTED_SAMPLE_RE.split(text):
+            for segment in _QUESTION_SAMPLE_RE.split(quoted_gap):
+                words = _re.findall(r'[0-9a-z]+', segment)
+                for i in range(len(words) - _INSTRUCTION_NGRAM + 1):
+                    grams.add(tuple(words[i:i + _INSTRUCTION_NGRAM]))
     return frozenset(grams)
 
 

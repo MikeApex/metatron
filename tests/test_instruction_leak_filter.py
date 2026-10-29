@@ -136,6 +136,39 @@ def main() -> int:
     check("the interviewer's unquoted rule prose is still suppressed",
           filter_output(rule, "goals_interviewer") == _CANNED_FALLBACK)
 
+    # --- questions are the agent's to ask (2026-10-29) ------------------------
+    # trial_1029's second answer got the canned fallback: the interviewer asked
+    # goals_interviewer.md:117's unquoted bullet question nearly as written. This is the
+    # reply that was suppressed, verbatim.
+    suppressed = (
+        "That feeling of powerlessness during layoffs is heavy — it drains energy before the "
+        "day even properly finishes, which makes complete sense of wanting to just collapse "
+        "when you're off the clock.\n\nTo get a clear picture of what we're working with "
+        "day-to-day:\n\n1. When does your day usually start, and when do you typically head to "
+        "bed? How is your sleep holding up through this?\n2. Outside of work running late, is "
+        "anyone depending on you at home — family, pets, caregiving responsibilities?\n3. How "
+        "is your body doing physically right now? Any health issues, injuries, or things that "
+        "limit what's realistic for you, especially with that half-marathon in mind?")
+    check("trial_1029's suppressed interview reply reaches the user",
+          filter_output(suppressed, "goals_interviewer") == suppressed)
+    for agent in ("goals_interviewer", "synthesizer"):
+        text = (Path(__file__).parent.parent / "config" / "agents" / f"{agent}.md").read_text()
+        # Bullets that are nothing but questions. A bullet that opens with a rule statement
+        # and ends on a question keeps its statement covered, rightly.
+        bullets = [b.strip() for b in re.findall(r"^[ \t]*[-*][ \t]+([^\n]*)$", text, re.M)]
+        questions = [b for b in bullets
+                     if b.endswith("?") and not re.sub(r"[^.!?:;\n]*\?", "", b).strip(" *")
+                     and len(re.findall(r"[0-9a-z]+", b.lower())) >= _INSTRUCTION_NGRAM]
+        blocked = [q for q in questions if filter_output(q, agent) != q]
+        check(f"all {len(questions)} bulleted sample questions in {agent}.md pass", not blocked)
+        if blocked:
+            print(f"        first blocked: {blocked[0][:80]!r}")
+    # A statement from the same file, with no tool name in it, is still covered.
+    statement = ("Take your time here. Health limitations are constraints that must be built "
+                 "into every goal and timeline that follows. Do not skip this.")
+    check("the interviewer's rule prose with no tool name is still suppressed",
+          filter_output(statement, "goals_interviewer") == _CANNED_FALLBACK)
+
     print()
     failed = [label for ok, label in _results if not ok]
     if failed:
