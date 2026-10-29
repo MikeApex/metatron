@@ -85,6 +85,9 @@
     .message.assistant {
       background: #1a1a1a;
       border-bottom-left-radius: 4px;
+      /* A reply's line breaks are its structure — one question per line, a paragraph per
+         thought. Without this they collapsed and numbered questions ran together (2026-10-29). */
+      white-space: pre-wrap;
     }
 
     .message.system {
@@ -1382,6 +1385,47 @@
   // ts is optional and only known for messages replayed from the server
   // (history/catchup/message). Freshly typed or streaming bubbles have none
   // yet, so they stamp with the client's current time instead.
+  // A reply as the user reads it. The agents write plain text with light markdown — a
+  // question per bulleted line, now and then a stray ** or a > quote — and the bubble shows
+  // text, never HTML, so a reply cannot inject markup. Bullets become •, numbered lines stay,
+  // and the markup characters that would otherwise show raw are dropped (2026-10-29: a
+  // purpose draft arrived as "> **Purpose:**", literally).
+  function replyText(md) {
+    return (md || '')
+      .replace(/\*\*/g, '')
+      .replace(/^[ \t]*#{1,6}[ \t]+/gm, '')
+      .replace(/^[ \t]*>[ \t]?/gm, '')
+      .replace(/^([ \t]*)[-*+][ \t]+/gm, '$1• ');
+  }
+
+  // The same reply as it is read aloud: no markers at all, one line per item. /tts takes the
+  // text as given, so anything left here is spoken.
+  function speechText(md) {
+    return replyText(md)
+      .replace(/^[ \t]*•[ \t]*/gm, '')
+      .replace(/^[ \t]*\d+[.)][ \t]+/gm, '')
+      .replace(/\n{2,}/g, '\n');
+  }
+
+  // What to do when the device refuses a permission Metatron needs: one wording for location,
+  // the microphone and notifications, said in the conversation where the user is looking, once
+  // per load for each (2026-10-29). Code cannot re-show a prompt the user has refused — only they
+  // can undo it — so the useful thing is telling them where.
+  const permissionHelpShown = new Set();
+  const PERMISSION_NAMES = {
+    location: ['your location', 'Location'],
+    microphone: ['the microphone', 'Microphone'],
+    notifications: ['notifications', 'Notifications'],
+  };
+  function showPermissionHelp(kind) {
+    if (permissionHelpShown.has(kind) || !PERMISSION_NAMES[kind]) return;
+    permissionHelpShown.add(kind);
+    const [name, setting] = PERMISSION_NAMES[kind];
+    addMessage('system', window.Metatron
+      ? `Metatron can't use ${name}. To allow it, open your phone's Settings, then Apps, Metatron, Permissions, ${setting}, and choose Allow.`
+      : `Your browser is blocking ${name} for Metatron. To allow it, tap the icon beside the web address, set ${setting} to Allow, then reload the page.`);
+  }
+
   function addMessage(role, text, ts, attachments) {
     if (role === 'system') {
       const div = document.createElement('div');
@@ -1397,7 +1441,7 @@
 
     const bubble = document.createElement('div');
     bubble.className = `message ${role}`;
-    bubble.textContent = text;
+    bubble.textContent = role === 'assistant' ? replyText(text) : text;
     // Only ever on a user bubble, which is never streamed — an assistant bubble has
     // its textContent overwritten on every chunk, which would strip child nodes.
     if (attachments && attachments.length) renderMessageAttachments(bubble, attachments);
@@ -1897,7 +1941,7 @@
       // which ensureConnected has detached it and is waiting for this very event).
       if ((current || ws === null) && ownBubble) {
         stopWorking(ownBubble);
-        ownBubble.textContent = ownAccumulated || '[Connection lost]';
+        ownBubble.textContent = replyText(ownAccumulated) || '[Connection lost]';
         // This reply is orphaned: its 'done' was going to arrive on a socket that is
         // now gone. Remember which one, so the frames that continue arriving on the
         // NEXT socket can be recognised as ours and re-adopted (see 'chunk' below),
@@ -2209,7 +2253,7 @@
           if (ownBubble) {
             stopWorking(ownBubble);
             ownAccumulated += msg.text;
-            ownBubble.textContent = ownAccumulated + '▍';
+            ownBubble.textContent = replyText(ownAccumulated) + '▍';
             scrollToBottom();
           }
         } else if (shownIds.has(msg.exchange_id)) {
@@ -2220,7 +2264,7 @@
           if (fb) {
             stopWorking(fb.bubble);
             fb.accumulated += msg.text;
-            fb.bubble.textContent = fb.accumulated + '▍';
+            fb.bubble.textContent = replyText(fb.accumulated) + '▍';
             scrollToBottom();
           }
         }
@@ -2232,10 +2276,13 @@
           // Own exchange complete — finalize and speak
           if (ownBubble) {
             stopWorking(ownBubble);
-            ownBubble.textContent = ownAccumulated;
+            ownBubble.textContent = replyText(ownAccumulated);
             speakResponse(ownAccumulated);
             ownBubble = null; ownAccumulated = ''; ownExchangeId = null;
           }
+          // An interview reply may have recorded a yes to location sharing.
+          if (typeof interviewStatus !== 'undefined' && interviewStatus === 'active'
+              && typeof recheckLocationAfterInterviewTurn === 'function') recheckLocationAfterInterviewTurn();
           // Delivered — whether on its original socket or a re-adopted one. Either
           // way it is no longer owed, so no later reconnect can speak it again.
           if (msg.exchange_id === orphanedOwnId) orphanedOwnId = null;
@@ -2251,7 +2298,7 @@
           const fb = foreignBubbles.get(msg.exchange_id);
           if (fb) {
             stopWorking(fb.bubble);
-            fb.bubble.textContent = fb.accumulated;
+            fb.bubble.textContent = replyText(fb.accumulated);
             foreignBubbles.delete(msg.exchange_id);
             maybeAlert(fb.proactive);
           }
@@ -2272,7 +2319,7 @@
         if (msg.exchange_id === ownExchangeId) {
           if (ownBubble) {
             stopWorking(ownBubble);
-            ownBubble.textContent = replacement || "I can't help with that right now.";
+            ownBubble.textContent = replyText(replacement) || "I can't help with that right now.";
             ownBubble = null; ownAccumulated = ''; ownExchangeId = null;
           }
           setLoading(false);
@@ -2282,7 +2329,7 @@
           confirmDelivered(msg.exchange_id);   // answered, by the filter; never resent
         } else {
           const fb = foreignBubbles.get(msg.exchange_id);
-          if (fb) { stopWorking(fb.bubble); fb.bubble.textContent = replacement || '...'; foreignBubbles.delete(msg.exchange_id); }
+          if (fb) { stopWorking(fb.bubble); fb.bubble.textContent = replyText(replacement) || '...'; foreignBubbles.delete(msg.exchange_id); }
           shownIds.add(msg.exchange_id);
         }
         break;
@@ -2336,7 +2383,7 @@
     const finishesOwn = ownBubble && row.exchange_id === ownExchangeId;
     if (finishesOwn) {
       stopWorking(ownBubble);
-      ownBubble.textContent = row.assistant;
+      ownBubble.textContent = replyText(row.assistant);
       speakResponse(row.assistant);
       ownBubble = null; ownAccumulated = ''; ownExchangeId = null;
       setLoading(false);
@@ -3217,8 +3264,10 @@
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (err) {
       micIntent = false;
-      setStatus('Mic blocked: ' + err.name, '#a44');
+      const refused = err && (err.name === 'NotAllowedError' || err.name === 'SecurityError');
+      setStatus(refused ? 'Microphone blocked' : 'Mic blocked: ' + err.name, '#a44');
       document.getElementById('grant-wrap').style.display = 'block';
+      if (refused) showPermissionHelp('microphone');
       return;
     }
 
@@ -3332,7 +3381,9 @@
   const grantWrap = document.getElementById('grant-wrap');
   const grantBtn  = document.getElementById('grant-btn');
 
-  function requestMicPermission() {
+  // `fromUser`: the grant button, not the check on load — a user who declined the mic on
+  // purpose is not told how to undo it every time the page loads.
+  function requestMicPermission(fromUser) {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       setStatus('Mic unavailable (needs HTTPS)', '#a44');
       grantWrap.style.display = 'block';
@@ -3340,9 +3391,14 @@
     }
     return navigator.mediaDevices.getUserMedia({ audio: true })
       .then(s => { s.getTracks().forEach(t => t.stop()); setStatus('Ready', '#555'); grantWrap.style.display = 'none'; })
-      .catch(err => { setStatus('Mic blocked: ' + err.name, '#a44'); grantWrap.style.display = 'block'; });
+      .catch(err => {
+        const refused = err && (err.name === 'NotAllowedError' || err.name === 'SecurityError');
+        setStatus(refused ? 'Microphone blocked' : 'Mic blocked: ' + err.name, '#a44');
+        grantWrap.style.display = 'block';
+        if (refused && fromUser) showPermissionHelp('microphone');
+      });
   }
-  grantBtn.addEventListener('click', requestMicPermission);
+  grantBtn.addEventListener('click', () => requestMicPermission(true));
   requestMicPermission();
 
   micBtn.textContent = 'Tap to Speak';
@@ -3898,7 +3954,11 @@
   // immediately — nothing about sending waits for this.
   function maybeSendLocationWithMessage() {
     if (!locOnSend) return;
-    readPosition().then(postLocation).catch(() => {});
+    readPosition().then(postLocation).catch((err) => {
+      // A refused permission is the one failure the user can fix, and the on-send path is
+      // otherwise silent — so say how, once per load (2026-10-29). Code 1 is PERMISSION_DENIED.
+      if (err && err.code === 1 && typeof showPermissionHelp === 'function') showPermissionHelp('location');
+    });
   }
 
   // The button. Unlike the on-send path this reports what happened, because the user
@@ -3918,7 +3978,9 @@
           : `Shared — you're at ${zone}.`;
       }
     } catch (e) {
-      if (note) note.textContent = 'Could not get a location fix.';
+      const refused = e && e.code === 1;
+      if (note) note.textContent = refused ? 'Location is blocked for Metatron.' : 'Could not get a location fix.';
+      if (refused && typeof showPermissionHelp === 'function') showPermissionHelp('location');
     } finally {
       if (btn) btn.disabled = false;
     }
@@ -3956,8 +4018,25 @@
         locOnSend = true;
         localStorage.setItem(LOC_ONSEND_KEY, 'on');
         renderLocControls();
+        // The yes was given in conversation; the device still has to be asked. Say so, or the
+        // permission prompt arrives unexplained on the next send (2026-10-29: it was given and
+        // nothing visible happened).
+        if (typeof addMessage === 'function') {
+          addMessage('system', ((typeof window !== 'undefined' && window.Metatron)
+            ? 'Location is on for your messages. Your phone will ask to share your location the next time you send one. Choose Allow while using the app.'
+            : 'Location is on for your messages. Your browser will ask to share your location the next time you send one. Choose Allow.'));
+        }
       }
     } catch (e) { /* stays off */ }
+  }
+
+  // The answer is given IN the first interview, after the once-per-load ask has already run,
+  // so each interview reply re-arms it for one more ask. An ordinary session still asks once
+  // per load; nothing here polls.
+  function recheckLocationAfterInterviewTurn() {
+    if (localStorage.getItem(LOC_ONSEND_KEY) !== null) return;
+    locDefaultAsked = false;
+    adoptServerLocationDefault();
   }
 
   document.getElementById('loc-toggle').addEventListener('click', () => {
@@ -3996,7 +4075,7 @@
       const res = await authFetch('/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text: speechText(text) }),
       });
       if (!res.ok) throw new Error('TTS failed');
       const arrayBuffer = await res.arrayBuffer();
@@ -4074,7 +4153,7 @@
     const perm = Notification.permission;
 
     if (perm === 'denied') {
-      wrap.innerHTML = '<span style="color:#333;font-size:11px">notif blocked — enable in Chrome site settings</span>';
+      wrap.innerHTML = '<span style="color:#333;font-size:11px">Notifications blocked — allow them in this site\'s settings, then reload</span>';
       return;
     }
 
@@ -4092,6 +4171,7 @@
             wrap.innerHTML = '<span style="color:#444;font-size:12px">Notifications on</span>';
           } else {
             wrap.innerHTML = '<span style="color:#333;font-size:12px">Notifications blocked</span>';
+            showPermissionHelp('notifications');
           }
         } catch(e) {
           wrap.innerHTML = `<span style="color:#333;font-size:11px">notif error: ${e.message}</span>`;

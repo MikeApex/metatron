@@ -58,7 +58,9 @@ function check(name, fn) {
 // --- a fake browser: storage, DOM, geolocation, and the auth-wrapped fetch -------------
 
 function makeHarness(opts = {}) {
-  const { stored = null, position = null, geolocation = true } = opts;
+  const { stored = null, position = null, geolocation = true, refused = false } = opts;
+  const helps = [];                    // showPermissionHelp calls
+  const notes = [];                    // addMessage('system', …) calls
 
   const store = new Map();
   if (stored !== null) store.set('metatron_location_onsend', stored);
@@ -98,7 +100,8 @@ function makeHarness(opts = {}) {
     navigator: geolocation ? {
       geolocation: {
         getCurrentPosition(ok, fail) {
-          if (position) ok(position);
+          if (refused) fail(Object.assign(new Error('denied'), { code: 1 }));   // PERMISSION_DENIED
+          else if (position) ok(position);
           else fail(new Error('denied'));
         },
       },
@@ -109,11 +112,15 @@ function makeHarness(opts = {}) {
     },
   };
 
+  // Defined outside the location section in index.html; the section calls them by typeof.
+  sandbox.showPermissionHelp = (kind) => helps.push(kind);
+  sandbox.addMessage = (role, text) => notes.push([role, text]);
+
   vm.createContext(sandbox);
   vm.runInContext(SECTION, sandbox, { filename: 'index.html:location-section' });
 
   return {
-    sandbox, posted, store, element, handlers,
+    sandbox, posted, store, element, handlers, helps, notes,
     fire: (id, type, ev) => handlers.get(`${id}:${type}`)(ev || {}),
     // Everything here is fire-and-forget promise work; one macrotask turn settles it.
     settle: () => new Promise((r) => setTimeout(r, 5)),
@@ -272,6 +279,48 @@ check('the server is asked once per load, not on every refresh', async () => {
   await h.sandbox.adoptServerLocationDefault();
   await h.sandbox.adoptServerLocationDefault();
   if (h.posted.length !== 1) throw new Error(`asked ${h.posted.length} times`);
+});
+
+// --- the yes given mid-interview, and a refused permission (2026-10-29) ------------------
+// trial_1029 said yes to location inside the first interview, after the once-per-load ask had
+// run, and nothing happened. Each interview reply re-arms one more ask; a stored choice still
+// means nothing is asked; and a refusal says where to allow it.
+
+check('a yes given after the first ask is adopted on the next interview turn, with a note', async () => {
+  const h = makeHarness({ position: FIX });
+  serverSays(h, { on_send: null });
+  await h.sandbox.adoptServerLocationDefault();          // on load: not asked yet
+  serverSays(h, { on_send: true });
+  h.sandbox.recheckLocationAfterInterviewTurn();         // the interview reply that recorded yes
+  await h.settle();
+  if (h.store.get('metatron_location_onsend') !== 'on') throw new Error('the later yes was not adopted');
+  if (!h.notes.some(([role, text]) => role === 'system' && /will ask to share your location/.test(text))) {
+    throw new Error('no note telling the user the device will ask');
+  }
+});
+
+check('an interview turn asks nothing when a choice is already stored', async () => {
+  const h = makeHarness({ stored: 'off', position: FIX });
+  serverSays(h, { on_send: true });
+  h.sandbox.recheckLocationAfterInterviewTurn();
+  await h.settle();
+  if (h.posted.length !== 0) throw new Error('asked the server despite a stored choice');
+  if (h.store.get('metatron_location_onsend') !== 'off') throw new Error('the server overrode off');
+});
+
+check('a refused permission on send says how to allow it', async () => {
+  const h = makeHarness({ stored: 'on', refused: true });
+  h.sandbox.maybeSendLocationWithMessage();
+  await h.settle();
+  if (h.helps.join() !== 'location') throw new Error(`help shown: ${JSON.stringify(h.helps)}`);
+  if (h.posted.length !== 0) throw new Error('posted despite the refusal');
+});
+
+check('a failed fix that is not a refusal stays silent on send', async () => {
+  const h = makeHarness({ stored: 'on' });                 // no position: a plain failure
+  h.sandbox.maybeSendLocationWithMessage();
+  await h.settle();
+  if (h.helps.length !== 0) throw new Error('help shown for a non-refusal');
 });
 
 // --- nothing runs on its own ------------------------------------------------------------
