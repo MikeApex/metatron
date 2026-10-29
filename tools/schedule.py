@@ -237,7 +237,7 @@ def write_schedule(
             from tools import confirm
             card = confirm.request(
                 "allow_quiet_hours", {"name": key, "at": entry["at"]},
-                f"Wake you at {at_hm}? That's inside your quiet hours ({start}–{end}). "
+                f"Wake you at {at_hm}?\nThat's inside your quiet hours ({start}–{end}). "
                 f"Approve and the reminder comes at {at_hm}; otherwise it waits until {end}.")
             if card.get("status") == "PENDING_CONFIRMATION":
                 disturb_note += (f" A card in the app asks them to approve {at_hm}. Tell them "

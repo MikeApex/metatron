@@ -211,6 +211,32 @@ def main() -> int:
     check("an approved reminder fires inside quiet hours; the held one stays",
           fired == ["alarm"] and "check_back" in left and "alarm" not in left)
 
+    # The awake/quiet decision is made once, in the loop: a job popped at 21:59:59 must not be
+    # re-gated into quiet hours at 22:00:00 and skipped (Fable review of 97f9f09, finding 3).
+    passed: list = []
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "schedules.yaml"
+        path.write_text(_yaml.dump({"check_back": dict(followup)}))
+        with _patch.object(scheduler, "_agent_schedules_path", return_value=path), \
+             _patch.object(scheduler, "_held_for_interview", return_value=False), \
+             _patch.object(scheduler, "_load_config", return_value=CFG), \
+             _patch.object(scheduler, "_in_quiet_hours", return_value=False), \
+             _patch.object(scheduler, "fire_session",
+                           side_effect=lambda *a, **k: passed.append(k.get("job_cfg") or {})):
+            scheduler._fire_due_one_offs("probe_persona")
+    check("a one-off fired while awake is not re-gated into quiet hours",
+          passed and passed[0].get("respect_quiet_hours") is False)
+
+    # The quiet-hours card asks about something already done, so the reply is not rewritten
+    # as "nothing has been changed yet" (Fable review, findings 1–2).
+    from core import orchestrator as orch
+    fake = [{"token": "a", "action": "allow_quiet_hours", "description": "Wake you at 06:00?"},
+            {"token": "b", "action": "send_email", "description": "Email Sarah"}]
+    with _patch.object(confirm_tool, "pending", return_value=fake):
+        raised = orch._pending_raised_since(set())
+    check("the quiet-hours card does not count as a gated action awaiting approval",
+          [p["token"] for p in raised] == ["b"])
+
     print()
     failed = [label for ok, label in _results if not ok]
     if failed:

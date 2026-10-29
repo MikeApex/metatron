@@ -947,6 +947,10 @@ def _fire_due_one_offs(persona: str) -> None:
         due = [(n, j) for n, j in due if not j.get("respect_quiet_hours", True)]
         if not due:
             return
+    else:
+        # Decided once, here. Popped at 21:59:59 and gated again at 22:00:00 would be the
+        # same unseen deletion in a one-tick window (Fable review of 97f9f09).
+        due = [(n, {**j, "respect_quiet_hours": False}) for n, j in due]
 
     for name, job in due:
         data.pop(name, None)

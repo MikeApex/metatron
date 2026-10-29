@@ -2040,12 +2040,20 @@ def _pending_tokens(persona: str | None = None) -> set:
         return set()
 
 
+# Cards that ask about a refinement of something already done, not a gated action. The
+# quiet-hours card (2026-10-29) is raised after the reminder is saved: treating it as "nothing
+# has happened yet" replaced a true "that's scheduled" with the waiting line and told the
+# Diarist the reminder was not set (Fable review of 97f9f09).
+_PENDING_INFORMATIONAL = frozenset({"allow_quiet_hours"})
+
+
 def _pending_raised_since(before: set, persona: str | None = None) -> list[dict]:
     """Confirmations that appeared during this turn — server state, not the model's
-    account of what it did."""
+    account of what it did. Informational cards are left out: nothing waits on them."""
     try:
         from tools.confirm import pending
-        return [p for p in pending(persona) if p["token"] not in (before or set())]
+        return [p for p in pending(persona) if p["token"] not in (before or set())
+                and p.get("action") not in _PENDING_INFORMATIONAL]
     except Exception:  # noqa: BLE001
         return []
 
