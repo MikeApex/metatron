@@ -6126,6 +6126,52 @@ def has_real_user_turn(user_input: str,
     return bool((user_input or "").strip()) or bool(attachments)
 
 
+# A clinical flag needs the user's own words (Mike, 2026-10-29: hold the flagging system to a
+# valid reason until the agent rewrite gives clinical flags their own treatment). On trial_2026_10c
+# one disclosure inside the first interview became eight scheduled sessions in 22 hours, each with
+# Mental Wellbeing re-raising CLINICAL_CONCERN + ESCALATION from the log entries it had written
+# itself the session before, and the Synthesizer reciting the full crisis-resource block every
+# time. A scheduled session has no user words by construction (has_real_user_turn), so on one
+# Mental Wellbeing's clinical items and its MUST_SURFACE are dropped before the Synthesizer reads
+# them. Scoped to Mental Wellbeing, which owns these flags: another specialist's data-driven flag
+# (MEDICATION_MISSED_CRITICAL from the stored profile) is a valid reason without user words.
+# The other half — no clinical thread or escalation written on such a turn — is enforced in
+# tools/context_tracker.write_context_tracker, which every writer goes through.
+_CLINICAL_FLAG_AGENT = "mental_wellbeing"
+_CLINICAL_FLAG_ITEM_RE = _re.compile(r"^(CLINICAL_CONCERN\b.*|ESCALATION|MUST_SURFACE\b.*)$", _re.I)
+_OUTPUT_FIELD_RE = _re.compile(r"^[A-Z][A-Z _/-]+:")
+
+
+def _drop_unprompted_clinical_flags(outputs: dict, user_turn: bool) -> dict:
+    """Mental Wellbeing's output with its clinical flags and MUST_SURFACE removed, when the
+    turn carries no user words. Every other output, and every real user turn, is unchanged."""
+    text = outputs.get(_CLINICAL_FLAG_AGENT)
+    if user_turn or not isinstance(text, str):
+        return outputs
+    kept, skipping, dropped = [], False, 0
+    for line in text.splitlines():
+        stripped = line.strip()
+        if skipping:
+            if not _OUTPUT_FIELD_RE.match(stripped):
+                continue          # a continuation line of the dropped MUST_SURFACE
+            skipping = False
+        if stripped.upper().startswith("MUST_SURFACE:"):
+            skipping, dropped = True, dropped + 1
+            continue
+        if stripped.upper().startswith("FLAGS:"):
+            items = [i.strip() for i in stripped.split(":", 1)[1].split(",") if i.strip()]
+            left = [i for i in items if not _CLINICAL_FLAG_ITEM_RE.match(i)]
+            if len(left) != len(items):
+                dropped += len(items) - len(left)
+                line = "FLAGS: " + (", ".join(left) if left else "none")
+        kept.append(line)
+    if not dropped:
+        return outputs
+    logger.warning("[clinical] %d clinical item(s) dropped from a scheduled session's "
+                   "mental_wellbeing output — no user words this turn", dropped)
+    return {**outputs, _CLINICAL_FLAG_AGENT: "\n".join(kept)}
+
+
 # WHAT THE USER LOSES WHEN A SPECIALIST FAILS — B4's first degradation path, built
 # 2026-09-03 ([DB-0804-02]). One line per area, phrased as the CONSEQUENCE the user can
 # feel, never as the part of the system that produced it.
@@ -7044,6 +7090,8 @@ def run_pipeline_session(user_input: str,
         )
         specialist_outputs = _file_wisdom_proposals(specialist_outputs, persona=persona)
         specialist_outputs = _file_horizon_items(specialist_outputs, persona=persona)
+        specialist_outputs = _drop_unprompted_clinical_flags(
+            specialist_outputs, has_real_user_turn(user_input, is_proactive, attachments))
 
         # Bundle specialist outputs for Synthesizer (exclude async fire-and-forget)
         spec_text = "\n\n".join(
@@ -7292,6 +7340,8 @@ def _run_pipeline_session_stream_inner(
     )
     specialist_outputs = _file_wisdom_proposals(specialist_outputs, persona=persona)
     specialist_outputs = _file_horizon_items(specialist_outputs, persona=persona)
+    specialist_outputs = _drop_unprompted_clinical_flags(
+        specialist_outputs, has_real_user_turn(user_input, is_proactive, attachments))
     spec_text = "\n\n".join(
         f"--- {agent} ---\n{output}"
         for agent, output in specialist_outputs.items()

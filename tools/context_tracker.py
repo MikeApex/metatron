@@ -1213,6 +1213,18 @@ def _merge_clinical_threads(
     return out, notices
 
 
+def _scheduled_turn() -> bool:
+    """True while the current request is a scheduled (proactive) session. The request trace is
+    thread-local and propagated to specialist threads, so a tool call inside one sees it too.
+    No trace — a script, a test, a maintenance job — is not a scheduled session."""
+    try:
+        from core.trace import get_trace
+        t = get_trace()
+        return bool(t is not None and t.is_proactive)
+    except Exception:  # noqa: BLE001 — never block a tracker write on the trace
+        return False
+
+
 def administratively_resolve(flag: str, persona: str | None = None) -> bool:
     """
     Set a clinical thread to `resolved` on disk, bypassing the tier-2 coercion.
@@ -1321,9 +1333,17 @@ def write_context_tracker(
             _preserve_corrupt(path)
             existing = {}
 
+    # A clinical thread needs the user's own words (Mike, 2026-10-29) — the other half of
+    # core/orchestrator._drop_unprompted_clinical_flags. A scheduled session has none, so it
+    # neither opens, re-states nor changes a thread, and raises no escalation: existing threads
+    # carry forward untouched, as on any omission. Here rather than in the orchestrator because
+    # the [CONTEXT] block and the write_context_tracker tool both arrive through this function.
+    unprompted = bool(clinical_threads) and _scheduled_turn()
     threads, notices = _merge_clinical_threads(
-        clinical_threads, existing.get("clinical_threads", [])
+        None if unprompted else clinical_threads, existing.get("clinical_threads", [])
     )
+    if unprompted:
+        notices.append("clinical_threads not written: a scheduled session carries no user words")
 
     today = date.today().isoformat()
     still_eligible, newly_expired = _expire_open_threads(
