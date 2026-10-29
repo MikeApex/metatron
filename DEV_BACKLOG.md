@@ -105,12 +105,6 @@ back-tagging the rest is `[DB-0815-10]`.
 - **[instruction change]** User requested that venue recommendations rigorously verify live operating hours and closure status via Google Maps/Places before recommending, prompted by Arôme Bakery being recommended while closed on a Tuesday afternoon.  
   `2026-09-08T14:27:53.140047Z`
 
-- **[needs building]** Plant watering tracking check must integrate localized home weather (precipitation in London) to account for outdoor watering, and resolve the sync failure where user-reported waterings failed to update the last-watered baseline date.  
-  `2026-09-08T08:54:16.419430Z`
-
-- **[instruction change]** Plant watering checks failed to reflect Mike's recorded watering logs, remaining stuck on August 4, and failed to check home-location weather to recognise that current rainfall in London treats outdoor plants as watered. Logic needs to sync with logged waterings and evaluate local precipitation before flagging plants as overdue.  
-  `2026-09-08T08:53:11.891063Z`
-
 - **[needs building]** Outbound calendar invitation dispatch to attendee email addresses (iva.stod@gmail.com) did not execute despite user updating capabilities.  
   `2026-09-07T11:14:56.321966Z`
 
@@ -169,7 +163,6 @@ flag — which would send a turn containing only the cue.
 `static/index.html` → `cue()` / `cueAndWait()`; `MainActivity.HeadsetBridge.playCue()`.
 - **[needs building] Dictated messages sometimes arrive cut off, and the rest of what was said is lost.** Two this month: 2026-10-22 10:09 ends *"…so it should look for phonetic"* (Mike's own app-change request; the rest never arrived), and 2026-10-15 11:54 ends mid-word *"…Greenwich and Black"*. **Evidence, checked 2026-10-23:** both were dictated, and the transcript the VM saved for each recording (`data/audio/2026-10-22/10-07-59.json`, `data/audio/2026-10-15/11-53-14.json`) ends at the same word. So the text was lost at capture or transcription, not later in the pipeline. **Cause not established.** A mid-word cut points away from the 2.5s silence stop and towards the end of the audio being lost, but that is an inference. **Mitigated, not fixed:** since `54222c0` the on-screen mic shows each recording's text in the voice tray before Send, so a cut-off snippet is visible and can be re-recorded. Headset turns still send unseen. **Closes on:** one cut-off reported from daily use, plus whether Mike had paused or was mid-word. The standing note in `startRecording()` forbids widening the silence window without such a turn to point at. Raised by Claude Code, 2026-10-23, from Mike's conversation logs (not by Mike).
 - **Check by 2026-11-07: a correspondence suggestion fires.** Needs a real email answering an open `waiting`/`deadline` task — the TfL contactless refund (ref 24626231) is now the likeliest (the S.A.R. e-file closed 10-23). Pass: the suggestion bar shows it; **Mark done** closes it with evidence "correspondence evidence, approved in the app"; nothing from the email's subject reaches any context section. If nothing has arrived by 11-07, re-scope rather than extend. (task-ledger post-deploy session, 2026-10-24; the launch prompt Mike ran asked for each time-gated check to leave with a date)
-- **Make the day boundary user-adjustable (default local midnight).** Mike, 2026-10-24: "Local midnight is a fine boundary as default. Should be user adjustable." **Built, not yet live** (corrected 2026-10-26 — this entry said "not built"): the day planner's Stage A built it (`45739a2`, plan `archive/plans/day_planner_plan_2026-10-24.md` row A1) — one `_ledger_day()` in `tools/obligations.py`, set via `update_task(task_id="settings", action="day_starts")`. The action is hidden behind the `ledger_fields` flag, which day-planner Stage B (K1) turns on. **Closes on:** after Stage B, Mike says when his day starts (e.g. "my day starts at 4") → `tasks.yaml` `settings.day_starts` holds it, and a habit ticked at 01:30 counts toward the previous day. Design: `archive/plans/reply_latency_plan_2026-10-24.md` § 6.4.
 - **Check 2026-11-02: a full week of gym adherence reads right.** On the VM: `python3 -m tools.obligations mike --report` shows gym as completions/target for the week of 10-26, with the partial week of 10-19 excluded. (task-ledger post-deploy session, 2026-10-24; the launch prompt Mike ran asked for each time-gated check to leave with a date)
 - **A measured session on the Synthesizer's thinking budget — the largest latency lever left on an ordinary reply.** **Premise corrected 2026-10-26:** the "~3.9k of the 4,096-token budget" figure was the shared 4,096 output ceiling cutting thinking off, not the budget (`archive/PROJECT_LOG.md` § 2026-10-26, third), and the budget is a target, not a cap — in the live probe a 1,024 budget thought 2,664 tokens and a 4,096 budget thought 5,673. So a lower budget cannot *bound* the wait. It may still *shorten* it, since the lower target thought about half as much. **The question is now:** does a lower target shorten time-to-first-word on real prompts without hurting reply quality? A/B before changing anything; `_SYNTH_THINKING_BUDGET`'s comment explains why it is not a cost knob. **Sequence:** after `[DB-1026-01]` (due 10-29 — it already measures the thinking spread and the 75 s timeout tail since the ceiling doubled) and after day-planner Stage B, which adds the plan block to every Synthesizer prompt; measuring before that measures a prompt about to change. Not behind the second-user or WhatsApp builds. Mike agreed it is its own session (2026-10-24). (reply-latency plan § 4.4)
 - **Check 2026-10-31: are Vertex reply stalls still happening?** Count `[reply_limits]` capacity retries in the server journal since 10-24 and the share of Synthesizer calls over 60 s. If the tail is still ~2.5%+, decide option (b) of `archive/plans/reply_latency_plan_2026-10-24.md` § 7 — fall back to the bulk-tier Vertex model on a second stall (stays on Vertex terms; lower reply quality). Mike ruled retry-only for now (2026-10-24). (task-ledger post-deploy session, 2026-10-24; the launch prompt Mike ran asked for each time-gated check to leave with a date)
@@ -177,7 +170,8 @@ flag — which would send a turn containing only the cue.
 - **The Franklin virtue review kept coming back to the evening close after Mike asked to drop it — now paused; one day of real use owed to confirm it stays gone (due 2026-10-28).** Built and deployed `4e16f3c`: user-requestable pause for rituals and the user's own check-ins (`tools/routines.py`). Live 2026-10-26 22:33: Mike's request produced `pause_routine("evening_ritual", revisit="2027-01-26")` and the VM store `data/personas/mike/routine_pauses.yaml` is correct. **Closes on:** the 2026-10-27 07:30 morning brief offers no virtue catch-up, and the 2026-10-27 20:00 evening close carries no virtue list (read both replies in `data/personas/mike/traces/2026-10-27.jsonl`). Either one present → reopen with the reply text. The 2027-01-26 check-back is not this item. Raised by Claude Code, 2026-10-26, as the confirmation step for a fix Mike requested.
 - **A request ending in "over and out" got "Received — talk to you later" and was never carried out — fixed; one real use owed to confirm (due 2026-11-02).** Built and deployed `e5b895c`: the sign-off shortcut now skips the Synthesizer only for a bare sign-off (≤8 words, no question in the message or Metatron's previous reply, no request/answer/time word, no task-completion note); otherwise it runs with a one-line-reply instruction. Origin: 2026-10-26 22:05 (job post to tomorrow, retire the gym — both dropped), also 10-19 and 10-21. **Closes on:** the first real user message after deploy that ends "over and out" and carries a request — its trace shows the Synthesizer ran (not `[PIPELINE] sign-off detected — synthesizer skipped`), the request was acted on, and the reply is one line. Also confirm a bare "over and out" still gets the ack. If none arrives by 11-02, ask Mike to send one. Record: `archive/log/2026-10-26-06-over-and-out-no-longer-drops-requests.md`. Raised by Claude Code, 2026-10-26, as the confirmation step for a fix Mike requested ("Synth shouldn't skip when there's something active requested").
 - **[a calendar event Metatron writes has its place only in the title, and an internal word in it]** Filed with Mike's agreement, 2026-10-27. Event "Benny and user at Canary Wharf" (11:30, Metatron calendar, written 09:58 from Mike's "Benny and I need to be at Canary Wharf by 11:30"): `location` empty, so the day planner planned no "leave for" row; and "user" — internal vocabulary — is now on Mike's real calendar. Also seen the same day: Logistics called `update_calendar_event` with uid `"..."` (a placeholder, 11:49). Fix where events are written (the calendar tools / Logistics conduct): a place the user names goes in `location`; titles use the user's name or none; a check keeps internal words out of event titles. Evidence: `archive/PROJECT_LOG.md` § 2026-10-27.
-- **[a reply says something was set or queued when nothing was written]** Raised by Mike, 2026-10-27 (day-planner watch day 2). Twice now: 10-25 08:35 "the Chase and Rowan windows are set to surface…" and 10-27 09:59 + 10:00 "dinner prep queued for 16:30" — no task, event or setting was written either time. `check_false_action_claims()` (`core/orchestrator.py:6521`) and `_COMPLETION_CLAIM_RES` (`:1964`) recognise "I've added / I've set" and miss "is set to", "queued", "lined up". Fix: widen the phrasings, tested against these two real replies (conversation records 10-25 and 10-27 on the VM). Evidence: `archive/PROJECT_LOG.md` § 2026-10-27.
+- **[a reply says something was set or queued when nothing was written]** Raised by Mike, 2026-10-27 (day-planner watch day 2). Twice now: 10-25 08:35 "the Chase and Rowan windows are set to surface…" and 10-27 09:59 + 10:00 "dinner prep queued for 16:30" — no task, event or setting was written either time. `check_false_action_claims()` (`core/orchestrator.py:6641`, via `_PERSISTENCE_CLAIM_PATTERNS` `:6580`) and `_COMPLETION_CLAIM_RES` (`:1981`) recognise "I've added / I've set" and miss "is set to", "queued", "lined up". Fix: widen the phrasings, tested against these two real replies (conversation records 10-25 and 10-27 on the VM). Evidence: `archive/PROJECT_LOG.md` § 2026-10-27.
+  **Re-checked 2026-10-29 (`/backlog attack`):** both claims are genuinely false, not plan-backed — the VM's `day_plan/plan_2026-10-27.json` has no dinner-prep row (16:30 is "Return trip from Crossharbour"; dinner is the 17:30 calendar event), and 10-25 predates the Synthesizer reading the plan. **Constraint for the fix:** the day planner now sets real reminders (`remind_later`, `tools/day_plan.py`), so a widened check must not flag a claim that matches a row in that day's plan — the check sees only tool calls on the trace. Log-only, so a false flag costs quality-log noise, not a wrong reply.
 - **[bug]** A follow-up Metatron promises ("I'll check back with you at 6:30") is silently deleted if it falls inside quiet hours — it never fires and nothing says so. `core/scheduler.py` `_fire_due_one_offs` removes a due one-off from `schedules.yaml` **before** `fire_session` runs its gates; when a gate then skips it, it is gone. `tools/schedule.py:190-194` exempts only a **user-requested** one-off set inside quiet hours (`respect_quiet_hours: False`), so an **agent-created** one-off due in quiet hours — or a user's one-off if quiet hours change after it was set — is popped and skipped. Other gates (`paused_checkins`, `_day_plan_owns`) match by job name, so a one-off is unlikely to hit them; `_near_fixed_job_blocks` is interval-jobs only. The interview hold already keeps one-offs (Stage 3 review L1, branch `multi-user-build` `6c728ab`) — the fix is the same shape: evaluate the gates before popping and keep a held one-off (or re-time it to the end of quiet hours). Checked against code 2026-10-28; found by the Fable review of Stage 3, filed at Mike's request.  
   `2026-10-28 (Mike, /archive close-out)`
 - **[needs building]** The app has no way to sign out: tapping the name in the top-right only opens the sign-in screen, the previous user's sign-in stays stored, and a failed sign-in as someone else leaves the first person signed in after a refresh (`static/index.html:1328`, `:4519`; the HttpOnly cookie needs a server route to clear it). Mike, 2026-10-28, Stage 5: build it after Stage 5, before or with Stage C's follow-ups. Doesn't affect Iva on her own phone; affects any shared device. Needs an APK rebuild.
@@ -202,8 +196,10 @@ standing rule distrusts.*
 *One survivor of the 2026-08-21 trace-measured block — its two siblings closed on live evidence
 2026-09-02 (`archive/backlog_closed_2026-09.md`).*
 
-- **4. [DB-0910-02] It named a lecture as today's confirmed commitment while the calendar was
-  refusing to answer, and said nothing about the gap.** Live 2026-09-10 07:30, the proactive
+- **4. [DB-0910-02] When the calendar fails on the Logistics path, a remembered event can still be
+  stated as today's confirmed commitment — the day-plan half is fixed (`f10ba3d`), Logistics still
+  sees a 401 as success.** *Original title:* it named a lecture as today's confirmed commitment
+  while the calendar was refusing to answer, and said nothing about the gap. Live 2026-09-10 07:30, the proactive
   morning session (exchange `001`, `mike`). `logistics` called `read_calendar` and got CalDAV
   `401`; it called `read_email` and got `AUTHENTICATIONFAILED`. It then fell back to two
   `search_memory` calls and the Synthesizer opened with *"Today's primary commitment is the BRS
@@ -220,7 +216,22 @@ standing rule distrusts.*
   **Open question, and it decides the shape of the fix:** does the Synthesizer receive any marker
   distinguishing "read from calendar" from "recalled from memory" in the specialist package? If
   it does, this is agent-file wording. If it does not, it is a package-format change and belongs
-  in code — check before proposing either. **Not yet verified against current code.**
+  in code — check before proposing either.
+  **Answered 2026-10-29 (`/backlog attack`): no marker on either path, so the fix is code.**
+  **✅ Plan half built `f10ba3d`** (not yet deployed). The day plan, which the Synthesizer reads on
+  every prompt and which calls itself authoritative for timing, now says when the calendar could
+  not be read and when it was last read successfully (`render_block`, `tools/day_plan.py:1852`;
+  `tests/test_day_plan_calendar_error.py` 4/4, failing 3/4 on the old code). Before this, a
+  failed read showed stale events, or an empty day, with no warning.
+  **Open half: the Logistics path is still blind.** `read_calendar` returns CalDAV failures as
+  a dict `{"error": "CalDAV request failed: 401 …"}` (`tools/caldav.py:772`, `:793`, `:915`). The
+  orchestrator turns it into JSON text (`core/orchestrator.py:2816`), so the result starts with `{`.
+  Neither `_failed_tool_calls` (`:5638`, which checks `startswith("Error")`) nor
+  `_TOOL_ERROR_PREFIX_RE` (`:1918`) catches it. The `[TOOL FAILURES …]` marker never fires,
+  and the trace records `ok: true`. Fix: treat a dict result carrying an `error` key as a
+  failure, in one place. Amber; check `.claude/rules/orchestrator.md` for the A8 claim first.
+  **Closes on:** that fix, plus one live failed read whose trace shows "Calendar could not be read"
+  in the plan block.
   *raised by Mike 2026-09-10 from the exchange-001 troubleshoot; trace evidence at
   `data/personas/mike/traces/2026-09-10.jsonl` 07:30:16, logistics turns 1-5*
 
@@ -245,6 +256,17 @@ standing rule distrusts.*
   `coordinator.md` change.
   **Closes on:** a week of `quality_events.json` in which scheduler-opened sessions produce no
   `ROUTING_MISS` unless a specialist was genuinely missed.
+  **Re-timed 2026-10-29 (`/backlog attack`, Mike): measure before building.** The same day,
+  day-planner step 2 (`3d3524a`) switched on `owns_checkins`: the fixed `companion_checkin` job —
+  the source of most of the 114 — is now suppressed by `_day_plan_owns` (`core/scheduler.py`), and
+  the plan's own check-in fires only on a day with nothing left planned. The count above is
+  pre-switch. **On 11-05, re-count ROUTING_MISS from scheduler-opened sessions since 10-29.** If
+  still significant, the guard is cheap Green: `write_quality_event` (`tools/logger.py:425`)
+  already calls `get_trace()`, and the trace carries `is_proactive` (`core/trace.py:162`), so it
+  can refuse scheduled-prompt self-reports without asking the Coordinator — whose own rule
+  (`coordinator.md:46`) already says not to file them.
+  @waiting: a week of check-ins under `owns_checkins`
+  `due: 2026-11-05`
   **Deliberately not chased:** about 15–25 events since 09-04 still just describe routing that
   worked, in phrasings `asserts_routing_success()` misses (*"correctly routed"*, *"handled
   appropriately"*). That is about 15% of the noise. Widen the guard only if it is still significant

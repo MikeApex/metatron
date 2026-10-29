@@ -233,3 +233,28 @@ read a count back**, so the `@waiting: 2026-09-10` condition (a live run reading
 back correctly) never occurred. Nobody has reported the symptom since 2026-09-02. Closed by Mike,
 2026-10-29 (`/backlog verify`). **Reopen if a reply states a stale count again.** The
 age-annotation and intraday halves (`cbd5ca3`, `4cc9e3e`) shipped earlier and are unchanged.
+
+## ✅ Plant watering stuck on August 4 and blind to rain (two Inbox entries, 2026-09-08) — closed 2026-10-29
+
+Superseded by the task ledger, checked on the VM 2026-10-29 (`/backlog attack`). The fixed
+`plant_watering_check` job no longer exists: the VM's live schedule list holds only
+`check_inbox_6h`. It was replaced by a ledger interval task, *"Water indoor and garden plants"*
+(`ob_261024_177765`, `interval_days: 3`, `data/personas/mike/tasks.yaml`), which counts from
+`last_done`. That is the stuck-date fault removed by design (`tools/obligations.py:74`,
+`27c570f`). The rain half works through Mike's own word: a completion on 2026-10-24 carries
+the evidence *"It's raining today, so consider the plants watered."* **Not built: an automatic
+rain check.** `tools/ambient.py` `get_weather` returns `days_since_rain`, but no task or job
+reads it. If Mike wants rain to count without telling the tool, that is a new feature request,
+not this item. Closed by Mike, 2026-10-29 ("remove any items… completed or rendered irrelevant").
+
+## ✅ Make the day boundary user-adjustable (Inbox, 2026-10-24) — closed 2026-10-29
+
+Built and switched on. Nothing is left to build. The single home is `_ledger_day()` at
+`tools/obligations.py:246`, with `_day_starts()` at `:223-237` defaulting to 00:00. It is set
+by `update_task(task_id="settings", action="day_starts")` (`:1665`, validated 00:00–06:00 at
+`:1403-1420`). That action is gated on `ledger_fields`, which is `true` in
+`config/modules/day_plan.yaml:28` since `d38efc7` (2026-10-27). The code default in
+`tools/day_plan_config.py:33` stays `False` deliberately, as the fail-safe if the file is missing.
+**The first live use is the confirmation:** Mike says when his day starts, `tasks.yaml`
+`settings.day_starts` holds it, and a habit ticked at 01:30 counts for the day before. Closed
+by Mike, 2026-10-29 (`/backlog attack`).

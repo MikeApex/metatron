@@ -10,7 +10,11 @@ check 2 on a fresh account, disable the trial accounts, then **Mike purges them 
 `accounts.py purge` (`fe5847b`) is committed but not deployed; it needs a deploy first. **Then
 Iva's walkthrough.** M3 memory watch runs to ~11-04. Log § 2026-10-29 second.
 **Next after that: reply latency**, `archive/handoffs/2026-10-28-reply-latency-defer-thinking-cache-prompt.md`.
-After Stage 5: a real Sign out in the app. WhatsApp 0b may run any time. **Still owed:** the
+After Stage 5: a real Sign out in the app. WhatsApp 0b may run any time. **Held for the
+next deploy:** the day plan now flags a failed calendar read (`f10ba3d`, `[DB-0910-02]` half
+done — the Logistics path still traces a 401 as `ok`). Backlog decisions put to Mike 10-29
+(task defer action, check-in wording, false-claim widening, the quiet-hours follow-up bug to
+Now #1): log § 2026-10-29 third. **Still owed:** the
 boys' school hours and bedtimes → `children_home` (Mike, in the app); "over and out" live check;
 virtue-pause day-after check; `[DB-1026-01]` due 10-29; Mike's calendar live check (week of 9 Nov);
 silent-mic APK `24d5c24` sideload if not done; `[DB-0901-02]`, due 12-15.*
