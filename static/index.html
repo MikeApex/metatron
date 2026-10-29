@@ -1429,10 +1429,14 @@
     const safari = /Safari\//.test(ua) && !/Chrome|Chromium|CriOS|Edg|Firefox|FxiOS/.test(ua);
     const privateNote = kind === 'notifications'
       ? ' Notifications cannot be turned on in a private window.' : '';
+    // A site allowed in Safari is still refused while the device has not let Safari itself use
+    // location (Mike's Mac, 2026-10-29: allowed in Safari, refused again on reload).
+    const deviceNote = kind === 'location'
+      ? " If it is already allowed there, also allow Safari in your device's Settings, under Privacy & Security, then Location Services." : '';
     addMessage('system', window.Metatron
       ? `Metatron can't use ${name}. To allow it, open your phone's Settings, then Apps, Metatron, Permissions, ${setting}, and choose Allow.`
       : safari
-        ? `Safari is blocking ${name} for Metatron. To allow it, open the Safari menu, choose Settings, then Websites, then ${setting}, set this site to Allow, and reload the page.${privateNote}`
+        ? `Safari is blocking ${name} for Metatron. To allow it, open the Safari menu, choose Settings, then Websites, then ${setting}, set this site to Allow, and reload the page.${deviceNote}${privateNote}`
         : `Your browser is blocking ${name} for Metatron. To allow it, click the icon beside the web address, set ${setting} to Allow, then reload the page.${privateNote}`);
   }
 
