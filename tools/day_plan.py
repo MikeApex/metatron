@@ -1849,7 +1849,21 @@ def render_block(plan: dict | None, kind: str | None = None, due_now: list[dict]
         out.append(f"(Waking hours {_hm(w.get('wake'))}–{_hm(w.get('bed'))} are assumed, not "
                    f"stated — ask once, when it fits.)")
     snap = _dt(plan.get("snapshot_at"))
-    if str((_load_state().get("snapshot") or {}).get("discovery") or "") == "not_connected":
+    live = _load_state().get("snapshot") or {}
+    failed, good = _dt(live.get("failed_at")), _dt(live.get("fetched_at"))
+    if live.get("error") and failed and (good is None or failed > good):
+        # The latest read failed (DB-0910-02: a remembered lecture stated as today's confirmed
+        # commitment while CalDAV returned 401). A failure only stamps the old snapshot, so
+        # without this line the header above vouches for stale events — or for an empty day.
+        # A success replaces the snapshot whole, which is what clears it.
+        if good is None:
+            out.append(f"(Calendar could not be read at {failed:%H:%M} — no events are known "
+                       "for today; do not describe the day as free.)")
+        else:
+            at = f"{good:%H:%M}" if good.date() == now.date() else f"{good:%a %H:%M}"
+            out.append(f"(Calendar could not be read at {failed:%H:%M} — events below are from "
+                       f"the last good read at {at}; do not state them as confirmed.)")
+    elif str(live.get("discovery") or "") == "not_connected":
         # A user with no calendar connected (plan § 4.8). Said outright, because the header
         # above says the plan is kept "from the calendar" — without this line an empty day
         # reads as a free one, and "nothing on your calendar" would be the wrong answer.
