@@ -1142,7 +1142,7 @@ def open_task(what: str, kind: str = "deadline", due: str | None = None,
               priority_source: str | None = None, stakes: str | None = None,
               stakes_source: str | None = None, zone: str | None = None,
               activity: str | None = None, flexible: bool | None = None,
-              after: str | None = None) -> str:
+              after: str | None = None, done_words=None) -> str:
     """Record something the user has to do, or is waiting on, so it is tracked until done."""
     what = (what or "").strip()
     if not what:
@@ -1165,6 +1165,9 @@ def open_task(what: str, kind: str = "deadline", due: str | None = None,
         return err
 
     entry: dict = {"what": what, "kind": kind, "status": "open"}
+    words = _clean_done_words(done_words)
+    if words and kind in ("habit", "interval"):
+        entry["done_words"] = words
     if kind == "habit":
         every = (every or "").strip().lower()
         if every not in _EVERY:
@@ -2284,6 +2287,18 @@ _AFFIRM_RE = re.compile(
     r"already did|i did|just did|finished|completed|booked|paid|sent|went)\b", re.I)
 
 
+def _clean_done_words(raw) -> list[str]:
+    """A habit's own report words, lower-case single words of 3+ letters, at most eight."""
+    if isinstance(raw, str):
+        raw = re.split(r"[,\s]+", raw)
+    out: list[str] = []
+    for w in raw or []:
+        w = str(w or "").strip().lower()
+        if len(w) >= 3 and w.isalpha() and w not in _STOPWORDS and w not in out:
+            out.append(w)
+    return out[:8]
+
+
 def completion_hints(user_text: str, prev_assistant: str | None = None,
                      persona: str | None = None, as_of: date | None = None) -> str:
     """A note for the Synthesizer when the user's turn may report a task done.
@@ -2308,7 +2323,16 @@ def completion_hints(user_text: str, prev_assistant: str | None = None,
         clause = (clause or "").strip()
         if not clause or _NEGATION_RE.search(clause):
             continue
-        if not set(_WORD_RE.findall(clause)) & _DONE_MARKERS:
+        cwords = set(_WORD_RE.findall(clause))
+        # [DB-1029-03] A habit's own report words count as reporting it, with no "done" word
+        # — "for breakfast I had eggs" logs a meal (Mike, 2026-10-29: an unprompted report
+        # is a reason not to ask). Only while today's occurrence is still due, so a fourth
+        # meal does not over-complete it.
+        for t in tasks:
+            if (t.get("done_words") and not any(t is h for h, _ in hits)
+                    and cwords & set(t["done_words"]) and _view(t, today)["actionable"]):
+                hits.append((t, "report"))
+        if not cwords & _DONE_MARKERS:
             continue
         ctoks = _task_tokens(clause)
         for t in tasks:
@@ -3216,6 +3240,12 @@ OPEN_TASK_SCHEMA = {
                      "description": "The commitment, in words that still make sense in a month. "
                                     "'Pay Chase credit card bill', not 'the bill'."},
             "kind": {"type": "string", "enum": list(KINDS)},
+            "done_words": {"type": "array", "items": {"type": "string"},
+                           "description": "habit/interval: words that report it done when the "
+                                          "user mentions it unprompted, without saying 'done' "
+                                          "— a meal-logging habit: breakfast, lunch, dinner, "
+                                          "snack, ate. Their unprompted report then counts, so "
+                                          "they are not asked for it."},
             "due": {"type": "string",
                     "description": "deadline: YYYY-MM-DD. Leave empty if no date was given; put "
                                    "a vague phrase ('next week') in note."},

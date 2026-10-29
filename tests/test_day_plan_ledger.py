@@ -298,7 +298,9 @@ def _():
     _fresh("schemas_off")
     C._OVERRIDE = _SHIPPED
     o, u, l = O.task_schemas()
-    assert (_h(o), _h(u), _h(l)) == ("0a096897e6448300", "426bcfc2d90b424d",
+    # open_task re-pinned 2026-10-29 (0a096897e6448300 → 56ebb356afbce40a): `done_words`
+    # added to the shipped constant on purpose [DB-1029-03] — not a flag leaking through.
+    assert (_h(o), _h(u), _h(l)) == ("56ebb356afbce40a", "426bcfc2d90b424d",
                                      "fc306ac3d96fa5e1"), (_h(o), _h(u), _h(l))
     r, g = G.goal_schemas()
     assert (_h(r), _h(g)) == ("dd71c3276d1e4b23", "385d3750301ff22e"), (_h(r), _h(g))
