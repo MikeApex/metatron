@@ -33,6 +33,7 @@ resolves the address inside the one request, which is both cheaper and the hones
 from __future__ import annotations
 
 import os
+from datetime import date, datetime
 
 import requests
 
@@ -46,6 +47,16 @@ _FIELD_MASK = (
     "places.userRatingCount,places.priceLevel,"
     "places.currentOpeningHours.openNow,places.location"
 )
+
+# Opening periods, requested ONLY when the caller passes `at` [DB-0902-03]. These are the
+# "opening-hours detail beyond openNow" the module docstring warns about: they move that
+# call to a higher SKU tier. Kept off the default mask so an ordinary search costs what it
+# did; the price of the higher tier was not checkable from this machine (2026-10-29) — read
+# it from the Places pricing page before widening when this is sent. `currentOpeningHours`
+# covers the next seven days including holiday exceptions; `regularOpeningHours` the rest.
+_HOURS_FIELDS = (",places.currentOpeningHours.periods,places.regularOpeningHours.periods,"
+                 "places.businessStatus")
+_WEEK_MIN = 7 * 1440
 
 _MAX_RESULTS_CAP = 10
 
@@ -63,7 +74,39 @@ def _places_key() -> str | None:
     return os.environ.get("GOOGLE_PLACES_API_KEY")
 
 
-def _summarize(place: dict) -> dict:
+def _open_at(place: dict, at: datetime, today: date) -> bool | None:
+    """Is this venue open at `at` (venue-local wall time)? None when the source has no hours.
+
+    Live 2026-09-08 Metatron sent Mike to Arôme Bakery on a Tuesday afternoon, when it is
+    closed; on 08-28 it suggested a shop errand at 9:30 PM. `open_now` answers only for the
+    moment of the search, never for when the user would arrive.
+    """
+    if place.get("businessStatus") in ("CLOSED_PERMANENTLY", "CLOSED_TEMPORARILY"):
+        return False
+    source = "currentOpeningHours" if (at.date() - today).days < 7 else "regularOpeningHours"
+    periods = (place.get(source) or {}).get("periods") \
+        or (place.get("regularOpeningHours") or {}).get("periods")
+    if not periods:
+        return None
+
+    def _week_minute(point: dict) -> int:
+        # Google numbers days 0 = Sunday; Python's weekday() is 0 = Monday.
+        return (int(point.get("day", 0)) % 7) * 1440 + int(point.get("hour", 0)) * 60 \
+            + int(point.get("minute", 0))
+
+    t = ((at.weekday() + 1) % 7) * 1440 + at.hour * 60 + at.minute
+    for p in periods:
+        if not p.get("close"):
+            return True          # one open period with no close: open around the clock
+        start, end = _week_minute(p.get("open") or {}), _week_minute(p["close"])
+        if end <= start:
+            end += _WEEK_MIN     # crosses Saturday night into Sunday
+        if start <= t < end or start <= t + _WEEK_MIN < end:
+            return True
+    return False
+
+
+def _summarize(place: dict, at: datetime | None = None, today: date | None = None) -> dict:
     """One API place record reduced to the compact shape that feeds a model prompt."""
     summary: dict = {
         "name": (place.get("displayName") or {}).get("text") or "Unnamed place",
@@ -76,6 +119,9 @@ def _summarize(place: dict) -> dict:
     open_now = (place.get("currentOpeningHours") or {}).get("openNow")
     if open_now is not None:
         summary["open_now"] = open_now
+    if at is not None:
+        opened = _open_at(place, at, today or date.today())
+        summary["open_at_time"] = "unknown — no hours on record" if opened is None else opened
     price = place.get("priceLevel")
     if price:
         summary["price_level"] = _PRICE_LEVEL.get(price, price)
@@ -86,7 +132,7 @@ def _summarize(place: dict) -> dict:
     return summary
 
 
-def find_places(query: str, near: str, max_results: int = 5) -> dict:
+def find_places(query: str, near: str, max_results: int = 5, at: str = "") -> dict:
     """
     Find real venues of a given kind near a named address or landmark.
 
@@ -94,6 +140,9 @@ def find_places(query: str, near: str, max_results: int = 5) -> dict:
         query: The kind of place wanted — "café", "pharmacy", "quiet pub", "hardware shop".
         near: A named address, postcode, or landmark to search around. No GPS needed.
         max_results: How many venues to return, 1–10 (default 5, capped at 10).
+        at: When the user would be there, "YYYY-MM-DDTHH:MM" local time. When given, each
+            result carries `open_at_time` (true / false / "unknown — no hours on record"),
+            at the higher SKU tier (see _HOURS_FIELDS).
 
     Returns:
         {"places": [{"name", "address", "rating", "rating_count", "open_now",
@@ -116,6 +165,13 @@ def find_places(query: str, near: str, max_results: int = 5) -> dict:
         max_results = 5
     max_results = max(1, min(max_results, _MAX_RESULTS_CAP))
 
+    at_dt = None
+    if (at or "").strip():
+        try:
+            at_dt = datetime.fromisoformat(at.strip()[:16])
+        except ValueError:
+            return {"error": f"'at' must be local time as YYYY-MM-DDTHH:MM, got {at!r}."}
+
     key = _places_key()
     if not key:
         return {"error": "Venue search requires GOOGLE_PLACES_API_KEY, which is not configured."}
@@ -128,7 +184,7 @@ def find_places(query: str, near: str, max_results: int = 5) -> dict:
             headers={
                 "Content-Type": "application/json",
                 "X-Goog-Api-Key": key,
-                "X-Goog-FieldMask": _FIELD_MASK,
+                "X-Goog-FieldMask": _FIELD_MASK + (_HOURS_FIELDS if at_dt else ""),
             },
             json=body,
             timeout=TIMEOUT_SECONDS,
@@ -144,7 +200,7 @@ def find_places(query: str, near: str, max_results: int = 5) -> dict:
     if not places:
         return {"error": f"No {query} found near {near}."}
 
-    return {"places": [_summarize(p) for p in places[:max_results]]}
+    return {"places": [_summarize(p, at_dt) for p in places[:max_results]]}
 
 
 # ---------------------------------------------------------------------------
@@ -256,6 +312,15 @@ FIND_PLACES_SCHEMA = {
             "max_results": {
                 "type": "integer",
                 "description": "How many venues to return, 1-10. Default 5.",
+            },
+            "at": {
+                "type": "string",
+                "description": (
+                    "When the user would be there, local time 'YYYY-MM-DDTHH:MM'. Pass it "
+                    "whenever the suggestion is for a later time (this evening, tomorrow); "
+                    "each result then says open_at_time true, false or unknown. Omit it for "
+                    "'right now' — open_now already answers that, and this costs more."
+                ),
             },
         },
         "required": ["query", "near"],
