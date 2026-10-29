@@ -2830,6 +2830,13 @@ def dispatch_tool(name: str, inputs: dict, handlers: dict,
         else:
             result = fn(**inputs)
             if isinstance(result, dict):
+                # [DB-0910-02] Eighteen tool files report failure as {"error": "..."} — CalDAV's
+                # "401 Unauthorized" among them. Encoded to JSON the result starts with "{", so
+                # the "Error:" prefix check below never saw it: live 2026-09-10 a refused
+                # calendar read was traced ok:true and the Synthesizer was never told it failed.
+                # A null or empty "error" key is not a failure.
+                if result.get("error"):
+                    ok = False
                 result = json.dumps(result, indent=2)
             else:
                 result = str(result)
@@ -5641,7 +5648,9 @@ def _failed_tool_calls(rec) -> list[str]:
     session counts as a real failure.
 
     Any result beginning "Error" counts — that covers a bad call signature, a raised
-    exception, and a permission denial such as a write to a non-allowlisted file.
+    exception, and a permission denial such as a write to a non-allowlisted file. So
+    does a call dispatch_tool() recorded as not ok, which since 2026-10-29 includes a
+    tool returning {"error": ...} — a refused calendar read among them [DB-0910-02].
     """
     if rec is None:
         return []
@@ -5651,7 +5660,7 @@ def _failed_tool_calls(rec) -> list[str]:
     for turn in rec.turns:
         for tc in turn.tool_calls:
             preview = str(tc.result_preview)
-            if preview.startswith("Error"):
+            if preview.startswith("Error") or getattr(tc, "ok", True) is False:
                 failures.setdefault(tc.name, preview[:300])
             else:
                 succeeded.add(tc.name)
