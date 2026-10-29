@@ -133,6 +133,11 @@ BOUND = {
     ("POST", "/connections/google"): dict(json={"address": "b@gmail.com",
                                                 "app_password": "x", "persona": BOB}),
     ("DELETE", "/connections/google"): dict(params={"persona": BOB}),
+    # Day planner Stage C (2026-10-28) — the phone's token, the message behind a ping, and Not yet.
+    ("POST", "/push/fcm/register"): dict(json={"token": "t", "persona": BOB}),
+    ("POST", "/push/fcm/unregister"): dict(json={"token": "t", "persona": BOB}),
+    ("GET", "/push/message/{msg_id}"): dict(params={"persona": BOB}),
+    ("POST", "/tasks/remind"): dict(json={"task_id": "t", "minutes": 30, "persona": BOB}),
 }
 MONITOR_PREFIX, INTERNAL_PREFIX = "/monitor/", "/internal/"
 
