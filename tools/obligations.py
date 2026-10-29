@@ -2857,6 +2857,15 @@ def accountability_items(persona: str | None = None) -> list[dict]:
                     # Past-midnight closes join the intention of the day the user was still in.
                     closed_at = f"{_stamp_day(closed_at).isoformat()}T12:00:00"
                 out.append({"what": t["what"], "status": "closed", "closed_at": closed_at})
+            elif t.get("kind") == "deadline" and t.get("status") == "open":
+                # [DB-0827-09] An intention that is still an open task was sent to the
+                # free-text judge, which said "indeterminate" while the ledger knew it was not
+                # done (2026-10-29 audit). Waiting tasks are left out: waiting on someone
+                # else is not the user's failure. `due`/`eligible_from` let the join tell a
+                # task not yet due, or deferred by the user, from one that slipped.
+                out.append({"what": t["what"], "status": "open",
+                            "opened_at": t.get("created_at"), "due": t.get("due"),
+                            "eligible_from": t.get("eligible_from")})
             continue
         dates = [str(c.get("on") or c.get("at") or "")[:10]
                  for c in (t.get("completions") or []) + (t.get("recent_completions") or [])]
@@ -2865,6 +2874,14 @@ def accountability_items(persona: str | None = None) -> list[dict]:
         for d in sorted(set(x for x in dates if x)):
             out.append({"what": t["what"], "status": "closed", "closed_at": f"{d}T12:00:00"})
     return out
+
+
+def same_task(text: str, what: str) -> bool:
+    """The ledger's own bar for "this text is about this task" — two shared identifying
+    tokens or identical sets, never a single shared word. Used where a match turns into a
+    verdict (tools/accountability.py), so it is the strict form: "book dentist" does not
+    match "Book flights for the US trip"."""
+    return _tokens_match(_task_tokens(text), _task_tokens(what))
 
 
 def report(persona: str, days: int = 30) -> str:

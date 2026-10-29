@@ -205,6 +205,68 @@ def _():
         assert "SECRET-DO-NOT-LEAK" not in blob, blob
 
 
+# ---------------------------------------------------------------------------
+# Open ledger tasks join in code (2026-10-29 audit: 13 of 14 verdicts indeterminate)
+# ---------------------------------------------------------------------------
+
+def _open_task(what: str, due: str = "", eligible_from: str = "") -> dict:
+    return {"what": what, "status": "open", "opened_at": "2026-10-15T10:00:00",
+            "due": due or None, "eligible_from": eligible_from or None}
+
+
+@check("an intention that is still an open, overdue task after its window is unfulfilled")
+def _():
+    i = _intention("Post a hybrid programmer/babysitter job next week", "2026-10-15")
+    ob = [_open_task("Post hybrid programmer/babysitter job", due="2026-10-20")]
+    item = ACC.resolve_intention(i, [], ob, as_of=date(2026, 10, 29))
+    assert item["verdict"] == "unfulfilled", item
+    assert "open task" in item["reason"] and not item["reason"].startswith(ACC._AWAITING_GATE), item
+
+
+@check("an open task the user rescheduled past today is not counted as a failure")
+def _():
+    i = _intention("Post a hybrid programmer/babysitter job next week", "2026-10-15")
+    ob = [_open_task("Post hybrid programmer/babysitter job", due="2026-10-30")]
+    item = ACC.resolve_intention(i, [], ob, as_of=date(2026, 10, 29))
+    assert item["verdict"] == "indeterminate", item
+    assert "not due until 2026-10-30" in item["reason"], item
+    assert not item["reason"].startswith(ACC._AWAITING_GATE), "must not spend a gate call"
+
+
+@check("an open task deferred by the user is not counted as a failure")
+def _():
+    i = _intention("review the Schwab treasury notes", "2026-10-15")
+    ob = [_open_task("Review Schwab treasury note maturities", due="2026-10-20",
+                     eligible_from="2026-11-02")]
+    item = ACC.resolve_intention(i, [], ob, as_of=date(2026, 10, 29))
+    assert item["verdict"] == "indeterminate" and "2026-11-02" in item["reason"], item
+
+
+@check("one shared word is not a match — 'book dentist' is not 'Book flights for the US trip'")
+def _():
+    i = _intention("book dentist", "2026-10-01")
+    ob = [_open_task("Book flights for the US trip", due="2026-10-05")]
+    item = ACC.resolve_intention(i, [], ob, as_of=date(2026, 10, 29))
+    assert item["reason"].startswith(ACC._AWAITING_GATE), item
+
+
+@check("while the window is open, an open task changes nothing")
+def _():
+    i = _intention("Post a hybrid programmer/babysitter job next week", "2026-10-25")
+    ob = [_open_task("Post hybrid programmer/babysitter job", due="2026-10-20")]
+    item = ACC.resolve_intention(i, [], ob, as_of=date(2026, 10, 29))
+    assert item["reason"] == "window still open", item
+
+
+@check("a closed match still wins over an open task of the same name")
+def _():
+    i = _intention("Post a hybrid programmer/babysitter job next week", "2026-10-15")
+    ob = [_open_task("Post hybrid programmer/babysitter job", due="2026-10-20"),
+          _closed_obligation("Post hybrid programmer/babysitter job", "2026-10-18")]
+    item = ACC.resolve_intention(i, [], ob, as_of=date(2026, 10, 29))
+    assert item["verdict"] == "fulfilled", item
+
+
 if __name__ == "__main__":
     for n, ok, detail in _results:
         print(f"  {'PASS' if ok else 'FAIL'}  {n}")

@@ -423,6 +423,24 @@ def _find_obligation_match(text: str, obligations: list[dict], start: date, end:
     return best
 
 
+def _as_date(value) -> date | None:
+    try:
+        return date.fromisoformat(str(value or "")[:10])
+    except ValueError:
+        return None
+
+
+def _find_open_task_match(text: str, obligations: list[dict]) -> dict | None:
+    """An open ledger task this intention is about, by the ledger's strict rule — a looser
+    match here would name a wrong "unfulfilled" in the weekly summary (Fable review,
+    2026-10-29: "book dentist" scores 0.5 against "Book flights…" under _match_score)."""
+    from tools.obligations import same_task
+    for ob in obligations:
+        if ob.get("status") == "open" and same_task(text, ob.get("what", "")):
+            return ob
+    return None
+
+
 # ---------------------------------------------------------------------------
 # The gate's verdict store — append-only, local, 0600
 # ---------------------------------------------------------------------------
@@ -516,6 +534,19 @@ def resolve_intention(intention: dict, calendar_events: list[dict], obligations:
             reason = f"matched {m.source} ({m.matched_on!r}) but outside the grace window"
         elif as_of <= end:
             verdict, reason = "indeterminate", "window still open"
+        elif (open_ob := _find_open_task_match(text, obligations)) is not None:
+            # [DB-0827-09] Code answers before the judge. Neither reason starts with
+            # _AWAITING_GATE, so run_judgment_gate() never spends a call on these.
+            later = max((d for d in (_as_date(open_ob.get("due")),
+                                     _as_date(open_ob.get("eligible_from"))) if d), default=None)
+            what = open_ob.get("what", "")
+            if later is not None and later >= as_of:
+                # Rescheduled or deferred by the user: their decision, not a slip.
+                verdict = "indeterminate"
+                reason = f"matched open task ({what!r}), not due until {later.isoformat()}"
+            else:
+                verdict = "unfulfilled"
+                reason = f"matched open task ({what!r}), still not done after the window"
         else:
             verdict = "indeterminate"
             reason = (f"{_AWAITING_GATE} — no structured (calendar/obligation) match "
