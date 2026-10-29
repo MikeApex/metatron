@@ -246,6 +246,22 @@ def _():
     assert out.startswith("error") and "defer" not in out.split(", not ")[0], out
 
 
+@check("reopen brings a deferred task back early; a task not deferred is unaffected")
+def _():
+    _fresh("undefer")
+    tid = _id(O.open_task("Call the plumber", kind="deadline"))
+    _at(2026, 10, 29)
+    O.update_task(tid, "defer", new_due="2026-11-02", evidence="not until Monday")
+    assert tid not in _now_section(), O.context_block()
+    out = O.update_task(tid, "reopen", evidence="actually show me the plumber now")
+    assert "back now" in out, out
+    assert tid in _now_section(), O.context_block()
+    t = _task(tid)
+    assert "eligible_from" not in t and not t.get("due"), t
+    assert t["history"][-1]["event"] == "undeferred", t["history"]
+    out = O.update_task(tid, "reopen", evidence="again")
+    assert "already open" in out, out
+
 def main() -> int:
     passed = sum(1 for _, ok, _ in _results if ok)
     for name, ok, detail in _results:

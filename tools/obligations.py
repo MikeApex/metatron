@@ -1797,6 +1797,19 @@ def update_task(task_id: str, action: str, evidence: str | None = None,
             return f"{tid} rescheduled to {due_iso}: {_summarise(t)}"
 
         if action == "reopen":
+            # Bringing a deferred task back early (Mike, 2026-10-29) — without this a deferral
+            # was a one-way door until its day. Restores whatever eligible_from held before.
+            until = _deferred_until(t)
+            if status == "open" and until and (_d(until) or today) > today:
+                prior = next((h.get("from") for h in reversed(hist)
+                              if h.get("event") == "deferred"), None)
+                hist.append({"event": "undeferred", "at": _stamp(), "was_until": until,
+                             "reason": evidence})
+                if prior:
+                    t["eligible_from"] = prior
+                else:
+                    t.pop("eligible_from", None)
+                return f"{tid} is back now instead of {until}: {_summarise(t)} ({evidence})"
             if kind == "habit":
                 pk = _period(t.get("every", "day"), when)[0]
                 occ = (t.get("occurrences") or {}).get(pk) or {}
