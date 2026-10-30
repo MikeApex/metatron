@@ -1,26 +1,20 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-10-29. **Second user: Stage 5 is closed** (7 of 7; trial accounts deleted by
-Mike). **Next: Iva's onboarding this weekend:**
-`archive/handoffs/2026-10-29-iva-account-walkthrough-prompt.md` (APK rebuild first, then account
-linking in full). **M3, the memory week, restarts on her approval day.** Scheduled sessions no
-longer raise clinical flags (Mike: curtailed until the agent rewrite). VM `ebfe50b`; `0b143a9` and
-this archive await a deploy. **Then: capture-fidelity planning**
-(`archive/handoffs/2026-10-29-capture-fidelity-plan-prompt.md`, Mike: build sooner), reply latency
-(`archive/handoffs/2026-10-28-reply-latency-defer-thinking-cache-prompt.md`), and a real Sign out.
-Security hardening is `[DB-1029-20]`. Log § 2026-10-29 fourth. **Day planner:** step 2 is on, and
-its five live checks are `[DB-1029-01]`, due 10-31. About half the pings since 10-28 fell back to
-a textless "You have a message"; the new APK reports why. **Backlog:** overdue checks and the
-Inbox triage are done (log § 2026-10-29 fifth). Nine fixes deployed (VM `4637dfb`),
-each with a dated closes-on check (due 11-12). **The meals habit still doesn't exist**: Mike's
-15:06 request was saved as wisdom, not a habit. He re-asks as "open a daily habit…". `## Now`
-now holds work only (built items wait in Later's "Done and deployed"). **Next: Mike runs
-`/backlog deep`, then
-`archive/handoffs/2026-10-30-backlog-attack-signout-calendar-text-forward-trail-prompt.md`**
-(Now 4–6, Amber, Opus). Reply
-latency now also carries the low-latency mode `[DB-1029-09]`. WhatsApp 0b may run any time.
-**Still owed:** the boys' school hours and bedtimes → `children_home` (Mike, in the app); the
-"over and out" live check; Mike's calendar live check (week of 9 Nov); `[DB-0901-02]`, due 12-15.*
+*Updated: 2026-10-30. **Synth now says what to do now and the one thing next, not the whole day**
+(`547c446`, **not deployed**; log § 2026-10-30). Code hands it Now / Next / Free / Important ≤ 2;
+`read_day_plan` gives the whole day on request; the evening close keeps prerequisites (the Red
+Book) and drops "tomorrow in full" (Mike, superseding 09-05). **Mike: deploy, then live-check the
+07:31 brief, an "I'm home" reply and the 20:01 close — no rundowns.** **Next: stage 2, the planner
+schedules the prep** — `archive/handoffs/2026-10-30-prep-tasks-stage-2-spec-prompt.md` (spec
+first; draft failed Fable review). **Still next, unchanged:** Iva's onboarding this weekend
+(`archive/handoffs/2026-10-29-iva-account-walkthrough-prompt.md`, APK rebuild first); M3 restarts
+on her approval day; `/backlog deep`, then
+`archive/handoffs/2026-10-30-backlog-attack-signout-calendar-text-forward-trail-prompt.md`;
+capture-fidelity planning; reply latency (with `[DB-1029-09]`); Sign out; security `[DB-1029-20]`;
+day-planner live checks `[DB-1029-01]` (due 10-31); nine fixes' closes-on checks (11-12). **The
+meals habit still doesn't exist** — Mike re-asks as "open a daily habit…". **Still owed:** the
+boys' school hours/bedtimes → `children_home`; the "over and out" live check; Mike's calendar live
+check (week of 9 Nov); `[DB-0901-02]`, due 12-15.*
 
 *Standing rules, each earned twice and both invisible to `qa_sweep`: **a test that exercises a seam
 for real must stub every live meter it ends in**, and **a live gate run dirties TRACKED
@@ -107,7 +101,8 @@ owns the per-item detail and the standing evidence.**
 user's day from a plan code keeps current. Stage C delivers it as native FCM push with the app
 closed (D1 b), through a separate Firebase project `metatron-push`, with Done / Not yet / Skipped
 on each task. Step 2 turned on `nudges` and `owns_checkins`; either off restores the fixed
-check-ins exactly. Reshuffle thinking is 0. Plan: [day_planner_plan_2026-10-24.md](archive/plans/day_planner_plan_2026-10-24.md)
+check-ins exactly. **R2 amended 2026-10-30:** Synth sees now/next/free/Important, not the whole
+day (`547c446`). Reshuffle thinking is 0. Plan: [day_planner_plan_2026-10-24.md](archive/plans/day_planner_plan_2026-10-24.md)
 (§ 18 round 2); Stage B: `archive/PROJECT_LOG.md` § 2026-10-27; Stage C and step 2: § 2026-10-29.
 
 **WHATSAPP INPUT — approved 10-26; Phase 0a done; next 0b + phone probes in a FRESH session**
