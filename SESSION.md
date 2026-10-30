@@ -11,6 +11,7 @@ first; draft failed Fable review). **Still next, unchanged:** Iva's onboarding t
 on her approval day; `/backlog deep`, then
 `archive/handoffs/2026-10-30-backlog-attack-signout-calendar-text-forward-trail-prompt.md`;
 capture-fidelity planning; reply latency (with `[DB-1029-09]`); Sign out; security `[DB-1029-20]`;
+**WhatsApp Phase 0 close-out** (survival read 10-31, LM + increments rulings — § Current state);
 day-planner live checks `[DB-1029-01]` (due 10-31); nine fixes' closes-on checks (11-12). **The
 meals habit still doesn't exist** — Mike re-asks as "open a daily habit…". **Still owed:** the
 boys' school hours/bedtimes → `children_home`; the "over and out" live check; Mike's calendar live
@@ -105,10 +106,16 @@ check-ins exactly. **R2 amended 2026-10-30:** Synth sees now/next/free/Important
 day (`547c446`). Reshuffle thinking is 0. Plan: [day_planner_plan_2026-10-24.md](archive/plans/day_planner_plan_2026-10-24.md)
 (§ 18 round 2); Stage B: `archive/PROJECT_LOG.md` § 2026-10-27; Stage C and step 2: § 2026-10-29.
 
-**WHATSAPP INPUT — approved 10-26; Phase 0a done; next 0b + phone probes in a FRESH session**
-(`archive/handoffs/2026-10-26-whatsapp-phase-0b-clean-room-and-probes-prompt.md` — the clean room:
-never open the 10-26 WhatsApp transcripts, which hold GPL source). Then LM → second-user build →
-Phases 1–3 ([plan](archive/plans/whatsapp_input_plan_2026-10-26.md)). Mike owes: delete the `/private/tmp` reference copy.
+**WHATSAPP INPUT — Phase 0b + probes done 10-30; the code is UNCOMMITTED for Mike's review.**
+The clean-room reader (`android/…/metatron/whatsapp/`, 19 tests) decrypts Mike's real backup on
+the phone; live notifications carry a chat ID (one-to-one by hidden `@lid`, mapped via `jid_map`);
+dedup key 5/5. **Mike's phone runs the throwaway `waprobe` build** (`./gradlew assembleWaprobe`;
+`assembleDebug`/Iva's APK carries none of it). **Next:**
+`archive/handoffs/2026-10-31-whatsapp-phase-0-close-survival-lm-increments-prompt.md` — the 24 h
+survival read (after 13:22 10-31), then two rulings Mike owes: **LM** (rec. no local model) and
+**nightly backups are incremental**, which the reader ignores (rec. a Phase 0a′ session). Then
+Phase 1 — the second-user build it waited on has landed ([plan](archive/plans/whatsapp_input_plan_2026-10-26.md)).
+Clean room: never open the 10-26 transcripts. Mike owes: delete the `/private/tmp` reference copy.
 
 **A9 — built and deployed 2026-08-18; `@waiting` on real use, review `2026-10-01`.** Spec, the
 five provisional parts and the date: [ROADMAP.md](ROADMAP.md) § A9a, the single home.
