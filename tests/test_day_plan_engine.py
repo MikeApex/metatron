@@ -514,13 +514,145 @@ def _():
     D.refresh_snapshot(_PERSONA)
     plan = D.current(_PERSONA)
     text = D.render_block(plan, kind="evening_close", heads_up=True)
-    assert "TODAY'S PLAN" in text and "Earlier:" in text and "Now (" in text, text
-    assert "Take the tablets" in text and "✓" in text, text
-    assert "Physio (calendar)" in text and "leave for Physio" in text, text
+    assert "TODAY'S PLAN" in text and "Now (" in text, text
+    assert "Earlier:" not in text and "Later:" not in text, text   # synth_now_next § 3.1
     assert "fuller rework" in text, text
+    # The whole day, with live statuses, is the on-request read (R2, amended 2026-10-30).
+    full = D.render_full(plan)
+    assert "Earlier:" in full and "Take the tablets" in full and "✓" in full, full
+    assert "Physio (calendar)" in full and "leave for Physio" in full, full
     assert len(text) <= 4000, len(text)
     plan["notes"] = ["Planning meeting now overlaps Write the report, already under way"]
     assert "Notes: Planning meeting now overlaps" in D.render_block(plan), "notes not rendered"
+
+
+# --- now and next, not the day (archive/plans/synth_now_next_plan_2026-10-30.md) -------------
+
+def _at(hm: str) -> str:
+    return f"2026-10-26T{hm}:00"
+
+
+def _synthetic(plan: dict, blocks: list[dict]) -> dict:
+    """The real plan's window and snapshot, with blocks chosen for one rule at a time."""
+    return {**plan, "blocks": blocks, "unplaced": [], "notes": [], "suggestions": []}
+
+
+def _task_block(ref: str, s: str, e: str, **extra) -> dict:
+    return {"id": f"task:{ref}@{s}", "kind": "task", "ref": ref, "task_id": ref.split("@")[0],
+            "title": extra.pop("title", "Draft migration runbook"), "start": _at(s), "end": _at(e),
+            "essential": False, "length_known": True, "copy": 0, **extra}
+
+
+@check("ordinary turn: Now and ONE Next — no Earlier, no Later; a later hold still asked")
+def _():
+    d, ids = _ready("nownext")
+    plan = D.current(_PERSONA)
+    plan = _synthetic(plan, plan["blocks"] + [
+        {"id": "hold:x", "kind": "hold", "key": "x", "title": "Partner out voting",
+         "calendar": "family", "start": _at("17:00"), "end": _at("18:00")}])
+    _CLOCK["now"] = datetime(2026, 10, 26, 9, 50)
+    text = D.render_block(plan)
+    assert "Earlier:" not in text and "Later:" not in text, text
+    assert text.count("Next:") == 1 and "Next: 10:00 Stand-up" in text, text
+    assert "Physio" not in text and "Team sync" not in text, text
+    assert "Asks" in text and "Partner out voting" in text, text
+
+
+@check("next skips a break, someone else's event and an unanswered hold")
+def _():
+    d, ids = _ready("nextskip")
+    base = D.current(_PERSONA)
+    plan = _synthetic(base, [
+        {"id": "break:1", "kind": "break", "title": "break", "start": _at("10:00"), "end": _at("10:10")},
+        {"id": "context:1", "kind": "context", "title": "Partner's gym", "start": _at("10:10"), "end": _at("10:40")},
+        {"id": "hold:1", "kind": "hold", "key": "k", "title": "School fair", "start": _at("10:40"), "end": _at("11:00")},
+        {"id": "event:1", "kind": "event", "title": "Dentist", "start": _at("11:00"), "end": _at("11:30")}])
+    _CLOCK["now"] = datetime(2026, 10, 26, 9, 55)
+    text = D.render_block(plan)
+    assert "Next: 11:00 Dentist" in text, text
+
+
+@check("free: until the next fixed thing, meals and protected time included; short gaps unsaid")
+def _():
+    d, ids = _ready("free")
+    base = D.current(_PERSONA)
+    ref = ids["runbook"]
+    ev = {"id": "event:p", "kind": "event", "title": "Physio", "start": _at("14:00"), "end": _at("15:00")}
+    plan = _synthetic(base, [_task_block(ref, "12:15", "12:45"), ev])
+    _CLOCK["now"] = datetime(2026, 10, 26, 12, 0)
+    text = D.render_block(plan)
+    assert "Free until 14:00 (next: Physio (calendar) at 14:00)" in text, text
+    assert "Draft migration runbook" in text and "own time" in text, text
+    meal = {"id": "meal:l", "kind": "meal", "title": "lunch", "start": _at("13:00"), "end": _at("13:30")}
+    text = D.render_block(_synthetic(base, [_task_block(ref, "12:15", "12:45"), meal, ev]))
+    assert "Free until 13:00" in text, text
+    prot = {"id": "prot", "kind": "protected", "title": "family time", "start": _at("12:30"), "end": _at("14:00")}
+    text = D.render_block(_synthetic(base, [prot, ev]))
+    assert "Free until" not in text, text          # 30 minutes is not worth saying
+    _CLOCK["now"] = datetime(2026, 10, 26, 13, 0)   # inside family time already under way
+    text = D.render_block(_synthetic(base, [prot, ev]))
+    assert "Free until" not in text, text
+
+
+@check("important: a prerequisite survives the cap; it outranks everything but vital-today")
+def _():
+    d, ids = _ready("impcap")
+    base = D.current(_PERSONA)
+    nxt = {"id": "event:n", "kind": "event", "title": "Stand-up", "start": _at("10:00"), "end": _at("10:15")}
+    vital = _task_block(ids["runbook"], "16:00", "17:30", stakes="vital", due="2026-10-26")
+    disp = _task_block(ids["card"], "19:30", "19:50", title="Buy a birthday card", displaced_protected=True)
+    _CLOCK["now"] = datetime(2026, 10, 26, 9, 0)
+    text = D.render_block(_synthetic(base, [nxt, vital, disp]), horizon=["Pack the Red Book"])
+    line = next(l for l in text.splitlines() if l.startswith("Important today"))
+    assert "runbook" in line and "Red Book" in line and "birthday card" not in line, line
+
+
+@check("important: a vital deadline and a displaced task qualify; events, habits, meals never")
+def _():
+    d, ids = _ready("important")
+    base = D.current(_PERSONA)
+    vital = _task_block(ids["runbook"], "16:00", "17:30", stakes="vital", due="2026-10-26")
+    habit = _task_block(f"{ids['meds']}@2026-10-26", "18:00", "18:05", title="Take the tablets")
+    ev = {"id": "event:q", "kind": "event", "title": "Quarterly review", "start": _at("15:00"), "end": _at("16:00")}
+    meal = {"id": "meal:d", "kind": "meal", "title": "dinner", "start": _at("18:30"), "end": _at("19:00")}
+    nxt = {"id": "event:n", "kind": "event", "title": "Stand-up", "start": _at("10:00"), "end": _at("10:15")}
+    _CLOCK["now"] = datetime(2026, 10, 26, 9, 0)
+    text = D.render_block(_synthetic(base, [nxt, ev, vital, habit, meal]))
+    line = next((l for l in text.splitlines() if l.startswith("Important today")), "")
+    assert "Draft migration runbook" in line and "vital, due today" in line, text
+    assert "Quarterly review" not in line and "tablets" not in line and "dinner" not in line, line
+    plain = _task_block(ids["runbook"], "16:00", "17:30", due="2026-10-26")   # stakes unset
+    text = D.render_block(_synthetic(base, [nxt, ev, plain, habit, meal]))
+    assert "Important" not in text, text           # an unset stake is not vital (§ 8 F4)
+
+
+@check("evening close: tonight, first thing tomorrow, prerequisites — never tomorrow in full")
+def _():
+    d, ids = _ready("evening")
+    base = D.current(_PERSONA)
+    _CLOCK["now"] = datetime(2026, 10, 26, 20, 0)
+    tomorrow = {**base, "day": "2026-10-27", "blocks": [
+        {"id": "meal:b", "kind": "meal", "title": "breakfast", "start": "2026-10-27T07:30:00", "end": "2026-10-27T08:00:00"},
+        {"id": "event:n", "kind": "event", "title": "Nursery settling-in", "start": "2026-10-27T09:30:00", "end": "2026-10-27T10:30:00"},
+        {"id": "event:d", "kind": "event", "title": "Doctor", "start": "2026-10-27T11:30:00", "end": "2026-10-27T12:00:00"}]}
+    text = D.render_block(base, kind="evening_close", tomorrow=tomorrow,
+                          horizon=["Pack the Red Book — for Nursery settling-in, by 2026-10-27"])
+    assert "First thing tomorrow: 09:30 Nursery settling-in" in text, text
+    assert "Doctor" not in text and "Tomorrow (draft)" not in text, text
+    assert "Important tomorrow" in text and "Red Book" in text, text
+
+
+@check("read_day_plan: today in full; tomorrow says it is not planned yet rather than free")
+def _():
+    d, ids = _ready("readtool")
+    C._OVERRIDE = {"flags": {"build": True, "ledger_fields": True}}
+    _CLOCK["now"] = datetime(2026, 10, 26, 9, 0)
+    full = D.read_day_plan()
+    assert "THE DAY" in full and "Physio" in full and "Team sync" in full, full
+    t = D.read_day_plan("tomorrow")
+    assert "not planned yet" in t and "free" not in t.replace("as free", ""), t
+    # Today's events are not tomorrow's (Fable B1): the snapshot holds three days.
+    assert "Stand-up" not in t and "Physio" not in t, t
 
 
 @check("today_view: off with show_in_app off; rows with statuses and no ids when on")

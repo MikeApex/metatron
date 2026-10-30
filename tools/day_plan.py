@@ -1107,6 +1107,8 @@ def _fill(cands: list[dict], blocks: list[dict], shape: dict, plan_start: dateti
                        "end": _iso(e), "essential": c["essential"], "score": c["score"],
                        "length_known": c["length_known"], "copy": copy,
                        "activity": c["activity"],
+                       # Read by render_block's Important line (synth_now_next plan § 8 F4).
+                       "stakes": c.get("stakes"), "due": c.get("due"),
                        **({"condition": cond} if cond else {}),
                        **({"displaced_protected": True} if displaced else {})})
         counts[c["ref"]] = counts.get(c["ref"], 0) + 1
@@ -1832,68 +1834,177 @@ def _listed(plan: dict) -> list[dict]:
                                       and _status_of(b.get("ref"), b.get("copy", 0)) == "open")]
 
 
-def render_block(plan: dict | None, kind: str | None = None, due_now: list[dict] | None = None,
-                 heads_up: bool = False, offer_rhythm: str | None = None,
-                 allocation_gaps: list[dict] | None = None, tomorrow: dict | None = None,
-                 ask_length: str | None = None) -> str:
-    """The Synthesizer's view of the whole day (Mike, R2: "the whole day, including
-    completed/missed items"). Statuses are read from the ledger now. Target ≤ ~1,000 tokens."""
-    if not plan:
-        return ""
-    now = _now()
-    out = ["TODAY'S PLAN — kept by code from the calendar, the tasks and the user's day shape. "
-           "Authoritative for timing; whether a task is done comes from the Tasks section. "
-           "Running the day is yours: say what to do now and next."]
-    w = plan.get("window") or {}
-    if "stated" not in (w.get("wake_source"), w.get("bed_source")):
-        out.append(f"(Waking hours {_hm(w.get('wake'))}–{_hm(w.get('bed'))} are assumed, not "
-                   f"stated — ask once, when it fits.)")
+# What the voice may name as "next" (synth_now_next plan § 8 F7): never a break, someone else's
+# event, a protected window or an unanswered hold (that goes to Asks). "First thing tomorrow" also
+# skips meals and routines — breakfast is not news.
+_NEXT_SKIP = ("break", "context", "protected", "wind_down", "hold")
+_FIRST_SKIP = _NEXT_SKIP + ("meal", "routine")
+
+
+def _calendar_caveat(plan: dict, now: datetime) -> str | None:
+    """One line when the calendar behind the plan cannot be vouched for (DB-0910-02) — shared by
+    the Synthesizer's block and the full read, so neither can describe a day as free on a failed
+    read."""
     snap = _dt(plan.get("snapshot_at"))
     live = _load_state().get("snapshot") or {}
     failed, good = _dt(live.get("failed_at")), _dt(live.get("fetched_at"))
     if live.get("error") and failed and (good is None or failed > good):
         # The latest read failed (DB-0910-02: a remembered lecture stated as today's confirmed
         # commitment while CalDAV returned 401). A failure only stamps the old snapshot, so
-        # without this line the header above vouches for stale events — or for an empty day.
+        # without this line the header vouches for stale events — or for an empty day.
         # A success replaces the snapshot whole, which is what clears it.
         if good is None:
-            out.append(f"(Calendar could not be read at {failed:%H:%M} — no events are known "
-                       "for today; do not describe the day as free.)")
-        else:
-            at = f"{good:%H:%M}" if good.date() == now.date() else f"{good:%a %H:%M}"
-            out.append(f"(Calendar could not be read at {failed:%H:%M} — events below are from "
-                       f"the last good read at {at}; do not state them as confirmed.)")
-    elif str(live.get("discovery") or "") == "not_connected":
+            return (f"(Calendar could not be read at {failed:%H:%M} — no events are known "
+                    "for today; do not describe the day as free.)")
+        at = f"{good:%H:%M}" if good.date() == now.date() else f"{good:%a %H:%M}"
+        return (f"(Calendar could not be read at {failed:%H:%M} — events below are from "
+                f"the last good read at {at}; do not state them as confirmed.)")
+    if str(live.get("discovery") or "") == "not_connected":
         # A user with no calendar connected (plan § 4.8). Said outright, because the header
-        # above says the plan is kept "from the calendar" — without this line an empty day
-        # reads as a free one, and "nothing on your calendar" would be the wrong answer.
-        out.append("(No calendar is connected — this plan has no events because none can be "
-                   "read, not because the day is free.)")
-    elif snap is None:
-        out.append("(The calendar has not been read yet — events may be missing.)")
-    elif (now - snap) > timedelta(minutes=float(_limit("snapshot_max_age_minutes") or 10) + 5):
-        out.append(f"(Calendar as of {snap:%H:%M}.)")
-    blocks = _listed(plan)
-    earlier, now_b, nxt, later = [], None, [], []
+        # says the plan is kept "from the calendar" — without this line an empty day reads as
+        # a free one, and "nothing on your calendar" would be the wrong answer.
+        return ("(No calendar is connected — this plan has no events because none can be "
+                "read, not because the day is free.)")
+    if snap is None:
+        return "(The calendar has not been read yet — events may be missing.)"
+    if (now - snap) > timedelta(minutes=float(_limit("snapshot_max_age_minutes") or 10) + 5):
+        return f"(Calendar as of {snap:%H:%M}.)"
+    return None
+
+
+def _is_boundary(b: dict) -> bool:
+    """Where free time ends (§ 8 F5): the next thing that closes time to the user's own use — a
+    hard block that is not a task or a planner's break, or a protected one. Read from the full
+    block list, because `_listed` strips protected windows."""
+    if b["kind"] in ("task", "break"):
+        return False
+    return _is_hard(b) or _is_protected(b) or b["kind"] == "wind_down"
+
+
+def _free_line(plan: dict, now: datetime, now_b: dict | None) -> str | None:
+    """The free window from now (or the end of what is under way) to the next boundary, when it
+    is long enough to be worth saying, with what the planner already placed in it. Code names no
+    task of its own here: the placement already weighed task against rest (Mike, S5)."""
+    start = max(now, _dt(now_b["end"])) if now_b else now
+    blocks = plan.get("blocks") or []
+    # Inside family time, a hold or wind-down, the time is not the user's to spend — no Free line,
+    # even though that block started before now and so is never the boundary ahead (Fable B2).
+    if any(_dt(b["start"]) <= now < _dt(b["end"]) and (_is_protected(b) or b["kind"] == "wind_down")
+           for b in blocks):
+        return None
+    bound = next((b for b in sorted(blocks, key=lambda b: b["start"])
+                  if _dt(b["start"]) >= start and _is_boundary(b)), None)
+    w = plan.get("window") or {}
+    end = _dt(bound["start"]) if bound else _dt(w.get("bed"))
+    if end is None or (end - start) < timedelta(minutes=float(_limit("free_min_minutes") or 45)):
+        return None
+    inside = [b for b in blocks if b["kind"] == "task" and start <= _dt(b["start"]) < end
+              and _status_of(b.get("ref"), b.get("copy", 0)) == "open"]
+    what = f"next: {_label(bound)} at {_hm(bound['start'])}" if bound else "then bedtime"
+    line = f"Free until {_hm(end.isoformat())} ({what})"
+    if inside:
+        bits = []
+        for b in inside[:2]:
+            mins = int((_dt(b["end"]) - _dt(b["start"])).total_seconds() // 60)
+            due = f", due {b['due']}" if b.get("due") else ""
+            bits.append(f"{b['title']} `{b['ref']}` ({mins} min{due})")
+        line += ". Placed in it: " + "; ".join(bits) + ". The rest is the user's own time."
+    else:
+        line += " — nothing placed; the user's own time."
+    return line
+
+
+def _important(blocks: list[dict], day: date, now: datetime, exclude: set, horizon: list[str]
+               ) -> list[str]:
+    """Candidates the Synthesizer may raise (§ 8 F2), ranked and capped — often none. Calendar
+    events never qualify by being on the calendar: they reach the user as Next or as a nudge.
+    Habits, meals, routines, travel and chores never qualify."""
+    ranked: list[tuple[float, str]] = []
     for b in blocks:
-        s, e = _dt(b["start"]), _dt(b["end"])
-        text = f"{_hm(b['start'])} {_label(b)}" + (_task_status_text(b, now) if b["kind"] == "task" else "")
-        if e <= now:
-            earlier.append(text)
-        elif s <= now < e and now_b is None and b["kind"] != "break":
-            now_b = f"{_label(b)} (until {_hm(b['end'])})" + (
-                _task_status_text(b, now) if b["kind"] == "task" else "")
-        elif len(nxt) < 2 and s > now:
-            nxt.append(text)
-        elif s > now:
-            later.append(text)
-    if earlier:
-        out.append("Earlier: " + " · ".join(earlier[-8:]))
-    out.append(f"Now ({now:%H:%M}): " + (now_b or "nothing planned"))
+        if b.get("id") in exclude or b["kind"] != "task" or _dt(b["end"]) <= now:
+            continue
+        if _status_of(b.get("ref"), b.get("copy", 0)) != "open":
+            continue
+        due = _O()._d(b.get("due"))
+        if b.get("stakes") == "vital" and due and due <= day + timedelta(days=1):
+            when = "due today" if due <= day else "due tomorrow"
+            ranked.append((0 if due <= day else 3,
+                           f"{b['title']} `{b['ref']}` — vital, {when} ({_hm(b['start'])})"))
+        elif b.get("displaced_protected"):
+            ranked.append((2, f"{b['title']} `{b['ref']}` — takes the user's own time "
+                              f"({_hm(b['start'])}); say why, once"))
+    # A prerequisite ranks just under a vital deadline due today — it is what F3 exists to keep,
+    # so the cap must not cut it first (Fable B3).
+    ranked += [(0.5, f"{h} — needs something done first") for h in horizon]
+    ranked.sort(key=lambda r: r[0])
+    return [text for _, text in ranked][: int(_limit("important_max") or 2)]
+
+
+def _asks(plan: dict, now: datetime) -> list[str]:
+    """Questions only the user can answer, gathered from the WHOLE day — dropping the Later list
+    must not drop these (§ 8, finding 1 of the review's reading)."""
+    out = []
+    for b in _listed(plan):
+        k = b["kind"]
+        if k == "hold" and _dt(b["end"]) > now:
+            out.append(f"{_hm(b['start'])} {_label(b)}")
+        elif k in ("meal", "ask") and b.get("ask") and _dt(b["end"]) > now:
+            out.append(f"{_hm(b['start'])} {_label(b)}")
+        elif k == "task" and b.get("condition") and _dt(b["end"]) > now:
+            out.append(f"{_hm(b['start'])} {b['title']} `{b['ref']}` — only {b['condition']} — ask")
+        elif (k == "task" and b.get("essential") and b.get("history")
+              and _status_of(b.get("ref"), b.get("copy", 0)) == "open"):
+            out.append(f"{b['title']} `{b['ref']}` — essential, no word yet (now at "
+                       f"{_hm(b['start'])}); ask once whether it happened")
+    return out
+
+
+def render_block(plan: dict | None, kind: str | None = None, due_now: list[dict] | None = None,
+                 heads_up: bool = False, offer_rhythm: str | None = None,
+                 allocation_gaps: list[dict] | None = None, tomorrow: dict | None = None,
+                 ask_length: str | None = None, horizon: list[str] | None = None) -> str:
+    """What the Synthesizer should say about the day, not the day itself (Mike, 2026-10-30:
+    "REMOVE the need to be aware of the schedule"; amends R2). Now, the one thing next, free
+    time, a short Important list and the questions only the user can answer. The whole day is
+    `render_full`, reached through `read_day_plan` when the user asks. `horizon` is the
+    findings that need something done first for today (morning) or tomorrow (evening close)."""
+    if not plan:
+        return ""
+    now = _now()
+    today = _O()._d(plan.get("day")) or now.date()
+    out = ["TODAY'S PLAN — kept by code from the calendar, the tasks and the user's day shape. "
+           "Authoritative for timing; whether a task is done comes from the Tasks section. "
+           "What to do now, and the one thing after it. The user sees the whole day in the app "
+           "— fetch it with read_day_plan only when they ask about their schedule."]
+    w = plan.get("window") or {}
+    if "stated" not in (w.get("wake_source"), w.get("bed_source")):
+        out.append(f"(Waking hours {_hm(w.get('wake'))}–{_hm(w.get('bed'))} are assumed, not "
+                   f"stated — ask once, when it fits.)")
+    caveat = _calendar_caveat(plan, now)
+    if caveat:
+        out.append(caveat)
+    listed = _listed(plan)
+    now_b = next((b for b in listed if _dt(b["start"]) <= now < _dt(b["end"])
+                  and b["kind"] not in _NEXT_SKIP), None)
+    nxt = next((b for b in listed if _dt(b["start"]) > now and b["kind"] not in _NEXT_SKIP), None)
+    out.append(f"Now ({now:%H:%M}): " + (
+        f"{_label(now_b)} (until {_hm(now_b['end'])})"
+        + (_task_status_text(now_b, now) if now_b["kind"] == "task" else "")
+        if now_b else "nothing planned"))
     if nxt:
-        out.append("Next: " + " → ".join(nxt))
-    if later:
-        out.append("Later: " + " · ".join(later))
+        out.append(f"Next: {_hm(nxt['start'])} {_label(nxt)}")
+    free = _free_line(plan, now, now_b)
+    if free:
+        out.append(free)
+    shown = {b.get("id") for b in (now_b, nxt) if b}
+    evening = kind == "evening_close"
+    imp = _important(plan.get("blocks") or [], today, now, shown, [] if evening else horizon or [])
+    if imp:
+        out.append("Important today (candidates — raise one only if it matters; often none): "
+                   + "; ".join(imp))
+    asks = _asks(plan, now)
+    if asks:
+        out.append("Asks — only the user can answer; one line, once each: " + "; ".join(asks))
     own = [f"{b['title']} {_hm(b['start'])}–{_hm(b['end'])}" for b in plan.get("blocks") or []
            if b["kind"] == "protected" and _dt(b["end"]) > now]
     if own:
@@ -1915,18 +2026,28 @@ def render_block(plan: dict | None, kind: str | None = None, due_now: list[dict]
     if soon:
         out.append("Suggested (yours to decide): " + " · ".join(
             f"{_hm(x['at'])} {x['kind']} — {x['title']}: {x['why']}" for x in soon[:6]))
-    if kind == "evening_close":
+    if evening:
         unconf = [f"{b['title']} `{b['ref']}`" for b in plan.get("blocks") or []
                   if b["kind"] == "task" and not b.get("essential") and _dt(b["end"]) <= now
                   and _status_of(b.get("ref"), b.get("copy", 0)) == "open"]
         if unconf:
             out.append("Unconfirmed today (non-essential) — ask about these in ONE line, once; "
                        "record what the user says; leave the rest: " + "; ".join(unconf))
-    if tomorrow:
-        tb = [f"{_hm(b['start'])} {_label(b)}" for b in _listed(tomorrow)
-              if b["kind"] in ("event", "task", "travel")]
-        if tb:
-            out.append("Tomorrow (draft): " + " · ".join(tb[:10]))
+        tonight = [f"{_hm(b['start'])} {_label(b)}" for b in listed
+                   if _dt(b["start"]) > now and b["kind"] not in _FIRST_SKIP
+                   and b.get("id") not in shown]
+        if tonight:
+            out.append("Tonight: " + " · ".join(tonight[:3]))
+        tb = _listed(tomorrow) if tomorrow else []
+        first = next((b for b in tb if b["kind"] not in _FIRST_SKIP), None)
+        if first:
+            out.append(f"First thing tomorrow: {_hm(first['start'])} {_label(first)}")
+        imp_t = _important(tomorrow.get("blocks") or [] if tomorrow else [],
+                           today + timedelta(days=1), now,
+                           {first.get("id")} if first else set(), horizon or [])
+        if imp_t:
+            out.append("Important tomorrow (candidates — raise only what needs something done "
+                       "tonight or first thing): " + "; ".join(imp_t))
     if allocation_gaps:
         out.append("Goals with no standing time this week — consult whoever owns the domain, "
                    "propose time, record it as a habit task linked to the goal: " + "; ".join(
@@ -1942,6 +2063,38 @@ def render_block(plan: dict | None, kind: str | None = None, due_now: list[dict]
     if due_now:
         out.append("DUE NOW: " + " · ".join(
             f"{_hm(x['at'])} {x['kind']} — {x['title']}: {x['why']}" for x in due_now))
+    return "\n".join(out)
+
+
+def render_full(plan: dict | None) -> str:
+    """The whole day, as the user sees it in the app — for `read_day_plan` only (Mike, R2: "the
+    whole day, including completed/missed items"). Never part of the per-turn block."""
+    if not plan:
+        return ""
+    now = _now()
+    out = ["THE DAY — the whole plan, read because the user asked about their schedule. Answer "
+           "what they asked; do not read it all out."]
+    caveat = _calendar_caveat(plan, now)
+    if caveat:
+        out.append(caveat)
+    earlier, later, now_t = [], [], None
+    for b in _listed(plan):
+        s, e = _dt(b["start"]), _dt(b["end"])
+        text = f"{_hm(b['start'])} {_label(b)}" + (_task_status_text(b, now) if b["kind"] == "task" else "")
+        if e <= now:
+            earlier.append(text)
+        elif s <= now < e and now_t is None and b["kind"] != "break":
+            now_t = text + f" (until {_hm(b['end'])})"
+        else:
+            later.append(text)
+    if earlier:
+        out.append("Earlier: " + " · ".join(earlier))
+    out.append(f"Now ({now:%H:%M}): " + (now_t or "nothing planned"))
+    if later:
+        out.append("Later: " + " · ".join(later))
+    if plan.get("unplaced"):
+        out.append("Not placed: " + "; ".join(
+            f"{u['title']} ({u['reason']})" for u in plan["unplaced"][:5]))
     return "\n".join(out)
 
 
@@ -2866,6 +3019,49 @@ def request_replan(reason: str = "") -> str:
     if not _flag("build"):
         return "the day plan is not running"
     return request_reshuffle(reason or "asked by the Synthesizer", force=True)
+
+
+def read_day_plan(day: str = "today") -> str:
+    """Synth's read of the whole day, for when the user asks about their schedule (synth_now_next
+    plan § 3.3). The per-turn block deliberately holds only what is worth saying; this is the
+    rest. Never builds anything — a reply never waits on a build (§ 8 F6)."""
+    if not _flag("build"):
+        return "the day plan is not running"
+    persona = resolve_persona(None)
+    if str(day).strip().lower() != "tomorrow":
+        text = render_full(current(persona, reason="read", for_reply=True))
+        return text or "Today's plan is not built yet — do not describe the day as free."
+    draft = tomorrow_draft(persona)
+    if draft:
+        return "TOMORROW (draft — it may still change):\n" + render_full(draft).split("\n", 1)[-1]
+    target = _today() + timedelta(days=1)
+    # _events_for returns the whole three-day snapshot; only tomorrow's are tomorrow's (Fable B1).
+    events = [e for e in _events_for(_load_state(persona), target)
+              if not e.get("all_day") and str(e.get("start") or "")[:10] == target.isoformat()]
+    head = (f"Tomorrow is not planned yet — it is drafted after "
+            f"{_evening_start(persona):%H:%M}.")
+    if not (_load_state(persona).get("snapshot") or {}).get("events") and not events:
+        return head + " The calendar for tomorrow has not been read — do not describe it as free."
+    if not events:
+        return head + " No timed calendar events tomorrow; tasks due are under Tasks."
+    return head + " Calendar for tomorrow: " + " · ".join(
+        f"{_hm(e['start'])} {e['title']}" for e in events)
+
+
+READ_DAY_PLAN_SCHEMA = {
+    "name": "read_day_plan",
+    "description": (
+        "The user's whole plan for today, or tomorrow — only when they ask about their schedule "
+        "(\"what's my afternoon like?\", \"what's on tomorrow?\"). Never to review the day "
+        "unasked: what is worth saying is already in your input. Answer what they asked."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {"day": {"type": "string", "enum": ["today", "tomorrow"],
+                               "description": "Which day. Defaults to today."}},
+        "required": [],
+    },
+}
 
 
 REQUEST_REPLAN_SCHEMA = {

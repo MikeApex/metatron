@@ -67,6 +67,11 @@ limits:
   frozen_minutes: 20
   # A task with no recorded length is placed at this, flagged "length unknown".
   default_task_minutes: 30
+  # The Synthesizer is told the user has free time only when the gap before the next fixed
+  # thing is at least this long (synth_now_next_plan_2026-10-30.md § 8 F5).
+  free_min_minutes: 45
+  # At most this many "Important" candidates reach the Synthesizer per day (§ 8 F2).
+  important_max: 2
   # A reshuffle worker that has not returned in this long is superseded.
   reshuffle_stale_seconds: 180
   # The reply path waits at most this long for the plan lock, then renders without writing.

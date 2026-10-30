@@ -379,9 +379,8 @@ def _digest(persona: str | None, lo: date, hi: date, header: str) -> str:
     """A read-only digest of findings dated in [lo, hi], **ignoring delivery state**. "" when
     the window is empty.
 
-    Shared by `review_block` and `week_block`, which differ only in their window and framing.
-    Everything true of one is true of the other, and the important part is what this does NOT
-    do: it never writes. No offer is charged, nothing is marked delivered, the ledger is not
+    Used by `week_block`. (`review_block`, its evening twin, was replaced by `prep_items` on
+    2026-10-30.) The important part is what this does NOT do: it never writes. No offer is charged, nothing is marked delivered, the ledger is not
     reopened for writing at all. A digest is a re-reading, not a raising — so a finding still
     awaiting its first proper mention keeps that status and `context_block()` will still serve
     it in the ordinary way.
@@ -433,7 +432,7 @@ def week_block(persona: str | None = None) -> str:
     the week is empty.
 
     Mike's instruction, 2026-09-05: *"Weekly meeting should go over the week's coming
-    obligations."* The counterpart to `review_block`'s tomorrow, and it exists for the same
+    obligations."* It once had an evening twin for tomorrow (now `prep_items`); it exists for the same
     reason: the proximity gate now holds anything past tomorrow, so without a session that
     deliberately widens the window, a commitment on Friday would not be seen until Thursday.
     **The gate is what makes this necessary — quieting the ordinary turn is only safe if some
@@ -453,35 +452,59 @@ def week_block(persona: str | None = None) -> str:
         "never as a list you were handed.]")
 
 
-def review_block(persona: str | None = None) -> str:
-    """Tomorrow's findings for the evening close, **including ones already delivered**. "" when
-    tomorrow is empty.
+def prep_items(persona: str | None = None, day: date | None = None) -> list[str]:
+    """Findings for `day` that need something done first, **delivered ones included** — the
+    paperwork for tomorrow's nursery session, a form to post today for a deadline next week.
+    For the evening close (`day` = tomorrow) and the morning brief (`day` = today); "" rows
+    never. Rendered by the day plan as Important candidates, not as a block of its own.
 
-    Mike, 2026-09-05: *"Daily wrap up should run through all of tomorrow's events whether
-    previously stated or not. It's a review."* Everywhere else in this module the governing
-    rule is raise-each-thing-once, and it is load-bearing — repetition is the hazard the whole
-    ledger exists to bound. The evening close is the one place that rule is wrong: a review
-    that skips the half of tomorrow you already heard about is not a review of tomorrow.
+    Replaces `review_block` (Mike, 2026-10-30, S2): *"Only tonight, first thing tomorrow, the
+    same major event threshold"* supersedes his 2026-09-05 *"run through all of tomorrow's
+    events whether previously stated or not."* What that ruling protected is kept: a finding
+    that was delivered, or used up its `_MAX_OFFERS`, is still re-read here when it needs
+    something done — the 10-28 Red Book lines were exactly that. A finding that only *happens*
+    tomorrow is not re-read; the user has it, and the plan's Next and nudges carry the day.
 
-    So this deliberately ignores `delivered_at`, and just as deliberately does not touch it.
-    Nothing here is charged an offer, nothing is marked delivered, nothing is written at all —
-    the function only reads. An item that was still awaiting its first mention keeps that
-    status and will be served normally by `context_block()`; being read out in a review is not
-    the same event as being raised.
-
-    Scope worth stating, because the wording invites the wrong expectation: this is the
-    *findings ledger* for tomorrow, not tomorrow's calendar. The calendar reaches the head
-    layer by its own route. This closes the half that the raise-once rule was suppressing.
+    Read-only, like `_digest`: nothing is charged, nothing marked delivered.
     """
-    tomorrow = date.today() + timedelta(days=1)
-    return _digest(
-        persona, tomorrow, tomorrow,
-        "[TOMORROW — the evening review. Go through all of these with the user, including "
-        "any you have already raised on an earlier turn: this is the one moment in the day "
-        "where repeating something is the point, because they are reviewing tomorrow, not "
-        "hearing news. Some of these may also appear in the block above — those are the "
-        "same items, not additional ones, so cover each thing once. Say them in your own "
-        "voice and never as a list you were handed.]")
+    day = day or date.today()
+    today = date.today()
+    try:
+        persona = resolve_persona(persona)
+        with _LOCK:
+            data = _read(persona)
+        out = []
+        for row in data.values():
+            item = row.get("item") or {}
+            try:
+                when = date.fromisoformat(str(item.get("date") or "").strip())
+            except ValueError:
+                when = None
+            by = None
+            if str(item.get("precursor_by") or "").strip():
+                try:
+                    by = date.fromisoformat(str(item["precursor_by"]).strip())
+                except ValueError:
+                    by = None
+            # The precursor is the signal, never `detail`: every finding carries a detail
+            # (measured on mike's ledger, 2026-10-30), so detail would flag every event.
+            pre = str(item.get("precursor") or "").strip()
+            if not pre or pre.lower() in ("none", "n/a", "no", "-"):
+                continue
+            if when is not None and when < today:
+                continue
+            due_by = by if by is not None else when
+            if due_by is None or not (today <= due_by <= day):
+                continue
+            where = str(item.get("venue") or "").strip()
+            out.append(f"{pre} — for {item.get('title')}"
+                       + (f" ({when.isoformat()})" if when and when != day else "")
+                       + (f", {where}" if where else "")
+                       + f", by {due_by.isoformat()}")
+        return sorted(out)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[horizon] prep items failed: {exc}")
+        return []
 
 
 def _charge_offers(data: dict, keys: list[str], now: datetime | None = None) -> bool:

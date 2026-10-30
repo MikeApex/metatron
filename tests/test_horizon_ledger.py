@@ -500,48 +500,56 @@ def _():
 
 
 # ---------------------------------------------------------------------------
-# The evening review (2026-09-05). Mike: "Daily wrap up should run through all of
-# tomorrow's events whether previously stated or not. It's a review."
+# Prerequisites for the day (2026-10-30, replacing the 2026-09-05 evening review). Mike: "Only
+# tonight, first thing tomorrow, the same major event threshold." A finding that needs something
+# done first is re-read whether or not it was delivered; one that only happens is not.
 # ---------------------------------------------------------------------------
 
-@check("review: tomorrow is read out even after it has already been delivered")
+def _prep(when: str, by: str = "", pre: str = "Pack the Red Book") -> dict:
+    return _bare(when, kind="appointment", precursor=pre, precursor_by=by)
+
+
+@check("prep: a prerequisite for tomorrow is re-read even after it has been delivered")
 def _():
     reset()
-    H.record([_bare(TOMORROW)])
+    H.record([_prep(TOMORROW)])
     assert H.mark_engaged("tell me about the thing on " + TOMORROW) == 1
     assert H.context_block() == "", "precondition: it should be discharged for normal turns"
-    assert TOMORROW in H.review_block(), (
-        "the evening review skipped an item the user had already heard — that is exactly "
-        "the half a review must not drop")
+    items = H.prep_items(day=date.fromisoformat(TOMORROW))
+    assert len(items) == 1 and "Pack the Red Book" in items[0], items
 
 
-@check("review: reading tomorrow out charges nothing and delivers nothing")
+@check("prep: reading prerequisites charges nothing and delivers nothing")
 def _():
     reset()
-    H.record([_bare(TOMORROW)])
+    H.record([_prep(TOMORROW)])
     before = json.dumps(ledger(), sort_keys=True)
-    H.review_block()
-    H.review_block()
-    assert json.dumps(ledger(), sort_keys=True) == before, (
-        "the review wrote to the ledger — it must be read-only, or it would consume the "
-        "finding's chance to be raised properly")
+    H.prep_items(day=date.fromisoformat(TOMORROW))
+    H.prep_items(day=date.fromisoformat(TOMORROW))
+    assert json.dumps(ledger(), sort_keys=True) == before, "prep_items wrote to the ledger"
 
 
-@check("review: stops at tomorrow — today and the rest of the week are not its job")
+@check("prep: a finding that only happens tomorrow is not re-read; 'none' is no precursor")
 def _():
     reset()
-    H.record([_bare(date.today().isoformat()), _bare(TOMORROW), _bare(FUTURE)])
-    block = H.review_block()
-    assert TOMORROW in block, block
-    assert FUTURE not in block, "the review reached into next month"
-    assert date.today().isoformat() not in block, "the review re-ran today"
+    H.record([_bare(TOMORROW), _prep(TOMORROW, pre="none")])
+    assert H.prep_items(day=date.fromisoformat(TOMORROW)) == []
 
 
-@check("review: an empty tomorrow costs nothing")
+@check("prep: a precursor due by the day counts at any event distance; a later one waits")
 def _():
     reset()
-    H.record([_bare(FUTURE)])
-    assert H.review_block() == ""
+    H.record([_prep(FUTURE, by=TOMORROW, pre="Post the form"),
+              _prep(LATER, by=FUTURE, pre="Book the table")])
+    items = H.prep_items(day=date.fromisoformat(TOMORROW))
+    assert len(items) == 1 and "Post the form" in items[0] and FUTURE in items[0], items
+
+
+@check("prep: the morning brief's day is today — tomorrow's prerequisite waits for the evening")
+def _():
+    reset()
+    H.record([_prep(TOMORROW)])
+    assert H.prep_items(day=date.today()) == []
 
 
 @check("week: the coming seven days, delivered or not")
@@ -602,29 +610,16 @@ def _():
     assert H.week_block() == ""
 
 
-@check("the evening review carries no date suffix; the weekly one does")
-def _():
-    reset()
-    # No date in the title or venue — _bare() puts one in both, which would mask this.
-    H.record([{"title": "Dentist", "date": TOMORROW, "venue": "Highgate",
-               "kind": "appointment", "detail": "9am"}])
-    assert TOMORROW not in H.review_block().split("]\n", 1)[1], (
-        "every line of a one-day digest would carry the same date — noise")
-    assert TOMORROW in H.week_block().split("]\n", 1)[1], (
-        "a seven-day digest must say which day each item falls on")
-
-
-@check("review: fires on evening_close only, and never on an ordinary turn")
+@check("prep reaches the day plan at the evening close and morning brief only; no review block")
 def _():
     text = (ROOT / "core" / "orchestrator.py").read_text(encoding="utf-8")
     body = text.split("\ndef _horizon_block(", 1)[1].split("\ndef ", 1)[0]
-    assert 'session == "evening_close"' in body, (
-        "the review is not gated on the evening session — it would repeat delivered "
-        "findings on every turn, which is the groundhog-day failure this module exists "
-        "to prevent")
+    assert "review_block" not in body, "the retired evening review is still wired"
     assert "carries_weekly_review(session, persona)" in body, (
         "the week block is not gated on the weekly-review setting")
-    assert "review_block" in body and "week_block" in body
+    plan = text.split("\ndef _day_plan_block(", 1)[1].split("\ndef ", 1)[0]
+    assert 'kind in ("evening_close", "morning_brief")' in plan and "prep_items" in plan, (
+        "prerequisites are not gated to the two sessions — they would repeat on every turn")
 
 
 @check("weekly: a dedicated weekly_review session carries the week")

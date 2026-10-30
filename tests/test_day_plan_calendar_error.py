@@ -121,7 +121,10 @@ def _():
     text = _block()
     assert _NOTICE in text and "at 08:03" in text, text
     assert "last good read at 08:00" in text and "do not state them as confirmed" in text, text
-    assert "Evening lecture" in text, text            # still shown — flagged, not hidden
+    # Still shown — flagged, not hidden. Since 2026-10-30 a later event is in the whole-day read,
+    # not the per-turn block (synth_now_next plan § 3.1), and the read carries the same notice.
+    full = D.render_full(D.current(_PERSONA))
+    assert "Evening lecture" in full and "last good read at 08:00" in full, full
 
 
 @check("the next successful read clears the notice")
@@ -145,7 +148,9 @@ def _():
     _fresh("ok")
     D.refresh_snapshot(_PERSONA)
     text = _block()
-    assert _NOTICE not in text and "Evening lecture" in text, text
+    assert _NOTICE not in text, text
+    full = D.render_full(D.current(_PERSONA))
+    assert _NOTICE not in full and "Evening lecture" in full, full
 
 
 def main() -> int:

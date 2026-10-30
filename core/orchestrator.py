@@ -1442,6 +1442,8 @@ def register_tools() -> tuple[list[dict], dict]:
         PAUSE_ROUTINE_SCHEMA, RESUME_ROUTINE_SCHEMA, LIST_ROUTINES_SCHEMA,
     )
     from tools.day_plan import request_replan, REQUEST_REPLAN_SCHEMA, answer_event, ANSWER_EVENT_SCHEMA
+    # The whole day on request (archive/plans/synth_now_next_plan_2026-10-30.md § 3.3).
+    from tools.day_plan import read_day_plan, READ_DAY_PLAN_SCHEMA
     # External-content tools. Both return their payload wrapped by tools/untrusted.py —
     # a web page and an email body are written by strangers.
     from tools.web import fetch_url, FETCH_URL_SCHEMA, fetch_rendered, FETCH_RENDERED_SCHEMA
@@ -1504,7 +1506,7 @@ def register_tools() -> tuple[list[dict], dict]:
         WRITE_AGENT_CONFIG_SCHEMA, READ_AGENT_CONFIG_SCHEMA,
         WRITE_WISHES_SCHEMA, READ_WISHES_SCHEMA, GENERATE_EMERGENCY_CARD_SCHEMA,
         OPEN_TASK_SCHEMA, UPDATE_TASK_SCHEMA, LIST_TASKS_SCHEMA,
-        SET_DAY_SHAPE_SCHEMA, REQUEST_REPLAN_SCHEMA, ANSWER_EVENT_SCHEMA,
+        SET_DAY_SHAPE_SCHEMA, REQUEST_REPLAN_SCHEMA, ANSWER_EVENT_SCHEMA, READ_DAY_PLAN_SCHEMA,
         PAUSE_INTERVIEW_SCHEMA, FINISH_INTERVIEW_SCHEMA,
         PAUSE_ROUTINE_SCHEMA, RESUME_ROUTINE_SCHEMA, LIST_ROUTINES_SCHEMA,
         READ_INTAKE_QUEUE_SCHEMA, TEACH_INTAKE_SCHEMA,
@@ -1605,6 +1607,7 @@ def register_tools() -> tuple[list[dict], dict]:
         "finish_interview": finish_interview,
         "request_replan": request_replan,
         "answer_event": answer_event,
+        "read_day_plan": read_day_plan,
         "pause_routine": pause_routine,
         "resume_routine": resume_routine,
         "list_routines": list_routines,
@@ -6069,20 +6072,16 @@ def _horizon_block(persona: str | None = None, session: str | None = None) -> st
     """This turn's horizon block, for the Synthesizer bundle. "" when nothing is waiting.
 
     `session` is the scheduled-session key from `session_kind()`, or None for a user-typed
-    turn. Two wider blocks can be appended (2026-09-05), both **including already delivered
-    findings**, because a wrap-up and a weekly are reviews rather than bulletins: `evening_close`
-    gets tomorrow in full, and any session `carries_weekly_review()` accepts gets the coming
-    seven days. Ordinary turns see neither. Both are read-only — they charge no offer and mark
-    nothing delivered, so neither can consume a finding's chance to be raised properly.
+    turn. Any session `carries_weekly_review()` accepts also gets the coming seven days
+    (2026-09-05), **including already delivered findings**, read-only — it charges no offer
+    and marks nothing delivered. The evening close's "tomorrow in full" was retired on
+    2026-10-30 (Mike, S2): tomorrow's findings that need something done first reach it as
+    Important candidates in the day-plan block (`tools.horizon.prep_items`), and nothing else
+    about tomorrow is re-read.
 
-    The two are deliberately **not** exclusive: a Sunday `evening_close` carrying
-    `weekly_review_on: sunday` yields both, which is a coherent thing to want. Each block's
-    wording tells the model that items repeated across blocks are the same items.
-
-    **These two are the counterweight to `_due_now()`.** The gate holds anything past tomorrow
-    unless it has a deadline or a precursor due, which is only safe because these sessions
-    still take the long view. Quieting the ordinary turn and widening the review are one
-    decision, not two.
+    **The week block is the counterweight to `_due_now()`.** The gate holds anything past
+    tomorrow unless it has a deadline or a precursor due, which is only safe because the
+    weekly session still takes the long view.
 
     Called after `_file_horizon_items()` and before the Synthesizer runs, so a finding
     discovered *this* turn is put to the user in the exchange that found it. Without this the
@@ -6096,11 +6095,9 @@ def _horizon_block(persona: str | None = None, session: str | None = None) -> st
     charge — so wiring it in twice costs the finding nothing.
     """
     try:
-        from tools.horizon import context_block, review_block, week_block
+        from tools.horizon import context_block, week_block
         with persona_scope(resolve_persona(persona)):
             blocks = [context_block(persona)]
-            if session == "evening_close":
-                blocks.append(review_block(persona))
             if carries_weekly_review(session, persona):
                 blocks.append(week_block(persona))
         return "\n\n".join(b for b in blocks if b)
@@ -6147,9 +6144,17 @@ def _day_plan_block(persona: str | None, kind: str | None, is_proactive: bool) -
             ask = None if is_proactive else D.length_ask(persona, plan, mark=True)
             tomorrow = D.tomorrow_draft(persona) if kind == "evening_close" else None
             gaps = D.allocation_gaps(persona) if carries_weekly_review(kind, persona) else None
+            # Findings that need something done first — tomorrow's at the evening close, today's
+            # at the morning brief (synth_now_next plan § 8 F3). Other turns: none.
+            prep = None
+            if kind in ("evening_close", "morning_brief"):
+                from datetime import timedelta
+                from tools.horizon import prep_items
+                day = D._today() + timedelta(days=1 if kind == "evening_close" else 0)
+                prep = prep_items(persona, day)
             return D.render_block(plan, kind=kind, heads_up=D.pending_heads_up(persona),
                                   offer_rhythm=offer, allocation_gaps=gaps, tomorrow=tomorrow,
-                                  ask_length=ask)
+                                  ask_length=ask, horizon=prep)
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"[day_plan] block failed: {exc}")
         return ""
