@@ -1,6 +1,7 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-10-30. **Synth now says what to do now and the one thing next, not the whole day**
+*Updated: 2026-11-04. **Whole-codebase Fable review ready, not run:** fresh Fable 5.1 session, paste
+`archive/handoffs/2026-11-04-whole-codebase-review-prompt.md` (~$180, cap $250; log § 11-04). **Synth now says what to do now and the one thing next, not the whole day**
 (`547c446`, **not deployed**; log § 2026-10-30). Code hands it Now / Next / Free / Important ≤ 2;
 `read_day_plan` gives the whole day on request; the evening close keeps prerequisites (the Red
 Book) and drops "tomorrow in full" (Mike, superseding 09-05). **Mike: deploy, then live-check the

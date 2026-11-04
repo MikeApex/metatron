@@ -75,6 +75,9 @@ back-tagging the rest is `[DB-0815-10]`.
 > against `git log` before promoting anything from here.
 *(empty — last triaged 2026-09-05; evidence in `archive/backlog_closed_2026-09.md`)*
 
+- **[needs building]** User requested a dedicated tracker/file for films to record whether they have been seen along with his thoughts and reviews on them.  
+  `2026-11-01T19:10:18.495162Z`
+
 - **[needs building]** User requested automated meal and snack logging three times daily unless reported first. Requires automated background meal-logging capability; currently logging relies on user reporting or check-in prompts.  
   `2026-10-29T15:08:26.272213Z`
 
@@ -1364,6 +1367,42 @@ evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording �
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
 
+- **[a specialist missed a signal it should have caught]** User expressed intent to find a personal trainer this week (Sun Nov 1), but the goal was not routed to Physical Health or flagged as a new goal in the recent context package.  
+  `2026-11-03T07:31:29.004793Z`
+
+- **[THINKING_CAP_HIT]** reply cut at the 8192-token output ceiling (thinking 7864 + reply 324, turn 1). Thinking overshoots its 4096 budget on this model; check whether the reply arrived whole.  
+  `2026-11-02T20:01:30.105419Z`
+
+- **[user corrected a prior turn]** User corrected focus block timing: focus blocks for Monday and Wednesday afternoons begin from next week, not this one.  
+  `2026-11-02T17:13:51.958441Z`
+
+- **[user corrected a prior turn]** User corrected a typo or phrased a previous instruction about Metatron/focus blocks, but previously handled via USER_CORRECTION incorrectly. Here the user says 'Knocked out a few things this morning as yo've seen, and I'm already at the Wharf. What should I do right now.'  
+  `2026-11-02T12:03:31.658452Z`
+
+- **[user corrected a prior turn]** User corrected a misheard name or reference in a prior turn: George School Open House is in Philadelphia, Canary Wharf dental updates are irrelevant unless appointment/billing, Freedom Clinics is the same as the Podiatrist, birth cert translation is Iva's domain, BRS quiz is out, added new doctor appointment at South Street Medical Center for tomorrow at 4:50, and defined weekly focus/Metatron time blocks.  
+  `2026-11-02T12:01:30.772669Z`
+
+- **[user corrected a prior turn]** User corrected the date or session opening time in prior turns, or system clock handling required specific attention during scheduled session start.  
+  `2026-11-02T10:00:19.132819Z`
+
+- **[THINKING_CAP_HIT]** reply cut at the 8192-token output ceiling (thinking 7860 + reply 328, turn 1). Thinking overshoots its 4096 budget on this model; check whether the reply arrived whole.  
+  `2026-11-02T07:31:27.523745Z`
+
+- **[a specialist missed a signal it should have caught]** Routing miss: morning scheduled prompt ('Good morning. Open with whatever is most time-sensitive today...') went unrouted with empty specialists list.  
+  `2026-11-02T07:30:14.756095Z`
+
+- **[a capability gap was filed]** BLD-1101-01 (construct): A film tracker to record films watched, whether they've been seen, and personal thoughts/notes on them.  
+  `2026-11-01T19:09:35.258881Z`
+
+- **[a specialist missed a signal it should have caught]** User message contained multiple distinct tasks and notes across different domains (entertainment, logistics, AI backup, family photos) that were processed in a single turn.  
+  `2026-11-01T19:07:48.562014Z`
+
+- **[THINKING_CAP_HIT]** reply cut at the 8192-token output ceiling (thinking 7864 + reply 324, turn 1). Thinking overshoots its 4096 budget on this model; check whether the reply arrived whole.  
+  `2026-11-01T10:01:16.435024Z`
+
+- **[THINKING_CAP_HIT]** reply cut at the 8192-token output ceiling (thinking 7862 + reply 326, turn 1). Thinking overshoots its 4096 budget on this model; check whether the reply arrived whole.  
+  `2026-10-30T20:35:26.873055Z`
+
 - **[user corrected a prior turn]** User provided explicit instruction about meal logging frequency ('Log my meals and snacks each day, three times per day, unless I tell you about them first') and financial responsibility ('Payment is handled by Iva').  
   `2026-10-29T15:06:36.218055Z`
 
@@ -1703,8 +1742,8 @@ entry is a symptom, never a diagnosis.)*
 - **[user corrected a prior turn]** ```  
   `2026-10-05T16:32:33.291047Z`
 
-- **[a specialist missed a signal it should have caught]** Coordinator routing miss: scheduled anticipatory logistics pass received without user message; Coordinator failed to invoke Logistics specialist to evaluate evening and tomorrow locations, locations-based opportunities, or gaps.  
-  `2026-10-05T09:00:27.551886Z`
+- **[a specialist missed a signal it should have caught]** Coordinator failed to surface scheduled anticipatory logistics pass (location check and evening/tomorrow preparation) during scheduled opening.  ×2  
+  `2026-11-04T10:00:13.676792Z`
 
 - **[a specialist missed a signal it should have caught]** Routed morning brief to Diarist and Mental Wellbeing as whole-person morning session, while loading relevant knowledge subjects.  
   `2026-10-05T06:30:14.575447Z`
