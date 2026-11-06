@@ -1,7 +1,7 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-11-04. **Whole-codebase Fable review ready, not run:** fresh Fable 5.1 session, paste
-`archive/handoffs/2026-11-04-whole-codebase-review-prompt.md` (~$180, cap $250; log § 11-04). **Synth now says what to do now and the one thing next, not the whole day**
+*Updated: 2026-11-05. **Whole-codebase review done and verified:** `archive/plans/codebase_review_2026-11-05_fable-5-1.md` — 6 High + 1 conditional, 19 Medium, $179/$250 (log § 11-05).
+**Mike: `/backlog` triage from it; one VM check decides finding 1: `grep -c '^OPENAI_API_KEY=.' ~/multi-model-mcp/.env`.** **Synth now says what to do now and the one thing next, not the whole day**
 (`547c446`, **not deployed**; log § 2026-10-30). Code hands it Now / Next / Free / Important ≤ 2;
 `read_day_plan` gives the whole day on request; the evening close keeps prerequisites (the Red
 Book) and drops "tomorrow in full" (Mike, superseding 09-05). **Mike: deploy, then live-check the
@@ -13,7 +13,7 @@ on her approval day; `/backlog deep`, then
 `archive/handoffs/2026-10-30-backlog-attack-signout-calendar-text-forward-trail-prompt.md`;
 capture-fidelity planning; reply latency (with `[DB-1029-09]`); Sign out; security `[DB-1029-20]`;
 **WhatsApp Phase 0 close-out** (survival read 10-31, LM + increments rulings — § Current state);
-day-planner live checks `[DB-1029-01]` (due 10-31); nine fixes' closes-on checks (11-12). **The
+day-planner live checks `[DB-1029-01]` (due 10-31; the check script is already on the VM — no deploy needed); nine fixes' closes-on checks (11-12). **The
 meals habit still doesn't exist** — Mike re-asks as "open a daily habit…". **Still owed:** the
 boys' school hours/bedtimes → `children_home`; the "over and out" live check; Mike's calendar live
 check (week of 9 Nov); `[DB-0901-02]`, due 12-15.*
@@ -138,7 +138,7 @@ sequencing, cost, kept/changed/deleted. Per-phase prompts, including E's deploy 
 F1 run 1's two defects (Inquiry named a retired agent; no path back from an artifact that validates
 but is wrong): `archive/handoffs/2026-09-26-build-phase-F1.md`. **Next: `claude update` to ≥
 2.1.271, restart, bench test 2** (`archive/plans/inquiry_rewrite_2026-09-26.md`) — **`omitClaudeMd:
-true` is SILENTLY IGNORED below 2.1.271**, the one way bench test 2 could measure nothing.
+true` is SILENTLY IGNORED below 2.1.271**, the one way bench test 2 could measure nothing. **Review 11-05: N13 cannot land any capability as coded** (the name gate refuses what step 3 just wrote) — report finding 9, fix before the next `/build` run.
 
 ---
 
