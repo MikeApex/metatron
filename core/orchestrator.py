@@ -5978,7 +5978,12 @@ def _reroute_refused_complaint(agent: str, key: str, value: str,
 
 
 # Tools that put text from outside the user in front of a model. See _file_wisdom_proposals.
-_UNTRUSTED_READ_TOOLS = frozenset({"read_email", "fetch_url", "fetch_rendered"})
+_UNTRUSTED_READ_TOOLS = frozenset({"read_email", "fetch_url", "fetch_rendered",
+                                   # mail-derived subjects/snippets; invite text by outsiders
+                                   "read_intake_queue", "read_calendar"})
+# Agents whose output is web text with no tool call to see: the Research Agent's grounded
+# path searches inside the model call itself.
+_UNTRUSTED_OUTPUT_AGENTS = frozenset({"research_agent"})
 
 
 def _file_wisdom_proposals(outputs: dict, persona: str | None = None) -> dict:
@@ -6050,7 +6055,9 @@ def _file_wisdom_proposals(outputs: dict, persona: str | None = None) -> dict:
                         key=key,
                         value=value,
                         domain=prop.get("domain", ""),
-                        provenance="observed" if read_untrusted else prop.get("provenance", ""),
+                        provenance=("observed"
+                                    if read_untrusted or agent in _UNTRUSTED_OUTPUT_AGENTS
+                                    else prop.get("provenance", "")),
                     )
                     _trace(f"[KNOWLEDGE] proposal from {agent}: {result}")
                     _reroute_refused_complaint(agent, key, value, result, persona)

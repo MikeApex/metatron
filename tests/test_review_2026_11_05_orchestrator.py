@@ -328,33 +328,41 @@ _PROPOSAL = ('Booked. WISDOM_PROPOSAL: {"key": "gym_mornings", "value": "trains 
              '"domain": "fitness", "provenance": "stated"}')
 
 
-def _file_one(tool_called: str | None) -> list[dict]:
+def _file_one(tool_called: str | None, agent: str = "logistics") -> list[dict]:
     written: list[dict] = []
     _tr.start_request_trace("hello", PERSONA)
     try:
-        rec = _tr.push_agent("logistics", "gemini", "m")
+        rec = _tr.push_agent(agent, "gemini", "m")
         if tool_called:
             _tr.record_tool_call(rec, 1, tool_called, {}, "From: someone@example.com ...", 1.0)
         _tr.pop_agent(rec)
         with mock.patch("tools.wisdom.write_wisdom",
                         lambda **kw: written.append(kw) or "Recorded."), \
                 mock.patch.object(orch, "_reroute_refused_complaint", lambda *a, **k: None):
-            cleaned = orch._file_wisdom_proposals({"logistics": _PROPOSAL}, persona=PERSONA)
+            cleaned = orch._file_wisdom_proposals({agent: _PROPOSAL}, persona=PERSONA)
     finally:
         _tr.set_trace(None)
         _tr._set_current_agent(None)
-    assert cleaned == {"logistics": "Booked."}
+    assert cleaned == {agent: "Booked."}
     return written
 
 
 def test_proposal_from_a_turn_that_read_mail_is_filed_observed():
-    for tool in ("read_email", "fetch_url", "fetch_rendered"):
+    # read_intake_queue (mail subjects/snippets) and read_calendar (invite text by outsiders)
+    # added after the 2026-11-11 Fable code review.
+    for tool in ("read_email", "fetch_url", "fetch_rendered", "read_intake_queue", "read_calendar"):
         written = _file_one(tool)
         assert [w["provenance"] for w in written] == ["observed"], (tool, written)
 
 
+def test_proposal_from_the_research_agent_is_filed_observed():
+    # Its grounded search happens inside the model call: no tool call to see.
+    written = _file_one(None, agent="research_agent")
+    assert [w["provenance"] for w in written] == ["observed"], written
+
+
 def test_proposal_from_an_ordinary_turn_keeps_its_provenance():
-    written = _file_one("read_calendar")
+    written = _file_one("read_wisdom")
     assert [w["provenance"] for w in written] == ["stated"]
 
 

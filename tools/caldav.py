@@ -1902,7 +1902,9 @@ def find_event_for_invite(uid: str = "", title: str = "", date: str = "") -> dic
         # A series: fetch the resource so the invitation can carry its EXDATEs (finding 7).
         full = _get_event_by_uid(matches[0]["uid"])
         if "error" not in full:
-            return full
+            # The master's start is the series' first date; the approval prompt must show
+            # the occurrence the user named. The .ics is still built from the master.
+            return {**full, "occurrence_start": matches[0].get("start", "")}
     return matches[0]
 
 

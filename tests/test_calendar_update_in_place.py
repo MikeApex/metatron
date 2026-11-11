@@ -205,6 +205,17 @@ class Series(Base):
                                       attendee_email="friend@example.com")
         self.assertIn("EXDATE;TZID=Europe/London:20261118T180000", ics)
 
+    def test_an_invitation_found_by_title_shows_the_named_occurrence(self):
+        # The master's start is the series' first date; the approval prompt must show the
+        # occurrence the user asked about (2026-11-11 Fable code review).
+        listed = {"uid": "yoga@google.com", "title": "Yoga class",
+                  "start": "2026-11-25T18:00:00", "end": "2026-11-25T19:00:00",
+                  "recurrence": "FREQ=WEEKLY;BYDAY=WE", "description": "", "location": ""}
+        with mock.patch.object(caldav, "_query_events", lambda *a, **k: {"events": [listed]}):
+            ev = caldav.find_event_for_invite(title="Yoga", date="2026-11-25")
+        self.assertEqual(ev.get("occurrence_start"), "2026-11-25T18:00:00")
+        self.assertNotEqual(ev.get("start"), "2026-11-25T18:00:00")  # the master's own start
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

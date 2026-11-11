@@ -46,6 +46,7 @@ finding trains the reader to ignore it, which is the exact failure the
 from __future__ import annotations
 
 import hashlib
+import re
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -183,7 +184,8 @@ def audit_calendar_duplicates() -> str:
         findings = find_calendar_duplicates(persona)
     except CalendarUnreadable as e:
         report_calendar_unreadable("calendar_audit", str(e))
-        return f"calendar dedup audit FAILED: calendar unreadable, nothing was checked ({e})"
+        return ("calendar dedup audit FAILED: calendar unreadable, nothing was checked "
+                f"({re.sub(r'https?://\S+', '<url>', str(e))})")  # the URL carries the account
     except Exception as e:
         return f"calendar dedup audit skipped: {e}"
 

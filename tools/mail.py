@@ -907,7 +907,7 @@ def send_calendar_invite(to: str, uid: str = "", title: str = "", date: str = ""
         if confirm_token:
             return {"error": f"Not sent. {reason}"}
         shaped = (disclosure_note or "").strip()
-        when = event.get("start", "")
+        when = event.get("occurrence_start") or event.get("start", "")
         where = event.get("location", "") or ""
         return request(
             "send_calendar_invite", args,
