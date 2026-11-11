@@ -49,7 +49,7 @@ from pathlib import Path
 import yaml
 
 from core.persona import persona_config_dir, persona_data_dir, resolve_persona
-from tools.caldav import _query_events
+from tools.caldav import CalendarUnreadable, _query_events, report_calendar_unreadable
 from tools.scheduling import _parse_dt
 
 # How far ahead to look. A pre-departure check is only useful in the window where the
@@ -190,7 +190,8 @@ def find_travel_events(persona: str | None = None, lookahead_hours: int = _LOOKA
 
     raw = _query_events(now.date().isoformat(), horizon.date().isoformat(), persona=resolved)
     if "error" in raw:
-        return []
+        # Not []: an unreadable calendar is not a day without travel (review 2026-11-05, #6).
+        raise CalendarUnreadable(raw["error"])
 
     usual = _usual_lines(resolved)
     out = []
@@ -304,6 +305,9 @@ def travel_check() -> dict | str:
     try:
         persona = resolve_persona()
         events = find_travel_events(persona)
+    except CalendarUnreadable as e:
+        report_calendar_unreadable("travel_watch", str(e))
+        return f"travel check FAILED: calendar unreadable, nothing was checked ({e})"
     except Exception as e:
         return f"travel check skipped: {e}"
 

@@ -11,16 +11,20 @@ Not a summary — a list of threads to pick up next session.
 Sensitive-tier, local-only, 600 permissions. Persona-scoped.
 """
 
+import functools
 import hashlib
 import json
 import logging
 import os
 import re
 import shutil
+import tempfile
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from contextlib import nullcontext
+
+from filelock import FileLock
 
 from core.persona import persona_data_dir, persona_scope
 
@@ -603,26 +607,112 @@ def _preserve_corrupt(path: Path) -> str:
         return ""
 
 
+# Review 2026-11-05, finding 22. Every writer here is a read-modify-write of one file, and they
+# run in two processes — the server (the Synthesizer's write_context_tracker, the asked-state
+# bookkeeping after a turn) and each persona's scheduler (close_scheduled_run at the end of every
+# job). The file was written with open("w") + json.dump: truncate first, then fill, so a reader in
+# the other process could see it empty or half-written. A zero-length read keeps nothing in
+# `_preserve_corrupt` (there is nothing to copy), and `close_scheduled_run` then wrote back only
+# `{scheduled_runs}` — clinical threads included in what was erased, with no copy anywhere.
+#
+# Three parts, all under the lock: writes go through a temp file and `os.replace`, so no reader
+# can observe a torn file from our own writers; the outgoing tracker, when it is valid, is COPIED
+# to `context.json.lastgood` before the new one replaces it (copied, never moved — there is no
+# instant at which the tracker is absent); and a torn, empty or missing tracker beside a valid
+# `.lastgood` carries `clinical_threads` and `_CARRIED_KEYS` from it rather than from nothing.
+# A brand-new persona has neither file and still starts empty. Same lock and replace pattern as
+# core/memory.py and tools/wisdom.py.
+_LOCK_TIMEOUT = 30  # seconds; a tracker read-modify-write is milliseconds
+
+
+def _lock_path() -> Path:
+    return _tracker_path().parent / ".context.lock"
+
+
+def _lastgood_path() -> Path:
+    path = _tracker_path()
+    return path.with_name(path.name + ".lastgood")
+
+
+def _tracker_lock() -> FileLock:
+    """Cross-process lock for one persona's tracker. Not re-entrant across calls — take it once,
+    at the public read-modify-write, never inside `_read_raw`/`_write_raw`."""
+    _tracker_path().parent.mkdir(parents=True, exist_ok=True)
+    return FileLock(str(_lock_path()), timeout=_LOCK_TIMEOUT)
+
+
+def _locked(fn):
+    """Run a read-modify-write of the tracker under `_tracker_lock()`. The persona must already
+    be bound when it is called — the lock path is resolved from it."""
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        with _tracker_lock():
+            return fn(*args, **kwargs)
+    return wrapper
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + ".", suffix=".tmp")
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(text)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
+def _recover_from_lastgood() -> dict:
+    """The carried keys from `.lastgood`, or {} if it is missing or unreadable too.
+
+    Only what is carried forward rather than rewritten each turn: clinical threads (merge, not
+    replace — they must not be deletable) and `_CARRIED_KEYS`. Open threads, patterns and
+    follow-ups are restated by the next ordinary write, so a stale copy of them is not restored.
+    """
+    try:
+        good = json.loads(_lastgood_path().read_text())
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(good, dict):
+        return {}
+    kept = {k: good[k] for k in ("clinical_threads", *_CARRIED_KEYS) if k in good}
+    if kept:
+        logger.warning("[context_tracker] tracker unreadable or missing — carried %s from %s",
+                       sorted(kept), _lastgood_path().name)
+    return kept
+
+
 def _read_raw() -> dict:
-    """The whole tracker file, or {} — including keys `read_context_tracker()` hides."""
+    """The whole tracker file, or {} — including keys `read_context_tracker()` hides.
+
+    A torn, empty or missing tracker falls back to `_recover_from_lastgood()`; a brand-new
+    persona has no `.lastgood` either and gets {}."""
     path = _tracker_path()
     if not path.exists():
-        return {}
+        return _recover_from_lastgood()
     try:
         return json.loads(path.read_text())
     except json.JSONDecodeError:
         _preserve_corrupt(path)
-        return {}
+        return _recover_from_lastgood()
     except OSError:
         return {}
 
 
 def _write_raw(data: dict) -> None:
+    """Replace the tracker atomically, keeping the outgoing one as `.lastgood` if it is valid.
+    Callers hold `_tracker_lock()`."""
     path = _tracker_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w") as f:
-        json.dump(data, f, indent=2)
-    os.chmod(path, 0o600)
+    try:
+        outgoing = path.read_text()
+        if isinstance(json.loads(outgoing), dict):
+            _atomic_write_text(_lastgood_path(), outgoing)
+    except (OSError, ValueError):
+        pass  # no tracker yet, or a damaged one: .lastgood keeps the last valid copy
+    _atomic_write_text(path, json.dumps(data, indent=2))
 
 
 def _norm_question(text: str) -> str:
@@ -690,6 +780,7 @@ def _archive_asked(data: dict, entries: list[dict]) -> None:
     data["asked_questions_archive"] = archive
 
 
+@_locked
 def record_asked_questions(questions: list[str], kind: str | None = None) -> list[str]:
     """
     Record that a scheduled run put these questions to the user and they are, as of now,
@@ -739,6 +830,7 @@ def record_asked_questions(questions: list[str], kind: str | None = None) -> lis
     return touched
 
 
+@_locked
 def clear_answered_questions(user_text: str | None) -> list[str]:
     """
     An answered question clears its asked-state. Returns the texts cleared.
@@ -824,6 +916,7 @@ def _context_fingerprint(data: dict) -> str:
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:32]
 
 
+@_locked
 def close_scheduled_run(kind: str, at: datetime | None = None) -> None:
     """
     Close a scheduled run: stamp the context as it stands NOW.
@@ -851,6 +944,7 @@ def close_scheduled_run(kind: str, at: datetime | None = None) -> None:
     _write_raw(data)
 
 
+@_locked
 def note_scheduled_run(kind: str, at: datetime | None = None) -> dict:
     """
     Open a scheduled run: record it, and report what this run may and may not say.
@@ -1249,6 +1343,7 @@ def administratively_resolve(flag: str, persona: str | None = None) -> bool:
         return _administratively_resolve_bound(flag)
 
 
+@_locked
 def _administratively_resolve_bound(flag: str) -> bool:
     data = _read_raw()
     threads = data.get("clinical_threads")
@@ -1269,6 +1364,7 @@ def _administratively_resolve_bound(flag: str) -> bool:
     return changed
 
 
+@_locked
 def write_context_tracker(
     open_threads: list,
     patterns: list[str],
@@ -1329,9 +1425,12 @@ def write_context_tracker(
             existing = json.loads(path.read_text())
         except json.JSONDecodeError:
             # The write below replaces this file wholesale. Keep the damaged copy first
-            # — see _preserve_corrupt; clinical threads live here.
+            # — see _preserve_corrupt; clinical threads live here — and carry what must not
+            # be deletable from the last good copy (finding 22, above _LOCK_TIMEOUT).
             _preserve_corrupt(path)
-            existing = {}
+            existing = _recover_from_lastgood()
+    else:
+        existing = _recover_from_lastgood()
 
     # A clinical thread needs the user's own words (Mike, 2026-10-29) — the other half of
     # core/orchestrator._drop_unprompted_clinical_flags. A scheduled session has none, so it
@@ -1438,10 +1537,7 @@ def write_context_tracker(
         if _key in existing:
             tracker[_key] = existing[_key]
 
-    with open(path, "w") as f:
-        json.dump(tracker, f, indent=2)
-
-    os.chmod(path, 0o600)
+    _write_raw(tracker)
 
     # [DB-0814-02] The audit line, beside the file it describes. `removed` is the third
     # category and is not the same as `expired`: a thread the model simply stopped sending

@@ -65,7 +65,7 @@ from pathlib import Path
 import yaml
 
 from core.persona import persona_config_dir, persona_data_dir, resolve_persona
-from tools.caldav import _query_events
+from tools.caldav import CalendarUnreadable, _query_events, report_calendar_unreadable
 from tools.scheduling import _parse_dt
 
 _MODULE_CONFIG = Path(__file__).parent.parent / "config" / "modules" / "calendar_reconcile.yaml"
@@ -203,7 +203,9 @@ def find_unreferenced_events(persona: str | None = None) -> list[dict]:
     raw = _query_events(window_start.date().isoformat(), now.date().isoformat(),
                         persona=resolved)
     if "error" in raw:
-        return []
+        # Not []: an unreadable calendar is not one with nothing unreferenced (review
+        # 2026-11-05, #6).
+        raise CalendarUnreadable(raw["error"])
 
     days = tuple(sorted({
         (window_start + timedelta(days=d)).strftime("%Y-%m-%d")
@@ -355,6 +357,9 @@ def reconcile_check() -> str:
     try:
         persona = resolve_persona()
         candidates = find_unreferenced_events(persona)
+    except CalendarUnreadable as e:
+        report_calendar_unreadable("calendar_reconcile", str(e))
+        return f"calendar reconcile FAILED: calendar unreadable, nothing was checked ({e})"
     except Exception as e:
         return f"calendar reconcile skipped: {e}"
 

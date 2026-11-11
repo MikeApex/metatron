@@ -31,7 +31,7 @@ import requests
 import yaml
 
 from core.connections import apply_credentials, credentials_path
-from core.persona import persona_config_dir
+from core.persona import persona_config_dir, persona_data_dir
 from tools.untrusted import (UNTRUSTED_CONTENT_INSTRUCTION, contains_injection_markers,
                              wrap_untrusted)
 
@@ -171,6 +171,55 @@ def _auth_hint(e: Exception) -> str:
     """The remedy above, but only when the server actually rejected the credentials."""
     status = getattr(getattr(e, "response", None), "status_code", None)
     return _credential_remedy() if status in (401, 403) else ""
+
+
+# Review 2026-11-05, finding 6. The unattended calendar jobs (tools/travel_watch.py,
+# tools/calendar_audit.py, tools/calendar_reconcile.py) each turned `{"error": ...}` from
+# _query_events into an empty list, so a revoked app password read as "no travel found",
+# "no duplicates", "nothing unreferenced" — a quiet day — for as long as the outage lasted.
+# An interactive calendar turn still surfaces the 401 with its remedy; these jobs had no one
+# to say it to. Now each raises this, returns its own failure string, and files one event.
+class CalendarUnreadable(RuntimeError):
+    """The calendar could not be read — a broken connection, never an empty calendar."""
+
+
+def _unreadable_seen_path() -> Path:
+    return persona_data_dir() / "logs" / ".calendar_unreadable_reported"
+
+
+def report_calendar_unreadable(job: str, error: str) -> bool:
+    """
+    File one CALENDAR_UNREADABLE quality event per job per day. Returns True if one was written.
+
+    Hourly jobs during a day-long outage would otherwise write the same event every run, and a
+    repeated signal trains the reader to skip it — the same reason calendar_audit's findings are
+    reported once. The ledger keeps today's `date|job` lines only. Never raises: this runs on the
+    failure path of an unattended job.
+    """
+    try:
+        today = datetime.now().date().isoformat()
+        key = f"{today}|{job}"
+        path = _unreadable_seen_path()
+        lines = path.read_text().splitlines() if path.exists() else []
+        if key in lines:
+            return False
+        from tools.logger import write_quality_event
+        # URLs carry the account address; the remedy text stays, it is the useful part.
+        cause = re.sub(r"https?://\S+", "<url>", str(error or "unknown error")).strip()[:300]
+        write_quality_event(
+            event_type="CALENDAR_UNREADABLE",
+            source_agent=job,
+            detail=(f"{job}: the calendar could not be read, so this run checked nothing — "
+                    f"a broken connection, not a quiet day. {cause}"),
+            session_id=job,
+        )
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("\n".join([ln for ln in lines if ln.startswith(today + "|")] + [key]) + "\n")
+        path.chmod(0o600)
+        return True
+    except Exception as exc:  # noqa: BLE001 — see docstring
+        logger.warning("[caldav] could not report CALENDAR_UNREADABLE for %s: %s", job, exc)
+        return False
 
 
 def _parse_ical_dt(val: str, tzid: str = "", target_tz: str = "", utc_to_local: bool = False) -> str:
@@ -894,9 +943,124 @@ def _get_event_by_uid(uid: str, persona: str | None = None) -> dict:
     if not raw_events:
         return {"error": f"Event '{uid}' returned no parseable VEVENT."}
 
-    event = _format_event(raw_events[0], str(cfg.get("timezone", "") or ""))
+    # The series master, not whichever VEVENT came first — a resource holding a recurring
+    # series also holds one VEVENT per rescheduled occurrence (RECURRENCE-ID).
+    master = next((r for r in raw_events if not r.get("RECURRENCE-ID")), raw_events[0])
+    event = _format_event(master, str(cfg.get("timezone", "") or ""))
     event["_event_url"] = event_url
+    # The resource as fetched. update_calendar_event edits this in place (finding 7, above
+    # _edit_master_vevent) rather than rebuilding the event from the fields above.
+    event["_ics"] = response.text
     return event
+
+
+# Review 2026-11-05, finding 7. update_calendar_event used to rebuild ONE VEVENT from the
+# formatted fields and PUT it over the whole resource. The formatted dict carries no VALARM,
+# no EXDATE and no sibling VEVENT, so "move the dentist to 3:30" deleted the reminder (the
+# schema says to pass the alarm only "if changing"), and retitling a weekly class brought back
+# the occurrence the user had cancelled, and dropped every rescheduled one. Editing the fetched
+# text keeps all of that: only the master VEVENT's own properties that this call changes are
+# replaced; everything else — siblings, alarms, exclusions, VTIMEZONE, folding — is as fetched.
+
+def _ical_groups(ics_text: str) -> list[list[str]]:
+    """Physical lines grouped into logical ones (a line plus its folded continuations)."""
+    groups: list[list[str]] = []
+    for line in ics_text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        if line[:1] in (" ", "\t") and groups:
+            groups[-1].append(line)
+        else:
+            groups.append([line])
+    return groups
+
+
+def _ical_name(group: list[str]) -> str:
+    return group[0].split(":", 1)[0].split(";", 1)[0].strip().upper()
+
+
+def _master_span(groups: list[list[str]]) -> tuple[int, int] | None:
+    """(BEGIN, END) indexes of the master VEVENT: the first with no RECURRENCE-ID of its own,
+    else the first VEVENT. None when there is no complete VEVENT."""
+    spans: list[tuple[int, int, bool]] = []
+    begin, depth, has_rid = None, 0, False
+    for i, g in enumerate(groups):
+        line = g[0].strip().upper()
+        if begin is None:
+            if line == "BEGIN:VEVENT":
+                begin, depth, has_rid = i, 0, False
+            continue
+        if line.startswith("BEGIN:"):
+            depth += 1
+        elif line == "END:VEVENT" and depth == 0:
+            spans.append((begin, i, has_rid))
+            begin = None
+        elif line.startswith("END:"):
+            depth -= 1
+        elif depth == 0 and _ical_name(g) == "RECURRENCE-ID":
+            has_rid = True
+    if not spans:
+        return None
+    b, e, _ = next((s for s in spans if not s[2]), spans[0])
+    return b, e
+
+
+def _edit_master_vevent(ics_text: str, set_lines: list[str], drop: set[str],
+                        alarm: list[str] | None = None) -> str | None:
+    """
+    The fetched resource with its master VEVENT edited: every top-level property named in
+    `drop` or by a line in `set_lines` is removed and `set_lines` written in its place; when
+    `alarm` is given, the master's own VALARMs are replaced by it, otherwise kept as they are.
+    Sibling VEVENTs and everything outside the master are untouched. None if no VEVENT found.
+    """
+    groups = _ical_groups(ics_text)
+    span = _master_span(groups)
+    if span is None:
+        return None
+    begin, end = span
+    names = {n.upper() for n in drop} | {_ical_name([ln]) for ln in set_lines}
+
+    body: list[list[str]] = []
+    nested: list[list[str]] = []
+    depth, in_alarm = 0, False
+    for g in groups[begin + 1:end]:
+        line = g[0].strip().upper()
+        if depth == 0 and line.startswith("BEGIN:"):
+            depth, in_alarm = 1, line == "BEGIN:VALARM"
+            if not (in_alarm and alarm is not None):
+                nested.append(g)
+            continue
+        if depth:
+            if line.startswith("BEGIN:"):
+                depth += 1
+            elif line.startswith("END:"):
+                depth -= 1
+            if not (in_alarm and alarm is not None):
+                nested.append(g)
+            continue
+        if _ical_name(g) not in names:
+            body.append(g)
+
+    # Properties before components, as RFC 5545's VEVENT grammar orders them.
+    edited = (groups[:begin + 1] + body + [[ln] for ln in set_lines] + nested
+              + [[ln] for ln in (alarm or [])] + groups[end:])
+    return "\r\n".join(ln for g in edited for ln in g)
+
+
+def _master_exdate_lines(ics_text: str) -> list[str]:
+    """The master VEVENT's EXDATE lines, as written (unfolded)."""
+    groups = _ical_groups(ics_text or "")
+    span = _master_span(groups)
+    if span is None:
+        return []
+    out, depth = [], 0
+    for g in groups[span[0] + 1:span[1]]:
+        line = g[0].strip().upper()
+        if line.startswith("BEGIN:"):
+            depth += 1
+        elif line.startswith("END:"):
+            depth -= 1
+        elif depth == 0 and _ical_name(g) == "EXDATE":
+            out.append(g[0] + "".join(c[1:] for c in g[1:]))
+    return out
 
 
 def read_calendar(start_date: str, end_date: str) -> dict:
@@ -1376,6 +1540,40 @@ def update_calendar_event(
     lines += ["END:VEVENT", "END:VCALENDAR", ""]
     ical = "\r\n".join(lines)
 
+    # The fetched resource, edited in place (finding 7, above _edit_master_vevent). Only what
+    # this call changes is rewritten; the rebuild above remains only for an event fetched
+    # without its text.
+    if existing.get("_ics"):
+        set_lines = [f"DTSTAMP:{now_utc}",
+                     f"X-CONFLICT-CHECK-STATUS:{'FAILED' if conflict_check_failed else 'OK'}"]
+        drop: set[str] = set()
+        if start is not None or end is not None or all_day is not None:
+            set_lines += [dtstart, dtend]
+            drop.add("DURATION")       # DTEND replaces it; both at once is invalid
+        if title is not None or conflict_check_failed:
+            set_lines.append(f"SUMMARY:{_esc(title_to_write)}")
+        if description is not None or conflict_check_failed:
+            set_lines.append(f"DESCRIPTION:{_esc(new_description)}")
+        if location is not None:
+            set_lines.append(f"LOCATION:{_esc(new_location)}")
+        if recurrence is not None:
+            if new_recurrence:
+                set_lines.append(f"RRULE:{new_recurrence}")
+            else:
+                drop.add("RRULE")
+        if attendees is not None:
+            if new_attendees:
+                set_lines.append(f"X-ATTENDEE-NAMES:{_esc(', '.join(new_attendees))}")
+            else:
+                drop.add("X-ATTENDEE-NAMES")
+        alarm = None
+        if alarm_minutes_before is not None:
+            alarm = ["BEGIN:VALARM", "ACTION:DISPLAY", f"DESCRIPTION:{_esc(title_to_write)}",
+                     f"TRIGGER:-PT{alarm_minutes_before}M", "END:VALARM"]
+        edited = _edit_master_vevent(existing["_ics"], set_lines, drop, alarm)
+        if edited is not None:
+            ical = edited
+
     event_url = existing.get("_event_url") or (url.rstrip("/") + "/" + uid + ".ics")
     auth_cfg = cfg.get("auth", {})
     auth = (auth_cfg.get("username", ""), auth_cfg.get("password", ""))
@@ -1700,6 +1898,11 @@ def find_event_for_invite(uid: str = "", title: str = "", date: str = "") -> dic
         return {"error": f"'{title}' on {date} matches {len(matches)} events — say which one.",
                 "candidates": [{"uid": e.get("uid"), "title": e.get("title"),
                                 "start": e.get("start")} for e in matches]}
+    if matches[0].get("recurrence") and matches[0].get("uid"):
+        # A series: fetch the resource so the invitation can carry its EXDATEs (finding 7).
+        full = _get_event_by_uid(matches[0]["uid"])
+        if "error" not in full:
+            return full
     return matches[0]
 
 
@@ -1753,5 +1956,7 @@ def build_invite_ics(event: dict, organizer_email: str, attendee_email: str,
     ]
     if event.get("recurrence"):
         lines.append(f"RRULE:{event['recurrence']}")
+        # The occurrences the user cancelled stay cancelled in the recipient's copy (finding 7).
+        lines += _master_exdate_lines(event.get("_ics", ""))
     lines += ["END:VEVENT", "END:VCALENDAR", ""]
     return "\r\n".join(lines)

@@ -318,11 +318,11 @@ def create_semantic_anchor(label: str, description: str) -> str:
 
 
 def write_aspirational_baseline(
-    persona: str,
     good_week: str,
     hard_week: str,
     peak_days: str,
     floor_days: str,
+    persona: str = "",
 ) -> str:
     """
     Record the user's aspirational baseline from the Goals Interview.
@@ -369,9 +369,9 @@ def write_aspirational_baseline(
 
 
 def shuffled_null_score(
-    persona: str,
     window_days: int,
     n_permutations: int = 100,
+    persona: str = "",
 ) -> dict:
     """
     Build a null distribution of anchor similarity scores via random permutation.
@@ -447,8 +447,8 @@ def shuffled_null_score(
 
 
 def score_against_anchors(
-    persona: str,
     date_range: dict,
+    persona: str = "",
 ) -> dict:
     """
     Score a date range's log entries against all semantic anchors.
@@ -652,6 +652,9 @@ CREATE_SEMANTIC_ANCHOR_SCHEMA = {
     },
 }
 
+# No `persona` property in this schema or the two below (review 2026-11-05, finding 3). It was
+# REQUIRED, so the model had to invent a value, and an existing name reached that user's tree.
+# The Python parameter stays for tests; on a model call the bound persona answers.
 WRITE_ASPIRATIONAL_BASELINE_SCHEMA = {
     "name": "write_aspirational_baseline",
     "description": (
@@ -663,10 +666,6 @@ WRITE_ASPIRATIONAL_BASELINE_SCHEMA = {
     "input_schema": {
         "type": "object",
         "properties": {
-            "persona": {
-                "type": "string",
-                "description": "Persona slug for test runs; empty string for the real user.",
-            },
             "good_week": {
                 "type": "string",
                 "description": "User's description of a recent week that felt genuinely good.",
@@ -684,7 +683,7 @@ WRITE_ASPIRATIONAL_BASELINE_SCHEMA = {
                 "description": "The floor — a day to avoid; signals of heading there.",
             },
         },
-        "required": ["persona", "good_week", "hard_week", "peak_days", "floor_days"],
+        "required": ["good_week", "hard_week", "peak_days", "floor_days"],
     },
 }
 
@@ -699,10 +698,6 @@ SHUFFLED_NULL_SCORE_SCHEMA = {
     "input_schema": {
         "type": "object",
         "properties": {
-            "persona": {
-                "type": "string",
-                "description": "Persona slug; empty string for the real user.",
-            },
             "window_days": {
                 "type": "integer",
                 "description": "Analysis window size in days (e.g. 7, 30).",
@@ -712,7 +707,7 @@ SHUFFLED_NULL_SCORE_SCHEMA = {
                 "description": "Number of random draws (default 100).",
             },
         },
-        "required": ["persona", "window_days"],
+        "required": ["window_days"],
     },
 }
 
@@ -727,10 +722,6 @@ SCORE_AGAINST_ANCHORS_SCHEMA = {
     "input_schema": {
         "type": "object",
         "properties": {
-            "persona": {
-                "type": "string",
-                "description": "Persona slug; empty string for the real user.",
-            },
             "date_range": {
                 "type": "object",
                 "description": "Dict with 'start' and 'end' keys (ISO dates YYYY-MM-DD).",
@@ -741,6 +732,6 @@ SCORE_AGAINST_ANCHORS_SCHEMA = {
                 "required": ["start", "end"],
             },
         },
-        "required": ["persona", "date_range"],
+        "required": ["date_range"],
     },
 }

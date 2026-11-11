@@ -912,6 +912,21 @@ def context_block(persona: str | None = None) -> str:
     if counts:
         lines.append("[Intake queues] " + ", ".join(counts))
 
+    # Last, and ours: a channel whose sweeps are failing (finding 6, see _record_channel_health).
+    # States the consequence only — no error text, no mechanism.
+    try:
+        health = _read_json(_channel_health_path(persona), {})
+    except Exception:  # noqa: BLE001 — a context line must never break context assembly
+        health = {}
+    failing = [f"{ch}: {int(h.get('failures') or 0)} sweep(s) in a row failed, since "
+               f"{str(h.get('since') or '?')[:16].replace('T', ' ')}"
+               for ch, h in sorted(health.items()) if isinstance(h, dict)]
+    if failing:
+        lines.append("[Intake — channel not being read] " + "; ".join(failing) + ". New "
+                     "messages on it are NOT reaching the queues, so a quiet queue says nothing "
+                     "about the inbox — never tell the user nothing new has arrived. If mail "
+                     "comes up, say the mail connection is not working at the moment.")
+
     return "\n".join(lines)
 
 
@@ -1093,6 +1108,37 @@ def collapse_threads(envelopes: list[Envelope]) -> list[Envelope]:
 # The sweep
 # ---------------------------------------------------------------------------
 
+def _channel_health_path(persona: str | None = None) -> Path:
+    return _intake_dir(persona) / "channel_health.json"
+
+
+def _record_channel_health(persona: str | None, attempted: list[str],
+                           failed: set[str]) -> None:
+    """
+    Count consecutive failed sweeps per channel; a sweep that reads a channel clears its count,
+    and a channel no longer swept (switched off) is dropped.
+
+    Review 2026-11-05, finding 6: a revoked app password made every sweep fail, the failure
+    went only into `sweep`'s return string — printed to a journal nobody reads — and intake
+    simply went quiet, which is what a quiet inbox also looks like. `context_block` reads this
+    so the head layer can tell the two apart. Never raises: a bookkeeping fault must not cost
+    the sweep.
+    """
+    try:
+        health = _read_json(_channel_health_path(persona), {})
+        now = datetime.now().isoformat(timespec="seconds")
+        updated = {}
+        for channel in attempted:
+            if channel in failed:
+                entry = dict(health.get(channel) or {"failures": 0, "since": now})
+                entry["failures"] = int(entry.get("failures") or 0) + 1
+                updated[channel] = entry
+        if updated != health:
+            _write_json(_channel_health_path(persona), updated)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[intake] channel health not recorded: {exc}")
+
+
 def sweep(persona: str | None = None) -> str:
     """Read new messages, classify them, record them. Notifies nothing, ever.
 
@@ -1116,9 +1162,11 @@ def sweep(persona: str | None = None) -> str:
 
     fetched: list[Envelope] = []
     failures: list[str] = []
+    attempted: list[str] = []
     for channel, enabled in (cfg.get("channels") or {}).items():
         if not enabled or channel not in _ADAPTERS:
             continue
+        attempted.append(channel)
         # The skip predicate lets an adapter avoid downloading content for messages
         # already processed — the difference between an idle hourly sweep costing a
         # headers-only round trip and it re-downloading 50 full bodies.
@@ -1137,6 +1185,8 @@ def sweep(persona: str | None = None) -> str:
             # One channel failing must not cost the others their sweep.
             failures.append(f"{channel}: {exc}")
             logger.warning(f"[intake] {channel} fetch failed: {exc}")
+    _record_channel_health(persona, attempted,
+                           {f.split(":", 1)[0] for f in failures})
 
     fresh_all = [env for env in fetched if env.id not in seen]
     fresh = collapse_threads(fresh_all)[:max_per_sweep]

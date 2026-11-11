@@ -148,6 +148,9 @@ def read_recent_insights(n: int = 5, persona: str = "") -> list[dict]:
 # ---------------------------------------------------------------------------
 # Tool schemas
 # ---------------------------------------------------------------------------
+# No schema here declares `persona` (review 2026-11-05, finding 3): a model that fills a
+# "for dev testing" slot reaches another user's logs and insights by naming them. The
+# Python parameter stays for tests; on a model call the bound persona answers.
 
 GET_LOG_WINDOW_SCHEMA = {
     "name": "get_log_window",
@@ -167,10 +170,6 @@ GET_LOG_WINDOW_SCHEMA = {
             "end_date": {
                 "type": "string",
                 "description": "End of the window, ISO format (YYYY-MM-DD).",
-            },
-            "persona": {
-                "type": "string",
-                "description": "Persona name for dev testing. Leave empty for real user data.",
             },
             "max_entries": {
                 "type": "integer",
@@ -210,10 +209,6 @@ WRITE_INSIGHT_REPORT_SCHEMA = {
                     "baseline_used: string, data_window: string }"
                 ),
             },
-            "persona": {
-                "type": "string",
-                "description": "Persona name for dev testing. Leave empty for real user data.",
-            },
         },
         "required": ["date_str", "content"],
     },
@@ -233,10 +228,6 @@ READ_RECENT_INSIGHTS_SCHEMA = {
             "n": {
                 "type": "integer",
                 "description": "Number of recent reports to return. Default 5.",
-            },
-            "persona": {
-                "type": "string",
-                "description": "Persona name for dev testing. Leave empty for real user data.",
             },
         },
         "required": [],

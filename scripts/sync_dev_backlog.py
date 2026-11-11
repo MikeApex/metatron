@@ -91,7 +91,10 @@ MACHINE_TYPES = {"TOOL_DENIED", "RULE_CONFLICT", "SELF_APPLIED", "UNGROUNDED_ANS
                  # registered HERE and not only emitted, because the standing
                  # lesson of this file is that an unregistered type is silently
                  # discarded (ROUTING_MISS, 5 events lost on the live VM).
-                 "BUILD_PROPOSED", "BUILD_CHECK_FAILED"}
+                 "BUILD_PROPOSED", "BUILD_CHECK_FAILED",
+                 # Review 2026-11-05 #6: an unattended calendar job (travel watch, audit,
+                 # reconcile) that could not read the calendar, filed once per job per day.
+                 "CALENDAR_UNREADABLE"}
 
 WANTED = USER_TYPES | MACHINE_TYPES
 
@@ -134,6 +137,7 @@ LABELS = {
     # a turn — the user sees an error and the exchange is never recorded, which
     # is invisible from the conversation log precisely because nothing was written.
     "MODEL_CALL_FAILED": "a model call failed outright",
+    "CALENDAR_UNREADABLE": "an unattended calendar job could not read the calendar",
     # The user re-stated or corrected a prior turn. By volume the largest signal
     # in the events file — see the MACHINE_TYPES comment above for why it lands
     # here rather than a dedicated section, for now.
