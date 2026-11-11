@@ -1,0 +1,8 @@
+[Unit]
+Description=Renew Metatron TLS certificate (restarts server only if it changed)
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/home/md-homefolder/multi-model-mcp/scripts/renew_cert.sh

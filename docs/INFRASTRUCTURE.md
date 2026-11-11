@@ -277,7 +277,7 @@ Budget history: $20 → $30 (2026-07-27) → $40 (2026-07-30) → restructured t
   - Trigger: Pub/Sub message on `billing-cap`
   - Action: if `costAmount > budgetAmount` **and no manual override is active**, calls `cloudbilling.disable_project_billing()` on the project
   - Retry policy: `RETRY_POLICY_DO_NOT_RETRY`
-  - Source tracked at... *(not yet in the repo — currently only deployed; add under `infra/stop-billing/` if it needs another change. `infra/stop-vm/` shows the pattern.)*
+  - Source: `infra/stop-billing/` — downloaded from the deployed function's source bucket 2026-11-11 (deployed 2026-07-31). Redeploy from there if it needs another change; `infra/stop-vm/` shows the pattern.
 
 **Soft cap (stops the VM, the normal control) — amount in the table above:**
 
@@ -604,8 +604,8 @@ every client refuses the origin. Issue it through Tailscale (§ TLS certificate 
   Only the scheduler template is in the repo (`infra/systemd/`); the server unit is the verbatim
   text above.
 - Recreate the server's drop-in `/etc/systemd/system/metatron-server.service.d/host.conf`
-  (`[Service]` / `Environment=METATRON_HOST=vm`, text in § systemd unit files). **Not in the repo** —
-  it belongs in `infra/systemd/`, to be committed from the live VM.
+  (`[Service]` / `Environment=METATRON_HOST=vm`): copy `infra/systemd/metatron-server.service.d/host.conf`
+  (committed from the live VM 2026-11-11).
 - `sudo systemctl daemon-reload && sudo systemctl enable --now metatron-server metatron-scheduler@mike`
 - Then one `sudo systemctl enable --now metatron-scheduler@<persona>` per active account (`scripts/accounts.py list`)
 - Verify: `curl https://metatron-vm.tail0acc5d.ts.net:8001/health` → `{"status":"ok"}` — **without
@@ -618,10 +618,8 @@ Let's Encrypt certs last 90 days; the hand-minted one of 2026-06-21 expired on 2
 every client down with a healthy server (§ TLS certificate). Renewal is
 `metatron-cert-renew.timer` → `metatron-cert-renew.service` → `scripts/renew_cert.sh`, daily at
 04:30 ±30 min, as root.
-- **The two unit files are NOT in the repo.** They exist only on the live VM, at
-  `/etc/systemd/system/metatron-cert-renew.{service,timer}`. They belong in `infra/systemd/`, to be
-  committed from the live VM — **copy them off before the old VM is deleted**; a rebuild from a
-  lost VM has to rewrite them from the description above.
+- The two unit files are `infra/systemd/metatron-cert-renew.{service,timer}`, committed verbatim
+  from the live VM 2026-11-11. If the live copies are ever edited, re-commit them.
 - Install: copy both to `/etc/systemd/system/`, then
   `sudo systemctl daemon-reload && sudo systemctl enable --now metatron-cert-renew.timer`
 - Verify: `systemctl list-timers metatron-cert-renew.timer` shows a next run, and
