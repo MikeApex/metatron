@@ -225,6 +225,44 @@ def test_websocket_user_bound_to_own_persona():
         assert reply == {"type": "auth_ok", "persona": ALICE}
 
 
+def test_provider_field_never_reaches_the_pipeline():
+    """Review 2026-11-05 finding 1: a request's `provider` field picked the model API for the
+    whole pipeline — one extra key from any signed-in client moved the user's turn off the
+    ruled path. Routing is routing*.yaml's alone, for every token role, on every entry."""
+    _own_db()
+    seen: list[tuple[str, dict]] = []
+
+    def _stream(user_input, **kw):
+        seen.append(("stream", kw))
+        yield "ok"
+
+    def _session(agent, user_input, **kw):
+        seen.append(("session", kw))
+        return "ok"
+
+    saved = (server.run_pipeline_session_stream, server.run_session, server._log_conversation)
+    server.run_pipeline_session_stream, server.run_session = _stream, _session
+    server._log_conversation = lambda *a, **k: None      # writes into data/personas/
+    try:
+        for token, named in ((_user_token(ALICE), None), (auth.issue_token(), ALICE)):
+            body = {"input": "hi", "provider": "openai", **({"persona": named} if named else {})}
+            assert client.post("/session", headers=_h(token), json=body).status_code == 200
+            assert client.post("/session/stream", headers=_h(token), json=body).status_code == 200
+            with client.websocket_connect(f"/ws?persona={named}" if named else "/ws") as ws:
+                ws.send_json({"type": "auth", "token": token})
+                assert ws.receive_json()["type"] == "auth_ok"
+                ws.send_json({"type": "send", "exchange_id": f"prov-{bool(named)}",
+                              "input": "hi", "provider": "openai"})
+                while ws.receive_json().get("type") not in ("done", "error", "retract"):
+                    pass
+    finally:
+        server.run_pipeline_session_stream, server.run_session, server._log_conversation = saved
+
+    assert len(seen) == 6, seen
+    leaked = [(where, kw.get("provider")) for where, kw in seen if kw.get("provider")]
+    assert not leaked, f"a client-chosen provider reached the pipeline: {leaked}"
+
+
 def test_open_socket_is_closed_when_the_account_is_disabled():
     """Review F1: revocation reaches a socket that is already open."""
     _own_db()

@@ -1084,3 +1084,41 @@ WRITE_WISDOM_SCHEMA = {
         "required": ["key", "value", "domain"],
     },
 }
+
+# Absent until 2026-11-11 (2026-11-05 review, finding 4): the Synthesizer was granted and
+# instructed to call this, and the handler was registered, but with no schema it was never
+# advertised — so the model could not emit the call, and every answer to "I've noticed you
+# tend to X — is that right?" was lost.
+RECORD_WISDOM_RESPONSE_SCHEMA = {
+    "name": "record_wisdom_response",
+    "description": (
+        "Record the user's answer after you put an inferred observation to them — one marked "
+        "'you inferred this, and have not confirmed it with the user'. Call it once they have "
+        "answered: 'accepted' if they agree, 'denied' if they say it is not true. A denial "
+        "does not delete the entry and agreement does not make it something they stated; "
+        "either way it stays an observation, with their answer kept beside it."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "key": {
+                "type": "string",
+                "description": "The identifier of the entry you put to them, exactly as shown.",
+            },
+            "response": {
+                "type": "string",
+                "enum": ["accepted", "denied"],
+                "description": "Whether they agreed with the observation or rejected it.",
+            },
+            "pushback": {
+                "type": "string",
+                "description": (
+                    "Their own words, verbatim, when they pushed back or corrected it. Never "
+                    "a paraphrase — a paraphrased correction is how the correction gets lost. "
+                    "Leave empty when they simply agreed."
+                ),
+            },
+        },
+        "required": ["key", "response"],
+    },
+}

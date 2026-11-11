@@ -7,7 +7,7 @@ the phone and calls this server for the actual model inference.
 
 Run:
     python core/server.py --persona <name>
-    python core/server.py --persona <name> --provider openai --port 8000
+    python core/server.py --persona <name> --port 8000
 
 In production the VM serves HTTPS on 8001 behind a Tailscale cert:
     https://metatron-vm.tail0acc5d.ts.net:8001
@@ -348,10 +348,13 @@ async def auth_register(req: RegisterRequest) -> dict:
 # ---------------------------------------------------------------------------
 
 class SessionRequest(BaseModel):
+    # No `provider` field (2026-11-05 review, finding 1). It let any signed-in client pick
+    # the model API for its own turn, a second routing authority beside routing*.yaml with
+    # no guard. A plain BaseModel ignores an extra key, so an older client sending one is
+    # not refused; the value simply never reaches the pipeline.
     input: str
     agent: str = "coordinator"
     persona: str | None = None
-    provider: str | None = None   # None = auto-routed via routing.yaml
 
 
 class SessionResponse(BaseModel):
@@ -920,7 +923,7 @@ async def session(req: SessionRequest, request: Request) -> SessionResponse:
         history = _session_history.setdefault(persona, []) if agent == "coordinator" else None
         loop = asyncio.get_running_loop()
         response = await loop.run_in_executor(
-            None, lambda: run_session(agent, req.input, persona=persona, provider=req.provider, history=history)
+            None, lambda: run_session(agent, req.input, persona=persona, history=history)
         )
         _log_conversation(req.input, response, agent, persona)
         return SessionResponse(response=response)
@@ -972,13 +975,13 @@ async def session_stream(req: SessionRequest, request: Request):
         def _produce() -> None:
             try:
                 for chunk in run_pipeline_session_stream(
-                    req.input, persona=persona, provider=req.provider, history=history,
+                    req.input, persona=persona, history=history,
                     received_at=received_at,
                 ):
                     asyncio.run_coroutine_threadsafe(queue.put(chunk), loop).result()
             except NotImplementedError:
                 # Provider has no streaming variant — fall back to single blocking call
-                response = run_session(req.agent, req.input, persona=persona, provider=req.provider)
+                response = run_session(req.agent, req.input, persona=persona)
                 asyncio.run_coroutine_threadsafe(queue.put(response), loop).result()
                 asyncio.run_coroutine_threadsafe(queue.put("[DONE]"), loop).result()
             except Exception as e:
@@ -1256,7 +1259,8 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
     client); for a signed-in user it may be omitted, and naming anyone else is refused.
 
     Client → server message types:
-      {type: "send", exchange_id, input, provider, attachments}  — submit a prompt.
+      {type: "send", exchange_id, input, attachments}  — submit a prompt.
+          A `provider` key is ignored: routing*.yaml alone picks the model API.
           `attachments` is a list of ids returned by POST /upload; files themselves
           never travel over this socket. Unknown ids are dropped, not rejected.
           Idempotent on exchange_id: a resend is acknowledged, never run twice.
@@ -1411,7 +1415,6 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                 except Exception:
                     pass
 
-                provider = data.get("provider") or None
                 # Scheduler-initiated exchanges are flagged so traces record that
                 # Metatron opened the conversation rather than the user.
                 proactive = bool(data.get("proactive"))
@@ -1480,16 +1483,14 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                             asyncio.run_coroutine_threadsafe(queue.put(reply), loop).result()
                             return
                         for chunk in run_pipeline_session_stream(
-                            user_input, persona=persona_orch, provider=provider,
+                            user_input, persona=persona_orch,
                             history=history, is_proactive=proactive,
                             received_at=received_at, attachments=pipeline_attachments,
                             source=source, nudge=nudge,
                         ):
                             asyncio.run_coroutine_threadsafe(queue.put(chunk), loop).result()
                     except NotImplementedError:
-                        response = run_session(
-                            "coordinator", user_input, persona=persona_orch, provider=provider
-                        )
+                        response = run_session("coordinator", user_input, persona=persona_orch)
                         asyncio.run_coroutine_threadsafe(queue.put(response), loop).result()
                         asyncio.run_coroutine_threadsafe(queue.put("[DONE]"), loop).result()
                     except Exception as e:
@@ -2957,8 +2958,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Life Manager — PWA Server")
     parser.add_argument("--host", default="0.0.0.0", help="Bind address (0.0.0.0 = all interfaces)")
     parser.add_argument("--port", type=int, default=8000)
-    parser.add_argument("--provider", default="gemini", choices=["anthropic", "openai", "ollama", "gemini"],
-                        help="Default provider (can be overridden per request)")
+    # Accepted and ignored (2026-11-05 review, finding 1): the server no longer takes a
+    # provider from anyone. Kept parseable so a unit or script still passing it does not
+    # make the server refuse to start and crash-loop on the next deploy.
+    parser.add_argument("--provider", default=None, help=argparse.SUPPRESS)
     # Accepted for the systemd unit's sake and otherwise ignored: since 2026-10-27 every
     # request's persona comes from its token (bound_persona), never from a server default.
     parser.add_argument("--persona", default=None,

@@ -1353,6 +1353,7 @@ def register_tools() -> tuple[list[dict], dict]:
         write_wisdom, read_wisdom, WRITE_WISDOM_SCHEMA, READ_WISDOM_SCHEMA,
         find_duplicate_wisdom, merge_wisdom_entries, record_wisdom_response,
         FIND_DUPLICATE_WISDOM_SCHEMA, MERGE_WISDOM_ENTRIES_SCHEMA,
+        RECORD_WISDOM_RESPONSE_SCHEMA,
     )
     from tools.pattern_miner import (
         get_log_window, write_insight_report, read_recent_insights,
@@ -1487,6 +1488,7 @@ def register_tools() -> tuple[list[dict], dict]:
         SEARCH_CONVERSATIONS_SCHEMA,
         WRITE_WISDOM_SCHEMA, READ_WISDOM_SCHEMA,
         FIND_DUPLICATE_WISDOM_SCHEMA, MERGE_WISDOM_ENTRIES_SCHEMA,
+        RECORD_WISDOM_RESPONSE_SCHEMA,
         SEARCH_MEMORY_SCHEMA,
         READ_CONTEXT_TRACKER_SCHEMA, WRITE_CONTEXT_TRACKER_SCHEMA,
         WRITE_PERSONA_SCHEMA,
@@ -2823,6 +2825,13 @@ def dispatch_tool(name: str, inputs: dict, handlers: dict,
                 f"could not do."
             )
 
+    # A model never names whose data a tool touches: the bound persona does (2026-11-05
+    # review, finding 3). Several tools keep a `persona` parameter for tests and dev runs,
+    # where an explicit argument beats the thread-local — so a model that fills that slot
+    # would reach another user's tree. Dropped here, before the call, on every path.
+    if inputs and "persona" in inputs:
+        inputs = {k: v for k, v in inputs.items() if k != "persona"}
+
     _trace(f"  [TOOL] {name}")
     t0 = time.monotonic()
     fn = handlers[name]
@@ -3925,7 +3934,11 @@ def _log_api_failure(loop: str, model: str, exc: Exception,
     detail, so a varying field there would make every occurrence its own item.
     """
     from core.router import log_model_error
-    who = agent or _tr.get_current_agent() or "unknown"
+    # The agent's NAME, never the record — same leak as _note_unsigned's 2026-08-15 fix. The
+    # AgentRecord's repr carries `context_sections`, the whole assembled prompt, so the
+    # f-string below wrote it to journald; and json.dumps() of it in write_quality_event
+    # raised, so MODEL_CALL_FAILED was never written while an agent was current.
+    who = agent or getattr(_tr.get_current_agent(), "agent", None) or "unknown"
     turn_s = f" turn={turn}" if turn is not None else ""
     extra_s = f" {extra}" if extra else ""
     logger.error(f"[model_error] loop={loop} agent={who} model={model}{turn_s}{extra_s} error={exc}")
@@ -4064,7 +4077,8 @@ def run_session_gemini_grounded(system_prompt: str, user_input: str,
             )
         except Exception as _api_exc:
             _log_api_failure("gemini_grounded", model_name, _api_exc, turn=turn,
-                             agent=_tr.get_current_agent() or "research_agent")
+                             agent=getattr(_tr.get_current_agent(), "agent", None)
+                             or "research_agent")
             raise
 
         # Token budget logging (native SDK field)
@@ -4217,7 +4231,9 @@ def run_session_gemini_cached(system_prompt: str, user_input: str,
     Falls back to run_session_gemini (OpenAI-compat, uncached) when:
     - GOOGLE_CLOUD_PROJECT is not set (not on Vertex)
     - Cache creation fails (model doesn't support caching, content below minimum, etc.)
-    - Native loop raises (e.g. thought_signature bug on rare parallel-tool escalations)
+    - Native loop raises (e.g. thought_signature bug on rare parallel-tool escalations) —
+      which it does only before any tool has run; a failure after one ends the turn with
+      what was said, so neither the rebuild below nor the fallback can repeat a write
     """
     project = os.environ.get("GOOGLE_CLOUD_PROJECT")
     if not project:
@@ -4518,14 +4534,36 @@ def _run_gemini_native_loop(client, model_name: str,
 
     cumulative_input_tokens = 0
     result = ""
+    # Any tool run, in any round (2026-11-05 review, finding 15 — the stream twin's 10-24 rule).
+    # Once one has, raising would hand the turn to run_session_gemini_cached's rebuild-and-retry
+    # or its compat fallback, which re-run it from the top: every write in rounds 1..N-1 twice.
+    dispatched = False
 
     for turn_num in range(1, max_iterations + 1):
         _trace(f"[API] gemini-native/{model_name}  turn={turn_num}  waiting...")
-        response = client.models.generate_content(
-            model=model_name,
-            contents=contents,
-            config=config,
-        )
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=contents,
+                config=config,
+            )
+        except Exception as e:
+            if not dispatched:
+                raise   # nothing done yet: the caller's retry or fallback is safe
+            from core.router import log_model_error
+            _who = getattr(_tr.get_current_agent(), "agent", None) or "unknown"
+            logger.warning(f"[vertex_cache] native round {turn_num} failed after tools ran "
+                           f"(agent={_who}) — turn ended, not replayed: {e}")
+            log_model_error(_who, "gemini-native", model_name,
+                            f"round {turn_num} failed after tools ran, turn ended: {e}")
+            # What the stream twin does: keep what was said and say it was cut, or say that
+            # the reply could not be finished. What the tools did is on the trace either way,
+            # which is where the ACTIONS block reads it from.
+            result = result + _CUT_REPLY_LINE if result else _NO_REPLY_LINE
+            if history is not None:
+                history.append({"role": "user", "content": user_input})
+                history.append({"role": "assistant", "content": result})
+            return result
 
         if hasattr(response, "usage_metadata") and response.usage_metadata:
             input_tokens = getattr(response.usage_metadata, "prompt_token_count", 0) or 0
@@ -4570,6 +4608,7 @@ def _run_gemini_native_loop(client, model_name: str,
                 history.append({"role": "assistant", "content": result})
             return result
 
+        dispatched = True
         result_parts = []
         parallel_calls = []
         for fc in function_calls:
@@ -5938,6 +5977,10 @@ def _reroute_refused_complaint(agent: str, key: str, value: str,
         logger.warning(f"[knowledge] could not reroute {agent} complaint '{key}': {exc}")
 
 
+# Tools that put text from outside the user in front of a model. See _file_wisdom_proposals.
+_UNTRUSTED_READ_TOOLS = frozenset({"read_email", "fetch_url", "fetch_rendered"})
+
+
 def _file_wisdom_proposals(outputs: dict, persona: str | None = None) -> dict:
     """
     File WISDOM_PROPOSAL blocks emitted by specialists, and strip them from what the
@@ -5958,11 +6001,26 @@ def _file_wisdom_proposals(outputs: dict, persona: str | None = None) -> dict:
 
     Stripped before synthesis on the discretion principle: a proposal is the system's own
     bookkeeping, and a Synthesizer that can see it can narrate it.
+
+    NOTHING FROM A TURN THAT READ MAIL OR A PAGE IS FILED AS `stated` (2026-11-05 review,
+    finding 21). `stated` is filed at once and rendered as bare fact in every later prompt;
+    text an email or a web page put in front of a specialist is not the user's testimony,
+    and the untrusted-content wrapper governs instructions, not what a model proposes. So
+    those turns' proposals are forced to `observed`, which waits for a second sighting and is
+    put back to the user as an inference.
     """
     if not outputs:
         return outputs
 
     from tools.wisdom import write_wisdom
+
+    _t = _tr.get_trace()
+    read_untrusted = _t is not None and any(
+        tc.name in _UNTRUSTED_READ_TOOLS
+        for rec in _tr._walk_agents(list(_t.pipeline))
+        for turn in rec.turns
+        for tc in turn.tool_calls
+    )
 
     cleaned: dict = {}
     for agent, text in outputs.items():
@@ -5992,7 +6050,7 @@ def _file_wisdom_proposals(outputs: dict, persona: str | None = None) -> dict:
                         key=key,
                         value=value,
                         domain=prop.get("domain", ""),
-                        provenance=prop.get("provenance", ""),
+                        provenance="observed" if read_untrusted else prop.get("provenance", ""),
                     )
                     _trace(f"[KNOWLEDGE] proposal from {agent}: {result}")
                     _reroute_refused_complaint(agent, key, value, result, persona)
@@ -7326,11 +7384,21 @@ def run_pipeline_session_stream(
                 _prev = _m.get("content") if isinstance(_m.get("content"), str) else None
                 break
         turn["prev_assistant"] = _prev or ""
-        yield from _run_pipeline_session_stream_inner(
-            user_input, persona=bound, provider=provider, history=history,
-            is_proactive=is_proactive, received_at=received_at,
-            attachments=attachments, source=source, nudge=nudge,
-        )
+        try:
+            yield from _run_pipeline_session_stream_inner(
+                user_input, persona=bound, provider=provider, history=history,
+                is_proactive=is_proactive, received_at=received_at,
+                attachments=attachments, source=source, nudge=nudge,
+            )
+        except Exception:
+            # Mirrors the non-streaming twin's reset (2026-11-05 review, finding 16). The inner
+            # body binds a trace on this pooled thread and only finish_request_trace() unbinds
+            # it, so a turn that raised — both Coordinator legs failing — left it bound, and the
+            # next run_session() here read it as its caller's: no _spend_gate(), never traced.
+            # Here rather than in the inner body, its only caller, so that body is not re-indented.
+            _tr.set_trace(None)
+            _tr._set_current_agent(None)
+            raise
 
 
 def _run_pipeline_session_stream_inner(
@@ -7861,7 +7929,12 @@ if __name__ == "__main__":
 
     if _use_remote:
         from core.remote_client import run_interactive_remote
-        run_interactive_remote(args.persona, server=args.server, provider=args.provider)
+        if args.provider:
+            # The server routes from routing*.yaml alone and ignores a client's choice
+            # (2026-11-05 review, finding 1). --provider still applies to --local runs.
+            print(f"[remote] --provider {args.provider} is ignored against the server — "
+                  f"use --local to force a provider\n")
+        run_interactive_remote(args.persona, server=args.server)
     elif args.input:
         result = run_session(args.agent, args.input, persona=args.persona, provider=args.provider,
                              bare=args.bare)

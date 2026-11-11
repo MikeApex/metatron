@@ -26,7 +26,7 @@ aspiration sat in live instruction text with a mandatory-citation rule attached,
 so the model filled the gap by inventing. Aspiration is fine. Aspiration the
 model cannot distinguish from capability is not.
 
-Four classes:
+Five classes:
 
   0. **planned** — named under a heading that marks it unbuilt ("Phase 6 tools
      (deferred)", "Enhancement backlog", "Future"). Not a defect and never
@@ -37,6 +37,12 @@ Four classes:
      The `web_search` failure. The model reads it as a present capability.
      Fix by building it, or by moving the line into a deferred section so it
      reads as a plan.
+
+  1b. **granted-but-not-advertised** — in an agent's `allowed_tools`, but
+     `register_tools()` has no schema for it, so it is never advertised and the
+     model cannot call it. A handler alone is not built: `record_wisdom_response`
+     sat in this state from 2026-09-05 to 2026-11-11, granted, instructed and
+     handled, and read as built because the two name sets were one.
 
   2. **named-but-not-granted** — the tool exists, but the agent's `allowed_tools`
      whitelist omits it, so its schema is never advertised. The agent is told it
@@ -104,13 +110,13 @@ Usage
 
 Exit status
 -----------
-    0  nothing named as live that is not built
-    1  at least one class-1 finding
+    0  nothing named as live that is not built, nothing granted that is not advertised
+    1  at least one class-1 or class-1b finding
 
 Classes 0, 2 and 3 never affect exit status. A planned tool is the build queue
 working as intended; a not-granted tool is sometimes a deliberate staging state;
-an undocumented grant is a judgement call. Only class 1 says the running system
-is telling an agent something untrue about itself.
+an undocumented grant is a judgement call. Only classes 1 and 1b say the running
+system is telling an agent something untrue about itself — 1b in the grant itself.
 """
 
 from __future__ import annotations
@@ -188,12 +194,20 @@ class Ref:
     is_tool_ref: bool
 
 
-def _load_registered_tools() -> set[str]:
-    """Tool names from register_tools() — the registry, not a guess at it."""
+def _load_registered_tools() -> tuple[set[str], set[str]]:
+    """(advertised, registered) from register_tools() — the registry, not a guess at it.
+
+    `advertised` is the names that have a schema; `registered` adds names with a handler
+    only. The two were one set until 2026-11-11, which is how `record_wisdom_response`
+    read as built for two months: its handler was registered and its schema never written,
+    so no model was ever shown it (2026-11-05 review, finding 4). Only a schema reaches
+    the model.
+    """
     sys.path.insert(0, str(ROOT))
     from core.orchestrator import register_tools
     schemas, handlers = register_tools()
-    return {s["name"] for s in schemas} | set(handlers)
+    advertised = {s["name"] for s in schemas}
+    return advertised, advertised | set(handlers)
 
 
 def _load_routing(which: str) -> dict[str, list[str] | None]:
@@ -348,7 +362,7 @@ def main() -> int:
                          "and VM-only, so a Mac run cannot exercise this path otherwise.")
     args = ap.parse_args()
 
-    registered = _load_registered_tools()
+    advertised, registered = _load_registered_tools()
     routings = ["cloud", "local"] if args.routing == "both" else [args.routing]
     allowed_by_routing = {r: _load_routing(r) for r in routings}
 
@@ -378,6 +392,7 @@ def main() -> int:
             scan.append((f, a, f"{label} [{a}]"))
 
     nonexistent: list[tuple[str, str, int, bool]] = []
+    unadvertised: list[tuple[str, str, str, bool]] = []
     not_granted: list[tuple[str, str, int, bool, str]] = []
     never_named: list[tuple[str, str, str]] = []
     planned: list[tuple[str, str, int]] = []
@@ -446,6 +461,16 @@ def main() -> int:
                 if tool not in named_by_agent.get(agent, set()):
                     never_named.append((agent, tool, r))
 
+    # Class 1b reads the grant, not the agent file: a granted name with no schema is
+    # never advertised whatever the instructions say, so every routed agent is checked.
+    for r in routings:
+        for agent, allowed in sorted(allowed_by_routing[r].items()):
+            if args.agent and agent != args.agent:
+                continue
+            for tool in allowed or []:
+                if tool not in advertised:
+                    unadvertised.append((agent, tool, r, tool in registered))
+
     print("-" * 72)
     print("0. PLANNED — named under a deferred/backlog heading. Not a defect: this is")
     print("   the build queue, shown so it stays visible rather than filtered away.")
@@ -464,6 +489,18 @@ def main() -> int:
     if nonexistent:
         for label, tool, line, called in nonexistent:
             print(f"  ✗ {label}:{line}  {_ref(tool, called)}  — not in register_tools()")
+    elif not args.quiet:
+        print("  None.")
+
+    print("\n" + "-" * 72)
+    print("1b. GRANTED BUT NOT ADVERTISED — in allowed_tools, but register_tools() has no")
+    print("   schema for it, so the model is never shown the tool and cannot call it. A")
+    print("   handler alone is not a built tool. Write the schema and register it.")
+    print("-" * 72)
+    if unadvertised:
+        for agent, tool, r, has_handler in unadvertised:
+            what = "handler only, no schema" if has_handler else "neither schema nor handler"
+            print(f"  ✗ {agent}  `{tool}`  — granted ({r}), {what}")
     elif not args.quiet:
         print("  None.")
 
@@ -489,6 +526,7 @@ def main() -> int:
 
     print("\n" + "=" * 72)
     print(f"{len(planned)} planned, {len(nonexistent)} named-as-live-but-unbuilt, "
+          f"{len(unadvertised)} granted-but-unadvertised, "
           f"{len(not_granted)} not-granted, {len(never_named)} undocumented "
           f"— across {len(agent_files)} agent and {len(persona_files)} persona file(s).")
     if not args.no_personas and not persona_files:
@@ -521,7 +559,7 @@ def main() -> int:
     # core/build/gates.check_told_not_granted() through verify.content_gate(),
     # where the capability being checked is known by name.
     print("=" * 72)
-    return 1 if nonexistent else 0
+    return 1 if nonexistent or unadvertised else 0
 
 
 if __name__ == "__main__":

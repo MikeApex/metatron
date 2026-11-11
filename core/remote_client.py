@@ -89,7 +89,7 @@ def _ssl_context(url: str, insecure: bool):
     return ctx
 
 
-async def _run(persona: str, server: str, provider: str | None, insecure: bool) -> None:
+async def _run(persona: str, server: str, insecure: bool) -> None:
     try:
         import websockets
     except ImportError:
@@ -253,7 +253,6 @@ async def _run(persona: str, server: str, provider: str | None, insecure: bool) 
                 "type": "send",
                 "exchange_id": xid,
                 "input": text,
-                "provider": provider,
             }))
 
     recv_task = asyncio.create_task(receive())
@@ -273,21 +272,24 @@ async def _run(persona: str, server: str, provider: str | None, insecure: bool) 
 
 
 def run_interactive_remote(persona: str, server: str | None = None,
-                           provider: str | None = None, insecure: bool = True) -> None:
+                           insecure: bool = True) -> None:
     """
     Interactive REPL against the running server.
 
     insecure defaults to True: the server presents a Tailscale certificate and
     the rest of the tooling (curl, deploy checks) already uses -k against it.
     Transport is still encrypted, and Tailscale is the only route to the host.
+
+    No provider: the server picks the model API from routing*.yaml alone and ignores
+    a client's choice (2026-11-05 review, finding 1).
     """
     try:
-        asyncio.run(_run(persona, server or DEFAULT_SERVER, provider, insecure))
+        asyncio.run(_run(persona, server or DEFAULT_SERVER, insecure))
     except KeyboardInterrupt:
         print("\n")
 
 
-async def _send_one(persona: str, text: str, server: str, provider: str | None,
+async def _send_one(persona: str, text: str, server: str,
                     insecure: bool, timeout: float, nudge: bool = False) -> str:
     import websockets
 
@@ -297,8 +299,7 @@ async def _send_one(persona: str, text: str, server: str, provider: str | None,
         await ws.recv()  # history handshake
         xid = str(uuid.uuid4())
         await ws.send(json.dumps({
-            "type": "send", "exchange_id": xid, "input": text,
-            "provider": provider, "proactive": True,
+            "type": "send", "exchange_id": xid, "input": text, "proactive": True,
             # A day-plan nudge (tools/day_plan.py): the server buffers it, skips the
             # Coordinator, and records and broadcasts it only if the Synthesizer speaks.
             **({"nudge": True} if nudge else {}),
@@ -329,7 +330,7 @@ async def _send_one(persona: str, text: str, server: str, provider: str | None,
 
 
 def send_one(persona: str, text: str, server: str | None = None,
-             provider: str | None = None, insecure: bool = True,
+             insecure: bool = True,
              timeout: float = 600.0, nudge: bool = False) -> str:
     """
     Send one message through the server and return the response.
@@ -345,7 +346,7 @@ def send_one(persona: str, text: str, server: str | None = None,
     silent fallback recreates exactly that invisibility.
     """
     return asyncio.run(
-        _send_one(persona, text, server or DEFAULT_SERVER, provider, insecure, timeout,
+        _send_one(persona, text, server or DEFAULT_SERVER, insecure, timeout,
                   nudge=nudge)
     )
 
