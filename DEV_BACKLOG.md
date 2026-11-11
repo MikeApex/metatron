@@ -1367,6 +1367,63 @@ evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording �
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
 
+- **[THINKING_CAP_HIT]** reply cut at the 8192-token output ceiling (thinking 7860 + reply 297, turn 1). Thinking overshoots its 4096 budget on this model; check whether the reply arrived whole.  
+  `2026-11-11T07:32:19.938769Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Travel to Cheder & Nosh and Natter' (2027-01-10T09:00:00, uid=fc2ff445-8e3c-4a23-a6f0-ce9fb2a437c3@ai-life-manager) and 'Cheder & Nosh and Natter' (2027-01-10T10:00:00, uid=0995d454-8f53-4d81-bbd8-305a45fd3c32@ai-life-manager). title_similarity=0.83, shared_attendees=[], shared_words=['cheder', 'natter', 'nosh']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-11-11T05:35:21.330617Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Cheder & Nosh and Natter' (2027-01-10T00:00:00, uid=17845c4e-e956-4b80-8e71-926f92c22a47@ai-life-manager) and 'Travel from Cheder & Nosh and Natter' (2027-01-10T12:30:00, uid=d6a855c2-b20a-44b3-9685-7aa6e27006dd@ai-life-manager). title_similarity=0.8, shared_attendees=[], shared_words=['cheder', 'natter', 'nosh']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-11-11T05:35:21.330489Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Cheder & Nosh and Natter' (2027-01-10T00:00:00, uid=17845c4e-e956-4b80-8e71-926f92c22a47@ai-life-manager) and 'Cheder & Nosh and Natter' (2027-01-10T10:00:00, uid=0995d454-8f53-4d81-bbd8-305a45fd3c32@ai-life-manager). title_similarity=1.0, shared_attendees=[], shared_words=['cheder', 'natter', 'nosh']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-11-11T05:35:21.330263Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Cheder & Nosh and Natter' (2027-01-10T00:00:00, uid=17845c4e-e956-4b80-8e71-926f92c22a47@ai-life-manager) and 'Travel to Cheder & Nosh and Natter' (2027-01-10T09:00:00, uid=fc2ff445-8e3c-4a23-a6f0-ce9fb2a437c3@ai-life-manager). title_similarity=0.83, shared_attendees=[], shared_words=['cheder', 'natter', 'nosh']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-11-11T05:35:21.329827Z`
+
+- **[a specialist missed a signal it should have caught]** The user prompt was an automated scheduled session directive ('Anticipatory logistics pass'), but the coordinator produced a package as if the user spoke, and the system prompt rules state that scheduled sessions are prompts for the coordinator.  
+  `2026-11-10T10:00:24.877125Z`
+
+- **[THINKING_CAP_HIT]** reply cut at the 8192-token output ceiling (thinking 7860 + reply 328, turn 1). Thinking overshoots its 4096 budget on this model; check whether the reply arrived whole.  
+  `2026-11-10T07:31:56.134864Z`
+
+- **[a specialist missed a signal it should have caught]** User stated they cleared their day to care for sick Benny, but coordinator failed to dispatch Physical Health to log the childcare status change and sick leave context.  
+  `2026-11-09T20:00:18.038168Z`
+
+- **[user corrected a prior turn]** User stated they've been offline for several days due to kids getting colds, completed stretches, and needs to clear their day to focus on caring for Benny at home while Iva works remotely.  
+  `2026-11-09T10:12:46.011134Z`
+
+- **[user corrected a prior turn]** User corrected opening prompt style from abstract/long-form to time-sensitive specific, but this session was triggered by an automatic anticipatory logistics pass with no direct user message, so routing/style matched system instructions.  
+  `2026-11-09T10:00:30.637565Z`
+
+- **[THINKING_CAP_HIT]** reply cut at the 8192-token output ceiling (thinking 7860 + reply 328, turn 1). Thinking overshoots its 4096 budget on this model; check whether the reply arrived whole.  
+  `2026-11-09T07:31:30.509147Z`
+
+- **[user corrected a prior turn]** User corrected a prior statement about Eva's time off: December 31st is a full day off, not a half day off.  
+  `2026-11-07T13:17:25.998359Z`
+
+- **[THINKING_CAP_HIT]** reply cut at the 8192-token output ceiling (thinking 7862 + reply 326, turn 1). Thinking overshoots its 4096 budget on this model; check whether the reply arrived whole.  
+  `2026-11-07T10:33:05.982889Z`
+
+- **[user corrected a prior turn]** User corrected a prior detail about the podiatrist follow-up appointment time and practitioner name (Julia Ho, two weeks from today at 1:20 PM).  
+  `2026-11-07T10:09:07.670264Z`
+
+- **[THINKING_CAP_HIT]** reply cut at the 8192-token output ceiling (thinking 7865 + reply 275, turn 1). Thinking overshoots its 4096 budget on this model; check whether the reply arrived whole.  
+  `2026-11-06T14:10:08.694209Z`
+
+- **[a specialist missed a signal it should have caught]** The user opened with a scheduled morning session prompt, but the coordinator erroneously routed it as if the user had sent a message asking about time-sensitive commitments. The prompt was a system-level anticipatory logistics pass regarding this evening and tomorrow, which was misinterpreted.  
+  `2026-11-06T10:00:24.127880Z`
+
+- **[user corrected a prior turn]** The session runner provided automated scheduled session prompts as user messages directly in the conversation history without cleaning them up or letting the coordinator handle them first.  
+  `2026-11-06T07:30:14.008372Z`
+
+- **[THINKING_CAP_HIT]** reply cut at the 8192-token output ceiling (thinking 7862 + reply 268, turn 1). Thinking overshoots its 4096 budget on this model; check whether the reply arrived whole.  
+  `2026-11-05T21:04:21.790544Z`
+
+- **[user corrected a prior turn]** User corrected the coordinator or system in a prior turn, but this is a scheduled background session with no user message.  
+  `2026-11-05T10:00:11.461159Z`
+
 - **[a specialist missed a signal it should have caught]** User expressed intent to find a personal trainer this week (Sun Nov 1), but the goal was not routed to Physical Health or flagged as a new goal in the recent context package.  
   `2026-11-03T07:31:29.004793Z`
 
@@ -1856,8 +1913,8 @@ entry is a symptom, never a diagnosis.)*
 - **[user corrected a prior turn]** ```  
   `2026-09-25T06:30:20.812316Z`
 
-- ⚠ **[a specialist missed a signal it should have caught]** Coordinated day-close check-in triggered by scheduled prompt; routed to Diarist, Mental Wellbeing, and Physical Health for the evening wrap-up.  ×5  
-  `2026-10-28T20:00:11.057352Z`
+- ⚠ **[a specialist missed a signal it should have caught]** Coordinator routing pass completed for day-close session (2026-11-06 20:00). Morning/day-close rule triggered routing to Diarist, Mental Wellbeing, and Physical Health.  ×6  
+  `2026-11-06T20:00:28.535239Z`
 
 - **[a specialist missed a signal it should have caught]** Coordinator emitted natural response directly instead of routing package for synthesizer in quiet check-in.  
   `2026-09-24T19:39:08.196992Z`
@@ -1970,8 +2027,8 @@ entry is a symptom, never a diagnosis.)*
 - ⚠ **[a specialist missed a signal it should have caught]** Routing missed implicit scheduled session instruction in prior turn, leading to unhandled inbox check request.  ×3  
   `2026-10-06T10:34:38.822920Z`
 
-- **[a specialist missed a signal it should have caught]** User prompt was a scheduled session (anticipatory logistics pass) with no user utterance, but Coordinator packaged it incorrectly as if the user spoke.  
-  `2026-09-20T09:00:26.192749Z`
+- ⚠ **[a specialist missed a signal it should have caught]** The user's message was a scheduled session trigger instruction ('Anticipatory logistics pass...'), but the prompt was treated as a user message or unhandled input instead of recognizing it as a background system instruction.  ×3  
+  `2026-11-11T10:00:24.229557Z`
 
 - **[user corrected a prior turn]** ```  
   `2026-09-19T19:40:29.918109Z`
@@ -2387,8 +2444,8 @@ entry is a symptom, never a diagnosis.)*
 - **[a specialist missed a signal it should have caught]** A ROUTING_MISS was logged by the coordinator for the day-close session prompt, but session prompts are routine system passes and should not log events when handled correctly.  
   `2026-09-04T19:55:40.793593Z`
 
-- **[user corrected a prior turn]** missed calling Mental Wellbeing and Physical Health for the day-close session  
-  `2026-09-04T19:00:30.776714Z`
+- **[user corrected a prior turn]** missed routing Physical Health and Mental Wellbeing for day-close session when user reported caring for sick Benny today.  ×2  
+  `2026-11-09T20:00:20.274197Z`
 
 - ⚠ **[a specialist missed a signal it should have caught]** Routing miss on scheduled morning brief: Coordinator failed to route to Mental Wellbeing and Physical Health per the scheduled morning brief cross-domain rule.  ×3  
   `2026-10-27T07:30:11.901469Z`
@@ -2522,8 +2579,8 @@ entry is a symptom, never a diagnosis.)*
 - **[a specialist missed a signal it should have caught]** Coordinator attempted output without valid structured format or handled an empty scheduled check-in trigger incorrectly.  
   `2026-09-02T10:08:48.704932Z`
 
-- **[a specialist missed a signal it should have caught]** Coordinator received a scheduled programmatic morning briefing directive instead of a direct user message; handled appropriately as an anticipatory logistics pass.  
-  `2026-09-02T09:00:10.695770Z`
+- **[a specialist missed a signal it should have caught]** The scheduled morning prompt was routed as a user message, but the intake handled it as a Coordinator directive.  ×2  
+  `2026-11-09T07:30:23.073791Z`
 
 - **[a specialist missed a signal it should have caught]** Coordinator test run check  
   `2026-09-01T19:00:27.725541Z`

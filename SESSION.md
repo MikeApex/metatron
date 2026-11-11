@@ -1,15 +1,18 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-11-05. **Whole-codebase review done and verified:** `archive/plans/codebase_review_2026-11-05_fable-5-1.md` — 6 High + 1 conditional, 19 Medium, $179/$250 (log § 11-05).
-**Mike: `/backlog` triage from it; one VM check decides finding 1: `grep -c '^OPENAI_API_KEY=.' ~/multi-model-mcp/.env`.** **Synth now says what to do now and the one thing next, not the whole day**
-(`547c446`, **not deployed**; log § 2026-10-30). Code hands it Now / Next / Free / Important ≤ 2;
-`read_day_plan` gives the whole day on request; the evening close keeps prerequisites (the Red
-Book) and drops "tomorrow in full" (Mike, superseding 09-05). **Mike: deploy, then live-check the
-07:31 brief, an "I'm home" reply and the 20:01 close — no rundowns.** **Next: stage 2, the planner
+*Updated: 2026-11-11. **The 11-05 review's High and Medium findings are fixed and DEPLOYED** (VM at
+`968a8a0`; plan with Mike's Phase 1 calls at its end: `archive/plans/codebase_review_fixes_plan_2026-11-11.md`;
+log § 11-11). 5 of 7 Highs closed. **Held by Mike, recorded only in that plan:** #5 (a nudge due near
+a fixed session is dropped), #9 (Build cannot land — fix before the next `/build` run), #10, #33.
+**Before Iva signs up:** #11 (her data in developer channels — ruling deferred), #40, #41. Skipped:
+#29. Lows wait for the next review. **`accounts.py list` shows no accounts — Iva has not signed up.**
+**Mike (optional): delete `~/multi-model-mcp/.env.bak-2026-11-11` on the VM (holds the removed API
+key); check a moved event keeps its reminder.** **Synth now/next (`547c446`) went live with it** —
+live-check the 07:31 brief, an "I'm home" reply and the 20:01 close. **Next: stage 2, the planner
 schedules the prep** — `archive/handoffs/2026-10-30-prep-tasks-stage-2-spec-prompt.md` (spec
-first; draft failed Fable review). **Still next, unchanged:** Iva's onboarding this weekend
-(`archive/handoffs/2026-10-29-iva-account-walkthrough-prompt.md`, APK rebuild first); M3 restarts
-on her approval day; `/backlog deep`, then
+first). **Still next, unchanged:** Iva's onboarding
+(`archive/handoffs/2026-10-29-iva-account-walkthrough-prompt.md`, APK rebuild first; #11/#40/#41
+first); M3 restarts on her approval day; `/backlog deep`, then
 `archive/handoffs/2026-10-30-backlog-attack-signout-calendar-text-forward-trail-prompt.md`;
 capture-fidelity planning; reply latency (with `[DB-1029-09]`); Sign out; security `[DB-1029-20]`;
 **WhatsApp Phase 0 close-out** (survival read 10-31, LM + increments rulings — § Current state);
@@ -89,7 +92,7 @@ which model runs which kind of session** (plan in Opus, review in Fable, build i
 ### Built
 **The Phase 5 catalogue moved out on 2026-09-18 — it was finished work, and a primer holds state.**
 What exists: [CODEBASE_INDEX.md](CODEBASE_INDEX.md). When and why each piece was built:
-[archive/PROJECT_LOG.md](archive/PROJECT_LOG.md). VM at `ebfe50b` (10-29); commits after it await a deploy.
+[archive/PROJECT_LOG.md](archive/PROJECT_LOG.md). VM at `968a8a0` (11-11) — HEAD at that date.
 
 ### In progress / next
 
@@ -138,7 +141,7 @@ sequencing, cost, kept/changed/deleted. Per-phase prompts, including E's deploy 
 F1 run 1's two defects (Inquiry named a retired agent; no path back from an artifact that validates
 but is wrong): `archive/handoffs/2026-09-26-build-phase-F1.md`. **Next: `claude update` to ≥
 2.1.271, restart, bench test 2** (`archive/plans/inquiry_rewrite_2026-09-26.md`) — **`omitClaudeMd:
-true` is SILENTLY IGNORED below 2.1.271**, the one way bench test 2 could measure nothing. **Review 11-05: N13 cannot land any capability as coded** (the name gate refuses what step 3 just wrote) — report finding 9, fix before the next `/build` run.
+true` is SILENTLY IGNORED below 2.1.271**, the one way bench test 2 could measure nothing. **Review 11-05: N13 cannot land any capability as coded** (the name gate refuses what step 3 just wrote) — report finding 9, held 11-11 with #10 and #41; fix before the next `/build` run.
 
 ---
 
