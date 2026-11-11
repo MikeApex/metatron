@@ -164,11 +164,41 @@ NVIDIA_PKGS=$(pip list --format=freeze 2>/dev/null | grep -o '^nvidia-[^=]*' || 
 [ -n "$NVIDIA_PKGS" ] && pip uninstall -q -y $NVIDIA_PKGS
 pip install -q -r requirements.txt
 
+# --- Import check: refuse to restart into code that cannot load ------------------
+#
+# Both units are Type=simple, so `systemctl restart` returns 0 the moment the process
+# forks — an ImportError (HEAD importing a file that was never committed, rule 4 in
+# .claude/rules/deploy.md) or a module-level NameError (rule 1) would restart cleanly
+# and then crash-loop under Restart=always. Importing both entry points here, BEFORE
+# either restart, aborts while the old processes are still serving. It is not a run:
+# a NameError inside a function still gets past it — the post-restart verdict below
+# is the net for that. </dev/null because this script IS this shell's stdin.
+if ! .venv/bin/python -c "import core.server, core.scheduler" </dev/null; then
+    echo "" >&2
+    echo "DEPLOY ABORTED — the pulled code does not import (error above)." >&2
+    echo "" >&2
+    echo "Nothing was restarted: the old processes are still serving the previous code." >&2
+    echo "But the VM's checkout is now at the new commit, so a crash, reboot or resume" >&2
+    echo "would start the broken code. Fix forward (usually: commit the file it imports)" >&2
+    echo "and re-run ./deploy.sh promptly." >&2
+    exit 1
+fi
+
+# Journal window for the post-restart verdict: everything from here on is new processes.
+VERIFY_SINCE=$(date '+%Y-%m-%d %H:%M:%S')
+
 # Schedulers have no active connections — restart immediately. One per user since
 # 2026-10-27 (metatron-scheduler@<persona>, plan § 4.6); the quoted glob restarts every
 # loaded instance. The old single `metatron-scheduler` unit is retired at the migration
 # (its file moved out of /etc/systemd/system), so nothing here can start it again.
 sudo systemctl restart 'metatron-scheduler@*'
+
+# NRestarts baseline, read IMMEDIATELY after the restart: an explicit restart resets the
+# counter, so a figure read before it is not a baseline. Same set of units the glob just
+# restarted (loaded instances); --all so one already crashed into auto-restart is listed.
+SCHED_UNITS=$(systemctl list-units --all --no-legend --plain --type=service 'metatron-scheduler@*' 2>/dev/null \
+    | grep -w loaded | grep -o 'metatron-scheduler@[^ ]*\.service' || true)
+NRESTARTS_BASE=$(for u in $SCHED_UNITS; do echo "$u $(systemctl show -p NRestarts --value "$u" 2>/dev/null)"; done)
 
 # Drain active SSE streams before restarting the server.
 # Waits up to 3 minutes for in-flight pipelines to finish; force-restarts after timeout.
@@ -192,6 +222,105 @@ while [ "$elapsed" -lt "$timeout" ]; do
 done
 [ "$elapsed" -ge "$timeout" ] && echo "Drain timeout (${timeout}s) — restarting anyway."
 sudo systemctl restart metatron-server
+NRESTARTS_BASE="$NRESTARTS_BASE
+metatron-server $(systemctl show -p NRestarts --value metatron-server 2>/dev/null)"
+
+# --- Post-restart verdict: is the new code actually running? -------------------
+#
+# `systemctl restart` returning 0 proves only that a process forked (Type=simple). A
+# deploy that left the server or a scheduler crash-looping used to print "Deploy
+# complete" regardless (review 2026-11-05 #8; the 08-04 near miss). Four inputs, and the
+# Mac's success line depends on all four, because this heredoc exits 1 on any of them:
+#   1. `is-active` = active for metatron-server and every scheduler instance
+#   2. NRestarts unchanged from the post-restart baseline above — a crash systemd
+#      quietly restarted is still a crash
+#   3. /health 200, with the token minted for the drain
+#   4. no `REFUSING TO START` in the journal since the restarts (a scheduler's own
+#      single-instance refusal, core/scheduler.py)
+#
+# The settle wait must outlast RestartSec (10s schedulers, 5s server): a process that
+# dies just after the restart is only counted when systemd restarts it.
+#
+# Deliberately NOT a generic `Traceback` grep. The journal window includes the old
+# server's last minutes, and the restart itself kills in-flight turns — an ordinary
+# pipeline traceback there says nothing about the new code, and an alarm that fires on
+# good deploys is one people learn to ignore (the 2026-08-03 lesson below).
+#
+# A function taking its inputs as text, so tests/test_deploy_verdict.py can feed it
+# failing ones — it extracts this body from deploy.sh verbatim, so keep the shape.
+deploy_verdict() {
+    # $1 "unit state" lines   $2 "unit NRestarts" baseline   $3 the same, after settling
+    # $4 /health HTTP code    $5 journal text since the restarts
+    local states="$1" base="$2" after="$3" health="$4" journal="$5"
+    local ok=0 unit state n0 n1
+    [ -n "$states" ] || { echo "  no unit states could be read" >&2; ok=1; }
+    while read -r unit state; do
+        [ -n "$unit" ] || continue
+        [ "$state" = "active" ] || { echo "  $unit is ${state:-unreadable}, not active" >&2; ok=1; }
+    done <<< "$states"
+    [ -n "$base" ] || { echo "  no NRestarts baseline could be read" >&2; ok=1; }
+    while read -r unit n0; do
+        [ -n "$unit" ] || continue
+        n1=$(printf '%s\n' "$after" | awk -v u="$unit" '$1 == u {print $2; exit}')
+        case "$n0" in ''|*[!0-9]*) echo "  $unit: NRestarts baseline unreadable" >&2; ok=1; continue ;; esac
+        case "$n1" in ''|*[!0-9]*) echo "  $unit: NRestarts unreadable after the settle wait" >&2; ok=1; continue ;; esac
+        if [ "$n1" -ne "$n0" ]; then
+            echo "  $unit: systemd restarted it $((n1 - n0)) time(s) since the deploy did — it is crashing" >&2
+            ok=1
+        fi
+    done <<< "$base"
+    case "$health" in
+        200) ;;
+        401) echo "  /health refused the token (401) — mint failed or .env changed; server unverified" >&2; ok=1 ;;
+        *)   echo "  /health returned ${health:-nothing} (000 = no answer), not 200" >&2; ok=1 ;;
+    esac
+    if printf '%s\n' "$journal" | grep -q 'REFUSING TO START'; then
+        echo "  a scheduler logged REFUSING TO START since the restart:" >&2
+        printf '%s\n' "$journal" | grep 'REFUSING TO START' | tail -n 3 | sed 's/^/    /' >&2
+        ok=1
+    fi
+    return $ok
+}
+
+SETTLE=20
+echo "Server restarted. Settling ${SETTLE}s, then checking the new processes..."
+sleep "$SETTLE"
+# /health is polled, not read once: a slow start is not a failure. Up to 60s more.
+health=000; waited=0
+while :; do
+    health=$(curl -sk -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $MT_TOKEN" \
+        https://localhost:8001/health 2>/dev/null || true)
+    { [ "$health" = "200" ] || [ "$waited" -ge 60 ]; } && break
+    sleep 5; waited=$((waited + 5))
+done
+VERIFY_UNITS="metatron-server $SCHED_UNITS"
+STATES=$(for u in $VERIFY_UNITS; do echo "$u $(systemctl is-active "$u" 2>/dev/null)"; done)
+NRESTARTS_AFTER=$(for u in $VERIFY_UNITS; do echo "$u $(systemctl show -p NRestarts --value "$u" 2>/dev/null)"; done)
+VERDICT_FAIL=0
+if ! JOURNAL=$(sudo journalctl -u metatron-server -u 'metatron-scheduler@*' --since "$VERIFY_SINCE" --no-pager 2>/dev/null); then
+    echo "  the journal could not be read, so a refusing scheduler would be invisible" >&2
+    VERDICT_FAIL=1
+fi
+[ -n "$SCHED_UNITS" ] || echo "NOTE: no metatron-scheduler@ instance is loaded — no user's scheduled jobs will run." >&2
+deploy_verdict "$STATES" "$NRESTARTS_BASE" "$NRESTARTS_AFTER" "$health" "$JOURNAL" || VERDICT_FAIL=1
+
+if [ "$VERDICT_FAIL" -ne 0 ]; then
+    echo "" >&2
+    echo "DEPLOY FAILED — the new code is on the VM but is NOT running cleanly (reasons above)." >&2
+    echo "Users may be getting nothing: no replies, no scheduled briefs." >&2
+    echo "" >&2
+    echo "Last journal lines since the restart:" >&2
+    printf '%s\n' "$JOURNAL" | tail -n 25 | sed 's/^/    /' >&2
+    echo "" >&2
+    echo "Full log, from the Mac:" >&2
+    echo "  gcloud compute ssh metatron-vm --zone=us-central1-a \\" >&2
+    echo "    --project=metatron-ai-499810 --tunnel-through-iap \\" >&2
+    echo "    --command=\"sudo journalctl -u metatron-server -u 'metatron-scheduler@*' --since '$VERIFY_SINCE' --no-pager\"" >&2
+    echo "" >&2
+    echo "Fix forward, or git revert the commit, then re-run ./deploy.sh." >&2
+    exit 1
+fi
+echo "Post-restart check passed: $(printf '%s\n' "$STATES" | grep -c ' active$') unit(s) active, no crash restarts, /health 200."
 REMOTE
 
 # --- Post-deploy assertion -------------------------------------------------
@@ -210,6 +339,10 @@ REMOTE
 #
 # Runs even when the deploy above reports success — a deploy that "succeeded"
 # while leaving the VM behind is exactly the case this exists to catch.
+#
+# This block answers only WHICH code is live. Whether it is RUNNING (is-active,
+# NRestarts, /health, journal) is the post-restart verdict inside the heredoc,
+# which exits 1 — aborting this script under `set -e` — before reaching here.
 #
 # The test is ANCESTRY, not equality. The question worth answering is "is the
 # commit I just pushed live on the VM?" — not "is the VM's HEAD character-for-

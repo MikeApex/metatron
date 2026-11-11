@@ -570,19 +570,70 @@ Follow this order. Each step depends on the ones before it.
 - Option A (from GitHub after step 6): `git clone git@github.com:<account>/metatron.git ~/multi-model-mcp`
 - Option B (initial transfer before GitHub exists): `git archive HEAD | gcloud compute scp - metatron-vm:~/repo.tar --zone=us-central1-a --tunnel-through-iap` then extract
 - Create `.venv` and install: `python3.11 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt`
+  — then the CPU-only PyTorch step exactly as `deploy.sh` runs it (§ GitHub and the deploy pipeline);
+  a bare `pip install -r` pulls the 2.7 GB CUDA build.
+- Playwright's browser — pip installs only the driver. Without these, `fetch_rendered` returns its
+  "browser binary not installed" error (cleanly; nothing crashes). From `requirements.txt`:
+  `.venv/bin/playwright install chromium` and, once per host, `sudo .venv/bin/playwright install-deps chromium`
+- Swap: `sudo bash scripts/vm_add_swap.sh` (2 GB, idempotent, persists via `/etc/fstab`). The
+  e2-medium has none by default, and with none the kernel OOM-kills the server outright
+  (2026-08-15) instead of slowing down. Check `df -h /` first — the script refuses below 3 GB free.
 - Copy `.env` to VM: `gcloud compute scp .env metatron-vm:~/multi-model-mcp/.env --zone=us-central1-a --tunnel-through-iap`
 - Copy `vertex-key.json` to VM: same command pattern
 
+**7a. TLS certificate — before the server first starts**
+
+Without a cert in `certs/` the server falls back to plain HTTP, so step 8's `https` check fails and
+every client refuses the origin. Issue it through Tailscale (§ TLS certificate below):
+- `tailscale cert` needs MagicDNS and HTTPS certificates enabled in the tailnet's DNS settings.
+- **Check the node name first:** if the old VM is still in the tailnet, the new one joins as
+  `metatron-vm-1`, and the cert, `scripts/renew_cert.sh`'s `DOMAIN` and every client URL are then
+  wrong. Remove the old node from the tailnet before step 5, or rename this one.
+- ```bash
+  cd ~/multi-model-mcp && mkdir -p certs
+  sudo tailscale cert --cert-file certs/server.crt --key-file certs/server.key metatron-vm.tail0acc5d.ts.net
+  sudo chown md-homefolder:md-homefolder certs/server.crt certs/server.key
+  chmod 644 certs/server.crt && chmod 600 certs/server.key
+  ```
+  The `chown` is not optional: under `sudo` both files land root-owned and the server cannot read
+  the key. (`sudo bash scripts/renew_cert.sh` does the same three steps, but it ends by restarting
+  `metatron-server`, which does not exist yet — use it from step 8a on.)
+
 **8. systemd services**
-- Write `metatron-server.service` and `metatron-scheduler@.service` (text above) to `/etc/systemd/system/`
+- Write `metatron-server.service` and `metatron-scheduler@.service` (text above) to `/etc/systemd/system/`.
+  Only the scheduler template is in the repo (`infra/systemd/`); the server unit is the verbatim
+  text above.
+- Recreate the server's drop-in `/etc/systemd/system/metatron-server.service.d/host.conf`
+  (`[Service]` / `Environment=METATRON_HOST=vm`, text in § systemd unit files). **Not in the repo** —
+  it belongs in `infra/systemd/`, to be committed from the live VM.
 - `sudo systemctl daemon-reload && sudo systemctl enable --now metatron-server metatron-scheduler@mike`
 - Then one `sudo systemctl enable --now metatron-scheduler@<persona>` per active account (`scripts/accounts.py list`)
-- Verify: `curl https://metatron-vm.tail0acc5d.ts.net:8001/health` → `{"status":"ok"}`
+- Verify: `curl https://metatron-vm.tail0acc5d.ts.net:8001/health` → `{"status":"ok"}` — **without
+  `-k`**, so the cert from step 7a is actually checked. (`/health` needs a token since 2026-08-03;
+  from the VM, add `-H "Authorization: Bearer $(python3 scripts/mint_token.py)"`.)
+
+**8a. Cert renewal timer — or every client dies again in 90 days**
+
+Let's Encrypt certs last 90 days; the hand-minted one of 2026-06-21 expired on 2026-09-19 and took
+every client down with a healthy server (§ TLS certificate). Renewal is
+`metatron-cert-renew.timer` → `metatron-cert-renew.service` → `scripts/renew_cert.sh`, daily at
+04:30 ±30 min, as root.
+- **The two unit files are NOT in the repo.** They exist only on the live VM, at
+  `/etc/systemd/system/metatron-cert-renew.{service,timer}`. They belong in `infra/systemd/`, to be
+  committed from the live VM — **copy them off before the old VM is deleted**; a rebuild from a
+  lost VM has to rewrite them from the description above.
+- Install: copy both to `/etc/systemd/system/`, then
+  `sudo systemctl daemon-reload && sudo systemctl enable --now metatron-cert-renew.timer`
+- Verify: `systemctl list-timers metatron-cert-renew.timer` shows a next run, and
+  `sudo systemctl start metatron-cert-renew.service && sudo journalctl -u metatron-cert-renew.service -n 5`
+  logs `cert unchanged … — no restart`.
 
 **9. Deploy pipeline on Mac**
 - Ensure `deploy.sh` is executable: `chmod +x deploy.sh`
 - Set `git config pull.rebase false` on VM (step 6 above)
-- Test: make a trivial commit, run `./deploy.sh`, confirm services restart
+- Test: make a trivial commit, run `./deploy.sh`, and expect `Post-restart check passed: …` followed
+  by `Verified: VM HEAD matches.` — the first line is the proof the services came back, not just that
+  they were restarted
 
 **10. Android app**
 - Install Java 21: `brew install openjdk@21`
@@ -752,8 +803,15 @@ near-miss that would have closed the wrong item with a number attached to it.
 
 ```bash
 ./scripts/metatron-pause.sh     # stops metatron-vm — halts compute + scheduler Vertex spend
-./scripts/metatron-resume.sh    # starts it, waits for health check
+./scripts/metatron-resume.sh    # starts it, waits for health check, then checks outbound DNS
 ```
+
+After `/health` answers, `metatron-resume.sh` runs `getent hosts aiplatform.googleapis.com` on the VM
+(up to three tries). `/health` is a constant served on localhost, so it says "up" even when Tailscale
+DNS came back unhealthy and every model call is failing — `CLAUDE.md` infrastructure trap 7, the one
+failure a resume is known to cause (§ Tailscale). On failure it prints the check
+(`sudo tailscale status`) and the fix (`sudo tailscale set --accept-dns=false`) and exits 1; if it
+cannot reach the VM at all it says "unverified" rather than guessing DNS.
 
 The phone app is unreachable while paused; a stopped VM still incurs a small disk
 fee but no compute or Vertex charges. If `metatron-resume.sh` finds billing
@@ -775,8 +833,20 @@ path entirely.
 `./deploy.sh` from the Mac: `git push origin main` → `gcloud compute ssh
 metatron-vm` → `git pull origin main` → CPU-only PyTorch from PyTorch's own index, in its own
 step, then any `nvidia-*` packages uninstalled (the VM has no GPU; the CUDA build was 2.7 GB of
-disk and ~169 MB resident) → `pip install -q -r requirements.txt` →
-`sudo systemctl restart 'metatron-scheduler@*'` → drain, then restart `metatron-server`.
+disk and ~169 MB resident) → `pip install -q -r requirements.txt` → **import check**
+(`import core.server, core.scheduler`; on failure it aborts with the old processes still serving) →
+`sudo systemctl restart 'metatron-scheduler@*'` → drain, then restart `metatron-server` →
+**post-restart verdict**.
+
+**What the verdict checks (2026-11-11, review #8).** Both units are `Type=simple`, so a restart
+"succeeds" the moment the process forks; a crash loop used to end in "Deploy complete". After a
+20 s settle (longer than `RestartSec`) and up to 60 s of polling `/health`, the deploy passes only if
+`metatron-server` and every `metatron-scheduler@*` are `active`, each unit's `NRestarts` is unchanged
+from the reading taken right after its restart, `/health` returns 200, and no `REFUSING TO START` is
+in the journal since the restarts. Any miss prints the reasons, the last journal lines and a
+`journalctl` command, and exits 1 — the Mac never prints `Verified`. It deliberately does **not**
+grep for `Traceback`: the restart kills in-flight turns, which log one on a perfectly good deploy.
+Adds ~25 s to a deploy. The verdict function is tested in `tests/test_deploy_verdict.py`.
 
 `.git/hooks/post-commit` prints a reminder to deploy. It does **not** auto-deploy
 — deployment is always manual.
