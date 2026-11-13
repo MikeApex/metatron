@@ -1,6 +1,6 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-11-11. **The 11-05 review's High and Medium findings are fixed and DEPLOYED** (VM at
+*Updated: 2026-11-13 (11-11 state + Mike's cardiac-log exception). **The 11-05 review's High and Medium findings are fixed and DEPLOYED** (VM at
 `968a8a0`; plan with Mike's Phase 1 calls at its end: `archive/plans/codebase_review_fixes_plan_2026-11-11.md`;
 log § 11-11). 5 of 7 Highs closed. **Held by Mike, recorded only in that plan:** #5 (a nudge due near
 a fixed session is dropped), #9 (Build cannot land — fix before the next `/build` run), #10, #33.
@@ -19,7 +19,7 @@ capture-fidelity planning; reply latency (with `[DB-1029-09]`); Sign out; securi
 day-planner live checks `[DB-1029-01]` (due 10-31; the check script is already on the VM — no deploy needed); nine fixes' closes-on checks (11-12). **The
 meals habit still doesn't exist** — Mike re-asks as "open a daily habit…". **Still owed:** the
 boys' school hours/bedtimes → `children_home`; the "over and out" live check; Mike's calendar live
-check (week of 9 Nov); `[DB-0901-02]`, due 12-15.*
+check (week of 9 Nov); `[DB-0901-02]`, due 12-15. **Cardiac log skips Physical Health until 11-20** (VM `profile.yaml` `other:`); remove 11-21, `[DB-1113-01]`.*
 
 *Standing rules, each earned twice and both invisible to `qa_sweep`: **a test that exercises a seam
 for real must stub every live meter it ends in**, and **a live gate run dirties TRACKED

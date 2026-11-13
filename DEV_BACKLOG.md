@@ -261,6 +261,17 @@ the condition has not arrived, push the date rather than closing the item.
 
 ### Chores — upkeep on a clock
 
+- **[DB-1113-01] Mike's week-long cardiac log keeps skipping Physical Health after the week ends
+  unless the temporary line is removed.** `due: 2026-11-21` · `@kind: chore`
+  Mike asked 2026-11-13 (seq 011) that his irregular-heartbeat log entries go to the Diarist only,
+  without being routed to Physical Health, for one week. Implemented as a single dated entry in the
+  VM's `config/personas/mike/profile.yaml` `other:` list (the only persona file the Coordinator
+  loads; `mike.md` is head-layer only). The line says "ignore after 2026-11-20", but that is
+  model-read, not enforced. **On or after 11-21:** on the VM, restore `other: []`, or restore
+  `profile.yaml.bak-2026-11-13` if nothing else has changed in the file since, and delete the
+  backup. The no-symptom-questions line in the VM's `mike.md` is a separate, standing preference;
+  leave it unless Mike says otherwise.
+
 - **[DB-0901-01] The fleet can sit on a deprecated model for weeks without anyone noticing, so
   check weekly whether Google has shipped something newer we can actually call.**
   `due: 2026-10-31` · `@kind: chore`
