@@ -24,6 +24,7 @@ whose only exit was approving the thing you had just refused.
 
 from __future__ import annotations
 
+import re
 import threading
 import time
 from contextlib import contextmanager
@@ -32,18 +33,38 @@ from typing import Iterator
 
 _state = threading.local()
 
+# When each part of the message was SPOKEN, as the client stamped it. static/index.html
+# prefixes a voice snippet with `[<recorded time>] ` when it is sent late or in a batch
+# (stampIfLate, composeBatch) — otherwise the arrival time already is the spoken time and
+# no stamp is added. The text is kept exactly as the client wrote it, in the device's own
+# locale, rather than parsed: a parse would have to guess the locale, and a wrong guess
+# would turn a correct time into a confidently wrong one. 2026-11-13: a cardiac event
+# spoken at 16:48 was logged at 17:10 with its time gone, because only the model saw the
+# stamp and it dropped it.
+_SPOKEN_STAMP_RE = re.compile(r"^\[([^\]\n]{4,40}\d:\d\d[^\]\n]{0,8})\][ \t]", re.MULTILINE)
+
+
+def spoken_stamps(text: str | None) -> list[str]:
+    """The client's recorded-at stamps in `text`, in order. Empty when there are none."""
+    return _SPOKEN_STAMP_RE.findall(text or "")
+
 
 @contextmanager
-def turn_scope(user_turn: bool, started_at: float | None = None) -> Iterator[dict]:
+def turn_scope(user_turn: bool, started_at: float | None = None,
+               spoken: list[str] | None = None) -> Iterator[dict]:
     """
     Bind this turn for the duration of the block, on this thread.
 
     `user_turn`: did the user actually say something — core/orchestrator.py's
     has_real_user_turn(), which is already decisive about a scheduled session's opening text
     being the system talking to itself rather than speech.
+
+    `spoken`: the message's recorded-at stamps (spoken_stamps), for a writer that has to say
+    when something happened rather than when it was written down.
     """
     turn = {"user_turn": bool(user_turn),
-            "started_at": float(started_at if started_at is not None else time.time())}
+            "started_at": float(started_at if started_at is not None else time.time()),
+            "spoken": list(spoken or [])}
     previous = getattr(_state, "turn", None)
     _state.turn = turn
     try:
@@ -64,6 +85,25 @@ def adopt(turn: dict | None) -> None:
     fit, because the worker body is a plain function.
     """
     _state.turn = turn
+
+
+def adopt_spoken(spoken: list[str] | None) -> None:
+    """
+    Carry a parent turn's recorded-at stamps onto a thread WITHOUT binding the turn.
+
+    For the Diarist's fire-and-forget thread, which has always run with no turn bound.
+    Adopting the whole turn would change what new_trigger_since() answers there, so the
+    stamps get their own slot and the decline guard's input is untouched.
+    """
+    _state.spoken = list(spoken or [])
+
+
+def current_spoken() -> list[str]:
+    """This turn's recorded-at stamps — or a thread's adopted ones — else []."""
+    turn = current()
+    if turn is not None:
+        return list(turn.get("spoken") or [])
+    return list(getattr(_state, "spoken", None) or [])
 
 
 def _newer_intake_row(since: float, persona: str | None = None) -> bool:

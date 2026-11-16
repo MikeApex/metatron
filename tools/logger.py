@@ -257,6 +257,52 @@ def _leaf_paths(node: dict, prefix: str = "") -> list[str]:
 _INTENTIONS_KEY = "intentions"
 
 
+# The day's health notes as a FEED, beside the scalars they would otherwise overwrite.
+#
+# `health.symptoms` and `health.medical_notes` are one free-text scalar each, and
+# _deep_merge replaces a scalar, so every write replaced the one before. 2026-11-13 to
+# 11-16: Mike's cardiac event log (time + what he was doing, for his cardiologist) lost
+# four of six events that way — the 11:42 entry overwritten by the evening close, the
+# 15:08 one by a 17:10 write — and nothing reported it. Same failure, same repair as
+# `intentions` above: the scalars keep merging exactly as before, so no reader changes, and
+# every value written is also appended here with when it was written and, where the client
+# stamped one, when it was spoken. An exact repeat of the field's previous entry is not
+# appended again — unlike an intention, a restated note carries no frequency signal.
+_HEALTH_NOTES_KEY = "health_notes"
+_HEALTH_NOTE_FIELDS = ("symptoms", "medical_notes")
+
+
+def _health_note_entries(content: dict, written_at: str) -> list[dict]:
+    """The feed entries this write adds — one per non-empty health note field it carries."""
+    health = content.get("health")
+    if not isinstance(health, dict):
+        return []
+    from tools.turn_context import current_spoken
+    spoken = current_spoken()
+    entries = []
+    for field in _HEALTH_NOTE_FIELDS:
+        text = health.get(field)
+        if not isinstance(text, str) or not text.strip():
+            continue
+        entry = {"field": field, "text": text.strip(), "written_at": written_at}
+        if spoken:
+            entry["spoken"] = spoken
+        entries.append(entry)
+    return entries
+
+
+def _append_health_notes(feed, entries: list[dict]) -> list:
+    """`feed` with `entries` appended, skipping one identical to its field's last entry."""
+    feed = list(feed) if isinstance(feed, list) else []   # a non-list is corrupt
+    for entry in entries:
+        last = next((e for e in reversed(feed)
+                     if isinstance(e, dict) and e.get("field") == entry["field"]), None)
+        if last is not None and last.get("text") == entry["text"]:
+            continue
+        feed.append(entry)
+    return feed
+
+
 def _split_intention(content: dict) -> tuple[dict, dict | None]:
     """
     Lift a top-level scalar `intention` (plus its optional `stated_for`) out of `content`.
@@ -349,7 +395,13 @@ def write_log(content: dict | None = None, log_date: str = "") -> str:
         for path in _leaf_paths(content):
             stamps[path] = now_iso
 
+        health_entries = _health_note_entries(content, now_iso)
         existing = _deep_merge(existing, content)
+        if health_entries:
+            feed = _append_health_notes(existing.get(_HEALTH_NOTES_KEY), health_entries)
+            if feed != existing.get(_HEALTH_NOTES_KEY):
+                existing[_HEALTH_NOTES_KEY] = feed
+                stamps[_HEALTH_NOTES_KEY] = now_iso
         if intention_entry is not None:
             feed = existing.get(_INTENTIONS_KEY)
             if not isinstance(feed, list):

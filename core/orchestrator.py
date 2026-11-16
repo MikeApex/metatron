@@ -6556,9 +6556,15 @@ def _dispatch_from_coordinator(
                     # Instrumentation must never cost the corrected dispatch.
                     pass
 
+            # Only the recorded-at stamps travel with the Diarist: its directive is a rewrite
+            # of the message, so the times a health note needs (tools/logger.py) exist only
+            # here. No turn is bound, as before, so the decline guard in tools/confirm.py
+            # treats the Diarist exactly as it did (see turn_context.adopt_spoken).
             def _bg(a: str = agent, d: str = directive, c: str | None = complexity,
-                    depth: int = _tr.get_subagent_depth()) -> None:
+                    depth: int = _tr.get_subagent_depth(),
+                    spoken: list[str] = _turn.current_spoken()) -> None:
                 _tr.set_subagent_depth(depth)
+                _turn.adopt_spoken(spoken)
                 try:
                     run_session(a, user_input=d, persona=persona, complexity=c)
                 except Exception as exc:
@@ -7160,7 +7166,8 @@ def run_pipeline_session(user_input: str,
     # below — a session runs on a pooled thread, and a turn left bound would let the NEXT
     # session inherit "the user spoke" from this one.
     _turn.adopt({"user_turn": has_real_user_turn(user_input, is_proactive, attachments),
-                 "started_at": time.time()})
+                 "started_at": time.time(),
+                 "spoken": _turn.spoken_stamps(user_input)})
     try:
         # Tokens outstanding BEFORE this turn. Anything new by the end of it was raised
         # by this turn's tool calls, which is how enforce_pending_receipt() knows what
@@ -7367,7 +7374,8 @@ def run_pipeline_session_stream(
     or on close, so an abandoned stream does not leave the turn behind.
     """
     with persona_scope(resolve_persona(persona)) as bound, _turn.turn_scope(
-        user_turn=has_real_user_turn(user_input, is_proactive, attachments)
+        user_turn=has_real_user_turn(user_input, is_proactive, attachments),
+        spoken=_turn.spoken_stamps(user_input),
     ) as turn:
         # Counted from when the message arrived, not from here: the queue ahead of the pipeline
         # is part of what the user waits through.
