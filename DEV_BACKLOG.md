@@ -271,6 +271,15 @@ the condition has not arrived, push the date rather than closing the item.
   `profile.yaml.bak-2026-11-13` if nothing else has changed in the file since, and delete the
   backup. The no-symptom-questions line in the VM's `mike.md` is a separate, standing preference;
   leave it unless Mike says otherwise.
+  **Added 2026-11-16, before the 11-21 removal:**
+  - **18th: re-run the rebuild** (the command in the 11-16 transcript / log § 2026-11-16) for the
+    19th follow-up. It regenerates `data/personas/mike/health/cardiac_events_2026-11.md` and
+    `archive/cardiac_events.json` (Physical Health reads the archive copy) from the conversation
+    records, so later entries are included. Keep both files after the week.
+  - **First live check of `23f1e59`:** the next cardiac entry should appear in that day's log
+    `health_notes` list with a `spoken` time (if the app stamped one), the earlier notes intact.
+  - The temporary profile line gained a pointer sentence on 11-16 (cardiac_events archive).
+    Restoring `other: []` removes both; the backup predates both.
 
 - **[DB-0901-01] The fleet can sit on a deprecated model for weeks without anyone noticing, so
   check weekly whether Google has shipped something newer we can actually call.**
