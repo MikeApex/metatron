@@ -651,6 +651,8 @@ flag — which would send a turn containing only the cue.
   note is I'd like to find a way to send these to Metatron automatically."* Nothing reads a health
   source today. Likely shape: Android Health Connect read in the APK, posted to the server — an APK
   rebuild and a new permission. Pairs with the daily-logging item `[DB-1029-03]`.
+  **Researched 2026-11-16, nothing built:** device shortlist, local-only pipeline, BP plan and
+  repo blockers in `archive/plans/wearable_integration_spec_2026-11-16.md` — read it first.
   @kind: feature
   *raised by Mike 2026-10-28 (Inbox) · triaged to Later by Mike 2026-10-29*
 
