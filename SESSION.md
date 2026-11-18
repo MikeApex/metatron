@@ -1,6 +1,6 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-11-16 (11-11 state + Mike's cardiac log; VM at `23f1e59`). **The 11-05 review's High and Medium findings are fixed and DEPLOYED** (VM at
+*Updated: 2026-11-18 (11-16 state + an instruction-file audit, dev-side only — `84630b7`, log § 11-18; tool-permission enforcement filed to the Inbox as its own session; VM at `23f1e59`). **The 11-05 review's High and Medium findings are fixed and DEPLOYED** (VM at
 `968a8a0`; plan with Mike's Phase 1 calls at its end: `archive/plans/codebase_review_fixes_plan_2026-11-11.md`;
 log § 11-11). 5 of 7 Highs closed. **Held by Mike, recorded only in that plan:** #5 (a nudge due near
 a fixed session is dropped), #9 (Build cannot land — fix before the next `/build` run), #10, #33.

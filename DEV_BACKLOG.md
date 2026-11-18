@@ -75,6 +75,15 @@ back-tagging the rest is `[DB-0815-10]`.
 > against `git log` before promoting anything from here.
 *(empty — last triaged 2026-09-05; evidence in `archive/backlog_closed_2026-09.md`)*
 
+- **[needs building]** Mike requested a tool to capture live GPS coordinates and align them with current schedule activities to infer and anticipate completed tasks. Prompted after discussing message location tracking prior to Benny's 11:30 appointment.  
+  `2026-11-17T10:49:15.868845Z`
+
+- **[needs building]** User expected consecutive mobile messages to provide geolocation coordinates so the assistant could infer recent whereabouts and activity. System currently only receives discrete presence states (e.g. 'away'). Needs client-side geolocation capture and ingestion pipeline.  
+  `2026-11-17T10:45:53.945047Z`
+
+- **[instruction change]** User requested that routine cardiac monitor logging not prompt for symptoms and not refer out to Physical Health. Interaction preference saved to suppress symptom prompting; Coordinator routing instructions need updating outside conversation to prevent dispatching routine cardiac logs to Physical Health specialist.  
+  `2026-11-13T13:50:57.555011Z`
+
 - **[needs building]** User requested a dedicated tracker/file for films to record whether they have been seen along with his thoughts and reviews on them.  
   `2026-11-01T19:10:18.495162Z`
 
@@ -90,6 +99,11 @@ back-tagging the rest is `[DB-0815-10]`.
 - **Check 2026-10-31: are Vertex reply stalls still happening?** Count `[reply_limits]` capacity retries in the server journal since 10-24 and the share of Synthesizer calls over 60 s. If the tail is still ~2.5%+, decide option (b) of `archive/plans/reply_latency_plan_2026-10-24.md` § 7 — fall back to the bulk-tier Vertex model on a second stall (stays on Vertex terms; lower reply quality). Mike ruled retry-only for now (2026-10-24). (task-ledger post-deploy session, 2026-10-24; the launch prompt Mike ran asked for each time-gated check to leave with a date)
 - **Check 2026-10-31: is the `check_inbox_6h` Logistics job redundant? If so, delete it.** Kept on 10-23 when its twin was deleted; `logistics.md` already says standing triage is the intake sweep's job. It costs ~67 runs a month at ~96k tokens each on the bulk tier, and on 10-24 one 73 s run overlapped a user turn. Watch a week of task creation from mail: if every task it files also arrives through the intake queue, delete it (Mike approves, as a schedule change). Mike asked for this item, 2026-10-24. **⚠ Read 2026-10-29: the check cannot be answered from the ledger as written** — all 24 tasks created since 10-24 carry `created_by: None` in the VM's `tasks.yaml`, so a mail-filed task is indistinguishable from an intake-filed one. On 10-31 read this job's own `open_task`/`update_task` calls in its traces instead.
 - **A request ending in "over and out" got "Received — talk to you later" and was never carried out — fixed; one real use owed to confirm (due 2026-11-02).** Built and deployed `e5b895c`: the sign-off shortcut now skips the Synthesizer only for a bare sign-off (≤8 words, no question in the message or Metatron's previous reply, no request/answer/time word, no task-completion note); otherwise it runs with a one-line-reply instruction. Origin: 2026-10-26 22:05 (job post to tomorrow, retire the gym — both dropped), also 10-19 and 10-21. **Closes on:** the first real user message after deploy that ends "over and out" and carries a request — its trace shows the Synthesizer ran (not `[PIPELINE] sign-off detected — synthesizer skipped`), the request was acted on, and the reply is one line. Also confirm a bare "over and out" still gets the ack. If none arrives by 11-02, ask Mike to send one. Record: `archive/log/2026-10-26-06-over-and-out-no-longer-drops-requests.md`. Raised by Claude Code, 2026-10-26, as the confirmation step for a fix Mike requested ("Synth shouldn't skip when there's something active requested").
+- **[needs building]** Agents can still use tools they were never granted: permissions run in warn mode, so a denial is recorded and the call goes ahead anyway. `dispatch_tool()` checks every call against the agent's advertised tools (`core/orchestrator.py:2818`), but it blocks only when `METATRON_TOOL_PERMISSIONS=enforce`, and the default is `warn` (`core/orchestrator.py:2766`). *Raised by Mike, 2026-11-18 (prompt-audit session).*
+  **Why it was left open (Mike):** warn mode was chosen on purpose, so that enforcement would not hold up other development while it ran, and so the recorded denials would show which disallowed tools agents actually need and reach for. Those denials are the input to phase 1, not noise.
+  **Phases:** (1) Survey the denials recorded since warn mode shipped (2026-08-03). For each agent/tool pair, decide to grant it (a tool named in an agent file is a specification, per `.claude/rules/agent-files.md`) or to drop the reference. (2) Correct the allowlists in both routing files at parity (Red, not delegated), get a clean `python3 scripts/check_agent_tools.py`, then deploy. (3) **Testing phase, before the flip:** keep warn mode on the corrected lists for a window Mike sets (suggest 7 days, so every scheduled job fires at least once); it passes only with zero new tool-denial records. Also add a test that sets `enforce` and confirms a denied call returns the "not available to this agent" error while a granted call still runs. (4) Set `METATRON_TOOL_PERMISSIONS=enforce` on the VM and watch the next days of traces. Rollback is unsetting the variable. Model: Opus 5.5.
+  `2026-11-18T06:57:25.826411Z`
+
 ## Now
 
 **Ranked — position is priority.** Capped at ~10, so something enters by displacing something.
@@ -1389,6 +1403,135 @@ evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording �
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
 
+- **[a specialist missed a signal it should have caught]** User asked about geolocations and past activities when no location ingestion tool exists, which was a routing miss or unhandled capability gap.  
+  `2026-11-17T20:00:31.111184Z`
+
+- **[a specialist missed a signal it should have caught]** User referenced the screenshot from the earlier exchange regarding step counts and heart points, and Coordinator should have routed to Physical Health to evaluate the attached step count screenshot and calendar timeline for November.  
+  `2026-11-17T11:51:41.102593Z`
+
+- **[the runtime claimed an action it didn't take]** Mike, that is logged on the development backlog.  
+  `2026-11-17T10:49:15.722674Z`
+
+- **[a capability gap was filed]** BLD-1117-01 (construct): Build a tool to capture GPS coordinates and align them with scheduled activities to anticipate completed tasks automatically.  
+  `2026-11-17T10:48:53.736345Z`
+
+- **[a specialist missed a signal it should have caught]** User asked if the system received geolocations or could speculate where they just were, but the client only reports status/presence strings ('away'), not raw GPS coordinates.  
+  `2026-11-17T10:45:15.987265Z`
+
+- **[answered without retrieving anything]** Answered with nothing retrieved — no search was issued. Query: Examine the provided second screenshot (Screenshot_20261117-100529.png) showing November daily activity data (hearts/rings/step counts) and approximate the daily step counts for each day in November v  
+  `2026-11-17T10:40:11.138441Z`
+
+- **[user corrected a prior turn]** User corrected the spelling of Julie Ahoe to Julia Ho (H-O) and clarified she is an osteopath/chiropractor at the Greenwich practice.  
+  `2026-11-17T10:39:59.113503Z`
+
+- **[user corrected a prior turn]** User corrected a professional name: podiatry appointment is with Jane Aspery, not Julie Ahoe; Julie Ahoe is the osteopath chiropractor doctor.  
+  `2026-11-17T10:06:13.329555Z`
+
+- **[user corrected a prior turn]** The user message 'All nights. Work/admin should be elective in the evenings unless extremely urgent.' in the previous turn was processed correctly as a scheduling preference, but no quality event was written then; writing it now as a correction/preference log since user re-stated an operating rule.  
+  `2026-11-17T10:00:20.242712Z`
+
+- **[user corrected a prior turn]** User corrected credit card payment status (stated it was already completed) and clarified Benny's appointment attendance (taking him personally), correcting prior assumptions.  
+  `2026-11-17T09:07:55.653281Z`
+
+- **[a specialist missed a signal it should have caught]** Coordinator failed to surface the scheduled prompt for Tuesday morning (November 17, 2026, 7:30 AM) requiring an opening about today's time-sensitive items (Show and Tell toy prep and Echocardiogram).  
+  `2026-11-17T07:30:06.073273Z`
+
+- **[already applied by the tool]** Saved standing rule: post-8:30 PM work and admin is elective across all seven nights, reserving evenings for recreation, relaxation, or personal projects.  
+  `2026-11-16T22:16:45.208005Z`
+
+- **[already applied by the tool]** Mike specified that after kids go to bed around 8:30 PM, evenings are reserved for recreation, relaxation, or personal projects rather than general work/admin. Recorded as standing wisdom under work.  
+  `2026-11-16T20:05:20.782287Z`
+
+- **[a specialist missed a signal it should have caught]** Coordinator routed day-close check-in without calling Diarist to log the evening dinner and energy details provided by the user.  
+  `2026-11-16T20:04:20.270789Z`
+
+- **[user corrected a prior turn]** User clarified that the hybrid job posting is pending the meeting with Yana on Friday; coordinator correctly routed to Logistics and Diarist to acknowledge the relaxation and note the dependency.  
+  `2026-11-16T17:14:40.159474Z`
+
+- **[user corrected a prior turn]** User corrected the completion status of heart rate wearable research in the previous turn, stating it is now complete.  
+  `2026-11-16T17:10:55.651389Z`
+
+- **[user corrected a prior turn]** User stated 'Mover Claims updates are completed' in this turn, updating the task status, but coordinator previously logged mover claims as paused awaiting dad. Handled as a workflow confirmation.  
+  `2026-11-16T16:32:43.470912Z`
+
+- **[user corrected a prior turn]** User corrected task priority sequence regarding AI models backup versus other pending tasks.  
+  `2026-11-16T15:06:14.662673Z`
+
+- **[user corrected a prior turn]** User noted duplicate calendar entries for work blocks (half hour difference) and an errant Saturday entry for Manny's swim class that should not be there.  
+  `2026-11-16T15:04:08.789695Z`
+
+- **[user corrected a prior turn]** Clarified that stretching is a single task (either phrasing refers to the same routine) and ideally done twice daily.  
+  `2026-11-16T15:02:23.737609Z`
+
+- **[a specialist missed a signal it should have caught]** Coordinator attempted to call update_task with a task ID containing an inline date suffix (@2026-11-16) that did not exist in the task store, causing a tool execution failure when processing the user's stretching confirmation.  
+  `2026-11-16T15:02:22.001954Z`
+
+- **[a specialist missed a signal it should have caught]** Coordinator routed user's prompt about what is pressing directly to Synthesizer without any specialist call, missing task evaluation and open thread check.  
+  `2026-11-16T15:00:40.038410Z`
+
+- **[user corrected a prior turn]** User corrected a prior lunch location reference to Blackheath for Yana, clarifying the Black Heath Hospital mention and specifying Blackheath for the lunch spot with Yana.  
+  `2026-11-16T12:39:33.283030Z`
+
+- **[user corrected a prior turn]** Mike corrected multiple schedule items: payments are done, Blackheath Hospital appointment is for Iva Diamond not him, Maccabi Games are cancelled, Bupa clearance was already submitted, he is taking Benny to vaccination himself, and family photos status is pending check with Iva.  
+  `2026-11-16T08:55:23.066885Z`
+
+- **[a specialist missed a signal it should have caught]** User stated council tax is paid, cardiac monitor is on while sitting at the computer, and Bupa coverage request was submitted, but the original coordinator message failed to surface any specialist tool calls or output package.  
+  `2026-11-15T17:10:10.120867Z`
+
+- **[a specialist missed a signal it should have caught]** Coordinator missed the note about Guy's Hospital out-of-hours urgent GP for the kids in a batched message.  
+  `2026-11-15T15:09:16.286755Z`
+
+- **[THINKING_CAP_HIT]** reply cut at the 8192-token output ceiling (thinking 7865 + reply 323, turn 1). Thinking overshoots its 4096 budget on this model; check whether the reply arrived whole.  
+  `2026-11-15T07:48:20.069744Z`
+
+- **[THINKING_CAP_HIT]** reply cut at the 8192-token output ceiling (thinking 7861 + reply 310, turn 1). Thinking overshoots its 4096 budget on this model; check whether the reply arrived whole.  
+  `2026-11-14T20:01:36.900970Z`
+
+- **[THINKING_CAP_HIT]** reply cut at the 8192-token output ceiling (thinking 7863 + reply 325, turn 1). Thinking overshoots its 4096 budget on this model; check whether the reply arrived whole.  
+  `2026-11-13T20:02:16.368163Z`
+
+- **[a specialist missed a signal it should have caught]** The prior assistant turn responded to a scheduled session prompt rather than routing the scheduled prompt to the coordinator pipeline correctly.  
+  `2026-11-13T20:00:20.264509Z`
+
+- **[user corrected a prior turn]** MISHEARD: "Ben" -> Benny  
+  `2026-11-13T19:10:35.839795Z`
+
+- **[a specialist missed a signal it should have caught]** The prior assistant turn responded to a movie title suggestion directly without calling any specialists or logging to the Diarist, missing the Diarist logging requirement for user statements.  
+  `2026-11-13T19:10:33.620229Z`
+
+- **[a specialist missed a signal it should have caught]** The user sent a conversational message about a movie to watch (Champions of the Golden Valley), but the message was processed by background event triggers rather than a direct user turn. No specialist was missed, but routing is required to log the movie recommendation.  
+  `2026-11-13T17:15:42.882898Z`
+
+- **[THINKING_CAP_HIT]** reply cut at the 8192-token output ceiling (thinking 7864 + reply 271, turn 1). Thinking overshoots its 4096 budget on this model; check whether the reply arrived whole.  
+  `2026-11-13T14:14:11.537381Z`
+
+- **[user corrected a prior turn]** User corrected appointment history: the cardiology appointment was not rescheduled, it happened; November 19 is the follow-up, and the pre-authorisation covers it. Also requested to stop prompting for symptoms every time on cardiac logs and not to route cardiac logs to Physical Health.  
+  `2026-11-13T13:47:59.068152Z`
+
+- **[a specialist missed a signal it should have caught]** User reported another cardiac event while reclined in bed, continuing the recent logging of irregular heartbeats.  
+  `2026-11-13T13:42:53.382279Z`
+
+- **[a specialist missed a signal it should have caught]** User asked about task ob_261107_54a099 (Bupa pre-authorisation call) which was in open threads and tasks list.  
+  `2026-11-13T13:38:36.248577Z`
+
+- **[user corrected a prior turn]** User corrected mistranscription regarding cardiac monitor tracking: 'When it happened, not when I'm happy.'  
+  `2026-11-13T11:46:41.471762Z`
+
+- **[user corrected a prior turn]** User corrected the purpose of the tracking series: it's not a general reason log, but specifically for tracking when and what happened when they were happy, in conjunction with wearing a cardiac monitor for irregular heartbeats.  
+  `2026-11-13T11:45:58.683412Z`
+
+- **[already applied by the tool]** User requested keeping a separate log of timestamped entries (date, time, reason) over the course of the week; maintained as a dedicated tracking thread.  
+  `2026-11-13T11:44:10.884875Z`
+
+- **[a specialist missed a signal it should have caught]** User asked for cardiologist phone number (Dr Paul Scott / St Olaf House), which requires checking contacts/relationships or logistics, but Coordinator missed calling Relationships.  
+  `2026-11-12T14:23:43.946718Z`
+
+- **[user corrected a prior turn]** The system received an automated scheduled anticipatory logistics pass prompt at 10:00 AM, but instead of recognizing it as a background scheduler tick and outputting a silent HOLD or routine status check, it was treated as a user query requiring a response.  
+  `2026-11-12T10:00:18.202984Z`
+
+- **[a specialist missed a signal it should have caught]** System prompt requested routing for day-close session with no user utterance present; coordinator correctly packaged context for synthesizer without invoking any user-facing response.  
+  `2026-11-11T20:00:21.280114Z`
+
 - **[THINKING_CAP_HIT]** reply cut at the 8192-token output ceiling (thinking 7860 + reply 297, turn 1). Thinking overshoots its 4096 budget on this model; check whether the reply arrived whole.  
   `2026-11-11T07:32:19.938769Z`
 
@@ -1467,8 +1610,8 @@ entry is a symptom, never a diagnosis.)*
 - **[THINKING_CAP_HIT]** reply cut at the 8192-token output ceiling (thinking 7860 + reply 328, turn 1). Thinking overshoots its 4096 budget on this model; check whether the reply arrived whole.  
   `2026-11-02T07:31:27.523745Z`
 
-- **[a specialist missed a signal it should have caught]** Routing miss: morning scheduled prompt ('Good morning. Open with whatever is most time-sensitive today...') went unrouted with empty specialists list.  
-  `2026-11-02T07:30:14.756095Z`
+- **[a specialist missed a signal it should have caught]** The system prompt instructed opening the morning brief, but the user message queue already contained the turn 'Good morning. Open with whatever is most time-sensitive today...' which was parsed as a scheduled prompt rather than a user message. Routing and coordinator logic functioned correctly to handle the morning routine.  ×2  
+  `2026-11-12T07:30:20.343238Z`
 
 - **[a capability gap was filed]** BLD-1101-01 (construct): A film tracker to record films watched, whether they've been seen, and personal thoughts/notes on them.  
   `2026-11-01T19:09:35.258881Z`
@@ -1824,8 +1967,8 @@ entry is a symptom, never a diagnosis.)*
 - **[a specialist missed a signal it should have caught]** Coordinator failed to surface scheduled anticipatory logistics pass (location check and evening/tomorrow preparation) during scheduled opening.  ×2  
   `2026-11-04T10:00:13.676792Z`
 
-- **[a specialist missed a signal it should have caught]** Routed morning brief to Diarist and Mental Wellbeing as whole-person morning session, while loading relevant knowledge subjects.  
-  `2026-10-05T06:30:14.575447Z`
+- **[a specialist missed a signal it should have caught]** Routed scheduled day-close session (How did today go?) to Diarist, Mental Wellbeing, and Physical Health per morning brief/day-close cross-domain rule.  ×2  
+  `2026-11-16T20:00:27.928527Z`
 
 - **[user corrected a prior turn]** ```  
   `2026-10-04T19:57:21.313186Z`
@@ -1935,8 +2078,8 @@ entry is a symptom, never a diagnosis.)*
 - **[user corrected a prior turn]** ```  
   `2026-09-25T06:30:20.812316Z`
 
-- ⚠ **[a specialist missed a signal it should have caught]** Coordinator routing pass completed for day-close session (2026-11-06 20:00). Morning/day-close rule triggered routing to Diarist, Mental Wellbeing, and Physical Health.  ×6  
-  `2026-11-06T20:00:28.535239Z`
+- ⚠ **[a specialist missed a signal it should have caught]** Coordinator missed routing the morning greeting session to Mental Wellbeing and Physical Health as mandated by the cross-domain routing rule for morning briefs.  ×7  
+  `2026-11-16T07:30:07.006364Z`
 
 - **[a specialist missed a signal it should have caught]** Coordinator emitted natural response directly instead of routing package for synthesizer in quiet check-in.  
   `2026-09-24T19:39:08.196992Z`
@@ -1962,8 +2105,8 @@ entry is a symptom, never a diagnosis.)*
 - **[user corrected a prior turn]** ```  
   `2026-09-23T19:33:54.725516Z`
 
-- **[a specialist missed a signal it should have caught]** Scheduled prompt instruction leakage on previous turn caused system instructions to echo to the user  
-  `2026-09-23T11:30:51.103462Z`
+- **[a specialist missed a signal it should have caught]** User prompt was a system instruction for a scheduled morning brief, not a user message.  ×2  
+  `2026-11-13T07:30:11.665128Z`
 
 - **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Travel to Cheder AM and Maccabi Games PM' (2026-11-22T09:00:00, uid=bacc80d8-8e15-43eb-aa81-4d192700acff@ai-life-manager) and 'Cheder AM and Maccabi Games PM' (2026-11-22T10:00:00, uid=0c12743e-433c-4602-9e0a-ca734cf08502@ai-life-manager). title_similarity=0.86, shared_attendees=[], shared_words=['cheder', 'games', 'maccabi']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
   `2026-09-23T04:35:16.446259Z`
@@ -2049,8 +2192,8 @@ entry is a symptom, never a diagnosis.)*
 - ⚠ **[a specialist missed a signal it should have caught]** Routing missed implicit scheduled session instruction in prior turn, leading to unhandled inbox check request.  ×3  
   `2026-10-06T10:34:38.822920Z`
 
-- ⚠ **[a specialist missed a signal it should have caught]** The user's message was a scheduled session trigger instruction ('Anticipatory logistics pass...'), but the prompt was treated as a user message or unhandled input instead of recognizing it as a background system instruction.  ×3  
-  `2026-11-11T10:00:24.229557Z`
+- ⚠ **[a specialist missed a signal it should have caught]** The scheduled anticipatory logistics pass was treated as a user message and routed to specialists instead of being handled as a system prompt directive.  ×4  
+  `2026-11-14T10:00:11.538655Z`
 
 - **[user corrected a prior turn]** ```  
   `2026-09-19T19:40:29.918109Z`
@@ -2196,8 +2339,8 @@ entry is a symptom, never a diagnosis.)*
 - **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Manny's School Event: World Recycle Day' (2026-09-14T00:00:00, uid=de363c03-6327-4b02-83f5-1b298ecb746b@ai-life-manager) and 'Arrange school visits (MANI meeting action item)' (2026-09-14T00:00:00, uid=c41af8d1-22d8-4e6f-946d-959ac10614af@ai-life-manager). title_similarity=0.37, shared_attendees=[], shared_words=['school']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
   `2026-09-14T04:35:13.032065Z`
 
-- ⚠ **[a specialist missed a signal it should have caught]** Coordinator returned empty specialist list on scheduled Manny check-in because the scheduled prompt text was interpreted as user input rather than a system prompt, missing Relationships/Logistics route for school items.  ×3  
-  `2026-10-04T15:00:14.116267Z`
+- ⚠ **[a specialist missed a signal it should have caught]** Coordinating scheduled Manny school check-in session missing specialist for school/relational child tracking domain; routed to Relationships and Logistics.  ×4  
+  `2026-11-15T16:00:30.811852Z`
 
 - **[user corrected a prior turn]** ```  
   `2026-09-13T11:54:06.549248Z`
@@ -2253,8 +2396,8 @@ entry is a symptom, never a diagnosis.)*
 - **[user corrected a prior turn]** user corrected a prior turn where output was cut off at Steve and Y, asking to complete the sentence, check emails, and verify scheduled tasks  
   `2026-09-11T21:44:10.255685Z`
 
-- **[a specialist missed a signal it should have caught]** Scheduled session prompt triggered: 'How, source_agent=coo  ×2  
-  `2026-09-11T19:42:22.560325Z`
+- ⚠ **[a specialist missed a signal it should have caught]** Automated scheduled session triggered; no user message present.  ×3  
+  `2026-11-16T10:00:27.117005Z`
 
 - **[user corrected a prior turn]** ```  
   `2026-09-11T16:11:35.288154Z`
