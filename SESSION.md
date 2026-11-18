@@ -8,9 +8,10 @@ a fixed session is dropped), #9 (Build cannot land — fix before the next `/bui
 #29. Lows wait for the next review. **`accounts.py list` shows no accounts — Iva has not signed up.**
 **Mike (optional): delete `~/multi-model-mcp/.env.bak-2026-11-11` on the VM (holds the removed API
 key); check a moved event keeps its reminder.** **Synth now/next (`547c446`) went live with it** —
-live-check the 07:31 brief, an "I'm home" reply and the 20:01 close. **Next: stage 2, the planner
-schedules the prep** — `archive/handoffs/2026-10-30-prep-tasks-stage-2-spec-prompt.md` (spec
-first). **Still next, unchanged:** Iva's onboarding
+live-checked on the VM 11-18: passes on ordinary days, three misses (plan § 12). **Next: phase 1 of
+the goal–task network** (stage 2 absorbed; plan Fable-reviewed, `archive/plans/goal_task_network_plan_2026-11-18.md`)
+— prompt `archive/handoffs/2026-11-18-goal-network-phase-1-build-prompt.md`. `mike`'s goals updated
+on the VM 11-18 (ids + Bulgarian/taxes/Prudential). **Still next, unchanged:** Iva's onboarding
 (`archive/handoffs/2026-10-29-iva-account-walkthrough-prompt.md`, APK rebuild first; #11/#40/#41
 first); M3 restarts on her approval day; `/backlog deep`, then
 `archive/handoffs/2026-10-30-backlog-attack-signout-calendar-text-forward-trail-prompt.md`;

@@ -326,3 +326,23 @@ goal is talked through; nothing is changed before then.
 through Metatron, so the filing never waits on this build, and phase 2's `open_plan` adopts open
 tasks into a plan (`part_of` on existing ids) when it lands. That adoption is a small addition
 to R7c.
+
+**Done 2026-11-18, on the VM, at Mike's instruction ("update those goals manually for mike from
+here"):** ids given to the four goals that had none (Healthier Diet `d2`, Swim for Manny `q3`,
+Purpose-Driven Exercise `w4`, Strength and Flexibility Training `w5`). The three goals above were
+added as `q4`, `q5`, `q6`, each with a `context` line naming what Synth must ask Mike; Bulgarian
+carries `timeline: long-term` and moves to the `long` horizon in phase 3. `d1` Bulgarian
+Vocabulary now has `parent_goal: q4`. Backup: `config/personas/mike/goals.yaml.bak-2026-11-18`
+on the VM. **Open (Mike):** `q2` "Metatron Mark 2 Transition" is obsolete since Mark 2 ended —
+complete it, remove it, or rewrite it as the Mark 1 work it now stands for.
+
+## 12. Stage 1's three live-check misses — cause and proposed fix (2026-11-18)
+
+Read on the VM, 11-12 → 11-18 (synth plan § 11). **Recommended: all three ride phase 1**,
+because each touches a file phase 1 already opens. Mike rules at the start of the phase 1 session.
+
+| # | What Mike saw | Cause | Proposed fix |
+|---|---|---|---|
+| M1 | **Monday's brief (11-16) recited the whole week**, day by day | Working as written: `synthesizer_scheduled_sessions.md` § Weekly review phase 2 says *"go through the coming week's commitments — everything falling in the next seven days… repetition is the point"* (the 09-05 ruling), and `horizon.week_block` hands it the full week | Keep a Monday look-ahead, cut to **the week's shape in one sentence + the one to three things that need something done first or decided now** (phases 1 and 3; phase 2 goes). Done in code too, per stage 1's lesson that a model given data is not reliably stopped from reciting it: `week_block` returns per-day counts plus only items with a deadline, a precursor or a decision. Once phase 1 schedules prep as tasks, even this shrinks. **Supersedes 09-05's "everything in the next seven days" the way S2 superseded its evening-close twin.** |
+| M2 | **11-18's brief carried five extras** — three new horizon findings, the 39 contact suggestions, Show and Tell | `horizon.context_block` has **no count cap** and tells Synth to *"put these to the user in this exchange"*, so every undelivered finding arrives at once. The contact-suggestion line is by design (one line, `crm_sweep`) | New findings join the **Important ranking (cap `important_max`, 2)** on the brief and close, ranked with prerequisites and vital deadlines; at most **one** on an ordinary turn. Offers are charged only for findings actually shown, so a held one keeps both its chances. The contact line stays as it is. |
+| M3 | **"Takes your own time" repeated daily for the same task**; repotting proposed at 07:30 on four mornings, not done | The rider is "once per task **per day**" (`synthesizer_day_plan.md:11`), and an undone task that the planner has to put into protected time is re-placed there every day. Nothing notices that the same task keeps being carried | **Once per task, not per day.** Plus a task-level version of § 4.2's non-compliance trigger: **a task carried or not done three days running is asked about once** — keep, give it a fixed time, or drop it — instead of being proposed again. Code counts it; Synth asks. |
