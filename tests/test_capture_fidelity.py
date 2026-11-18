@@ -567,6 +567,39 @@ def test_a_fact_kept_by_another_agent_is_not_a_miss():
     assert capture.match(aisha, [("write_log", {"content": {"notes": "invite Aisha Thanksgiving"}})]) is None
 
 
+def test_rematch_rescores_without_a_model_call():
+    p = "cap_rematch"
+    (_tmp / "config" / "personas" / p).mkdir(parents=True, exist_ok=True)
+    tdir = _tmp / "data" / "personas" / p / "traces"
+    tdir.mkdir(parents=True, exist_ok=True)
+    user = {"trace_id": "u1", "user_input": "invite Aisha for Thanksgiving", "is_proactive": False,
+            "source": "ui", "pipeline": [{"agent": "coordinator"}, {"agent": "logistics", "turns": [
+                {"tool_calls": [{"name": "open_obligation", "ok": True,
+                                 "args": {"what": "Plan Thanksgiving invitation for Aisha"}}]}]}]}
+    diarist = {"trace_id": "d1", "user_input": "Log the Thanksgiving invite", "is_proactive": False,
+               "source": "ui", "pipeline": [{"agent": "diarist"}]}
+    (tdir / "2026-11-17.jsonl").write_text(json.dumps(user) + "\n" + json.dumps(diarist) + "\n")
+    cand = {**_c("task", "task", "Invite Aisha for Thanksgiving dinner",
+                 say="invite Aisha for Thanksgiving dinner"), "matcher": "unsaved", "guess": "real"}
+    review = _tmp / "data" / "personas" / p / "capture" / "backfill_review_2026-11-18.jsonl"
+    review.parent.mkdir(parents=True, exist_ok=True)
+    review.write_text("".join(json.dumps({"trace_id": tid, "agent": "synthesizer", "ts": "x",
+                                          "user_input": "u", "ok": True,
+                                          "candidates": [dict(cand)]}) + "\n"
+                              for tid in ("u1", "d1")))
+    EXTRACT["fn"] = lambda text: (_ for _ in ()).throw(AssertionError("model called"))
+    saved = capture._now
+    capture._now = lambda: datetime(2026, 11, 18, 9, 0)
+    try:
+        out = capture.rematch(p, days=5)
+    finally:
+        capture._now = saved
+        EXTRACT["fn"] = None
+    rows = [json.loads(ln) for ln in review.read_text().splitlines()]
+    assert "dropped 1" in out and [r["trace_id"] for r in rows] == ["u1"]
+    assert rows[0]["candidates"][0]["matcher"] == "saved_elsewhere"
+
+
 _SAVED_EXTRACT = capture.extract     # the real one, captured before setup_module patches it
 
 

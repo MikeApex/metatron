@@ -1185,12 +1185,7 @@ def backfill(persona: str, days: int = 60) -> str:
             n_failed += not res["ok"]
             items = []
             for c in res["candidates"]:
-                own = _match_own(c, writes) if c["disposition"] != "declined" else None
-                state = ("declined" if c["disposition"] == "declined" else
-                         "saved" if own == "same" else "different" if own == "different" else
-                         "saved_elsewhere" if kept_elsewhere(c, writes) else
-                         "held_now" if already_held(persona, c) else "unsaved")
-                items.append({**c, "matcher": state, "guess": "real"})
+                items.append({**c, "matcher": _classify(persona, c, writes), "guess": "real"})
             n_cands += len(items)
             for c in items:
                 if c["matcher"] in ("saved", "saved_elsewhere", "different", "unsaved"):
@@ -1203,18 +1198,60 @@ def backfill(persona: str, days: int = 60) -> str:
                                 ensure_ascii=False) + "\n")
     # The pre-deploy miss rate per agent/kind — what § 5.3's live miss rate is held against.
     # A candidate already held in today's record is left out, as live comparison does.
+    head = f"backfill: {n_turns} turns, {n_cands} candidates, {n_failed} extractor failures → {out_path}"
+    if n_failed:
+        head += (f"\n  WARNING: {n_failed} of {n_turns} turns were not read — the baseline "
+                 f"covers only the rest. Check the log for '[capture]' lines.")
+    return _write_baseline(persona, days, n_turns, tally, head)
+
+
+def _classify(persona: str, c: dict, writes: list[tuple[str, dict]]) -> str:
+    if c["disposition"] == "declined":
+        return "declined"
+    own = _match_own(c, writes)
+    return ("saved" if own == "same" else "different" if own == "different" else
+            "saved_elsewhere" if kept_elsewhere(c, writes) else
+            "held_now" if already_held(persona, c) else "unsaved")
+
+
+def rematch(persona: str, days: int = 60) -> str:
+    """Re-score the latest review file with the current matcher and turn filter — no model
+    calls. For when the matcher changes after a backfill (2026-11-18: the first run counted
+    only each kind's own tool, and read the Diarist's runs as user turns)."""
+    path = _latest_review(persona)
+    if path is None:
+        return "no backfill review file — run --backfill first"
+    traces = {rec.get("trace_id"): (rec, agent) for rec, _, agent in user_turns(persona, days)}
+    kept, dropped, tally = [], 0, {}
+    for ln in path.read_text().splitlines():
+        if not ln.strip():
+            continue
+        t = json.loads(ln)
+        hit = traces.get(t.get("trace_id"))
+        if hit is None:
+            dropped += 1           # not a user turn by the current filter
+            continue
+        writes = writes_from_trace_dict(hit[0])
+        for c in t["candidates"]:
+            c["matcher"] = _classify(persona, c, writes)
+            if c["matcher"] in ("saved", "saved_elsewhere", "different", "unsaved"):
+                k = tally.setdefault(f"{t['agent']}/{c['kind']}", {"n": 0, "unsaved": 0})
+                k["n"] += 1
+                k["unsaved"] += c["matcher"] == "unsaved"
+        kept.append(t)
+    path.write_text("".join(json.dumps(t, ensure_ascii=False) + "\n" for t in kept))
+    return _write_baseline(persona, days, len(kept), tally,
+                           f"rematch: kept {len(kept)} user turns, dropped {dropped}, "
+                           f"{sum(len(t['candidates']) for t in kept)} candidates → {path}")
+
+
+def _write_baseline(persona: str, days: int, n_turns: int, tally: dict, head: str) -> str:
     baseline = {"measured_on": _now().date().isoformat(), "days": days, "turns": n_turns,
                 "kinds": {k: {"n": t["n"], "miss_rate": t["unsaved"] / t["n"]}
                           for k, t in tally.items() if t["n"]}}
     _write_json(_dir(persona) / "baseline.json", baseline)
-    lines = [f"backfill: {n_turns} turns, {n_cands} candidates, {n_failed} extractor failures"
-             f" → {out_path}"]
-    if n_failed:
-        lines.append(f"  WARNING: {n_failed} of {n_turns} turns were not read — the baseline "
-                     f"covers only the rest. Check the log for '[capture]' lines.")
-    lines += [f"  baseline {k}: miss {v['miss_rate']:.0%} (n={v['n']})"
-              for k, v in sorted(baseline["kinds"].items())]
-    return "\n".join(lines)
+    return "\n".join([head] + [f"  baseline {k}: miss {v['miss_rate']:.0%} (n={v['n']})"
+                               for k, v in sorted(baseline["kinds"].items())])
 
 
 def _latest_review(persona: str) -> Path | None:
@@ -1239,6 +1276,7 @@ def label(persona: str, precision_n: int = 100, recall_n: int = 50) -> str:
         for i, (t, c) in enumerate(sample, 1):
             print(f"\n[{i}/{len(sample)}] USER: {t['user_input'][:600]}")
             print(f"  candidate: {c['disposition']} · {c['kind']} · {c['say']}")
+            print(f"  proposal:  {json.dumps(c.get('proposal'), ensure_ascii=False)[:200]}")
             print(f"  matcher says: {c['matcher']}   guess: {c['guess']}")
             k = input("  Enter=real  n=not a fact  w=wrong kind  m=matcher wrong  q=quit > ")
             if k.strip() == "q":
@@ -1306,6 +1344,7 @@ def main() -> None:
     g.add_argument("--backfill", action="store_true")
     g.add_argument("--label", action="store_true")
     g.add_argument("--score", action="store_true")
+    g.add_argument("--rematch", action="store_true")
     g.add_argument("--eval", metavar="FIXTURE")
     ap.add_argument("--since")
     ap.add_argument("--days", type=int, default=60)
@@ -1320,6 +1359,8 @@ def main() -> None:
             print(label(a.persona))
         elif a.score:
             print(score(a.persona))
+        elif a.rematch:
+            print(rematch(a.persona, a.days))
         else:
             print(run_eval(a.persona, Path(a.eval)))
 
