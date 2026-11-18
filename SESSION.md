@@ -3,7 +3,7 @@
 *Updated: 2026-11-18 (11-16 state + an instruction-file audit, dev-side only — `84630b7`, log § 11-18; tool-permission enforcement filed to the Inbox as its own session; VM at `23f1e59`). **The 11-05 review's High and Medium findings are fixed and DEPLOYED** (VM at
 `968a8a0`; plan with Mike's Phase 1 calls at its end: `archive/plans/codebase_review_fixes_plan_2026-11-11.md`;
 log § 11-11). 5 of 7 Highs closed. **Held by Mike, recorded only in that plan:** #5 (a nudge due near
-a fixed session is dropped), #9 (Build cannot land — fix before the next `/build` run), #10, #33.
+a fixed session is dropped — now in goal-network phase 1), #9 (Build cannot land — fix before the next `/build` run), #10, #33.
 **Before Iva signs up:** #40, #41 (#11 ruled 11-18: her data has exactly `mike`'s clearances, `ROADMAP.md` § 0). Skipped:
 #29. Lows wait for the next review. **`accounts.py list` shows no accounts — Iva has not signed up.**
 **Mike (optional): delete `~/multi-model-mcp/.env.bak-2026-11-11` on the VM (holds the removed API
@@ -124,24 +124,12 @@ Clean room: never open the 10-26 transcripts. Mike owes: delete the `/private/tm
 **A9 — built and deployed 2026-08-18; `@waiting` on real use, review `2026-10-01`.** Spec, the
 five provisional parts and the date: [ROADMAP.md](ROADMAP.md) § A9a, the single home.
 
-**BUILD — the vertical that constructs capabilities. v4.12; every phase committed, E deployed 09-25,
-F1 run 1 started and stopped.** **The defect is not what it was thought to be:** *"the Coordinator
-will not file a shape-2 gap"* is incompletely diagnosed — a daily `plant_watering_check` job and
-Logistics' catch-all directory entry both already claim the class, so two config files conflict
-(`archive/PROJECT_LOG.md` § 2026-09-26). The under-filing fixture
-`config/modules/routing_cloud.yaml:66` asserts exists **still does not exist**. **Live surface:**
-`core/build/` (17 files), **353 checks across fourteen suites**, six content gates including the
-**tier gate** — which refuses a capability making a standing judgement over a history on the bulk
-tier — the read doors, and `/build` taking every step from `core/build/driver.py` so it can hand out
-none the driver refuses. Plan:
-[build_vertical_plan_2026-09-24.md](archive/plans/build_vertical_plan_2026-09-24.md) — rulings,
-sequencing, cost, kept/changed/deleted. Per-phase prompts, including E's deploy checklist:
-[build_v4_phase_prompts_2026-09-24.md](archive/plans/build_v4_phase_prompts_2026-09-24.md).
-*Unchanged since 09-26; development, not execution (Mike): he starts, approves, commits, deploys.*
-F1 run 1's two defects (Inquiry named a retired agent; no path back from an artifact that validates
-but is wrong): `archive/handoffs/2026-09-26-build-phase-F1.md`. **Next: `claude update` to ≥
-2.1.271, restart, bench test 2** (`archive/plans/inquiry_rewrite_2026-09-26.md`) — **`omitClaudeMd:
-true` is SILENTLY IGNORED below 2.1.271**, the one way bench test 2 could measure nothing. **Review 11-05: N13 cannot land any capability as coded** (the name gate refuses what step 3 just wrote) — report finding 9, held 11-11 with #10 and #41; fix before the next `/build` run.
+**BUILD — paused for Mike to revisit or revise (11-18: "not sure I'm happy with it"); the goal–task
+network does not depend on it.** State unchanged since 09-26: F1 run 1 stopped on two defects
+(`archive/handoffs/2026-09-26-build-phase-F1.md`), and review finding 9 says no capability can land
+as coded. Plan and reasoning: [build_vertical_plan_2026-09-24.md](archive/plans/build_vertical_plan_2026-09-24.md),
+`archive/PROJECT_LOG.md` § 2026-09-24 → 09-26. **If resumed: `omitClaudeMd: true` is SILENTLY
+IGNORED below Claude Code 2.1.271** — bench test 2 (`archive/plans/inquiry_rewrite_2026-09-26.md`) would measure nothing.
 
 ---
 

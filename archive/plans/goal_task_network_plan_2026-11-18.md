@@ -333,13 +333,37 @@ Purpose-Driven Exercise `w4`, Strength and Flexibility Training `w5`). The three
 added as `q4`, `q5`, `q6`, each with a `context` line naming what Synth must ask Mike; Bulgarian
 carries `timeline: long-term` and moves to the `long` horizon in phase 3. `d1` Bulgarian
 Vocabulary now has `parent_goal: q4`. Backup: `config/personas/mike/goals.yaml.bak-2026-11-18`
-on the VM. **Open (Mike):** `q2` "Metatron Mark 2 Transition" is obsolete since Mark 2 ended —
-complete it, remove it, or rewrite it as the Mark 1 work it now stands for.
+on the VM. **`q2` converted (Mike, 11-18: "converted into Metatron work, with a specific set of
+things to be achieved this quarter"):** now "Metatron work this quarter", due 2027-02-18. Its four
+outcomes are a **draft by Claude Code**, flagged in `context` for Mike to confirm through Synth:
+the network's three phases live; Iva signed up and using it; WhatsApp messages reaching Metatron;
+Build revisited and decided. Second backup: `goals.yaml.bak-2026-11-18b`.
 
 ## 12. Stage 1's three live-check misses — cause and proposed fix (2026-11-18)
 
-Read on the VM, 11-12 → 11-18 (synth plan § 11). **Recommended: all three ride phase 1**,
-because each touches a file phase 1 already opens. Mike rules at the start of the phase 1 session.
+Read on the VM, 11-12 → 11-18 (synth plan § 11). **Mike's rulings, 2026-11-18:** M1 **leave as
+is for the time being** (not built). M2 **"I'd need to see this to comment on it"** — the example
+below is shown to him at the start of the phase 1 session; built only on his yes. M3 **revised by
+Mike**: *"Tasks pushed day to day should continue to be raised — with recognition that they've
+been missed — until completed or dismissed. Synth can prompt user on that."* That replaces the
+"asked once after three days" proposal in the table.
+
+**M2, what 11-18's 07:31 brief would have said under the cap** (actual: three new horizon
+findings in a row, then 39 contact suggestions):
+> *"Mike, Manny's Show and Tell is at 9:00. Right now it's repotting the basement plants, then the
+> brokerage backup at 7:50 — that one takes your own time. Two things for today: your
+> echocardiogram is tomorrow at 16:00, so travel needs sorting today, and Aisha's Thanksgiving
+> invitation for the 26th needs an answer. There are 39 contact suggestions whenever you want
+> them. Do Show and Tell and Iva being off from 9:30 need you?"*
+
+The Teams seminar is held back, not dropped: it keeps both of its offers and comes up on a later
+turn that day.
+
+**M3 as ruled:** a task carried from one day to the next is raised again every day until it is
+done or dismissed. Each time, it carries how many days it has slipped and since when, so Synth
+says so ("the repotting has slipped four days — now, or drop it?") and offers dismissal. Code
+counts the slips; Synth voices them. The "takes your own time" rider is said once per task, not
+once per day (the part of M3 the ruling did not change).
 
 | # | What Mike saw | Cause | Proposed fix |
 |---|---|---|---|

@@ -18,9 +18,10 @@ happened, and it follows the event if the event moves.
 2. A two-step task shows step 2 only once step 1 is done. Skipping a required step 1 closes step 2
    and asks once whether to redo it.
 3. A nudge due near a scheduled session is no longer dropped.
-4. If Mike approves § 12 at the start: Monday's brief gives the week's shape and the one to three
-   things to act on, not a day-by-day list. New horizon items count against the two-item
-   Important cap. A task carried three days running is asked about once, not proposed again.
+4. A task that slips from day to day keeps being raised until done or dismissed, and each time
+   Synth says how long it has slipped and offers to drop it (§ 12 M3, as Mike ruled).
+5. If Mike says yes to § 12's M2 example: new horizon items count against the two-item
+   Important cap instead of all arriving at once.
 
 ## Read first, in this order
 
@@ -32,14 +33,12 @@ happened, and it follows the event if the event moves.
 3. `archive/plans/codebase_review_fixes_plan_2026-11-11.md` line 64 — the recorded design for
    finding #5 (nudges dropped near a fixed session), adopted by § 10 R10.
 
-## Before building: three questions for Mike, one message
+## Before building: two questions for Mike, one message
 
-1. **§ 12 M1–M3 — ride phase 1, yes or no** (each separately)? Recommended: all three. Each
-   touches a file phase 1 already opens.
-2. **`q2` "Metatron Mark 2 Transition"** in his goals is obsolete. Complete it, remove it, or
-   rewrite it as the Mark 1 work it now stands for? (He makes this change himself, or tells you
-   and you do it on the VM the way § 11 was done: back up first.)
-3. Confirm the **Red edits** listed below before you start them.
+1. **Show him § 12's M2 example**, the 11-18 brief rewritten under the cap. He asked to see it
+   before ruling. Build M2 only on his yes. M1 is ruled "leave as is" (not built), and M3 is ruled
+   and in scope.
+2. Confirm the **Red edits** listed below before you start them.
 
 ## Scope — phase 1 only (§ 10 closing paragraph)
 
@@ -71,7 +70,10 @@ happened, and it follows the event if the event moves.
    and raises the end state once as Important.
 7. **R10 — finding #5,** exactly as recorded: carried entries passed as DUE NOW and stamped, plus
    `shield_jobs:` in `day_plan.yaml`. **No change to `core/scheduler.py`.**
-8. **§ 12 M1–M3, if Mike approved them.**
+8. **§ 12 M3, as Mike ruled:** a carried task is raised every day until done or dismissed. It
+   carries its slip count and the date it was first missed for Synth to voice, with dismissal
+   offered. The "takes your own time" rider is said once per task. **M2 only on Mike's yes. Not
+   M1.**
 
 **Not in phase 1:** vetting, the project planner agent, `proposed` goals, the goal filter,
 playbooks, finish-date alerts (phases 2 and 3).
@@ -112,8 +114,9 @@ in the module; Red, and Mike approves at the prompt. **No routing changes in pha
    - the next real event with a precursor gets a scheduled prep that is nudged, checked, and moves
      if the event is moved
    - a two-step test task, including a Skip on step 1
-   - if M1–M3 shipped: the next Monday brief, a morning with new horizon findings, and a task left
-     undone three days
+   - a task left undone for a few days: raised each day with how long it has slipped, and
+     dismissable
+   - if M2 shipped: a morning with several new horizon findings shows at most two
 4. `/archive`.
 
 ## Constraints that bind this work
