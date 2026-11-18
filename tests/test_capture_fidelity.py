@@ -285,6 +285,28 @@ def test_extractor_nests_in_the_users_trace():
     assert res["ok"] and calls == [("capture_extractor", True, True)]
 
 
+def test_owned_extractor_call_is_not_counted_as_a_session():
+    """The backfill and the interviewer own their trace: the spend cap is checked, but the
+    call must not count toward stop_sessions_per_hour (it would refuse a live interview)."""
+    from core import spend_guard
+    seen = {"checked": 0}
+    saved = (spend_guard.check_before_session, spend_guard.note_session_start,
+             orchestrator.run_session, capture.extract)
+
+    def no_note():
+        raise AssertionError("an extractor call was counted as a session")
+    spend_guard.check_before_session = lambda: seen.__setitem__("checked", seen["checked"] + 1)
+    spend_guard.note_session_start = no_note
+    orchestrator.run_session = lambda agent, user_input, **kw: "[]"
+    capture.extract = _SAVED_EXTRACT
+    try:
+        res = capture.extract(P, "I take the bus", None, ("day_shape",), trace=None)
+    finally:
+        (spend_guard.check_before_session, spend_guard.note_session_start,
+         orchestrator.run_session, capture.extract) = saved
+    assert res["ok"] and seen["checked"] == 1
+
+
 # --- 6. holdout -----------------------------------------------------------------------------------------
 
 def test_holdout_draw_and_window():

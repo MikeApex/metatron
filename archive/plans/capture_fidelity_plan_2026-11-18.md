@@ -160,8 +160,10 @@ scheduled session has no user words by construction.
   - **Inside the pipeline**, the extractor thread binds the request's trace (`set_trace`) and
     `persona_scope`, so `run_session` nests the call in the user's turn, where the spend meter
     counts it.
-  - **Everywhere else** — the interviewer thread, `--backfill`, `--eval` — `tools/capture.py` runs
-    `_spend_gate()` itself, then opens a trace with `is_proactive=True, source="capture"` and
+  - **Everywhere else** — the interviewer thread, `--backfill`, `--eval` — `tools/capture.py` checks the
+    spend guard itself (`check_before_session` only — **not** `_spend_gate()`, whose
+    `note_session_start` would count each call toward the 60-an-hour stop and could refuse a
+    live interview; found at commit time), then opens a trace with `is_proactive=True, source="capture"` and
     closes it after the call.
 
   `tools/analytics.py:rollup_day` skips `source == "capture"`, so A9 counts these calls as neither

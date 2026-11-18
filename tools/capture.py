@@ -426,13 +426,31 @@ def _agent_tokens(trace, name: str = AGENT) -> tuple[int, int]:
     return walk(getattr(trace, "pipeline", [])) if trace is not None else (0, 0)
 
 
+def _within_spend() -> bool:
+    """The daily spend cap and the hourly stop, WITHOUT counting this call as a session.
+
+    `_spend_gate()` also calls `note_session_start()`, so every extractor call would count
+    toward `stop_sessions_per_hour` (60): an interview turn would count twice and could refuse
+    the user mid-interview, and the backfill would stop itself after 60 calls. An extractor
+    call is part of a turn, not a session. Fails open, as `_spend_gate()` does."""
+    try:
+        from core.spend_guard import SpendLimitExceeded, check_before_session
+        try:
+            check_before_session()
+        except SpendLimitExceeded as exc:
+            logger.warning(f"[capture] extractor skipped by the spend guard: {exc}")
+            return False
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[capture] spend check error, allowing: {exc}")
+    return True
+
+
 def extract(persona: str, user_input: str, history: list[dict] | None,
             kinds: tuple[str, ...], trace=None) -> dict:
     """One extractor call. With `trace`, it nests in the user's turn; without, it owns a
-    `source="capture"` trace and runs the spend gate itself (plan review 3)."""
+    `source="capture"` trace and checks the spend guard itself (plan review 3)."""
     from core import trace as _tr
     from core.orchestrator import run_session
-    from core.orchestrator import _spend_gate
     from core.persona import persona_scope
     t0 = time.monotonic()
     result = {"candidates": [], "rejected": 0, "ok": False, "ms": 0, "tin": 0, "tout": 0}
@@ -443,7 +461,7 @@ def extract(persona: str, user_input: str, history: list[dict] | None,
             if trace is not None:
                 _tr.set_trace(trace)
             else:
-                if _spend_gate():
+                if not _within_spend():
                     return result
                 owned = _tr.start_request_trace(user_input[:200], persona, is_proactive=True,
                                                 source="capture")
@@ -1099,7 +1117,7 @@ def backfill(persona: str, days: int = 60) -> str:
     """The pre-deploy baseline and the label set. Writes a review file holding the user's
     words — sensitive tier, in the persona's own directory, on the VM only."""
     out_path = _dir(persona) / f"backfill_review_{_now().date().isoformat()}.jsonl"
-    n_turns = n_cands = 0
+    n_turns = n_cands = n_failed = 0
     tally: dict[str, dict] = {}
     with open(out_path, "w") as fh:
         for rec, hist, agent in user_turns(persona, days):
@@ -1107,6 +1125,7 @@ def backfill(persona: str, days: int = 60) -> str:
             res = extract(persona, rec["user_input"], hist, kinds, trace=None)
             writes = writes_from_trace_dict(rec)
             n_turns += 1
+            n_failed += not res["ok"]
             items = []
             for c in res["candidates"]:
                 m = match(c, writes) if c["disposition"] != "declined" else None
@@ -1130,7 +1149,11 @@ def backfill(persona: str, days: int = 60) -> str:
                 "kinds": {k: {"n": t["n"], "miss_rate": t["unsaved"] / t["n"]}
                           for k, t in tally.items() if t["n"]}}
     _write_json(_dir(persona) / "baseline.json", baseline)
-    lines = [f"backfill: {n_turns} turns, {n_cands} candidates → {out_path}"]
+    lines = [f"backfill: {n_turns} turns, {n_cands} candidates, {n_failed} extractor failures"
+             f" → {out_path}"]
+    if n_failed:
+        lines.append(f"  WARNING: {n_failed} of {n_turns} turns were not read — the baseline "
+                     f"covers only the rest. Check the log for '[capture]' lines.")
     lines += [f"  baseline {k}: miss {v['miss_rate']:.0%} (n={v['n']})"
               for k, v in sorted(baseline["kinds"].items())]
     return "\n".join(lines)
