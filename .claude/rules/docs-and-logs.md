@@ -57,7 +57,7 @@ of files this lesson governs?**
 | A specific file's past (this exact file was broken once) | an `archive/log/` fragment | surfaced automatically by the write-time briefing |
 | One area (agent files, personas, deploy, records) | the matching `.claude/rules/*.md` | on read of that area |
 | A repeatable procedure | a skill / `.claude/commands/` file | on invocation |
-| Everything, and it is dangerous to get wrong | root `CLAUDE.md` — **and it must earn a line against the 200 ceiling** | always |
+| Everything, and it is dangerous to get wrong | root `CLAUDE.md` — **and it must earn a line against its ceiling** (`CEILINGS`) | always |
 | Nothing anymore (the cause was fixed) | the fragment only | never — it is history |
 
 The standing question for the last row but one: *would removing this cause a mistake in a session

@@ -92,7 +92,7 @@ python3 scripts/backlog_close_scan.py
 
 It ranks `## Now`/`## Later` against this session's diff and prints the evidence. **Read every
 candidate against the diff** — the scan only decides what to read; an entry naming a file is often
-about a different fault in it. Fully done → move to `archive/backlog_closed_2026-08.md` with the
+about a different fault in it. Fully done → move to `archive/backlog_closed_YYYY-MM.md` (current month) with the
 commit or `file:line`. Partly done → **stays open**, retitled to what is left (built but undeployed
 is open). Untouched → leave it; do not re-word an item because you read it. *(Replaced a filename
 grep 2026-08-18 — it only found items that *name a file*, missing incidental closures entirely.
@@ -121,7 +121,7 @@ list stops being read. The count is the signal; `/backlog` is where a pass happe
 ## 5. Commit the close-out
 
 Stage an explicit manifest: `SESSION.md`, `archive/PROJECT_LOG.md`, `DEV_BACKLOG.md`,
-`archive/backlog_closed_2026-08.md`, plus `ROADMAP.md` if step 3 touched it. Never `git add -A`,
+the current month's `archive/backlog_closed_YYYY-MM.md`, plus `ROADMAP.md` if step 3 touched it. Never `git add -A`,
 never a glob. **`git diff` each file before staging** — two windows run against this tree, and
 `git add <path>` stages that file's whole current content, a parallel session's uncommitted
 lines included (CLAUDE.md § Deploy safety, rule 4). Then `git push origin main` — the offsite
@@ -146,5 +146,5 @@ your own edits from a parallel window's (`[DB-0805-05]`, open), so raising it is
 ---
 
 *Procedure only — incident history lives in `archive/PROJECT_LOG.md`. Ceiling: `CEILINGS` in
-`scripts/check_claude_md_claims.py` (150 as of 2026-08-15), which is the authority — do not
+`scripts/check_claude_md_claims.py`, which is the authority — do not
 restate the number anywhere else.*

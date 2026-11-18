@@ -92,40 +92,19 @@ Adopted 2026-08-14, generalised from the `HARNESS_BACKLOG.md` precedent — the 
 mechanism already proven to work here. Roughly 12 of 34 scripts and 4 of 6 hooks manage the record
 keeping and dev process rather than the product; that ratio is why this rule exists.
 
-**`bash scripts/qa_sweep.sh`** is free (9 checks, ~3s) and is the right thing to run after any
+**`bash scripts/qa_sweep.sh`** is free (seconds, zero model tokens) and is the right thing to run after any
 harness edit. It parses; it does not execute — run the thing you changed.
 
 ---
 
-## Plan-scoped deny lift (`scripts/hook_deny_lift.py`, 2026-08-29)
+## A hook's `allow` does not beat a settings deny
 
-**A Denied-tier `Write`/`Edit` is allowable during an approved plan's implementation — by asking
-Mike, never by editing the deny list.** On his yes, write .claude/deny_lift.json — unbackticked
-deliberately: the file exists only while a lift is in force, and `check_claude_md_claims.py`
-reads a backticked path as one that must exist — at repo root, gitignored, scoped to that plan's
-paths with a ≤7-day expiry:
+**A Denied-tier edit during a plan is Mike's: he makes it himself, or lifts the deny in settings
+and restores it.** A `PreToolUse` hook cannot do it for him. Probed 2026-08-29 with Mike present:
+with a valid plan-scoped lift in force, a `Write` to the lifted path was refused — *"File is in a
+directory that is denied by your permission settings."* In an autonomous session the classifier
+also blocks creating the lift file, by both `Write` and `Bash`.
 
-```json
-{"plan": "one-line plan name", "created": "YYYY-MM-DD", "expires": "YYYY-MM-DD",
- "paths": ["data/personas/mike/zones.yaml"]}
-```
-
-The hook allows exactly those paths until expiry, then deletes the lift — failure mode is the
-deny returning, which fails closed. It **retires** per-phase manual deny-list edits (a forgotten
-restore is silently invisible). Full rationale, and the `NEVER_LIFT` floor a lift can never
-touch (constitution, `.env*`, keys, `deploy.sh`, settings, the mechanism itself): the hook's own
-header. The lift covers `Write`/`Edit` only — Bash-side actions (e.g. SSH edits of VM files)
-answer to the auto-mode classifier, which nothing here lifts.
-
-**❌ PROBED 2026-08-29, Mike present: the settings deny WINS — the lift does not work.** With a
-valid lift in force for `data/personas/probe_lift.txt` (created by Mike's own hand; the hook
-registered in settings and hooks demonstrably firing that session), a `Write` to the lifted
-path was refused: *"File is in a directory that is denied by your permission settings."*
-Whether the hook's `allow` was emitted and overridden, or the deny short-circuits before
-`PreToolUse` hooks run, is indistinguishable from outside — the operative result is the same.
-Two prior findings from the same probe: in an **autonomous** session the classifier blocks even
-*creating* the lift file, by both `Write` and `Bash`. So the mechanism fails closed at every
-layer — safe, and inert. **Open decision (Mike's): retire `scripts/hook_deny_lift.py` per this
-file's standing rule against machinery that does nothing, or keep it dormant against a future
-harness where hook-allow gains precedence.** Until decided, a Denied-tier edit during a plan is
-what it was before the hook: Mike edits it himself, or lifts the deny in settings and restores it.
+The plan-scoped lift built on the opposite assumption (hook_deny_lift.py) was retired on
+2026-11-18 under the standing rule above: it could only ever say "allow", so it guarded nothing.
+It is in git history if a future harness gives hook-`allow` precedence.

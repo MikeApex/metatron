@@ -38,8 +38,8 @@ premise, dispatches.
 |---|---|---|
 | Green | `tests/`, `scripts/`, `docs/`, `archive/`, comments, logging | Sonnet worker |
 | Amber | `tools/*.py`, `core/*.py` (non-red), `static/`, non-routing `config/modules/*.yaml` | Sonnet worker, Opus reviews |
-| **Red** | `config/agents/*.md`, `routing*.yaml`, `core/{router,persona,scheduler,spend_guard}.py`, `./deploy.sh`, `git push` | **Opus, here. Never delegated** |
-| Denied | `config/constitution.md`, `config/personas/mike*`, `data/personas/**`, `.env` | nobody, until lifted explicitly |
+| **Red** | `config/agents/*.md`, `routing*.yaml`, `core/{router,persona,scheduler,spend_guard}.py`, `git push` | **Opus, here. Never delegated** |
+| Denied | `config/constitution.md`, `config/personas/mike*`, `data/personas/**`, `.env`, `./deploy.sh` | nobody, until lifted explicitly |
 
 Red is not delegated because **there the judgement is the work** — and a
 contractor without the project's history decides wrong, confidently.

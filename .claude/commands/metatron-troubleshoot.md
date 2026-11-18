@@ -17,7 +17,7 @@ PERSONA = $4
 
 - `DATE` — full ISO `YYYY-MM-DD`. Expand shorthand ("Aug 2" → `2026-08-02`) using today's date for the year.
 - `SEQ` — zero-padded 3 digits (`21` → `021`).
-- `PERSONA` — defaults to `mike` if not given. Nine personas exist; the tool is not Mike-only.
+- `PERSONA` — defaults to `mike` if not given. Several personas exist; the tool is not Mike-only.
 - `ISSUE` — the user's actual question, quoted at the end of this file.
 
 State the four resolved values back to the user in one line before running the pull, so a misparse is caught immediately rather than after a confusing empty result.
@@ -26,7 +26,7 @@ Title the chat by date/seq for archiving.
 
 ## Step 2 — context
 
-Metatron pipeline on `metatron-vm` (`us-central1-a`, project `metatron-ai-499810`). Coordinator (Flash-Lite) → parallel specialists → Synthesizer (Pro).
+Metatron pipeline on `metatron-vm` (`us-central1-a`, project `metatron-ai-499810`). Coordinator → parallel specialists → Synthesizer; each step's model is in `config/modules/routing_cloud.yaml` and in the trace.
 
 Paths are **persona-scoped** (since the 2026-07-28 persona unification):
 
@@ -174,7 +174,7 @@ Findings in this format:
 
 Pair each technical finding with a plain-language statement of what it meant for the user in practice — keep both, and do not drop the specifics when restating plainly.
 
-Before proposing any fix, run the **Mandatory Pre-Edit Context Check** in `CLAUDE.md`: `SESSION.md`, the active roadmap, and the file-ownership rules. `config/agents/*.md` are ordinary editable config — the post-review freeze was lifted 2026-08-02 — but they are the product and they are token-sensitive, so keep additions short.
+Before proposing any fix, run the **Mandatory Pre-Edit Context Check** in `CLAUDE.md`: `SESSION.md`, the active roadmap, and the file-ownership rules. `config/agents/*.md` are ordinary editable config, but they are the product and they are token-sensitive, so keep additions short.
 
 **Fix it here if you can, and file nothing.** A one-file fix found by a troubleshoot belongs in this session, not in `DEV_BACKLOG.md`. File only what a user would notice or what blocks the roadmap.
 

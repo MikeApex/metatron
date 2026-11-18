@@ -79,9 +79,10 @@ quality-event stream or `DEV_BACKLOG.md`.
 > which is the ratio that teaches a reader to skip the report. Four bullet-leading JSON keys
 > still slip through. Add to `_NOT_TOOLS` when one does; a clean report is evidence, not proof.
 
-**Fix the tool allowlists *before* enforcing them.** The per-agent whitelist filters
-`tool_schemas` but not `tool_handlers`, and `dispatch_tool()` does no whitelist check — so an
-agent that is merely *told* about a tool can still call it. Proven live: `logistics` is not
+**Fix the tool allowlists *before* enforcing them.** `dispatch_tool()` checks each call against
+the agent's advertised tools, but in the default `warn` mode (`METATRON_TOOL_PERMISSIONS` unset)
+it only records the denial and runs the call — so an agent that is merely *told* about a tool
+can still call it. Proven live: `logistics` is not
 granted `write_agent_config`, called it three times in production, and the dispatcher executed
 each. **Every "told-but-not-offered" capability therefore works by accident.** Enforcing
 least-privilege without first correcting the allowlists breaks all of them at once, silently.

@@ -119,7 +119,6 @@ runtime, and not invoked from the command line in normal use:
 
 | Script | Fires on | Purpose |
 |---|---|---|
-| [scripts/hook_deny_lift.py](scripts/hook_deny_lift.py) | PreToolUse (Write\|Edit) | Allows Write/Edit on Denied-tier paths only while a plan-scoped work order is in force |
 | [scripts/hook_context_gate.py](scripts/hook_context_gate.py) | PreToolUse (Write\|Edit) | Per-file briefing (tier, governing rule, recent commits, log history) plus warn-only checks that `SESSION.md`/`ROADMAP.md` were read this session — the mechanism behind § Mandatory Pre-Edit Context Check in `CLAUDE.md` |
 | [scripts/hook_agent_spawn.py](scripts/hook_agent_spawn.py) | PreToolUse (Agent) | Records worker spawn — narration that replaced the ~800 approval prompts removed when subagent tool use stopped requiring confirmation |
 | [scripts/hook_commit_guard.py](scripts/hook_commit_guard.py) | PreToolUse (Bash) + PostToolUse (Write\|Edit) | Blocks a commit that would sweep up another session's uncommitted work in a shared tree (the 2026-08-09 incident: session A's `routing*.yaml` edit swept into session B's commit) |

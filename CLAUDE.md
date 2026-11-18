@@ -106,8 +106,8 @@ copy here would go stale and the stale copy would keep being read. Read it there
 > (Mike's decision, 2026-08-14) — it was the only ungated irreversible action.
 >
 > **Anything that must never happen unattended belongs in the Denied row.** Rule probing, `git push`'s
-> inert Red, and the **plan-scoped deny lift** (2026-08-29 — a Denied `Edit`, only during an approved
-> plan, only by asking Mike, never constitution/`.env`/keys/`deploy.sh`): [`.claude/rules/deploy.md`](.claude/rules/deploy.md).
+> inert Red, and why **a hook cannot lift a deny** (probed; the plan-scoped lift was retired — a
+> Denied edit is Mike's to make or lift): [`.claude/rules/deploy.md`](.claude/rules/deploy.md).
 
 The Denied row turns two standing prose rules into mechanism: the constitution is Tier 0, and
 **the VM owns live persona config** ([`.claude/rules/personas.md`](.claude/rules/personas.md)).
@@ -136,7 +136,7 @@ Use precise names. Avoid pronouns and generic terms.
 |---|---|
 | **Claude Code** | The development interface — the CLI/IDE tool used to build this project. Not the runtime. |
 | **Orchestrator** | `core/orchestrator.py` — the runtime brain. Loads config, calls a model API, dispatches tools. |
-| **[Model name]** | The specific AI model called at runtime. Always by name: Sonnet 4.6, Haiku 4.5, qwen3:14b, gemini-2.5-flash, gpt-4o. Never "Claude" as a generic runtime label. |
+| **[Model name]** | The specific AI model called at runtime. Always by the exact name `config/modules/routing*.yaml` gives it. Never "Claude" as a generic runtime label. |
 | **[Agent name]** | The instruction file loaded for a session. Always by name: Time Director, Goals Interviewer, Diarist. Not "the agent" generically. |
 | **Anthropic / OpenAI / Gemini API** | Cloud APIs for those vendors' models. Name the API, not "the cloud". |
 | **Ollama** | Local model server at `localhost:11434`. Runs models like qwen3:14b locally. |

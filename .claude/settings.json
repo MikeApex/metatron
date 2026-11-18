@@ -136,12 +136,6 @@
   "hooks": [
     {
       "type": "command",
-      "command": "python3 \"$CLAUDE_PROJECT_DIR/scripts/hook_deny_lift.py\"",
-      "timeout": 10,
-      "statusMessage": "Checking plan-scoped deny lift..."
-    },
-    {
-      "type": "command",
       "command": "python3 \"$CLAUDE_PROJECT_DIR/scripts/hook_context_gate.py\"",
       "timeout": 15,
       "statusMessage": "Checking session context..."

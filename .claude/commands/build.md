@@ -124,7 +124,6 @@ ledger = S.record_interview_answer(ledger, question_id, his_answer)
 That writes the answer where the Planner and the question table both read it, with a
 truthful `user`/`interview` inventory — nothing about the shape is yours to decide.
 Write the ledger back, set `answered: true` on `ledger_check`, ask the driver again.
-**`answer_interview_item` is retired — do not call it.**
 
 ### `N10` the brief
 

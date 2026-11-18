@@ -263,7 +263,9 @@ CEILINGS = {
     ".claude/rules/agent-files.md": 180,
     ".claude/rules/personas.md": 110,
     ".claude/rules/orchestrator.md": 90,
-    ".claude/rules/deploy.md": 100,
+    # 100 -> 140 on 2026-11-18 (Mike's decision). It stood at 131 that day and at
+    # 110 once the retired deny-lift section left it.
+    ".claude/rules/deploy.md": 140,
     ".claude/rules/docs-and-logs.md": 150,
 }
 

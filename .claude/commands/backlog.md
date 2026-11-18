@@ -113,7 +113,7 @@ The brief must carry, because a worker starts cold:
 
 - **the full text of each item it owns** — it cannot see `DEV_BACKLOG.md`'s context
 - **read-only, and say it plainly: edit nothing, commit nothing, run nothing that writes.**
-  Nothing enforces this — `qa_sweep.sh` checks seven specific things, not tree cleanliness, and
+  Nothing enforces this — `qa_sweep.sh` runs a fixed list of checks, not tree cleanliness, and
   the `SubagentStop` gate excludes the main tree from its dirty-worktree sweep. The prohibition
   in the brief is the whole control.
 - per item, one of four verdicts **with its evidence**: **fixed** (commit or `file:line`) ·
@@ -125,8 +125,8 @@ a day". Workers do not SSH; collect those and run one round-trip here — the in
 near-miss warning are in [docs/INFRASTRUCTURE.md](../../docs/INFRASTRUCTURE.md) § Service
 management.
 
-**This window owns every write.** Workers report; you move items to
-`archive/backlog_closed_2026-08.md` with their evidence, repoint drifted line numbers, and put
+**This window owns every write.** Workers report; you move items to the
+current month's `archive/backlog_closed_YYYY-MM.md` with their evidence, repoint drifted line numbers, and put
 the decisions to Mike in one batch. A verdict without a `file:line`, commit or named test is a
 description, and descriptions are what the standing rule distrusts — send it back rather than
 recording it.
@@ -145,9 +145,9 @@ Everything above, plus the maintenance a default pass deliberately skips:
   drift, rather than a day of serial reading.
 - **Sweep `## Machine log`.** Promote anything user-impacting; leave the rest collapsed.
 - **Roll closed items** into `archive/backlog_closed_YYYY-MM.md`, starting a new file each month.
-- **Check the shape:** `DEV_BACKLOG.md`'s ceiling is the figure in `CLAUDE.md` § *Which File
-  Holds What* — read it there rather than trusting a number repeated here. Past
-  it, narrative is accumulating again — the detail belongs in the code, the log, or the archive.
+- **Check the shape:** `DEV_BACKLOG.md` is bounded by item count — `ITEM_CEILINGS` in
+  `scripts/check_claude_md_claims.py`; read it there rather than trusting a number repeated here.
+  Past it, finished work is not exiting — close it to the archive.
 
 ---
 
