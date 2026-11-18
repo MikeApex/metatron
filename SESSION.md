@@ -36,8 +36,7 @@ the homes each paragraph was already pointing at.
 
 | Settled | Where the reasoning is |
 |---|---|
-| **Real calendar guest management → Mark 2** (Mike, 09-09). Do not re-propose against the Mark 1 CalDAV path — it is an integration change, not a patch | `DEV_BACKLOG.md` § Inbox, which holds the OAuth route and the 7-day refresh-token measurement |
-| **Alpha ships on Mark 2** (Mike, 09-02), and the **Darwin API key `[DB-0818-04]` folded into it** (09-04) — not a standalone (M). `ROADMAP.md` still reads as though A8 is live; **Mike updates that manually, it is not an oversight** | `archive/plans/mark2_endeavour_plan_2026-09-02.md` (sequencing, gates, cost) · `archive/plans/code_dominant_rebuild_notes.md` (architecture) |
+| **Mark 2 is ENDED; Mark 1 continues and takes new features** (Mike, 11-18). The 09-02 "Mark 1 bugfix-only" freeze and every "deferred/folded into Mark 2" are void. Items that were parked there — calendar guest management (OAuth), the Darwin key `[DB-0818-04]`, A7 checks 10/12, A8, the Goals Interviewer overhaul — need a Mark 1 home; none waits on Mark 2 | banner on `archive/plans/mark2_endeavour_plan_2026-09-02.md` |
 | **A4 safety testing SUSPENDED** (before-Alpha is the only clock) and **ZDR refused** | `ROADMAP.md` § Section 0 — both, in full |
 | **The intake extractor is parked permanently** (priced out, not disproven); teaching `rules:` tops out at 11/33 because **a sender is not a category** (Mike). Successor `[DB-0905-01]` reads correspondence **as code, never a model judgement** | `DEV_BACKLOG.md` `[DB-0905-01]` · `archive/backlog_closed_2026-09.md`. **Do not re-derive** |
 | **No off-machine backup** — Mike declined a date twice. A recorded acceptance of a named risk, not an unfiled worry; **do not re-raise** | this line is the record. `VERTEX_CACHE_DISABLED` ON on the Mac since 09-05 (net **+$0.94**/14d) |
@@ -97,8 +96,8 @@ What exists: [CODEBASE_INDEX.md](CODEBASE_INDEX.md). When and why each piece was
 ### In progress / next
 
 **A7 — Phase 5 sign-off — BLOCKED on B1 alone.** A1–A6 complete, B2 built, B1a passing. Checks 10
-and 12 SKIPPED, A8 CANCELLED (Mike, 09-02 — both fold into Mark 2; `ROADMAP.md` § A8 still reads
-as live and Mike updates that manually — do not start it). Left: B1b's calendar, web-page and
+and 12 SKIPPED, A8 CANCELLED (Mike, 09-02 — both folded into Mark 2, **which ended 11-18**; where
+they now sit in Mark 1 is Mike's call, not yet made — do not start A8 on this line alone). Left: B1b's calendar, web-page and
 CardDAV rows (gated on Track E), A5b/A5c, `[DB-0804-02]`. **[ROADMAP.md](ROADMAP.md) § Track A/B
 owns the per-item detail and the standing evidence.**
 

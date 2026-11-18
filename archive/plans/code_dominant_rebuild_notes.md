@@ -283,3 +283,15 @@ deliberately. And a named gate, **G1**, reviewing the complete Mark 2 file suite
 any production code, because the failure being guarded against is a collection of individually
 sensible files that together say something nobody chose. Checklist and cost budget: § 4 and § 7 of
 the companion plan.
+
+---
+
+## 2026-11-18 — Mark 2 ended as a refactor
+
+Mike: *"We are no longer pursuing Mark 2 as a refactor. We continue with Mark 1 until further
+notice. The Mark 2 restrictions for future development can be removed project wide."* This
+notebook's retirement condition ("when the rebuild is commissioned") can therefore no longer fire.
+The code-dominant direction itself was not withdrawn and is already being applied inside Mark 1
+piecemeal (e.g. the 10-30 Synth now/next change: "a rule that tells a model not to use data it is
+given is weaker than not giving it the data"). Whether this file stays open as the architecture
+reading for Mark 1 work or closes is not yet ruled.

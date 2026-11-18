@@ -1,4 +1,10 @@
 # Metatron Mark 2 — endeavour plan
+
+> **ENDED 2026-11-18 (Mike): *"We are no longer pursuing Mark 2 as a refactor. We continue with
+> Mark 1 until further notice. The Mark 2 restrictions for future development can be removed
+> project wide."*** This file is now history. **The § 0 sequencing is void** — in particular
+> "Mark 1 goes bugfix-only. No new features", "Alpha ships on Mark 2", and every item deferred or
+> folded "into Mark 2". Those items need a new home in Mark 1; they do not wait on this plan.
 *Written 2026-09-02, from the Mark 2 scoping conversation with Mike. **This is a plan, not an
 authorization to build.** The rulings in § 0 are Mike's, made in that conversation; everything
 downstream of them is proposal. Companion to

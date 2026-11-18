@@ -271,3 +271,13 @@ eight suites green, `qa_sweep` 12/12):
 | A6 | "Evening" was the evening-close job's clock time, so prep collided with family time and got the "takes your own time" rider | place from the day shape (light, screen-free task in family time is allowed), no `after` pin |
 | A8 | A refused open (recently closed twin) loops every 5 minutes and never places the prep | stamp the refusal |
 | A9 | A moved event leaves the old prep task on the wrong night | re-filing moves the open prep task's `due` |
+
+## 11. Stage 2 is absorbed into the goal–task network plan (Mike, 2026-11-18)
+
+Not specced here. Mike widened the need to one dependency network for every task, goal and
+obligation; the Red Book prep is that plan's phase 1 first case, and § 10's A1–A9 are answered in
+its § 4.7: [goal_task_network_plan_2026-11-18.md](goal_task_network_plan_2026-11-18.md).
+**Stage 1 live check, read on the VM 2026-11-18 (11-12 → 11-18):** ordinary briefs pass (now + next
++ one); the prep line works (Show and Tell toy, 11-16 and 11-17 evening closes); misses — Monday's
+week-ahead is a full rundown (by design, `week_block` untouched), new horizon items are uncapped
+(11-18: five extras), and "takes your own time" repeats daily for the same task.
