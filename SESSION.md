@@ -20,7 +20,7 @@ capture-fidelity planning; reply latency (with `[DB-1029-09]`); Sign out; securi
 day-planner live checks `[DB-1029-01]` (due 10-31; the check script is already on the VM — no deploy needed); nine fixes' closes-on checks (11-12). **The
 meals habit still doesn't exist** — Mike re-asks as "open a daily habit…". **Still owed:** the
 boys' school hours/bedtimes → `children_home`; the "over and out" live check; Mike's calendar live
-check (week of 9 Nov); `[DB-0901-02]`, due 12-15. **Cardiac log:** health notes no longer overwrite (`23f1e59`, deployed); log rebuilt to `archive/cardiac_events` — re-run 11-18, remove the routing line 11-21, `[DB-1113-01]`.*
+check (week of 9 Nov); `[DB-0901-02]`, due 12-15. **Non-Metatron, paused mid-chat 11-18:** Founder's Associate hiring brief + internal interview process in `archive/plans/founders_associate_*_2026-11-18.md` (log § 11-18 fourth); next is drafting the test materials with Mike. **Cardiac log:** health notes no longer overwrite (`23f1e59`, deployed); log rebuilt to `archive/cardiac_events` — re-run 11-18, remove the routing line 11-21, `[DB-1113-01]`.*
 
 *Standing rules, each earned twice and both invisible to `qa_sweep`: **a test that exercises a seam
 for real must stub every live meter it ends in**, and **a live gate run dirties TRACKED
