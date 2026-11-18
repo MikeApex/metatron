@@ -551,6 +551,16 @@ Token counts are **estimates until step 4 measures them**.
 11. **Backfill window: 60 days.**
 12. **Shown once.**
 
+13. **Ordinary turns ship in shadow; interviews ship on** (Mike, 2026-11-18, after the backfill).
+    The 60-day backfill and its re-score found 160 real user turns (the other 311 non-proactive
+    traces were the Diarist's runs and morning intake jobs). 15 of 18 stated facts were already
+    kept by some agent, and the other 3 were doubtful as facts. At mike's volume (~2.7 turns/day,
+    one stated fact per ~9 turns), the § 5.3 live miss-rate gate cannot be measured in any
+    reasonable window. So: `modes` in `capture.yaml`. Shadow measures each user's own baseline
+    without pushing a save. The interviewer is on, gated on the eval (6/7, the seventh still an
+    ask) and Mike's labels, because its only measured case missed 3 of 8 facts. **The § 5.3
+    thresholds stand as the bar for switching a shadow writer to on**, on that user's own data.
+
 **Made in the build, flagged for Mike:**
 
 - **Holdout: 1 turn in 5, during each user's first 14 days** (§ 4.1, plan review 1). It is the

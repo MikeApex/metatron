@@ -137,6 +137,10 @@ _DEFAULTS = {
     "history_messages": 6,
     "saved_record_chars": 2400,
     "match_overlap": 0.5,
+    # Per writer: "on" shows the note, "shadow" runs the extractor and records outcomes but
+    # shows nothing, "off" runs nothing (Mike, 2026-11-18 — mike's ordinary turns kept 15 of
+    # 18 stated facts, so the Synthesizer path measures before it is allowed to push a save).
+    "modes": {"synthesizer": "shadow", "goals_interviewer": "on"},
     # The plan's minimums (§ 5.3), so a capture.yaml missing them never makes a gate lenient.
     "minimums": {"precision": 0.90, "recall": 0.80, "matcher": 0.90,
                  "miss_rate_reduction": 0.75, "accept_rate": 0.75},
@@ -155,11 +159,21 @@ def config() -> dict:
         return dict(_DEFAULTS)
     merged = {**_DEFAULTS, **{k: v for k, v in data.items() if v is not None}}
     merged["minimums"] = {**_DEFAULTS["minimums"], **(data.get("minimums") or {})}
+    merged["modes"] = {**_DEFAULTS["modes"], **(data.get("modes") or {})}
     return merged
 
 
 def enabled() -> bool:
     return bool(config().get("enabled"))
+
+
+def mode(agent: str, cfg: dict | None = None) -> str:
+    """"on", "shadow" or "off" for this writer; "off" whenever capture as a whole is off."""
+    cfg = cfg or config()
+    if not cfg.get("enabled"):
+        return "off"
+    m = str((cfg.get("modes") or {}).get(agent, "off")).strip().lower()
+    return m if m in ("on", "shadow") else "off"
 
 
 def _dir(persona: str) -> Path:
@@ -532,7 +546,7 @@ def start(persona: str, user_input: str, history: list[dict] | None, agent: str,
           trace=None) -> Job | None:
     """Start the extractor for a real user turn, or None when capture is off. The caller has
     already established the turn is the user's own (`has_real_user_turn`)."""
-    if not enabled() or agent not in AGENT_KINDS or not (user_input or "").strip():
+    if agent not in AGENT_KINDS or mode(agent) == "off" or not (user_input or "").strip():
         return None
     rid = getattr(trace, "trace_id", None) or uuid.uuid4().hex[:12]
     job = Job(persona, agent, rid)
@@ -917,9 +931,11 @@ def _resolve(persona: str, agent: str, rid: str, shown: list[dict],
 # --- the ordinary-turn path -----------------------------------------------------------------------
 
 class SynthTurn:
-    def __init__(self, persona: str, rid: str, shown: list[dict], holdout: bool, day: int):
+    def __init__(self, persona: str, rid: str, shown: list[dict], holdout: bool, day: int,
+                 shadow: bool = False):
         self.persona, self.rid, self.shown, self.holdout, self.day = (
             persona, rid, shown, holdout, day)
+        self.shadow = shadow            # measured like a holdout, never shown, never carried
         self.note = "" if holdout else render_note(shown)
 
 
@@ -930,7 +946,8 @@ def note_for_synthesizer(persona: str, job: Job | None, trace) -> SynthTurn | No
     cfg = config()
     agent = "synthesizer"
     day = window_day(persona)
-    holdout = is_holdout(job.request_id, day, cfg)
+    shadow = mode(agent, cfg) == "shadow"
+    holdout = shadow or is_holdout(job.request_id, day, cfg)
     cap = int(cfg["cap"])
 
     def late(res: dict) -> None:
@@ -944,7 +961,8 @@ def note_for_synthesizer(persona: str, job: Job | None, trace) -> SynthTurn | No
                 _outcome(persona, agent, job.request_id, c, "declined", False, day)
             else:
                 keep.append(c)
-        add_pending(persona, agent, keep)
+        if not shadow:
+            add_pending(persona, agent, keep)
 
     res = job.wait(float(cfg["join_bound_s"]), late=late)
     writes = writes_from_trace(trace)
@@ -961,7 +979,7 @@ def note_for_synthesizer(persona: str, job: Job | None, trace) -> SynthTurn | No
     items = (fresh + carried)
     for c in items[cap:]:
         _outcome(persona, agent, job.request_id, c, "dropped_cap", holdout, day)
-    return SynthTurn(persona, job.request_id, items[:cap], holdout, day)
+    return SynthTurn(persona, job.request_id, items[:cap], holdout, day, shadow)
 
 
 def after_synthesizer(turn: SynthTurn | None, trace) -> None:
@@ -971,7 +989,7 @@ def after_synthesizer(turn: SynthTurn | None, trace) -> None:
         writes = writes_from_trace(trace)
         _resolve(turn.persona, "synthesizer", turn.rid, turn.shown, writes, turn.holdout,
                  turn.day)
-        if turn.holdout:
+        if turn.holdout and not turn.shadow:
             # Measured; now caught one turn late rather than lost — a holdout delays
             # prevention, it does not withhold it.
             add_pending(turn.persona, "synthesizer",
@@ -983,7 +1001,7 @@ def after_synthesizer(turn: SynthTurn | None, trace) -> None:
 
 def defer(turn: SynthTurn | None) -> None:
     """The Synthesizer never ran (sign-off): hold what would have been shown for next turn."""
-    if turn is None or not turn.shown:
+    if turn is None or not turn.shown or turn.shadow:
         return
     add_pending(turn.persona, "synthesizer",
                 [{k: v for k, v in c.items() if k not in ("_mismatch", "agent", "created", "id")}
@@ -993,7 +1011,7 @@ def defer(turn: SynthTurn | None) -> None:
 # --- the interview path -----------------------------------------------------------------------------
 
 def take_for_interview(persona: str) -> list[dict]:
-    if not enabled():
+    if mode("goals_interviewer") != "on":
         return []
     return _still_missing(persona, "goals_interviewer", "carry",
                           take_pending(persona, "goals_interviewer"), [], window_day(persona))
@@ -1012,10 +1030,16 @@ def after_interview_turn(persona: str, job: Job | None, before: dict, after: dic
             return
         cfg = config()
 
+        shadow = mode(agent, cfg) == "shadow"
+
         def finish(res: dict) -> None:
-            _turn_row(persona, agent, rid, res, "ran" if res.get("ok") else "failed", False, day)
-            show = _triage(persona, agent, rid, res.get("candidates") or [], writes, False, day)
-            add_pending(persona, agent, [{k: v for k, v in c.items()} for c in show])
+            _turn_row(persona, agent, rid, res, "ran" if res.get("ok") else "failed", shadow, day)
+            show = _triage(persona, agent, rid, res.get("candidates") or [], writes, shadow, day)
+            if shadow:
+                for c in show:
+                    _outcome(persona, agent, rid, c, "held_out_unsaved", True, day)
+            else:
+                add_pending(persona, agent, [{k: v for k, v in c.items()} for c in show])
 
         res = job.wait(float(cfg["join_bound_s"]), late=finish)
         if res is not None:

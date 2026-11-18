@@ -332,7 +332,9 @@ def run_turn(persona: str, user_input: str, history: list[dict], proactive: bool
     # Capture fidelity: the extractor runs beside the interviewer; what this turn wrote is the
     # before/after diff of the record, because run_session's trace is gone when it returns
     # (plan review 2). Misses reach the NEXT turn's coverage block, shown once.
-    live = capture.enabled() and not proactive     # the app's opening words are not the user's
+    # The app's opening words are not the user's; the mode is the interviewer's own
+    # (config/modules/capture.yaml `modes`), on or shadow.
+    live = capture.mode(AGENT) != "off" and not proactive
     shown = capture.take_for_interview(persona) if live else []
     snap = capture.snapshot(persona) if live else None
     job = capture.start(persona, user_input, history, AGENT) if live else None

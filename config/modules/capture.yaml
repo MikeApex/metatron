@@ -1,9 +1,21 @@
 # Capture fidelity — the agent is shown what the user said and it did not keep.
 # Read by tools/capture.py. Plan: archive/plans/capture_fidelity_plan_2026-11-18.md.
 
-# OFF until the backfill's labels pass the minimums below (plan § 5.3). While off, nothing
-# runs on a live turn; --backfill, --label, --score and --eval still work.
+# Master switch. OFF until Mike's labels are in (plan § 9, 2026-11-18). While off, nothing
+# runs on a live turn; --backfill, --rematch, --label, --score and --eval still work.
 enabled: false
+
+# Per writer, once the master switch is on (Mike, 2026-11-18):
+#   on     — the note is shown; the agent saves or asks.
+#   shadow — the extractor runs and outcomes are recorded; nothing is shown or carried.
+#   off    — nothing runs.
+# Ordinary turns start in shadow: mike's 60-day backfill found 15 of 18 stated facts already
+# kept by some agent, and a wrong note pushes a duplicate save. Shadow gives each user's own
+# baseline; switch to on if it shows a material miss rate. The interviewer is on: the one
+# measured case (trial_1029) missed 3 of 8 facts and saved one for the wrong days.
+modes:
+  synthesizer: shadow
+  goals_interviewer: on
 
 # The measurement window: 1 eligible ordinary turn in 5 is a holdout — compared, never shown —
 # during each persona's first `window_days` with capture on. It is the only way to see what the

@@ -30,7 +30,8 @@ _tmp = Path(tempfile.mkdtemp(prefix="metatron-capture-"))
 P = "cap_test"
 P2 = "cap_other"
 
-CFG = {**capture._DEFAULTS, "enabled": True, "holdout_rate": 0.0, "join_bound_s": 2.0}
+CFG = {**capture._DEFAULTS, "enabled": True, "holdout_rate": 0.0, "join_bound_s": 2.0,
+       "modes": {"synthesizer": "on", "goals_interviewer": "on"}}
 EXTRACT = {"fn": None}
 AGENT_CALLS: list[dict] = []
 AGENT_SIDE = {"fn": None}
@@ -598,6 +599,30 @@ def test_rematch_rescores_without_a_model_call():
     rows = [json.loads(ln) for ln in review.read_text().splitlines()]
     assert "dropped 1" in out and [r["trace_id"] for r in rows] == ["u1"]
     assert rows[0]["candidates"][0]["matcher"] == "saved_elsewhere"
+
+
+def test_shadow_mode_measures_and_never_shows():
+    _reset()
+    saved_modes = CFG["modes"]
+    CFG["modes"] = {"synthesizer": "shadow", "goals_interviewer": "on"}
+    try:
+        capture.add_pending(P, "synthesizer", [_c("task", "task", "older", say="older")])
+        turn = capture.note_for_synthesizer(P, _done_job("r-sh", [
+            _c("task", "task", "renew the passport", say="renew the passport")]), None)
+        assert turn.note == "" and turn.shadow
+        capture.after_synthesizer(turn, None)
+        capture.defer(turn)
+        assert [r["outcome"] for r in _rows() if r.get("row") == "candidate"] == ["held_out_unsaved"]
+        # nothing new is carried; what was pending before stays untouched for an "on" turn
+        assert [c["say"] for c in capture._read_json(capture._pending_path(P), [])] == ["older"]
+    finally:
+        CFG["modes"] = saved_modes
+
+
+def test_default_modes_and_master_switch():
+    assert capture._DEFAULTS["modes"] == {"synthesizer": "shadow", "goals_interviewer": "on"}
+    assert capture.mode("synthesizer", {**CFG, "enabled": False}) == "off"
+    assert capture.mode("goals_interviewer", {**CFG, "modes": {"goals_interviewer": "bogus"}}) == "off"
 
 
 _SAVED_EXTRACT = capture.extract     # the real one, captured before setup_module patches it
