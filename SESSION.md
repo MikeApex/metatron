@@ -1,16 +1,16 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-11-18 (11-16 state + an instruction-file audit, dev-side only — `84630b7`, log § 11-18; tool-permission enforcement filed to the Inbox as its own session; VM at `23f1e59`). **The 11-05 review's High and Medium findings are fixed and DEPLOYED** (VM at
+*Updated: 2026-11-18 (**goal–task network phase 1 BUILT, committed `98f158f`, NOT deployed** — log § 11-18 fifth, plan § 13; VM at `23f1e59`). **Mike deploys, then four live checks:** (1) the next real event with a precursor gets a prep task that is nudged, checked, and moves if the event is moved; (2) a two-step test task — step 2 appears only after step 1; Skip on step 1 closes step 2 and asks once to redo; (3) a task left undone a few days is raised on the brief with how long it slipped, dismissable; (4) a morning with several new horizon findings shows at most two. **Before deploying, confirm** `mike`'s fixed-job names match `shield_jobs` in `config/modules/day_plan.yaml` (`morning_brief`, `evening_close`, `location_anticipation`). Revert: flags `prep_tasks`/`horizon_cap` off. **The 11-05 review's High and Medium findings are fixed and DEPLOYED** (VM at
 `968a8a0`; plan with Mike's Phase 1 calls at its end: `archive/plans/codebase_review_fixes_plan_2026-11-11.md`;
 log § 11-11). 5 of 7 Highs closed. **Held by Mike, recorded only in that plan:** #5 (a nudge due near
-a fixed session is dropped — now in goal-network phase 1), #9 (Build cannot land — fix before the next `/build` run), #10, #33.
+a fixed session is dropped — **fixed in `98f158f`, undeployed**), #9 (Build cannot land — fix before the next `/build` run), #10, #33.
 **Before Iva signs up:** #40, #41 (#11 ruled 11-18: her data has exactly `mike`'s clearances, `ROADMAP.md` § 0). Skipped:
 #29. Lows wait for the next review. **`accounts.py list` shows no accounts — Iva has not signed up.**
 **Mike (optional): delete `~/multi-model-mcp/.env.bak-2026-11-11` on the VM (holds the removed API
 key); check a moved event keeps its reminder.** **Synth now/next (`547c446`) went live with it** —
-live-checked on the VM 11-18: passes on ordinary days, three misses (plan § 12). **Next: phase 1 of
-the goal–task network** (stage 2 absorbed; plan Fable-reviewed, `archive/plans/goal_task_network_plan_2026-11-18.md`)
-— prompt `archive/handoffs/2026-11-18-goal-network-phase-1-build-prompt.md`. `mike`'s goals updated
+live-checked on the VM 11-18: three misses (plan § 12) — M2 and M3 now built in phase 1, M1 left as is (Mike). **After phase 1's live checks: phase 2 of
+the goal–task network** (intake/vetting S/M, project planner, taxes playbook — plan § 5, § 10 R3/R4/R6/R8;
+`archive/plans/goal_task_network_plan_2026-11-18.md`), no prompt written yet. `mike`'s goals updated
 on the VM 11-18 (ids + Bulgarian/taxes/Prudential). **Still next, unchanged:** Iva's onboarding
 (`archive/handoffs/2026-10-29-iva-account-walkthrough-prompt.md`, APK rebuild first; #11/#40/#41
 first); M3 restarts on her approval day; `/backlog deep`, then
