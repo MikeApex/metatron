@@ -81,6 +81,12 @@ agents:
     # entry is what authorises the Vertex path, and it has no bearing here.
     allowed_tools: []
 
+  capture_extractor:
+    local: true
+    # Parity with routing_cloud.yaml: bare dispatch, empty grant, the user's own words are
+    # Sensitive tier → Ollama only, fail-closed.
+    allowed_tools: []
+
   day_planner:
     local: true
     # Parity with routing_cloud.yaml: bare dispatch, empty grant, Sensitive tier → Ollama only,

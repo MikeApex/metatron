@@ -4,7 +4,7 @@
 `968a8a0`; plan with Mike's Phase 1 calls at its end: `archive/plans/codebase_review_fixes_plan_2026-11-11.md`;
 log § 11-11). 5 of 7 Highs closed. **Held by Mike, recorded only in that plan:** #5 (a nudge due near
 a fixed session is dropped), #9 (Build cannot land — fix before the next `/build` run), #10, #33.
-**Before Iva signs up:** #11 (her data in developer channels — ruling deferred), #40, #41. Skipped:
+**Before Iva signs up:** #40, #41 (#11 ruled 11-18: her data has exactly `mike`'s clearances, `ROADMAP.md` § 0). Skipped:
 #29. Lows wait for the next review. **`accounts.py list` shows no accounts — Iva has not signed up.**
 **Mike (optional): delete `~/multi-model-mcp/.env.bak-2026-11-11` on the VM (holds the removed API
 key); check a moved event keeps its reminder.** **Synth now/next (`547c446`) went live with it** —

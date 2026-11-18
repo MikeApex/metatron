@@ -7201,6 +7201,16 @@ def run_pipeline_session(user_input: str,
             if coord_context else f"{proactive_prefix}{receipt_line}{user_input}{attach_note}{name_note}"
         )
 
+        # Capture fidelity: the extractor reads the user's words beside the Coordinator, so the
+        # Synthesizer's one pass can be shown what this turn said and nothing kept — no added
+        # latency. User turns only; off unless config/modules/capture.yaml enables it.
+        # archive/plans/capture_fidelity_plan_2026-11-18.md § 4.1. Kept identical to the twin.
+        from tools import capture as _capture
+        _capture_trace = _tr.get_trace()
+        capture_job = (_capture.start(persona, user_input, history, "synthesizer", _capture_trace)
+                       if not nudge and has_real_user_turn(user_input, is_proactive, attachments)
+                       else None)
+
         # Pass 1: Coordinator — single-pass routing directive assembly. Skipped on a day-plan
         # nudge (F9 (a)), which has nothing to route.
         _trace("[PIPELINE] coordinator  starting")
@@ -7246,6 +7256,8 @@ def run_pipeline_session(user_input: str,
         # Read-only, and built before the sign-off decision: a completion note means the
         # user's words may close a task, which only the Synthesizer records.
         task_hint = _task_hint_block(user_input, is_proactive, history, persona)
+        # After the specialists, so their writes this turn are already in the trace.
+        capture_turn = _capture.note_for_synthesizer(persona, capture_job, _capture_trace)
 
         # User signed off ("over and out") with nothing asked or reported, and nothing
         # pressing came back from the specialists: rest without the Synthesizer pass.
@@ -7254,6 +7266,7 @@ def run_pipeline_session(user_input: str,
                 history.append({"role": "user", "content": user_input})
                 history.append({"role": "assistant", "content": _SIGNOFF_ACK})
                 del history[:-10]
+            _capture.defer(capture_turn)     # no writer ran: shown on the next user turn
             _tr.finish_request_trace(_SIGNOFF_ACK)
             return _SIGNOFF_ACK
         signoff_note = _signoff_note(spec_text, user_input, is_proactive)
@@ -7275,6 +7288,7 @@ def run_pipeline_session(user_input: str,
             + (f"\n\n{horizon_text}" if horizon_text else "")
             + (f"\n\n{plan_text}" if plan_text else "")
             + (f"\n\n{task_hint}" if task_hint else "")
+            + (f"\n\n{capture_turn.note}" if capture_turn and capture_turn.note else "")
             + (f"\n\n{signoff_note}" if signoff_note else "")
             + (f"\n\n{focus_block}" if focus_block else "")
             + f"\n\n{_action_block()}"
@@ -7296,6 +7310,7 @@ def run_pipeline_session(user_input: str,
         # [DB-0815-11] Detection only, before anything else touches the text and while the
         # trace is still open — nothing here changes what the user sees.
         check_false_action_claims(visible)
+        _capture.after_synthesizer(capture_turn, _capture_trace)
         # Only a real user turn keeps a thread alive. On a proactive session
         # `user_input` is the scheduler's own prompt, and passing that would
         # let the system grant its own threads a reprieve — the same mistake
@@ -7476,6 +7491,12 @@ def _run_pipeline_session_stream_inner(
         f"{proactive_prefix}{receipt_line}{user_input}{attach_note}{name_note}\n\n---\n\n[Pre-loaded context]\n{coord_context}"
         if coord_context else f"{proactive_prefix}{receipt_line}{user_input}{attach_note}{name_note}"
     )
+    # Capture fidelity — mirrors the non-streaming twin exactly (plan § 4.1).
+    from tools import capture as _capture
+    _capture_trace = _tr.get_trace()
+    capture_job = (_capture.start(persona, user_input, history, "synthesizer", _capture_trace)
+                   if not nudge and has_real_user_turn(user_input, is_proactive, attachments)
+                   else None)
     # Skipped on a day-plan nudge (F9 (a)) — mirrors the non-streaming twin.
     coord_output = _NUDGE_PACKAGE if nudge else _run_single_agent(
         "coordinator", coord_input, persona=persona, provider=provider,
@@ -7504,12 +7525,14 @@ def _run_pipeline_session_stream_inner(
     # Kept identical to the non-streaming twin — see _task_hint_block(). Built before the
     # sign-off decision, which reads it.
     task_hint = _task_hint_block(user_input, is_proactive, history, persona)
+    capture_turn = _capture.note_for_synthesizer(persona, capture_job, _capture_trace)
     # Sign-off skip — mirrors the non-streaming branch above; same veto, same ack.
     if _signoff_skip(spec_text, user_input, is_proactive, task_hint, history):
         if history is not None:
             history.append({"role": "user", "content": user_input})
             history.append({"role": "assistant", "content": _SIGNOFF_ACK})
             del history[:-10]
+        _capture.defer(capture_turn)
         yield _SIGNOFF_ACK
         yield "[DONE]"
         _tr.finish_request_trace(_SIGNOFF_ACK)
@@ -7533,6 +7556,7 @@ def _run_pipeline_session_stream_inner(
         + (f"\n\n{horizon_text}" if horizon_text else "")
         + (f"\n\n{plan_text}" if plan_text else "")
         + (f"\n\n{task_hint}" if task_hint else "")
+        + (f"\n\n{capture_turn.note}" if capture_turn and capture_turn.note else "")
         + (f"\n\n{signoff_note}" if signoff_note else "")
         + (f"\n\n{focus_block}" if focus_block else "")
         + f"\n\n{_action_block()}"
@@ -7720,6 +7744,7 @@ def _run_pipeline_session_stream_inner(
     # [DB-0815-11] Same detection as the non-streaming twin. The text has already reached
     # the user by this point on this path, which is exactly why it only logs.
     check_false_action_claims(visible)
+    _capture.after_synthesizer(capture_turn, _capture_trace)
     # See the note at the non-streaming call site: a scheduler prompt is not
     # the user speaking, so it must not grace an open thread.
     persist_context_block(_ctx, user_text=None if is_proactive else user_input)

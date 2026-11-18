@@ -225,8 +225,11 @@ def _calendar_connected(persona: str) -> bool:
         return False
 
 
-def coverage_block(persona: str) -> str:
-    """The code-built account of what this interview has saved so far (plan § 4.7, 2.2/2.9)."""
+def coverage_block(persona: str, capture_lines: str = "") -> str:
+    """The code-built account of what this interview has saved so far (plan § 4.7, 2.2/2.9).
+
+    `capture_lines` is what the user said on an earlier turn that nothing saved — capture
+    fidelity's one-turn-late channel (archive/plans/capture_fidelity_plan_2026-11-18.md § 4.1)."""
     from tools.day_shape import read_shape
     waiting = pending_config_files(persona)
     try:
@@ -250,6 +253,8 @@ def coverage_block(persona: str) -> str:
     if waiting:
         lines.append("- Something is waiting for the user's confirmation in the app; tell them "
                      "plainly it needs their tap before it is saved.")
+    if capture_lines:
+        lines.append(capture_lines)
     return "\n".join(lines)
 
 
@@ -314,7 +319,7 @@ def trim_history(pairs: list[dict]) -> list[dict]:
     return kept
 
 
-def run_turn(persona: str, user_input: str, history: list[dict]) -> str:
+def run_turn(persona: str, user_input: str, history: list[dict], proactive: bool = False) -> str:
     """
     One interviewer turn. The reply has passed `filter_output()` (inside run_session — the
     interviewer is a user-facing agent) and `enforce_pending_receipt()` (here), so neither a
@@ -322,9 +327,20 @@ def run_turn(persona: str, user_input: str, history: list[dict]) -> str:
     """
     from core.orchestrator import (_pending_raised_since, _pending_tokens,
                                    enforce_pending_receipt, run_session)
+    from tools import capture
     before = _pending_tokens(persona)
-    message = f"{coverage_block(persona)}\n\n---\n\n{user_input}"
+    # Capture fidelity: the extractor runs beside the interviewer; what this turn wrote is the
+    # before/after diff of the record, because run_session's trace is gone when it returns
+    # (plan review 2). Misses reach the NEXT turn's coverage block, shown once.
+    live = capture.enabled() and not proactive     # the app's opening words are not the user's
+    shown = capture.take_for_interview(persona) if live else []
+    snap = capture.snapshot(persona) if live else None
+    job = capture.start(persona, user_input, history, AGENT) if live else None
+    message = (f"{coverage_block(persona, capture.coverage_lines(shown))}"
+               f"\n\n---\n\n{user_input}")
     reply = run_session(AGENT, message, persona=persona, history=list(trim_history(history)))
     reply = enforce_pending_receipt(reply, _pending_raised_since(before, persona))
+    if snap is not None:
+        capture.after_interview_turn(persona, job, snap, capture.snapshot(persona), shown)
     count_turn(persona)
     return reply

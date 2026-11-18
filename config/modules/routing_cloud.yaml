@@ -105,14 +105,28 @@ agents:
     # PRIVACY TIER, stated because this entry is what authorises it: this agent reads
     # JOURNAL TEXT — Sensitive tier — on the Vertex path. That is valid ONLY on the
     # Amendment 2026-08-28 basis (ROADMAP.md § Section 0: ZDR refused, Google's verified
-    # defaults in force, Mike gating his own data personally), and it lapses with that
-    # basis the moment the deployment stops being single-user. Ruled by Mike 2026-08-28
+    # defaults in force, Mike gating his own data personally), extended to every user with
+    # recorded consent (amendments 2026-10-26 and 2026-11-18: each user's data carries
+    # exactly the clearances `mike`'s does). Ruled by Mike 2026-08-28
     # ([DB-0827-09] ruling b) — not an oversight, and not a precedent for other agents.
     # Empty grant AND bare dispatch, both deliberate (the intake_extractor/tone_profiler
     # rationale): its whole input is recorded free text, so it holds no tools and sees
     # no constitution/goals/profile; with no schemas advertised it cannot emit a tool
     # call. Dispatched nightly by tools.accountability.run_judgment_gate over the
     # post-join leftovers only.
+    allowed_tools: []
+
+  capture_extractor:
+    provider: gemini
+    model: "models/gemini-3.5-flash-lite"   # one message → a short JSON list; bulk tier (Mike, 2026-11-18)
+    # PRIVACY TIER, stated because this entry is what authorises it: reads the user's own words
+    # this turn, the last six messages and what is already recorded (goal TITLES only, never
+    # private_why) — Sensitive tier on the Vertex path, on the Amendment 2026-08-28 basis
+    # extended to every user with recorded consent (ROADMAP.md § Section 0, 2026-10-26 and
+    # 2026-11-18). Empty grant AND bare dispatch (the accountability_judge shape): it proposes,
+    # code compares, the agent writes — it can emit no tool call. Called only by
+    # tools/capture.py, on real user turns, while capture.yaml has it enabled.
+    # archive/plans/capture_fidelity_plan_2026-11-18.md.
     allowed_tools: []
 
   day_planner:
@@ -133,8 +147,8 @@ agents:
     # WHOLE DAY of conversation and journal text — Sensitive tier, and more of it at once
     # than anything else here — on the Vertex path. Valid ONLY on the Amendment 2026-08-28
     # basis (ROADMAP.md § Section 0: ZDR refused, Google's verified defaults in force, Mike
-    # gating his own data personally), and it lapses with that basis the moment the
-    # deployment stops being single-user. It is the same path `relationships` already reads
+    # gating his own data personally), extended to every user with recorded consent
+    # (amendments 2026-10-26 and 2026-11-18). It is the same path `relationships` already reads
     # this material on; nothing new was ruled on for this build ([DB-0827-03]).
     # Empty grant AND bare dispatch, both deliberate (the intake_extractor/tone_profiler
     # rationale): its whole input is recorded free text, so it holds no tools and sees no

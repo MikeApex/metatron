@@ -715,6 +715,17 @@ _DEFAULT_JOBS: dict[str, dict] = {
         "notification": False,
         "respect_quiet_hours": False,   # silent; pre-dawn on purpose
     },
+    # Capture fidelity's weekly table (archive/plans/capture_fidelity_plan_2026-11-18.md § 4.6):
+    # content-free counts into capture/weekly.jsonl, the file the Observer will read. Daily slot,
+    # writes on Mondays only — no model tokens.
+    "capture_weekly_rollup": {
+        "enabled": True,
+        "time": "05:50",
+        "days": "daily",
+        "function": "tools.capture.weekly_rollup",
+        "notification": False,
+        "respect_quiet_hours": False,
+    },
     # Accountability judgment gate ([DB-0827-09], proposal accepted 2026-08-28): resolves
     # yesterday's structurally-indeterminate intentions via a bare Flash-Lite call per
     # leftover (config/agents/accountability_judge.md). 05:45 so it follows the 05:40

@@ -72,7 +72,8 @@ PRIVACY TIER. This reads a whole day of conversation and journal text — Sensit
 the most personal thing this system stores — and on the cloud path that goes to Vertex.
 That is the path `relationships` already reads this data on, and it is valid ONLY on the
 basis recorded in `ROADMAP.md` § Section 0 (Amendment 2026-08-26/28: ZDR refused,
-Google's verified defaults in force, single-user expiry). No open-tier cloud call exists
+Google's verified defaults in force; extended to every user with recorded consent by the
+2026-10-26 and 2026-11-18 amendments). No open-tier cloud call exists
 anywhere in this pipeline. Nothing new is ruled on here.
 
 A DECLINED PROPOSAL STAYS DECLINED

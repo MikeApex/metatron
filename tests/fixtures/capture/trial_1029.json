@@ -1,0 +1,27 @@
+{
+  "_about": "AUTHORED from the three phrases in archive/handoffs/2026-10-29-capture-fidelity-plan-prompt.md — the trial accounts were deleted 2026-10-29, so this is not a recovered transcript (plan § 1). For `python3 -m tools.capture --eval`: real extractor calls, capped at 20, never in the suite.",
+  "agent": "goals_interviewer",
+  "turns": [
+    {"history": [{"role": "assistant", "content": "Let's start with your days. When do you usually get up and go to bed?"}],
+     "user": "Weekdays I'm up at 7 and in bed around midnight.",
+     "expect": ["save:day_shape/day"]},
+    {"history": [{"role": "assistant", "content": "And your working day — what hours do you work?"}],
+     "user": "Work is 9-5, but it often runs late.",
+     "expect": ["save:day_shape/work_start", "save:day_shape/work_end"]},
+    {"history": [{"role": "assistant", "content": "Does that change at the weekend?"}],
+     "user": "I'm out later on weekends and sleep in until around 10.",
+     "expect": ["save:day_shape/day"]},
+    {"history": [{"role": "assistant", "content": "How does your energy go through the day?"}],
+     "user": "I tend to crash out after lunch.",
+     "expect": ["ask:day_shape/windows"]},
+    {"history": [{"role": "assistant", "content": "When do you usually eat dinner on weekdays?"}],
+     "user": "Dinner's between 6 and 7.",
+     "expect": ["save:day_shape/meals (weekdays only)"]},
+    {"history": [{"role": "assistant", "content": "How do you get around?"}],
+     "user": "Public transport mostly. And yes, share my location, that's fine.",
+     "expect": ["save:day_shape/travel_mode", "save:day_shape/location_sharing"]},
+    {"history": [{"role": "assistant", "content": "How are you feeling today?"}],
+     "user": "Honestly I'm so tired today.",
+     "expect": []}
+  ]
+}

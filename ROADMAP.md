@@ -247,6 +247,22 @@ have full access."* **D9 (Mike, 2026-10-27): she is told in the app and gives pe
 - **Unchanged:** fail-closed routing, the north star, decontextualization for open-tier work.
   What she gets is not Phase-7-grade isolation — see § Section 3.
 
+**Amendment 2026-11-18 (Mike's ruling) — Iva's data carries exactly the assumptions and
+clearances `mike`'s data carries, universally.** *"Iva's data has the same assumptions and
+clearances that mike data has, universally."* Every clearance recorded above for `mike` applies
+to her data identically: the Vertex path under Google's default terms, `tone_profiler`, contact
+enrichment (`[DB-0826-02]`), and every developer channel — traces, quality events, the backlog
+sync, Build's read doors, the capture-fidelity miss log. **This settles the 11-05 codebase
+review's #11** (her data reaching developer channels her consent does not name), deferred on
+11-11: no channel open to his data is closed to hers. Her consent text already tells her Mike can
+read everything she tells Metatron.
+
+- **What it does not change:** her consent is still given in the app and recorded per user, and
+  the code-enforced records (`correspondence_read`, `tone_profile`) still gate those paths
+  fail-closed for **every** user, `mike` included — the ruling makes the clearances equal, not
+  the records optional. A further user without the same recorded consent is still not covered.
+  Fail-closed routing, the north star and decontextualization for open-tier work are unchanged.
+
 **The 2026-06-11 development-testing carve-out is SUPERSEDED (2026-07-28).** It had permitted
 persona data on any cloud model as "test data." After persona unification **nothing at runtime
 distinguishes a synthetic persona from a real one**, so a rule depending on that distinction

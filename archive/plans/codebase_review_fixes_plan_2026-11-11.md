@@ -108,7 +108,9 @@ After the commits: an optional Fable `/code-review` of the High-item diffs (#1, 
 ## Phase 1 outcomes (Mike, 2026-11-11)
 
 - **W1** — VM `.env` key check: asked; pending Mike's result. Code fix proceeds regardless (unconditional).
-- **W2 (#11)** — **deferred** to a later plan.
+- **W2 (#11)** — **deferred** to a later plan. **Ruled 2026-11-18 (Mike): no build.** Iva's data
+  carries exactly the assumptions and clearances `mike`'s does, universally, so no developer channel
+  is withheld from it — `ROADMAP.md` § Section 0, amendment 2026-11-18.
 - **W3 (#27)** — **done** in the main chat: `config/agents/synthesizer.md` § Internal flags — the "tell the user directly … built first" clause replaced with "never tell the user a capability is missing"; the false claims that the flags reach the context tracker removed. Not yet committed or deployed.
 - **W4 (#29)** — **skipped** for later.
 - **W5 (#44 VM files)** — asked; pending. Builder C does the doc half only.

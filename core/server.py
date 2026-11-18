@@ -1074,8 +1074,10 @@ async def _interview_proactive_turn(persona: str, prompt: str, opening: bool = F
     loop = asyncio.get_running_loop()
     try:
         history = await _interview_history(persona)
+        # proactive=True: the prompt is the app's own words, so capture fidelity must not read
+        # it as the user's (archive/plans/capture_fidelity_plan_2026-11-18.md § 4.1).
         reply = await loop.run_in_executor(
-            None, interview_mod.run_turn, persona, prompt, history)
+            None, lambda: interview_mod.run_turn(persona, prompt, history, proactive=True))
     except Exception:
         logger.exception(f"[interview] proactive turn failed for {persona}")
         if opening:

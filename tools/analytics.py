@@ -137,6 +137,10 @@ def rollup_day(day: str, persona: str) -> dict | None:
             rec = json.loads(line)
         except ValueError:
             continue
+        # Capture fidelity's own extractor calls (tools/capture.py) are measurement, not use:
+        # counted as neither a user nor a proactive session.
+        if rec.get("source") == "capture":
+            continue
 
         sessions += 1
         proactive = bool(rec.get("is_proactive"))
