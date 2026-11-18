@@ -598,7 +598,9 @@ def _candidates(today: date, persona: str | None) -> list[dict]:
             "minutes": int(t.get("minutes") or default_minutes),
             "length_known": bool(t.get("minutes")),
             "essential": O.is_essential(t, goals) and v.get("state") != "in_window",
-            "stakes": t.get("stakes"), "after": t.get("after"),
+            "stakes": t.get("stakes"), "after": t.get("after"), "before": t.get("before"),
+            # A step of a plan or a prep for an event: code places it, no reshuffle (R5).
+            "step": bool(t.get("part_of") or t.get("prep_for")),
             "vital": ((t.get("kind") == "deadline" or bool(O._month_window(t)))
                       and t.get("stakes") != "missable"),
             "due": t.get("due"), "zone": t.get("zone"), "copies": copies,
@@ -613,7 +615,7 @@ def _candidates(today: date, persona: str | None) -> list[dict]:
             "score": score,
             "digest": _digest(t.get("status"), v.get("state"), v.get("text"), t.get("due"),
                               t.get("minutes"), t.get("priority"), t.get("stakes"),
-                              t.get("goal_id"), t.get("zone"), activity),
+                              t.get("goal_id"), t.get("zone"), activity, t.get("before")),
         })
     out.sort(key=lambda c: (-c["score"], str(c.get("due") or "9999"), c["minutes"]))
     return out
@@ -1115,7 +1117,7 @@ def _fill(cands: list[dict], blocks: list[dict], shape: dict, plan_start: dateti
 
     def free_run(i: int, n: int, c: dict, allow_protected: bool, need: list | None,
                  avoid: list | None) -> bool:
-        if i + n > grid.n:
+        if i + n > grid.n or i + n > _before_idx(c, grid, day, shape):
             return False
         rej = profile(c)["rej"]
         for k in range(i, i + n):
@@ -1199,6 +1201,19 @@ def _after_time(c: dict, day: date, shape: dict) -> datetime | None:
         return anchor(day, datetime.strptime(str(c["after"]), "%H:%M").time(), shape["wake"])
     except (ValueError, KeyError):
         return None
+
+
+def _before_idx(c: dict, grid, day: date, shape: dict) -> int:
+    """The slot a candidate must END by ("before the 09:30 session" — Fable A1: a prep filed the
+    morning of its event goes before it, not after). grid.n when it has no `before`."""
+    if not c.get("before"):
+        return grid.n
+    try:
+        from tools.day_shape import anchor
+        at = anchor(day, datetime.strptime(str(c["before"]), "%H:%M").time(), shape["wake"])
+    except (ValueError, KeyError):
+        return grid.n
+    return max(0, min(grid.n, grid.idx(at)))
 
 
 def _after_idx(c: dict, grid, day: date, shape: dict) -> int:
@@ -1385,8 +1400,13 @@ def _classify(prev: dict | None, day: date, now: datetime, cands: list[dict], ev
     fresh = {c["ref"]: (c["digest"], c["score"]) for c in cands}
     history = {b.get("ref") for b in prev.get("blocks") or [] if b.get("history")}
     added = [r for r in fresh if r not in stored and r not in history]
+    # A step of a plan or a prep for an event is placed by code, in a repair: no reshuffle, so no
+    # day_planner call on the user's daily cap (goal–task network plan § 10 R5, Fable A5).
+    steps = {c["ref"] for c in cands if c.get("step")}
+    if [r for r in added if r not in steps]:
+        return "reshuffle", [f"{len([r for r in added if r not in steps])} task(s) added"]
     if added:
-        return "reshuffle", [f"{len(added)} task(s) added"]
+        mode, reasons = "repair", [f"{len(added)} step(s) placed"]
     for ref, (dg, sc) in fresh.items():
         if ref in stored and stored[ref][0] != dg:
             if abs(int(sc) - int(stored[ref][1])) >= delta:
@@ -1779,7 +1799,10 @@ def _label(b: dict) -> str:
         bits = [b["title"], f"`{b['ref']}`"]
         if b.get("essential"):
             bits.append("essential")
-        if b.get("displaced_protected"):
+        if b.get("displaced_protected") and b.get("rider_said"):
+            # M3: said once per task, ever — not every day it is re-placed there.
+            bits.append("in the user's own time — already explained once; do not repeat why")
+        elif b.get("displaced_protected"):
             bits.append("takes the user's own time — say so")
         if b.get("condition"):
             bits.append(f"only {b['condition']} — ask")
@@ -1914,12 +1937,17 @@ def _free_line(plan: dict, now: datetime, now_b: dict | None) -> str | None:
     return line
 
 
-def _important(blocks: list[dict], day: date, now: datetime, exclude: set, horizon: list[str]
-               ) -> list[str]:
+def _important(blocks: list[dict], day: date, now: datetime, exclude: set, horizon: list[str],
+               findings: list[dict] | None = None, cascades: list[dict] | None = None,
+               findings_max: int = 0) -> list[tuple[str, str, str]]:
     """Candidates the Synthesizer may raise (§ 8 F2), ranked and capped — often none. Calendar
     events never qualify by being on the calendar: they reach the user as Next or as a nudge.
-    Habits, meals, routines, travel and chores never qualify."""
-    ranked: list[tuple[float, str]] = []
+    Habits, meals, routines, travel and chores never qualify.
+
+    Returns (kind, text, id) — kind "task", "prep", "cascade" or "finding". New horizon findings
+    and dismissal cascades join the ranking under the same cap (plan § 12 M2, § 10 R9), findings
+    at most `findings_max` of it (Mike: at most one on an ordinary turn)."""
+    ranked: list[tuple[float, str, str, str]] = []
     for b in blocks:
         if b.get("id") in exclude or b["kind"] != "task" or _dt(b["end"]) <= now:
             continue
@@ -1928,16 +1956,28 @@ def _important(blocks: list[dict], day: date, now: datetime, exclude: set, horiz
         due = _O()._d(b.get("due"))
         if b.get("stakes") == "vital" and due and due <= day + timedelta(days=1):
             when = "due today" if due <= day else "due tomorrow"
-            ranked.append((0 if due <= day else 3,
-                           f"{b['title']} `{b['ref']}` — vital, {when} ({_hm(b['start'])})"))
-        elif b.get("displaced_protected"):
-            ranked.append((2, f"{b['title']} `{b['ref']}` — takes the user's own time "
-                              f"({_hm(b['start'])}); say why, once"))
+            ranked.append((0 if due <= day else 3, "task",
+                           f"{b['title']} `{b['ref']}` — vital, {when} ({_hm(b['start'])})", b["id"]))
+        elif b.get("displaced_protected") and not b.get("rider_said"):
+            ranked.append((2, "task", f"{b['title']} `{b['ref']}` — takes the user's own time "
+                                      f"({_hm(b['start'])}); say why, once", b["id"]))
     # A prerequisite ranks just under a vital deadline due today — it is what F3 exists to keep,
     # so the cap must not cut it first (Fable B3).
-    ranked += [(0.5, f"{h} — needs something done first") for h in horizon]
+    ranked += [(0.5, "prep", f"{h} — needs something done first", "") for h in horizon]
+    for f in (findings or [])[:max(0, findings_max)]:
+        ranked.append((1, "finding", f["text"], f["key"]))
     ranked.sort(key=lambda r: r[0])
-    return [text for _, text in ranked][: int(_limit("important_max") or 2)]
+    cap = int(_limit("important_max") or 2)
+    out = ranked[:cap]
+    # A finding dated today or tomorrow is never held behind higher-ranked items: held, it is
+    # past by the next day and dropped unsaid (Fable diff review #4). It takes the last slot.
+    soon = {(day + timedelta(days=n)).isoformat() for n in (0, 1)}
+    urgent = next((r for r in ranked if r[1] == "finding"
+                   and any(f["key"] == r[3] and str(f.get("date") or "")[:10] in soon
+                           for f in findings or [])), None)
+    if urgent and urgent not in out and findings_max > 0 and out:
+        out = out[:-1] + [urgent]
+    return [(k, text, rid) for _, k, text, rid in out]
 
 
 def _asks(plan: dict, now: datetime) -> list[str]:
@@ -1962,7 +2002,9 @@ def _asks(plan: dict, now: datetime) -> list[str]:
 def render_block(plan: dict | None, kind: str | None = None, due_now: list[dict] | None = None,
                  heads_up: bool = False, offer_rhythm: str | None = None,
                  allocation_gaps: list[dict] | None = None, tomorrow: dict | None = None,
-                 ask_length: str | None = None, horizon: list[str] | None = None) -> str:
+                 ask_length: str | None = None, horizon: list[str] | None = None,
+                 findings: list[dict] | None = None, cascades: list[dict] | None = None,
+                 shown: dict | None = None) -> str:
     """What the Synthesizer should say about the day, not the day itself (Mike, 2026-10-30:
     "REMOVE the need to be aware of the schedule"; amends R2). Now, the one thing next, free
     time, a short Important list and the questions only the user can answer. The whole day is
@@ -1972,6 +2014,22 @@ def render_block(plan: dict | None, kind: str | None = None, due_now: list[dict]
         return ""
     now = _now()
     today = _O()._d(plan.get("day")) or now.date()
+    try:
+        state = _load_state()
+    except Exception:  # noqa: BLE001 — no persona bound (a test, a smoke run): nothing remembered
+        state = {}
+    said = state.get("riders") or {}
+    # M3: "takes your own time" is said once per task — a task already explained on an earlier
+    # day keeps its place there, without the rider.
+    plan = {**plan, "blocks": [({**b, "rider_said": True}
+                                if b.get("displaced_protected") and b.get("task_id") in said
+                                and said[b["task_id"]] < today.isoformat() else b)
+                               for b in plan.get("blocks") or []]}
+    rider_refs = {b.get("ref") for b in plan["blocks"] if b.get("rider_said")}
+    record = shown if shown is not None else {}
+    record.setdefault("findings", [])
+    record.setdefault("cascades", [])
+    record.setdefault("riders", [])
     out = ["TODAY'S PLAN — kept by code from the calendar, the tasks and the user's day shape. "
            "Authoritative for timing; whether a task is done comes from the Tasks section. "
            "What to do now, and the one thing after it. The user sees the whole day in the app "
@@ -1996,13 +2054,44 @@ def render_block(plan: dict | None, kind: str | None = None, due_now: list[dict]
     free = _free_line(plan, now, now_b)
     if free:
         out.append(free)
-    shown = {b.get("id") for b in (now_b, nxt) if b}
+    shown_ids = {b.get("id") for b in (now_b, nxt) if b}
     evening = kind == "evening_close"
-    imp = _important(plan.get("blocks") or [], today, now, shown, [] if evening else horizon or [])
-    if imp:
+    brief_or_close = kind in ("morning_brief", "evening_close")
+    imp = _important(plan.get("blocks") or [], today, now, shown_ids, [] if evening else horizon or [],
+                     findings=findings, cascades=cascades,
+                     findings_max=int(_limit("important_max") or 2) if brief_or_close else 1)
+    imp_lines = [text for k, text, _ in imp if k != "finding"]
+    new_lines = [text for k, text, _ in imp if k == "finding"]
+    if imp_lines:
         out.append("Important today (candidates — raise one only if it matters; often none): "
-                   + "; ".join(imp))
+                   + "; ".join(imp_lines))
+    if new_lines:
+        # M2: the horizon block's delivery instruction, kept for what made the cap — the rest
+        # waits for a later turn with its offers intact.
+        out.append("New — the user has NOT been told yet; put it to them in this exchange, one "
+                   "line, your own words, never as a list you were handed: " + "; ".join(new_lines))
+    record["findings"] += [rid for k, _, rid in imp if k == "finding"]
+    record["cascades"] += [rid for k, _, rid in imp if k == "cascade"]
+    record["riders"] += [b.get("task_id") for b in plan["blocks"]
+                         if b.get("displaced_protected") and not b.get("rider_said")
+                         and b.get("task_id") and (b.get("id") in shown_ids
+                                                   or b.get("id") in {rid for _, _, rid in imp})]
     asks = _asks(plan, now)
+    # R9's "X can't go ahead without Y — redo it?" is a question only the user can answer, so it
+    # is an Ask, not an Important candidate the model may skip; it counts as asked only once a
+    # brief or close has carried it (Fable diff review #5).
+    for c in cascades or []:
+        why = ("ran out of time" if c.get("lapsed") else "was dropped")
+        asks.append(f"{c['end']} can't go ahead without \"{c['what']}\", which {why} — ask once "
+                    f"whether to redo it; on yes, reopen `{c['id']}` (the later steps come back "
+                    f"with it)")
+        if brief_or_close:
+            record["cascades"].append(c["id"])
+    if brief_or_close:
+        slips = _slip_asks(state, today)
+        asks += [text for _, text in slips]
+        record.setdefault("slips", [])
+        record["slips"] += [tid for tid, _ in slips]
     if asks:
         out.append("Asks — only the user can answer; one line, once each: " + "; ".join(asks))
     own = [f"{b['title']} {_hm(b['start'])}–{_hm(b['end'])}" for b in plan.get("blocks") or []
@@ -2021,7 +2110,9 @@ def render_block(plan: dict | None, kind: str | None = None, due_now: list[dict]
     if proposals:
         out.append("Standing answers the user's own answers suggest — offer ONE, once; record it "
                    "with set_day_shape(event_rules) only on their yes: " + "; ".join(proposals[:2]))
-    soon = [x for x in plan.get("suggestions") or []
+    soon = [({**x, "why": "planned in time the user gave up once already — no need to explain again"}
+             if x.get("ref") in rider_refs and "own time" in str(x.get("why")) else x)
+            for x in plan.get("suggestions") or []
             if now - timedelta(minutes=5) <= _dt(x["at"]) <= now + timedelta(hours=3)]
     if soon:
         out.append("Suggested (yours to decide): " + " · ".join(
@@ -2035,7 +2126,7 @@ def render_block(plan: dict | None, kind: str | None = None, due_now: list[dict]
                        "record what the user says; leave the rest: " + "; ".join(unconf))
         tonight = [f"{_hm(b['start'])} {_label(b)}" for b in listed
                    if _dt(b["start"]) > now and b["kind"] not in _FIRST_SKIP
-                   and b.get("id") not in shown]
+                   and b.get("id") not in shown_ids]
         if tonight:
             out.append("Tonight: " + " · ".join(tonight[:3]))
         tb = _listed(tomorrow) if tomorrow else []
@@ -2047,7 +2138,7 @@ def render_block(plan: dict | None, kind: str | None = None, due_now: list[dict]
                            {first.get("id")} if first else set(), horizon or [])
         if imp_t:
             out.append("Important tomorrow (candidates — raise only what needs something done "
-                       "tonight or first thing): " + "; ".join(imp_t))
+                       "tonight or first thing): " + "; ".join(text for _, text, _ in imp_t))
     if allocation_gaps:
         out.append("Goals with no standing time this week — consult whoever owns the domain, "
                    "propose time, record it as a habit task linked to the goal: " + "; ".join(
@@ -2577,6 +2668,451 @@ def _build_from(day: date, persona: str, prev: dict | None, now: datetime, event
 
 # --- the ticks (Stage B registers them in core/scheduler.py) ---------------------------------
 
+# --- prep tasks: the Red Book (goal–task network plan § 4.7, § 10 R2) -------------------------
+# A horizon finding that needs something done first — "gather the Red Book and paperwork before
+# Benny's 09:30 session" — becomes a task the plan places, nudges and checks, and that follows
+# its event. Code only, in the scheduler's tick (R1 made the two ledgers safe to write from it).
+# Behind `prep_tasks`; off closes the open ones with a reason and `prep_items` says them again (A3).
+
+_PREP_SOURCE = "horizon-prep:"
+_PREP_OFF = "prep tasks switched off"
+_PREP_GONE = "its event was cancelled"
+# Opened only this near (today + 2): the snapshot's own span, so the ledger is not filled weeks
+# ahead — far precursors still reach the user as findings and in the weekly review.
+_PREP_NEAR_DAYS = 2
+# A6: placed from the day shape. Light, screen-free prep (packing a bag, finding a document) may
+# share family time; a prep done on a screen may not.
+_SCREEN_RE = re.compile(r"\b(online|e-?mail|form|website|portal|upload|submit|register|log ?in|"
+                        r"print|pay|book)\b", re.IGNORECASE)
+
+
+def _prep_what(pre: str) -> str:
+    pre = pre.strip().rstrip(".")
+    return pre[:1].upper() + pre[1:]
+
+
+def _event_tokens(e: dict) -> frozenset:
+    return _O()._task_tokens(f"{e.get('title', '')} {e.get('location', '')}")
+
+
+def _match_event(item: dict, events: list[dict]) -> dict | None:
+    """The calendar event a finding is about: same date, most shared title/venue words, at least
+    one, and no tie (R2 — a finding carries no uid, so this is how the prep gets one)."""
+    day = str(item.get("date") or "").strip()[:10]
+    if not day:
+        return None
+    toks = _O()._task_tokens(f"{item.get('title', '')} {item.get('venue', '')}")
+    scored = sorted(((len(toks & _event_tokens(e)), e) for e in events
+                     if str(e.get("start") or "")[:10] == day), key=lambda x: -x[0])
+    if not scored or scored[0][0] < 1 or (len(scored) > 1 and scored[1][0] == scored[0][0]):
+        return None
+    return scored[0][1]
+
+
+def _prep_due(event_day: date | None, by: date | None, start: datetime | None, today: date
+              ) -> tuple[date | None, str | None]:
+    """(due, before) for a prep. `precursor_by` before the event wins; else the evening before;
+    an event TODAY gives due today, before its start (A1). Never earlier than today."""
+    if by and (event_day is None or by < event_day):
+        return max(by, today), None
+    if event_day is None:
+        return None, None
+    if event_day <= today:
+        return today, (start.strftime("%H:%M") if start and not (start.hour == 0 and start.minute == 0)
+                       else None)
+    return max(event_day - timedelta(days=1), today), None
+
+
+def _snapshot_ok(state: dict) -> bool:
+    snap = state.get("snapshot") or {}
+    return bool(snap.get("fetched_at")) and not snap.get("error") and snap.get("discovery") != "not_connected"
+
+
+def _prep_groups(rows: dict, today: date) -> list[list[str]]:
+    """Findings that are one prep: same date, and titles that share two words — or one, when
+    their precursors share two (A4/A7: three near-duplicate nursery findings open one task)."""
+    O = _O()
+    from tools.horizon import precursor_of
+    live = []
+    for key, row in sorted(rows.items()):
+        item = row.get("item") or {}
+        pre = precursor_of(item)
+        if not pre:
+            continue
+        d = O._d(item.get("date"))
+        if d and d < today:
+            continue
+        live.append((key, str(item.get("date") or "")[:10],
+                     O._task_tokens(str(item.get("title") or "")), O._task_tokens(pre)))
+    groups: list[list] = []
+    for key, day, tt, pt in live:
+        for g in groups:
+            _k, gday, gtt, gpt = g[0]
+            shared = len(tt & gtt)
+            if day == gday and (shared >= 2 or (shared >= 1 and len(pt & gpt) >= 2)):
+                g.append((key, day, tt, pt))
+                break
+        else:
+            groups.append([(key, day, tt, pt)])
+    return [[k for k, *_ in g] for g in groups]
+
+
+def _prep_source(lead_key: str, pre: str) -> str:
+    from tools.horizon import _norm as hnorm
+    return _PREP_SOURCE + _digest(lead_key, hnorm(pre))
+
+
+def _prep_sweep(persona: str, state: dict) -> str:
+    """Open, follow and close prep tasks. Returns a short note for the tick's log line."""
+    O = _O()
+    from tools import horizon as H
+    if not _flag("prep_tasks"):
+        n = _prep_close_all(persona)
+        return f"prep: off, {n} closed" if n else ""
+    today, now = _today(), _now()
+    snap_ok = _snapshot_ok(state)
+    events = (state.get("snapshot") or {}).get("events") or [] if snap_ok else []
+    rows = H.rows(persona)
+    tasks = [O._norm(t) for t in O._load(persona)]
+    by_id = {t["id"]: t for t in tasks}
+    opened = moved = gone = refused = 0
+    for keys in _prep_groups(rows, today):
+        group = [(k, rows[k]) for k in keys]
+        stamped = next((r.get("prep_task_id") for _k, r in group if r.get("prep_task_id")), None)
+        if stamped or any(r.get("prep_refused") for _k, r in group):
+            unstamped = [k for k, r in group if not r.get("prep_task_id") and not r.get("prep_refused")]
+            if stamped and unstamped:
+                H.stamp_prep(unstamped, persona, task_id=stamped)       # a sibling filed later
+            continue
+        lead_key, lead = group[0]
+        item = lead.get("item") or {}
+        pre = H.precursor_of(item)
+        event = _match_event(item, events)
+        start = _dt(event["start"]) if event else None
+        event_day = start.date() if start else O._d(item.get("date"))
+        due, before = _prep_due(event_day, O._d(item.get("precursor_by")), start, today)
+        if due is None or (due - today).days > _PREP_NEAR_DAYS:
+            continue                                   # not yet — a later tick opens it
+        if start and start <= now:
+            H.stamp_prep(keys, persona, refused="the event had already started")
+            refused += 1
+            continue
+        what = _prep_what(pre)
+        twin = O._open_duplicate(tasks, what)
+        if twin:
+            H.stamp_prep(keys, persona, task_id=twin["id"])            # already on the list
+            continue
+        step = {"what": what, "kind": "deadline", "due": due.isoformat(), "domain": "logistics",
+                "minutes": 15, "minutes_source": "estimated",
+                "activity": "admin" if _SCREEN_RE.search(pre) else "errands",
+                "note": f"Before {item.get('title')}" + (f" on {event_day.isoformat()}" if event_day else ""),
+                "source_id": _prep_source(lead_key, pre),
+                "prep_for": {"finding": lead_key, "title": str(item.get("title") or "")[:120],
+                             "by": str(item.get("precursor_by") or "")[:10]}}
+        if before:
+            step["before"] = before
+        if event_day:
+            step["moot_after"] = event_day.isoformat()
+        if event:
+            step["prep_for"].update(uid=event.get("uid") or "", start=event["start"])
+        res = O.open_plan([step], persona=persona, created_by="prep")
+        if res.get("ok"):
+            H.stamp_prep(keys, persona, task_id=res["ids"]["s0"])
+            opened += 1
+        else:
+            # A8: stamped, never retried every five minutes. An open duplicate is adopted.
+            dup = by_id.get(res.get("duplicate") or "")
+            if dup and dup.get("status") == "open":
+                H.stamp_prep(keys, persona, task_id=dup["id"])
+            else:
+                H.stamp_prep(keys, persona, refused=str(res.get("error") or "refused"))
+                refused += 1
+    moved, gone = _prep_follow(persona, state, tasks, today, snap_ok=snap_ok)
+    _log("prep", persona, opened=opened, moved=moved, cancelled=gone, refused=refused)
+    bits = [f"{n} {w}" for n, w in ((opened, "opened"), (moved, "moved"), (gone, "cancelled"),
+                                    (refused, "refused")) if n]
+    return ("prep: " + ", ".join(bits)) if bits else ""
+
+
+_PREP_STARTED = "its event has started"
+# After a lookup that could not tell (an error), the same event is not looked up again for this
+# long — one CalDAV call per tick per unresolved prep would run for up to two days (Fable diff
+# review #8).
+_LOOKUP_BACKOFF = timedelta(hours=1)
+
+
+def _prep_follow(persona: str, state: dict, tasks: list[dict], today: date,
+                 snap_ok: bool = True) -> tuple[int, int]:
+    """A9 and A1 on every tick, for every open prep linked to an event:
+      - its (due, before) is re-derived from the event's start EVERY tick, not only when the
+        event moves — a prep left undone the night before gets "before 09:30" on the morning
+        itself, so it is never placed after the event (Fable diff review #1);
+      - once the event has started it is closed moot — it can no longer help;
+      - the event moved → due moves; deleted → moot, "its event was cancelled"; the calendar
+        cannot tell, or the event is outside the snapshot → the stored start stands (R2)."""
+    O = _O()
+    now = _now()
+    snap = state.get("snapshot") or {}
+    sd = O._d(snap.get("day"))
+    events = (snap.get("events") or []) if snap_ok else []
+    lookups = dict(state.get("prep_lookups") or {})
+    looked = False
+    changes: dict[str, dict] = {}
+    for t in tasks:
+        pf = t.get("prep_for") or {}
+        uid = pf.get("uid")
+        if t.get("status") != "open" or not uid or not str(t.get("source_id") or "").startswith(_PREP_SOURCE):
+            continue
+        old = _dt(pf.get("start"))
+        start = old
+        inst = [e for e in events if e.get("uid") == uid]
+        if inst:
+            same = [e for e in inst if old and str(e["start"])[:10] == old.date().isoformat()]
+            start = _dt((same or sorted(inst, key=lambda e: abs((_dt(e["start"]) - old).total_seconds())
+                                        if old else 0))[0]["start"])
+        elif snap_ok and old and sd and sd <= old.date() <= sd + timedelta(days=2):
+            # Gone from a window it should be in: deleted, or moved out of the snapshot.
+            last = _dt(lookups.get(uid))
+            if not (last and now - last < _LOOKUP_BACKOFF):
+                got = _lookup_event(uid, persona, old)
+                looked = True
+                if got == "gone":
+                    changes[t["id"]] = {"close": _PREP_GONE}
+                    lookups.pop(uid, None)
+                    continue
+                if isinstance(got, datetime):
+                    start = got
+                    lookups.pop(uid, None)
+                else:
+                    lookups[uid] = now.isoformat(timespec="seconds")
+        if start is None:
+            continue
+        if start <= now:
+            changes[t["id"]] = {"close": _PREP_STARTED}
+            continue
+        due, before = _prep_due(start.date(), O._d(pf.get("by")), start, today)
+        if (start == old and due.isoformat() == t.get("due")
+                and (before or None) == (t.get("before") or None)):
+            continue
+        changes[t["id"]] = {"start": start.isoformat(timespec="seconds"), "due": due,
+                            "before": before, "day": start.date(), "moved": start != old}
+    if looked:
+        with _locked(persona):
+            st = _load_state(persona)
+            st["prep_lookups"] = lookups
+            _write_json(_state_path(persona), st)
+    if not changes:
+        return 0, 0
+    counts = {"moved": 0, "gone": 0}
+
+    def apply(doc: dict) -> None:
+        for t in doc["tasks"]:
+            ch = changes.get(t.get("id"))
+            if not ch or t.get("status") != "open":
+                continue
+            if ch.get("close"):
+                t.update(status="moot", closed_at=O._stamp(), evidence=ch["close"])
+                doc.setdefault("_history", []).append(O._one_off_row(t, "moot"))
+                counts["gone"] += ch["close"] == _PREP_GONE
+                continue
+            if ch["due"].isoformat() != t.get("due"):
+                t.setdefault("history", []).append({
+                    "event": "rescheduled", "at": O._stamp(), "from": t.get("due"),
+                    "to": ch["due"].isoformat(), "was_overdue": False,
+                    "reason": "its event moved" if ch["moved"] else "its event is today"})
+            t["due"], t["moot_after"] = ch["due"].isoformat(), ch["day"].isoformat()
+            t["prep_for"] = {**(t.get("prep_for") or {}), "start": ch["start"]}
+            if ch["before"]:
+                t["before"] = ch["before"]
+            else:
+                t.pop("before", None)
+            t["note"] = f"Before {(t.get('prep_for') or {}).get('title', 'it')} on {ch['day'].isoformat()}"
+            counts["moved"] += bool(ch["moved"])
+
+    O._with_store(persona, apply)
+    return counts["moved"], counts["gone"]
+
+
+def _lookup_event(uid: str, persona: str, old: datetime | None):
+    """Where the event went: its next start (the instance nearest the stored one, never before
+    today), "gone" when a successful read of every calendar over the next 60 days does not hold
+    it, None when the calendar cannot be read. A date-range query, not a GET by uid: a GET reads
+    one calendar, assumes the resource is named by its uid, and returns a recurring series'
+    FIRST start (Fable diff review #8). None never closes anything."""
+    try:
+        from tools.caldav import _query_events
+        today = _today()
+        raw = _query_events(today.isoformat(), (today + timedelta(days=60)).isoformat(),
+                            persona=persona, calendars="all")
+    except Exception:  # noqa: BLE001
+        return None
+    if not isinstance(raw, dict) or raw.get("error") or raw.get("connected") is False:
+        return None
+    hits = [e for e in _normalise(raw.get("events") or []) if e.get("uid") == uid]
+    if not hits:
+        return "gone"
+    starts = [_dt(e["start"]) for e in hits if _dt(e["start"])]
+    if not starts:
+        return None
+    return min(starts, key=lambda s: abs((s - old).total_seconds())) if old else min(starts)
+
+
+def _prep_close_all(persona: str) -> int:
+    """A3: turning `prep_tasks` off closes the open prep tasks with a reason. Their findings are
+    said again by `prep_items`, which only skips a converted one while the flag is on."""
+    O = _O()
+    if not any(t.get("status") == "open" and str(t.get("source_id") or "").startswith(_PREP_SOURCE)
+               for t in O._load(persona)):
+        return 0
+    n = {"v": 0}
+
+    def apply(doc: dict) -> None:
+        for t in doc["tasks"]:
+            if t.get("status") == "open" and str(t.get("source_id") or "").startswith(_PREP_SOURCE):
+                t.update(status="moot", closed_at=O._stamp(), evidence=_PREP_OFF)
+                doc.setdefault("_history", []).append(O._one_off_row(t, "moot"))
+                n["v"] += 1
+
+    O._with_store(persona, apply)
+    return n["v"]
+
+
+# --- tasks that slip from day to day (plan § 12 M3, Mike 2026-11-18) ---------------------------
+# "Tasks pushed day to day should continue to be raised — with recognition that they've been
+# missed — until completed or dismissed." Code counts: a one-off that sat on a day's plan and was
+# still open at its end has slipped that day. Synth voices it, with dismissal offered.
+
+def _record_slips(persona: str, today: date) -> int:
+    O = _O()
+    st = _load_state(persona)
+    through = O._d(st.get("slips_through")) or (today - timedelta(days=int(_limit("plan_retention_days") or 3) + 1))
+    days = []
+    d = through + timedelta(days=1)
+    while d < today:
+        days.append(d)
+        d += timedelta(days=1)
+    tasks = {t["id"]: O._norm(t) for t in O._load(persona)}
+    slips = dict(st.get("slips") or {})
+    n = 0
+    for day in days:
+        plan = _read_json(_plan_path(day, persona), None) or {}
+        ids = {b.get("task_id") for b in plan.get("blocks") or [] if b.get("kind") == "task"}
+        # A task that did not fit at all slipped that day too (Fable diff review #2).
+        ids |= {str(u.get("ref") or "").split("@", 1)[0] for u in plan.get("unplaced") or []}
+        ids |= {str(r or "").split("@", 1)[0] for r in plan.get("dropped") or []}
+        for tid in ids:
+            t = tasks.get(tid)
+            if not t or t.get("kind") not in O._ONE_OFF or t.get("kind") == "waiting":
+                continue
+            closed = O._stamp_day(t.get("closed_at"))
+            if t.get("status") in O._TERMINAL and (closed is None or closed <= day):
+                continue
+            s = slips.get(tid) or {"first": day.isoformat(), "days": 0}
+            if s.get("last") != day.isoformat():
+                s.update(days=int(s.get("days") or 0) + 1, last=day.isoformat())
+                slips[tid] = s
+                n += 1
+    slips = {k: v for k, v in slips.items()
+             if k in tasks and tasks[k].get("status") == "open"}
+    with _locked(persona):
+        st = _load_state(persona)
+        st["slips"] = slips
+        st["slips_through"] = (today - timedelta(days=1)).isoformat()
+        _write_json(_state_path(persona), st)
+    return n
+
+
+# At most this many slipped tasks are raised in one session (Fable diff review #2): the brief M2
+# was built to shorten must not get them all back.
+_SLIP_ASKS_MAX = 2
+
+
+def _slip_asks(state: dict, today: date) -> list[tuple[str, str]]:
+    """(task id, ask) for slipped tasks to raise TODAY: open, actionable today (one given a later
+    day — rescheduled, deferred, "tomorrow" — is not), not already asked today, most slipped first,
+    capped. Raised on the brief and the close only; stamped when shown (`after_render`), so once a
+    day, every day, until done or dismissed (Mike, M3)."""
+    O = _O()
+    asked = state.get("slip_asked") or {}
+    by_id = {t["id"]: O._norm(t) for t in O._load()}
+    out = []
+    for tid, s in sorted((state.get("slips") or {}).items(), key=lambda kv: -int(kv[1].get("days") or 0)):
+        t = by_id.get(tid)
+        if not t or t.get("status") != "open" or t.get("_blocked") or int(s.get("days") or 0) < 1:
+            continue
+        if asked.get(tid) == today.isoformat():
+            continue
+        v = O._view(t, today)
+        if not ((v.get("actionable") and O._on_todays_list(t, v)) or v.get("state") in ("lapsed", "in_window")):
+            continue
+        if any(h.get("event") in ("rescheduled", "deferred") and O._stamp_day(h.get("at")) == today
+               for h in t.get("history") or [] if isinstance(h, dict)):
+            continue                            # answered today with "a set time"
+        n = int(s["days"])
+        out.append((tid, f"{t['what']} `{tid}` — slipped {n} day{'s' if n != 1 else ''} (first "
+                         f"planned {s.get('first')}): say how long, then ask — now, a set time, or "
+                         f"drop it (dismissed, their words)"))
+        if len(out) >= _SLIP_ASKS_MAX:
+            break
+    return out
+
+
+# --- review finding #5: a nudge due near a scheduled session is no longer dropped (R10) ---------
+# The recorded design (codebase_review_fixes_plan_2026-11-11.md, #5): the shield narrows to the
+# conversational jobs in `shield_jobs:`, and what it carried reaches that session as DUE NOW.
+
+def carried_due_now(persona: str, plan: dict | None, mark: bool = True) -> list[dict]:
+    """Suggestions the nudge tick carried (a session was coming) and no session has surfaced yet,
+    still worth saying — for a scheduled turn's DUE NOW. Read from what was stored at the carry,
+    since the block may have ended since. Stamped as surfaced when `mark`."""
+    if not plan:
+        return []
+    day = plan.get("day")
+    state = _load_state(persona)
+    handled = (state.get("handled") or {}).get(day) or {}
+    now = _now()
+    out = [h["item"] for h in handled.values()
+           if isinstance(h, dict) and h.get("outcome") == "carried" and h.get("item")
+           and not h.get("surfaced_at")
+           and (_dt(h["item"].get("at")) or now) >= now - timedelta(hours=6)
+           and not _ref_done(h["item"].get("ref"), h["item"].get("copy", 0))]
+    if out and mark:
+        with _locked(persona):
+            st = _load_state(persona)
+            hh = (st.get("handled") or {}).get(day) or {}
+            for x in out:
+                if isinstance(hh.get(x["id"]), dict):
+                    hh[x["id"]]["surfaced_at"] = now.isoformat(timespec="seconds")
+            _write_json(_state_path(persona), st)
+    return out
+
+
+# --- what the block showed, recorded after it is built (M2, M3 rider, R9) ----------------------
+
+def after_render(persona: str, shown: dict) -> None:
+    """Charge the findings the block showed (M2), mark each dismissal cascade raised (R9) and each
+    "takes your own time" rider said (M3) — once each, ever."""
+    if not shown:
+        return
+    if shown.get("findings"):
+        from tools.horizon import charge
+        charge(shown["findings"], persona)
+    if shown.get("cascades"):
+        _O().mark_cascade_raised(shown["cascades"], persona)
+    if shown.get("riders") or shown.get("slips"):
+        with _locked(persona):
+            st = _load_state(persona)
+            r = st.setdefault("riders", {})
+            for tid in shown.get("riders") or []:
+                r.setdefault(tid, _today().isoformat())
+            sa = st.setdefault("slip_asked", {})
+            for tid in shown.get("slips") or []:
+                sa[tid] = _today().isoformat()
+            st["slip_asked"] = {k: v for k, v in sa.items() if k in (st.get("slips") or {})
+                                or k in (shown.get("slips") or [])}
+            _write_json(_state_path(persona), st)
+
+
 def refresh_tick() -> str:
     """Every 5 minutes, silent: snapshot, gate, repair, a requested reshuffle (off the loop),
     tomorrow's draft in the evening, the ledger sweep on a day change, pruning once a day."""
@@ -2598,6 +3134,20 @@ def refresh_tick() -> str:
             st = _load_state(persona)
             st["last_day"] = today.isoformat()
             _write_json(_state_path(persona), st)
+        try:
+            n = _record_slips(persona, today)
+            if n:
+                notes.append(f"{n} slip(s) recorded")
+        except Exception as exc:  # noqa: BLE001
+            notes.append(f"slips failed: {type(exc).__name__}")
+    # Before `current()`, so a prep opened now is placed in this same tick (synth plan § 9).
+    try:
+        note = _prep_sweep(persona, _load_state(persona))
+        if note:
+            notes.append(note)
+    except Exception as exc:  # noqa: BLE001 — a prep fault never costs the day its plan
+        logger.warning(f"[day_plan] prep sweep failed: {exc}")
+        notes.append(f"prep failed: {type(exc).__name__}")
     plan = current(persona, reason="tick")
     started = start_reshuffle(persona)
     tomorrow_draft(persona, build=True)
@@ -2634,9 +3184,38 @@ def _near_fixed(persona: str) -> str | None:
     try:
         from core import scheduler as S
         fn = getattr(S, "near_fixed_session", None)
-        return fn(S._load_config(persona), _now()) if fn else None
+        if not fn:
+            return None
+        cfg = S._load_config(persona)
+        # Review finding #5 (R10): only a CONVERSATIONAL session carries a nudge — the Sunday
+        # analysis jobs say nothing to the user, so yielding to them dropped it. Narrowed here,
+        # from `shield_jobs:` in day_plan.yaml; core/scheduler.py is unchanged. No list = every
+        # fixed job, as before.
+        names = _cfg().load().get("shield_jobs")
+        if not isinstance(names, list):
+            return fn(cfg, _now())
+        cfg = {**cfg, "schedules": {k: v for k, v in (cfg.get("schedules") or {}).items()
+                                    if k in names}}
+        now = _now()
+        hit = fn(cfg, now)
+        if not hit:
+            return None
+        # Only a session still AHEAD carries the nudge (Fable diff review #3): the scan is
+        # |now − session| ≤ window, so a nudge due 07:50 after a 07:30 brief was carried into a
+        # session that had already run. A session ahead by d ≤ window is still within the window
+        # `window` minutes from now; one already past is not. Same scan, no scheduler change.
+        try:
+            window = float(cfg.get("interval_near_fixed_minutes", 30))
+        except (TypeError, ValueError):
+            window = 30.0
+        return hit if fn(cfg, now + timedelta(minutes=window)) else None
     except Exception:  # noqa: BLE001
         return None
+
+
+# A carried nudge goes out as itself only this long after it was carried — the near-fixed window
+# (30 min by default) plus the session's own run.
+_CARRY_GRACE = timedelta(minutes=45)
 
 
 _EMPTY_DAY_CHECKIN = (" Nothing is planned for the rest of today. Do not tell the user nothing "
@@ -2687,6 +3266,20 @@ def nudge_tick() -> str | dict:
            if x["id"] not in handled and x.get("ref") not in deferred and _dt(x["at"]) <= now <= _dt(x["at"]) + timedelta(minutes=20)
            and not (x["kind"] == "check" and _ref_done(x.get("ref"), x.get("copy", 0)))]
     shield = _near_fixed(persona)
+    if not shield:
+        # A nudge carried into a session that never surfaced it (the session was skipped, or ran
+        # without a plan block) is not lost: once no session is ahead, it is sent as itself
+        # (Fable diff review #3) — within the six hours `carried_due_now` would have used.
+        late = [h["item"] for h in handled.values()
+                if isinstance(h, dict) and h.get("outcome") == "carried" and h.get("item")
+                and not h.get("surfaced_at") and not h.get("resent_at")
+                # Time for the session it was carried into to run and surface it first.
+                and (_dt(h.get("at")) or now) <= now - _CARRY_GRACE
+                and h["item"].get("ref") not in deferred
+                and (_dt(h["item"].get("at")) or now) >= now - timedelta(hours=6)
+                and not _ref_done(h["item"].get("ref"), h["item"].get("copy", 0))]
+        if late:
+            due = due + [x for x in late if x["id"] not in {d["id"] for d in due}]
     if due and shield:
         _mark(persona, day, due, "carried")
         return f"nudges: {len(due)} carried by a fixed session ({shield})"
@@ -2850,7 +3443,14 @@ def _mark(persona: str, day: str, items: list[dict], outcome: str) -> None:
         for k in [k for k in h if k < (_today() - timedelta(days=2)).isoformat()]:
             h.pop(k, None)
         h.setdefault(day, {}).update({x["id"]: {"outcome": outcome,
-                                                "at": _now().isoformat(timespec="seconds")}
+                                                "at": _now().isoformat(timespec="seconds"),
+                                                # A carried item keeps what it was: by the time
+                                                # it is surfaced its block may have ended and
+                                                # left the plan's suggestions (R10).
+                                                **({"item": {k: x.get(k) for k in (
+                                                    "id", "kind", "at", "ref", "copy", "title",
+                                                    "why") if k in x}}
+                                                   if outcome == "carried" else {})}
                                       for x in items})
         _write_json(_state_path(persona), st)
 

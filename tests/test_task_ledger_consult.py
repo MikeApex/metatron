@@ -20,6 +20,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.persona import persona_data_dir, persona_scope  # noqa: E402
 import tools.obligations as O  # noqa: E402
+import tools.day_plan_config as _C  # noqa: E402
+_C._OVERRIDE = {"flags": {"horizon_cap": False, "prep_tasks": False}}   # the uncapped horizon block
 
 PERSONA = "task_ledger_consult_test"
 _results: list[tuple[str, bool, str]] = []

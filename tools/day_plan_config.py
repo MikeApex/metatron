@@ -32,7 +32,7 @@ _DEFAULTS: dict = {
     "flags": {
         "build": True, "show_in_app": True, "ledger_fields": False, "synth_reads_plan": False,
         "unconfirmed_rule": False, "reshuffle_model": False, "nudges": False,
-        "owns_checkins": False,
+        "owns_checkins": False, "prep_tasks": False, "horizon_cap": False,
     },
     "replaces_jobs": ["companion_checkin"],
     "score": {

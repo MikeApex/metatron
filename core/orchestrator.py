@@ -6133,7 +6133,8 @@ def _file_horizon_items(outputs: dict, persona: str | None = None) -> dict:
     return cleaned
 
 
-def _horizon_block(persona: str | None = None, session: str | None = None) -> str:
+def _horizon_block(persona: str | None = None, session: str | None = None,
+                   uncapped: bool = False) -> str:
     """This turn's horizon block, for the Synthesizer bundle. "" when nothing is waiting.
 
     `session` is the scheduled-session key from `session_kind()`, or None for a user-typed
@@ -6162,7 +6163,9 @@ def _horizon_block(persona: str | None = None, session: str | None = None) -> st
     try:
         from tools.horizon import context_block, week_block
         with persona_scope(resolve_persona(persona)):
-            blocks = [context_block(persona)]
+            # `uncapped`: the day-plan block that would carry new findings under M2 came back
+            # empty this turn (no plan, or it failed) — so this block delivers them as before.
+            blocks = [context_block(persona, uncapped=uncapped)]
             if carries_weekly_review(session, persona):
                 blocks.append(week_block(persona))
         return "\n\n".join(b for b in blocks if b)
@@ -6217,9 +6220,23 @@ def _day_plan_block(persona: str | None, kind: str | None, is_proactive: bool) -
                 from tools.horizon import prep_items
                 day = D._today() + timedelta(days=1 if kind == "evening_close" else 0)
                 prep = prep_items(persona, day)
-            return D.render_block(plan, kind=kind, heads_up=D.pending_heads_up(persona),
+            # New horizon findings join Important under its cap (goal–task network plan § 12 M2);
+            # the horizon block steps aside while they do (tools/horizon.py `capped`).
+            from tools.horizon import capped, new_findings
+            findings = new_findings(persona) if capped() else None
+            # A dismissed step that stopped later ones, raised once (§ 10 R9).
+            from tools.obligations import cascades_to_raise
+            cascades = cascades_to_raise(persona)
+            # Review finding #5 (§ 10 R10): a nudge the tick carried because this session was
+            # near reaches it as DUE NOW, once.
+            due_now = D.carried_due_now(persona, plan) if is_proactive else None
+            shown: dict = {}
+            text = D.render_block(plan, kind=kind, heads_up=D.pending_heads_up(persona),
                                   offer_rhythm=offer, allocation_gaps=gaps, tomorrow=tomorrow,
-                                  ask_length=ask, horizon=prep)
+                                  ask_length=ask, horizon=prep, findings=findings,
+                                  cascades=cascades, due_now=due_now or None, shown=shown)
+            D.after_render(persona, shown)
+            return text
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"[day_plan] block failed: {exc}")
         return ""
@@ -7277,9 +7294,9 @@ def run_pipeline_session(user_input: str,
         know_text = _knowledge_block(knowledge)
         # [DB-0822-09] Built HERE, after the sign-off veto above: a finding must not be
         # charged an offer on a turn where the Synthesizer never runs.
-        horizon_text = _horizon_block(persona, session=kind)
         # Mirrors the streaming twin: after the specialists, so this turn's writes are in it.
         plan_text = _day_plan_block(persona, kind, is_proactive)
+        horizon_text = _horizon_block(persona, session=kind, uncapped=not plan_text)
         synthesizer_input = (
             f"{proactive_prefix}{receipt_line}{synth_label}:\n{user_input}{attach_note}\n\n"
             f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"
@@ -7543,11 +7560,12 @@ def _run_pipeline_session_stream_inner(
 
     # Build Synthesizer input — ACTIONS block last and unconditional, as above.
     know_text = _knowledge_block(knowledge)
-    # [DB-0822-09] After the sign-off veto, as in the non-streaming twin above.
-    horizon_text = _horizon_block(persona, session=kind)
     # The day plan — after the specialists, so this turn's calendar writes are repaired in the
     # same reply (Q10). Kept identical to the non-streaming twin.
     plan_text = _day_plan_block(persona, kind, is_proactive)
+    # [DB-0822-09] After the sign-off veto, as in the non-streaming twin above — and after the
+    # plan block, which carries new findings under M2 unless it came back empty.
+    horizon_text = _horizon_block(persona, session=kind, uncapped=not plan_text)
     synthesizer_input = (
         f"{proactive_prefix}{receipt_line}{synth_label}:\n{user_input}{attach_note}\n\n"
         f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"

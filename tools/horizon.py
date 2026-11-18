@@ -48,10 +48,13 @@ open thread alive when the user's own turn touches it.
 
 from __future__ import annotations
 
+import fcntl
 import json
 import logging
+import os
 import re
 import threading
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -59,7 +62,40 @@ from core.persona import persona_data_dir, resolve_persona
 
 logger = logging.getLogger(__name__)
 
-_LOCK = threading.Lock()
+_LOCK = threading.RLock()
+# Across processes too (goal–task network plan § 10 R1): the server files findings and charges
+# offers on user turns while the scheduler's tick now stamps prep tasks onto them. Same shape as
+# tools/obligations.py `_store_lock`: the fcntl lock is taken once per outermost entry.
+_FLOCKS: dict[str, list] = {}
+
+
+@contextmanager
+def _locked(persona: str | None = None):
+    with _LOCK:
+        path = _store_path(persona)
+        key = str(path)
+        held = _FLOCKS.get(key)
+        if held:
+            held[1] += 1
+            try:
+                yield
+            finally:
+                held[1] -= 1
+            return
+        fh = open(path.with_name(path.name + ".lock"), "a+")
+        try:
+            fcntl.flock(fh, fcntl.LOCK_EX)
+            _FLOCKS[key] = [fh, 1]
+            try:
+                yield
+            finally:
+                _FLOCKS.pop(key, None)
+                try:
+                    fcntl.flock(fh, fcntl.LOCK_UN)
+                except OSError:
+                    pass
+        finally:
+            fh.close()
 
 # How many sessions may carry an undelivered finding before it is written off. Two, not one,
 # because a single offer is what the Synthesizer already failed at on 09-02; and not more,
@@ -108,7 +144,7 @@ def _read(persona: str | None = None) -> dict:
 
 def _write(data: dict, persona: str | None = None) -> None:
     path = _store_path(persona)
-    tmp = path.with_suffix(".tmp")
+    tmp = path.with_name(path.name + f".tmp{os.getpid()}.{threading.get_ident()}")
     tmp.write_text(json.dumps(data, indent=2, sort_keys=True, ensure_ascii=False))
     tmp.replace(path)
 
@@ -191,7 +227,7 @@ def record(items: list, persona: str | None = None) -> dict:
     persona = resolve_persona(persona)
     now = datetime.now().isoformat(timespec="seconds")
     closed_tasks = [e for e in _ledger_index(persona) if e["terminal"]]
-    with _LOCK:
+    with _locked(persona):
         data = _read(persona)
         for item in items:
             if not _valid(item):
@@ -324,7 +360,7 @@ def _undelivered(data: dict, today: date | None = None,
     return rows
 
 
-def context_block(persona: str | None = None) -> str:
+def context_block(persona: str | None = None, uncapped: bool = False) -> str:
     """The head layer's horizon block. "" when nothing is waiting.
 
     Registered in `core/orchestrator.load_recent_context()` alongside obligations, confirm,
@@ -343,7 +379,12 @@ def context_block(persona: str | None = None) -> str:
     try:
         persona = resolve_persona(persona)
         ledger = _ledger_index(persona)
-        with _LOCK:
+        if capped() and not uncapped:
+            # M2 (plan § 12, Mike 2026-11-18): new findings share the day plan's Important cap,
+            # so the plan's block carries them — ranked, capped and charged there
+            # (`new_findings` / `charge`). This block steps aside rather than deliver them all.
+            return ""
+        with _locked(persona):
             data = _read(persona)
             rows = _undelivered(data, ledger=ledger)
             if rows and _charge_offers(data, [key for key, _ in rows]):
@@ -476,6 +517,10 @@ def prep_items(persona: str | None = None, day: date | None = None) -> list[str]
         out = []
         for row in data.values():
             item = row.get("item") or {}
+            if _prep_carried(row):
+                # The plan holds it as a task now — nudged, checked, placed. Important would
+                # only repeat it (synth plan § 9 rule 5).
+                continue
             try:
                 when = date.fromisoformat(str(item.get("date") or "").strip())
             except ValueError:
@@ -505,6 +550,116 @@ def prep_items(persona: str | None = None, day: date | None = None) -> list[str]
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"[horizon] prep items failed: {exc}")
         return []
+
+
+def _flag(name: str) -> bool:
+    try:
+        from tools.day_plan_config import flag
+        return flag(name)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def capped() -> bool:
+    """M2 is live: the day plan is built and read by the Synthesizer, and `horizon_cap` is on.
+    Any of the three off restores the old block, which delivers every finding at once."""
+    return _flag("horizon_cap") and _flag("build") and _flag("synth_reads_plan")
+
+
+def _line(item: dict) -> str:
+    when = str(item.get("date") or "").strip() or "no date"
+    where = str(item.get("venue") or "").strip()
+    detail = str(item.get("detail") or "").strip()
+    return (f"{item.get('title')} — {when}" + (f", {where}" if where else "")
+            + (f". {detail}" if detail else ""))
+
+
+def new_findings(persona: str | None = None) -> list[dict]:
+    """Undelivered findings that have earned this exchange (`_due_now`), soonest first, with
+    nothing charged — the day plan ranks them into Important and charges only those it shows
+    (`charge`). A held one keeps both its offers (plan § 12 M2)."""
+    try:
+        persona = resolve_persona(persona)
+        ledger = _ledger_index(persona)
+        data = _read(persona)
+        return [{"key": key, "text": _line(row.get("item") or {}),
+                 "date": str((row.get("item") or {}).get("date") or "")[:10]}
+                for key, row in _undelivered(data, ledger=ledger)]
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[horizon] new findings failed: {exc}")
+        return []
+
+
+def charge(keys: list[str], persona: str | None = None) -> None:
+    """One offer for each finding the day plan actually showed."""
+    if not keys:
+        return
+    try:
+        persona = resolve_persona(persona)
+        with _locked(persona):
+            data = _read(persona)
+            if _charge_offers(data, keys):
+                _write(data, persona)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[horizon] charge failed: {exc}")
+
+
+# --- Prep tasks (goal–task network plan § 4.7, § 10 R2) ------------------------------------
+# The day plan's tick turns a finding's precursor into a task (tools/day_plan.py
+# `_prep_sweep`). These two stamp the outcome on the findings, so a converted one is not
+# repeated under Important and a refused one is never retried every five minutes (A8).
+
+_NO_PRECURSOR = ("", "none", "n/a", "no", "-")
+
+
+def precursor_of(item: dict) -> str:
+    pre = str(item.get("precursor") or "").strip()
+    return "" if pre.lower() in _NO_PRECURSOR else pre
+
+
+def rows(persona: str | None = None) -> dict:
+    """The ledger as stored, read-only."""
+    return _read(resolve_persona(persona))
+
+
+def stamp_prep(keys: list[str], persona: str | None = None, task_id: str | None = None,
+               refused: str | None = None) -> None:
+    persona = resolve_persona(persona)
+    now = datetime.now().isoformat(timespec="seconds")
+    with _locked(persona):
+        data = _read(persona)
+        changed = False
+        for key in keys:
+            row = data.get(key)
+            if row is None:
+                continue
+            if task_id:
+                row["prep_task_id"] = task_id
+                row.pop("prep_refused", None)
+            elif refused:
+                row["prep_refused"] = {"at": now, "reason": refused[:160]}
+            else:
+                row.pop("prep_task_id", None)
+            changed = True
+        if changed:
+            _write(data, persona)
+
+
+def _prep_carried(row: dict) -> bool:
+    """Whether the plan carries this finding's precursor now — its prep task is open, done, or
+    dropped by the user. Only while `prep_tasks` is on: off, every precursor is said again (A3).
+    A refused open, or a prep closed because the flag went off, is not carried."""
+    tid = row.get("prep_task_id")
+    if not tid or not _flag("prep_tasks"):
+        return False
+    try:
+        from tools.obligations import _find, _load
+        t = _find(_load(), tid)
+    except Exception:  # noqa: BLE001
+        return False
+    if not t:
+        return False
+    return t.get("status") in ("open", "done", "dismissed")
 
 
 def _charge_offers(data: dict, keys: list[str], now: datetime | None = None) -> bool:
@@ -550,7 +705,7 @@ def mark_engaged(user_text: str | None, persona: str | None = None) -> int:
 
         persona = resolve_persona(persona)
         now = datetime.now().isoformat(timespec="seconds")
-        with _LOCK:
+        with _locked(persona):
             data = _read(persona)
             hit = 0
             for key, row in data.items():

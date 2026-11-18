@@ -98,6 +98,7 @@ from task ids, keyed by occurrence so a repeated or catch-up sweep appends nothi
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import logging
@@ -169,6 +170,14 @@ _EVERY = ("day", "week", "month")
 # One lock for the store and the history file. Specialists fan out across threads, and two
 # of them closing and opening in the same turn must not interleave a load and a save.
 _LOCK = threading.RLock()
+# ...and across PROCESSES (goal–task network plan § 10 R1): the server writes the store on user
+# turns and taps while the scheduler's tick sweeps it, nudges from it and now opens prep tasks in
+# it. An in-process lock alone let a "Done" tap and a tick interleave a load and a save, and the
+# later save silently dropped the earlier write. `_store_lock` takes `_LOCK` and then an fcntl
+# lock on a sibling file. flock() blocks a SECOND descriptor even inside the same process, so the
+# file lock is taken once per outermost entry and nested entries only count depth (`_FLOCKS`,
+# guarded by `_LOCK`, which is reentrant). Same pattern as tools/day_plan.py `_locked`.
+_FLOCKS: dict[str, list] = {}
 
 
 class StoreUnreadable(Exception):
@@ -363,6 +372,354 @@ def _norm(t: dict) -> dict:
     return t
 
 
+# --- The network (archive/plans/goal_task_network_plan_2026-11-18.md § 4.1, § 10 R7/R9) -----
+# `needs: [id, …]` — a task cannot start until each is done. `part_of: <task id | goal id>` — the
+# end state it serves. `required` (default true) — whether dismissing it stops what needs it.
+# `blocked` is DERIVED here, once per load, from the whole store, and attached to each row as
+# `_blocked` (never saved — `_save_doc` strips it). Computing it per load rather than inside the
+# single-row `_view_core` is review R7a: one row cannot see whether its prerequisites are done,
+# and passing a set to ~15 call sites is a set that one forgotten site leaks through. Every
+# reader goes through `_load_doc`, so every reader sees the same answer.
+
+def _needs(t: dict) -> list[str]:
+    raw = t.get("needs")
+    if isinstance(raw, str):
+        raw = [raw]
+    return [str(x) for x in raw or [] if str(x or "").strip()]
+
+
+def _satisfies(dep: dict | None) -> bool:
+    """Does this prerequisite let what needs it go ahead? Done does. Dismissed or moot does only
+    when the step was optional (`required: false`) — a skipped "gather P60" must not silently
+    unblock "file the return" (§ 4.5)."""
+    if dep is None:
+        return False
+    status = dep.get("status")
+    if status == "done":
+        return True
+    return status in ("dismissed", "moot") and dep.get("required") is False
+
+
+def _annotate_network(tasks: list[dict]) -> None:
+    by_id = {t.get("id"): t for t in tasks}
+    for t in tasks:
+        t.pop("_blocked", None)
+        t.pop("_blocked_by", None)
+        if t.get("status") != "open":
+            continue
+        waiting = [d for d in _needs(t) if not _satisfies(by_id.get(d))]
+        if waiting:
+            t["_blocked"] = True
+            t["_blocked_by"] = waiting
+
+
+def _is_step(t: dict) -> bool:
+    """A step of a plan, or anything waiting on one: the user-facing duplicate guards and the soft
+    cap skip it (R7b) — otherwise the user's own new task is refused as "already open as <a hidden
+    step>". A plan's end state carries no `part_of` but is hidden exactly as its steps are while it
+    waits, so `_blocked` counts too."""
+    return bool(t.get("part_of") or t.get("_blocked"))
+
+
+def _dependents(tasks: list[dict], tid: str) -> list[dict]:
+    """Open tasks that need `tid`, directly or through another open task — breadth first."""
+    out, seen, frontier = [], {tid}, [tid]
+    while frontier:
+        cur = frontier.pop(0)
+        for t in tasks:
+            if t.get("status") == "open" and t.get("id") not in seen and cur in _needs(t):
+                seen.add(t["id"])
+                out.append(t)
+                frontier.append(t["id"])
+    return out
+
+
+_PREREQ_DISMISSED = "its prerequisite was dismissed"
+
+
+def _close_dependents(doc: dict, t: dict) -> list[str]:
+    """R9, phase 1's dismissal rule. A dismissed REQUIRED step closes everything that needs it
+    `moot` — it can't go ahead — and records the cascade on the dismissed step, so the end state is
+    raised once as Important ("X can't go ahead without Y — redo it?"). An optional step closes
+    nothing: what needs it unblocks. Phase 2 replaces the close with a re-plan."""
+    if t.get("required") is False:
+        return []
+    closed = []
+    for dep in _dependents(doc["tasks"], t["id"]):
+        dep["status"] = "moot"
+        dep["closed_at"] = _stamp()
+        dep["evidence"] = _PREREQ_DISMISSED
+        dep.setdefault("history", []).append({"event": "closed_by_prerequisite",
+                                              "at": _stamp(), "prerequisite": t["id"]})
+        doc.setdefault("_history", []).append(_one_off_row(dep, "moot"))
+        closed.append(dep["id"])
+    if closed:
+        t["cascade"] = {"closed": closed, "at": _stamp(), "raised": None}
+    return closed
+
+
+def _stuck_behind(tasks: list[dict], t: dict) -> str | None:
+    """Refuse to reopen a step whose required prerequisite is closed and not done: reopened, it
+    would sit blocked and invisible forever (Fable diff review #7). The way back is the
+    prerequisite — reopening that brings this step back with it."""
+    by_id = {x.get("id"): x for x in tasks}
+    for d in _needs(t):
+        dep = by_id.get(d)
+        if dep and dep.get("status") in _TERMINAL and not _satisfies(dep):
+            return (f"error: {t['id']} can't be reopened on its own — it needs {d} "
+                    f"({dep.get('what')}), which is {dep.get('status')}. Reopen {d} instead; this "
+                    f"step comes back with it. Nothing was changed.")
+    return None
+
+
+def _reopen_cascade(doc: dict, t: dict) -> int:
+    cascade = t.pop("cascade", None) or {}
+    n = 0
+    for cid in cascade.get("closed") or []:
+        dep = _find(doc["tasks"], cid)
+        if dep and dep.get("status") == "moot" and dep.get("evidence") == _PREREQ_DISMISSED:
+            dep["status"] = "open"
+            dep.setdefault("history", []).append({"event": "reopened", "at": _stamp(),
+                                                  "was": "moot", "reason": "prerequisite redone"})
+            for k in ("closed_at", "evidence"):
+                dep.pop(k, None)
+            n += 1
+    return n
+
+
+def cascades_to_raise(persona: str | None = None, as_of: date | None = None) -> list[dict]:
+    """Dismissals that closed later steps, not yet put to the user — for the day plan's Important
+    list. Each is raised once (`mark_cascade_raised`) and only within a few days of happening."""
+    today = as_of or _today()
+    tasks = [_norm(t) for t in _load(persona)]
+    by_id = {t["id"]: t for t in tasks}
+    out = []
+    for t in tasks:
+        c = t.get("cascade") or {}
+        # A prerequisite that went moot by its date stops its plan as surely as a dismissal does,
+        # and is raised the same way (Fable diff review #6).
+        if t.get("status") not in ("dismissed", "moot") or not c.get("closed") or c.get("raised"):
+            continue
+        at = _stamp_day(c.get("at"))
+        if not at or (today - at).days > _RECENT_DAYS:
+            continue
+        closed = [by_id[i] for i in c["closed"] if i in by_id]
+        # The end state is the closed step nothing else in the cascade needs — the last one.
+        needed = {d for x in closed for d in _needs(x)}
+        end = next((x for x in reversed(closed) if x["id"] not in needed), closed[-1] if closed else None)
+        if end is None:
+            continue
+        out.append({"id": t["id"], "what": t["what"], "end": end["what"], "end_id": end["id"],
+                    "closed": len(closed), "lapsed": t.get("status") == "moot"})
+    return out
+
+
+def mark_cascade_raised(task_ids: list[str], persona: str | None = None) -> None:
+    if not task_ids:
+        return
+
+    def apply(doc: dict) -> int:
+        n = 0
+        for t in doc["tasks"]:
+            c = t.get("cascade")
+            if t.get("id") in task_ids and isinstance(c, dict) and not c.get("raised"):
+                c["raised"] = _stamp()
+                n += 1
+        return n
+
+    try:
+        _with_store(persona, apply)
+    except Exception as exc:  # noqa: BLE001 — bookkeeping never breaks a reply
+        logger.warning("[tasks] cascade raise not recorded: %s", exc)
+
+
+# --- Writing a whole plan at once (§ 10 R7c) ---------------------------------------------------
+
+_STEP_FIELDS = ("what", "kind", "due", "eligible_from", "flexible", "after", "before", "minutes",
+                "minutes_source", "needs", "part_of", "required", "stakes", "domain", "note",
+                "activity", "key", "source_id", "prep_for", "zone", "moot_after")
+# A step this close to its end state's due is on the critical path near the deadline: vital
+# (nudged and checked). Everything else a plan opens is `missable` (R5) — one model wake per
+# step was the cost the review found.
+_CRITICAL_MARGIN_DAYS = 2
+
+
+def _acyclic(edges: dict[str, list[str]]) -> bool:
+    state: dict[str, int] = {}
+
+    def visit(n: str) -> bool:
+        if state.get(n) == 1:
+            return False
+        if state.get(n) == 2:
+            return True
+        state[n] = 1
+        for m in edges.get(n, []):
+            if m in edges and not visit(m):
+                return False
+        state[n] = 2
+        return True
+
+    return all(visit(n) for n in edges)
+
+
+def open_plan(steps: list[dict], persona: str | None = None, created_by: str = "plan") -> dict:
+    """Write a whole plan in ONE locked write: ids minted first, every step validated, and
+    all-or-nothing — a refused step aborts the plan, so no later step is left with a `needs` that
+    points nowhere (review R7c, the mid-plan near-match refusal).
+
+    Each step: {key, what, kind="deadline", due?, eligible_from?, flexible?, after?, minutes?,
+    needs: [key | existing id], part_of?: key | existing task id | goal id, required=True,
+    stakes?, domain?, note?, activity?, source_id?, prep_for?}. Returns
+    {"ok": True, "ids": {key: id}} or {"ok": False, "error": "..."}; nothing is written on error.
+    Code-only in phase 1 (no tool schema): the test project and prep tasks. The project planner
+    that calls it is phase 2.
+    """
+    if not isinstance(steps, list) or not steps:
+        return {"ok": False, "error": "a plan needs at least one step"}
+    keys: dict[str, str] = {}
+    clean: list[dict] = []
+    for i, raw in enumerate(steps):
+        if not isinstance(raw, dict):
+            return {"ok": False, "error": f"step {i} is not a mapping"}
+        unknown = set(raw) - set(_STEP_FIELDS)
+        if unknown:
+            return {"ok": False, "error": f"step {i}: unknown field(s) {sorted(unknown)}"}
+        what = str(raw.get("what") or "").strip()
+        if not what:
+            return {"ok": False, "error": f"step {i} has no `what`"}
+        kind = str(raw.get("kind") or "deadline").strip().lower()
+        if kind not in _ONE_OFF:
+            return {"ok": False, "error": f"step {i}: a plan step is a one-off, not {kind!r}"}
+        key = str(raw.get("key") or f"s{i}")
+        if key in keys:
+            return {"ok": False, "error": f"two steps share the key {key!r}"}
+        keys[key] = _new_id(what)
+        entry = {"what": what, "kind": kind, "status": "open"}
+        for name in ("due", "eligible_from", "moot_after"):
+            iso, err = _iso_arg(name, raw.get(name))
+            if err:
+                return {"ok": False, "error": f"step {i}: {err}"}
+            if iso:
+                entry[name] = iso
+        if not entry.get("due"):
+            # An undated one-off is never placed on a day nor shown on Today (§ 10 R4), so a step
+            # without a date would unblock and never appear (Fable diff review #9).
+            return {"ok": False, "error": f"step {i}: every step needs a `due` (its latest date)"}
+        if raw.get("flexible"):
+            entry["flexible"] = True
+        for name in ("after", "before"):
+            if raw.get(name):
+                if _parse_hhmm(raw[name]) is None:
+                    return {"ok": False, "error": f"step {i}: `{name}` is HH:MM"}
+                entry[name] = str(raw[name]).strip()
+        if raw.get("minutes") is not None:
+            dur, err = _minutes_arg(raw["minutes"], raw.get("minutes_source"))
+            if err:
+                return {"ok": False, "error": f"step {i}: {err}"}
+            entry.update(dur)
+        stakes = raw.get("stakes")
+        if stakes is not None and stakes not in _STAKES:
+            return {"ok": False, "error": f"step {i}: `stakes` is one of {', '.join(_STAKES)}"}
+        for name in ("domain", "note", "activity", "source_id", "zone"):
+            if raw.get(name):
+                entry[name] = str(raw[name]).strip()
+        if isinstance(raw.get("prep_for"), dict):
+            entry["prep_for"] = {k: str(v) for k, v in raw["prep_for"].items() if v}
+        if raw.get("required") is False:
+            entry["required"] = False
+        clean.append({"key": key, "entry": entry, "needs": _needs(raw),
+                      "part_of": str(raw.get("part_of") or "").strip(), "stakes": stakes})
+
+    def apply(doc: dict) -> dict:
+        tasks = doc["tasks"]
+        existing = {t["id"]: t for t in tasks}
+        edges: dict[str, list[str]] = {}
+        for c in clean:
+            resolved = []
+            for n in c["needs"]:
+                if n in keys:
+                    resolved.append(keys[n])
+                elif n in existing and existing[n].get("kind") in _ONE_OFF:
+                    resolved.append(n)
+                else:
+                    return {"ok": False, "error": f"step {c['key']!r} needs {n!r}, which is "
+                                                  f"neither a step of this plan nor a one-off task"}
+            c["entry"]["needs"] = resolved
+            edges[keys[c["key"]]] = resolved
+            po = c["part_of"]
+            if po:
+                po = keys.get(po, po)
+                target = existing.get(po)
+                if po.startswith("ob_") and po not in existing and po not in keys.values():
+                    return {"ok": False, "error": f"step {c['key']!r} is part of {po!r}, which "
+                                                  f"does not exist"}
+                if target is not None and target.get("status") in _TERMINAL:
+                    return {"ok": False, "error": f"step {c['key']!r} is part of {po!r}, which is "
+                                                  f"already {target.get('status')}"}
+                c["entry"]["part_of"] = po
+        if not _acyclic(edges):
+            return {"ok": False, "error": "the steps' `needs` form a cycle"}
+        # Duplicate guard per plan (R7b): a step dedupes against its own plan only — the other
+        # steps here and open steps already part of the same end state — never the user's tasks.
+        for i, c in enumerate(clean):
+            what = c["entry"]["what"]
+            for other in clean[:i]:
+                if _same_commitment(other["entry"]["what"], what):
+                    return {"ok": False, "error": f"steps {other['key']!r} and {c['key']!r} are "
+                                                  f"the same commitment"}
+            po = c["entry"].get("part_of")
+            if po:
+                twin = next((t for t in tasks if t.get("status") == "open"
+                             and t.get("part_of") == po
+                             and _same_commitment(t.get("what", ""), what)), None)
+                if twin:
+                    return {"ok": False, "error": f"step {c['key']!r} is already open in this "
+                                                  f"plan as {twin['id']}"}
+            sid = c["entry"].get("source_id")
+            if sid:
+                dup = _source_duplicate(tasks, sid, _today())
+                if dup:
+                    return {"ok": False, "error": f"already tracked from the same source as "
+                                                  f"{dup['id']} ({dup.get('status')})",
+                            "duplicate": dup["id"]}
+        # Stakes (R5): explicit wins; else vital within the margin of the end state's due.
+        end_due = {}
+        for c in clean:
+            po = c["entry"].get("part_of")
+            target_due = None
+            if po in keys.values():
+                target = next(x["entry"] for x in clean if keys[x["key"]] == po)
+                target_due = _d(target.get("due"))
+            elif po in existing:
+                target_due = _d(existing[po].get("due"))
+            end_due[c["key"]] = target_due
+        stamp, today = _stamp(), _today()
+        for c in clean:
+            e = c["entry"]
+            if c["stakes"]:
+                e["stakes"], e["stakes_source"] = c["stakes"], "stated"
+            elif not e.get("prep_for"):
+                d, end = _d(e.get("due")), end_due[c["key"]]
+                is_end = not e.get("part_of")
+                near = bool(d and ((end and (end - d).days <= _CRITICAL_MARGIN_DAYS) or is_end))
+                e["stakes"], e["stakes_source"] = ("vital" if near else "missable"), "inferred"
+            e["id"] = keys[c["key"]]
+            e["created_at"] = stamp
+            e["created_by"] = created_by
+            e.setdefault("start", today.isoformat())
+            if e["needs"] == []:
+                e.pop("needs")
+        for c in clean:
+            tasks.append(c["entry"])
+        _annotate_network(tasks)
+        return {"ok": True, "ids": dict(keys)}
+
+    result = _with_store(persona, apply)
+    if isinstance(result, str):            # the store could not be read
+        return {"ok": False, "error": result}
+    return result
+
+
 def _remerge_v1(doc: dict, persona: str | None = None) -> None:
     """
     Fold in anything old code wrote to obligations.yaml after the import — the rollback case.
@@ -424,6 +781,7 @@ def _load_doc(persona: str | None = None) -> dict:
             raise StoreUnreadable("tasks.yaml carries no task list")
         doc["tasks"] = [_norm(t) for t in doc["tasks"] if isinstance(t, dict)]
         _remerge_v1(doc, persona)
+        _annotate_network(doc["tasks"])
         return doc
     doc: dict = {"version": 2, "tasks": [_norm(_from_v1(it)) for it in _v1_items(persona)]}
     v1 = _v1_path(persona)
@@ -434,6 +792,7 @@ def _load_doc(persona: str | None = None) -> dict:
             mtime = 0.0
         doc["import"] = {"at": _stamp(), "v1_mtime": mtime, "count": len(doc["tasks"])}
         doc["_dirty"] = True
+    _annotate_network(doc["tasks"])
     return doc
 
 
@@ -445,7 +804,13 @@ def _save_doc(doc: dict, persona: str | None = None) -> None:
     doc.pop("_dirty", None)
     path = _store_path(persona)
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
+    tmp = path.with_name(path.name + f".tmp{os.getpid()}.{threading.get_ident()}")
+    for t in doc.get("tasks") or []:
+        # Derived per load (`_annotate_network`), never stored: a stored `blocked` would outlive
+        # the step that unblocks it.
+        if isinstance(t, dict):
+            t.pop("_blocked", None)
+            t.pop("_blocked_by", None)
     tmp.write_text(yaml.safe_dump(doc, sort_keys=False, allow_unicode=True))
     try:
         os.chmod(tmp, 0o600)
@@ -469,10 +834,42 @@ def _preserve_corrupt(persona: str | None = None) -> None:
         pass
 
 
+@contextmanager
+def _store_lock(persona: str | None = None):
+    """`_LOCK`, plus an fcntl lock on `tasks.yaml.lock` beside the store — see `_FLOCKS`.
+    Reentrant within a thread; exclusive across threads and processes."""
+    with _LOCK:
+        path = _store_path(persona)
+        key = str(path)
+        held = _FLOCKS.get(key)
+        if held:
+            held[1] += 1
+            try:
+                yield
+            finally:
+                held[1] -= 1
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fh = open(path.with_name(path.name + ".lock"), "a+")
+        try:
+            fcntl.flock(fh, fcntl.LOCK_EX)
+            _FLOCKS[key] = [fh, 1]
+            try:
+                yield
+            finally:
+                _FLOCKS.pop(key, None)
+                try:
+                    fcntl.flock(fh, fcntl.LOCK_UN)
+                except OSError:
+                    pass
+        finally:
+            fh.close()
+
+
 def _with_store(persona: str | None, fn):
     """Load, apply `fn(doc)`, save, return fn's result. An unreadable store is preserved and
     nothing is written: overwriting it would replace every task with only this call's."""
-    with _LOCK:
+    with _store_lock(persona):
         try:
             doc = _load_doc(persona)
         except StoreUnreadable as exc:
@@ -489,7 +886,7 @@ def _load(persona: str | None = None) -> list[dict]:
     that read it — returning empty loses visibility for one call; raising would break every
     session until fixed. Persists a first-time v1 import so tasks.yaml exists promptly."""
     try:
-        with _LOCK:
+        with _store_lock(persona):
             doc = _load_doc(persona)
             tasks = [dict(t) for t in doc["tasks"]]
             if doc.get("_dirty"):
@@ -519,7 +916,7 @@ def _history_rows(persona: str | None = None) -> list[dict]:
 def _append_history(rows: list[dict], persona: str | None = None) -> int:
     """Append rows whose key is not already on file. Returns how many were written.
     Idempotency lives here, so a repeated sweep or a re-merged close cannot double-count."""
-    with _LOCK:
+    with _store_lock(persona):
         keys = {r.get("key") for r in _history_rows(persona)}
         fresh = [r for r in rows if r.get("key") and r["key"] not in keys]
         if not fresh:
@@ -723,7 +1120,7 @@ def _same_commitment(a: str, b: str) -> bool:
 
 def _open_duplicate(tasks: list[dict], what: str) -> dict | None:
     for t in tasks:
-        if t.get("status") == "open" and _same_commitment(t.get("what", ""), what):
+        if t.get("status") == "open" and not _is_step(t) and _same_commitment(t.get("what", ""), what):
             return t
     return None
 
@@ -732,7 +1129,8 @@ def _open_near(tasks: list[dict], what: str) -> dict | None:
     """An open task sharing two identifying words with `what` (_tokens_match)."""
     new = _task_tokens(what)
     for t in tasks:
-        if t.get("status") == "open" and _tokens_match(new, _task_tokens(t.get("what", ""))):
+        if (t.get("status") == "open" and not _is_step(t)
+                and _tokens_match(new, _task_tokens(t.get("what", "")))):
             return t
     return None
 
@@ -740,7 +1138,7 @@ def _open_near(tasks: list[dict], what: str) -> dict | None:
 def _recent_close_match(tasks: list[dict], what: str, today: date) -> dict | None:
     new = _task_tokens(what)
     for t in tasks:
-        if t.get("status") not in _TERMINAL or t.get("kind") not in _ONE_OFF:
+        if t.get("status") not in _TERMINAL or t.get("kind") not in _ONE_OFF or _is_step(t):
             continue
         closed = _stamp_day(t.get("closed_at"))
         if not closed or (today - closed).days > _RECLOSE_WINDOW_DAYS:
@@ -904,6 +1302,11 @@ def _view_core(t: dict, today: date, lead_days: int = _LEAD_DAYS) -> dict:
          "sort": (9,), "text": what}
     if status != "open":
         return v
+    if t.get("_blocked"):
+        # Waiting on an earlier step (§ 4.1): hidden exactly as `dormant` is — not on Today, not
+        # a planner candidate, not under Now — until the step it needs is done.
+        v["state"] = "blocked"
+        return v
     start = _start(t)
     eligible = _d(t.get("eligible_from"))
     if (eligible and eligible > today) or (start and start > today and kind == "habit"):
@@ -934,7 +1337,8 @@ def _view_core(t: dict, today: date, lead_days: int = _LEAD_DAYS) -> dict:
                      text=f"{what} — overdue since {due.isoformat()}")
         elif due == today:
             v.update(state="due_today", actionable=True, sort=(1, due.isoformat()),
-                     text=f"{what} — due today" + (f", after {t['after']}" if t.get("after") else ""))
+                     text=f"{what} — due today" + (f", after {t['after']}" if t.get("after") else "")
+                          + (f", before {t['before']}" if t.get("before") else ""))
         elif t.get("flexible"):
             # Any day up to its date (Mike, 2026-10-27): the planner places it on a day with
             # room, and it is a must-do only on its last day.
@@ -1269,7 +1673,8 @@ def open_task(what: str, kind: str = "deadline", due: str | None = None,
         entry.setdefault("start", today.isoformat())
         tasks.append(entry)
         msg = f"task {entry['id']} opened ({kind}): {_summarise(entry)}"
-        open_one_offs = sum(1 for t in tasks if t.get("status") == "open" and t.get("kind") in _ONE_OFF)
+        open_one_offs = sum(1 for t in tasks if t.get("status") == "open"
+                            and t.get("kind") in _ONE_OFF and not _is_step(t))
         if kind in _ONE_OFF and open_one_offs > _SOFT_CAP:
             msg += (f"\n\nNOTE: {open_one_offs} one-off tasks are now open, past the {_SOFT_CAP} "
                     f"this store is sized for. Written anyway. Several are probably done and "
@@ -1789,15 +2194,26 @@ def update_task(task_id: str, action: str, evidence: str | None = None,
             hist.append({"event": "rescheduled", "at": _stamp(), "from": old, "to": due_iso,
                          "reason": evidence or note or "", "was_overdue":
                          bool(_d(old) and _d(old) < today)})
+            if status in _TERMINAL:
+                stuck = _stuck_behind(doc["tasks"], t)
+                if stuck:
+                    return stuck
             t[field] = due_iso
             if kind == "deadline" and t.get("calendar_uid"):
                 closed_holder["moved"] = (dict(t), due_iso)
+            if _d(t.get("moot_after")) and _d(t["moot_after"]) < _d(due_iso):
+                t.pop("moot_after", None)      # a new date outlives the old cut-off
+            restored = 0
             if status in _TERMINAL:
                 hist.append({"event": "reopened", "at": _stamp(), "was": status})
                 t["status"] = "open"
                 for k in ("closed_at", "evidence"):
                     t.pop(k, None)
-            return f"{tid} rescheduled to {due_iso}: {_summarise(t)}"
+                # "Let's do the P60 Friday" brings back what its dismissal closed (Fable #7).
+                restored = _reopen_cascade(doc, t)
+            return (f"{tid} rescheduled to {due_iso}: {_summarise(t)}"
+                    + (f"; {restored} later step(s) it had closed are back, waiting on it"
+                       if restored else ""))
 
         if action == "reopen":
             # Bringing a deferred task back early (Mike, 2026-10-29) — without this a deferral
@@ -1837,13 +2253,21 @@ def update_task(task_id: str, action: str, evidence: str | None = None,
                 return "error: an interval task is never closed — use reschedule to set when it is next due"
             if status not in _TERMINAL:
                 return f"{tid} is already open — nothing to reopen"
+            stuck = _stuck_behind(doc["tasks"], t)
+            if stuck:
+                return stuck
             hist.append({"event": "reopened", "at": _stamp(), "was": status,
                          "closed_at": t.get("closed_at"), "evidence": t.get("evidence"),
                          "reason": evidence})
             t["status"] = "open"
             for k in ("closed_at", "evidence"):
                 t.pop(k, None)
-            return f"{tid} reopened: {_summarise(t)} ({evidence})"
+            # Redoing a dismissed step (R9's "redo it?" answered yes) brings back the steps its
+            # dismissal closed — they were closed for that reason and no other.
+            restored = _reopen_cascade(doc, t)
+            return (f"{tid} reopened: {_summarise(t)} ({evidence})"
+                    + (f"; {restored} later step(s) it had closed are back, waiting on it"
+                       if restored else ""))
 
         if status in _TERMINAL:
             return (f"{tid} was already {status} at {t.get('closed_at', 'unknown')} — "
@@ -1861,6 +2285,11 @@ def update_task(task_id: str, action: str, evidence: str | None = None,
             t["closed_at"] = _stamp()
             t["evidence"] = evidence
             doc.setdefault("_history", []).append(_one_off_row(t, "dismissed"))
+            cascade = _close_dependents(doc, t)
+            if cascade:
+                return (f"{tid} dismissed — no longer tracked: {_summarise(t)}. "
+                        f"{len(cascade)} later step(s) that could not go ahead without it were "
+                        f"closed; the user will be asked once whether to redo it.")
             return f"{tid} dismissed — no longer tracked: {_summarise(t)}"
 
         if kind in _ONE_OFF:   # done
@@ -1964,6 +2393,10 @@ def list_tasks(include_closed: bool = False, horizon: str | None = None) -> str:
         return "no tasks tracked"
     today = _today()
     open_items = [t for t in tasks if t.get("status") == "open"]
+    # Steps waiting on an earlier step are hidden (§ 4.1 — "the one leak in the hidden layer"):
+    # the user is given the step that can be done now, and the map only when they ask for it.
+    waiting_steps = sum(1 for t in open_items if t.get("_blocked"))
+    open_items = [t for t in open_items if not t.get("_blocked")]
     span = (horizon or "").strip().lower()
     if span:
         if span not in _HORIZON_DAYS:
@@ -1973,6 +2406,10 @@ def list_tasks(include_closed: bool = False, horizon: str | None = None) -> str:
     for t in sorted(open_items, key=lambda t: _view(t, today)["sort"]):
         v = _view(t, today)
         lines.append(f"  {v['occ']}  [{t['kind']}] {t['what']} — {_state_line(t, today)}")
+    if waiting_steps:
+        lines.append(f"  (+{waiting_steps} later step{'s' if waiting_steps != 1 else ''} of a "
+                     f"plan, waiting on an earlier one — not shown; each appears when it can "
+                     f"be done)")
     if include_closed:
         closed = [t for t in tasks if t.get("status") in _TERMINAL]
         lines.append(f"\n{len(closed)} closed:")
@@ -2122,11 +2559,14 @@ def context_block(persona: str | None = None, as_of: date | None = None) -> str:
     pending = [t for t in tasks if t.get("status") == "open"
                and any(p.get("status") == "pending" for p in t.get("proposals") or [])]
     later = {"deadlines further out": 0, "waiting on others": 0, "not yet eligible": 0,
-             "recurring, not due today": 0, "past their date, unconfirmed": 0}
+             "recurring, not due today": 0, "past their date, unconfirmed": 0,
+             "later steps waiting on an earlier one": 0}
     for t, v in views:
         if t.get("status") != "open" or v["actionable"]:
             continue
-        if v["state"] == "dormant":
+        if v["state"] == "blocked":
+            later["later steps waiting on an earlier one"] += 1
+        elif v["state"] == "dormant":
             later["not yet eligible"] += 1
         elif v["state"] == "lapsed":
             later["past their date, unconfirmed"] += 1
@@ -2136,7 +2576,8 @@ def context_block(persona: str | None = None, as_of: date | None = None) -> str:
             later["deadlines further out"] += 1
         elif t["kind"] in ("habit", "interval") and v["state"] in ("later",):
             later["recurring, not due today"] += 1
-    singular = {"deadlines further out": "deadline further out"}
+    singular = {"deadlines further out": "deadline further out",
+                "later steps waiting on an earlier one": "later step waiting on an earlier one"}
     later_text = ", ".join(f"{n} {singular.get(label, label) if n == 1 else label}"
                            for label, n in later.items() if n)
 
@@ -2394,7 +2835,7 @@ def note_raised(reply_text: str, persona: str | None = None, as_of: date | None 
         return stamped["n"]
 
     try:
-        with _LOCK:
+        with _store_lock(persona):
             doc = _load_doc(persona)
             apply(doc)
             if stamped["n"] or doc.get("_dirty"):
@@ -2586,7 +3027,7 @@ def match_envelope(envelope_id: str, thread_id: str = "", sender_address: str = 
     added = 0
     for t in _load(persona):
         t = _norm(t)
-        if t.get("status") != "open" or t.get("kind") not in _ONE_OFF:
+        if t.get("status") != "open" or t.get("kind") not in _ONE_OFF or t.get("_blocked"):
             continue
         if envelope_id == t.get("source_id"):
             continue
@@ -2775,6 +3216,15 @@ def sweep(persona: str | None = None, as_of: date | None = None) -> str:
                 t["raised"] = raised
             else:
                 t.pop("raised", None)
+        # A required prerequisite that went moot on its own (its date passed) stops what needs
+        # it exactly as a dismissal does (R9) — otherwise those steps stay blocked forever.
+        by_id = {t.get("id"): t for t in doc["tasks"]}
+        for t in list(doc["tasks"]):
+            if (t.get("status") == "moot" and t.get("required") is not False
+                    and not t.get("cascade") and any(
+                        t["id"] in _needs(o) and o.get("status") == "open"
+                        for o in by_id.values())):
+                counts["moot"] += len(_close_dependents(doc, t))
         return (f"task sweep: {counts['periods']} period(s) recorded, {counts['moot']} moot, "
                 f"{counts['expired']} suggestion(s) expired")
 
@@ -2881,7 +3331,7 @@ def accountability_items(persona: str | None = None) -> list[dict]:
                     # Past-midnight closes join the intention of the day the user was still in.
                     closed_at = f"{_stamp_day(closed_at).isoformat()}T12:00:00"
                 out.append({"what": t["what"], "status": "closed", "closed_at": closed_at})
-            elif t.get("kind") == "deadline" and t.get("status") == "open":
+            elif t.get("kind") == "deadline" and t.get("status") == "open" and not t.get("_blocked"):
                 # [DB-0827-09] An intention that is still an open task was sent to the
                 # free-text judge, which said "indeterminate" while the ledger knew it was not
                 # done (2026-10-29 audit). Waiting tasks are left out: waiting on someone
@@ -2956,6 +3406,10 @@ def consult_index(persona: str | None = None, as_of: date | None = None) -> list
                 continue
             phrase = ("no longer relevant" if status == "moot"
                       else f"{status} {closed.isoformat()}")
+        elif status == "open" and t.get("_blocked"):
+            # A hidden step is not something a copy elsewhere can be about (R7): matching one
+            # would let it suppress a horizon finding or annotate a log line the user never saw.
+            continue
         elif status == "open":
             # A deferred task's copies elsewhere (a thread, a day log) must not read as
             # outstanding before its day: the user asked not to see it until then.

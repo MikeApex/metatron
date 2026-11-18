@@ -39,6 +39,11 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 import tools.horizon as H  # noqa: E402
+import tools.day_plan_config as C  # noqa: E402
+
+# These checks are the horizon block's own delivery (uncapped). With `horizon_cap` on, new findings
+# move into the day plan's Important line instead — tested in tests/test_goal_network_phase1.py.
+C._OVERRIDE = {"flags": {"horizon_cap": False, "prep_tasks": False}}
 
 _results: list[tuple[str, bool, str]] = []
 
@@ -407,7 +412,8 @@ def _():
     # `run_pipeline_session_stream` is a thin wrapper around it.
     for name in ("run_pipeline_session", "_run_pipeline_session_stream_inner"):
         body = text.split(f"\ndef {name}(", 1)[1].split("\ndef ", 1)[0]
-        assert "_horizon_block(persona, session=kind)" in body, (
+        # Prefix match: the call also carries `uncapped=` since M2 (goal-network phase 1).
+        assert "_horizon_block(persona, session=kind" in body, (
             f"{name} never builds the block — or builds it without the session kind, which "
             f"is what switches on the evening review")
         assert body.index("_signoff_skip(") < body.index("_horizon_block(persona"), (

@@ -37,8 +37,23 @@ flags:
   nudges: true
   # The plan's empty-day check-ins replace the jobs listed in `replaces_jobs`.
   owns_checkins: true
+  # GOAL–TASK NETWORK PHASE 1 (2026-11-18; archive/plans/goal_task_network_plan_2026-11-18.md).
+  # A horizon finding's precursor ("gather the Red Book before Benny's 09:30 session") becomes a
+  # task the plan places, nudges and checks, and that follows its event (§ 10 R2). Off closes the
+  # open ones with a reason, and the precursor is said again under Important, as before (A3).
+  prep_tasks: true
+  # New horizon findings share Important's cap (`important_max`) on the brief and close, and take
+  # at most one slot on an ordinary turn; one held back keeps its offers (§ 12 M2, Mike's yes
+  # 2026-11-18). Off: every undelivered finding arrives at once, as before.
+  horizon_cap: true
 
 replaces_jobs: [companion_checkin]
+
+# Review finding #5 (§ 10 R10): a nudge due near one of THESE fixed sessions is carried into it
+# and said there under DUE NOW. Only conversational sessions belong here — the Sunday analysis
+# jobs say nothing to the user, so yielding to them dropped the nudge. Remove the key to shield on
+# every fixed job, as before.
+shield_jobs: [morning_brief, evening_close, location_anticipation]
 
 # Score weights (plan § 5.2). Baseline is the explicit priority, else the linked goal.
 score:

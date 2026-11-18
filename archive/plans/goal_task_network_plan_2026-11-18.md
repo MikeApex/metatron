@@ -370,3 +370,30 @@ once per day (the part of M3 the ruling did not change).
 | M1 | **Monday's brief (11-16) recited the whole week**, day by day | Working as written: `synthesizer_scheduled_sessions.md` § Weekly review phase 2 says *"go through the coming week's commitments — everything falling in the next seven days… repetition is the point"* (the 09-05 ruling), and `horizon.week_block` hands it the full week | Keep a Monday look-ahead, cut to **the week's shape in one sentence + the one to three things that need something done first or decided now** (phases 1 and 3; phase 2 goes). Done in code too, per stage 1's lesson that a model given data is not reliably stopped from reciting it: `week_block` returns per-day counts plus only items with a deadline, a precursor or a decision. Once phase 1 schedules prep as tasks, even this shrinks. **Supersedes 09-05's "everything in the next seven days" the way S2 superseded its evening-close twin.** |
 | M2 | **11-18's brief carried five extras** — three new horizon findings, the 39 contact suggestions, Show and Tell | `horizon.context_block` has **no count cap** and tells Synth to *"put these to the user in this exchange"*, so every undelivered finding arrives at once. The contact-suggestion line is by design (one line, `crm_sweep`) | New findings join the **Important ranking (cap `important_max`, 2)** on the brief and close, ranked with prerequisites and vital deadlines; at most **one** on an ordinary turn. Offers are charged only for findings actually shown, so a held one keeps both its chances. The contact line stays as it is. |
 | M3 | **"Takes your own time" repeated daily for the same task**; repotting proposed at 07:30 on four mornings, not done | The rider is "once per task **per day**" (`synthesizer_day_plan.md:11`), and an undone task that the planner has to put into protected time is re-placed there every day. Nothing notices that the same task keeps being carried | **Once per task, not per day.** Plus a task-level version of § 4.2's non-compliance trigger: **a task carried or not done three days running is asked about once** — keep, give it a fixed time, or drop it — instead of being proposed again. Code counts it; Synth asks. |
+
+## 13. Phase 1 built — Fable 5.1 diff review and reconciliation (2026-11-18)
+
+Built in one Opus 5.5 session; M2 on Mike's yes the same day, M3 as ruled, M1 not built. **Fable
+5.1 reviewed the full diff: four structural, five local findings. All nine were checked against
+the code and fixed before commit;** each has its own test in `tests/test_goal_network_phase1.py`.
+
+| # | What would have gone wrong | Fix |
+|---|---|---|
+| F1 | A prep left undone the night before was placed after its event the next morning — `before` was set only when the event moved | `(due, before)` re-derived from the event start on every tick; a prep whose event has started closes moot |
+| F2 | Slip questions on every turn, uncapped, and asked again after the user gave a time | Asked on the brief and close only, at most 2, once a day per task, only while actionable today; a task that did not fit (unplaced/dropped) counts as slipped |
+| F3 | The shield is `abs(now − session) ≤ window`, so a nudge due after a session (07:50 after a 07:30 brief — Mike's 11-18 example) was carried into the past | Carried only while the session is ahead (the scheduler's own scan, called twice; no scheduler change). A carry no session surfaced is sent as itself after 45 min. Carried items are stored at carry time, since their block may have left the plan |
+| F4 | On a busy day a same-day finding was held behind two higher-ranked items until it expired | A finding dated today/tomorrow always takes the last Important slot; if the plan block comes back empty, the horizon block delivers uncapped |
+| F5 | The "redo it?" question was stamped asked the first time it rendered, as a skippable candidate | It is an Ask, and counts as asked only once a brief or close carried it |
+| F6 | A prerequisite that went moot by date closed its plan with nobody told | Raised the same way, worded "ran out of time" |
+| F7 | Rescheduling a dismissed step left its later steps closed; reopening a later step alone left it hidden forever | Reschedule restores the cascade; reopening a step stuck behind a closed required prerequisite is refused, naming the step to reopen |
+| F8 | The uid GET read one calendar, assumed href = uid, returned a recurring series' first start, and repeated every tick on failure | A 60-day range query over every calendar; "gone" only on a good read; one-hour back-off after a failed read |
+| F9 | `open_plan` accepted undated steps, which unblock and never appear (R4) | Every step needs a `due` now, not only in phase 2 |
+
+**Found while building, not by the review:** a plan's end state carries no `part_of` but is hidden
+while blocked, so the user-facing duplicate guard also skips blocked rows (R7b). `blocked` is derived
+once per load in `_load_doc` rather than passed to each `_view` call site — every reader goes through
+it, so none can be forgotten (R7a's intent).
+
+**Not verified, for the live check:** `shield_jobs` ships as `[morning_brief, evening_close,
+location_anticipation]` (the template's names). A conversational fixed job on `mike`'s VM under
+another name would no longer shield at all.
