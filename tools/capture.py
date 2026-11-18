@@ -74,6 +74,22 @@ KIND_TOOLS = {
     "preference": "write_persona",
     "profile": "write_profile",
 }
+# Where else each kind is legitimately recorded. The backfill (2026-11-18) found most "misses"
+# were saved, just not by the kind's own tool: Logistics files tasks as obligations, calendar
+# events, shopping-archive items, horizon items and scheduled reminders; the Diarist files
+# stated preferences as wisdom; Logistics keeps some as its own agent config. A write to any
+# of these whose text carries the candidate's words counts as kept — the note must never ask
+# the agent to save, a second time, what another agent already filed.
+KIND_HOMES = {
+    "day_shape": ("write_calendar_event", "update_calendar_event", "write_wisdom"),
+    "goal": ("write_goals", "write_wisdom"),
+    "task": ("open_obligation", "write_calendar_event", "write_archive", "record_horizon_item",
+             "write_schedule", "request_build", "update_task"),
+    "preference": ("write_wisdom", "write_agent_config", "write_profile"),
+    "profile": ("write_wisdom", "write_persona"),
+}
+_RECORDING_TOOLS = frozenset(KIND_TOOLS.values()) | {t for v in KIND_HOMES.values() for t in v}
+
 AGENT_KINDS = {
     "goals_interviewer": ("day_shape", "goal"),
     "synthesizer": ("day_shape", "goal", "task", "preference", "profile"),
@@ -531,7 +547,7 @@ def start(persona: str, user_input: str, history: list[dict] | None, agent: str,
 def writes_from_trace(trace) -> list[tuple[str, dict]]:
     """Every write-tool call in the turn's trace, with its arguments, subagents included."""
     out: list[tuple[str, dict]] = []
-    wanted = set(KIND_TOOLS.values())
+    wanted = _RECORDING_TOOLS
 
     def walk(rec) -> None:
         for turn in getattr(rec, "turns", []):
@@ -550,7 +566,7 @@ def writes_from_trace(trace) -> list[tuple[str, dict]]:
 def writes_from_trace_dict(record: dict) -> list[tuple[str, dict]]:
     """The same, from a serialised trace line — the backfill's input."""
     out: list[tuple[str, dict]] = []
-    wanted = set(KIND_TOOLS.values())
+    wanted = _RECORDING_TOOLS
 
     def walk(rec: dict) -> None:
         for turn in rec.get("turns") or []:
@@ -598,8 +614,13 @@ he she his her its get got go going want need like""".split())
 _WORD_RE = re.compile(r"[a-z0-9']+")
 
 
+def _stem(w: str) -> str:
+    return w[:-1] if len(w) > 3 and w.endswith("s") and not w.endswith("ss") else w
+
+
 def _words(text: str) -> set[str]:
-    return {w for w in _WORD_RE.findall((text or "").lower()) if w not in _STOP and len(w) > 1}
+    return {_stem(w) for w in _WORD_RE.findall((text or "").lower().replace("_", " "))
+            if w not in _STOP and len(w) > 1}
 
 
 def text_overlap(candidate: str, written: str) -> float:
@@ -620,8 +641,39 @@ def _shape_write(args: dict):
     return sec, _validate_shape(sec, val)
 
 
+def _leaf_text(value) -> str:
+    """Every string in a tool call's arguments, for matching a write by its words."""
+    if isinstance(value, dict):
+        return " ".join(_leaf_text(v) for v in value.values())
+    if isinstance(value, list):
+        return " ".join(_leaf_text(v) for v in value)
+    if isinstance(value, str):
+        try:
+            return _leaf_text(json.loads(value)) if value[:1] in "{[" else value
+        except ValueError:
+            return value
+    return ""
+
+
+def kept_elsewhere(c: dict, writes: list[tuple[str, dict]], overlap: float | None = None) -> bool:
+    """Was it recorded by another of the kind's homes (`KIND_HOMES`)?"""
+    need = float(overlap if overlap is not None else config()["match_overlap"])
+    homes = KIND_HOMES.get(c["kind"], ())
+    phrasings = [t for t in (c.get("say"), c.get("proposal")) if isinstance(t, str) and t]
+    return any(name in homes and max(text_overlap(t, _leaf_text(args)) for t in phrasings) >= need
+               for name, args in writes if phrasings)
+
+
 def match(c: dict, writes: list[tuple[str, dict]], overlap: float | None = None) -> str | None:
-    """"same", "different" (day shape only), or None. Two rules by kind (plan review 6)."""
+    """"same", "different" (day shape only), or None — the kind's own tool by the two rules of
+    plan review 6, then any other home it can be kept in (`kept_elsewhere`)."""
+    m = _match_own(c, writes, overlap)
+    if m is None and kept_elsewhere(c, writes, overlap):
+        return "same"
+    return m
+
+
+def _match_own(c: dict, writes: list[tuple[str, dict]], overlap: float | None = None) -> str | None:
     tool = KIND_TOOLS[c["kind"]]
     if c["kind"] == "day_shape":
         from tools import day_shape as ds
@@ -1106,6 +1158,11 @@ def user_turns(persona: str, days: int):
             if not text:
                 continue
             agents = {a.get("agent") for a in rec.get("pipeline") or []}
+            # A user turn passes through the Coordinator or the interviewer. The Diarist's own
+            # runs and the morning intake jobs own traces too, non-proactive, with a directive
+            # where the user's words would be ("Log user's preference…") — not the user.
+            if not agents & {"coordinator", "goals_interviewer"}:
+                continue
             agent = "goals_interviewer" if "goals_interviewer" in agents else "synthesizer"
             yield rec, list(hist), agent
             hist += [{"role": "user", "content": text},
@@ -1128,14 +1185,15 @@ def backfill(persona: str, days: int = 60) -> str:
             n_failed += not res["ok"]
             items = []
             for c in res["candidates"]:
-                m = match(c, writes) if c["disposition"] != "declined" else None
+                own = _match_own(c, writes) if c["disposition"] != "declined" else None
                 state = ("declined" if c["disposition"] == "declined" else
-                         "saved" if m == "same" else "different" if m == "different" else
+                         "saved" if own == "same" else "different" if own == "different" else
+                         "saved_elsewhere" if kept_elsewhere(c, writes) else
                          "held_now" if already_held(persona, c) else "unsaved")
                 items.append({**c, "matcher": state, "guess": "real"})
             n_cands += len(items)
             for c in items:
-                if c["matcher"] in ("saved", "different", "unsaved"):
+                if c["matcher"] in ("saved", "saved_elsewhere", "different", "unsaved"):
                     t = tally.setdefault(f"{agent}/{c['kind']}", {"n": 0, "unsaved": 0})
                     t["n"] += 1
                     t["unsaved"] += c["matcher"] == "unsaved"

@@ -392,12 +392,16 @@ def test_capture_traces_are_not_sessions():
     tdir.mkdir(parents=True, exist_ok=True)
     day = "2026-11-17"
     rows = [{"trace_id": "a", "user_input": "hi", "is_proactive": False, "source": "ui",
-             "pipeline": []},
+             "pipeline": [{"agent": "coordinator"}, {"agent": "synthesizer"}]},
+            {"trace_id": "d", "user_input": "Log user's preference for tea", "is_proactive": False,
+             "source": "ui", "pipeline": [{"agent": "diarist"}]},
             {"trace_id": "b", "user_input": "x", "is_proactive": True, "source": "capture",
              "pipeline": []}]
     (tdir / f"{day}.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n")
     out = analytics.rollup_day(day, p)
-    assert out["user_sessions"] == 1 and out.get("proactive_sessions", 0) == 0
+    # The capture trace is counted as neither kind. (The Diarist's own run IS counted as a user
+    # session — A9's existing definition, flagged to Mike 2026-11-18, not changed here.)
+    assert out["user_sessions"] == 2 and out.get("proactive_sessions", 0) == 0
     saved = capture._now
     capture._now = lambda: datetime(2026, 11, 18, 9, 0)
     try:
@@ -529,7 +533,7 @@ def test_backfill_writes_a_baseline_and_report_checks_it():
     tdir = _tmp / "data" / "personas" / p / "traces"
     tdir.mkdir(parents=True, exist_ok=True)
     recs = [{"trace_id": f"t{i}", "user_input": f"I need to do thing {i}", "is_proactive": False,
-             "source": "ui", "pipeline": [{"agent": "synthesizer", "turns": [{"tool_calls": (
+             "source": "ui", "pipeline": [{"agent": "coordinator"}, {"agent": "synthesizer", "turns": [{"tool_calls": (
                  [{"name": "open_task", "args": {"what": f"do thing {i}"}, "ok": True}]
                  if i % 2 else [])}]}]} for i in range(4)]
     (tdir / "2026-11-17.jsonl").write_text("\n".join(json.dumps(r) for r in recs) + "\n")
@@ -548,6 +552,19 @@ def test_backfill_writes_a_baseline_and_report_checks_it():
                          "held_out_unsaved" if i < 2 else "held_out_saved", True, 1)
     rep = capture.report(p)
     assert "vs baseline 50% (bar 12%): pass, n=25" in rep
+
+
+def test_a_fact_kept_by_another_agent_is_not_a_miss():
+    """From mike's backfill: Logistics filed these, just not with the kind's own tool."""
+    aisha = _c("task", "task", "Invite Aisha for Thanksgiving dinner",
+               say="invite Aisha for Thanksgiving dinner")
+    assert capture.match(aisha, [("open_obligation", {
+        "what": "Plan Thanksgiving invitation for Aisha", "note": "Plan Thanksgiving invitation"})]) == "same"
+    gym = _c("preference", "preference", "Gym workouts should be in the morning or midday, not evenings",
+             say="gym in the evenings doesn't work, so mornings or midday")
+    assert capture.match(gym, [("write_agent_config", {"key": "gym_schedule_preference",
+        "value": "{\"time_of_day\": \"morning_or_midday\", \"evening_prohibited\": true}"})]) == "same"
+    assert capture.match(aisha, [("write_log", {"content": {"notes": "invite Aisha Thanksgiving"}})]) is None
 
 
 _SAVED_EXTRACT = capture.extract     # the real one, captured before setup_module patches it
