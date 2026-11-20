@@ -37,7 +37,8 @@ AGENT_CALLS: list[dict] = []
 AGENT_SIDE = {"fn": None}
 
 
-def _fake_extract(persona, user_input, history, kinds, trace=None):
+def _fake_extract(persona, user_input, history, kinds, trace=None, today=None):
+    EXTRACT["today"] = today
     cands = EXTRACT["fn"](user_input) if EXTRACT["fn"] else []
     return {"candidates": cands, "rejected": 0, "ok": True, "ms": 5, "tin": 100, "tout": 20}
 
@@ -806,6 +807,33 @@ def test_the_backlog_sync_surfaces_a_new_category():
     import sync_dev_backlog as sync
     assert "CAPTURE_NEW_CATEGORY" in sync.USER_TYPES and "CAPTURE_NEW_CATEGORY" in sync.LABELS
     assert "CAPTURE_NEW_CATEGORY" not in sync.MACHINE_TYPES
+
+
+def test_backfill_reads_each_turn_on_the_day_it_was_said():
+    """2026-11-20: the re-run resolved "tomorrow" in October messages against the run's own
+    date, so every relative date was wrong and every event read as unsaved."""
+    p = "cap_when"
+    (_tmp / "config" / "personas" / p).mkdir(parents=True, exist_ok=True)
+    tdir = _tmp / "data" / "personas" / p / "traces"
+    tdir.mkdir(parents=True, exist_ok=True)
+    rec = {"trace_id": "w1", "ts": "2026-10-15T21:09:00", "user_input": "call Chloe tomorrow",
+           "is_proactive": False, "source": "ui", "pipeline": [{"agent": "coordinator"}]}
+    (tdir / "2026-10-15.jsonl").write_text(json.dumps(rec) + "\n")
+    saved = capture._now
+    capture._now = lambda: datetime(2026, 11, 20, 9, 0)
+    try:
+        capture.backfill(p, days=60)
+    finally:
+        capture._now = saved
+    assert EXTRACT["today"] == datetime(2026, 10, 15, 21, 9)
+    text = capture.build_input(p, "x", None, ("task",), datetime(2026, 10, 15, 21, 9))
+    assert text.startswith("TODAY: 2026-10-15 (Thursday)")
+
+
+def test_dates_do_not_dilute_a_task_match():
+    c = _c("task", "task", "Get back to Chloe on 2026-10-16 about babysitting days")
+    assert capture.match(c, [("open_task", {"what": "Get back to Chloe about babysitting days",
+                                            "due": "2026-10-16"})]) == "same"
 
 
 def test_catalogue_names_every_kind_and_other():

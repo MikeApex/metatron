@@ -411,14 +411,18 @@ def catalogue(kinds: tuple[str, ...]) -> str:
 
 
 def build_input(persona: str, user_input: str, history: list[dict] | None,
-                kinds: tuple[str, ...]) -> str:
+                kinds: tuple[str, ...], today: datetime | None = None) -> str:
+    """`today` is when the user said it — the backfill re-reads old turns, and "tomorrow" in
+    an October message is not tomorrow from now (2026-11-20 re-run: every relative date had
+    resolved against the day of the run)."""
+    today = today or _now()
     n = int(config()["history_messages"])
     convo = []
     for m in (history or [])[-n:]:
         if isinstance(m, dict) and isinstance(m.get("content"), str):
             convo.append(f"{m.get('role', '?')}: {m['content'][:1200]}")
     return (
-        f"TODAY: {_now().date().isoformat()} ({_now():%A})\n\n"
+        f"TODAY: {today.date().isoformat()} ({today:%A})\n\n"
         f"WHAT CAN BE RECORDED:\n{catalogue(kinds)}\n\n"
         f"ALREADY RECORDED:\n{saved_record_text(persona, kinds)}\n\n"
         f"RECENT CONVERSATION (oldest first):\n" + ("\n".join(convo) or "(none)") + "\n\n"
@@ -573,7 +577,7 @@ def _within_spend() -> bool:
 
 
 def extract(persona: str, user_input: str, history: list[dict] | None,
-            kinds: tuple[str, ...], trace=None) -> dict:
+            kinds: tuple[str, ...], trace=None, today: datetime | None = None) -> dict:
     """One extractor call. With `trace`, it nests in the user's turn; without, it owns a
     `source="capture"` trace and checks the spend guard itself (plan review 3)."""
     from core import trace as _tr
@@ -581,7 +585,7 @@ def extract(persona: str, user_input: str, history: list[dict] | None,
     from core.persona import persona_scope
     t0 = time.monotonic()
     result = {"candidates": [], "rejected": 0, "ok": False, "ms": 0, "tin": 0, "tout": 0}
-    text = build_input(persona, user_input, history, kinds)
+    text = build_input(persona, user_input, history, kinds, today)
     owned = None
     with persona_scope(persona):
         try:
@@ -735,7 +739,10 @@ def _words(text: str) -> set[str]:
 
 
 def text_overlap(candidate: str, written: str) -> float:
-    cw = _words(candidate)
+    """Share of the candidate's content words the write carries. Bare numbers are left out:
+    a task's date lives in its own field, so "2026-10-16" in the candidate would only dilute
+    the match — dates are checked where they decide it, for events (`_text_matches`)."""
+    cw = {w for w in _words(candidate) if not w.isdigit()}
     return len(cw & _words(written)) / len(cw) if cw else 0.0
 
 
@@ -1474,7 +1481,8 @@ def backfill(persona: str, days: int = 60) -> str:
     with open(out_path, "w") as fh:
         for rec, hist, agent in user_turns(persona, days):
             kinds = AGENT_KINDS[agent]
-            res = extract(persona, rec["user_input"], hist, kinds, trace=None)
+            res = extract(persona, rec["user_input"], hist, kinds, trace=None,
+                          today=_turn_time(rec))
             writes = writes_from_trace_dict(rec)
             n_turns += 1
             n_failed += not res["ok"]
@@ -1498,6 +1506,13 @@ def backfill(persona: str, days: int = 60) -> str:
         head += (f"\n  WARNING: {n_failed} of {n_turns} turns were not read — the baseline "
                  f"covers only the rest. Check the log for '[capture]' lines.")
     return _write_baseline(persona, days, n_turns, tally, head)
+
+
+def _turn_time(rec: dict) -> datetime | None:
+    try:
+        return datetime.fromisoformat(str(rec.get("ts") or ""))
+    except ValueError:
+        return None
 
 
 def _classify(persona: str, c: dict, writes: list[tuple[str, dict]]) -> str:
