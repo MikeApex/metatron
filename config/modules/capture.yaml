@@ -35,6 +35,18 @@ history_messages: 6    # the Coordinator's window — enough to read "dinner's a
 saved_record_chars: 2400
 match_overlap: 0.5     # free-text kinds: share of the candidate's content words a write must carry
 
+# The "other" route (plan § 10, Mike 2026-11-20): a fact worth keeping that fits no kind is
+# never shown, but kept in capture/uncategorised.jsonl (newest `other_cap`) and raised ONCE to
+# the backlog Inbox when one category reaches `other_raise_count` in `other_window_days`. The
+# volume alert catches a category the model names inconsistently: `other_volume_raise` of any
+# category in the window, at most once per window. Checked daily; no model call.
+other_window_days: 30
+other_raise_count: 5
+other_volume_raise: 15
+other_cap: 200
+other_examples: 0      # example summaries in each alert; 0 keeps the user's words on the VM
+                       # (the alert reaches DEV_BACKLOG.md, a tracked file — Mike's call to raise)
+
 # Fixed minimums (Mike, 2026-11-18). Precision, recall and matcher accuracy gate `enabled`.
 minimums:
   precision: 0.90

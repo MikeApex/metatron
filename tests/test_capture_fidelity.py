@@ -426,7 +426,7 @@ def test_isolation():
 def test_notes_carry_no_identifiers():
     items = [{**c, "_mismatch": False} for c in TRIAL_EIGHT]
     for text in (capture.render_note(items), capture.coverage_lines(items)):
-        for ident in capture._SHAPE_TARGETS + tuple(capture.KIND_TOOLS.values()):
+        for ident in capture._SHAPE_TARGETS + tuple(capture._RECORDING_TOOLS):
             if "_" in ident:
                 assert ident not in text, ident
 
@@ -623,6 +623,196 @@ def test_default_modes_and_master_switch():
     assert capture._DEFAULTS["modes"] == {"synthesizer": "shadow", "goals_interviewer": "on"}
     assert capture.mode("synthesizer", {**CFG, "enabled": False}) == "off"
     assert capture.mode("goals_interviewer", {**CFG, "modes": {"goals_interviewer": "bogus"}}) == "off"
+
+
+# --- plan § 10 (2026-11-20): five new kinds, and the "other" route ---------------------------------------
+
+def test_new_kinds_are_matched_on_their_own_tool_and_homes():
+    physio = _c("event", "event", "Physio appointment, Saturday 2026-11-07 at 09:30",
+                say="physio on Saturday 7 November at 9:30")
+    assert capture.match(physio, [("write_calendar_event", {
+        "title": "Physio", "start": "2026-11-07T09:30"})]) == "same"        # short title, ISO time
+    assert capture.match(physio, [("write_calendar_event", {                  # the wrong day
+        "title": "Physio appointment", "start": "2026-11-14T10:30"})]) is None
+    assert capture.match(physio, [("open_task", {"what": "Physio appointment Saturday"})]) is None
+    assert capture.match(physio, [("open_task", {"what": "Physio 2026-11-07 09:30"})]) == "same"
+    assert capture.match(physio, [("write_calendar_event", {
+        "title": "Dentist", "start": "2026-11-07T09:30"})]) is None              # right day, wrong thing
+    gp = _c("place", "place", "Out-of-hours urgent GP for the kids is Guy's Hospital",
+            say="for an urgent GP for the kids out of hours, use Guy's Hospital")
+    assert capture.match(gp, [("write_wisdom", {"content": "Urgent GP for kids: Guy's Hospital out of hours"})]) == "same"
+    sitter = _c("person", "person", "Karmit babysits on Fridays, time set each week",
+                say="Karmit babysits on Fridays, with the time set each week")
+    assert capture.match(sitter, [("write_contact", {"name": "Karmit", "notes": "babysits Fridays, time set weekly"})]) == "same"
+    vaccine = _c("health", "health", "Ben's next vaccine is due on or after 17 May",
+                 say="Ben's next vaccine can be given on or after 17 May")
+    assert capture.match(vaccine, [("write_log", {"content": {"health": {
+        "notes": "Ben next vaccine due 17 May"}}})]) == "same"
+    assert capture.match(vaccine, [("write_log", {"content": {                # a day's narrative
+        "summary": "Ben had his vaccine; next vaccine due 17 May"}})]) is None
+    fix = {**_c("correction", "correction", "Podiatry is with Jane Aspery (not Julie Ahoe)",
+                say="the podiatry appointment is with Jane Aspery, not Julie Ahoe"),
+           "right": "Podiatry appointment is with Jane Aspery", "wrong": "Julie Ahoe"}
+    assert capture.match(fix, [("update_calendar_event", {"title": "Podiatry — Jane Aspery"})]) == "same"
+    assert capture.match(fix, [("update_calendar_event", {                    # repeats the mistake
+        "title": "Podiatry appointment — Julie Ahoe"})]) is None
+    assert capture.match(fix, []) is None
+    parsed, _ = capture.parse(json.dumps([{"kind": "correction", "target": "correction",
+        "proposal": {"right": "podiatry is with Jane Aspery", "wrong": "Julie Ahoe"},
+        "disposition": "save", "say": "podiatry is with Jane Aspery, not Julie Ahoe", "quote": "q"}]),
+        capture.AGENT_KINDS["synthesizer"])
+    assert parsed[0]["right"] == "podiatry is with Jane Aspery" and parsed[0]["wrong"] == "Julie Ahoe"
+    assert capture.match(fix, [("open_task", {"what": "Podiatry Jane Aspery"})]) is None   # not a home
+
+
+def test_other_is_validated_counted_and_never_shown():
+    kinds = capture.AGENT_KINDS["synthesizer"]
+    raw = json.dumps([
+        {"kind": "other", "target": "other", "proposal": "Manny's school breaks up on 18 December",
+         "disposition": "save", "say": "school breaks up on 18 December", "quote": "q",
+         "category": "School Dates"},
+        {"kind": "other", "target": "other", "proposal": "x", "disposition": "save",
+         "say": "no category given", "quote": "q"},
+    ])
+    cands, rejected = capture.parse(raw, kinds)
+    assert rejected == 1 and cands[0]["kind"] == "other" and cands[0]["category"] == "school date"
+    # The interviewer keeps day shape and goals: an "other" there is not a missing kind.
+    assert capture.parse(raw, capture.AGENT_KINDS["goals_interviewer"]) == ([], 2)
+    assert "kind other" not in capture.catalogue(capture.AGENT_KINDS["goals_interviewer"])
+    _reset()
+    turn = capture.note_for_synthesizer(P, _done_job("r-other", cands), None)
+    assert turn.shown == [] and turn.note == ""
+    rows = [r for r in _rows() if r.get("row") == "candidate"]
+    assert [(r["kind"], r["outcome"]) for r in rows] == [("other", "uncategorised")]
+    assert "category" not in rows[0] and set(rows[0]) <= capture._ROW_KEYS   # content-free
+    kept = capture._read_uncategorised(P, "2000-01-01")
+    assert [(k["category"], k["say"]) for k in kept] == [("school date", "school breaks up on 18 December")]
+    assert capture._read_json(capture._pending_path(P), []) == []           # never carried
+    assert capture._classify(P, cands[0], []) == "other"                    # never in a baseline
+
+
+def test_uncategorised_file_is_capped():
+    _reset()
+    saved = dict(CFG)
+    CFG["other_cap"] = 3
+    try:
+        for i in range(5):
+            capture.record_uncategorised(P, "synthesizer", {"category": "car", "say": f"fact {i}"})
+    finally:
+        CFG.clear()
+        CFG.update(saved)
+    assert [k["say"] for k in capture._read_uncategorised(P, "2000-01-01")] == ["fact 2", "fact 3", "fact 4"]
+
+
+def test_a_recurring_category_is_raised_once_and_volume_once_per_window():
+    from datetime import date as _date
+    from tools import logger as logger_mod
+    filed: list[tuple[str, str]] = []
+    saved_fn, saved_now = logger_mod.write_quality_event, capture._now
+    logger_mod.write_quality_event = lambda t, source_agent="", detail="", session_id="": (
+        filed.append((t, detail)) or "ok")
+    capture._now = lambda: datetime(2026, 11, 20, 6, 0)
+    _reset()
+    try:
+        for i, cat in enumerate(["School dates", "school date", "school dates", "School Date",
+                                 "school date"]):
+            capture.record_uncategorised(P, "synthesizer",
+                                         {"category": capture._category(cat), "say": f"s{i}"})
+        for i in range(4):
+            capture.record_uncategorised(P, "synthesizer", {"category": "car", "say": f"c{i}"})
+        today = _date(2026, 11, 20)
+        first = capture.raise_new_categories(P, today)
+        assert len(first) == 1 and "\"school date\": 5 in 30 days" in first[0]
+        assert filed[0][0] == "CAPTURE_NEW_CATEGORY"
+        assert capture.raise_new_categories(P, today) == []                 # once, never again
+        capture.record_uncategorised(P, "synthesizer", {"category": "car", "say": "c4"})
+        assert [d for d in capture.raise_new_categories(P, today) if "car" in d]  # crossed now
+        for i in range(6):
+            capture.record_uncategorised(P, "synthesizer", {"category": f"misc {i}", "say": "m"})
+        vol = capture.raise_new_categories(P, today)
+        assert len(vol) == 1 and vol[0].startswith("16 facts with no capture kind")
+        assert capture.raise_new_categories(P, _date(2026, 12, 1)) == []    # inside the window
+    finally:
+        logger_mod.write_quality_event, capture._now = saved_fn, saved_now
+
+
+def test_an_alert_that_fails_to_file_is_not_marked_and_retries():
+    from datetime import date as _date
+    from tools import logger as logger_mod
+    saved_fn = logger_mod.write_quality_event
+    _reset()
+    for i in range(5):
+        capture.record_uncategorised(P, "synthesizer", {"category": "car", "say": f"c{i}"})
+
+    def boom(*a, **k):
+        raise OSError("disk full")
+    try:
+        logger_mod.write_quality_event = boom
+        assert capture.raise_new_categories(P, _date(2026, 11, 20)) == []
+        assert "car" not in (capture._read_json(capture._dir(P) / "state.json", {})
+                             .get("raised_categories") or [])
+        logger_mod.write_quality_event = lambda *a, **k: "ok"
+        assert len(capture.raise_new_categories(P, _date(2026, 11, 21))) == 1     # retried
+    finally:
+        logger_mod.write_quality_event = saved_fn
+
+
+def test_alerts_carry_no_user_words_by_default():
+    from datetime import date as _date
+    from tools import logger as logger_mod
+    saved_fn = logger_mod.write_quality_event
+    _reset()
+    for i in range(5):
+        capture.record_uncategorised(P, "synthesizer", {"category": "car", "say": f"secret {i}"})
+    try:
+        logger_mod.write_quality_event = lambda *a, **k: "ok"
+        out = capture.raise_new_categories(P, _date(2026, 11, 20))
+    finally:
+        logger_mod.write_quality_event = saved_fn
+    assert out and "secret" not in out[0] and "uncategorised.jsonl" in out[0]
+
+
+def test_score_leaves_other_out_of_both_pools():
+    turns = [{"ok": True, "candidates": [{"kind": "other", "disposition": "save"}]},
+             {"ok": True, "candidates": [{"kind": "task", "disposition": "save"}]},
+             {"ok": True, "candidates": []}]
+    cands, empty = capture.sample_pools(turns)
+    assert [c["kind"] for _, c in cands] == ["task"] and len(empty) == 1
+
+
+def test_two_category_alerts_stay_two_inbox_entries():
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import sync_dev_backlog as sync
+    ev = lambda cat, ts: {"event_type": "CAPTURE_NEW_CATEGORY", "timestamp": ts, "detail": (  # noqa: E731
+        f"Facts with no capture kind, \"{cat}\": 5 in 30 days (mike) — add a kind, or leave "
+        f"uncounted. Read capture/uncategorised.jsonl on the VM")}
+    block, appended, _ = sync.merge("", ev("school date", "t1"), machine=False)
+    assert appended
+    block, appended, _ = sync.merge(block, ev("car", "t2"), machine=False)
+    assert appended and block.count("- ") == 2
+    block, appended, n = sync.merge(block, ev("car", "t3"), machine=False)
+    assert not appended and n == 2
+    vol = {"event_type": "CAPTURE_NEW_CATEGORY", "timestamp": "t4", "detail":
+           "16 facts with no capture kind in 30 days (mike) — read capture/uncategorised.jsonl "
+           "on the VM. Categories: car ×6, school date ×5"}
+    block, appended, _ = sync.merge(block, vol, machine=False)
+    assert appended
+
+
+def test_the_backlog_sync_surfaces_a_new_category():
+    """An unregistered event type is silently discarded by the sync — the standing lesson of
+    scripts/sync_dev_backlog.py. It must reach the Inbox, not the ×1 machine log."""
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import sync_dev_backlog as sync
+    assert "CAPTURE_NEW_CATEGORY" in sync.USER_TYPES and "CAPTURE_NEW_CATEGORY" in sync.LABELS
+    assert "CAPTURE_NEW_CATEGORY" not in sync.MACHINE_TYPES
+
+
+def test_catalogue_names_every_kind_and_other():
+    text = capture.catalogue(capture.AGENT_KINDS["synthesizer"])
+    for kind in capture.AGENT_KINDS["synthesizer"]:
+        assert f"kind {kind}" in text
+    assert "kind other" in text and "category" in text
 
 
 _SAVED_EXTRACT = capture.extract     # the real one, captured before setup_module patches it

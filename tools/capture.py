@@ -67,13 +67,26 @@ _CONFIG = ROOT / "config" / "modules" / "capture.yaml"
 AGENT = "capture_extractor"
 
 # Which tool records each kind. The writer is whichever agent holds it on that path.
-KIND_TOOLS = {
+# event / place / person / health / correction added 2026-11-20 (Mike, after labelling: most
+# named misses had no kind — plan § 10). A correction has no single tool: it is kept by
+# whichever update reaches the record it corrects, so it is matched on its homes alone.
+KIND_TOOLS: dict[str, str | None] = {
     "day_shape": "set_day_shape",
     "goal": "update_goal",
     "task": "open_task",
     "preference": "write_persona",
     "profile": "write_profile",
+    "event": "write_calendar_event",
+    "place": "write_wisdom",
+    "person": "write_contact",
+    "health": "write_log",
+    "correction": None,
 }
+# A fact worth keeping that fits no kind. Never shown to an agent — there is no home to check
+# it against — but counted, kept in `capture/uncategorised.jsonl`, and raised once to the
+# backlog when one category recurs (`raise_new_categories`). This is how a missing kind is
+# noticed instead of rediscovered by hand (Mike, 2026-11-20).
+OTHER = "other"
 # Where else each kind is legitimately recorded. The backfill (2026-11-18) found most "misses"
 # were saved, just not by the kind's own tool: Logistics files tasks as obligations, calendar
 # events, shopping-archive items, horizon items and scheduled reminders; the Diarist files
@@ -87,12 +100,21 @@ KIND_HOMES = {
              "write_schedule", "request_build", "update_task"),
     "preference": ("write_wisdom", "write_agent_config", "write_profile"),
     "profile": ("write_wisdom", "write_persona"),
+    "event": ("update_calendar_event", "open_task", "record_horizon_item", "write_schedule"),
+    "place": ("write_archive", "write_contact", "write_agent_config", "write_profile"),
+    "person": ("write_wisdom", "write_profile", "write_agent_config"),
+    "health": ("write_profile", "write_agent_config", "write_archive", "write_wisdom"),
+    "correction": ("update_task", "update_calendar_event", "write_contact", "merge_contacts",
+                   "write_profile", "set_day_shape", "write_persona", "write_log",
+                   "update_goal", "write_agent_config"),
 }
-_RECORDING_TOOLS = frozenset(KIND_TOOLS.values()) | {t for v in KIND_HOMES.values() for t in v}
+_RECORDING_TOOLS = (frozenset(t for t in KIND_TOOLS.values() if t)
+                    | {t for v in KIND_HOMES.values() for t in v})
 
 AGENT_KINDS = {
     "goals_interviewer": ("day_shape", "goal"),
-    "synthesizer": ("day_shape", "goal", "task", "preference", "profile"),
+    "synthesizer": ("day_shape", "goal", "task", "preference", "profile",
+                    "event", "place", "person", "health", "correction"),
 }
 DISPOSITIONS = ("save", "ask", "declined")
 
@@ -144,6 +166,13 @@ _DEFAULTS = {
     # The plan's minimums (§ 5.3), so a capture.yaml missing them never makes a gate lenient.
     "minimums": {"precision": 0.90, "recall": 0.80, "matcher": 0.90,
                  "miss_rate_reduction": 0.75, "accept_rate": 0.75},
+    # The "other" route (plan § 10): a category is raised once when it recurs this often in
+    # the window; a volume alert catches categories the model names inconsistently.
+    "other_window_days": 30,
+    "other_raise_count": 5,
+    "other_volume_raise": 15,
+    "other_cap": 200,
+    "other_examples": 0,
 }
 
 
@@ -346,14 +375,38 @@ def catalogue(kinds: tuple[str, ...]) -> str:
         for sec in _SHAPE_TARGETS:
             desc = SECTIONS.get(sec) or FIELDS.get(sec, "")
             lines.append(f"  {sec}: {desc}")
-    plain = {"goal": "something the user wants to achieve, stated as a goal",
-             "task": "something the user needs or means to do (not something already done)",
-             "preference": "how the user wants Metatron to behave with them",
-             "profile": "a stable fact about who the user is (work, family, home, health basics)"}
+    plain = {
+        "goal": "something the user wants to achieve over months, stated as a goal — not the "
+                "reason behind a task",
+        "task": "something the user needs or means to do, with its date, deadline, cadence or "
+                "duration when they gave one (not something already done)",
+        "preference": "how the user wants Metatron to behave with them",
+        "profile": "a stable fact about who the user is (work, family, home)",
+        "event": "an appointment, meeting or dated occasion — who or what, when, where",
+        "place": "a place or piece of household know-how to remember (a restaurant they "
+                 "liked, which clinic to use out of hours)",
+        "person": "who someone in the user's life is — their role, practice or arrangement "
+                  "with the user (a babysitter's standing day, which practitioner is which)",
+        "health": "a standing health fact — a condition, a vaccine or check due, a medication "
+                  "or treatment, a health interest or its absence (not a symptom of the moment)",
+        "correction": "a fix to something Metatron already holds or said wrongly. proposal is "
+                      "{\"right\": \"<what is right>\", \"wrong\": \"<what it replaces>\"}",
+    }
     for kind in kinds:
-        if kind in plain:
+        if kind == "correction":
+            lines.append(f"kind correction — {plain[kind]}. target is \"correction\".")
+        elif kind == "event":
+            lines.append(f"kind event — {plain[kind]}. target is \"event\"; proposal is one "
+                         f"plain sentence with the date as YYYY-MM-DD and any time as HH:MM.")
+        elif kind in plain:
             lines.append(f"kind {kind} — {plain[kind]}. target is \"{kind}\"; proposal is one "
                          f"plain sentence.")
+    if not _other_allowed(kinds):
+        return "\n".join(lines)
+    lines.append(f"kind {OTHER} — a fact worth keeping that fits none of the kinds above. "
+                 f"target is \"{OTHER}\"; proposal is one plain sentence; add \"category\": one "
+                 f"to three plain words naming what sort of fact it is (\"school dates\", "
+                 f"\"car\").")
     return "\n".join(lines)
 
 
@@ -403,7 +456,8 @@ def _validate_candidate(it, kinds: tuple[str, ...]) -> dict | None:
         return None
     kind = str(it.get("kind") or "").strip()
     disp = str(it.get("disposition") or "").strip()
-    if kind not in kinds or disp not in DISPOSITIONS:
+    if (kind not in kinds and not (kind == OTHER and _other_allowed(kinds))) \
+            or disp not in DISPOSITIONS:
         return None
     say = " ".join(str(it.get("say") or "").split())[:200]
     quote = " ".join(str(it.get("quote") or "").split())[:120]
@@ -411,6 +465,20 @@ def _validate_candidate(it, kinds: tuple[str, ...]) -> dict | None:
         return None     # the note travels in the turn's input: no identifiers (plan § 4.5)
     target = str(it.get("target") or kind).strip()
     proposal = it.get("proposal")
+    if kind == OTHER:
+        category = _category(it.get("category"))
+        if not category:
+            return None     # an uncategorised fact with no category cannot be counted
+        return {"kind": OTHER, "target": OTHER, "category": category, "disposition": disp,
+                "proposal": " ".join(str(proposal or say).split())[:200], "say": say,
+                "quote": quote}
+    if kind == "correction":
+        right, wrong = _correction_parts(proposal)
+        if not right:
+            return None     # a fix that does not say what is right cannot be checked
+        return {"kind": kind, "target": kind, "disposition": disp, "say": say, "quote": quote,
+                "proposal": right if not wrong else f"{right} (not {wrong})",
+                "right": right, "wrong": wrong}
     if kind == "day_shape":
         if target not in _SHAPE_TARGETS:
             return None
@@ -423,6 +491,35 @@ def _validate_candidate(it, kinds: tuple[str, ...]) -> dict | None:
         proposal = " ".join(str(proposal or say).split())[:200]
     return {"kind": kind, "target": target, "proposal": proposal, "disposition": disp,
             "say": say, "quote": quote}
+
+
+def _correction_parts(proposal) -> tuple[str, str]:
+    """(right, wrong) from a correction's proposal — {"right": …, "wrong": …}, or a plain
+    sentence, which is taken as the right value with no wrong one named."""
+    if isinstance(proposal, str):
+        try:
+            proposal = json.loads(proposal) if proposal[:1] == "{" else proposal
+        except ValueError:
+            pass
+    if isinstance(proposal, dict):
+        clean = lambda v: " ".join(str(v or "").split())[:200]  # noqa: E731
+        return clean(proposal.get("right")), clean(proposal.get("wrong"))
+    return " ".join(str(proposal or "").split())[:200], ""
+
+
+def _other_allowed(kinds: tuple[str, ...]) -> bool:
+    """`other` belongs to the full set of kinds only. The interviewer keeps day shape and goals;
+    a task or an event said in an interview is not a missing kind, and five of them must not
+    raise "add a kind" for one that exists (review 2026-11-20, finding 7)."""
+    return set(AGENT_KINDS["synthesizer"]) <= set(kinds)
+
+
+def _category(value) -> str:
+    """One to three plain lowercase words, singular — so "School dates" and "school date"
+    count as one category. Anything else is no category."""
+    words = _WORD_RE.findall(str(value or "").lower().replace("_", " "))
+    words = [_stem(w) for w in words][:3]
+    return " ".join(words) if words else ""
 
 
 def _validate_shape(section: str, proposal):
@@ -669,13 +766,70 @@ def _leaf_text(value) -> str:
     return ""
 
 
+_ISO_DATE_RE = re.compile(r"(?<!\d)(\d{4})-(\d{2})-(\d{2})(?!\d)")
+_CLOCK_RE = re.compile(r"(?<!\d)([01]\d|2[0-3]):([0-5]\d)(?!\d)")   # also inside "…T09:30"
+
+
+def _when(text: str) -> set[str]:
+    """The ISO dates and HH:MM times in a text — what an event is pinned to."""
+    return ({"-".join(m) for m in _ISO_DATE_RE.findall(text or "")}
+            | {f"{h}:{m}" for h, m in _CLOCK_RE.findall(text or "")})
+
+
+def _home_text(kind: str, tool: str, args: dict) -> str:
+    """What a write is matched on for this kind. A health fact is kept by the log's health
+    notes only — a day's narrative that happens to mention it records nothing standing
+    (review 2026-11-20, finding 4)."""
+    if kind == "health" and tool == "write_log":
+        content = args.get("content")
+        if isinstance(content, str):
+            try:
+                content = json.loads(content)
+            except ValueError:
+                return ""
+        return _leaf_text((content or {}).get("health")) if isinstance(content, dict) else ""
+    return _write_text(tool, args) or _leaf_text(args)
+
+
+def _phrasings(c: dict) -> list[str]:
+    """A correction is matched on its proposal alone — the right value. Its `say` names the
+    wrong value too, so a write that repeats the mistake would otherwise read as the fix."""
+    keys = ("proposal",) if c["kind"] == "correction" else ("say", "proposal")
+    return [t for t in (c.get(k) for k in keys) if isinstance(t, str) and t]
+
+
+def _text_matches(c: dict, text: str, need: float) -> bool:
+    """Word overlap — and for an event pinned to a date or time, the write must carry every
+    one of them, so a write for the wrong day is never the save (review finding 3). Numbers
+    are left to the date check: ISO dates never share words with "7 November"."""
+    if c["kind"] == "correction" and c.get("right"):
+        # Kept when the write carries what distinguishes the right value and nothing that
+        # distinguishes the wrong one — shared words ("podiatry appointment") decide nothing.
+        right, wrong = _words(c["right"]), _words(c.get("wrong") or "")
+        got = _words(text)
+        only_right, only_wrong = right - wrong, wrong - right
+        if not wrong:
+            return text_overlap(c["right"], text) >= need
+        return (bool(only_right) and len(only_right & got) / len(only_right) >= need
+                and not (only_wrong & got))
+    if c["kind"] == "event":
+        want = _when(str(c.get("proposal") or ""))
+        if want:
+            if not want <= _when(text):
+                return False
+            words = lambda t: {w for w in _words(t) if not w.isdigit()}  # noqa: E731
+            return any(words(p) & words(text) for p in _phrasings(c))
+    return max(text_overlap(p, text) for p in _phrasings(c)) >= need
+
+
 def kept_elsewhere(c: dict, writes: list[tuple[str, dict]], overlap: float | None = None) -> bool:
     """Was it recorded by another of the kind's homes (`KIND_HOMES`)?"""
     need = float(overlap if overlap is not None else config()["match_overlap"])
     homes = KIND_HOMES.get(c["kind"], ())
-    phrasings = [t for t in (c.get("say"), c.get("proposal")) if isinstance(t, str) and t]
-    return any(name in homes and max(text_overlap(t, _leaf_text(args)) for t in phrasings) >= need
-               for name, args in writes if phrasings)
+    if not _phrasings(c):
+        return False
+    return any(name in homes and _text_matches(c, _home_text(c["kind"], name, args), need)
+               for name, args in writes)
 
 
 def match(c: dict, writes: list[tuple[str, dict]], overlap: float | None = None) -> str | None:
@@ -688,7 +842,9 @@ def match(c: dict, writes: list[tuple[str, dict]], overlap: float | None = None)
 
 
 def _match_own(c: dict, writes: list[tuple[str, dict]], overlap: float | None = None) -> str | None:
-    tool = KIND_TOOLS[c["kind"]]
+    tool = KIND_TOOLS.get(c["kind"])
+    if tool is None:
+        return None         # a correction, or "other": matched on homes alone, or not at all
     if c["kind"] == "day_shape":
         from tools import day_shape as ds
         found = None
@@ -714,7 +870,15 @@ def _match_own(c: dict, writes: list[tuple[str, dict]], overlap: float | None = 
         return found or _time_match(c, writes)
     need = float(overlap if overlap is not None else config()["match_overlap"])
     for name, args in writes:
-        if name == tool and text_overlap(str(c["proposal"]), _write_text(name, args)) >= need:
+        # Tools without a named text field (the calendar, contacts, wisdom) are matched on
+        # every string in their arguments; the log on its health notes (`_home_text`).
+        if name != tool:
+            continue
+        text = _home_text(c["kind"], name, args)
+        if c["kind"] == "event":
+            if _text_matches(c, text, need):
+                return "same"
+        elif text_overlap(str(c["proposal"]), text) >= need:
             return "same"
     return None
 
@@ -891,6 +1055,99 @@ def coverage_lines(items: list[dict]) -> str:
     return "- Said but not yet saved:\n" + "\n".join(f"  - {_line(c)}" for c in items)
 
 
+# --- the "other" route: a missing kind is noticed, not rediscovered -----------------------------------
+
+def _uncat_path(persona: str) -> Path:
+    return _dir(persona) / "uncategorised.jsonl"
+
+
+def record_uncategorised(persona: str, agent: str, c: dict) -> None:
+    """Keep the newest `other_cap` uncategorised facts. They carry the user's words in plain
+    form, so this file is sensitive tier like `pending.json` — the content-free count is the
+    outcome row beside it."""
+    cap = int(config()["other_cap"])
+    entry = {"ts": _now().isoformat(timespec="seconds"), "agent": agent,
+             "category": c.get("category") or "", "say": c.get("say") or ""}
+    try:
+        with _locked(persona):
+            path = _uncat_path(persona)
+            lines = path.read_text().splitlines() if path.exists() else []
+            lines = [ln for ln in lines if ln.strip()] + [json.dumps(entry, ensure_ascii=False)]
+            path.write_text("\n".join(lines[-cap:]) + "\n")
+    except OSError as exc:
+        logger.warning(f"[capture] uncategorised fact not kept: {exc}")
+
+
+def _read_uncategorised(persona: str, since: str) -> list[dict]:
+    path = _uncat_path(persona)
+    out = []
+    for ln in path.read_text().splitlines() if path.exists() else []:
+        try:
+            r = json.loads(ln)
+        except ValueError:
+            continue
+        if str(r.get("ts", "")) >= since:
+            out.append(r)
+    return out
+
+
+def raise_new_categories(persona: str, today: date | None = None) -> list[str]:
+    """Raise, once each, a category of uncategorised fact that recurs — and, once per window,
+    a volume of them the model named too inconsistently to group. Goes to the backlog Inbox
+    through the quality-event stream, which is the channel Mike sees at every session start.
+    Returns the details raised. No model call."""
+    cfg = config()
+    today = today or _now().date()
+    window = int(cfg["other_window_days"])
+    since = (today - timedelta(days=window)).isoformat()
+    rows = _read_uncategorised(persona, since)
+    groups: dict[str, list[dict]] = {}
+    for r in rows:
+        if r.get("category"):
+            groups.setdefault(r["category"], []).append(r)
+    path = _dir(persona) / "state.json"
+    state = _read_json(path, {})
+    done = set(state.get("raised_categories") or [])
+    # Examples carry the user's facts in plain words, and the alert travels to DEV_BACKLOG.md,
+    # a tracked file. 0 (the default) keeps them on the VM: the alert names the category and
+    # the count, and points at the file (review 2026-11-20, finding 6).
+    n_ex = int(cfg["other_examples"])
+    due: list[tuple[str, str]] = []           # (state key, detail) — marked only once filed
+    for cat, rs in sorted(groups.items(), key=lambda kv: -len(kv[1])):
+        if cat in done or len(rs) < int(cfg["other_raise_count"]):
+            continue
+        ex = ("; e.g. " + "; ".join(r.get("say", "") for r in rs[-n_ex:])) if n_ex > 0 else ""
+        due.append((cat, f"Facts with no capture kind, \"{cat}\": {len(rs)} in {window} days "
+                         f"({persona}) — add a kind, or leave uncounted. Read "
+                         f"capture/uncategorised.jsonl on the VM{ex}"))
+    last_vol = state.get("volume_raised_on")
+    vol_due = not last_vol or (today - date.fromisoformat(last_vol)).days >= window
+    if vol_due and len(rows) >= int(cfg["other_volume_raise"]):
+        top = ", ".join(f"{c} ×{len(rs)}" for c, rs in
+                        sorted(groups.items(), key=lambda kv: -len(kv[1]))[:5])
+        due.append(("", f"{len(rows)} facts with no capture kind in {window} days ({persona}) "
+                        f"— read capture/uncategorised.jsonl on the VM. Categories: {top}"))
+    from tools.logger import write_quality_event
+    filed: list[tuple[str, str]] = []
+    for key, detail in due:
+        try:
+            write_quality_event("CAPTURE_NEW_CATEGORY", source_agent=AGENT, detail=detail,
+                                session_id=today.isoformat())
+            filed.append((key, detail))
+        except Exception as exc:  # noqa: BLE001 — unfiled stays unmarked, so tomorrow retries
+            logger.warning(f"[capture] new-category alert not filed: {exc}")
+    if filed:
+        with _locked(persona):
+            state = _read_json(path, {})
+            marked = set(state.get("raised_categories") or [])
+            marked |= {k for k, _ in filed if k}
+            state["raised_categories"] = sorted(marked)
+            if any(not k for k, _ in filed):
+                state["volume_raised_on"] = today.isoformat()
+            _write_json(path, state)
+    return [d for _, d in filed]
+
+
 # --- triage: one list of candidates into shown / silent ---------------------------------------------
 
 def _triage(persona: str, agent: str, rid: str, cands: list[dict],
@@ -901,6 +1158,10 @@ def _triage(persona: str, agent: str, rid: str, cands: list[dict],
     for c in cands:
         if c["disposition"] == "declined":
             _outcome(persona, agent, rid, c, "declined", holdout, day)
+            continue
+        if c["kind"] == OTHER:
+            record_uncategorised(persona, agent, c)
+            _outcome(persona, agent, rid, c, "uncategorised", holdout, day)
             continue
         m = match(c, writes)
         if m == "same":
@@ -959,6 +1220,9 @@ def note_for_synthesizer(persona: str, job: Job | None, trace) -> SynthTurn | No
         for c in res.get("candidates") or []:
             if c["disposition"] == "declined":
                 _outcome(persona, agent, job.request_id, c, "declined", False, day)
+            elif c["kind"] == OTHER:
+                record_uncategorised(persona, agent, c)
+                _outcome(persona, agent, job.request_id, c, "uncategorised", False, day)
             else:
                 keep.append(c)
         if not shadow:
@@ -1140,13 +1404,20 @@ def report(persona: str, since: str | None = None) -> str:
 
 
 def weekly_rollup() -> str:
-    """Scheduler entry point (daily slot; writes on Mondays). Never raises."""
+    """Scheduler entry point (daily slot; the table is written on Mondays, the new-category
+    check runs every day so a recurring miss is raised within a day of crossing). Never
+    raises."""
     try:
         from core.persona import resolve_persona
         persona = resolve_persona(None)
         today = _now().date()
+        try:
+            raised = raise_new_categories(persona, today)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"[capture] new-category check failed: {exc}")
+            raised = []
         if today.weekday() != 0:
-            return "capture weekly: not Monday"
+            return f"capture weekly: not Monday · {len(raised)} new-category alert(s)"
         since = (today - timedelta(days=7)).isoformat()
         row = {"week_ending": today.isoformat(), **summarise(read_outcomes(persona, since))}
         with _locked(persona):
@@ -1232,6 +1503,8 @@ def backfill(persona: str, days: int = 60) -> str:
 def _classify(persona: str, c: dict, writes: list[tuple[str, dict]]) -> str:
     if c["disposition"] == "declined":
         return "declined"
+    if c["kind"] == OTHER:
+        return OTHER        # no home to check; counted, never in the baseline
     own = _match_own(c, writes)
     return ("saved" if own == "same" else "different" if own == "different" else
             "saved_elsewhere" if kept_elsewhere(c, writes) else
@@ -1283,6 +1556,19 @@ def _latest_review(persona: str) -> Path | None:
     return files[-1] if files else None
 
 
+def sample_pools(turns: list[dict]) -> tuple[list[tuple[dict, dict]], list[dict]]:
+    """(precision pool, recall pool) — the one definition `label` and `score` share.
+
+    `other` is in neither: no agent is ever shown one, so counting it as a find would let an
+    extractor that files facts as "other" raise recall toward the bar while keeping nothing
+    (review 2026-11-20, finding 5). A turn whose only finds are `other` is still not an empty
+    turn — its misses go unmeasured, which `score` reports by printing the count."""
+    cands = [(t, c) for t in turns for c in t["candidates"]
+             if c["disposition"] != "declined" and c["kind"] != OTHER]
+    empty = [t for t in turns if t["ok"] and not t["candidates"]]
+    return cands, empty
+
+
 def label(persona: str, precision_n: int = 100, recall_n: int = 50) -> str:
     """Mike's walkthrough: Enter accepts the tool's guess; one key changes it."""
     import random
@@ -1290,8 +1576,7 @@ def label(persona: str, precision_n: int = 100, recall_n: int = 50) -> str:
     if path is None:
         return "no backfill review file — run --backfill first"
     turns = [json.loads(ln) for ln in path.read_text().splitlines() if ln.strip()]
-    cands = [(t, c) for t in turns for c in t["candidates"] if c["disposition"] != "declined"]
-    empty = [t for t in turns if t["ok"] and not t["candidates"]]
+    cands, empty = sample_pools(turns)
     rng = random.Random(7)
     sample = rng.sample(cands, min(precision_n, len(cands)))
     empties = rng.sample(empty, min(recall_n, len(empty)))
@@ -1335,8 +1620,9 @@ def score(persona: str) -> str:
     # Recall estimate: real facts found in the sample, against those plus the misses Mike
     # named in the found-nothing sample, scaled to the backfill's proportions.
     turns = [json.loads(ln) for ln in path.read_text().splitlines() if ln.strip()]
-    n_empty = sum(1 for t in turns if t["ok"] and not t["candidates"])
-    n_cands = sum(len(t["candidates"]) for t in turns)
+    pool, empty = sample_pools(turns)
+    n_empty, n_cands = len(empty), len(pool)
+    n_other = sum(1 for t in turns for c in t["candidates"] if c["kind"] == OTHER)
     found_real = n_cands * (real / len(prec)) if prec else 0
     missed_total = n_empty * (missed / len(rec)) if rec else 0
     recall = found_real / (found_real + missed_total) if (found_real + missed_total) else None
@@ -1345,7 +1631,8 @@ def score(persona: str) -> str:
     return (f"precision {fmt(real / len(prec) if prec else None)} (n={len(prec)}, min "
             f"{fmt(mins.get('precision'))}) · recall {fmt(recall)} (n={len(rec)}, min "
             f"{fmt(mins.get('recall'))}) · matcher {fmt(matcher_ok / len(prec) if prec else None)}"
-            f" (min {fmt(mins.get('matcher'))})")
+            f" (min {fmt(mins.get('matcher'))})"
+            + (f" · {n_other} uncategorised, not counted" if n_other else ""))
 
 
 def run_eval(persona: str, fixture: Path, cap: int = 20) -> str:

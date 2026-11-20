@@ -567,3 +567,93 @@ Token counts are **estimates until step 4 measures them**.
   only way to measure the Synthesizer's unprompted miss rate once the note exists. The cost is that
   a fifth of a new user's turns go without prevention for two weeks. It is a config value in
   `capture.yaml`, so it can be changed without code.
+
+## 10. Amendment 2026-11-20 — the labels failed, the kinds widen, and a missing kind is raised
+
+**The measurement.** Mike labelled the 11-18 backfill sample in chat (18 precision, 50 recall;
+notes and every item's finding: [capture_labels_notes_2026-11-18.md](capture_labels_notes_2026-11-18.md)).
+`--score`: **precision 72%, recall 18%, matcher 100%** against minimums of 90 / 80 / 90.
+`enabled` stays false — the interviewer, set to `on`, writes day shape, and two of the five
+precision failures were invented day-shape values (a one-night sleep report turned into every
+day; focus-block times the user never gave).
+
+**Why recall failed — two causes, both addressed here.** (1) The extractor skipped facts its
+kinds cover: standing arrangements, task durations, "remind me on X", "from now on"
+preferences, work windows — pushed by its own "when in doubt whether it is a fact, leave it
+out". (2) Most of the misses Mike named had **no kind at all**: appointments, places,
+household know-how, who someone is, standing health facts, corrections.
+
+**Decisions (Mike, 2026-11-20):**
+
+14. **Five kinds added for ordinary turns** — the interviewer keeps day shape and goals. Each is
+    kept when its own tool or one of its homes writes it (`KIND_TOOLS` / `KIND_HOMES` in
+    `tools/capture.py`):
+
+    | Kind | Own tool | Also kept by |
+    |---|---|---|
+    | `event` | calendar write | calendar update, a task, a horizon item, a scheduled reminder |
+    | `place` | wisdom | archive list, contacts, agent config, profile |
+    | `person` | `write_contact` | wisdom, profile, agent config |
+    | `health` | the log's health notes | profile, agent config, archive (medical list), wisdom |
+    | `correction` | — none: matched on its homes alone | the update tool for the record it fixes (task, calendar, contact, profile, day shape, persona, log, goal, agent config) |
+
+    **Health's clinical-safety review is deferred to the full pre-launch review** (Mike: "it will
+    undergo full review before going public") — the before-Alpha A4 re-run in `ROADMAP.md` § 0
+    is where it is owed.
+15. **A missing kind must be noticed, not rediscovered** (Mike: "so long as misses are
+    caught"). The extractor gains `other` — a fact worth keeping that fits no kind — with a
+    one-to-three-word `category`. An `other` is never shown to an agent (there is no home to
+    check). It is counted in `outcomes.jsonl` (outcome `uncategorised`, content-free) and kept,
+    with its plain-words summary, in `capture/uncategorised.jsonl` (sensitive tier, newest 200).
+    A daily, model-free check (`raise_new_categories`, inside the existing
+    `capture_weekly_rollup` job) raises **once per category** when one reaches **5 in 30 days**,
+    and once per window when **15** of any category accumulate (the model's category names will
+    not always agree). The alert is a `CAPTURE_NEW_CATEGORY` quality event, registered as an
+    **Inbox** type in `scripts/sync_dev_backlog.py` — as a machine entry it would sit at ×1
+    among hundreds and never reach the session-start line. Thresholds are in `capture.yaml`.
+    The backstop is unchanged: every re-score's recall pass asks Mike what was missed.
+16. **The extractor's instructions are rewritten against the labelled failures** (Red, approved
+    by Mike line by line): inventing a value is the worst error, leaving out a given fact the
+    common one; one-occasion reports are logs; values only from the user's words; kind-choice
+    rules; spelled-out names win; keep dates, cadence and durations; development notes count
+    only where they state a preference.
+
+**Known limits, stated so nobody over-trusts a pass:**
+
+- **The new kinds have no "already held" check.** The extractor's ALREADY RECORDED view and
+  `already_held` cover day shape, goals, open tasks, profile and preferences only — not the
+  calendar, contacts, wisdom or the log. So a repeated appointment or person fact reads as
+  unsaved. Harmless in shadow; **it must be built before the Synthesizer's mode goes `on`.**
+- **Iva's alerts do not reach the backlog yet.** The sync fetches `mike`'s quality events only
+  (`fetch_events(args.server, args.persona)`) — true already of every event type her sessions
+  raise. Fix before she signs up, in the sync, not here.
+- **One Metatron-voiced message was in the 160 "user turns"** (recall item R8). Its trace is
+  indistinguishable from an app message (`source: ui`, ordinary pipeline) — most likely a
+  development session typing through the app. No filter was built on a guess.
+- **Category grouping is lexical** (lowercase, singular, first three words). Two names for one
+  category split the count — which is what the volume alert is for.
+
+**Next:** deploy, re-run `--backfill` (160 turns, ≈ $0.22 on the bulk tier), Mike labels the new
+precision items, `--score`. Pass → `enabled: true` with the modes as they are. Fail → the
+reasoning tier is Mike's call with the number in hand (§ 5.3).
+
+**Fable review of the diff, 2026-11-20 — nine findings, all fixed in the same commit:**
+
+1. Two category alerts merged into one Inbox entry on prose similarity, and raise-once meant the
+   lost one never returned → the sync now matches `CAPTURE_NEW_CATEGORY` entries by category.
+2. A category was marked raised before its alert was filed → filed first; marked only on
+   success, so a failed filing retries the next day.
+3. A correction read as kept when the write repeated the wrong value; an event read as kept on
+   the wrong date → a correction's proposal is `{right, wrong}` (kept only when the write carries
+   the right value's distinguishing words and none of the wrong one's); an event's proposal
+   carries `YYYY-MM-DD` / `HH:MM`, and a write must carry every one.
+4. Any daily-log write counted as keeping a health fact → only the log's `health` notes do.
+5. `other` items inflated recall → `sample_pools` leaves them out of both labelling pools;
+   `--score` prints their count.
+6. Alerts copied the user's words into `DEV_BACKLOG.md`, a tracked file → `other_examples: 0` by
+   default; the alert names the category and points at the VM file. **Raising it is Mike's call.**
+7. The interviewer could raise "add a kind" for kinds that exist → `other` is offered to and
+   accepted from the ordinary-turn extractor only.
+8. The new example inferred a role the user had not said → the user's line now says it.
+9. Three instruction conflicts (accepted offers, "closest kind" vs "never force", kinds the
+   interviewer lacks) → reworded.

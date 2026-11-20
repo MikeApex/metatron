@@ -45,7 +45,12 @@ TIMEOUT_SECONDS = 3
 
 # What Mike asked for, in his own words. These reach '## Inbox' and are the
 # only events a routine triage pass looks at.
-USER_TYPES = {"FEATURE_REQUEST", "INSTRUCTION_CHANGE_REQUEST"}
+#
+# CAPTURE_NEW_CATEGORY (2026-11-20) is not the user's words but is filed here on purpose: it
+# is raised ONCE per category by tools/capture.raise_new_categories and asks Mike for a
+# decision (add a capture kind, or leave it uncounted). As a machine entry it would sit at ×1
+# among hundreds and never reach the ⚠ line — the silent failure the route exists to prevent.
+USER_TYPES = {"FEATURE_REQUEST", "INSTRUCTION_CHANGE_REQUEST", "CAPTURE_NEW_CATEGORY"}
 
 # What the runtime noticed about itself. Real signals, but nobody asked for
 # them, and they arrive far faster than they are worked. They reach
@@ -116,6 +121,7 @@ ESCALATE_AT = 3
 LABELS = {
     "FEATURE_REQUEST": "needs building",
     "INSTRUCTION_CHANGE_REQUEST": "instruction change",
+    "CAPTURE_NEW_CATEGORY": "facts nothing can keep — new capture kind?",
     "SELF_APPLIED": "already applied by the tool",
     # Emitted by dispatch_tool when an agent reaches for a tool it was not
     # granted. The agent instruction files are a specification written ahead of
@@ -877,6 +883,15 @@ def render(event: dict, count: int = 1) -> str:
     return f"- {warn}**[{label}]** {detail}{tally}  \n  `{event.get('timestamp', '')}`"
 
 
+CAPTURE_CAT_RE = re.compile(r'no capture kind, \\?"([^"\\]+)\\?"', re.I)
+
+
+def _capture_key(text: str) -> str:
+    """A CAPTURE_NEW_CATEGORY entry's identity: its quoted category, or "volume"."""
+    m = CAPTURE_CAT_RE.search(text)
+    return m.group(1).lower() if m else "volume"
+
+
 def merge(block: str, event: dict, machine: bool) -> tuple[str, bool, int]:
     """
     Fold one event into a section body.
@@ -914,6 +929,12 @@ def merge(block: str, event: dict, machine: bool) -> tuple[str, bool, int]:
                 same_label
                 and similar(_entry_text(line), incoming) >= SIMILARITY_THRESHOLD
             )
+        elif event.get("event_type") == "CAPTURE_NEW_CATEGORY":
+            # Raised once per category; the boilerplate dominates the prose, so two
+            # categories read as one at the similarity bar and the second overwrote the
+            # first (review 2026-11-20). Same category, or both volume alerts — never prose.
+            same_label = f"**[{LABELS['CAPTURE_NEW_CATEGORY']}]**" in line
+            alike = same_label and _capture_key(line) == _capture_key(incoming)
         else:
             alike = similar(_entry_text(line), incoming) >= SIMILARITY_THRESHOLD
         if not alike:
