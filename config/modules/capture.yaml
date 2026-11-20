@@ -44,8 +44,8 @@ other_window_days: 30
 other_raise_count: 5
 other_volume_raise: 15
 other_cap: 200
-other_examples: 0      # example summaries in each alert; 0 keeps the user's words on the VM
-                       # (the alert reaches DEV_BACKLOG.md, a tracked file — Mike's call to raise)
+other_examples: 3      # example summaries in each alert (Mike, 2026-11-20). They are the user's
+                       # words and reach DEV_BACKLOG.md, a tracked, pushed file; 0 keeps them on the VM
 
 # Fixed minimums (Mike, 2026-11-18). Precision, recall and matcher accuracy gate `enabled`.
 minimums:
