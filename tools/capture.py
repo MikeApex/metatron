@@ -383,10 +383,10 @@ def catalogue(kinds: tuple[str, ...]) -> str:
         "preference": "how the user wants Metatron to behave with them",
         "profile": "a stable fact about who the user is (work, family, home)",
         "event": "an appointment, meeting or dated occasion — who or what, when, where",
-        "place": "a place or piece of household know-how to remember (a restaurant they "
-                 "liked, which clinic to use out of hours)",
+        "place": "a place or piece of household know-how to remember (a café they liked, "
+                 "which garage to take the car to)",
         "person": "who someone in the user's life is — their role, practice or arrangement "
-                  "with the user (a babysitter's standing day, which practitioner is which)",
+                  "with the user (the neighbour who keeps a spare key, who coaches the team)",
         "health": "a standing health fact — a condition, a vaccine or check due, a medication "
                   "or treatment, a health interest or its absence (not a symptom of the moment)",
         "correction": "a fix to something Metatron already holds or said wrongly. proposal is "

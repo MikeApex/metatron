@@ -36,45 +36,45 @@ output format.
 - **ask** — a pattern said loosely enough that saving it would be a guess about firmness
   or days ("I crash out after lunch" → should early afternoon stay light, and on which
   days?). The agent will ask the user rather than save. A remark about one day that may be a
-  pattern ("the boy should be napping between two and four") is an `ask` about whether it
-  is regular — never a saved window, and never dropped.
+  pattern ("the pool was empty at six this morning") is an `ask` about whether it is
+  regular — never a saved window, and never dropped.
 - **declined** — the user said not to keep it, or answered no when the agent offered to
   keep it (read the previous assistant message).
 - **Not a fact — leave it out:**
   - a report about one occasion: last night's sleep, what they ate, how today went,
     something they have just done. That is a log, kept elsewhere — "I slept 11 to 7 last
-    night" is never a standing bedtime. The same for news that a task is finished ("the
-    credit cards are paid", "I made the appointment", "that's sorted") — the task list is
-    updated elsewhere.
-  - what they are doing now, or hope to get to this afternoon ("I'll do my stretches now",
-    "hoping to get the users sorted this afternoon"). A to-do they ask Metatron to fit into
-    the day ("work twenty minutes on the heater into today") is a `task`.
+    night" is never a standing bedtime. The same for news that a task is finished ("the car
+    insurance is renewed", "I booked the boiler service", "that's handled") — the task list
+    is updated elsewhere.
+  - what they are doing now, or hope to get to this afternoon ("I'm heading out for a run",
+    "hoping to finish the slides this afternoon"). A to-do they ask Metatron to fit into the
+    day ("fit half an hour on the tax return into today") is a `task`.
   - a state of the moment, an opinion, a question to Metatron, a test message, or a request
-    for Metatron to do something now that leaves nothing to remember ("check the flight
-    status").
+    for Metatron to do something now that leaves nothing to remember ("what's the weather in
+    Leeds?").
   - a development note — a request about how Metatron itself is built ("make a backlog
     note to…") — unless it also says how the user wants Metatron to behave with them, which
     is a `preference`.
 
 ## Choosing the kind
 
-- A standing time rule for an activity ("gym in the evenings doesn't work", "no admin until
-  after the 10 o'clock drop-off") is `day_shape`, not a preference.
+- A standing time rule for an activity ("I can't swim in the mornings", "no calls before 9 on
+  weekdays") is `day_shape`, not a preference.
 - The reason or detail behind a task goes in that task's proposal, never a separate goal. A
   goal is worked toward over months; "a goal for next week" is a `task`.
 - Merging, renaming or fixing something already held ("that's a double entry — it's just
-  stretching") is a `correction`.
-- A request to change how Metatron behaves — what it shows, asks, reminds or checks ("double
-  check me next time I book Rowan", "remove the Franklin virtues from the evening close",
-  "pause that review for three months") — is a `preference`, even when it is phrased as a
-  fix. A `correction` fixes a fact Metatron holds wrongly.
-- Something to find or look up ("find a pub near Iva's work") is a `task`. A `place` is
-  somewhere they want remembered, or have been and judged ("nice, but not again") — a meal
-  out with no verdict ("lunch was at The Ivy") is a log.
-- How long a routine takes ("drop-off is usually 30–45 minutes") is a duration in a `task`
+  piano practice") is a `correction`.
+- A request to change how Metatron behaves — what it shows, asks, reminds or checks ("check
+  with me before you book anything with Sam", "stop showing the weather in the morning
+  brief", "pause the reading reminders for a month") — is a `preference`, even when it is
+  phrased as a fix. A `correction` fixes a fact Metatron holds wrongly.
+- Something to find or look up ("find a café near the station") is a `task`. A `place` is
+  somewhere they want remembered, or have been and judged ("decent, but too loud to go
+  back") — a meal out with no verdict ("dinner was at the Thai place") is a log.
+- How long a routine takes ("the commute is usually 40 minutes") is a duration in a `task`
   proposal — never a day-shape entry with times they did not give.
-- An appointment or dated occasion is an `event`; something to do is a `task`. "Physio
-  Saturday at 9:30" is an event; "book the vaccine two weeks before" is a task.
+- An appointment or dated occasion is an `event`; something to do is a `task`. "Dentist
+  Thursday at 3" is an event; "book the boiler service a month before winter" is a task.
 - Who someone is to the user — role, practice, a standing arrangement — is a `person`.
 - A fact worth keeping that fits no kind is `other`, with a `category`. Never force it into
   a kind that does not fit.
@@ -118,13 +118,13 @@ is 9 to 5 but it often runs late. Weekends I'm out later and sleep in until abou
  {"kind":"day_shape","target":"day","proposal":{"days":["sat","sun"],"wake":"10:00"},"disposition":"save","say":"on weekends they get up around 10","quote":"sleep in until about 10"}]
 ```
 
-TODAY is 2026-11-02. The user wrote: "Physio was good — next one is Saturday 7 November at
-9:30. Slept badly last night. Karmit can babysit on Fridays from now on; we'll set the time
-each week."
+TODAY is 2026-03-02. The user wrote: "Dentist was fine — next check-up is Thursday 12 March
+at 3pm. Slept badly last night. Sam can walk the dog on Tuesdays from now on; we'll agree the
+time each week."
 
 ```
-[{"kind":"event","target":"event","proposal":"Physio appointment, Saturday 2026-11-07 at 09:30","disposition":"save","say":"the next physio appointment is Saturday 7 November at 9:30","quote":"next one is Saturday 7 November at 9:30"},
- {"kind":"person","target":"person","proposal":"Karmit babysits on Fridays; the time is set each week","disposition":"save","say":"Karmit babysits on Fridays, with the time set week by week","quote":"Karmit can babysit on Fridays from now on"}]
+[{"kind":"event","target":"event","proposal":"Dentist check-up, Thursday 2026-03-12 at 15:00","disposition":"save","say":"the next dentist check-up is Thursday 12 March at 3pm","quote":"next check-up is Thursday 12 March at 3pm"},
+ {"kind":"person","target":"person","proposal":"Sam walks the dog on Tuesdays; the time is agreed each week","disposition":"save","say":"Sam walks the dog on Tuesdays, with the time agreed week by week","quote":"Sam can walk the dog on Tuesdays from now on"}]
 ```
 
 The sleep report is a log, so it is not listed.
