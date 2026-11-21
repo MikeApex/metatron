@@ -1404,6 +1404,30 @@ evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording �
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
 
+- **[THINKING_CAP_HIT]** reply cut at the 8192-token output ceiling (thinking 7864 + reply 287, turn 1). Thinking overshoots its 4096 budget on this model; check whether the reply arrived whole.  
+  `2026-11-20T20:02:42.423737Z`
+
+- **[user corrected a prior turn]** User corrected an ambiguous phrase 'admit or edit your own work' which was likely a speech-to-text artifact for admin work, but kept the corrected intent intact.  
+  `2026-11-20T11:54:27.742076Z`
+
+- **[already applied by the tool]** Saved standing rule that user does not do lunch with Iva on Fridays as she works from home; updated routine and wisdom to Monday through Thursday.  
+  `2026-11-20T11:51:22.389069Z`
+
+- **[a specialist missed a signal it should have caught]** Coordinator omitted the first message block containing a cardiac event log ('[Wed, Nov 18, 9:12 AM] cardiac monitor riding on the bus.'), missing diarist routing.  
+  `2026-11-20T11:51:11.199024Z`
+
+- **[a specialist missed a signal it should have caught]** User asked a follow-up about specific train options from Greenwich, which requires live transit routing data. Coordinator routed to Logistics to retrieve the exact train details from Greenwich to London Bridge.  
+  `2026-11-19T14:42:31.319158Z`
+
+- **[THINKING_CAP_HIT]** reply cut at the 8192-token output ceiling (thinking 7860 + reply 276, turn 1). Thinking overshoots its 4096 budget on this model; check whether the reply arrived whole.  
+  `2026-11-19T10:33:51.002175Z`
+
+- **[THINKING_CAP_HIT]** reply cut at the 8192-token output ceiling (thinking 7860 + reply 326, turn 1). Thinking overshoots its 4096 budget on this model; check whether the reply arrived whole.  
+  `2026-11-19T07:33:18.516401Z`
+
+- **[a specialist missed a signal it should have caught]** Scheduled session prompt arrived as a system instruction ("How did today go?...") but the turn was handled as an automated day-close opening rather than waiting for user response.  
+  `2026-11-18T20:00:06.564694Z`
+
 - **[a specialist missed a signal it should have caught]** The user prompt was a scheduled anticipatory session trigger ('Anticipatory logistics pass. Review where the user will be this evening and tomorrow...'), but the prompt received by the coordinator had no user-facing message body attached to process as an interactive turn, causing a routing omission for the scheduled background pass.  
   `2026-11-18T10:00:16.735565Z`
 
@@ -2247,8 +2271,8 @@ entry is a symptom, never a diagnosis.)*
 - **[user corrected a prior turn]** ```  
   `2026-09-18T09:00:18.452631Z`
 
-- **[a specialist missed a signal it should have caught]** quality event test for pipeline check  
-  `2026-09-18T09:00:16.588624Z`
+- **[a specialist missed a signal it should have caught]** Quality event for session initialization or routing check  ×2  
+  `2026-11-20T20:00:29.804037Z`
 
 - **[user corrected a prior turn]** ```  
   `2026-09-17T10:29:58.019409Z`
@@ -2577,8 +2601,8 @@ entry is a symptom, never a diagnosis.)*
 - **[a specialist missed a signal it should have caught]** Quiet check-in session routed incorrectly or surfaced check-in prose when it should have stayed quiet under quiet check-in rules  
   `2026-09-06T15:39:35.682666Z`
 
-- ⚠ **[a specialist missed a signal it should have caught]** Coordinator produced conversational text instead of a structured context package in the previous turn  ×4  
-  `2026-10-10T10:43:24.000669Z`
+- ⚠ **[a specialist missed a signal it should have caught]** Coordinator agent must produce a structured context package and never a user-facing response.  ×5  
+  `2026-11-19T20:00:20.130046Z`
 
 - **[user corrected a prior turn]** ```  
   `2026-09-06T09:00:07.181028Z`

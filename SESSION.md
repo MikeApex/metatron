@@ -1,9 +1,9 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-11-18 (**goal–task network phase 1 BUILT, committed `98f158f`, NOT deployed** — log § 11-18 fifth, plan § 13; VM at `23f1e59`). **Mike deploys, then four live checks:** (1) the next real event with a precursor gets a prep task that is nudged, checked, and moves if the event is moved; (2) a two-step test task — step 2 appears only after step 1; Skip on step 1 closes step 2 and asks once to redo; (3) a task left undone a few days is raised on the brief with how long it slipped, dismissable; (4) a morning with several new horizon findings shows at most two. **Before deploying, confirm** `mike`'s fixed-job names match `shield_jobs` in `config/modules/day_plan.yaml` (`morning_brief`, `evening_close`, `location_anticipation`). Revert: flags `prep_tasks`/`horizon_cap` off. **The 11-05 review's High and Medium findings are fixed and DEPLOYED** (VM at
+*Updated: 2026-11-21 (log § 11-21). **Capture fidelity SWITCHED ON in `f878ead` — NOT YET DEPLOYED** (VM at `6e8ed5d`): ordinary turns in shadow, first interviews show the note; precision 87% vs a 90% floor, accepted by Mike (plan § 10). After deploy and a day of use, VM: `cd ~/multi-model-mcp && .venv/bin/python -m tools.capture --report --persona mike` — pass: "extractor ran on N of N", `held_out_*` only; Iva's first interview, same with her persona. Before the Synthesizer goes `on`: an "already held" check for the new kinds. Before Iva signs up: the backlog sync fetches mike's quality events only. Next planning: custom logs + places with GPS (`archive/handoffs/2026-11-21-custom-logs-and-places-planning-prompt.md`). **Goal–task network phase 1 (`98f158f`) went LIVE unannounced with the capture deploys (11-20/21)** — its pre-deploy check holds (the shield rule covers every coordinator-run fixed job; `shield_jobs: []` is by design). **Four live checks now owed:** (1) the next real event with a precursor gets a prep task that is nudged, checked, and moves if the event is moved; (2) a two-step test task — step 2 appears only after step 1; Skip on step 1 closes step 2 and asks once to redo; (3) a task left undone a few days is raised on the brief with how long it slipped, dismissable; (4) a morning with several new horizon findings shows at most two. Revert: flags `prep_tasks`/`horizon_cap` off. **The 11-05 review's High and Medium findings are fixed and DEPLOYED** (VM at
 `968a8a0`; plan with Mike's Phase 1 calls at its end: `archive/plans/codebase_review_fixes_plan_2026-11-11.md`;
 log § 11-11). 5 of 7 Highs closed. **Held by Mike, recorded only in that plan:** #5 (a nudge due near
-a fixed session is dropped — **fixed in `98f158f`, undeployed**), #9 (Build cannot land — fix before the next `/build` run), #10, #33.
+a fixed session is dropped — **fixed in `98f158f`, live since 11-20**), #9 (Build cannot land — fix before the next `/build` run), #10, #33.
 **Before Iva signs up:** #40, #41 (#11 ruled 11-18: her data has exactly `mike`'s clearances, `ROADMAP.md` § 0). Skipped:
 #29. Lows wait for the next review. **`accounts.py list` shows no accounts — Iva has not signed up.**
 **Mike (optional): delete `~/multi-model-mcp/.env.bak-2026-11-11` on the VM (holds the removed API
@@ -15,7 +15,7 @@ on the VM 11-18 (ids + Bulgarian/taxes/Prudential). **Still next, unchanged:** I
 (`archive/handoffs/2026-10-29-iva-account-walkthrough-prompt.md`, APK rebuild first; #11/#40/#41
 first); M3 restarts on her approval day; `/backlog deep`, then
 `archive/handoffs/2026-10-30-backlog-attack-signout-calendar-text-forward-trail-prompt.md`;
-capture-fidelity planning; reply latency (with `[DB-1029-09]`); Sign out; security `[DB-1029-20]`;
+reply latency (with `[DB-1029-09]`); Sign out; security `[DB-1029-20]`;
 **WhatsApp Phase 0 close-out** (survival read 10-31, LM + increments rulings — § Current state);
 day-planner live checks `[DB-1029-01]` (due 10-31; the check script is already on the VM — no deploy needed); nine fixes' closes-on checks (11-12). **The
 meals habit still doesn't exist** — Mike re-asks as "open a daily habit…". **Still owed:** the
