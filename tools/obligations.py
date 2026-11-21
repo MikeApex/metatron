@@ -487,6 +487,51 @@ def _reopen_cascade(doc: dict, t: dict) -> int:
     return n
 
 
+_IMPLIED = "done by implication"
+
+
+def _imply_prerequisites(doc: dict, t: dict) -> list[str]:
+    """Mike's judgement gate, 2026-11-21: *"If it's clear that the later step couldn't have been
+    completed without the earlier one, then both should be considered completed."* A REQUIRED
+    prerequisite is exactly that (`required` is what says the later step cannot go ahead
+    without it), so when a step is done, every required prerequisite behind it that is not
+    done — still open, dismissed, or closed by a dismissal — is closed done too, with that
+    reason. An optional one still open is closed moot: what it was for is finished. Whether
+    the user really did the later step is the model's judgement (the close gate's); this is
+    only what follows from it. Returns the ids changed."""
+    by_id = {x.get("id"): x for x in doc["tasks"]}
+    changed: list[str] = []
+    seen: set = set()
+    frontier = list(_needs(t))
+    while frontier:
+        did = frontier.pop(0)
+        if did in seen:
+            continue
+        seen.add(did)
+        dep = by_id.get(did)
+        if dep is None or dep.get("status") == "done":
+            continue
+        optional = dep.get("required") is False
+        if optional and dep.get("status") != "open":
+            continue
+        frontier.extend(_needs(dep))
+        was = dep.get("status")
+        dep["status"] = "moot" if optional else "done"
+        dep["closed_at"] = _stamp()
+        dep["evidence"] = (f"no longer needed: {t.get('what')} is done" if optional
+                           else f"{_IMPLIED}: {t.get('what')} was done, which could not be "
+                                f"done without it")
+        dep.setdefault("history", []).append({"event": "closed_by_later_step", "at": _stamp(),
+                                              "was": was, "later_step": t.get("id")})
+        doc.setdefault("_history", []).append(_one_off_row(dep, dep["status"]))
+        if dep.get("cascade"):
+            # Its dismissal is undone by the facts: nothing to ask about, and the other steps
+            # that dismissal closed come back.
+            _reopen_cascade(doc, dep)
+        changed.append(did)
+    return changed
+
+
 def cascades_to_raise(persona: str | None = None, as_of: date | None = None) -> list[dict]:
     """Dismissals that closed later steps, not yet put to the user — for the day plan's Important
     list. Each is raised once (`mark_cascade_raised`) and only within a few days of happening."""
@@ -510,7 +555,8 @@ def cascades_to_raise(persona: str | None = None, as_of: date | None = None) -> 
         if end is None:
             continue
         out.append({"id": t["id"], "what": t["what"], "end": end["what"], "end_id": end["id"],
-                    "closed": len(closed), "lapsed": t.get("status") == "moot"})
+                    "closed": len(closed), "lapsed": t.get("status") == "moot",
+                    "later": [(x["id"], x["what"]) for x in closed]})
     return out
 
 
@@ -537,7 +583,11 @@ def mark_cascade_raised(task_ids: list[str], persona: str | None = None) -> None
 
 _STEP_FIELDS = ("what", "kind", "due", "eligible_from", "flexible", "after", "before", "minutes",
                 "minutes_source", "needs", "part_of", "required", "stakes", "domain", "note",
-                "activity", "key", "source_id", "prep_for", "zone", "moot_after")
+                "activity", "key", "source_id", "prep_for", "zone", "moot_after", "adopt",
+                "goal_id")
+# Fields an adopted task takes from the plan (§ 11: open tax tasks adopted into a plan). Its own
+# `what`, history and source stay; a `due` it already has is kept unless the plan's is earlier.
+_ADOPT_FIELDS = ("needs", "part_of", "eligible_from", "flexible", "goal_id", "required")
 # A step this close to its end state's due is on the critical path near the deadline: vital
 # (nudged and checked). Everything else a plan opens is `missable` (R5) — one model wake per
 # step was the cost the review found.
@@ -593,8 +643,11 @@ def open_plan(steps: list[dict], persona: str | None = None, created_by: str = "
         key = str(raw.get("key") or f"s{i}")
         if key in keys:
             return {"ok": False, "error": f"two steps share the key {key!r}"}
-        keys[key] = _new_id(what)
+        adopt = str(raw.get("adopt") or "").strip()
+        keys[key] = adopt or _new_id(what)
         entry = {"what": what, "kind": kind, "status": "open"}
+        if raw.get("goal_id"):
+            entry["goal_id"] = str(raw["goal_id"]).strip()
         for name in ("due", "eligible_from", "moot_after"):
             iso, err = _iso_arg(name, raw.get(name))
             if err:
@@ -628,11 +681,26 @@ def open_plan(steps: list[dict], persona: str | None = None, created_by: str = "
         if raw.get("required") is False:
             entry["required"] = False
         clean.append({"key": key, "entry": entry, "needs": _needs(raw),
-                      "part_of": str(raw.get("part_of") or "").strip(), "stakes": stakes})
+                      "part_of": str(raw.get("part_of") or "").strip(), "stakes": stakes,
+                      "adopt": adopt})
+    adopted_ids = [c["adopt"] for c in clean if c["adopt"]]
+    if len(set(adopted_ids)) != len(adopted_ids):
+        return {"ok": False, "error": "the same task is adopted twice"}
 
     def apply(doc: dict) -> dict:
         tasks = doc["tasks"]
         existing = {t["id"]: t for t in tasks}
+        for c in clean:
+            if not c["adopt"]:
+                continue
+            cur = existing.get(c["adopt"])
+            if cur is None or cur.get("status") != "open" or cur.get("kind") not in _ONE_OFF:
+                return {"ok": False, "error": f"step {c['key']!r} adopts {c['adopt']!r}, which is "
+                                              f"not an open one-off task"}
+            po = keys.get(c["part_of"], c["part_of"])
+            if cur.get("part_of") and cur.get("part_of") != po:
+                return {"ok": False, "error": f"{c['adopt']} is already part of "
+                                              f"{cur.get('part_of')}"}
         edges: dict[str, list[str]] = {}
         for c in clean:
             resolved = []
@@ -656,6 +724,13 @@ def open_plan(steps: list[dict], persona: str | None = None, created_by: str = "
                 if target is not None and target.get("status") in _TERMINAL:
                     return {"ok": False, "error": f"step {c['key']!r} is part of {po!r}, which is "
                                                   f"already {target.get('status')}"}
+                goal = None if (target is not None or po in keys.values()) else _goal_index().get(po)
+                if goal is not None and str(goal.get("status") or "active") not in (
+                        "active", "not_started", "at_risk"):
+                    # Only a goal that has been taken on is decomposed (§ 4.2) — a proposed one
+                    # is still being considered, a parked or declined one is not wanted now.
+                    return {"ok": False, "error": f"goal {po!r} is {goal.get('status')} — only a "
+                                                  f"goal that has been taken on is planned"}
                 c["entry"]["part_of"] = po
         if not _acyclic(edges):
             return {"ok": False, "error": "the steps' `needs` form a cycle"}
@@ -670,7 +745,7 @@ def open_plan(steps: list[dict], persona: str | None = None, created_by: str = "
             po = c["entry"].get("part_of")
             if po:
                 twin = next((t for t in tasks if t.get("status") == "open"
-                             and t.get("part_of") == po
+                             and t.get("part_of") == po and t.get("id") not in adopted_ids
                              and _same_commitment(t.get("what", ""), what)), None)
                 if twin:
                     return {"ok": False, "error": f"step {c['key']!r} is already open in this "
@@ -692,10 +767,51 @@ def open_plan(steps: list[dict], persona: str | None = None, created_by: str = "
                 target_due = _d(target.get("due"))
             elif po in existing:
                 target_due = _d(existing[po].get("due"))
+            elif po:
+                target_due = _d((_goal_index().get(po) or {}).get("due"))   # a goal's steps
             end_due[c["key"]] = target_due
         stamp, today = _stamp(), _today()
         for c in clean:
             e = c["entry"]
+            if c["adopt"]:
+                cur = existing[c["adopt"]]
+                # An adopted task keeps its what, history, source and a stated stakes; it takes
+                # its place in the plan. A due it already has stands unless the plan needs it
+                # earlier.
+                for name in _ADOPT_FIELDS:
+                    if e.get(name) not in (None, [], ""):
+                        cur[name] = e[name]
+                # Its own earlier date stands only where it still fits the plan: not before the
+                # window opens, nor before a step it now needs is due (Fable diff review #8 — a
+                # task due 25 Nov given eligible_from 28 Nov sat hidden and came back overdue).
+                old, new = _d(cur.get("due")), _d(e.get("due"))
+                ef = _d(cur.get("eligible_from"))
+                by_key = {keys[x["key"]]: x["entry"] for x in clean}
+                need_dues = [_d((by_key.get(n) or existing.get(n) or {}).get("due"))
+                             for n in cur.get("needs") or []]
+                fits = bool(old and new and old <= new and (not ef or old >= ef)
+                            and all(nd is None or old >= nd for nd in need_dues))
+                if new and not fits:
+                    if old and old != new:
+                        cur.setdefault("history", []).append({
+                            "event": "rescheduled", "at": stamp, "from": cur.get("due"),
+                            "to": e["due"], "reason": "fitted into its plan",
+                            "was_overdue": bool(old < today)})
+                    cur["due"] = e["due"]
+                if not cur.get("minutes") and e.get("minutes"):
+                    cur["minutes"], cur["minutes_source"] = e["minutes"], e.get("minutes_source", "estimated")
+                # An adopted END STATE (the obligation itself) keeps its stakes — "missable"
+                # inferred for a filing deadline would be the wrong way round.
+                if cur.get("part_of") and (not cur.get("stakes") or cur.get("stakes_source") != "stated"):
+                    d, end = _d(cur.get("due")), end_due[c["key"]]
+                    near = bool(d and end and (end - d).days <= _CRITICAL_MARGIN_DAYS)
+                    cur["stakes"], cur["stakes_source"] = ("vital" if near else "missable"), "inferred"
+                if cur.get("needs") == []:
+                    cur.pop("needs")
+                cur.setdefault("history", []).append({"event": "adopted_into_plan", "at": stamp,
+                                                      "part_of": cur.get("part_of"),
+                                                      "by": created_by})
+                continue
             if c["stakes"]:
                 e["stakes"], e["stakes_source"] = c["stakes"], "stated"
             elif not e.get("prep_for"):
@@ -710,14 +826,38 @@ def open_plan(steps: list[dict], persona: str | None = None, created_by: str = "
             if e["needs"] == []:
                 e.pop("needs")
         for c in clean:
-            tasks.append(c["entry"])
+            if not c["adopt"]:
+                tasks.append(c["entry"])
         _annotate_network(tasks)
-        return {"ok": True, "ids": dict(keys)}
+        return {"ok": True, "ids": dict(keys), "adopted": adopted_ids}
 
     result = _with_store(persona, apply)
     if isinstance(result, str):            # the store could not be read
         return {"ok": False, "error": result}
     return result
+
+
+def close_plan_of(end_id: str, reason: str, persona: str | None = None) -> int:
+    """Close every open step part_of `end_id` (a goal declined, parked or completed — § 4.1),
+    moot with `reason`. A step's own end-state task, if any, is the caller's to close."""
+    end_id = str(end_id or "").strip()
+    if not end_id:
+        return 0
+    n = {"v": 0}
+
+    def apply(doc: dict) -> None:
+        for t in doc["tasks"]:
+            if t.get("status") == "open" and t.get("part_of") == end_id:
+                t.update(status="moot", closed_at=_stamp(), evidence=reason)
+                t.setdefault("history", []).append({"event": "closed_with_end_state",
+                                                    "at": _stamp(), "reason": reason})
+                doc.setdefault("_history", []).append(_one_off_row(t, "moot"))
+                n["v"] += 1
+
+    if not any(t.get("status") == "open" and t.get("part_of") == end_id for t in _load(persona)):
+        return 0
+    _with_store(persona, apply)
+    return n["v"]
 
 
 def _remerge_v1(doc: dict, persona: str | None = None) -> None:
@@ -1684,6 +1824,17 @@ def open_task(what: str, kind: str = "deadline", due: str | None = None,
     result = _with_store(None, apply)
     if result.startswith("task ") and calendar_uid is None:
         _link_calendar_if_exact(result.split()[1])
+        if kind == "deadline":
+            # A precursor stated in chat ("bring my old passport to tomorrow's appointment") is
+            # linked to the event it is about, so it follows the event (goal–task network
+            # phase 2, the 2026-11-21 gap). Never fails the open.
+            try:
+                from tools.day_plan import link_prep_from_chat
+                title = link_prep_from_chat(result.split()[1])
+                if title:
+                    result += f" — linked to {title}; it moves if that event moves"
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("[tasks] event link skipped: %s", exc)
     return result
 
 
@@ -1755,8 +1906,9 @@ def _goal_index() -> dict[str, dict]:
         return _GOAL_CACHE["index"]
     index: dict[str, dict] = {}
     try:
+        from tools.goals import HORIZONS     # gains `long` in phase 2 (§ 10 R6) — read, not copied
         doc = yaml.safe_load(path.read_text()) or {}
-        for horizon in ("quarterly", "weekly", "daily"):
+        for horizon in HORIZONS:
             for g in doc.get(horizon) or []:
                 if isinstance(g, dict) and g.get("id"):
                     index[str(g["id"])] = g
@@ -2269,7 +2421,16 @@ def update_task(task_id: str, action: str, evidence: str | None = None,
                     + (f"; {restored} later step(s) it had closed are back, waiting on it"
                        if restored else ""))
 
-        if status in _TERMINAL:
+        # A later step closed only because its prerequisite was dismissed can still be reported
+        # done — the user did it after all — and then the prerequisite was done too (Mike's
+        # judgement gate, `_imply_prerequisites`).
+        # And a skipped step that stopped later ones can be reported done itself — "I did
+        # download the P60 after all" — which brings those later steps back (Fable diff review
+        # #1: recording the END done instead would have closed the whole plan).
+        revived = (action == "done" and kind in _ONE_OFF and (
+            (status == "moot" and t.get("evidence") == _PREREQ_DISMISSED)
+            or (status == "dismissed" and isinstance(t.get("cascade"), dict))))
+        if status in _TERMINAL and not revived:
             return (f"{tid} was already {status} at {t.get('closed_at', 'unknown')} — "
                     f"nothing to do, and no second record made.")
 
@@ -2299,9 +2460,19 @@ def update_task(task_id: str, action: str, evidence: str | None = None,
             for p in t.get("proposals") or []:
                 if p.get("status") == "pending":
                     p["status"] = "superseded"
+            restored = 0
+            if revived:
+                t.setdefault("history", []).append({"event": "reopened", "at": _stamp(),
+                                                    "was": status, "reason": "done after all"})
+                if status == "dismissed":
+                    restored = _reopen_cascade(doc, t)       # the later steps it stopped
             doc.setdefault("_history", []).append(_one_off_row(t, "done"))
             closed_holder["task"] = dict(t)
-            return f"{tid} done: {_summarise(t)}"
+            implied = _imply_prerequisites(doc, t)
+            return (f"{tid} done: {_summarise(t)}"
+                    + (f"; {len(implied)} earlier step(s) it could not have been done without "
+                       f"are counted done too" if implied else "")
+                    + (f"; {restored} later step(s) it had stopped are back" if restored else ""))
 
         if kind == "interval":
             due = _interval_due(t, today)
@@ -2644,7 +2815,14 @@ def _named_by(t: dict, text: str, prev: str, others: list[dict], stop: frozenset
     low = (text or "").lower()
     if t["id"] in low or (t.get("what") or "").strip().lower() in low:
         return True, ""
-    ttoks = _gate_tokens(t.get("what", ""), stop)
+
+    def toks_of(x: dict) -> frozenset:
+        # A prep task answers to "the prep" (live 2026-11-21: "dismiss the prep task" was refused
+        # as naming nothing, beside a test step with a near-identical title).
+        base = _gate_tokens(x.get("what", ""), stop)
+        return base | {"prep"} if x.get("prep_for") else base
+
+    ttoks = toks_of(t)
     tie = False
     for clause in _CLAUSE_SPLIT_RE.split(low):
         clause = (clause or "").strip()
@@ -2654,10 +2832,10 @@ def _named_by(t: dict, text: str, prev: str, others: list[dict], stop: frozenset
         shared = ctoks & ttoks
         if not shared:
             continue
-        rivals = [o for o in others if ctoks & _gate_tokens(o.get("what", ""), stop)]
-        if any(len(ctoks & _gate_tokens(o.get("what", ""), stop)) > len(shared) for o in rivals):
+        rivals = [o for o in others if ctoks & toks_of(o)]
+        if any(len(ctoks & toks_of(o)) > len(shared) for o in rivals):
             continue                       # the clause names something else better
-        if any(ctoks & _gate_tokens(o.get("what", ""), stop) == shared for o in rivals):
+        if any(ctoks & toks_of(o) == shared for o in rivals):
             tie = True                     # "booked the dentist" with two dentist tasks open
             continue
         return True, ""
@@ -2700,9 +2878,13 @@ def _close_refusal(t: dict, tasks: list[dict], today: date) -> str | None:
     same_domain = [o for o in pool if o.get("domain") and o.get("domain") == t.get("domain")]
     listed = (in_named_domain or near or same_domain or pool)[:4]
     names = "; ".join(o["what"] for o in listed)
-    return (f"error: not recorded — {why}. Ask the user which they mean"
+    # Live 2026-11-21: Synth relayed the reason ("the exact task title wasn't recognized from
+    # your phrasing") instead of asking. The reason is for the model; the user gets the question.
+    return (f"error: not recorded — {why}. Ask the user which one they mean, naming the likely "
+            f"ones in everyday words"
             + (f" (open: {names})" if names else "")
-            + ", then record the one they confirm. Nothing was changed.")
+            + ", then record the one they confirm. Never tell them why it was not recorded, and "
+              "never mention titles, wording or matching. Nothing was changed.")
 
 
 # --- The possible-completion hint ------------------------------------------------------------

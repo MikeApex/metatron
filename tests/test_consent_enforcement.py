@@ -59,7 +59,7 @@ _MODEL_REPLY = json.dumps({
     "names_user_uses_for_them": ["Sam"],
 })
 CODE_ONLY = ("tone_profiler", "intake_extractor", "accountability_judge", "day_planner",
-             "crm_sweep", "capture_extractor")
+             "crm_sweep", "capture_extractor", "project_planner")
 
 
 # --- the sandbox -----------------------------------------------------------------------------
@@ -340,11 +340,12 @@ def test_a_normal_specialist_still_dispatches():
 
 
 def test_the_code_callers_reach_their_agents_through_run_session_directly():
-    """The refusal is name-based in run_subagent; the six callers must not route through it."""
+    """The refusal is name-based in run_subagent; the seven callers must not route through it."""
     callers = {
         "tools/tone.py": "tone_profiler", "tools/intake_extract.py": "intake_extractor",
         "tools/accountability.py": "accountability_judge", "tools/day_plan.py": "day_planner",
         "tools/crm_sweep.py": "crm_sweep", "tools/capture.py": "capture_extractor",
+        "tools/project_plan.py": "project_planner",
     }
     for rel, agent in callers.items():
         src = (_REPO / rel).read_text()

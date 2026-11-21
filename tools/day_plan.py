@@ -2004,7 +2004,7 @@ def render_block(plan: dict | None, kind: str | None = None, due_now: list[dict]
                  allocation_gaps: list[dict] | None = None, tomorrow: dict | None = None,
                  ask_length: str | None = None, horizon: list[str] | None = None,
                  findings: list[dict] | None = None, cascades: list[dict] | None = None,
-                 shown: dict | None = None) -> str:
+                 shown: dict | None = None, projects: list[dict] | None = None) -> str:
     """What the Synthesizer should say about the day, not the day itself (Mike, 2026-10-30:
     "REMOVE the need to be aware of the schedule"; amends R2). Now, the one thing next, free
     time, a short Important list and the questions only the user can answer. The whole day is
@@ -2070,6 +2070,12 @@ def render_block(plan: dict | None, kind: str | None = None, due_now: list[dict]
         # waits for a later turn with its offers intact.
         out.append("New — the user has NOT been told yet; put it to them in this exchange, one "
                    "line, your own words, never as a list you were handed: " + "; ".join(new_lines))
+    if projects:
+        # A plan made out of sight (goal–task network § 10 R8): said once, next turn — stamped by
+        # project_plan.note_said only once a reply says it, never on render.
+        from tools.project_plan import render as _render_projects
+        out.append("Planning, once each: " + " ".join(_render_projects(projects)))
+        record["projects"] = [p["id"] for p in projects]
     record["findings"] += [rid for k, _, rid in imp if k == "finding"]
     record["cascades"] += [rid for k, _, rid in imp if k == "cascade"]
     record["riders"] += [b.get("task_id") for b in plan["blocks"]
@@ -2081,10 +2087,22 @@ def render_block(plan: dict | None, kind: str | None = None, due_now: list[dict]
     # is an Ask, not an Important candidate the model may skip; it counts as asked only once a
     # brief or close has carried it (Fable diff review #5).
     for c in cascades or []:
-        why = ("ran out of time" if c.get("lapsed") else "was dropped")
-        asks.append(f"{c['end']} can't go ahead without \"{c['what']}\", which {why} — ask once "
-                    f"whether to redo it; on yes, reopen `{c['id']}` (the later steps come back "
-                    f"with it)")
+        if c.get("lapsed"):
+            asks.append(f"{c['end']} can't go ahead without \"{c['what']}\", which ran out of "
+                        f"time — ask once whether to redo it; on yes, reopen `{c['id']}` (the "
+                        f"later steps come back with it)")
+        else:
+            # Mike, 2026-11-21: a skip may be an accident, and a later step may have been done
+            # anyway — so the question is about intent, not "redo it?".
+            later = ", ".join(f"\"{w}\" `{i}`" for i, w in (c.get("later") or [])[:4])
+            asks.append(f"{c['end']} can't go ahead without \"{c['what']}\", which was skipped "
+                        f"— ask once whether that was on purpose. By accident: reopen "
+                        f"`{c['id']}` (the later steps come back with it). They did it after "
+                        f"all: record `{c['id']}` done (the later steps come back). They have "
+                        f"already done a later step anyway: record only that one done — the "
+                        f"steps before it count done too"
+                        + (f" (later steps: {later})" if later else "")
+                        + ". On purpose: leave it")
         record["cascades"].append(c["id"])
     if brief_or_close:
         slips = _slip_asks(state, today)
@@ -2380,8 +2398,16 @@ def allocation_gaps(persona: str | None = None) -> list[dict]:
         if t.get("status") == "open" and t.get("kind") == "habit" and t.get("goal_id"):
             linked.setdefault(str(t["goal_id"]), []).append(str(t.get("goal_hash") or ""))
     out = []
+    try:
+        from tools.project_plan import has_plan
+    except Exception:  # noqa: BLE001
+        has_plan = None
     for gid, g in goals.items():
         if str(g.get("status") or "active") not in ("active", "at_risk", "not_started"):
+            continue
+        # A goal with one end date (S/M) is planned in steps, not given weekly time — the
+        # "verified goal with no plan" sweep (tools/project_plan.py) covers it (§ 4.3).
+        if str(g.get("size") or "").upper() in ("S", "M") or (has_plan and has_plan(gid, persona)):
             continue
         hashes = linked.get(gid)
         if not hashes:
@@ -2708,6 +2734,98 @@ def _match_event(item: dict, events: list[dict]) -> dict | None:
     return scored[0][1]
 
 
+# Words that name the KIND of event, never which one: a task saying "tomorrow's appointment"
+# shares "appointment" with every appointment, so it cannot link a task to one of them alone.
+_EVENT_GENERIC = frozenset({"appointment", "meeting", "session", "event", "class", "lesson",
+                            "visit", "call", "party", "booking", "slot", "reservation"})
+
+
+_EVENT_CUE_RE = re.compile(
+    r"\b(to|for|before|at|ahead of)\s+(the|my|our|his|her|their|this|that|"
+    r"(today|tomorrow|tonight|mon|tues|wednes|thurs|fri|satur|sun)\w*'?s?|\w+'s)?\s*"
+    r"(appointment|meeting|session|visit|class|lesson|party|event|booking|interview|exam|"
+    r"flight|trip|match|game|check-?up|consultation|hearing)\b", re.I)
+
+
+def _chat_event(t: dict, events: list[dict], today: date) -> dict | None:
+    """The calendar event a task the user stated is about (2026-11-21: "bring my old passport to
+    tomorrow's appointment" became a plain task that did not follow the appointment). Same
+    matching as `_match_event` — shared title/venue words, no tie — with the kind-of-event words
+    taken out, over events on the task's due day or up to two days after it (a prep is done
+    before its event), never one already started."""
+    O = _O()
+    text = f"{t.get('what', '')} {t.get('note', '')}"
+    toks = O._task_tokens(text) - _EVENT_GENERIC
+    if not toks:
+        return None
+    # One shared word is not enough on its own (Fable diff review #2: "Buy Manny new shoes" beside
+    # a lone "Manny swim" would have moved a day earlier and closed itself when swimming started).
+    # It takes two, or one plus words that point AT an event: "to tomorrow's appointment",
+    # "before the visit", "for the interview".
+    cue = bool(_EVENT_CUE_RE.search(text))
+    due = O._d(t.get("due")) or today
+    now = _now()
+    scored = []
+    for e in events:
+        start = _dt(e.get("start"))
+        if not start or start <= now or not (0 <= (start.date() - due).days <= 2):
+            continue
+        shared = len(toks & (_event_tokens(e) - _EVENT_GENERIC))
+        if shared >= 2 or (shared == 1 and cue):
+            scored.append((shared, e))
+    scored.sort(key=lambda x: -x[0])
+    if not scored or (len(scored) > 1 and scored[1][0] == scored[0][0]):
+        return None
+    return scored[0][1]
+
+
+def link_prep_from_chat(task_id: str, persona: str | None = None) -> str | None:
+    """Give a just-opened task `prep_for` when it is about an event in the calendar snapshot, so
+    it follows the event (moves with it, closes when it starts or is cancelled) exactly as a prep
+    opened from a finding does. Behind `prep_tasks`. Returns the event title linked, or None."""
+    if not _flag("prep_tasks"):
+        return None
+    persona = resolve_persona(persona)
+    O = _O()
+    state = _load_state(persona)
+    if not _snapshot_ok(state):
+        return None
+    events = (state.get("snapshot") or {}).get("events") or []
+    tid = O._split_id(task_id)
+    t = next((O._norm(x) for x in O._load(persona) if x.get("id") == tid), None)
+    if (not t or t.get("status") != "open" or t.get("kind") != "deadline" or t.get("prep_for")
+            or t.get("calendar_uid") or t.get("part_of")):
+        return None
+    today = _today()
+    event = _chat_event(t, events, today)
+    if not event:
+        return None
+    start = _dt(event["start"])
+    # A date the user gave BEFORE the event is their own "by" and wins, as a finding's
+    # `precursor_by` does; one on the event day means "before it", the prep's own default.
+    stated = O._d(t.get("due"))
+    by = stated if stated and stated < start.date() else None
+    due, before = _prep_due(start.date(), by, start, today)
+    title = str(event.get("title") or "")[:120]
+
+    def apply(doc: dict) -> bool:
+        row = O._find(doc["tasks"], tid)
+        if not row or row.get("status") != "open" or row.get("prep_for"):
+            return False
+        row["prep_for"] = {"uid": event.get("uid") or "", "start": event["start"], "title": title,
+                           "by": by.isoformat() if by else "", "chat": "1"}
+        row["due"] = due.isoformat()
+        row["moot_after"] = start.date().isoformat()
+        if before:
+            row["before"] = before
+        row.setdefault("note", f"Before {title} on {start.date().isoformat()}")
+        row.setdefault("history", []).append({"event": "linked_to_event", "at": O._stamp(),
+                                              "title": title})
+        return True
+
+    return title if O._with_store(persona, apply) is True else None
+
+
 def _prep_due(event_day: date | None, by: date | None, start: datetime | None, today: date
               ) -> tuple[date | None, str | None]:
     """(due, before) for a prep. `precursor_by` before the event wins; else the evening before;
@@ -2804,6 +2922,15 @@ def _prep_sweep(persona: str, state: dict) -> str:
         if twin:
             H.stamp_prep(keys, persona, task_id=twin["id"])            # already on the list
             continue
+        # A task already linked to the same event, about the same thing (the user said "bring my
+        # old passport to tomorrow's appointment" before Logistics filed the finding): adopted,
+        # not twinned — the duplicate guard above only catches near-identical wording
+        # (2026-11-21). Any part of the precursor the task does not say is added to its note.
+        linked = _linked_prep(tasks, event, pre) if event else None
+        if linked:
+            _note_precursor(persona, linked, pre)
+            H.stamp_prep(keys, persona, task_id=linked["id"])
+            continue
         step = {"what": what, "kind": "deadline", "due": due.isoformat(), "domain": "logistics",
                 "minutes": 15, "minutes_source": "estimated",
                 "activity": "admin" if _SCREEN_RE.search(pre) else "errands",
@@ -2836,6 +2963,50 @@ def _prep_sweep(persona: str, state: dict) -> str:
     return ("prep: " + ", ".join(bits)) if bits else ""
 
 
+def _linked_prep(tasks: list[dict], event: dict, pre: str) -> dict | None:
+    """An open task already linked to this event whose words share one with the precursor. A
+    task linked to the same event about something else ("book a taxi" beside "bring the
+    passport") is a different prep, and the finding's still opens."""
+    uid = event.get("uid")
+    if not uid:
+        return None
+    O = _O()
+    ptoks = O._task_tokens(pre) - _EVENT_GENERIC
+    for t in tasks:
+        pf = t.get("prep_for") or {}
+        if (t.get("status") == "open" and pf.get("uid") == uid
+                and ptoks & (O._task_tokens(t.get("what", "")) - _EVENT_GENERIC)):
+            return t
+    return None
+
+
+def _note_precursor(persona: str, t: dict, pre: str) -> None:
+    O = _O()
+    pre = pre.strip().rstrip(".")
+    if not pre or O._task_tokens(pre) <= O._task_tokens(f"{t.get('what', '')} {t.get('note', '')}"):
+        return
+
+    def apply(doc: dict) -> None:
+        row = O._find(doc["tasks"], t["id"])
+        if row and row.get("status") == "open":
+            # Kept on prep_for, which `_prep_follow` carries into every note it rewrites (Fable
+            # diff review #5: a note alone was overwritten on the event morning).
+            pf = row.setdefault("prep_for", {})
+            pf["also"] = pre[:160]
+            own = row.get("note") and not str(row["note"]).startswith("Before ")
+            row["note"] = (f"{row['note']}. Also: {pf['also']}" if own else _prep_note(row))
+
+    O._with_store(persona, apply)
+
+
+def _prep_note(t: dict) -> str:
+    """The note a prep carries: "Before <event> on <day>", plus what else its finding asked."""
+    pf = t.get("prep_for") or {}
+    day = str(pf.get("start") or t.get("moot_after") or "")[:10]
+    base = f"Before {pf.get('title', 'it')}" + (f" on {day}" if day else "")
+    return base + (f". Also: {pf['also']}" if pf.get("also") else "")
+
+
 _PREP_STARTED = "its event has started"
 # After a lookup that could not tell (an error), the same event is not looked up again for this
 # long — one CalDAV call per tick per unresolved prep would run for up to two days (Fable diff
@@ -2863,7 +3034,9 @@ def _prep_follow(persona: str, state: dict, tasks: list[dict], today: date,
     for t in tasks:
         pf = t.get("prep_for") or {}
         uid = pf.get("uid")
-        if t.get("status") != "open" or not uid or not str(t.get("source_id") or "").startswith(_PREP_SOURCE):
+        # A prep opened from a finding, or a task the user stated about the event (`chat`).
+        if t.get("status") != "open" or not uid or not (
+                str(t.get("source_id") or "").startswith(_PREP_SOURCE) or pf.get("chat")):
             continue
         old = _dt(pf.get("start"))
         start = old
@@ -2928,7 +3101,10 @@ def _prep_follow(persona: str, state: dict, tasks: list[dict], today: date,
                 t["before"] = ch["before"]
             else:
                 t.pop("before", None)
-            t["note"] = f"Before {(t.get('prep_for') or {}).get('title', 'it')} on {ch['day'].isoformat()}"
+            # A note the user gave a task they stated themselves is theirs and stays; a code-written
+            # one ("Before …") is rewritten with the new day and what else the finding asked.
+            if not t.get("note") or str(t["note"]).startswith("Before "):
+                t["note"] = _prep_note(t)
             counts["moved"] += bool(ch["moved"])
 
     O._with_store(persona, apply)
@@ -3173,7 +3349,7 @@ _SAID_SIGNALS = {
                          r"cuts? into|takes? (up )?(some of )?your)\b", re.I),
     "cascades": re.compile(r"\b(redo\w*|re-?do\w*|again|without|can'?t|cannot|won'?t|go ahead|"
                            r"restart\w*|re-?open\w*|block\w*|drop\w*|dismiss\w*|skip\w*|"
-                           r"bring (it |that )?back|undo\w*)\b", re.I),
+                           r"bring (it |that )?back|undo\w*|on purpose|by accident|accidentally|meant to|mean to)\b", re.I),
 }
 
 
@@ -3270,6 +3446,13 @@ def refresh_tick() -> str:
                 notes.append(f"{n} slip(s) recorded")
         except Exception as exc:  # noqa: BLE001
             notes.append(f"slips failed: {type(exc).__name__}")
+        try:
+            from tools.project_plan import sweep_unplanned
+            n = sweep_unplanned(persona)
+            if n:
+                notes.append(f"{n} vetted goal(s) queued for a plan")
+        except Exception as exc:  # noqa: BLE001
+            notes.append(f"plan sweep failed: {type(exc).__name__}")
     # Before `current()`, so a prep opened now is placed in this same tick (synth plan § 9).
     try:
         note = _prep_sweep(persona, _load_state(persona))
@@ -3278,6 +3461,17 @@ def refresh_tick() -> str:
     except Exception as exc:  # noqa: BLE001 — a prep fault never costs the day its plan
         logger.warning(f"[day_plan] prep sweep failed: {exc}")
         notes.append(f"prep failed: {type(exc).__name__}")
+    # The project planner (goal–task network § 10 R8): one queued plan at a time, off this tick,
+    # on a worker; its steps are placed by the next tick's build, with no reshuffle (R5).
+    planning = False
+    try:
+        from tools.project_plan import start_planning
+        planning = start_planning(persona)
+    except Exception as exc:  # noqa: BLE001 — a planner fault never costs the day its plan
+        logger.warning(f"[day_plan] project planner failed to start: {exc}")
+        notes.append(f"project planner failed: {type(exc).__name__}")
+    if planning:
+        notes.append("project planner started")
     plan = current(persona, reason="tick")
     started = start_reshuffle(persona)
     tomorrow_draft(persona, build=True)

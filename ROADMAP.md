@@ -446,6 +446,10 @@ Phase 5 was built iteratively across many sessions, each solving a local problem
 > belongs with `load_config()` in **`core/config.py`**; `_synth_conditional_sections()` is
 > wired into both pipeline twins and stays in **`core/orchestrator.py`**. **Regression gate
 > addition:** `python tests/test_synth_module_injection.py` must still pass after the split.
+>
+> **⚠ One more 2026-11-21 (goal–task network phase 2):** `_goals_section()` — the one goal
+> filter every prompt goes through (§ 10 R6) — belongs with `load_config()`/`load_goals()` in
+> **`core/config.py`**. Gate: `python tests/test_goal_network_phase2.py` (its R6 checks).
 
 **Server split — `core/server.py` → 2 files:**
 

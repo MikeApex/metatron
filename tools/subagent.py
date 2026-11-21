@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 # costs no existing route (tests/test_consent_enforcement.py greps for it).
 CODE_ONLY_AGENTS = frozenset({
     "tone_profiler", "intake_extractor", "accountability_judge", "day_planner", "crm_sweep",
-    "capture_extractor",
+    "capture_extractor", "project_planner",
 })
 
 

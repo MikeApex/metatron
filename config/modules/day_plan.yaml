@@ -46,6 +46,11 @@ flags:
   # at most one slot on an ordinary turn; one held back keeps its offers (§ 12 M2, Mike's yes
   # 2026-11-18). Off: every undelivered finding arrives at once, as before.
   horizon_cap: true
+  # GOAL–TASK NETWORK PHASE 2 (2026-11-21). A goal or obligation Synth sized M and checked with
+  # the user is queued (plan_project) and broken into small dated steps by the project_planner
+  # agent, run off this tick — one at a time, capped per day (limits below). Off: plan_project
+  # refuses, nothing is queued or planned, and steps already written stay as ordinary tasks.
+  project_planner: true
 
 replaces_jobs: [companion_checkin]
 
@@ -97,3 +102,12 @@ limits:
   length_asks_per_day: 2
   log_retention_days: 90
   plan_retention_days: 3
+  # The project planner (goal–task network plan § 10 R8). One reasoning-tier call per planned
+  # item (+ at most one retry): ~$0.02 each at today's price, ~$0.04 after the introductory price
+  # ends — so 6 a day caps a persona at ~$0.12/day (~$0.24 after). Typical use is a few a week.
+  project_plans_per_day: 6
+  project_plan_gap_minutes: 10
+  # Two reasoning calls (one retry) fit well inside this; a worker past it is presumed dead.
+  project_plan_stale_seconds: 600
+  # No step longer than this — a longer one is split (§ 4.3).
+  project_step_max_minutes: 90

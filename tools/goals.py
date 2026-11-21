@@ -74,15 +74,27 @@ def write_goals(content: dict) -> str:
     return f"Goals written to {goals_path}"
 
 
-HORIZONS = ("quarterly", "weekly", "daily")
-_ID_PREFIX = {"quarterly": "q", "weekly": "w", "daily": "d"}
+# `long` sits above quarterly (goal–task network plan § 4.6, § 10 R6): a language is not a
+# 90-day goal. Every reader that walks horizons reads this tuple, so a long goal links,
+# weights and sweeps like the rest.
+HORIZONS = ("long", "quarterly", "weekly", "daily")
+_ID_PREFIX = {"long": "l", "quarterly": "q", "weekly": "w", "daily": "d"}
+
+# Goal statuses. `proposed` is a goal stated in chat and not yet vetted; `parked` is "later",
+# with a date to re-ask; `declined` is kept, not deleted (archive-on-merge). Only the first
+# four reach prompts as current goals; `proposed` reaches them under "being considered";
+# `parked` and `declined` never (§ 10 R6, `prompt_view`). Only `active` goals are decomposed.
+STATUSES = ("active", "not_started", "at_risk", "completed", "proposed", "parked", "declined")
+CURRENT = ("active", "not_started", "at_risk")
+_SIZES = ("S", "M", "L")
 
 # Fields an in-conversation edit may set. `private_why` is here because a goal
 # added mid-conversation usually arrives with its motivation attached — the
 # reason is the part worth capturing, and asking the user to repeat it in a
 # formal interview later is how it gets lost.
 _EDITABLE = ("title", "private_why", "shareable_what", "status", "due",
-             "parent_goal", "context", "essential")
+             "parent_goal", "context", "essential", "size", "kind", "timeline",
+             "open_questions", "revisit_on")
 
 
 def _next_id(goals: list, horizon: str) -> str:
@@ -98,6 +110,135 @@ def _next_id(goals: list, horizon: str) -> str:
     return f"{prefix}{n}"
 
 
+def _calling_agent() -> str:
+    """The agent whose tool call this is, from the request trace; "" when none is bound (a
+    direct call, a test). Read, never trusted from an argument a model fills in."""
+    try:
+        from core.trace import get_current_agent
+        rec = get_current_agent()
+        return str(getattr(rec, "agent", "") or "")
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _find_goal(data: dict, goal_id: str) -> tuple[str, int, dict] | None:
+    for h in HORIZONS:
+        for i, g in enumerate(data.get(h) or []):
+            if isinstance(g, dict) and str(g.get("id", "")) == goal_id:
+                return h, i, g
+    return None
+
+
+def _iso(value: str) -> str | None:
+    try:
+        return datetime.strptime(str(value).strip()[:10], "%Y-%m-%d").date().isoformat()
+    except ValueError:
+        return None
+
+
+def _close_steps(goal_id: str, status: str) -> None:
+    """A task part_of a goal that is declined, parked or completed is closed with that reason
+    (§ 4.1). The ledger owns the write; a failure never blocks the goal change."""
+    try:
+        from tools.obligations import close_plan_of
+        close_plan_of(goal_id, f"its goal was {status}")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def vet_goal(goal_id: str, verdict: str, size: str = "", displaces: str = "", priority: str = "",
+             revisit_on: str = "", by: str = "") -> str:
+    """Record a vetting verdict on one goal (§ 4.2, § 10 R3). Depth is the size Synth gave it in
+    the turn: S needs nothing beyond the ledger; M needs a date it is feasible by and a priority
+    against what is open; L is vetted by the Goals Interviewer's re-interview, which is phase 3 —
+    until then an L goal stays `proposed` ("being considered") and is never decomposed."""
+    verdict = str(verdict or "").strip().lower()
+    if verdict not in ("active", "parked", "declined"):
+        return "Error: verdict must be active, parked or declined."
+    size = str(size or "").strip().upper()
+    data = read_goals()
+    hit = _find_goal(data, str(goal_id or "").strip())
+    if not hit:
+        return f"Error: no goal with id '{goal_id}'."
+    h, _i, g = hit
+    size = size or str(g.get("size") or "").upper()
+    if verdict == "active":
+        if size not in _SIZES:
+            return ("Error: say how big it is first — size S (one sitting), M (hours to days, one "
+                    "end date) or L (recurring time for weeks or more). Nothing was changed.")
+        if size == "L":
+            # § 4.2's L row: Synth's SHORT pass — what it displaces in a real week and where it
+            # ranks — takes it on; the Interviewer's full pass is phase 3. Without this, every
+            # recurring goal stated in chat stayed "being considered" for the whole phase 2 → 3
+            # interval, where today it becomes current and gets weekly time (Fable diff review #4).
+            # An L goal is given weekly time, never steps (plan_project refuses it).
+            if not str(displaces or "").strip() or not str(priority or "").strip():
+                return ("Error: a goal that needs regular time is taken on only once it is clear "
+                        "what it takes that time from in a real week (`displaces`) and where it "
+                        "ranks (`priority`). Nothing was changed.")
+        if size == "M":
+            if not _iso(g.get("due") or ""):
+                return ("Error: an M goal is vetted against its date — set `due` first (update_goal "
+                        "action=update), then vet. Nothing was changed.")
+            if not str(priority or "").strip():
+                return ("Error: say where it ranks against what is already open (`priority`). "
+                        "Nothing was changed.")
+    if verdict == "parked":
+        when = _iso(revisit_on)
+        if not when:
+            return "Error: a parked goal needs `revisit_on` (YYYY-MM-DD), the day to ask again."
+        g["revisit_on"] = when
+    g["status"] = verdict
+    if size in _SIZES:
+        g["size"] = size
+    g["vetted"] = {k: v for k, v in (
+        ("date", datetime.now().strftime("%Y-%m-%d")), ("depth", size or None),
+        ("displaces", str(displaces or "").strip() or None),
+        ("priority", str(priority or "").strip() or None),
+        ("by", by or _calling_agent() or None),
+        ("pass", "short" if size == "L" and verdict == "active" else None)) if v}
+    _write(data)
+    if verdict in ("parked", "declined"):
+        _close_steps(str(g["id"]), verdict)
+    word = {"active": "taken on", "parked": f"parked until {g.get('revisit_on')}",
+            "declined": "declined (kept on record)"}[verdict]
+    tail = (" Ask plan_project to break it into steps." if verdict == "active" and size == "M"
+            else " It is given regular time each week, not steps." if verdict == "active"
+            and size == "L" else "")
+    return f"{h} goal {g['id']} {word}.{tail}"
+
+
+def prompt_view(data: dict) -> str:
+    """Goals as every prompt sees them (§ 10 R6) — the one filter. Current goals (active,
+    not_started, at_risk; and completed, which the record keeps) as YAML; proposed ones under a
+    short "being considered" heading; parked and declined never; `vetted` records never. A goal
+    with no status is active, as it has always been read."""
+    current: dict = {}
+    considered: list[str] = []
+    for h in HORIZONS:
+        for g in data.get(h) or []:
+            if not isinstance(g, dict):
+                continue
+            status = str(g.get("status") or "active")
+            if status in ("parked", "declined"):
+                continue
+            if status == "proposed":
+                considered.append(f"- {g.get('id', '?')}: {g.get('title', '')}"
+                                  + (f" (by {g['due']})" if g.get("due") else ""))
+                continue
+            current.setdefault(h, []).append({k: v for k, v in g.items() if k != "vetted"})
+    for k, v in data.items():
+        if k not in HORIZONS and k not in current:
+            current[k] = v
+    out = yaml.dump(current, default_flow_style=False, allow_unicode=True, sort_keys=False).strip() \
+        if current else ""
+    text = f"```yaml\n{out}\n```" if out else ""
+    if considered:
+        text += ("\n\n### Being considered (not yet taken on — never treat these as current goals)\n"
+                 + "\n".join(considered))
+    return text.strip()
+
+
 def update_goal(
     action: str,
     horizon: str = "",
@@ -110,6 +251,12 @@ def update_goal(
     parent_goal: str = "",
     context: str = "",
     essential: bool | str | None = None,
+    size: str = "",
+    kind: str = "",
+    verdict: str = "",
+    displaces: str = "",
+    priority: str = "",
+    revisit_on: str = "",
 ) -> str:
     """
     Add, edit, complete or remove a single goal.
@@ -132,8 +279,11 @@ def update_goal(
         Confirmation, or an explanatory refusal.
     """
     action = str(action).strip().lower()
-    if action not in ("add", "update", "complete", "remove"):
-        return "Error: action must be one of add, update, complete, remove."
+    if action not in ("add", "update", "complete", "remove", "vet"):
+        return "Error: action must be one of add, update, complete, remove, vet."
+    if action == "vet":
+        return vet_goal(goal_id, verdict, size=size, displaces=displaces, priority=priority,
+                        revisit_on=revisit_on)
 
     data = read_goals()
     fields = {k: v for k, v in (
@@ -141,6 +291,31 @@ def update_goal(
         ("shareable_what", shareable_what), ("status", status), ("due", due),
         ("parent_goal", parent_goal), ("context", context),
     ) if str(v).strip()}
+    if fields.get("status") and fields["status"].strip().lower() not in STATUSES:
+        return f"Error: status must be one of {', '.join(STATUSES)}."
+    if "status" in fields:
+        fields["status"] = fields["status"].strip().lower()
+    if str(size).strip():
+        if str(size).strip().upper() not in _SIZES:
+            return "Error: size is S, M or L."
+        fields["size"] = str(size).strip().upper()
+    if str(kind).strip():
+        if str(kind).strip().lower() not in ("goal", "obligation"):
+            return "Error: kind is goal or obligation."
+        fields["kind"] = str(kind).strip().lower()
+    if fields.get("due") and not _iso(fields["due"]):
+        return "Error: due is YYYY-MM-DD."
+    # § 10 R6: a goal stated in chat is written `proposed`, in code, whatever status the model
+    # sent — and only a vetting verdict (action=vet) takes it on. The Goals Interviewer authors
+    # vetted goals and keeps its default.
+    from_synth = _calling_agent() == "synthesizer"
+    if from_synth and action == "update" and fields.get("status") in ("active", "not_started",
+                                                                      "at_risk", "parked",
+                                                                      "declined"):
+        hit = _find_goal(data, str(goal_id).strip())
+        if hit and str(hit[2].get("status") or "active") == "proposed":
+            return ("Error: a goal being considered is taken on, parked or declined with "
+                    "action=vet (it records the verdict). Nothing was changed.")
     # `essential` — "survived trade-off forcing": the goals the day planner protects time for
     # (archive/plans/day_planner_plan_2026-10-24.md § 4.1). Only write_goals could set it before,
     # so the Synthesizer could not mediate goal importance (Mike, F4). A real bool is stored,
@@ -160,9 +335,14 @@ def update_goal(
         data[horizon] = bucket
         new = {"id": _next_id(bucket, horizon)}
         new.update(fields)
+        if from_synth:
+            new["status"] = "proposed"
         new.setdefault("status", "active")
         bucket.append(new)
         _write(data)
+        if new["status"] == "proposed":
+            return (f"Added {horizon} goal {new['id']} as being considered: {new['title']}. "
+                    f"Size it and check it with the user (action=vet) before it is taken on.")
         return f"Added {horizon} goal {new['id']}: {new['title']}"
 
     if not str(goal_id).strip():
@@ -187,12 +367,15 @@ def update_goal(
                     g["completed_on"] = datetime.now().strftime("%Y-%m-%d")
                     g.update(fields)
                     _write(data)
+                    _close_steps(goal_id, "completed")
                     return f"Completed {h} goal {goal_id}: {g.get('title', '')}"
                 if not fields:
                     return (f"Error: nothing to change on {goal_id} — pass at "
                             f"least one of {list(_EDITABLE)}.")
                 g.update(fields)
                 _write(data)
+                if fields.get("status") in ("parked", "declined", "completed"):
+                    _close_steps(goal_id, fields["status"])
                 return (f"Updated {h} goal {goal_id}: "
                         f"{', '.join(sorted(fields))} changed.")
 
@@ -233,13 +416,16 @@ UPDATE_GOAL_SCHEMA = {
         "record with a completion date. Use 'remove' only for a goal that was "
         "abandoned or entered by mistake.\n\n"
         "Call read_goals first to get the goal's id. Nothing outside the one "
-        "goal named is touched."
+        "goal named is touched.\n\n"
+        "A goal added from conversation is recorded as being considered, not taken on. "
+        "Use 'vet' to record the verdict once it has been checked with the user: verdict "
+        "active (taken on), parked (with revisit_on) or declined (kept on record)."
     ),
     "input_schema": {
         "type": "object",
         "properties": {
-            "action": {"type": "string", "description": "add | update | complete | remove"},
-            "horizon": {"type": "string", "description": "quarterly | weekly | daily. Required for add."},
+            "action": {"type": "string", "description": "add | update | complete | remove | vet"},
+            "horizon": {"type": "string", "description": "long | quarterly | weekly | daily. Required for add. long = longer than a quarter."},
             "goal_id": {"type": "string", "description": "Id of the goal, e.g. 'd2'. Required for update, complete, remove."},
             "title": {"type": "string", "description": "The goal in one line. Required for add."},
             "private_why": {"type": "string", "description": "The user's underlying motivation, in their own terms. Sensitive — never leaves this system."},
@@ -248,6 +434,12 @@ UPDATE_GOAL_SCHEMA = {
             "due": {"type": "string", "description": "YYYY-MM-DD, if there is a date."},
             "parent_goal": {"type": "string", "description": "Id of the goal this serves, e.g. a weekly goal under 'q1'."},
             "context": {"type": "string", "description": "Anything worth knowing about how this goal has been going."},
+            "size": {"type": "string", "description": "S (one sitting, about an hour) | M (hours to days, one end date) | L (recurring time for weeks or more)."},
+            "kind": {"type": "string", "description": "goal | obligation (something that must be done, e.g. filing taxes)."},
+            "verdict": {"type": "string", "description": "For vet: active | parked | declined."},
+            "priority": {"type": "string", "description": "For vet: where it ranks against what is already open, in a few words."},
+            "displaces": {"type": "string", "description": "For vet: what it takes time from, if anything."},
+            "revisit_on": {"type": "string", "description": "For vet with verdict parked: YYYY-MM-DD to ask again."},
         },
         "required": ["action"],
     },
@@ -261,7 +453,7 @@ WRITE_GOALS_SCHEMA = {
         "from a horizon you pass is deleted. To change a single goal, use "
         "update_goal instead.\n\n"
         "Pass a dict with one or more horizon keys "
-        "(quarterly, weekly, daily). Each key replaces the existing value for that horizon. "
+        "(long, quarterly, weekly, daily). Each key replaces the existing value for that horizon. "
         "Each goal should include: title, private_why (sensitive — motivation), "
         "shareable_what (semi-sensitive — instrumental behavior), status, and optionally "
         "due (YYYY-MM-DD) and parent_goal (id of the parent goal)."

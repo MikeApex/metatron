@@ -610,11 +610,9 @@ def load_config(persona: str | None = None, kind: str | None = None) -> str:
             if content:
                 sections.append(_titled(label, content))
 
-    goals_path = config_dir / "goals.yaml"
-    if goals_path.exists():
-        goals_content = goals_path.read_text().strip()
-        if goals_content:
-            sections.append(f"## Current Goals\n\n```yaml\n{goals_content}\n```")
+    goals_block = _goals_section(config_dir / "goals.yaml")
+    if goals_block:
+        sections.append(goals_block)
 
     # Optional, per-persona: how to handle a request to change the tool itself.
     # Present only for personas whose user is also building Metatron — absent
@@ -658,14 +656,31 @@ def load_config(persona: str | None = None, kind: str | None = None) -> str:
     return "\n\n---\n\n".join(sections)
 
 
+def _goals_section(goals_path: Path) -> str:
+    """goals.yaml as every prompt sees it — through ONE filter (goal–task network plan § 10 R6):
+    current goals as YAML, proposed ones under "being considered", parked and declined never,
+    vetting records never. Until 2026-11-21 the raw file was pasted, so a declined goal read as
+    current to every agent. An unparseable file falls back to the raw text, as before — losing
+    the goals from every prompt would be the worse failure."""
+    if not goals_path.exists():
+        return ""
+    raw = goals_path.read_text().strip()
+    if not raw:
+        return ""
+    try:
+        import yaml as _yaml
+        from tools.goals import prompt_view
+        data = _yaml.safe_load(raw)
+        body = prompt_view(data) if isinstance(data, dict) else f"```yaml\n{raw}\n```"
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[goals] filter failed, raw file used: {exc}")
+        body = f"```yaml\n{raw}\n```"
+    return f"## Current Goals\n\n{body}" if body else ""
+
+
 def load_goals(persona: str | None = None) -> str:
     """Load only goals.yaml — for specialist agents that don't need full config."""
-    goals_path = persona_config_dir(persona) / "goals.yaml"
-    if goals_path.exists():
-        content = goals_path.read_text().strip()
-        if content:
-            return f"## Current Goals\n\n```yaml\n{content}\n```"
-    return ""
+    return _goals_section(persona_config_dir(persona) / "goals.yaml")
 
 
 def _load_coordinator_context(persona: str | None = None) -> str:
@@ -1445,6 +1460,9 @@ def register_tools() -> tuple[list[dict], dict]:
     from tools.day_plan import request_replan, REQUEST_REPLAN_SCHEMA, answer_event, ANSWER_EVENT_SCHEMA
     # The whole day on request (archive/plans/synth_now_next_plan_2026-10-30.md § 3.3).
     from tools.day_plan import read_day_plan, READ_DAY_PLAN_SCHEMA
+    # The project planner (goal–task network plan § 10 R8): plan_project only queues; read_plan is
+    # the whole map on request. Granted to the synthesizer in both routing files.
+    from tools.project_plan import plan_project, read_plan, PLAN_PROJECT_SCHEMA, READ_PLAN_SCHEMA
     # External-content tools. Both return their payload wrapped by tools/untrusted.py —
     # a web page and an email body are written by strangers.
     from tools.web import fetch_url, FETCH_URL_SCHEMA, fetch_rendered, FETCH_RENDERED_SCHEMA
@@ -1509,6 +1527,7 @@ def register_tools() -> tuple[list[dict], dict]:
         WRITE_WISHES_SCHEMA, READ_WISHES_SCHEMA, GENERATE_EMERGENCY_CARD_SCHEMA,
         OPEN_TASK_SCHEMA, UPDATE_TASK_SCHEMA, LIST_TASKS_SCHEMA,
         SET_DAY_SHAPE_SCHEMA, REQUEST_REPLAN_SCHEMA, ANSWER_EVENT_SCHEMA, READ_DAY_PLAN_SCHEMA,
+        PLAN_PROJECT_SCHEMA, READ_PLAN_SCHEMA,
         PAUSE_INTERVIEW_SCHEMA, FINISH_INTERVIEW_SCHEMA,
         PAUSE_ROUTINE_SCHEMA, RESUME_ROUTINE_SCHEMA, LIST_ROUTINES_SCHEMA,
         READ_INTAKE_QUEUE_SCHEMA, TEACH_INTAKE_SCHEMA,
@@ -1610,6 +1629,8 @@ def register_tools() -> tuple[list[dict], dict]:
         "request_replan": request_replan,
         "answer_event": answer_event,
         "read_day_plan": read_day_plan,
+        "plan_project": plan_project,
+        "read_plan": read_plan,
         "pause_routine": pause_routine,
         "resume_routine": resume_routine,
         "list_routines": list_routines,
@@ -1705,6 +1726,7 @@ _ALWAYS_CONFIDENTIAL = [
     "record_wisdom_response",
     "write_contact", "read_contact", "list_contacts", "log_interaction",
     "search_contacts", "write_persona", "get_tone_shape", "tone_profiler",
+    "plan_project", "read_plan", "project_planner",
     # Routing / architecture terms
     "cloud_deep", "cloud_fast", "cloud_analytical", "routing.yaml",
     "run_session", "config/agents",
@@ -4349,7 +4371,9 @@ _REPLY_OUTPUT_TOKENS = 4096
 # Raised to 16,384 the same day (Mike): on the live day both reshuffles were cut again at
 # ~7,800 thinking + output = 8,188. Worst case ~$0.06 a reshuffle (≤ 12 a day, ~$0.72); typical
 # is what it produces. If it is still cut at 16,384, the answer is a thinking cap, not more room.
-_WIDE_OUTPUT_AGENTS = {"day_planner": 16384}
+# project_planner (goal–task network phase 2): a dozen dated steps is ~1.5k tokens of JSON, and
+# a cut-off reply is a wasted call plus its retry — same room as the day planner, billed as produced.
+_WIDE_OUTPUT_AGENTS = {"day_planner": 16384, "project_planner": 16384}
 
 # It was (Mike, 2026-10-28): 1 of 6 live reshuffles at 16,384 still ran out — 15,726 thinking +
 # 654 out — and the two longest-thinking runs were the reject and the cut-off, so the cap targets
@@ -4361,7 +4385,9 @@ _WIDE_OUTPUT_AGENTS = {"day_planner": 16384}
 # 0 fitted it 2/3 (4–9 s, ~$0.005); Flash-Lite 1/3. Thinking made it cautious, not better. Nine
 # runs on one day — judged on live use against the 16,384 week (3 of 6 applied); revert to 6,000
 # if fewer apply or more essentials go unplaced.
-_PLAIN_THINKING_CAPS = {"day_planner": 0}
+# project_planner: 4,096 — planning backwards from a deadline benefits from some thinking, and the
+# cap is what holds a call near the ~$0.02 named beside `project_plans_per_day` (day_plan.yaml).
+_PLAIN_THINKING_CAPS = {"day_planner": 0, "project_planner": 4096}
 
 
 # [DB-1026-01] A reply round that ends MAX_TOKENS with no tool call did not finish: its text
@@ -6234,12 +6260,18 @@ def _day_plan_block(persona: str | None, kind: str | None, is_proactive: bool,
             # Review finding #5 (§ 10 R10): a nudge the tick carried because this session was
             # near reaches it as DUE NOW, once.
             due_now = D.carried_due_now(persona, plan) if is_proactive else None
+            # A plan made out of sight, said once (goal–task network § 10 R8). Not on a nudge
+            # wake — its conduct is "that one thing" (the 11-21 lesson above).
+            from tools import project_plan as PP
+            projects = [] if nudge else PP.notices(persona)
             shown: dict = {}
             text = D.render_block(plan, kind=kind, heads_up=D.pending_heads_up(persona),
                                   offer_rhythm=offer, allocation_gaps=gaps, tomorrow=tomorrow,
                                   ask_length=ask, horizon=prep, findings=findings,
-                                  cascades=cascades, due_now=due_now or None, shown=shown)
+                                  cascades=cascades, due_now=due_now or None, shown=shown,
+                                  projects=projects or None)
             D.after_render(persona, shown)
+            PP.mark_offered(shown.get("projects") or [], persona)
             return text
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"[day_plan] block failed: {exc}")
@@ -7075,6 +7107,12 @@ def _close_turn_bookkeeping(visible: str, user_input: str, is_proactive: bool,
         note_said(visible)
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"[day_plan] said-stamp not recorded: {exc}")
+    # "It's planned", said once (goal–task network § 10 R8) — the same rule.
+    try:
+        from tools.project_plan import note_said as plan_said
+        plan_said(visible)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[project_plan] said-stamp not recorded: {exc}")
 
 
 def _bind_turn_kind(kind: str | None, persona: str | None) -> None:

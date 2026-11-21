@@ -425,3 +425,39 @@ all four of `mike`'s conversational jobs are `agent: coordinator` (read on the V
 
 **Still owed live:** a prep following a moved event (no real event moved); Synth actually asking
 the redo question at a brief.
+
+## 15. Phase 2 built — Fable 5.1 diff review and reconciliation (2026-11-21)
+
+Built in one Opus 5.5 session. **Mike's rulings that session:** taxes (not Prudential) is the live
+test; the taxes playbook researched by the Research Agent (decontextualised question; a few cents, not metered) and
+reviewed by Mike before it lands; the Red edits approved; and on dismissal — *"a check on whether
+the skipped step was skipped intentionally or accidentally. If it's clear that the later step
+couldn't have been completed without the earlier one, then both should be considered completed"*
+— built light: a done later step closes its required prerequisites done, and the brief asks "on
+purpose or by accident?". **R9's automatic re-plan on dismissal was not built** (Mike: only if it
+does not overcomplicate the phase). Also built: a precursor stated in chat is linked to its event
+and follows it, and a later finding adopts it (the 11-21 gap); the close gate hears "the prep",
+and its refusal tells Synth never to explain itself (live finding 11-21). The redo-question stamp
+defect from the live check was fixed separately (`9ad7a6c`).
+
+**Fable 5.1 reviewed the full diff: four structural, six local. All ten were checked against the
+code and fixed before commit;** each has its own check in `tests/test_goal_network_phase2.py`.
+
+| # | What would have gone wrong | Fix |
+|---|---|---|
+| F1 | "I did the skipped step after all" could only be recorded by marking the END done — closing every step in between | Done on a dismissed step that stopped others is allowed: it closes done and its later steps come back; the question names each later step's id |
+| F2 | Any deadline task sharing one word with an event in the next two days ("Buy Manny new shoes" beside "Manny swim") was re-dated and closed itself when the event started | A link needs two shared words, or one plus words pointing at an event ("to tomorrow's appointment"); a user's own note is never overwritten |
+| F3 | A planner size-up left the goal active, M, vetted and unplannable — `vet` refused L, the sweep skipped it, a re-queue drew the same answer | Vetting it L (short pass) gives it weekly time; re-queuing it as M after a size-up is the user confirming the size, and is planned as M |
+| F4 | Every recurring goal stated in chat stayed "being considered" with no path to current until phase 3 — a regression from today | § 4.2's L row: Synth's short pass (`displaces` + `priority`) takes it on as L, with weekly time, never steps; the Interviewer's full pass stays phase 3 |
+| F5 | The part of a finding's precursor the adopted chat task did not say lived only in a note the event-day rewrite erased | Kept on `prep_for.also` and carried into every rewritten note |
+| F6 | A failed model call (spend refusal, Vertex error) was filed as "couldn't plan" and never retried | Re-queued after an hour, up to three tries, before the user is told |
+| F7 | "It's planned" was stamped said only when the reply used a word of the title — else re-said every turn for three days | The only notice on offer is stamped by the plan words alone; any notice is let go after three offers |
+| F8 | An adopted task kept its own earlier date while taking the plan's later window — hidden, then back overdue | Its date stands only if it fits the window and its prerequisites; otherwise the plan's, with a history row |
+| F9 | A worker past the stale window could write after a restart had taken over | The generation is re-checked under the lock before the write; stale window 300 → 600 s |
+| F10 | The UK playbook attached to anything with "tax" in it (car tax, council tax) | Every word of an `applies_to` phrase must be present, matched as plain words; phrases are specific (`UK taxes`, `self assessment`, `SA100`) |
+
+**Checked, no change:** the Synthesizer stays far above the 4,096-token cache floor (~11.7k
+tokens; +~430 this phase, ~$0.01/day of cache storage). **Live planner pass (`METATRON_LIVE=1`,
+~$0.02):** valid, M, eight 30–45-minute steps following the playbook, submission 28 Dec for a 30 Dec
+date. **Not verified, for the live check:** the size Synth gives a real stated obligation, and
+whether it calls `vet` then `plan_project` in the same turn.

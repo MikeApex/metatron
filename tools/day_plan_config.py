@@ -33,6 +33,7 @@ _DEFAULTS: dict = {
         "build": True, "show_in_app": True, "ledger_fields": False, "synth_reads_plan": False,
         "unconfirmed_rule": False, "reshuffle_model": False, "nudges": False,
         "owns_checkins": False, "prep_tasks": False, "horizon_cap": False,
+        "project_planner": False,
     },
     "replaces_jobs": ["companion_checkin"],
     "score": {
@@ -50,7 +51,8 @@ _DEFAULTS: dict = {
         "travel_assumed_minutes": 30, "snapshot_max_age_minutes": 10,
         "calendar_fetch_timeout_seconds": 3, "frozen_minutes": 20, "default_task_minutes": 30,
         "reshuffle_stale_seconds": 180, "reply_lock_ms": 200, "length_asks_per_day": 2, "log_retention_days": 90,
-        "plan_retention_days": 3,
+        "plan_retention_days": 3, "project_plans_per_day": 6, "project_plan_gap_minutes": 10,
+        "project_plan_stale_seconds": 600, "project_step_max_minutes": 90,
     },
 }
 

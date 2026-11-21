@@ -303,7 +303,10 @@ def _():
     assert (_h(o), _h(u), _h(l)) == ("56ebb356afbce40a", "426bcfc2d90b424d",
                                      "fc306ac3d96fa5e1"), (_h(o), _h(u), _h(l))
     r, g = G.goal_schemas()
-    assert (_h(r), _h(g)) == ("dd71c3276d1e4b23", "385d3750301ff22e"), (_h(r), _h(g))
+    # update_goal re-pinned 2026-11-21 (385d3750301ff22e → 18eae9fc0347207f): the `vet` action,
+    # the `long` horizon and size/kind/verdict/priority/displaces/revisit_on added to the shipped
+    # constant on purpose (goal–task network phase 2, § 10 R3/R6) — not a flag leaking through.
+    assert (_h(r), _h(g)) == ("dd71c3276d1e4b23", "18eae9fc0347207f"), (_h(r), _h(g))
 
 
 @check("flag ON: the planner's actions and fields appear; the constants are not mutated")
