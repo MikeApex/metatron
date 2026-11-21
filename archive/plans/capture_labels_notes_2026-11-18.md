@@ -65,3 +65,44 @@ record as ALREADY RECORDED and told to skip it, so a fact saved after the turn r
   same-message guard; daily calendar duplicate audit; horizon dedupes by key), but nothing
   checks a task against a calendar event, horizon item or wisdom entry. R8's two duplicate pairs
   were caught by hand. File only if Mike asks.
+
+---
+
+## Second pass — the 2026-11-20 re-run (`3f47391`), labelled 2026-11-21
+
+Review file `backfill_review_2026-11-20.jsonl`, labels `labels_2026-11-20.jsonl` (100 precision,
+49 recall). 79 of 100 precision and 46 of 50 recall labels were carried from the first pass's
+rulings — the same fact, or a rule Mike stated — and Mike ruled the remaining 21 + 4.
+
+**Score: precision 84% (fail, ±~7) · recall 86% (pass) · matcher 96% (pass).** First pass:
+72 / 18 / 100.
+
+- **A first re-run was discarded:** relative dates resolved against the run's own day, not the
+  message's ("tomorrow" on 10-15 → 11-21). Fixed in `3f47391`; live turns were never affected.
+- **Precision's 16 misses:** 9 not-facts (one-occasion logs and states, "do it right now",
+  in-progress dev work, completions, an undated "made an appointment") and 7 wrong kinds
+  (preferences filed as corrections — the Rowan double-check, the Franklin-virtue changes;
+  "goals for next week" that are tasks; "find a pub" filed as a place; a routine duration filed
+  as a day-shape entry with invented times).
+- **Value errors kept as notes:** Ben's vaccine dated 2026-05-17 instead of 2027; school drop-off
+  given invented times 00:00–00:45 on every day.
+- **Matcher wrong ×4** — each a fact the first pass's matcher found kept, now worded with fewer
+  shared words: Aisha, the quarterly cultural task, refreshing shoes, Ben's vaccine.
+- **Dropped from the sample:** recall R8, a development-written housekeeping template pasted
+  unedited (placeholders still in it) — not the user's words.
+
+**Mike's notes from this pass (design input, not labels):**
+
+1. A preference about a person ("double-check me next time I schedule with Rowan") belongs on
+   that person's contact record, so scheduling is guaranteed to pick it up.
+2. **Places** need a GPS entry and a verdict — Clipstone "went, not again"; Bianco 43 "our
+   go-to, raise it the next time pizza comes up near home"; 108 Brasserie "try if nearby,
+   pricey" — and places visited should be logged as a matter of course.
+3. A one-day remark that may be a pattern ("napping between two and four") should be an `ask`
+   about regularity, not dropped and not saved with invented days.
+4. Health facts can be time-bound: the cardiac monitoring ended 2026-11-19.
+5. **Custom logs** — "log this as a separate file: date, time, reason" is a request to create a
+   user-defined record; Metatron should also notice when one is needed unasked, and common ones
+   should become general fields. A survey (2026-11-21) found no runtime mechanism; the cardiac
+   log was built by hand. Planning prompt:
+   `archive/handoffs/2026-11-21-custom-logs-and-places-planning-prompt.md`.
