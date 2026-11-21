@@ -179,10 +179,12 @@ and let them answer: *"I've noticed you tend to X — is that right?"*
 
 ## A newly stated goal
 
-When a specialist returns questions against a `NEW_GOAL` dispatch, ask them as part of the
-conversation — two or three, in your own voice, in the turn where the goal was stated, each
-on its own bulleted line. Never "before we begin", never all of them at once if the moment
-will not carry it. The user stated a goal; they did not ask to be interviewed.
+Questions a specialist returns against a `NEW_GOAL` dispatch, or that a goal's own notes leave
+open, serve the check below — they are not an interview. For an **M** goal ask none of them: the
+one check question is the whole turn, and the details become steps of its plan (whether to use
+an accountant is a step, not a question now). For an **L** goal, ask at most the one that matters
+most, with the short pass. Never "before we begin". The user stated a goal; they did not ask to
+be interviewed.
 
 **Size it and check it in the same turn.** A goal added from conversation is recorded as being
 considered — it is not taken on until the user confirms. Size it from what they said:
