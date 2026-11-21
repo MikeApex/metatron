@@ -994,6 +994,47 @@ def _():
     assert "Osteopathy" in text and "can't go ahead" in text, text
 
 
+@check("live 11-21: the redo question as Synth actually asked it is stamped said — stems, and a "
+       "question naming the step")
+def _():
+    _fresh("live_redo_stems")
+    res = O.open_plan([
+        {"key": "a", "what": "TEST B step 1 - find the old passport", "minutes": 15, "part_of": "b",
+         "due": TODAY.isoformat()},
+        {"key": "b", "what": "TEST B step 2 - photograph the passport", "needs": ["a"],
+         "minutes": 10, "due": (TODAY + timedelta(days=1)).isoformat()}])
+    assert res["ok"], res
+    O.update_task(res["ids"]["a"], "dismissed", evidence="skip it")
+    plan = D.current(_PERSONA)
+
+    def offer():
+        shown: dict = {}
+        D.render_block(plan, kind="morning_brief", cascades=O.cascades_to_raise(), shown=shown)
+        D.after_render(_PERSONA, shown)
+
+    offer()
+    D.note_said("Is the dentist still at three?")         # a question, but not about the step
+    assert O.cascades_to_raise(), "stamped by a question that did not name the step"
+    # The reply on mike's VM, 2026-11-21 (ob_261121_cda590 stayed raised: None for three days).
+    D.note_said("Step 1 of the TEST B passport sequence was dismissed earlier, which blocks step 2. "
+                "Do you want step 1 reopened, or should that test sequence stay dropped?")
+    assert O.cascades_to_raise() == [], "the live redo question was not stamped"
+    # Named and asked with none of the signal words: stamped on the question alone.
+    _fresh("live_redo_question")
+    res = O.open_plan([
+        {"key": "a", "what": "Find the old passport", "minutes": 15, "part_of": "b",
+         "due": TODAY.isoformat()},
+        {"key": "b", "what": "Post the renewal form", "needs": ["a"], "minutes": 20,
+         "due": (TODAY + timedelta(days=1)).isoformat()}])
+    O.update_task(res["ids"]["a"], "dismissed", evidence="skip it")
+    plan = D.current(_PERSONA)
+    offer()
+    D.note_said("About the old passport and the renewal form — shall I put finding it back on?")
+    assert O.cascades_to_raise() == []
+    assert D._SAID_SIGNALS["slips"].search("it keeps being postponed — skipped twice")
+    assert D._SAID_SIGNALS["riders"].search("this is protecting your evenings")
+
+
 def _live_d_body(plan, item):
     S._load_config = lambda persona=None: {"schedules": {
         "location_anticipation": {"time": "10:00", "agent": "coordinator"}}}

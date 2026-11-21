@@ -3161,12 +3161,19 @@ _OFFER_REPLY_WINDOW = timedelta(minutes=15)
 # Naming a task is not asking about it: "the VAT return is next at 2" must not count as saying it
 # slipped (Fable live-fix review #2). Each item counts as said only when the reply names the task
 # AND carries words of that question. A heuristic on the reply, deliberately loose on wording.
+# Stems, not whole words (live check 2026-11-21): Synth asked the redo question exactly right —
+# "…was dismissed earlier, which blocks step 2. Do you want step 1 reopened, or should that test
+# sequence stay dropped?" — and none of `reopen`, `dismiss`, `block`, `drop` matched, so the
+# cascade stayed unstamped and was re-offered every turn for three days.
 _SAID_SIGNALS = {
     "slips": re.compile(r"\b(slip\w*|days?|since|put (it )?off|keeps? (getting )?(moved|pushed)|"
-                        r"drop(ped)?|dismiss\w*|still (not|open|waiting)|haven'?t|missed|again)\b", re.I),
-    "riders": re.compile(r"\b(own time|your time|evening|family time|protected|eats? into|cuts? into|"
-                         r"takes? (up )?(some of )?your)\b", re.I),
-    "cascades": re.compile(r"\b(redo|again|without|can'?t|cannot|won'?t|go ahead|restart|reopen)\b", re.I),
+                        r"drop\w*|dismiss\w*|skip\w*|postpon\w*|still (not|open|waiting)|"
+                        r"haven'?t|miss\w*|again)\b", re.I),
+    "riders": re.compile(r"\b(own time|your time|evening\w*|family time|protect\w*|eats? into|"
+                         r"cuts? into|takes? (up )?(some of )?your)\b", re.I),
+    "cascades": re.compile(r"\b(redo\w*|re-?do\w*|again|without|can'?t|cannot|won'?t|go ahead|"
+                           r"restart\w*|re-?open\w*|block\w*|drop\w*|dismiss\w*|skip\w*|"
+                           r"bring (it |that )?back|undo\w*)\b", re.I),
 }
 
 
@@ -3194,7 +3201,10 @@ def note_said(reply_text: str, persona: str | None = None) -> int:
 
     said: dict[str, set] = {"slips": set(), "riders": set(), "cascades": set()}
     for kind in said:
-        if not _SAID_SIGNALS[kind].search(reply):
+        # The redo question is the only question asked about a closed step, so a reply that
+        # names the step and ends in a question has asked it, whatever words it used.
+        asked = kind == "cascades" and reply.rstrip().endswith("?")
+        if not (_SAID_SIGNALS[kind].search(reply) or asked):
             continue
         for e in pending:
             for tid in e.get(kind) or []:
