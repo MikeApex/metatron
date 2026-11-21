@@ -49,11 +49,12 @@ flags:
 
 replaces_jobs: [companion_checkin]
 
-# Review finding #5 (§ 10 R10): a nudge due near one of THESE fixed sessions is carried into it
-# and said there under DUE NOW. Only conversational sessions belong here — the Sunday analysis
-# jobs say nothing to the user, so yielding to them dropped the nudge. Remove the key to shield on
-# every fixed job, as before.
-shield_jobs: [morning_brief, evening_close, location_anticipation]
+# Review finding #5 (§ 10 R10): a nudge due shortly before a CONVERSATIONAL fixed session is
+# carried into it and said there under DUE NOW. Every fixed job run by the coordinator counts
+# (mike's VM also has `manny_school`, which a name list missed); the Sunday analysis jobs say
+# nothing to the user and do not. Names listed here are added to that rule — for a conversational
+# job run by another agent. Empty by default.
+shield_jobs: []
 
 # Score weights (plan § 5.2). Baseline is the explicit priority, else the linked goal.
 score:

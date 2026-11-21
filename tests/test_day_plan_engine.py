@@ -715,8 +715,11 @@ def _():
     D._idle_minutes = lambda persona: 3.0
     assert "mid-conversation" in D.nudge_tick()
     D._idle_minutes = lambda persona: 500.0
+    # A "leave now" is NOT held by the shield — it cannot wait for the session (goal-network
+    # phase 1 live-fix review #1, 2026-11-21); a task nudge would be carried.
     D._near_fixed = lambda persona: "lands 7m from fixed job 'morning_brief'"
-    assert "carried" in D.nudge_tick()
+    out = D.nudge_tick()
+    assert isinstance(out, dict) and out["notify"] and "physio" in out["body"], out
     _fresh_state = D._load_state(_PERSONA)
     _fresh_state["handled"] = {}
     D._write_json(D._state_path(_PERSONA), _fresh_state)

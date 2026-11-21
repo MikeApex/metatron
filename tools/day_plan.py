@@ -2085,8 +2085,7 @@ def render_block(plan: dict | None, kind: str | None = None, due_now: list[dict]
         asks.append(f"{c['end']} can't go ahead without \"{c['what']}\", which {why} — ask once "
                     f"whether to redo it; on yes, reopen `{c['id']}` (the later steps come back "
                     f"with it)")
-        if brief_or_close:
-            record["cascades"].append(c["id"])
+        record["cascades"].append(c["id"])
     if brief_or_close:
         slips = _slip_asks(state, today)
         asks += [text for _, text in slips]
@@ -2712,14 +2711,17 @@ def _match_event(item: dict, events: list[dict]) -> dict | None:
 def _prep_due(event_day: date | None, by: date | None, start: datetime | None, today: date
               ) -> tuple[date | None, str | None]:
     """(due, before) for a prep. `precursor_by` before the event wins; else the evening before;
-    an event TODAY gives due today, before its start (A1). Never earlier than today."""
+    an event TODAY gives due today, before its start (A1) — whether or not the finding carried its
+    own `precursor_by` (live data 2026-11-20: the Bupa prep lost its "before 15:30" on the day,
+    because the `by` branch returned first). Never earlier than today."""
+    before = (start.strftime("%H:%M") if start and event_day and event_day <= today
+              and not (start.hour == 0 and start.minute == 0) else None)
     if by and (event_day is None or by < event_day):
-        return max(by, today), None
+        return max(by, today), before
     if event_day is None:
         return None, None
     if event_day <= today:
-        return today, (start.strftime("%H:%M") if start and not (start.hour == 0 and start.minute == 0)
-                       else None)
+        return today, before
     return max(event_day - timedelta(days=1), today), None
 
 
@@ -3034,9 +3036,15 @@ def _slip_asks(state: dict, today: date) -> list[tuple[str, str]]:
     day, every day, until done or dismissed (Mike, M3)."""
     O = _O()
     asked = state.get("slip_asked") or {}
+    last_offer = state.get("slip_offered") or {}
     by_id = {t["id"]: O._norm(t) for t in O._load()}
     out = []
-    for tid, s in sorted((state.get("slips") or {}).items(), key=lambda kv: -int(kv[1].get("days") or 0)):
+    # Least recently offered first, then most slipped: if the Synthesizer leaves a pair unsaid,
+    # the next session offers the next pair, so every slipped task gets its turn (Fable live-fix
+    # #3) — instead of the same two at every brief and close while the rest never come up.
+    order = sorted((state.get("slips") or {}).items(),
+                   key=lambda kv: (str(last_offer.get(kv[0]) or ""), -int(kv[1].get("days") or 0)))
+    for tid, s in order:
         t = by_id.get(tid)
         if not t or t.get("status") != "open" or t.get("_blocked") or int(s.get("days") or 0) < 1:
             continue
@@ -3061,6 +3069,25 @@ def _slip_asks(state: dict, today: date) -> list[tuple[str, str]]:
 # The recorded design (codebase_review_fixes_plan_2026-11-11.md, #5): the shield narrows to the
 # conversational jobs in `shield_jobs:`, and what it carried reaches that session as DUE NOW.
 
+def _is_travel(x: dict) -> bool:
+    return str(x.get("id") or "").startswith("nudge:travel")
+
+
+def _settled(x: dict) -> bool:
+    """Whether a carried suggestion no longer needs saying. A task's: done or closed. A travel
+    "leave now": its moment has passed — 20 minutes after it, the nudge tick's own window — since
+    "leave now" said at the meeting's start is a wrong instruction, not a late one (Fable live-fix
+    review #1). `_ref_done` cannot answer for a travel ref (an event, not a task — it read the
+    11-20 09:35 nudge as closed and dropped it)."""
+    if _is_travel(x):
+        at = _dt(x.get("at"))
+        return bool(at and _now() > at + timedelta(minutes=20))
+    ref = x.get("ref")
+    if not ref:
+        return False
+    return _ref_done(ref, x.get("copy", 0))
+
+
 def carried_due_now(persona: str, plan: dict | None, mark: bool = True) -> list[dict]:
     """Suggestions the nudge tick carried (a session was coming) and no session has surfaced yet,
     still worth saying — for a scheduled turn's DUE NOW. Read from what was stored at the carry,
@@ -3075,7 +3102,7 @@ def carried_due_now(persona: str, plan: dict | None, mark: bool = True) -> list[
            if isinstance(h, dict) and h.get("outcome") == "carried" and h.get("item")
            and not h.get("surfaced_at")
            and (_dt(h["item"].get("at")) or now) >= now - timedelta(hours=6)
-           and not _ref_done(h["item"].get("ref"), h["item"].get("copy", 0))]
+           and not _settled(h["item"])]
     if out and mark:
         with _locked(persona):
             st = _load_state(persona)
@@ -3090,27 +3117,120 @@ def carried_due_now(persona: str, plan: dict | None, mark: bool = True) -> list[
 # --- what the block showed, recorded after it is built (M2, M3 rider, R9) ----------------------
 
 def after_render(persona: str, shown: dict) -> None:
-    """Charge the findings the block showed (M2), mark each dismissal cascade raised (R9) and each
-    "takes your own time" rider said (M3) — once each, ever."""
+    """Charge the findings the block showed (M2 — a finding's two offers are spent by showing it).
+    The say-once items — a slipped task, "takes your own time", the redo question (R9) — are only
+    RECORDED as offered here; `note_said` stamps each once a reply actually says it. Stamping on
+    render marked four slips asked on 2026-11-20 that neither the brief nor the close said.
+
+    Offers are a LIST, one entry per render, each expiring after `_OFFER_REPLY_WINDOW`: a user
+    turn rendering while a brief's Synthesizer is still running must not replace the brief's
+    offer (Fable live-fix review #4). Each slip's last offer is also kept, so the next session
+    offers the slips offered least recently and every one gets its turn (review #3)."""
     if not shown:
         return
     if shown.get("findings"):
         from tools.horizon import charge
         charge(shown["findings"], persona)
-    if shown.get("cascades"):
-        _O().mark_cascade_raised(shown["cascades"], persona)
-    if shown.get("riders") or shown.get("slips"):
-        with _locked(persona):
-            st = _load_state(persona)
-            r = st.setdefault("riders", {})
-            for tid in shown.get("riders") or []:
-                r.setdefault(tid, _today().isoformat())
-            sa = st.setdefault("slip_asked", {})
-            for tid in shown.get("slips") or []:
-                sa[tid] = _today().isoformat()
-            st["slip_asked"] = {k: v for k, v in sa.items() if k in (st.get("slips") or {})
-                                or k in (shown.get("slips") or [])}
-            _write_json(_state_path(persona), st)
+    offered = {k: list(dict.fromkeys(shown.get(k) or [])) for k in ("slips", "riders", "cascades")}
+    if not any(offered.values()):
+        return
+    now = _now()
+    O = _O()
+    tasks = {t["id"]: O._norm(t) for t in O._load(persona)}
+    with _locked(persona):
+        st = _load_state(persona)
+        live = [e for e in st.get("offered") or [] if isinstance(e, dict)
+                and (_dt(e.get("at")) or now) > now - _OFFER_REPLY_WINDOW]
+        live.append({"at": now.isoformat(timespec="seconds"), **offered})
+        st["offered"] = live
+        so = st.setdefault("slip_offered", {})
+        sa = st.setdefault("slip_asked", {})
+        for tid in offered["slips"]:
+            so[tid] = now.isoformat(timespec="seconds")
+            # A task with no identifying words can never be matched in a reply: offered is asked.
+            if tid in tasks and not O._task_tokens(tasks[tid]["what"]):
+                sa[tid] = now.date().isoformat()
+        st["slip_offered"] = {k: v for k, v in so.items() if k in (st.get("slips") or {})}
+        _write_json(_state_path(persona), st)
+
+
+# How long an offer waits for its reply. A turn's reply follows its block within a minute or two;
+# anything older belongs to a turn that never delivered.
+_OFFER_REPLY_WINDOW = timedelta(minutes=15)
+
+# Naming a task is not asking about it: "the VAT return is next at 2" must not count as saying it
+# slipped (Fable live-fix review #2). Each item counts as said only when the reply names the task
+# AND carries words of that question. A heuristic on the reply, deliberately loose on wording.
+_SAID_SIGNALS = {
+    "slips": re.compile(r"\b(slip\w*|days?|since|put (it )?off|keeps? (getting )?(moved|pushed)|"
+                        r"drop(ped)?|dismiss\w*|still (not|open|waiting)|haven'?t|missed|again)\b", re.I),
+    "riders": re.compile(r"\b(own time|your time|evening|family time|protected|eats? into|cuts? into|"
+                         r"takes? (up )?(some of )?your)\b", re.I),
+    "cascades": re.compile(r"\b(redo|again|without|can'?t|cannot|won'?t|go ahead|restart|reopen)\b", re.I),
+}
+
+
+def note_said(reply_text: str, persona: str | None = None) -> int:
+    """After a delivered reply: stamp each say-once item a recent render offered that the reply
+    says — its task's words (`_tokens_match`, as `obligations.note_raised`) AND a signal of that
+    question (`_SAID_SIGNALS`). Stamped items leave every pending offer; the rest wait for another
+    reply until their offer expires. Returns how many were stamped. Best effort."""
+    reply = (reply_text or "").strip()
+    if not reply:
+        return 0
+    persona = resolve_persona(persona)
+    O = _O()
+    now = _now()
+    st = _load_state(persona)
+    pending = [e for e in st.get("offered") or [] if isinstance(e, dict)
+               and (_dt(e.get("at")) or now) > now - _OFFER_REPLY_WINDOW]
+    if not pending:
+        return 0
+    rtoks = O._task_tokens(reply)
+    tasks = {t["id"]: O._norm(t) for t in O._load(persona)}
+
+    def names(*texts) -> bool:
+        return any(O._tokens_match(rtoks, O._task_tokens(x), single_ok=True) for x in texts if x)
+
+    said: dict[str, set] = {"slips": set(), "riders": set(), "cascades": set()}
+    for kind in said:
+        if not _SAID_SIGNALS[kind].search(reply):
+            continue
+        for e in pending:
+            for tid in e.get(kind) or []:
+                t = tasks.get(tid)
+                if not t:
+                    continue
+                texts = [t["what"]]
+                if kind == "cascades":
+                    texts += [tasks[x]["what"] for x in (t.get("cascade") or {}).get("closed") or []
+                              if x in tasks]
+                if names(*texts):
+                    said[kind].add(tid)
+    if not any(said.values()):
+        return 0
+    today = now.date().isoformat()
+    with _locked(persona):
+        st = _load_state(persona)
+        sa = st.setdefault("slip_asked", {})
+        for t in said["slips"]:
+            sa[t] = today
+        st["slip_asked"] = {k: v for k, v in sa.items() if k in (st.get("slips") or {})}
+        r = st.setdefault("riders", {})
+        for t in said["riders"]:
+            r.setdefault(t, today)
+        kept = []
+        for e in st.get("offered") or []:
+            if not isinstance(e, dict) or (_dt(e.get("at")) or now) <= now - _OFFER_REPLY_WINDOW:
+                continue
+            e = {**e, **{k: [x for x in e.get(k) or [] if x not in said[k]] for k in said}}
+            if any(e.get(k) for k in said):
+                kept.append(e)
+        st["offered"] = kept
+        _write_json(_state_path(persona), st)
+    if said["cascades"]:
+        O.mark_cascade_raised(sorted(said["cascades"]), persona)
+    return sum(len(v) for v in said.values())
 
 
 def refresh_tick() -> str:
@@ -3191,11 +3311,13 @@ def _near_fixed(persona: str) -> str | None:
         # analysis jobs say nothing to the user, so yielding to them dropped it. Narrowed here,
         # from `shield_jobs:` in day_plan.yaml; core/scheduler.py is unchanged. No list = every
         # fixed job, as before.
-        names = _cfg().load().get("shield_jobs")
-        if not isinstance(names, list):
-            return fn(cfg, _now())
+        # A fixed job run by the Coordinator is a conversation; `shield_jobs:` in day_plan.yaml
+        # only ADDS names to that. Not a name list alone: mike's VM has `manny_school` (Sun
+        # 16:00), which a list written from the template missed (2026-11-21).
+        names = set(_cfg().load().get("shield_jobs") or [])
         cfg = {**cfg, "schedules": {k: v for k, v in (cfg.get("schedules") or {}).items()
-                                    if k in names}}
+                                    if isinstance(v, dict)
+                                    and (v.get("agent") == "coordinator" or k in names)}}
         now = _now()
         hit = fn(cfg, now)
         if not hit:
@@ -3277,12 +3399,17 @@ def nudge_tick() -> str | dict:
                 and (_dt(h.get("at")) or now) <= now - _CARRY_GRACE
                 and h["item"].get("ref") not in deferred
                 and (_dt(h["item"].get("at")) or now) >= now - timedelta(hours=6)
-                and not _ref_done(h["item"].get("ref"), h["item"].get("copy", 0))]
+                and not _settled(h["item"])]
         if late:
             due = due + [x for x in late if x["id"] not in {d["id"] for d in due}]
     if due and shield:
-        _mark(persona, day, due, "carried")
-        return f"nudges: {len(due)} carried by a fixed session ({shield})"
+        # A "leave now" cannot wait for the session: it goes out on time (Fable live-fix #1).
+        hold = [x for x in due if not _is_travel(x)]
+        if hold:
+            _mark(persona, day, hold, "carried")
+        due = [x for x in due if _is_travel(x)]
+        if not due:
+            return f"nudges: {len(hold)} carried by a fixed session ({shield})"
     text, outcome, what = "", "", ""
     if due:
         directive = ("DAY PLAN — due now. " + " ".join(

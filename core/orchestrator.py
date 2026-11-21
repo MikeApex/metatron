@@ -6192,7 +6192,8 @@ _SCHEDULE_IMPACT_RE = _re.compile(r"^\s*SCHEDULE_IMPACT:\s*(none|minor|major)\b[
                                   _re.IGNORECASE | _re.MULTILINE)
 
 
-def _day_plan_block(persona: str | None, kind: str | None, is_proactive: bool) -> str:
+def _day_plan_block(persona: str | None, kind: str | None, is_proactive: bool,
+                    nudge: bool = False) -> str:
     """The whole day, for the Synthesizer — only while the planner's `synth_reads_plan` flag is
     on. Built after the specialists have written, so a calendar change made this turn is
     repaired in the same reply (Q10). Never waits on the calendar or the plan lock
@@ -6222,11 +6223,14 @@ def _day_plan_block(persona: str | None, kind: str | None, is_proactive: bool) -
                 prep = prep_items(persona, day)
             # New horizon findings join Important under its cap (goal–task network plan § 12 M2);
             # the horizon block steps aside while they do (tools/horizon.py `capped`).
+            # Not on a nudge wake, whose conduct is "that one thing" — showing them there spent
+            # their offers unsaid (live data 2026-11-21: two findings used both offers across
+            # five nudge wakes in 90 minutes). Same for the redo question.
             from tools.horizon import capped, new_findings
-            findings = new_findings(persona) if capped() else None
+            findings = new_findings(persona) if capped() and not nudge else None
             # A dismissed step that stopped later ones, raised once (§ 10 R9).
             from tools.obligations import cascades_to_raise
-            cascades = cascades_to_raise(persona)
+            cascades = [] if nudge else cascades_to_raise(persona)
             # Review finding #5 (§ 10 R10): a nudge the tick carried because this session was
             # near reaches it as DUE NOW, once.
             due_now = D.carried_due_now(persona, plan) if is_proactive else None
@@ -7063,6 +7067,14 @@ def _close_turn_bookkeeping(visible: str, user_input: str, is_proactive: bool,
         note_raised(visible)
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"[tasks] raise stamp not recorded: {exc}")
+    # The day plan's say-once items — a slipped task, "takes your own time", the redo question —
+    # count as said only when this reply actually mentions them (goal-network phase 1 live data,
+    # 2026-11-20: four slips marked asked at the brief and close, none of them said).
+    try:
+        from tools.day_plan import note_said
+        note_said(visible)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[day_plan] said-stamp not recorded: {exc}")
 
 
 def _bind_turn_kind(kind: str | None, persona: str | None) -> None:
@@ -7295,8 +7307,11 @@ def run_pipeline_session(user_input: str,
         # [DB-0822-09] Built HERE, after the sign-off veto above: a finding must not be
         # charged an offer on a turn where the Synthesizer never runs.
         # Mirrors the streaming twin: after the specialists, so this turn's writes are in it.
-        plan_text = _day_plan_block(persona, kind, is_proactive)
-        horizon_text = _horizon_block(persona, session=kind, uncapped=not plan_text)
+        plan_text = _day_plan_block(persona, kind, is_proactive, nudge=nudge)
+        # Never on a day-plan nudge: a finding served there is charged an offer for a reply that
+        # is told to be about one thing (goal-network phase 1 live data, 2026-11-21).
+        horizon_text = "" if nudge else _horizon_block(persona, session=kind,
+                                                       uncapped=not plan_text)
         synthesizer_input = (
             f"{proactive_prefix}{receipt_line}{synth_label}:\n{user_input}{attach_note}\n\n"
             f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"
@@ -7562,10 +7577,12 @@ def _run_pipeline_session_stream_inner(
     know_text = _knowledge_block(knowledge)
     # The day plan — after the specialists, so this turn's calendar writes are repaired in the
     # same reply (Q10). Kept identical to the non-streaming twin.
-    plan_text = _day_plan_block(persona, kind, is_proactive)
+    plan_text = _day_plan_block(persona, kind, is_proactive, nudge=nudge)
     # [DB-0822-09] After the sign-off veto, as in the non-streaming twin above — and after the
-    # plan block, which carries new findings under M2 unless it came back empty.
-    horizon_text = _horizon_block(persona, session=kind, uncapped=not plan_text)
+    # plan block, which carries new findings under M2 unless it came back empty. Never on a
+    # day-plan nudge (see the non-streaming twin).
+    horizon_text = "" if nudge else _horizon_block(persona, session=kind,
+                                                   uncapped=not plan_text)
     synthesizer_input = (
         f"{proactive_prefix}{receipt_line}{synth_label}:\n{user_input}{attach_note}\n\n"
         f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"

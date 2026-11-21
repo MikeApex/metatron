@@ -56,7 +56,8 @@ for label, fn in (("non-streaming", ORC.run_pipeline_session),
                   ("streaming", ORC._run_pipeline_session_stream_inner)):
     body = inspect.getsource(fn)
     check(f"{label} twin builds the plan block after the specialists and puts it in the package",
-          "plan_text = _day_plan_block(persona, kind, is_proactive)" in body
+          # Prefix: the call also passes `nudge=` since goal-network phase 1 (2026-11-21).
+          "plan_text = _day_plan_block(persona, kind, is_proactive" in body
           and '+ (f"\\n\\n{plan_text}" if plan_text else "")' in body
           and body.index("_dispatch_from_coordinator") < body.index("_day_plan_block"))
     check(f"{label} twin parses the Coordinator's SCHEDULE_IMPACT line",

@@ -397,3 +397,31 @@ it, so none can be forgotten (R7a's intent).
 **Not verified, for the live check:** `shield_jobs` ships as `[morning_brief, evening_close,
 location_anticipation]` (the template's names). A conversational fixed job on `mike`'s VM under
 another name would no longer shield at all.
+
+## 14. Phase 1 live data, 11-18 → 11-21 — four misses fixed, Fable-reviewed (2026-11-21)
+
+Read on the VM (read-only) after three live days. **Working:** three preps opened by themselves
+at deploy (Bupa pre-authorisation, echo travel, Aisha's reply), placed and nudged before their
+events and closed when the events started; a 07:00 and a 19:30 nudge were carried into the
+07:30 brief and the 20:00 close; the 11-19 brief said "the George School donation has slipped
+three days"; briefs carried one new finding, not a flood. Checks 2 and 4 replayed on a throwaway
+copy of `mike`'s data with this code: 17/17 (two replay-script checks miscounted semicolons in the
+line headers — the lines themselves were right). **Missed, and fixed:**
+
+| # | What the user saw | Fix |
+|---|---|---|
+| L-A | The Bupa prep had no "before 15:30" on the appointment day (placed before it by luck) | `_prep_due` sets `before` on the event day even when the finding has its own `precursor_by` |
+| L-B | 11-20: four slips marked asked, none said at the brief or close | Say-once items (slips, rider, redo question) are recorded as offered at render and stamped only when the reply names the task AND carries words of that question (`note_said`, `_SAID_SIGNALS`); offers are a list with a 15-min window; slips rotate least-recently-offered first |
+| L-C | Two findings spent both offers across five nudge wakes, unsaid | No findings, redo questions or horizon block on a day-plan nudge wake |
+| L-D | A 09:35 "leave now" for a 10:00 meeting was held for the 10:00 session and never said | A travel nudge is never held by the shield — it goes out on time; a carried one 20 min past its moment is dropped, never said late |
+| L-E | `manny_school` (Sun 16:00) missing from `shield_jobs` | Any fixed `agent: coordinator` job shields; `shield_jobs` only adds names (now `[]`) |
+
+**Fable 5.1 review of that fix:** two structural, four local. Accepted and fixed: a carried travel
+nudge could be said after its meeting started (→ L-D's on-time rule); naming a task was counted as
+asking about it (→ the signal words); unsaid slips blocked the rest (→ rotation); one shared offer
+slot (→ the list). Noted, not fixed: the stamp is taken before the confidentiality filter, as
+`note_raised`'s already is. Checked, no change: the shield now rests on each job's `agent` field —
+all four of `mike`'s conversational jobs are `agent: coordinator` (read on the VM 11-21).
+
+**Still owed live:** a prep following a moved event (no real event moved); Synth actually asking
+the redo question at a brief.

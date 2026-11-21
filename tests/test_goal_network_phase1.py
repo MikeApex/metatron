@@ -386,6 +386,11 @@ def _():
     text = D.render_block(plan, kind="morning_brief", cascades=raise_, shown=shown)
     assert "can't go ahead without" in text and ids["a"] in text, text
     D.after_render(_PERSONA, shown)
+    D.note_said("Morning. Your lunch is at one.")
+    D.note_said("The renewal form is on your list for tomorrow.")   # named, not asked
+    assert O.cascades_to_raise(), "stamped by a reply that never asked it"
+    D.after_render(_PERSONA, shown)
+    D.note_said("The renewal form can't go out without the old passport — want to redo that step?")
     assert O.cascades_to_raise() == [], "raised twice"
     r = O.update_task(ids["a"], "reopen", evidence="actually, yes, redo it")
     assert "are back" in r, r
@@ -710,14 +715,20 @@ def _():
     assert isinstance(out, dict) and out.get("notify") and len(_SENT) == 1, out
 
 
-@check("R10: an analysis job (not in shield_jobs) no longer shields a nudge; no list keeps the "
-       "old behaviour")
+@check("R10: any coordinator job shields — one named nowhere (manny_school) included; an analysis "
+       "job does not, unless listed in shield_jobs")
 def _():
-    _fresh("r10b", extra={"shield_jobs": ["evening_close"]})
-    S._load_config = lambda persona=None: json.loads(json.dumps(_SCHED))
-    _CLOCK["now"] = datetime.combine(TODAY, time(19, 20))
-    assert D._near_fixed(_PERSONA) is None
-    C._OVERRIDE.pop("shield_jobs")
+    _fresh("r10b")
+    sched = {"schedules": {
+        "manny_school": {"time": "16:00", "agent": "coordinator"},
+        "weekly_pattern_miner": {"time": "19:50", "agent": "pattern_miner"},
+    }, "interval_near_fixed_minutes": 30}
+    S._load_config = lambda persona=None: json.loads(json.dumps(sched))
+    _CLOCK["now"] = datetime.combine(TODAY, time(15, 45))
+    assert "manny_school" in str(D._near_fixed(_PERSONA)), "a coordinator job did not shield"
+    _CLOCK["now"] = datetime.combine(TODAY, time(19, 30))
+    assert D._near_fixed(_PERSONA) is None, "an analysis job shielded"
+    C._OVERRIDE["shield_jobs"] = ["weekly_pattern_miner"]
     assert "weekly_pattern_miner" in str(D._near_fixed(_PERSONA))
 
 
@@ -767,6 +778,12 @@ def _():
     assert "takes the user's own time — say so" in text, text
     assert shown["riders"] == [tid]
     D.after_render(_PERSONA, shown)
+    D.note_said("Morning — nothing until ten.")              # not said: still owed
+    D.note_said("The VAT return is next, at six.")           # named, not explained (Fable #2)
+    assert tid not in (D._load_state(_PERSONA).get("riders") or {})
+    D.after_render(_PERSONA, shown)
+    D.note_said("The VAT return eats into your evening — it's due today.")
+    assert tid in D._load_state(_PERSONA)["riders"]
     _CLOCK["now"] += timedelta(days=1)
     plan2 = {**plan, "day": (TODAY + timedelta(days=1)).isoformat(),
              "blocks": [{**plan["blocks"][0],
@@ -852,10 +869,22 @@ def _():
     text = D.render_block(plan, kind="morning_brief", shown=shown)
     assert text.count("slipped 1 day") == 2 and len(shown["slips"]) == 2, text
     D.after_render(_PERSONA, shown)
+    p1 = list(shown["slips"])
+    # Live 2026-11-20: offered at the brief, never said. Named without the question doesn't count;
+    # the close then offers the NEXT pair, so all four get their turn (Fable live-fix #3).
+    D.note_said("Morning Mike — " + _task(p1[0])["what"].lower() + " is first, then the gym.")
     shown2: dict = {}
     text2 = D.render_block(plan, kind="evening_close", shown=shown2)
-    assert set(shown2["slips"]).isdisjoint(shown["slips"]) and len(shown2["slips"]) == 2, text2
+    p2 = list(shown2["slips"])
+    assert set(p2).isdisjoint(p1) and len(p2) == 2, ("no rotation", p1, p2, text2)
     D.after_render(_PERSONA, shown2)
+    D.note_said("Two things have slipped a day: " + " and ".join(_task(t)["what"] for t in p2)
+                + " — now, or drop them?")
+    shown3: dict = {}
+    D.render_block(plan, kind="morning_brief", shown=shown3)
+    assert shown3["slips"] == p1, ("the unsaid pair comes back", shown3["slips"], p1)
+    D.after_render(_PERSONA, shown3)
+    D.note_said("Also slipped since yesterday: " + " and ".join(_task(t)["what"] for t in p1) + ".")
     assert "slipped" not in D.render_block(plan, kind="morning_brief"), "asked twice in a day"
     later = TODAY + timedelta(days=5)
     O.update_task(ids[0], "reschedule", new_due=later.isoformat(), evidence="Friday then")
@@ -882,7 +911,7 @@ def _():
     assert "Show and Tell" in H.context_block(uncapped=True)
 
 
-@check("Fable #5/#6: the redo question is an Ask, counted as asked only on a brief or close; a "
+@check("Fable #5/#6: the redo question is an Ask, counted as asked only once a reply asks it; a "
        "prerequisite that ran out of time is raised too")
 def _():
     _fresh("f56")
@@ -892,12 +921,14 @@ def _():
     shown: dict = {}
     text = D.render_block(plan, kind=None, cascades=O.cascades_to_raise(), shown=shown)
     asks = next(line for line in text.splitlines() if line.startswith("Asks"))
-    assert "can't go ahead" in asks and shown["cascades"] == [], text
+    assert "can't go ahead" in asks, text
     D.after_render(_PERSONA, shown)
-    assert O.cascades_to_raise(), "stamped on an ordinary turn"
+    D.note_said("Sure, the dentist is at three.")              # an unrelated reply
+    assert O.cascades_to_raise(), "stamped by a reply that did not ask it"
     shown = {}
     D.render_block(plan, kind="morning_brief", cascades=O.cascades_to_raise(), shown=shown)
     D.after_render(_PERSONA, shown)
+    D.note_said("Photographing the passport can't happen without finding it first — redo that?")
     assert O.cascades_to_raise() == []
     _fresh("f6")
     res = O.open_plan([{"key": "a", "what": "Collect the tickets", "due": _D3,
@@ -922,6 +953,78 @@ def _():
     r = O.update_task(ids["a"], "reschedule", new_due=_D3, evidence="do it Friday")
     assert "are back" in r, r
     assert _task(ids["b"])["status"] == "open" and _task(ids["b"])["_blocked"]
+
+
+# =============================================================================================
+# Live data, 2026-11-19 → 21 — the four misses phase 1's first days showed
+# =============================================================================================
+
+@check("live A: a prep whose finding has its own 'by' date still gets 'before <start>' on the "
+       "event's day (the Bupa code, 11-20)")
+def _():
+    _fresh("live_a")
+    d1 = TODAY + timedelta(days=1)
+    _EVENTS["v"] = [_ev("u-bupa", "Appointment — Blackheath Hospital", _at(d1, "15:30"),
+                        _at(d1, "16:30"), "Blackheath Hospital")]
+    H.record([_finding("Appointment with Circle Health Group", d1, "Blackheath Hospital",
+                       "obtain Bupa pre-authorisation code prior to appointment",
+                       by=TODAY.isoformat())])
+    _tick()
+    [p] = _preps()
+    assert p["due"] == TODAY.isoformat() and not p.get("before"), p
+    _CLOCK["now"] = datetime.combine(d1, time(7, 0))
+    _tick()
+    [p] = _preps()
+    assert p["due"] == d1.isoformat() and p["before"] == "15:30", p
+
+
+@check("live C: a nudge wake carries no new findings and no redo question, and spends no offer")
+def _():
+    _fresh("live_c")
+    H.record([_finding("Osteopathy follow-up", TODAY + timedelta(days=1), "Greenwich")])
+    import core.orchestrator as ORCH
+    _two_step()
+    O.update_task(next(t["id"] for t in O._load() if t["what"].startswith("Find")), "dismissed",
+                  evidence="skip")
+    D.current(_PERSONA)
+    text = ORCH._day_plan_block(_PERSONA, None, True, nudge=True)
+    assert text and "Osteopathy" not in text and "can't go ahead" not in text, text
+    assert all((r.get("offers") or 0) == 0 for r in H.rows().values())
+    text = ORCH._day_plan_block(_PERSONA, "morning_brief", True)
+    assert "Osteopathy" in text and "can't go ahead" in text, text
+
+
+def _live_d_body(plan, item):
+    S._load_config = lambda persona=None: {"schedules": {
+        "location_anticipation": {"time": "10:00", "agent": "coordinator"}}}
+    _CLOCK["now"] = datetime.combine(TODAY, time(9, 36))
+    out = D.nudge_tick()
+    assert isinstance(out, dict) and out.get("notify") and len(_SENT) == 1, out
+    # One already carried (by the old code) and now 25 minutes late: dropped, not said.
+    D._mark(_PERSONA, TODAY.isoformat(), [{**item, "id": "nudge:travel:u-old@0935"}], "carried")
+    _CLOCK["now"] = datetime.combine(TODAY, time(10, 0))
+    assert D.carried_due_now(_PERSONA, plan, mark=False) == []
+    _CLOCK["now"] = datetime.combine(TODAY, time(10, 40))
+    out = D.nudge_tick()
+    assert len(_SENT) == 1, ("a late 'leave now' went out", out)
+
+
+@check("live D: a 'leave now' inside a coming session's shield is sent on time, not carried; a "
+       "carried one past its moment is dropped, never said late (the 10:00 meeting, 11-20)")
+def _():
+    _fresh("live_d")
+    _CLOCK["now"] = datetime.combine(TODAY, time(9, 0))
+    plan = D.current(_PERSONA)
+    item = {"id": "nudge:travel:u-mtg@0935", "kind": "nudge", "at": _at(TODAY, "09:35")[:16],
+            "ref": f"u-mtg@{_at(TODAY, '10:00')}", "title": "travel to Meeting",
+            "why": "leave now — 20 min by transit"}
+    plan = {**plan, "suggestions": [item]}
+    real_current = D.current
+    D.current = lambda *a, **k: plan                    # the hand-made suggestion stands
+    try:
+        _live_d_body(plan, item)
+    finally:
+        D.current = real_current
 
 
 # =============================================================================================
