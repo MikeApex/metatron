@@ -318,3 +318,42 @@ Time-bounded interactive agents for discrete, well-defined goals. Unlike the cur
 **Design conversation (prerequisite to any build).** Session agents represent a meaningful pipeline addition — a new execution mode, a new state store, a new entry/exit protocol. Run an E4-style design conversation before writing any instruction files.
 
 **Related — Projects feature:** A trip planning session is a bounded Project type (see Projects section above). Evaluate whether session agents are best implemented as a mode within the Projects architecture before designing a separate session pipeline. If Projects ships first, session agents may be a Projects sub-type rather than a parallel architecture.
+
+---
+
+## Family Mode and Cross-User Coordination (Phase 7+ / Design First)
+
+*Parked 2026-11-21 from the custom-logs-and-places planning session (Mike's rulings,
+`archive/plans/custom_logs_and_places_plan_2026-11-21.md` § 2, "Later builds"). Nothing here is
+built; the data design in that plan keeps each piece possible. Read this before designing
+Family mode or anything that lets one user's data inform another user's Metatron.*
+
+**1. Agent-to-agent matching between mutual contacts (later build).** Metatron's agents for
+two users who are mutual contacts compare notes **without either user authorising each
+exchange**, and the users are told only when Metatron judges both would want to act.
+Mike's example: two old college friends happen to be vacationing in the same city; each
+user's agent notices the other is nearby, compares schedules and likes, and pitches a
+date/time/event to both. Disclosure options recorded but not ruled: (a) each side told only
+"X is nearby, want to meet?" once both have opted in; (b) the area; (c) the exact place.
+**This is the largest privacy question in the area and needs its own ruling before any
+build**: two people's location and preferences exchanged with no per-exchange consent, on
+the Vertex path, crossing persona trees — the precise mingling `ROADMAP.md` § Section 0
+was written against. Each user's consent would need a versioned `consents.json` record of
+its own (the pattern of `correspondence_read`).
+
+**2. Family mode location and activity sharing.** More intimate than (1). Each family
+member can toggle geolocation so other members learn their location and activities.
+Mike's example: Iva is running late at work and is responsible for dinner; Mike's
+Metatron notices from Iva's and adjusts Mike's dinner responsibilities. Joins the two
+Family mode notes already in memory (`project_family_mode`): code inferring duties from
+household facts, and batched group scheduling above the per-user scheduler.
+
+**3. Related, not Family mode:** a VM-hosted offline map lookup (so an unnamed recurring
+spot can be named without sending the user's position anywhere), and separating user data
+from system state inside `data/personas/{p}/` (confirmations, traces, tokens sit beside
+user data today).
+
+**What the 2026-11-21 plan does so these stay possible:** places, visits and data objects
+are per-user records with per-field structure (shareable field by field later, never as a
+whole file); background location already carries a versioned consent record; nothing is
+hard-wired as "one persona = one isolated world" beyond what isolation requires.
