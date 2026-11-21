@@ -56,7 +56,7 @@ the insights lie."*
 | Day shape | its own store (`tools/day_shape.py`), written by the interviewer, read by the day planner |
 | Knowledge manifest | `_knowledge_manifest()` names the wisdom subjects that hold entries — **derived by enumeration, never hand-written, contents never shown**. The precedent this plan generalises |
 | Location | `tools/location.py`: coordinate → named zone, discarded inside `record_position()`; only zone **transitions** stored; no trail; nothing polls. Positions arrive only when the user sends a message with location on, or taps share |
-| Place lookup | `tools/places.py`: `find_places` (Logistics, Recreation's category) and `geocode_place_name` — **by name only**, so the vendor never learns the user's position (Mike, 2026-08-28). Results are used once and discarded. Needs `GOOGLE_PLACES_API_KEY` on the VM — **whether it is set is unknown** (§ 9, M1) |
+| Place lookup | `tools/places.py`: `find_places` (Logistics, Recreation's category) and `geocode_place_name` — **by name only**, so the vendor never learns the user's position (Mike, 2026-08-28). Results are used once and discarded. Needs `GOOGLE_PLACES_API_KEY` on the VM — **set and working, checked 2026-11-21** (§ 9, M1) |
 | Capture | `other` kind + `capture/uncategorised.jsonl` + `raise_new_categories` (5 in 30 days → a developer Inbox alert). `KIND_HOMES["place"]` = archive, contacts, agent config, profile |
 | Pattern Miner | no grant on the archive store, places or location history |
 | Who else is present | nothing in the system knows — ruled the user's risk (R15) |
@@ -565,8 +565,8 @@ M tokens; reasoning `gemini-3.8-flash` $0.75 / $3.75. **Token counts are estimat
      categories crossed the threshold and how many objects were created.
   2. **Android stopping background reports** (battery optimisation, a revoked permission) reads
      as "stayed home." The location report shows the last background report time per user.
-  3. **A missing Places key silently disables lookup by name** — and whether it is set today is
-     unknown (§ 9, M1).
+  3. **A missing Places key silently disables lookup by name** — it is set and working as of 2026-11-21, but nothing would report it lapsing; the
+     check in § 9 M1 is the re-run.
   4. The manifest's per-turn tokens show in the A9 rows; **no meter flags growth** — the cap
      (R29) is the bound.
 - **Things that persist** (the three questions):
@@ -599,8 +599,9 @@ M tokens; reasoning `gemini-3.8-flash` $0.75 / $3.75. **Token counts are estimat
 
 ## 9. Mike-gated items — each gets a walkthrough session
 
-1. **M1 — Is `GOOGLE_PLACES_API_KEY` set on the VM?** Lookup by name, which R7 depends on,
-   is dormant without it. Ten minutes, guided, before phase 3.
+1. **M1 — DONE 2026-11-21 (Mike, guided):** `GOOGLE_PLACES_API_KEY` is in the VM's `.env`, in
+   the running server's environment, and a live `geocode_place_name` of a public landmark
+   returned a position. Lookup by name (R7) works today.
 2. **M2 — Settled at the review (R33, R34).** The remaining plan's choices stand unless the
    verify round or the build finds otherwise.
 3. **M3 — The VM data steps** (registry seed, the cardiac log's registration) — Denied tier, run

@@ -73,8 +73,10 @@ phase 4 diff reviews own them.
 `archive/handoffs/2026-11-21-data-objects-phase-1-build-prompt.md` (Opus, high); cross-user
 matching and Family-mode location sharing parked in `archive/plans/future_phases.md`.
 
-**Owed by Mike:** whether `GOOGLE_PLACES_API_KEY` is set on the VM (lookup by name is dormant
-without it) — a guided check before phase 3.
+**Places key checked with Mike in-session, after the close-out commit:** `GOOGLE_PLACES_API_KEY`
+is in the VM's `.env` (count 1), in the live server process's environment (count 1), and a real
+`geocode_place_name("British Museum, London")` returned a position. The plan had listed this as
+unknown; lookup by name works today, so phase 3 has no key blocker.
 
 ### 2026-11-21, third (goal–task network phase 1's last two live checks — the prep followed its moved event; the redo question was asked but not recorded) — no code — **nothing deployed; one defect handed to the phase 2 chat**
 
