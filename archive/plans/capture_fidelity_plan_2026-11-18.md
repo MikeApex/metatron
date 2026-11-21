@@ -657,3 +657,15 @@ reasoning tier is Mike's call with the number in hand (§ 5.3).
 8. The new example inferred a role the user had not said → the user's line now says it.
 9. Three instruction conflicts (accepted offers, "closest kind" vs "never force", kinds the
    interviewer lacks) → reworded.
+
+**Switched on, 2026-11-21 (Mike).** Third labelling pass (`labels_2026-11-21.jsonl`, examples in
+the extractor's instructions all invented so the score measures the rules): **precision 87%
+(n=100, ±~7), recall 90% (n=49), matcher 98%**. By kind: tasks 43/43, events 12/13,
+corrections 12/15, preferences 11/16, day shape 3/4, goals 1/3. Mike's ruling: switch on as
+planned — ordinary turns in shadow, the interviewer on — *"87% is close enough to our arbitrary
+90% floor, and as budget models get better adherence will improve past the 90% mark."* **The
+precision minimum is not met; this is a recorded acceptance, not a pass.** Rejected: both
+writers in shadow (would have measured the interviewer on Iva's first interview without
+helping it), and a fourth instruction round (the third bought 3 precision points and cost 4
+recall misses — the durations message, the Fid transfer, an errand, a preference). Run cost:
+≈ $0.0015 per user turn, $0.03–0.07/day per user.

@@ -1,9 +1,12 @@
 # Capture fidelity — the agent is shown what the user said and it did not keep.
 # Read by tools/capture.py. Plan: archive/plans/capture_fidelity_plan_2026-11-18.md.
 
-# Master switch. OFF until Mike's labels are in (plan § 9, 2026-11-18). While off, nothing
-# runs on a live turn; --backfill, --rematch, --label, --score and --eval still work.
-enabled: false
+# Master switch. ON 2026-11-21 (Mike): third labelling pass scored precision 87%, recall 90%,
+# matcher 98% against minimums of 90/80/90 — "87% is close enough to our arbitrary 90% floor,
+# and as budget models get better adherence will improve past it." Precision is the one bar
+# below its minimum, by Mike's ruling (plan § 10). Off: nothing runs on a live turn;
+# --backfill, --rematch, --label, --score and --eval work either way.
+enabled: true
 
 # Per writer, once the master switch is on (Mike, 2026-11-18):
 #   on     — the note is shown; the agent saves or asks.

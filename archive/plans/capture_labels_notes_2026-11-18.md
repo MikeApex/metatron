@@ -106,3 +106,19 @@ rulings — the same fact, or a rule Mike stated — and Mike ruled the remainin
    should become general fields. A survey (2026-11-21) found no runtime mechanism; the cardiac
    log was built by hand. Planning prompt:
    `archive/handoffs/2026-11-21-custom-logs-and-places-planning-prompt.md`.
+
+## Third pass — `6e8ed5d`, labelled 2026-11-21
+
+Examples in the instructions replaced with invented ones (Mike: the old ones contaminated the
+retest, invited surface matching, and put mike's life into every user's prompt). 52 of 100
+precision labels carried mechanically from the 11-20 pass (same message, ≥ 50% word overlap),
+adjusted where the kind moved the way Mike ruled; the rest from his stated rules. **Precision
+87% · recall 90% · matcher 98%** — switched on by Mike's ruling (plan § 10).
+
+- **Recall regressions** from the 11-21 instruction lines: the durations message (stretching,
+  groceries, plants, bills), the Fid transfer, the chicken-soup errand, "keep the heart log
+  simple" — all found before, empty now. The new "not a fact" lines over-suppress slightly.
+- **Goals 1/3:** both misses are a message where the user said "that'll be a goal for next
+  week" — the extractor took the user's word over the rule.
+- **A fact taken from the previous message** (meals check-ins listed again on the next turn) —
+  counted not-a-fact for this message.
