@@ -84,7 +84,10 @@ def _():
 
 @check("Today lists what is outstanding; a tap records done; a refusal is a 400, not 'done'")
 def _():
-    tid = _id(O.open_task("Pay Chase credit card bill", kind="deadline", due="2026-01-01"))
+    # Judged vital, as task_judge would: since 2026-11-22 an UNJUDGED overdue deadline is back
+    # burner (lapsed) and leaves Today until judged (ranking § 16).
+    tid = _id(O.open_task("Pay Chase credit card bill", kind="deadline", due="2026-01-01",
+                          stakes="vital"))
     hid = _id(O.open_task("Stretching", kind="habit", every="day"))
     items = _client.get(f"/tasks/today?persona={PERSONA}", headers=_auth()).json()["items"]
     assert {i["task_id"] for i in items} == {tid, hid}, items

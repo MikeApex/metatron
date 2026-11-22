@@ -146,8 +146,11 @@ def _close_steps(goal_id: str, status: str) -> None:
         pass
 
 
+_VET_PRIORITIES = ("high", "normal", "low")
+
+
 def vet_goal(goal_id: str, verdict: str, size: str = "", displaces: str = "", priority: str = "",
-             revisit_on: str = "", by: str = "") -> str:
+             revisit_on: str = "", by: str = "", kind: str = "") -> str:
     """Record a vetting verdict on one goal (§ 4.2, § 10 R3). Depth is the size Synth gave it in
     the turn: S needs nothing beyond the ledger; M needs a date it is feasible by and a priority
     against what is open; L is vetted by the Goals Interviewer's re-interview, which is phase 3 —
@@ -162,6 +165,16 @@ def vet_goal(goal_id: str, verdict: str, size: str = "", displaces: str = "", pr
         return f"Error: no goal with id '{goal_id}'."
     h, _i, g = hit
     size = size or str(g.get("size") or "").upper()
+    # high | normal | low since 2026-11-22 (ranking § 16): free text ("ahead of the Prudential
+    # review", 11-21) was recorded and then ignored by every score. What it ranks above goes in
+    # `displaces`.
+    priority = str(priority or "").strip().lower()
+    if priority and priority not in _VET_PRIORITIES:
+        return ("Error: `priority` is high, normal or low — put what it ranks above in "
+                "`displaces`. Nothing was changed.")
+    kind = str(kind or "").strip().lower()
+    if kind and kind not in ("goal", "obligation"):
+        return "Error: kind is goal or obligation. Nothing was changed."
     if verdict == "active":
         if size not in _SIZES:
             return ("Error: say how big it is first — size S (one sitting), M (hours to days, one "
@@ -191,6 +204,8 @@ def vet_goal(goal_id: str, verdict: str, size: str = "", displaces: str = "", pr
     g["status"] = verdict
     if size in _SIZES:
         g["size"] = size
+    if kind:
+        g["kind"] = kind
     g["vetted"] = {k: v for k, v in (
         ("date", datetime.now().strftime("%Y-%m-%d")), ("depth", size or None),
         ("displaces", str(displaces or "").strip() or None),
@@ -200,6 +215,15 @@ def vet_goal(goal_id: str, verdict: str, size: str = "", displaces: str = "", pr
     _write(data)
     if verdict in ("parked", "declined"):
         _close_steps(str(g["id"]), verdict)
+    elif verdict == "active":
+        # A goal re-vetted at a new priority (or as an obligation) re-weighs its open steps now,
+        # not at tomorrow's sweep (ranking § 16). Never blocks the verdict.
+        try:
+            from tools.obligations import reweigh_plan_steps, _GOAL_CACHE
+            _GOAL_CACHE.update(key=None)
+            reweigh_plan_steps()
+        except Exception:  # noqa: BLE001
+            pass
     word = {"active": "taken on", "parked": f"parked until {g.get('revisit_on')}",
             "declined": "declined (kept on record)"}[verdict]
     tail = (" Ask plan_project to break it into steps." if verdict == "active" and size == "M"
@@ -283,7 +307,7 @@ def update_goal(
         return "Error: action must be one of add, update, complete, remove, vet."
     if action == "vet":
         return vet_goal(goal_id, verdict, size=size, displaces=displaces, priority=priority,
-                        revisit_on=revisit_on)
+                        revisit_on=revisit_on, kind=kind)
 
     data = read_goals()
     fields = {k: v for k, v in (
@@ -435,9 +459,9 @@ UPDATE_GOAL_SCHEMA = {
             "parent_goal": {"type": "string", "description": "Id of the goal this serves, e.g. a weekly goal under 'q1'."},
             "context": {"type": "string", "description": "Anything worth knowing about how this goal has been going."},
             "size": {"type": "string", "description": "S (one sitting, about an hour) | M (hours to days, one end date) | L (recurring time for weeks or more)."},
-            "kind": {"type": "string", "description": "goal | obligation (something that must be done, e.g. filing taxes)."},
+            "kind": {"type": "string", "description": "goal | obligation (something that must be done, e.g. filing taxes). Also for vet."},
             "verdict": {"type": "string", "description": "For vet: active | parked | declined."},
-            "priority": {"type": "string", "description": "For vet: where it ranks against what is already open, in a few words."},
+            "priority": {"type": "string", "description": "For vet: high | normal | low — how it ranks against what is already open, by what missing it would cost (an obligation like taxes is high even when it serves no goal)."},
             "displaces": {"type": "string", "description": "For vet: what it takes time from, if anything."},
             "revisit_on": {"type": "string", "description": "For vet with verdict parked: YYYY-MM-DD to ask again."},
         },

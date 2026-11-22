@@ -153,6 +153,18 @@ agents:
     # it proposes steps, code validates and writes them, it acts on nothing.
     allowed_tools: []
 
+  task_judge:
+    provider: gemini
+    model: "models/gemini-3.8-flash"   # weighing a list against the user's values — judgement,
+                                       # not the bulk tier (ranking plan § 16)
+    # PRIVACY TIER, stated because this entry is what authorises it: reads the titles, dates and
+    # notes of open tasks nobody has judged, the current goals' titles and shareable_what (NEVER
+    # private_why), and the user's mission and prime directive — Sensitive tier on the Vertex
+    # path, valid ONLY on the Amendment 2026-08-28 basis (ROADMAP.md § Section 0, extended
+    # 2026-10-26/11-18) and lapsing with it. Called bare by tools/task_judge.py off the scheduler
+    # tick. Empty grant: it proposes stakes and priorities, code validates and writes them.
+    allowed_tools: []
+
   crm_sweep:
     provider: gemini
     model: "models/gemini-3.5-flash-lite"   # a closed JSON array from one day's text — the intake_extractor shape

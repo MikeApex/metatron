@@ -34,6 +34,7 @@ _DEFAULTS: dict = {
         "unconfirmed_rule": False, "reshuffle_model": False, "nudges": False,
         "owns_checkins": False, "prep_tasks": False, "horizon_cap": False,
         "project_planner": False,
+        "task_judge": False,
     },
     "replaces_jobs": ["companion_checkin"],
     "score": {
@@ -44,6 +45,7 @@ _DEFAULTS: dict = {
         "habit": {"planned_day": 10, "at_risk": 15, "daily": 10},
         "interval_due": 15,
         "medication": 50,
+        "ramp_days": 0,
         "reshuffle_delta": 10,
     },
     "limits": {
@@ -53,6 +55,8 @@ _DEFAULTS: dict = {
         "reshuffle_stale_seconds": 180, "reply_lock_ms": 200, "length_asks_per_day": 2, "log_retention_days": 90,
         "plan_retention_days": 3, "project_plans_per_day": 6, "project_plan_gap_minutes": 10,
         "project_plan_stale_seconds": 600, "project_step_max_minutes": 90,
+        "task_judge_calls_per_day": 6, "task_judge_gap_minutes": 10,
+        "task_judge_batch": 25, "task_judge_stale_seconds": 300,
     },
 }
 

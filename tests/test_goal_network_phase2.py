@@ -175,7 +175,7 @@ def _vetted_taxes(due_days: int = 30) -> str:
                         kind="obligation")
     assert "being considered" in out, out
     gid = out.split()[3]
-    out = G.update_goal("vet", goal_id=gid, verdict="active", size="M", priority="ahead of the bike repair")
+    out = G.update_goal("vet", goal_id=gid, verdict="active", size="M", priority="high", displaces="the bike repair")
     assert "taken on" in out, out
     G._calling_agent = lambda: ""
     return gid
@@ -709,7 +709,7 @@ def _():
     G._calling_agent = lambda: "synthesizer"
     lid = G.update_goal("add", horizon="long", title="Speak Bulgarian").split()[3]
     out = G.update_goal("vet", goal_id=lid, verdict="active", size="L", displaces="two evenings of TV",
-                        priority="after the taxes")
+                        priority="normal")
     assert "regular time" in out and _goal(lid)["status"] == "active", out
     assert _goal(lid)["vetted"]["pass"] == "short"
     assert "not yet" in PP.plan_project(lid)

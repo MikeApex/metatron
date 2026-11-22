@@ -328,8 +328,9 @@ def _():
     assert c["needs"] == [res["ids"]["b"]]
 
 
-@check("R5: plan steps are missable unless near their end state's deadline; the end state is "
-       "vital; a prep is left essential (unset stakes on a deadline)")
+@check("R5 as amended 2026-11-22 (Mike: \"I don't think any of the steps in filing the taxes are "
+       "missable\"): every required step of a vital end is vital, an optional one missable; the "
+       "end state is vital; a prep is vital and essential")
 def _():
     _fresh("stakes")
     end = (TODAY + timedelta(days=30))
@@ -342,10 +343,15 @@ def _():
          "due": TODAY.isoformat()},
     ])
     ids = res["ids"]
-    assert _task(ids["far"])["stakes"] == "missable"
+    # Until 11-22 `far` was missable (only a step within two days of the end was vital), so an
+    # early required step lapsed past its date and the chain behind it stalled unseen.
+    assert _task(ids["far"])["stakes"] == "vital"
     assert _task(ids["near"])["stakes"] == "vital"
     assert _task(ids["end"])["stakes"] == "vital"
-    assert "stakes" not in _task(ids["prep"]) and O.is_essential(_task(ids["prep"]))
+    assert _task(ids["prep"])["stakes"] == "vital" and O.is_essential(_task(ids["prep"]))
+    opt = O.open_plan([{"key": "o", "what": "Order a nicer folder", "part_of": ids["end"],
+                        "required": False, "due": (end - timedelta(days=5)).isoformat()}])
+    assert _task(opt["ids"]["o"])["stakes"] == "missable", opt
 
 
 @check("R5: a new step or prep reaching the day is placed by code in a repair — no reshuffle, so "

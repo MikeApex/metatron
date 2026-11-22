@@ -218,7 +218,7 @@ def run_m_item(persona: str) -> list[str]:
     gid = out.split()[3] if "being considered" in out else None
     if not gid:
         return [f"goal not recorded as considered: {out}"]
-    vet = G.update_goal("vet", goal_id=gid, verdict="active", size="M", priority="ahead of the rest")
+    vet = G.update_goal("vet", goal_id=gid, verdict="active", size="M", priority="high", displaces="the rest")
     G._calling_agent = lambda: ""
     O._GOAL_CACHE.update(key=None)
     if "taken on" not in vet:
@@ -276,7 +276,7 @@ def live_planner_pass(base: Path) -> int:
         gid = G.update_goal("add", horizon="quarterly", title="File UK taxes",
                             due=(TODAY + timedelta(days=39)).isoformat(),
                             kind="obligation").split()[3]
-        G.update_goal("vet", goal_id=gid, verdict="active", size="M", priority="first")
+        G.update_goal("vet", goal_id=gid, verdict="active", size="M", priority="high")
         G._calling_agent = lambda: ""
         O._GOAL_CACHE.update(key=None)
         PP.plan_project(gid, note="employed, already files online, no accountant")

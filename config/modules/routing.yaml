@@ -99,6 +99,12 @@ agents:
     # fail-closed.
     allowed_tools: []
 
+  task_judge:
+    local: true
+    # Parity with routing_cloud.yaml: bare dispatch, empty grant, Sensitive tier → Ollama only,
+    # fail-closed.
+    allowed_tools: []
+
   crm_sweep:
     local: true
     # Parity with routing_cloud.yaml — see the note there: bare dispatch, empty grant, a

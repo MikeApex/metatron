@@ -461,3 +461,84 @@ tokens; +~430 this phase, ~$0.01/day of cache storage). **Live planner pass (`ME
 ~$0.02):** valid, M, eight 30–45-minute steps following the playbook, submission 28 Dec for a 30 Dec
 date. **Not verified, for the live check:** the size Synth gives a real stated obligation, and
 whether it calls `vet` then `plan_project` in the same turn.
+
+## 16. Ranking — every task weighed, plan steps never missable, deadlines that climb (2026-11-22)
+
+**What the live check found (11-22).** The tax plan was written well (9 steps, sign-in check first,
+submission before the 30 Dec PAYE cutoff), but its first step never reached the day: 9 stale
+overdue chores with no `stakes` scored 55 each (base 15 + vital-overdue 40), because F10 counted
+unknown stakes as vital; the plan's early steps were `missable` (R5's two-day critical margin)
+and scored 20; nothing climbed before the last two days; and the step was cut from Synth's Tasks
+section by the 6-line cap, so *"I checked my HMRC sign-in, it works"* closed nothing.
+
+**Mike's rulings, 2026-11-22 (verbatim where quoted):**
+1. *"Tasks should be scored always, and if not vital should have a weaker score and be relegated
+   to back burner. Many times user will add tasks that aren't important and quickly forgotten.
+   That said, Metatron should check new tasks against user goals and core values to ensure
+   appropriate ranking. If someone is a passionate gardener, repotting the plants is likely more
+   important than for the weekend warrior."* — and it is the general picture, all task streams,
+   not taxes.
+2. *"I don't think any of the steps in filing the taxes are missable."*
+3. The ramp — *"temporal dilation is a key part of how we can emphasize the right, or the wrong
+   things. Sometimes even an urgent deadline is less important if the underlying task gets in the
+   way of, say, family time. This will require a deeper interview conversation to do properly."*
+4. Judging reflects *"general life realities. Taxes might not align with mission, but still are
+   high priority."* Costs of missing a task — *"financial — easy to quantify, social — much
+   harder, existential/psychological — harder still"* — inform the weighing.
+5. *"Metatron should proactively manage tasks and prioritization with the user, as well as by
+   itself on the backend. That reconciliation is a core strength of the intended tool. Metatron's
+   mission is to emphasize what will lead to long term happiness, not managing a to do list."*
+
+**Part A — built this session (mechanism; no weights invented):**
+
+| | What | Where |
+|---|---|---|
+| A1 | Unjudged = back burner: `is_essential`, `_score`, the candidate `vital` flag read only `stakes == "vital"`. F10's "unknown counts as vital" is amended, its safety moved to A3/A4 | `obligations.is_essential`, `day_plan._score` |
+| A2 | Required steps take the end state's weight (`_end_weight`): vital unless the end was judged missable or taken on at `low`; optional steps missable; priority inherited; R5's margin retired; code preps vital explicitly | `obligations._end_weight/_step_weight`, `open_plan` |
+| A3 | The judging rule in ONE home — open_task's `stakes`/`priority` descriptions, read by every agent that opens a task — plus `stakes_why` | `_PLAN_FIELD_PROPS` |
+| A4 | The net: `task_judge` judges unjudged deadlines off the tick (single flight, 6/day, 10-min gap, one locked write, never over a stated value or one judged meanwhile) | `tools/task_judge.py`, `config/agents/task_judge.md` |
+| A5 | The ramp: a deadline climbs linearly from its window's start to its due-day weight over ≤ `ramp_days` (14) | `day_plan._ramp`, `day_plan.yaml score.ramp_days` |
+| A6 | A plan's current step is never cut from Synth's Tasks section by the cap | `obligations.context_block` |
+| A7 | `vet` priority is high/normal/low (free text refused; what it ranks above → `displaces`); `kind` recordable at vet | `goals.vet_goal`, synthesizer.md |
+| A8 | Daily `reweigh_plan_steps` (and the first tick after deploy) migrates steps written under R5 | `refresh_tick` |
+
+**Costs.** *Build:* one Opus session + Fable diff review. *Run:* the judge, ~$0.01 a call (≤25
+tasks; 3.8 Flash, thinking capped 1,024), capped 6 answered calls a day → ≤ ~$0.06/day (~$0.12
+after the intro price); typical is one call on deploy day, then rare. The ramp and reweigh are
+code. *Ancillary:* (1) every required plan step is now vital. Inside its window it is not
+essential, so nothing wakes early; from its last day, each day it stays open can wake the
+Synthesizer twice (start nudge, end check), ~$0.01 a wake — an on-time step costs ~$0.02, a
+neglected one ~$0.02 a day until done. R5 had avoided exactly this. (2) A verdict that moves a
+score 10+ can make the next build a day_planner reshuffle, under `reshuffles_per_day`. *Unseen:*
+a real obligation judged missable fades the way trivia should, silently. Guards: the obligation
+rule in both the schema and the judge's file, and the back-burner review with Mike.
+
+**Deploy-day transition.** Nothing disappears. A task with no stakes is back burner only while it
+awaits the judge (`_JUDGE_GRACE`, 60 min from when it was opened); every existing task is older
+than that, so each reads as vital — exactly as before — until the judge weighs it: the first
+tick after deploy, 25 at a time, most urgent first, 10 minutes apart. The first tick also runs
+the one-time `legacy` reweigh, moving the 11-21 tax plan's R5 values to the new rule. Its steps
+become vital at once; the overdue ones may nudge that day.
+
+**Part B — needs Mike's interview first (not built):** values-weighted ranking (passions raise
+their tasks; protected time — family — outranks a deadline that would cut into it), the ramp's
+shape per kind of thing, cost dimensions as recorded fields rather than one-line `why`, and
+Metatron proactively reconciling priorities with the user (a recurring conversation) and alone
+(the backend). Its planning chat's prompt: `archive/handoffs/2026-11-22-ranking-part-b-interview-prompt.md`.
+
+**Fable 5.1 diff review (2026-11-22) — 16 findings, all accepted:**
+
+| # | Finding (what a user would see) | Resolution |
+|---|---|---|
+| F1 | A failing judge (outage, spend stop) left a real overdue bill hidden all day; failures used up the cap; a garbled reply re-offered the same 25 forever | `stakes_of`: unjudged past `_JUDGE_GRACE` reads vital again; a failed call refunds the cap; an empty pass halves the next batch (≥5) |
+| F2 | The daily reweigh undid what Synth recorded from the user ("that step doesn't matter much") | plan-set values carry source `plan`; only those move; R5's `inferred` values move once (`legacy`) |
+| F3 | The judge's priority flattened a goal-linked task's edge | the judge never writes priority on a task linked to a known goal |
+| F4 | The live tax steps ranked like errands (free-text vet priority read as none); `kind: obligation` ignored; `_score` never read a goal's vetted priority | `_goal_priority`: obligation → high; `_score` uses it for every goal-linked task |
+| F5 | More than 6 steps re-hid the current step; "+N more" undercounted | per-plan allowance (3) beside the cap, in list order; every cut counted |
+| F6 | Deploy-day backlog judged oldest-first | most urgent first |
+| F7 | A judged-missable end left its steps vital until tomorrow | a judging pass, and a re-vet, reweigh at once |
+| F8 | An unreadable store marked the reweigh done | stamped only on an int result |
+| F9 | Nudge cost understated | corrected above |
+| F10 | A verdict can cost a reshuffle, unnamed | named above and in `task_judge.py` |
+| F11 | Judge input nearer 4–6k than 3k | immaterial at this tier; noted |
+| F12–16 | Tests not proving their claims; missing cases | test 2 asserts the exact climb; new checks for the grace, refund, batch halving, urgency order, goal priority, month-window judging, per-plan cap and count, re-vet reweigh — `tests/test_task_ranking.py` 18/18 |

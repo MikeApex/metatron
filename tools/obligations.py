@@ -127,6 +127,8 @@ _SOFT_CAP = 12
 # how many more there are rather than listing them, because a long list in front of every
 # session is exactly what "open on one thing" is meant to prevent.
 _CONTEXT_MAX = 6
+# A plan's unblocked steps shown beside that cap, per plan (2026-11-22; Fable diff review #5).
+_STEPS_PER_PLAN = 3
 
 # Deadlines this close are listed under "Now"; further out they are a count under "Later".
 # Two days covers today, tomorrow and the day after — so the evening close's "tomorrow, in
@@ -588,10 +590,87 @@ _STEP_FIELDS = ("what", "kind", "due", "eligible_from", "flexible", "after", "be
 # Fields an adopted task takes from the plan (§ 11: open tax tasks adopted into a plan). Its own
 # `what`, history and source stay; a `due` it already has is kept unless the plan's is earlier.
 _ADOPT_FIELDS = ("needs", "part_of", "eligible_from", "flexible", "goal_id", "required")
-# A step this close to its end state's due is on the critical path near the deadline: vital
-# (nudged and checked). Everything else a plan opens is `missable` (R5) — one model wake per
-# step was the cost the review found.
-_CRITICAL_MARGIN_DAYS = 2
+# R5's two-day critical margin (only a step that close to its end was vital) was retired
+# 2026-11-22 — see _end_weight.
+
+
+def _goal_priority(goal: dict | None) -> str | None:
+    """The priority a goal was taken on at (high/normal/low), or None. `vetted.priority` held free
+    text before 2026-11-22 ("ahead of Prudential review"); that reads as no priority."""
+    if not goal:
+        return None
+    p = str((goal.get("vetted") or {}).get("priority") or "").strip().lower()
+    if p in _PRIORITIES:
+        return p
+    # An obligation is high whatever it serves (Mike, 11-22: "Taxes might not align with mission,
+    # but still are high priority") — and the 11-21 tax goal's free-text priority reads as none.
+    if goal.get("essential") is True or str(goal.get("kind") or "").lower() == "obligation":
+        return "high"
+    return None
+
+
+def _end_weight(target: dict | None, goal: dict | None) -> dict:
+    """What a plan's steps inherit from the end state they lead to: {"vital", "priority"}.
+
+    Mike, 2026-11-22: "I don't think any of the steps in filing the taxes are missable", and the
+    rule is general — every plan, not taxes. Until then (R5) only a step within two days of the
+    end was vital and the rest `missable`, so an early required step past its date LAPSED: it sank
+    to the bottom of the day and the steps waiting on it stalled, with nothing said (the 11-21 tax
+    plan's sign-in check scored 20, last of 15). A required step of something the user took on is
+    now vital, unless the end itself was judged missable (a task end) or taken on at low priority
+    (a goal end). The cost R5 avoided is named in § 16: a step is essential only on its last day
+    and after (inside its window it is not — day_plan `_candidates`), and then each day it stays
+    open it can wake the Synthesizer twice (a start nudge and an end check), ~$0.01 a wake."""
+    if target is not None:
+        return {"vital": target.get("stakes") != "missable", "priority": target.get("priority")}
+    pri = _goal_priority(goal)
+    return {"vital": pri != "low", "priority": pri}
+
+
+# A value a step took from its end state carries this source, so the daily reweigh moves only
+# what it set itself — never what the user stated, nor what an agent recorded from what they said
+# (`set_stakes` / `set_priority`, source inferred; Fable diff review 11-22 #2).
+_PLAN_SOURCE = "plan"
+
+
+def _step_weight(e: dict, w: dict, legacy: bool = False) -> None:
+    """Apply an end state's weight to one step. Only a value with no source, or one this function
+    set (`plan`), moves; `legacy` also moves the `inferred` values open_plan wrote before 11-22."""
+    movable = (None, _PLAN_SOURCE) + (("inferred",) if legacy else ())
+    if e.get("stakes_source") in movable:
+        vital = w.get("vital") and e.get("required") is not False
+        e["stakes"], e["stakes_source"] = ("vital" if vital else "missable"), _PLAN_SOURCE
+    if w.get("priority") and e.get("priority_source") in movable:
+        e["priority"], e["priority_source"] = w["priority"], _PLAN_SOURCE
+
+
+def reweigh_plan_steps(persona: str | None = None, legacy: bool = False) -> int:
+    """Re-apply _end_weight to every open step's plan-set values — after its end state's weight
+    changed (a goal re-vetted, an end task judged). `legacy` (once, on the first tick after the
+    11-22 deploy) also moves the `inferred` values open_plan wrote under R5. Code only, idempotent.
+    Returns how many steps changed, or the store's error string."""
+    def apply(doc: dict) -> int:
+        tasks = doc["tasks"]
+        by_id = {t["id"]: t for t in tasks}
+        goals = _goal_index()
+        n = 0
+        for t in tasks:
+            po = t.get("part_of")
+            pf = t.get("prep_for") or {}
+            if t.get("status") == "open" and pf and not pf.get("chat") and not t.get("stakes"):
+                t["stakes"], t["stakes_source"] = "vital", _PLAN_SOURCE   # a code prep (open_plan)
+                n += 1
+                continue
+            if t.get("status") != "open" or not po or pf:
+                continue
+            target = by_id.get(po)
+            w = _end_weight(target, None if target is not None else goals.get(po))
+            before = (t.get("stakes"), t.get("priority"))
+            _step_weight(t, w, legacy=legacy)
+            if (t.get("stakes"), t.get("priority")) != before:
+                n += 1
+        return n
+    return _with_store(persona, apply)
 
 
 def _acyclic(edges: dict[str, list[str]]) -> bool:
@@ -757,19 +836,18 @@ def open_plan(steps: list[dict], persona: str | None = None, created_by: str = "
                     return {"ok": False, "error": f"already tracked from the same source as "
                                                   f"{dup['id']} ({dup.get('status')})",
                             "duplicate": dup["id"]}
-        # Stakes (R5): explicit wins; else vital within the margin of the end state's due.
-        end_due = {}
+        # Stakes and priority (amended 2026-11-22, ranking § 16): explicit wins; else a step
+        # takes its end state's weight — see _step_weight.
+        end_w = {}
         for c in clean:
             po = c["entry"].get("part_of")
-            target_due = None
+            target = None
             if po in keys.values():
                 target = next(x["entry"] for x in clean if keys[x["key"]] == po)
-                target_due = _d(target.get("due"))
             elif po in existing:
-                target_due = _d(existing[po].get("due"))
-            elif po:
-                target_due = _d((_goal_index().get(po) or {}).get("due"))   # a goal's steps
-            end_due[c["key"]] = target_due
+                target = existing[po]
+            goal = (_goal_index().get(po) or {}) if (po and target is None) else None
+            end_w[c["key"]] = _end_weight(target, goal)
         stamp, today = _stamp(), _today()
         for c in clean:
             e = c["entry"]
@@ -802,10 +880,8 @@ def open_plan(steps: list[dict], persona: str | None = None, created_by: str = "
                     cur["minutes"], cur["minutes_source"] = e["minutes"], e.get("minutes_source", "estimated")
                 # An adopted END STATE (the obligation itself) keeps its stakes — "missable"
                 # inferred for a filing deadline would be the wrong way round.
-                if cur.get("part_of") and (not cur.get("stakes") or cur.get("stakes_source") != "stated"):
-                    d, end = _d(cur.get("due")), end_due[c["key"]]
-                    near = bool(d and end and (end - d).days <= _CRITICAL_MARGIN_DAYS)
-                    cur["stakes"], cur["stakes_source"] = ("vital" if near else "missable"), "inferred"
+                if cur.get("part_of"):
+                    _step_weight(cur, end_w[c["key"]])
                 if cur.get("needs") == []:
                     cur.pop("needs")
                 cur.setdefault("history", []).append({"event": "adopted_into_plan", "at": stamp,
@@ -814,11 +890,16 @@ def open_plan(steps: list[dict], persona: str | None = None, created_by: str = "
                 continue
             if c["stakes"]:
                 e["stakes"], e["stakes_source"] = c["stakes"], "stated"
-            elif not e.get("prep_for"):
-                d, end = _d(e.get("due")), end_due[c["key"]]
-                is_end = not e.get("part_of")
-                near = bool(d and ((end and (end - d).days <= _CRITICAL_MARGIN_DAYS) or is_end))
-                e["stakes"], e["stakes_source"] = ("vital" if near else "missable"), "inferred"
+                if e.get("part_of"):
+                    _step_weight(e, end_w[c["key"]])      # its priority still comes from the end
+            elif e.get("prep_for"):
+                # A prep for an event (§ 4.7) was essential because its stakes were left unset and
+                # unset counted as vital; since 2026-11-22 unset is back-burner, so it says so.
+                e["stakes"], e["stakes_source"] = "vital", _PLAN_SOURCE
+            elif not e.get("part_of"):
+                e["stakes"], e["stakes_source"] = "vital", _PLAN_SOURCE   # an end state itself
+            else:
+                _step_weight(e, end_w[c["key"]])
             e["id"] = keys[c["key"]]
             e["created_at"] = stamp
             e["created_by"] = created_by
@@ -1686,6 +1767,7 @@ def open_task(what: str, kind: str = "deadline", due: str | None = None,
               priority_source: str | None = None, stakes: str | None = None,
               stakes_source: str | None = None, zone: str | None = None,
               activity: str | None = None, flexible: bool | None = None,
+              stakes_why: str | None = None,
               after: str | None = None, done_words=None) -> str:
     """Record something the user has to do, or is waiting on, so it is tracked until done."""
     what = (what or "").strip()
@@ -1757,7 +1839,7 @@ def open_task(what: str, kind: str = "deadline", due: str | None = None,
     plan, err = _plan_fields(kind, goal_id=goal_id or None, priority=priority or None,
                              priority_source=priority_source, stakes=stakes or None,
                              stakes_source=stakes_source, zone=zone or None,
-                             activity=activity or None,
+                             activity=activity or None, stakes_why=stakes_why,
                              windowed=bool(_month_window(entry)))
     if err:
         return err
@@ -1922,10 +2004,44 @@ def _goal_hash(goal: dict) -> str:
     return hashlib.sha256(json.dumps(goal, sort_keys=True, default=str).encode()).hexdigest()[:12]
 
 
+# How long a task may stay unjudged before it counts as vital again (Fable diff review 11-22 #1).
+# The task judge normally weighs a new task within one tick (~5 min); past this, something is
+# wrong — the judge failing, capped or off — and an unweighed task is safer treated as vital
+# (F10's original reading) than hidden on the back burner.
+_JUDGE_GRACE = timedelta(minutes=60)
+
+
+def stakes_of(t: dict, now: datetime | None = None) -> str | None:
+    """The stakes the ranking reads: the stored value; else, for a task unjudged within the grace
+    since it was opened, None (back burner); past the grace, "vital". A row with no `created_at`
+    is past the grace."""
+    st = t.get("stakes")
+    if st:
+        return st
+    raw = str(t.get("created_at") or "")[:19]
+    try:
+        opened = datetime.fromisoformat(raw) if raw else None
+    except ValueError:
+        opened = None
+    if opened is not None and (now or _now()) - opened < _JUDGE_GRACE:
+        return None
+    return "vital"
+
+
 def is_essential(t: dict, goals: dict[str, dict] | None = None) -> bool:
     """F10: essential = medication, OR explicitly high priority, OR serving an essential goal, OR a
-    deadline whose stakes are not known to be missable (unknown stakes count as vital — a missed
-    tax deadline costs more than a lost evening). Derived on every read, never stored."""
+    deadline judged vital. Derived on every read, never stored.
+
+    AMENDED 2026-11-22 (Mike): "Tasks should be scored always, and if not vital should have a
+    weaker score and be relegated to back burner. Many times user will add tasks that aren't
+    important and quickly forgotten." Until then UNKNOWN stakes counted as vital (a missed tax
+    deadline costs more than a lost evening) — so every chore nobody judged sat overdue at the top
+    of the day for weeks, above the steps of a real tax plan. An unjudged task is now back-burner,
+    and what keeps F10's tax case safe is that nothing stays unjudged for long: the agent that
+    opens a task judges it (open_task's `stakes`), and tools/task_judge.py judges any it missed
+    within minutes, against the user's goals and values (ranking plan § 16). If it has not within
+    _JUDGE_GRACE, `stakes_of` reads it as vital again — a broken judge degrades to F10, never to a
+    hidden bill."""
     if _MEDICATION_RE.search(f"{t.get('what', '')} {t.get('note', '')}"):
         return True
     if t.get("priority") == "high":
@@ -1938,7 +2054,7 @@ def is_essential(t: dict, goals: dict[str, dict] | None = None) -> bool:
     # A monthly habit with a window is a recurring deadline — a bill due by the 15th — so its
     # stakes count exactly as a deadline's do (review F4).
     return ((t.get("kind") == "deadline" or bool(_month_window(t)))
-            and t.get("stakes") != "missable")
+            and stakes_of(t) == "vital")
 
 
 def _ledger_fields() -> bool:
@@ -2109,7 +2225,7 @@ def _deferred_until(t: dict) -> str | None:
 
 def _plan_fields(kind: str, goal_id=None, priority=None, priority_source=None, stakes=None,
                  stakes_source=None, zone=None, windowed: bool = False,
-                 activity=None) -> tuple[dict, str | None]:
+                 activity=None, stakes_why=None) -> tuple[dict, str | None]:
     """Validate the planner's fields. Returns (fields to set, error). An empty string for
     `goal_id`, `zone` or `activity` clears it."""
     out: dict = {}
@@ -2160,6 +2276,8 @@ def _plan_fields(kind: str, goal_id=None, priority=None, priority_source=None, s
         if err:
             return {}, err
         out.update(stakes=st, stakes_source=src)
+        if str(stakes_why or "").strip():
+            out["stakes_why"] = str(stakes_why).strip()[:120]
     if zone is not None:
         z = str(zone).strip().lower()
         if z:
@@ -2218,7 +2336,8 @@ def _set_plan_field(task_id: str, action: str, **kw) -> str:
     if kw.get(wanted) is None:
         return f"error: `{wanted}` is required for {action}. Nothing was written."
     tid = _split_id(task_id)
-    only = {k: v for k, v in kw.items() if k in (wanted, f"{wanted}_source")}
+    only = {k: v for k, v in kw.items() if k in (wanted, f"{wanted}_source")
+            or (wanted == "stakes" and k == "stakes_why")}
 
     def apply(doc: dict) -> str:
         t = _find(doc["tasks"], tid)
@@ -2274,7 +2393,8 @@ def update_task(task_id: str, action: str, evidence: str | None = None,
                 goal_id: str | None = None, priority: str | None = None,
                 priority_source: str | None = None, stakes: str | None = None,
                 stakes_source: str | None = None, zone: str | None = None,
-                on_days=None, activity: str | None = None, after: str | None = None) -> str:
+                on_days=None, activity: str | None = None, after: str | None = None,
+                stakes_why: str | None = None) -> str:
     """Record what happened to a tracked task — done, done with a loose end, skipped,
     dismissed, reopen, reschedule, or a new note."""
     action = (action or "").strip().lower()
@@ -2300,7 +2420,8 @@ def update_task(task_id: str, action: str, evidence: str | None = None,
     if action in _PLAN_ACTIONS:
         return _set_plan_field(task_id, action, goal_id=goal_id, priority=priority,
                                priority_source=priority_source, stakes=stakes,
-                               stakes_source=stakes_source, zone=zone, activity=activity)
+                               stakes_source=stakes_source, zone=zone, activity=activity,
+                               stakes_why=stakes_why)
     evidence = _evidence_arg(evidence)
     if action in ("done", "skipped", "dismissed", "reopen") and not evidence:
         return ("error: `evidence` is required — quote what the user said that shows this. "
@@ -2714,6 +2835,9 @@ def context_block(persona: str | None = None, as_of: date | None = None) -> str:
                  key=lambda tv: (tv[1]["sort"], _due_sort_key(tv[0])))
     hidden = 0
     shown: list[str] = []
+    others = 0
+    per_plan: dict[str, int] = {}
+    extra = 0
     for t, v in now:
         raised = _raised_today(t, v["occ"], today)
         if raised and hide_raised:
@@ -2722,9 +2846,19 @@ def context_block(persona: str | None = None, as_of: date | None = None) -> str:
         line = f"- `{v['occ']}` {v['text']}"
         if raised:
             line += f" (already raised today, {raised})"
-        shown.append(line)
-    extra = max(0, len(shown) - _CONTEXT_MAX)
-    shown = shown[:_CONTEXT_MAX]
+        # A plan's current steps have their own allowance beside the cap (2026-11-22): on 11-22
+        # "I checked my HMRC sign-in, it works" closed nothing — the step was 7th behind six
+        # overdue chores, so the Synthesizer could not see it to close. Up to _STEPS_PER_PLAN per
+        # plan, in the list's own order; whatever is cut, of either kind, is counted below.
+        po = t.get("part_of")
+        if po and per_plan.get(po, 0) < _STEPS_PER_PLAN:
+            per_plan[po] = per_plan.get(po, 0) + 1
+            shown.append(line)
+        elif not po and others < _CONTEXT_MAX:
+            others += 1
+            shown.append(line)
+        else:
+            extra += 1
 
     recent = _recently_closed(tasks, today)
     pending = [t for t in tasks if t.get("status") == "open"
@@ -4023,19 +4157,29 @@ _PLAN_FIELD_PROPS = {
                                "you hold). What it is for sets how much it matters; empty "
                                "string unlinks it."},
     "priority": {"type": "string", "enum": list(_PRIORITIES),
-                 "description": "How much this matters beyond its deadline. Leave unset to take "
-                                "it from the goal it serves."},
+                 "description": "How much this matters beyond its deadline, against the user's "
+                                "goals, mission and values — an obligation like taxes is high "
+                                "even when it serves no goal. Leave unset to take it from the "
+                                "goal it serves."},
     "priority_source": {"type": "string", "enum": list(_FIELD_SOURCES),
                         "description": "stated — the user said so; inferred — your judgement. "
                                        "Default inferred; a stated value is never replaced by "
                                        "an inferred one."},
     "stakes": {"type": "string", "enum": list(_STAKES),
-               "description": "a deadline, or a monthly habit with days of the month: vital — "
-                              "missing it has real consequences (taxes, a bill, a legal date); "
-                              "missable — it can slip in favour of the user's day. Unset counts "
-                              "as vital."},
+               "description": "a deadline, or a monthly habit with days of the month — ALWAYS set "
+                              "it; unset is treated as back-burner. Judge it by what missing it "
+                              "would cost this user: financial (a penalty, a fee), legal, health, "
+                              "social (someone let down), psychological (it would weigh on them). "
+                              "vital — a real cost: taxes, bills, legal dates and the like are "
+                              "vital whether or not they serve a goal. missable — little lost if "
+                              "it slips. What they care about counts: for a keen gardener, "
+                              "repotting the plants can be vital; for most people it is "
+                              "missable."},
     "stakes_source": {"type": "string", "enum": list(_FIELD_SOURCES),
                       "description": "stated or inferred, as for priority_source."},
+    "stakes_why": {"type": "string",
+                   "description": "With stakes: what missing it would cost, in a few words "
+                                  "(\"£100 penalty\", \"lets Sam down\", \"nothing much\")."},
     "zone": {"type": "string",
              "description": "A named place where this gets done (\"gym\"), from the zones on "
                             "file — lets arriving there count as a sign it happened. Empty "

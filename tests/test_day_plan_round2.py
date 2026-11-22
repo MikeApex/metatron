@@ -137,10 +137,13 @@ def _fresh(name: str, shape: str = _SHAPE) -> Path:
 
 def _tasks() -> dict:
     ids = {}
+    # The two must-dos are judged vital, as task_judge would: since 2026-11-22 an unjudged
+    # deadline is back burner, where until then unset stakes counted as vital (ranking § 16).
     ids["return"] = O.open_task("File the quarterly return", kind="deadline", due="2026-10-27",
-                                domain="finance", minutes=60, minutes_source="stated")
+                                domain="finance", minutes=60, minutes_source="stated",
+                                stakes="vital")
     ids["essay"] = O.open_task("Write the essay", kind="deadline", due="2026-10-27",
-                               domain="work", minutes=90, minutes_source="stated")
+                               domain="work", minutes=90, minutes_source="stated", stakes="vital")
     ids["post"] = O.open_task("Post the job listing", kind="deadline", due="2026-10-28",
                               domain="logistics", minutes=30)
     ids["refund"] = O.open_task("Check the refund status", kind="deadline", domain="finance")
@@ -453,7 +456,8 @@ def _():
     # the day (07:00, breakfast 07:40, wind-down from 09:00) has one 45-minute gap — that one.
     (d / "day_shape.yaml").write_text('day: [{days: all, wake: "07:00", bed: "10:00"}]\n')
     must = O.open_task("File the quarterly return", kind="deadline", due="2026-10-27",
-                       domain="finance", minutes=45, minutes_source="stated").split()[1]
+                       domain="finance", minutes=45, minutes_source="stated",
+                       stakes="vital").split()[1]
     day = date(2026, 10, 27)
     cands = [c for c in D._candidates(day, _PERSONA) if c["task_id"] in (repot, must)]
     rp = next(c for c in cands if c["task_id"] == repot)
@@ -471,7 +475,18 @@ def _():
     v = O._view(O._norm(O._find(O._load(None), repot)), date(2026, 11, 2))
     assert v["state"] == "due_today", v
     cands = {c["task_id"]: c for c in D._candidates(date(2026, 11, 2), _PERSONA)}
+    # Since 2026-11-22 the last-day must-do holds for a task judged vital (the keen gardener's
+    # repotting) — or one the judge never reached (the grace fail-safe); judged missable, not.
     assert cands[repot]["essential"], cands[repot]
+    O.update_task(repot, "set_stakes", stakes="missable")
+    cands = {c["task_id"]: c for c in D._candidates(date(2026, 11, 2), _PERSONA)}
+    assert not cands[repot]["essential"], cands[repot]
+    out = O.update_task(repot, "set_stakes", stakes="vital", stakes_source="stated",
+                        stakes_why="the plants are her passion")
+    assert "error" not in out.lower(), out
+    cands = {c["task_id"]: c for c in D._candidates(date(2026, 11, 2), _PERSONA)}
+    assert cands[repot]["essential"], cands[repot]
+    assert O._find(O._load(None), repot)["stakes_why"] == "the plants are her passion"
 
 
 @check("a kept slot outside the task's only-here hours is released: admin kept at 21:30 moves "
@@ -635,7 +650,7 @@ def _bill(**kw):
 
 
 @check("F4: a windowed monthly habit — nothing before the 10th, planned the 10th–15th, due on "
-       "the 15th, overdue after it; essential unless missable")
+       "the 15th, overdue after it; essential when judged vital (unjudged is back burner, 11-22)")
 def _():
     _fresh("window")
     t = _bill()
@@ -645,7 +660,10 @@ def _():
     assert v12["state"] == "due_today" and O._on_todays_list(t, v12), v12
     assert "due today" in v15["text"], v15
     assert v16["state"] == "overdue" and O._on_todays_list(t, v16), v16
-    assert O.is_essential(t) and not O.is_essential(_bill(stakes="missable"))
+    assert O.is_essential(_bill(stakes="vital")) and not O.is_essential(_bill(stakes="missable"))
+    # Unjudged: back burner while it awaits the judge; past the grace (here: no created_at at
+    # all) it counts as vital again — the fail-safe (2026-11-22).
+    assert O.is_essential(t) and not O.is_essential(_bill(created_at=O._stamp()))
     late = _bill(start="2026-10-24")                      # set up after October's window closed
     assert not O._view(late, date(2026, 10, 25))["actionable"]
 

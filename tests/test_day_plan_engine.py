@@ -779,7 +779,7 @@ def _one_task_day(name, **task):
 
 @check("S-1: a task under way stays put — one block, at its own time — and its nudge and check each wake once")
 def _():
-    d, tid = _one_task_day("s1", what="File the VAT return", kind="deadline", due="2026-10-26",
+    d, tid = _one_task_day("s1", what="File the VAT return", kind="deadline", due="2026-10-26", stakes="vital",
                            minutes=30, minutes_source="stated")
     _no_gates()
     _flags(nudges=True)
@@ -806,7 +806,7 @@ def _():
 @check("N1, as Mike ruled 2026-10-26: an unconfirmed essential task stays on the plan all morning "
        "— shown once, at its latest time — and wakes twice: one nudge, one check")
 def _():
-    d, tid = _one_task_day("n1", what="File the VAT return", kind="deadline", due="2026-10-26",
+    d, tid = _one_task_day("n1", what="File the VAT return", kind="deadline", due="2026-10-26", stakes="vital",
                            minutes=30, minutes_source="stated")
     _no_gates()
     _flags(nudges=True)

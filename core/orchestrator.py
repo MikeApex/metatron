@@ -1726,7 +1726,7 @@ _ALWAYS_CONFIDENTIAL = [
     "record_wisdom_response",
     "write_contact", "read_contact", "list_contacts", "log_interaction",
     "search_contacts", "write_persona", "get_tone_shape", "tone_profiler",
-    "plan_project", "read_plan", "project_planner",
+    "plan_project", "read_plan", "project_planner", "task_judge",
     # Routing / architecture terms
     "cloud_deep", "cloud_fast", "cloud_analytical", "routing.yaml",
     "run_session", "config/agents",
@@ -4387,7 +4387,9 @@ _WIDE_OUTPUT_AGENTS = {"day_planner": 16384, "project_planner": 16384}
 # if fewer apply or more essentials go unplaced.
 # project_planner: 4,096 — planning backwards from a deadline benefits from some thinking, and the
 # cap is what holds a call near the ~$0.02 named beside `project_plans_per_day` (day_plan.yaml).
-_PLAIN_THINKING_CAPS = {"day_planner": 0, "project_planner": 4096}
+# task_judge (ranking § 16): 1,024 — weighing a list against stated values needs little, and the
+# cap holds a call near the ~$0.01 named beside `task_judge_calls_per_day`.
+_PLAIN_THINKING_CAPS = {"day_planner": 0, "project_planner": 4096, "task_judge": 1024}
 
 
 # [DB-1026-01] A reply round that ends MAX_TOKENS with no tool call did not finish: its text

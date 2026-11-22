@@ -507,6 +507,30 @@ def _digest(*parts) -> str:
     return hashlib.sha256(json.dumps(parts, sort_keys=True, default=str).encode()).hexdigest()[:12]
 
 
+def _ramp(t: dict, due: date, today: date, table: dict, w: dict) -> int:
+    """How far a deadline has climbed toward its due-day weight (2026-11-22, ranking § 16 —
+    Mike: "with something so important, it's vital that it's not left to the last minute").
+
+    Until then a deadline gained nothing until the day before (+15) and the day itself (+30), so a
+    vital step due in four days scored as low as a chore and was never placed early. It now climbs
+    in a straight line from where its window starts (eligible_from, else the day it was opened) to
+    the full due-day weight, over at most `ramp_days`: a vital task half-way through its window
+    has half its due-day weight, a missable one climbs only to its own (smaller) due-day weight.
+    The basic shape only — how steeply which kinds of thing climb, and what they may never push
+    aside (family time), is the ranking interview's (§ 16 Part B)."""
+    span_max = int(w.get("ramp_days", 0) or 0)
+    top = int(table.get("due_today", 0))
+    if span_max <= 0 or top <= 0:
+        return 0
+    _O_ = _O()
+    start = _O_._d(t.get("eligible_from")) or _O_._d(str(t.get("created_at") or "")[:10])
+    span = max(1, min(span_max, (due - start).days if start else span_max))
+    left = (due - today).days
+    if left >= span:
+        return 0
+    return int(round(top * (span - left) / span))
+
+
 def _score(t: dict, v: dict, today: date, goals: dict, w: dict) -> int:
     O = _O()
     pri = t.get("priority")
@@ -514,13 +538,21 @@ def _score(t: dict, v: dict, today: date, goals: dict, w: dict) -> int:
         base = int(w["priority"][pri])
     else:
         g = goals.get(str(t.get("goal_id") or ""))
-        base = int((w.get("goal") or {}).get(
-            "essential" if g and g.get("essential") is True else ("linked" if g else "none"), 15))
+        # A goal's own priority, when it was taken on at one (or is an obligation — 2026-11-22,
+        # ranking § 16): what the user ranked it at reaches every task that serves it.
+        gp = O._goal_priority(g) if g else None
+        if gp in (w.get("priority") or {}):
+            base = int(w["priority"][gp])
+        else:
+            base = int((w.get("goal") or {}).get(
+                "essential" if g and g.get("essential") is True else ("linked" if g else "none"), 15))
     dyn = 0
     kind, state = t.get("kind"), v.get("state")
     if kind == "deadline":
         due = O._d(t.get("due"))
-        vital = t.get("stakes") != "missable"
+        # Judged vital only (2026-11-22): an unjudged task scores as missable — the back burner —
+        # until the agent that opened it, or tools/task_judge.py, says otherwise.
+        vital = O.stakes_of(t) == "vital"
         table = w.get("vital" if vital else "missable") or {}
         if state == "lapsed":
             dyn += int(table.get("lapsed", 0))
@@ -528,14 +560,14 @@ def _score(t: dict, v: dict, today: date, goals: dict, w: dict) -> int:
             dyn += int(table.get("overdue", 0))
         elif due and due == today:
             dyn += int(table.get("due_today", 0))
-        elif due and due == today + timedelta(days=1):
-            dyn += int(table.get("due_tomorrow", 0))
         elif due:
-            dyn += int(table.get("in_lead", 0))
+            fixed = int(table.get("due_tomorrow" if due == today + timedelta(days=1)
+                                  else "in_lead", 0))
+            dyn += max(fixed, _ramp(t, due, today, table, w))
     elif kind == "habit" and O._month_window(t):
         # A monthly habit with days of the month is a recurring deadline (review F4): overdue
         # after its last day, due on it.
-        table = w.get("vital" if t.get("stakes") != "missable" else "missable") or {}
+        table = w.get("vital" if O.stakes_of(t) == "vital" else "missable") or {}
         if state == "overdue":
             dyn += int(table.get("overdue", 0))
         elif state == "due_today" and v.get("sort", (9,))[0] == 1:
@@ -602,7 +634,7 @@ def _candidates(today: date, persona: str | None) -> list[dict]:
             # A step of a plan or a prep for an event: code places it, no reshuffle (R5).
             "step": bool(t.get("part_of") or t.get("prep_for")),
             "vital": ((t.get("kind") == "deadline" or bool(O._month_window(t)))
-                      and t.get("stakes") != "missable"),
+                      and O.stakes_of(t) == "vital"),
             "due": t.get("due"), "zone": t.get("zone"), "copies": copies,
             # What kind of activity it is, and what that needs (plan § 18.3): where it may go.
             "activity": activity, "device": bool(attrs.get("device")),
@@ -3472,6 +3504,32 @@ def refresh_tick() -> str:
         notes.append(f"project planner failed: {type(exc).__name__}")
     if planning:
         notes.append("project planner started")
+    # Ranking § 16: once a day (and on the first tick after a deploy), steps re-take their end
+    # state's weight; and any task nobody judged is judged off this tick, on a worker.
+    try:
+        if state.get("reweighed") != today.isoformat():
+            # `legacy` once, the first time: steps written under R5 carry `inferred` values.
+            n = _O().reweigh_plan_steps(persona, legacy=not state.get("reweigh_legacy_done"))
+            if isinstance(n, int):                 # an unreadable store returns its error text
+                with _locked(persona):
+                    st = _load_state(persona)
+                    st["reweighed"] = today.isoformat()
+                    st["reweigh_legacy_done"] = True
+                    _write_json(_state_path(persona), st)
+                if n:
+                    notes.append(f"{n} plan step(s) reweighed")
+            else:
+                notes.append("reweigh skipped: the task store could not be read")
+    except Exception as exc:  # noqa: BLE001 — a ranking fault never costs the day its plan
+        logger.warning(f"[day_plan] reweigh failed: {exc}")
+        notes.append(f"reweigh failed: {type(exc).__name__}")
+    try:
+        from tools.task_judge import start_judging
+        if start_judging(persona):
+            notes.append("task judge started")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[day_plan] task judge failed to start: {exc}")
+        notes.append(f"task judge failed: {type(exc).__name__}")
     plan = current(persona, reason="tick")
     started = start_reshuffle(persona)
     tomorrow_draft(persona, build=True)

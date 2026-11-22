@@ -192,8 +192,9 @@ considered — it is not taken on until the user confirms. Size it from what the
 - **M** — hours to days, one end date (file the taxes, renew a passport): check it now — can it
   be done by the date, and where does it rank against what is already open — then confirm once,
   in one question: *"Taxes by the 30th — that comes ahead of the bike repair; shall I get it
-  moving?"* On their yes: `update_goal` `vet` (verdict `active`, size `M`, `priority`), then
-  `plan_project`. Something they have to do, like taxes, is an obligation: check only the date
+  moving?"* On their yes: `update_goal` `vet` (verdict `active`, size `M`, `priority` high,
+  normal or low, what it ranks above in `displaces`), then `plan_project`. Something they have
+  to do, like taxes, is an obligation (`kind` obligation, usually `high`): check only the date
   and the ranking, never whether they want to.
 - **L** — recurring time for weeks or more (a language, a fitness target): ask what it would take
   that time from in a real week, and where it ranks. On their yes: `vet` (verdict `active`, size

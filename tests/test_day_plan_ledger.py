@@ -205,7 +205,8 @@ def _():
     assert O.update_task(tid, "set_priority").startswith("error:")
 
 
-@check("is_essential: medication, high priority, essential goal, unknown-stakes deadline")
+@check("is_essential: medication, high priority, essential goal, a deadline judged vital — and, "
+       "since 2026-11-22, not one awaiting judgement (back burner), unless the judge is overdue")
 def _():
     _fresh("essential")
     goals = {"q1": {"essential": True}, "q2": {"essential": False}}
@@ -214,7 +215,15 @@ def _():
     assert O.is_essential({"kind": "habit", "what": "Stretch", "priority": "high"}, goals)
     assert O.is_essential({"kind": "habit", "what": "Run", "goal_id": "q1"}, goals)
     assert not O.is_essential({"kind": "habit", "what": "Guitar", "goal_id": "q2"}, goals)
-    assert O.is_essential({"kind": "deadline", "what": "File the tax return"}, goals)
+    assert O.is_essential({"kind": "deadline", "what": "File the tax return", "stakes": "vital"},
+                          goals)
+    # Mike, 2026-11-22: unset stakes no longer count as vital — task_judge judges it within
+    # minutes. Past the grace (or with no created_at), it counts as vital again: a broken judge
+    # degrades to F10, never to a hidden bill.
+    fresh = O._stamp()
+    assert not O.is_essential({"kind": "deadline", "what": "Repot the plants",
+                               "created_at": fresh}, goals)
+    assert O.is_essential({"kind": "deadline", "what": "Repot the plants"}, goals)
     assert not O.is_essential({"kind": "deadline", "what": "Buy a card", "stakes": "missable"},
                               goals)
     assert not O.is_essential({"kind": "habit", "what": "Stretching"}, goals)
@@ -263,11 +272,17 @@ def _():
     _at(2026, 10, 20, 9, 0)
     card = _id(O.open_task("Buy a birthday card", kind="deadline", due="2026-10-21",
                            stakes="missable"))
-    tax = _id(O.open_task("File the tax return", kind="deadline", due="2026-10-21"))
+    tax = _id(O.open_task("File the tax return", kind="deadline", due="2026-10-21",
+                          stakes="vital"))
+    chore = _id(O.open_task("Repot the plants", kind="deadline", due="2026-10-21"))
     _at(2026, 10, 24, 9, 0)
     assert O._view(_task(card), O._today())["state"] == "lapsed"
     assert not O._view(_task(card), O._today())["actionable"]
     assert O._view(_task(tax), O._today())["state"] == "overdue"
+    # Unjudged for four days — past the judge's grace — it counts as vital: overdue, not hidden.
+    assert O._view(_task(chore), O._today())["state"] == "overdue"
+    new = _id(O.open_task("Sort the loft", kind="deadline", due="2026-10-21"))
+    assert O._view(_task(new), O._today())["state"] == "lapsed"     # awaiting judgement
     block = O.context_block()
     assert "past their date, unconfirmed" in block and "Buy a birthday card" not in block, block
     assert _task(card)["status"] == "open"     # stays open; only not raised
@@ -306,7 +321,9 @@ def _():
     # update_goal re-pinned 2026-11-21 (385d3750301ff22e → 18eae9fc0347207f): the `vet` action,
     # the `long` horizon and size/kind/verdict/priority/displaces/revisit_on added to the shipped
     # constant on purpose (goal–task network phase 2, § 10 R3/R6) — not a flag leaking through.
-    assert (_h(r), _h(g)) == ("dd71c3276d1e4b23", "18eae9fc0347207f"), (_h(r), _h(g))
+    # Re-pinned 2026-11-22 (18eae9fc0347207f → 54c5d252741855f7): vet's `priority` is high |
+    # normal | low and `kind` applies to vet (ranking § 16) — description text only.
+    assert (_h(r), _h(g)) == ("dd71c3276d1e4b23", "54c5d252741855f7"), (_h(r), _h(g))
 
 
 @check("flag ON: the planner's actions and fields appear; the constants are not mutated")

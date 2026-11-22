@@ -51,6 +51,11 @@ flags:
   # agent, run off this tick — one at a time, capped per day (limits below). Off: plan_project
   # refuses, nothing is queued or planned, and steps already written stay as ordinary tasks.
   project_planner: true
+  # RANKING, PART A (2026-11-22, Mike; goal_task_network_plan § 16). Any open task nobody judged
+  # (no `stakes`) is judged by the task_judge agent off this tick — vital or missable, and a
+  # priority, against the user's goals, mission and values, by what missing it would cost. Until
+  # judged a task is back-burner. Off: unjudged tasks stay back-burner, and no model is called.
+  task_judge: true
 
 replaces_jobs: [companion_checkin]
 
@@ -70,6 +75,9 @@ score:
   habit: {planned_day: 10, at_risk: 15, daily: 10}
   interval_due: 15
   medication: 50
+  # A deadline climbs from the start of its window toward its due-day weight over at most this
+  # many days, instead of jumping only on the last two (§ 16). 0 turns the climb off.
+  ramp_days: 14
   # A score move at least this large between builds is a change in what matters — a reshuffle.
   reshuffle_delta: 10
 
@@ -111,3 +119,12 @@ limits:
   project_plan_stale_seconds: 600
   # No step longer than this — a longer one is split (§ 4.3).
   project_step_max_minutes: 90
+  # The task judge (§ 16): one reasoning-tier call judges up to `task_judge_batch` unjudged tasks
+  # — ~$0.01 a call at today's price (~$0.02 after the introductory price ends) — so 6 a day caps
+  # a persona at ~$0.06/day (~$0.12 after). Typical use: one call on the day it ships (the
+  # backlog), then one now and then, when an agent opens a task unjudged. A failed call gives its
+  # place back; a verdict that moves a score 10+ can cost one reshuffle (under reshuffles_per_day).
+  task_judge_calls_per_day: 6
+  task_judge_gap_minutes: 10
+  task_judge_batch: 25
+  task_judge_stale_seconds: 300
