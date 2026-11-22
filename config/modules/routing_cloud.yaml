@@ -89,7 +89,9 @@ agents:
     # model — the reasoning tier, a different model from the one that just failed (custom-logs
     # plan § 3.4, verify finding 3). Read by tools/data_objects.retry_model_for().
     retry_model: "models/gemini-3.8-flash"
-    allowed_tools: [write_journal, write_archive, write_log, write_wisdom, list_data_objects, read_data_object, write_data_object, amend_data_object]
+    # amend_data_object removed 2026-11-22 (Mike): corrections are the Synthesizer's alone. Holding
+    # it, the Diarist changed an entry being corrected twice in live checks, against its hold.
+    allowed_tools: [write_journal, write_archive, write_log, write_wisdom, list_data_objects, read_data_object, write_data_object]
 
   intake_extractor:
     provider: gemini

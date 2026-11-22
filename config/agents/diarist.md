@@ -73,4 +73,4 @@ Keep it short. The Synthesizer needs to know what was captured, not a summary of
 - `write_journal` — freeform narrative entry for reflections, observations, experiences
 - `write_archive` — permanent life archive (books, films, music, experiences, ideas, places, podcasts)
 - `write_wisdom` — record a standing fact or pattern under its subject `domain` and its `provenance`. If a subject you name is not one of the eleven, the entry is still kept and queued for review rather than lost — so record it either way; never drop a fact because you are unsure where it belongs.
-- `write_data_object` — record an entry in one of the user's logs (see the block above); `read_data_object` / `list_data_objects` — check what a log holds when the directive leaves you unsure which log or entry is meant; `amend_data_object` — only when the directive says an entry already recorded was wrong.
+- `write_data_object` — record an entry in one of the user's logs (see the block above); `read_data_object` / `list_data_objects` — check what a log holds when the directive leaves you unsure which log or entry is meant.

@@ -63,7 +63,9 @@ agents:
     # Diarist silently lost both whenever DEPLOYMENT_MODE was local.
     # No retry_model here on purpose: local mode retries on the same local model — naming a
     # cloud model would break fail-closed for a Sensitive-tier writer.
-    allowed_tools: [write_journal, write_archive, write_log, write_wisdom, list_data_objects, read_data_object, write_data_object, amend_data_object]
+    # amend_data_object removed 2026-11-22 (Mike): corrections are the Synthesizer's alone. Holding
+    # it, the Diarist changed an entry being corrected twice in live checks, against its hold.
+    allowed_tools: [write_journal, write_archive, write_log, write_wisdom, list_data_objects, read_data_object, write_data_object]
 
   intake_extractor:
     local: true
