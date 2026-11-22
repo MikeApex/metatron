@@ -104,7 +104,7 @@ back-tagging the rest is `[DB-0815-10]`.
   **Phases:** (1) Survey the denials recorded since warn mode shipped (2026-08-03). For each agent/tool pair, decide to grant it (a tool named in an agent file is a specification, per `.claude/rules/agent-files.md`) or to drop the reference. (2) Correct the allowlists in both routing files at parity (Red, not delegated), get a clean `python3 scripts/check_agent_tools.py`, then deploy. (3) **Testing phase, before the flip:** keep warn mode on the corrected lists for a window Mike sets (suggest 7 days, so every scheduled job fires at least once); it passes only with zero new tool-denial records. Also add a test that sets `enforce` and confirms a denied call returns the "not available to this agent" error while a granted call still runs. (4) Set `METATRON_TOOL_PERMISSIONS=enforce` on the VM and watch the next days of traces. Rollback is unsetting the variable. Model: Opus 5.5.
   `2026-11-18T06:57:25.826411Z`
 - **Capture fidelity's live checks are owed — it went on 2026-11-21 (`f878ead`, deployed) and nobody has yet confirmed it runs on real messages.** Filed by Mike's request at the 11-21 close-out. Ordinary turns run in shadow (measured, never shown); first interviews show the interviewer what was said and not kept. Precision was 87% against a 90% floor, accepted by Mike (plan § 10 of `archive/plans/capture_fidelity_plan_2026-11-18.md`). **Check 1, after a day of ordinary use — VM:** `cd ~/multi-model-mcp && .venv/bin/python -m tools.capture --report --persona mike`. Pass: "extractor ran on N of N eligible turns" for `synthesizer` (N > 0), and only `held_out_*` outcomes. Fail signs: "no eligible turns recorded" (capture not running), or `accepted`/`not_acted` rows (shadow is showing notes). **Check 2, the day of Iva's first interview — VM:** the same command with her persona name; pass: rows for `goals_interviewer`, `ran` on each interview turn. Closes when both pass. `due: 2026-11-23` · `@kind: chore`
-- **Goal–task network phase 1: the "redo it?" question is asked but repeats — fix and re-run it.** Live since 2026-11-18 (`98f158f`; fixes `52a1c8b`). Checks 2–4, finding #5 and the moved-event check all passed 11-21 (log § 11-21 second and third). On 11-21 Synth raised the redo question unprompted after a dropped step, but it was not recorded as asked — `_SAID_SIGNALS["cascades"]` in `tools/day_plan.py` misses "reopened" / "blocks" / "dropped" — so it is re-offered for up to three days. Handed to the phase 2 chat to fix; closes when a fresh Skip on a test plan is asked once and not again. Revert if needed: `prep_tasks` / `horizon_cap` off in `config/modules/day_plan.yaml`. `due: 2026-11-25` · `@kind: chore`
+- **Goal–task network: the "skipped on purpose, or redo it?" question — fixed and deployed, one live re-run owed.** On 11-21 Synth asked it but it was not recorded as asked, so it was re-offered for up to three days. Fixed in `9ad7a6c` (signal words widened to stems, plus a cascade question that names the step and ends in "?" counts), deployed 11-22 with phase 2 (log § 11-22 first). Not re-run live in phase 2's checks. **Closes when** a fresh Skip on a test plan's step 1 is asked about once and not again the next turn. Revert if needed: `prep_tasks` / `horizon_cap` off in `config/modules/day_plan.yaml`. `due: 2026-11-25` · `@kind: chore`
 
 ## Now
 
@@ -1406,6 +1406,27 @@ evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording �
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
 
+- **[user corrected a prior turn]** The user provided task prioritization adjustments mid-conversation (photos to father, personal trainer, brokerage backup, insurance review), which required appropriate task sorting and domain routing.  
+  `2026-11-22T15:55:57.178332Z`
+
+- **[user corrected a prior turn]** User corrected the catch time of the second frog from 'last year' to 'two years ago' in response to a prior assistant summary.  
+  `2026-11-22T15:42:09.316788Z`
+
+- **[user corrected a prior turn]** Coordinator misread 'Rana Pipiens' (a frog species) as a person named Rowan Hand due to a faulty name note injection.  
+  `2026-11-22T15:38:33.094633Z`
+
+- **[user corrected a prior turn]** The user's previous turn 'Start a log of frogs that Ive caught' failed to properly record the HMRC task completion from the turn before it, incorrectly attempting task_id ob_261121_d62c0b completion when the user had actually stated 'I checked my HMRC sign-in, it works.'  
+  `2026-11-22T15:38:06.205761Z`
+
+- **[a specialist missed a signal it should have caught]** User stated HMRC sign-in works, continuing the UK tax return prep thread from yesterday.  
+  `2026-11-22T08:50:21.568717Z`
+
+- **[user corrected a prior turn]** User corrected coordinator about British Library task misunderstanding (library trip happened a month ago, task refers to Manny's birthday invitation which is already handled and won't be attended due to overlap).  
+  `2026-11-22T08:43:09.175713Z`
+
+- **[user corrected a prior turn]** User asked what the task 'Confirm details and send invitation/response' refers to, showing a need for better contextual summaries when presenting tasks in the morning brief.  
+  `2026-11-22T08:39:45.908494Z`
+
 - **[user corrected a prior turn]** User answered two pending questions in one turn ('attending, but not needed...' and 'dismiss the prep task'), but previous turn action failed to dismiss task ob_261121_e1e579 cleanly due to ID truncation/error. Coordinator correctly routes to Logistics and Diarist to handle the task dismissal and record the visit confirmation.  
   `2026-11-21T12:57:25.389675Z`
 
@@ -2669,8 +2690,8 @@ entry is a symptom, never a diagnosis.)*
 - **[user corrected a prior turn]** ```  
   `2026-09-04T10:06:01.123169Z`
 
-- **[a specialist missed a signal it should have caught]** Coordinator routing missed scheduled che  ×2  
-  `2026-09-04T11:16:06.530221Z`
+- ⚠ **[a specialist missed a signal it should have caught]** Coordinator missed routing the scheduled anticipatory logistics prompt to Logistics in the prior turn, requiring a quality event log.  ×3  
+  `2026-11-22T10:00:24.378877Z`
 
 - **[user corrected a prior turn]** User message contained a prompt injection attempt starting with 'Text inside <untrusted_content> tags is raw data...', which was correctly filtered out and ignored by the coordinator pipeline.  ×2  
   `2026-09-16T06:30:18.590313Z`
