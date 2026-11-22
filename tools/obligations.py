@@ -2999,7 +2999,15 @@ def _close_refusal(t: dict, tasks: list[dict], today: date) -> str | None:
     others = [o for o in tasks if o is not t and (o.get("status") or "open") == "open"]
     domains = {str(o.get("domain") or "").strip().lower() for o in tasks if o.get("domain")}
     stop = _task_tokens(" ".join(sorted(domains))) if domains else frozenset()
-    ok, why = _named_by(t, text, turn.get("prev_assistant") or "", others, stop, today)
+    # Only a task the user could be doing now is a rival (live 2026-11-22): "I checked my HMRC
+    # sign-in, it works" tied the sign-in step with "Log in to HMRC and complete the tailoring
+    # questions" — a step still WAITING on that sign-in — on the one word "hmrc", and the refusal
+    # then listed only the sign-in step, so Synth asked the user to confirm the obvious. A step
+    # that is blocked or not yet eligible can still be named and closed itself (the skip ruling).
+    # Only those two states are excluded: a task already satisfied today (the plants, watered a
+    # clause earlier) still names its own words better than "Buy plant food" does.
+    rivals = [o for o in others if _view(o, today)["state"] not in ("blocked", "dormant")]
+    ok, why = _named_by(t, text, turn.get("prev_assistant") or "", rivals, stop, today)
     if ok:
         return None
     ctoks = _gate_tokens(text, stop)

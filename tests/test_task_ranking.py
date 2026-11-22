@@ -587,6 +587,35 @@ def _():
     assert (_task(x)["stakes"], _task(x)["priority"]) == ("vital", "high")
 
 
+@check("live 11-22: 'I checked my HMRC sign-in, it works' closes the sign-in step — a step still "
+       "waiting on it ('Log in to HMRC…') is no rival; two steps open at once still tie")
+def _():
+    _fresh("gate_waiting_rival", goals=_TAX_GOALS.format(due=_d(30)))
+    res = O.open_plan([
+        {"key": "a", "what": "Check you can sign in to your HMRC online account", "part_of": "q5",
+         "due": _d(3), "eligible_from": _d(0), "flexible": True},
+        {"key": "b", "what": "Log in to HMRC and complete the tax return tailoring questions",
+         "part_of": "q5", "needs": ["a"], "due": _d(10), "flexible": True}])
+    a = res["ids"]["a"]
+    from tools import turn_context as T
+    text = "I checked my HMRC sign-in, it works."
+    cm = T.turn_scope(user_turn=True)
+    turn = cm.__enter__()
+    turn.update(close_gate=True, user_text=text, prev_assistant="")
+    try:
+        r = O.update_task(a, "done", evidence=text)
+        assert not r.startswith("error"), r
+        assert _task(a)["status"] == "done"
+        # Now step b is open and actionable: a second HMRC step open at once is a real rival.
+        c = _id(O.open_task("Ring HMRC about the PAYE code", kind="deadline", due=_d(4),
+                            stakes="vital"))
+        turn.update(user_text="sorted the HMRC one")
+        r = O.update_task(c, "done", evidence="sorted the HMRC one")
+        assert r.startswith("error: not recorded"), r
+    finally:
+        cm.__exit__(None, None, None)
+
+
 if __name__ == "__main__":
     for name, ok, err in _results:
         print(f"  {'PASS' if ok else 'FAIL'}  {name}")

@@ -31,6 +31,13 @@ or agent-file edits, no deploy.
 - *"Taxes might not align with mission, but still are high priority."* Costs of missing something —
   *"financial — easy to quantify, social — much harder, existential/psychological — harder
   still"* — should inform the weighing.
+- *"For tasks in the future, their shape and edges should be figured out by Synth in
+  communications. For example, the GS donation needs to be done before the donations for this
+  year's annual fund close out at the end of November, or may have an emotional component yet
+  unearthed. Potting plants might have a window of two weeks before the plants die, etc. These
+  things should be probed at task mention."*
+- *"Disappointing a parent is likely vital, not missable. Urgency and importance are two different
+  vectors that are being consolidated into a single score."*
 - *"Metatron should proactively manage tasks and prioritization with the user, as well as by
   itself on the backend. That reconciliation is a core strength of the intended tool. Metatron's
   mission is to emphasize what will lead to long term happiness, not managing a to do list."*
@@ -48,23 +55,29 @@ reflect back what you heard before moving on; his answer is design by default (h
 should work for anyone) unless he says it is just him — ask when it is unclear.
 Topics to cover (refine them; don't read them out as a list):
 
-1. **Protected time.** Which parts of a life outrank a deadline that would cut into them (family
+1. **Urgency and importance, apart.** Part A folds both into one score (`_score`): how near a
+   date is, and how much it matters. What each axis is made of, how they combine to decide what
+   is done first — and where a merely urgent task loses to an important one.
+2. **Protected time.** Which parts of a life outrank a deadline that would cut into them (family
    time, sleep, health, rest), how strongly, and when a deadline may intrude anyway (a tax filing
    on 30 December).
-2. **Values and passions.** How Metatron learns that someone is a keen gardener — from the
+3. **Values and passions.** How Metatron learns that someone is a keen gardener — from the
    mission, goals and profile it already holds, from behaviour, or by asking — and how much a
    passion should lift its tasks.
-3. **The costs of missing something.** Financial, legal, health, social, psychological,
+4. **The costs of missing something.** Financial, legal, health, social, psychological,
    existential: which to record per task, how to weigh the hard-to-quantify ones against the easy
-   one, and whether the user is ever asked.
-4. **The climb.** How early different kinds of things should start rising (an obligation with
+   one (a parent let down is vital, Mike says).
+5. **Probing a task's shape when it is mentioned.** The real deadline behind the stated one, a
+   decay window, an unearthed emotional component — which tasks earn a question, how many, in
+   whose words, and what it costs the user's attention (the denominator of the core metric).
+6. **The climb.** How early different kinds of things should start rising (an obligation with
    lead times, a chore, a promise to a friend), and when rising turns into being raised.
-5. **The back burner.** What becomes of unimportant tasks that are quietly forgotten — let them
+7. **The back burner.** What becomes of unimportant tasks that are quietly forgotten — let them
    expire, review them now and then, ask once — and how a misjudged real obligation is caught.
-6. **Reconciliation.** What Metatron settles alone in the background, what it brings to the user,
+8. **Reconciliation.** What Metatron settles alone in the background, what it brings to the user,
    how often (a weekly look at priorities?), and how a clash is put to them (an urgent deadline
    against family time).
-7. **Long-term happiness as the aim.** What would tell either of you the ranking is serving it —
+9. **Long-term happiness as the aim.** What would tell either of you the ranking is serving it —
    framed as a working hypothesis to test in use, never a verdict.
 
 ## Deliverable

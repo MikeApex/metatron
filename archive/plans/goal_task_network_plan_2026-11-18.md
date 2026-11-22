@@ -542,3 +542,22 @@ Metatron proactively reconciling priorities with the user (a recurring conversat
 | F10 | A verdict can cost a reshuffle, unnamed | named above and in `task_judge.py` |
 | F11 | Judge input nearer 4–6k than 3k | immaterial at this tier; noted |
 | F12–16 | Tests not proving their claims; missing cases | test 2 asserts the exact climb; new checks for the grace, refund, batch halving, urgency order, goal priority, month-window judging, per-plan cap and count, re-vet reweigh — `tests/test_task_ranking.py` 18/18 |
+
+**After the deploy (2026-11-22, live checks 1–3).** 1 passed (16 tasks judged in one pass, ~$0.01;
+stale chores off the top, none closed). 2 passed (*"The taxes are high priority — they're an
+obligation"* re-vetted q5 as an obligation at `high`; all 9 steps vital + high at once). 3 half:
+Synth saw the sign-in step and closed the right id, but the close gate tied it with *"Log in to
+HMRC and complete the tailoring questions"* — a step still waiting on it — on the one word
+"hmrc", so Synth asked the obvious. Fixed: a blocked or not-yet-eligible task is no rival.
+
+**Mike's further rulings, the same day — for Part B:**
+6. A task's shape is probed **when it is mentioned**: *"their shape and edges should be figured out
+   by Synth in communications"* — the real deadline behind the stated one (*"the GS donation needs
+   to be done before the donations for this year's annual fund close out at the end of
+   November"*), a decay window (*"potting plants might have a window of two weeks before the
+   plants die"*), an emotional component *"yet unearthed"*.
+7. *"Urgency and importance are two different vectors that are being consolidated into a single
+   score."* Part A's score folds both into one number; Part B separates them.
+8. *"Disappointing a parent is likely vital, not missable"* (social cost); *"Personal trainer is a
+   goal step"*; the brokerage backup and the insurance review confirmed vital. Recorded through
+   the back-burner walkthrough (check 4), so the corrections land as Mike's own (`stated`).
