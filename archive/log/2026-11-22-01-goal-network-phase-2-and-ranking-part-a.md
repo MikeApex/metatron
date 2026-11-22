@@ -40,7 +40,18 @@ a step still waiting on it (`e6a661c`), and a goal link kept the judge's priorit
 "Let's go through my tasks" gave the afternoon plan, not a review: no back-burner review exists.
 
 **Decided / rejected:** runtime-authored playbooks stay out (one user's details would reach every
-user); the Drop button stays as is (Mike); "Done, but…" became **Update…**, sent to Synth as a chat
+user); the Drop button's reason box stays (Mike); "Done, but…" became **Update…**, sent to Synth as a chat
 message rather than a new router (`c1e097a`, phone on the next APK). Values-weighted ranking was
 NOT guessed: Part B interviews Mike first (prompt `archive/handoffs/2026-11-22-ranking-part-b-interview-prompt.md`).
+
+**After the close-out — the redo question, re-run live (`e796ce6`, `11ad504`, `d1aaa01`).** Three
+tries, sent as Mike through the server. (1) The Tasks section listed the dropped step under "do
+not raise" while the plan block asked to raise it; Synth obeyed the former. (2) The ask was last of
+seven and repeated the conduct module's decision tree; a reply's "next steps?" stamped 11-21's
+TEST B asked on the word "step". (3) Fixed both — first among the asks, short; a stamp needs a
+non-scaffolding word — and on a clean run Synth still carried a calendar ask instead. **Believed
+true and wrong:** that the stamp was the only fault; the question was not reaching the reply at
+all. Mike chose to settle it at the tap: Drop on a step others wait on shows what it stops and
+asks "Drop anyway", and a confirmed drop answers the question (`d1aaa01`); Synth's question stays
+the fallback. One confound was mine: an "on purpose" answer sent before Synth had asked.
 
