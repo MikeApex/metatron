@@ -59,7 +59,8 @@ _MODEL_REPLY = json.dumps({
     "names_user_uses_for_them": ["Sam"],
 })
 CODE_ONLY = ("tone_profiler", "intake_extractor", "accountability_judge", "day_planner",
-             "crm_sweep", "capture_extractor", "project_planner", "data_object_tagger", "task_judge")
+             "crm_sweep", "capture_extractor", "project_planner", "data_object_tagger", "task_judge",
+             "data_object_matcher")
 
 
 # --- the sandbox -----------------------------------------------------------------------------
@@ -348,6 +349,7 @@ def test_the_code_callers_reach_their_agents_through_run_session_directly():
         "tools/project_plan.py": "project_planner",
         "tools/task_judge.py": "task_judge",
         "tools/data_objects.py": "data_object_tagger",
+        "tools/noticed_logs.py": "data_object_matcher",
     }
     for rel, agent in callers.items():
         src = (_REPO / rel).read_text()

@@ -227,7 +227,9 @@ created: 2026-11-21
   user's registry lists it from day one, empty. Promotion = adding a template file after
   Mike reads the cross-user report (§ 3.6), **plus** whatever code the object then needs (R29).
 - **Limits** — `config/modules/data_objects.yaml`: active objects listed to an agent (start
-  high, e.g. 60), detection threshold, visit dwell, rounding. Tightening = a config edit;
+  high, e.g. 60), visit dwell, rounding. *(Phase 2 build, 2026-11-22: the detection threshold
+  and the noticed/derived switches live in `config/modules/capture.yaml`, beside the `other`
+  route they read — `archive/plans/data_objects_phase2_build_plan_2026-11-22.md` § 6.)* Tightening = a config edit;
   nothing is deleted when it tightens — the least-used objects drop out of the lists and stay
   queryable (R29).
 
@@ -312,8 +314,11 @@ with Mike.
   aliases **and description** by one bulk-tier call (not by the label's string — the extractor's
   category names are known to vary, review finding 4), so a match becomes an alias proposal, not
   a new object. A survivor becomes **a code-raised confirmation card** (`tools/confirm.py`
-  `request("create_data_object", …)`, the same mechanism the zone suggestion uses), announced in
-  the **next reply**: *"Want me to start a list of the places you've mentioned wanting to try?"*
+  `request("create_data_object", …)`), announced in the **next reply**. *(Phase 2 build,
+  2026-11-22: the zone card is raised by code but never announced, and a card raised at
+  detection would expire — 600 s — or appear unexplained before the question. So the offer is
+  HELD at detection and the card raised at the start of the next real user turn, with a 24 h
+  lifetime, and announced by a line in the logs block — phase 2 build plan § 3.3.)*: *"Want me to start a list of the places you've mentioned wanting to try?"*
   **The answer is the card, not the reply's wording** (verify finding NEW 3 — the redo question
   was lost to signal-word matching): Yes → `POST /confirm` creates it server-side
   (`origin: noticed`) with the held facts filed in; No → recorded in
@@ -352,7 +357,8 @@ with Mike.
 ### 3.6 Promotion (R6, R21, R29)
 
 - `tools/analytics.py`'s daily row gains **counts only**: objects per user, by origin
-  (asked / noticed / template), fields added. No names.
+  (asked / noticed / template / existing — phase 1 added `existing` for registered stores),
+  fields added. No names.
 - `scripts/data_object_report.py` (VM, developer-only, prints to the terminal, writes nothing
   tracked): every user's invented object names, aliases and field names side by side, grouped
   lexically. Mike reads it and decides what becomes a template. Covers both current users under
@@ -443,6 +449,8 @@ never coordinates). It sees `private` entries. **A grant and agent-file change: 
 ### 3.10 Capture (R28)
 
 `KIND_HOMES`: `place` gains `write_data_object`; `event`, `health` and the new `entry` likewise.
+*(Phase 2 build: `place`, `task` and `health` already carry it from phase 1; `event` and
+`entry` remain. `other` takes no home: it is never matched, it is the detector's input.)*
 `raise_new_categories` keeps its developer alert, and gains the per-user creation path in § 3.4.
 
 ---

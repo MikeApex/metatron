@@ -81,7 +81,13 @@ KIND_TOOLS: dict[str, str | None] = {
     "person": "write_contact",
     "health": "write_log",
     "correction": None,
+    # An entry for one of the user's own logs (phase 2, 2026-11-22). Never shown in a note: it
+    # goes to the derived writer (tools/noticed_logs.derived), which is in shadow until a
+    # labelled score clears it (archive/plans/data_objects_phase2_build_plan_2026-11-22.md § 3.5).
+    "entry": "write_data_object",
 }
+# The kind that is never shown and never matched: it feeds the derived writer instead.
+ENTRY = "entry"
 # A fact worth keeping that fits no kind. Never shown to an agent — there is no home to check
 # it against — but counted, kept in `capture/uncategorised.jsonl`, and raised once to the
 # backlog when one category recurs (`raise_new_categories`). This is how a missing kind is
@@ -100,7 +106,8 @@ KIND_HOMES = {
              "record_horizon_item", "write_schedule", "request_build", "update_task"),
     "preference": ("write_wisdom", "write_agent_config", "write_profile"),
     "profile": ("write_wisdom", "write_persona"),
-    "event": ("update_calendar_event", "open_task", "record_horizon_item", "write_schedule"),
+    "event": ("update_calendar_event", "open_task", "record_horizon_item", "write_schedule",
+              "write_data_object"),
     "place": ("write_archive", "write_data_object", "write_contact", "write_agent_config",
               "write_profile"),
     "person": ("write_wisdom", "write_profile", "write_agent_config"),
@@ -111,6 +118,7 @@ KIND_HOMES = {
     "correction": ("update_task", "update_calendar_event", "write_contact", "merge_contacts",
                    "write_profile", "set_day_shape", "write_persona", "write_log",
                    "update_goal", "write_agent_config", "amend_data_object"),
+    "entry": ("write_data_object", "write_archive"),
 }
 _RECORDING_TOOLS = (frozenset(t for t in KIND_TOOLS.values() if t)
                     | {t for v in KIND_HOMES.values() for t in v})
@@ -118,7 +126,7 @@ _RECORDING_TOOLS = (frozenset(t for t in KIND_TOOLS.values() if t)
 AGENT_KINDS = {
     "goals_interviewer": ("day_shape", "goal"),
     "synthesizer": ("day_shape", "goal", "task", "preference", "profile",
-                    "event", "place", "person", "health", "correction"),
+                    "event", "place", "person", "health", "correction", "entry"),
 }
 DISPOSITIONS = ("save", "ask", "declined")
 
@@ -177,6 +185,14 @@ _DEFAULTS = {
     "other_volume_raise": 15,
     "other_cap": 200,
     "other_examples": 0,
+    # Phase 2 of the user's own logs (plan archive/plans/data_objects_phase2_build_plan_2026-11-22.md):
+    # a category of `other` fact that recurs is OFFERED as a new log (R34 — ask, never create).
+    "noticed_logs": "ask",
+    "noticed_raise_count": 3,
+    "noticed_window_days": 30,
+    "noticed_card_ttl_hours": 2,
+    # The derived writer: "shadow" records what it would file and writes nothing.
+    "derived_entries": "shadow",
 }
 
 
@@ -397,7 +413,18 @@ def catalogue(kinds: tuple[str, ...]) -> str:
                       "{\"right\": \"<what is right>\", \"wrong\": \"<what it replaces>\"}",
     }
     for kind in kinds:
-        if kind == "correction":
+        if kind == ENTRY:
+            if _derived_mode() == "off":
+                continue
+            from tools.record_rules import RELATIVE_REFERENCES
+            lines.append("kind entry — something the user did, had or noted that is plainly an "
+                         "entry for one of THE USER'S LOGS below (a migraine for a migraine log, "
+                         "a film watched for a films log). target is that log's id; proposal is "
+                         "an object of that log's fields with the user's own values — only the "
+                         "fields they gave. Never for a log not listed, never to start one, and "
+                         "never for a correction to an entry already kept. "
+                         + RELATIVE_REFERENCES)
+        elif kind == "correction":
             lines.append(f"kind correction — {plain[kind]}. target is \"correction\".")
         elif kind == "event":
             lines.append(f"kind event — {plain[kind]}. target is \"event\"; proposal is one "
@@ -412,6 +439,34 @@ def catalogue(kinds: tuple[str, ...]) -> str:
                  f"to three plain words naming what sort of fact it is (\"school dates\", "
                  f"\"car\").")
     return "\n".join(lines)
+
+
+def _derived_mode() -> str:
+    m = str(config().get("derived_entries", "shadow")).strip().lower()
+    return m if m in ("shadow", "on") else "off"
+
+
+def user_logs_text(persona: str) -> str:
+    """The user's logs the extractor may propose an `entry` for: id, name, one-line
+    description, field names — never an entry (phase 2 plan § 3.5). Registered stores
+    themselves (contacts, tasks …) and private or archived logs are not listed."""
+    try:
+        from core.persona import persona_scope
+        from tools import data_objects as DO
+        with persona_scope(persona):
+            lines = []
+            for o in DO.objects():
+                if o.get("status") != "active" or o.get("merged_into"):
+                    continue
+                if o.get("store") != "archive" and o["id"] == o.get("store"):
+                    continue
+                fields = ", ".join(f for f in DO.fields_of(o)) or "text"
+                desc = f" — {o['description']}" if o.get("description") else ""
+                lines.append(f"- id {o['id']}: {o['name']}{desc} (fields: {fields})")
+        return "\n".join(lines) or "(none)"
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[capture] user logs not listed: {exc}")
+        return "(none)"
 
 
 def build_input(persona: str, user_input: str, history: list[dict] | None,
@@ -429,7 +484,9 @@ def build_input(persona: str, user_input: str, history: list[dict] | None,
         f"TODAY: {today.date().isoformat()} ({today:%A})\n\n"
         f"WHAT CAN BE RECORDED:\n{catalogue(kinds)}\n\n"
         f"ALREADY RECORDED:\n{saved_record_text(persona, kinds)}\n\n"
-        f"RECENT CONVERSATION (oldest first):\n" + ("\n".join(convo) or "(none)") + "\n\n"
+        + (f"THE USER'S LOGS:\n{user_logs_text(persona)}\n\n"
+           if ENTRY in kinds and _derived_mode() != "off" else "")
+        + f"RECENT CONVERSATION (oldest first):\n" + ("\n".join(convo) or "(none)") + "\n\n"
         f"THE USER'S MESSAGE THIS TURN:\n<user_words>\n{user_input}\n</user_words>"
     )
 
@@ -480,6 +537,26 @@ def _validate_candidate(it, kinds: tuple[str, ...]) -> dict | None:
         return {"kind": OTHER, "target": OTHER, "category": category, "disposition": disp,
                 "proposal": " ".join(str(proposal or say).split())[:200], "say": say,
                 "quote": quote}
+    if kind == ENTRY:
+        # Checked against the user's logs by the derived writer, which has the persona; here
+        # only its shape. A plain sentence becomes {"text": …}.
+        if isinstance(proposal, str):
+            try:
+                proposal = json.loads(proposal) if proposal[:1] == "{" else {"text": proposal}
+            except ValueError:
+                proposal = {"text": proposal}
+        if not isinstance(proposal, dict) or not proposal or len(proposal) > 8:
+            return None
+        clean = {}
+        for k, v in proposal.items():
+            if not isinstance(k, str) or isinstance(v, (dict, list)):
+                return None
+            clean[k.strip()] = " ".join(str(v).split())[:200]
+        tgt = str(it.get("target") or "").strip()
+        if not tgt or tgt == ENTRY:
+            return None
+        return {"kind": ENTRY, "target": tgt, "proposal": clean, "disposition": disp,
+                "say": say, "quote": quote}
     if kind == "correction":
         right, wrong = _correction_parts(proposal)
         if not right:
@@ -619,8 +696,9 @@ class Job:
     """An extractor call on its own thread. `wait` is bounded; a result that arrives after the
     caller stopped waiting is handed to `late` (it becomes pending for the next turn)."""
 
-    def __init__(self, persona: str, agent: str, request_id: str):
+    def __init__(self, persona: str, agent: str, request_id: str, user_text: str = ""):
         self.persona, self.agent, self.request_id = persona, agent, request_id
+        self.user_text = user_text      # the derived writer records it beside a proposal
         self.result: dict | None = None
         self._done = threading.Event()
         self._lock = threading.Lock()
@@ -654,7 +732,7 @@ def start(persona: str, user_input: str, history: list[dict] | None, agent: str,
     if agent not in AGENT_KINDS or mode(agent) == "off" or not (user_input or "").strip():
         return None
     rid = getattr(trace, "trace_id", None) or uuid.uuid4().hex[:12]
-    job = Job(persona, agent, rid)
+    job = Job(persona, agent, rid, user_input)
     hist = [dict(h) for h in history] if history else None     # never the caller's live list
     threading.Thread(target=job._run, daemon=True, name="capture",
                      args=(persona, user_input, hist, AGENT_KINDS[agent], trace)).start()
@@ -1087,6 +1165,11 @@ def record_uncategorised(persona: str, agent: str, c: dict) -> None:
             path.write_text("\n".join(lines[-cap:]) + "\n")
     except OSError as exc:
         logger.warning(f"[capture] uncategorised fact not kept: {exc}")
+        return
+    # The detector (phase 2): a category that recurs is offered as a new log. Code only; the
+    # one model judgement runs off the reply's path. Never raises.
+    from tools import noticed_logs
+    noticed_logs.consider(persona, entry["category"])
 
 
 def _read_uncategorised(persona: str, since: str) -> list[dict]:
@@ -1161,12 +1244,29 @@ def raise_new_categories(persona: str, today: date | None = None) -> list[str]:
 
 # --- triage: one list of candidates into shown / silent ---------------------------------------------
 
+def _entry(persona: str, agent: str, rid: str, c: dict, writes: list[tuple[str, dict]],
+           touched, user_text: str, holdout: bool, day: int) -> None:
+    """An `entry` goes to the derived writer and nowhere else — never a note, never pending."""
+    from tools import noticed_logs
+    out = noticed_logs.derived(persona, rid, c, writes, touched, user_text=user_text)
+    # The outcome row is content-free: the target is the user's log id (their own words, as a
+    # slug), so the row carries the kind instead (diff review F7). The log is in derived.jsonl.
+    _outcome(persona, agent, rid, {**c, "target": ENTRY}, out, holdout, day)
+
+
 def _triage(persona: str, agent: str, rid: str, cands: list[dict],
-            writes: list[tuple[str, dict]], holdout: bool, day: int) -> list[dict]:
-    """Drop what is held or already written the same way; return what would be shown."""
+            writes: list[tuple[str, dict]], holdout: bool, day: int,
+            touched=frozenset(), user_text: str = "") -> list[dict]:
+    """Drop what is held or already written the same way; return what would be shown.
+    `touched`: ids of every log this turn started, added to, amended or delegated — the
+    derived writer leaves those alone (phase 2 plan § 3.5, review R9)."""
     shape, texts = _shape(persona), saved_texts(persona, AGENT_KINDS[agent])
     show = []
     for c in cands:
+        if c["kind"] == ENTRY:
+            if c["disposition"] != "declined":
+                _entry(persona, agent, rid, c, writes, touched, user_text, holdout, day)
+            continue
         if c["disposition"] == "declined":
             _outcome(persona, agent, rid, c, "declined", holdout, day)
             continue
@@ -1211,8 +1311,10 @@ class SynthTurn:
         self.note = "" if holdout else render_note(shown)
 
 
-def note_for_synthesizer(persona: str, job: Job | None, trace) -> SynthTurn | None:
-    """After the specialists: join (bounded), compare, draw the holdout, build the note."""
+def note_for_synthesizer(persona: str, job: Job | None, trace,
+                         touched=frozenset()) -> SynthTurn | None:
+    """After the specialists: join (bounded), compare, draw the holdout, build the note.
+    `touched`: the logs this turn's resolver started, added to, amended or delegated."""
     if job is None:
         return None
     cfg = config()
@@ -1229,7 +1331,11 @@ def note_for_synthesizer(persona: str, job: Job | None, trace) -> SynthTurn | No
                   False, day)
         keep = []
         for c in res.get("candidates") or []:
-            if c["disposition"] == "declined":
+            if c["kind"] == ENTRY:
+                if c["disposition"] != "declined":
+                    _entry(persona, agent, job.request_id, c, writes_from_trace(trace), touched,
+                           getattr(job, "user_text", ""), False, day)
+            elif c["disposition"] == "declined":
                 _outcome(persona, agent, job.request_id, c, "declined", False, day)
             elif c["kind"] == OTHER:
                 record_uncategorised(persona, agent, c)
@@ -1250,7 +1356,7 @@ def note_for_synthesizer(persona: str, job: Job | None, trace) -> SynthTurn | No
         _turn_row(persona, agent, job.request_id, res, "ran" if res.get("ok") else "failed",
                   holdout, day)
         fresh = _triage(persona, agent, job.request_id, res.get("candidates") or [],
-                        writes, holdout, day)
+                        writes, holdout, day, touched, getattr(job, "user_text", ""))
     items = (fresh + carried)
     for c in items[cap:]:
         _outcome(persona, agent, job.request_id, c, "dropped_cap", holdout, day)
@@ -1411,6 +1517,12 @@ def report(persona: str, since: str | None = None) -> str:
         counts = ", ".join(f"{k} {v}" for k, v in t.items() if isinstance(v, int))
         lines.append(f"  {key}: miss {fmt(t['miss_rate'])}{verdict_m}{verdict_b} · accept "
                      f"{fmt(t['accept_rate'])}{verdict_a} · {counts}")
+    # A dead detector reads as "no new logs needed" — so its counts are printed (plan § 7).
+    try:
+        from tools import noticed_logs
+        lines.extend(noticed_logs.report_lines(persona))
+    except Exception as exc:  # noqa: BLE001
+        lines.append(f"  noticed logs: report unavailable ({exc})")
     return "\n".join(lines)
 
 
@@ -1427,6 +1539,12 @@ def weekly_rollup() -> str:
         except Exception as exc:  # noqa: BLE001
             logger.warning(f"[capture] new-category check failed: {exc}")
             raised = []
+        try:
+            # The noticed-log detector's daily catch-up — anything a restart interrupted.
+            from tools import noticed_logs
+            noticed_logs.sweep(persona)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"[capture] noticed-log sweep failed: {exc}")
         if today.weekday() != 0:
             return f"capture weekly: not Monday · {len(raised)} new-category alert(s)"
         since = (today - timedelta(days=7)).isoformat()
@@ -1583,7 +1701,7 @@ def sample_pools(turns: list[dict]) -> tuple[list[tuple[dict, dict]], list[dict]
     (review 2026-11-20, finding 5). A turn whose only finds are `other` is still not an empty
     turn — its misses go unmeasured, which `score` reports by printing the count."""
     cands = [(t, c) for t in turns for c in t["candidates"]
-             if c["disposition"] != "declined" and c["kind"] != OTHER]
+             if c["disposition"] != "declined" and c["kind"] not in (OTHER, ENTRY)]
     empty = [t for t in turns if t["ok"] and not t["candidates"]]
     return cands, empty
 

@@ -45,7 +45,8 @@ output format.
     something they have just done. That is a log, kept elsewhere — "I slept 11 to 7 last
     night" is never a standing bedtime. The same for news that a task is finished ("the car
     insurance is renewed", "I booked the boiler service", "that's handled") — the task list
-    is updated elsewhere.
+    is updated elsewhere. **The one exception:** a report that is plainly an entry for one of
+    THE USER'S LOGS in your input is an `entry` (below).
   - what they are doing now, or hope to get to this afternoon ("I'm heading out for a run",
     "hoping to finish the slides this afternoon"). A to-do they ask Metatron to fit into the
     day ("fit half an hour on the tax return into today") is a `task`.
@@ -76,6 +77,10 @@ output format.
 - An appointment or dated occasion is an `event`; something to do is a `task`. "Dentist
   Thursday at 3" is an event; "book the boiler service a month before winter" is a task.
 - Who someone is to the user — role, practice, a standing arrangement — is a `person`.
+- A report that is plainly an entry for one of THE USER'S LOGS — a migraine when they keep a
+  migraine log, a film watched when they keep a films log — is an `entry`: target is that
+  log's id, proposal only the fields the user gave, in their words. Never for a log that is not
+  listed. Asking to start a log, or fixing an entry already kept, is not an entry.
 - A fact worth keeping that fits no kind is `other`, with a `category`. Never force it into
   a kind that does not fit.
 - When the user spells a name out, use their spelling.
@@ -93,9 +98,11 @@ At most eight items. Each item:
 
 ```
 {"kind": "<one of the kinds listed>",
- "target": "<for day_shape: one section name listed; otherwise the kind itself>",
+ "target": "<for day_shape: one section name listed; for entry: the log's id;
+            otherwise the kind itself>",
  "proposal": <for day_shape: the entry exactly in the form listed for that section;
               for correction: {"right": "<what is right>", "wrong": "<what it replaces>"};
+              for entry: {"<field>": "<the user's value>", …} using that log's fields;
               for event: one plain sentence with the date as YYYY-MM-DD and any time as HH:MM;
               otherwise one plain sentence>,
  "disposition": "save" | "ask" | "declined",

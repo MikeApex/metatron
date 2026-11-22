@@ -50,6 +50,27 @@ other_cap: 200
 other_examples: 3      # example summaries in each alert (Mike, 2026-11-20). They are the user's
                        # words and reach DEV_BACKLOG.md, a tracked, pushed file; 0 keeps them on the VM
 
+# Noticed logs (the user's own logs, phase 2 — archive/plans/data_objects_phase2_build_plan_2026-11-22.md).
+# A category of "other" fact that reaches `noticed_raise_count` in `noticed_window_days` is
+# OFFERED as a new log on the next reply, with a card in the app — never created unasked (R34,
+# Mike 2026-11-21). The developer alert above is unchanged and separate.
+#   ask — offer on a card (the only mode built). off — count nothing, offer nothing.
+# Create-and-tell (R5) is Mike's switch once the yes rate in --report shows the offers are reliable.
+noticed_logs: ask
+noticed_raise_count: 3
+noticed_window_days: 30
+# The offer card's lifetime. Other cards live 10 minutes; an offer may be read a little after it
+# is asked. It sorts behind every other card, and while it shows, task suggestions wait behind
+# it — so it is short. Cost: bytes per card, pruned on read; no meter needed.
+noticed_card_ttl_hours: 2
+
+# The derived writer: the extractor proposes an entry for one of the user's existing logs and code
+# files it, marked derived. shadow — record the proposal, WRITE NOTHING. on — write (archive logs
+# only). off — not asked for. Stays shadow until `python3 -m tools.noticed_logs --score-derived`
+# passes the precision minimum on Mike's labels (M4): the extractor's worst error is inventing
+# values (R15). Extra extractor input/output ≈ $0.005–0.01/day per user, paid in shadow too.
+derived_entries: shadow
+
 # Fixed minimums (Mike, 2026-11-18). Precision, recall and matcher accuracy gate `enabled`.
 minimums:
   precision: 0.90

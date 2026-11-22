@@ -85,6 +85,27 @@ from core.persona import persona_data_dir
 TTL_SECONDS = 600
 _LOCK = threading.Lock()
 
+# Cards that OFFER something the user never asked for — a log Metatron noticed they keep
+# mentioning (tools/noticed_logs.py; archive/plans/data_objects_phase2_build_plan_2026-11-22.md
+# § 3.3). They live longer than an approval (the caller passes `ttl_seconds`), and because the
+# app shows ONE card at a time — the first `pending()` returns — they always sort behind every
+# other card: a send, a merge or a config write raised later must still take the footer.
+OFFER_ACTIONS = frozenset({"create_data_object", "alias_data_object"})
+
+# What /decline writes into the conversation. The default promises never to ask again, which
+# every gated action keeps; a noticed log may be offered again if it keeps coming up a lot more
+# (its count doubles), so its line must not make that promise (plan review R8).
+_DECLINE_DEFAULT = "Nothing was done, and I won't ask about it again."
+_DECLINE_LINES = {
+    "create_data_object": "No list started. I'll only ask again if it keeps coming up a lot.",
+    "alias_data_object": "Nothing was added. I'll only ask again if it keeps coming up a lot.",
+}
+
+
+def decline_line(action: str) -> str:
+    """The sentence `POST /decline` writes after "🚫 Declined — …" for this action."""
+    return _DECLINE_LINES.get(action, _DECLINE_DEFAULT)
+
 
 def _store_path(persona: str | None = None) -> Path:
     p = persona_data_dir(persona) / "pending_confirmations.json"
@@ -167,7 +188,7 @@ def _recently_declined(action: str, args: dict, persona: str | None = None) -> d
 
 
 def request(action: str, args: dict, description: str,
-            persona: str | None = None) -> dict:
+            persona: str | None = None, ttl_seconds: int | None = None) -> dict:
     """
     Record a pending action and return the payload a tool should hand back instead of acting.
 
@@ -186,6 +207,9 @@ def request(action: str, args: dict, description: str,
     When a re-proposal IS allowed, the pending record remembers that it follows a refusal, so
     the user can be told they are being asked again. Being asked twice without being told is
     the same discourtesy in a quieter register.
+
+    `ttl_seconds` overrides the 10-minute lifetime for this one card — used only by code-raised
+    offers (`OFFER_ACTIONS`), whose question may be read a little after it is asked.
     """
     prior = _recently_declined(action, args, persona)
     if prior is not None:
@@ -209,6 +233,7 @@ def request(action: str, args: dict, description: str,
             }
 
     token = secrets.token_urlsafe(16)
+    ttl = int(ttl_seconds) if ttl_seconds else TTL_SECONDS
     with _LOCK:
         data = _prune(_load(persona))
         data[token] = {
@@ -217,7 +242,7 @@ def request(action: str, args: dict, description: str,
             "fingerprint": _fingerprint(action, args),
             "description": description,
             "created_at": time.time(),
-            "expires_at": time.time() + TTL_SECONDS,
+            "expires_at": time.time() + ttl,
             "approved": False,
             # Set only when this action was refused earlier and something new brought it
             # back. The card can then say so, rather than presenting itself as a first ask.
@@ -229,7 +254,7 @@ def request(action: str, args: dict, description: str,
         "status": "PENDING_CONFIRMATION",
         "confirm_token": token,
         "description": description,
-        "expires_in_seconds": TTL_SECONDS,
+        "expires_in_seconds": ttl,
         "instruction": (
             "This action has NOT been performed. Show the user the description above and "
             "ask them to approve it in the app. Approving it there is what carries it out — "
@@ -307,6 +332,23 @@ def decline(token: str, persona: str | None = None) -> dict | None:
         _append_declined(record, persona)
 
     return record
+
+
+def withdraw(token: str, persona: str | None = None) -> dict | None:
+    """Remove a pending OFFER card without recording a refusal. Code only, and only for
+    `OFFER_ACTIONS`: when the user says a noticed log belongs in a list they already keep, the
+    offer to start a new one is replaced by an offer to keep it in theirs
+    (tools/noticed_logs.on_alias). The user refused nothing, so nothing goes in the declined
+    ledger — and nothing is created by a withdrawal. Any other action is refused: a gated
+    action leaves the store only by the user's tap (approve/decline) or by expiry."""
+    with _LOCK:
+        data = _prune(_load(persona))
+        entry = data.get(token)
+        if not entry or entry.get("action") not in OFFER_ACTIONS:
+            return None
+        data.pop(token)
+        _save(data, persona)
+    return entry
 
 
 # The ledger is append-only and nothing prunes it on a schedule, so it is capped by count
@@ -398,10 +440,12 @@ def pending(persona: str | None = None) -> list[dict]:
     with _LOCK:
         data = _prune(_load(persona))
         _save(data, persona)
+    # Offers last: the app renders the first card only (static/index.html refreshPending).
     return [
         {"token": t, "description": e["description"], "action": e["action"],
          "expires_at": e["expires_at"]}
-        for t, e in sorted(data.items(), key=lambda kv: kv[1]["created_at"])
+        for t, e in sorted(data.items(), key=lambda kv: (kv[1].get("action") in OFFER_ACTIONS,
+                                                         kv[1]["created_at"]))
         if not e.get("approved")
     ]
 
@@ -490,6 +534,12 @@ _EXECUTORS: dict[str, tuple[str, str]] = {
     # Mike). Raised by code in write_schedule, never by a model; the approval lets that
     # one job wake them. Unapproved, it still comes — when quiet hours end.
     "allow_quiet_hours":     ("tools.schedule",      "allow_in_quiet_hours"),
+    # A log Metatron noticed the user keeps mentioning, offered — never started unasked
+    # (R34). Raised by code in tools/noticed_logs.py, never by a model; approval starts the log
+    # (origin "noticed") and files what the user already said, by code. The second keeps those
+    # facts in a list the user already has. Registered WITH the feature (see the note above).
+    "create_data_object":    ("tools.noticed_logs",  "create_noticed_log"),
+    "alias_data_object":     ("tools.noticed_logs",  "alias_noticed_log"),
 }
 
 

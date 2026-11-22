@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 CODE_ONLY_AGENTS = frozenset({
     "tone_profiler", "intake_extractor", "accountability_judge", "day_planner", "crm_sweep",
     "capture_extractor", "project_planner", "data_object_tagger", "task_judge",
+    "data_object_matcher",
 })
 
 

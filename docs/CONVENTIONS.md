@@ -113,6 +113,13 @@ module, which is the definition of on-demand.*
 2. Add tools to `tools/{module_name}.py` — Python functions + JSON schemas
 3. Add `config/modules/{module_name}.yaml` — settings if needed
 4. Register tools in `core/orchestrator.py` → `register_tools()`
+5. **If the agent should know about the user's logs** (R26, the reverse check): add it to
+   `TAGGABLE_AGENTS` in `tools/data_objects.py` and give its agent file an italic one-line remit
+   under the title (the tagger reads it). Then, on the VM, see which existing logs it should be
+   told about, and apply:
+   `.venv/bin/python scripts/check_data_object_relevance.py --agent {module_name} --all` (dry run,
+   one bulk-tier call per log, ≈ $0.0005 each), then the same with `--apply`. Logs created after
+   that are tagged at creation.
 
 No other code changes required.
 

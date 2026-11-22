@@ -1093,6 +1093,10 @@ def write_data_object(object: str, entry: dict | None = None, action: str = "add
             return "Not recorded: name the field to add."
         with _locked():
             objs, s = _materialise(o["id"], _stored())
+            if field not in s["fields"]:
+                # Counted for the content-free analytics row (phase 2, plan § 3.6) — a count,
+                # never the field's name.
+                s["fields_added"] = int(s.get("fields_added") or 0) + 1
             s["fields"].setdefault(field, "text")
             _save(objs)
         return f"{o['name']} now has a '{field}' field. Earlier entries are unchanged."
@@ -1231,7 +1235,36 @@ def amend_data_object(object: str, action: str, entry: int = 0,
         else:
             return f"Not changed: unknown action '{action}'."
         _save(objs)
+    if action == "add_alias" and agent == "synthesizer":
+        # "That belongs in my X list" (phase 2 plan § 3.4, review R4/R5). The Synthesizer adds
+        # the user's name for it; CODE then turns an open offer to start a new list into an
+        # offer to keep those facts in this one — a second card. Nothing is filed and nothing
+        # is declined by this call: the facts move only on the user's tap.
+        try:
+            from tools import noticed_logs
+            noticed_logs.on_alias(s["id"])
+        except Exception as exc:  # noqa: BLE001 — the alias itself has landed
+            logger.warning(f"[data_objects] noticed-log alias hook failed: {exc}")
     return msg
+
+
+def add_alias(obj_id: str, alias: str) -> bool:
+    """Add a name to a log, as CODE — the noticed-log alias card's executor
+    (tools/noticed_logs.alias_noticed_log) and the yes path's category alias. `amend_data_object`
+    refuses an unbound caller by design (its read rule), so code has this door instead. Refuses
+    a name that already finds a different log. Returns True when the name now finds it."""
+    alias = str(alias or "").strip()
+    if not alias:
+        return False
+    with _locked():
+        other = resolve(alias, follow=False)
+        if other is not None and other["id"] != obj_id:
+            return False
+        objs, s = _materialise(obj_id, _stored())
+        if alias not in s["aliases"]:
+            s["aliases"] = list(dict.fromkeys([*s["aliases"], alias]))
+            _save(objs)
+    return True
 
 
 # ---------------------------------------------------------------------------

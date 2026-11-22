@@ -1769,7 +1769,7 @@ _ALWAYS_CONFIDENTIAL = [
     "search_contacts", "write_persona", "get_tone_shape", "tone_profiler",
     "plan_project", "read_plan", "project_planner", "task_judge",
     "list_data_objects", "read_data_object", "write_data_object", "amend_data_object",
-    "data_object_tagger",
+    "data_object_tagger", "data_object_matcher",
     # Routing / architecture terms
     "cloud_deep", "cloud_fast", "cloud_analytical", "routing.yaml",
     "run_session", "config/agents",
@@ -2130,8 +2130,13 @@ def _pending_raised_since(before: set, persona: str | None = None) -> list[dict]
     account of what it did. Informational cards are left out: nothing waits on them."""
     try:
         from tools.confirm import pending
+        from tools.confirm import OFFER_ACTIONS
+        # Offer cards too (a log Metatron noticed — tools/noticed_logs.py): they ride on a
+        # turn about something else, so a true "I've added milk" must not be replaced as a
+        # false completion claim (phase 2 plan review R2). _offer_receipt() asks for them.
         return [p for p in pending(persona) if p["token"] not in (before or set())
-                and p.get("action") not in _PENDING_INFORMATIONAL]
+                and p.get("action") not in _PENDING_INFORMATIONAL
+                and p.get("action") not in OFFER_ACTIONS]
     except Exception:  # noqa: BLE001
         return []
 
@@ -6173,7 +6178,8 @@ def _render_entries(result: dict) -> str:
     return "\n".join(lines) + more
 
 
-def _data_object_block(turn: dict | None, unsaved: list[str]) -> str:
+def _data_object_block(turn: dict | None, unsaved: list[str],
+                       offer: dict | None = None) -> str:
     """The Synthesizer's facts about the user's logs this turn: what was started, what is on
     its way (NOT saved yet — the write lands after the reply), what a read found, what no
     log is called, and any earlier entry that did not save. Facts only; what to say about
@@ -6228,6 +6234,12 @@ def _data_object_block(turn: dict | None, unsaved: list[str]) -> str:
         parts.append(f"- No log is called \"{n}\".{hint}")
     for n in unsaved:
         parts.append(f"- An entry the user asked to keep in \"{n}\" earlier did NOT save.")
+    if offer and offer.get("still_open"):
+        parts.append(f"- Still waiting on its card in the app, asked earlier: "
+                     f"\"{offer['question']}\" Do not ask it again. Nothing is started yet.")
+    elif offer:
+        parts.append(f"- Offered this turn, by a card now in the app: \"{offer['question']}\" "
+                     f"— the user answers with the card, not in words. Nothing is started yet.")
     if not parts:
         return ""
     return "THE USER'S LOGS THIS TURN:\n" + "\n".join(parts)
@@ -6302,6 +6314,66 @@ def _unsaved_log_notes(persona: str | None, user_turn: bool) -> list[str]:
     except Exception as exc:
         logger.warning(f"[data_objects] unsaved-note check failed: {exc}")
         return []
+
+
+def _data_object_ids(turn: dict | None) -> frozenset:
+    """Every log this turn's resolver started, added to, amended or delegated — the derived
+    writer leaves those alone (phase 2 plan § 3.5, review R9). A8: stays here, beside
+    `_data_object_block()`."""
+    turn = turn or {}
+    ids = set()
+    for key in ("started", "archived"):
+        ids |= {o.get("id") for o in turn.get(key, []) if isinstance(o, dict)}
+    for key in ("adding", "amending", "delegated", "reads"):
+        ids |= {r["object"].get("id") for r in turn.get(key, [])
+                if isinstance(r, dict) and isinstance(r.get("object"), dict)}
+    return frozenset(i for i in ids if i)
+
+
+def _take_log_offer(persona: str | None, user_turn: bool) -> dict | None:
+    """Raise a noticed log's card at the start of a real user turn's Synthesizer pass and return
+    the question for the logs block (tools/noticed_logs.take_offer). Never on a scheduled
+    session. A8: stays in core/orchestrator.py beside `_unsaved_log_notes()`. Never raises."""
+    if not user_turn:
+        return None
+    try:
+        from tools.noticed_logs import take_offer
+
+        return take_offer(resolve_persona(persona))
+    except Exception as exc:
+        logger.warning(f"[noticed] offer not taken: {exc}")
+        return None
+
+
+def _offer_receipt(text: str, persona: str | None, before: set,
+                   model_text: str | None = None) -> str:
+    """The question for every offer card raised this turn, APPENDED when the reply did not
+    already send the user to the card — never a replacement (phase 2 plan § 3.3, review R2).
+    A reply that asked in its own words but did not point at the app gains only the pointer.
+    A8: stays in core/orchestrator.py beside `_take_log_offer()`. Never raises."""
+    try:
+        from tools.noticed_logs import questions_since
+
+        asks = questions_since(resolve_persona(persona), before)
+    except Exception as exc:
+        logger.warning(f"[noticed] offer receipt skipped: {exc}")
+        return text
+    if not asks:
+        return text
+    said = text if model_text is None else model_text
+    low = (said or "").casefold()
+    points = bool(said and _ASKS_FOR_APPROVAL_RE.search(said))
+    extra = []
+    for a in asks:
+        asked = bool(a["phrase"]) and a["phrase"].casefold() in low
+        if asked and points:
+            continue
+        extra.append("Tap Yes or No in the app to answer." if asked
+                     else f"{a['question']} Tap Yes or No in the app.")
+    if not extra:
+        return text
+    add = " ".join(dict.fromkeys(extra))
+    return f"{text.rstrip()}\n\n{add}" if text and text.strip() else add
 
 
 _WISDOM_PROPOSAL_RE = _re.compile(
@@ -7750,7 +7822,8 @@ def run_pipeline_session(user_input: str,
         # user's words may close a task, which only the Synthesizer records.
         task_hint = _task_hint_block(user_input, is_proactive, history, persona)
         # After the specialists, so their writes this turn are already in the trace.
-        capture_turn = _capture.note_for_synthesizer(persona, capture_job, _capture_trace)
+        capture_turn = _capture.note_for_synthesizer(persona, capture_job, _capture_trace,
+                                                  _data_object_ids(data_turn))
 
         # User signed off ("over and out") with nothing asked or reported, and nothing
         # pressing came back from the specialists: rest without the Synthesizer pass.
@@ -7770,9 +7843,13 @@ def run_pipeline_session(user_input: str,
         know_text = _knowledge_block(knowledge)
         # After the sign-off veto, so a "didn't save" note is never spent on a turn the
         # Synthesizer does not run. Mirrors the streaming twin.
+        # A noticed log's card is raised HERE, after the sign-off veto and before the
+        # Synthesizer, so the reply that asks the question is the one the card belongs to.
+        log_offer = None if nudge else _take_log_offer(
+            persona, has_real_user_turn(user_input, is_proactive, attachments))
         objects_text = _data_object_block(
             data_turn, [] if nudge else _unsaved_log_notes(
-                persona, has_real_user_turn(user_input, is_proactive, attachments)))
+                persona, has_real_user_turn(user_input, is_proactive, attachments)), log_offer)
         # [DB-0822-09] Built HERE, after the sign-off veto above: a finding must not be
         # charged an offer on a turn where the Synthesizer never runs.
         # Mirrors the streaming twin: after the specialists, so this turn's writes are in it.
@@ -7826,11 +7903,15 @@ def run_pipeline_session(user_input: str,
         # so letting it grant exemptions would let the system unlock its own filter.
         filtered = filter_output(visible, "synthesizer",
                                  user_text=None if is_proactive else user_input)
+        _was_suppressed = filtered != visible
         _stamp_routine_revisits(kind, visible, filtered)
         # After the confidentiality filter, not before: a suppressed reply has already
         # lost its text, and the pending line still needs to reach the user.
+        _model_text = filtered
         filtered = enforce_pending_receipt(
             filtered, _pending_raised_since(_pending_before, persona))
+        if not _was_suppressed:
+            filtered = _offer_receipt(filtered, persona, _pending_before, _model_text)
         if history is not None:
             history.append({"role": "user",
                             "content": user_input + _history_attachment_note(attachments)})
@@ -8032,7 +8113,8 @@ def _run_pipeline_session_stream_inner(
     # Kept identical to the non-streaming twin — see _task_hint_block(). Built before the
     # sign-off decision, which reads it.
     task_hint = _task_hint_block(user_input, is_proactive, history, persona)
-    capture_turn = _capture.note_for_synthesizer(persona, capture_job, _capture_trace)
+    capture_turn = _capture.note_for_synthesizer(persona, capture_job, _capture_trace,
+                                              _data_object_ids(data_turn))
     # Sign-off skip — mirrors the non-streaming branch above; same veto, same ack.
     if _signoff_skip(spec_text, user_input, is_proactive, task_hint, history):
         if history is not None:
@@ -8051,9 +8133,12 @@ def _run_pipeline_session_stream_inner(
     # Build Synthesizer input — ACTIONS block last and unconditional, as above.
     know_text = _knowledge_block(knowledge)
     # After the sign-off veto — mirrors the non-streaming twin.
+    # A noticed log's card — mirrors the non-streaming twin.
+    log_offer = None if nudge else _take_log_offer(
+        persona, has_real_user_turn(user_input, is_proactive, attachments))
     objects_text = _data_object_block(
         data_turn, [] if nudge else _unsaved_log_notes(
-            persona, has_real_user_turn(user_input, is_proactive, attachments)))
+            persona, has_real_user_turn(user_input, is_proactive, attachments)), log_offer)
     # The day plan — after the specialists, so this turn's calendar writes are repaired in the
     # same reply (Q10). Kept identical to the non-streaming twin.
     plan_text = _day_plan_block(persona, kind, is_proactive, nudge=nudge)
@@ -8283,6 +8368,12 @@ def _run_pipeline_session_stream_inner(
     _stamp_routine_revisits(kind, visible, filtered)
     _final = filtered if _suppressed else enforce_pending_receipt(
         filtered, _pending_raised_since(_pending_before, persona))
+    if not _suppressed:
+        # A noticed log's question, appended (never a replacement) when the reply did not
+        # ask it — through the same replace-with marker below when it changes the text.
+        # Judged on the Synthesizer's own words: the receipt line for another card above
+        # also mentions the app, and must not count as asking (diff review F3).
+        _final = _offer_receipt(_final, persona, _pending_before, filtered)
     if history is not None:
         # History is text, so the file itself does not survive into later turns —
         # only the note that one was sent. A follow-up question about the picture

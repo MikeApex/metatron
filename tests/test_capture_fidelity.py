@@ -254,7 +254,10 @@ def test_both_twins_carry_capture():
     for src in (ns, st):
         assert '_capture.start(persona, user_input, history, "synthesizer", _capture_trace)' in src
         assert "has_real_user_turn(user_input, is_proactive, attachments)" in src
-        assert "_capture.note_for_synthesizer(persona, capture_job, _capture_trace)" in src
+        # Phase 2 of the user's logs: both twins also hand capture the logs the turn touched,
+        # so the derived writer leaves them alone (review R9).
+        assert "_capture.note_for_synthesizer(persona, capture_job, _capture_trace," in src
+        assert "_data_object_ids(data_turn))" in src
         assert "capture_turn.note" in src
         assert "_capture.defer(capture_turn)" in src
         assert "_capture.after_synthesizer(capture_turn, _capture_trace)" in src

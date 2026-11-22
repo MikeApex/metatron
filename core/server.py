@@ -1762,7 +1762,10 @@ async def decline_action(req: ConfirmRequest, request: Request) -> dict:
 
     headline = (record.get("description") or "").strip().splitlines()
     headline = headline[0] if headline else "that action"
-    line = f"🚫 Declined — {headline}\n\nNothing was done, and I won't ask about it again."
+    # Per action: a noticed log may be offered again if it keeps coming up, so its line must
+    # not promise "never again" (tools/confirm.py decline_line, plan review R8).
+    from tools.confirm import decline_line
+    line = f"🚫 Declined — {headline}\n\n{decline_line(record.get('action', ''))}"
 
     exchange_id = f"decline-{uuid.uuid4().hex[:12]}"
     user_side = "(declined in the app)"

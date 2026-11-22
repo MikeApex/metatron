@@ -194,6 +194,28 @@ def rollup_day(day: str, persona: str) -> dict | None:
     except Exception:
         task_counts = {}
 
+    # The user's own logs (phase 2, archive/plans/data_objects_phase2_build_plan_2026-11-22.md
+    # § 3.7): COUNTS ONLY — how many logs by origin, and fields the user added. Never a name,
+    # an alias or a field name: what users invent is read in scripts/data_object_report.py on
+    # the VM, never in a row. A snapshot of the registry when the row is built, not that day's
+    # events — a backfilled day carries today's counts. Same never-crash discipline.
+    log_counts = {"data_objects_asked": 0, "data_objects_noticed": 0,
+                  "data_objects_template": 0, "data_objects_existing": 0,
+                  "data_object_fields_added": 0}
+    try:
+        from core.persona import persona_scope
+        from tools import data_objects as _DO
+        with persona_scope(persona):
+            for o in _DO._stored():
+                origin = str(o.get("origin") or "")
+                key = ("data_objects_template" if origin.startswith("template:") else
+                       f"data_objects_{origin}")
+                if key in log_counts:
+                    log_counts[key] += 1
+                log_counts["data_object_fields_added"] += int(o.get("fields_added") or 0)
+    except Exception:
+        pass
+
     return {
         # --- cohort anchor: the fields that cannot be reconstructed later ---
         "date": day,
@@ -228,6 +250,8 @@ def rollup_day(day: str, persona: str) -> dict | None:
             "tasks_done", "tasks_missed", "tasks_unconfirmed", "tasks_skipped",
             "tasks_dismissed", "tasks_moot", "habit_target", "habit_done", "deadlines_met",
             "deadlines_late")},
+        # --- the user's own logs: counts only (see above) ---
+        **log_counts,
         # --- cost: gross margin, not performance telemetry ---
         "tokens_in": tokens_in,
         "tokens_out": tokens_out,

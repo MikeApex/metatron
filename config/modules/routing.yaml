@@ -97,6 +97,12 @@ agents:
     # fail-closed.
     allowed_tools: []
 
+  data_object_matcher:
+    local: true
+    # Parity with routing_cloud.yaml: bare dispatch, empty grant, the user's facts restated are
+    # Sensitive tier → Ollama only, fail-closed.
+    allowed_tools: []
+
   day_planner:
     local: true
     # Parity with routing_cloud.yaml: bare dispatch, empty grant, Sensitive tier → Ollama only,

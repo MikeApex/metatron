@@ -146,6 +146,19 @@ agents:
     # when a log is created.
     allowed_tools: []
 
+  data_object_matcher:
+    provider: gemini
+    model: "models/gemini-3.5-flash-lite"   # one short JSON verdict per recurring category; bulk tier
+    # PRIVACY TIER, stated because this entry is what authorises it: reads a category label of the
+    # user's uncategorised facts, up to three of capture's one-line summaries of them (the user's
+    # facts, restated), their logs' NAMES, aliases and one-line descriptions — never an entry —
+    # and their earlier refused offers. Sensitive tier on the Vertex path, the same basis as
+    # capture_extractor (ROADMAP.md § Section 0, Amendments 2026-08-28 / 2026-10-26 / 2026-11-18).
+    # Empty grant AND bare dispatch: it returns one judgement; code raises the card and files.
+    # Called only by tools/noticed_logs.py, off the reply's path, once per threshold crossing
+    # (≈ $0.0005; archive/plans/data_objects_phase2_build_plan_2026-11-22.md § 7).
+    allowed_tools: []
+
   day_planner:
     provider: gemini
     model: "models/gemini-3.8-flash"   # judgement over the user's day and history — not the bulk
