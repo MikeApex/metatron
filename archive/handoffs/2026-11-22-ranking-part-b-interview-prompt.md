@@ -9,8 +9,9 @@ or agent-file edits, no deploy.
 
 1. `SESSION.md`, then `ROADMAP.md` (the mandatory pre-edit context check applies even though you
    will not edit code).
-2. `archive/plans/goal_task_network_plan_2026-11-18.md` § 16 — Mike's five rulings of 2026-11-22
-   verbatim, what Part A built, its costs, and what was deliberately left for you. § 4–5 for the
+2. `archive/plans/goal_task_network_plan_2026-11-18.md` § 16 — Mike's eight rulings of 2026-11-22
+   verbatim (1–5, then 6–8 after the deploy), what Part A built, its costs, what the live checks
+   found, and what was deliberately left for you. § 4–5 for the
    network it sits in (§ 5's phase 3, "large goals", is adjacent: share what it shares, don't
    duplicate it).
 3. What Part A shipped, as the code really is (check `git log` for the ranking Part A commit; if it
