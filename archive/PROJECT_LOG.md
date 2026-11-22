@@ -89,7 +89,7 @@ Fable's operational review found 13 more issues; all were fixed except two that 
 
 **Outgoing:** phase 1 is live. The four TEST logs are archived; nothing can be deleted by design. Phase 2 (noticed logs) is next: `archive/handoffs/2026-11-22-data-objects-phase-2-build-prompt.md` (Opus, high). It carries phase 1's lessons as binding: writes by code, never by asking a model not to; the Diarist's live-marker gate; one writer per kind of change; stage and commit in one command. Two plan's choices are put to Mike before building: the matcher agent, and how the card is announced. The plan has five phases (1–2 deliver need 1, the user's own logs; 3–4 need 2, places and background location; 5 is Pattern Miner's grants).
 
-### 2026-11-22 (goal–task network phase 2 built and live-checked; ranking Part A — every task weighed, plan steps never missable, deadlines that climb) — `9ad7a6c`, `d772968`, `0c9aa46`, `3b7c32a`, `c1e097a`, `fda9d80`, `e6a661c`, `9cf1215`, `deed121` — **deployed by Mike through `fda9d80` (VM at the data-objects chat's `9542e34`); `e6a661c`, `deed121` undeployed**
+### 2026-11-22 (goal–task network phase 2 built and live-checked; ranking Part A — every task weighed, plan steps never missable, deadlines that climb) — `9ad7a6c`, `d772968`, `0c9aa46`, `3b7c32a`, `c1e097a`, `fda9d80`, `e6a661c`, `9cf1215`, `deed121` , then `e796ce6`, `11ad504`, `d1aaa01` — **all deployed by Mike 11-22 (VM at `5793187`, server restarted 17:29 after the last commit)**
 
 **Incoming handoff:** log § 11-21 third — phase 1 live; the redo question asked but not recorded
 (`note_said` signal words too narrow), handed here with the phase 2 build prompt (Opus, high).
