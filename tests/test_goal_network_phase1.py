@@ -390,7 +390,7 @@ def _():
     plan = D.current(_PERSONA)
     shown: dict = {}
     text = D.render_block(plan, kind="morning_brief", cascades=raise_, shown=shown)
-    assert "can't go ahead without" in text and ids["a"] in text, text
+    assert "can't go ahead" in text and ids["a"] in text, text
     D.after_render(_PERSONA, shown)
     D.note_said("Morning. Your lunch is at one.")
     D.note_said("The renewal form is on your list for tomorrow.")   # named, not asked
@@ -1021,6 +1021,10 @@ def _():
     offer()
     D.note_said("Is the dentist still at three?")         # a question, but not about the step
     assert O.cascades_to_raise(), "stamped by a question that did not name the step"
+    # The reply on mike's VM, 2026-11-22: a question sharing only the plan word "step".
+    D.note_said("The Prudential insurance review: what decisions are pending so we can sequence "
+                "the next steps?")
+    assert O.cascades_to_raise(), "stamped on the word 'step' alone (live 11-22)"
     # The reply on mike's VM, 2026-11-21 (ob_261121_cda590 stayed raised: None for three days).
     D.note_said("Step 1 of the TEST B passport sequence was dismissed earlier, which blocks step 2. "
                 "Do you want step 1 reopened, or should that test sequence stay dropped?")

@@ -577,7 +577,11 @@ def _():
     D.refresh_tick()
     plan = json.loads(D._plan_path(TODAY).read_text())
     text = D.render_block(plan, kind="morning_brief", cascades=O.cascades_to_raise(), shown={})
-    assert "on purpose" in text and f"record `{a}` done" in text and f"`{b}`" in text, text
+    # Since 2026-11-22 the ask is short and first; what to do with each answer is the conduct
+    # module's (synthesizer_day_plan.md), so the ids are here and the handling is not.
+    assert "on purpose" in text and f"`{a}`" in text and f"`{b}`" in text, text
+    assert text.split("Asks — only the user can answer; one line, once each: ", 1)[1].startswith(
+        '"'), text                                         # the redo question leads the asks
 
 
 # =============================================================================================

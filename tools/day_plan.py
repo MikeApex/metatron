@@ -2118,24 +2118,23 @@ def render_block(plan: dict | None, kind: str | None = None, due_now: list[dict]
     # R9's "X can't go ahead without Y — redo it?" is a question only the user can answer, so it
     # is an Ask, not an Important candidate the model may skip; it counts as asked only once a
     # brief or close has carried it (Fable diff review #5).
+    # FIRST, and short (live 2026-11-22): placed last of seven asks as a paragraph that repeated
+    # the whole decision tree, it was never among the two or three a reply carries — on two
+    # "anything you need me to decide?" turns running. What to do with each answer is the conduct
+    # module's (synthesizer_day_plan.md, "can't go ahead"), its one home; the ids are here.
+    redo = []
     for c in cascades or []:
+        later = ", ".join(f"`{i}`" for i, _w in (c.get("later") or [])[:4])
         if c.get("lapsed"):
-            asks.append(f"{c['end']} can't go ahead without \"{c['what']}\", which ran out of "
-                        f"time — ask once whether to redo it; on yes, reopen `{c['id']}` (the "
-                        f"later steps come back with it)")
+            redo.append(f"\"{c['what']}\" `{c['id']}` ran out of time, so \"{c['end']}\" can't "
+                        f"go ahead — ask once whether to redo it")
         else:
-            # Mike, 2026-11-21: a skip may be an accident, and a later step may have been done
-            # anyway — so the question is about intent, not "redo it?".
-            later = ", ".join(f"\"{w}\" `{i}`" for i, w in (c.get("later") or [])[:4])
-            asks.append(f"{c['end']} can't go ahead without \"{c['what']}\", which was skipped "
-                        f"— ask once whether that was on purpose. By accident: reopen "
-                        f"`{c['id']}` (the later steps come back with it). They did it after "
-                        f"all: record `{c['id']}` done (the later steps come back). They have "
-                        f"already done a later step anyway: record only that one done — the "
-                        f"steps before it count done too"
-                        + (f" (later steps: {later})" if later else "")
-                        + ". On purpose: leave it")
+            # Mike, 2026-11-21: a skip may be an accident — the question is about intent.
+            redo.append(f"\"{c['what']}\" `{c['id']}` was skipped, so \"{c['end']}\" can't go "
+                        f"ahead — ask once whether that was on purpose"
+                        + (f" (later steps {later})" if later else ""))
         record["cascades"].append(c["id"])
+    asks = redo + asks
     if brief_or_close:
         slips = _slip_asks(state, today)
         asks += [text for _, text in slips]
@@ -3385,6 +3384,10 @@ _SAID_SIGNALS = {
 }
 
 
+_PLAN_WORDS = frozenset({"step", "part", "test", "one", "two", "three", "first", "second",
+                         "next", "later", "plan", "check"})
+
+
 def note_said(reply_text: str, persona: str | None = None) -> int:
     """After a delivered reply: stamp each say-once item a recent render offered that the reply
     says — its task's words (`_tokens_match`, as `obligations.note_raised`) AND a signal of that
@@ -3404,8 +3407,10 @@ def note_said(reply_text: str, persona: str | None = None) -> int:
     rtoks = O._task_tokens(reply)
     tasks = {t["id"]: O._norm(t) for t in O._load(persona)}
 
-    def names(*texts) -> bool:
-        return any(O._tokens_match(rtoks, O._task_tokens(x), single_ok=True) for x in texts if x)
+    def names(*texts, generic: frozenset = frozenset()) -> bool:
+        # The ordinary match, AND at least one shared word that is not plan scaffolding.
+        return any(O._tokens_match(rtoks, O._task_tokens(x), single_ok=True)
+                   and (rtoks & O._task_tokens(x)) - generic for x in texts if x)
 
     said: dict[str, set] = {"slips": set(), "riders": set(), "cascades": set()}
     for kind in said:
@@ -3423,7 +3428,9 @@ def note_said(reply_text: str, persona: str | None = None) -> int:
                 if kind == "cascades":
                     texts += [tasks[x]["what"] for x in (t.get("cascade") or {}).get("closed") or []
                               if x in tasks]
-                if names(*texts):
+                # A plan's own scaffolding words name no step: on 11-22 "sequence the next
+                # steps?" stamped "TEST B step 1 …" asked on the one word "step".
+                if names(*texts, generic=_PLAN_WORDS if kind == "cascades" else frozenset()):
                     said[kind].add(tid)
     if not any(said.values()):
         return 0
