@@ -14,7 +14,7 @@ on the VM 11-18 (ids + Bulgarian/taxes/Prudential). **Still next, unchanged:** I
 first); M3 restarts on her approval day; `/backlog deep`, then
 `archive/handoffs/2026-10-30-backlog-attack-signout-calendar-text-forward-trail-prompt.md`;
 reply latency (with `[DB-1029-09]`); Sign out; security `[DB-1029-20]`;
-**WhatsApp Phase 0 close-out** (survival read 10-31, LM + increments rulings — § Current state);
+**WhatsApp Phase 0 close-out** (two prompts ready 11-22 — § Current state);
 day-planner live checks `[DB-1029-01]` (due 10-31; the check script is already on the VM — no deploy needed); nine fixes' closes-on checks (11-12). **The
 meals habit still doesn't exist** — Mike re-asks as "open a daily habit…". **Still owed:** the
 boys' school hours/bedtimes → `children_home`; the "over and out" live check; Mike's calendar live
@@ -112,12 +112,16 @@ day (`547c446`). Reshuffle thinking is 0. Plan: [day_planner_plan_2026-10-24.md]
 The clean-room reader (`android/…/metatron/whatsapp/`, 19 tests) decrypts Mike's real backup on
 the phone; live notifications carry a chat ID (one-to-one by hidden `@lid`, mapped via `jid_map`);
 dedup key 5/5. **Mike's phone runs the throwaway `waprobe` build** (`./gradlew assembleWaprobe`;
-`assembleDebug`/Iva's APK carries none of it). **Next:**
-`archive/handoffs/2026-10-31-whatsapp-phase-0-close-survival-lm-increments-prompt.md` — the 24 h
-survival read (after 13:22 10-31), then two rulings Mike owes: **LM** (rec. no local model) and
-**nightly backups are incremental**, which the reader ignores (rec. a Phase 0a′ session). Then
-Phase 1 — the second-user build it waited on has landed ([plan](archive/plans/whatsapp_input_plan_2026-10-26.md)).
-Clean room: never open the 10-26 transcripts. Mike owes: delete the `/private/tmp` reference copy.
+`assembleDebug`/Iva's APK carries none of it). **The close-out prompt was Fable-reviewed 11-22**
+(4 rounds, all closed; log § 11-22 third) and now runs as **two parallel sessions**:
+`archive/handoffs/2026-11-22-whatsapp-phase-0-probe-build-prompt.md` (hook fence first, probe
+`rx` + event list + increment button, APK) and
+`archive/handoffs/2026-11-22-whatsapp-phase-0-mike-walkthrough-prompt.md` (delete the
+`/private/tmp` copy, install + daytime check, increment test, LM and increments rulings, overnight
+planted-message survival test). Both read the revised 10-31 prompt. Then Phase 1
+([plan](archive/plans/whatsapp_input_plan_2026-10-26.md)).
+Clean room: open no transcripts; WhatsApp log entries only 10-30-02 and fragments titled
+"clean-room"; every WhatsApp session titles its fragment "clean-room" or "reference-reading".
 
 **A9 — built and deployed 2026-08-18; `@waiting` on real use, review `2026-10-01`.** Spec, the
 five provisional parts and the date: [ROADMAP.md](ROADMAP.md) § A9a, the single home.
