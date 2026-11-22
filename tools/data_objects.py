@@ -70,6 +70,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from core.persona import persona_data_dir, persona_scope, resolve_persona, current_persona
+from tools.record_rules import RELATIVE_REFERENCES
 
 logger = logging.getLogger(__name__)
 
@@ -437,10 +438,28 @@ def create_object(name: str, description: str = "", fields: dict | None = None,
 
 def register_store(store: str, name: str = "", description: str = "",
                    aliases: list[str] | None = None, **extra) -> dict:
-    """Register an existing store (R27) — entries stay where they are."""
+    """Register an existing store (R27) — entries stay where they are. Its origin is
+    "existing", never "asked": phase 2 counts logs by origin, and nobody asked for these."""
+    extra.setdefault("origin", "existing")
     return create_object(name or store, description=description, store=store,
                          identity="thing", aliases=aliases, object_id=store,
                          tag=False, **extra)
+
+
+def repair_store_origins() -> list[str]:
+    """Stores registered before 2026-11-22 carry origin "asked" (register_store's old
+    default). Re-mark them "existing". Idempotent; returns the ids it changed."""
+    changed = []
+    with _locked():
+        objs = _stored()
+        for o in objs:
+            if (o.get("store") != "archive" and o.get("id") == o.get("store")
+                    and o.get("origin") == "asked"):
+                o["origin"] = "existing"
+                changed.append(o["id"])
+        if changed:
+            _save(objs)
+    return changed
 
 
 # ---------------------------------------------------------------------------
@@ -640,11 +659,19 @@ def registered_category(category: str) -> dict | None:
 
 
 def _dates_of(row: dict) -> list[str]:
-    out = [str(row.get(k, ""))[:10] for k in ("at", "date", "date_added", "recorded_at")
-           if row.get(k)]
-    out += [str(x.get("at", ""))[:10] for x in row.get("occurrences") or []
-            if isinstance(x, dict)]
-    return [d for d in out if d]
+    """The dates a filter reads an entry by: when it happened (`at`, `date`, its
+    occurrences) if it says; only an entry that names no date of its own falls back to when
+    it was recorded. Otherwise a frog caught in 2024 and logged today would also match
+    "since 2025"."""
+    own = [str(row.get(k, ""))[:10] for k in ("at", "date") if row.get(k)]
+    own += [str(x.get("at", ""))[:10] for x in row.get("occurrences") or []
+            if isinstance(x, dict) and x.get("at")]
+    # Only a real date or year counts as the entry's own: an `at` of "15:00" or "3pm" (the
+    # time of day the Diarist is told to give) says nothing about which day.
+    own = [d for d in own if re.match(r"^\d{4}(-\d{2}(-\d{2})?)?(T|\s|$)", d)]
+    if own:
+        return own
+    return [str(row.get(k, ""))[:10] for k in ("date_added", "recorded_at") if row.get(k)]
 
 
 def read_entries(o: dict, since: str = "", until: str = "", contains: str = "",
@@ -653,8 +680,11 @@ def read_entries(o: dict, since: str = "", until: str = "", contains: str = "",
     numbered = [{"n": i + 1, **r} if isinstance(r, dict) else {"n": i + 1, "value": r}
                 for i, r in enumerate(rows)]
     if since or until:
+        # Compared at the entry's own precision: an `at` of "2024" (a year, as the relative-
+        # reference rule records "two years ago") falls inside 2024-01-01..2024-12-31.
         numbered = [r for r in numbered if any(
-            (not since or d >= since) and (not until or d <= until) for d in _dates_of(r))]
+            (not since or d >= since[:len(d)]) and (not until or d <= until[:len(d)])
+            for d in _dates_of(r))]
     if contains:
         needle = contains.casefold()
         numbered = [r for r in numbered if needle in json.dumps(r, ensure_ascii=False).casefold()]
@@ -1286,7 +1316,8 @@ WRITE_DATA_OBJECT_SCHEMA = {
                        "enum": ["add", "add_occurrence", "create", "add_field"]},
             "entry": {"type": "object", "additionalProperties": True,
                       "description": "The entry's fields, e.g. {\"text\": …, \"at\": …, "
-                                     "\"notes\": …}."},
+                                     "\"notes\": …}. `at` is a date or a year. "
+                                     + RELATIVE_REFERENCES},
             "occurrence": {"type": "object", "additionalProperties": True,
                            "description": "{at: YYYY-MM-DD, notes} for add_occurrence."},
             "description": {"type": "string", "description": "create: one line."},
@@ -1317,7 +1348,12 @@ AMEND_DATA_OBJECT_SCHEMA = {
                        "enum": ["change_entry", "rename", "add_alias", "archive",
                                 "unarchive", "private", "public", "merge"]},
             "entry": {"type": "integer", "description": "change_entry: the entry number."},
-            "changes": {"type": "object", "additionalProperties": True},
+            "changes": {"type": "object", "additionalProperties": True,
+                        "description": "change_entry: the fields to change. Each field you "
+                                       "name is replaced whole — give the full corrected "
+                                       "text, keeping everything still true about the "
+                                       "entry; never a note about the correction. "
+                                       + RELATIVE_REFERENCES},
             "new_name": {"type": "string"},
             "alias": {"type": "string"},
             "into": {"type": "string", "description": "merge: the log to merge into."},

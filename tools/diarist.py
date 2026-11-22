@@ -17,6 +17,7 @@ from pathlib import Path
 
 from core.persona import PersonaError, persona_data_dir, persona_scope, resolve_persona
 from core.background import run_background
+from tools.record_rules import RELATIVE_REFERENCES
 
 _ROOT = Path(__file__).parent.parent
 
@@ -410,7 +411,7 @@ WRITE_JOURNAL_SCHEMA = {
             },
             "text": {
                 "type": "string",
-                "description": "The journal entry text. Freeform.",
+                "description": "The journal entry text. Freeform. " + RELATIVE_REFERENCES,
             },
             "tags": {
                 "type": "array",
@@ -497,7 +498,7 @@ WRITE_ARCHIVE_SCHEMA = {
                     "music: title, artist, notes. "
                     "experiences: description, location, notes. "
                     "ideas: text, tags. "
-                    "places: name, location, notes."
+                    "places: name, location, notes. " + RELATIVE_REFERENCES
                 ),
                 "additionalProperties": True,
             },

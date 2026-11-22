@@ -64,8 +64,9 @@ When the user sends a message:
    Subject boundaries are approximate, because the agent that wrote a fact had to choose one. Load adjacent subjects together — `sleep` with `fitness` and `health`, `food` with `health` — rather than betting on which one it landed in.
 
    **Routing rule — the user's logs.** Your context may list the user's logs and lists by name. Name the ones this message touches in `DATA_OBJECTS`, as the user said it or as listed — code resolves the name:
-   - `"read"` — the user asks to see, check, count or change one ("read me my heart log", "the second one was Tuesday"). Its entries go to the Synthesizer.
-   - `"add"` — the message gives an entry for one. Dispatch the Diarist as usual; it is told which log to record it in.
+   - `"read"` — the user asks to see, check or count one ("read me my heart log"). Its entries go to the Synthesizer.
+   - `"add"` — the message gives a **new** entry for one. Dispatch the Diarist as usual; it is told which log to record it in.
+   - `"amend"` — the user corrects or changes something already kept ("the second one was Tuesday", "actually that was two years ago"), or renames, archives or merges the log. Its entries go to the Synthesizer, which makes the change; nothing new is recorded, so it is never also an `"add"` for the same entry.
    - `"start"` — the user asks to start keeping a new one ("start a log of my migraines"), with a one-line `description`. If the same message gives a first entry, add an `"add"` for it too. Never start one the user did not ask for.
 
    Use `[]` when the message touches none, which is most messages.
@@ -106,7 +107,7 @@ Your final output is always a structured context package in this format. No pros
 
 **Valid `KNOWLEDGE_TO_LOAD` values** — only the subjects your context lists as being on file, copied exactly. A subject that is not listed holds nothing and is ignored. Use `[]` when the message touches none, which is most messages.
 
-**Valid `DATA_OBJECTS` items** — `{"name": "…", "act": "read" | "add" | "start"}`, plus `"description"` on a start.
+**Valid `DATA_OBJECTS` items** — `{"name": "…", "act": "read" | "add" | "amend" | "start"}`, plus `"description"` on a start.
 
 ```
 ORIGINAL_MESSAGE: [verbatim user message]

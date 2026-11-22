@@ -5847,6 +5847,9 @@ def _data_object_action_rows(turn: dict | None) -> list[str]:
     rows += [f"- an entry for the user's \"{a['object']['name']}\" log — QUEUED, NOT YET "
              f"SAVED: it is recorded after this reply. Say it is being added; never that it "
              f"is added or saved" for a in turn.get("adding", [])]
+    rows += [f"- a change to the user's \"{r['object']['name']}\" log — NOT YET MADE: it is "
+             f"yours to make this turn with your own call, and done only once that call "
+             f"succeeds" for r in turn.get("amending", []) if not r["result"].get("error")]
     return rows
 
 
@@ -6024,7 +6027,7 @@ def _resolve_data_objects(coord_output: str, persona: str | None = None,
     "started" or "adding" truthfully, and the entries reach the Synthesizer with no extra
     tool round.
 
-    Each item is {"name": …, "act": "start" | "add" | "read"} (+ description / fields /
+    Each item is {"name": …, "act": "start" | "add" | "read" | "amend"} (+ description / fields /
     identity on a start). Absent, malformed and hallucinated names are all tolerated, as in
     `_resolve_knowledge()`: an unknown name is reported to the Synthesizer, never invented.
 
@@ -6039,7 +6042,7 @@ def _resolve_data_objects(coord_output: str, persona: str | None = None,
     Never raises.
     """
     turn: dict = {"started": [], "matched": [], "adding": [], "reads": [], "unknown": [],
-                  "delegated": [], "archived": []}
+                  "delegated": [], "archived": [], "amending": []}
     match = _re.search(r'DATA_OBJECTS:\s*```json\s*(.*?)```', coord_output, _re.DOTALL)
     if not match:
         match = _re.search(r'DATA_OBJECTS:\s*(\[.*?\])\s*(?:\n|\Z)', coord_output, _re.DOTALL)
@@ -6062,7 +6065,7 @@ def _resolve_data_objects(coord_output: str, persona: str | None = None,
                     continue
                 name = str(it.get("name") or "").strip()
                 act = str(it.get("act") or "").strip().lower()
-                if not name or act not in ("start", "add", "read"):
+                if not name or act not in ("start", "add", "read", "amend"):
                     continue
                 if act == "start":
                     if not user_turn:
@@ -6096,6 +6099,35 @@ def _resolve_data_objects(coord_output: str, persona: str | None = None,
                         turn["adding"].append({"object": DO.public(obj),
                                                "fields": DO.fields_of(obj),
                                                "token": DO.mark_pending(obj["id"])})
+                elif act == "amend" and not user_turn:
+                    continue        # a scheduled session changes nothing the user keeps
+                elif act == "amend":
+                    # A correction to what is already kept, or a change to the log itself
+                    # (Mike, 2026-11-22: its own act, not folded into "read", so code can see
+                    # the intent). The entries are fetched for the Synthesizer, which makes
+                    # the change; NOTHING is queued for the Diarist, which is told it is not
+                    # a new entry. A message may still add one entry and fix another — each
+                    # item names its own act.
+                    if any(r["object"]["id"] == obj["id"] for r in turn["amending"]):
+                        continue
+                    prior = next((r for r in turn["delegated"]
+                                  if r["object"]["id"] == obj["id"]), None)
+                    if prior is not None:
+                        prior["amend"] = True       # one dispatch: read it, then correct it
+                        prior["read"] = True
+                        continue
+                    if obj.get("store") != "archive":
+                        tool = DO.NATIVE_READ.get(obj.get("store", ""))
+                        cands = list(obj.get("relevant_agents") or []) + [
+                            a for a in DO.TAGGABLE_AGENTS if a not in (obj.get(
+                                "relevant_agents") or [])]
+                        holder = next((a for a in cands if tool and DO._holds(a, tool)), "")
+                        turn["delegated"].append({"object": DO.public(obj), "agent": holder,
+                                                  "amend": True})
+                        continue
+                    adding_now = any(a["object"]["id"] == obj["id"] for a in turn["adding"])
+                    got = DO.fetch("synthesizer", obj["id"], wait=not adding_now)
+                    turn["amending"].append({"object": DO.public(obj), "result": got})
                 elif act == "read":
                     if any(r["object"]["id"] == obj["id"] for r in turn["reads"]) or any(
                             r["object"]["id"] == obj["id"] for r in turn["delegated"]):
@@ -6122,7 +6154,8 @@ def _resolve_data_objects(coord_output: str, persona: str | None = None,
     except Exception as exc:
         logger.warning(f"[data_objects] resolution failed: {exc}")
     _trace(f"[DATA_OBJECTS] started={len(turn['started'])} adding={len(turn['adding'])} "
-           f"reads={len(turn['reads'])} delegated={len(turn['delegated'])} "
+           f"reads={len(turn['reads'])} amending={len(turn['amending'])} "
+           f"delegated={len(turn['delegated'])} "
            f"unknown={turn['unknown']}")
     return turn
 
@@ -6165,10 +6198,24 @@ def _data_object_block(turn: dict | None, unsaved: list[str]) -> str:
                  "this reply." if r.get("adding_now") else "")
         parts.append(f"- \"{r['object']['name']}\"{status} — entries, numbered:{later}\n"
                      + _render_entries(res))
+    for r in turn.get("amending", []):
+        res = r["result"]
+        if res.get("error"):
+            parts.append(f"- \"{r['object']['name']}\" (being changed): {res['error']}")
+            continue
+        parts.append(f"- The user is changing \"{r['object']['name']}\" — an entry already "
+                     f"kept, or the log itself. Nothing new is recorded for the correction; "
+                     f"the change is yours to make. Entries, numbered:\n"
+                     + _render_entries(res))
     for r in turn.get("delegated", []):
-        if r["agent"]:
+        if r["agent"] and r.get("amend"):
+            parts.append(f"- \"{r['object']['name']}\" — the change is made by a specialist "
+                         f"this turn; what it did is in that specialist's output.")
+        elif r["agent"]:
             parts.append(f"- \"{r['object']['name']}\" — read back by a specialist this "
                          f"turn; its entries are in that specialist's output.")
+        elif r.get("amend"):
+            parts.append(f"- \"{r['object']['name']}\" cannot be changed this turn.")
         else:
             parts.append(f"- \"{r['object']['name']}\" cannot be read back this turn.")
     for o in turn.get("archived", []):
@@ -6192,27 +6239,48 @@ def _data_object_directive(turn: dict | None, agent: str) -> str:
     entries of the logs it reads."""
     turn = turn or {}
     if agent == "diarist":
+        adding_ids = {a["object"]["id"] for a in turn.get("adding", [])}
+        corrected = ([r["object"] for r in turn.get("amending", [])]
+                     + [r["object"] for r in turn.get("delegated", []) if r.get("amend")])
+        not_new = []
+        for o in corrected:
+            if o["id"] in adding_ids:
+                not_new.append(f"- \"{o['name']}\" — this message ALSO adds a new entry to it: "
+                               f"record only that new entry; the correction is not one.")
+            else:
+                not_new.append(f"- \"{o['name']}\" — record nothing in it for the "
+                               f"correction.")
+        hold = ("NOT A NEW ENTRY — the user is correcting what is already kept; the change is "
+                "made elsewhere this turn (journal as usual):\n"
+                + "\n".join(not_new)) if not_new else ""
         lines = [f"- \"{a['object']['name']}\" — record it with write_data_object, object "
                  f"\"{a['object']['id']}\""
                  + (f"; give the entry under its fields: {', '.join(a['fields'])}"
                     if a.get("fields") else "") + "."
                  for a in turn.get("adding", [])]
-        if not lines:
-            return ""
-        return ("LOG ENTRY TO RECORD (the user asked for this to be kept in their log — "
-                "record exactly what they said, in that log and nowhere else for this entry):\n"
-                + "\n".join(lines))
+        record = ("LOG ENTRY TO RECORD (the user asked for this to be kept in their log — "
+                  "record what they said, with any relative time or place resolved as the "
+                  "tool describes, in that log and nowhere else for this entry):\n"
+                  + "\n".join(lines)) if lines else ""
+        return "\n\n".join(x for x in (record, hold) if x)
     blocks = [f"- \"{r['object']['name']}\":\n" + _render_entries(r["result"])
               for r in turn.get("reads", [])
               if agent in r.get("readers", []) and not r["result"].get("error")]
     asks = [f"- \"{r['object']['name']}\" — read it with read_data_object, object "
             f"\"{r['object']['id']}\", and give its entries, dated, in your output."
-            for r in turn.get("delegated", []) if r["agent"] == agent]
+            for r in turn.get("delegated", [])
+            if r["agent"] == agent and (not r.get("amend") or r.get("read"))]
+    fixes = [f"- \"{r['object']['name']}\" — the user is correcting something already kept "
+             f"there. Read it with read_data_object, object \"{r['object']['id']}\", then make "
+             f"the change with that store's own tool, and say in your output what you changed."
+             for r in turn.get("delegated", []) if r["agent"] == agent and r.get("amend")]
     out = []
     if blocks:
         out.append("THE USER'S LOG ENTRIES (already recorded):\n" + "\n".join(blocks))
     if asks:
         out.append("LOG TO READ BACK (the user asked to see it):\n" + "\n".join(asks))
+    if fixes:
+        out.append("LOG TO CORRECT:\n" + "\n".join(fixes))
     return "\n\n".join(out)
 
 
@@ -6849,6 +6917,14 @@ def _dispatch_from_coordinator(
             block = _data_object_directive(data_turn, agent)
             if block:
                 directive = f"{directive}\n\n{block}"
+
+        # The Diarist resolves "last year" / "here" against what the user actually said
+        # (tools/record_rules.py), so it is handed their words, not only the Coordinator's
+        # paraphrase of them (Fable review, 2026-11-22). Real user turns only — a scheduled
+        # prompt is not the user's speech ([DB-0822-05]).
+        if agent == "diarist" and user_turn and user_text and user_text not in directive:
+            directive = (f"{directive}\n\nTHE USER'S OWN WORDS THIS TURN (what any time or "
+                         f"place in the directive points from): {user_text[:2000]}")
 
         if is_ff:
             # Collected, NOT started — see the deferral note below the blocking loop.

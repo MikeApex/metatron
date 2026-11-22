@@ -26,6 +26,7 @@ from pathlib import Path
 from filelock import FileLock
 
 from core.persona import persona_data_dir
+from tools.record_rules import RELATIVE_REFERENCES
 
 _ROOT = Path(__file__).parent.parent
 _LOCK_TIMEOUT = 30  # seconds; a read-modify-write here is sub-millisecond
@@ -1060,7 +1061,8 @@ WRITE_WISDOM_SCHEMA = {
             },
             "value": {
                 "type": "string",
-                "description": "What to remember, in one or two plain sentences.",
+                "description": ("What to remember, in one or two plain sentences. "
+                                + RELATIVE_REFERENCES),
             },
             "domain": {
                 "type": "string",

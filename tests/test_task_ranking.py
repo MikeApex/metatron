@@ -637,6 +637,27 @@ def _():
     assert _task(mine)["priority"] == "low"
 
 
+@check("live 11-22: a dropped step whose 'on purpose?' question is owed is not listed under 'do not "
+       "raise' — the ask is the one instruction; the step it stopped says why, not 'its date passed'")
+def _():
+    _fresh("cascade_not_do_not_raise")
+    res = O.open_plan([
+        {"key": "s1", "what": "Redo check part one - tap Skip on this", "minutes": 5,
+         "due": _d(0), "part_of": "s2", "stakes": "missable"},
+        {"key": "s2", "what": "Redo check part two - waits on part one", "minutes": 5,
+         "due": _d(0), "needs": ["s1"], "stakes": "missable"}])
+    s1, s2 = res["ids"]["s1"], res["ids"]["s2"]
+    O.update_task(s1, "dismissed", evidence="marked in the app")
+    assert any(c["id"] == s1 for c in O.cascades_to_raise())
+    block = O.context_block()
+    closed = block.split("**Closed recently", 1)[-1] if "**Closed recently" in block else ""
+    assert "Redo check part one" not in closed, block
+    assert "stopped — an earlier step it needs was dropped" in block, block
+    assert "its date passed" not in closed.split("Redo check part two", 1)[-1][:60], block
+    O.mark_cascade_raised([s1])
+    assert "Redo check part one - tap Skip on this — dismissed" in O.context_block()
+
+
 if __name__ == "__main__":
     for name, ok, err in _results:
         print(f"  {'PASS' if ok else 'FAIL'}  {name}")

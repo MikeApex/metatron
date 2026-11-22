@@ -2776,9 +2776,18 @@ def _recently_closed(tasks: list[dict], today: date) -> list[str]:
         if not closed or (today - closed).days > _RECENT_DAYS or closed > today:
             continue
         status = t["status"]
+        casc = t.get("cascade") or {}
+        if status in ("dismissed", "skipped") and casc.get("closed") and not casc.get("raised"):
+            # Its "on purpose?" question is still owed, under TODAY'S PLAN's asks. Listed here it
+            # sat under "do not raise" — and on 11-22 Synth obeyed that over the ask, twice
+            # (the redo re-check). The ask is the one instruction about it until it is asked.
+            continue
         if status == "done":
             ev = str(t.get("evidence") or "").strip().replace("\n", " ")
             tail = f"done {_when(closed, today)}" + (f" (\"{ev[:70]}\")" if ev else "")
+        elif status == "moot" and any(h.get("event") == "closed_by_prerequisite"
+                                      for h in t.get("history") or []):
+            tail = "stopped — an earlier step it needs was dropped"
         elif status == "moot":
             tail = "no longer relevant — its date passed"
         else:

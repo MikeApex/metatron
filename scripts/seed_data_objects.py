@@ -163,9 +163,18 @@ def main() -> int:
             print(f"\n  ! files starting with '_' in archive/ — not categories, now unreachable "
                   f"by any tool: {reserved}")
 
+        stale_origin = [o["id"] for o in DO._stored()
+                        if o.get("store") != "archive" and o.get("id") == o.get("store")
+                        and o.get("origin") == "asked"]
+        if stale_origin:
+            print(f"\n  ~ stores marked as asked-for, to re-mark existing: {stale_origin}")
+
         if not args.apply:
             print("\nNothing written. Re-run with --apply to register.")
             return 0
+
+        if stale_origin:
+            print(f"  re-marked existing: {DO.repair_store_origins()}")
 
         for kind, spec in plan:
             spec = {k: v for k, v in spec.items() if not k.startswith("_")}

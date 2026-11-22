@@ -13,6 +13,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from core.persona import PersonaError, persona_data_dir, persona_scope, resolve_persona
+from tools.record_rules import RELATIVE_REFERENCES
 from core.background import run_background
 
 
@@ -624,7 +625,7 @@ WRITE_LOG_SCHEMA = {
                     "Log fields to record, in the shape described above — domain values "
                     "inside their `wellbeing` / `health` block, using the fixed vocabulary, "
                     "with the specific wording in the `notes` beside them. Top level takes "
-                    "focus, blockers, wins, tasks_completed, notes."
+                    "focus, blockers, wins, tasks_completed, notes. " + RELATIVE_REFERENCES
                 ),
                 "additionalProperties": True,
             },

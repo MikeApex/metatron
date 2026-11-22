@@ -744,6 +744,153 @@ def _():
         assert out.startswith("Not changed"), out
 
 
+# ---------------------------------------------------------------------------
+# The amend act and the relative-reference rule (Mike, 2026-11-22)
+# ---------------------------------------------------------------------------
+
+@check("amend: entries fetched for the Synthesizer, nothing queued, the Diarist told it is not new")
+def _():
+    import core.orchestrator as O
+    import tools.data_objects as DO
+    with _sandbox("diarist") as (_u, _s):
+        DO.create_object("Frogs", identity="occurrence")
+        DO.write_data_object("frogs", entry={"text": "leopard frog, caught last year"})
+        turn = O._resolve_data_objects('DATA_OBJECTS: [{"name": "frogs", "act": "amend"}]',
+                                       persona="mike", user_turn=True)
+        assert not turn["adding"] and not DO.pending_tokens(), turn
+        block = O._data_object_block(turn, [])
+        assert "is changing" in block and "leopard frog" in block, block
+        d = O._data_object_directive(turn, "diarist")
+        assert "NOT A NEW ENTRY" in d and "LOG ENTRY TO RECORD" not in d, d
+        rows = O._data_object_action_rows(turn)              # the Synthesizer acts, not code
+        assert len(rows) == 1 and "NOT YET MADE" in rows[0] and "yours to make" in rows[0], rows
+
+
+@check("one message may add one entry and correct another in the same log")
+def _():
+    import core.orchestrator as O
+    import tools.data_objects as DO
+    with _sandbox("diarist") as (_u, _s):
+        DO.create_object("Frogs", identity="occurrence")
+        turn = O._resolve_data_objects(
+            'DATA_OBJECTS: [{"name": "frogs", "act": "add"}, {"name": "frogs", "act": "amend"}]',
+            persona="mike", user_turn=True)
+        assert turn["adding"] and turn["amending"], turn
+        d = O._data_object_directive(turn, "diarist")
+        assert "LOG ENTRY TO RECORD" in d and "ALSO adds a new entry" in d, d
+
+
+@check("amend on a log kept in the daily log goes to the area holding its tool, as a correction")
+def _():
+    import core.orchestrator as O
+    with _sandbox("diarist") as (_u, _s):
+        turn = O._resolve_data_objects('DATA_OBJECTS: [{"name": "sleep", "act": "amend"}]',
+                                       persona="mike", user_turn=True)
+        assert turn["delegated"] and turn["delegated"][0]["amend"], turn
+        d = O._data_object_directive(turn, "physical_health")
+        assert "LOG TO CORRECT" in d and "LOG TO READ BACK" not in d, d
+
+
+@check("every record writer carries the one relative-reference rule, word for word")
+def _():
+    from tools.record_rules import RELATIVE_REFERENCES as R
+    from tools.diarist import WRITE_JOURNAL_SCHEMA, WRITE_ARCHIVE_SCHEMA
+    from tools.logger import WRITE_LOG_SCHEMA
+    from tools.wisdom import WRITE_WISDOM_SCHEMA
+    from tools.data_objects import WRITE_DATA_OBJECT_SCHEMA, AMEND_DATA_OBJECT_SCHEMA
+    params = [(WRITE_JOURNAL_SCHEMA, "text"), (WRITE_ARCHIVE_SCHEMA, "item"),
+              (WRITE_LOG_SCHEMA, "content"), (WRITE_WISDOM_SCHEMA, "value"),
+              (WRITE_DATA_OBJECT_SCHEMA, "entry"), (AMEND_DATA_OBJECT_SCHEMA, "changes")]
+    for schema, prop in params:
+        desc = schema["input_schema"]["properties"][prop]["description"]
+        assert R in desc, (schema["name"], prop)
+    changes = AMEND_DATA_OBJECT_SCHEMA["input_schema"]["properties"]["changes"]["description"]
+    assert "replaced whole" in changes
+
+
+@check("a registered store is marked existing, and the repair re-marks old ones once")
+def _():
+    import tools.data_objects as DO
+    with _sandbox("diarist") as (_u, _s):
+        DO.register_store("contacts", name="Contacts")
+        assert DO.get("contacts")["origin"] == "existing"
+        with DO._locked():
+            objs = DO._stored()
+            for o in objs:
+                if o["id"] == "contacts":
+                    o["origin"] = "asked"           # as registered before the fix
+            DO._save(objs)
+        assert DO.repair_store_origins() == ["contacts"]
+        assert DO.repair_store_origins() == []
+        assert DO.get("contacts")["origin"] == "existing"
+
+
+
+@check("a correction to a daily-log log holds the Diarist too")
+def _():
+    import core.orchestrator as O
+    with _sandbox("diarist") as (_u, _s):
+        turn = O._resolve_data_objects(
+            'DATA_OBJECTS: [{"name": "sleep", "act": "read"}, {"name": "sleep", "act": "amend"}]',
+            persona="mike", user_turn=True)
+        assert len(turn["delegated"]) == 1 and turn["delegated"][0]["amend"], turn
+        assert "NOT A NEW ENTRY" in O._data_object_directive(turn, "diarist")
+        d = O._data_object_directive(turn, "physical_health")
+        assert "LOG TO READ BACK" in d and "LOG TO CORRECT" in d, d
+
+
+@check("a scheduled session changes nothing the user keeps")
+def _():
+    import core.orchestrator as O
+    import tools.data_objects as DO
+    with _sandbox("diarist") as (_u, _s):
+        DO.create_object("Frogs", identity="occurrence")
+        turn = O._resolve_data_objects('DATA_OBJECTS: [{"name": "frogs", "act": "amend"}]',
+                                       persona="mike", user_turn=False)
+        assert not turn["amending"] and O._data_object_block(turn, []) == "", turn
+
+
+@check("an entry dated by year alone is found by a read over that year")
+def _():
+    import tools.data_objects as DO
+    with _sandbox("synthesizer") as (_u, _s):
+        DO.create_object("Frogs", identity="occurrence")
+        DO.archive_write(DO.get("frogs"), {"text": "leopard frog", "at": "2024"})
+        got = DO.read_data_object("frogs", since="2024-01-01", until="2024-12-31")
+        assert got["total"] == 1, got
+        assert DO.read_data_object("frogs", since="2025-01-01")["total"] == 0
+        # A time of day is not a date: such an entry is found by the day it was recorded.
+        DO.archive_write(DO.get("frogs"), {"text": "tree frog", "at": "15:00"})
+        got = DO.read_data_object("frogs", since="2025-01-01", contains="tree")
+        assert got["total"] == 1, got
+
+
+@check("the Diarist is handed the user's own words on a real turn, never on a scheduled one")
+def _():
+    import time
+    import core.orchestrator as O
+    seen = {}
+
+    def fake(agent_name, user_input, persona=None, complexity=None, **kw):
+        seen[agent_name] = user_input
+        return "ok"
+    real = O.run_session
+    O.run_session = fake
+    coord = ('SPECIALISTS_TO_CALL:\n```json\n[{"agent": "diarist", "fire_and_forget": true, '
+             '"directive": "Journal the toad."}]\n```\n')
+    try:
+        O._dispatch_from_coordinator(coord, user_turn=True,
+                                     user_text="found a toad here last week")
+        time.sleep(0.3)
+        assert "found a toad here last week" in seen.get("diarist", ""), seen
+        seen.clear()
+        O._dispatch_from_coordinator(coord, user_turn=False, user_text="Good morning prompt")
+        time.sleep(0.3)
+        assert "Good morning prompt" not in seen.get("diarist", ""), seen
+    finally:
+        O.run_session = real
+
+
 if __name__ == "__main__":
     passed = sum(1 for _, ok, _ in _results if ok)
     for name, ok, err in _results:
