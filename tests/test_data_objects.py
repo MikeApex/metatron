@@ -91,6 +91,16 @@ def _rows(user: Path, cat: str) -> list:
     return json.loads(p.read_text()) if p.exists() else []
 
 
+def _seed(DO, *a, **kw):
+    """Write a fixture entry as code (an unbound caller), so the setup does not depend on
+    the Diarist's per-turn write gate — that gate has its own check."""
+    saved, DO._caller = DO._caller, (lambda: "")
+    try:
+        return DO.write_data_object(*a, **kw)
+    finally:
+        DO._caller = saved
+
+
 # ---------------------------------------------------------------------------
 # The archive tool: `_` names, repeat merges, unregistered byte-identity
 # ---------------------------------------------------------------------------
@@ -223,7 +233,7 @@ def _():
     with _sandbox("diarist") as (user, _s):
         DO.create_object("Migraines", identity="occurrence")
         for t in ("left side", "behind the eyes", "after the train"):
-            DO.write_data_object("migraines", entry={"text": t})
+            _seed(DO, "migraines", entry={"text": t})
         before = len(_rows(user, "migraines"))
         s = _s
         s["caller"] = "synthesizer"
@@ -242,7 +252,7 @@ def _():
     with _sandbox("synthesizer") as (user, s):
         s["caller"] = "diarist"
         DO.create_object("Migraines", identity="occurrence")
-        DO.write_data_object("migraines", entry={"text": "left side"})
+        _seed(DO, "migraines", entry={"text": "left side"})
         s["caller"] = "synthesizer"
         DO.amend_data_object("migraines", action="archive")
         assert "Migraines" not in [o["name"] for o in DO.list_data_objects()]
@@ -255,10 +265,10 @@ def _():
 def _():
     import tools.data_objects as DO
     with _sandbox("diarist") as (_u, _s):
-        DO.write_data_object("films", entry={"title": "Heat"})
-        DO.write_data_object("films", entry={"title": "Heat"}, action="add_occurrence",
+        _seed(DO, "films", entry={"title": "Heat"})
+        _seed(DO, "films", entry={"title": "Heat"}, action="add_occurrence",
                              occurrence={"at": "2026-11-20", "notes": "again, with Iva"})
-        DO.write_data_object("films", entry={"title": "Ran"})
+        _seed(DO, "films", entry={"title": "Ran"})
         got = DO.read_data_object("films", count_only=True)
         assert got["things"] == 2 and got["occurrences"] == 1, got
 
@@ -532,7 +542,7 @@ def _():
     import tools.data_objects as DO
     with _sandbox("diarist") as (_u, _s):
         DO.create_object("Migraines", identity="occurrence")
-        DO.write_data_object("migraines", entry={"text": "left side"})
+        _seed(DO, "migraines", entry={"text": "left side"})
         coord = ('DATA_OBJECTS: [{"name": "my migraine log", "act": "read"}, '
                  '{"name": "dream journal", "act": "read"}]')
         turn = O._resolve_data_objects(coord, persona="mike", user_turn=True)
@@ -754,7 +764,7 @@ def _():
     import tools.data_objects as DO
     with _sandbox("diarist") as (_u, _s):
         DO.create_object("Frogs", identity="occurrence")
-        DO.write_data_object("frogs", entry={"text": "leopard frog, caught last year"})
+        _seed(DO, "frogs", entry={"text": "leopard frog, caught last year"})
         turn = O._resolve_data_objects('DATA_OBJECTS: [{"name": "frogs", "act": "amend"}]',
                                        persona="mike", user_turn=True)
         assert not turn["adding"] and not DO.pending_tokens(), turn
@@ -905,6 +915,18 @@ def _():
         # and the model cannot start a second copy of it
         out = DO.write_data_object("Metatron test log", action="create")
         assert out.startswith("Not created"), out
+
+
+
+@check("the Diarist adds to a log only when this turn asked for an entry there")
+def _():
+    import tools.data_objects as DO
+    with _sandbox("diarist") as (user, _s):
+        DO.create_object("Migraines", identity="occurrence")
+        out = DO.write_data_object("migraines", entry={"text": "a white shell in Greenwich"})
+        assert out.startswith("Not recorded") and not _rows(user, "migraines"), out
+        seen = _verified(DO, lambda a, m: DO.write_data_object("migraines", entry={"text": "ok"}))
+        assert seen == [None] and len(_rows(user, "migraines")) == 1, seen
 
 
 if __name__ == "__main__":

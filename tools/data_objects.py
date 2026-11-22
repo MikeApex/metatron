@@ -1098,6 +1098,16 @@ def write_data_object(object: str, entry: dict | None = None, action: str = "add
         return f"{o['name']} now has a '{field}' field. Earlier entries are unchanged."
     if not isinstance(entry, dict) or not entry:
         return "Not recorded: the entry is empty."
+    # The Diarist adds to one of the user's logs only when this turn asked for an entry there
+    # — a live marker for that log (run_verified_write). Instructions did not hold it: in the
+    # 2026-11-22 live checks it wrote a correction, and the answer to "where was that?", as new
+    # entries against an explicit "NOT A NEW ENTRY" hold. Phase 1 has no unasked log writes.
+    is_log = o.get("store") == "archive" or o.get("id") != o.get("store")   # not a store itself
+    if agent == "diarist" and is_log and not any(p["object"] == o["id"] and p["token"] in _LIVE
+                                                 for p in _pending()["pending"]):
+        return (f"Not recorded: nothing was asked to be added to {o['name']} this turn — a "
+                f"correction is made by another agent, and a log takes entries only when the "
+                f"user gives one.")
     store = o.get("store", "archive")
     if store != "archive":
         tool = NATIVE_WRITE.get(store)
