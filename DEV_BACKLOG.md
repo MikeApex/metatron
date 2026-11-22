@@ -1406,6 +1406,24 @@ evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording �
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
 
+- **[the runtime claimed an action it didn't take]** Mike, I've updated the entry in your Metatron final check log to record that the white shell was found in Greenwich.  ×2  
+  `2026-11-22T16:49:47.305325Z`
+
+- **[THINKING_CAP_HIT]** reply cut at the 8192-token output ceiling (thinking 7865 + reply 323, turn 1). Thinking overshoots its 4096 budget on this model; check whether the reply arrived whole.  
+  `2026-11-22T16:24:52.503363Z`
+
+- ⚠ **[user corrected a prior turn]** corrected the date of the grey feather entry in the Metatron final check log from yesterday to four days ago.  ×3  
+  `2026-11-22T16:48:03.565508Z`
+
+- **[user corrected a prior turn]** User repeated identical command 'Start a log called Metatron test log...' because the previous turn erroneously logged a ROUTING_MISS quality event instead of executing the log creation.  
+  `2026-11-22T16:21:47.377802Z`
+
+- **[a specialist missed a signal it should have caught]** User asked to start a new log called 'Metatron test log', but the coordinator failed to include a start action in DATA_OBJECTS for the log creation.  
+  `2026-11-22T16:21:03.052798Z`
+
+- **[a specialist missed a signal it should have caught]** User message 'Im working on Metatron this afternoon.' was routed to work_vocation, but no appropriate tool or specialist directive was warranted for this casual status update; diarist should have been the only target, but the coordinator misrouted to work_vocation.  
+  `2026-11-22T16:04:10.785132Z`
+
 - **[user corrected a prior turn]** The user provided task prioritization adjustments mid-conversation (photos to father, personal trainer, brokerage backup, insurance review), which required appropriate task sorting and domain routing.  
   `2026-11-22T15:55:57.178332Z`
 
