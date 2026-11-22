@@ -6242,16 +6242,20 @@ def _data_object_directive(turn: dict | None, agent: str) -> str:
         adding_ids = {a["object"]["id"] for a in turn.get("adding", [])}
         corrected = ([r["object"] for r in turn.get("amending", [])]
                      + [r["object"] for r in turn.get("delegated", []) if r.get("amend")])
-        not_new = []
+        # A log started this turn with no first entry: the request to start it is not an
+        # entry (live check, 2026-11-22 — it was filed as entry 1).
+        started_empty = [o for o in turn.get("started", []) if o["id"] not in adding_ids]
+        not_new = [f"- \"{o['name']}\" — just started for the user; it has no entry yet. "
+                   f"Record nothing in it." for o in started_empty]
         for o in corrected:
             if o["id"] in adding_ids:
                 not_new.append(f"- \"{o['name']}\" — this message ALSO adds a new entry to it: "
                                f"record only that new entry; the correction is not one.")
             else:
                 not_new.append(f"- \"{o['name']}\" — record nothing in it for the "
-                               f"correction.")
-        hold = ("NOT A NEW ENTRY — the user is correcting what is already kept; the change is "
-                "made elsewhere this turn (journal as usual):\n"
+                               f"correction, and change nothing in it.")
+        hold = ("NOT A NEW ENTRY — these logs take nothing from you this turn: a correction is "
+                "made by another agent, and a new log starts empty (journal as usual):\n"
                 + "\n".join(not_new)) if not_new else ""
         lines = [f"- \"{a['object']['name']}\" — record it with write_data_object, object "
                  f"\"{a['object']['id']}\""

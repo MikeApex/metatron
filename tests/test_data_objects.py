@@ -891,6 +891,22 @@ def _():
         O.run_session = real
 
 
+
+@check("a just-started log with no first entry: the Diarist is told it starts empty")
+def _():
+    import core.orchestrator as O
+    import tools.data_objects as DO
+    with _sandbox("diarist") as (_u, _s):
+        turn = O._resolve_data_objects(
+            'DATA_OBJECTS: [{"name": "Metatron test log", "act": "start", '
+            '"description": "checking"}]', persona="mike", user_turn=True)
+        d = O._data_object_directive(turn, "diarist")
+        assert "starts empty" in d and "LOG ENTRY TO RECORD" not in d, d
+        # and the model cannot start a second copy of it
+        out = DO.write_data_object("Metatron test log", action="create")
+        assert out.startswith("Not created"), out
+
+
 if __name__ == "__main__":
     passed = sum(1 for _, ok, _ in _results if ok)
     for name, ok, err in _results:

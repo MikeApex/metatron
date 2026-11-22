@@ -1067,6 +1067,14 @@ def write_data_object(object: str, entry: dict | None = None, action: str = "add
     """Create a log, add an entry, record an occurrence, or add a field."""
     agent = _caller()
     if action == "create":
+        # Starting a log is code's, on the Coordinator's "start" (core/orchestrator.py
+        # _resolve_data_objects), and only when the user asked. A model creating one as well
+        # duplicated the start and then filed the request itself as the first entry (live
+        # check, 2026-11-22). An unbound caller is code.
+        if agent:
+            return ("Not created: a log is started for the user when they ask for one — "
+                    "it already exists if they did. Record nothing in it unless a LOG ENTRY "
+                    "TO RECORD block names it.")
         out = create_object(object, description=description, fields=fields,
                             identity=identity or "occurrence")
         if out.get("created"):
