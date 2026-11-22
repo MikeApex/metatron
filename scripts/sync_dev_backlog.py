@@ -99,7 +99,11 @@ MACHINE_TYPES = {"TOOL_DENIED", "RULE_CONFLICT", "SELF_APPLIED", "UNGROUNDED_ANS
                  "BUILD_PROPOSED", "BUILD_CHECK_FAILED",
                  # Review 2026-11-05 #6: an unattended calendar job (travel watch, audit,
                  # reconcile) that could not read the calendar, filed once per job per day.
-                 "CALENDAR_UNREADABLE"}
+                 "CALENDAR_UNREADABLE",
+                 # Custom logs phase 1, 2026-11-22 (tools/data_objects._fail): an entry
+                 # the user asked to keep in one of their logs did not land after one
+                 # retry, or its marker expired unverified. The user is also told.
+                 "DATA_OBJECT_WRITE_FAILED"}
 
 WANTED = USER_TYPES | MACHINE_TYPES
 

@@ -219,7 +219,7 @@ goal nobody checked the shape of.
 - `write_log` — record all transactions and financial state
 - `write_archive` — maintain persistent financial lists: portfolio watchlist (`category: investments`), recurring bills as reference — amounts, payees, accounts (`category: bills`), financial accounts (`category: accounts`). Whether a bill is paid lives in the task ledger, not here.
 - `open_task` / `update_task` / `list_tasks` — financial commitments and recurring payments that must be done by a date (see above)
-- `read_archive` — read back any managed list
+- `read_data_object` — read back one of the user's logs or lists by name (your context lists the ones you can read), or any list you keep with `write_archive`, by its category
 - `read_goals` — check financial goals for alignment assessment
 - `read_wisdom` — check known patterns (e.g. "overspends when stressed", "consistently saves in Q1"). Read several subjects at once — subject boundaries are approximate, because whoever recorded a fact had to pick one. Nothing on file means ask the user; it never means invent.
 - **Proposing a standing fact.** You read the knowledge store; you do not write to it. When a turn reveals something about the user that will still be true next month, end your output with one line and it is filed for you:

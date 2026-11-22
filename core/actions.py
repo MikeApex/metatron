@@ -102,6 +102,11 @@ ACTION_TOOLS: frozenset[str] = frozenset({
     # Logs, journal, wisdom — the user asks for these directly ("log that")
     "write_log", "write_quality_event",
     "write_journal", "write_archive",
+    # The user's logs: an entry, a new log, a change kept with its history, an archive.
+    "write_data_object", "amend_data_object",
+    # plan_project queues a sized goal for the planner — a persisted record. Unclassified
+    # since it shipped 2026-11-21 (goal–task network phase 2); found 2026-11-22.
+    "plan_project",
     "write_wisdom", "merge_wisdom_entries",
     # record_wisdom_response stores the user's reaction to an observation, keeping their
     # pushback VERBATIM (tools/wisdom.py:808). It persists their own words and changes what
@@ -128,7 +133,10 @@ ACTION_TOOLS: frozenset[str] = frozenset({
 # (tools/wishes.py:119).
 READ_TOOLS: frozenset[str] = frozenset({
     "read_log", "read_goals", "read_journal", "read_journal_range",
-    "read_archive", "read_wisdom",
+    "read_data_object", "list_data_objects", "read_wisdom",
+    # read_plan / read_day_plan only look up; both unclassified since they shipped
+    # (2026-11-21 goal–task phase 2; the day planner) — found 2026-11-22.
+    "read_plan", "read_day_plan",
     "find_duplicate_wisdom", "search_memory", "read_context_tracker",
     # search_conversations reads the conversation JSONL and advances no cursor —
     # unlike read_intake_queue below, it leaves no presentation state behind.
@@ -238,15 +246,22 @@ def _gated(tc) -> bool:
     return any(s in preview for s in _NOT_PERFORMED_STATUSES)
 
 
-def action_provenance_block(trace) -> str:
+def action_provenance_block(trace, extra: list[str] | None = None) -> str:
     """The ACTIONS block for one request, ready to paste into Synthesizer input.
 
     Always returns a block, including when nothing ran: an absent line would be
     indistinguishable from "no information", which is the state that produced the
     false confirmation in the first place.
+
+    `extra`: rows for things code did this request off the tool trace — the user's logs
+    (core/orchestrator.py _data_object_action_rows): a log started by code, an entry queued
+    for the Diarist's thread. Without them the line said NONE while the logs block said
+    "started", and synthesizer.md's "absent means it did not happen" made the two disagree
+    (Fable review, 2026-11-22). Each row states its own status; nothing here infers one.
     """
+    extra = [r for r in (extra or []) if r]
     if trace is None:
-        return _NONE
+        return f"[{_HEADER}]\n" + "\n".join(extra) if extra else _NONE
 
     # (name, failed) → count. Aggregated because three identical calendar writes
     # is one fact, and the args are not echoed: an email body or a journal entry
@@ -277,7 +292,7 @@ def action_provenance_block(trace) -> str:
                 tally[key] = tally.get(key, 0) + 1
 
     if not tally:
-        return _NONE
+        return f"[{_HEADER}]\n" + "\n".join(extra) if extra else _NONE
 
     # Failures first, then gated, then completions — the two the Synthesizer most
     # needs to see are the two where it would otherwise tell the user it worked.
@@ -297,4 +312,4 @@ def action_provenance_block(trace) -> str:
         else:
             lines.append(f"- {name} — completed{times}{mark}")
 
-    return f"[{_HEADER}]\n" + "\n".join(lines)
+    return f"[{_HEADER}]\n" + "\n".join(lines + extra)

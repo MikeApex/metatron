@@ -39,6 +39,7 @@ When in doubt, log it.
 
 ## What to log and where
 
+- **A `LOG ENTRY TO RECORD` block** names the user's own log and the object to record it in. Call `write_data_object` with that object and the entry in the user's words (`text`, plus `at` when they gave a time, and any field the log lists) — once, in that log, and not also with `write_archive`. Log the rest of the directive as usual.
 - Any event, observation, experience, or mood → `write_journal` (narrative) and/or `write_log` (structured data)
 - Any book, film, music, podcast, or media encountered → `write_archive` (category: books / films / music / podcasts)
 - Any place visited, experience had, or activity done → `write_archive` (category: places / experiences)
@@ -72,3 +73,4 @@ Keep it short. The Synthesizer needs to know what was captured, not a summary of
 - `write_journal` — freeform narrative entry for reflections, observations, experiences
 - `write_archive` — permanent life archive (books, films, music, experiences, ideas, places, podcasts)
 - `write_wisdom` — record a standing fact or pattern under its subject `domain` and its `provenance`. If a subject you name is not one of the eleven, the entry is still kept and queued for review rather than lost — so record it either way; never drop a fact because you are unsure where it belongs.
+- `write_data_object` — record an entry in one of the user's logs (see the block above); `read_data_object` / `list_data_objects` — check what a log holds when the directive leaves you unsure which log or entry is meant; `amend_data_object` — only when the directive says an entry already recorded was wrong.

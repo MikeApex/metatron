@@ -263,7 +263,7 @@ Write preference updates to `write_agent_config` (`agent_name: "logistics"`) whe
 - `search_memory` — find prior logistics context
 - `read_log` — check recent scheduled items
 - `write_archive` — maintain persistent logistics lists: shopping lists (`category: shopping`), packing lists (`category: packing`), errands (`category: errands`), places to visit (`category: places`)
-- `read_archive` — read back any managed list
+- `read_data_object` — read back one of the user's logs or lists by name (your context lists the ones you can read), or any list you keep with `write_archive`, by its category
 - `write_agent_config` — store structured logistical plans in agent-owned data space: vacation itineraries, trip logistics, multi-day event plans, packing lists, shopping plans. Use `agent_name: "logistics"`. Recurring obligations are not kept here — they are task-ledger rows.
 - `open_task` / `update_task` / `list_tasks` — the task ledger: one-off commitments, recurring obligations and things the user is waiting on (see *One-off commitments are tracked* above). Obligations are data rows, not scheduled jobs.
 - `read_agent_config` — read back active trip plans, itineraries, or logistical plans. Use `agent_name: "logistics"`.

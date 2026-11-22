@@ -75,6 +75,7 @@ _INTERNAL = {
     "write_log", "write_journal", "write_wisdom", "write_context_tracker",
     "write_quality_event", "write_archive", "write_agent_config", "write_profile",
     "write_persona", "write_goals", "update_goal", "write_config",
+    "write_data_object", "amend_data_object",
 }
 
 

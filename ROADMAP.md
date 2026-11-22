@@ -450,6 +450,13 @@ Phase 5 was built iteratively across many sessions, each solving a local problem
 > **⚠ One more 2026-11-21 (goal–task network phase 2):** `_goals_section()` — the one goal
 > filter every prompt goes through (§ 10 R6) — belongs with `load_config()`/`load_goals()` in
 > **`core/config.py`**. Gate: `python tests/test_goal_network_phase2.py` (its R6 checks).
+>
+> **⚠ Seven more 2026-11-22 (custom logs phase 1):** `_data_object_manifest()` belongs with
+> `_knowledge_manifest()` in **`core/config.py`**; `_resolve_data_objects()`,
+> `_render_entries()`, `_data_object_block()`, `_data_object_directive()`,
+> `_data_object_action_rows()` and `_unsaved_log_notes()` are pipeline concerns and **stay in `core/orchestrator.py`** beside
+> `_resolve_knowledge()`. The manifest is prepended to the per-turn input, never the cached
+> prefix — keep it there across the move. Gate: `python tests/test_data_objects.py`.
 
 **Server split — `core/server.py` → 2 files:**
 

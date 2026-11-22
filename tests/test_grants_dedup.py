@@ -37,9 +37,15 @@ def check(label: str, condition: bool) -> None:
 
 def part1() -> None:
     print("write_archive dedup — one entry per real-world item")
+    from core.persona import persona_scope
+    from tools import data_objects
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
-        with mock.patch.object(diarist, "_archive_dir", return_value=tmp):
+        # write_archive consults the user's registry since 2026-11-22 (books, films and music
+        # are templates now), so the registry needs a persona and a folder too.
+        with mock.patch.object(diarist, "_archive_dir", return_value=tmp), \
+                mock.patch.object(data_objects, "_user_dir", return_value=tmp), \
+                persona_scope("mike"):
             # The canonical clutter case: filed as to-read, filed again as read.
             diarist.write_archive("books", {"title": "Dune", "status": "to-read",
                                             "author": "Herbert"})

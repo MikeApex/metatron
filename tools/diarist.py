@@ -294,6 +294,23 @@ def write_archive(category: str, item: dict | str | None = None) -> str:
 
     category = category.lower().strip().replace(" ", "_")
 
+    # Names starting with "_" are not categories (custom-logs plan § 3.1): a store-wide file
+    # there would otherwise be reachable through this tool. Nor is anything carrying a path
+    # character: "../x" would write outside archive/ (Fable review, 2026-11-22).
+    from tools.data_objects import safe_category
+    if not safe_category(category):
+        return (f"Not recorded: '{category}' is not an archive category — names starting "
+                f"with '_' are reserved, and a name cannot contain a path.")
+
+    # A category registered as one of the user's logs follows that log's identity rule
+    # (tools/data_objects.py): a repeat still merges for a `thing`, every write is an entry
+    # for an `occurrence` log, and a merged log writes to where its entries went. An
+    # unregistered category takes the code below, unchanged.
+    from tools import data_objects as _objects
+    registered = _objects.registered_category(category)
+    if registered is not None:
+        return _objects.archive_write(registered, item)
+
     archive_dir = _archive_dir()
     archive_dir.mkdir(parents=True, exist_ok=True)
     archive_path = archive_dir / f"{category}.json"
@@ -341,17 +358,28 @@ def write_archive(category: str, item: dict | str | None = None) -> str:
     return f"Item added to {category} archive ({archive_path})"
 
 
-def read_archive(category: str) -> list:
+def _read_archive_category(category: str) -> list:
     """
-    Read all items in a category archive.
+    Read all items in a category archive, raw.
+
+    No longer a tool (Mike, 2026-11-22): models read through `read_data_object`, which
+    applies each log's status, merge and read rule — a raw door beside it would bypass all
+    four. This is that tool's reader for unregistered categories.
 
     Args:
         category: Archive category (e.g. "books", "films"). Lowercase.
 
     Returns:
         List of archive items, or empty list if category doesn't exist.
+
+    Raises:
+        ValueError for a name starting with "_" or carrying a path — not a category
+        (custom-logs plan § 3.1).
     """
     category = category.lower().strip().replace(" ", "_")
+    from tools.data_objects import safe_category
+    if not safe_category(category):
+        raise ValueError(f"'{category}' is not an archive category")
     archive_path = _archive_dir() / f"{category}.json"
 
     if not archive_path.exists():
@@ -475,20 +503,5 @@ WRITE_ARCHIVE_SCHEMA = {
             },
         },
         "required": ["category", "item"],
-    },
-}
-
-READ_ARCHIVE_SCHEMA = {
-    "name": "read_archive",
-    "description": "Read all items in a life archive category (books, films, experiences, etc.).",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "category": {
-                "type": "string",
-                "description": "Archive category to read (e.g. 'books', 'films', 'ideas').",
-            },
-        },
-        "required": ["category"],
     },
 }

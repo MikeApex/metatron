@@ -63,6 +63,13 @@ When the user sends a message:
 
    Subject boundaries are approximate, because the agent that wrote a fact had to choose one. Load adjacent subjects together — `sleep` with `fitness` and `health`, `food` with `health` — rather than betting on which one it landed in.
 
+   **Routing rule — the user's logs.** Your context may list the user's logs and lists by name. Name the ones this message touches in `DATA_OBJECTS`, as the user said it or as listed — code resolves the name:
+   - `"read"` — the user asks to see, check, count or change one ("read me my heart log", "the second one was Tuesday"). Its entries go to the Synthesizer.
+   - `"add"` — the message gives an entry for one. Dispatch the Diarist as usual; it is told which log to record it in.
+   - `"start"` — the user asks to start keeping a new one ("start a log of my migraines"), with a one-line `description`. If the same message gives a first entry, add an `"add"` for it too. Never start one the user did not ask for.
+
+   Use `[]` when the message touches none, which is most messages.
+
    **Routing rule — a job nobody owns.** Having decided who to call, ask one more question: is there a job in this message that nothing actually *performs* — no specialist, no stored fact? If so call `request_build` (§ Tools available) **in addition** to whatever else you do, never instead of it. Four shapes:
 
    1. Its class appears in **no** entry of the specialist directory below.
@@ -99,6 +106,8 @@ Your final output is always a structured context package in this format. No pros
 
 **Valid `KNOWLEDGE_TO_LOAD` values** — only the subjects your context lists as being on file, copied exactly. A subject that is not listed holds nothing and is ignored. Use `[]` when the message touches none, which is most messages.
 
+**Valid `DATA_OBJECTS` items** — `{"name": "…", "act": "read" | "add" | "start"}`, plus `"description"` on a start.
+
 ```
 ORIGINAL_MESSAGE: [verbatim user message]
 
@@ -123,6 +132,8 @@ SPECIALISTS_TO_CALL:
 ```
 
 KNOWLEDGE_TO_LOAD: ["subject", "adjacent subject"]
+
+DATA_OBJECTS: [{"name": "log name", "act": "add"}]
 
 USER_CORRECTION: [if this message corrects a prior error — brief description; omit if not applicable]
 

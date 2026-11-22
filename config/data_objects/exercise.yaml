@@ -1,0 +1,10 @@
+# A template (R6) over the daily log (R27): the log's own exercise block.
+id: exercise
+name: Exercise
+aliases: [workouts, exercise log, training log]
+description: Exercise done, day by day — type, duration and effort.
+store: log
+identity: thing
+fields: {exercise: object}
+log_fields: {exercise: health.exercise}
+relevant_agents: [physical_health]

@@ -1,0 +1,11 @@
+# A template (R6) over the daily log (R27 — registered, not moved): reads and writes go through
+# the log's own tools, at the paths below.
+id: sleep
+name: Sleep
+aliases: [sleep log, sleep diary]
+description: Hours slept and how well, night by night.
+store: log
+identity: thing
+fields: {sleep_hours: number, sleep_quality: text}
+log_fields: {sleep_hours: health.sleep_hours, sleep_quality: health.sleep_quality}
+relevant_agents: [physical_health, mental_wellbeing]

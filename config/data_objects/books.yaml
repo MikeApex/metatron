@@ -1,0 +1,9 @@
+# A template (R6). One row per book; a re-read is an occurrence on that row (R20).
+id: books
+name: Books
+aliases: [reading, reading list, books read]
+description: Books read, being read or to read, with notes.
+store: archive
+identity: thing+occurrences
+fields: {title: text, author: text, status: text, rating: number, notes: text}
+relevant_agents: [learning_growth, recreation_hobbies]

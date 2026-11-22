@@ -164,6 +164,32 @@ def _knowledge_manifest(persona: str | None = None) -> str:
     )
 
 
+def _data_object_manifest(agent: str, persona: str | None = None) -> str:
+    """
+    Name the user's logs and lists `agent` may read — names and one-line descriptions, never
+    entries (custom-logs plan § 3.5). The sibling of `_knowledge_manifest()`.
+
+    PER-TURN, NEVER THE CACHED PREFIX (R30). `_knowledge_manifest()` lands in the head-layer
+    system prompt and its note above accepts a bounded cache miss; this one changes every
+    time a log is started, so it goes in the user message `_run_single_agent()` builds, and
+    the 4,096-token Vertex floor on the cached prefix is untouched by it
+    (tests/test_data_objects.py asserts the system prompt is unchanged by creating a log).
+
+    DERIVED FROM THE REGISTRY, NEVER HAND-WRITTEN; HOW TO REACH IT IS ABSENT for the same
+    reason as the knowledge manifest's — the agent files state what to do about it.
+
+    A8: moves to core/config.py with `_knowledge_manifest()`. Never raises.
+    """
+    try:
+        from tools.data_objects import manifest_for
+
+        with persona_scope(resolve_persona(persona)):
+            return manifest_for(agent)
+    except Exception as exc:
+        logger.warning(f"[data_objects] manifest unavailable: {exc}")
+        return ""
+
+
 def load_profile(persona: str | None = None) -> str:
     """
     Load config/profile.yaml (or persona override) and format as a system prompt section,
@@ -1359,7 +1385,15 @@ def register_tools() -> tuple[list[dict], dict]:
     from tools.diarist import (
         write_journal, read_journal, WRITE_JOURNAL_SCHEMA, READ_JOURNAL_SCHEMA,
         read_journal_range, READ_JOURNAL_RANGE_SCHEMA,
-        write_archive, read_archive, WRITE_ARCHIVE_SCHEMA, READ_ARCHIVE_SCHEMA,
+        write_archive, WRITE_ARCHIVE_SCHEMA,
+    )
+    # The user's logs and lists — one read door over every store (custom-logs plan § 3.3).
+    # It replaced read_archive as a tool on 2026-11-22 (Mike): a raw reader beside it would
+    # bypass every rule it applies.
+    from tools.data_objects import (
+        list_data_objects, read_data_object, write_data_object, amend_data_object,
+        LIST_DATA_OBJECTS_SCHEMA, READ_DATA_OBJECT_SCHEMA, WRITE_DATA_OBJECT_SCHEMA,
+        AMEND_DATA_OBJECT_SCHEMA,
     )
     # The verbatim conversation record, searchable. Nothing could search it before
     # 2026-09-24; search_memory is a FAISS index over logs and journal entries only.
@@ -1502,7 +1536,9 @@ def register_tools() -> tuple[list[dict], dict]:
         READ_GOALS_SCHEMA, WRITE_GOALS_SCHEMA, UPDATE_GOAL_SCHEMA,
         WRITE_CONFIG_SCHEMA,
         WRITE_JOURNAL_SCHEMA, READ_JOURNAL_SCHEMA, READ_JOURNAL_RANGE_SCHEMA,
-        WRITE_ARCHIVE_SCHEMA, READ_ARCHIVE_SCHEMA,
+        WRITE_ARCHIVE_SCHEMA,
+        LIST_DATA_OBJECTS_SCHEMA, READ_DATA_OBJECT_SCHEMA, WRITE_DATA_OBJECT_SCHEMA,
+        AMEND_DATA_OBJECT_SCHEMA,
         SEARCH_CONVERSATIONS_SCHEMA,
         WRITE_WISDOM_SCHEMA, READ_WISDOM_SCHEMA,
         FIND_DUPLICATE_WISDOM_SCHEMA, MERGE_WISDOM_ENTRIES_SCHEMA,
@@ -1561,7 +1597,10 @@ def register_tools() -> tuple[list[dict], dict]:
         "read_journal": read_journal,
         "read_journal_range": read_journal_range,
         "write_archive": write_archive,
-        "read_archive": read_archive,
+        "list_data_objects": list_data_objects,
+        "read_data_object": read_data_object,
+        "write_data_object": write_data_object,
+        "amend_data_object": amend_data_object,
         "search_conversations": search_conversations,
         "write_wisdom": write_wisdom,
         "read_wisdom": read_wisdom,
@@ -1716,6 +1755,8 @@ _ALWAYS_CONFIDENTIAL = [
     # regex build on every response and protects nothing.
     # Tool names
     "run_subagent", "run_model_conference", "write_log", "read_log",
+    # read_archive stopped being a tool 2026-11-22 and is kept here on purpose: stored
+    # history and memory still carry the name, so a model can still echo it.
     "write_journal", "read_journal", "write_archive", "read_archive",
     "write_wisdom", "read_wisdom", "search_memory", "write_config",
     "read_goals", "write_goals", "update_goal", "write_schedule",
@@ -1727,6 +1768,8 @@ _ALWAYS_CONFIDENTIAL = [
     "write_contact", "read_contact", "list_contacts", "log_interaction",
     "search_contacts", "write_persona", "get_tone_shape", "tone_profiler",
     "plan_project", "read_plan", "project_planner", "task_judge",
+    "list_data_objects", "read_data_object", "write_data_object", "amend_data_object",
+    "data_object_tagger",
     # Routing / architecture terms
     "cloud_deep", "cloud_fast", "cloud_analytical", "routing.yaml",
     "run_session", "config/agents",
@@ -5690,6 +5733,15 @@ def _run_single_agent(agent_name: str, user_input: str,
         augmented_input = f"{clock}\n\n---\n\n{user_input}" if clock else user_input
         context_sections = {"agent_file": agent, "goals": goals, "clock": clock}
 
+    # The user's logs and lists this agent may read — in the USER message, so creating one
+    # never changes a cached system prefix (_data_object_manifest). Bare runs (code-only
+    # agents, research) get none; an agent without a read grant gets "" from the registry.
+    if not bare and agent_name != "research_agent":
+        _objects = _data_object_manifest(agent_name, persona)
+        if _objects:
+            augmented_input = f"{_objects}\n\n---\n\n{augmented_input}"
+            context_sections["data_objects"] = _objects
+
     tool_schemas, tool_handlers = register_tools()
 
     # Apply per-agent schema whitelist — only advertise tools the agent can call.
@@ -5787,7 +5839,18 @@ def _failed_tool_calls(rec) -> list[str]:
     return [f"- {name}: {msg}" for name, msg in failures.items() if name not in succeeded]
 
 
-def _action_block() -> str:
+def _data_object_action_rows(turn: dict | None) -> list[str]:
+    """ACTIONS-line rows for the user's logs this request — done by code, not on the trace."""
+    turn = turn or {}
+    rows = [f"- the user's \"{o['name']}\" log — started (created) this request"
+            for o in turn.get("started", [])]
+    rows += [f"- an entry for the user's \"{a['object']['name']}\" log — QUEUED, NOT YET "
+             f"SAVED: it is recorded after this reply. Say it is being added; never that it "
+             f"is added or saved" for a in turn.get("adding", [])]
+    return rows
+
+
+def _action_block(data_turn: dict | None = None) -> str:
     """The ACTIONS provenance block for the Synthesizer — evidence, not a claim.
 
     Called after _dispatch_from_coordinator() returns, which is the first moment
@@ -5809,7 +5872,7 @@ def _action_block() -> str:
     Classification of which tools count lives in core/actions.py, in one place.
     """
     from core.actions import action_provenance_block
-    block = action_provenance_block(_tr.get_trace())
+    block = action_provenance_block(_tr.get_trace(), _data_object_action_rows(data_turn))
     # Also emitted to the journal, at INFO on its own logger for the reason given
     # at _dev_request_log: the module logger is pinned to WARNING and _trace() is
     # a no-op in the service. This is what makes the line checkable in production
@@ -5949,6 +6012,224 @@ def _knowledge_block(entries: list[dict], domains: list[str] | None = None) -> s
         "KNOWLEDGE ON FILE (standing facts about the user, already recorded — treat as "
         "known, do not ask the user to repeat them):\n" + "\n".join(lines)
     )
+
+
+def _resolve_data_objects(coord_output: str, persona: str | None = None,
+                          user_turn: bool = True) -> dict:
+    """
+    Parse DATA_OBJECTS from Coordinator output: start a log, mark an entry on its way, and
+    pre-fetch a log the turn reads (custom-logs plan § 3.4–3.5). The sibling of
+    `_resolve_knowledge()`, and it rides the same path: the Coordinator sees only names (the
+    per-turn manifest), names what this turn needs, and code resolves — so the reply can say
+    "started" or "adding" truthfully, and the entries reach the Synthesizer with no extra
+    tool round.
+
+    Each item is {"name": …, "act": "start" | "add" | "read"} (+ description / fields /
+    identity on a start). Absent, malformed and hallucinated names are all tolerated, as in
+    `_resolve_knowledge()`: an unknown name is reported to the Synthesizer, never invented.
+
+    `user_turn` False (a scheduled session — no user speech) starts nothing and marks
+    nothing; the Diarist is refused on such a turn anyway ([DB-0822-05]).
+
+    THE MARKER IS SET HERE, BEFORE THE REPLY, and cleared by the write. That ordering is what
+    lets a read on the very next turn wait out a Diarist still running, and what makes a
+    write that never lands visible (tools/data_objects.py, the pending marker).
+
+    A8: stays in core/orchestrator.py beside `_resolve_knowledge()` — pipeline, not config.
+    Never raises.
+    """
+    turn: dict = {"started": [], "matched": [], "adding": [], "reads": [], "unknown": [],
+                  "delegated": [], "archived": []}
+    match = _re.search(r'DATA_OBJECTS:\s*```json\s*(.*?)```', coord_output, _re.DOTALL)
+    if not match:
+        match = _re.search(r'DATA_OBJECTS:\s*(\[.*?\])\s*(?:\n|\Z)', coord_output, _re.DOTALL)
+    if not match:
+        return turn
+    try:
+        items = json.loads(match.group(1).strip())
+    except json.JSONDecodeError as exc:
+        logger.warning(f"[data_objects] DATA_OBJECTS JSON parse error: {exc}")
+        return turn
+    if not isinstance(items, list):
+        return turn
+
+    try:
+        from tools import data_objects as DO
+
+        with persona_scope(resolve_persona(persona)):
+            for it in items:
+                if not isinstance(it, dict):
+                    continue
+                name = str(it.get("name") or "").strip()
+                act = str(it.get("act") or "").strip().lower()
+                if not name or act not in ("start", "add", "read"):
+                    continue
+                if act == "start":
+                    if not user_turn:
+                        continue
+                    out = DO.create_object(
+                        name, description=str(it.get("description") or ""),
+                        fields=it.get("fields") if isinstance(it.get("fields"), dict) else None,
+                        identity=str(it.get("identity") or "occurrence"), persona=persona)
+                    if out.get("created"):
+                        turn["started"].append(out["object"])
+                    elif out.get("match"):
+                        turn["matched"].append({"asked": name, "object": out["match"]})
+                    continue
+                # Exact name, core name or alias only. A near name is NOT taken as a match:
+                # close_match's ratio exists to refuse a duplicate at creation, and here it
+                # would file "my wine log" under Wins (Fable review, 2026-11-22). The nearest
+                # name goes to the Synthesizer instead, to ask about.
+                obj = DO.resolve(name)
+                if obj is None:
+                    near = DO.close_match(name)
+                    turn["unknown"].append({"name": name,
+                                            "near": near["name"] if near else ""})
+                    continue
+                if act == "add":
+                    if not user_turn:
+                        continue
+                    if obj.get("status") == "archived":
+                        turn["archived"].append(DO.public(obj))
+                        continue
+                    if not any(a["object"]["id"] == obj["id"] for a in turn["adding"]):
+                        turn["adding"].append({"object": DO.public(obj),
+                                               "fields": DO.fields_of(obj),
+                                               "token": DO.mark_pending(obj["id"])})
+                elif act == "read":
+                    if any(r["object"]["id"] == obj["id"] for r in turn["reads"]) or any(
+                            r["object"]["id"] == obj["id"] for r in turn["delegated"]):
+                        continue
+                    if obj.get("store") != "archive":
+                        # A store with its own read tool is read only by an agent holding it
+                        # (plan § 3.3, review finding 7 — no widening), so the Synthesizer
+                        # cannot be handed it. The area that holds the reader is sent to read
+                        # it back instead, so the ask is answered rather than met with silence.
+                        tool = DO.NATIVE_READ.get(obj.get("store", ""))
+                        cands = list(obj.get("relevant_agents") or []) + [
+                            a for a in DO.TAGGABLE_AGENTS if a not in (obj.get(
+                                "relevant_agents") or [])]
+                        holder = next((a for a in cands if tool and DO._holds(a, tool)), "")
+                        turn["delegated"].append({"object": DO.public(obj), "agent": holder})
+                        continue
+                    # An entry being added this same turn cannot have landed yet: do not wait
+                    # the pending window for it — the read is told it is on its way instead.
+                    adding_now = any(a["object"]["id"] == obj["id"] for a in turn["adding"])
+                    got = DO.fetch("synthesizer", obj["id"], wait=not adding_now)
+                    turn["reads"].append({"object": DO.public(obj), "result": got,
+                                          "readers": sorted(DO.readers(obj)),
+                                          "adding_now": adding_now})
+    except Exception as exc:
+        logger.warning(f"[data_objects] resolution failed: {exc}")
+    _trace(f"[DATA_OBJECTS] started={len(turn['started'])} adding={len(turn['adding'])} "
+           f"reads={len(turn['reads'])} delegated={len(turn['delegated'])} "
+           f"unknown={turn['unknown']}")
+    return turn
+
+
+def _render_entries(result: dict) -> str:
+    entries = result.get("entries") or []
+    if not entries:
+        return "  (no entries yet)"
+    lines = []
+    for e in entries:
+        fields = {k: v for k, v in e.items() if k not in ("n", "previous")}
+        lines.append(f"  {e.get('n')}. " + json.dumps(fields, ensure_ascii=False))
+    more = (f"\n  (showing the latest {len(entries)} of {result.get('total')})"
+            if result.get("truncated") else "")
+    return "\n".join(lines) + more
+
+
+def _data_object_block(turn: dict | None, unsaved: list[str]) -> str:
+    """The Synthesizer's facts about the user's logs this turn: what was started, what is on
+    its way (NOT saved yet — the write lands after the reply), what a read found, what no
+    log is called, and any earlier entry that did not save. Facts only; what to say about
+    them is synthesizer.md's (One Home Per Rule Class)."""
+    turn = turn or {}
+    parts: list[str] = []
+    for o in turn.get("started", []):
+        parts.append(f"- Started a new log, \"{o['name']}\", just now.")
+    for m in turn.get("matched", []):
+        parts.append(f"- \"{m['asked']}\" is already kept as \"{m['object']['name']}\" — "
+                     f"no new log was started.")
+    for a in turn.get("adding", []):
+        parts.append(f"- This turn's entry for \"{a['object']['name']}\" is being added "
+                     f"after this reply — it is not saved yet.")
+    for r in turn.get("reads", []):
+        res = r["result"]
+        if res.get("error"):
+            parts.append(f"- \"{r['object']['name']}\": {res['error']}")
+            continue
+        status = " (archived)" if res.get("status") == "archived" else ""
+        later = (" This turn's new entry is not among them yet — it is being added after "
+                 "this reply." if r.get("adding_now") else "")
+        parts.append(f"- \"{r['object']['name']}\"{status} — entries, numbered:{later}\n"
+                     + _render_entries(res))
+    for r in turn.get("delegated", []):
+        if r["agent"]:
+            parts.append(f"- \"{r['object']['name']}\" — read back by a specialist this "
+                         f"turn; its entries are in that specialist's output.")
+        else:
+            parts.append(f"- \"{r['object']['name']}\" cannot be read back this turn.")
+    for o in turn.get("archived", []):
+        parts.append(f"- \"{o['name']}\" is archived — nothing was added to it. It can be "
+                     f"unarchived.")
+    for u in turn.get("unknown", []):
+        n, near = (u["name"], u["near"]) if isinstance(u, dict) else (u, "")
+        hint = (f" The closest kept is \"{near}\" — ask whether that is the one; do not "
+                f"assume it." if near else "")
+        parts.append(f"- No log is called \"{n}\".{hint}")
+    for n in unsaved:
+        parts.append(f"- An entry the user asked to keep in \"{n}\" earlier did NOT save.")
+    if not parts:
+        return ""
+    return "THE USER'S LOGS THIS TURN:\n" + "\n".join(parts)
+
+
+def _data_object_directive(turn: dict | None, agent: str) -> str:
+    """What one dispatched agent is handed about the user's logs this turn: for the Diarist,
+    the entry to record and the object to record it in; for a specialist, the pre-fetched
+    entries of the logs it reads."""
+    turn = turn or {}
+    if agent == "diarist":
+        lines = [f"- \"{a['object']['name']}\" — record it with write_data_object, object "
+                 f"\"{a['object']['id']}\""
+                 + (f"; give the entry under its fields: {', '.join(a['fields'])}"
+                    if a.get("fields") else "") + "."
+                 for a in turn.get("adding", [])]
+        if not lines:
+            return ""
+        return ("LOG ENTRY TO RECORD (the user asked for this to be kept in their log — "
+                "record exactly what they said, in that log and nowhere else for this entry):\n"
+                + "\n".join(lines))
+    blocks = [f"- \"{r['object']['name']}\":\n" + _render_entries(r["result"])
+              for r in turn.get("reads", [])
+              if agent in r.get("readers", []) and not r["result"].get("error")]
+    asks = [f"- \"{r['object']['name']}\" — read it with read_data_object, object "
+            f"\"{r['object']['id']}\", and give its entries, dated, in your output."
+            for r in turn.get("delegated", []) if r["agent"] == agent]
+    out = []
+    if blocks:
+        out.append("THE USER'S LOG ENTRIES (already recorded):\n" + "\n".join(blocks))
+    if asks:
+        out.append("LOG TO READ BACK (the user asked to see it):\n" + "\n".join(asks))
+    return "\n\n".join(out)
+
+
+def _unsaved_log_notes(persona: str | None, user_turn: bool) -> list[str]:
+    """Logs whose entry did not save and the user has not been told on a reply — each
+    returned once (tools/data_objects.take_turn_notes). Real user turns only, so a scheduled
+    session never spends the note. Never raises."""
+    if not user_turn:
+        return []
+    try:
+        from tools.data_objects import take_turn_notes
+
+        with persona_scope(resolve_persona(persona)):
+            return take_turn_notes()
+    except Exception as exc:
+        logger.warning(f"[data_objects] unsaved-note check failed: {exc}")
+        return []
 
 
 _WISDOM_PROPOSAL_RE = _re.compile(
@@ -6431,6 +6712,8 @@ def _dispatch_from_coordinator(
     provider: str | None = None,
     knowledge: list[dict] | None = None,
     user_turn: bool = True,
+    data_turn: dict | None = None,
+    user_text: str = "",
 ) -> dict:
     """
     Parse SPECIALISTS_TO_CALL from Coordinator output and dispatch agents.
@@ -6447,6 +6730,11 @@ def _dispatch_from_coordinator(
     filing the scheduler's own "Good morning..." prompt as something Mike said. The agent-file
     rule against this (`82d394b`, 2026-08-09) was already in place and already ignored, which
     is why the refusal is here in Python.
+
+    `data_turn`: from _resolve_data_objects(). A log entry on its way goes to the Diarist —
+    dispatched here with the user's own words (`user_text`) if the Coordinator listed none,
+    because the marker is already set and an entry nobody is sent to write would only ever
+    surface as "didn't save". Its thread then verifies the write (run_verified_write).
     """
     import re as _re
     import threading
@@ -6454,14 +6742,34 @@ def _dispatch_from_coordinator(
     match = _re.search(r'SPECIALISTS_TO_CALL:\s*```json\s*(.*?)```', coord_output, _re.DOTALL)
     if not match:
         match = _re.search(r'SPECIALISTS_TO_CALL:\s*(\[.*?\])\s*(?:\n\n|\Z)', coord_output, _re.DOTALL)
+    specialists: list = []
     if not match:
         _trace("[PIPELINE] SPECIALISTS_TO_CALL not found — no specialists dispatched")
-        return {}
+    else:
+        try:
+            specialists = json.loads(match.group(1).strip())
+        except json.JSONDecodeError as e:
+            logger.warning(f"[PIPELINE] SPECIALISTS_TO_CALL JSON parse error: {e}")
+            specialists = []
+    if not isinstance(specialists, list):
+        specialists = []
 
-    try:
-        specialists: list = json.loads(match.group(1).strip())
-    except json.JSONDecodeError as e:
-        logger.warning(f"[PIPELINE] SPECIALISTS_TO_CALL JSON parse error: {e}")
+    # A log entry on its way needs a Diarist even when the Coordinator listed none.
+    _adding = (data_turn or {}).get("adding") or []
+    if _adding and user_turn and not any(
+            normalize_agent_name(str(sp.get("agent", "")), dict(_AGENT_NAME_MAP)) == "diarist"
+            for sp in specialists if isinstance(sp, dict)):
+        specialists.append({"agent": "diarist", "fire_and_forget": True,
+                            "directive": f"The user said: {user_text}"})
+    # A log kept in another store is read back by the area that holds its reader.
+    for _r in (data_turn or {}).get("delegated") or []:
+        if _r.get("agent") and not any(
+                normalize_agent_name(str(sp.get("agent", "")), dict(_AGENT_NAME_MAP))
+                == _r["agent"] for sp in specialists if isinstance(sp, dict)):
+            specialists.append({"agent": _r["agent"], "mode": "quick",
+                                "fire_and_forget": False,
+                                "directive": f"The user said: {user_text}"})
+    if not specialists:
         return {}
 
     outputs: dict = {}
@@ -6495,6 +6803,8 @@ def _dispatch_from_coordinator(
         return normalize_agent_name(name, name_map)
 
     for spec in specialists:
+        if not isinstance(spec, dict):
+            continue
         agent = spec.get("agent", "")
         agent = _normalize_agent(agent)
         directive = spec.get("directive", "")
@@ -6530,6 +6840,13 @@ def _dispatch_from_coordinator(
         # writing a fourth near-duplicate of a fact recorded three times already.
         if knowledge:
             block = _knowledge_block(knowledge, domains=_agent_domains.get(agent, []))
+            if block:
+                directive = f"{directive}\n\n{block}"
+
+        # The user's logs: the entry to record (Diarist) or the entries a log this agent
+        # reads already holds (specialists) — see _data_object_directive().
+        if data_turn:
+            block = _data_object_directive(data_turn, agent)
             if block:
                 directive = f"{directive}\n\n{block}"
 
@@ -6615,11 +6932,33 @@ def _dispatch_from_coordinator(
             # of the message, so the times a health note needs (tools/logger.py) exist only
             # here. No turn is bound, as before, so the decline guard in tools/confirm.py
             # treats the Diarist exactly as it did (see turn_context.adopt_spoken).
+            # A Diarist carrying a log entry is VERIFIED, not assumed (custom-logs plan
+            # § 3.4): one retry on the reasoning tier, then a push, a quality event and the
+            # next reply's note. Every other fire-and-forget run is unchanged.
+            _tokens = ([x["token"] for x in _adding] if agent == "diarist" else [])
+            # The retry gets the user's words and the entry alone (see run_verified_write).
+            _retry_d = (f"The user said: {user_text}\n\n"
+                        f"{_data_object_directive(data_turn, 'diarist')}" if _tokens else "")
+
             def _bg(a: str = agent, d: str = directive, c: str | None = complexity,
                     depth: int = _tr.get_subagent_depth(),
-                    spoken: list[str] = _turn.current_spoken()) -> None:
+                    spoken: list[str] = _turn.current_spoken(),
+                    tokens: list[str] = _tokens, retry_d: str = _retry_d) -> None:
                 _tr.set_subagent_depth(depth)
                 _turn.adopt_spoken(spoken)
+                if tokens:
+                    from tools import data_objects as _DO
+                    try:
+                        with persona_scope(resolve_persona(persona)) as _p:
+                            _DO.run_verified_write(
+                                lambda dd, mm: run_session(a, user_input=dd, persona=_p,
+                                                           complexity=c, model_override=mm),
+                                d, tokens, persona=_p,
+                                retry_model=_DO.retry_model_for(a),
+                                retry_directive=retry_d)
+                    except Exception as exc:
+                        logger.warning(f"[fire_and_forget] {a} verified write failed: {exc}")
+                    return
                 try:
                     run_session(a, user_input=d, persona=persona, complexity=c)
                 except Exception as exc:
@@ -7303,12 +7642,17 @@ def run_pipeline_session(user_input: str,
         # Fetch the standing knowledge the Coordinator selected, before dispatch — the
         # specialists that read those subjects get them appended to their directives.
         knowledge = {} if nudge else _resolve_knowledge(coord_output, persona=persona)
+        # The user's logs this turn — started, on their way, read. Mirrors the streaming twin.
+        data_turn = None if nudge else _resolve_data_objects(
+            coord_output, persona=persona,
+            user_turn=has_real_user_turn(user_input, is_proactive, attachments))
 
         # Dispatch specialists from Python based on Coordinator's SPECIALISTS_TO_CALL
         _trace("[PIPELINE] dispatching specialists")
         specialist_outputs = {} if nudge else _dispatch_from_coordinator(
             coord_output, persona=persona, provider=provider, knowledge=knowledge,
             user_turn=has_real_user_turn(user_input, is_proactive, attachments),
+            data_turn=data_turn, user_text=user_input,
         )
         specialist_outputs = _file_wisdom_proposals(specialist_outputs, persona=persona)
         specialist_outputs = _file_horizon_items(specialist_outputs, persona=persona)
@@ -7344,6 +7688,11 @@ def run_pipeline_session(user_input: str,
         # The ACTIONS block goes last, closest to the response, and is always
         # present: see _action_block().
         know_text = _knowledge_block(knowledge)
+        # After the sign-off veto, so a "didn't save" note is never spent on a turn the
+        # Synthesizer does not run. Mirrors the streaming twin.
+        objects_text = _data_object_block(
+            data_turn, [] if nudge else _unsaved_log_notes(
+                persona, has_real_user_turn(user_input, is_proactive, attachments)))
         # [DB-0822-09] Built HERE, after the sign-off veto above: a finding must not be
         # charged an offer on a turn where the Synthesizer never runs.
         # Mirrors the streaming twin: after the specialists, so this turn's writes are in it.
@@ -7356,6 +7705,7 @@ def run_pipeline_session(user_input: str,
             f"{proactive_prefix}{receipt_line}{synth_label}:\n{user_input}{attach_note}\n\n"
             f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"
             + (f"\n\n{know_text}" if know_text else "")
+            + (f"\n\n{objects_text}" if objects_text else "")
             + (f"\n\nSPECIALIST OUTPUTS:\n{spec_text}" if spec_text else "")
             + (f"\n\n{horizon_text}" if horizon_text else "")
             + (f"\n\n{plan_text}" if plan_text else "")
@@ -7363,7 +7713,7 @@ def run_pipeline_session(user_input: str,
             + (f"\n\n{capture_turn.note}" if capture_turn and capture_turn.note else "")
             + (f"\n\n{signoff_note}" if signoff_note else "")
             + (f"\n\n{focus_block}" if focus_block else "")
-            + f"\n\n{_action_block()}"
+            + f"\n\n{_action_block(data_turn)}"
         )
         _trace("[PIPELINE] synthesizer  starting")
         recent_history = list(history[-10:]) if history else None
@@ -7581,9 +7931,14 @@ def _run_pipeline_session_stream_inner(
     # the server streams, so a feature wired only into the non-streaming function is live in
     # tests and dead in production. Any change to the knowledge wiring changes both.
     knowledge = {} if nudge else _resolve_knowledge(coord_output, persona=persona)
+    # The user's logs this turn — mirrors the non-streaming twin exactly.
+    data_turn = None if nudge else _resolve_data_objects(
+        coord_output, persona=persona,
+        user_turn=has_real_user_turn(user_input, is_proactive, attachments))
     specialist_outputs = {} if nudge else _dispatch_from_coordinator(
         coord_output, persona=persona, provider=provider, knowledge=knowledge,
         user_turn=has_real_user_turn(user_input, is_proactive, attachments),
+        data_turn=data_turn, user_text=user_input,
     )
     specialist_outputs = _file_wisdom_proposals(specialist_outputs, persona=persona)
     specialist_outputs = _file_horizon_items(specialist_outputs, persona=persona)
@@ -7615,6 +7970,10 @@ def _run_pipeline_session_stream_inner(
 
     # Build Synthesizer input — ACTIONS block last and unconditional, as above.
     know_text = _knowledge_block(knowledge)
+    # After the sign-off veto — mirrors the non-streaming twin.
+    objects_text = _data_object_block(
+        data_turn, [] if nudge else _unsaved_log_notes(
+            persona, has_real_user_turn(user_input, is_proactive, attachments)))
     # The day plan — after the specialists, so this turn's calendar writes are repaired in the
     # same reply (Q10). Kept identical to the non-streaming twin.
     plan_text = _day_plan_block(persona, kind, is_proactive, nudge=nudge)
@@ -7627,6 +7986,7 @@ def _run_pipeline_session_stream_inner(
         f"{proactive_prefix}{receipt_line}{synth_label}:\n{user_input}{attach_note}\n\n"
         f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"
         + (f"\n\n{know_text}" if know_text else "")
+        + (f"\n\n{objects_text}" if objects_text else "")
         + (f"\n\nSPECIALIST OUTPUTS:\n{spec_text}" if spec_text else "")
         + (f"\n\n{horizon_text}" if horizon_text else "")
         + (f"\n\n{plan_text}" if plan_text else "")
@@ -7634,7 +7994,7 @@ def _run_pipeline_session_stream_inner(
         + (f"\n\n{capture_turn.note}" if capture_turn and capture_turn.note else "")
         + (f"\n\n{signoff_note}" if signoff_note else "")
         + (f"\n\n{focus_block}" if focus_block else "")
-        + f"\n\n{_action_block()}"
+        + f"\n\n{_action_block(data_turn)}"
     )
 
     # Load Synthesizer prompt — mirrors _run_single_agent internals
@@ -7654,6 +8014,10 @@ def _run_pipeline_session_stream_inner(
     augmented_input = (
         f"[Recent context]\n{recent}\n\n---\n\n{synthesizer_input}" if recent else synthesizer_input
     )
+    # The user's logs, per turn — mirrors _run_single_agent (never the cached prefix).
+    _objects = _data_object_manifest("synthesizer", persona)
+    if _objects:
+        augmented_input = f"{_objects}\n\n---\n\n{augmented_input}"
     tool_schemas, tool_handlers = register_tools()
     from core.router import get_allowed_tools
     synth_allowed = get_allowed_tools("synthesizer")

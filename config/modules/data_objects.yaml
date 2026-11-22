@@ -1,0 +1,35 @@
+# The user's logs and lists — limits (archive/plans/custom_logs_and_places_plan_2026-11-21.md
+# § 3.1). Read by tools/data_objects.py `limits()`; a key missing here takes the code default.
+#
+# START HIGH (R29): the generic set is being learned from real use. Tightening any of these is a
+# config edit, and nothing is deleted when it tightens — the objects past a cap drop out of the
+# lists and stay readable by name.
+
+# Objects named to one agent per turn. ~20 input tokens each; at 20 objects on the Synthesizer's
+# tier ≈ $0.0003 a turn (plan § 7). The cap bounds the worst case at ~1,200 tokens a turn.
+manifest_max_objects: 60
+
+# The stores that already have their own tools (contacts, tasks, the calendar …) are registered
+# but not listed: every agent that can read one already holds its tool and knows it exists, so
+# listing them would cost every turn and tell nobody anything. Daily-log objects (sleep,
+# exercise) ARE listed — they are the user's logs, kept in the daily log.
+manifest_includes_native_stores: false
+
+# Entries returned by one read; the newest are kept.
+read_max_entries: 200
+
+# A pending write ("adding that to your heart log") older than this, still unverified, is
+# reported as not saved — a push and a note on the next reply. Never silence. The Diarist lands
+# in seconds; two minutes is the restart/crash backstop, not the normal path.
+pending_expiry_seconds: 120
+
+# How long a read waits for a write still on its way to the same log ("read it back" said
+# straight after an entry). Only paid when a marker is actually pending.
+pending_wait_seconds: 8
+
+# How alike a new log's name must be to an existing one to be refused as a duplicate (R18).
+close_match_ratio: 0.85
+
+# Daily-log objects: days read when none are given, and the most a read may ask for.
+log_read_default_days: 14
+log_read_max_days: 92

@@ -78,14 +78,18 @@ agents:
     # standing fact — and it is the fallback for turns the Coordinator's KNOWLEDGE_TO_LOAD did
     # not predict. Without the read grant the pre-fetch is the ONLY path to the store and a
     # mid-conversation turn toward a subject has no way to reach it.
-    allowed_tools: [run_subagent, run_model_conference, write_persona, write_profile, read_profile, write_config, write_wishes, read_wishes, generate_emergency_card, write_quality_event, write_schedule, list_schedules, delete_schedule, update_goal, open_task, update_task, list_tasks, read_wisdom, write_wisdom, teach_intake, record_wisdom_response, pause_routine, resume_routine, list_routines, set_day_shape, request_replan, answer_event, read_day_plan, plan_project, read_plan]
+    allowed_tools: [run_subagent, run_model_conference, write_persona, write_profile, read_profile, write_config, write_wishes, read_wishes, generate_emergency_card, write_quality_event, write_schedule, list_schedules, delete_schedule, update_goal, open_task, update_task, list_tasks, read_wisdom, write_wisdom, teach_intake, record_wisdom_response, pause_routine, resume_routine, list_routines, set_day_shape, request_replan, answer_event, read_day_plan, plan_project, read_plan, list_data_objects, read_data_object, amend_data_object]
 
   # ── Data and analysis ────────────────────────────────────────────────────────
 
   diarist:
     provider: gemini
     model: "models/gemini-3.5-flash-lite"   # write-only; fire-and-forget target
-    allowed_tools: [write_journal, write_archive, write_log, write_wisdom]
+    # A log entry the user asked to keep is verified after the run; ONE retry runs on this
+    # model — the reasoning tier, a different model from the one that just failed (custom-logs
+    # plan § 3.4, verify finding 3). Read by tools/data_objects.retry_model_for().
+    retry_model: "models/gemini-3.8-flash"
+    allowed_tools: [write_journal, write_archive, write_log, write_wisdom, list_data_objects, read_data_object, write_data_object, amend_data_object]
 
   intake_extractor:
     provider: gemini
@@ -127,6 +131,17 @@ agents:
     # code compares, the agent writes — it can emit no tool call. Called only by
     # tools/capture.py, on real user turns, while capture.yaml has it enabled.
     # archive/plans/capture_fidelity_plan_2026-11-18.md.
+    allowed_tools: []
+
+  data_object_tagger:
+    provider: gemini
+    model: "models/gemini-3.5-flash-lite"   # one short JSON list per new log; bulk tier (R26)
+    # PRIVACY TIER, stated because this entry is what authorises it: reads a new log's NAME,
+    # one-line description and field names — never an entry — plus each agent's one-line
+    # remit. Sensitive tier on the Vertex path, on the Amendment 2026-08-28 basis extended to
+    # every user with recorded consent (ROADMAP.md § Section 0). Empty grant AND bare
+    # dispatch: it names agents, code records them. Called only by tools/data_objects.py
+    # when a log is created.
     allowed_tools: []
 
   day_planner:
@@ -254,7 +269,7 @@ agents:
     # agents to dispatch, and with the depth guard now admitting depth 1 a category agent
     # holding it could only call sideways into another category agent, which is a loop
     # forming rather than a design. It arrives with the first landed capability.
-    allowed_tools: [read_log, write_log, write_journal, search_memory, read_agent_config, write_agent_config, read_wisdom, write_wisdom, request_build]
+    allowed_tools: [read_log, write_log, write_journal, search_memory, read_agent_config, write_agent_config, read_wisdom, write_wisdom, request_build, read_data_object]
 
   physical_health:
     provider: gemini
@@ -276,26 +291,26 @@ agents:
     # — diet tracking is the founding use case for the store — it is where the write happens.
     # Note the store is a *subject* axis: a breakfast composition is `food` no matter which agent
     # observed it, so PH writing directly would not have given PH ownership of it either.
-    # read_archive + write_archive granted 2026-08-28 [DB-0810-03] (grants batch, cluster 1):
+    # read_archive + write_archive granted 2026-08-28 [DB-0810-03] (grants batch, cluster 1): (→ read_data_object 2026-11-22)
     # physical_health.md:184-185 assigns three named lists (supplements, plans, medical). The
     # write grant landed with the write_archive dedup fix in tools/diarist.py — five new archive
     # writers in one pass without dedup invites clutter.
     # request_build granted 2026-09-24 — reasoning on mental_wellbeing above.
-    allowed_tools: [read_log, write_log, search_memory, read_wisdom, read_profile, write_profile, read_agent_config, write_agent_config, read_archive, write_archive, request_build]
+    allowed_tools: [read_log, write_log, search_memory, read_wisdom, read_profile, write_profile, read_agent_config, write_agent_config, read_data_object, write_archive, request_build]
 
   work_vocation:
     provider: gemini
     model: "models/gemini-3.5-flash-lite"   # no clinical stakes
     # search_memory granted 2026-08-05: denied 2026-08-04 while trying to recall that morning's
     # Apex consolidation brief in order to connect "put that on your active items" to it.
-    # read_archive + write_archive + read_goals granted 2026-08-28 [DB-0810-03] (clusters 1+3):
+    # read_archive + write_archive + read_goals granted 2026-08-28 [DB-0810-03] (clusters 1+3): (→ read_data_object 2026-11-22)
     # work_vocation.md names all three (:196-197 archive lists, :112 goals alignment).
     # read_intake_queue granted 2026-09-03 with the intake domain axis: work_vocation
     # became a routable domain that day, and a domain the extractor can file to whose
     # agent cannot read the queue is a black hole — mail sorted correctly and never
     # seen. Granting the tool is part of adding the domain, not a follow-up.
     # request_build granted 2026-09-24 — reasoning on mental_wellbeing above.
-    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, search_memory, read_wisdom, read_archive, write_archive, read_goals, read_intake_queue, request_build]
+    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, search_memory, read_wisdom, read_data_object, write_archive, read_goals, read_intake_queue, request_build]
 
   relationships:
     provider: gemini
@@ -322,12 +337,12 @@ agents:
     # every outbound message behind one owner and one gate; the tool resolves the event
     # itself in Python so this agent needs no calendar grant to use it.
     # request_build granted 2026-09-24 — reasoning on mental_wellbeing above.
-    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, merge_contacts, unmerge_contacts, import_contacts_file, read_profile, write_profile, send_email, send_calendar_invite, search_memory, get_tone_shape, read_wisdom, read_intake_queue, read_agent_config, write_agent_config, apply_crm_proposals, request_build]
+    allowed_tools: [read_log, write_log, write_journal, write_contact, read_contact, list_contacts, log_interaction, search_contacts, merge_contacts, unmerge_contacts, import_contacts_file, read_profile, write_profile, send_email, send_calendar_invite, search_memory, get_tone_shape, read_wisdom, read_intake_queue, read_agent_config, write_agent_config, apply_crm_proposals, request_build, read_data_object]
 
   finance:
     provider: gemini
     model: "models/gemini-3.5-flash-lite"   # arithmetic tracking; escalate to 3.7 Flash if hard-fails were marginal
-    # read_archive granted 2026-08-05: denied 2026-08-03 answering "what can you tell me about my
+    # read_archive granted 2026-08-05: denied 2026-08-03 answering "what can you tell me about my (→ read_data_object 2026-11-22)
     # credit card payments" — a recall question it had no store to answer from.
     # search_memory granted 2026-08-10: denied 2026-08-05T15:21, the same class of recall
     # question read_archive only half-answered. finance.md:89 makes it a procedure step
@@ -337,18 +352,18 @@ agents:
     # granted (cluster 2) — observations route through the Diarist; the journal line in
     # finance.md was rewritten in the same pass.
     # request_build granted 2026-09-24 — reasoning on mental_wellbeing above.
-    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, read_archive, write_archive, read_goals, open_task, update_task, list_tasks, search_memory, read_wisdom, read_intake_queue, request_build]
+    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, read_data_object, write_archive, read_goals, open_task, update_task, list_tasks, search_memory, read_wisdom, read_intake_queue, request_build]
 
   learning_growth:
     provider: gemini
     model: "models/gemini-3.5-flash-lite"
-    # read_archive + write_archive granted 2026-08-28 [DB-0810-03] (cluster 1): named at
+    # read_archive + write_archive granted 2026-08-28 [DB-0810-03] (cluster 1): named at (→ read_data_object 2026-11-22)
     # learning_growth.md:74/:195-196. write_config deliberately NOT granted (cluster 6) —
     # the skill-goals line redirected to write_agent_config, already held; global write_config
     # would confirm-prompt on every streak tick. write_journal NOT granted (cluster 2) —
     # observations route through the Diarist; both lines rewritten in the same pass.
     # request_build granted 2026-09-24 — reasoning on mental_wellbeing above.
-    allowed_tools: [read_log, write_log, search_memory, read_agent_config, write_agent_config, read_wisdom, read_archive, write_archive, request_build]
+    allowed_tools: [read_log, write_log, search_memory, read_agent_config, write_agent_config, read_wisdom, read_data_object, write_archive, request_build]
 
   recreation_hobbies:
     provider: gemini
@@ -359,7 +374,7 @@ agents:
     # read/write_agent_config (:116/:236 — the 2026-08-10 production refusal class, now completing
     # the domain-specialist set), search_memory (:124). All five instructed and never granted.
     # request_build granted 2026-09-24 — reasoning on mental_wellbeing above.
-    allowed_tools: [read_log, write_log, read_wisdom, read_intake_queue, find_places, read_archive, write_archive, read_agent_config, write_agent_config, search_memory, request_build]
+    allowed_tools: [read_log, write_log, read_wisdom, read_intake_queue, find_places, read_data_object, write_archive, read_agent_config, write_agent_config, search_memory, request_build]
 
   logistics:
     provider: gemini
@@ -385,7 +400,7 @@ agents:
     # gate and the CRM recipient allowlist — is enforced in Python for both agents and is
     # untouched. Relationships keeps its grant for person-centred conversations.
     # request_build granted 2026-09-24 — reasoning on mental_wellbeing above.
-    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, update_calendar_event, delete_calendar_event, check_calendar_conflicts, send_calendar_invite, get_weather, get_environmental_snapshot, get_tfl_status, get_flight_status, get_travel_time, get_regional_transit_info, find_places, read_profile, write_profile, write_schedule, list_schedules, delete_schedule, fetch_url, fetch_rendered, read_email, read_agent_config, write_agent_config, search_memory, read_archive, write_archive, open_task, update_task, list_tasks, read_intake_queue, record_horizon_item, request_build]
+    allowed_tools: [read_log, write_log, read_calendar, write_calendar_event, update_calendar_event, delete_calendar_event, check_calendar_conflicts, send_calendar_invite, get_weather, get_environmental_snapshot, get_tfl_status, get_flight_status, get_travel_time, get_regional_transit_info, find_places, read_profile, write_profile, write_schedule, list_schedules, delete_schedule, fetch_url, fetch_rendered, read_email, read_agent_config, write_agent_config, search_memory, read_data_object, write_archive, open_task, update_task, list_tasks, read_intake_queue, record_horizon_item, request_build]
     # update_calendar_event, delete_calendar_event, check_calendar_conflicts added
     # 2026-08-05 — required to act on what the calendar-conflict build detects:
     # Logistics could previously only create events, never move, correct, or

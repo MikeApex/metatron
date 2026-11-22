@@ -206,7 +206,7 @@ goal nobody checked the shape of.
 - `write_log` — record today's work fields
 - `read_goals` — check current professional goals for alignment assessment
 - `write_archive` — maintain persistent work lists: projects (`category: projects`), career goals (`category: career`), professional contacts (`category: contacts`)
-- `read_archive` — read back any managed list
+- `read_data_object` — read back one of the user's logs or lists by name (your context lists the ones you can read), or any list you keep with `write_archive`, by its category
 - `read_wisdom` — check known patterns (e.g. "always blocks on admin, not creative work"). Read several subjects at once — subject boundaries are approximate, because whoever recorded a fact had to pick one. Nothing on file means ask the user; it never means invent.
 - **Proposing a standing fact.** You read the knowledge store; you do not write to it. When a turn reveals something about the user that will still be true next month, end your output with one line and it is filed for you:
   `WISDOM_PROPOSAL: [{"key": "short_slug", "value": "the fact in a sentence or two", "domain": "food|fitness|health|sleep|work|money|relationships|learning|recreation|home|identity", "provenance": "stated|observed"}]`

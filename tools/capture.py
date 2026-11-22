@@ -96,17 +96,21 @@ OTHER = "other"
 KIND_HOMES = {
     "day_shape": ("write_calendar_event", "update_calendar_event", "write_wisdom"),
     "goal": ("write_goals", "write_wisdom"),
-    "task": ("open_obligation", "write_calendar_event", "write_archive", "record_horizon_item",
-             "write_schedule", "request_build", "update_task"),
+    "task": ("open_obligation", "write_calendar_event", "write_archive", "write_data_object",
+             "record_horizon_item", "write_schedule", "request_build", "update_task"),
     "preference": ("write_wisdom", "write_agent_config", "write_profile"),
     "profile": ("write_wisdom", "write_persona"),
     "event": ("update_calendar_event", "open_task", "record_horizon_item", "write_schedule"),
-    "place": ("write_archive", "write_contact", "write_agent_config", "write_profile"),
+    "place": ("write_archive", "write_data_object", "write_contact", "write_agent_config",
+              "write_profile"),
     "person": ("write_wisdom", "write_profile", "write_agent_config"),
-    "health": ("write_profile", "write_agent_config", "write_archive", "write_wisdom"),
+    # write_data_object / amend_data_object: the user's own logs (2026-11-22) — an entry
+    # filed in the cardiac or migraine log is kept, not missed.
+    "health": ("write_profile", "write_agent_config", "write_archive", "write_data_object",
+               "write_wisdom"),
     "correction": ("update_task", "update_calendar_event", "write_contact", "merge_contacts",
                    "write_profile", "set_day_shape", "write_persona", "write_log",
-                   "update_goal", "write_agent_config"),
+                   "update_goal", "write_agent_config", "amend_data_object"),
 }
 _RECORDING_TOOLS = (frozenset(t for t in KIND_TOOLS.values() if t)
                     | {t for v in KIND_HOMES.values() for t in v})

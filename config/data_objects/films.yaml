@@ -1,0 +1,11 @@
+# A template — present for every user from day one, empty (R6). One row per film; another
+# viewing is an occurrence on that row (R20). An existing films.json reads as films with no
+# occurrences — nothing is converted.
+id: films
+name: Films
+aliases: [movies, films watched, films to watch]
+description: Films watched or to watch, with what the user thought.
+store: archive
+identity: thing+occurrences
+fields: {title: text, director: text, year: number, status: text, rating: number, notes: text}
+relevant_agents: [recreation_hobbies]

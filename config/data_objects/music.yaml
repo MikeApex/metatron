@@ -1,0 +1,9 @@
+# A template (R6). One row per album or track.
+id: music
+name: Music
+aliases: [albums, songs]
+description: Music discovered or loved — albums, tracks, artists.
+store: archive
+identity: thing
+fields: {title: text, artist: text, notes: text}
+relevant_agents: [recreation_hobbies]

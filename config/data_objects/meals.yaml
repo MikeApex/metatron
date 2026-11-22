@@ -1,0 +1,10 @@
+# A template (R6). Kept in the archive rather than the daily log: the log records only whether
+# food was logged (`health.food_logged`), never what was eaten.
+id: meals
+name: Meals
+aliases: [food log, food diary, what I ate]
+description: Meals and snacks as eaten, with the time.
+store: archive
+identity: occurrence
+fields: {at: datetime, what: text, notes: text}
+relevant_agents: [physical_health]

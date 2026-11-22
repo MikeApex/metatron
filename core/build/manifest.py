@@ -6,7 +6,8 @@ Plan: archive/plans/build_vertical_plan_2026-09-24.md sections 3 (N4), 6.
 THE CALL TABLE BELOW IS SALVAGED BY COPY (section 10, finding 8 — it was never
 in probe.py). Every argument repair the D4 round bought is in its comments and
 must survive: `get_log_window`'s start/end window, `search_memory`'s required
-`query`, `read_archive`'s required category, `read_intake_queue`'s domain,
+`query`, the archive row's `with_entries` (it was `read_archive`'s required
+category until 2026-11-22), `read_intake_queue`'s domain,
 `read_agent_config`'s `agent_name`, `read_email`'s `count`, and the seven
 `live: True` rows that are deliberately never probed. Losing one of these is
 the exact defect class three review rounds were spent finding: a probe with a
@@ -137,12 +138,15 @@ _SOURCES: tuple[dict[str, Any], ...] = (
     {"id": "insights", "tool": "read_recent_insights", "kind": "behavioural",
      "description": "Pattern Miner reports",
      "probe": {}},
-    # read_archive(category) takes a required category and had none. "books" is
-    # the category tools/diarist.py's own docstring names first; the probe only
-    # has to establish whether the archive answers at all.
-    {"id": "archive", "tool": "read_archive", "kind": "behavioural",
-     "description": "archived records, with their merged_into pointers",
-     "probe": {"category": "books"}},
+    # The user's logs and lists. read_archive stopped being a tool on 2026-11-22
+    # (custom-logs plan phase 1, Mike): every read goes through the data-object
+    # registry. The id stays "archive" so filed ledgers that cite it still resolve —
+    # the `obligations` precedent below. `with_entries` counts only logs holding at
+    # least one entry, so a user with nothing but the default templates reads
+    # `no_data`, not `data`. Names and counts only — never an entry.
+    {"id": "archive", "tool": "list_data_objects", "kind": "behavioural",
+     "description": "the user's logs and lists, with their merged_into pointers",
+     "probe": {"with_entries": True}},
     # Same defect as `log`: read_calendar takes start_date/end_date, not `days`.
     {"id": "calendar", "tool": "read_calendar", "kind": "single_point",
      "description": "calendar entries over a window",

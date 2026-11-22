@@ -1,0 +1,11 @@
+# A template (R6). Every write is an entry — events never merge (R20). class: health always
+# adds both health agents (R26).
+id: health_events
+name: Health events
+aliases: [symptoms log, health log]
+description: Symptoms and health events as they happen, with the time and what was going on.
+store: archive
+identity: occurrence
+class: health
+fields: {at: datetime, what: text, notes: text}
+relevant_agents: [physical_health, mental_wellbeing]

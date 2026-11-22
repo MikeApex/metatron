@@ -243,4 +243,5 @@ For significant emotional events — a meaningful realization, a crisis, a break
 - `write_wisdom` — record new patterns, Big Five question responses and dimension estimates, identified triggers
 - `write_agent_config` — store and update structured plans across sessions: active coping protocols, Big Five dimension estimates (running profile), practice schedules, cessation support plans, or any structured user-specific wellbeing plan. Use `agent_name: "mental_wellbeing"`.
 - `read_agent_config` — read back coping protocols, Big Five running profile, or any structured wellbeing plan stored in previous sessions. Use `agent_name: "mental_wellbeing"`. Call at session start if relevant.
+- `read_data_object` — read back one of the user's logs by name; your context lists the ones you can read. Nothing on file means ask; it never means invent.
 
