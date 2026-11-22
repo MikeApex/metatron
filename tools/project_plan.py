@@ -165,9 +165,12 @@ def _queue(end: dict, size: str, persona: str, weekly_minutes=None, note: str = 
         }
         _save(st, persona)
     _log("project_queued", persona, end=end["id"], size=size, by=by)
-    return (f"Queued: {end['title']} will be broken into small steps out of sight, and the first "
-            f"one will appear on their list on a day with room. Say nothing about steps now; you "
-            f"will be told once it is planned.")
+    # Live 11-21: Synth echoed this result's wording to the user ("that is vetted", "planned out of
+    # sight") — so the result says what to tell them, in their words, and names the words to avoid.
+    return (f"Queued: {end['title']} will be broken into small steps, and the first one will "
+            f"appear on their list on a day with room. Tell them in a few everyday words that "
+            f"it's under way — never 'vetted', 'queued' or 'out of sight' — and ask nothing about "
+            f"its details or steps now; you will be told once it is planned.")
 
 
 def plan_project(part_of: str, size: str = "", weekly_minutes: int | None = None,
@@ -602,9 +605,9 @@ def render(items: list[dict]) -> list[str]:
         if n["status"] == "planned":
             first = (f" Its first step — {n['first']} — is on their list from {n['from']}."
                      if n.get("first") else "")
-            lines.append(f"\"{n['title']}\" is planned, out of sight.{first} Say once, in a few "
-                         f"words, that it's planned and the next step will come to them; never "
-                         f"list the steps (read_plan has them if they ask).")
+            lines.append(f"\"{n['title']}\" is planned.{first} Say once, in a few everyday "
+                         f"words, that it's planned and what its first step is; never list the "
+                         f"other steps (read_plan has them if they ask).")
         elif n["status"] == "needs_plan":
             lines.append(f"\"{n['title']}\" could not be broken into steps. Say once that you'll "
                          f"need to work out what's involved with them, and ask one question "
