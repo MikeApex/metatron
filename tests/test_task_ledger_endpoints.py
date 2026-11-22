@@ -103,6 +103,31 @@ def _():
     assert odd.status_code == 400
 
 
+@check("Drop on a step others wait on: Today names what it stops; a confirmed drop answers the "
+       "on-purpose question at the tap, an unconfirmed one (an older app) leaves it for Synth")
+def _():
+    today = O._today().isoformat()
+    res = O.open_plan([
+        {"key": "a", "what": "Sort the spare-room cables", "part_of": "b", "due": today},
+        {"key": "b", "what": "Label the blue box", "needs": ["a"], "due": today}])
+    a = res["ids"]["a"]
+    items = {i["task_id"]: i for i in
+             _client.get(f"/tasks/today?persona={PERSONA}", headers=_auth()).json()["items"]}
+    assert items[a].get("stops") == ["Label the blue box"], items[a]
+    r = _client.post("/tasks/act", headers=_auth(), json={"task_id": a, "action": "dismissed",
+                                                         "persona": PERSONA, "confirmed": True})
+    assert r.status_code == 200, r.text
+    assert a not in {c["id"] for c in O.cascades_to_raise()}
+    res2 = O.open_plan([
+        {"key": "a", "what": "Find the gutter ladder", "part_of": "b", "due": today},
+        {"key": "b", "what": "Clear the gutters", "needs": ["a"], "due": today}])
+    a2 = res2["ids"]["a"]
+    r = _client.post("/tasks/act", headers=_auth(),
+                     json={"task_id": a2, "action": "dismissed", "persona": PERSONA})
+    assert r.status_code == 200, r.text
+    assert a2 in {c["id"] for c in O.cascades_to_raise()}
+
+
 @check("a thread reply to the message a task came from proposes a close; ids only are stored")
 def _():
     _record("env_src", "thread-42", "cpa@sar-cpa.com", "Sharkey Abo & Rodeffer",

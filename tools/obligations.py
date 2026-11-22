@@ -3387,7 +3387,8 @@ def match_envelope(envelope_id: str, thread_id: str = "", sender_address: str = 
 
 
 def act_from_app(task_id: str, action: str, persona: str | None = None,
-                 reason: str | None = None, followup: str | None = None) -> str:
+                 reason: str | None = None, followup: str | None = None,
+                 confirmed: bool = False) -> str:
     """A tap in the app's Today panel. The evidence is the tap itself — the user's own act —
     plus the reason, when the app sent one. An app from before reasons existed sends none and
     still works: "marked in the app" alone is the record, as it was."""
@@ -3397,7 +3398,12 @@ def act_from_app(task_id: str, action: str, persona: str | None = None,
     why = (reason or "").strip()
     evidence = "marked in the app" + (f": {why}" if why else "")
     with _user_act():
-        return update_task(task_id, action, evidence=evidence, followup=followup)
+        out = update_task(task_id, action, evidence=evidence, followup=followup)
+    # The app showed what this drop stops and the user tapped "Drop anyway": the on-purpose
+    # question is answered at the tap, so the Synthesizer is not told to ask it later.
+    if confirmed and action in ("dismissed", "skipped") and not str(out).startswith("error"):
+        mark_cascade_raised([_split_id(task_id)], persona)
+    return out
 
 
 def _on_todays_list(t: dict, v: dict) -> bool:
@@ -3437,8 +3443,16 @@ def today_items(persona: str | None = None, as_of: date | None = None) -> list[d
     today = as_of or _today()
     out = []
     planned = None
-    for t in _load(persona):
-        t = _norm(t)
+    rows = [_norm(x) for x in _load(persona)]
+    # What each task would stop if dropped: the open steps that need it (§ 10 R9). The app names
+    # them at the tap and asks "Drop anyway?" (Mike, 2026-11-22: a tap can be a slip — settled
+    # there, by code, where the Synthesizer's later question went unasked on live turns).
+    stops: dict[str, list[str]] = {}
+    for d in rows:
+        if d.get("status") == "open" and d.get("required") is not False:
+            for n in d.get("needs") or []:
+                stops.setdefault(n, []).append(d["what"])
+    for t in rows:
         v = _view(t, today)
         if not v["actionable"]:
             continue
@@ -3455,7 +3469,8 @@ def today_items(persona: str | None = None, as_of: date | None = None) -> list[d
                     "what": t["what"], "label": v["text"][len(t["what"]):].lstrip(" —"),
                     "state": v["state"], "sort": list(v["sort"]),
                     "actions": (["done", "skipped"] if t["kind"] in ("habit", "interval")
-                                else ["done", "done_with_followup", "dismissed"])})
+                                else ["done", "done_with_followup", "dismissed"]),
+                    **({"stops": stops[t["id"]][:3]} if stops.get(t["id"]) else {})})
     out.sort(key=lambda i: i["sort"])
     for i in out:
         i.pop("sort", None)

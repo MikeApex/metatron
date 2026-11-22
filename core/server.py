@@ -1868,6 +1868,8 @@ class TaskActRequest(BaseModel):
     # asks for them is installed (reply latency plan § 6.3).
     reason: str | None = None
     followup: str | None = None
+    # The user saw what a drop stops and tapped "Drop anyway" (2026-11-22); older apps omit it.
+    confirmed: bool | None = None
 
 
 class ProposalDeclineRequest(BaseModel):
@@ -1947,7 +1949,8 @@ async def tasks_act(req: TaskActRequest, request: Request) -> dict:
     else:
         result = await asyncio.to_thread(_task_call, persona_key, act_from_app,
                                          req.task_id, req.action,
-                                         reason=req.reason, followup=req.followup)
+                                         reason=req.reason, followup=req.followup,
+                                         confirmed=bool(req.confirmed))
     return _task_result(result)
 
 

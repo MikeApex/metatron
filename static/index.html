@@ -4360,7 +4360,7 @@
         b.className = 'task-btn task-' + action;
         b.textContent = labels[action] || action;
         b.addEventListener('click', () => (ASKS[action]
-          ? askThenAct(taskId, action, row, acts, item.what)
+          ? askThenAct(taskId, action, row, acts, item)
           : actOnTask(taskId, action, row)));
         acts.appendChild(b);
       }
@@ -4381,7 +4381,11 @@
   };
   let taskEditing = false;   // the 30 s refresh redraws the list, which would wipe a half-typed line
 
-  function askThenAct(taskId, action, row, acts, what) {
+  function askThenAct(taskId, action, row, acts, item) {
+    const what = item.what;
+    // Dropping a step that others wait on says what it stops, and the tap that confirms it is
+    // the answer to "was that on purpose?" (Mike, 2026-11-22: a tap can be a slip).
+    const stops = action === 'dismissed' && Array.isArray(item.stops) ? item.stops : [];
     const spec = ASKS[action];
     taskEditing = true;
     const saved = Array.from(acts.childNodes);
@@ -4392,7 +4396,13 @@
     input.placeholder = spec.placeholder;
     const ok = document.createElement('button');
     ok.className = 'task-btn task-' + action;
-    ok.textContent = 'Save';
+    ok.textContent = stops.length ? 'Drop anyway' : 'Save';
+    let warn = null;
+    if (stops.length) {
+      warn = document.createElement('div');
+      warn.className = 'task-label';
+      warn.textContent = 'This also stops: ' + stops.map(s => '“' + s + '”').join(', ');
+    }
     const cancel = document.createElement('button');
     cancel.className = 'task-btn';
     cancel.textContent = 'Cancel';
@@ -4407,9 +4417,11 @@
         return;
       }
       taskEditing = false;
-      actOnTask(taskId, action, row, value ? { [spec.field]: value } : {});
+      actOnTask(taskId, action, row, { ...(value ? { [spec.field]: value } : {}),
+                                       ...(stops.length ? { confirmed: true } : {}) });
     });
     input.addEventListener('keydown', e => { if (e.key === 'Enter') ok.click(); });
+    if (warn) acts.append(warn);
     acts.append(input, ok, cancel);
     input.focus();
   }
