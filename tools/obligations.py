@@ -2359,6 +2359,14 @@ def _set_plan_field(task_id: str, action: str, **kw) -> str:
                     t.pop("goal_hash", None)
             else:
                 t[k] = v
+        # Linked to a goal, a task takes that goal's priority (`_score`: "leave unset to take it
+        # from the goal it serves"). A priority that was only a judgement made before the link —
+        # the task judge's, live 2026-11-22: "Find a personal trainer" kept the judge's "normal"
+        # after Mike said it is a step of his fitness goal — gives way. The user's own stays.
+        if (action == "link_goal" and t.get("goal_id") and t.get("priority")
+                and t.get("priority_source") != "stated"):
+            t.pop("priority", None)
+            t.pop("priority_source", None)
         state = f"set to {t.get(wanted)!r}" if t.get(wanted) else "cleared"
         return f"{tid} {wanted} {state}: {_summarise(t)}"
     return _with_store(None, apply)

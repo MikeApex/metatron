@@ -616,6 +616,27 @@ def _():
         cm.__exit__(None, None, None)
 
 
+@check("live 11-22: linking a judged task to a goal gives the judge's priority way to the goal's; "
+       "a priority the user stated stays")
+def _():
+    _fresh("link_goal_priority", goals=_TAX_GOALS.format(due=_d(30)))
+    trainer = _id(O.open_task("Find a personal trainer", kind="deadline", due=_d(-14)))
+    _JUDGE_REPLIES.append(_verdicts({"Find a personal trainer": {"stakes": "vital",
+                                                                 "priority": "normal", "why": "x"}}))
+    assert TJ.start_judging(_PERSONA) is True
+    _join()
+    assert _task(trainer)["priority"] == "normal"
+    out = O.update_task(trainer, "link_goal", goal_id="q5",
+                        evidence="Personal trainer is a step of your fitness goal.")
+    assert "error" not in out.lower(), out
+    assert not _task(trainer).get("priority"), _task(trainer)
+    assert _score(trainer) == 30 + 40, _score(trainer)            # the goal's high + vital overdue
+    mine = _id(O.open_task("Book the boiler service", kind="deadline", due=_d(4),
+                           priority="low", priority_source="stated", stakes="vital"))
+    O.update_task(mine, "link_goal", goal_id="q5", evidence="it's for the house goal")
+    assert _task(mine)["priority"] == "low"
+
+
 if __name__ == "__main__":
     for name, ok, err in _results:
         print(f"  {'PASS' if ok else 'FAIL'}  {name}")
