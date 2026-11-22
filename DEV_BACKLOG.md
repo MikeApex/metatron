@@ -1406,6 +1406,9 @@ evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording �
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
 
+- **[user corrected a prior turn]** User corrected a prior assistant turn in the exchange where the assistant mistakenly attributed a Metatron log amendment to 'Greenwich', whereas the user's previous 'Greenwich' reply was actually providing location context for something else (likely an admission preference or venue context).  
+  `2026-11-22T17:10:40.738501Z`
+
 - **[the runtime claimed an action it didn't take]** Mike, I've updated the entry in your Metatron final check log to record that the white shell was found in Greenwich.  ×2  
   `2026-11-22T16:49:47.305325Z`
 

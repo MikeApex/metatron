@@ -55,5 +55,5 @@ Fable's operational review found 13 more issues; all were fixed except two that 
 
 **`e796ce6`\* carries this session's amend act and relative-reference rule under the other session's message.** That session committed while these files were staged. The content was verified first; history was not rewritten.
 
-**Outgoing:** phase 1 is live. The four TEST logs are archived; nothing can be deleted by design. Phase 2 (noticed logs) is next per the plan, and has no build prompt yet.
+**Outgoing:** phase 1 is live. The four TEST logs are archived; nothing can be deleted by design. Phase 2 (noticed logs) is next: `archive/handoffs/2026-11-22-data-objects-phase-2-build-prompt.md` (Opus, high). It carries phase 1's lessons as binding: writes by code, never by asking a model not to; the Diarist's live-marker gate; one writer per kind of change; stage and commit in one command. Two plan's choices are put to Mike before building: the matcher agent, and how the card is announced. The plan has five phases (1–2 deliver need 1, the user's own logs; 3–4 need 2, places and background location; 5 is Pattern Miner's grants).
 
