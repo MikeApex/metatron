@@ -4339,7 +4339,7 @@
       list.appendChild(empty);
       return;
     }
-    const labels = { done: 'Done', done_with_followup: 'Done, but…', skipped: 'Skip', dismissed: 'Drop' };
+    const labels = { done: 'Done', done_with_followup: 'Update…', skipped: 'Skip', dismissed: 'Drop' };
     for (const item of items) {
       const row = document.createElement('div');
       row.className = 'task-row';
@@ -4360,7 +4360,7 @@
         b.className = 'task-btn task-' + action;
         b.textContent = labels[action] || action;
         b.addEventListener('click', () => (ASKS[action]
-          ? askThenAct(taskId, action, row, acts)
+          ? askThenAct(taskId, action, row, acts, item.what)
           : actOnTask(taskId, action, row)));
         acts.appendChild(b);
       }
@@ -4369,15 +4369,19 @@
     }
   }
 
-  // "Done, but…" names the loose end, which becomes a task of its own; "Drop" gives a reason.
+  // "Update…" (Mike, 2026-11-22 — it was "Done, but…", which read as a kind of done) says
+  // what is going on with the task in the user's words, and sends it to Metatron as a chat
+  // message about that task, so new dates, priority, details or "done, but X is left" are
+  // handled where every other change to a task is. It occupies the done_with_followup slot the
+  // server offers; the ledger action itself is unchanged. "Drop" gives a reason.
   // Both open a one-line field in the row instead of acting on the tap.
   const ASKS = {
-    done_with_followup: { field: 'followup', placeholder: 'What is still left to do?', required: true },
+    done_with_followup: { placeholder: "What's changed?", required: true, chat: true },
     dismissed: { field: 'reason', placeholder: 'Why drop it? (optional)', required: false },
   };
   let taskEditing = false;   // the 30 s refresh redraws the list, which would wipe a half-typed line
 
-  function askThenAct(taskId, action, row, acts) {
+  function askThenAct(taskId, action, row, acts, what) {
     const spec = ASKS[action];
     taskEditing = true;
     const saved = Array.from(acts.childNodes);
@@ -4397,6 +4401,11 @@
     ok.addEventListener('click', () => {
       const value = input.value.trim();
       if (spec.required && !value) { input.focus(); return; }
+      if (spec.chat) {
+        restore();
+        sendToServer(`Update on "${what}": ${value}`);
+        return;
+      }
       taskEditing = false;
       actOnTask(taskId, action, row, value ? { [spec.field]: value } : {});
     });
