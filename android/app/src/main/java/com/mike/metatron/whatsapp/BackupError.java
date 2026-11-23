@@ -22,7 +22,13 @@ public enum BackupError {
     // Not in the description's table, which assumes a file was found; needed so "nothing
     // there" is a named refusal rather than an empty result (§ 6.6).
     NO_BACKUP_FOUND("no_backup_found", "No WhatsApp backup was found on the phone."),
-    BUSINESS_OUT_OF_SCOPE("whatsapp_business_out_of_scope", "WhatsApp Business backups aren't supported.");
+    BUSINESS_OUT_OF_SCOPE("whatsapp_business_out_of_scope", "WhatsApp Business backups aren't supported."),
+    // Nightly increments — format description § 12.
+    INCREMENT_FORMAT_UNKNOWN("increment_format_unknown", "WhatsApp changed its nightly backup format."),
+    INCREMENT_MISSING_PART("increment_missing_part", "A nightly backup is missing a part the app needs."),
+    INCREMENT_MALFORMED("increment_malformed", "A nightly backup is damaged."),
+    INCREMENT_TOO_LARGE("increment_too_large", "A nightly backup is larger than expected."),
+    INCREMENT_GAP("increment_gap", "A nightly backup is missing — the app catches up at the next full backup.");
 
     public final String code;
     public final String userText;

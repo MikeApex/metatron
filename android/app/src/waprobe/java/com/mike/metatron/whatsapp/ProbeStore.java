@@ -175,6 +175,22 @@ final class ProbeStore {
         return prefs(ctx).getString("increment_report", null);
     }
 
+    static void saveProofReport(Context ctx, String report) {
+        prefs(ctx).edit().putString("proof_report", report).apply();
+    }
+
+    static String savedProofReport(Context ctx) {
+        return prefs(ctx).getString("proof_report", null);
+    }
+
+    static void saveFieldMapReport(Context ctx, String report) {
+        prefs(ctx).edit().putString("fieldmap_report", report).apply();
+    }
+
+    static String savedFieldMapReport(Context ctx) {
+        return prefs(ctx).getString("fieldmap_report", null);
+    }
+
     /** "Delete probe data": events, lifecycle marks, saved reports. The key is ProbeKeyVault's. */
     static synchronized void deleteAll(Context ctx) {
         file(ctx).delete();

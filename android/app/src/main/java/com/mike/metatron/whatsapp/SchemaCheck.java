@@ -14,14 +14,15 @@ import java.util.Set;
  *
  * {@link #REQUIRED} holds what § 9 confirms on Mike's real backup, plus the names the Phase 0
  * probe confirmed on it 2026-10-30 (message.text_data, chat.subject, jid.raw_string/user,
- * lid_display_name's columns). message_media is not required: W4 is text only.
+ * lid_display_name's columns), plus message._id and key_id, which combining with the nightly
+ * increments keys on (§ 12, P3 11-23). message_media is not required: W4 is text only.
  */
 public final class SchemaCheck {
     public static final Map<String, List<String>> REQUIRED;
 
     static {
         Map<String, List<String>> m = new LinkedHashMap<>();
-        m.put("message", list("timestamp", "from_me", "chat_row_id", "sender_jid_row_id", "text_data"));
+        m.put("message", list("_id", "key_id", "timestamp", "from_me", "chat_row_id", "sender_jid_row_id", "text_data"));
         m.put("chat", list("jid_row_id", "subject"));
         m.put("jid", list("_id", "server", "user", "raw_string"));
         m.put("jid_map", list("lid_row_id", "jid_row_id"));

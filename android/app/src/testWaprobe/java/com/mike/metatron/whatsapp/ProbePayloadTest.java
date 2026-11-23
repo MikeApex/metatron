@@ -121,6 +121,34 @@ public class ProbePayloadTest {
         assertEquals(0, ProbePayload.sweep(work));
     }
 
+    @Test public void nonSqliteEntriesAreHeldInMemoryForShapesAndWiped() throws Exception {
+        byte[] json = "{\"rows\":[{\"_id\":1}]}".getBytes(StandardCharsets.US_ASCII);
+        byte[] bin = {0x08, 0x02, 0x12, 0x01, 0x41};
+        byte[] zip = zip(new Object[][]{
+                {"jid_modified_1.json", json, ZipEntry.DEFLATED},
+                {"messages.bin", bin, ZipEntry.STORED},
+                {"msgstore.db", fakeDatabase(3000), ZipEntry.DEFLATED}});
+        File f = crypt15(zlib(zip), true);
+        expectReaderRefuses(f);
+
+        ProbePayload.Inspection r = ProbePayload.inspect(f, key(), work);
+        assertEquals(3, r.entries.size());
+        byte[] heldJson = r.entries.get(0).bytes, heldBin = r.entries.get(1).bytes;
+        assertTrue(Arrays.equals(json, heldJson));
+        assertTrue(Arrays.equals(bin, heldBin));
+        assertNull("a SQLite entry is extracted, not held", r.entries.get(2).bytes);
+        assertNotNull(r.entries.get(2).extracted);
+        String[] onDisk = work.list();
+        for (String n : onDisk) assertFalse("held entries never touch disk: " + n, n.contains("json") || n.contains("bin"));
+
+        ProbePayload.wipe(r);
+        assertNull(r.entries.get(0).bytes);
+        assertNull(r.entries.get(1).bytes);
+        for (byte x : heldJson) assertEquals(0, x);
+        for (byte x : heldBin) assertEquals(0, x);
+        assertEquals(0, ProbePayload.sweep(work));
+    }
+
     @Test public void moreSqliteEntriesThanTheCapAreListedNotExtracted() throws Exception {
         Object[][] entries = new Object[ProbePayload.MAX_SQLITE_ENTRIES + 2][];
         for (int i = 0; i < entries.length; i++) entries[i] = new Object[]{"part" + i + ".db", fakeDatabase(100 + i), ZipEntry.DEFLATED};

@@ -31,7 +31,7 @@ import java.util.Arrays;
  */
 public class ProbeActivity extends Activity {
     private TextView status, report;
-    private Button runBackup, runIncrement;
+    private Button runBackup, runIncrement, runFieldMap, runProof;
 
     @Override
     protected void onCreate(Bundle saved) {
@@ -59,6 +59,10 @@ public class ProbeActivity extends Activity {
         col.addView(runBackup);
         runIncrement = button("5. Try newest increment", v -> runIncrementTest());
         col.addView(runIncrement);
+        runFieldMap = button("6. Field map counts (P3)", v -> runFieldMapCounts());
+        col.addView(runFieldMap);
+        runProof = button("7. Read the set (P3 proof)", v -> runSetProof());
+        col.addView(runProof);
         col.addView(button("Refresh", v -> refresh()));
         col.addView(button("Delete all probe data", v -> confirmDelete()));
 
@@ -102,7 +106,9 @@ public class ProbeActivity extends Activity {
                 + "\n3. Backup key: " + (ProbeKeyVault.present(this) ? "stored (Keystore-wrapped)" : "not entered"));
         String saved = ProbeStore.savedReport(this);
         String inc = ProbeStore.savedIncrementReport(this);
-        report.setText(ProbeReport.device(this) + "\n" + ProbeReport.survival(this) + "\n"
+        String map = ProbeStore.savedFieldMapReport(this);
+        String proof = ProbeStore.savedProofReport(this);
+        report.setText((proof == null ? "" : proof + "\n") + (map == null ? "" : map + "\n") + ProbeReport.device(this) + "\n" + ProbeReport.survival(this) + "\n"
                 + ProbeReport.events(this) + "\n"
                 + ProbeReport.listener(this) + "\n" + (saved == null ? "== BACKUP PROBE ==\nnot run yet\n" : saved)
                 + "\n" + (inc == null ? "== INCREMENT TEST ==\nnot run yet\n" : inc));
@@ -183,10 +189,38 @@ public class ProbeActivity extends Activity {
         ProbePayload.sweep(work); // increment payload, inflated output, extracted ZIP entries
     }
 
-    /** Buttons 4 and 5 share the decrypted full-backup path, so only one runs at a time. */
+    /** Buttons 4, 5 and 6 share the decrypted-copy work dir, so only one runs at a time. */
     private void setRunning(boolean running) {
         runBackup.setEnabled(!running);
         runIncrement.setEnabled(!running);
+        runFieldMap.setEnabled(!running);
+        runProof.setEnabled(!running);
+    }
+
+    private void runSetProof() {
+        setRunning(true);
+        report.setText("Reading the sets with the new reader… (decrypts the newest full backup and each set's base in turn)");
+        new Thread(() -> {
+            String r = ProbeProofRun.run(getApplicationContext());
+            ProbeStore.saveProofReport(getApplicationContext(), r);
+            runOnUiThread(() -> {
+                setRunning(false);
+                refresh();
+            });
+        }, "wa-probe-proof").start();
+    }
+
+    private void runFieldMapCounts() {
+        setRunning(true);
+        report.setText("Counting the field map… (decodes every increment, then decrypts the newest full backup and each set's base in turn)");
+        new Thread(() -> {
+            String r = ProbeFieldMapRun.run(getApplicationContext());
+            ProbeStore.saveFieldMapReport(getApplicationContext(), r);
+            runOnUiThread(() -> {
+                setRunning(false);
+                refresh();
+            });
+        }, "wa-probe-fieldmap").start();
     }
 
     private void runBackupProbe() {

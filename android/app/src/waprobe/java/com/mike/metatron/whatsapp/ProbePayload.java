@@ -31,7 +31,8 @@ import java.util.zip.ZipInputStream;
  *
  * Reports SHAPES only: which refusal branch, format magic (first 8 bytes, or 16 after
  * inflation), sizes, and for a ZIP each entry's name (digit runs masked), size and whether it
- * begins with the SQLite header. SQLite entries are extracted for the caller's shape report.
+ * begins with the SQLite header. SQLite entries are extracted for the caller's shape report; other
+ * entries are held in memory (never on disk) for ProbeShapes, and {@link #wipe} zeroes them.
  * Every file written starts with {@link #PREFIX} in the work dir; {@link #sweep} removes them all.
  */
 final class ProbePayload {
@@ -41,6 +42,9 @@ final class ProbePayload {
     static final int MAX_LISTED_ENTRIES = 40;
     /** An increment is ~0.1 MB; stop well short of filling the phone if something is odd. */
     static final long INFLATE_CAP = 512L * 1024 * 1024;
+    /** Non-SQLite entries are kept in memory for their shape report — never written to disk. */
+    static final int KEEP_ENTRY_CAP = 8 * 1024 * 1024;
+    static final long KEEP_TOTAL_CAP = 32L * 1024 * 1024;
 
     private static final int BUF = 64 * 1024;
     private static final byte[] ZIP_MAGIC = {'P', 'K', 3, 4};
@@ -52,6 +56,8 @@ final class ProbePayload {
         String head8 = "";
         boolean sqlite;
         File extracted;
+        /** A non-SQLite entry's bytes, held in memory for ProbeShapes; zeroed by {@link #wipe}. */
+        byte[] bytes;
     }
 
     static final class Inspection {
@@ -71,6 +77,7 @@ final class ProbePayload {
         String zipReader, zipError;
         int entryCount;
         final List<Entry> entries = new ArrayList<>();
+        long keptBytes;
 
         List<Entry> sqliteEntries() {
             List<Entry> out = new ArrayList<>();
@@ -147,6 +154,18 @@ final class ProbePayload {
         if (r.entryCount > r.entries.size()) {
             b.append("  … ").append(r.entryCount - r.entries.size()).append(" more not listed\n");
         }
+    }
+
+    /** Zeroes and drops every entry held in memory. Safe to call twice. */
+    static void wipe(Inspection r) {
+        if (r == null) return;
+        for (Entry e : r.entries) {
+            if (e.bytes != null) {
+                Arrays.fill(e.bytes, (byte) 0);
+                e.bytes = null;
+            }
+        }
+        r.keptBytes = 0;
     }
 
     /** Deletes every file this probe wrote in the work dir (and SQLite side files). Returns how many remain. */
@@ -364,6 +383,21 @@ final class ProbePayload {
                 }
             }
             e.extracted = out;
+        } else if (!e.sqlite && e.size <= KEEP_ENTRY_CAP && r.keptBytes < KEEP_TOTAL_CAP) {
+            // Held for ProbeShapes. A size the central directory does not state (-1) is read up to the cap.
+            java.io.ByteArrayOutputStream kept = new java.io.ByteArrayOutputStream();
+            kept.write(head, 0, hn);
+            int n;
+            boolean over = false;
+            while ((n = in.read(buf)) > 0) {
+                total += n;
+                if (!over && kept.size() + n <= KEEP_ENTRY_CAP) kept.write(buf, 0, n);
+                else over = true;
+            }
+            if (!over) {
+                e.bytes = kept.toByteArray();
+                r.keptBytes += e.bytes.length;
+            }
         } else {
             int n;
             while ((n = in.read(buf)) > 0) total += n;

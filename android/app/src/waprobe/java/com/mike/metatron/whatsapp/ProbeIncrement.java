@@ -26,8 +26,11 @@ import java.util.Set;
  * the min/max message time, and how many of its message ids also appear in the newest full
  * backup. If the reader refuses the payload as not_a_message_database, ProbePayload says which
  * branch and what is inside (format magic, ZIP entry names and sizes; any SQLite entry gets the
- * same shape report). No text, no names, no identifiers. Every decrypted or extracted copy is
- * deleted before returning.
+ * same shape report). Since 11-23 (second round) every non-SQLite entry also gets ProbeShapes'
+ * report — JSON by key path, anything else by a generic protobuf wire-format walk — compared, as
+ * counts, with the newest full backup, which is decrypted once and first. No text, no names, no
+ * identifiers. Every decrypted or extracted copy is deleted and every held entry zeroed before
+ * returning.
  */
 final class ProbeIncrement {
     private static final String[] COUNTED = {"message", "chat", "jid"};
@@ -135,6 +138,30 @@ final class ProbeIncrement {
         ProbePayload.lines(p, b);
         SQLiteDatabase[] full = {null};
         try {
+            // The full backup is opened once, first, so every entry's shape can be compared with it.
+            ProbeShapes.Full against = ProbeShapes.NONE;
+            b.append("\n-- the newest full backup, for comparison --\n");
+            try {
+                openFull(key, dir, fullOut, b, full);
+                against = new SqliteFull(full[0]);
+                b.append("full backup's newest message time: ").append(when(against.newestMessageTime())).append('\n');
+            } catch (BackupException e) {
+                b.append("not opened — ").append(e.error.code).append(" — comparisons omitted\n");
+            } catch (Throwable t) {
+                b.append("not opened — ").append(t.getClass().getSimpleName()).append(" — comparisons omitted\n");
+            }
+            b.append("\n-- entry shapes (paths, types, lengths, counts — never a value) --\n");
+            int shaped = 0;
+            for (ProbePayload.Entry e : p.entries) {
+                if (e.bytes == null) continue;
+                b.append('[').append(++shaped).append("] ");
+                try {
+                    ProbeShapes.entry(e.name, e.bytes, against, b);
+                } catch (Throwable t) {
+                    b.append("\n  shape FAILED: ").append(t.getClass().getSimpleName()).append('\n');
+                }
+            }
+            if (shaped == 0) b.append("no non-SQLite entries held\n");
             int k = 0;
             for (ProbePayload.Entry e : p.sqliteEntries()) {
                 b.append("\n-- ZIP entry ").append(++k).append(": ").append(e.name).append(" --\n");
@@ -150,6 +177,93 @@ final class ProbeIncrement {
             }
         } finally {
             if (full[0] != null) full[0].close();
+            ProbePayload.wipe(p);
+        }
+    }
+
+    /** Decrypts and opens the newest full backup into held[0], once. */
+    private static void openFull(BackupKey key, File dir, File fullOut, StringBuilder b, SQLiteDatabase[] held) throws Exception {
+        if (held[0] != null) {
+            b.append("full backup: as above\n");
+            return;
+        }
+        File ff = BackupLocator.newest(dir);
+        b.append("full backup: ").append(ff.getName()).append("  written ").append(ProbeReport.ts(ff.lastModified())).append('\n');
+        BackupLocator.requireComplete(ff, BackupLocator.SYSTEM_CLOCK, BackupLocator.THREAD_SLEEP);
+        BackupDecryptor.decrypt(ff, key, fullOut, BackupDecryptor.FILESYSTEM);
+        held[0] = open(fullOut);
+    }
+
+    /** ProbeShapes' view of the full backup: schema names, message key_ids, newest time, _id presence. */
+    private static final class SqliteFull implements ProbeShapes.Full {
+        private final SQLiteDatabase db;
+        private final Set<String> tables;
+        private Set<String> schema, keyIds, jids;
+        private long newest = Long.MIN_VALUE;
+
+        SqliteFull(SQLiteDatabase db) {
+            this.db = db;
+            this.tables = tables(db);
+        }
+
+        public Set<String> schemaNames() {
+            if (schema == null) {
+                schema = new java.util.HashSet<>(tables);
+                for (String t : tables) schema.addAll(columns(db, "\"" + t.replace("\"", "\"\"") + "\""));
+            }
+            return schema;
+        }
+
+        public Set<String> messageKeyIds() {
+            if (keyIds == null) {
+                keyIds = new java.util.HashSet<>();
+                if (tables.contains("message") && columns(db, "message").contains("key_id")) {
+                    try (Cursor c = db.rawQuery("SELECT key_id FROM message WHERE key_id IS NOT NULL", null)) {
+                        while (c.moveToNext()) keyIds.add(c.getString(0));
+                    }
+                }
+            }
+            return keyIds;
+        }
+
+        public Set<String> jidRawStrings() {
+            if (jids == null) {
+                jids = new java.util.HashSet<>();
+                if (tables.contains("jid") && columns(db, "jid").contains("raw_string")) {
+                    try (Cursor c = db.rawQuery("SELECT raw_string FROM jid WHERE raw_string IS NOT NULL", null)) {
+                        while (c.moveToNext()) jids.add(c.getString(0));
+                    }
+                }
+            }
+            return jids;
+        }
+
+        public long newestMessageTime() {
+            if (newest == Long.MIN_VALUE) {
+                newest = tables.contains("message") ? longOf(db, "SELECT MAX(timestamp) FROM message WHERE timestamp > 0") : -1;
+            }
+            return newest;
+        }
+
+        public int idsPresent(String table, List<Long> ids) {
+            if (!tables.contains(table)) return -1; // the name is only ever one sqlite_master listed
+            String quoted = "\"" + table.replace("\"", "\"\"") + "\"";
+            if (!columns(db, quoted).contains("_id")) return -2;
+            int found = 0;
+            for (int i = 0; i < ids.size(); i += 400) {
+                List<Long> chunk = ids.subList(i, Math.min(ids.size(), i + 400));
+                StringBuilder q = new StringBuilder("SELECT COUNT(*) FROM ").append(quoted).append(" WHERE _id IN (");
+                String[] args = new String[chunk.size()];
+                for (int j = 0; j < chunk.size(); j++) {
+                    q.append(j == 0 ? "?" : ",?");
+                    args[j] = String.valueOf(chunk.get(j));
+                }
+                q.append(')');
+                try (Cursor c = db.rawQuery(q.toString(), args)) {
+                    if (c.moveToFirst()) found += c.getInt(0);
+                }
+            }
+            return found;
         }
     }
 
@@ -180,17 +294,8 @@ final class ProbeIncrement {
     private static void overlap(SQLiteDatabase inc, BackupKey key, File dir, File fullOut, StringBuilder b,
                                 SQLiteDatabase[] held) {
         b.append("\n-- against the newest full backup --\n");
-        boolean opened = held[0] == null;
         try {
-            if (opened) {
-                File ff = BackupLocator.newest(dir);
-                b.append("full backup: ").append(ff.getName()).append("  written ").append(ProbeReport.ts(ff.lastModified())).append('\n');
-                BackupLocator.requireComplete(ff, BackupLocator.SYSTEM_CLOCK, BackupLocator.THREAD_SLEEP);
-                BackupDecryptor.decrypt(ff, key, fullOut, BackupDecryptor.FILESYSTEM);
-                held[0] = open(fullOut);
-            } else {
-                b.append("full backup: as above\n");
-            }
+            openFull(key, dir, fullOut, b, held);
             SQLiteDatabase full = held[0];
             long fullMax = longOf(full, "SELECT MAX(timestamp) FROM message WHERE timestamp > 0");
             b.append("full backup's newest message time: ").append(when(fullMax)).append('\n');

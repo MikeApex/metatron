@@ -207,3 +207,97 @@ added since.
   fetching it. Its transcript, its prompt and its coverage results complete the record (L1).
 - **Afterwards:** session 1 may run the vectors against session 2's reader as a black box —
   behaviour, never code.
+
+## 12. Increments — observed on device, clean-room
+
+**Provenance: the probe on Mike's phone, never a reference.** Shapes from the increment-contents
+probe (11-23, plan § 4 "Found 11-23"); the field map below from P3 step 1's two count runs (button
+6, 11-23 10:37 and 10:51): 9 increments in two rotated sets, 612 messages, each matched by key_id to
+the newest full backup (11-23) and to its set's own base. **No reference implementation and no
+published schema was read** (clean-room rule 5): every field below was adopted because the counts
+beside it showed it on Mike's data. Counts are against the newest full backup unless stated.
+
+**Sets and numbering.**
+- A *set* is one full backup plus increments `1..k`. Live: `msgstore.db.crypt15` plus undated
+  `msgstore-increment-N.db.crypt15`. When WhatsApp writes the next full backup (unforced, every ~6
+  days, 02:00), the set is renamed with that date D: the old full backup becomes
+  `msgstore-D.1.db.crypt15` and its increments `msgstore-increment-N-D.1.db.crypt15`. So a rotated
+  set's base carries the date it was *replaced*, not written: `msgstore-2026-11-23.1` was written
+  11-17, its increments 11-18..11-22.
+- N counts increments within the set, not nights (11-21 had none). Both observed sets ran 1..k
+  with no gap (1..5, 1..4); every base predated its increment 1.
+- Increments carry **changed** messages, not only new ones: against its own base, 52 of 612
+  messages were already present (the rest new since the base), with times up to a month old.
+
+**Container.** The crypt15 container of §§ 3–5 unchanged — header, AES-GCM, tag, MD5 trailer — with
+a **zlib** payload that inflates to a **ZIP** (`50 4b 03 04`). Encrypted 35–151 KB observed.
+
+**ZIP layout** (33 entries on 11-22's): `header.json`, `sequences.json`, `messages.bin`, and per
+table `<table>_modified_N.json` / `<table>_deleted_N.json`, plus `deletedMessages_N.json`.
+
+**`header.json`** — keys as observed:
+- `header`: `creation_date` (ms), `os`, `os_version`, `app_name`, `app_version`, **`format_version`
+  = `"1.0"`** on all 9.
+- `added_messages`: **`filename` = `messages.bin`**, **`format` = `"protobuf"`** on all 9,
+  `messages_count_on_backup`, `messages_updated`, `messages_deleted`, `chunks`
+  [{`chunk_number`, `messages_count`}].
+- `deleted_messages.deleted_message_ids_files` [file names] — on a night with no deletions
+  `deleted_messages` is still there but this list is absent (4 of 9 observed, each with
+  `messages_deleted` 0), so the list is required exactly when `messages_deleted` > 0.
+- `entities.<group>` [{`table_name`, `table_id_field`, `modified_entity_files` [names],
+  `deleted_id_files` [names], `records_count_in_db`}] — which table files exist and what keys them.
+- `messages_updated` exceeds the messages decoded by 3–12 in every increment; the difference is
+  unexplained and is **not** used as a check.
+
+**Table entries.** `<table>_modified_N.json` = `{"<table>": [full rows]}` in the full backup's own
+row-id space. Observed columns: `jid` {`_id`, `user`, `server`, `agent`, `device`, `type`,
+`raw_string`}; `jid_map` {`lid_row_id`, `jid_row_id`, `sort_id`}; `lid_display_name`
+{`lid_row_id`, `display_name`, `username`}; `chat` {`_id`, `jid_row_id`, `subject`, … 50 more}.
+`<table>_deleted_N.json` and `deletedMessages_N.json` = `{"deleted_ids": [row ids]}`. A header may name a
+`<table>_deleted_N.json` its ZIP does not hold (11-23 set, increment 2, `chat_deleted_1.json`): it is
+read as empty and counted (`absentDeletedFiles`). A named *modified* file that is absent is refused.
+
+**`messages.bin`** — the generic protobuf wire format, as one or more varint-length-prefixed
+records (one per chunk: 2 records where the header listed 2). Top-level fields: `1` varint, `2`
+chat blocks, `5` varint, `15` {jid, jid} pairs. Key_ids appear only at the message key and, as
+references, inside quoted-reply blocks (`…1.2.6.17.1`, `…1.2.12.14.6.17.1`) — no message is held
+outside a chat block. Paths below are relative to a message block (`record.2.2`):
+
+| Meaning | Path | Count that adopted it |
+|---|---|---|
+| chat block's jid | `record.2.1` | = the key's jid on 612/612 |
+| key: chat jid | `1.1.1` | = chat's `jid.raw_string` 574/605; the other 31 are the same chat under its other id, linked by `jid_map` (31/31) |
+| key: from me (0/1) | `1.1.2` | = `from_me` 605/605 |
+| key: key_id | `1.1.3` | matched 605/612; the other 7 are key_ids on 2 rows, told apart by chat (newest: 52,096 rows, 52,094 distinct key_ids, 52,096 distinct (chat, from_me, key_id)) |
+| time, **seconds** | `1.3` | = `timestamp`/1000 605/605 (no ms anywhere) |
+| group sender jid | `1.5` | = sender's `raw_string` 299/299 (group rows not from me); also present on 4 from-me group rows — ignored there |
+| row id | `2` | = `message._id` 605/605 |
+| text | first present of `1.2.1`, `1.2.6.1`, `1.2.3.3`, `1.2.12.14.1`, `1.2.12.14.6.1`, `1.2.75.3` | = `text_data` 520/520, differs 0, never present where `text_data` is null; per path 410, 74, 30, 3, 2, 1. One message (1 of 521 with text) held its text only at `1.26`, which is not text on 10 of 11 — left out; that text arrives with the next full backup |
+
+**Not adopted:** `1.2.6.2` (= `text_data` 13, differs 7); `1.26`; `1.38`/`1.38.1` (prose-like
+text where `text_data` is null); the reaction-, media- and receipt-shaped blocks. W4 is text only.
+
+**Deletions — observed, and ruled.** `deletedMessages_N.json` listed 14 row ids across 5
+increments. **All 14 are still present in the newest full backup** (8 with text, 6 without), and
+12 of 14 are re-sent in the same increment with the same key_id. So in this data a listed id means
+*replaced*, not *gone*. **Ruled (Mike, 11-23): deletions are counted, never applied** — a later
+version of a message overwrites the earlier one (a re-sent copy without text removes the text), and
+no message is removed. Recorded in the plan § 4.
+
+**Edits.** None observed: no text candidate ever differed from either backup. "Later version wins,
+keyed by (canonical chat, from_me, key_id)" is the rule; it is tested on synthetic data only.
+
+**What the reader handles and refuses** (names in `BackupError`):
+
+| Case | We |
+|---|---|
+| crypt15 → zlib → ZIP with `format_version` `1.0` and `format` `protobuf` | **handle** |
+| any other `format_version` or `added_messages.format`, or a payload that is not zlib → ZIP | **refuse** → `increment_format_unknown` |
+| a required header key, the messages file, a file the header names, or a required wire path (chat jid, key jid/flag/key_id, time, row id) missing | **refuse** → `increment_missing_part` |
+| a wire record or JSON that does not parse | **refuse** → `increment_malformed` |
+| an encrypted file over 4 MiB or an inflated payload over 32 MiB (observed ≤ 0.15 MB) | **refuse** → `increment_too_large` |
+| a missing N in the live set | **refuse** → `increment_gap`, naming how many were read |
+| wrong key, damaged, truncated, being written | as §§ 6–7: `wrong_key`, `integrity`, `truncated`, `being_written` |
+
+The full-backup path (§§ 5–7) is unchanged: it still refuses a ZIP payload as
+`not_a_message_database`.
