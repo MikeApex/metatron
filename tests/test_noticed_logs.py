@@ -487,6 +487,35 @@ def _():
             assert got == want, (raw, got)
 
 
+@check("17l. live check 11-23: a meal the Diarist writes with no time gets the usual time; the "
+       "same meal re-sent minutes later is not filed twice; a different meal is")
+def _():
+    from datetime import time as _t
+    import tools.day_shape as DS
+    import tools.data_objects as DO
+    import tools.noticed_logs as NL
+    real_s, real_now = DS.shape_for, NL._now
+    DS.shape_for = lambda day, persona=None: {"meals": [
+        {"name": "lunch", "earliest": _t(11, 45), "target": _t(12, 0), "source": "stated"}]}
+    try:
+        with _sandbox() as (user, _s):
+            M = lambda: DO.get("meals")
+            today = datetime.now().date().isoformat()
+            first = {"at": today, "meal": "lunch", "what": "ramen", "notes": "Mike had a bowl of ramen"}
+            assert DO.archive_write(M(), dict(first)).startswith("Added an entry")
+            row = _rows(user, "meals")[0]
+            if datetime.now().time() >= _t(12, 0):
+                assert row["at"] == f"{today}T12:00" and row["time_from"] == "usual", row
+            assert "not added twice" in DO.archive_write(M(), dict(first))
+            assert DO.archive_write(M(), {"at": today, "meal": "lunch", "what": "a sandwich"}) \
+                .startswith("Added an entry")
+            assert len(_rows(user, "meals")) == 2, _rows(user, "meals")
+            kept = DO.archive_write(M(), {"at": f"{today}T07:10", "meal": "breakfast", "what": "eggs"})
+            assert _rows(user, "meals")[-1]["at"] == f"{today}T07:10", kept
+    finally:
+        DS.shape_for, NL._now = real_s, real_now
+
+
 @check("17d. a new entry in a dev-backlog list also files a FEATURE_REQUEST; a merge does not")
 def _():
     import tools.data_objects as DO

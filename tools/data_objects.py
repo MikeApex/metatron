@@ -604,6 +604,17 @@ def archive_write(o: dict, item: dict, occurrence: dict | None = None) -> str:
     categories), so the two doors cannot disagree."""
     item = dict(item or {})
     today = date.today().isoformat()
+    if o["id"] == "meals" and "time_from" not in item \
+            and not re.search(r"\d{1,2}:\d{2}", str(item.get("at") or "")):
+        # A meal written with no time — by the Diarist, which writes most of them — gets the same
+        # rule the derived writer applies (Mike, 2026-11-23): the usual time for that meal, never
+        # later than now. A time an agent wrote is kept. Live check: ramen filed "2026-11-23".
+        try:
+            from tools import noticed_logs
+            text = " ".join(str(item.get(k) or "") for k in ("meal", "what", "notes", "at"))
+            item.update(noticed_logs._meal_at(None, item, text, datetime.now()))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"[data_objects] meal time not set: {exc}")
     if "for" in (o.get("fields") or {}) and item.get("for") and not item.get("for_contact"):
         cid = _contact_for(str(item["for"]))
         if cid:
@@ -632,8 +643,14 @@ def archive_write(o: dict, item: dict, occurrence: dict | None = None) -> str:
         elif o.get("identity") == "occurrence":
             item["date_added"] = item.get("date_added") or today
             item.setdefault("recorded_at", datetime.now().isoformat(timespec="seconds"))
-            rows.append(item)
-            msg = f"Added an entry to {o['name']} (entry {len(rows)})."
+            # Meals only: every other event log keeps R20 — two identical cardiac readings in
+            # half an hour can both be real, and a dropped health event is worse than a twin.
+            twin = _recent_twin(rows, item) if o["id"] == "meals" else 0
+            if twin:
+                msg = f"Already recorded in {o['name']} (entry {twin}) — not added twice."
+            else:
+                rows.append(item)
+                msg = f"Added an entry to {o['name']} (entry {len(rows)})."
         else:
             row = next((r for r in rows if isinstance(r, dict) and key and not r.get("removed")
                         and _key(r) == key), None)
@@ -673,6 +690,39 @@ def archive_write(o: dict, item: dict, occurrence: dict | None = None) -> str:
     if msg.startswith("Added an entry") and o["id"] in (limits().get("dev_backlog_logs") or ()):
         _file_dev_request(o, item)
     return msg
+
+
+# Fields that say when or how an entry was written, not what it says.
+_BOOKKEEPING = {"date_added", "recorded_at", "said_at", "derived", "source_turn", "time_from",
+                "previous", "date_updated", "removed"}
+TWIN_MINUTES = 30
+
+
+def _recent_twin(rows: list, item: dict) -> int:
+    """The number of an entry saying exactly the same thing, written in the last half hour, or 0.
+    MEALS ONLY (the caller). An occurrence never merges, so a turn that re-sends what the turn
+    before it already logged (live check 2026-11-23: the Coordinator re-dispatched "ramen for
+    lunch" on the next message) would file it twice. Two identical lunches within 30 minutes are
+    a repeat, not two lunches."""
+    def body(d: dict) -> dict:
+        # `at` compared by day: the same lunch re-sent a minute later carries a later minute.
+        return {k: (" ".join(str(v).split()).casefold()[:10] if k == "at"
+                    else " ".join(str(v).split()).casefold())
+                for k, v in d.items() if k not in _BOOKKEEPING and v not in (None, "", [], {})}
+    want, now = body(item), datetime.now()
+    if not want:
+        return 0
+    for i in range(len(rows) - 1, -1, -1):
+        r = rows[i]
+        if not isinstance(r, dict) or r.get("removed"):
+            continue
+        try:
+            age = (now - datetime.fromisoformat(str(r.get("recorded_at") or ""))).total_seconds()
+        except ValueError:
+            continue
+        if 0 <= age <= TWIN_MINUTES * 60 and body(r) == want:
+            return i + 1
+    return 0
 
 
 def _contact_for(name: str) -> str:
