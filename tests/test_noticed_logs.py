@@ -251,6 +251,247 @@ def _():
         assert len(rows) == 1 and rows[0]["derived"] is True and rows[0]["source_turn"] == "r"
 
 
+@check("17b. a derived entry carries when it was said; a second mention of a thing joins its "
+       "one entry, adding to the note and keeping the first write's provenance")
+def _():
+    import tools.data_objects as DO
+    import tools.noticed_logs as NL
+    with _sandbox(cfg={"derived_entries": "on"}) as (user, _s):
+        DO.create_object("Films", identity="thing")
+        DO.archive_write(DO.get("films"), {"title": "Champions", "notes": "on olympics.com"})
+        c = {"kind": "entry", "target": "films", "disposition": "save",
+             "proposal": {"title": "champions", "notes": "made by a producer I met"},
+             "say": "film", "quote": "film"}
+        assert NL.derived(P, "r2", c, [], frozenset()) == "derived_written"
+        rows = _rows(user, "films")
+        assert len(rows) == 1, rows
+        assert rows[0]["notes"] == "on olympics.com; made by a producer I met", rows
+        assert "derived" not in rows[0] and "said_at" not in rows[0], rows
+        DO.create_object("Snacks", identity="occurrence")
+        c2 = {**c, "target": "snacks", "proposal": {"text": "an apple"}}
+        assert NL.derived(P, "r3", c2, [], frozenset()) == "derived_written"
+        s = _rows(user, "snacks")[0]
+        assert s["said_at"] and s["derived"] is True, s
+
+
+@check("17c. meal times (Mike's rule + the 11-23 review): a time said wins; 'just had' is when "
+       "it was said; else the usual time — never later than when it was said; the meal named is "
+       "the one eaten; yesterday moves the date; a habit names an unnamed meal")
+def _():
+    from datetime import time as _t
+    import tools.day_shape as DS
+    import tools.noticed_logs as NL
+    import tools.wisdom as W
+    real_s, real_w = DS.shape_for, W._all_entries
+    DS.shape_for = lambda day, persona=None: {"meals": [
+        {"name": "breakfast", "earliest": _t(7, 30), "target": None, "source": "stated"},
+        {"name": "lunch", "earliest": _t(12, 0), "target": _t(12, 45), "source": "stated"},
+        {"name": "dinner", "earliest": _t(18, 0), "target": _t(18, 30), "source": "stated"}]}
+    W._all_entries = lambda: [
+        {"key": "standard_breakfast", "domain": "food", "value": "Standard oatmeal: 60g oats."},
+        {"key": "dinner_time", "domain": "food", "value": "prefers dinner before seven"}]
+    def f(at, q, when, what="x", meal=None):
+        prop = {"at": at, "what": what, **({"meal": meal} if meal else {})}
+        return NL._meal_at(P, prop, q, when)
+    d = lambda h, m=0, day=20: datetime(2026, 11, day, h, m)
+    try:
+        with _sandbox() as (user, _s):
+            # the usual time, and never in the future
+            assert f("11:49", "This morning for breakfast, I had toast", d(11, 49)) == \
+                {"at": "2026-11-20T07:30", "meal": "breakfast", "time_from": "usual"}
+            assert f("", "Lunch today was schnitzel", d(15, 0))["at"] == "2026-11-20T12:45"
+            assert f("", "Had soup for dinner", d(17, 10)) == \
+                {"at": "2026-11-20T17:10", "meal": "dinner", "time_from": "said"}
+            assert f("", "Had pizza for dinner", d(0, 30, day=21))["at"] == "2026-11-20T18:30"
+            # said as happening now
+            assert f("", "I just had eggs for breakfast", d(10, 40))["time_from"] == "said"
+            assert f("", "I just had a cookie and a walnut", d(11, 49))["at"] == "2026-11-20T11:49"
+            # the meal named is the one eaten
+            assert f("", "After lunch I had a cookie", d(15, 0))["meal"] == ""
+            assert f("", "had the leftover lunch curry for dinner", d(20, 0))["meal"] == "dinner"
+            assert f("", "a breakfast burrito", d(20, 0), what="breakfast burrito",
+                     meal="dinner")["meal"] == "dinner"
+            assert f("", "brunch was eggs", d(11, 30)) == \
+                {"at": "2026-11-20T11:30", "meal": "brunch", "time_from": "said"}
+            # times the user said
+            assert f("08:10", "breakfast at 8:10 was eggs", d(11, 0))["time_from"] == "stated"
+            assert f("07:30", "breakfast at half past seven", d(11, 0))["at"] == "2026-11-20T07:30"
+            assert f("07:30", "breakfast at 730", d(11, 0))["at"] == "2026-11-20T07:30"
+            assert f("15:58", "6 crackers as a snack about an hour age", d(11, 49))["at"] \
+                == "2026-11-20T10:49"
+            assert f("", "lunch a couple of hours ago", d(15, 0))["at"] == "2026-11-20T13:00"
+            assert f("", "ate an hour and a half ago", d(15, 0))["at"] == "2026-11-20T13:30"
+            assert f("", "four hours ago I had soup", d(15, 0))["at"] == "2026-11-20T11:00"
+            assert f("10:30", "a cup of coffee mid morning", d(15, 56))["at"] == "2026-11-20T10:30"
+            assert f("", "a cup of coffee mid-morning", d(15, 56))["at"] == "2026-11-20T10:30"
+            assert f("", "ate 6 crackers with brie as a snack", d(11, 49))["time_from"] == "said"
+            # the date
+            assert f("2026-11-19", "yesterday's breakfast was oatmeal", d(11, 0))["at"] \
+                == "2026-11-19T07:30"
+            assert f("yesterday", "dinner yesterday was pasta", d(11, 0))["at"] == "2026-11-19T18:30"
+            # a habit names an unnamed meal; a food fact's ordinary words do not
+            assert f("", "Today was the usual oatmeal", d(17, 57), what="oatmeal") == \
+                {"at": "2026-11-20T07:30", "meal": "breakfast", "time_from": "usual"}
+            assert f("", "I just had an oatmeal-raisin cookie", d(11, 47),
+                     what="an oatmeal-raisin cookie")["at"] == "2026-11-20T11:47"
+            assert f("", "chicken before the meeting", d(20, 0), what="chicken before")["meal"] == ""
+    finally:
+        DS.shape_for, W._all_entries = real_s, real_w
+
+
+@check("17e. dinner with no time: the design's usual 18:30 when the user set none")
+def _():
+    from datetime import time as _t
+    import tools.day_shape as DS
+    import tools.noticed_logs as NL
+    real = DS.shape_for
+    try:
+        DS.shape_for = lambda day, persona=None: {"meals": [
+            {"name": "dinner", "earliest": _t(18, 0), "target": None, "source": "design"}]}
+        assert NL._meal_at(P, {"what": "x"}, "For dinner I had a salad",
+                           datetime(2026, 10, 26, 21, 29))["at"] == "2026-10-26T18:30"
+    finally:
+        DS.shape_for = real
+
+
+@check("17f. a gift idea links to the one contact it names; that contact's read lists it; "
+       "a reader the list is not for sees nothing; two matching contacts → no link")
+def _():
+    import tools.crm as CRM
+    import tools.data_objects as DO
+    with _sandbox() as (user, _s):
+        real_load, real_caller = CRM._load_contacts, DO._caller
+        try:
+            CRM._load_contacts = lambda: [{"id": "c1", "name": "Manny Diamond", "first_name": "Manny"}]
+            DO.archive_write(DO.get("gift_ideas"), {"title": "T-ball tee", "for": "Manny"})
+            assert _rows(user, "gift_ideas")[0]["for_contact"] == "c1"
+            DO._caller = lambda: "relationships"
+            got = DO.entries_for_contact({"id": "c1", "name": "Manny Diamond"})
+            assert [g["title"] for g in got] == ["T-ball tee"] and "for_contact" not in got[0], got
+            DO._caller = lambda: "finance"
+            assert DO.entries_for_contact({"id": "c1", "name": "Manny Diamond"}) == []
+            CRM._load_contacts = lambda: [{"id": "c1", "name": "Manny Diamond"},
+                                          {"id": "c2", "name": "Manny Ortiz"}]
+            DO.archive_write(DO.get("gift_ideas"), {"title": "kite", "for": "Manny"})
+            kite = [r for r in _rows(user, "gift_ideas") if r["title"] == "kite"][0]
+            assert "for_contact" not in kite, kite
+            DO._caller = lambda: "relationships"
+            got = DO.entries_for_contact({"id": "c2", "name": "Manny Ortiz", "first_name": "Manny"})
+            assert [g["title"] for g in got] == ["kite"], got
+        finally:
+            CRM._load_contacts, DO._caller = real_load, real_caller
+
+
+@check("17h. review 11-23: an agent's note replaces (only a derived mention adds); a note "
+       "already holding the old one replaces it; the same gift for two people is two entries; "
+       "a re-mention for an unlinkable name drops the stale link; names link whole, never by substring")
+def _():
+    import tools.crm as CRM
+    import tools.data_objects as DO
+    with _sandbox() as (user, _s):
+        DO.create_object("Films", identity="thing")
+        F = lambda: DO.get("films")
+        DO.archive_write(F(), {"title": "Dune", "notes": "want to watch"})
+        DO.archive_write(F(), {"title": "Dune", "notes": "watched, 4/5"})
+        assert _rows(user, "films")[0]["notes"] == "watched, 4/5", _rows(user, "films")
+        DO.archive_write(F(), {"title": "Dune", "notes": "seen at the IMAX", "derived": True})
+        DO.archive_write(F(), {"title": "Dune", "notes": "watched, 4/5; seen at the IMAX; loved it",
+                               "derived": True})
+        assert _rows(user, "films")[0]["notes"] == "watched, 4/5; seen at the IMAX; loved it"
+        real = CRM._load_contacts
+        try:
+            CRM._load_contacts = lambda: [{"id": "m", "name": "Mum"}, {"id": "i", "name": "Iva Diamond"},
+                                          {"id": "v", "name": "Vlad"}, {"id": "j", "name": "James"}]
+            G = lambda: DO.get("gift_ideas")
+            DO.archive_write(G(), {"title": "a scarf", "for": "Mum"})
+            DO.archive_write(G(), {"title": "a scarf", "for": "Iva"})
+            rows = _rows(user, "gift_ideas")
+            assert [(r["for"], r.get("for_contact")) for r in rows] == [("Mum", "m"), ("Iva", "i")], rows
+            DO.archive_write(G(), {"title": "socks", "for": "Dad"})
+            DO.archive_write(G(), {"title": "a book", "for": "me"})
+            assert all("for_contact" not in r for r in _rows(user, "gift_ideas")[2:]), _rows(user, "gift_ideas")
+            # a stale link is dropped when the row's `for` no longer links
+            rows = _rows(user, "gift_ideas")
+            rows[0]["for"] = "mum"
+            (user / "archive" / "gift_ideas.json").write_text(json.dumps(rows))
+            CRM._load_contacts = lambda: [{"id": "m", "name": "Mum"}, {"id": "m2", "name": "Mum"}]
+            DO.archive_write(G(), {"title": "a scarf", "for": "mum", "notes": "blue"})
+            assert "for_contact" not in _rows(user, "gift_ideas")[0], _rows(user, "gift_ideas")[0]
+        finally:
+            CRM._load_contacts = real
+
+
+@check("17i. a time or date given as a word ('now', 'today') is written as when it was said")
+def _():
+    import tools.data_objects as DO
+    import tools.noticed_logs as NL
+    with _sandbox(cfg={"derived_entries": "on"}) as (user, _s):
+        DO.create_object("Cardiac events", identity="occurrence",
+                         fields={"date": "date", "time": "text", "description": "text"})
+        c = {"kind": "entry", "target": "cardiac_events", "disposition": "save",
+             "proposal": {"date": "today", "time": "now", "description": "reclined in bed"},
+             "say": "x", "quote": "x"}
+        assert NL.derived(P, "r9", c, [], frozenset(), said=datetime(2026, 11, 13, 19, 9)) \
+            == "derived_written"
+        row = _rows(user, "cardiac_events")[0]
+        assert (row["date"], row["time"]) == ("2026-11-13", "19:09"), row
+
+
+@check("17j. remove_entry takes an entry out of view and keeps it; numbers stay put; a removed "
+       "entry cannot be changed, is never merged into, never counted, never read; restore brings it back")
+def _():
+    import tools.data_objects as DO
+    with _sandbox() as (user, _s):
+        real = DO._caller
+        try:
+            DO._caller = lambda: "synthesizer"
+            DO.create_object("Films", identity="thing")
+            for t in ("Edge of Tomorrow", "Pain", "A Real Pain"):
+                DO.archive_write(DO.get("films"), {"title": t})
+            out = DO.amend_data_object("films", "remove_entry", entry=2, reason="a duplicate")
+            assert out.startswith("Removed entry 2 from Films"), out
+            rows = _rows(user, "films")
+            assert len(rows) == 3 and rows[1]["removed"]["reason"] == "a duplicate", rows
+            seen = DO.read_entries(DO.get("films"))
+            assert [(e["n"], e["title"]) for e in seen["entries"]] == \
+                [(1, "Edge of Tomorrow"), (3, "A Real Pain")], seen
+            assert DO.read_entries(DO.get("films"), count_only=True)["things"] == 2
+            assert DO.amend_data_object("films", "change_entry", entry=2,
+                                        changes={"notes": "x"}).startswith("Not changed")
+            assert "already removed" in DO.amend_data_object("films", "remove_entry", entry=2)
+            DO.archive_write(DO.get("films"), {"title": "Pain", "notes": "a new mention"})
+            assert len(_rows(user, "films")) == 4 and "removed" in _rows(user, "films")[1]
+            assert DO.amend_data_object("films", "restore_entry", entry=2) == "Restored entry 2 to Films."
+            r2 = _rows(user, "films")[1]
+            assert "removed" not in r2 and r2["previous"][-1]["value"]["removed"]["reason"] == "a duplicate"
+            DO.archive_write(DO.get("gift_ideas"), {"title": "kite", "for": "Manny"})
+            assert DO.amend_data_object("gift_ideas", "remove_entry", entry=1,
+                                        reason="bought").startswith("Removed")
+            DO._caller = lambda: "relationships"
+            assert DO.entries_for_contact({"id": "c", "name": "Manny"}) == []
+        finally:
+            DO._caller = real
+
+
+@check("17d. a new entry in a dev-backlog list also files a FEATURE_REQUEST; a merge does not")
+def _():
+    import tools.data_objects as DO
+    import tools.logger as L
+    with _sandbox() as (user, _s):
+        got, real_q, real_l = [], L.write_quality_event, DO.limits
+        L.write_quality_event = lambda t, source_agent="", detail="", session_id="": got.append((t, detail))
+        DO.limits = lambda: {**real_l(), "dev_backlog_logs": ["app_backlog"]}
+        try:
+            DO.create_object("App backlog", identity="thing")
+            DO.archive_write(DO.get("app_backlog"), {"title": "revisit the GPS tool"})
+            DO.archive_write(DO.get("app_backlog"), {"title": "revisit the GPS tool", "notes": "x"})
+            DO.create_object("Ideas", identity="thing")
+            DO.archive_write(DO.get("ideas"), {"title": "a gift"})
+        finally:
+            L.write_quality_event, DO.limits = real_q, real_l
+        assert got == [("FEATURE_REQUEST", "From the user's App backlog list: revisit the GPS tool")], got
+
+
 @check("11. an entry candidate never reaches a CAPTURE NOTE or pending.json, on time or late")
 def _():
     import tools.capture as C

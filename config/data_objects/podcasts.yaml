@@ -1,0 +1,10 @@
+# A template (R6). One row per podcast; a second mention joins its row. Added 2026-11-23 (Mike):
+# a podcast to try went into Music for want of a home.
+id: podcasts
+name: Podcasts
+aliases: [podcasts to try, podcast list, shows to listen to]
+description: Podcasts listened to or to try, with what the user thought.
+store: archive
+identity: thing
+fields: {title: text, host: text, status: text, notes: text}
+relevant_agents: [recreation_hobbies, learning_growth]

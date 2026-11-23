@@ -1546,15 +1546,23 @@ def read_contact(contact_id: str = "", name: str = "") -> str:
     # Plan § 4.11 (P2): tone_shape only under a current `tone_profile` record.
     permitted = _tone_profiles_permitted()
 
+    def _shown(contact: dict) -> dict:
+        # The contact as read, plus the entries in the user's lists that are for this person —
+        # gift ideas (Mike, 2026-11-23).
+        out = _gate_tone_shape(contact, permitted)
+        from tools.data_objects import entries_for_contact
+        mine = entries_for_contact(contact)
+        return {**out, "for_them_in_your_lists": mine} if mine else out
+
     if contact_id:
         if name:
             _record_resolution(name, contact_id, "read_contact")
         for contact in contacts:
             if contact.get("id") == contact_id:
-                return json.dumps(_gate_tone_shape(contact, permitted), indent=2)
+                return json.dumps(_shown(contact), indent=2)
         merged = _resolve_merged(contacts, contact_id)
         if merged is not None:
-            result = _gate_tone_shape(merged, permitted).copy()
+            result = _shown(merged).copy()
             result["_merged_note"] = (
                 f"'{contact_id}' was merged into this record ('{merged.get('id')}')."
             )
@@ -1569,10 +1577,10 @@ def read_contact(contact_id: str = "", name: str = "") -> str:
             remembered = _apply_resolution(contacts, name, matches)
             if remembered is None:
                 return _ambiguous_match(name, matches, "returned")
-            result = _gate_tone_shape(remembered, permitted).copy()
+            result = _shown(remembered).copy()
             result["_resolution_note"] = _resolution_note(name, remembered)
             return json.dumps(result, indent=2)
-        return json.dumps(_gate_tone_shape(matches[0], permitted), indent=2)
+        return json.dumps(_shown(matches[0]), indent=2)
 
     return "Error: provide either contact_id or name"
 

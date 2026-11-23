@@ -112,6 +112,8 @@ back-tagging the rest is `[DB-0815-10]`.
   `run_session_*` paths in `core/orchestrator.py` before designing anything.
   *Raised by Mike 2026-08-05; given its own line by Mike's ruling 2026-11-23
   (`archive/plans/agent_instructions_to_code_sweep_2026-11-23.md` § 6).*
+- **[bug]** Telling Metatron you're free today doesn't clear the "(when free of childcare?)" question on the day plan — the one-day override is saved (`day_overrides`, holds: true) and the plan refreshes ("day shape changed"), but the weekend task keeps its condition and the Today panel still shows "File the quarterly return (when free of childcare?)" at 10:00. Reproduced 2026-11-23 by replaying `tests/test_day_plan_round2.py` check F8, which fails on clean HEAD too (predates the 11-23 derived-writer work; likely since `fda9d80` "every task is weighed"). Filed at Mike's request.  
+  `2026-11-23`
 
 ## Now
 

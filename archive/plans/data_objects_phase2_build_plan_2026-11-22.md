@@ -361,3 +361,38 @@ Eight findings, all checked against the code and accepted; each has a check in
 | F6 | an unrelated alias, then a reasonable No, removed the list offer for good | a declined or ignored alias offer hands the topic back to its list offer (`expired`) |
 | F7 | the user's log id in the content-free outcomes file | the outcome row carries `entry`; the log is in `derived.jsonl` only |
 | F8 | `--sweep` printed success and judged nothing | the CLI judges inline; an orphaned `matching` offer is re-asked in place |
+
+## 11. The derived writer goes on — Mike's labels and rulings (2026-11-23)
+
+**Ruling:** *"The lists should populate without users constantly giving permission. When a user
+mentions a movie they'd like to see, it should go on the movies list."* Starting a NEW list still
+asks (R34); adding to an existing one does not. `derived_entries: on`.
+
+**M4, labelled in chat in batches (Mike's choice — clean formatting):** 30 shadow proposals from
+mike's last ~60 days, 24 right as first labelled (80%, below the 90% floor). Every miss had a
+code cause and was fixed before the flip; the as-built writer scored 28/28 on his labels (the 24
+unchanged plus four re-proposed items, A–D). Labels: `capture/derived_labels.jsonl` on the VM.
+
+| What Mike saw | What changed |
+|---|---|
+| meal times the extractor made up (08:30, 12:00) or took from the message (11:49 for breakfast) | code sets the time: a time said wins ("an hour ago", "half past seven", "mid-morning"); "just had" is when it was said; else the user's usual time for that meal (their day shape; design dinner default 18:30); never later than when it was said; "yesterday"/"last night" move the date; an unnamed meal is named by the user's habits ("the usual oatmeal" = breakfast, from `standard_breakfast`) |
+| a gift idea filed under Ideas | Gift ideas template, `for` linked to the one contact it names; the contact's read lists it |
+| a test podcast in Music | Podcasts template; the extractor drops test messages |
+| someone else's lunch as his | dropped by the extractor on re-read |
+| a second mention of a film as a second entry | merged into the one row; a derived mention adds to the note |
+| "removed" rows that stayed in Films | `remove_entry` / `restore_entry` — out of view, kept, numbers stable |
+
+Also built, at his direction: Notable experiences as a default list; App development backlog
+entries also file a FEATURE_REQUEST to `DEV_BACKLOG.md`; every derived entry carries `said_at`;
+"now"/"today" in a time field is written as when it was said. Extractor: tastes, someday wants,
+specs and sightings go to `other` (the new-list detector was starved — 8–10 of 11 probe phrasings
+now route; 0 of 6 controls misroute), never when a user log holds that sort of thing; a
+development note is an entry when a log keeps them.
+
+**Fable's review of the 11-23 diff** found the first meal rule unsafe (future times, a named meal
+ignoring "just had", first-substring meal naming, single-row habits) and three list defects (an
+agent's note growing instead of replacing; the same gift for two people collapsing; substring
+contact links — "Dad" → "Vlad"). All fixed with checks 17b–17j. Left, stated: a merged mention's
+own `said_at` is not recorded; a late specialist write can duplicate a derived meal; a gift
+linked to a contact later merged away may not show on the survivor; "producer Bakhmat" was once
+read as `director` (one mislabelled field, not a pattern).

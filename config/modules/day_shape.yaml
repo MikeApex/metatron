@@ -8,10 +8,12 @@
 #
 # Times are HH:MM local. "wake+90" means 90 minutes after the user's wake time.
 
+# `usual` is when a meal the user logs without a time is filed (tools/noticed_logs._meal_at);
+# without one, the window's earliest. A time the user set in their own day shape wins over both.
 meals:
   breakfast: {earliest: "wake", latest: "wake+90", minutes: 15}
   lunch: {earliest: "12:00", latest: "14:00", minutes: 30}
-  dinner: {earliest: "18:00", latest: "20:30", minutes: 45}
+  dinner: {earliest: "18:00", latest: "20:30", minutes: 45, usual: "18:30"}
 
 # After this many minutes of task blocks back to back, a short break goes in. Comfort breaks are
 # this rule — there is no separate block type for them.

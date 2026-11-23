@@ -1,0 +1,11 @@
+# A template (R6) — a default list for every user (Mike, 2026-11-23). Every write is an entry:
+# two visits to the same place are two experiences. A user who already keeps a list with this
+# id keeps their own; a stored list always wins over a template of the same id.
+id: experiences
+name: Notable experiences
+aliases: [experiences, things we did, outings, memorable moments]
+description: Things the user did, saw or went to that were worth remembering, and what they made of them.
+store: archive
+identity: occurrence
+fields: {at: datetime, description: text, location: text, with: text, notes: text}
+relevant_agents: [recreation_hobbies, relationships]

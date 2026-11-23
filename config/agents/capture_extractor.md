@@ -45,17 +45,19 @@ output format.
     something they have just done. That is a log, kept elsewhere — "I slept 11 to 7 last
     night" is never a standing bedtime. The same for news that a task is finished ("the car
     insurance is renewed", "I booked the boiler service", "that's handled") — the task list
-    is updated elsewhere. **The one exception:** a report that is plainly an entry for one of
-    THE USER'S LOGS in your input is an `entry` (below).
+    is updated elsewhere. **Two exceptions:** a report that is plainly an entry for one of
+    THE USER'S LOGS in your input is an `entry` (below); something they saw, tried or found
+    that no log covers ("a goldfinch at the feeder", "tried the Muga Rioja — loved it") is
+    `other`.
   - what they are doing now, or hope to get to this afternoon ("I'm heading out for a run",
     "hoping to finish the slides this afternoon"). A to-do they ask Metatron to fit into the
     day ("fit half an hour on the tax return into today") is a `task`.
-  - a state of the moment, an opinion, a question to Metatron, a test message, or a request
+  - a state of the moment, a passing opinion, a question to Metatron, a test message, or a request
     for Metatron to do something now that leaves nothing to remember ("what's the weather in
     Leeds?").
   - a development note — a request about how Metatron itself is built ("make a backlog
     note to…") — unless it also says how the user wants Metatron to behave with them, which
-    is a `preference`.
+    is a `preference`, or one of THE USER'S LOGS keeps such notes, which makes it an `entry`.
 
 ## Choosing the kind
 
@@ -82,7 +84,11 @@ output format.
   log's id, proposal only the fields the user gave, in their words. Never for a log that is not
   listed. Asking to start a log, or fixing an entry already kept, is not an entry.
 - A fact worth keeping that fits no kind is `other`, with a `category`. Never force it into
-  a kind that does not fit.
+  a kind that does not fit. Typical: a lasting taste ("a wine I love is…"), something to
+  try, read or get someday with no plan to do it ("a board game I'd like is Wingspan" — a
+  `task` only when they ask for it done), a spec of something they own ("the car takes
+  5W-30"), something seen or collected. If one of THE USER'S LOGS holds that sort of thing,
+  it is an `entry` there, never `other`.
 - When the user spells a name out, use their spelling.
 
 **Read days from the conversation.** If the user has been describing weekdays, "dinner's

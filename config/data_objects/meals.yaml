@@ -3,8 +3,8 @@
 id: meals
 name: Meals
 aliases: [food log, food diary, what I ate]
-description: Meals and snacks as eaten, with the time.
+description: Meals and snacks as eaten, with the time — the one place meals are kept.
 store: archive
 identity: occurrence
-fields: {at: datetime, what: text, notes: text}
+fields: {at: datetime, meal: text, what: text, notes: text}
 relevant_agents: [physical_health]

@@ -1,0 +1,12 @@
+# A template (R6) — gift ideas, each for someone (Mike, 2026-11-23). `for` is the person's name as
+# the user says it; code links it to their contact (`for_contact`) when exactly one contact
+# matches, and reading that contact lists their open ideas. Two people with the name → no link,
+# the name stays — a wrong link is worse than none.
+id: gift_ideas
+name: Gift ideas
+aliases: [gift list, present ideas, presents to get]
+description: Gift ideas and who each one is for, with the occasion when there is one.
+store: archive
+identity: thing
+fields: {title: text, for: text, occasion: text, status: text, notes: text}
+relevant_agents: [relationships]

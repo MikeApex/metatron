@@ -170,6 +170,9 @@ _NOT_TOOLS = {
     # Added 2026-11-22: an INPUT KEY of data_object_matcher's payload (tools/noticed_logs.py),
     # listed on a bullet beside `categories`/`examples`/`logs`. Same bullet-leading JSON-key class.
     "earlier_offers",
+    # Added 2026-11-23: ACTION VALUES of amend_data_object (`action` enum), named beside
+    # `change_entry` in synthesizer.md — not tools.
+    "remove_entry", "restore_entry",
 }
 
 # Headings under which a named tool is understood to be unbuilt. Matched against

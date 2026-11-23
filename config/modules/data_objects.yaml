@@ -33,3 +33,7 @@ close_match_ratio: 0.85
 # Daily-log objects: days read when none are given, and the most a read may ask for.
 log_read_default_days: 14
 log_read_max_days: 92
+
+# Lists whose new entries also reach the development backlog (DEV_BACKLOG.md Inbox) as a feature
+# request (Mike, 2026-11-23). A list's id, as the registry holds it.
+dev_backlog_logs: [app_development_backlog]

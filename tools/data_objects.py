@@ -604,13 +604,23 @@ def archive_write(o: dict, item: dict, occurrence: dict | None = None) -> str:
     categories), so the two doors cannot disagree."""
     item = dict(item or {})
     today = date.today().isoformat()
+    if "for" in (o.get("fields") or {}) and item.get("for") and not item.get("for_contact"):
+        cid = _contact_for(str(item["for"]))
+        if cid:
+            item["for_contact"] = cid
+    has_for = "for" in (o.get("fields") or {})
+
+    def _key(d: dict) -> str:
+        # A gift for Mum and the same gift for Iva are two entries (review 2026-11-23 #7).
+        k = _identity_key(d)
+        return f"{k}|for:{str(d.get('for') or '').strip().casefold()}" if k and has_for else k
     with _locked():
         path = _archive_file(o["id"])
         rows = _rows(o["id"])
-        key = _identity_key(item)
+        key = _key(item)
         if occurrence is not None:
-            row = next((r for r in rows if isinstance(r, dict) and key
-                        and _identity_key(r) == key), None)
+            row = next((r for r in rows if isinstance(r, dict) and key and not r.get("removed")
+                        and _key(r) == key), None)
             if row is None:
                 row = {**item, "date_added": item.get("date_added") or today}
                 rows.append(row)
@@ -625,11 +635,25 @@ def archive_write(o: dict, item: dict, occurrence: dict | None = None) -> str:
             rows.append(item)
             msg = f"Added an entry to {o['name']} (entry {len(rows)})."
         else:
-            row = next((r for r in rows if isinstance(r, dict) and key
-                        and _identity_key(r) == key), None)
+            row = next((r for r in rows if isinstance(r, dict) and key and not r.get("removed")
+                        and _key(r) == key), None)
             if row is not None:
+                if has_for and item.get("for") and not item.get("for_contact"):
+                    row.pop("for_contact", None)    # a name that no longer links: no stale link
                 for k, v in item.items():
-                    if v not in (None, "", [], {}):
+                    if v in (None, "", [], {}):
+                        continue
+                    old = row.get(k)
+                    # A second MENTION adds to the note — one entry per thing holds everything
+                    # said about it (Mike, 2026-11-23). Only the derived writer's mentions: an
+                    # agent writing a note means it as the note, and replaces it (review #6).
+                    if k == "notes" and item.get("derived") and isinstance(old, str) \
+                            and old.strip() and str(v).strip().casefold() not in old.casefold() \
+                            and old.strip().casefold() not in str(v).casefold():
+                        row[k] = f"{old.rstrip()}; {v}"
+                    elif k in ("derived", "source_turn", "said_at"):
+                        continue    # the row keeps when and how it was first written
+                    else:
                         row[k] = v
                 row["date_updated"] = today
                 msg = (f"Updated the existing {key.split(':', 1)[0]}-matched entry in "
@@ -646,7 +670,79 @@ def archive_write(o: dict, item: dict, occurrence: dict | None = None) -> str:
             objs, _ = _materialise(o["id"], _stored())
             _save(objs)
         _clear_one_pending(o["id"])
+    if msg.startswith("Added an entry") and o["id"] in (limits().get("dev_backlog_logs") or ()):
+        _file_dev_request(o, item)
     return msg
+
+
+def _contact_for(name: str) -> str:
+    """The contact id a `for` name means — only when exactly one contact matches (Mike,
+    2026-11-23: gift ideas tied to the person). Two matches or none → "" and the name stands."""
+    try:
+        from tools import crm
+        want = " ".join(name.split()).casefold()
+        if not want:
+            return ""
+
+        def _names(c: dict) -> set[str]:
+            full = " ".join(str(c.get("name") or "").split()).casefold()
+            out = {full, full.split(" ")[0] if full else ""}
+            out |= {" ".join(str(c.get(k) or "").split()).casefold()
+                    for k in ("first_name", "nickname", "preferred_name")}
+            out |= {" ".join(str(x).split()).casefold() for x in c.get("referred_to_as") or []}
+            return out - {""}
+        # Whole names only — a substring match links "Dad" to "Vlad" and "me" to "James" (#7).
+        hits = [c for c in crm._find_by_name(crm._load_contacts(), name) if want in _names(c)]
+        return str(hits[0].get("id") or "") if len(hits) == 1 else ""
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[data_objects] contact link not made: {exc}")
+        return ""
+
+
+def entries_for_contact(contact: dict) -> list[dict]:
+    """Every entry in a log with a `for` field that names this contact — linked by id, or by
+    name when no link was made. Read by tools/crm.read_contact. Never raises."""
+    try:
+        cid = str(contact.get("id") or "")
+        names = {str(contact.get(k) or "").strip().casefold()
+                 for k in ("name", "first_name", "preferred_name", "nickname")}
+        names |= {str(s).strip().casefold() for s in contact.get("referred_to_as") or []}
+        names -= {""}
+        out, agent = [], _caller()
+        for o in objects():
+            if o.get("store") != "archive" or "for" not in (o.get("fields") or {}) \
+                    or o.get("status") != "active":
+                continue
+            if not may_read(agent, o)[0]:          # the read rule binds here too
+                continue
+            for r in _rows(o["id"]):
+                if not isinstance(r, dict) or r.get("removed"):
+                    continue
+                if (cid and r.get("for_contact") == cid) or (
+                        not r.get("for_contact")
+                        and str(r.get("for") or "").strip().casefold() in names):
+                    out.append({"list": o["name"], **{k: v for k, v in r.items()
+                                if k not in ("for_contact", "derived", "source_turn")}})
+        return out
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[data_objects] entries for contact not read: {exc}")
+        return []
+
+
+def _file_dev_request(o: dict, item: dict) -> None:
+    """A new entry in a list named in `dev_backlog_logs` also reaches the development backlog
+    as a FEATURE_REQUEST (Mike, 2026-11-23). The Synthesizer's own dev-request path usually
+    files it too; the sync's similarity merge folds the two into one Inbox item."""
+    text = " ".join(str(item.get(k) or "") for k in ("title", "text", "description", "notes"))
+    text = " ".join(text.split())
+    if not text:
+        return
+    try:
+        from tools.logger import write_quality_event
+        write_quality_event("FEATURE_REQUEST", source_agent="data_objects",
+                            detail=f"From the user's {o['name']} list: {text[:400]}")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[data_objects] dev backlog entry not filed: {exc}")
 
 
 def registered_category(category: str) -> dict | None:
@@ -677,8 +773,9 @@ def _dates_of(row: dict) -> list[str]:
 def read_entries(o: dict, since: str = "", until: str = "", contains: str = "",
                  count_only: bool = False, limit: int = 0) -> dict:
     rows = _rows(o["id"])
+    # A removed entry keeps its number (so `change_entry` numbers stay true) and is never shown.
     numbered = [{"n": i + 1, **r} if isinstance(r, dict) else {"n": i + 1, "value": r}
-                for i, r in enumerate(rows)]
+                for i, r in enumerate(rows) if not (isinstance(r, dict) and r.get("removed"))]
     if since or until:
         # Compared at the entry's own precision: an `at` of "2024" (a year, as the relative-
         # reference rule records "two years ago") falls inside 2024-01-01..2024-12-31.
@@ -1041,7 +1138,8 @@ def list_data_objects(with_entries: bool = False) -> list[dict]:
             continue
         row = {"name": o["name"], "description": o["description"]}
         if o.get("store") == "archive":
-            row["entries"] = len(_rows(o["id"]))
+            row["entries"] = sum(1 for r in _rows(o["id"])
+                                 if not (isinstance(r, dict) and r.get("removed")))
             if with_entries and not row["entries"]:
                 continue
         elif with_entries:
@@ -1160,9 +1258,10 @@ def fields_of(o: dict) -> list[str]:
 
 def amend_data_object(object: str, action: str, entry: int = 0,
                       changes: dict | None = None, new_name: str = "", alias: str = "",
-                      into: str = "") -> str:
-    """Change an entry (keeping history), rename, add an alias, archive or unarchive, mark
-    private or not, or merge into another log. Nothing is deleted."""
+                      into: str = "", reason: str = "") -> str:
+    """Change an entry (keeping history), remove one from view or restore it, rename, add an
+    alias, archive or unarchive, mark private or not, or merge into another log. Nothing is
+    deleted."""
     agent = _caller()
     o = resolve(object, follow=(action != "unarchive"))
     if o is None:
@@ -1185,6 +1284,9 @@ def amend_data_object(object: str, action: str, entry: int = 0,
             if not 1 <= int(entry) <= len(rows) or not isinstance(rows[int(entry) - 1], dict):
                 return f"Not changed: {o['name']} has no entry {entry}."
             row = rows[int(entry) - 1]
+            if row.get("removed"):
+                return (f"Not changed: entry {entry} in {o['name']} was removed — restore it "
+                        f"first if it should be back.")
             prev = {k: row.get(k) for k in changes}
             row.update(changes)
             row.setdefault("previous", []).append({"value": prev, "changed_at": now})
@@ -1193,6 +1295,36 @@ def amend_data_object(object: str, action: str, entry: int = 0,
                 json.dump(rows, f, indent=2)
             os.chmod(_archive_file(o["id"]), 0o600)
         return f"Changed entry {entry} in {o['name']}; the earlier value is kept."
+    if action in ("remove_entry", "restore_entry"):
+        # Out of view, never deleted (plan R19/R20; Mike, 2026-11-23 — "Pain was a duplicate",
+        # "Troxy was a concert, not a film"). The row stays in the file, so entry numbers stay
+        # put and Pattern Miner still sees it; every read skips it.
+        if o.get("store") != "archive":
+            return f"Not changed: {o['name']} is changed through its own tool."
+        try:
+            entry = int(entry)
+        except (TypeError, ValueError):
+            return "Not changed: give the entry's number, as shown when the log was read."
+        with _locked():
+            rows = _rows(o["id"])
+            if not 1 <= entry <= len(rows) or not isinstance(rows[entry - 1], dict):
+                return f"Not changed: {o['name']} has no entry {entry}."
+            row = rows[entry - 1]
+            if action == "remove_entry":
+                if row.get("removed"):
+                    return f"Entry {entry} was already removed from {o['name']}."
+                row["removed"] = {"at": now, "reason": " ".join(str(reason or "").split())[:200]}
+            else:
+                if not row.get("removed"):
+                    return f"Entry {entry} in {o['name']} is not removed."
+                row.setdefault("previous", []).append({"value": {"removed": row.pop("removed")},
+                                                       "changed_at": now})
+            row["date_updated"] = now[:10]
+            with open(_archive_file(o["id"]), "w") as f:
+                json.dump(rows, f, indent=2)
+            os.chmod(_archive_file(o["id"]), 0o600)
+        return (f"Removed entry {entry} from {o['name']} — out of view, nothing deleted."
+                if action == "remove_entry" else f"Restored entry {entry} to {o['name']}.")
     with _locked():
         objs, s = _materialise(o["id"], _stored())
         if action == "rename":
@@ -1386,7 +1518,9 @@ AMEND_DATA_OBJECT_SCHEMA = {
     "name": "amend_data_object",
     "description": (
         "Change one of the user's logs. 'change_entry' changes entry number `entry` (from "
-        "read_data_object) with `changes` — the old value is kept; 'rename' (`new_name`); "
+        "read_data_object) with `changes` — the old value is kept; 'remove_entry' takes entry "
+        "`entry` off the list (out of view, kept — give `reason`), 'restore_entry' puts it "
+        "back; 'rename' (`new_name`); "
         "'add_alias' (`alias`); 'archive' takes it out of the lists without deleting "
         "anything, 'unarchive' brings it back; 'private' keeps it out of every list; "
         "'merge' moves its entries into another log (`into`). Nothing is ever deleted."
@@ -1396,9 +1530,15 @@ AMEND_DATA_OBJECT_SCHEMA = {
         "properties": {
             "object": {"type": "string"},
             "action": {"type": "string",
-                       "enum": ["change_entry", "rename", "add_alias", "archive",
-                                "unarchive", "private", "public", "merge"]},
-            "entry": {"type": "integer", "description": "change_entry: the entry number."},
+                       "enum": ["change_entry", "remove_entry", "restore_entry", "rename",
+                                "add_alias", "archive", "unarchive", "private", "public",
+                                "merge"]},
+            "entry": {"type": "integer",
+                      "description": "change_entry / remove_entry / restore_entry: the entry "
+                                     "number."},
+            "reason": {"type": "string",
+                       "description": "remove_entry: why, in a few words (\"a duplicate\", "
+                                      "\"a concert, not a film\")."},
             "changes": {"type": "object", "additionalProperties": True,
                         "description": "change_entry: the fields to change. Each field you "
                                        "name is replaced whole — give the full corrected "

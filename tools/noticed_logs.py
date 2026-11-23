@@ -701,9 +701,189 @@ def _derived_path(persona: str):
     return _cap()._dir(persona) / "derived.jsonl"
 
 
-def derived(persona: str, rid: str, c: dict, writes: list, touched, user_text: str = "") -> str:
+_MEAL_SLOTS = ("breakfast", "brunch", "lunch", "dinner", "supper", "snack")
+_SLOT_ALIAS = {"supper": "dinner"}
+_SLOT_RE = r"(breakfast|brunch|lunch|dinner|supper|snack)"
+# "for dinner", "my lunch", "last night's dinner" — the meal the food was eaten AS.
+_FOR_SLOT = re.compile(r"\b(?:for|as|my|at|during|today'?s|tonight'?s|yesterday'?s|this "
+                       r"morning'?s|last night'?s)\s+" + _SLOT_RE + r"\b", re.I)
+# "after lunch", "before dinner" — a meal named only as a time marker, never the meal itself.
+_BESIDE_SLOT = re.compile(r"\b(?:after|before|since|until|till|between)\s+" + _SLOT_RE + r"\b", re.I)
+_WORD_NUM = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+             "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
+             "a couple of": 2, "a few": 3}
+_NUM_WORDS = "|".join(sorted(_WORD_NUM, key=len, reverse=True))
+# "about an hour ago", "a couple of hours ago", "an hour and a half ago" — worked out from when it
+# was said, by code, never by the extractor. "age" is a voice slip seen in real messages.
+_AGO = re.compile(r"\b(half an|" + _NUM_WORDS + r"|\d{1,3})(\s+and\s+a\s+half)?\s+(hours?|minutes?"
+                  r"|mins?)(\s+and\s+a\s+half)?\s+ag[oe]\b", re.I)
+# A clock time the user actually said: "at 8", "around 7:30", "12:15", "8am", "six o'clock",
+# "half past seven", "twenty to eight", "at 730". A bare number is not one ("6 crackers").
+_CLOCK = (r"(?:\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)")
+_STATED_TIME = re.compile(
+    r"\b(?:at|around|about|by)\s+(?:\d{1,2}(?::\d{2})?|\d{3,4}|" + _CLOCK[3:-1] + r"|noon|midday)\b"
+    r"|\b\d{1,2}:\d{2}\b|\b\d{1,2}\s*(?:am|pm|a\.m\.|p\.m\.)|\b" + _CLOCK + r"\s+o'?clock\b"
+    r"|\b(?:half|quarter|twenty|ten|five|twenty[- ]five)\s+(?:past|to)\s+" + _CLOCK + r"\b", re.I)
+# A part of the day the user said, with no clock time: the extractor's reading stands if it gave
+# one, otherwise this.
+_DAYPART = {"mid-morning": "10:30", "mid morning": "10:30", "midmorning": "10:30",
+            "mid-afternoon": "15:00", "mid afternoon": "15:00", "midafternoon": "15:00"}
+# Said as happening now — the time it was said is the time, whatever the meal usually is.
+_NOW = re.compile(r"\b(?:just\s+(?:had|ate|eaten|finished|got\s+done)|right\s+now|i'?m\s+(?:having"
+                  r"|eating)|i\s+am\s+(?:having|eating)|eating\s+now|having\s+(?:it|this|that)\s+now)\b",
+                  re.I)
+_YESTERDAY = re.compile(r"\b(?:yesterday|last\s+night)\b", re.I)
+# Too common to say which meal it was, or not food at all.
+_NOT_FOOD = {"bread", "toast", "butter", "cheese", "water", "coffee", "fruit", "apple", "apples",
+             "salad", "little", "piece", "usual", "normal", "today", "along", "small", "large",
+             "standard", "after", "before", "really", "prefers", "prefer", "usually", "every",
+             "around", "about", "which", "there", "their", "would", "could", "should", "maybe",
+             "thing", "things", "morning", "evening", "night", "later", "earlier", "seven",
+             "eight", "three", "minutes", "hours", "though", "while", "without", "alongside"}
+
+
+def _food_words(text: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z]{5,}", text.lower())
+            if w not in _NOT_FOOD and w not in _MEAL_SLOTS}
+
+
+def _slot_of(prop: dict, quote: str) -> str:
+    """The meal the user said this was — the extractor's `meal` first, then "for dinner", then
+    a single meal word; "" when unsaid or ambiguous ("leftover lunch curry for dinner" → dinner)."""
+    for v in (prop.get("meal"), prop.get("at")):
+        v = str(v or "").strip().lower()
+        if v in _MEAL_SLOTS:
+            return _SLOT_ALIAS.get(v, v)
+    q = _BESIDE_SLOT.sub(" ", quote or "")
+    hit = _FOR_SLOT.search(q)
+    if hit:
+        s = hit.group(1).lower()
+        return _SLOT_ALIAS.get(s, s)
+    found = {_SLOT_ALIAS.get(s, s) for s in _MEAL_SLOTS if re.search(rf"\b{s}\b", q, re.I)}
+    return found.pop() if len(found) == 1 else ""
+
+
+def _habit_slot(what: str) -> str:
+    """Which meal a food usually is for this user, when they did not say (Mike, 2026-11-23: "the
+    usual oatmeal" is breakfast — his standing knowledge says so). A food fact that names a meal
+    and the food; or two or more of their own Meals entries that agree, with none disagreeing.
+    "" when nothing ties. The caller still refuses a usual time later than when it was said."""
+    food = _food_words(what)
+    if not food:
+        return ""
+    try:
+        from tools import wisdom
+        for e in wisdom._all_entries():
+            if not isinstance(e, dict) or str(e.get("domain") or "") != "food":
+                continue
+            key = str(e.get("key") or "").lower().replace("_", " ")
+            value = str(e.get("value") or "")
+            slot = next((s for s in _MEAL_SLOTS if re.search(rf"\b{s}\b", f"{key} {value.lower()}")),
+                        "")
+            if slot and food & _food_words(value):
+                return _SLOT_ALIAS.get(slot, slot)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[noticed] food facts not read: {exc}")
+    try:
+        from tools import data_objects as DO
+        votes: dict[str, int] = {}
+        for r in (DO._rows("meals") if DO.get("meals") else []):
+            if isinstance(r, dict) and not r.get("removed") and r.get("meal") in _MEAL_SLOTS \
+                    and food & _food_words(str(r.get("what") or "")):
+                votes[str(r["meal"])] = votes.get(str(r["meal"]), 0) + 1
+        if len(votes) == 1 and next(iter(votes.values())) >= 2:
+            return next(iter(votes))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[noticed] meal history not read: {exc}")
+    return ""
+
+
+def _usual_time(persona: str, slot: str, day):
+    """The user's own time for that meal (their day shape), else the design's usual, else the
+    window's earliest. None for a meal with no time (snack, brunch)."""
+    if slot not in ("breakfast", "lunch", "dinner"):
+        return None
+    try:
+        from tools import day_shape
+        m = next((m for m in day_shape.shape_for(day, persona)["meals"] if m["name"] == slot), None)
+        if not m:
+            return None
+        if m.get("target"):
+            return m["target"]
+        if m.get("source") == "design":
+            spec = (day_shape.design().get("meals") or {}).get(slot) or {}
+            return day_shape._hhmm(spec.get("usual")) or m["earliest"]
+        return m["earliest"]
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[noticed] meal time not read: {exc}")
+        return None
+
+
+def _meal_at(persona: str, prop: dict, quote: str, said: datetime) -> dict:
+    """When a meal was eaten (Mike, 2026-11-23), in this order:
+      1. a time the user said — "an hour ago" worked out by code, a clock time the extractor read;
+      2. said as happening now ("just had") → when it was said;
+      3. the user's usual time for that meal (their day shape; the design's when they set none);
+      4. when it was said.
+    Never later than when it was said: a usual time still to come means it was eaten earlier than
+    usual (→ when it was said), or — said in the small hours — last night. The date is the
+    extractor's, moved back a day for "yesterday" / "last night". `time_from` says which."""
+    said = said.replace(tzinfo=None, second=0, microsecond=0)
+    quote = quote or ""
+    raw = str(prop.get("at") or "").strip()
+    slot = _slot_of(prop, quote)
+    now = bool(_NOW.search(quote))
+    if not slot and not now:
+        slot = _habit_slot(str(prop.get("what") or quote))
+    day, given = said.date(), None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", ""))
+        day, given = parsed.date(), (parsed.time() if ("T" in raw or " " in raw) else None)
+    except ValueError:
+        try:
+            from datetime import date as _date
+            day = _date.fromisoformat(raw[:10])
+        except ValueError:
+            if re.fullmatch(r"\d{1,2}:\d{2}", raw):
+                given = datetime.strptime(raw, "%H:%M").time()
+    if day == said.date() and _YESTERDAY.search(f"{raw} {quote}"):
+        day = day - timedelta(days=1)
+    out = lambda at, src: {"at": at.isoformat(timespec="minutes"), "meal": slot, "time_from": src}
+    ago = _AGO.search(quote)
+    if ago:
+        n = ago.group(1).lower()
+        num = 0.5 if n == "half an" else float(_WORD_NUM.get(n) or int(n))
+        if ago.group(2) or ago.group(4):
+            num += 0.5
+        mins = int(num * (60 if ago.group(3).lower().startswith("h") else 1))
+        return out(said - timedelta(minutes=mins), "stated")
+    part = next((v for k, v in _DAYPART.items() if k in quote.lower()), None)
+    if given and (_STATED_TIME.search(quote) or part):
+        at, src = datetime.combine(day, given), "stated"
+    elif part:
+        at, src = datetime.combine(day, datetime.strptime(part, "%H:%M").time()), "stated"
+    elif now and day == said.date():
+        return out(said, "said")
+    else:
+        usual = _usual_time(persona, slot, day)
+        if usual:
+            at, src = datetime.combine(day, usual), "usual"
+        elif day == said.date():
+            return out(said, "said")
+        else:
+            return {"at": day.isoformat(), "meal": slot, "time_from": "date_only"}
+    if at > said:
+        if src == "usual" and day == said.date() and said.hour < 4 and slot in ("dinner", "snack"):
+            return out(at - timedelta(days=1), "usual")      # last night's dinner, said after midnight
+        return out(said, "said")                             # eaten earlier than usual, or misread
+    return out(at, src)
+
+
+def derived(persona: str, rid: str, c: dict, writes: list, touched, user_text: str = "",
+            said: datetime | None = None) -> str:
     """One `entry` candidate from the extractor. Returns its content-free outcome. In shadow
-    it is recorded and NOTHING is written; on, code writes it marked derived. Never raises."""
+    it is recorded and NOTHING is written; on, code writes it marked derived. Never raises.
+    `said` is when the user said it — now, on the live path; a backfill passes the turn's time."""
     try:
         cfg = _cfg()
         mode = str(cfg.get("derived_entries", "shadow")).lower()
@@ -727,7 +907,21 @@ def derived(persona: str, rid: str, c: dict, writes: list, touched, user_text: s
             written = any(t in _WRITE_TOOLS and o["id"] in _names(a or {}) for t, a in writes)
             if o["id"] in set(touched or ()) or written:
                 return "derived_kept"
-            rec = {"ts": _now().isoformat(timespec="seconds"), "request_id": rid,
+            said = said or _now()
+            # A time or date given as a word ("now", "today") is when it was said — the extractor
+            # once wrote `"time": "now"` into a cardiac log (review re-run, 2026-11-23).
+            fields = dict(o.get("fields") or {})          # name → type
+            for k, v in list(prop.items()):
+                word = str(v).strip().lower() if isinstance(v, str) else ""
+                if word in ("now", "just now", "right now", "today", "this moment"):
+                    if k == "date" or fields.get(k) == "date":
+                        prop = {**prop, k: said.date().isoformat()}
+                    elif k in ("time", "at") or fields.get(k) in ("time", "datetime"):
+                        prop = {**prop, k: (said.strftime("%H:%M") if k == "time"
+                                            else said.isoformat(timespec="minutes"))}
+            if o["id"] == "meals":
+                prop = {**prop, **_meal_at(persona, prop, str(c.get("quote") or ""), said)}
+            rec = {"ts": said.isoformat(timespec="seconds"), "request_id": rid,
                    "target": o["id"], "proposal": prop, "say": c.get("say", ""),
                    "quote": c.get("quote", ""), "user_text": (user_text or "")[:600],
                    "mode": mode}
@@ -739,7 +933,11 @@ def derived(persona: str, rid: str, c: dict, writes: list, touched, user_text: s
                 return "derived_shadow"
             if o.get("store") != "archive":
                 return "derived_unsupported"
-            DO.archive_write(o, {**prop, "derived": True, "source_turn": rid})
+            # `said_at` is when the user said it (Mike, 2026-11-23: the timestamp is the default;
+            # a time they name — "breakfast", "yesterday" — stays in the proposal beside it). The
+            # writer runs within seconds of the turn, so the write time is the message's time.
+            DO.archive_write(o, {**prop, "said_at": rec["ts"], "derived": True,
+                                 "source_turn": rid})
             return "derived_written"
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"[noticed] derived entry not handled: {exc}")

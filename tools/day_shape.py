@@ -62,7 +62,7 @@ _DESIGN_DEFAULTS = {
     "meals": {
         "breakfast": {"earliest": "wake", "latest": "wake+90", "minutes": 15},
         "lunch": {"earliest": "12:00", "latest": "14:00", "minutes": 30},
-        "dinner": {"earliest": "18:00", "latest": "20:30", "minutes": 45},
+        "dinner": {"earliest": "18:00", "latest": "20:30", "minutes": 45, "usual": "18:30"},
     },
     "break_after_minutes": 90, "break_minutes": 10, "transition_minutes": 5,
     "departure_buffer_minutes": 10, "wind_down_minutes": 60, "travel_mode": "transit",
