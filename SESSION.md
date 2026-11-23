@@ -107,8 +107,8 @@ check-ins exactly. **R2 amended 2026-10-30:** Synth sees now/next/free/Important
 day (`547c446`). Reshuffle thinking is 0. Plan: [day_planner_plan_2026-10-24.md](archive/plans/day_planner_plan_2026-10-24.md)
 (§ 18 round 2); Stage B: `archive/PROJECT_LOG.md` § 2026-10-27; Stage C and step 2: § 2026-10-29.
 
-**WHATSAPP INPUT — Phase 1, VM side, BUILT and COMMITTED (`e45c7cd`, Mike: "as rec", 11-23);
-undeployed, and the channel ships OFF for every user.** The VM can receive a paired phone's
+**WHATSAPP INPUT — Phase 1, VM side, BUILT and DEPLOYED (`e45c7cd`, Mike: "as rec", 11-23);
+the channel is OFF for every user.** The VM can receive a paired phone's
 messages (`/device/*`, device token only), hold back what is objectionable or unreadable, translate
 Bulgarian on the VM (local OPUS-MT, Apache-2.0; other scripts held back), turn the rest into facts —
 questions/proposals/requests surface, routine chat is recorded only — re-raise an unanswered
@@ -116,14 +116,16 @@ one-to-one question once, park one close-card per task, purge on un-share, expir
 delete everything on the user's opt-in. Plan delta with Mike's rulings A–D and the endpoint contract
 Phase 2 builds to (§ 2.2, key in whole seconds):
 [whatsapp_phase1_build_plan_2026-11-23.md](archive/plans/whatsapp_phase1_build_plan_2026-11-23.md);
-log § 11-23 eighth. **Deploy (Mike's next routine one) installs `dateparser`, `sentencepiece`,
-`tzlocal`;** nothing changes for a user. **Next, before any alert: M2** — label ~200 received
+log § 11-23 eighth. **DEPLOYED 11-23 13:27** (by another chat; VM at `388a91c`, which includes
+`e45c7cd`; deps installed, both units active). **Owed, first thing next session:** the first post-deploy
+email intake sweep through the new `ingest()` path — VM: `cd ~/multi-model-mcp && journalctl -u
+metatron-scheduler@mike --since "13:27" --no-pager | grep -i intake` — pass: an `intake:` line, no
+`whatsapp housekeeping failed` / `task evidence check failed`. **Next, before any alert: M2** — label ~200 received
 messages on the Mac, Bulgarian included (walkthrough, ~45 min), **then M4** for `mike`: seed the
 `whatsapp` consent (`scripts/accounts.py seed-consent mike --scopes whatsapp --evidence "Mike W10, 2026-10-26"`), the stanza on,
 `scripts/fetch_whatsapp_translation_model.py` then `--check` on the VM. **Owed before Phase 2 wires the
 reader in:** a Fable review of `src/main/…/whatsapp/` (~0.2M). **Mike's phone runs only the
-`waprobe` build** — installing `assembleDebug` over it revokes All-files access; **`npx cap sync`
-before `assembleWaprobe`**; clean-build Iva's APK (`./gradlew clean assembleDebug`). Clean room still
+`waprobe` build** — how to build and serve it: `docs/INFRASTRUCTURE.md` § APK. Clean room still
 binds: open no transcripts; WhatsApp log entries only 10-30-02 and fragments titled "clean-room";
 never put the other phrase in a clean-room fragment's first heading (the write-time briefing fails
 closed).

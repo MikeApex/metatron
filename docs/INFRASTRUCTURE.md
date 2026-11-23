@@ -438,6 +438,13 @@ cd ..
                                # skipped sync or a stale, un-rebuilt APK before it ships
 ```
 
+**Mike's phone runs the `waprobe` build, not `debug`** (WhatsApp probe, from 2026-10-30): installing
+`assembleDebug` over it **revokes All-files access**, which the backup reader needs. Build it with
+`npx cap sync android` then `./gradlew assembleWaprobe` (`app/build/outputs/apk/waprobe/`), and serve
+that file as `app-debug.apk`. `check_apk_sync.sh` checks only the debug APK, so the sync step is the
+only guard on the probe build. **Any APK for someone else's phone is a clean build:**
+`./gradlew clean assembleDebug` — an incremental debug build carries ~2.3 MB of packaging holes.
+
 **Sideload to phone. The APK is always served at `http://100.70.67.45:8888/app-debug.apk`**
 (Mike's standing rule, 2026-09-03) — the Mac's Tailscale address, port 8888, that filename.
 Copy the built APK to a staging directory and serve **only that directory**:

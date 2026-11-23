@@ -90,7 +90,7 @@ The Fable reviewer was given the same limits.
 - then M4 for `mike`: seed the `whatsapp` consent, the stanza on, fetch the model and `--check` on the VM;
 - Phase 2 (phone) builds to plan delta § 2.2, after the owed Fable review of `src/main/…/whatsapp/`.
 
-**Deploy (Mike's next routine one) installs `dateparser`, `sentencepiece`, `tzlocal`; with the channel off nothing changes for a user.**
+**Deployed 11-23 13:27 by Mike from another chat** (VM at `388a91c`, which includes `e45c7cd` and `23ddb28`; `dateparser`/`sentencepiece`/`tzlocal` import on the VM; server and scheduler active). The first post-deploy intake sweep had not yet run when this window closed; its check is in `SESSION.md`. **M2 prep prompt:** `archive/handoffs/2026-11-23-whatsapp-m2-labelling-prep-prompt.md` (Opus 5.5) — Claude never sees a message text; Mike labels in his own terminal and pastes only the numbers.
 
 ### 2026-11-23, seventh (ranking Part B — Mike interviewed on what should outweigh what; the regret-of-delay plan written, Fable-reviewed, every finding reconciled; phase 1 build prompt and a research prompt ready) — no code; **nothing deployed**
 
