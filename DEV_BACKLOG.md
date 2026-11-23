@@ -1406,6 +1406,9 @@ evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording â
 unintended email to be sent" â€” is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
 
+- **[THINKING_CAP_HIT]** reply cut at the 8192-token output ceiling (thinking 7861 + reply 327, turn 1). Thinking overshoots its 4096 budget on this model; check whether the reply arrived whole.  
+  `2026-11-23T07:31:33.129036Z`
+
 - **[a specialist missed a signal it should have caught]** User asked 'what's on my plate for the rest of today?', but the coordinator emitted no routing instructions to Logistics or any specialist, leaving the synthesizer without active context to answer what's on the schedule.  
   `2026-11-22T18:17:12.619874Z`
 
