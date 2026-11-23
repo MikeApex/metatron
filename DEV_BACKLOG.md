@@ -75,6 +75,9 @@ back-tagging the rest is `[DB-0815-10]`.
 > against `git log` before promoting anything from here.
 *(empty — last triaged 2026-09-05; evidence in `archive/backlog_closed_2026-09.md`)*
 
+- **[instruction change]** User repeated instruction to remove 'Pain' (duplicate of 'A Real Pain') and 'Death Cab for Cutie at Troxy' (concert, not film) from Films list. The prior turn called change_entry setting status='removed' instead of remove_entry, leaving entries visible to the user. System prompt/tool choice must ensure remove_entry is used when user requests removing list items.  
+  `2026-11-23T11:58:44.366291Z`
+
 - **[needs building]** Mike requested a tool to capture live GPS coordinates and align them with current schedule activities to infer and anticipate completed tasks. Prompted after discussing message location tracking prior to Benny's 11:30 appointment.  
   `2026-11-17T10:49:15.868845Z`
 
@@ -114,7 +117,6 @@ back-tagging the rest is `[DB-0815-10]`.
   (`archive/plans/agent_instructions_to_code_sweep_2026-11-23.md` § 6).*
 - **[bug]** Telling Metatron you're free today doesn't clear the "(when free of childcare?)" question on the day plan — the one-day override is saved (`day_overrides`, holds: true) and the plan refreshes ("day shape changed"), but the weekend task keeps its condition and the Today panel still shows "File the quarterly return (when free of childcare?)" at 10:00. Reproduced 2026-11-23 by replaying `tests/test_day_plan_round2.py` check F8, which fails on clean HEAD too (predates the 11-23 derived-writer work; likely since `fda9d80` "every task is weighed"). Filed at Mike's request.  
   `2026-11-23`
-
 ## Now
 
 **Ranked — position is priority.** Capped at ~10, so something enters by displacing something.
@@ -1393,6 +1395,15 @@ claim user-facing (its log-write sibling is `[DB-0829-01]`); the two Iva/Eva cor
 evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording — "causing an
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
+
+- **[user corrected a prior turn]** User stated their last four messages were tests, correcting prior additions of Perfect Days, ramen meals, Manny junior football gift, and Conan O'Brien podcast.  
+  `2026-11-23T12:07:12.718700Z`
+
+- **[a specialist missed a signal it should have caught]** Coordinator routed previous message ('Had a bowl of ramen for lunch') instead of current message ('Gift idea for Manny: a junior football'), queuing Meals log instead of Gift ideas.  
+  `2026-11-23T12:02:02.816389Z`
+
+- **[user corrected a prior turn]** User repeated the previous message verbatim; no new correction or change of intent.  
+  `2026-11-23T11:57:35.472289Z`
 
 - **[user corrected a prior turn]** User corrected films list entries: 'A Real Pain' and 'Fiddler on the Roof' were incorrectly recorded as already watched rather than on the watchlist ('to watch', with Fiddler to watch with Manny); duplicate entry 'Pain' consolidated; and 'Death Cab for Cutie at Troxy' was misfiled as a film rather than a concert.  
   `2026-11-23T10:26:04.910336Z`
