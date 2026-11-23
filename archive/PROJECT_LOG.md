@@ -81,6 +81,11 @@ left without a home since Mark 2 ended on 11-18.
   is live.
 - The review's 19 misses are not ruled and are not built.
 
+**Later the same session (`75e2a65`): Mike folded the review's misses into the build.** 18 of the
+19 are in. Not the wishes-store read (M15), which he skipped as 11-05 #29. Each miss is placed by
+stage in the driver prompt and gets the same plan review; one found wrong is dropped and reported.
+The build estimate rose to ~1.8–2.1M tokens, with two or three A4 runs.
+
 **Also found:** `CLAUDE.md` trap 6 says only two agents are on the cached path. Eight
 specialists have been on it since 08-28. The driver's Stage 0 corrects it.
 
