@@ -196,15 +196,18 @@ enjoyed_gap_minutes: 15
 
 # lookup_public_fact asks the Research Agent, through the code guard in tools/lookup_guard.py.
 # The Research Agent answers from Google Search grounding, which is BILLED PER SEARCH AND SEEN BY
-# NO SPEND METER (plan § 8, Unseen 1) — this cap is the only bound. Price, RECALLED NOT VERIFIED
-# (the build had no web access): Gemini 3-series grounding ≈ $14 per 1,000 search queries, and
-# one lookup may run a few; 2-series ≈ $35 per 1,000 grounded requests. At 5 a day × ~3 queries,
-# the worst case is ≈ $0.21 a day per user (~$6/month); typical use is a few a week. Mike checks
-# the figure on the Vertex AI pricing page before protected_v2/behind_v2 flip (an (M) item).
+# NO SPEND METER (plan § 8, Unseen 1) — this cap is the only bound. Price, checked by Mike
+# 2026-11-23 (a pasted summary of the Vertex AI pricing page, not the page itself): Gemini
+# 3-series grounding (research_agent is models/gemini-3.8-flash) = $14 per 1,000 search QUERIES,
+# and one lookup may run a few; first 5,000 queries a month per account free. (2-series would be
+# $35 per 1,000 grounded REQUESTS — not our row.) At 5 a day × ~3 queries, the worst case is
+# $0.21 a day per user (~$6/month) before the free allowance; typical use is a few a week.
+# Gemini 2027-01-01 pricing change: re-check this figure then.
 lookups:
-  # OFF at deploy (Fable diff review #1): the tool answers "not available yet — ask the user"
-  # until Mike has checked the price above and ruled on figures. Turning it on is this one line.
-  enabled: false
+  # Was OFF at deploy (Fable diff review #1) until Mike checked the price above and ruled on
+  # figures. Both done 2026-11-23: price $14/1,000 queries confirmed, figures refused.
+  # Revert is this one line: enabled: false (the tool then answers "not available yet").
+  enabled: true
   per_day: 5
   # Refuse any money amount or health reading in a question (plan § 4.7: "a health/financial
   # figure from the user's records" — the guard cannot tell theirs from a public one).
