@@ -120,7 +120,8 @@ BUILT 11-23** (log § 11-23 second): button 5 names the refusal branch and lists
 fragments — **never put that phrase in a non-reference fragment's first heading** (fails closed).
 `/private/tmp` reference copy left to the next restart; rule 4 still binds.
 **Next:** `archive/handoffs/2026-11-23-whatsapp-increment-contents-walkthrough-prompt.md` (Opus,
-clean-room, ~5 min of Mike): serve that APK, Mike taps 5, read the shapes →
+clean-room, ~20 min of Mike): serve that APK, Mike taps 5, read the shapes; Mike reviews and
+commits the WhatsApp code (agreed 11-23) →
 the reader extension (P3) (narrowed 0a′ only if unrecognisable) → Phase 1
 ([plan](archive/plans/whatsapp_input_plan_2026-10-26.md) § 4).
 Clean room: open no transcripts; WhatsApp log entries only 10-30-02 and fragments titled

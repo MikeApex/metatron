@@ -32,6 +32,25 @@ scratchpad; no crypt implementation, no web. Read log § 11-23 second (the probe
   separate session (fragment titled "reference-reading"); **do not do 0a′ here.**
 - `decrypted copies deleted: yes` must be the last line.
 
+## Mike reviews and commits the WhatsApp code (~15 min, guided — agreed 11-23)
+
+It has been uncommitted since 10-30; the reader extension should start from a clean base.
+Walk Mike through the diff area by area and let him approve each before staging. Stage an
+explicit list, never a glob, and **`git diff` every tracked file first**: two windows share this
+tree, so lines another session wrote stop the commit.
+1. The reader: `android/app/src/main/java/com/mike/metatron/whatsapp/` and its tests in
+   `android/app/src/test/java/com/mike/metatron/whatsapp/`. Before staging, run
+   `./gradlew :app:testDebugUnitTest --tests 'com.mike.metatron.whatsapp.*'`; 19 must pass.
+2. The probe (throwaway, but committed so the record is whole): `android/app/src/waprobe/`,
+   `android/app/src/testWaprobe/`, the `waprobe` build type in `android/app/build.gradle`.
+3. `android/app/src/main/AndroidManifest.xml` (`allowBackup="false"`) and the `.gitignore`
+   admissions. Show their diffs; they may carry other sessions' lines.
+4. The hook fence: `scripts/hook_context_gate.py` + `tests/test_hook_context_gate_fence.py`.
+Leave out what is not WhatsApp: `.claude/agents/build-inquiry.md`,
+`archive/plans/inquiry_rewrite_2026-09-26.md`, the `2026-09-24-build-phase-*.patch` files.
+`android/app/src/test/java/com/getcapacitor/myapp/ExampleUnitTest.java` is Capacitor boilerplate;
+ask. Commit message without attribution lines; push; assert `HEAD` equals `origin/main`.
+
 ## Then
 
 Record the shapes in plan § 4 under INCREMENTS RULED and write the log fragment. Its first heading
@@ -40,4 +59,4 @@ prompt for the **reader extension (P3)**: which increments to read, how they com
 backup, a synthetic fixture built from the observed shapes, `src/main/` + `src/test/` (the 19 tests
 grow). Estimate ~0.5–1M Opus tokens, clean-room. Close with `/archive`.
 
-**Budget:** ~0.1M Opus tokens; Mike ~5 minutes. Run cost: none — throwaway probe.
+**Budget:** ~0.15M Opus tokens; Mike ~20 minutes (5 for the tap, 15 for the review). Run cost: none — throwaway probe.

@@ -44,7 +44,7 @@ file is the only narrative record, alongside the verbatim transcripts.*
 
 **APK:** `android/app/build/outputs/apk/waprobe/app-waprobe.apk`, built 11-23 07:29, sha256 `e204b170582780d7…` — check this before serving (11-23-01 correction iii).
 
-**Next:** the walkthrough session serves this APK; Mike installs over the probe (the update keeps notification access, key and events) and taps **5**; the report is read for shapes. Then the reader extension (P3) is designed from them, or, only if the contents are a format we cannot recognise, a narrowed Phase 0a′. Then Phase 1, VM side. The WhatsApp code stays uncommitted for Mike's review.
+**Next:** the walkthrough session serves this APK; Mike installs over the probe (the update keeps notification access, key and events) and taps **5**; the report is read for shapes. Then the reader extension (P3) is designed from them, or, only if the contents are a format we cannot recognise, a narrowed Phase 0a′. Then Phase 1, VM side. **Agreed with Mike at close:** the same walkthrough also takes him through the WhatsApp code diff (uncommitted since 10-30), so he can commit it. That adds ~15 min, about 20 in all. Reason: the reader extension should start from a clean base, and each further session piling onto an uncommitted tree raises the chance of a parallel window's lines mixing in. The prompt lists what to stage and what to leave out.
 
 ### 2026-11-22 → 11-23 (WhatsApp Phase 0 walkthrough, clean-room — the listener survives an idle night, no local model, read the nightly increments clean-room, full backups every 6 days) — **plan edits only; no code, nothing deployed**
 
