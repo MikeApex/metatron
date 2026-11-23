@@ -502,6 +502,13 @@ measure the extractor on Mike's labelled sample (M2) before any alert goes live.
 > plus a sent-hash list, the stale-backup and text-gone notices, message type for reply markers
 > (one probe count, M); two are accepted.
 
+> **PHASE 2 STEP 0 PASSED — 11-23 17:12 (clean-room).** The 11-23 reader changes met real data:
+> 9 of 9 increments decode on the rebuilt probe, no refusal, windows 547 and 362 exactly as before,
+> decrypted copies deleted. **Finding 6's count (button 9):** increments carry **no type field** —
+> the content block's field number sorts kinds instead, and types 7/15/99 have no content block;
+> type 7 is never received (6,063 from-me rows, 221 in no chat). Detail: review file § 5, last
+> note. Which from-me types are replies: Phase 2 plan, decision 5.
+
 **Phase 2 — Phone** (~2 sessions). P1–P5, plus the review's "During" items (review § 3).
 
 **Phase 3 — Alerts and security** (~1 session). P6 if W5; the WhatsApp cards (V7); **B1b WhatsApp rows** in

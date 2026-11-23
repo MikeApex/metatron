@@ -355,3 +355,24 @@ rest. The format description § 12 carries the new refusals.
 **For the Phase 2 prompt — the probe's proof (button 7) should be tapped once on the rebuilt probe
 before the nightly job is wired**, to confirm 9 of 9 increments still decode with the stricter
 `jid` checks on real files. That is the one thing these changes have not met: real data.
+
+**MET REAL DATA — 2026-11-23 17:12, Phase 2 Step 0 (clean-room; probe rebuilt with button 9, APK
+sha256 `821df61f…5b8f6`).** Button 7 on Mike's phone: **every increment decoded: yes — 9 of 9**
+(rotated 11-17 N 1–5, rotated 11-23 N 1–4; no live set yet), **no `REFUSED` line**, decrypted
+copies deleted: yes. The combined windows match 11-23 exactly — **547** (11-17 set) and **362**
+(11-23 set), in both / text equal 547 and 361 of 362 — so the stricter `jid` checks (finding 8) and
+the whole-second order (finding 5) changed no count on real files. One text differs in the 11-23
+set: an edit made after its increment was written — the case finding 2's hash list exists for.
+
+**Finding 6's count (button 9, 17:14).** Counts only; the reading is from the numbers, no field
+meaning assumed:
+- **Increments carry no type field.** No numeric field equals the full backup's `message_type`
+  (612 of 612 increment messages matched by row id and key_id). **The content block's field number
+  sorts them instead:** in this sample every typed kind with content has its own `1.2.N` (type 0 →
+  `{1}`, `{6}` or `{12}`; 1 → `{3}`; 2 → `{8}`; 9 → `{7}`; 92 → `{75}`; 118 → `{102}`); types 7, 15
+  and 99 carry **no content block**; type 90 is **never in an increment**.
+- **From-me rows in the newest full backup, by type** (rows / with text): 0 — 12,710 / 12,710;
+  7 — **6,063 / 105, and type 7 has no received rows at all** (221 belong to no chat); 90 — 1,825 / 0;
+  1 — 628 / 89; 2 — 290 / 0; 15 — 49 / 0; 3 — 25 / 0; 99 — 26 / 0; 9 — 17 / 13; 4 — 5 / 5;
+  24 — 4 / 4 (no received rows); ≤ 2 each for 11, 13, 16, 20, 81, 116.
+- **Which from-me types count as a reply** is decision 5 of the Phase 2 plan, put to Mike there.

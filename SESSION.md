@@ -13,7 +13,7 @@ on the VM 11-18 (ids + Bulgarian/taxes/Prudential). **Next: Iva's onboarding wal
 (`archive/handoffs/2026-11-23-iva-onboarding-walkthrough-prompt.md`, Opus; supersedes 10-29); M3 restarts on her approval day; `/backlog deep`, then
 `archive/handoffs/2026-10-30-backlog-attack-signout-calendar-text-forward-trail-prompt.md`;
 reply latency (with `[DB-1029-09]`); Sign out; security `[DB-1029-20]`;
-**WhatsApp:** Phase 1 (VM side) deployed 11-23, channel off; M2 dropped (real use is the baseline); phone reader reviewed and hardened 11-23; next Phase 2 (prompt written), then M4 (§ Current state);
+**WhatsApp:** Phase 1 (VM side) deployed 11-23, channel off; **Phase 2 planned, reviewed and ruled 11-23** (Step 0 passed on real data); next the build (`archive/handoffs/2026-11-23-whatsapp-phase-2-build-driver-prompt.md`, concurrent workers), then Mike's walkthrough and M4 (§ Current state);
 day-planner live checks `[DB-1029-01]` (due 10-31; the check script is already on the VM — no deploy needed); nine fixes' closes-on checks (11-12). **The
 meals habit still doesn't exist** — Mike re-asks as "open a daily habit…". **Still owed:** the
 boys' school hours/bedtimes → `children_home`; the "over and out" live check; Mike's calendar live
@@ -117,19 +117,16 @@ log § 11-23 eighth. **DEPLOYED 11-23 13:27** (by another chat; VM at `388a91c`,
 cadences under 6 h run on a grid from midnight, so a deploy no longer delays them — reminders keep
 their old timing; **deploys with the next routine one**. **M2 DROPPED as the gate (Mike, 11-23):
 real use is the baseline**, tuned from what he sees (plan § 4; log § 11-23 tenth). **Phone reader
-REVIEWED 11-23 (Fable; 16 findings, Mike: "as rec"), its seven reader fixes BUILT** (log § 11-23 twelfth;
-rulings and what Phase 2 carries: `archive/plans/whatsapp_phone_reader_review_2026-11-23_fable-5-2.md`)
-— tested on synthetic files only. **Next: Phase 2** (`archive/handoffs/2026-11-23-whatsapp-phase-2-phone-build-prompt.md`,
-Opus, high; plan first; nothing reaches the VM before the phone posts) — **it opens with two probe
-taps (M):** button 7 on a rebuilt probe (9 of 9 increments must still decode) and a message-type count;
-then **M4** for `mike`: seed the `whatsapp` consent (`scripts/accounts.py seed-consent mike --scopes
-whatsapp --evidence "Mike W10, 2026-10-26"`), the stanza on, `scripts/fetch_whatsapp_translation_model.py`
-then `--check` on the VM. **Phase 2 also builds a "this should have come up" action** — now the only
-measure of misses (Mike: "Build it in", 11-23; ~0.3–0.5M). **Mike's phone runs only the
-`waprobe` build** — how to build and serve it: `docs/INFRASTRUCTURE.md` § APK. Clean room still
-binds: open no transcripts; WhatsApp log entries only 10-30-02 and fragments titled "clean-room";
-never put the other phrase in a clean-room fragment's first heading (the write-time briefing fails
-closed).
+reviewed and hardened 11-23; met real data in Phase 2 Step 0** (9/9 increments, windows 547/362).
+**PHASE 2 PLANNED, REVIEWED (Fable, all closed) AND RULED 11-23** (log § 11-23 fourteenth; plan
+`archive/plans/whatsapp_phase2_build_plan_2026-11-23.md` § 5): one APK for every user, nothing
+active until the VM reports consent; the VM extended; replies by photo/voice/document count.
+**Next: the build** — `archive/handoffs/2026-11-23-whatsapp-phase-2-build-driver-prompt.md` (Opus,
+high; concurrent worktree workers; stops at commit); **then (M) a ~40-min walkthrough:** deploy →
+seed `mike`'s consent only → sideload `debug`, pair, key, chats → read the dry run → rest of M4.
+Mike's phone runs `waprobe` until then (`docs/INFRASTRUCTURE.md` § APK). Clean room still binds:
+no transcripts; WhatsApp log entries only 10-30-02 and fragments titled "clean-room"; never the
+other phrase in a clean-room fragment's first heading (the write-time briefing fails closed).
 
 **A9 — built and deployed 2026-08-18; `@waiting` on real use, review `2026-10-01`.** Spec, the
 five provisional parts and the date: [ROADMAP.md](ROADMAP.md) § A9a, the single home.

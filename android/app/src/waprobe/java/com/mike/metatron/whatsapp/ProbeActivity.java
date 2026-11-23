@@ -33,7 +33,7 @@ import java.util.Arrays;
  */
 public class ProbeActivity extends Activity {
     private TextView status, report;
-    private Button runBackup, runIncrement, runFieldMap, runProof, runSample;
+    private Button runBackup, runIncrement, runFieldMap, runProof, runSample, runTypes;
 
     @Override
     protected void onCreate(Bundle saved) {
@@ -67,6 +67,8 @@ public class ProbeActivity extends Activity {
         col.addView(runProof);
         runSample = button("8. Export a labelling sample (M2)", v -> runSampleExport());
         col.addView(runSample);
+        runTypes = button("9. Message types (Phase 2)", v -> runTypeCount());
+        col.addView(runTypes);
         col.addView(button("Refresh", v -> refresh()));
         col.addView(button("Delete all probe data", v -> confirmDelete()));
 
@@ -115,7 +117,8 @@ public class ProbeActivity extends Activity {
         String map = ProbeStore.savedFieldMapReport(this);
         String proof = ProbeStore.savedProofReport(this);
         String m2 = ProbeStore.savedM2Report(this);
-        report.setText((m2 == null ? "" : m2 + "\n") + (proof == null ? "" : proof + "\n") + (map == null ? "" : map + "\n") + ProbeReport.device(this) + "\n" + ProbeReport.survival(this) + "\n"
+        String types = ProbeStore.savedTypesReport(this);
+        report.setText((types == null ? "" : types + "\n") + (m2 == null ? "" : m2 + "\n") + (proof == null ? "" : proof + "\n") + (map == null ? "" : map + "\n") + ProbeReport.device(this) + "\n" + ProbeReport.survival(this) + "\n"
                 + ProbeReport.events(this) + "\n"
                 + ProbeReport.listener(this) + "\n" + (saved == null ? "== BACKUP PROBE ==\nnot run yet\n" : saved)
                 + "\n" + (inc == null ? "== INCREMENT TEST ==\nnot run yet\n" : inc));
@@ -197,13 +200,27 @@ public class ProbeActivity extends Activity {
         ProbeM2Run.sweepStale(this); // button 8's sample, once Taildrop has had time to read it
     }
 
-    /** Buttons 4–8 share the decrypted-copy work dir, so only one runs at a time. */
+    /** Buttons 4–9 share the decrypted-copy work dir, so only one runs at a time. */
     private void setRunning(boolean running) {
         runBackup.setEnabled(!running);
         runIncrement.setEnabled(!running);
         runFieldMap.setEnabled(!running);
         runProof.setEnabled(!running);
         runSample.setEnabled(!running);
+        runTypes.setEnabled(!running);
+    }
+
+    private void runTypeCount() {
+        setRunning(true);
+        report.setText("Counting message types… (decodes every increment, then decrypts the newest full backup once)");
+        new Thread(() -> {
+            String r = ProbeTypesRun.run(getApplicationContext());
+            ProbeStore.saveTypesReport(getApplicationContext(), r);
+            runOnUiThread(() -> {
+                setRunning(false);
+                refresh();
+            });
+        }, "wa-probe-types").start();
     }
 
     private void runSampleExport() {
