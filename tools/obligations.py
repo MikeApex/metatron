@@ -3196,7 +3196,11 @@ _CORRESPONDENCE_EVIDENCE = "correspondence evidence, approved in the app"
 # user's phone reported arriving at the place a task gets done, during its planned time. It says
 # they were THERE — never for how long — so it only ever offers a close; the tap closes it.
 _LOCATION_EVIDENCE = "location evidence, approved in the app"
-_PROPOSAL_SOURCES = ("correspondence", "location")
+# "whatsapp" (archive/plans/whatsapp_phase1_build_plan_2026-11-23.md § 2.5): ONE card per task,
+# ever — keyed by the task, not the message, so a chatty sender parks one card and a decline ends
+# WhatsApp proposals for that task for good. Correspondence keys per message, which for a chat
+# would park a card per line.
+_PROPOSAL_SOURCES = ("correspondence", "location", "whatsapp")
 _LOCATION_PROPOSAL_TTL_DAYS = 2
 
 
@@ -3217,12 +3221,21 @@ def add_proposal(task_id: str, envelope_id: str = "", basis: str = "", received:
         t = _find(doc["tasks"], tid)
         if t is None or t.get("status") != "open":
             return
-        if source == "correspondence" and t.get("kind") not in _ONE_OFF:
+        if source in ("correspondence", "whatsapp") and t.get("kind") not in _ONE_OFF:
             return
         if source == "location" and (t.get("kind") == "waiting" or not key):
             return
         props = t.setdefault("proposals", [])
-        if source == "correspondence":
+        if source == "whatsapp":
+            if any(p.get("source") == "whatsapp" for p in props):
+                return          # pending, accepted or declined: one per task, ever
+            wkey = f"whatsapp:{tid}"
+            pid = "pr_" + hashlib.sha256(f"{tid}|{wkey}".encode()).hexdigest()[:10]
+            props.append({"proposal_id": pid, "source": "whatsapp", "key": wkey,
+                          "envelope_id": envelope_id, "basis": str(basis or "")[:40],
+                          "received": str(received or "")[:25], "created": _stamp(),
+                          "status": "pending"})
+        elif source == "correspondence":
             if any(p.get("envelope_id") == envelope_id for p in props):
                 return
             pid = "pr_" + hashlib.sha256(f"{tid}|{envelope_id}".encode()).hexdigest()[:10]
@@ -3241,6 +3254,28 @@ def add_proposal(task_id: str, envelope_id: str = "", basis: str = "", received:
 
     _with_store(persona, apply)
     return added["ok"]
+
+
+def drop_pending_proposals(envelope_ids: set[str], source: str = "whatsapp",
+                           persona: str | None = None) -> int:
+    """Remove PENDING proposals of `source` that name one of these envelopes — the WhatsApp purge
+    (W3) and the user's opt-in deletion. Answered ones stay: they record a tap the user made."""
+    if not envelope_ids:
+        return 0
+    gone = {"n": 0}
+
+    def apply(doc: dict) -> None:
+        for t in doc["tasks"]:
+            props = t.get("proposals") or []
+            kept = [p for p in props if not (p.get("source") == source
+                                              and p.get("status") == "pending"
+                                              and p.get("envelope_id") in envelope_ids)]
+            if len(kept) != len(props):
+                gone["n"] += len(props) - len(kept)
+                t["proposals"] = kept
+
+    _with_store(persona, apply)
+    return gone["n"]
 
 
 def has_proposal(task_id: str, key: str, persona: str | None = None) -> bool:
@@ -3292,6 +3327,8 @@ def resolve_proposal(proposal_id: str, accept: bool, persona: str | None = None)
         return result
     prop = target["prop"] or {}
     if not accept:
+        if prop.get("source") == "whatsapp":
+            return f"{target['task']} left open; WhatsApp will not suggest closing it again"
         what = "that arrival" if prop.get("source") == "location" else "that message"
         return f"{target['task']} left open; {what} will not be offered again"
     with _user_act():   # the user's tap on the card — never gated by a turn's words
@@ -3349,9 +3386,59 @@ def _sender_matches(expect: str, address: str, display: str) -> bool:
     return bool(expect) and (expect in display or expect.replace(" ", "") in address)
 
 
+_WA_WORD_RE = re.compile(r"\w+", re.UNICODE)
+
+
+def _wa_sender_matches(expect: str, address: str, display: str) -> bool:
+    """A WhatsApp sender against a task's `expect_from` (phase-1 plan § 2.5, review 1).
+
+    An id (`@` in it — what Phase 3's "Track this" writes) must equal the canonical sender
+    exactly. Anything else is what a model wrote ("Anna"), matched against **the user's own
+    name** for the sender — the share list's one-to-one label or group senders map, never a
+    group subject or a WhatsApp display name — as whole words in order, case-folded: "Anna"
+    matches "Anna Petrova", never "Joanna". Not `_sender_matches`: its substring test is how the
+    one card a task ever gets would land on the wrong person.
+    """
+    expect = (expect or "").strip().casefold()
+    if not expect:
+        return False
+    if "@" in expect:
+        return (address or "").strip().casefold() == expect
+    want = _WA_WORD_RE.findall(expect)
+    have = _WA_WORD_RE.findall((display or "").casefold())
+    if not want or not have:
+        return False
+    return any(have[i:i + len(want)] == want for i in range(len(have) - len(want) + 1))
+
+
+def match_reply_marker(envelope_ids: set[str], marker_time: str,
+                       persona: str | None = None) -> int:
+    """The user's own reply in a chat, as evidence for a task opened from a message in it.
+
+    `envelope_ids` are that chat's WhatsApp facts that asked something of the user (question,
+    request, proposal) — tools/intake_whatsapp.py passes them, so this module never reads the
+    index. An open one-off task whose `source_id` is one of them, opened before `marker_time`,
+    gets the task's one WhatsApp card. Never a close: replying is not always doing.
+    """
+    if not envelope_ids or not marker_time:
+        return 0
+    added = 0
+    for t in _load(persona):
+        t = _norm(t)
+        if (t.get("status") != "open" or t.get("kind") not in _ONE_OFF
+                or t.get("source_id") not in envelope_ids):
+            continue
+        if str(t.get("created_at") or "") >= str(marker_time):
+            continue
+        if add_proposal(t["id"], t["source_id"], "reply", marker_time[:25], persona=persona,
+                        source="whatsapp"):
+            added += 1
+    return added
+
+
 def match_envelope(envelope_id: str, thread_id: str = "", sender_address: str = "",
                    sender_display: str = "", subject: str = "", received: str = "",
-                   category: str = "", persona: str | None = None) -> int:
+                   category: str = "", persona: str | None = None, channel: str = "") -> int:
     """
     Called by tools/intake.sweep for each message it processes. A message that answers an
     open deadline or waiting task parks a proposed close for the user to tap — it never closes
@@ -3371,6 +3458,15 @@ def match_envelope(envelope_id: str, thread_id: str = "", sender_address: str = 
         if t.get("status") != "open" or t.get("kind") not in _ONE_OFF or t.get("_blocked"):
             continue
         if envelope_id == t.get("source_id"):
+            continue
+        if channel == "whatsapp":
+            # The sender basis only: a chat has no thread (thread_id is empty by design) and its
+            # subject is our own fact string, not words of theirs to match a task against.
+            if (t.get("expect_from")
+                    and _wa_sender_matches(t["expect_from"], sender_address, sender_display)
+                    and add_proposal(t["id"], envelope_id, "sender", received, persona=persona,
+                                     source="whatsapp")):
+                added += 1
             continue
         basis = None
         if thread_id and thread_id == t.get("source_thread"):

@@ -32,7 +32,11 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCOPES = ("base_configuration", "correspondence_read", "tone_profile", "contact_enrichment")
+# `whatsapp` (archive/plans/whatsapp_input_plan_2026-10-26.md W10; phase-1 build plan § 1): the
+# channel opens only with this record AND the channel stanza. Not in APP_SCOPES and no text yet —
+# `mike`'s record is seeded on the VM citing his ruling; Iva's text is shown at M7 (plan L2).
+SCOPES = ("base_configuration", "correspondence_read", "tone_profile", "contact_enrichment",
+          "whatsapp")
 
 # The texts the user is shown live in config/consent/<scope>_<version>.md, so the record's
 # `text_version` points at exactly what she read.

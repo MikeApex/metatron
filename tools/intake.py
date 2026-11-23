@@ -92,10 +92,13 @@ change one, change both.
 
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import fnmatch
 import hashlib
 import json
 import logging
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -115,6 +118,12 @@ _TEMPLATE_PATH = Path(__file__).parent.parent / "config" / "templates" / "intake
 _PROTECTED_CATEGORY = "action_required"
 
 _VALID_DISPOSITIONS = ("surface", "digest", "silent")
+
+# Channels the phone PUSHES (POST /device/whatsapp/events → ingest()), never polled by sweep():
+# no adapter, no fetch, no channel-health entry. They also never read or teach the learned sender
+# ledger — each WhatsApp message is classified on its own facts, because a sender is not a
+# category (WhatsApp phase-1 plan § 2.3; Mike's settled intake ruling).
+_PUSH_CHANNELS = frozenset({"whatsapp"})
 
 
 # ---------------------------------------------------------------------------
@@ -172,6 +181,34 @@ def _intake_dir(persona: str | None = None) -> Path:
     path = persona_data_dir(persona) / "intake"
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+# One lock over this persona's intake state — seen.json, ledger.json, records.jsonl and the
+# WhatsApp stores — because two PROCESSES write them: the hourly sweep runs in the scheduler, and
+# the WhatsApp endpoint calls ingest() in the server (phase-1 plan § 2.4, review 4). Advisory
+# (fcntl): **any new writer of these files must take it**, or the race it closes re-opens.
+# Re-entrant within a thread, so ingest() may call _append_record() without blocking on itself.
+_LOCK_STATE = threading.local()
+
+
+@contextlib.contextmanager
+def _state_lock(persona: str | None = None):
+    depth = getattr(_LOCK_STATE, "depth", 0)
+    if depth:
+        _LOCK_STATE.depth = depth + 1
+        try:
+            yield
+        finally:
+            _LOCK_STATE.depth -= 1
+        return
+    with open(_intake_dir(persona) / ".state.lock", "a") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        _LOCK_STATE.depth = 1
+        try:
+            yield
+        finally:
+            _LOCK_STATE.depth = 0
+            fcntl.flock(handle, fcntl.LOCK_UN)
 
 
 def _read_json(path: Path, default):
@@ -285,7 +322,7 @@ def _load_adapters(cfg: dict) -> None:
         except Exception as exc:
             logger.warning(f"[intake] email adapter unavailable: {exc}")
     for name, enabled in channels.items():
-        if enabled and name not in _ADAPTERS:
+        if enabled and name not in _ADAPTERS and name not in _PUSH_CHANNELS:
             logger.warning(f"[intake] channel {name!r} enabled but no adapter registered")
 
 
@@ -560,6 +597,9 @@ def classify(env: Envelope, cfg: dict, ledger: dict) -> Classification:
         pending_domain = _UNSET
         pending_reason = ""
 
+    if env.channel == "whatsapp":
+        return _classify_whatsapp(env, cfg, pending_override, pending_domain, pending_reason)
+
     learned = _ledger_lookup(env, ledger, cfg)
     if learned:
         category, reason = learned
@@ -582,6 +622,33 @@ def classify(env: Envelope, cfg: dict, ledger: dict) -> Classification:
         "; ".join(filter(None, [pending_reason, "no rule, ledger or header signal"])))
 
 
+def _classify_whatsapp(env: Envelope, cfg: dict, override, domain_override,
+                       reason: str) -> Classification:
+    """A WhatsApp fact, on its own facts — never the ledger (phase-1 plan § 2.3).
+
+    `tools/intake_whatsapp.py` decides `action` from the fact's type and the chat's kind: in a
+    one-to-one chat a question, proposal or request needs the user; in a group only a proposal
+    with a time does (verify 3). Everything else is `info`: recorded only — silent, no domain,
+    so it reaches no queue, no digest and no specialist (Mike, decision B, 2026-11-23). A user
+    rule that set a category already returned above; one that set only a disposition or a
+    domain still applies here.
+    """
+    wa = (env.signals or {}).get("whatsapp") or {}
+    note = f"whatsapp: {wa.get('type') or 'info'} in a {wa.get('kind') or 'chat'}"
+    if wa.get("action"):
+        category = _PROTECTED_CATEGORY
+        return Classification(
+            category, _effective_disposition(category, cfg, override, narrow=True),
+            _effective_domain(category, cfg, domain_override), "whatsapp",
+            "; ".join(filter(None, [reason, note])))
+    return Classification(
+        "correspondence", _effective_disposition("correspondence", cfg, override or "silent",
+                                                 narrow=True),
+        _effective_domain("correspondence", cfg,
+                          None if domain_override is _UNSET else domain_override),
+        "whatsapp", "; ".join(filter(None, [reason, note])))
+
+
 # ---------------------------------------------------------------------------
 # Records — append-only and permanent
 # ---------------------------------------------------------------------------
@@ -595,12 +662,53 @@ def _append_record(row: dict, persona: str | None = None) -> None:
     unauditable — the user cannot ask about what neither of you kept.
     """
     path = _intake_dir(persona) / "records.jsonl"
-    with path.open("a") as handle:
+    with _state_lock(persona), path.open("a") as handle:
         handle.write(json.dumps(row, sort_keys=True) + "\n")
     try:
         path.chmod(0o600)
     except OSError:
         pass
+
+
+def _rewrite_records(transform: Callable[[dict], dict | None],
+                     persona: str | None = None) -> int:
+    """Rewrite records.jsonl through `transform` (a row → the row, a replacement, or None to drop).
+
+    **The one exception to "nothing is deleted", and only ever for `channel == "whatsapp"`
+    rows** — an update replacing a fact (revise), an un-share or an opt-in deletion (purge), and
+    the 90-day expiry (W3, W6). Rows of any other channel pass through untouched whatever the
+    transform says. Under the state lock, so an append from the other process is never lost.
+    Returns how many rows changed or went.
+    """
+    path = _intake_dir(persona) / "records.jsonl"
+    with _state_lock(persona):
+        if not path.exists():
+            return 0
+        out, changed = [], 0
+        for line in path.read_text().splitlines():
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except Exception:
+                out.append(line)
+                continue
+            if row.get("channel") not in _PUSH_CHANNELS:
+                out.append(line)
+                continue
+            new = transform(row)
+            if new is None:
+                changed += 1
+                continue
+            if new != row:
+                changed += 1
+            out.append(json.dumps(new, sort_keys=True))
+        if changed:
+            tmp = path.with_suffix(".jsonl.tmp")
+            tmp.write_text("".join(x + "\n" for x in out))
+            tmp.chmod(0o600)
+            tmp.replace(path)
+        return changed
 
 
 def read_records(since: str = "", persona: str | None = None) -> list[dict]:
@@ -743,7 +851,10 @@ def _empty_queue(domain: str, records: list[dict] | None = None) -> dict:
         # Records the sweep ingested but could not route anywhere. This is the number
         # that makes the queue's emptiness legible: 24 messages seen, none classified.
         source = read_records() if records is None else records
-        unrouted = sum(1 for row in source if not row.get("domain"))
+        # WhatsApp's recorded-only facts are routed nowhere ON PURPOSE (decision B), so they
+        # are not "unrouted" messages and would only swell this count (verify new 3).
+        unrouted = sum(1 for row in source if not row.get("domain")
+                       and row.get("channel") not in _PUSH_CHANNELS)
         if unrouted:
             why.append(f"{unrouted} ingested message(s) currently carry no domain and "
                        f"so appear in no queue")
@@ -912,6 +1023,14 @@ def context_block(persona: str | None = None) -> str:
     if counts:
         lines.append("[Intake queues] " + ", ".join(counts))
 
+    # WhatsApp's awaiting-reply backstop (V6): a one-to-one question still unanswered after a day,
+    # offered once. Empty for any user who never had the channel.
+    try:
+        from tools import intake_whatsapp
+        lines.extend(intake_whatsapp.context_lines(persona))
+    except Exception as exc:  # noqa: BLE001 — a context line must never break context assembly
+        logger.warning(f"[intake] whatsapp context line skipped: {exc}")
+
     # Last, and ours: a channel whose sweeps are failing (finding 6, see _record_channel_health).
     # States the consequence only — no error text, no mechanism.
     try:
@@ -1033,13 +1152,14 @@ def teach_intake(sender: str = "", subject_contains: str = "", list_id: str = ""
     # A correction contradicts whatever the ledger had learned about this sender —
     # retire it rather than letting it re-accumulate its way back into effect.
     retired = []
-    ledger = _load_ledger()
-    for key in (f"list:{list_id}" if list_id else None,
-                f"addr:{sender}" if sender and "*" not in sender else None):
-        if key and retire(ledger, key, f"user correction {stamp}"):
-            retired.append(key)
-    if retired:
-        _save_ledger(ledger)
+    with _state_lock():    # the sweep writes ledger.json from the other process
+        ledger = _load_ledger()
+        for key in (f"list:{list_id}" if list_id else None,
+                    f"addr:{sender}" if sender and "*" not in sender else None):
+            if key and retire(ledger, key, f"user correction {stamp}"):
+                retired.append(key)
+        if retired:
+            _save_ledger(ledger)
 
     # Systematic mis-classification should reach the dev backlog through the
     # machine-log sync that already exists.
@@ -1139,6 +1259,114 @@ def _record_channel_health(persona: str | None, attempted: list[str],
         logger.warning(f"[intake] channel health not recorded: {exc}")
 
 
+def ingest(envelopes: list[Envelope], persona: str | None = None, cfg: dict | None = None,
+           siblings: list[Envelope] | None = None) -> dict:
+    """Classify, record and mark seen — the per-envelope half of the sweep, callable on its own.
+
+    `sweep()` calls it after fetching; the WhatsApp endpoint calls it for pushed messages
+    (phase-1 plan § 2.4). Everything happens under the state lock, on a `seen` and a ledger
+    **re-read inside it** — the copies a caller read before a slow fetch may be stale. `seen` is
+    pruned here, the one prune (verify new 2). `siblings` are the collapsed-away messages of the
+    threads processed now; they are marked seen too.
+
+    Returns {"tally": {category: n}, "processed": [envelopes], "results": {id: Classification},
+    "duplicates": [ids already seen]}.
+    """
+    cfg = load_config(persona) if cfg is None else cfg
+    limits = cfg.get("limits") or {}
+    out: dict = {"tally": {}, "processed": [], "results": {}, "duplicates": []}
+    with _state_lock(persona):
+        seen = _prune_seen(_load_seen(persona), int(limits.get("seen_retention_days", 90)))
+        ledger = _load_ledger(persona)
+
+        # The model stage, doubly gated: config off by default, and the eval gate
+        # (tests/run_intake_eval.py — zero action_required false negatives) before any
+        # persona flips it on. Import deferred so a code-only sweep never touches the
+        # model stack.
+        extractor_on = bool((cfg.get("extractor") or {}).get("enabled"))
+
+        tally = out["tally"]
+        now = datetime.now().isoformat(timespec="seconds")
+        processed_threads: set[str] = set()
+        for env in envelopes:
+            if env.id in seen:
+                out["duplicates"].append(env.id)
+                continue
+            result = classify(env, cfg, ledger)
+            important = False
+            if extractor_on and result.category == "unclear" and result.source == "default":
+                try:
+                    from tools.intake_extract import extract, has_domain_opinion
+                    found = extract(env, persona)
+                    if found["category"] != "unclear":
+                        # Domain precedence (2026-09-03): the model's answer beats the
+                        # category default, and a user `rules:` entry beats both — which
+                        # is why the rule path never reaches here. A model that returned
+                        # no usable domain falls through to the category default, so this
+                        # axis can only improve routing, never lose a queue entry that
+                        # the old one-to-one mapping would have made.
+                        domain = (found["domain"] if has_domain_opinion(found)
+                                  else _effective_domain(found["category"], cfg))
+                        result = Classification(
+                            found["category"],
+                            _effective_disposition(found["category"], cfg),
+                            domain,
+                            "extractor", "extractor classification")
+                        important = found.get("important", False)
+                except Exception as exc:
+                    logger.warning(f"[intake] extractor unavailable: {exc}")
+                    extractor_on = False    # one failure, not one per message
+            markers = contains_injection_markers(f"{env.subject}\n{env.body}")
+            row = _record_row(env, result, markers)
+            if important:
+                row["important"] = True
+            _append_record(row, persona)
+            # Correspondence evidence for the task ledger (archive/plans/
+            # task_ledger_plan_2026-10-23.md § 6.3): a message answering an open deadline or
+            # waiting task parks a proposed close the user approves with a tap. Code, no model.
+            # A message carrying injection markers is never evidence of anything; ids only cross.
+            if not markers:
+                try:
+                    from tools.obligations import match_envelope
+                    match_envelope(env.id, env.thread_id, env.sender_address, env.sender_display,
+                                   env.subject, env.received, result.category, persona=persona,
+                                   channel=env.channel)
+                except Exception as exc:  # noqa: BLE001 — one task fault must not cost the sweep
+                    logger.warning(f"[intake] task evidence check failed: {exc}")
+            # The ledger learns only from decisions Python is confident in. Learning from
+            # its own `unclear` default would teach it that everything unfamiliar is
+            # unfamiliar, and learning from the extractor is deferred to Phase 3 so a
+            # model's guess cannot harden into a rule before the eval corpus exists.
+            # `ledger_safe: False` marks an UNWRAPPED self-forward [DB-0904-01]. The
+            # original sender came out of a message body — attacker-writable text — and
+            # authentication proved only that the user forwarded it, not that the quoted
+            # header inside is truthful. Routing on it is cheap to get wrong and easy to
+            # correct; TEACHING THE LEDGER FROM IT IS NEITHER, because a forged identity
+            # would harden into a standing rule that then mislabels that sender's real
+            # mail. Route on it, never learn from it. A pushed channel never teaches it at all.
+            ledger_safe = (env.signals or {}).get("ledger_safe", True)
+            if (result.source in ("rule", "headers") and ledger_safe
+                    and env.channel not in _PUSH_CHANNELS):
+                observe(ledger, env, result.category)
+            seen[env.id] = now
+            processed_threads.add(env.thread_id or env.id)
+            tally[result.category] = tally.get(result.category, 0) + 1
+            out["processed"].append(env)
+            out["results"][env.id] = result
+
+        # Collapsed-away siblings of processed threads are handled work — mark them seen,
+        # or the next sweep re-surfaces the same thread through its second-newest message
+        # (2026-08-19 review, finding 4). Siblings of threads the cap deferred are NOT
+        # marked: they come back next sweep with their thread, which is the cap working.
+        for env in siblings or ():
+            if env.id not in seen and (env.thread_id or env.id) in processed_threads:
+                seen[env.id] = now
+
+        _save_seen(seen, persona)
+        _save_ledger(ledger, persona)
+    return out
+
+
 def sweep(persona: str | None = None) -> str:
     """Read new messages, classify them, record them. Notifies nothing, ever.
 
@@ -1147,6 +1375,13 @@ def sweep(persona: str | None = None) -> str:
     header for why that matters and which older decision it reconciles with.
     """
     cfg = load_config(persona)
+    # WhatsApp housekeeping first, and whatever the switches say: the 90-day expiry and the
+    # awaiting-reply backstop must not depend on the mail sweep being on (phase-1 plan § 2.6-2.7).
+    try:
+        from tools import intake_whatsapp
+        intake_whatsapp.hourly(persona, cfg)
+    except Exception as exc:  # noqa: BLE001 — WhatsApp housekeeping never costs the mail sweep
+        logger.warning(f"[intake] whatsapp housekeeping failed: {exc}")
     if not cfg.get("enabled"):
         return "intake disabled"
     if _in_quiet_hours(persona):
@@ -1156,22 +1391,23 @@ def sweep(persona: str | None = None) -> str:
     max_per_sweep = int(limits.get("max_per_sweep", 50))
     _load_adapters(cfg)
 
-    seen = _prune_seen(_load_seen(persona),
-                       int(limits.get("seen_retention_days", 90)))
-    ledger = _load_ledger(persona)
+    # A read-only copy, for the adapters' skip predicate only: it may be stale by the time the
+    # fetch returns (the server ingests WhatsApp meanwhile), which costs at worst a download of
+    # something already seen — ingest() re-reads under the lock and drops it (review 4).
+    seen_snapshot = _load_seen(persona)
 
     fetched: list[Envelope] = []
     failures: list[str] = []
     attempted: list[str] = []
     for channel, enabled in (cfg.get("channels") or {}).items():
-        if not enabled or channel not in _ADAPTERS:
+        if not enabled or channel not in _ADAPTERS or channel in _PUSH_CHANNELS:
             continue
         attempted.append(channel)
         # The skip predicate lets an adapter avoid downloading content for messages
         # already processed — the difference between an idle hourly sweep costing a
         # headers-only round trip and it re-downloading 50 full bodies.
         def _already_seen(native_id: str, _ch=channel) -> bool:
-            return envelope_id(_ch, native_id) in seen
+            return envelope_id(_ch, native_id) in seen_snapshot
         try:
             fetched.extend(_ADAPTERS[channel](max_per_sweep, skip=_already_seen))
         except TypeError:
@@ -1188,87 +1424,11 @@ def sweep(persona: str | None = None) -> str:
     _record_channel_health(persona, attempted,
                            {f.split(":", 1)[0] for f in failures})
 
-    fresh_all = [env for env in fetched if env.id not in seen]
+    fresh_all = [env for env in fetched if env.id not in seen_snapshot]
     fresh = collapse_threads(fresh_all)[:max_per_sweep]
-
-    # The model stage, doubly gated: config off by default, and the eval gate
-    # (tests/run_intake_eval.py — zero action_required false negatives) before any
-    # persona flips it on. Import deferred so a code-only sweep never touches the
-    # model stack.
-    extractor_on = bool((cfg.get("extractor") or {}).get("enabled"))
-
-    tally: dict[str, int] = {}
-    now = datetime.now().isoformat(timespec="seconds")
-    processed_threads: set[str] = set()
-    for env in fresh:
-        result = classify(env, cfg, ledger)
-        important = False
-        if extractor_on and result.category == "unclear" and result.source == "default":
-            try:
-                from tools.intake_extract import extract, has_domain_opinion
-                found = extract(env, persona)
-                if found["category"] != "unclear":
-                    # Domain precedence (2026-09-03): the model's answer beats the
-                    # category default, and a user `rules:` entry beats both — which
-                    # is why the rule path never reaches here. A model that returned
-                    # no usable domain falls through to the category default, so this
-                    # axis can only improve routing, never lose a queue entry that
-                    # the old one-to-one mapping would have made.
-                    domain = (found["domain"] if has_domain_opinion(found)
-                              else _effective_domain(found["category"], cfg))
-                    result = Classification(
-                        found["category"],
-                        _effective_disposition(found["category"], cfg),
-                        domain,
-                        "extractor", "extractor classification")
-                    important = found.get("important", False)
-            except Exception as exc:
-                logger.warning(f"[intake] extractor unavailable: {exc}")
-                extractor_on = False    # one failure, not one per message
-        markers = contains_injection_markers(f"{env.subject}\n{env.body}")
-        row = _record_row(env, result, markers)
-        if important:
-            row["important"] = True
-        _append_record(row, persona)
-        # Correspondence evidence for the task ledger (archive/plans/
-        # task_ledger_plan_2026-10-23.md § 6.3): a message answering an open deadline or
-        # waiting task parks a proposed close the user approves with a tap. Code, no model.
-        # A message carrying injection markers is never evidence of anything; ids only cross.
-        if not markers:
-            try:
-                from tools.obligations import match_envelope
-                match_envelope(env.id, env.thread_id, env.sender_address, env.sender_display,
-                               env.subject, env.received, result.category, persona=persona)
-            except Exception as exc:  # noqa: BLE001 — one task fault must not cost the sweep
-                logger.warning(f"[intake] task evidence check failed: {exc}")
-        # The ledger learns only from decisions Python is confident in. Learning from
-        # its own `unclear` default would teach it that everything unfamiliar is
-        # unfamiliar, and learning from the extractor is deferred to Phase 3 so a
-        # model's guess cannot harden into a rule before the eval corpus exists.
-        # `ledger_safe: False` marks an UNWRAPPED self-forward [DB-0904-01]. The
-        # original sender came out of a message body — attacker-writable text — and
-        # authentication proved only that the user forwarded it, not that the quoted
-        # header inside is truthful. Routing on it is cheap to get wrong and easy to
-        # correct; TEACHING THE LEDGER FROM IT IS NEITHER, because a forged identity
-        # would harden into a standing rule that then mislabels that sender's real
-        # mail. Route on it, never learn from it.
-        ledger_safe = (env.signals or {}).get("ledger_safe", True)
-        if result.source in ("rule", "headers") and ledger_safe:
-            observe(ledger, env, result.category)
-        seen[env.id] = now
-        processed_threads.add(env.thread_id or env.id)
-        tally[result.category] = tally.get(result.category, 0) + 1
-
-    # Collapsed-away siblings of processed threads are handled work — mark them seen,
-    # or the next sweep re-surfaces the same thread through its second-newest message
-    # (2026-08-19 review, finding 4). Siblings of threads the cap deferred are NOT
-    # marked: they come back next sweep with their thread, which is the cap working.
-    for env in fresh_all:
-        if env.id not in seen and (env.thread_id or env.id) in processed_threads:
-            seen[env.id] = now
-
-    _save_seen(seen, persona)
-    _save_ledger(ledger, persona)
+    result = ingest(fresh, persona, cfg=cfg, siblings=fresh_all)
+    tally = result["tally"]
+    fresh = result["processed"]
 
     if not fresh:
         return "intake: nothing new" + (f" ({'; '.join(failures)})" if failures else "")
@@ -1311,7 +1471,11 @@ def build_digest(persona: str | None = None, since: str = "") -> str:
     cfg = load_config(persona)
     state = _digest_state(persona)
     since = since or state.get("last_run") or ""
-    all_rows = read_records(persona=persona)      # one pass; everything below filters it
+    # WhatsApp never enters the digest (review 2): its silent facts are recorded only, and an
+    # unread action fact keeps surfacing through context_block instead — so a parked digest
+    # never holds a chat's facts, and un-sharing has nothing left behind to miss here.
+    all_rows = [r for r in read_records(persona=persona)       # one pass; below filters it
+                if r.get("channel") not in _PUSH_CHANNELS]
     rows = [r for r in all_rows if not since or r.get("seen_at", "") >= since]
 
     digest_cfg = cfg.get("digest") or {}

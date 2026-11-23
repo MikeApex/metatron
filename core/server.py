@@ -137,10 +137,19 @@ async def require_auth(request: Request, call_next):
         request.headers.get("authorization"),
         request.cookies.get(auth.COOKIE_NAME),
     )
+    path = request.url.path
+    # /device/* is the phone's native code and nothing else (WhatsApp phase-1 plan § 2.1): only a
+    # device token is accepted there, and a device token is refused everywhere else — decided
+    # here, never inside a handler, so a route added later under either prefix cannot get it wrong.
+    if path.startswith("/device/"):
+        identity = auth.decode_device_token(token)
+        if identity is None:
+            return JSONResponse({"detail": "Authentication required."}, status_code=401)
+        request.state.identity = identity
+        return await call_next(request)
     identity = auth.decode_token(token)
     if identity is None:
         return JSONResponse({"detail": "Authentication required."}, status_code=401)
-    path = request.url.path
     if (path.startswith("/monitor/") or path in _ADMIN_ONLY_PATHS) and not identity.is_admin_or_service:
         return JSONResponse({"detail": "Not available to this account."}, status_code=403)
     if path.startswith("/internal/") and identity.role != "service":
@@ -159,12 +168,14 @@ def bound_persona(identity: "auth.Identity", named: str | None) -> str:
 
     - A `user` or `admin` token is bound to one persona. A request that names a different
       one is refused (403) — never quietly served as either.
+    - A `device` token (the phone's native code, /device/* only) is bound the same way: the
+      user comes from the token, never from the request.
     - A `service` token is the internal clients' (scheduler, The Book, scripts). It names
       the persona per request, and one that names none is refused (400): there is no
       default to fall back to, by design.
     """
     named = (named or "").strip() or None
-    if identity.role in ("user", "admin"):
+    if identity.role in ("user", "admin", "device"):
         if named and named != identity.persona:
             raise HTTPException(status_code=403, detail="That isn't your account.")
         return identity.persona
@@ -1966,7 +1977,8 @@ def _proposals_for_display() -> list[dict]:
     # Intake records are read for correspondence proposals only; a location proposal carries its
     # own basis ("You were at the gym at 18:05"), written by code, never by a stranger.
     wanted = {p["envelope_id"] for p in props
-              if p.get("source", "correspondence") == "correspondence" and p.get("envelope_id")}
+              if p.get("source", "correspondence") in ("correspondence", "whatsapp")
+              and p.get("envelope_id")}
     records = ({r.get("id"): r for r in read_records() if r.get("id") in wanted}
                if wanted else {})
     out = []
@@ -1978,6 +1990,15 @@ def _proposals_for_display() -> list[dict]:
                         "received": str(p.get("created") or "")[:25]})
             continue
         rec = records.get(p["envelope_id"]) or {}
+        if p.get("source") == "whatsapp":
+            # The user's own name for the sender and our own fact string — never a WhatsApp id,
+            # never a display name the sender set, never their words (WhatsApp phase-1 § 2.5).
+            out.append({"proposal_id": p["proposal_id"], "task_id": p["task_id"],
+                        "what": p["what"], "source": "whatsapp",
+                        "sender": str(rec.get("sender_display") or "WhatsApp")[:120],
+                        "subject": str(rec.get("subject") or "")[:200],
+                        "received": str(rec.get("received") or p.get("received") or "")[:25]})
+            continue
         out.append({
             "proposal_id": p["proposal_id"], "task_id": p["task_id"], "what": p["what"],
             # Shown to the user only. Never stored on the task, never sent to a model.
@@ -2003,6 +2024,119 @@ async def tasks_proposal_decline(req: ProposalDeclineRequest, request: Request) 
     result = await asyncio.to_thread(_task_call, request_persona(request, req.persona),
                                      resolve_proposal, req.proposal_id, False)
     return _task_result(result)
+
+
+# ---------------------------------------------------------------------------
+# WhatsApp — the phone's native code on /device/*, the app's own calls on /whatsapp/*
+# (archive/plans/whatsapp_phase1_build_plan_2026-11-23.md § 2.1–2.2). `require_auth` decides who
+# may call which prefix; nothing here re-checks a token. The user is the token's, never the body's.
+# ---------------------------------------------------------------------------
+
+_DEVICE_BODY_CAP = 512 * 1024
+
+
+async def _read_capped(request: Request, cap: int = _DEVICE_BODY_CAP) -> dict:
+    """The JSON body, refused past `cap` BEFORE it is all read: a Content-Length over the cap is
+    refused unread, and a chunked body is counted as it streams (`/upload` reads first)."""
+    declared = request.headers.get("content-length")
+    if declared and declared.strip().isdigit() and int(declared) > cap:
+        raise HTTPException(status_code=413, detail="Request too large.")
+    buf = bytearray()
+    async for chunk in request.stream():
+        buf += chunk
+        if len(buf) > cap:
+            raise HTTPException(status_code=413, detail="Request too large.")
+    try:
+        body = json.loads(bytes(buf) or b"{}")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Body is not JSON.")
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Body must be a JSON object.")
+    return body
+
+
+async def _whatsapp_call(request: Request, fn, *args):
+    from tools import intake_whatsapp as W
+    persona_key = request_persona(request)
+    try:
+        return await asyncio.to_thread(_task_call, persona_key, fn, *args)
+    except W.ChannelOff:
+        raise HTTPException(status_code=403, detail="channel_off")
+    except W.EventError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/device/whatsapp/events")
+async def device_whatsapp_events(request: Request) -> dict:
+    """Messages from the user's shared chats. Screened, turned into facts, never stored as text."""
+    from tools import intake_whatsapp as W
+    body = await _read_capped(request)
+    return await _whatsapp_call(request, lambda: W.handle_events(None, body))
+
+
+@app.get("/device/whatsapp/cursor")
+async def device_whatsapp_cursor(request: Request) -> dict:
+    """Where the phone's nightly backup reader resumes — kept here so a reinstall resumes too."""
+    from tools import intake_whatsapp as W
+    return await _whatsapp_call(request, lambda: W.get_cursor(None))
+
+
+@app.post("/device/whatsapp/share-list")
+async def device_whatsapp_share_list(request: Request) -> dict:
+    """The chats the user shares, whole. A chat that drops off is deleted here at once (W3)."""
+    from tools import intake_whatsapp as W
+    body = await _read_capped(request)
+    return await _whatsapp_call(request, lambda: W.set_share_list(None, body))
+
+
+class DevicePairRequest(BaseModel):
+    label: str = ""
+    persona: str | None = None
+
+
+class DeviceRevokeRequest(BaseModel):
+    device_id: str
+    persona: str | None = None
+
+
+def _require_person(request: Request, named: str | None = None) -> str:
+    """The app's own WhatsApp calls are the signed-in user's: never a service token's. Naming
+    another persona is refused like on every bound route (bound_persona)."""
+    if request.state.identity.role not in ("user", "admin"):
+        raise HTTPException(status_code=403, detail="Not available to this account.")
+    return request_persona(request, named)
+
+
+@app.post("/whatsapp/device/pair")
+async def whatsapp_device_pair(req: DevicePairRequest, request: Request) -> dict:
+    """Mint this phone's device token. Shown once; the app hands it to native code (plan P5)."""
+    persona_key = _require_person(request, req.persona)
+    device_id, token = await asyncio.to_thread(auth.issue_device_token, persona_key, req.label)
+    return {"device_id": device_id, "token": token}
+
+
+@app.get("/whatsapp/devices")
+async def whatsapp_devices(request: Request, persona: str | None = None) -> dict:
+    persona_key = _require_person(request, persona)
+    return {"devices": await asyncio.to_thread(auth.list_devices, persona_key)}
+
+
+@app.post("/whatsapp/device/revoke")
+async def whatsapp_device_revoke(req: DeviceRevokeRequest, request: Request) -> dict:
+    persona_key = _require_person(request, req.persona)
+    ok = await asyncio.to_thread(auth.revoke_device, persona_key, req.device_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="No such device, or already revoked.")
+    return {"status": "ok"}
+
+
+@app.post("/whatsapp/delete-all")
+async def whatsapp_delete_all(request: Request, persona: str | None = None) -> dict:
+    """The user's own opt-in deletion of everything WhatsApp left here (Mike, decision C). Works
+    with the channel off: withdrawing consent first must not take away the means to delete."""
+    from tools import intake_whatsapp as W
+    persona_key = _require_person(request, persona)
+    return await asyncio.to_thread(_task_call, persona_key, W.delete_all, None)
 
 
 # ---------------------------------------------------------------------------

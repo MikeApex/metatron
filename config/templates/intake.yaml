@@ -30,6 +30,11 @@ enabled: false
 # specification). An unregistered name is skipped with a warning, never an error.
 channels:
   email: true
+  # WhatsApp is PUSHED by the phone (POST /device/whatsapp/events), never polled. Off for every
+  # user. It opens only when this is true AND the user holds a `whatsapp` consent record
+  # (core/consent.py) — either alone refuses with "channel_off". Turning this off stops
+  # collection and deletes nothing; deletion is the user's own opt-in (Mike, 2026-11-23).
+  whatsapp: false
   # telegram: false
   # sms: false
 

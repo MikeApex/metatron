@@ -2,6 +2,7 @@ package com.mike.metatron.whatsapp;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
@@ -32,6 +33,26 @@ public class ProbeProofTest {
                 + "\n    only newest, by chat kind {g.us=1} in 1 chats; from me 1, with text 0, timed before the base was written 0", v);
         for (String leak : new String[]{"secret", "KEY", "447700900", "120363", "whatsapp.net"}) {
             assertFalse(leak, a.contains(leak) || v.contains(leak));
+        }
+    }
+
+    @Test public void omittedMessageTypesSplitByFromMeAndChatKind() {
+        List<WaMessage> newest = Arrays.asList(
+                new WaMessage(ALICE, "KEY1", false, 1_763_870_400_000L, null, "secret carried", 1),
+                new WaMessage(ALICE, "KEY2", true, 1_763_870_401_000L, null, null, 2),
+                new WaMessage(GROUP, "KEY3", true, 1_763_870_402_000L, null, null, 3),
+                new WaMessage(GROUP, "KEY4", false, 1_763_870_403_000L, BOB, null, 4),
+                new WaMessage(ALICE, "KEY5", true, 1_763_870_404_000L, null, null, 5));
+        List<WaMessage> combined = Arrays.asList(newest.get(0));
+        java.util.Map<Long, Integer> types = new java.util.HashMap<>();
+        types.put(1L, 0); types.put(2L, 42); types.put(3L, 42); types.put(4L, 7);
+        // row 5 has no type row: reported as -1
+        String v = ProbeProof.versus(combined, newest, 1_763_870_000_000L, types);
+        assertTrue(v, v.endsWith("\n    message_type, in both {0=1}; only newest — from me in one-to-one {-1=1, 42=1}, "
+                + "from me in groups {42=1}, from me elsewhere {}, not from me {7=1}"));
+        // The chat-kind label (s.whatsapp.net, g.us) is printed by design; numbers, keys and text never.
+        for (String leak : new String[]{"secret", "KEY", "447700900", "120363"}) {
+            assertFalse(leak, v.contains(leak));
         }
     }
 }

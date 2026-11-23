@@ -271,6 +271,160 @@ def verify_token(token: str | None) -> bool:
     return decode_token(token) is not None
 
 
+# ---------------------------------------------------------------------------
+# Device tokens — the phone's native code, on /device/* only
+# (archive/plans/whatsapp_phase1_build_plan_2026-11-23.md § 2.1; plan P5)
+#
+#     d1.<persona>.<device_id>.<hmac>
+#
+# Why not a v2 token: a session token lasts 30 days and is minted only by a password login, so a
+# background listener would go dark every month. A device token carries no expiry of its own;
+# its life is the registry below, because revocation and "unused for 30 days" both need state.
+# Nothing secret is stored there — the token is derivable only with the signing key, so rotating
+# METATRON_AUTH_PASSWORD still revokes every one. `decode_token` refuses anything not `v2.`, and
+# core/server.py's middleware refuses a `d1.` token off /device/* and anything else on it.
+# ---------------------------------------------------------------------------
+
+DEVICE_UNUSED_DAYS = 30
+_DEVICE_TOUCH_SECONDS = 3600      # last_used is written at most hourly, not per request
+DEVICES_ROOT = Path(__file__).parent.parent / "data" / "personas"
+_DEVICE_ID_CHARS = frozenset("0123456789abcdef")
+
+
+def _devices_path(persona: str) -> Path:
+    return DEVICES_ROOT / persona / "devices.json"
+
+
+def _read_devices(persona: str) -> dict:
+    import json
+    path = _devices_path(persona)
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text())
+    except Exception:
+        return {}         # fail closed: an unreadable registry knows no device
+    return data if isinstance(data, dict) else {}
+
+
+def _write_devices(persona: str, data: dict) -> None:
+    import json
+    path = _devices_path(persona)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, indent=2, sort_keys=True))
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, path)
+
+
+def _devices_locked(persona: str):
+    import contextlib
+    import fcntl
+
+    @contextlib.contextmanager
+    def _cm():
+        path = _devices_path(persona)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path.with_name("devices.json.lock"), "a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock, fcntl.LOCK_UN)
+    return _cm()
+
+
+def _valid_device_persona(persona: str) -> bool:
+    import re
+    return bool(persona) and re.fullmatch(r"[a-z0-9][a-z0-9_]{0,39}", persona) is not None
+
+
+def issue_device_token(persona: str, label: str = "") -> tuple[str, str]:
+    """Pair a device: register it and return `(device_id, token)`. The token is shown once."""
+    import secrets
+    if not _valid_device_persona(persona):
+        raise ValueError(f"not a persona name: {persona!r}")
+    device_id = secrets.token_hex(8)
+    now = int(time.time())
+    with _devices_locked(persona):
+        data = _read_devices(persona)
+        data[device_id] = {"created": now, "last_used": now, "revoked_at": None,
+                           "label": " ".join(str(label or "").split())[:60]}
+        _write_devices(persona, data)
+    payload = f"d1.{persona}.{device_id}"
+    return device_id, f"{payload}.{_sign(payload)}"
+
+
+def decode_device_token(token: str | None) -> Identity | None:
+    """
+    `Identity(persona, "device")` for a valid device token, else None. Refused: a bad signature,
+    an unknown or revoked device, one unused for DEVICE_UNUSED_DAYS, and — for an account user —
+    an account that is no longer `active`, so disabling an account kills its devices too.
+    """
+    if not token or not token.startswith("d1."):
+        return None
+    payload, _, signature = token.rpartition(".")
+    try:
+        expected = _sign(payload)
+    except AuthNotConfigured:
+        return None
+    if not hmac.compare_digest(signature, expected):
+        return None
+    parts = payload.split(".")
+    if len(parts) != 3:
+        return None
+    _v, persona, device_id = parts
+    if not _valid_device_persona(persona) or not device_id or set(device_id) - _DEVICE_ID_CHARS:
+        return None
+    entry = _read_devices(persona).get(device_id)
+    now = int(time.time())
+    if not isinstance(entry, dict) or entry.get("revoked_at"):
+        return None
+    last = int(entry.get("last_used") or entry.get("created") or 0)
+    if now - last > DEVICE_UNUSED_DAYS * 86400:
+        return None
+    try:
+        from core import accounts
+        acct = accounts.get(persona)
+    except Exception:
+        return None       # fail closed, as decode_token does for user tokens
+    if acct is not None and acct.get("status") != "active":
+        return None
+    if now - last >= _DEVICE_TOUCH_SECONDS:
+        try:
+            with _devices_locked(persona):
+                data = _read_devices(persona)
+                if isinstance(data.get(device_id), dict):
+                    data[device_id]["last_used"] = now
+                    _write_devices(persona, data)
+        except OSError as e:   # bookkeeping never refuses a valid device
+            logger.warning(f"[auth] device last_used not recorded: {e}")
+    return Identity(persona, "device", 0)
+
+
+def list_devices(persona: str) -> list[dict]:
+    """Paired devices — ids, labels, dates. Never a token."""
+    out = []
+    for device_id, entry in sorted(_read_devices(persona).items()):
+        if isinstance(entry, dict):
+            out.append({"device_id": device_id, "label": entry.get("label") or "",
+                        "created": entry.get("created"), "last_used": entry.get("last_used"),
+                        "revoked": bool(entry.get("revoked_at"))})
+    return out
+
+
+def revoke_device(persona: str, device_id: str) -> bool:
+    """Revoke one device. True if it was live."""
+    with _devices_locked(persona):
+        data = _read_devices(persona)
+        entry = data.get(device_id)
+        if not isinstance(entry, dict) or entry.get("revoked_at"):
+            return False
+        entry["revoked_at"] = int(time.time())
+        _write_devices(persona, data)
+    return True
+
+
 # Brute-force blunting. A generated 32-byte password is not guessable in any practical
 # sense, so this is defence against a weak one the user chose by hand rather than the
 # primary control. Per-process and deliberately simple — a real lockout store would be

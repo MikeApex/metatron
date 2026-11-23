@@ -121,6 +121,11 @@ def _newer_intake_row(since: float, persona: str | None = None) -> bool:
             seen = row.get("seen_at")
             if not seen:
                 continue
+            # A WhatsApp chat produces rows all day; only one that needs the user is a genuinely
+            # new event. Routine chat facts must not lift every decline (WhatsApp phase-1 plan
+            # § 2.8, review 3). Email is unchanged.
+            if row.get("channel") == "whatsapp" and row.get("category") != "action_required":
+                continue
             try:
                 if datetime.fromisoformat(str(seen)).timestamp() > since:
                     return True

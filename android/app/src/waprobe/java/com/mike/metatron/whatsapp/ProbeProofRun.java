@@ -51,6 +51,32 @@ final class ProbeProofRun {
         return b.toString();
     }
 
+    /**
+     * Phase 1 step 0: every row's message_type (message._id → type) into {@code out}, and a
+     * per-type summary of the whole backup — rows and rows with text_data. Small integers only;
+     * read-only, closed before returning. The caller deletes the decrypted file.
+     */
+    static String readTypes(File database, java.util.Map<Long, Integer> out) {
+        android.database.sqlite.SQLiteDatabase db = android.database.sqlite.SQLiteDatabase.openDatabase(database.getPath(), null,
+                android.database.sqlite.SQLiteDatabase.OPEN_READONLY | android.database.sqlite.SQLiteDatabase.NO_LOCALIZED_COLLATORS);
+        try {
+            try (android.database.Cursor c = db.rawQuery("SELECT _id, message_type FROM message", null)) {
+                while (c.moveToNext()) out.put(c.getLong(0), c.isNull(1) ? -1 : c.getInt(1));
+            }
+            StringBuilder sum = new StringBuilder("{");
+            try (android.database.Cursor c = db.rawQuery("SELECT IFNULL(message_type, -1), COUNT(*), SUM(text_data IS NOT NULL) "
+                    + "FROM message GROUP BY 1 ORDER BY 1", null)) {
+                while (c.moveToNext()) {
+                    if (sum.length() > 1) sum.append(", ");
+                    sum.append(c.getInt(0)).append('=').append(c.getLong(1)).append('/').append(c.getLong(2));
+                }
+            }
+            return sum.append('}').toString();
+        } finally {
+            db.close();
+        }
+    }
+
     private static String absentFiles(Increment inc) {
         int n = 0;
         for (Increment.TableDelta t : inc.tables.values()) n += t.absentDeletedFiles;
@@ -128,9 +154,13 @@ final class ProbeProofRun {
         stage[0] = "newest full backup: decrypt";
         BackupDecryptor.decrypt(newestFile, key[0], fullOut, BackupDecryptor.FILESYSTEM);
         FullBackupMessages newest;
+        java.util.Map<Long, Integer> types = new java.util.HashMap<>();
+        String typeSummary;
         stage[0] = "newest full backup: read messages";
         try {
             newest = FullBackupMessages.read(fullOut, 0);
+            stage[0] = "newest full backup: read message_type";
+            typeSummary = readTypes(fullOut, types);
         } finally {
             BackupDecryptor.deleteDecrypted(fullOut);
         }
@@ -138,6 +168,7 @@ final class ProbeProofRun {
         java.util.Map<String, WaMessage> newestByKey = ProbeProof.index(newestCanon);
         b.append("newest full backup: ").append(newest.messages.size()).append(" messages with a key_id (")
                 .append(newest.withoutKeyId).append(" without; ").append(newest.withoutChat).append(" belonging to no chat, not returned)\n");
+        b.append("newest full backup by message_type {type=rows/with text}: ").append(typeSummary).append('\n');
         Set<String> allChats = new HashSet<>();
         for (WaMessage m : newest.messages) allChats.add(m.chatJid);
         for (WaMessage m : newestCanon) allChats.add(m.chatJid);
@@ -210,7 +241,7 @@ final class ProbeProofRun {
                 for (WaMessage m : c.messages) if (m.timeMs < end) combinedWindow.add(m);
                 for (WaMessage m : newestCanon) if (m.timeMs >= since && m.timeMs < end) newestWindow.add(m);
                 b.append("  window to the last increment (").append(ProbeReport.ts(end)).append("): ")
-                        .append(ProbeProof.versus(combinedWindow, newestWindow, s.base.lastModified())).append('\n');
+                        .append(ProbeProof.versus(combinedWindow, newestWindow, s.base.lastModified(), types)).append('\n');
             } catch (BackupException e) {
                 b.append("  combine REFUSED ").append(e.error.code).append(" — ").append(e.getMessage()).append('\n');
                 allDecoded = false;

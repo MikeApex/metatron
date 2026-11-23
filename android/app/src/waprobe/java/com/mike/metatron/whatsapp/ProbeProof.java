@@ -43,18 +43,56 @@ final class ProbeProof {
 
     /** The combined set against the newest full backup over the same window. */
     static String versus(List<WaMessage> combined, List<WaMessage> newestWindow, long baseWrittenMs) {
+        return versus(combined, newestWindow, baseWrittenMs, null);
+    }
+
+    /**
+     * As above; with {@code types} (the newest backup's message._id → message_type) it also counts
+     * the message_type of the messages the increments carried and of those only the newest holds —
+     * the latter split by from-me and chat kind, because V6's reply markers are the user's own
+     * messages in one-to-one chats (Phase 1 step 0). Small integers only.
+     */
+    static String versus(List<WaMessage> combined, List<WaMessage> newestWindow, long baseWrittenMs, Map<Long, Integer> types) {
         Map<String, WaMessage> n = index(newestWindow);
         int both = 0, textEqual = 0, textDiffers = 0, onlyCombined = 0;
+        java.util.TreeMap<Integer, Integer> carried = new java.util.TreeMap<>();
         for (WaMessage c : combined) {
             WaMessage x = n.remove(BackupCombiner.key(c));
             if (x == null) { onlyCombined++; continue; }
             both++;
             boolean eq = c.text == null ? x.text == null : c.text.equals(x.text);
             if (eq) textEqual++; else textDiffers++;
+            if (types != null) bump(carried, typeOf(types, x.rowId));
         }
-        return "combined " + combined.size() + " vs newest " + newestWindow.size() + " in the same window: in both " + both
+        String out = "combined " + combined.size() + " vs newest " + newestWindow.size() + " in the same window: in both " + both
                 + " (text equal " + textEqual + ", differs " + textDiffers + "), only combined " + onlyCombined
                 + ", only newest " + n.size() + onlyNewest(n.values(), baseWrittenMs);
+        if (types != null) out += "\n    message_type, in both " + carried + onlyNewestTypes(n.values(), types);
+        return out;
+    }
+
+    /** message_type of the messages only the newest backup holds: from me in one-to-one / in groups / other chats, and not from me. */
+    static String onlyNewestTypes(java.util.Collection<WaMessage> rest, Map<Long, Integer> types) {
+        java.util.TreeMap<Integer, Integer> meOne = new java.util.TreeMap<>(), meGroup = new java.util.TreeMap<>(),
+                meOther = new java.util.TreeMap<>(), notMe = new java.util.TreeMap<>();
+        for (WaMessage m : rest) {
+            int t = typeOf(types, m.rowId);
+            if (!m.fromMe) bump(notMe, t);
+            else if (m.chatJid.endsWith("@g.us")) bump(meGroup, t);
+            else if (m.chatJid.endsWith("@s.whatsapp.net") || m.chatJid.endsWith("@lid")) bump(meOne, t);
+            else bump(meOther, t);
+        }
+        return "; only newest — from me in one-to-one " + meOne + ", from me in groups " + meGroup
+                + ", from me elsewhere " + meOther + ", not from me " + notMe;
+    }
+
+    private static int typeOf(Map<Long, Integer> types, long rowId) {
+        Integer t = types.get(rowId);
+        return t == null ? -1 : t;
+    }
+
+    private static void bump(java.util.TreeMap<Integer, Integer> m, int k) {
+        m.put(k, m.containsKey(k) ? m.get(k) + 1 : 1);
     }
 
     /** What the messages only the newest backup holds are: chat kind, from-me, text, before or after the base. Counts only. */

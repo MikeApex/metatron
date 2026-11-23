@@ -1,0 +1,103 @@
+# WhatsApp — the objectionable screen, the fact markers and the translation model.
+#
+# Read by tools/intake_whatsapp.py. Plan: archive/plans/whatsapp_input_plan_2026-10-26.md V2/V3;
+# build delta: archive/plans/whatsapp_phase1_build_plan_2026-11-23.md § 2.3.
+#
+# THE SCREEN RUNS BEFORE ANYTHING ELSE AND IS TUNED TO OVER-FLAG. A hit holds the message back:
+# the user gets who / which chat / when / category — never the text — and nothing of it reaches
+# extraction, intake, a record or any model. Google's own classifier cannot be seen, so ours must
+# be stricter than it. A false hit costs the user one tap into WhatsApp; a miss puts the text's
+# facts in front of a model. Add freely; remove only with a reason. Removed 2026-11-23, at build:
+# everyday profanity (fuck, shit), insults (stupid, idiot, loser) and words with ordinary senses
+# (speed, joint, hash, gram*, inject*) — a fact carries only an event noun, a place, a date and a
+# type, never those words, so holding back every message that has one protects nothing and costs
+# the channel its use. M2's labelled sample tunes the rest.
+#
+# Matching (code, not here): case-folded; light de-obfuscation first (0→o 1→i 3→e 4→a 5→s @→a
+# $→s, runs of 3+ of one letter squeezed to 2, separators between single letters removed); then
+# each `words` entry on word boundaries (a trailing * matches any ending), each `patterns` entry
+# as a regular expression. Bulgarian is screened on its English translation.
+
+screen:
+  sexual:
+    words: [sex*, sexy, nude*, naked, porn*, xxx, horny, orgasm*, blowjob*, handjob*, dick*,
+            cock*, pussy, pussies, tits, titties, boob*, nsfw, onlyfans, erotic*, fetish*,
+            masturbat*, cum, cumming, slut*, whore*, hooker*, escort*, viagra, condom*,
+            threesome*, nudes, sext*, dildo*, vibrator*, genital*, penis*, vagina*, anal]
+    patterns: []
+  violence_weapons:
+    words: [kill*, murder*, stab*, shoot*, shot, gun*, rifle*, pistol*, firearm*, ammo,
+            ammunition, bullet*, bomb*, explosive*, grenade*, knife, knives, machete*, weapon*,
+            assault*, attack*, beat up, beating, punch*, strangl*, choke, choking, torture*,
+            hostage*, kidnap*, massacre*, terror*, behead*, blood*, die, dead, death, corpse*,
+            hurt you, i will hurt, threat*]
+    patterns: ["\\bi(?:'| a)?m going to (?:get|hurt|find) you\\b"]
+  self_harm:
+    words: [suicid*, kill myself, killing myself, end my life, end it all, want to die,
+            wanna die, self harm, self-harm, selfharm, cut myself, cutting myself, overdos*,
+            hang myself, no reason to live, better off dead, slit*, jump off]
+    patterns: []
+  drugs:
+    words: [cocaine, coke, crack, heroin, meth*, mdma, ecstasy, molly, lsd, acid, shrooms,
+            ketamine, ket, weed, cannabis, marijuana, spliff, dealer*, pills,
+            xanax, oxycodone, oxycontin, fentanyl, opioid*, opiate*, amphetamine*, high af, stoned,
+            snort*, grams, baggie*]
+    patterns: []
+  slurs_harassment:
+    words: [nigger*, nigga*, faggot*, fag, fags, dyke*, tranny, trannies, retard*, spastic,
+            spaz, kike*, chink*, gook*, paki*, wetback*, spic*, raghead*, towelhead*, gyp*,
+            cunt*, bitch*, motherfucker*, wanker*, twat*,
+            asshole*, arsehole*, slag*, skank*, ugly fat, kill yourself, kys, go die,
+            hate you, piece of shit, worthless]
+    patterns: []
+
+# What kind of fact a message is (V3). Checked on the English text (the translation, for
+# Bulgarian) in this order: proposal (a date or time found AND a proposal marker), request,
+# question (a "?" or an opener), otherwise info.
+facts:
+  proposal_markers: ["shall we", "how about", "let's", "lets", "are you free", "want to",
+                     "wanna", "fancy", "up for", "join us", "come over", "meet", "meeting",
+                     "dinner", "lunch", "breakfast", "drinks", "coffee", "call", "see you"]
+  request_markers: ["can you", "could you", "would you", "will you", "please", "pls", "plz",
+                    "can u", "could u", "remind me", "don't forget", "dont forget", "send me",
+                    "let me know", "lmk", "tell me", "bring", "pick up", "buy", "book"]
+  # A greeting that is phrased as a question asks nothing of the user: it is chat (info), unless
+  # the message asks a second question too.
+  greeting_questions: ["how are you", "how r u", "how are u", "how's it going", "hows it going",
+                       "how are things", "what's up", "whats up", "wassup", "sup", "you ok",
+                       "u ok", "how have you been", "how's your day", "how was your day",
+                       "how's everything", "all good", "how do you do"]
+  question_openers: [who, what, when, where, why, how, which, whose, do, does, did, are, is,
+                     was, were, can, could, would, will, should, shall, have, has, any]
+  event_nouns: [dinner, lunch, breakfast, brunch, drinks, coffee, party, birthday, wedding,
+                meeting, call, appointment, game, match, concert, show, movie, film, trip,
+                flight, train, pickup, drop-off, playdate, practice, class, lesson, booking,
+                reservation]
+  # Words that make a dateparser hit believable. Without one of these or a digit in the matched
+  # text, the hit is dropped — dateparser reads "may", "second" and "sun" as dates.
+  date_words: [today, tonight, tomorrow, tmrw, yesterday, monday, tuesday, wednesday, thursday,
+               friday, saturday, sunday, mon, tue, tues, wed, thu, thur, thurs, fri, sat, sun,
+               weekend, morning, afternoon, evening, noon, midnight, january, february, march,
+               april, june, july, august, september, october, november, december, jan, feb,
+               mar, apr, jun, jul, aug, sep, sept, oct, nov, dec, week, next,
+               днес, довечера, утре, вдругиден, понеделник, вторник, сряда, четвъртък, петък,
+               събота, неделя, уикенд, сутринта, следобед, вечерта, обед, януари, февруари,
+               март, април, май, юни, юли, август, септември, октомври, ноември, декември,
+               седмица, следващ, следващата, следващия]
+  # A place is a capitalised run of up to three words after one of these (original text).
+  place_prepositions: [at, "@", in, в, във, на, при]
+  span_max_chars: 40
+
+# Languages (Mike, decision D, 2026-11-23): Bulgarian is translated to English on the VM by a
+# small local model, then screened and extracted like English. Any other non-Latin script is held
+# back as `unscreened` until it has a model. `model_dir` is relative to the repo root; the model
+# is fetched and converted once by scripts/fetch_whatsapp_translation_model.py.
+languages:
+  bg:
+    script: cyrillic
+    model_dir: data/models/opus-mt-bg-en-ct2
+  # A message is "in" a script when more than this share of its letters are in it.
+  script_share: 0.5
+  # The model unloads after this long unused. Longer holds ~150-250 MB of RAM longer; shorter
+  # pays a ~1-2 s reload on the next Bulgarian message. (Plan § 5 D.)
+  unload_after_idle_seconds: 600

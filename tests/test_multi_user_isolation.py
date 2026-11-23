@@ -138,7 +138,16 @@ BOUND = {
     ("POST", "/push/fcm/unregister"): dict(json={"token": "t", "persona": BOB}),
     ("GET", "/push/message/{msg_id}"): dict(params={"persona": BOB}),
     ("POST", "/tasks/remind"): dict(json={"task_id": "t", "minutes": 30, "persona": BOB}),
+    # WhatsApp Phase 1 (2026-11-23) — the app's own calls: pair, list, revoke, opt-in deletion.
+    ("POST", "/whatsapp/device/pair"): dict(json={"label": "x", "persona": BOB}),
+    ("GET", "/whatsapp/devices"): dict(params={"persona": BOB}),
+    ("POST", "/whatsapp/device/revoke"): dict(json={"device_id": "d", "persona": BOB}),
+    ("POST", "/whatsapp/delete-all"): dict(params={"persona": BOB}),
 }
+# The phone's native code only: a device token, whose user is the token's and nothing else.
+# Every session token — user, admin, service — is refused there (WhatsApp phase-1 plan § 2.1).
+DEVICE_ONLY = {("POST", "/device/whatsapp/events"), ("GET", "/device/whatsapp/cursor"),
+               ("POST", "/device/whatsapp/share-list")}
 MONITOR_PREFIX, INTERNAL_PREFIX = "/monitor/", "/internal/"
 
 
@@ -154,9 +163,17 @@ def _routes() -> set:
 def test_every_route_is_classified():
     unclassified = sorted(
         (m, p) for m, p in _routes()
-        if (m, p) not in OPEN | ANY_ROLE | set(BOUND)
+        if (m, p) not in OPEN | ANY_ROLE | set(BOUND) | DEVICE_ONLY
         and not p.startswith((MONITOR_PREFIX, INTERNAL_PREFIX)))
     assert not unclassified, f"routes with no isolation decision: {unclassified}"
+
+
+def test_device_routes_refuse_every_session_token():
+    for token in (_user_token(ALICE), auth.issue_token(persona=ADMIN_PERSONA, role="admin"),
+                  auth.issue_token()):
+        for method, path in sorted(DEVICE_ONLY):
+            r = _call(method, path, token, json={} if method == "POST" else None)
+            assert r.status_code == 401, (method, path, r.status_code)
 
 
 def _call(method: str, path: str, token: str, **kw):

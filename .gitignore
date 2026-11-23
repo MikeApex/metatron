@@ -147,6 +147,9 @@ data/wisdom/*
 data/archive/*
 data/memory/*
 
+# Downloaded model weights — fetched per machine (scripts/fetch_whatsapp_translation_model.py)
+data/models/
+
 # Runtime data (sensitive or ephemeral)
 data/audio/
 data/baselines/
