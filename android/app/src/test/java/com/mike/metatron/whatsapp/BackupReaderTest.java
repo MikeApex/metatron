@@ -64,6 +64,7 @@ public class BackupReaderTest {
                 "§7 file being written -> being_written",
                 "§7 not enough free space -> insufficient_space",
                 "§6.2 wrong key -> wrong_key",
+                "§6.2 right key, unfamiliar payload -> unknown_format",
                 "§6.2 tag or MD5 failure -> integrity",
                 "§6.2 decompression ends early -> truncated",
                 "§6.3 key input (64 hex, separators, case) -> key_format",
@@ -268,6 +269,20 @@ public class BackupReaderTest {
         assertLocatorError(only14, BackupError.CRYPT14_END_TO_END_OFF);
         covered("§7 crypt14 -> crypt14_end_to_end_off", "a folder holding only msgstore.db.crypt14");
 
+        // End-to-end switched off after the last crypt15: the crypt14 is newer, so the stale crypt15 is not read.
+        File switchedOff = tmp.newFolder("switchedOff");
+        File c15 = touch(switchedOff, "msgstore.db.crypt15", 2_000L);
+        touch(switchedOff, "msgstore-2026-10-25.1.db.crypt15", 1_000L);
+        File c14 = touch(switchedOff, "msgstore-2026-10-27.1.db.crypt14", 3_000L);
+        assertLocatorError(switchedOff, BackupError.CRYPT14_END_TO_END_OFF);
+        assertTrue(c14.setLastModified(2_000L));
+        assertEquals("a crypt14 as old as the crypt15 does not block it", c15, BackupLocator.newest(switchedOff));
+        assertTrue(c14.setLastModified(1_000L));
+        assertEquals("an older crypt14 is history", c15, BackupLocator.newest(switchedOff));
+        touch(switchedOff, "msgstore.db.crypt14", 3_000L);
+        assertLocatorError(switchedOff, BackupError.CRYPT14_END_TO_END_OFF);
+        covered("§7 crypt14 -> crypt14_end_to_end_off", "a crypt14 newer than the newest crypt15 (dated or current name); older or equal is read past");
+
         assertLocatorError(tmp.newFolder("empty"), BackupError.NO_BACKUP_FOUND);
         File biz = new File(tmp.getRoot(), "Android/media/com.whatsapp.w4b/WhatsApp Business/Databases");
         assertTrue(biz.mkdirs());
@@ -347,6 +362,26 @@ public class BackupReaderTest {
     }
 
     @Test
+    public void anUnfamiliarPayloadWithTheRightKeyIsAFormatChangeNotAWrongKey() throws Exception {
+        // Neither zlib, SQLite nor ZIP — as if WhatsApp changed the compression. ~200 KB, so the
+        // decryptor must carry on through many buffers to reach the tag.
+        byte[] payload = concat("NEWCOMPRESSION01".getBytes(StandardCharsets.US_ASCII), fakeDatabase(200_000));
+        expectSynthetic(payload, true, BackupError.UNKNOWN_FORMAT);
+        expectSynthetic(payload, false, BackupError.UNKNOWN_FORMAT); // no-trailer form: the held-back tail is ciphertext too
+        byte[] tiny = "NEWFORMAT".getBytes(StandardCharsets.US_ASCII); // shorter than one block
+        expectSynthetic(tiny, true, BackupError.UNKNOWN_FORMAT);
+        byte[] otherRoot = new byte[32];
+        Arrays.fill(otherRoot, (byte) 0x43);
+        expectSynthetic(payload, true, BackupError.WRONG_KEY, otherRoot);
+        expectSynthetic(payload, false, BackupError.WRONG_KEY, otherRoot);
+        expectSynthetic(zlib(fakeDatabase(5000)), true, BackupError.WRONG_KEY, otherRoot);
+        covered("§6.2 right key, unfamiliar payload -> unknown_format",
+                "synthetic: tag verifies on a payload that is not zlib/SQLite/ZIP (with and without MD5, and under one block); "
+                        + "the same with another key -> wrong_key");
+        covered("§6.2 wrong key -> wrong_key", "synthetic: another key on an unfamiliar and on a zlib payload");
+    }
+
+    @Test
     public void aTinyFileIsRefusedNotMisread() throws Exception {
         // header followed by fewer than 16 bytes: no room for a tag
         byte[] c15 = concat(new byte[]{0x0a, 16}, new byte[16]);
@@ -417,6 +452,11 @@ public class BackupReaderTest {
 
     /** Builds a crypt15 file from our own reading of § 3 and checks the reader's verdict (null = ok). */
     private File expectSynthetic(byte[] payload, boolean md5Trailer, BackupError want) throws Exception {
+        return expectSynthetic(payload, md5Trailer, want, null);
+    }
+
+    /** As above, decrypting with {@code readRoot} instead of the key it was written with (null = the same key). */
+    private File expectSynthetic(byte[] payload, boolean md5Trailer, BackupError want, byte[] readRoot) throws Exception {
         byte[] root = new byte[32];
         Arrays.fill(root, (byte) 0x42);
         byte[] aes = BackupKey.hkdfSha256(new byte[32], root, "backup encryption".getBytes(StandardCharsets.US_ASCII), 32);
@@ -432,7 +472,7 @@ public class BackupReaderTest {
         Files.write(f.toPath(), body);
         File out = new File(dest.getParentFile(), f.getName() + ".db");
         try {
-            BackupDecryptor.decrypt(f, BackupKey.fromDigits(toHex(root)), out, PLENTY);
+            BackupDecryptor.decrypt(f, BackupKey.fromDigits(toHex(readRoot != null ? readRoot : root)), out, PLENTY);
             if (want != null) fail("expected " + want.code);
         } catch (BackupException e) {
             if (want == null) throw e;

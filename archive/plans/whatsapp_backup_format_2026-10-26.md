@@ -305,7 +305,10 @@ keyed by (canonical chat, from_me, key_id)" is the rule; it is tested on synthet
 | any other `format_version` or `added_messages.format`, or a payload that is not zlib → ZIP | **refuse** → `increment_format_unknown` |
 | a required header key, the messages file, a file the header names, or a required wire path (chat jid, key jid/flag/key_id, time, row id) missing | **refuse** → `increment_missing_part` |
 | a wire record or JSON that does not parse | **refuse** → `increment_malformed` |
-| an encrypted file over 4 MiB or an inflated payload over 32 MiB (observed ≤ 0.15 MB) | **refuse** → `increment_too_large` |
+| an encrypted file over 4 MiB or an inflated payload over 8 MiB (observed ≤ 0.15 MB; lowered from 32 MiB 11-23, reader review finding 12) | **refuse** → `increment_too_large` |
+| first bytes that are none of zlib, ZIP or SQLite, **with a tag that verifies** (the key is right, so the format changed — reader review finding 7; the full-backup path reports the same case as `unknown_format`, and `wrong_key` now needs the tag to fail too) | **refuse** → `increment_format_unknown` |
+| a message time ≥ 10¹¹ (milliseconds where seconds are expected) | **refuse** → `increment_format_unknown` |
+| a `jid` row with no `raw_string` key, or `jid` / `jid_map` keyed by another column than `_id` / `lid_row_id` | **refuse** → `increment_missing_part` |
 | a missing N in the live set | **refuse** → `increment_gap`, naming how many were read |
 | wrong key, damaged, truncated, being written | as §§ 6–7: `wrong_key`, `integrity`, `truncated`, `being_written` |
 

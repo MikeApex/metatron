@@ -179,7 +179,8 @@ public final class BackupDecryptor {
         return n;
     }
 
-    private enum Mode { UNDECIDED, ZLIB, RAW }
+    /** UNKNOWN: the first bytes are none of the known kinds — output is discarded and the tag decides. */
+    private enum Mode { UNDECIDED, ZLIB, RAW, UNKNOWN }
 
     /**
      * Receives plaintext: identifies the payload from its first block (§ 6.2), inflates or
@@ -223,6 +224,8 @@ public final class BackupDecryptor {
                 decide();
                 feed(first, 0, firstLen);
             }
+            // Unfamiliar first bytes: a verified tag proves the key right, so the format changed.
+            if (mode == Mode.UNKNOWN) throw new BackupException(tagOk ? BackupError.UNKNOWN_FORMAT : BackupError.WRONG_KEY);
             if (mode == Mode.ZLIB && !inflater.finished()) throw new BackupException(BackupError.TRUNCATED);
             if (!tagOk) throw new BackupException(BackupError.INTEGRITY);
             if (trailing > 0) throw new BackupException(BackupError.INTEGRITY, trailing + " bytes after the zlib stream");
@@ -233,10 +236,15 @@ public final class BackupDecryptor {
         }
 
         /**
-         * With the right key the payload begins zlib, SQLite or ZIP; anything else is the
-         * wrong key. The zlib test is the full RFC 1950 header check, not just 0x78, so a
-         * wrong key has a ~1/8000 rather than 1/256 chance of passing it — and if it does,
-         * the tag still fails and the file is refused as damaged, never accepted.
+         * With the right key the payload begins zlib, SQLite or ZIP. Anything else is either
+         * the wrong key or a format WhatsApp changed, and only the tag can tell them apart —
+         * so it is not refused here: the payload is discarded (nothing more reaches the
+         * temporary file) and the decryptor carries on to the tag, which {@link #finish}
+         * judges: tag fails → wrong_key, tag verifies → unknown_format (review finding 7).
+         * Without this a correct key would be reported as wrong every night after a change.
+         * The zlib test is the full RFC 1950 header check, not just 0x78, so a wrong key has
+         * a ~1/8000 rather than 1/256 chance of passing it — and if it does, the tag still
+         * fails and the file is refused as damaged, never accepted.
          */
         private void decide() throws BackupException {
             if (firstLen == 16 && Arrays.equals(first, SQLITE_HEADER)) {
@@ -246,7 +254,8 @@ public final class BackupDecryptor {
             } else if (firstLen >= 4 && first[0] == 'P' && first[1] == 'K' && first[2] == 3 && first[3] == 4) {
                 throw new BackupException(BackupError.NOT_A_MESSAGE_DATABASE);
             } else {
-                throw new BackupException(BackupError.WRONG_KEY);
+                mode = Mode.UNKNOWN;
+                Arrays.fill(first, (byte) 0);
             }
         }
 
@@ -257,7 +266,7 @@ public final class BackupDecryptor {
         }
 
         private void feed(byte[] b, int off, int len) throws BackupException, IOException {
-            if (len == 0) return;
+            if (len == 0 || mode == Mode.UNKNOWN) return;
             if (mode == Mode.RAW) {
                 emit(b, off, len);
                 return;

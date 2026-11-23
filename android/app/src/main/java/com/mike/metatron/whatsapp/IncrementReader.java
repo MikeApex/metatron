@@ -38,8 +38,20 @@ import java.util.zip.ZipInputStream;
 public final class IncrementReader {
     /** Observed ≤ 0.15 MB encrypted (§ 12). */
     public static final long MAX_ENCRYPTED_BYTES = 4L * 1024 * 1024;
-    /** Inflated payload, and separately the sum of the ZIP entries. */
-    public static final long MAX_INFLATED_BYTES = 32L * 1024 * 1024;
+    /**
+     * Inflated payload, and separately the sum of the ZIP entries. 8 MiB against ≤ 0.15 MB observed:
+     * at the former 32 MiB the buffer copies, the entries and the JSON text would need roughly
+     * 100–200 MB of heap — a crash on a phone rather than the named increment_too_large (review
+     * finding 12).
+     */
+    public static final long MAX_INFLATED_BYTES = 8L * 1024 * 1024;
+
+    /**
+     * A message time at or above this (10¹¹ — the year 5138 in seconds, 1973 in milliseconds) is
+     * millisecond-shaped. Read as seconds it would be multiplied by 1,000, so it is refused as a
+     * format change (review finding 15).
+     */
+    static final long MS_SHAPED_SECONDS = 100_000_000_000L;
 
     static final String FORMAT_VERSION = "1.0";
     static final String MESSAGES_FORMAT = "protobuf";
@@ -78,7 +90,12 @@ public final class IncrementReader {
 
     // ---- container (§§ 3–5) ----------------------------------------------------------------
 
-    /** The verified plaintext. Wrong key, damage and the payload's kind are told apart as § 6.2 says. */
+    /**
+     * The verified plaintext. Wrong key, damage and the payload's kind are told apart as § 6.2 says,
+     * with one refinement (review finding 7): first bytes that are none of zlib, ZIP or SQLite are
+     * the wrong key only when the tag also fails. If the tag verifies, the key is right and the
+     * format changed — increment_format_unknown, so a correct key is never reported as wrong.
+     */
     static byte[] container(byte[] f, BackupKey key) throws BackupException {
         BackupHeader header = BackupHeader.parse(f, Math.min(f.length, BackupHeader.MAX_PREFIX));
         int start = header.dataStart;
@@ -102,7 +119,8 @@ public final class IncrementReader {
             boolean tagOk = MessageDigest.isEqual(gcm.tag(), Arrays.copyOfRange(f, tagStart, tagStart + 16));
             boolean zlib = plain.length >= 2 && isZlibHeader(plain[0] & 0xff, plain[1] & 0xff);
             boolean known = zlib || startsWith(plain, ZIP_MAGIC) || startsWith(plain, BackupDecryptor.SQLITE_HEADER);
-            if (!known) throw new BackupException(BackupError.WRONG_KEY);
+            if (!known && !tagOk) throw new BackupException(BackupError.WRONG_KEY);
+            if (!known) throw new BackupException(BackupError.INCREMENT_FORMAT_UNKNOWN, "payload is not zlib, ZIP or SQLite");
             if (!tagOk) throw new BackupException(BackupError.INTEGRITY);
             if (!zlib) throw new BackupException(BackupError.INCREMENT_FORMAT_UNKNOWN, "payload is not zlib");
             byte[] out = plain;
@@ -168,6 +186,10 @@ public final class IncrementReader {
         } catch (IOException e) {
             for (byte[] b : out.values()) Arrays.fill(b, (byte) 0);
             throw new BackupException(BackupError.INCREMENT_MALFORMED, "the ZIP does not read");
+        } catch (TooLarge e) {
+            // Over the cap mid-ZIP: the entries already read are decrypted content too.
+            for (byte[] b : out.values()) Arrays.fill(b, (byte) 0);
+            throw e;
         } catch (BackupException e) {
             for (byte[] b : out.values()) Arrays.fill(b, (byte) 0);
             throw e;
@@ -327,6 +349,9 @@ public final class IncrementReader {
         }
         if (key == null) throw new BackupException(BackupError.INCREMENT_MISSING_PART, "a message's key (1.1)");
         if (seconds == null || seconds <= 0) throw new BackupException(BackupError.INCREMENT_MISSING_PART, "a message's time (1.3)");
+        if (seconds >= MS_SHAPED_SECONDS) {
+            throw new BackupException(BackupError.INCREMENT_FORMAT_UNKNOWN, "a message's time (1.3) is in milliseconds, not seconds");
+        }
         String keyJid = null, keyId = null;
         Long flag = null;
         for (Field f : fields(d, key.start, key.end, "a message key")) {

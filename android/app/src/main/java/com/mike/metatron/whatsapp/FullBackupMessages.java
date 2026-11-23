@@ -9,7 +9,7 @@ import java.util.List;
 
 /**
  * Reads what {@link BackupCombiner} starts from out of a decrypted full backup: its messages since
- * a time, and its jid / jid_map tables. Android-only (SQLite); everything after it is platform-free.
+ * a whole second, and its jid / jid_map tables. Android-only (SQLite); everything after it is platform-free.
  * Opens read-only, closes before returning, and returns no column the reader does not use. The
  * caller owns the decrypted file and deletes it ({@link BackupDecryptor#deleteDecrypted}).
  */
@@ -28,7 +28,12 @@ public final class FullBackupMessages {
         this.withoutChat = withoutChat;
     }
 
-    public static FullBackupMessages read(File database, long sinceMs) {
+    /**
+     * @param sinceSeconds read messages from the start of this whole second on (timestamp ≥
+     *                     sinceSeconds × 1000), so a second is never cut in half and
+     *                     {@link BackupCombiner#combine} numbers each one whole (review finding 5)
+     */
+    public static FullBackupMessages read(File database, long sinceSeconds) {
         SQLiteDatabase db = SQLiteDatabase.openDatabase(database.getPath(), null,
                 SQLiteDatabase.OPEN_READONLY | SQLiteDatabase.NO_LOCALIZED_COLLATORS);
         try {
@@ -36,7 +41,8 @@ public final class FullBackupMessages {
             int noKey = 0, noChat = 0;
             try (Cursor c = db.rawQuery("SELECT m.key_id, m._id, m.from_me, m.timestamp, cj.raw_string, sj.raw_string, m.text_data "
                     + "FROM message m LEFT JOIN chat c ON c._id = m.chat_row_id LEFT JOIN jid cj ON cj._id = c.jid_row_id "
-                    + "LEFT JOIN jid sj ON sj._id = m.sender_jid_row_id WHERE m.timestamp >= ?", new String[]{String.valueOf(sinceMs)})) {
+                    + "LEFT JOIN jid sj ON sj._id = m.sender_jid_row_id WHERE m.timestamp >= ?",
+                    new String[]{String.valueOf(sinceSeconds * 1000L)})) {
                 while (c.moveToNext()) {
                     if (c.isNull(4)) { noChat++; continue; }
                     if (c.isNull(0)) { noKey++; continue; }

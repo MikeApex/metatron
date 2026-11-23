@@ -35,6 +35,11 @@ public final class BackupLocator {
      * The newest backup in {@code dir} by modification time; on a tie the undated current
      * file wins. A WhatsApp Business folder is refused outright rather than read as if it
      * were the same format (§ 1: out of scope).
+     *
+     * A crypt14 file written after the newest crypt15 means end-to-end backup was switched
+     * off since: WhatsApp now writes crypt14, and the crypt15 left behind only grows stale.
+     * Reading it would look like a quiet week, so it is refused as crypt14_end_to_end_off
+     * (review finding 3). A crypt14 no newer than the crypt15 is history and does not block.
      */
     public static File newest(File dir) throws BackupException {
         String path = dir.getAbsolutePath();
@@ -45,10 +50,14 @@ public final class BackupLocator {
         if (files == null) throw new BackupException(BackupError.NO_BACKUP_FOUND);
         File best = null;
         boolean sawCrypt14 = false;
+        long newestCrypt14 = Long.MIN_VALUE;
         for (File f : files) {
             if (!f.isFile()) continue;
             String name = f.getName();
-            if (CRYPT14.matcher(name).matches()) sawCrypt14 = true;
+            if (CRYPT14.matcher(name).matches()) {
+                sawCrypt14 = true;
+                newestCrypt14 = Math.max(newestCrypt14, f.lastModified());
+            }
             boolean current = name.equals(CURRENT);
             if (!current && !DATED.matcher(name).matches()) continue;
             if (best == null
@@ -57,7 +66,7 @@ public final class BackupLocator {
                 best = f;
             }
         }
-        if (best != null) return best;
+        if (best != null && !(sawCrypt14 && newestCrypt14 > best.lastModified())) return best;
         if (sawCrypt14) throw new BackupException(BackupError.CRYPT14_END_TO_END_OFF);
         throw new BackupException(BackupError.NO_BACKUP_FOUND);
     }

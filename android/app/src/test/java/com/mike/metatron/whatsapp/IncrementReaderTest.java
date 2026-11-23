@@ -155,7 +155,7 @@ public class IncrementReaderTest {
                 IncrementReader.read(two.write(tmp.newFile()), 2, key()));
 
         Set<String> allowed = new HashSet<>(Arrays.asList(ALICE, GROUP));
-        BackupCombiner.Combined c = BackupCombiner.combine(base, tables, incs, allowed, T * 1000 - 3_600_000L);
+        BackupCombiner.Combined c = BackupCombiner.combine(base, tables, incs, allowed, T - 3600);
 
         assertEquals(3, c.messages.size());
         WaMessage a1 = c.messages.get(0);
@@ -173,6 +173,7 @@ public class IncrementReaderTest {
         assertEquals(3, c.replaced);
         assertEquals(3, c.textChanged);
         assertEquals(4, c.baseMessages);
+        assertEquals(0, c.baseKeyCollisions);
 
         BackupCombiner.Combined none = BackupCombiner.combine(base, tables, incs, new HashSet<>(), 0);
         assertTrue("an empty allowlist returns nothing", none.messages.isEmpty());
@@ -188,6 +189,133 @@ public class IncrementReaderTest {
         BackupCombiner.Combined c = BackupCombiner.combine(new ArrayList<>(), tables,
                 Arrays.asList(IncrementReader.read(one.write(tmp.newFile()), 1, key())), new HashSet<>(Arrays.asList(GROUP)), 0);
         assertEquals("447700900222@s.whatsapp.net", c.messages.get(0).senderJid);
+    }
+
+    @Test public void sameSecondMessagesAreNumberedByRowIdReceivedApartFromMine() throws Exception {
+        BackupCombiner.JidTables tables = aliceLinked();
+        List<WaMessage> base = new ArrayList<>();
+        // From the full backup, with its milliseconds: received, the lower row id.
+        base.add(new WaMessage(ALICE, "KEYO1", false, T * 1000 + 700, null, "first in the second", 300));
+        // The user's own message in the same second, lowest row id of all: numbered apart.
+        base.add(new WaMessage(ALICE, "KEYO0", true, T * 1000 + 100, null, "my own words", 299));
+        base.add(new WaMessage(GROUP, "KEYO9", false, T * 1000 + 50, BOB_LID, "a group in the same second", 298));
+        // New in the increment, so …000 ms, sent under the chat's hidden id; the higher row id.
+        Inc one = new Inc();
+        one.chat(ALICE_LID, msg(ALICE_LID, 0, "KEYO2", T, null, content(1, "second in the second"), 301));
+        List<Increment> incs = Arrays.asList(IncrementReader.read(one.write(tmp.newFile()), 1, key()));
+
+        BackupCombiner.Combined c = BackupCombiner.combine(base, tables, incs, new HashSet<>(Arrays.asList(ALICE)), T);
+        assertEquals(3, c.messages.size());
+        assertEquals("by second, then row id — not ahead of the full backup's message for ending in 000",
+                Arrays.asList("KEYO0", "KEYO1", "KEYO2"), keyIds(c));
+        Map<String, Integer> o = ordinals(c);
+        assertEquals(0, (int) o.get("KEYO1"));
+        assertEquals("numbered with the phone-id copy of the chat: canonical before counting", 1, (int) o.get("KEYO2"));
+        assertEquals("from-me rows are numbered on their own", 0, (int) o.get("KEYO0"));
+        assertEquals(ALICE, c.messages.get(2).chatJid);
+
+        // A received row without text, lower row id, still counts — and shifts both.
+        List<WaMessage> withPhoto = new ArrayList<>(base);
+        withPhoto.add(new WaMessage(ALICE, "KEYOP", false, T * 1000 + 900, null, null, 297));
+        Map<String, Integer> p = ordinals(BackupCombiner.combine(withPhoto, tables, incs, new HashSet<>(Arrays.asList(ALICE)), T));
+        assertEquals(0, (int) p.get("KEYOP"));
+        assertEquals(1, (int) p.get("KEYO1"));
+        assertEquals(2, (int) p.get("KEYO2"));
+        assertEquals(0, (int) p.get("KEYO0"));
+
+        // The allowlist changes what is returned, never a number.
+        Map<String, Integer> g = ordinals(BackupCombiner.combine(withPhoto, tables, incs, new HashSet<>(Arrays.asList(ALICE, GROUP)), T));
+        assertEquals(1, (int) g.get("KEYO1"));
+        assertEquals(2, (int) g.get("KEYO2"));
+        assertEquals(0, (int) g.get("KEYO9"));
+        assertEquals("read straight from a file: no ordinal yet", 0, incs.get(0).messages.get(0).ordinal);
+    }
+
+    @Test public void theSinceBoundaryIsAWholeSecond() throws Exception {
+        List<WaMessage> base = new ArrayList<>();
+        base.add(new WaMessage(ALICE, "KEYB0", false, (T - 1) * 1000 + 999, null, "a second before", 400));
+        base.add(new WaMessage(ALICE, "KEYB1", false, T * 1000, null, "at the start of the second", 401));
+        base.add(new WaMessage(ALICE, "KEYB2", false, T * 1000 + 999, null, "at its end", 402));
+        BackupCombiner.Combined c = BackupCombiner.combine(base, new BackupCombiner.JidTables(), new ArrayList<Increment>(),
+                new HashSet<>(Arrays.asList(ALICE)), T);
+        assertEquals(Arrays.asList("KEYB1", "KEYB2"), keyIds(c));
+        assertEquals(0, c.messages.get(0).ordinal);
+        assertEquals(1, c.messages.get(1).ordinal);
+    }
+
+    @Test public void baseRowsThatShareAKeyAreCounted() throws Exception {
+        List<WaMessage> base = new ArrayList<>();
+        // One chat under both its ids, the same key_id: after canonicalising, one combine key.
+        base.add(new WaMessage(ALICE, "KEYC1", false, T * 1000, null, "under the phone id", 600));
+        base.add(new WaMessage(ALICE_LID, "KEYC1", false, T * 1000, null, "under the hidden id", 601));
+        base.add(new WaMessage(ALICE, "KEYC2", false, T * 1000 + 5000, null, "no clash", 602));
+        BackupCombiner.Combined c = BackupCombiner.combine(base, aliceLinked(), new ArrayList<Increment>(),
+                new HashSet<>(Arrays.asList(ALICE)), 0);
+        assertEquals(1, c.baseKeyCollisions);
+        assertEquals(2, c.messages.size());
+        assertEquals("the later row is kept, as before", 601, c.messages.get(0).rowId);
+    }
+
+    @Test public void aJidRowWithoutItsColumnRefusesRatherThanUnlinking() throws Exception {
+        Inc renamed = new Inc().standard();
+        renamed.jidRows.add("{\"_id\":901,\"user\":\"447700900123\",\"server\":\"s.whatsapp.net\",\"raw_text\":\"" + ALICE + "\"}");
+        BackupException e = expectCombine(renamed, BackupError.INCREMENT_MISSING_PART);
+        assertTrue(e.getMessage(), e.getMessage().contains("raw_string"));
+        assertFalse(e.getMessage(), e.getMessage().contains("447700900123"));
+
+        Inc wrongType = new Inc().standard();
+        wrongType.jidRows.add("{\"_id\":901,\"raw_string\":5}");
+        expectCombine(wrongType, BackupError.INCREMENT_MALFORMED);
+
+        Inc mapKey = new Inc().standard();
+        mapKey.jidMapIdField = "sort_id";
+        mapKey.jidMapRows.add(linkRow(900, 901));
+        expectCombine(mapKey, BackupError.INCREMENT_MISSING_PART);
+
+        // An explicit null still removes the id: the hidden id no longer canonicalises.
+        Set<String> both = new HashSet<>(Arrays.asList(ALICE, ALICE_LID));
+        Inc nulled = new Inc();
+        nulled.chat(ALICE_LID, msg(ALICE_LID, 0, "KEYN1", T, null, content(1, "some words"), 500));
+        Inc control = new Inc();
+        control.chat(ALICE_LID, msg(ALICE_LID, 0, "KEYN1", T, null, content(1, "some words"), 500));
+        nulled.jidRows.add("{\"_id\":901,\"raw_string\":null}");
+        assertEquals(ALICE, BackupCombiner.combine(new ArrayList<WaMessage>(), aliceLinked(),
+                Arrays.asList(IncrementReader.read(control.write(tmp.newFile()), 1, key())), both, 0).messages.get(0).chatJid);
+        assertEquals(ALICE_LID, BackupCombiner.combine(new ArrayList<WaMessage>(), aliceLinked(),
+                Arrays.asList(IncrementReader.read(nulled.write(tmp.newFile()), 1, key())), both, 0).messages.get(0).chatJid);
+    }
+
+    private BackupException expectCombine(Inc inc, BackupError want) throws Exception {
+        Increment read = IncrementReader.read(inc.write(tmp.newFile()), 1, key());
+        try {
+            BackupCombiner.combine(new ArrayList<WaMessage>(), aliceLinked(), Arrays.asList(read), new HashSet<>(Arrays.asList(ALICE)), 0);
+            fail("expected " + want.code);
+            return null;
+        } catch (BackupException e) {
+            assertEquals(e.getMessage(), want, e.error);
+            return e;
+        }
+    }
+
+    /** Alice's hidden id (900) linked to her phone id (901), as a full backup's tables hold them. */
+    private static BackupCombiner.JidTables aliceLinked() {
+        BackupCombiner.JidTables t = new BackupCombiner.JidTables();
+        t.putJid(900, ALICE_LID);
+        t.putJid(901, ALICE);
+        t.putLink(900, 901);
+        return t;
+    }
+
+    private static List<String> keyIds(BackupCombiner.Combined c) {
+        List<String> out = new ArrayList<>();
+        for (WaMessage m : c.messages) out.add(m.keyId);
+        return out;
+    }
+
+    private static Map<String, Integer> ordinals(BackupCombiner.Combined c) {
+        Map<String, Integer> out = new LinkedHashMap<>();
+        for (WaMessage m : c.messages) out.put(m.keyId, m.ordinal);
+        return out;
     }
 
     // ---- refusals ----------------------------------------------------------------------------
@@ -294,6 +422,67 @@ public class IncrementReaderTest {
         Inc bomb = new Inc().standard();
         bomb.rawPayload = new byte[(int) IncrementReader.MAX_INFLATED_BYTES + 1];
         expect(bomb, BackupError.INCREMENT_TOO_LARGE);
+        // Control: exactly at the cap inflates, and is then refused for not being a ZIP.
+        Inc atCap = new Inc().standard();
+        atCap.rawPayload = new byte[(int) IncrementReader.MAX_INFLATED_BYTES];
+        expect(atCap, BackupError.INCREMENT_FORMAT_UNKNOWN);
+        // The ZIP's entries summed: small compressed, over the cap once read — refused mid-ZIP.
+        Inc padded = new Inc().standard();
+        padded.paddingEntryBytes = (int) IncrementReader.MAX_INFLATED_BYTES;
+        expect(padded, BackupError.INCREMENT_TOO_LARGE);
+        assertEquals("the cap is 8 MiB", 8L * 1024 * 1024, IncrementReader.MAX_INFLATED_BYTES);
+    }
+
+    @Test public void anUnfamiliarPayloadWithTheRightKeyIsAFormatChangeNotAWrongKey() throws Exception {
+        Inc changed = new Inc();
+        changed.containerPayload = "a newer compression, not zlib".getBytes(StandardCharsets.UTF_8);
+        expect(changed, BackupError.INCREMENT_FORMAT_UNKNOWN);
+        File f = changed.write(tmp.newFile());
+        try {
+            IncrementReader.read(f, 1, BackupKey.fromRoot(filled(32, 0x43)));
+            fail("wrong key accepted");
+        } catch (BackupException e) {
+            assertEquals("the tag fails as well: the key is wrong", BackupError.WRONG_KEY, e.error);
+        }
+    }
+
+    @Test public void aMillisecondShapedTimeIsRefused() throws Exception {
+        Inc ms = new Inc();
+        ms.chat(ALICE, msg(ALICE, 0, "KEYM1", T * 1000, null, content(1, "some words"), 1));
+        BackupException e = expect(ms, BackupError.INCREMENT_FORMAT_UNKNOWN);
+        assertTrue(e.getMessage(), e.getMessage().contains("1.3"));
+        Inc edge = new Inc();
+        edge.chat(ALICE, msg(ALICE, 0, "KEYM2", IncrementReader.MS_SHAPED_SECONDS - 1, null, content(1, "some words"), 2));
+        assertEquals(1, IncrementReader.read(edge.write(tmp.newFile()), 1, key()).messages.size());
+    }
+
+    @Test public void aCrypt14NewerThanTheBaseIsRefusedAndTheSetGivesItsWriteTime() throws Exception {
+        File dir = tmp.newFolder("Databases");
+        touch(dir, "msgstore.db.crypt15", 1_000_000L);
+        touch(dir, "msgstore-increment-1.db.crypt15", 3_000_000L);
+        touch(dir, "msgstore-increment-2.db.crypt15", 2_000_000L);
+        touch(dir, "msgstore-increment-3-2026-11-17.1.db.crypt15", 9_000_000L); // rotated: not in the live set
+        IncrementSet s = IncrementSet.locate(dir);
+        assertEquals("the newest of the base and its increments", 3_000_000L, s.newestWriteMs());
+
+        File c14 = touch(dir, "msgstore-2026-11-20.1.db.crypt14", 999_000L);
+        assertEquals("an older crypt14 is history", 2, IncrementSet.locate(dir).increments.size());
+        assertTrue(c14.setLastModified(1_000_000L));
+        assertEquals("as old as the base: still read", 2, IncrementSet.locate(dir).increments.size());
+        assertTrue(c14.setLastModified(1_001_000L)); // newer than the base, older than the increments
+        try {
+            IncrementSet.locate(dir);
+            fail("a crypt14 newer than the base was read past");
+        } catch (BackupException e) {
+            assertEquals(BackupError.CRYPT14_END_TO_END_OFF, e.error);
+        }
+    }
+
+    private static File touch(File dir, String name, long mtime) throws IOException {
+        File f = new File(dir, name);
+        if (!f.exists()) assertTrue(f.createNewFile());
+        assertTrue(f.setLastModified(mtime));
+        return f;
     }
 
     @Test public void wrongKeyAndDamageAreToldApart() throws Exception {
@@ -346,11 +535,16 @@ public class IncrementReaderTest {
         final List<byte[]> chats = new ArrayList<>();
         final List<String> jidRows = new ArrayList<>(), jidMapRows = new ArrayList<>();
         List<Long> deletedMessages = new ArrayList<>();
-        String formatVersion = "1.0", messagesFormat = "protobuf";
+        String formatVersion = "1.0", messagesFormat = "protobuf", jidMapIdField = "lid_row_id";
         boolean topLevelExtras, omitAddedMessages, omitMessagesBin, omitDeletedFile, omitDeletedList, brokenJidJson,
                 omitJidDeletedFile, omitJidModifiedFile;
         int truncateMessagesBin;
+        /** Zero bytes in an extra ZIP entry, read before messages.bin. */
+        int paddingEntryBytes;
+        /** Zlib'd in place of the ZIP. */
         byte[] rawPayload;
+        /** Encrypted as is, with no zlib: the container's payload itself. */
+        byte[] containerPayload;
 
         Inc standard() {
             chat(ALICE, msg(ALICE, 0, "KEYS1", T, null, content(1, "standard words"), 1));
@@ -396,7 +590,7 @@ public class IncrementReaderTest {
             else h.append(",\"deleted_messages\":{}"); // as observed on a night with no deletions
             h.append(",\"entities\":{\"jid\":[{\"table_name\":\"jid\",\"table_id_field\":\"_id\",\"modified_entity_files\":[\"jid_modified_1.json\"],"
                     + "\"deleted_id_files\":[\"jid_deleted_1.json\"],\"records_count_in_db\":122867}],"
-                    + "\"lid\":[{\"table_name\":\"jid_map\",\"table_id_field\":\"lid_row_id\",\"modified_entity_files\":[\"jid_map_modified_1.json\"],"
+                    + "\"lid\":[{\"table_name\":\"jid_map\",\"table_id_field\":\"" + jidMapIdField + "\",\"modified_entity_files\":[\"jid_map_modified_1.json\"],"
                     + "\"records_count_in_db\":9800}],"
                     + "\"receipt\":[{\"table_name\":\"receipt_user\",\"table_id_field\":\"_id\",\"modified_entity_files\":[\"receipt_user_modified_1.json\"],"
                     + "\"records_count_in_db\":164}],\"away_messages\":[]}}");
@@ -427,6 +621,11 @@ public class IncrementReaderTest {
                     z.write(e.getValue().getBytes(StandardCharsets.UTF_8));
                     z.closeEntry();
                 }
+                if (paddingEntryBytes > 0) {
+                    z.putNextEntry(new ZipEntry("padding.bin"));
+                    z.write(new byte[paddingEntryBytes]);
+                    z.closeEntry();
+                }
                 if (!omitMessagesBin) {
                     z.putNextEntry(new ZipEntry("messages.bin"));
                     z.write(messagesBin());
@@ -437,7 +636,7 @@ public class IncrementReaderTest {
         }
 
         File write(File f) throws Exception {
-            byte[] payload = zlib(rawPayload != null ? rawPayload : zip());
+            byte[] payload = containerPayload != null ? containerPayload : zlib(rawPayload != null ? rawPayload : zip());
             byte[] aes = BackupKey.hkdfSha256(new byte[32], ROOT, "backup encryption".getBytes(StandardCharsets.US_ASCII), 32);
             byte[] c15 = concat(new byte[]{0x0a, 16}, IV);
             byte[] header = concat(new byte[]{0x08, 0x00, 0x1a, (byte) c15.length}, c15);

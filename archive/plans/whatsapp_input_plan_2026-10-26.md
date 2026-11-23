@@ -493,7 +493,16 @@ measure the extractor on Mike's labelled sample (M2) before any alert goes live.
 > a few hundred bytes per flagged miss, removed by the 90-day expiry). **RULED — Mike, 11-23: "Build it in."** It is part of Phase 2's scope.
 > The export was deleted 11-23 (with its resume file); button 8 and the script are kept for re-measuring.
 
-**Phase 2 — Phone** (~2 sessions). P1–P5.
+> **PHONE READER REVIEWED — 11-23 (Fable 5.2, clean-room): 16 findings — 4 high, 5 medium, 7 low;
+> Mike: "as rec".** The decrypt-and-decode core is sound; what was missing is everything the probe
+> did by hand. Findings, the "checked and fine" list, Mike's rulings and the order Phase 2 takes
+> them in: `archive/plans/whatsapp_phone_reader_review_2026-11-23_fable-5-2.md`. Seven are reader
+> changes built ahead of Phase 2 (review § 4); seven are requirements on Phase 2 itself — the
+> nightly entry point that owns deletion and the folder sweep, the cursor read with an overlap
+> plus a sent-hash list, the stale-backup and text-gone notices, message type for reply markers
+> (one probe count, M); two are accepted.
+
+**Phase 2 — Phone** (~2 sessions). P1–P5, plus the review's "During" items (review § 3).
 
 **Phase 3 — Alerts and security** (~1 session). P6 if W5; the WhatsApp cards (V7); **B1b WhatsApp rows** in
 `tests/run_intake_redteam.py` — an injection inside a place name, inside a display name, and an

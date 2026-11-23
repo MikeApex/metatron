@@ -218,20 +218,23 @@ final class ProbeProofRun {
                 b.append("  combine skipped: ").append(!s.base.isFile() ? "base not found" : "an increment did not decode").append('\n');
                 continue;
             }
-            long since = s.base.lastModified() - SINCE_BEFORE_BASE_MS;
+            // The reader takes whole seconds; the window below is compared in ms, so it starts on
+            // the same whole second.
+            long sinceSeconds = (s.base.lastModified() - SINCE_BEFORE_BASE_MS) / 1000;
+            long since = sinceSeconds * 1000L;
             try {
                 stage[0] = "set " + s.label + ": base decrypt";
                 BackupDecryptor.decrypt(s.base, key[0], fullOut, BackupDecryptor.FILESYSTEM);
                 stage[0] = "set " + s.label + ": base read and combine";
                 FullBackupMessages base;
                 try {
-                    base = FullBackupMessages.read(fullOut, since);
+                    base = FullBackupMessages.read(fullOut, sinceSeconds);
                 } finally {
                     BackupDecryptor.deleteDecrypted(fullOut);
                 }
                 for (WaMessage m : base.messages) allChats.add(m.chatJid);
                 for (WaMessage m : BackupCombiner.canonicalise(base.messages, base.tables)) allChats.add(m.chatJid);
-                BackupCombiner.Combined c = BackupCombiner.combine(base.messages, base.tables, incs, allChats, since);
+                BackupCombiner.Combined c = BackupCombiner.combine(base.messages, base.tables, incs, allChats, sinceSeconds);
                 long end = incs.get(incs.size() - 1).creationDateMs;
                 b.append("  combined since ").append(ProbeReport.ts(since)).append(" (base ").append(base.messages.size())
                         .append(" since then): ").append(c.messages.size()).append(" messages — added ").append(c.added)

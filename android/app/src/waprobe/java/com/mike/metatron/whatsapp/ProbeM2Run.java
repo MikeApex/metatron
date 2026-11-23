@@ -112,14 +112,16 @@ final class ProbeM2Run {
         stage[0] = "write check";
         set.requireComplete(BackupLocator.SYSTEM_CLOCK, BackupLocator.THREAD_SLEEP);
         long now = System.currentTimeMillis();
-        long since = now - ProbeM2Sample.WINDOW_MS;
+        // The reader takes whole seconds; the sample keeps its own ms window, so this only widens the
+        // read by under a second, and those rows are counted as outside the window.
+        long sinceSeconds = (now - ProbeM2Sample.WINDOW_MS) / 1000;
 
         stage[0] = "full backup: decrypt";
         BackupDecryptor.decrypt(set.base, key[0], fullOut, BackupDecryptor.FILESYSTEM);
         FullBackupMessages base;
         stage[0] = "full backup: read";
         try {
-            base = FullBackupMessages.read(fullOut, since);
+            base = FullBackupMessages.read(fullOut, sinceSeconds);
         } finally {
             BackupDecryptor.deleteDecrypted(fullOut);
         }
@@ -137,7 +139,7 @@ final class ProbeM2Run {
             for (WaMessage m : BackupCombiner.canonicalise(inc.messages, base.tables)) chats.add(m.chatJid);
         }
         stage[0] = "combine";
-        BackupCombiner.Combined c = BackupCombiner.combine(base.messages, base.tables, incs, chats, since);
+        BackupCombiner.Combined c = BackupCombiner.combine(base.messages, base.tables, incs, chats, sinceSeconds);
         b.append("read: the current full backup and ").append(incs.size()).append(" live increments → ")
                 .append(c.messages.size()).append(" messages in the window\n");
 

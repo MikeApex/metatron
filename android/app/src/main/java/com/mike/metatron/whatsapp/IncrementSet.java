@@ -36,6 +36,11 @@ public final class IncrementSet {
         return Long.parseLong(m.group(1));
     }
 
+    /**
+     * A crypt14 file modified after msgstore.db.crypt15 is refused as crypt14_end_to_end_off: end-to-end
+     * backup was switched off since, and the crypt15 set beside it will never be written again
+     * (review finding 3). A crypt14 no newer than the base is history and does not block.
+     */
     public static IncrementSet locate(File dir) throws BackupException {
         String path = dir.getAbsolutePath();
         if (path.contains("com.whatsapp.w4b") || path.contains("WhatsApp Business")) {
@@ -43,11 +48,15 @@ public final class IncrementSet {
         }
         File base = new File(dir, BackupLocator.CURRENT);
         if (!base.isFile()) throw new BackupException(BackupError.NO_BACKUP_FOUND);
+        long baseWritten = base.lastModified();
         File[] files = dir.listFiles();
         TreeMap<Long, File> byN = new TreeMap<>();
         if (files != null) {
             for (File f : files) {
                 if (!f.isFile()) continue;
+                if (BackupLocator.CRYPT14.matcher(f.getName()).matches() && f.lastModified() > baseWritten) {
+                    throw new BackupException(BackupError.CRYPT14_END_TO_END_OFF);
+                }
                 Matcher m = LIVE.matcher(f.getName());
                 if (m.matches()) byN.put(Long.parseLong(m.group(1)), f);
             }
@@ -63,6 +72,18 @@ public final class IncrementSet {
             expect++;
         }
         return new IncrementSet(base, out);
+    }
+
+    /**
+     * When WhatsApp last wrote any file of this set — the newest modification time among the base
+     * and its increments, in ms. This is the freshness signal (review finding 3): it says when
+     * WhatsApp last backed up, not when a job last read, so a backup that has stopped being written
+     * shows its age even while every read succeeds.
+     */
+    public long newestWriteMs() {
+        long newest = base.lastModified();
+        for (File f : increments) newest = Math.max(newest, f.lastModified());
+        return newest;
     }
 
     /**
