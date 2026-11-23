@@ -13,7 +13,7 @@ config/templates/whatsapp_screen.yaml points (`languages.bg.model_dir`).
 
 Run on the VM (and on the Mac for a local check). Idempotent: an existing model is kept unless
 --force. Prints the model card's licence line — Apache-2.0 when fetched on 2026-11-23; plan § 8a
-owes its licence and notice with any distribution beyond Mike and Iva.
+owes its licence and notice with any distribution beyond the first two users.
 """
 from __future__ import annotations
 

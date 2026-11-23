@@ -441,6 +441,21 @@ by ~2–4M tokens** (§ 6).
 `tests/test_intake_pipeline.py` pattern (fake adapter, monkeypatched persona directory). **Then
 measure the extractor on Mike's labelled sample (M2) before any alert goes live.**
 
+> **PHASE 1 BUILT, 11-23 (clean-room; `e45c7cd`, Mike: "as rec"; nothing deployed — the channel
+> ships off).** Built from the re-anchored delta `archive/plans/whatsapp_phase1_build_plan_2026-11-23.md`
+> (Fable review: 6 findings, verify closed 5 + 1 partial + 3 new, all addressed). **Step 0:**
+> increments omit only `message_type` 90 of the user's own messages (26/26, all one-to-one; 0 of
+> 3,362 with text); every other kind arrives the next night. **Rulings (Mike, 11-23):** A — accept
+> one possible redundant re-raise; B — `info` facts recorded only; **C amended** — consent withdrawal
+> stops collection, deletion is the user's opt-in (`POST /whatsapp/delete-all`), un-share still
+> purges at once (W3); **D amended — Bulgarian is translated on the VM** by a local OPUS-MT model
+> (Apache-2.0, 82 MB, +159 MB resident on the Mac; the VM's server already maps `ctranslate2`),
+> other scripts held back unscreened — this amends the 11-22 LM ruling for translation only.
+> **The endpoint contract Phase 2 builds to is plan delta § 2.2** — message key
+> `chat|seconds|ordinal`, the VM refuses ms. **Before any alert:** M2 (include Bulgarian messages),
+> then M4 (seed `mike`'s `whatsapp` consent, the stanza on, `scripts/fetch_whatsapp_translation_model.py`
+> then `--check` on the VM). Tests: `tests/test_intake_whatsapp.py` 35/35.
+
 **Phase 2 — Phone** (~2 sessions). P1–P5.
 
 **Phase 3 — Alerts and security** (~1 session). P6 if W5; the WhatsApp cards (V7); **B1b WhatsApp rows** in
@@ -602,7 +617,7 @@ L4–L8, `archive/plans/whatsapp_input_plan_2026-10-26.md` § 8a"* — the file 
 |---|---|
 | L4 | **Third parties' data:** a product processes messages from people who never agreed to it. Personal use sits in household exemptions; an operator does not. Lawful basis, transparency, and deletion requests from people who are not users, under GDPR/UK GDPR, CCPA and equivalents. Also confirm the reading of on-device notifications is recipient-side processing, not interception, in the jurisdictions served |
 | L5 | **WhatsApp/Meta:** whether a commercial product may decrypt users' backups or read their notifications under WhatsApp's terms and Meta's platform policies; use of the WhatsApp name in the product (trademark guidelines); and **the deferred reply features** (§ 9), which touch the terms' automated-messaging rules directly |
-| L6 | **Licence:** counsel confirms the clean-room record is sufficient, and the app's own licence is chosen |
+| L6 | **Licence:** counsel confirms the clean-room record is sufficient, and the app's own licence is chosen. **Also (11-23):** the Bulgarian translation model (`Helsinki-NLP/opus-mt-bg-en`, **Apache-2.0**, fetched per machine by `scripts/fetch_whatsapp_translation_model.py`) — its licence and notice travel with any distribution |
 | L7 | **App-store policy**, if ever distributed through Google Play: notification-listener access and All-files access are restricted permissions that need a declaration and Google's approval. Sideloading is unaffected |
 | L8 | **Vertex for third-party content at scale** — a data-processing agreement and the ZDR question, at the multi-user transition `ROADMAP.md` § Section 0 already names |
 
