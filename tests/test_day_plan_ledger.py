@@ -315,7 +315,13 @@ def _():
     o, u, l = O.task_schemas()
     # open_task re-pinned 2026-10-29 (0a096897e6448300 → 56ebb356afbce40a): `done_words`
     # added to the shipped constant on purpose [DB-1029-03] — not a flag leaking through.
-    assert (_h(o), _h(u), _h(l)) == ("56ebb356afbce40a", "426bcfc2d90b424d",
+    # Both re-pinned 2026-11-23 (→ b02af39546c057ea, f9b84883c1d66755): open_task's
+    # `medication` and update_task's `set_medication` (+ `medication`, `done_words`) added to the
+    # shipped constants on purpose — the medication view reads the link whatever the flag says.
+    # Re-pinned again the same day after the reviews (→ 169731d8ca65ce8c, 7202bdedc7de7759): the
+    # two descriptions now say one habit per medication, set by the Synthesizer, and that a dose
+    # past the count or repeated within 10 minutes is refused. Text only; no field changed.
+    assert (_h(o), _h(u), _h(l)) == ("169731d8ca65ce8c", "7202bdedc7de7759",
                                      "fc306ac3d96fa5e1"), (_h(o), _h(u), _h(l))
     r, g = G.goal_schemas()
     # update_goal re-pinned 2026-11-21 (385d3750301ff22e → 18eae9fc0347207f): the `vet` action,

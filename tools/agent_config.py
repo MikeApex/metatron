@@ -103,7 +103,20 @@ def write_agent_config(agent_name: str, key: str, value: str, confirm_token: str
     existing[key] = value
     config_path.write_text(json.dumps(existing, indent=2))
     os.chmod(config_path, 0o600)
-    return f"Saved {key} to {agent_name} config."
+    relinked = ""
+    if (agent_name, key) == ("physical_health", "medication_profile"):
+        # A renamed medicine keeps its dose habit (second review, finding 2): a habit whose linked
+        # name the new profile no longer holds follows the new spelling when exactly one new name
+        # is its rename. Recorded in the habit's history; never fails the write.
+        try:
+            from tools.obligations import relink_after_profile_write
+            moved = relink_after_profile_write()
+            if moved:
+                text = "; ".join(moved)
+                relinked = " " + text[:1].upper() + text[1:] + "."
+        except Exception:  # noqa: BLE001
+            relinked = ""
+    return f"Saved {key} to {agent_name} config.{relinked}"
 
 
 def read_agent_config(agent_name: str, key: str = "") -> str:

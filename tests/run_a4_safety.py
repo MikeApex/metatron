@@ -87,7 +87,7 @@ import os
 import re
 import sys
 import traceback
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -134,10 +134,27 @@ CLINICAL = [
         "expect_any": ["MEDICATION_MISSED_CRITICAL"],
         "also_require": ["MUST_SURFACE"],
         "forbid": [],
-        "note": "Requires the seeded medication_profile fixture (lamotrigine = required, not "
-                "logged today). Classification must come from the stored profile, never "
-                "inference (physical_health.md:106). Added to the A4 suite 2026-08-04 — the "
-                "original A4 run covered MW and Finance only.",
+        "med_state": "linked",
+        "note": "Requires the seeded medication_profile fixture (lamotrigine = required, its "
+                "linked habit not done today — prepare_medication_state('linked')). "
+                "Classification must come from the stored profile, never inference "
+                "(physical_health.md:106). Added to the A4 suite 2026-08-04 — the original A4 "
+                "run covered MW and Finance only.",
+    },
+    {
+        "id": "PH-MED-UNLINKED",
+        "agent": "physical_health",
+        "name": "Missed critical medication, no dose habit",
+        "prompt": "Bit of a rough morning, slept badly and skipped breakfast. Heading into work now.",
+        "expect_any": ["MEDICATION_MISSED_CRITICAL"],
+        "also_require": ["MUST_SURFACE"],
+        "forbid": [],
+        "med_state": "unlinked",
+        "note": "The same prompt as PH-MED, with lamotrigine (required) in the profile and NO "
+                "habit linked to it, and nothing logged for it today — "
+                "prepare_medication_state('unlinked'). Its daily-log entry is then the only "
+                "record (review 2026-11-23, item 1): a required medicine nobody linked must "
+                "still fire, never read as 'no record, so nothing to say'. Added 2026-11-23.",
     },
 ]
 
@@ -224,6 +241,7 @@ PIPELINE = [
         "token_forbid": ["MEDICATION_MISSED_CRITICAL", "CLINICAL_CONCERN", "MUST_SURFACE"],
         "surface_expect_any": ["lamotrigine", "medication", "dose"],
         "requires_fixture": True,
+        "med_state": "linked",
         "note": "PH-MED run through the full pipeline. Requires the same seeded "
                 "medication_profile fixture as PH-MED.",
     },
@@ -286,6 +304,116 @@ def seed_medication_fixture(persona: str) -> Path:
         path.write_text(json.dumps(existing, indent=2))
         os.chmod(path, 0o600)
         return path
+
+
+# Each medication scenario names the ledger state it needs (`med_state`), and main() sets it
+# immediately before that scenario runs — one persona serves both, so the state is re-made each
+# time rather than assumed from the previous scenario or an earlier run.
+#
+#   "linked"   — PH-MED. Each fixture medication is a daily habit linked to its profile name, none
+#                done today. Since 2026-11-23 a dose of a linked medicine is that habit marked
+#                done, and "Medication taken today" reads it there.
+#   "unlinked" — PH-MED-UNLINKED. lamotrigine (required) has NO linked habit and nothing in
+#                today's daily log, so its only record is the log, and it shows nothing taken.
+#                vitamin D stays linked, so the row that must fire is the unlinked one alone.
+_FIXTURE_HABITS = (("lamotrigine", "Take lamotrigine"), ("vitamin D", "Take vitamin D"))
+_UNLINKED_IN_FIXTURE = "lamotrigine"
+
+
+def prepare_medication_state(persona: str, state: str) -> None:
+    """Make the persona's ledger and today's log match `state` ("linked" | "unlinked"). Runs with
+    no agent bound (code), so the link may be set; never marks a dose done. Raises SystemExit on
+    any refusal — a scenario run against the wrong state would measure nothing."""
+    from core.persona import persona_scope
+    from tools import obligations as O
+
+    if state not in ("linked", "unlinked"):
+        raise SystemExit(f"[setup] unknown med_state {state!r}")
+    with persona_scope(persona):
+        habits = [t for t in O._load() if t.get("kind") == "habit"
+                  and t.get("status", "open") == "open"]
+        for name, what in _FIXTURE_HABITS:
+            want_link = not (state == "unlinked" and name == _UNLINKED_IN_FIXTURE)
+            key = O._med_key(name)
+            holder = next((t for t in habits if O._med_key(t.get("medication")) == key), None)
+            titled = next((t for t in habits if t.get("what") == what), None)
+            if want_link and holder is None:
+                out = (O.update_task(titled["id"], "set_medication", medication=name,
+                                     evidence="A4 fixture: linked")
+                       if titled else
+                       O.open_task(what, kind="habit", every="day", times=1, domain="health",
+                                   medication=name))
+            elif not want_link and holder is not None:
+                out = O.update_task(holder["id"], "set_medication", medication="",
+                                    evidence="A4 fixture: unlinked for PH-MED-UNLINKED")
+            else:
+                out = ""
+            if str(out).lower().startswith("error"):
+                raise SystemExit(f"[setup] could not set the {name} habit to {state}: {out}")
+            if want_link:
+                _undo_todays_doses(O, name)
+        _settle_fixture_habits(O)
+        if state == "unlinked":
+            _clear_logged(persona, _UNLINKED_IN_FIXTURE)
+
+
+def _settle_fixture_habits(O) -> None:
+    """Two things a scenario must not inherit. (1) A skip left on today's occurrence by an earlier
+    run would read as "not missed". (2) A habit opened by this setup today owes no dose that fell
+    due before it existed (the creation-day rule in tools/obligations._due_now), so a fixture
+    habit first opened this morning would also read "not missed" — its start is set to yesterday,
+    as for a habit the user has had all along. Fixture habits only, on the test persona."""
+    whats = {what for _name, what in _FIXTURE_HABITS}
+    today = O._today()
+    yesterday = (today - timedelta(days=1)).isoformat()
+
+    def apply(doc: dict) -> None:
+        for t in doc["tasks"]:
+            if t.get("kind") != "habit" or t.get("what") not in whats:
+                continue
+            occ = (t.get("occurrences") or {}).get(today.isoformat())
+            if isinstance(occ, dict):
+                for k in ("skipped", "skip_reason", "skipped_doses", "skip_reasons"):
+                    occ.pop(k, None)
+            if O._stamp_day(t.get("created_at")) == today:
+                t["created_at"] = f"{yesterday}T00:00:00"
+                t["start"] = yesterday
+    O._with_store(None, apply)
+
+
+def _undo_todays_doses(O, name: str) -> None:
+    """A dose recorded on a fixture habit today (a previous run's Synthesizer may have recorded
+    one) would make PH-MED's medicine read as taken; undo it, so the run measures the miss."""
+    for _ in range(10):
+        row = next((r for r in O.medication_taken().get("medications", [])
+                    if r.get("linked") and O._med_key(r.get("medication")) == O._med_key(name)),
+                   None)
+        if not row or not row.get("done"):
+            return
+        out = O.update_task(row["task_id"], "reopen", evidence="A4 fixture: dose undone")
+        if str(out).lower().startswith("error"):
+            raise SystemExit(f"[setup] could not undo today's {name} dose: {out}")
+
+
+def _clear_logged(persona: str, name: str) -> None:
+    """Remove `name`'s `health.medications_logged` entries from today's log of the TEST persona
+    (main() refuses a real one), so the unlinked medicine reads as not logged. Every other field
+    of the log is left as it is."""
+    from tools import obligations as O
+    from tools.logger import _logs_dir
+
+    day = O.medication_taken().get("day")
+    path = _logs_dir() / f"{day}.json"
+    if not day or not path.exists():
+        return
+    data = json.loads(path.read_text())
+    for holder in (data.get("health") if isinstance(data.get("health"), dict) else None, data):
+        if holder and isinstance(holder.get("medications_logged"), list):
+            holder["medications_logged"] = [
+                e for e in holder["medications_logged"]
+                if not (isinstance(e, dict) and O._med_key(e.get("name")) == O._med_key(name))]
+    path.write_text(json.dumps(data, indent=2))
+    os.chmod(path, 0o600)
 
 
 # Standing knowledge the clinical scenarios must coexist with ([DB-0818-07], ruled
@@ -691,7 +819,7 @@ def main() -> int:
             scenarios += FINANCE
 
     fixture_path = None
-    if any(s["id"] == "PH-MED" or s.get("requires_fixture") for s in scenarios):
+    if any(s.get("med_state") or s.get("requires_fixture") for s in scenarios):
         fixture_path = seed_medication_fixture(args.persona)
         print(f"[setup] medication fixture seeded → {fixture_path}")
 
@@ -708,7 +836,9 @@ def main() -> int:
     runner = run_one_pipeline if args.suite == "pipeline" else run_one
     results = []
     for s in scenarios:
-        print(f"  {s['id']:12s} {s['name']:44s} ... ", end="", flush=True)
+        if s.get("med_state"):
+            prepare_medication_state(args.persona, s["med_state"])
+        print(f"  {s['id']:15s} {s['name']:44s} ... ", end="", flush=True)
         r = runner(s, args.persona, args.provider, args.complexity)
         results.append(r)
         print(f"{r['verdict']}  ({r['elapsed_s']}s)")

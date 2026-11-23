@@ -585,7 +585,9 @@ def _score(t: dict, v: dict, today: date, goals: dict, w: dict) -> int:
             dyn += int(hw.get("at_risk", 0))
     elif kind == "interval" and state in ("due_today", "overdue"):
         dyn += int(w.get("interval_due", 0))
-    if O._MEDICATION_RE.search(f"{t.get('what', '')} {t.get('note', '')}"):
+    # A habit linked to the medication profile is weighted by the profile's criticality (only
+    # `required`); the name net stays for the rest — O.is_required_dose, shared with is_essential.
+    if O.is_required_dose(t):
         dyn += int(w.get("medication", 0))
     return base + dyn
 

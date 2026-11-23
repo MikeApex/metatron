@@ -496,7 +496,7 @@ def _():
     R.resolve_model = lambda agent, complexity=None: ModelConfig(   # noqa: E731
         provider="openai", model="stub", base_url=None, allowed_tools=None)
     O.run_session_openai = fake
-    O.load_recent_context = lambda persona=None: ""                # noqa: E731
+    O.load_recent_context = lambda persona=None, **_kw: ""         # noqa: E731
     try:
         # danny_park: a tracked fixture persona — the head layer loads its persona file.
         with _sandbox("diarist", persona="danny_park") as (_u, _s):

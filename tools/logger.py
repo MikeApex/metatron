@@ -184,9 +184,10 @@ def _deep_merge(base: dict, incoming: dict) -> dict:
     doing it the other way round would have converted a schema mismatch into data loss.
     (`[DB-0809-20]`.)
 
-    Lists are replaced rather than concatenated. `tasks_completed` and `medications_logged`
-    are restatements of the day's state, not append-only feeds — merging them would
-    duplicate every entry on the second write of the day.
+    Lists are replaced rather than concatenated. `tasks_completed` is a restatement of the day's
+    state, not an append-only feed — merging it would duplicate every entry on the second write of
+    the day. `medications_logged` reaches here already merged by medicine name
+    (`_merge_medications`, 2026-11-23), so replacing it loses nothing.
     """
     out = dict(base)
     for key, value in incoming.items():
@@ -324,6 +325,124 @@ def _split_intention(content: dict) -> tuple[dict, dict | None]:
     }
 
 
+# One record per dose, PER MEDICINE (owner's ruling, 2026-11-23: "PH and the rest of Metatron work
+# from the same data"; applied per medicine after the review the same day). A medicine with an
+# open habit linked to it (`medication`) has its doses in the task ledger — the habit marked done
+# — and "Medication taken today" reads them there (tools/obligations.medication_taken). For that
+# medicine a `medications_logged` entry would be a second record of the same dose, written by a
+# model from the conversation, and two records of one dose can disagree in a hard-fail domain:
+# its entries are dropped, and the tool result names them so a model that still sends them
+# learns. A medicine with NO linked habit keeps its entries: for it the daily log is the only
+# record, and dropping it silenced every missed required dose of a medicine nobody had linked.
+# When the ledger cannot be read, nothing is dropped — keeping a record can never hide a miss.
+#
+# A top-level `medications_logged` is the same record misplaced: what it keeps moves under
+# `health`. Each kept entry is stamped `logged_at` (persona-local), and merged with the file's
+# earlier ones BY NAME AND LEDGER DAY, not replaced as a list: a later write naming one medicine
+# must not erase the only record of another's dose.
+# Logs already on disk keep the values they hold — nothing here rewrites an earlier day.
+_MEDICATIONS_KEY = "medications_logged"
+
+
+def _medications_note(names: list[str]) -> str:
+    return (f" — the medications_logged entr{'y' if len(names) == 1 else 'ies'} for "
+            f"{', '.join(names)} {'was' if len(names) == 1 else 'were'} not stored: "
+            f"{'that medication has' if len(names) == 1 else 'each has'} a habit, so a dose is "
+            f"recorded by marking the habit done in the task ledger, and read back from "
+            f"\"Medication taken today\". Entries for medications with no habit are kept.")
+
+
+def _med_name_key(entry) -> str:
+    name = entry.get("name") if isinstance(entry, dict) else None
+    return " ".join(str(name or "").split()).casefold()
+
+
+def _strip_medications(content: dict) -> tuple[dict, list[str]]:
+    """`content` with the `medications_logged` entries of LINKED medicines removed and the rest
+    gathered under `health`, and the names removed. See the note above."""
+    top = content.get(_MEDICATIONS_KEY)
+    health = content.get("health")
+    nested = health.get(_MEDICATIONS_KEY) if isinstance(health, dict) else None
+    if top is None and nested is None:
+        return content, []
+    try:
+        from tools.obligations import linked_medication_keys
+        linked = linked_medication_keys() or set()
+    except Exception:  # noqa: BLE001 — cannot tell which are linked: keep every entry
+        linked = set()
+    entries = [e for part in (nested, top) if isinstance(part, list) for e in part]
+    kept = [e for e in entries if not (_med_name_key(e) and _med_name_key(e) in linked)]
+    dropped = [str(e.get("name")).strip() for e in entries
+               if _med_name_key(e) and _med_name_key(e) in linked]
+    content = {k: v for k, v in content.items() if k != _MEDICATIONS_KEY}
+    if health is not None and not isinstance(health, dict):
+        # A malformed `health` is not reshaped here; what is kept stays where it was sent.
+        if kept:
+            content[_MEDICATIONS_KEY] = kept
+        return content, list(dict.fromkeys(dropped))
+    rest = {k: v for k, v in (health or {}).items() if k != _MEDICATIONS_KEY}
+    if kept:
+        rest[_MEDICATIONS_KEY] = kept
+    if rest:
+        content["health"] = rest
+    else:
+        content.pop("health", None)
+    return content, list(dict.fromkeys(dropped))
+
+
+def _stamp_medications(content: dict) -> dict:
+    """Each kept `health.medications_logged` entry stamped `logged_at` — when it was written, on
+    the persona's own clock (second review, finding 5). The log FILE is dated by the machine's
+    calendar; the medication view places an entry on the persona's ledger day by this stamp, so
+    a dose logged at 01:30 on a day that starts at 04:00 counts for the day the user was still in.
+    Always overwritten: a time a model chose is not evidence of when anything was written (the
+    `_WRITTEN_AT_KEY` rule)."""
+    health = content.get("health")
+    entries = health.get(_MEDICATIONS_KEY) if isinstance(health, dict) else None
+    if not isinstance(entries, list) or not entries:
+        return content
+    try:
+        from tools.obligations import _stamp
+        now = _stamp()
+    except Exception:  # noqa: BLE001
+        now = datetime.now().isoformat(timespec="seconds")
+    stamped = [{**e, "logged_at": now} if isinstance(e, dict) else e for e in entries]
+    return {**content, "health": {**health, _MEDICATIONS_KEY: stamped}}
+
+
+def _entry_day(entry, log_date: str) -> str:
+    """The ledger day an entry belongs to: its `logged_at`, else (an entry from before the stamp)
+    the date of the file it is in."""
+    stamp = entry.get("logged_at") if isinstance(entry, dict) else None
+    if stamp:
+        try:
+            from tools.obligations import _stamp_day
+            day = _stamp_day(stamp)
+            if day:
+                return day.isoformat()
+        except Exception:  # noqa: BLE001
+            pass
+    return log_date
+
+
+def _merge_medications(existing: dict, content: dict, log_date: str = "") -> dict:
+    """`content` with its kept `health.medications_logged` merged into the file's earlier entries
+    by medicine name AND ledger day — an entry for the same medicine on the same day replaces the
+    earlier one; every other entry stays (one file can hold two ledger days around midnight)."""
+    incoming = (content.get("health") or {}).get(_MEDICATIONS_KEY) \
+        if isinstance(content.get("health"), dict) else None
+    if not incoming:
+        return content
+    prior = (existing.get("health") or {}).get(_MEDICATIONS_KEY) \
+        if isinstance(existing.get("health"), dict) else None
+    if not isinstance(prior, list) or not prior:
+        return content
+    named = {(_med_name_key(e), _entry_day(e, log_date)) for e in incoming if _med_name_key(e)}
+    merged = [e for e in prior
+              if not (_med_name_key(e) and (_med_name_key(e), _entry_day(e, log_date)) in named)]
+    return {**content, "health": {**content["health"], _MEDICATIONS_KEY: merged + incoming}}
+
+
 def write_log(content: dict | None = None, log_date: str = "") -> str:
     """
     Write a daily log entry to data/logs/YYYY-MM-DD.json.
@@ -347,6 +466,9 @@ def write_log(content: dict | None = None, log_date: str = "") -> str:
     # A write time the model chose is not evidence of when anything was written. Discarded
     # before the merge, so a forged map can never displace the real one — see _WRITTEN_AT_KEY.
     content.pop(_WRITTEN_AT_KEY, None)
+
+    # One record per dose — see _strip_medications.
+    content, dropped_meds = _strip_medications(content)
 
     # Held out of the merge entirely — see _split_intention. It is appended to the day's
     # `intentions` feed after the merge, so a scalar can never reach _deep_merge and
@@ -397,6 +519,8 @@ def write_log(content: dict | None = None, log_date: str = "") -> str:
             stamps[path] = now_iso
 
         health_entries = _health_note_entries(content, now_iso)
+        # By medicine name and ledger day — see _merge_medications.
+        content = _merge_medications(existing, _stamp_medications(content), log_date)
         existing = _deep_merge(existing, content)
         if health_entries:
             feed = _append_health_notes(existing.get(_HEALTH_NOTES_KEY), health_entries)
@@ -436,7 +560,7 @@ def write_log(content: dict | None = None, log_date: str = "") -> str:
 
     run_background(_index, f"index log {log_date}")
 
-    return f"Log written to {log_path}"
+    return f"Log written to {log_path}" + (_medications_note(dropped_meds) if dropped_meds else "")
 
 
 def read_log(log_date: str = "") -> dict:
@@ -610,6 +734,10 @@ WRITE_LOG_SCHEMA = {
         "sleep_quality: good|fair|poor, energy: low|moderate|high, food_logged: bool, "
         "exercise: {type, duration_minutes, intensity_rpe}, symptoms, medical_notes}. "
         "Top level also takes `focus`, `blockers`, `wins`, `tasks_completed`, `notes`. "
+        "Medication doses: a medication with a habit in the task ledger is recorded by marking "
+        "that habit done, and its `health.medications_logged` entries are not stored; a "
+        "medication with no habit is recorded here, in `health.medications_logged` "
+        "[{name (as the medication profile gives it), taken: bool, notes}]. "
         "Your own agent file's `## Data written` section is authoritative for your domain."
     ),
     "input_schema": {

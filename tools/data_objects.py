@@ -79,7 +79,7 @@ _TEMPLATE_DIR = _ROOT / "config" / "data_objects"
 _LIMITS_PATH = _ROOT / "config" / "modules" / "data_objects.yaml"
 
 STORES = ("archive", "wisdom", "contacts", "places", "day_shape", "tasks", "profile",
-          "agent_config", "log", "goals", "calendar")
+          "agent_config", "log", "goals", "calendar", "medication")
 IDENTITIES = ("thing", "occurrence", "thing+occurrences")
 STATUSES = ("active", "archived", "private")
 
@@ -103,6 +103,12 @@ NATIVE_WRITE = {
     "calendar": "write_calendar_event", "day_shape": "set_day_shape",
 }
 LOCATION_STORES = frozenset({"places"})
+# Stores that are a VIEW computed from other records: nothing is written into them, by any door
+# (sweep ruling D11 — "medication taken today" reads the ledger's dose habits; a second record of
+# a dose could disagree with the first, in a hard-fail domain). Keyed on the store, which only
+# code sets, never on a field a registry copy could lose. Absent from NATIVE_READ, so the read
+# rule is relevance: `class: health` adds both health agents to the standing readers.
+READ_ONLY_STORES = frozenset({"medication"})
 
 _DEFAULT_LIMITS = {
     "manifest_max_objects": 60,
@@ -559,6 +565,23 @@ def _holds(agent: str, tool: str) -> bool:
     return allowed is not None and tool in allowed
 
 
+def read_only(o: dict | None) -> bool:
+    """Is this object a computed view that takes no entries and no changes?"""
+    return bool(o) and o.get("store") in READ_ONLY_STORES
+
+
+def read_only_refusal(o: dict, verb: str = "Not recorded") -> str:
+    # Its aliases ("medications", "meds taken") also catch "add X to my medications", which is
+    # not a dose at all but a change to WHICH medicines the user takes — so the refusal says
+    # where that goes (review 2026-11-23, item 9). The aliases stay: they are what stops a
+    # second "medications" list being started beside the view, a second record of each dose.
+    return (f"{verb}: {o.get('name')} is read-only — it shows the doses marked done on the "
+            f"user's medication habits and keeps nothing of its own. A dose is recorded by "
+            f"marking its habit done in the task ledger. Adding, removing or changing a "
+            f"medication the user takes is a change to their medication profile, which "
+            f"Physical Health keeps — with the user's approval.")
+
+
 _COORD_KEY = re.compile(r"^(lat|lng|lon|long|latitude|longitude|coords?|coordinates|geo|"
                         r"latlng|lat_lng|latlon|lat_lon|lnglat|location_lat|location_lng|"
                         r"point|position)$", re.IGNORECASE)
@@ -602,6 +625,8 @@ def archive_write(o: dict, item: dict, occurrence: dict | None = None) -> str:
     """Write one entry into an archive-store object under its identity rule, and clear one
     pending marker for it. Shared by write_data_object and write_archive (registered
     categories), so the two doors cannot disagree."""
+    if read_only(o):
+        return read_only_refusal(o)
     item = dict(item or {})
     today = date.today().isoformat()
     if o["id"] == "meals" and "time_from" not in item \
@@ -889,6 +914,17 @@ def _read_calendar_object(o: dict, agent: str, f: dict) -> Any:
     return read_calendar(start, end)
 
 
+def _read_medication_object(o: dict, agent: str, f: dict) -> Any:
+    """Medication taken on one day — today, or the day `since` names — read from the task
+    ledger's dose habits (tools/obligations.medication_taken). Nothing is stored here."""
+    from tools.obligations import medication_taken
+    try:
+        day = date.fromisoformat(str(f.get("since") or "")[:10])
+    except ValueError:
+        day = None
+    return medication_taken(day=day)
+
+
 def _simple(module: str, fn: str, **kw) -> Callable[[dict, str, dict], Any]:
     def run(o: dict, agent: str, f: dict) -> Any:
         mod = __import__(module, fromlist=[fn])
@@ -899,6 +935,7 @@ def _simple(module: str, fn: str, **kw) -> Callable[[dict, str, dict], Any]:
 _NATIVE_READERS: dict[str, Callable[[dict, str, dict], Any]] = {
     "log": _read_log_object,
     "calendar": _read_calendar_object,
+    "medication": _read_medication_object,
     "wisdom": lambda o, a, f: __import__("tools.wisdom", fromlist=["read_wisdom"]).read_wisdom(
         **({"domains": o["domains"]} if o.get("domains") else {})),
     "contacts": _simple("tools.crm", "list_contacts"),
@@ -1234,6 +1271,8 @@ def write_data_object(object: str, entry: dict | None = None, action: str = "add
     o = resolve(object)
     if o is None:
         return f"Not recorded: no log called '{object}'."
+    if read_only(o):
+        return read_only_refusal(o)
     if o.get("status") == "archived":
         return f"Not recorded: {o['name']} is archived. Unarchive it first."
     if action == "add_field":
@@ -1316,6 +1355,8 @@ def amend_data_object(object: str, action: str, entry: int = 0,
     o = resolve(object, follow=(action != "unarchive"))
     if o is None:
         return f"Not changed: no log called '{object}'."
+    if read_only(o):
+        return read_only_refusal(o, "Not changed")
     ok, why = may_read(agent, o)
     if not ok:
         return f"Not changed: {why}."
@@ -1436,7 +1477,7 @@ def add_alias(obj_id: str, alias: str) -> bool:
     refuses an unbound caller by design (its read rule), so code has this door instead. Refuses
     a name that already finds a different log. Returns True when the name now finds it."""
     alias = str(alias or "").strip()
-    if not alias:
+    if not alias or read_only(get(obj_id)):
         return False
     with _locked():
         other = resolve(alias, follow=False)

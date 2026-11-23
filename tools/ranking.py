@@ -359,7 +359,9 @@ def assess(t: dict, v: dict, today: date, c: dict, bias: float = 0.0,
             elif slack <= 0:
                 out["must"] = True
     cod = G * bearer * out["factor"]
-    if O._MEDICATION_RE.search(f"{t.get('what', '')} {t.get('note', '')}") and out["must"]:
+    # A linked medication habit lifts by its profile criticality, an unlinked task by the name
+    # net — the same test is_essential and the day plan's weight use (O.is_required_dose).
+    if O.is_required_dose(t) and out["must"]:
         cod += float(c.get("medication_lift", 90))
     out["cod"] = round(cod, 3)
     out["factor"] = round(out["factor"], 4)

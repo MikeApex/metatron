@@ -464,6 +464,8 @@ def user_logs_text(persona: str) -> str:
                     continue
                 if o.get("store") != "archive" and o["id"] == o.get("store"):
                     continue
+                if DO.read_only(o):         # a computed view takes no entries (D11)
+                    continue
                 fields = ", ".join(f for f in DO.fields_of(o)) or "text"
                 desc = f" — {o['description']}" if o.get("description") else ""
                 lines.append(f"- id {o['id']}: {o['name']}{desc} (fields: {fields})")
@@ -880,7 +882,12 @@ def _home_text(kind: str, tool: str, args: dict) -> str:
                 content = json.loads(content)
             except ValueError:
                 return ""
-        return _leaf_text((content or {}).get("health")) if isinstance(content, dict) else ""
+        if not isinstance(content, dict):
+            return ""
+        # write_log drops the `medications_logged` entries of medicines with a linked habit (one
+        # record per dose, per medicine), so those save nothing here; the others are saved.
+        from tools.logger import _strip_medications
+        return _leaf_text(_strip_medications(content)[0].get("health"))
     return _write_text(tool, args) or _leaf_text(args)
 
 

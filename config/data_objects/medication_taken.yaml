@@ -1,0 +1,22 @@
+# A template (R6) — a default for every user (sweep ruling D11, 2026-11-23). A READ-ONLY VIEW,
+# never a store: each dose is the habit occurrence already marked done in the task ledger
+# (tools/obligations.medication_taken), so there is one record per dose and nothing new to log.
+# Every write and amend door refuses it (tools/data_objects.READ_ONLY_STORES). class: health
+# always adds both health agents (R26); no other specialist may read it. The aliases keep a
+# second "medication log" from being started beside it — that would be the second record the
+# ruling rejected. "medications" also catches "add X to my medications", a change to the
+# profile rather than a dose: it stays (dropping it would let write_archive start a
+# "medications" list), and every refusal says a medication change goes to Physical Health's
+# profile (review 2026-11-23, item 9). The second review added the other names a second dose
+# list would be started under — meds, medicine(s), med log, doses, pills taken (which also
+# catches "pills (taken)": names are compared without punctuation). A fixed list, never a
+# pattern; bare "pills" is left out, since "pills" alone is as likely a shopping item.
+id: medication_taken
+name: Medication taken today
+aliases: [medications, medication log, doses taken, meds taken, meds, medicine, medicines, med log, doses, pills taken]
+description: The doses of each medication due today and the ones marked done, read from the user's medication habits.
+store: medication
+identity: occurrence
+class: health
+fields: {}
+relevant_agents: [physical_health]

@@ -1771,7 +1771,7 @@ def open_task(what: str, kind: str = "deadline", due: str | None = None,
               after: str | None = None, done_words=None,
               costs=None, bears: str | None = None, shape: str | None = None,
               real_due: str | None = None, costs_source: str | None = None,
-              costs_why: str | None = None) -> str:
+              costs_why: str | None = None, medication: str | None = None) -> str:
     """Record something the user has to do, or is waiting on, so it is tracked until done."""
     what = (what or "").strip()
     if not what:
@@ -1779,6 +1779,19 @@ def open_task(what: str, kind: str = "deadline", due: str | None = None,
     kind = (kind or "deadline").strip().lower()
     if kind not in KINDS:
         return f"error: `kind` must be one of {', '.join(KINDS)}, not {kind!r}. Nothing was written."
+    med_name = None
+    if str(medication or "").strip():
+        # A dose habit is linked to its profile entry by name, checked here — the only marker
+        # the medication view reads (see "Medication taken" below). Who may set it is checked
+        # first, so a caller outside the health view learns nothing about the profile.
+        if not _may_set_link():
+            return _LINK_REFUSAL
+        if kind != "habit":
+            return ("error: `medication` links a habit to the user's medication profile — "
+                    f"this is a {kind}. Nothing was written.")
+        med_name, err = _medication_link(medication)
+        if err:
+            return err
 
     dates = {}
     for name, value in (("due", due), ("eligible_from", eligible_from),
@@ -1830,6 +1843,8 @@ def open_task(what: str, kind: str = "deadline", due: str | None = None,
         entry[name] = iso
     if domain:
         entry["domain"] = domain.strip()
+    if med_name:
+        entry["medication"] = med_name
     if note:
         entry["note"] = note.strip()
     if source_id:
@@ -1877,6 +1892,10 @@ def open_task(what: str, kind: str = "deadline", due: str | None = None,
         if dup:
             return (f"already open as {dup['id']}: {_summarise(dup)}. "
                     f"Not filed twice — update or close that one instead.")
+        if med_name:
+            clash = _second_link(tasks, med_name)
+            if clash:
+                return clash
         if not new_instance:
             # Two identifying words shared with an open task — the shape of a correction filed
             # as a new task (2026-10-27: "Mover claims admin" beside "Handle mover claims",
@@ -1905,6 +1924,10 @@ def open_task(what: str, kind: str = "deadline", due: str | None = None,
         entry.setdefault("start", today.isoformat())
         tasks.append(entry)
         msg = f"task {entry['id']} opened ({kind}): {_summarise(entry)}"
+        if med_name:
+            n = _import_logged_doses(entry, today)
+            if n:
+                msg += f"; {n} dose(s) already logged as taken today counted on it"
         open_one_offs = sum(1 for t in tasks if t.get("status") == "open"
                             and t.get("kind") in _ONE_OFF and not _is_step(t))
         if kind in _ONE_OFF and open_one_offs > _SOFT_CAP:
@@ -2038,6 +2061,22 @@ def stakes_of(t: dict, now: datetime | None = None) -> str | None:
     return "vital"
 
 
+def is_required_dose(t: dict) -> bool:
+    """Is this task a medication dose that must not be missed? The one test `is_essential` and the
+    day plan's medication weight share.
+
+    A habit linked to the medication profile is judged by the profile's criticality, never by its
+    name (review 2026-11-23: a linked Vitamin D supplement read as essential): `required` → yes;
+    `as_needed` / `optional` → no. A link whose criticality cannot be read — the profile is
+    unreadable, the entry has no criticality, or the link no longer matches an entry — reads yes:
+    in a hard-fail domain an unknown is never quietly demoted. A task with no link keeps the name
+    net (`_MEDICATION_RE`), which is all there is for it."""
+    if str(t.get("medication") or "").strip():
+        crit = _criticality_of(t["medication"])
+        return crit not in ("as_needed", "optional")
+    return bool(_MEDICATION_RE.search(f"{t.get('what', '')} {t.get('note', '')}"))
+
+
 def is_essential(t: dict, goals: dict[str, dict] | None = None) -> bool:
     """F10: essential = medication, OR explicitly high priority, OR serving an essential goal, OR a
     deadline judged vital. Derived on every read, never stored.
@@ -2052,7 +2091,7 @@ def is_essential(t: dict, goals: dict[str, dict] | None = None) -> bool:
     within minutes, against the user's goals and values (ranking plan § 16). If it has not within
     _JUDGE_GRACE, `stakes_of` reads it as vital again — a broken judge degrades to F10, never to a
     hidden bill."""
-    if _MEDICATION_RE.search(f"{t.get('what', '')} {t.get('note', '')}"):
+    if is_required_dose(t):
         return True
     if t.get("priority") == "high":
         return True
@@ -2513,21 +2552,26 @@ def update_task(task_id: str, action: str, evidence: str | None = None,
                 on_days=None, activity: str | None = None, after: str | None = None,
                 stakes_why: str | None = None, costs=None, bears: str | None = None,
                 shape: str | None = None, real_due: str | None = None,
-                costs_source: str | None = None, costs_why: str | None = None) -> str:
+                costs_source: str | None = None, costs_why: str | None = None,
+                medication: str | None = None, done_words=None) -> str:
     """Record what happened to a tracked task — done, done with a loose end, skipped,
-    dismissed, reopen, reschedule, or a new note."""
+    dismissed, reopen, reschedule, a new note, or a habit's link to a medication."""
     action = (action or "").strip().lower()
     # The planner's actions exist only while `ledger_fields` is on (review R1-1; Fable diff
     # review S-8): off, they are neither offered in the schema nor named in this error, nor
-    # accepted — a model cannot reach them by guessing.
+    # accepted — a model cannot reach them by guessing. `set_medication` is not a planner field:
+    # the medication view and the missed-dose check read it, so it is always offered.
     actions = ("done", "done_with_followup", "skipped", "dismissed", "reopen", "reschedule",
-               "note", "set_minutes") + (_PLAN_ACTIONS if _ledger_fields() else ()) + (
+               "note", "set_minutes", "set_medication") + (
+               _PLAN_ACTIONS if _ledger_fields() else ()) + (
                ("set_costs",) if _cost_record() else ())
     if action not in actions:
         return f"error: `action` must be one of {', '.join(actions)}, not {action!r}"
     if action == "set_costs":
         return _set_costs(task_id, costs=costs, bears=bears, shape=shape, real_due=real_due,
                           costs_source=costs_source, costs_why=costs_why)
+    if action == "set_medication":
+        return _set_medication(task_id, medication, done_words, evidence)
     if action == "done_with_followup":
         return _done_with_followup(task_id, evidence, followup, on_date)
     if action == "set_minutes":
@@ -2628,6 +2672,14 @@ def update_task(task_id: str, action: str, evidence: str | None = None,
             if kind == "habit":
                 pk = _period(t.get("every", "day"), when)[0]
                 occ = (t.get("occurrences") or {}).get(pk) or {}
+                if t.get("medication") and int(occ.get("skipped_doses") or 0) > 0:
+                    # A medication habit's skips are per dose: undo one.
+                    occ["skipped_doses"] = int(occ["skipped_doses"]) - 1
+                    if int(occ.get("done") or 0) + occ["skipped_doses"] < _habit_target(t):
+                        occ.pop("skipped", None)
+                        occ.pop("skip_reason", None)
+                    return (f"{tid}@{pk}: one skipped dose is no longer skipped "
+                            f"({occ['skipped_doses']} skipped)")
                 if occ.get("skipped"):
                     occ.pop("skipped", None)
                     occ.pop("skip_reason", None)
@@ -2746,10 +2798,18 @@ def update_task(task_id: str, action: str, evidence: str | None = None,
                     f"too late to change it")
         occs = t.setdefault("occurrences", {})
         occ = occs.setdefault(pk, {"done": 0, "completions": []})
+        linked_med = bool(str(t.get("medication") or "").strip())
+        if action == "skipped" and linked_med:
+            return _skip_one_dose(t, occ, tid, pk, every, evidence)
         if action == "skipped":
             occ["skipped"] = True
             occ["skip_reason"] = evidence
             return f"{tid}@{pk} skipped — left out of adherence for this {every}"
+        if linked_med:
+            # A dose counted twice hides a missed one (reviews 2026-11-23).
+            repeat = _dose_refusal(t, occ, every, when.isoformat(), evidence)
+            if repeat:
+                return repeat
         occ["done"] = int(occ.get("done") or 0) + 1
         occ.setdefault("completions", []).append({"on": when.isoformat(), "at": _stamp(),
                                                   "evidence": evidence})
@@ -2767,6 +2827,13 @@ def update_task(task_id: str, action: str, evidence: str | None = None,
     if closed_holder.get("moved"):
         _move_calendar(*closed_holder["moved"])
     return result
+
+
+def _link_tag(t: dict) -> str:
+    """` [medication: Atorvastatin]` for a habit linked to the medication profile, so the
+    Synthesizer can see which habit a reported dose belongs on whatever the habit is titled."""
+    med = str(t.get("medication") or "").strip()
+    return f" [medication: {med}]" if med else ""
 
 
 def _state_line(t: dict, today: date) -> str:
@@ -2818,9 +2885,13 @@ def list_tasks(include_closed: bool = False, horizon: str | None = None) -> str:
             return f"error: `horizon` must be one of {', '.join(_HORIZON_DAYS)}, not {horizon!r}"
         open_items = [t for t in open_items if _within_horizon(t, today, _HORIZON_DAYS[span])]
     lines = [f"{len(open_items)} open:"] if open_items else ["nothing open"]
+    # The link is shown only to a caller that may set one (Finance and Logistics hold this tool
+    # too, and the link names a profile entry — review item 8's no-oracle rule).
+    show_link = _may_set_link()
     for t in sorted(open_items, key=lambda t: _view(t, today)["sort"]):
         v = _view(t, today)
-        lines.append(f"  {v['occ']}  [{t['kind']}] {t['what']} — {_state_line(t, today)}")
+        lines.append(f"  {v['occ']}  [{t['kind']}] {t['what']} — {_state_line(t, today)}"
+                     + (_link_tag(t) if show_link else ""))
     if waiting_steps:
         lines.append(f"  (+{waiting_steps} later step{'s' if waiting_steps != 1 else ''} of a "
                      f"plan, waiting on an earlier one — not shown; each appears when it can "
@@ -2929,7 +3000,8 @@ def _recently_closed(tasks: list[dict], today: date) -> list[str]:
     return lines
 
 
-def context_block(persona: str | None = None, as_of: date | None = None) -> str:
+def context_block(persona: str | None = None, as_of: date | None = None,
+                  audience: str | None = None) -> str:
     """
     The Tasks section for load_recent_context — no model call, no tool call.
 
@@ -2961,6 +3033,11 @@ def context_block(persona: str | None = None, as_of: date | None = None) -> str:
     lead = _REVIEW_LEAD_DAYS if review else _LEAD_DAYS
     hide_raised = (bool(turn) and not turn.get("user_turn")
                    and turn.get("kind") != "evening_close" and not review)
+    # A habit's `[medication: X]` names a profile entry, so it is shown only when the block is
+    # built for an agent that may set a link (second review, item 7): load_recent_context passes
+    # the receiving agent. The Coordinator also receives this block and is not one; an unknown
+    # audience shows nothing.
+    show_link = str(audience or "") in _LINK_SETTERS
 
     views = [(t, _view(t, today, lead)) for t in tasks]
     now = sorted(((t, v) for t, v in views if v["actionable"]),
@@ -2975,7 +3052,7 @@ def context_block(persona: str | None = None, as_of: date | None = None) -> str:
         if raised and hide_raised:
             hidden += 1
             continue
-        line = f"- `{v['occ']}` {v['text']}"
+        line = f"- `{v['occ']}` {v['text']}" + (_link_tag(t) if show_link else "")
         if raised:
             line += f" (already raised today, {raised})"
         # A plan's current steps have their own allowance beside the cap (2026-11-22): on 11-22
@@ -3069,8 +3146,31 @@ def _user_act():
         _USER_ACT.on = prev
 
 
+@contextmanager
+def _code_act():
+    """A record code makes from a parsed specialist line (a dose on Physical Health's
+    `MEDICATION_TAKEN:` line — record_reported_doses). The close gate weighs the USER's words
+    against a model's choice of task; here no model chose — code matched the profile name
+    exactly — so the gate does not apply. Kept apart from `_user_act` so the two never blur."""
+    prev = getattr(_USER_ACT, "code", False)
+    _USER_ACT.code = True
+    try:
+        yield
+    finally:
+        _USER_ACT.code = prev
+
+
 def _gate_tokens(text: str, stop: frozenset) -> frozenset:
     return frozenset(_task_tokens(text) - stop)
+
+
+def _alias_tokens(t: dict, stop: frozenset = frozenset()) -> frozenset:
+    """The other words a habit answers to besides its title: the medication it is linked to and
+    its own done words (review 2026-11-23, item 2 — "took my atorvastatin" was refused against a
+    habit titled "Evening tablet", which left the dose unrecorded and the medicine reading missed).
+    """
+    words = " ".join([str(t.get("medication") or "")] + [str(w) for w in t.get("done_words") or []])
+    return _gate_tokens(words, stop) if words.strip() else frozenset()
 
 
 def _named_by(t: dict, text: str, prev: str, others: list[dict], stop: frozenset,
@@ -3081,11 +3181,17 @@ def _named_by(t: dict, text: str, prev: str, others: list[dict], stop: frozenset
     low = (text or "").lower()
     if t["id"] in low or (t.get("what") or "").strip().lower() in low:
         return True, ""
+    # The linked medicine names the habit only in a clause that is not negated (second review,
+    # finding 6: "I haven't taken my atorvastatin yet" passed on the bare name).
+    med = " ".join(str(t.get("medication") or "").split()).lower()
+    if med and any(med in c and not _NEGATION_RE.search(c)
+                   for c in (x.strip() for x in _CLAUSE_SPLIT_RE.split(low)) if c):
+        return True, ""
 
     def toks_of(x: dict) -> frozenset:
         # A prep task answers to "the prep" (live 2026-11-21: "dismiss the prep task" was refused
         # as naming nothing, beside a test step with a near-identical title).
-        base = _gate_tokens(x.get("what", ""), stop)
+        base = _gate_tokens(x.get("what", ""), stop) | _alias_tokens(x, stop)
         return base | {"prep"} if x.get("prep_for") else base
 
     ttoks = toks_of(t)
@@ -3118,7 +3224,7 @@ def _named_by(t: dict, text: str, prev: str, others: list[dict], stop: frozenset
 
 def _close_refusal(t: dict, tasks: list[dict], today: date) -> str | None:
     """None if this close may proceed; otherwise the `error:` the model sees."""
-    if getattr(_USER_ACT, "on", False):
+    if getattr(_USER_ACT, "on", False) or getattr(_USER_ACT, "code", False):
         return None
     turn = _turn_info()
     if not turn or not turn.get("close_gate"):
@@ -3235,7 +3341,11 @@ def completion_hints(user_text: str, prev_assistant: str | None = None,
         for t in tasks:
             if any(t is h for h, _ in hits):
                 continue
-            if _tokens_match(ctoks, _task_tokens(t["what"]), single_ok=True):
+            # A linked habit is named by its medication too ("took my atorvastatin" for a
+            # habit titled "Evening tablet") — review 2026-11-23, item 2.
+            if (_tokens_match(ctoks, _task_tokens(t["what"]), single_ok=True)
+                    or (t.get("medication") and _tokens_match(
+                        ctoks, _task_tokens(str(t["medication"])), single_ok=True))):
                 hits.append((t, "report"))
     if (not hits and prev_assistant and _AFFIRM_RE.match(text) and len(text.split()) <= 12
             and not _NEGATION_RE.search(text.lower())):
@@ -4234,6 +4344,774 @@ def calendar_ledger_notes(events: list[dict], persona: str | None = None) -> lis
     return notes
 
 
+# --- Medication taken: a view over the ledger, never a second store ---------------------------
+# Ruling D11 (archive/plans/agent_instructions_to_code_sweep_2026-11-23.md): "medication taken
+# today" is a default data object, and the owner chose a READ-ONLY VIEW over the records that
+# already exist — one record per dose, nothing new to log. A dose is a habit occurrence marked
+# done here; a store that doses are also written into was rejected, because in a hard-fail domain
+# two records of one dose can disagree. So this reads the ledger and writes nothing, ever: not
+# the store, not the lock file, not the v1 import `_load` would persist.
+#
+# What the ledger keeps per dose: the day it counts for (`on`) and when it was RECORDED (`at`).
+# It does not keep when the dose was taken — "I took it at 8" recorded at noon reads 12:00 — so
+# the field is named `recorded_at`, never `taken_at`. After the nightly sweep a past day keeps
+# only its count (task_history.jsonl), so `dose_times` says whether the times are still known.
+#
+# WHICH HABITS ARE MEDICATION: an explicit link, never a name (owner's ruling, 2026-11-23). A
+# habit is a dose habit when it carries `medication` — the name of an entry in the stored
+# medication_profile, checked against the profile when it is set (open_task's `medication`,
+# update_task's `set_medication`) and stored in the profile's own spelling. Nothing is guessed:
+# `domain` and `activity` are free text shared with exercise and stretching, and `_MEDICATION_RE`
+# is a name net that matches "dog tablets from the vet" and misses every drug named by name.
+#
+# The profile is the authority on WHAT the user takes (criticality, discontinuation_risk, dose,
+# schedule — Physical Health's, behind the confirm gate); the ledger is the authority on what was
+# DONE. Each row joins the two. A profile entry no active habit links appears with
+# `linked: False`, and for it the daily log's `medications_logged` is the record (see "Unlinked
+# medicines" below) — so a required medicine nobody linked is still checked, never silent.
+
+_PROFILE_FIELDS = ("criticality", "discontinuation_risk", "dose", "schedule")
+
+
+def _profile_medications() -> tuple[list[dict] | None, str]:
+    """The stored medication_profile's entries for the bound persona, read from the file (not
+    read_agent_config's message strings). ([], "") when there is no profile; (None, why) when
+    there is one and it cannot be read — never a guess at what it says."""
+    try:
+        from tools.agent_config import _agent_config_dir
+        path = _agent_config_dir() / "physical_health.json"
+        if not path.exists():
+            return [], ""
+        data = json.loads(path.read_text())
+        raw = data.get("medication_profile") if isinstance(data, dict) else None
+        if raw is None:
+            return [], ""
+        if isinstance(raw, str):
+            raw = json.loads(raw) if raw.strip() else {}
+        meds = raw.get("medications", []) if isinstance(raw, dict) else raw
+        if not isinstance(meds, list):
+            return None, "it holds no list of medications"
+        return [m for m in meds if isinstance(m, dict) and str(m.get("name") or "").strip()], ""
+    except Exception:  # noqa: BLE001
+        return None, "it could not be parsed"
+
+
+def _med_key(name) -> str:
+    return " ".join(str(name or "").split()).casefold()
+
+
+def _criticality_of(name) -> str | None:
+    """The profile's criticality for a linked medication name; None when the profile cannot be
+    read, holds no such entry, or the entry gives none. Callers read None as UNKNOWN."""
+    meds, _why = _profile_medications()
+    if not meds:
+        return None
+    hit = next((m for m in meds if _med_key(m["name"]) == _med_key(name)), None)
+    crit = str((hit or {}).get("criticality") or "").strip().lower()
+    return crit or None
+
+
+# Who may set or change a habit's `medication` link (review 2026-11-23, item 8): the Synthesizer,
+# which records doses, the two health agents, and code with no agent bound. Finance and Logistics
+# hold open_task and update_task too; they get one refusal, the same whatever name they gave, so
+# the refusal is never an oracle for what the profile holds.
+_LINK_SETTERS = frozenset({"synthesizer", "physical_health", "mental_wellbeing"})
+_LINK_REFUSAL = ("error: a habit's `medication` link is not set from here — the Synthesizer sets "
+                 "it. Open or keep the habit without `medication`. Nothing was written.")
+
+
+def _may_set_link() -> bool:
+    try:
+        from tools import data_objects as DO
+        agent = DO._caller()
+    except Exception:  # noqa: BLE001 — cannot tell who is asking: refuse
+        return False
+    return not agent or agent in _LINK_SETTERS
+
+
+def _second_link(tasks: list[dict], name: str, except_id: str | None = None) -> str | None:
+    """A refusal when another open habit is already linked to `name` (review item 6): two habits
+    on one medicine would split its doses between two counts, and the view would show both."""
+    key = _med_key(name)
+    other = next((t for t in tasks if t.get("id") != except_id
+                  and t.get("kind") == "habit" and t.get("status", "open") == "open"
+                  and _med_key(t.get("medication")) == key and key), None)
+    if other is None:
+        return None
+    return (f"error: {name!r} is already linked to {other['id']} ({other.get('what', '?')}). "
+            f"One habit per medication — a second daily dose is that habit's `times`, not a "
+            f"second habit. Unlink that one first (set_medication with an empty name) if this "
+            f"one should carry it instead. Nothing was written.")
+
+
+def _renamed_to(old_name, new_name) -> bool:
+    """Is `new_name` plausibly the profile's new spelling of `old_name` — it starts with it, or
+    holds every one of its words ("Atorvastatin" → "Atorvastatin 40mg")? Used only to join or
+    relink when EXACTLY ONE profile name qualifies; never to read a name the user said."""
+    old, new = _med_key(old_name), _med_key(new_name)
+    if not old or not new or old == new:
+        return False
+    return new.startswith(old) or set(old.split()) <= set(new.split())
+
+
+def relink_after_profile_write(persona: str | None = None) -> list[str]:
+    """After the medication profile is written (tools/agent_config.write_agent_config): an open
+    habit whose linked name the profile no longer holds follows the new spelling, when exactly one
+    new, unlinked profile name is its rename (`_renamed_to`) and no other broken habit claims the
+    same one. Recorded in the habit's history. Returns one line per relink; never raises."""
+    try:
+        meds, _why = _profile_medications()
+        if not meds:
+            return []
+        names = {_med_key(m["name"]): str(m["name"]).strip() for m in meds}
+
+        def apply(doc: dict) -> list[str]:
+            habits = [t for t in doc["tasks"] if t.get("kind") == "habit"
+                      and t.get("status", "open") == "open" and str(t.get("medication") or "").strip()]
+            held = {_med_key(t["medication"]) for t in habits}
+            broken = [t for t in habits if _med_key(t["medication"]) not in names]
+            picks: dict[str, list[dict]] = {}
+            for t in broken:
+                cands = [k for k in names if k not in held and _renamed_to(t["medication"], k)]
+                if len(cands) == 1:
+                    picks.setdefault(cands[0], []).append(t)
+            out = []
+            for key, ts in picks.items():
+                if len(ts) != 1:
+                    continue
+                t, new = ts[0], names[key]
+                t.setdefault("history", []).append({
+                    "event": "medication_relinked", "at": _stamp(), "from": t["medication"],
+                    "to": new, "reason": "the medication profile now spells it this way"})
+                out.append(f"the habit for {t['medication']!r} now follows its new name {new!r}")
+                t["medication"] = new
+            return out
+        result = _with_store(persona, apply)
+        return result if isinstance(result, list) else []
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[tasks] medication relink skipped: %s", exc)
+        return []
+
+
+def _import_logged_doses(t: dict, day: date) -> int:
+    """When a habit is linked to a medicine (open_task's `medication`, set_medication), the doses
+    already logged as taken for it that ledger day become done occurrences on the habit (second
+    review, finding 1) — without this, linking at noon erased the morning's logged dose and the
+    medicine read missed. Capped at the period's count. Returns how many were imported."""
+    logged = _logged_entries(day) or {}
+    taken = [e for e in logged.get(_med_key(t.get("medication")), []) if e.get("taken") is True]
+    if not taken:
+        return 0
+    every = t.get("every") if t.get("every") in _EVERY else "day"
+    pk = _period(every, day)[0]
+    occ = t.setdefault("occurrences", {}).setdefault(pk, {"done": 0, "completions": []})
+    room = max(0, _habit_target(t) - int(occ.get("done") or 0))
+    n = 0
+    for e in taken[:room]:
+        occ["done"] = int(occ.get("done") or 0) + 1
+        occ.setdefault("completions", []).append({
+            "on": day.isoformat(), "at": str(e.get("logged_at") or _stamp()),
+            "evidence": "logged as taken in the daily log before the habit was linked",
+            "source": "daily_log"})
+        t.setdefault("recent_completions", []).append({"on": day.isoformat()})
+        n += 1
+    t["recent_completions"] = (t.get("recent_completions") or [])[-40:]
+    return n
+
+
+def linked_medication_keys(persona: str | None = None) -> set[str] | None:
+    """The medications (as `_med_key`) that an open habit carries a link to — the medicines whose
+    doses are recorded in the ledger. None when the store cannot be read: a caller must then treat
+    every medicine as unlinked, never as linked (tools/logger.write_log keeps the daily-log entry,
+    which is the safe direction — a kept record cannot silence a miss)."""
+    try:
+        doc = _load_doc(persona)
+    except Exception:  # noqa: BLE001
+        return None
+    return {_med_key(t.get("medication")) for t in doc.get("tasks") or []
+            if isinstance(t, dict) and t.get("kind") == "habit"
+            and t.get("status", "open") == "open" and str(t.get("medication") or "").strip()}
+
+
+def _may_see_profile() -> bool:
+    """May this caller be shown the profile's names? Only an agent the medication view's read
+    rule admits (the health agents and the standing readers), or code. Finance and Logistics
+    hold open_task too, and a refusal must not hand them the user's medication list."""
+    try:
+        from tools import data_objects as DO
+        agent = DO._caller()
+        return not agent or agent in DO.readers(DO.get("medication_taken") or {"class": "health"})
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _medication_link(raw: str) -> tuple[str | None, str | None]:
+    """(the profile's own spelling of `raw`, None), or (None, a refusal the model can act on).
+    Matched whole, ignoring case and spacing — never in part."""
+    meds, why = _profile_medications()
+    if meds is None:
+        return None, (f"error: the user's medication profile could not be read ({why}), so "
+                      f"`medication` cannot be checked. Nothing was written.")
+    if not meds:
+        return None, ("error: the user's medication profile names no medications yet, so this "
+                      "habit cannot be linked to one. Open or keep the habit without "
+                      "`medication`; Physical Health adds the medication to the profile, with "
+                      "the user's approval, and the link is made then. Nothing was written.")
+    hit = next((m for m in meds if _med_key(m["name"]) == _med_key(raw)), None)
+    if hit:
+        return str(hit["name"]).strip(), None
+    names = (f" It names: {', '.join(str(m['name']).strip() for m in meds)}."
+             if _may_see_profile() else "")
+    return None, (f"error: {str(raw).strip()!r} is not a medication in the user's stored "
+                  f"profile.{names} Give the name exactly as the profile has it, or leave "
+                  f"`medication` unset until the profile has it. Nothing was written.")
+
+
+def _set_medication(task_id: str, medication: str | None, done_words,
+                    evidence: str | None) -> str:
+    """update_task's `set_medication`: link a habit to a profile medication (an empty string
+    unlinks it). The habit's own done words are kept; the caller's are used only when it has
+    none — never invented here."""
+    if not _may_set_link():
+        return _LINK_REFUSAL
+    if medication is None:
+        return ("error: `medication` is required for set_medication — the name exactly as the "
+                "user's medication profile gives it, or an empty string to unlink. Nothing was "
+                "written.")
+    name = None
+    if str(medication).strip():
+        name, err = _medication_link(medication)
+        if err:
+            return err
+    words = _clean_done_words(done_words)
+    tid = _split_id(task_id)
+
+    def apply(doc: dict) -> str:
+        t = _find(doc["tasks"], tid)
+        if t is None:
+            return f"error: no task with id {task_id!r}"
+        if t.get("kind") != "habit":
+            return (f"error: only a habit can be linked to a medication — {tid} is a "
+                    f"{t.get('kind')}. Nothing was written.")
+        if t.get("status", "open") != "open":
+            return f"error: {tid} is {t.get('status')}, not open. Nothing was written."
+        if name:
+            clash = _second_link(doc["tasks"], name, except_id=tid)
+            if clash:
+                return clash
+        was = t.get("medication")
+        t.setdefault("history", []).append({
+            "event": "medication_linked" if name else "medication_unlinked", "at": _stamp(),
+            "name": name or was, **({"reason": evidence.strip()} if evidence else {})})
+        note = ""
+        if name:
+            t["medication"] = name
+            n = _import_logged_doses(t, _today()) if _med_key(was) != _med_key(name) else 0
+            if n:
+                note = f"; {n} dose(s) already logged as taken today counted on it"
+        else:
+            t.pop("medication", None)
+        if words and not t.get("done_words"):
+            t["done_words"] = words
+        elif words:
+            note += "; it keeps the done words it already had"
+        state = f"linked to {name!r} in the medication profile" if name else "unlinked"
+        return f"{tid} {state}: {_summarise(t)}{note}"
+    return _with_store(None, apply)
+
+
+_REPEAT_DOSE_WINDOW = timedelta(minutes=10)
+
+
+# Words in the evidence that say how many doses it reports ("took both", "my second one",
+# "2 doses"). A fixed list, never inferred: it only ever PERMITS a dose the repeat guard would
+# otherwise refuse, and the cap at the period's count still holds.
+_DOSE_COUNT_WORDS = {"both": 2, "twice": 2, "second": 2, "two": 2, "third": 3, "three": 3,
+                     "thrice": 3, "fourth": 4, "four": 4}
+_DOSE_COUNT_RE = re.compile(r"\b(\d{1,2})\s*(?:doses?|pills?|tablets?|capsules?|times)\b")
+
+
+def _dose_quantity(evidence: str | None) -> int:
+    """How many doses the evidence says it reports, or 0 when it names no number."""
+    low = str(evidence or "").lower()
+    found = [n for w, n in _DOSE_COUNT_WORDS.items() if re.search(rf"\b{w}\b", low)]
+    found += [int(m.group(1)) for m in _DOSE_COUNT_RE.finditer(low)]
+    return max(found) if found else 0
+
+
+def _dose_label(t: dict) -> str:
+    """The medicine's name for a refusal — only to a caller that may see the link (review item 7:
+    Finance and Logistics hold update_task, and a refusal must not name a profile entry)."""
+    return str(t.get("medication")) if _may_set_link() else "this medication"
+
+
+def _dose_refusal(t: dict, occ: dict, every: str, on_iso: str, evidence: str | None) -> str | None:
+    """For a linked medication habit only: refuse a "done" that would count more doses than the
+    period expects, or that repeats a dose recorded for the SAME day (`on`) of the SAME period in
+    the last 10 minutes — a retried call or one report heard twice. Either would read as a dose
+    taken and could hide a missed one. A dose for another day (yesterday's, reported now) is never
+    a repeat; evidence that quantifies ("both", "two", "2 doses", "second") permits up to that
+    many. Other habits keep counting past their target, as before."""
+    done, target = int(occ.get("done") or 0), _habit_target(t)
+    span = ("today" if on_iso == _today().isoformat() else f"for {on_iso}") \
+        if every == "day" else f"this {every}"
+    if done >= target:
+        return (f"error: already recorded {done} of {target} {span} for {_dose_label(t)} — not "
+                f"counted again. If the user says they took an extra dose, that is for Physical "
+                f"Health to hear, not a dose to record here. Nothing was changed.")
+    if done < _dose_quantity(evidence):
+        return None
+    now = _now()
+    for c in reversed(occ.get("completions") or []):
+        if str((c or {}).get("on") or "") != on_iso:
+            continue
+        try:
+            at = datetime.fromisoformat(str((c or {}).get("at") or ""))
+        except ValueError:
+            continue
+        if timedelta(0) <= now - at < _REPEAT_DOSE_WINDOW:
+            mins = int((now - at).total_seconds() // 60)
+            return (f"error: a dose of {_dose_label(t)} for that day was recorded on this habit "
+                    f"{'just now' if mins < 1 else f'{mins} minute(s) ago'} — this reads as the "
+                    f"same dose reported twice, so it was not counted again. Do not retry. If the "
+                    f"user took more than one, record it with their words saying how many "
+                    f"(\"both\", \"two\"). Nothing was changed.")
+    return None
+
+
+def _skip_one_dose(t: dict, occ: dict, tid: str, pk: str, every: str, evidence: str) -> str:
+    """update_task "skipped" on a linked medication habit: one DOSE skipped, not the period
+    (second review, finding 4 — one skip of a 3-a-week medicine hid the other two). The count is
+    `skipped_doses`; the old period-wide `skipped` flag is set only once every dose of the period
+    is done or skipped, so the ledger stops asking exactly then. A legacy `skipped: true` with no
+    count reads as one."""
+    n = int(occ.get("skipped_doses") or (1 if occ.get("skipped") else 0))
+    target, done = _habit_target(t), int(occ.get("done") or 0)
+    if done + n >= target:
+        return (f"error: every dose of {tid}@{pk} is already done or skipped "
+                f"({done} done, {n} skipped of {target}). Nothing was changed.")
+    occ["skipped_doses"] = n + 1
+    occ.setdefault("skip_reasons", []).append(evidence)
+    if done + n + 1 >= target:
+        occ["skipped"] = True
+        occ["skip_reason"] = evidence
+    return (f"{tid}@{pk}: one dose skipped ({n + 1} skipped, {done} done of {target} this "
+            f"{every}) — left out of adherence")
+
+
+def _medication_habits(tasks: list[dict]) -> list[dict]:
+    """The habits that are medication doses: those carrying a `medication` link — never a habit
+    whose name looks like a medicine."""
+    return [t for t in tasks if str(t.get("medication") or "").strip()]
+
+
+def _active_on(t: dict, day: date) -> bool:
+    """Was this habit in force on `day` — started by then, and not closed before it."""
+    start = _start(t)
+    if start and start > day:
+        return False
+    if t.get("status", "open") in _TERMINAL:
+        closed = _stamp_day(t.get("closed_at"))
+        return bool(closed and closed > day)
+    return True
+
+
+def _doses_on(t: dict, day: date, history: dict[str, dict]) -> dict:
+    """One medication habit's record for `day`: expected, done, and each dose's record."""
+    every = t.get("every") if t.get("every") in _EVERY else "day"
+    pk, _ps, _pe = _period(every, day)
+    occ = (t.get("occurrences") or {}).get(pk)
+    row = {"task_id": t["id"], "what": t.get("what", ""), "every": every, "period": pk,
+           "expected": _habit_target(t), "done": 0, "skipped": False, "skipped_count": 0,
+           "doses": [], "dose_times": "recorded"}
+    eligible = _d(t.get("eligible_from"))
+    if eligible and eligible > day:
+        row["paused_until"] = eligible.isoformat()
+    if isinstance(occ, dict):
+        row["done"] = max(0, int(occ.get("done") or 0))
+        row["skipped"] = bool(occ.get("skipped"))
+        # Per dose (second review, finding 4); a legacy period-wide skip with no count is one.
+        row["skipped_count"] = max(0, int(occ.get("skipped_doses")
+                                          or (1 if occ.get("skipped") else 0)))
+        row["doses"] = [{"on": str(c.get("on") or ""), "recorded_at": str(c.get("at") or "")}
+                        for c in occ.get("completions") or [] if isinstance(c, dict)]
+        return row
+    past = history.get(f"{t['id']}@{pk}")
+    if past:
+        # Swept: the count is on file, the times are not.
+        row["done"] = max(0, int(past.get("done") or 0))
+        row["skipped"] = past.get("state") == "skipped"
+        row["skipped_count"] = 1 if row["skipped"] else 0
+        row["dose_times"] = "not_kept" if row["done"] else "recorded"
+    return row
+
+
+# --- When a dose is due (review 2026-11-23, item 3) -------------------------------------------
+# `done < expected` flagged a weekly Friday medicine every day from Monday, and the evening dose
+# of a twice-daily one from the morning. `due_now` is how many of the period's doses are due by
+# now — by the END of `day` for a day already over — and `missed` is `due_now > done`, never for
+# an occurrence the user skipped or a habit that is paused. The rules, from what the ledger
+# actually knows about a habit (a count per period, an optional earliest time `after`, and for a
+# week its planned weekdays or for a month its window of days — never per-dose times):
+#
+#   - every day, once: due from the day's start (the day boundary, `day_starts`), or from its
+#     `after` time when it has one ("evening statin, after 20:00").
+#   - every day, N times: the FIRST dose is due by midday (or from `after`, when set); the rest
+#     only by the day's end — the ledger cannot say when a later dose was meant, so it never calls
+#     one missed while the day is still running. A day that is over owes all N.
+#   - every week with planned days: one per planned day reached, up to `times` (a Friday habit
+#     on a Tuesday owes 0; on Friday, 1 — from `after` when set).
+#   - every week or month as a quota with no days: due only when the doses left can no longer fit
+#     in the days left (`times` − days remaining after `day`) — the ledger's own "needed today to
+#     stay on target". A first period the habit started part-way through owes nothing, as the
+#     ledger's sweep already excludes it from adherence.
+#   - every month with a window (the 10th–15th): nothing before the window opens; then the same
+#     quota rule against its last day; everything after it.
+#
+# THE CREATION DAY (second review, finding 1): a habit owes no dose that fell due before it
+# existed. On the ledger day it was created, a dose whose due moment is earlier than `created_at`
+# is not owed — a once-daily habit (due from the day's start) created at 21:00, or at 09:00, owes
+# nothing until the next day; a twice-daily one created at 13:00 owes only its end-of-day dose; a
+# Friday habit created on a Friday afternoon owes nothing that Friday. A quota or window habit is
+# forgiven the one slot of its creation day. The doses the user DID take that day are not lost to
+# this: linking imports the day's logged doses (`_import_logged_doses`), and a dose reported after
+# creation is recorded as usual.
+_MIDDAY = (12, 0)
+
+
+def _created_moment(t: dict) -> datetime | None:
+    try:
+        return datetime.fromisoformat(str(t.get("created_at") or ""))
+    except ValueError:
+        return None
+
+
+def _on_ledger_day(day: date, hm: tuple[int, int], boundary: timedelta) -> datetime:
+    """The moment HH:MM falls inside the ledger day `day`: a time before the day's start belongs
+    to the next calendar date (02:00 on a day that starts at 04:00 is that night, not that
+    morning)."""
+    offset = timedelta(hours=hm[0], minutes=hm[1])
+    moment = datetime.combine(day, datetime.min.time()) + offset
+    return moment + timedelta(days=1) if offset < boundary else moment
+
+
+def _due_now(t: dict, day: date, now: datetime, today: date) -> int:
+    """How many of this habit's doses for the period holding `day` are due by now (by the end of
+    `day` once it is over). Pure; see the rules above."""
+    if day > today:
+        return 0
+    every = t.get("every") if t.get("every") in _EVERY else "day"
+    target = _habit_target(t)
+    after = _parse_hhmm(t.get("after"))
+    boundary = _day_starts()
+    created = _created_moment(t)
+
+    def starts(d: date) -> datetime:
+        return datetime.combine(d, datetime.min.time()) + boundary
+
+    def owed(moment: datetime) -> bool:
+        """Due by now, and not due before the habit existed."""
+        return now >= moment and (created is None or moment >= created)
+
+    if every == "day":
+        first = _on_ledger_day(day, after, boundary) if after else (
+            _on_ledger_day(day, _MIDDAY, boundary) if target > 1 else starts(day))
+        moments = [first] + [starts(day + timedelta(days=1))] * (target - 1)
+        return sum(1 for m in moments if owed(m))
+    _pk, ps, pe = _period(every, day)
+    start = _start(t)
+    # A quota or window habit is forgiven the slot of the day it was created on.
+    forgive = 1 if created and _ledger_day(created) == day and created > starts(day) else 0
+    mdays = _month_window(t)
+    if mdays:
+        n_days = (pe - ps).days + 1
+        window = sorted({min(d, n_days) for d in mdays})
+        opens, by = ps.replace(day=window[0]), ps.replace(day=window[-1])
+        if (start and start > by) or day < opens:
+            return 0
+        return max(0, target - max(0, (by - day).days) - forgive)
+    preferred = [d for d in (t.get("on_days") or []) if d in _WEEKDAYS] if every == "week" else []
+    if preferred:
+        first = max(ps, start) if start else ps
+        planned = 0
+        for i in range((day - first).days + 1):
+            d = first + timedelta(days=i)
+            moment = _on_ledger_day(d, after, boundary) if after else starts(d)
+            if _WEEKDAYS[d.weekday()] in preferred and owed(moment):
+                planned += 1
+        return min(planned, target)
+    if start and start > ps:
+        return 0
+    return max(0, target - (pe - day).days - forgive)
+
+
+def _dose_state(t: dict, day: date, row: dict, now: datetime, today: date) -> dict:
+    """`due_now`, `paused` and `missed` for a linked row. Paused: not yet eligible on `day` (a
+    deferral — the ledger's `dormant`). Missed: more doses due than done plus skipped — skips
+    count per dose — and not paused."""
+    paused = bool(row.get("paused_until")) or _view(t, day)["state"] == "dormant"
+    due = 0 if paused else _due_now(t, day, now, today)
+    accounted = int(row.get("done") or 0) + int(row.get("skipped_count") or 0)
+    return {"due_now": due, "paused": paused, "missed": bool(due > accounted and not paused)}
+
+
+# --- Unlinked medicines: the daily log is their only record (review 2026-11-23, item 1) -------
+# "One record per dose" is applied per medicine: a medicine with an active linked habit keeps its
+# doses in the ledger, and write_log drops its `medications_logged` entries; a medicine with NO
+# habit keeps them, because for it that entry is the only record. So an unlinked row carries that
+# day's log evidence, and the old rule — required and not logged today, missed — still applies.
+
+def _logged_entries(day: date) -> dict[str, list[dict]] | None:
+    """The LEDGER day's `medications_logged` entries, by `_med_key` of their name, from the bound
+    persona's daily logs (health.medications_logged, and a misplaced top-level one). {} when there
+    are none; None when a log that could hold them cannot be read. A pure file read: no index, no
+    write.
+
+    A log file is dated by the machine's calendar, the view by the persona's ledger day (its
+    `day_starts` and timezone) — second review, finding 5: a dose logged at 01:30 on a day that
+    starts at 04:00 sits in the next date's file but belongs to the day before. So each entry is
+    placed by its `logged_at` (stamped by write_log, persona-local), read from the same-date file
+    and both neighbours; an entry from before the stamp existed falls back to its file's date."""
+    try:
+        from tools.logger import _logs_dir
+        out: dict[str, list[dict]] = {}
+        for offset in (-1, 0, 1):
+            file_day = day + timedelta(days=offset)
+            path = _logs_dir() / f"{file_day.isoformat()}.json"
+            if not path.exists():
+                continue
+            data = json.loads(path.read_text())
+            if not isinstance(data, dict):
+                return None
+            health = data.get("health") if isinstance(data.get("health"), dict) else {}
+            raw = list(health.get("medications_logged") or [])
+            raw += list(data.get("medications_logged") or [])
+            for e in raw:
+                if not (isinstance(e, dict) and str(e.get("name") or "").strip()):
+                    continue
+                placed = _stamp_day(e.get("logged_at")) if e.get("logged_at") else None
+                if (placed or file_day) == day:
+                    out.setdefault(_med_key(e["name"]), []).append(e)
+        return out
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _unlinked_row(entry: dict, logged: dict[str, list[dict]] | None) -> dict:
+    """A profile entry no active habit links on the day. `logged`: True when the day's log holds
+    an entry for it not marked `taken: false`; False when it holds none (or only `taken: false`);
+    None when the log could not be read. `missed` is the old rule on that evidence — never for
+    an `as_needed` medicine, which is taken when needed and so is never due; None when UNKNOWN.
+    `needs_link`: a required medicine with no habit — its doses can only be tracked by a link."""
+    crit = str(entry.get("criticality") or "").strip().lower()
+    entries = None if logged is None else logged.get(_med_key(entry["name"]), [])
+    took = None if entries is None else any(e.get("taken") is not False for e in entries)
+    missed = False if crit == "as_needed" else (None if took is None else not took)
+    return {"medication": str(entry["name"]).strip(), "linked": False, "in_profile": True,
+            **{k: entry.get(k) for k in _PROFILE_FIELDS},
+            "task_id": None, "expected": None, "done": None, "doses": [],
+            "logged": took, "logged_entries": entries if entries is not None else [],
+            "due_now": None, "paused": False, "skipped": False, "skipped_count": 0,
+            "missed": missed,
+            "needs_link": crit == "required", "link_broken": False}
+
+
+def medication_taken(persona: str | None = None, day: date | None = None) -> dict:
+    """What medication was taken on `day` (default: today, on the persona's own clock and day
+    boundary): the ledger's linked dose habits, joined to the stored medication profile. Pure
+    reads; never raises.
+
+    Returns {"ok": bool, "day": "YYYY-MM-DD", "medications": [row, …], "reason"?: str}.
+    Every row carries: medication, linked, in_profile, criticality, discontinuation_risk, dose,
+    schedule, task_id, expected, done, doses, due_now, paused, skipped, skipped_count, missed,
+    needs_link, link_broken.
+
+    A linked row (an active habit carries the link): task_id, what, every, period, expected
+    (the period's doses), done, skipped (the whole period), skipped_count (doses skipped),
+    doses: [{on, recorded_at}], dose_times: "recorded" | "not_kept", paused_until?; `due_now` —
+    doses due by now (see "When a dose is due", and its creation-day rule); `paused`;
+    `missed` = due_now > done + skipped_count, not paused; `link_broken` = the profile no longer
+    holds the name (`in_profile` False) — reported, never dropped. When exactly one unlinked
+    profile name is its rename, the row is joined to it: `medication` and the profile fields are
+    the new entry's, `linked_name` is the habit's old name, `relink_to` the new one.
+
+    An unlinked row (a profile entry no active habit links that day): task_id/expected/done None,
+    doses [], due_now None, and that day's daily-log evidence — `logged` (True / False / None when
+    the log cannot be read) and `logged_entries`; `missed` = not logged (None when unknown; never
+    for `as_needed`); `needs_link` True for a `required` medicine.
+
+    `ok` False means the view could not be computed — no persona, an unreadable store or profile
+    — and a caller must read that as UNKNOWN, never as "nothing taken" or "nothing missed"."""
+    out: dict = {"ok": False, "day": day.isoformat() if isinstance(day, date) else "",
+                 "medications": []}
+    try:
+        from core.persona import persona_scope, resolve_persona
+        p = resolve_persona(persona)
+    except Exception:  # noqa: BLE001 — fail closed: no persona, nobody's record
+        out["reason"] = "no user is bound to this read"
+        return out
+    try:
+        with persona_scope(p):
+            day = day if isinstance(day, date) else _today()
+            out["day"] = day.isoformat()
+            try:
+                doc = _load_doc(p)
+            except StoreUnreadable:
+                out["reason"] = "the task store could not be read"
+                return out
+            habits = [t for t in doc.get("tasks") or []
+                      if isinstance(t, dict) and t.get("kind") == "habit" and t.get("id")]
+            meds, _why = _profile_medications()
+            if meds is None:
+                out["reason"] = "the medication profile could not be read"
+                return out
+            profile = {_med_key(m["name"]): m for m in meds}
+            history = {str(r.get("key")): r for r in _history_rows(p)
+                       if r.get("kind") == "habit" and r.get("key")}
+            now, today = _now(), _today()
+            rows, linked = [], set()
+            for t in _medication_habits(habits):
+                if not _active_on(t, day):
+                    continue
+                key = _med_key(t["medication"])
+                entry = profile.get(key)
+                linked.add(key)
+                row = {"medication": str(t["medication"]).strip(), "linked": True,
+                       "in_profile": entry is not None,
+                       **{k: (entry or {}).get(k) for k in _PROFILE_FIELDS},
+                       **_doses_on(t, day, history)}
+                row.update(_dose_state(t, day, row, now, today))
+                # A link the profile no longer holds (renamed, removed) is reported, never
+                # dropped: its doses may be the only record of a medicine the user still takes.
+                row.update(needs_link=False, link_broken=entry is None)
+                rows.append(row)
+            # A renamed medicine (second review, finding 2): a broken link and exactly one
+            # unlinked profile name that is its new spelling are one medicine. The row takes the
+            # new entry's profile fields and keeps the habit's doses, so the rename alone never
+            # reads as a missed dose; `relink_to` names the profile spelling to link to.
+            unlinked = [k for k in profile if k not in linked]
+            claims: dict[str, list[dict]] = {}
+            for row in rows:
+                if row["link_broken"]:
+                    cands = [k for k in unlinked if _renamed_to(row["medication"], k)]
+                    if len(cands) == 1:
+                        claims.setdefault(cands[0], []).append(row)
+            for key, claimants in claims.items():
+                if len(claimants) != 1:
+                    continue
+                entry, row = profile[key], claimants[0]
+                row.update({k: entry.get(k) for k in _PROFILE_FIELDS})
+                row.update(linked_name=row["medication"], medication=str(entry["name"]).strip(),
+                           relink_to=str(entry["name"]).strip())
+                linked.add(key)
+            logged = _logged_entries(day) if any(k not in linked for k in profile) else {}
+            for key, entry in profile.items():
+                if key not in linked:
+                    rows.append(_unlinked_row(entry, logged))
+            out["medications"] = rows
+            out["ok"] = True
+            return out
+    except Exception as exc:  # noqa: BLE001 — a view must never take down its caller
+        logger.warning("[tasks] medication view unavailable: %s", exc)
+        out["medications"] = []
+        out["ok"] = False
+        out["reason"] = "the medication record could not be read"
+        return out
+
+
+# --- Doses Physical Health reports: recorded by code (second review, A1) ---------------------
+# The owner's standing preference is code over agents wherever an agent is not needed. A dose
+# Physical Health hears used to reach the ledger only if the Synthesizer called update_task, and
+# then only if the close gate found the user's words naming the habit — so a dose PH had already
+# identified by its profile name could be refused, and the medicine read missed. Now code reads
+# PH's line and records the dose itself.
+#
+# THE LINE, exactly:   MEDICATION_TAKEN: <name>[ at <time>]; <name>[ at <time>]; …
+#   - doses TAKEN only, each by its name exactly as the medication profile gives it;
+#   - the line may sit anywhere in PH's output, with list or emphasis marks before the key;
+#   - items are split on ";" (a "," or newline does not split — a name never contains ";");
+#   - " at <time>" and surrounding quotes, backticks and a trailing full stop are dropped;
+#   - "none", "-", "n/a" and empty items are ignored;
+#   - a name repeated k times is k doses.
+# Parsed tolerantly but NEVER fuzzily: a name counts only when it equals a profile name (case and
+# spacing ignored) AND an open habit is linked to it. Anything else is left alone — Physical
+# Health's own `medications_logged` write is the record for a medicine with no habit.
+_TAKEN_LINE_RE = re.compile(r"^[ \t>*_`#-]*MEDICATION_TAKEN[ \t*_`]*:(?P<items>.*)$",
+                            re.IGNORECASE | re.MULTILINE)
+_TAKEN_AT_RE = re.compile(r"\s+at\s+\S.*$", re.IGNORECASE)
+_TAKEN_NONE = {"", "none", "-", "n/a", "na", "nothing", "omit"}
+
+
+def parse_medication_taken(text: str) -> list[str]:
+    """The names on Physical Health's `MEDICATION_TAKEN:` line(s), one per dose, as written (see
+    the format above). Pure; never raises."""
+    names: list[str] = []
+    for m in _TAKEN_LINE_RE.finditer(str(text or "")):
+        for item in m.group("items").split(";"):
+            name = _TAKEN_AT_RE.sub("", item.strip()).strip().strip("`'\"*_").rstrip(".").strip()
+            if name.casefold() not in _TAKEN_NONE and not name.startswith("["):
+                names.append(name)
+    return names
+
+
+def record_reported_doses(text: str, persona: str | None = None) -> list[str]:
+    """Record each dose on Physical Health's `MEDICATION_TAKEN:` line on its linked habit — with
+    no agent bound, on the persona's ledger day, the line as evidence. Returns one line per
+    medicine for the Synthesizer's note ("Atorvastatin (1 of 1 today)", or "… — already recorded,
+    not counted again"); [] when nothing was recorded. Never raises."""
+    try:
+        from core.persona import persona_scope, resolve_persona
+        names = parse_medication_taken(text)
+        if not names:
+            return []
+        p = resolve_persona(persona)
+        line = next((m.group(0).strip() for m in _TAKEN_LINE_RE.finditer(text)), "")[:300]
+        with persona_scope(p):
+            meds, _why = _profile_medications()
+            profile = {_med_key(m["name"]): str(m["name"]).strip() for m in meds or []}
+            habits = {_med_key(t.get("medication")): t for t in _load(p)
+                      if t.get("kind") == "habit" and t.get("status", "open") == "open"
+                      and str(t.get("medication") or "").strip()}
+            counts: dict[str, int] = {}
+            for n in names:
+                if _med_key(n) in profile and _med_key(n) in habits:
+                    counts[_med_key(n)] = counts.get(_med_key(n), 0) + 1
+            out = []
+            for key, k in counts.items():
+                t, shown = habits[key], profile[key]
+                evidence = f"Physical Health reported {k} dose{'s' if k != 1 else ''}: {line}"
+                result, last_ok = "", ""
+                with _code_act():
+                    for _ in range(k):
+                        result = update_task(t["id"], "done", evidence=evidence)
+                        if str(result).startswith("error:"):
+                            break
+                        last_ok = result
+                # The count after the last dose that WAS recorded, when one was.
+                m = re.search(r"recorded: (\d+) of (\d+) this (\w+)", str(last_ok or result))
+                if m:
+                    span = "today" if m.group(3) == "day" else f"this {m.group(3)}"
+                    out.append(f"{shown} ({m.group(1)} of {m.group(2)} {span})")
+                elif "already recorded" in str(result) or "reported twice" in str(result):
+                    out.append(f"{shown} — already recorded, not counted again")
+                else:
+                    logger.warning("[tasks] reported dose not recorded for %s: %s", shown,
+                                   str(result)[:160])
+            return out
+    except Exception as exc:  # noqa: BLE001 — a dose note must never take down the turn
+        logger.warning("[tasks] reported doses not recorded: %s", exc)
+        return []
+
+
+def reported_doses_note(lines: list[str]) -> str:
+    """The Synthesizer's line for doses code recorded this turn; "" when none."""
+    if not lines:
+        return ""
+    return ("MEDICATION NOTE (from code): Recorded by code: " + "; ".join(lines) + ". These "
+            "doses are already in the record — do not record them again, and never tell the "
+            "user a dose was not recorded.")
+
+
 # --- The ledger's tool surface ---------------------------------------------------------------
 # Registered in core/orchestrator.py, classified in core/actions.py, granted to synthesizer,
 # finance and logistics in both routing files. They replaced the four v1 tools
@@ -4310,6 +5188,15 @@ OPEN_TASK_SCHEMA = {
                                           "(default a week)."},
             "domain": {"type": "string",
                        "description": "Optional life domain — finance, logistics, health, work."},
+            "medication": {"type": "string",
+                           "description": "habit: when the habit is taking a medication, its "
+                                          "name exactly as the user's stored medication "
+                                          "profile gives it. This is what makes each dose "
+                                          "count as taken; a name the profile does not hold is "
+                                          "refused, and so is a second habit for a medication "
+                                          "that already has one (a second daily dose is "
+                                          "`times`). Set by the Synthesizer. Leave unset for "
+                                          "any other habit."},
             "note": {"type": "string", "description": "Optional one line of context."},
             "source_id": {"type": "string",
                           "description": "The id of the intake-queue message it came from, when "
@@ -4337,6 +5224,11 @@ UPDATE_TASK_SCHEMA = {
         "dismissed — stop tracking it altogether; evidence is the user's "
         "reason. reopen — a close you recorded was wrong. "
         "reschedule — a new date (new_due), keeping the history. note — replace the note. "
+        "set_medication — link a habit to the medication it is for (medication: the name "
+        "exactly as the user's stored medication profile gives it; an empty string unlinks); "
+        "done_words may be given with it when the habit has none. A dose the user reports is "
+        "recorded as done on that habit — never in the daily log; a dose past the habit's "
+        "count for the period, or the same dose again within 10 minutes, is refused. "
         "For a recurring task, done and skipped apply to the current occurrence, or to "
         "on_date if the user said it was another day."
     ),
@@ -4348,7 +5240,7 @@ UPDATE_TASK_SCHEMA = {
                                        "ob_261023_a1b2c3@2026-W43."},
             "action": {"type": "string",
                        "enum": ["done", "done_with_followup", "skipped", "dismissed", "reopen",
-                                "reschedule", "note", "set_minutes"]},
+                                "reschedule", "note", "set_minutes", "set_medication"]},
             "evidence": {"type": "string",
                          "description": "The user's words that show this. Required for done, "
                                         "done_with_followup, skipped, dismissed and reopen — "
@@ -4364,6 +5256,15 @@ UPDATE_TASK_SCHEMA = {
                                         "words. It becomes a task of its own."},
             "new_due": {"type": "string", "description": "reschedule: the new YYYY-MM-DD."},
             "note": {"type": "string", "description": "note: the replacement text."},
+            "medication": {"type": "string",
+                           "description": "set_medication: the medication's name exactly as "
+                                          "the user's stored medication profile gives it, or "
+                                          "an empty string to unlink. A name the profile does "
+                                          "not hold is refused."},
+            "done_words": {"type": "array", "items": {"type": "string"},
+                           "description": "set_medication: words that report a dose done when "
+                                          "the user mentions it unprompted — only words the "
+                                          "user uses, and only if the habit has none yet."},
             "on_date": {"type": "string",
                         "description": "Optional YYYY-MM-DD it actually happened, within the "
                                        "last week ('I went yesterday')."},

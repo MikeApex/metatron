@@ -308,6 +308,11 @@ def write_archive(category: str, item: dict | str | None = None) -> str:
     # for an `occurrence` log, and a merged log writes to where its entries went. An
     # unregistered category takes the code below, unchanged.
     from tools import data_objects as _objects
+    # A computed view (Medication taken today) takes no entries through this door either: a
+    # dose filed here would be a second record of it, beside the ledger's (sweep ruling D11).
+    view = _objects.resolve(category)
+    if _objects.read_only(view):
+        return _objects.read_only_refusal(view)
     registered = _objects.registered_category(category)
     if registered is not None:
         return _objects.archive_write(registered, item)

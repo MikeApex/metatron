@@ -893,7 +893,8 @@ def derived(persona: str, rid: str, c: dict, writes: list, touched, user_text: s
         with persona_scope(persona):
             o = DO.get(str(c.get("target") or ""))
             if (o is None or o.get("status") != "active" or o.get("merged_into")
-                    or (o.get("store") != "archive" and o["id"] == o.get("store"))):
+                    or (o.get("store") != "archive" and o["id"] == o.get("store"))
+                    or DO.read_only(o)):          # a computed view takes no entries (D11)
                 return "derived_invalid"
             prop = c.get("proposal")
             allowed = set(DO.fields_of(o)) | {"text", "notes"}

@@ -1164,10 +1164,13 @@ def _render_today_log(entry: dict) -> str:
     return " | ".join(parts)
 
 
-def load_recent_context(persona: str | None = None, days: int = 5) -> str:
+def load_recent_context(persona: str | None = None, days: int = 5, audience: str = "") -> str:
     """
     Load the last N days of logs, context tracker, and ambient world context
     (date/time, weather, news) into a string for injection into the system prompt.
+
+    `audience` is the agent the context is built for. Only the task ledger's block reads it: a
+    habit's medication link is shown to an agent that may set one, never to the Coordinator.
 
     Returns empty string if no recent data exists.
     """
@@ -1342,7 +1345,9 @@ def load_recent_context(persona: str | None = None, days: int = 5) -> str:
                           "tools.turn_referent"):
         try:
             import importlib
-            block = importlib.import_module(_block_source).context_block(persona)
+            _mod = importlib.import_module(_block_source)
+            block = (_mod.context_block(persona, audience=audience)
+                     if _block_source == "tools.obligations" else _mod.context_block(persona))
             if block:
                 sections.append(block)
         except PersonaError:
@@ -5700,7 +5705,7 @@ def _run_single_agent(agent_name: str, user_input: str,
         # Full config (constitution → prime_directive → mission → goals) + recent context.
         kind = session_kind(user_input, persona)
         config = load_config(persona=persona, kind=kind)
-        recent = load_recent_context(persona=persona)
+        recent = load_recent_context(persona=persona, audience=agent_name)
         system_prompt = f"## Your Role for This Session\n\n{agent}\n\n---\n\n{config}"
         # Conduct sections gated on this turn's triggers — scheduled-session conduct
         # and baseline-interview conduct live in config/modules/, not in the agent
@@ -5723,7 +5728,7 @@ def _run_single_agent(agent_name: str, user_input: str,
         # values are enforced by the Synthesizer; Coordinator needs domain and context only.
         goals = load_goals(persona=persona)
         profile = load_profile(persona=persona)
-        recent = load_recent_context(persona=persona)
+        recent = load_recent_context(persona=persona, audience=agent_name)
         prompt_parts = [f"## Your Role for This Session\n\n{agent}"]
         if goals:
             prompt_parts.append(goals)
@@ -6057,7 +6062,7 @@ def _resolve_data_objects(coord_output: str, persona: str | None = None,
     Never raises.
     """
     turn: dict = {"started": [], "matched": [], "adding": [], "reads": [], "unknown": [],
-                  "delegated": [], "archived": [], "amending": []}
+                  "delegated": [], "archived": [], "amending": [], "read_only": []}
     match = _re.search(r'DATA_OBJECTS:\s*```json\s*(.*?)```', coord_output, _re.DOTALL)
     if not match:
         match = _re.search(r'DATA_OBJECTS:\s*(\[.*?\])\s*(?:\n|\Z)', coord_output, _re.DOTALL)
@@ -6103,6 +6108,13 @@ def _resolve_data_objects(coord_output: str, persona: str | None = None,
                     near = DO.close_match(name)
                     turn["unknown"].append({"name": name,
                                             "near": near["name"] if near else ""})
+                    continue
+                if act in ("add", "amend") and DO.read_only(obj):
+                    # A computed view (Medication taken today) takes no entry and no change:
+                    # marking one on its way would send the Diarist to a write that is refused,
+                    # and the failed write would reach the user as "did not save" (D11).
+                    if user_turn and not any(o["id"] == obj["id"] for o in turn["read_only"]):
+                        turn["read_only"].append(DO.public(obj))
                     continue
                 if act == "add":
                     if not user_turn:
@@ -6156,6 +6168,11 @@ def _resolve_data_objects(coord_output: str, persona: str | None = None,
                         cands = list(obj.get("relevant_agents") or []) + [
                             a for a in DO.TAGGABLE_AGENTS if a not in (obj.get(
                                 "relevant_agents") or [])]
+                        if DO.read_only(obj):
+                            # A computed view has no store tool: it is read back with
+                            # read_data_object, by an area the read rule lets read it.
+                            tool = "read_data_object"
+                            cands = [a for a in cands if DO.may_read(a, obj)[0]]
                         holder = next((a for a in cands if tool and DO._holds(a, tool)), "")
                         turn["delegated"].append({"object": DO.public(obj), "agent": holder})
                         continue
@@ -6237,6 +6254,12 @@ def _data_object_block(turn: dict | None, unsaved: list[str],
     for o in turn.get("archived", []):
         parts.append(f"- \"{o['name']}\" is archived — nothing was added to it. It can be "
                      f"unarchived.")
+    for o in turn.get("read_only", []):
+        parts.append(f"- \"{o['name']}\" is read from the doses marked done on the user's "
+                     f"habits — nothing was added to it or changed in it this turn. A dose "
+                     f"the user took is recorded on its medication habit; adding, removing or "
+                     f"changing a medication they take is a change to their medication "
+                     f"profile, which goes to Physical Health.")
     for u in turn.get("unknown", []):
         n, near = (u["name"], u["near"]) if isinstance(u, dict) else (u, "")
         hint = (f" The closest kept is \"{near}\" — ask whether that is the one; do not "
@@ -6332,7 +6355,7 @@ def _data_object_ids(turn: dict | None) -> frozenset:
     `_data_object_block()`."""
     turn = turn or {}
     ids = set()
-    for key in ("started", "archived"):
+    for key in ("started", "archived", "read_only"):
         ids |= {o.get("id") for o in turn.get(key, []) if isinstance(o, dict)}
     for key in ("adding", "amending", "delegated", "reads"):
         ids |= {r["object"].get("id") for r in turn.get(key, [])
@@ -6594,6 +6617,30 @@ def _file_horizon_items(outputs: dict, persona: str | None = None) -> dict:
         cleaned[agent] = _HORIZON_ITEMS_RE.sub("", text).strip()
 
     return cleaned
+
+
+def _record_reported_doses(outputs: dict, persona: str | None, user_turn: bool) -> str:
+    """Record the doses on Physical Health's `MEDICATION_TAKEN:` line in the task ledger, and
+    return the Synthesizer's note saying so ("" when none). Code, not the Synthesizer, records
+    them (second review, A1): the name was already matched to the profile by Physical Health, so
+    the close gate's question — do the user's words name this task? — no longer decides whether a
+    dose counts. Only on a real user turn: a scheduled session has no report to record. The line
+    is left in Physical Health's output; the note tells the Synthesizer it is done. Mirrors
+    `_file_horizon_items` in shape; never raises."""
+    if not user_turn or not outputs:
+        return ""
+    text = outputs.get("physical_health")
+    if not isinstance(text, str) or "MEDICATION_TAKEN" not in text.upper():
+        return ""
+    try:
+        from tools.obligations import record_reported_doses, reported_doses_note
+        lines = record_reported_doses(text, persona)
+        if lines:
+            _trace(f"[MEDICATION] recorded by code: {len(lines)}")
+        return reported_doses_note(lines)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[medication] reported doses not recorded: {exc}")
+        return ""
 
 
 def _horizon_block(persona: str | None = None, session: str | None = None,
@@ -7820,6 +7867,9 @@ def run_pipeline_session(user_input: str,
         specialist_outputs = _file_horizon_items(specialist_outputs, persona=persona)
         specialist_outputs = _drop_unprompted_clinical_flags(
             specialist_outputs, has_real_user_turn(user_input, is_proactive, attachments))
+        # Doses Physical Health heard are recorded by code — mirrors the streaming twin.
+        dose_note = _record_reported_doses(
+            specialist_outputs, persona, has_real_user_turn(user_input, is_proactive, attachments))
 
         # Bundle specialist outputs for Synthesizer (exclude async fire-and-forget)
         spec_text = "\n\n".join(
@@ -7877,6 +7927,7 @@ def run_pipeline_session(user_input: str,
             + (f"\n\n{horizon_text}" if horizon_text else "")
             + (f"\n\n{plan_text}" if plan_text else "")
             + (f"\n\n{task_hint}" if task_hint else "")
+            + (f"\n\n{dose_note}" if dose_note else "")
             + (f"\n\n{capture_turn.note}" if capture_turn and capture_turn.note else "")
             + (f"\n\n{signoff_note}" if signoff_note else "")
             + (f"\n\n{focus_block}" if focus_block else "")
@@ -8115,6 +8166,9 @@ def _run_pipeline_session_stream_inner(
     specialist_outputs = _file_horizon_items(specialist_outputs, persona=persona)
     specialist_outputs = _drop_unprompted_clinical_flags(
         specialist_outputs, has_real_user_turn(user_input, is_proactive, attachments))
+    # Doses Physical Health heard are recorded by code — see _record_reported_doses.
+    dose_note = _record_reported_doses(
+        specialist_outputs, persona, has_real_user_turn(user_input, is_proactive, attachments))
     spec_text = "\n\n".join(
         f"--- {agent} ---\n{output}"
         for agent, output in specialist_outputs.items()
@@ -8166,6 +8220,7 @@ def _run_pipeline_session_stream_inner(
         + (f"\n\n{horizon_text}" if horizon_text else "")
         + (f"\n\n{plan_text}" if plan_text else "")
         + (f"\n\n{task_hint}" if task_hint else "")
+        + (f"\n\n{dose_note}" if dose_note else "")
         + (f"\n\n{capture_turn.note}" if capture_turn and capture_turn.note else "")
         + (f"\n\n{signoff_note}" if signoff_note else "")
         + (f"\n\n{focus_block}" if focus_block else "")
@@ -8178,7 +8233,7 @@ def _run_pipeline_session_stream_inner(
     # latter carries the Coordinator package and specialist output, so the evening prompt's
     # words can appear in it on any turn that merely discusses the evening.
     config = load_config(persona=persona, kind=kind)
-    recent = load_recent_context(persona=persona)
+    recent = load_recent_context(persona=persona, audience="synthesizer")
     system_prompt = f"## Your Role for This Session\n\n{agent_instructions}\n\n---\n\n{config}"
     # Conduct sections gated on this turn's triggers (mirrors _run_single_agent).
     # kind keys on the user's turn per the note above; the BASELINE_INCOMPLETE
