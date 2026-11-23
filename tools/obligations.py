@@ -5223,8 +5223,9 @@ def medication_taken(persona: str | None = None, day: date | None = None) -> dic
 #   - "none", "-", "n/a" and empty items are ignored;
 #   - a name repeated k times is k doses.
 # Parsed tolerantly but NEVER fuzzily: a name counts only when it equals a profile name (case and
-# spacing ignored) AND an open habit is linked to it. Anything else is left alone — Physical
-# Health's own `medications_logged` write is the record for a medicine with no habit.
+# spacing ignored). With an open habit linked to it, the dose is marked done on that habit; with
+# none, code writes the day's `medications_logged` entry (_log_unlinked_dose — merged with any
+# entry Physical Health wrote itself). A name the profile does not hold is left alone.
 _TAKEN_LINE_RE = re.compile(r"^[ \t>*_`#-]*MEDICATION_TAKEN[ \t*_`]*:(?P<items>.*)$",
                             re.IGNORECASE | re.MULTILINE)
 _TAKEN_AT_RE = re.compile(r"\s+at\s+\S.*$", re.IGNORECASE)
@@ -5245,9 +5246,11 @@ def parse_medication_taken(text: str) -> list[str]:
 
 def record_reported_doses(text: str, persona: str | None = None) -> list[str]:
     """Record each dose on Physical Health's `MEDICATION_TAKEN:` line on its linked habit — with
-    no agent bound, on the persona's ledger day, the line as evidence. Returns one line per
-    medicine for the Synthesizer's note ("Atorvastatin (1 of 1 today)", or "… — already recorded,
-    not counted again"); [] when nothing was recorded. Never raises."""
+    no agent bound, on the persona's ledger day, the line as evidence — or, for a profile
+    medicine with no linked habit, in the day's `medications_logged` (_log_unlinked_dose).
+    Returns one line per medicine for the Synthesizer's note ("Atorvastatin (1 of 1 today)",
+    "… (logged as taken today)", or "… — already recorded, not counted again"); [] when nothing
+    was recorded. Never raises."""
     try:
         from core.persona import persona_scope, resolve_persona
         names = parse_medication_taken(text)
@@ -5261,11 +5264,23 @@ def record_reported_doses(text: str, persona: str | None = None) -> list[str]:
             habits = {_med_key(t.get("medication")): t for t in _load(p)
                       if t.get("kind") == "habit" and t.get("status", "open") == "open"
                       and str(t.get("medication") or "").strip()}
+            # A renamed medicine still on its old link (the view's `relink_to` join): a dose
+            # reported by the NEW profile name is recorded on that linked habit, never written to
+            # the log as if the medicine had no habit (Stage 3 review item 7).
+            by_id = {t.get("id"): t for t in habits.values()}
+            for r in medication_taken(persona=p).get("medications") or []:
+                key = _med_key(r.get("relink_to"))
+                if key and key not in habits and by_id.get(r.get("task_id")):
+                    habits[key] = by_id[r["task_id"]]
             counts: dict[str, int] = {}
+            unlinked: list[str] = []
             for n in names:
                 if _med_key(n) in profile and _med_key(n) in habits:
                     counts[_med_key(n)] = counts.get(_med_key(n), 0) + 1
-            out = []
+                elif _med_key(n) in profile and _med_key(n) not in unlinked:
+                    unlinked.append(_med_key(n))
+            out = [line for line in (_log_unlinked_dose(profile[key]) for key in unlinked)
+                   if line]
             for key, k in counts.items():
                 t, shown = habits[key], profile[key]
                 evidence = f"Physical Health reported {k} dose{'s' if k != 1 else ''}: {line}"
@@ -5290,6 +5305,38 @@ def record_reported_doses(text: str, persona: str | None = None) -> list[str]:
     except Exception as exc:  # noqa: BLE001 — a dose note must never take down the turn
         logger.warning("[tasks] reported doses not recorded: %s", exc)
         return []
+
+
+def _log_unlinked_dose(name: str) -> str:
+    """A reported dose of a profile medicine with NO open linked habit, written by code to the
+    day's `health.medications_logged` — its only record (Stage 3 plan, Revision 2 L4). So the dose
+    counts even when Physical Health reported it on its `MEDICATION_TAKEN:` line and omitted its
+    own `write_log`.
+
+    Merged, never duplicated (build-time amendment 4): when the ledger day already holds an entry
+    for this medicine, a `taken` one means nothing more is written; an entry marked
+    `taken: false` is rewritten with `taken: true` and its dose, time and notes left alone; only
+    when there is none does code write its own stub. Through tools.logger.write_log directly (not
+    dispatch_tool), with the persona already bound by the caller. Returns the note line, or ""
+    when nothing was recorded. Never raises."""
+    try:
+        from tools.logger import write_log
+        entries = (_logged_entries(_today()) or {}).get(_med_key(name), [])
+        if any(isinstance(e, dict) and e.get("taken") is not False for e in entries):
+            return f"{name} — already logged as taken today, not counted again"
+        if entries:
+            merged = [{**e, "taken": True} for e in entries if isinstance(e, dict)]
+        else:
+            merged = [{"name": name, "taken": True,
+                       "notes": "recorded by code from Physical Health's report"}]
+        result = write_log({"health": {"medications_logged": merged}})
+        if str(result).startswith("Error"):
+            logger.warning("[tasks] unlinked dose not logged for %s: %s", name, str(result)[:160])
+            return ""
+        return f"{name} (logged as taken today)"
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[tasks] unlinked dose not logged for %s: %s", name, exc)
+        return ""
 
 
 def reported_doses_note(lines: list[str]) -> str:
@@ -5385,7 +5432,10 @@ OPEN_TASK_SCHEMA = {
                                           "refused, and so is a second habit for a medication "
                                           "that already has one (a second daily dose is "
                                           "`times`). Set by the Synthesizer. Leave unset for "
-                                          "any other habit."},
+                                          "any other habit. When the dose is taken at a set "
+                                          "time of day (an evening tablet), also set `after` "
+                                          "to that time (HH:MM), so the dose is not read as "
+                                          "missed earlier in the day."},
             "note": {"type": "string", "description": "Optional one line of context."},
             "source_id": {"type": "string",
                           "description": "The id of the intake-queue message it came from, when "

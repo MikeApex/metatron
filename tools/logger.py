@@ -443,6 +443,182 @@ def _merge_medications(existing: dict, content: dict, log_date: str = "") -> dic
     return {**content, "health": {**content["health"], _MEDICATIONS_KEY: merged + incoming}}
 
 
+# --- Finance transactions: ids set by code, merged by id (Stage 3 plan § 1.2, ruling E) -------
+# `finance.transactions` is a list, and _deep_merge replaces lists — so a second Finance write in
+# a day that sent only the new purchase erased every earlier one. Merging by content instead
+# (a multiset) doubles a restated or corrected transaction. So code gives every stored transaction
+# an id, and a write is merged against the stored list:
+#   - an entry with a known `id` updates that entry in place, field by field (a correction;
+#     amendment 5 — `type`, category and description stay unless resent), stamped `corrected_at`;
+#   - `{"id": X, "remove": true}` marks entry X `removed: true` and keeps it (archive-on-merge);
+#   - an entry with an unknown `id` is refused and not written;
+#   - an entry with no `id` is NEW — except inside a RESTATEMENT: a write whose list carries the
+#     id of every stored, not-removed transaction, when the stored list holds at least one id
+#     (amendment 3: a legacy file with no ids is never a restatement). Only there are id-less
+#     entries matched by shape against stored id-less entries; per shape, new = incoming count
+#     minus stored count (floor 0);
+#   - an earlier entry the write does not mention is always kept: a second write never erases.
+#   - an entry carrying `"replaces": X` (with its own id, or none) is the correction of X in one
+#     step: X is marked removed (`replaced_by`) and kept; only the replacing entry counts;
+#   - an id from another day is refused with that day named, so it is resent there, never
+#     re-recorded here as new.
+# A new id-less entry with the same description as one already logged that day is recorded as new,
+# and the reply names both ids and the exact `replaces` write that turns it into a correction —
+# following it leaves one counted entry. Legacy id-less entries get ids after the merge; nothing is
+# renumbered.
+_TX_ID_RE = re.compile(r"^tx-\d{4}-\d{2}-\d{2}-(\d+)$")
+_TX_DAY_RE = re.compile(r"^tx-(\d{4}-\d{2}-\d{2})-\d+$")
+
+
+def _tx_shape(entry: dict) -> tuple:
+    from tools.finance_totals import amount_cents, norm
+    return (norm(entry.get("description")), amount_cents(entry.get("amount")),
+            norm(entry.get("financial_category")), norm(entry.get("type")))
+
+
+def _tx_label(entry: dict) -> str:
+    from tools.finance_totals import amount_cents, money
+    cents = amount_cents(entry.get("amount"))
+    desc = str(entry.get("description") or "no description").strip()
+    return f"{desc}, {money(cents) if cents is not None else entry.get('amount')}"
+
+
+def _unknown_id_line(tid: str, log_date: str, what: str = "no transaction") -> str:
+    """The refusal for an id this day's file does not hold. An id embeds its day, so one from
+    another day is named as such — resending it without an id would record a duplicate
+    (review item 4)."""
+    m = _TX_DAY_RE.match(str(tid))
+    if m and m.group(1) != log_date:
+        return (f"Not written: {tid} belongs to {m.group(1)}, not {log_date}; resend it with "
+                f"log_date: {m.group(1)}.")
+    return (f"Not written: {what} with id {tid} is logged on {log_date}; to record a new "
+            f"purchase, write it without an id.")
+
+
+def _merge_transactions(existing: dict, content: dict, log_date: str) -> tuple[dict, list[str]]:
+    """`content` with `finance.transactions` replaced by the full merged list (so _deep_merge's
+    list replace then writes the merged result), and the reply lines. A write with no
+    `finance.transactions` key is returned unchanged. See the note above."""
+    fin = content.get("finance")
+    if not isinstance(fin, dict) or "transactions" not in fin:
+        return content, []
+    incoming = fin.get("transactions")
+    if not isinstance(incoming, list):
+        rest = {k: v for k, v in fin.items() if k != "transactions"}
+        content = {**content, "finance": rest} if rest else {
+            k: v for k, v in content.items() if k != "finance"}
+        return content, ["Transactions not written: `finance.transactions` must be a list."]
+    try:
+        from tools.obligations import _stamp
+        now = _stamp()
+    except Exception:  # noqa: BLE001
+        now = datetime.now().isoformat(timespec="seconds")
+    prior_fin = existing.get("finance") if isinstance(existing.get("finance"), dict) else {}
+    prior_txs = prior_fin.get("transactions")
+    stored = ([dict(e) for e in prior_txs if isinstance(e, dict)]
+              if isinstance(prior_txs, list) else [])
+    by_id = {e["id"]: e for e in stored if e.get("id")}
+    live_ids = {i for i, e in by_id.items() if not e.get("removed")}
+    top = max([int(m.group(1)) for i in by_id if (m := _TX_ID_RE.match(str(i)))] or [0])
+
+    def next_id() -> str:
+        nonlocal top
+        top += 1
+        return f"tx-{log_date}-{top}"
+
+    lines: list[str] = []
+
+    def set_aside(old: str, by: str) -> None:
+        """`old` replaced by `by`: kept in the file, marked removed, never counted."""
+        target = by_id[old]
+        if not target.get("removed"):
+            target.update(removed=True, removed_at=now, replaced_by=by)
+            lines.append(f"Replaced: {old} ({_tx_label(target)}) is set aside; {by} counts "
+                         f"instead.")
+
+    incoming_ids = {e.get("id") for e in incoming if isinstance(e, dict) and e.get("id")}
+    restatement = bool(live_ids) and live_ids <= incoming_ids
+    new_entries: list[dict] = []
+    replacing: list[dict] = []        # id-less entries that name the entry they replace
+    idless: list[dict] = []
+    for e in incoming:
+        if not isinstance(e, dict):
+            lines.append("Not written: a transaction that is not an object.")
+            continue
+        tid, old = e.get("id"), e.get("replaces")
+        if old and (old not in by_id or old == tid):
+            lines.append(_unknown_id_line(old, log_date, "nothing to replace: no transaction")
+                         if old != tid else f"Not written: {tid} cannot replace itself.")
+            continue
+        if tid:
+            if tid not in by_id:
+                lines.append(_unknown_id_line(tid, log_date))
+                continue
+            target = by_id[tid]
+            if e.get("remove") is True:
+                if not target.get("removed"):
+                    target.update(removed=True, removed_at=now)
+                    lines.append(f"Removed: {tid} ({_tx_label(target)}).")
+                continue
+            fields = {k: v for k, v in e.items() if k not in ("id", "remove", "logged_at",
+                                                               "corrected_at", "removed_at",
+                                                               "replaced_by")}
+            if any(target.get(k) != v for k, v in fields.items()):
+                target.update(fields)
+                target["corrected_at"] = now
+                lines.append(f"Corrected: {tid} ({_tx_label(target)}).")
+            if old:
+                set_aside(old, tid)
+            continue
+        if e.get("remove") is True:
+            lines.append("Not written: a removal needs the transaction's id.")
+            continue
+        clean = {k: v for k, v in e.items() if k not in ("remove", "removed", "removed_at",
+                                                          "corrected_at", "replaced_by")}
+        (replacing if old else idless).append(clean)
+    if restatement:
+        # Matched only against stored id-less (legacy) entries — see the note above.
+        budget: dict[tuple, int] = {}
+        for s_e in stored:
+            if not s_e.get("id") and not s_e.get("removed"):
+                budget[_tx_shape(s_e)] = budget.get(_tx_shape(s_e), 0) + 1
+        for e in idless:
+            shape = _tx_shape(e)
+            if budget.get(shape, 0) > 0:
+                budget[shape] -= 1
+                continue
+            new_entries.append(e)
+    else:
+        new_entries = idless
+    for s_e in stored:            # legacy entries take ids after the merge; nothing renumbered
+        if not s_e.get("id"):
+            s_e["id"] = next_id()
+    known_desc = {}
+    for s_e in stored:
+        if not s_e.get("removed") and str(s_e.get("description") or "").strip():
+            known_desc.setdefault(_tx_shape(s_e)[0], s_e["id"])
+    recorded = []
+    for e in replacing:           # a one-step correction: the new entry, and the old set aside
+        e = {**e, "id": next_id(), "logged_at": now}
+        recorded.append(e)
+        set_aside(e["replaces"], e["id"])
+    for e in new_entries:
+        e = {**e, "id": next_id(), "logged_at": now}
+        recorded.append(e)
+        same = known_desc.get(_tx_shape(e)[0]) if _tx_shape(e)[0] else None
+        if same:
+            lines.append(f"Recorded as new: '{e.get('description')}' {_tx_label(e).rsplit(', ', 1)[-1]} "
+                         f"(id {e['id']}). An entry with the same description is already logged "
+                         f"today (id {same}). If this was a correction of {same} rather than a "
+                         f"second purchase, write {{\"id\": \"{e['id']}\", \"replaces\": "
+                         f"\"{same}\"}}: {same} is then set aside and only {e['id']} counts.")
+    if recorded:
+        lines.insert(0, "Transactions recorded: " + "; ".join(
+            f"{e['id']} ({_tx_label(e)})" for e in recorded) + ".")
+    merged = stored + recorded
+    return {**content, "finance": {**fin, "transactions": merged}}, lines
+
+
 def write_log(content: dict | None = None, log_date: str = "") -> str:
     """
     Write a daily log entry to data/logs/YYYY-MM-DD.json.
@@ -521,6 +697,9 @@ def write_log(content: dict | None = None, log_date: str = "") -> str:
         health_entries = _health_note_entries(content, now_iso)
         # By medicine name and ledger day — see _merge_medications.
         content = _merge_medications(existing, _stamp_medications(content), log_date)
+        # By code-assigned id — see _merge_transactions. Before _deep_merge, whose list replace
+        # then writes the merged list.
+        content, tx_lines = _merge_transactions(existing, content, log_date)
         existing = _deep_merge(existing, content)
         if health_entries:
             feed = _append_health_notes(existing.get(_HEALTH_NOTES_KEY), health_entries)
@@ -560,7 +739,9 @@ def write_log(content: dict | None = None, log_date: str = "") -> str:
 
     run_background(_index, f"index log {log_date}")
 
-    return f"Log written to {log_path}" + (_medications_note(dropped_meds) if dropped_meds else "")
+    return (f"Log written to {log_path}"
+            + (_medications_note(dropped_meds) if dropped_meds else "")
+            + ("\n" + "\n".join(tx_lines) if tx_lines else ""))
 
 
 def read_log(log_date: str = "") -> dict:

@@ -321,7 +321,10 @@ def _():
     # Re-pinned again the same day after the reviews (→ 169731d8ca65ce8c, 7202bdedc7de7759): the
     # two descriptions now say one habit per medication, set by the Synthesizer, and that a dose
     # past the count or repeated within 10 minutes is refused. Text only; no field changed.
-    assert (_h(o), _h(u), _h(l)) == ("169731d8ca65ce8c", "7202bdedc7de7759",
+    # open_task re-pinned again 2026-11-23 (169731d8ca65ce8c → b97a9036492eff61): Stage 3 #8 adds
+    # one sentence to `medication` — set `after` for a dose taken at a set time of day, so it is
+    # not read as missed earlier. Text only; no field changed.
+    assert (_h(o), _h(u), _h(l)) == ("b97a9036492eff61", "7202bdedc7de7759",
                                      "fc306ac3d96fa5e1"), (_h(o), _h(u), _h(l))
     r, g = G.goal_schemas()
     # update_goal re-pinned 2026-11-21 (385d3750301ff22e → 18eae9fc0347207f): the `vet` action,

@@ -89,6 +89,18 @@ def write_agent_config(agent_name: str, key: str, value: str, confirm_token: str
                 ),
             )
 
+    # Finance's budget has one readable shape (Stage 3 plan § 1.2, ruling D = (a)): code sums
+    # spending against it (tools/finance_totals.py), so a value it cannot read is refused with
+    # the shape, and the model corrects it in the same turn. Values already stored are left as
+    # they are; the figures report them as unreadable.
+    if (agent_name, key) == ("finance", "budget_structure"):
+        from tools.finance_totals import BUDGET_SHAPE, budget_shape_error
+        problem = budget_shape_error(value)
+        if problem:
+            return (f"Error: budget_structure not saved — {problem}. It must be JSON in exactly "
+                    f"this shape: {BUDGET_SHAPE}, with category names as you log them. Nothing "
+                    f"was written; send it again in that shape.")
+
     config_dir = _agent_config_dir()
     config_dir.mkdir(parents=True, exist_ok=True)
     config_path = config_dir / f"{agent_name}.json"

@@ -5985,6 +5985,14 @@ def _run_single_agent(agent_name: str, user_input: str,
         if _objects:
             augmented_input = f"{_objects}\n\n---\n\n{augmented_input}"
             context_sections["data_objects"] = _objects
+        # Finance's figures, summed by code from what is logged this period (Stage 3 plan
+        # § 1.2) — in the user message, so the cached system prefix is untouched. Every path
+        # that runs Finance passes here.
+        if agent_name == "finance":
+            _figures = _finance_block(persona)
+            if _figures:
+                augmented_input = f"{_figures}\n\n---\n\n{augmented_input}"
+                context_sections["finance_figures"] = _figures
 
     tool_schemas, tool_handlers = register_tools()
 
@@ -6049,7 +6057,75 @@ def _run_single_agent(agent_name: str, user_input: str,
         if failures:
             result = (f"{result}\n\n[TOOL FAILURES — these actions did NOT complete. "
                       f"Do not tell the user they succeeded.]\n" + "\n".join(failures))
+    # Code's checks at the specialist's return, on EVERY path that runs it — pipeline dispatch,
+    # run_subagent consults, scheduled single-agent runs, fire-and-forget and the A4 runner
+    # (Stage 3 plan § 1.1 H1, § 1.2). Add-only: `result` is always a prefix of what is returned.
+    if not bare:
+        if agent_name == "physical_health":
+            result = _physical_health_return(result, persona)
+        elif agent_name == "finance":
+            result = _finance_return(result, persona)
     return result
+
+
+_MEDICATION_SLOT = "medication"
+
+
+def _physical_health_return(result: str, persona: str | None) -> str:
+    """H1 — at Physical Health's return. (1) Record the doses on its `MEDICATION_TAKEN:` line,
+    only when the bound turn is a real user turn (no turn, or a scheduled one, records nothing —
+    fail closed). (2) Compute code's medication check AFTER that, so a dose reported this turn
+    does not alarm. (3) Deliver: into the pipeline's open slot on the bound turn (the twin puts
+    it in its own bundle line), else appended to `result`. Never raises; add-only."""
+    try:
+        from tools.clinical_checks import medication_note
+        from tools.obligations import record_reported_doses, reported_doses_note
+        turn = _turn.current()
+        lines: list[str] = []
+        if (turn or {}).get("user_turn") and "MEDICATION_TAKEN" in str(result).upper():
+            with persona_scope(resolve_persona(persona)) as _p:
+                lines = record_reported_doses(result, _p)
+            if lines:
+                _trace(f"[MEDICATION] recorded by code: {len(lines)}")
+        slot = turn.get(_MEDICATION_SLOT) if isinstance(turn, dict) else None
+        if isinstance(slot, dict):
+            # Bound for the Synthesizer's own bundle line: never trimmed against the model's
+            # text, so the line always carries its MUST_SURFACE (review item 3).
+            slot.setdefault("dose_lines", []).extend(lines)
+            slot["note"] = medication_note(persona)["text"]
+            return result
+        note = medication_note(persona, model_text=str(result))
+        parts = [x for x in (reported_doses_note(lines), note["text"]) if x]
+        if not parts:
+            return result
+        return (f"{result}\n\nMEDICATION (from code — read after this turn's doses were "
+                f"recorded):\n" + "\n".join(parts))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[medication] check at Physical Health's return failed: {exc}")
+        return result
+
+
+def _finance_return(result: str, persona: str | None) -> str:
+    """Finance's figures after this turn's writes, appended to its result (add-only)."""
+    try:
+        from tools.finance_totals import finance_figures_note
+        with persona_scope(resolve_persona(persona)) as _p:
+            note = finance_figures_note(_p)
+        return f"{result}\n\n{note}" if note else result
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[finance] figures note failed: {exc}")
+        return result
+
+
+def _finance_block(persona: str | None) -> str:
+    """Finance's figures before this turn's writes, for the head of its user message."""
+    try:
+        from tools.finance_totals import finance_figures_block
+        with persona_scope(resolve_persona(persona)) as _p:
+            return finance_figures_block(_p)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[finance] figures block failed: {exc}")
+        return ""
 
 
 def _failed_tool_calls(rec) -> list[str]:
@@ -6877,6 +6953,91 @@ def _record_reported_doses(outputs: dict, persona: str | None, user_turn: bool) 
         return ""
 
 
+def _open_medication_slot() -> None:
+    """The pipeline collects Physical Health's code check on the bound turn (H1 stores into it)
+    instead of in Physical Health's text. Opened before dispatch, closed once the Synthesizer's
+    input is built — after that a consult's check is appended to its tool result."""
+    turn = _turn.current()
+    if isinstance(turn, dict):
+        turn[_MEDICATION_SLOT] = {}
+
+
+def _close_medication_slot() -> None:
+    turn = _turn.current()
+    if isinstance(turn, dict):
+        turn.pop(_MEDICATION_SLOT, None)
+
+
+def _after_specialists(outputs: dict, persona: str | None, user_input: str,
+                       user_turn: bool) -> tuple[dict, str, str, bool]:
+    """Code's checks over the specialists' outputs, once per twin, AFTER
+    _drop_unprompted_clinical_flags. Returns (outputs, dose_note, med_line, crisis):
+
+    - `dose_note` / `med_line` — the doses H1 recorded and code's medication check, from the
+      turn's slot. When Physical Health ran but stored nothing (fire-and-forget, or a failed
+      specialist) the check is computed here. No Physical Health this turn, no line (ruling B).
+    - `outputs` with M8's completions (complete_clinical_flags; add-only).
+    - `crisis` — Mental Wellbeing's FLAGS raised SUICIDAL_IDEATION on a real user turn (M9).
+    Never raises."""
+    dose_note, med_line, crisis = "", "", False
+    try:
+        from tools.clinical_checks import medication_note
+        from tools.obligations import reported_doses_note
+        turn = _turn.current()
+        slot = turn.get(_MEDICATION_SLOT) if isinstance(turn, dict) else None
+        slot = slot if isinstance(slot, dict) else {}
+        dose_note = reported_doses_note(slot.get("dose_lines") or [])
+        # A stored note means Physical Health ran this turn — dispatched, or consulted by another
+        # specialist while the slot was open (its text then went back unchanged, so this line is
+        # the only place its check lands).
+        if "note" in slot or "physical_health" in (outputs or {}):
+            if "note" in slot:
+                text = slot["note"]
+            else:
+                with persona_scope(resolve_persona(persona)) as _p:
+                    text = medication_note(_p)["text"]
+            med_line = f"MEDICATION CHECK (from code):\n{text}" if text else ""
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[medication] pipeline check failed: {exc}")
+    try:
+        from tools.clinical_checks import complete_clinical_flags, raises_suicidal_ideation
+        outputs = complete_clinical_flags(outputs, persona, user_input, user_turn)
+        crisis = bool(user_turn) and raises_suicidal_ideation(outputs)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[clinical] completion failed: {exc}")
+    return outputs, dose_note, med_line, crisis
+
+
+def _crisis_bundle_line(crisis: bool, persona: str | None) -> str:
+    if not crisis:
+        return ""
+    try:
+        from tools.clinical_checks import crisis_bundle_line
+        with persona_scope(resolve_persona(persona)) as _p:
+            return crisis_bundle_line(_p)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[crisis] bundle line failed: {exc}")
+        return ""
+
+
+def _ensure_crisis(reply: str, crisis: bool, persona: str | None) -> str:
+    """M9 after the reply: the configured line appended when a crisis turn's reply lacks it.
+    On a failure with an empty reply (the suppressed-reply branch) the built-in default line is
+    returned, never "" (review item 9)."""
+    if not crisis:
+        return reply
+    try:
+        from tools.clinical_checks import ensure_crisis_line
+        with persona_scope(resolve_persona(persona)) as _p:
+            return ensure_crisis_line(reply, _p)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[crisis] line not ensured: {exc}")
+        if not (reply or "").strip():
+            from tools.clinical_checks import BUILTIN_CRISIS_LINE
+            return BUILTIN_CRISIS_LINE
+        return reply
+
+
 def _horizon_block(persona: str | None = None, session: str | None = None,
                    uncapped: bool = False, user_turn: bool = False) -> str:
     """This turn's horizon block, for the Synthesizer bundle. "" when nothing is waiting.
@@ -7054,7 +7215,9 @@ def has_real_user_turn(user_input: str,
 # The other half — no clinical thread or escalation written on such a turn — is enforced in
 # tools/context_tracker.write_context_tracker, which every writer goes through.
 _CLINICAL_FLAG_AGENT = "mental_wellbeing"
-_CLINICAL_FLAG_ITEM_RE = _re.compile(r"^(CLINICAL_CONCERN\b.*|ESCALATION|MUST_SURFACE\b.*)$", _re.I)
+# One home for the item parse: tools/clinical_checks.py, where M8 completes and M9 triggers on
+# exactly the items this drops (Stage 3 build-time amendment 2).
+from tools.clinical_checks import CLINICAL_FLAG_ITEM_RE as _CLINICAL_FLAG_ITEM_RE  # noqa: E402
 _OUTPUT_FIELD_RE = _re.compile(r"^[A-Z][A-Z _/-]+:")
 
 
@@ -8382,7 +8545,10 @@ def run_pipeline_session(user_input: str,
             _clarify_shadow_record(coord_output, data_turn,
                                    has_real_user_turn(user_input, is_proactive, attachments))
 
-        # Dispatch specialists from Python based on Coordinator's SPECIALISTS_TO_CALL
+        # Dispatch specialists from Python based on Coordinator's SPECIALISTS_TO_CALL.
+        # Physical Health's code check is collected on the turn, not in its text — see
+        # _open_medication_slot. Mirrors the streaming twin.
+        _open_medication_slot()
         _trace("[PIPELINE] dispatching specialists")
         specialist_outputs = {} if nudge else _dispatch_from_coordinator(
             coord_output, persona=persona, provider=provider, knowledge=knowledge,
@@ -8393,9 +8559,13 @@ def run_pipeline_session(user_input: str,
         specialist_outputs = _file_horizon_items(specialist_outputs, persona=persona)
         specialist_outputs = _drop_unprompted_clinical_flags(
             specialist_outputs, has_real_user_turn(user_input, is_proactive, attachments))
-        # Doses Physical Health heard are recorded by code — mirrors the streaming twin.
-        dose_note = _record_reported_doses(
-            specialist_outputs, persona, has_real_user_turn(user_input, is_proactive, attachments))
+        # Code's checks over the outputs (Stage 3): doses Physical Health heard were recorded
+        # at its return (H1); the medication check is its own bundle line; clinical companions
+        # are completed; a suicide disclosure arms the crisis line. Mirrors the streaming twin.
+        specialist_outputs, dose_note, med_line, crisis = _after_specialists(
+            specialist_outputs, persona, user_input,
+            has_real_user_turn(user_input, is_proactive, attachments))
+        crisis_text = _crisis_bundle_line(crisis, persona)
 
         # Bundle specialist outputs for Synthesizer (exclude async fire-and-forget)
         spec_text = "\n\n".join(
@@ -8413,7 +8583,10 @@ def run_pipeline_session(user_input: str,
 
         # User signed off ("over and out") with nothing asked or reported, and nothing
         # pressing came back from the specialists: rest without the Synthesizer pass.
-        if _signoff_skip(spec_text, user_input, is_proactive, task_hint, history):
+        # Code's medication line is read by the veto too, so a code-raised flag vetoes the skip.
+        veto_text = f"{spec_text}\n\n{med_line}" if med_line else spec_text
+        if _signoff_skip(veto_text, user_input, is_proactive, task_hint, history):
+            _close_medication_slot()
             if history is not None:
                 history.append({"role": "user", "content": user_input})
                 history.append({"role": "assistant", "content": _SIGNOFF_ACK})
@@ -8421,7 +8594,7 @@ def run_pipeline_session(user_input: str,
             _capture.defer(capture_turn)     # no writer ran: shown on the next user turn
             _tr.finish_request_trace(_SIGNOFF_ACK)
             return _SIGNOFF_ACK
-        signoff_note = _signoff_note(spec_text, user_input, is_proactive)
+        signoff_note = _signoff_note(veto_text, user_input, is_proactive)
 
         # Pass 2: Synthesizer — integration and user-facing response.
         # The ACTIONS block goes last, closest to the response, and is always
@@ -8455,6 +8628,8 @@ def run_pipeline_session(user_input: str,
             + (f"\n\n{plan_text}" if plan_text else "")
             + (f"\n\n{task_hint}" if task_hint else "")
             + (f"\n\n{dose_note}" if dose_note else "")
+            + (f"\n\n{med_line}" if med_line else "")
+            + (f"\n\n{crisis_text}" if crisis_text else "")
             + (f"\n\n{capture_turn.note}" if capture_turn and capture_turn.note else "")
             + (f"\n\n{signoff_note}" if signoff_note else "")
             + (f"\n\n{focus_block}" if focus_block else "")
@@ -8462,6 +8637,9 @@ def run_pipeline_session(user_input: str,
         )
         # M7: "" in shadow, so the Synthesizer's input is byte-identical. Mirrors the twin.
         synthesizer_input += _clarify_note(clarify)
+        # Closed once the input is built: a consult the Synthesizer makes from here appends its
+        # own check to its tool result. Mirrors the streaming twin.
+        _close_medication_slot()
         _trace("[PIPELINE] synthesizer  starting")
         recent_history = list(history[-10:]) if history else None
         # Files go to the Synthesizer as well as the Coordinator — see the streaming
@@ -8496,6 +8674,11 @@ def run_pipeline_session(user_input: str,
                                  user_text=None if is_proactive else user_input)
         _was_suppressed = filtered != visible
         _stamp_routine_revisits(kind, visible, filtered)
+        # M9: on a turn that raised SUICIDAL_IDEATION, a reply the confidentiality filter
+        # suppressed is replaced by the configured crisis line alone, never the fallback — it
+        # is fixed config text and cannot leak. Mirrors the streaming twin.
+        if _was_suppressed and crisis:
+            filtered = _ensure_crisis("", crisis, persona)
         # After the confidentiality filter, not before: a suppressed reply has already
         # lost its text, and the pending line still needs to reach the user.
         _model_text = filtered
@@ -8503,6 +8686,8 @@ def run_pipeline_session(user_input: str,
             filtered, _pending_raised_since(_pending_before, persona))
         if not _was_suppressed:
             filtered = _offer_receipt(filtered, persona, _pending_before, _model_text)
+            # M9: the configured line appended only when the reply lacks its number.
+            filtered = _ensure_crisis(filtered, crisis, persona)
         if history is not None:
             history.append({"role": "user",
                             "content": user_input + _history_attachment_note(attachments)})
@@ -8694,6 +8879,8 @@ def _run_pipeline_session_stream_inner(
     if not nudge:
         _clarify_shadow_record(coord_output, data_turn,
                                has_real_user_turn(user_input, is_proactive, attachments))
+    # Physical Health's code check is collected on the turn — mirrors the non-streaming twin.
+    _open_medication_slot()
     specialist_outputs = {} if nudge else _dispatch_from_coordinator(
         coord_output, persona=persona, provider=provider, knowledge=knowledge,
         user_turn=has_real_user_turn(user_input, is_proactive, attachments),
@@ -8703,9 +8890,11 @@ def _run_pipeline_session_stream_inner(
     specialist_outputs = _file_horizon_items(specialist_outputs, persona=persona)
     specialist_outputs = _drop_unprompted_clinical_flags(
         specialist_outputs, has_real_user_turn(user_input, is_proactive, attachments))
-    # Doses Physical Health heard are recorded by code — see _record_reported_doses.
-    dose_note = _record_reported_doses(
-        specialist_outputs, persona, has_real_user_turn(user_input, is_proactive, attachments))
+    # Code's checks over the outputs (Stage 3) — see _after_specialists. Mirrors the twin.
+    specialist_outputs, dose_note, med_line, crisis = _after_specialists(
+        specialist_outputs, persona, user_input,
+        has_real_user_turn(user_input, is_proactive, attachments))
+    crisis_text = _crisis_bundle_line(crisis, persona)
     spec_text = "\n\n".join(
         f"--- {agent} ---\n{output}"
         for agent, output in specialist_outputs.items()
@@ -8717,7 +8906,10 @@ def _run_pipeline_session_stream_inner(
     capture_turn = _capture.note_for_synthesizer(persona, capture_job, _capture_trace,
                                               _data_object_ids(data_turn))
     # Sign-off skip — mirrors the non-streaming branch above; same veto, same ack.
-    if _signoff_skip(spec_text, user_input, is_proactive, task_hint, history):
+    # The code medication line is read by the veto too — mirrors the non-streaming twin.
+    veto_text = f"{spec_text}\n\n{med_line}" if med_line else spec_text
+    if _signoff_skip(veto_text, user_input, is_proactive, task_hint, history):
+        _close_medication_slot()
         if history is not None:
             history.append({"role": "user", "content": user_input})
             history.append({"role": "assistant", "content": _SIGNOFF_ACK})
@@ -8727,7 +8919,7 @@ def _run_pipeline_session_stream_inner(
         yield "[DONE]"
         _tr.finish_request_trace(_SIGNOFF_ACK)
         return
-    signoff_note = _signoff_note(spec_text, user_input, is_proactive)
+    signoff_note = _signoff_note(veto_text, user_input, is_proactive)
 
     _trace("[PIPELINE] synthesizer  streaming")
 
@@ -8759,6 +8951,8 @@ def _run_pipeline_session_stream_inner(
         + (f"\n\n{plan_text}" if plan_text else "")
         + (f"\n\n{task_hint}" if task_hint else "")
         + (f"\n\n{dose_note}" if dose_note else "")
+        + (f"\n\n{med_line}" if med_line else "")
+        + (f"\n\n{crisis_text}" if crisis_text else "")
         + (f"\n\n{capture_turn.note}" if capture_turn and capture_turn.note else "")
         + (f"\n\n{signoff_note}" if signoff_note else "")
         + (f"\n\n{focus_block}" if focus_block else "")
@@ -8766,6 +8960,8 @@ def _run_pipeline_session_stream_inner(
     )
     # M7: "" in shadow, so the Synthesizer's input is byte-identical. Mirrors the twin.
     synthesizer_input += _clarify_note(clarify)
+    # Closed once the input is built — mirrors the non-streaming twin.
+    _close_medication_slot()
 
     # Load Synthesizer prompt — mirrors _run_single_agent internals
     agent_instructions = load_agent("synthesizer")
@@ -8974,21 +9170,40 @@ def _run_pipeline_session_stream_inner(
     _stamp_routine_revisits(kind, visible, filtered)
     _final = filtered if _suppressed else enforce_pending_receipt(
         filtered, _pending_raised_since(_pending_before, persona))
+    # M9: a suppressed reply on a turn that raised SUICIDAL_IDEATION is replaced by the
+    # configured crisis line alone, delivered through [RETRACT_WITH] below rather than the
+    # bare [RETRACT]. Fixed config text; it cannot leak. Mirrors the non-streaming twin.
+    _crisis_alone = bool(_suppressed and crisis)
+    if _crisis_alone:
+        _final = _ensure_crisis("", crisis, persona)
     if not _suppressed:
         # A noticed log's question, appended (never a replacement) when the reply did not
         # ask it — through the same replace-with marker below when it changes the text.
         # Judged on the Synthesizer's own words: the receipt line for another card above
         # also mentions the app, and must not count as asking (diff review F3).
         _final = _offer_receipt(_final, persona, _pending_before, filtered)
+        # M9: the configured line appended only when the reply lacks its number; the
+        # `_final != filtered` branch below then delivers it through [RETRACT_WITH].
+        _final = _ensure_crisis(_final, crisis, persona)
     if history is not None:
         # History is text, so the file itself does not survive into later turns —
         # only the note that one was sent. A follow-up question about the picture
         # therefore needs the picture attached again; recording the names at least
         # stops the model contradicting a conversation that plainly had files in it.
         history.append({"role": "user", "content": user_input + _history_attachment_note(attachments)})
-        history.append({"role": "assistant", "content": _final if _suppressed is False else ""})
+        history.append({"role": "assistant",
+                        "content": _final if (_suppressed is False or _crisis_alone) else ""})
         del history[:-10]
-    if _suppressed:
+    if _crisis_alone:
+        # The crisis line in place of the withdrawn reply (M9). Translated like any reply when
+        # a language is set — translate() fails open to the English line.
+        if _out_lang:
+            from core.translate import translate
+            yield f"[RETRACT_WITH]{translate(_final, *_out_lang)}"
+        else:
+            yield f"[RETRACT_WITH]{_final}"
+        yield "[DONE]"
+    elif _suppressed:
         # Suppressed. Nothing is delivered in either mode, so there is nothing to translate —
         # and the canned fallback must not be translated by a model call that could itself
         # leak, which is why this branch returns before the translation step below.
@@ -9039,7 +9254,7 @@ def _run_pipeline_session_stream_inner(
         yield "[DONE]"
 
     _trace(f"[PIPELINE] synthesizer  done  ({len(visible)} chars visible)")
-    _tr.finish_request_trace("" if _suppressed else _final)
+    _tr.finish_request_trace("" if (_suppressed and not _crisis_alone) else _final)
 
 
 def run_session(agent_name: str, user_input: str,

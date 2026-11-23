@@ -154,8 +154,11 @@ check("absent when a safety flag must lead",
 
 print("\nwiring — both pipeline twins:")
 SRC = (Path(__file__).parent.parent / "core" / "orchestrator.py").read_text()
+# Stage 3 (#8): the veto reads the specialists' text plus code's MEDICATION CHECK line.
 check("both twins pass the task note and history into the skip decision",
-      SRC.count("_signoff_skip(spec_text, user_input, is_proactive, task_hint, history)") == 2)
+      SRC.count("_signoff_skip(veto_text, user_input, is_proactive, task_hint, history)") == 2)
+check("both twins build the veto text from the outputs plus code's medication line",
+      SRC.count('veto_text = f"{spec_text}\\n\\n{med_line}" if med_line else spec_text') == 2)
 check("both twins add the sign-off note to the Synthesizer input",
       SRC.count('(f"\\n\\n{signoff_note}" if signoff_note else "")') == 2)
 for twin in ("def run_pipeline_session(", "def _run_pipeline_session_stream_inner("):

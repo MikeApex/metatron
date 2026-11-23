@@ -1,0 +1,43 @@
+# config/modules/crisis_lines.yaml — the crisis line for a reply to a suicide disclosure, by country.
+#
+# Read by tools/clinical_checks.py (crisis_line_for / ensure_crisis_line). On every real user turn
+# where Mental Wellbeing's FLAGS line carries CLINICAL_CONCERN: SUICIDAL_IDEATION, the Synthesizer
+# is handed `line` in its bundle, and code appends `line` to the reply only when the reply carries
+# none of `match` (plan archive/plans/instructions_to_code_stage3_hard_fail_plan_2026-11-23.md
+# § 1.5, ruling F = (a)).
+#
+#   aliases — matched exactly (casefolded, spaces collapsed) against profile.location.country;
+#             the entry's own key counts as an alias.
+#   line    — the sentence code appends. Public numbers only; never personal data.
+#   match   — numbers or names whose presence in a reply counts as the line already given.
+#             A number matches with spaces and dashes optional between its digits ("116 123",
+#             "116-123", "116123"); a name matches as a whole word, case-insensitively.
+#
+# `default` serves no country on file, or one no entry names. It is the Goals Interviewer's own
+# text (config/agents/goals_interviewer.md § Safety), so the GB numbers live in two homes until
+# every interviewer entry path carries a code block (ruling G = (a1)). THIS file is the copy code
+# reads; a change to a number is made in both.
+
+default:
+  line: >-
+    If you are thinking of ending your life or feel you might act on it, please reach out now:
+    Samaritans on 116 123 (free, any time), or text SHOUT to 85258; NHS 111, choosing the mental
+    health option; 999 in an emergency — or your local emergency number if you are outside the UK.
+  match: ["116 123", "85258", "Samaritans"]
+
+countries:
+  GB:
+    aliases: [uk, united kingdom, great britain, britain, england, scotland, wales,
+              northern ireland]
+    line: >-
+      If you are thinking of ending your life or feel you might act on it, please reach out now:
+      Samaritans on 116 123 (free, any time), or text SHOUT to 85258; NHS 111, choosing the
+      mental health option; 999 in an emergency.
+    match: ["116 123", "85258", "Samaritans"]
+  US:
+    aliases: [usa, united states, united states of america, america]
+    line: >-
+      If you are thinking of ending your life or feel you might act on it, please reach out now:
+      call or text 988, the Suicide & Crisis Lifeline (free, any time), or call 911 in an
+      emergency.
+    match: ["988"]

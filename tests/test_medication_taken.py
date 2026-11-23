@@ -1038,9 +1038,12 @@ def _():
             turn.update(close_gate=True, user_text="rough morning, heading to work",
                         prev_assistant="")
             note = OR._record_reported_doses({"physical_health": _PH_OUT}, P, True)
-        assert note.startswith("MEDICATION NOTE (from code): Recorded by code: "
-                               "Atorvastatin (1 of 1 today).") and "do not record them again" \
-            in note, note
+        # Vitamin D is a profile medicine with no linked habit: since Stage 3 (Revision 2 L4)
+        # code writes its medications_logged entry too.
+        assert note.startswith("MEDICATION NOTE (from code): Recorded by code: ") \
+            and "Atorvastatin (1 of 1 today)" in note \
+            and "Vitamin D (logged as taken today)" in note \
+            and "do not record them again" in note, note
         r = _row(O.medication_taken(day=DAY), tid)
         assert (r["done"], r["missed"]) == (1, False), r
         assert "Physical Health reported 1 dose" in _task(tid)["occurrences"]["2026-11-20"][
@@ -1053,15 +1056,17 @@ def _():
             "a scheduled turn records nothing"
 
 
-@check("A1: a name not in the profile, a profile name with no linked habit, and a near-miss "
-       "spelling are all left alone — no dose, no note")
+@check("A1: a name not in the profile and a near-miss spelling are left alone — no dose, no "
+       "note; a profile name with no linked habit is logged by code (Stage 3, Revision 2 L4)")
 def _():
     import core.orchestrator as OR
     import tools.obligations as O
     with _sandbox() as (_d, state):
         tid = _old_habit(state, "Evening tablet", medication="Atorvastatin")
-        out = ("MEDICATION_TAKEN: Bisoprolol; Vitamin D; Atorvastatin 20mg; Atorvastatn")
+        out = ("MEDICATION_TAKEN: Bisoprolol; Atorvastatin 20mg; Atorvastatn")
         assert OR._record_reported_doses({"physical_health": out}, P, True) == ""
+        vit = OR._record_reported_doses({"physical_health": "MEDICATION_TAKEN: Vitamin D"}, P, True)
+        assert "Vitamin D (logged as taken today)" in vit, vit
         assert _row(O.medication_taken(day=DAY), tid)["done"] == 0
         assert OR._record_reported_doses({"finance": "MEDICATION_TAKEN: Atorvastatin"}, P,
                                          True) == "", "only Physical Health's line counts"
