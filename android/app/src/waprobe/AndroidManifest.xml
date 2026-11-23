@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- WhatsApp Phase 0 probe — merged into the `waprobe` build type ONLY.
+     `./gradlew assembleDebug` never sees this file, so the listener and the All-files
+     permission cannot reach anyone else's phone. Throwaway: delete src/waprobe/ and the
+     build type once Phase 0 is read out (plan § 4). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Reading Android/media/com.whatsapp/… from another app (plan P3). Special-access:
+         granted in Settings, never at install. READ_EXTERNAL_STORAGE covers Android ≤ 12. -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+
+    <!-- Package visibility (Android 11+): whether AICore is installed, for checkpoint LM;
+         WhatsApp's version, because the backup format can change with any update. -->
+    <queries>
+        <package android:name="com.google.android.aicore" />
+        <package android:name="com.whatsapp" />
+    </queries>
+
+    <application>
+        <activity
+            android:name="com.mike.metatron.whatsapp.ProbeActivity"
+            android:label="WA probe"
+            android:exported="true"
+            android:theme="@android:style/Theme.DeviceDefault"
+            android:taskAffinity="com.mike.metatron.waprobe">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Only the system binds to it (the permission below is held by the system alone). -->
+        <service
+            android:name="com.mike.metatron.whatsapp.ProbeListener"
+            android:label="Metatron WhatsApp probe"
+            android:exported="true"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+    </application>
+</manifest>

@@ -1,7 +1,12 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- allowBackup is false (WhatsApp plan P4, 2026-10-30): Android's auto-backup would
+         otherwise copy app storage to Google Drive — the WhatsApp backup key once it is held
+         on the phone, and today already the WebView's localStorage with the session token.
+         The key is also kept in no_backup/, which auto-backup never copies; this is the
+         second lock, not the only one. -->
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"

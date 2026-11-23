@@ -21,6 +21,14 @@ android {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
+        // WhatsApp Phase 0 probe — throwaway (archive/plans/whatsapp_input_plan_2026-10-26.md § 4).
+        // Its listener, All-files permission and debug screen live only in src/waprobe/, so
+        // `./gradlew assembleDebug` — the APK anyone else installs — never contains them. Built
+        // only by `./gradlew assembleWaprobe`. Same app ID: google-services.json is keyed to it.
+        waprobe {
+            initWith debug
+            matchingFallbacks = ['debug']
+        }
     }
 }
 

@@ -123,6 +123,19 @@ android/app/src/main/java/com/*
 android/app/src/main/java/com/mike/*
 !android/app/src/main/java/com/mike/metatron/
 !android/app/src/main/java/com/mike/metatron/*.java
+# WhatsApp Phase 0b (2026-10-30): the clean-room reader's JVM tests, and the throwaway probe's
+# own build type (`./gradlew assembleWaprobe`). Capacitor's generated example tests stay ignored.
+!android/app/src/test/
+android/app/src/test/*
+!android/app/src/test/java/
+android/app/src/test/java/*
+!android/app/src/test/java/com/
+android/app/src/test/java/com/*
+!android/app/src/test/java/com/mike/
+!android/app/src/waprobe/
+# The probe's own JVM tests (11-22) — never in src/test/, where naming a waprobe class breaks
+# the debug compile and takes the 19 reader tests down with it.
+!android/app/src/testWaprobe/
 
 # Node dependencies
 node_modules/

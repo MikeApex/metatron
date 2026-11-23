@@ -247,6 +247,35 @@ def _search_terms(rel: str) -> list[str]:
     return terms
 
 
+# Clean-room fence (WhatsApp clean-room rule 2, added 2026-11-22). A session that
+# read a reference crypt implementation logs it; a clean-room session must never
+# be shown that log, and this hook would push it in unasked the moment a file it
+# names is edited. So "reference-reading" fragments are skipped — named NARROWLY,
+# by filename or first heading only. Never widen this to a mention of WhatsApp:
+# unrelated fragments (the whole-codebase review among them) mention it in
+# passing, this hook runs for every session in every area, and a broad match
+# would silently drop their history from every briefing, permanently.
+#
+# The heading match is a deliberately broad substring, so it fails CLOSED: a title
+# that merely mentions the phrase ("no reference reading", "fences reference-reading
+# fragments") is hidden too. Accepted — a hidden fragment is still in the log and can
+# be opened; a contaminated clean room cannot be undone. So never put the phrase in
+# the first heading of a fragment that is not one.
+_FENCED_FRAGMENTS = frozenset({
+    "2026-10-26-04-whatsapp-input-explored-planned-phase-0a.md",  # session 1, untitled
+})
+# Any run of space, underscore or hyphen/dash (incl. U+2010–2015) between the words.
+_FENCE_HEADING_RE = re.compile(r"reference[\s_\-\u2010-\u2015]+reading", re.IGNORECASE)
+
+
+def _fenced_heading(lines: list[str]) -> bool:
+    """True when the fragment's FIRST heading line says reference-reading."""
+    for line in lines:
+        if line.lstrip("\ufeff").startswith("#"):
+            return bool(_FENCE_HEADING_RE.search(line))
+    return False
+
+
 def _log_hits(root: Path, rel: str) -> list[tuple[str, str, list[str]]]:
     """(source, heading, excerpt-lines) from archive/log/, newest first.
 
@@ -254,6 +283,8 @@ def _log_hits(root: Path, rel: str) -> list[tuple[str, str, list[str]]]:
     sessions; `_history.md` is itself newest-first. One excerpt per heading —
     the heading is the session, and one pointer per session is the useful
     granularity. This is a pointer into the log, not a substitute for reading it.
+
+    Reference-reading fragments are never searched — see `_FENCED_FRAGMENTS`.
     """
     log_dir = root / "archive" / "log"
     if not log_dir.is_dir():
@@ -269,9 +300,13 @@ def _log_hits(root: Path, rel: str) -> list[tuple[str, str, list[str]]]:
     seen_headings: set[tuple[str, str]] = set()
 
     for src in sources:
+        if src.name in _FENCED_FRAGMENTS:
+            continue                      # skipped by name, before it is read
         try:
             lines = src.read_text(errors="ignore").splitlines()
         except OSError:
+            continue
+        if src is not blob and _fenced_heading(lines):
             continue
         for n, line in enumerate(lines):
             if not any(t in line for t in terms):
