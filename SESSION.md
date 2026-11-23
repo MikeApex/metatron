@@ -13,7 +13,7 @@ on the VM 11-18 (ids + Bulgarian/taxes/Prudential). **Next: Iva's onboarding wal
 (`archive/handoffs/2026-11-23-iva-onboarding-walkthrough-prompt.md`, Opus; supersedes 10-29); M3 restarts on her approval day; `/backlog deep`, then
 `archive/handoffs/2026-10-30-backlog-attack-signout-calendar-text-forward-trail-prompt.md`;
 reply latency (with `[DB-1029-09]`); Sign out; security `[DB-1029-20]`;
-**WhatsApp:** Phase 1 (VM side) built 11-23 (`e45c7cd`), channel off; next the M2 labelling walkthrough, then M4 (§ Current state);
+**WhatsApp:** Phase 1 (VM side) deployed 11-23, channel off; M2 dropped by Mike (real use is the baseline); next the Fable review of the phone reader, then Phase 2, then M4 (§ Current state);
 day-planner live checks `[DB-1029-01]` (due 10-31; the check script is already on the VM — no deploy needed); nine fixes' closes-on checks (11-12). **The
 meals habit still doesn't exist** — Mike re-asks as "open a daily habit…". **Still owed:** the
 boys' school hours/bedtimes → `children_home`; the "over and out" live check; Mike's calendar live
@@ -108,23 +108,23 @@ day (`547c446`). Reshuffle thinking is 0. Plan: [day_planner_plan_2026-10-24.md]
 (§ 18 round 2); Stage B: `archive/PROJECT_LOG.md` § 2026-10-27; Stage C and step 2: § 2026-10-29.
 
 **WHATSAPP INPUT — Phase 1, VM side, BUILT and DEPLOYED (`e45c7cd`, Mike: "as rec", 11-23);
-the channel is OFF for every user.** The VM can receive a paired phone's
-messages (`/device/*`, device token only), hold back what is objectionable or unreadable, translate
-Bulgarian on the VM (local OPUS-MT, Apache-2.0; other scripts held back), turn the rest into facts —
-questions/proposals/requests surface, routine chat is recorded only — re-raise an unanswered
-one-to-one question once, park one close-card per task, purge on un-share, expire at 90 days, and
-delete everything on the user's opt-in. Plan delta with Mike's rulings A–D and the endpoint contract
-Phase 2 builds to (§ 2.2, key in whole seconds):
+the channel is OFF for every user.** What the VM does with a message (§ 0), Mike's rulings A–D,
+and the endpoint contract Phase 2 builds to (§ 2.2):
 [whatsapp_phase1_build_plan_2026-11-23.md](archive/plans/whatsapp_phase1_build_plan_2026-11-23.md);
 log § 11-23 eighth. **DEPLOYED 11-23 13:27** (by another chat; VM at `388a91c`, which includes
 `e45c7cd`; deps installed, both units active). **Owed, first thing next session:** the first post-deploy
 email intake sweep through the new `ingest()` path — VM: `cd ~/multi-model-mcp && journalctl -u
 metatron-scheduler@mike --since "13:27" --no-pager | grep -i intake` — pass: an `intake:` line, no
-`whatsapp housekeeping failed` / `task evidence check failed`. **Next, before any alert: M2** — label ~200 received
-messages on the Mac, Bulgarian included (walkthrough, ~45 min), **then M4** for `mike`: seed the
-`whatsapp` consent (`scripts/accounts.py seed-consent mike --scopes whatsapp --evidence "Mike W10, 2026-10-26"`), the stanza on,
-`scripts/fetch_whatsapp_translation_model.py` then `--check` on the VM. **Owed before Phase 2 wires the
-reader in:** a Fable review of `src/main/…/whatsapp/` (~0.2M). **Mike's phone runs only the
+`whatsapp housekeeping failed` / `task evidence check failed`. **M2 DROPPED as the gate (Mike, 11-23,
+before any score):** a sample without the thread can't say what needs a reply, and he won't base it on
+old history — **real use is the baseline**, tuned from what he sees (plan § 4; log § 11-23 tenth).
+Button 8 and `scripts/whatsapp_m2_label.py` are kept for re-measuring, **uncommitted for Mike's review**;
+the export is deleted. 30 days held 0 Cyrillic messages. **Next:** a Fable review of
+`src/main/…/whatsapp/` (~0.2M), then **Phase 2** (nothing reaches the VM before the phone posts),
+then **M4** for `mike`: seed the `whatsapp` consent (`scripts/accounts.py seed-consent mike --scopes
+whatsapp --evidence "Mike W10, 2026-10-26"`), the stanza on, `scripts/fetch_whatsapp_translation_model.py`
+then `--check` on the VM. **Open for Mike:** a "this should have come up" action, now the only
+measure of misses — proposed for Phase 2 (~0.3–0.5M), not ruled. **Mike's phone runs only the
 `waprobe` build** — how to build and serve it: `docs/INFRASTRUCTURE.md` § APK. Clean room still
 binds: open no transcripts; WhatsApp log entries only 10-30-02 and fragments titled "clean-room";
 never put the other phrase in a clean-room fragment's first heading (the write-time briefing fails

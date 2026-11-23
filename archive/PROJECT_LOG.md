@@ -30,6 +30,120 @@ file is the only narrative record, alongside the verbatim transcripts.*
 
 ## Dated history
 
+### 2026-11-23 (WhatsApp M2, clean-room — the labelling tools were built and the sample exported; Mike dropped M2 as the gate before any score: real use is the baseline) — **uncommitted, for Mike's review; nothing deployed**
+
+**Incoming handoff:** `archive/handoffs/2026-11-23-whatsapp-m2-labelling-prep-prompt.md`. Clean-room rules held:
+- no transcript opened;
+- WhatsApp log entries read only in fragments titled "clean-room";
+- no crypt implementation, no web;
+- **no message text, contact name or number entered this conversation.** The export was never read. Two stray files in Downloads were identified by counts-only checks, and the one read in full is the probe's counts-only report.
+- The write-time briefing on `SESSION.md` injected excerpts of other fragments (Iva onboarding, the goal network, two clean-room ones). No WhatsApp reference-reading entry was among them.
+
+**Built (Amber/Green, uncommitted):**
+- **Probe button 8, "Export a labelling sample".** `ProbeM2Sample.java` (platform-free) and `ProbeM2Run.java`, with `ProbeActivity`/`ProbeStore` wiring.
+  - It draws about 200 received text messages from the last 30 days: Cyrillic ≥ 30, kinds in proportion, **≤ 15 per chat** (Mike).
+  - Rows carry n/kind/time/text only. The share sheet goes through the existing FileProvider `cache-path`.
+  - The sample is swept at the next launch after 15 minutes. `ProbeM2SampleTest` 6/6; the waprobe suite passes.
+- **`scripts/whatsapp_m2_label.py`.** Calls `intake_whatsapp._analyse` directly, with a neutral "Contact" entry. The verdict is shown first (Mike's choice, accepting the anchoring).
+  - The answer key is shown at every question (Mike). The resume file holds no text. Supports `--rescore`.
+  - It refuses without the translation model, prints a numbers-only summary, and offers deletion (default yes).
+  - A `p` answer (a proposal with a time) is the ground truth for the one-to-one hard gate. Without it, the gate could be checked only against our own typing, where it can never fail.
+  - `tests/test_whatsapp_m2_label.py` 10/10. `qa_sweep` 12/12. Waprobe APK built and served (sha `7f763f8a`) and installed.
+
+**Rulings:**
+- Transport (a): no ids, Taildrop.
+- Bar set before labelling: recall ≥ 95% (*"let's aim for 95% and see how it goes"*), no miss on a one-to-one proposal with a time, precision ≥ 60%.
+- **Then dropped:** *"there's not enough information … I don't want to predicate on my message history. Let's run the tool and see how Metatron would handle things, then adjust from that baseline."* Recorded in plan § 4. The bar is void.
+- Earlier, Mike refused labelling inside this chat: about 200 third-party texts would go to Anthropic's API and sit in the session log and the transcripts.
+
+**Why a no-ids sample could not decide it:**
+- Need depends on the thread. "Have a great day" needs a reply as a sign-off, none as an answer to "talk to you later". The per-chat last-reply time is a candidate signal (unbuilt).
+- A reply-need is moot until Metatron can reply on WhatsApp.
+
+**Found:** the window held **0 Cyrillic** of 1,054 received messages with text (330 one-to-one, 724 group; 37 chats sampled; 0 live increments). Ruling D's translation path has nothing to be measured on. Bulgarian in Latin letters would pass as English; Mike was told, and nothing was asked for.
+
+**Wrong at first:**
+- The first Taildrop arrival was the probe report shared as text, not the sample. Tailscale names shared text with a hash `.txt`.
+- The labelling export's shape check found 0 rows in it.
+
+**Rejected:**
+- Labelling in chat (privacy).
+- A batch mode (Mike chose the script as is).
+- A names-included re-export (more exposure; to be weighed only if skips exceeded 1 in 5).
+
+**Deleted:** the export and its resume file (11-23). Button 8 and the script are kept for re-measuring.
+
+**Next for WhatsApp:**
+1. The Fable review of `src/main/…/whatsapp/`.
+2. **Phase 2** (the phone posts; nothing reaches the VM before it).
+3. M4.
+
+**Open for Mike:** a "this should have come up" action, now the only measure of misses, proposed for Phase 2 (~0.3–0.5M tokens). Not ruled.
+
+### 2026-11-23, ninth (ranking Part B phase 1 built — the regret-of-delay ranking runs beside the old one in shadow, and every task starts recording what a delay would cost) — `05f3110` — **committed, NOT deployed**
+
+**Incoming handoff:** `archive/handoffs/2026-11-23-ranking-part-b-phase-1-build-prompt.md`
+(Opus 5.5, high) — consumed. The outgoing primer said *"Next: phase 1, in shadow … the flag flip
+waits for Mike's three-morning comparison."*
+
+**Built (plan § 11a has the full list):** `config/modules/ranking.yaml` with every § 11 value cited
+to the research; `tools/ranking.py`; the cost record in `tools/obligations.py` behind
+`cost_record` (**on** in the committed yaml, so the deploy starts recording); the judge records it
+in its existing pass; `_candidates_v2`, hard-first, the shadow and `scripts/ranking_report.py
+--compare` in `tools/day_plan.py`; Red edits to `task_judge.md` and `synthesizer.md` made in this
+session. Tests: `tests/test_ranking_v2.py` 26/26, Part A's `tests/test_task_ranking.py` 21/21 with
+the flag off, and every ledger, planner and judge suite unchanged. The two failures already on
+clean HEAD remain: round-2 F8, and `task_ledger_consult`'s 3 November date.
+
+**Decisions taken in the build (Mike approved the list before work began):**
+1. Implied promise dates are derived on read, not stored by `open_task`. `bears` usually arrives
+   from the judge later, and a stored `due` would show on the Today list before the flip.
+2. A fifth bearer, `own_org` (weight 1.0), for a business the user owns.
+3. The social × 1.5 weight is capped at a 0.99 share. Social still outranks financial at every
+   grade, but the gap narrows at severe (99 vs 90).
+4. `free_minutes_per_day: 120` turns a task's length into days (heuristic, measured by the shadow).
+5. Stage only this session's hunks. The other window's name scrub committed as `388a91c`
+   mid-session, so the separation was moot.
+
+**Believed true earlier, wrong (found by the first test run):** setting the climb window to the
+task's own need, as § 4.10 first read, would have put nothing more than a day ahead above the
+advance floor. Musts cost their whole weight whatever the window, so it orders advance work only.
+It is now the 14-day look-ahead, with `advance_floor` at 10: a minor is never pulled forward.
+
+**Fable 5.1 diff review: 13 findings, reconciled in plan § 11a.**
+1. Fixed:
+   - a stated vital stays vital under v2
+   - a judge reply with no costs writes no record
+   - a record that fails twice is not offered again, so one bad task can't spend the daily cap
+   - old promises are graced from the day they were recorded, not opened
+   - hard-first stays within a tier
+   - advance work is never on the Important line
+   - the people offer no longer labels a code-chosen grade as stated
+   - a moot cliff is never a must
+2. Kept or deferred with reasons:
+   - **Buffer learning is built but OFF**: in shadow every long task would train "starts late"
+   - fractional attention blocks
+   - undated goal steps as advance work, and showing the implied date: phase 2
+   - **the `request_replan` R9 sentence is live flag-off. Mike: keep (2026-11-23)**
+
+**Rejected:** a separate judge call for cost records. One call with a per-task `want` costs the
+same cap and the same output budget (~3k of the 5k ceiling for 25 tasks), and keeps stakes judging
+first in each batch.
+
+**Next:** at Mike's next routine deploy, `cost_record` goes live (one judge pass, ~$0.04 for `mike`)
+and `ranking_v2` stays off. Then three mornings of
+`archive/handoffs/2026-11-23-ranking-phase-1-shadow-comparison-walkthrough.md`. The flip needs v2
+preferred on ≥ 2 of 3 mornings, with no real obligation below the cut. Phase 2's prompt is
+`archive/handoffs/2026-11-23-ranking-part-b-phase-2-build-prompt.md` (Opus, high).
+
+**After the close-out (same session):** Mike deployed. On the VM at 14:06, `task_judge` recorded
+costs for 21 of the 21 tasks offered, in one call, so `cost_record` is live and the shadow reads
+real records. **Mike then deferred the three-morning comparison to the backlog so other builds can
+go ahead** (`396698d`). It gates only the `ranking_v2` flip, not phase 2. The phase 2 prompt's
+precondition was loosened to match: build on whatever `ranking.yaml` holds, since every value is
+config. Mornings are kept 14 days, so the comparison can be read in one sitting with `--day`, by
+about 2026-12-07.
+
 ### 2026-11-23 (WhatsApp Phase 1, VM side, clean-room — the server receives, screens, translates Bulgarian, extracts facts and surfaces what needs the user; the channel ships off) — **committed `e45c7cd`, pushed; nothing deployed**
 
 **Incoming handoff:** `archive/handoffs/2026-11-23-whatsapp-phase-1-vm-side-prompt.md` (log § 11-23 sixth). Clean-room rules held:

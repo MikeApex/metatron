@@ -117,7 +117,10 @@ back-tagging the rest is `[DB-0815-10]`.
   (`archive/plans/agent_instructions_to_code_sweep_2026-11-23.md` § 6).*
 - **[bug]** Telling Metatron you're free today doesn't clear the "(when free of childcare?)" question on the day plan — the one-day override is saved (`day_overrides`, holds: true) and the plan refreshes ("day shape changed"), but the weekend task keeps its condition and the Today panel still shows "File the quarterly return (when free of childcare?)" at 10:00. Reproduced 2026-11-23 by replaying `tests/test_day_plan_round2.py` check F8, which fails on clean HEAD too (predates the 11-23 derived-writer work; likely since `fda9d80` "every task is weighed"). Filed at Mike's request.  
   `2026-11-23`
+- **[needs building]** Before the repo is shared, real family and contact details still sit outside the code: names, the second user's personal and work email, schools and places in `DEV_BACKLOG.md`, `archive/**`, `SESSION.md`, `ROADMAP.md`, `docs/`, tests and generated reports under `tests/` — and in git history, which a working-tree scrub cannot touch (needs an export or a history rewrite). Mike, 2026-11-23: "It will be, and would need to be scrubbed at some point, but not now." Code, comments, config and agent files were scrubbed the same day; the two lines another session then had uncommitted (`core/consent.py`, `scripts/fetch_whatsapp_translation_model.py`) were scrubbed at its close-out, 11-23. Filed at Mike's request.  
+  `2026-11-23`
 - **2026-11-23 — Mike asked to file it (deferred so other builds can go ahead).** The new task ranking (by which delay you would regret more) runs only in shadow until Mike compares it with today's ranking on three mornings and prefers it on at least 2, with no real obligation below the cut. It is a walkthrough, ~15 min if all three are read in one sitting: `archive/handoffs/2026-11-23-ranking-phase-1-shadow-comparison-walkthrough.md` (Sonnet). The report keeps each morning for **14 days** — `scripts/ranking_report.py --compare --persona mike --day YYYY-MM-DD` on the VM — so the three mornings must fall within 14 days of the session, i.e. pick mornings from 2026-11-24 on and run it by ~2026-12-07 or the earliest are gone. Gates only the `ranking_v2` flip; phase 2's build does not wait on it.
+
 ## Now
 
 **Ranked — position is priority.** Capped at ~10, so something enters by displacing something.
@@ -1396,6 +1399,9 @@ claim user-facing (its log-write sibling is `[DB-0829-01]`); the two Iva/Eva cor
 evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording — "causing an
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
+
+- **[user corrected a prior turn]** User clarified that the previous items (cheese omelette from meals log and The Rest Is Politics from podcasts list) were tests and requested their removal.  
+  `2026-11-23T12:29:21.476927Z`
 
 - **[user corrected a prior turn]** User stated their last four messages were tests, correcting prior additions of Perfect Days, ramen meals, Manny junior football gift, and Conan O'Brien podcast.  
   `2026-11-23T12:07:12.718700Z`
