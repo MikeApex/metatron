@@ -483,6 +483,48 @@ def _normalize_open_threads(raw: list | None) -> list[dict]:
     return out
 
 
+# --- The open-thread cap (Stage 2 #4, review S7.1, 2026-11-23) -------------------------------
+# The Synthesizer's instruction asks for at most five per category, and the open list still grew
+# past it, so a stale sixth topic kept resurfacing. Code backstops `open_threads` only: it is the
+# one category with a date to pick "oldest" by exactly. `held_items`, `clinical_threads`,
+# `patterns` and `follow_ups` are never capped here.
+#
+# Oldest by `added` goes first. A thread the user engages THIS turn is exempt and ranks as
+# today's for the cap only (its stored `added` is unchanged, so expiry is untouched): an exact
+# re-send keeps its stored date in `_merge_open_threads` before engagement is checked, so the
+# oldest is not necessarily the least recently engaged. If more than five are engaged in one
+# turn, all are kept and the list runs over for that turn.
+_OPEN_THREADS_CAP = 5
+
+
+def _cap_block_live(capped_on) -> bool:
+    """Does a cap-archived entry still block re-entry? Only for `_OPEN_THREAD_EXPIRY_DAYS` from
+    `capped_on`; an undated or unparseable entry blocks nothing."""
+    try:
+        age = (date.today() - date.fromisoformat(str(capped_on))).days
+    except (TypeError, ValueError):
+        return False
+    return age <= _OPEN_THREAD_EXPIRY_DAYS
+
+
+def _cap_open_threads(
+    threads: list[dict], user_text: str | None, today: str
+) -> tuple[list[dict], list[dict]]:
+    """(kept in their given order, archive entries for the dropped). See `_OPEN_THREADS_CAP`."""
+    if len(threads) <= _OPEN_THREADS_CAP:
+        return threads, []
+    candidates = [
+        (str(t.get("added") or ""), i) for i, t in enumerate(threads)
+        if not _user_engages_thread(t.get("text") or "", user_text)
+    ]
+    excess = len(threads) - _OPEN_THREADS_CAP
+    drop = {i for _, i in sorted(candidates)[:excess]}
+    kept = [t for i, t in enumerate(threads) if i not in drop]
+    capped = [{**threads[i], "expired_on": today, "capped_on": today, "reason": "cap"}
+              for i in sorted(drop)]
+    return kept, capped
+
+
 # ---------------------------------------------------------------------------
 # Asked-state memory, and the nothing-new delta  [DB-0809-02]
 #
@@ -1106,7 +1148,8 @@ def _audit_path() -> Path:
 
 def _append_audit(added: list[str], removed: list[str], expired: list[str],
                   open_count: int, reworded: list[str] | None = None,
-                  closed_task: list[str] | None = None) -> None:
+                  closed_task: list[str] | None = None,
+                  capped: list[str] | None = None) -> None:
     """
     Append one line describing what this write did to the open threads.
 
@@ -1127,6 +1170,10 @@ def _append_audit(added: list[str], removed: list[str], expired: list[str],
     named a task the ledger records as closed. Not folded into `removed`, which means "the model
     stopped sending it" — this one is code acting on an exact link.
 
+    `capped` (2026-11-23) is a sixth: threads archived because the list ran past
+    `_OPEN_THREADS_CAP`. Not folded into `removed` either — the model kept sending them; code
+    dropped them on an exact rule.
+
     Never raises. An audit line that could break a context write would be worse than no
     audit line — the tracker is on the response path.
     """
@@ -1139,6 +1186,7 @@ def _append_audit(added: list[str], removed: list[str], expired: list[str],
             "expired": expired,
             "reworded": reworded or [],
             "closed_task": closed_task or [],
+            "capped": capped or [],
             "open_count": open_count,
         }
         with open(path, "a") as f:
@@ -1364,6 +1412,97 @@ def _administratively_resolve_bound(flag: str) -> bool:
     return changed
 
 
+def _clinical_merge_for_write(
+    clinical_threads: list[dict] | None, existing: dict
+) -> tuple[list[dict], list[str]]:
+    """
+    The one clinical-thread write path, shared by `write_context_tracker` (the [CONTEXT] block)
+    and `merge_pattern_findings` (the tool), so the two cannot drift. Returns (threads, notices).
+
+    A clinical thread needs the user's own words (Mike, 2026-10-29) — the other half of
+    core/orchestrator._drop_unprompted_clinical_flags. A scheduled session has none, so it
+    neither opens, re-states nor changes a thread, and raises no escalation: existing threads
+    carry forward untouched, as on any omission. `_merge_clinical_threads` does the rest:
+    add-only, tier-2 `resolved` refused, tier-2 escalation raised.
+    """
+    unprompted = bool(clinical_threads) and _scheduled_turn()
+    threads, notices = _merge_clinical_threads(
+        None if unprompted else clinical_threads, existing.get("clinical_threads", []) or []
+    )
+    if unprompted:
+        notices.append("clinical_threads not written: a scheduled session carries no user words")
+    return threads, notices
+
+
+def _norm_pattern(text) -> str:
+    return " ".join(str(text or "").split()).casefold()
+
+
+@_locked
+def merge_pattern_findings(
+    patterns: list[str] | None = None,
+    open_threads: list | None = None,
+    follow_ups: list[str] | None = None,
+    held_items: list | None = None,
+    clinical_threads: list[dict] | None = None,
+    user_text: str | None = None,
+) -> str:
+    """
+    The `write_context_tracker` TOOL's handler (Stage 2 M6, 2026-11-23). Adds findings to
+    `patterns` and records clinical threads through the shared add-only path; nothing else.
+
+    WHY: the tool used to call `write_context_tracker`, which rebuilds the whole tracker from its
+    arguments. Pattern Miner — the only agent granted the tool — had to send `open_threads` and
+    `follow_ups` (both required) and naturally sent them empty, so the weekly run wiped the
+    Synthesizer's follow-ups, held items and open threads. Those fields belong to the session,
+    which writes them through `persist_context_block` -> `write_context_tracker` (unchanged).
+
+    Every schema field is accepted so a model's call always binds; `open_threads`, `follow_ups`,
+    `held_items` and `user_text` are ignored. Callable from code with `patterns` alone.
+    `held_items` on disk pass through in whatever shape they have. `last_session`, the expiry
+    archive and `_CARRIED_KEYS` are untouched. An unreadable tracker writes nothing — the next
+    session write recovers it through the existing `_preserve_corrupt` / last-good path.
+    """
+    path = _tracker_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        try:
+            data = json.loads(path.read_text())
+        except (json.JSONDecodeError, OSError):
+            return "Tracker unreadable — nothing written"
+        if not isinstance(data, dict):
+            return "Tracker unreadable — nothing written"
+    else:
+        data = _recover_from_lastgood()
+
+    current = data.get("patterns")
+    current = list(current) if isinstance(current, list) else []
+    seen = {_norm_pattern(p) for p in current}
+    added = 0
+    for p in patterns or []:
+        text = " ".join(str(p or "").split())
+        key = text.casefold()
+        if not text or key in seen:
+            continue
+        seen.add(key)
+        current.append(text)
+        added += 1
+    data["patterns"] = current
+
+    notices: list[str] = []
+    if clinical_threads:
+        threads, notices = _clinical_merge_for_write(clinical_threads, data)
+        data["clinical_threads"] = threads
+
+    _write_raw(data)
+
+    msg = (f"Patterns: {added} added. Open threads, follow-ups and held items are kept by the "
+           f"session and were not changed by this call.")
+    if notices:
+        msg += "\nClinical threads: " + "; ".join(notices)
+    return msg
+
+
 @_locked
 def write_context_tracker(
     open_threads: list,
@@ -1432,17 +1571,7 @@ def write_context_tracker(
     else:
         existing = _recover_from_lastgood()
 
-    # A clinical thread needs the user's own words (Mike, 2026-10-29) — the other half of
-    # core/orchestrator._drop_unprompted_clinical_flags. A scheduled session has none, so it
-    # neither opens, re-states nor changes a thread, and raises no escalation: existing threads
-    # carry forward untouched, as on any omission. Here rather than in the orchestrator because
-    # the [CONTEXT] block and the write_context_tracker tool both arrive through this function.
-    unprompted = bool(clinical_threads) and _scheduled_turn()
-    threads, notices = _merge_clinical_threads(
-        None if unprompted else clinical_threads, existing.get("clinical_threads", [])
-    )
-    if unprompted:
-        notices.append("clinical_threads not written: a scheduled session carries no user words")
+    threads, notices = _clinical_merge_for_write(clinical_threads, existing)
 
     today = date.today().isoformat()
     still_eligible, newly_expired = _expire_open_threads(
@@ -1470,18 +1599,44 @@ def write_context_tracker(
     # `open_threads` stamped today, which is the immortality bug wearing a different hat. Both
     # sides now use the same anchor-set identity, so a thread stays archived until the USER brings
     # it up.
-    archived_keys = [
-        _anchor_tokens(t["text"])
-        for t in list(prior_expired_open_threads) + list(newly_expired)
-        if isinstance(t, dict) and t.get("text")
-    ]
+    #
+    # [Stage 2 #4, 2026-11-23] A CAP-archived entry (`reason: "cap"`) is held to two limits that
+    # expiry-archived entries are not: it blocks only for `_OPEN_THREAD_EXPIRY_DAYS` from
+    # `capped_on` (after that it stays in the archive, inert), and it is never matched against a
+    # thread that is still open on disk — capping one of two related threads must not silently
+    # remove its sibling. It blocks an exact re-send of itself and a NEW lookalike thread only.
+    archived_keys: list[frozenset[str]] = []
+    capped_keys: list[frozenset[str]] = []
+    capped_texts: set[str] = set()
+    for t in list(prior_expired_open_threads) + list(newly_expired):
+        if not (isinstance(t, dict) and t.get("text")):
+            continue
+        if t.get("reason") == "cap":
+            if _cap_block_live(t.get("capped_on")):
+                capped_keys.append(_anchor_tokens(t["text"]))
+                capped_texts.add(t["text"])
+            continue
+        archived_keys.append(_anchor_tokens(t["text"]))
+    # A thread still open is exempt from the cap filter whether it is re-sent verbatim or
+    # REWORDED (Fable diff review): a rewording of an open sibling is that sibling, and it
+    # inherits its date through `_carried_added` in `_merge_open_threads` as usual.
+    open_now = {t.get("text") for t in still_eligible if t.get("text")}
+    open_keys = [_anchor_tokens(t["text"]) for t in still_eligible if t.get("text")]
 
     def _text_of(item) -> str:
         return str((item.get("text") if isinstance(item, dict) else item) or "").strip()
 
     def _is_archived(text: str) -> bool:
         key = _anchor_tokens(text)
-        return any(_same_thread(key, k) for k in archived_keys)
+        if any(_same_thread(key, k) for k in archived_keys):
+            return True
+        if text in open_now:
+            return False
+        if text in capped_texts:          # an exact re-send of a capped thread stays out
+            return True
+        if any(_same_thread(key, k) for k in open_keys):
+            return False
+        return any(_same_thread(key, k) for k in capped_keys)
 
     filtered_incoming = [
         item for item in (open_threads or [])
@@ -1511,10 +1666,13 @@ def write_context_tracker(
         filtered_incoming = _kept
 
     stamped_open_threads = _merge_open_threads(filtered_incoming, still_eligible, user_text)
+    stamped_open_threads, capped_now = _cap_open_threads(stamped_open_threads, user_text, today)
 
     expired_open_threads = prior_expired_open_threads
     if newly_expired:
         expired_open_threads = expired_open_threads + newly_expired
+    if capped_now:
+        expired_open_threads = expired_open_threads + capped_now
     if len(expired_open_threads) > _EXPIRED_OPEN_THREADS_CAP:
         expired_open_threads = expired_open_threads[-_EXPIRED_OPEN_THREADS_CAP:]
 
@@ -1556,13 +1714,16 @@ def write_context_tracker(
         t["text"] for t in stamped_open_threads
         if t.get("text") and t["text"] not in _before and t.get("added") not in (None, today)
     )
+    _capped_texts = [t.get("text") for t in capped_now if t.get("text")]
     _append_audit(
         added=sorted(_after - _before),
-        removed=sorted(_before - _after - set(_expired_now) - set(closed_task_drops)),
+        removed=sorted(_before - _after - set(_expired_now) - set(closed_task_drops)
+                       - set(_capped_texts)),
         expired=_expired_now,
         open_count=len(stamped_open_threads),
         reworded=_reworded,
         closed_task=sorted(set(closed_task_drops)),
+        capped=sorted(set(_capped_texts)),
     )
 
     msg = f"Context tracker updated ({path})"
@@ -1592,10 +1753,9 @@ READ_CONTEXT_TRACKER_SCHEMA = {
 WRITE_CONTEXT_TRACKER_SCHEMA = {
     "name": "write_context_tracker",
     "description": (
-        "Update the session context tracker at the close of a session. "
-        "Record open threads (unresolved topics), patterns noticed, and specific "
-        "things to follow up on next session. Keep entries brief — one sentence each. "
-        "This is your notes-to-self, not a summary for the user. "
+        "Add findings to the tracker's patterns, and record or update clinical threads "
+        "(merge, never delete). Open threads, follow-ups and held items are kept by the "
+        "session and are not changed by this tool. Keep entries brief — one sentence each. "
         "If a clinical flag fired this session, record it in clinical_threads and move it "
         "to 'watch' once you have surfaced it and the user has responded."
     ),
@@ -1679,6 +1839,6 @@ WRITE_CONTEXT_TRACKER_SCHEMA = {
                 },
             },
         },
-        "required": ["open_threads", "patterns", "follow_ups"],
+        "required": ["patterns"],
     },
 }

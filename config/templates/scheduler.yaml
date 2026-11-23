@@ -69,7 +69,7 @@ schedules:
     agent: coordinator
     prompt: "How did today go? Anything worth capturing before the day closes? Reference anything that was left open earlier today rather than asking in the abstract."
     notification: push
-    # Day-close = whole-person session. Coordinator routes to Diarist + Mental Wellbeing + Physical Health.
+    # Day-close = whole-person session: code adds Mental Wellbeing + Physical Health (core/orchestrator.py `_dispatch_from_coordinator`); the Diarist runs only on the user's reply.
 
   location_anticipation:
     enabled: true

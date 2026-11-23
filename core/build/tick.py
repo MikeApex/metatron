@@ -165,6 +165,10 @@ def _count_faults(persona: str | None, built: set[str],
             continue
         if str(event.get("timestamp") or "") < cutoff:
             continue
+        # [DB-0902-01] Stage 2 #1: a ROUTING_MISS written on a turn with no user words is
+        # tagged `scheduled` (tools/logger._NEEDS_USER_WORDS) and never counts toward REPAIR.
+        if event.get("scheduled"):
+            continue
         # source_agent may name several specialists — the correction attribution
         # writes a comma-joined list, because a turn can dispatch more than one
         # and blaming the first alphabetically would be a guess.

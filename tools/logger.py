@@ -599,6 +599,43 @@ def read_log(log_date: str = "") -> dict:
 _NEVER_DEDUPED: frozenset[str] = frozenset({"BUILD_PROPOSED", "BUILD_CHECK_FAILED"})
 
 
+# [DB-0902-01] / Stage 2 #1 (D-S2-1 option 3, Mike 2026-11-23). These four types each CLAIM the
+# user did something — corrected the system, asked for a change, asked for a feature, applied a
+# fix themselves. On a turn that carries no words from the user (a scheduled brief or close, a
+# weekly single-agent job) the turn itself proves they did not: the Coordinator commenting on the
+# scheduler's own prompt was filed as ~56 USER_CORRECTION and ~155 ROUTING_MISS events, which
+# buried the real ones in the backlog and in Build's three-strikes count. The four are refused
+# there. ROUTING_MISS is kept — a specialist can genuinely be missed on a scheduled turn — but
+# written with `"scheduled": true`, and both readers that count it skip tagged events
+# (scripts/sync_dev_backlog.fetch_events, core/build/tick._count_faults). Code-written types
+# (CONTEXT_BLOCK_UNPARSED, FALSE_ACTION_CLAIM, CHAIN_LIMIT_REACHED, ...) are untouched.
+_NEEDS_USER_WORDS: frozenset[str] = frozenset({
+    "USER_CORRECTION", "INSTRUCTION_CHANGE_REQUEST", "FEATURE_REQUEST", "SELF_APPLIED",
+})
+
+
+def _no_user_words() -> bool:
+    """
+    True when the current turn provably carries no words from the user.
+
+    A bound turn (tools/turn_context) answers decisively: its `user_turn` is
+    has_real_user_turn(). With no bound turn, a bound proactive trace (the weekly single-agent
+    `run_session` jobs bind no turn) is a no-words turn. Neither bound — a script, a scheduler
+    function job, core/server.py's /feedback tap (a real user action from an HTTP handler) — is
+    NOT a no-words turn, as before. Never raises.
+    """
+    try:
+        from tools.turn_context import current
+        turn = current()
+        if turn is not None:
+            return not bool(turn.get("user_turn"))
+        from core.trace import get_trace
+        trace = get_trace()
+        return bool(trace is not None and trace.is_proactive)
+    except Exception:  # noqa: BLE001 — never block a quality event on the turn lookup
+        return False
+
+
 def write_quality_event(
     event_type: str,
     source_agent: str = "",
@@ -671,6 +708,16 @@ def write_quality_event(
             "anything. See asserts_routing_success()."
         )
 
+    # Stage 2 #1 — see _NEEDS_USER_WORDS.
+    scheduled = False
+    if (event_type in _NEEDS_USER_WORDS or event_type == "ROUTING_MISS") and _no_user_words():
+        if event_type in _NEEDS_USER_WORDS:
+            raise ValueError(
+                f"write_quality_event({event_type!r}): this turn carries no words from the "
+                "user, so there is nothing to have corrected or requested — do not log it."
+            )
+        scheduled = True
+
     logs_dir = _logs_dir()
     logs_dir.mkdir(parents=True, exist_ok=True)
     events_path = logs_dir / "quality_events.json"
@@ -682,6 +729,8 @@ def write_quality_event(
         "source_agent": source_agent,
         "detail": detail,
     }
+    if scheduled:
+        event["scheduled"] = True
 
     with _WRITE_QUALITY_EVENT_LOCK:
         # Dedup backstop ([DB-0810-03] grants ruling, 2026-08-28). The Coordinator can now

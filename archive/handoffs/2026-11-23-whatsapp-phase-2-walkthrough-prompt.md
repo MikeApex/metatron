@@ -18,11 +18,10 @@ Model: Opus 5.5 — a guided ~40-minute session with Mike (deploy, consent, side
 
 ## The steps
 
-### 1. Deploy the VM change (Mike runs it — `./deploy.sh` is Denied to Claude)
+### 1. Confirm the VM deploy landed (Mike deployed after the build closed, 11-23 — unverified by any session)
 
-The VM side of Phase 2 is harmless with the channel off: the closed gate now names which gate (`consented_off` / `no_consent`), plus the run-report and missed endpoints. It must reach the VM **before** the APK reaches the phone (plan § 4.4).
-- Mike, on the **MacBook**: `cd ~/Desktop/multi-model-mcp && ./deploy.sh`.
-- **Pass:** then on the **VM**: `cd ~/multi-model-mcp && git log --oneline --grep 'WhatsApp Phase 2 built'` finds the commit, and `.venv/bin/python tests/test_intake_whatsapp.py` ends `49/49 passed`.
+The VM side of Phase 2 is harmless with the channel off: the closed gate now names which gate (`consented_off` / `no_consent`), plus the run-report and missed endpoints. It must be on the VM **before** the APK reaches the phone (plan § 4.4) — so this step is a gate even though the deploy already ran. If the checks below fail, Mike re-runs `cd ~/Desktop/multi-model-mcp && ./deploy.sh` on the **MacBook** (`./deploy.sh` is Denied to Claude).
+- **Pass:** on the **VM**: `cd ~/multi-model-mcp && git log --oneline --grep 'WhatsApp Phase 2 built'` finds the commit, and `.venv/bin/python tests/test_intake_whatsapp.py` ends `49/49 passed`.
 
 ### 2. Seed `mike`'s WhatsApp consent only — the stanza stays off
 

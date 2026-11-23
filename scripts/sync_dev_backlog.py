@@ -103,7 +103,12 @@ MACHINE_TYPES = {"TOOL_DENIED", "RULE_CONFLICT", "SELF_APPLIED", "UNGROUNDED_ANS
                  # Custom logs phase 1, 2026-11-22 (tools/data_objects._fail): an entry
                  # the user asked to keep in one of their logs did not land after one
                  # retry, or its marker expired unverified. The user is also told.
-                 "DATA_OBJECT_WRITE_FAILED"}
+                 "DATA_OBJECT_WRITE_FAILED",
+                 # Stage 2 #10, 2026-11-23 (core/orchestrator._note_round_cap): a
+                 # Synthesizer reply ran out of tool rounds and was answered from what had
+                 # been done so far. A recurring signature is a question that keeps
+                 # running out of rounds.
+                 "CHAIN_LIMIT_REACHED"}
 
 WANTED = USER_TYPES | MACHINE_TYPES
 
@@ -180,6 +185,7 @@ LABELS = {
     # failing output itself is carried verbatim into the next attempt's brief,
     # not here, because an event is a signal and the output is a document.
     "BUILD_CHECK_FAILED": "a build landing failed its checks and was reverted",
+    "CHAIN_LIMIT_REACHED": "a reply ran out of tool rounds before it finished",
 }
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -430,11 +436,16 @@ def fetch_events(server: str, persona: str) -> list[dict]:
     # rule is archive-on-merge, data is never deleted, so the events stay on disk and
     # simply stop reaching the human-facing backlog. Without this the historical
     # `None. ×90` entry would keep leading the session-start line forever.
+    #
+    # [DB-0902-01] Stage 2 #1: an event tagged `scheduled` (a ROUTING_MISS written on a turn
+    # with no user words — tools/logger._NEEDS_USER_WORDS) stays on disk and out of the
+    # backlog, on the same read-time posture.
     return [
         e for e in events
         if isinstance(e, dict)
         and e.get("event_type") in WANTED
         and not _is_null_ish(str(e.get("detail", "")))
+        and not e.get("scheduled")
     ]
 
 

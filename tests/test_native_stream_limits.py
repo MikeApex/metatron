@@ -338,6 +338,198 @@ def _():
     assert not O._is_capacity_error(type("E", (Exception,), {"code": 400})("x"))
 
 
+# --- Stage 2 #10: CHAIN_LIMIT_REACHED and B4's final-round wording ---------------------------
+# The round cap (_SYNTH_MAX_ROUNDS) already ended tool use; nothing recorded it and the final
+# prompt said nothing about what was left undone. No call is ever refused.
+
+import core.trace as _TR  # noqa: E402
+import tools.logger as _L  # noqa: E402
+
+
+class _Events:
+    """Captures write_quality_event calls made through tools.logger (no file is written)."""
+
+    def __enter__(self):
+        self.events: list[tuple[str, dict]] = []
+        self._real = _L.write_quality_event
+        _L.write_quality_event = lambda event_type="", **k: (
+            self.events.append((event_type, k)) or "ok")
+        return self
+
+    def __exit__(self, *exc):
+        _L.write_quality_event = self._real
+
+    def kinds(self):
+        return [k for k, _ in self.events]
+
+
+def _as_agent(name):
+    rec = _TR.AgentRecord(agent=name, provider="", model="")
+    _TR._set_current_agent(rec)
+    return rec
+
+
+def _calls_only(n):
+    return [lambda: [_Chunk([_call("probe_tool")])]] * n
+
+
+@check("#10.1 the cap ending a Synthesizer reply records CHAIN_LIMIT_REACHED and runs the final round")
+def _():
+    _reset()
+    _as_agent("synthesizer")
+    try:
+        client = _FakeClient(_calls_only(O._SYNTH_MAX_ROUNDS) + [lambda: [_Chunk([_text("Done.")])]])
+        with _Events() as ev:
+            out, _ = _run(client)
+    finally:
+        _TR._set_current_agent(None)
+    assert out == "Done." and client.models.calls == O._SYNTH_MAX_ROUNDS + 1, out
+    assert ev.kinds() == ["CHAIN_LIMIT_REACHED"], ev.events
+    detail = ev.events[0][1]["detail"]
+    assert f"{O._SYNTH_MAX_ROUNDS}-round tool limit" in detail and "probe_tool" in detail, detail
+
+
+@check("#10.1b round-4 text beside a call, then the cap: event written, NO final round")
+def _():
+    _reset()
+    _as_agent("synthesizer")
+    try:
+        rounds = (_calls_only(O._SYNTH_MAX_ROUNDS - 1)
+                  + [lambda: [_Chunk([_text("Friday is booked; Saturday I could not check."),
+                                      _call("probe_tool")])]]
+                  + [lambda: [_Chunk([_text("SHOULD NOT RUN")])]])
+        client = _FakeClient(rounds)
+        with _Events() as ev:
+            out, hist = _run(client)
+    finally:
+        _TR._set_current_agent(None)
+    assert ev.kinds() == ["CHAIN_LIMIT_REACHED"]
+    assert client.models.calls == O._SYNTH_MAX_ROUNDS, client.models.calls
+    assert out == "Friday is booked; Saturday I could not check.", out
+    assert hist[-1]["content"] == out
+
+
+@check("#10.1c round-1 text, rounds 2-4 silent, then the cap: final round runs after a blank line")
+def _():
+    _reset()
+    _as_agent("synthesizer")
+    try:
+        rounds = ([lambda: [_Chunk([_text("Let me check."), _call("probe_tool")])]]
+                  + _calls_only(O._SYNTH_MAX_ROUNDS - 1)
+                  + [lambda: [_Chunk([_text("Friday is still unchecked.")])]])
+        client = _FakeClient(rounds)
+        with _Events() as ev:
+            out, hist = _run(client)
+    finally:
+        _TR._set_current_agent(None)
+    assert client.models.calls == O._SYNTH_MAX_ROUNDS + 1, client.models.calls
+    assert out == "Let me check.\n\nFriday is still unchecked.", repr(out)
+    assert hist[-1]["content"] == out            # history records what was shown
+    assert ev.kinds() == ["CHAIN_LIMIT_REACHED"]
+
+
+@check("#10.2 a Physical Health follow-up in round 4 runs, and its result reaches the final round")
+def _():
+    _reset()
+    ran = []
+    schemas = _SCHEMAS + [{"name": "run_subagent", "description": "t", "input_schema": {
+        "type": "object", "properties": {"agent_name": {"type": "string"}}}}]
+    handlers = {**_HANDLERS,
+                "run_subagent": lambda agent_name="", **k: ran.append(agent_name) or "PH: all clear"}
+    seen = []
+    sub = types.Part(function_call=types.FunctionCall(
+        name="run_subagent", args={"agent_name": "physical_health"}))
+    rounds = _calls_only(O._SYNTH_MAX_ROUNDS - 1) + [lambda: [_Chunk([sub])]] + [
+        lambda: [_Chunk([_text("Reply.")])]]
+    client = _FakeClient(rounds)
+    real = client.models.generate_content_stream
+    client.models.generate_content_stream = lambda model, contents, config: (
+        seen.append(list(contents)) or real(model, contents, config))
+    _as_agent("synthesizer")
+    try:
+        with _Events() as ev:
+            out = "".join(O._run_gemini_native_stream(
+                client, "fake-model", "system", "hello", schemas, handlers,
+                history=[], max_iterations=O._SYNTH_MAX_ROUNDS))
+    finally:
+        _TR._set_current_agent(None)
+    assert ran == ["physical_health"], ran
+    responses = [p.function_response.response for c in seen[-1] for p in (c.parts or [])
+                 if getattr(p, "function_response", None)]
+    assert {"result": "PH: all clear"} in responses, responses
+    assert "run_subagent(physical_health)" in ev.events[0][1]["detail"], ev.events
+    assert out == "Reply."
+
+
+@check("#10.3 a soft-deadline exit records no CHAIN_LIMIT_REACHED")
+def _():
+    _reset()
+    _as_agent("synthesizer")
+    real = O._past_soft_deadline
+    O._past_soft_deadline = lambda: True
+    try:
+        client = _FakeClient([lambda: [_Chunk([_call("probe_tool")])],
+                              lambda: [_Chunk([_text("Wrapped up.")])]])
+        with _Events() as ev:
+            out, _ = _run(client)
+    finally:
+        O._past_soft_deadline = real
+        _TR._set_current_agent(None)
+    assert out == "Wrapped up." and "CHAIN_LIMIT_REACHED" not in ev.kinds(), ev.events
+
+
+@check("#10.4 a reply that ends with text in round 2 records nothing")
+def _():
+    _reset()
+    _as_agent("synthesizer")
+    try:
+        client = _FakeClient([lambda: [_Chunk([_call("probe_tool")])],
+                              lambda: [_Chunk([_text("Answer.")])]])
+        with _Events() as ev:
+            out, _ = _run(client)
+    finally:
+        _TR._set_current_agent(None)
+    assert out == "Answer." and ev.kinds() == []
+
+
+@check("#10.5 cap exhaustion under a non-Synthesizer agent records nothing")
+def _():
+    _reset()
+    _as_agent("logistics")
+    try:
+        client = _FakeClient(_calls_only(O._SYNTH_MAX_ROUNDS) + [lambda: [_Chunk([_text("x")])]])
+        with _Events() as ev:
+            _run(client)
+    finally:
+        _TR._set_current_agent(None)
+    assert ev.kinds() == []
+
+
+@check("#10.6 the final round's request carries B4's consequence wording")
+def _():
+    assert "say so in one plain sentence" in O._FINAL_REPLY_PROMPT
+    assert "never why, and never how you work" in O._FINAL_REPLY_PROMPT
+    assert O._FINAL_REPLY_PROMPT.startswith("Your tool budget for this turn is spent.")
+
+
+@check("#10.7 the event is written on a no-user-words turn too (not a refused type)")
+def _():
+    import tempfile
+    from unittest import mock
+    _reset()
+    _as_agent("synthesizer")
+    try:
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(_L, "_logs_dir", return_value=Path(tmp)), \
+                T.turn_scope(user_turn=False):
+            client = _FakeClient(_calls_only(O._SYNTH_MAX_ROUNDS) + [lambda: [_Chunk([_text("x")])]])
+            _run(client)
+            lines = (Path(tmp) / "quality_events.json").read_text().splitlines()
+    finally:
+        _TR._set_current_agent(None)
+    assert len(lines) == 1 and '"CHAIN_LIMIT_REACHED"' in lines[0], lines
+
+
 if __name__ == "__main__":
     for name, ok, detail in _results:
         print(f"  {'PASS' if ok else 'FAIL'}  {name}" + (f"\n        {detail}" if detail else ""))

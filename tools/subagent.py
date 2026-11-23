@@ -9,6 +9,7 @@ data context. The active persona is resolved and passed through automatically.
 import logging
 import os
 import threading
+import time
 
 from core.persona import current_persona
 from core.trace import get_subagent_depth, set_subagent_depth
@@ -127,14 +128,33 @@ def run_subagent(agent_name: str, message: str, complexity: str = "",
         fire_and_forget = True
 
     if fire_and_forget:
+        # Stage 2 (Fable diff review): a follow-up fired from a turn with no user words keeps
+        # that state on its own thread, so the no-words write guard (core/orchestrator
+        # dispatch_tool) and the quality-event tag (tools/logger._no_user_words) still apply,
+        # and its own trace is proactive. Only the no-words state travels: a user turn's
+        # background run stays unbound, as before (the decline guard reads an unbound thread).
+        from tools import turn_context as _turn
+        _parent_turn = _turn.current()
+        _no_words = _parent_turn is not None and not _parent_turn.get("user_turn")
+        if _parent_turn is None:
+            from core.trace import get_trace
+            _t = get_trace()
+            _no_words = bool(_t is not None and _t.is_proactive)
+
         # Captured on this thread: the background thread starts with no depth of its own.
-        def _run(child_depth: int = depth + 1) -> None:
+        def _run(child_depth: int = depth + 1, no_words: bool = _no_words) -> None:
             set_subagent_depth(child_depth)
+            if no_words:
+                _turn.adopt({"user_turn": False, "started_at": time.time(), "spoken": []})
             try:
                 run_session(agent_name, user_input=message, persona=persona,
-                            complexity=complexity_hint)
+                            complexity=complexity_hint,
+                            **({"proactive": True} if no_words else {}))
             except Exception as e:
                 logger.warning(f"[fire_and_forget] {agent_name} failed: {e}")
+            finally:
+                if no_words:
+                    _turn.adopt(None)
         threading.Thread(target=_run, daemon=True).start()
         return f"{agent_name}: dispatched (async)"
 

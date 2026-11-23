@@ -811,7 +811,8 @@ def _corrected_agents(persona: str | None = None) -> list[str]:
         return []
 
 
-def _handle_user_correction(coord_output: str, persona: str | None = None) -> None:
+def _handle_user_correction(coord_output: str, persona: str | None = None,
+                            user_turn: bool = True) -> None:
     """
     Extract USER_CORRECTION from Coordinator output and log it via write_quality_event.
 
@@ -828,7 +829,13 @@ def _handle_user_correction(coord_output: str, persona: str | None = None) -> No
     merely noticed it. See `_corrected_agents()`. Falls back to `coordinator`
     when the previous turn cannot be read — the old behaviour, kept as the
     fallback rather than as the default.
+
+    `user_turn` False (Stage 2 #1): no user words, so there is nothing to have corrected —
+    returns before the trace scan. tools/logger.write_quality_event is the one authority and
+    refuses the type on such a turn anyway; this only saves the scan and a warning.
     """
+    if not user_turn:
+        return
     import re as _re
     match = _re.search(r'^USER_CORRECTION:\s*(.+)$', coord_output, _re.MULTILINE)
     if match:
@@ -1456,7 +1463,7 @@ def register_tools() -> tuple[list[dict], dict]:
     )
     from tools.memory_tool import search_memory, SEARCH_MEMORY_SCHEMA
     from tools.context_tracker import (
-        read_context_tracker, write_context_tracker,
+        read_context_tracker, merge_pattern_findings,
         READ_CONTEXT_TRACKER_SCHEMA, WRITE_CONTEXT_TRACKER_SCHEMA,
     )
     from tools.persona import write_persona, WRITE_PERSONA_SCHEMA
@@ -1654,7 +1661,9 @@ def register_tools() -> tuple[list[dict], dict]:
         "record_wisdom_response": record_wisdom_response,
         "search_memory": search_memory,
         "read_context_tracker": read_context_tracker,
-        "write_context_tracker": write_context_tracker,
+        # Stage 2 M6: the TOOL merges into `patterns` (and clinical threads, add-only) only;
+        # the session's replace-write is `persist_context_block` -> write_context_tracker.
+        "write_context_tracker": merge_pattern_findings,
         "get_log_window": get_log_window,
         "write_insight_report": write_insight_report,
         "read_recent_insights": read_recent_insights,
@@ -2522,7 +2531,7 @@ _CONTEXT_CLOSE = "[/CONTEXT]"
 # `clinical_threads` arrived from a parallel session on 2026-08-08; it is the one
 # with a safety cost if dropped.
 _CONTEXT_KEYS = ("open_threads", "patterns", "follow_ups", "held_items",
-                 "clinical_threads", "dev_request")
+                 "clinical_threads", "dev_request", "routing_miss")
 
 
 def _strip_fences(raw: str) -> str:
@@ -2793,6 +2802,55 @@ def persist_context_block(ctx: dict | None, user_text: str | None = None) -> Non
         logger.warning(f"[context_block] write failed: {exc}")
 
     _persist_dev_request(ctx.get("dev_request"))
+    _persist_routing_miss(ctx.get("routing_miss"))
+
+
+def _persist_routing_miss(value) -> None:
+    """
+    Record the Synthesizer's `routing_miss` from its [CONTEXT] block (Stage 2 M11).
+
+    Filing a miss used to cost the Synthesizer a whole extra head-model round — a
+    `write_quality_event` tool call — on a turn whose reply was otherwise ready. It rides the
+    block now. Shape: {"agent": <specialist that should have caught it>, "detail": <what was
+    missed>}, or a list of them, which becomes ONE event (one event per signal per turn is the
+    existing rule, and the per-trace dedup would drop a second anyway). Every write_quality_event
+    guard applies: null-ish, routing-success, per-trace dedup (the Coordinator's own copy wins),
+    and the no-user-words tag. While a live clarify hold is on, nothing is written: the missing
+    specialists were held by design. Own try, so neither this nor the tracker write costs the
+    other. Never raises.
+    """
+    if not value:
+        return
+    try:
+        if _bound_turn_flag("clarify_hold"):
+            return
+        items = value if isinstance(value, list) else [value]
+        agents: list[str] = []
+        details: list[str] = []
+        from tools.logger import is_null_ish
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            detail = str(it.get("detail") or "").strip()
+            if not detail or is_null_ish(detail):
+                continue
+            details.append(detail)
+            agent = normalize_agent_name(str(it.get("agent") or ""), dict(_AGENT_NAME_MAP))
+            if agent and agent not in agents:
+                agents.append(agent)
+        if not details:
+            return
+        from tools.logger import write_quality_event as _wqe
+        _wqe(
+            event_type="ROUTING_MISS",
+            source_agent=",".join(agents),
+            detail="; ".join(details),
+            session_id=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+        )
+    except PersonaError:
+        raise
+    except Exception as exc:
+        logger.warning(f"[routing_miss] not recorded: {exc}")
 
 
 _DEV_REQUEST_TYPES = {"SELF_APPLIED", "INSTRUCTION_CHANGE_REQUEST", "FEATURE_REQUEST"}
@@ -2923,6 +2981,70 @@ def _record_tool_denial(agent: str, name: str, inputs: dict) -> None:
         logger.warning(f"[tool_permissions] could not record denial: {e}")
 
 
+# --- Pre-call refusals (Stage 2, 2026-11-23) ---------------------------------------------
+# Small, exact rules code can decide before a tool runs. A refusal never executes the tool,
+# still reaches record_tool_call, and is recorded ok=False with a result that opens
+# "Error: not recorded —", so core/actions.action_provenance_block lists it as NOT done and the
+# Synthesizer is never told a write happened (build-time amendment 1).
+
+# #2 / S6 (D-S2-2.1): the five record writers Mental Wellbeing and Physical Health hold. On a
+# turn with no user words (a scheduled brief or close) whatever they write is their own
+# narration, and on 10-29 those self-written entries came back next session as "evidence".
+# `write_agent_config` (their working notes) and `request_build` stay allowed.
+_NO_WORDS_GUARDED_AGENTS = frozenset({"mental_wellbeing", "physical_health"})
+_NO_WORDS_REFUSED_WRITES = frozenset({
+    "write_log", "write_journal", "write_archive", "write_profile", "write_wisdom",
+})
+from core.actions import NO_WORDS_REFUSAL as _NO_WORDS_REFUSAL  # noqa: E402 — one home
+from core.actions import CLARIFY_REFUSAL as _CLARIFY_REFUSAL  # noqa: E402
+from core.actions import designed_refusal as _designed_refusal  # noqa: E402
+
+# M7 (D-S2-4, shadow first). Mental Wellbeing and Physical Health are never held — not in
+# dispatch, not as a Synthesizer follow-up. `_CLARIFY_HOLD_LIVE` stays False this run: code
+# records what it WOULD hold (trace annotations) and holds nothing. Flipping it is a later
+# change with its own preconditions (capture fidelity must skip a held turn; the Coordinator's
+# two deferred Red edits) — see the Stage 2 plan § 1 M7.
+_NEVER_HELD = frozenset({"mental_wellbeing", "physical_health"})
+_CLARIFY_HOLD_LIVE = False
+
+
+class _PreCallRefused(Exception):
+    """A designed refusal inside dispatch_tool; its message is the tool result."""
+
+
+def _bound_turn_flag(key: str):
+    try:
+        return (_turn.current() or {}).get(key)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _no_words_write_refusal(agent: str, name: str) -> str | None:
+    """#2's guard. Keyed on the BOUND TURN only, never the trace's `is_proactive`: the weekly
+    physical review is a single-agent run_session with no turn bound, and writing its summary
+    to the log is its job (config/templates/scheduler.yaml)."""
+    if agent not in _NO_WORDS_GUARDED_AGENTS or name not in _NO_WORDS_REFUSED_WRITES:
+        return None
+    turn = _turn.current()
+    if turn is None or turn.get("user_turn"):
+        return None
+    return _NO_WORDS_REFUSAL
+
+
+def _clarify_hold_refusal(agent: str, name: str, inputs: dict | None) -> str | None:
+    """M7 live only (review S2): while a hold is on, the Synthesizer's second hop to a held
+    writer and its action tools are refused. Inert while `_CLARIFY_HOLD_LIVE` is False."""
+    if not _CLARIFY_HOLD_LIVE or agent != "synthesizer" or not _bound_turn_flag("clarify_hold"):
+        return None
+    if name == "run_subagent":
+        target = normalize_agent_name(
+            str((inputs or {}).get("agent_name") or (inputs or {}).get("agent") or ""),
+            dict(_AGENT_NAME_MAP))
+        return None if target in _NEVER_HELD else _CLARIFY_REFUSAL
+    from core.actions import ACTION_TOOLS
+    return _CLARIFY_REFUSAL if name in ACTION_TOOLS else None
+
+
 def dispatch_tool(name: str, inputs: dict, handlers: dict,
                   _agent_rec=None, _turn_num: int = 1,
                   _allowed: set[str] | None = None) -> str:
@@ -2954,7 +3076,14 @@ def dispatch_tool(name: str, inputs: dict, handlers: dict,
     t0 = time.monotonic()
     fn = handlers[name]
     ok = True
+    _caller = getattr(_agent_rec or _tr.get_current_agent(), "agent", "") or ""
+    refusal = (_no_words_write_refusal(_caller, name)
+               or _clarify_hold_refusal(_caller, name, inputs))
     try:
+        if refusal is not None:
+            # Stage 2 pre-call refusal — see _NO_WORDS_REFUSED_WRITES. Not executed.
+            _trace(f"  [TOOL] {name} refused for {_caller}")
+            raise _PreCallRefused(refusal)
         # Bind first, so a wrong-argument error can name the right arguments.
         # A bare "got an unexpected keyword argument 'content'" tells the model its
         # guess was wrong but nothing about what is correct, so it guesses again:
@@ -2983,6 +3112,9 @@ def dispatch_tool(name: str, inputs: dict, handlers: dict,
                 result = json.dumps(result, indent=2)
             else:
                 result = str(result)
+    except _PreCallRefused as refused:
+        result = str(refused)
+        ok = False
     except Exception as e:
         result = f"Error running tool '{name}': {e}"
         ok = False
@@ -3010,7 +3142,7 @@ def dispatch_tool(name: str, inputs: dict, handlers: dict,
     rec = _agent_rec or _tr.get_current_agent()
     # For run_subagent, pull token counts from the subagent record that was just created.
     in_tok = out_tok = 0
-    if name == "run_subagent" and rec is not None:
+    if name == "run_subagent" and rec is not None and refusal is None:
         t = _tr.get_trace()
         if t is not None:
             subagents = t.pipeline[0].subagents if t.pipeline else []
@@ -4537,8 +4669,43 @@ _TURN_SOFT_DEADLINE_KEY = "soft_deadline"
 _USER_SOFT_DEADLINE_S = 150
 _SCHEDULED_SOFT_DEADLINE_S = 240
 
+# B4's consequence wording (Stage 2 #10): code states the consequence and the posture, the
+# Synthesizer says it in its own words — the same rule as _unavailable_notice. Also serves the
+# MAX_TOKENS replacement round, where the last sentence is harmless.
 _FINAL_REPLY_PROMPT = ("Your tool budget for this turn is spent. Reply to the user now, from "
-                       "what has been done so far. Do not call tools.")
+                       "what has been done so far. Do not call tools. If something you set out "
+                       "to check or do is still not done, say so in one plain sentence — what "
+                       "is still unchecked or undone, never why, and never how you work.")
+
+
+def _note_round_cap(max_iterations: int, last_calls: list) -> None:
+    """Record that the round cap ended a Synthesizer reply (Stage 2 #10). Names the last
+    round's tools, and run_subagent's `agent_name` values (specialist names, never user
+    content). Once per request (write_quality_event's per-trace dedup); not one of the
+    no-user-words refused types, so a scheduled turn records it too. Never raises."""
+    try:
+        rec = _tr.get_current_agent()
+        if getattr(rec, "agent", "") != "synthesizer":
+            return
+        names: list[str] = []
+        for fc in last_calls or []:
+            name = str(getattr(fc, "name", "") or "")
+            if name == "run_subagent":
+                args = getattr(fc, "args", None) or {}
+                target = str(args.get("agent_name") or args.get("agent") or "").strip()
+                name = f"run_subagent({target})" if target else name
+            if name and name not in names:
+                names.append(name)
+        from tools.logger import write_quality_event
+        write_quality_event(
+            event_type="CHAIN_LIMIT_REACHED",
+            source_agent="synthesizer",
+            detail=(f"reply reached the {max_iterations}-round tool limit; last round called: "
+                    f"{', '.join(names) or 'unknown'}"),
+            session_id=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+        )
+    except Exception as exc:  # noqa: BLE001 — instrumentation never costs a reply
+        logger.warning(f"[reply_limits] CHAIN_LIMIT_REACHED not recorded: {exc}")
 _NO_REPLY_LINE = ("I did what I could on that, but couldn't finish the reply — ask me again "
                   "if you need the details.")
 _CUT_REPLY_LINE = ("\n\n(I lost the connection partway through — ask me to finish if you "
@@ -4872,6 +5039,10 @@ def _run_gemini_native_stream(client, model_name: str,
     result = ""
     emitted = False       # any text shown to the user, in any round
     dispatched = False    # any tool run, in any round — "nothing emitted" is not "nothing done"
+    ended_on_deadline = False   # #10: the soft deadline, not the round cap, ended the loop
+    last_round_text = ""        # the LAST round's text only — `result` carries earlier rounds
+    shown_rounds: list[str] = []  # every round's streamed text, in order: what the user saw
+    last_calls: list = []       # the last round's function calls, for CHAIN_LIMIT_REACHED
 
     def _finish(text: str) -> None:
         if history is not None:
@@ -4881,6 +5052,7 @@ def _run_gemini_native_stream(client, model_name: str,
     for turn_num in range(1, max_iterations + 1):
         if turn_num > 1 and _past_soft_deadline():
             logger.warning(f"[reply_limits] soft deadline reached before round {turn_num}")
+            ended_on_deadline = True
             break
         _trace(f"[API] gemini-native-stream/{model_name}  turn={turn_num}  streaming...")
 
@@ -4962,6 +5134,9 @@ def _run_gemini_native_stream(client, model_name: str,
 
         if text_parts:
             result = "".join(text_parts)
+        last_round_text = "".join(text_parts)
+        shown_rounds.append(last_round_text)
+        last_calls = list(function_calls)
 
         if not function_calls:
             if text_parts and _finish_name(finish) == "MAX_TOKENS":
@@ -5036,11 +5211,27 @@ def _run_gemini_native_stream(client, model_name: str,
 
     # Out of rounds, or past the turn's soft deadline, and the last round asked for tools. On
     # 2026-10-24 this fell through with nothing said: a blank reply after 9 minutes.
-    final = "" if result else _final_reply_round(client, model_name, contents, config, types)
+    #
+    # Stage 2 #10 ([DB-0804-02] (a)). The round cap ending the chain is recorded
+    # (CHAIN_LIMIT_REACHED, Synthesizer only). Build-time amendment 3: `result` used to carry an
+    # earlier round's text — often a "let me check" line streamed beside a call — and that
+    # skipped the final round, so the B4 sentence about what is still unchecked never came. The
+    # final round now runs when the LAST round said nothing (cap or deadline alike); a last
+    # round that spoke beside its calls already answered, and a second reply would double it
+    # (Fable diff review). Final text after text already shown is set apart by a blank line,
+    # and history records exactly what the user saw.
+    if not ended_on_deadline:
+        _note_round_cap(max_iterations, last_calls)
+    already = "".join(shown_rounds)
+    final = ("" if last_round_text
+             else _final_reply_round(client, model_name, contents, config, types))
     if final:
-        yield final
-        result = final
-    elif not result:
+        sep = "\n\n" if already else ""
+        yield sep + final
+        result = already + sep + final
+    elif already:
+        result = already
+    else:
         yield _NO_REPLY_LINE
         result = _NO_REPLY_LINE
     _finish(result)
@@ -5884,6 +6075,11 @@ def _failed_tool_calls(rec) -> list[str]:
     for turn in rec.turns:
         for tc in turn.tool_calls:
             preview = str(tc.result_preview)
+            # A designed pre-call refusal (a scheduled session's write) is not a failure to
+            # report upward: nothing went wrong, and the Synthesizer would apologise for a save
+            # nobody asked for. The ACTIONS row says it was not recorded.
+            if _designed_refusal(preview):
+                continue
             if preview.startswith("Error") or getattr(tc, "ok", True) is False:
                 failures.setdefault(tc.name, preview[:300])
             else:
@@ -6071,7 +6267,7 @@ def _knowledge_block(entries: list[dict], domains: list[str] | None = None) -> s
 
 
 def _resolve_data_objects(coord_output: str, persona: str | None = None,
-                          user_turn: bool = True) -> dict:
+                          user_turn: bool = True, hold_writes: bool = False) -> dict:
     """
     Parse DATA_OBJECTS from Coordinator output: start a log, mark an entry on its way, and
     pre-fetch a log the turn reads (custom-logs plan § 3.4–3.5). The sibling of
@@ -6086,6 +6282,10 @@ def _resolve_data_objects(coord_output: str, persona: str | None = None,
 
     `user_turn` False (a scheduled session — no user speech) starts nothing and marks
     nothing; the Diarist is refused on such a turn anyway ([DB-0822-05]).
+
+    `hold_writes` (M7, live only — the twins pass it only while `_CLARIFY_HOLD_LIVE` is on and
+    the Coordinator asked a real question): start / add / amend are skipped exactly as on a
+    scheduled session, so no pending marker is set and no false "didn't save" note appears.
 
     THE MARKER IS SET HERE, BEFORE THE REPLY, and cleared by the write. That ordering is what
     lets a read on the very next turn wait out a Diarist still running, and what makes a
@@ -6108,6 +6308,7 @@ def _resolve_data_objects(coord_output: str, persona: str | None = None,
         return turn
     if not isinstance(items, list):
         return turn
+    writes_ok = user_turn and not hold_writes
 
     try:
         from tools import data_objects as DO
@@ -6121,7 +6322,7 @@ def _resolve_data_objects(coord_output: str, persona: str | None = None,
                 if not name or act not in ("start", "add", "read", "amend"):
                     continue
                 if act == "start":
-                    if not user_turn:
+                    if not writes_ok:
                         continue
                     out = DO.create_object(
                         name, description=str(it.get("description") or ""),
@@ -6146,11 +6347,11 @@ def _resolve_data_objects(coord_output: str, persona: str | None = None,
                     # A computed view (Medication taken today) takes no entry and no change:
                     # marking one on its way would send the Diarist to a write that is refused,
                     # and the failed write would reach the user as "did not save" (D11).
-                    if user_turn and not any(o["id"] == obj["id"] for o in turn["read_only"]):
+                    if writes_ok and not any(o["id"] == obj["id"] for o in turn["read_only"]):
                         turn["read_only"].append(DO.public(obj))
                     continue
                 if act == "add":
-                    if not user_turn:
+                    if not writes_ok:
                         continue
                     if obj.get("status") == "archived":
                         turn["archived"].append(DO.public(obj))
@@ -6159,7 +6360,7 @@ def _resolve_data_objects(coord_output: str, persona: str | None = None,
                         turn["adding"].append({"object": DO.public(obj),
                                                "fields": DO.fields_of(obj),
                                                "token": DO.mark_pending(obj["id"])})
-                elif act == "amend" and not user_turn:
+                elif act == "amend" and not writes_ok:
                     continue        # a scheduled session changes nothing the user keeps
                 elif act == "amend":
                     # A correction to what is already kept, or a change to the log itself
@@ -6734,7 +6935,6 @@ _DAY_PLAN_MARKER = "TODAY'S PLAN — kept by code"
 # A day-plan nudge skips the Coordinator (Mike, F9 (a)): there is nothing to route — the plan
 # already holds what the Synthesizer needs. This stands in for the routing package.
 _NUDGE_PACKAGE = (
-    "ORIGINAL_MESSAGE: (none — a day-plan wake; the user has not spoken)\n"
     "RESOLVED_INTENT: decide whether anything in TODAY'S PLAN that is due now is worth saying\n"
     "COMPLEXITY: quick\n"
     "USER_STATE: unknown\n"
@@ -6950,6 +7150,241 @@ def _unavailable_notice(agent_name: str) -> str:
     )
 
 
+# --- #2 (D4): the scheduled brief and close are whole-person sessions, by code --------------
+# The Coordinator was told to always call Mental Wellbeing and Physical Health on these two
+# sessions and skipped them (14 self-reported misses). Code adds them now, on the scheduler's
+# own session kinds (`_FIXED_SESSION_KINDS`); a user who types "good morning" is still the
+# Coordinator's call. Each gets a fixed, generic directive built here — no personal data.
+#
+# Mental Wellbeing: TONE ONLY (review S5), and `quick` (build-time amendment 4 — a forced deep
+# runs the history scan this directive exists to prevent). A past disclosure must not be
+# re-raised twice a day from a session the user never spoke in. If the Coordinator listed it,
+# its directive is REPLACED: that directive was written from the scheduler's prompt, not the
+# user's words, so nothing the user said is lost.
+# Physical Health: the proactive scan, `deep` (D-S2-2.2); its MEDICATION_MISSED_CRITICAL is
+# data-driven and valid without user words. A Coordinator directive is kept, the mode forced.
+_WHOLE_PERSON_MODE = {"mental_wellbeing": "quick", "physical_health": "deep"}
+_SESSION_LABEL = {"morning_brief": "morning brief", "evening_close": "day close"}
+
+
+_NOTHING_KEPT_LINE = ("Nothing you write in this session is kept — do not call write_log or "
+                      "write_journal.")
+
+
+def _whole_person_directive(agent: str, session: str | None) -> str:
+    label = _SESSION_LABEL.get(session or "", "session")
+    opening = (f"Scheduled {label}. The user has not spoken; nothing in this message is "
+               f"theirs. ")
+    closing = _NOTHING_KEPT_LINE
+    if agent == "mental_wellbeing":
+        return (opening + "Give tone context only: in a line or two, how the user has seemed "
+                "in their own recent entries. Raise no clinical history, past disclosure or "
+                "concern from an earlier session, and set no clinical flag — a concern is "
+                "raised only on the user's own words. " + closing)
+    return (opening + "Run your proactive scan over what is already on file and report what "
+            "is worth raising today, with your usual flags. " + closing)
+
+
+def _whole_person_specialists(specialists: list, session: str | None,
+                              user_turn: bool = False) -> list:
+    """`specialists` with Mental Wellbeing and Physical Health present and shaped for a
+    scheduled brief or close. Any other session — and any turn carrying the user's own words,
+    even one whose text matches a scheduled prompt — is unchanged: the directives say the user
+    has not spoken, which is only true of a scheduled run (Fable diff review)."""
+    if session not in _FIXED_SESSION_KINDS or user_turn:
+        return specialists
+    out: list = []
+    present: set[str] = set()
+    for sp in specialists:
+        if not isinstance(sp, dict):
+            out.append(sp)
+            continue
+        agent = normalize_agent_name(str(sp.get("agent", "")), dict(_AGENT_NAME_MAP))
+        if agent not in _WHOLE_PERSON_MODE:
+            out.append(sp)
+            continue
+        present.add(agent)
+        sp = {**sp, "agent": agent, "mode": _WHOLE_PERSON_MODE[agent],
+              "fire_and_forget": False}
+        if agent == "mental_wellbeing":
+            _trace(f"[PIPELINE] whole-person: mental_wellbeing directive replaced "
+                   f"(was: {str(sp.get('directive', ''))[:300]!r})")
+            sp["directive"] = _whole_person_directive(agent, session)
+        elif not str(sp.get("directive") or "").strip():
+            sp["directive"] = _whole_person_directive(agent, session)
+        elif _NOTHING_KEPT_LINE not in str(sp["directive"]):
+            # A kept Coordinator directive gets the same line, so Physical Health does not
+            # reach for a write the guard will refuse (Fable diff review).
+            sp["directive"] = f"{sp['directive']}\n\n{_NOTHING_KEPT_LINE}"
+        out.append(sp)
+    for agent in ("mental_wellbeing", "physical_health"):
+        if agent not in present:
+            out.append({"agent": agent, "mode": _WHOLE_PERSON_MODE[agent],
+                        "fire_and_forget": False,
+                        "directive": _whole_person_directive(agent, session)})
+            _trace(f"[PIPELINE] whole-person: added {agent}")
+    return out
+
+
+# --- M7: CLARIFICATION_NEEDED, measured in shadow ---------------------------------------
+_CLARIFICATION_LINE_RE = _re.compile(r"^\s*CLARIFICATION_NEEDED:\s*(.+)$", _re.MULTILINE)
+_NO_CLARIFICATION_RE = _re.compile(
+    r"^(?:(?:no|not)\b.*\b(?:needed|required|necessary|applicable)\b|nothing\b)", _re.I)
+
+
+def _clarification_line(coord_output: str | None) -> str | None:
+    """The raw CLARIFICATION_NEEDED value, or None when the line is absent."""
+    m = _CLARIFICATION_LINE_RE.search(coord_output or "")
+    return m.group(1).strip() if m else None
+
+
+def _clarification_shape(value: str) -> str:
+    """'free text' (a real question), or why it is not one: 'null-ish', 'bracket', 'negation'."""
+    from tools.logger import is_null_ish
+    v = (value or "").strip()
+    if not v or is_null_ish(v):
+        return "null-ish"
+    if v.startswith("["):
+        return "bracket"
+    if _NO_CLARIFICATION_RE.match(v):
+        return "negation"
+    return "free text"
+
+
+def _clarification_needed(coord_output: str | None) -> str | None:
+    """The ONE parser of the Coordinator's CLARIFICATION_NEEDED line (Stage 5 imports it).
+    The value when it is a real question; None for absent, null-ish, a bracketed template
+    echo, or a leading negation of need ("No clarification needed", "Nothing to clarify")."""
+    value = _clarification_line(coord_output)
+    if value is None or _clarification_shape(value) != "free text":
+        return None
+    return value
+
+
+def _parse_specialists(coord_output: str) -> list:
+    """SPECIALISTS_TO_CALL as a list, [] when absent or malformed."""
+    match = _re.search(r'SPECIALISTS_TO_CALL:\s*```json\s*(.*?)```', coord_output or "", _re.DOTALL)
+    if not match:
+        match = _re.search(r'SPECIALISTS_TO_CALL:\s*(\[.*?\])\s*(?:\n\n|\Z)', coord_output or "",
+                           _re.DOTALL)
+    if not match:
+        return []
+    try:
+        parsed = json.loads(match.group(1).strip())
+    except json.JSONDecodeError:
+        return []
+    return parsed if isinstance(parsed, list) else []
+
+
+def _data_object_acts(coord_output: str) -> list[str]:
+    """The write acts (start/add/amend) DATA_OBJECTS names — acts only, never log names."""
+    match = _re.search(r'DATA_OBJECTS:\s*```json\s*(.*?)```', coord_output or "", _re.DOTALL)
+    if not match:
+        match = _re.search(r'DATA_OBJECTS:\s*(\[.*?\])\s*(?:\n|\Z)', coord_output or "", _re.DOTALL)
+    if not match:
+        return []
+    try:
+        items = json.loads(match.group(1).strip())
+    except json.JSONDecodeError:
+        return []
+    return [str(it.get("act") or "").strip().lower() for it in items or []
+            if isinstance(it, dict)
+            and str(it.get("act") or "").strip().lower() in ("start", "add", "amend")]
+
+
+def _would_hold(specialists: list, data_turn: dict | None,
+                coord_output: str = "", user_turn: bool = True) -> dict:
+    """What a live hold would stop: every listed or code-added agent outside `_NEVER_HELD`
+    (the Diarist, delegated read-backs and the code-added Diarist included), and the
+    DATA_OBJECTS write acts. Holds nothing itself."""
+    names: list[str] = []
+    for sp in specialists or []:
+        if isinstance(sp, dict):
+            names.append(normalize_agent_name(str(sp.get("agent", "")), dict(_AGENT_NAME_MAP)))
+    if (data_turn or {}).get("adding") and user_turn:
+        names.append("diarist")
+    names += [r.get("agent") for r in (data_turn or {}).get("delegated") or [] if r.get("agent")]
+    held = sorted({n for n in names if n and n not in _NEVER_HELD})
+    return {"would_hold": held, "would_skip_writes": _data_object_acts(coord_output)}
+
+
+def _clarify_begin(coord_output: str, nudge: bool = False) -> str | None:
+    """Both twins call this right after the Coordinator. Returns the clarify value. Only when
+    `_CLARIFY_HOLD_LIVE` is on does it bind `clarify_hold` on the turn (what dispatch_tool and
+    `_persist_routing_miss` read); in shadow it binds nothing."""
+    if nudge:
+        return None
+    clarify = _clarification_needed(coord_output)
+    if clarify and _CLARIFY_HOLD_LIVE:
+        turn = _turn.current()
+        if turn is not None:
+            turn["clarify_hold"] = True
+    return clarify
+
+
+def _clarify_shadow_record(coord_output: str, data_turn: dict | None, user_turn: bool) -> None:
+    """M7's shadow measure, on the trace: written for every package that carries the line at
+    all (rejected ones too, so the filter itself is measured). The value text is never
+    stored — names can appear in it; only its shape and length. Never raises."""
+    try:
+        value = _clarification_line(coord_output)
+        trace = _tr.get_trace()
+        if value is None or trace is None:
+            return
+        shape = _clarification_shape(value)
+        held = (_would_hold(_parse_specialists(coord_output), data_turn, coord_output,
+                            user_turn) if shape == "free text"
+                else {"would_hold": [], "would_skip_writes": []})
+        trace.annotations["clarification"] = {
+            "value_shape": shape, "chars": len(value), "user_turn": bool(user_turn),
+            "would_hold": held["would_hold"], "would_skip_writes": held["would_skip_writes"],
+            "synth_redispatched": [],
+        }
+    except Exception as exc:  # noqa: BLE001 — a measurement never costs a turn
+        logger.warning(f"[clarify] shadow record skipped: {exc}")
+
+
+def _clarify_shadow_finish() -> None:
+    """After the Synthesizer: which held writers it re-dispatched through run_subagent — how
+    often the catch-up rules would have bounced off a live hold (review S2). Never raises."""
+    try:
+        trace = _tr.get_trace()
+        ann = (getattr(trace, "annotations", None) or {}).get("clarification")
+        if not ann or not ann.get("would_hold"):
+            return
+        held = set(ann["would_hold"])
+        hit: set[str] = set()
+
+        def _walk(recs):
+            for r in recs or []:
+                yield r
+                yield from _walk(getattr(r, "subagents", []))
+
+        for rec in _walk(trace.pipeline):
+            if rec.agent != "synthesizer":
+                continue
+            for turn in rec.turns:
+                for tc in turn.tool_calls:
+                    if tc.name != "run_subagent":
+                        continue
+                    target = normalize_agent_name(
+                        str((tc.args or {}).get("agent_name") or (tc.args or {}).get("agent")
+                            or ""), dict(_AGENT_NAME_MAP))
+                    if target in held:
+                        hit.add(target)
+        ann["synth_redispatched"] = sorted(hit)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[clarify] shadow finish skipped: {exc}")
+
+
+def _clarify_note(clarify: str | None) -> str:
+    """The Synthesizer's clarify note — "" in shadow, so its input is byte-identical."""
+    if not (clarify and _CLARIFY_HOLD_LIVE):
+        return ""
+    return ("\n\nCLARIFICATION NEEDED (from code): nothing was recorded or sent this turn. "
+            f"Ask the user, in one short question: {clarify}.")
+
+
 def _dispatch_from_coordinator(
     coord_output: str,
     persona: str | None = None,
@@ -6958,6 +7393,8 @@ def _dispatch_from_coordinator(
     user_turn: bool = True,
     data_turn: dict | None = None,
     user_text: str = "",
+    session: str | None = None,
+    clarify: str | None = None,
 ) -> dict:
     """
     Parse SPECIALISTS_TO_CALL from Coordinator output and dispatch agents.
@@ -6979,6 +7416,13 @@ def _dispatch_from_coordinator(
     dispatched here with the user's own words (`user_text`) if the Coordinator listed none,
     because the marker is already set and an entry nobody is sent to write would only ever
     surface as "didn't save". Its thread then verifies the write (run_verified_write).
+
+    `session`: the scheduled session kind (session_kind()), None on a user turn or a nudge.
+    On a morning brief or day close, Mental Wellbeing and Physical Health are added or
+    reshaped by code — see `_whole_person_specialists`.
+
+    `clarify`: the Coordinator's real CLARIFICATION_NEEDED value (`_clarification_needed`).
+    Acts only when `_CLARIFY_HOLD_LIVE` is on; in shadow it changes nothing.
     """
     import re as _re
     import threading
@@ -7013,6 +7457,14 @@ def _dispatch_from_coordinator(
             specialists.append({"agent": _r["agent"], "mode": "quick",
                                 "fire_and_forget": False,
                                 "directive": f"The user said: {user_text}"})
+    # M7, live only (inert while _CLARIFY_HOLD_LIVE is False): a turn waiting on the user's
+    # answer runs only the agents that are never held.
+    if clarify and _CLARIFY_HOLD_LIVE:
+        specialists = [sp for sp in specialists if isinstance(sp, dict) and normalize_agent_name(
+            str(sp.get("agent", "")), dict(_AGENT_NAME_MAP)) in _NEVER_HELD]
+        _trace("[PIPELINE] clarify hold: only never-held agents dispatched")
+    # #2: the scheduled brief and close always hear from Mental Wellbeing and Physical Health.
+    specialists = _whole_person_specialists(specialists, session, user_turn)
     if not specialists:
         return {}
 
@@ -7211,10 +7663,19 @@ def _dispatch_from_coordinator(
                     except Exception as exc:
                         logger.warning(f"[fire_and_forget] {a} verified write failed: {exc}")
                     return
+                # A no-words turn keeps that state on this thread (Fable diff review), so the
+                # write guard and the quality-event tag still apply; a user turn's background
+                # run stays unbound, as before.
+                if not user_turn:
+                    _turn.adopt({"user_turn": False, "started_at": time.time(), "spoken": []})
                 try:
-                    run_session(a, user_input=d, persona=persona, complexity=c)
+                    run_session(a, user_input=d, persona=persona, complexity=c,
+                                **({} if user_turn else {"proactive": True}))
                 except Exception as exc:
                     logger.warning(f"[fire_and_forget] {a} failed: {exc}")
+                finally:
+                    if not user_turn:
+                        _turn.adopt(None)
             threading.Thread(target=_bg, daemon=True).start()
 
     return outputs
@@ -7901,9 +8362,13 @@ def run_pipeline_session(user_input: str,
                   file=sys.stderr)
 
         # Handle any USER_CORRECTION flag in Coordinator output
-        _handle_user_correction(coord_output, persona)
+        _handle_user_correction(coord_output, persona,
+                                user_turn=has_real_user_turn(user_input, is_proactive, attachments))
         _handle_misheard(coord_output, persona, is_proactive, user_input)
         _handle_schedule_impact(coord_output, persona, is_proactive)
+        # M7 (shadow): the Coordinator's CLARIFICATION_NEEDED, parsed once. Holds nothing
+        # unless _CLARIFY_HOLD_LIVE. Mirrors the streaming twin.
+        clarify = _clarify_begin(coord_output, nudge)
 
         # Fetch the standing knowledge the Coordinator selected, before dispatch — the
         # specialists that read those subjects get them appended to their directives.
@@ -7911,14 +8376,18 @@ def run_pipeline_session(user_input: str,
         # The user's logs this turn — started, on their way, read. Mirrors the streaming twin.
         data_turn = None if nudge else _resolve_data_objects(
             coord_output, persona=persona,
-            user_turn=has_real_user_turn(user_input, is_proactive, attachments))
+            user_turn=has_real_user_turn(user_input, is_proactive, attachments),
+            hold_writes=bool(clarify) and _CLARIFY_HOLD_LIVE)
+        if not nudge:
+            _clarify_shadow_record(coord_output, data_turn,
+                                   has_real_user_turn(user_input, is_proactive, attachments))
 
         # Dispatch specialists from Python based on Coordinator's SPECIALISTS_TO_CALL
         _trace("[PIPELINE] dispatching specialists")
         specialist_outputs = {} if nudge else _dispatch_from_coordinator(
             coord_output, persona=persona, provider=provider, knowledge=knowledge,
             user_turn=has_real_user_turn(user_input, is_proactive, attachments),
-            data_turn=data_turn, user_text=user_input,
+            data_turn=data_turn, user_text=user_input, session=kind, clarify=clarify,
         )
         specialist_outputs = _file_wisdom_proposals(specialist_outputs, persona=persona)
         specialist_outputs = _file_horizon_items(specialist_outputs, persona=persona)
@@ -7991,6 +8460,8 @@ def run_pipeline_session(user_input: str,
             + (f"\n\n{focus_block}" if focus_block else "")
             + f"\n\n{_action_block(data_turn)}"
         )
+        # M7: "" in shadow, so the Synthesizer's input is byte-identical. Mirrors the twin.
+        synthesizer_input += _clarify_note(clarify)
         _trace("[PIPELINE] synthesizer  starting")
         recent_history = list(history[-10:]) if history else None
         # Files go to the Synthesizer as well as the Coordinator — see the streaming
@@ -8000,6 +8471,7 @@ def run_pipeline_session(user_input: str,
             history=recent_history, attachments=attachments,
         )
         _trace(f"[PIPELINE] synthesizer  done  ({len(synth_result)} chars)")
+        _clarify_shadow_finish()
         # Strip the internal [CONTEXT] block before the response leaves the
         # pipeline. Without this it reaches push notifications, the scheduler's
         # terminal output and the non-streaming /session endpoint verbatim, and
@@ -8204,9 +8676,12 @@ def _run_pipeline_session_stream_inner(
         "coordinator", coord_input, persona=persona, provider=provider,
         attachments=attachments, history=_coord_history(history))
     _trace(f"[PIPELINE] coordinator  done  ({len(coord_output)} chars) → dispatching specialists")
-    _handle_user_correction(coord_output, persona)
+    _handle_user_correction(coord_output, persona,
+                            user_turn=has_real_user_turn(user_input, is_proactive, attachments))
     _handle_misheard(coord_output, persona, is_proactive, user_input)
     _handle_schedule_impact(coord_output, persona, is_proactive)
+    # M7 (shadow) — mirrors the non-streaming twin exactly.
+    clarify = _clarify_begin(coord_output, nudge)
     # Knowledge fetch mirrors run_pipeline_session() exactly. THIS IS THE PATH THAT MATTERS:
     # the server streams, so a feature wired only into the non-streaming function is live in
     # tests and dead in production. Any change to the knowledge wiring changes both.
@@ -8214,11 +8689,15 @@ def _run_pipeline_session_stream_inner(
     # The user's logs this turn — mirrors the non-streaming twin exactly.
     data_turn = None if nudge else _resolve_data_objects(
         coord_output, persona=persona,
-        user_turn=has_real_user_turn(user_input, is_proactive, attachments))
+        user_turn=has_real_user_turn(user_input, is_proactive, attachments),
+        hold_writes=bool(clarify) and _CLARIFY_HOLD_LIVE)
+    if not nudge:
+        _clarify_shadow_record(coord_output, data_turn,
+                               has_real_user_turn(user_input, is_proactive, attachments))
     specialist_outputs = {} if nudge else _dispatch_from_coordinator(
         coord_output, persona=persona, provider=provider, knowledge=knowledge,
         user_turn=has_real_user_turn(user_input, is_proactive, attachments),
-        data_turn=data_turn, user_text=user_input,
+        data_turn=data_turn, user_text=user_input, session=kind, clarify=clarify,
     )
     specialist_outputs = _file_wisdom_proposals(specialist_outputs, persona=persona)
     specialist_outputs = _file_horizon_items(specialist_outputs, persona=persona)
@@ -8285,6 +8764,8 @@ def _run_pipeline_session_stream_inner(
         + (f"\n\n{focus_block}" if focus_block else "")
         + f"\n\n{_action_block(data_turn)}"
     )
+    # M7: "" in shadow, so the Synthesizer's input is byte-identical. Mirrors the twin.
+    synthesizer_input += _clarify_note(clarify)
 
     # Load Synthesizer prompt — mirrors _run_single_agent internals
     agent_instructions = load_agent("synthesizer")
@@ -8463,6 +8944,7 @@ def _run_pipeline_session_stream_inner(
         yield pending
 
     complete = "".join(buffer)
+    _clarify_shadow_finish()     # M7 — mirrors the non-streaming twin.
 
     # Same splitting logic as the non-streaming pipeline — one implementation so
     # the two paths cannot drift apart again.

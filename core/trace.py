@@ -168,6 +168,10 @@ class RequestTrace:
         # stray press from a deliberate question once the trace is written.
         self.source = source
         self.pipeline: list[AgentRecord] = []
+        # Per-request measurements code records for later reading (Stage 2 M7's shadow:
+        # `annotations["clarification"]`). Serialised only when non-empty, so ordinary turns
+        # carry no new key. Counts and shapes only — never user text.
+        self.annotations: dict = {}
         self.start_mono = time.monotonic()
         self._lock = threading.Lock()  # guards pipeline/subagent list mutations from worker threads
 
@@ -417,7 +421,7 @@ def _agent_to_dict(a: AgentRecord) -> dict:
 
 
 def _serialize(t: RequestTrace, duration_ms: int) -> dict:
-    return {
+    data = {
         "trace_id": t.trace_id,
         "ts": t.ts,
         "persona": t.persona,
@@ -432,6 +436,10 @@ def _serialize(t: RequestTrace, duration_ms: int) -> dict:
         # NOT `any(has_tool_calls())`: see AgentRecord.is_grounded().
         "grounded": _trace_grounded(t),
     }
+    annotations = getattr(t, "annotations", None)
+    if annotations:
+        data["annotations"] = annotations
+    return data
 
 
 def _walk_agents(agents: list[AgentRecord]):

@@ -218,6 +218,31 @@ def _walk(agents):
         yield from _walk(getattr(a, "subagents", []) or [])
 
 
+# Designed refusals (Stage 2, core/orchestrator.dispatch_tool's pre-call refusals). Not failures:
+# nothing went wrong, the system declined the write on purpose, and nothing was written. Shown
+# on their own row so the reply never apologises for a save nobody asked for — and never
+# claims one happened (build-time amendment 1). Keyed on the refusal's exact opening, which
+# core/orchestrator.py builds from these constants.
+NO_WORDS_REFUSAL = ("Error: not recorded — this session carries no words from the user, so "
+                    "nothing from it is written. Report what you found instead.")
+CLARIFY_REFUSAL = ("Error: not recorded — this turn is waiting for the user's answer to a "
+                   "question. Ask it; nothing is recorded or sent until they answer.")
+_DESIGNED_REFUSALS = (
+    (NO_WORDS_REFUSAL[:60], "not recorded (scheduled session)"),
+    (CLARIFY_REFUSAL[:60], "not recorded (waiting on the user's answer)"),
+)
+
+
+def designed_refusal(tc_or_preview) -> str | None:
+    """The ACTIONS label for a designed pre-call refusal, or None for anything else."""
+    preview = (tc_or_preview if isinstance(tc_or_preview, str)
+               else str(getattr(tc_or_preview, "result_preview", "")))
+    for prefix, label in _DESIGNED_REFUSALS:
+        if preview.startswith(prefix):
+            return label
+    return None
+
+
 def _failed(tc) -> bool:
     """A tool call that did not do what it was asked.
 
@@ -293,7 +318,10 @@ def action_provenance_block(trace, extra: list[str] | None = None) -> str:
                     unclassified.add(name)
                 # Order matters: a gated call is checked first because it is the
                 # narrower, positively-identified state. `_failed` is the fallback.
-                if _gated(tc):
+                refused = designed_refusal(tc)
+                if refused:
+                    outcome = refused
+                elif _gated(tc):
                     outcome = "gated"
                 elif _failed(tc):
                     outcome = "failed"
@@ -307,13 +335,16 @@ def action_provenance_block(trace, extra: list[str] | None = None) -> str:
 
     # Failures first, then gated, then completions — the two the Synthesizer most
     # needs to see are the two where it would otherwise tell the user it worked.
-    _RANK = {"failed": 0, "gated": 1, "done": 2}
-    rows = sorted(tally.items(), key=lambda kv: (_RANK[kv[0][1]], kv[0][0]))
+    _RANK = {"failed": 0, "gated": 1, "done": 3}
+    rows = sorted(tally.items(), key=lambda kv: (_RANK.get(kv[0][1], 2), kv[0][0]))
     lines = []
     for (name, outcome), count in rows:
         times = f" x{count}" if count > 1 else ""
         mark = " (unrecognised tool — reported as an action)" if name in unclassified else ""
-        if outcome == "failed":
+        if outcome.startswith("not recorded"):
+            lines.append(f"- {name} — {outcome}{times}: nothing was written, by design. It is "
+                         f"not a failure; do not mention it to the user{mark}")
+        elif outcome == "failed":
             lines.append(f"- {name} — ATTEMPTED AND FAILED{times}: did NOT complete{mark}")
         elif outcome == "gated":
             lines.append(
